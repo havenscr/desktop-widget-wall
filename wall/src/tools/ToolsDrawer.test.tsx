@@ -4,7 +4,6 @@ import { mocks } from '../bridge/tauri';
 import { Rail } from '../rail/Rail';
 import { usePlaceStore } from '../state/places';
 import { resetTip } from '../ui/HoverTip';
-import { PUBLIC_PAGE_KEY, resetPublicPage, usePublicPage } from '../unwind/spotify/model';
 import { DEFAULT_LOOKS } from '../unwind/watch/looks';
 import { useWatchStore } from '../unwind/watch/store';
 import { resetKeysFeed, useKeysFeedStore } from '../work/keysFeed';
@@ -52,8 +51,6 @@ beforeEach(() => {
   resetReports();
   resetRetries();
   resetKeysFeed();
-  localStorage.clear();
-  resetPublicPage();
   useWatchStore.setState({ looks: { ...DEFAULT_LOOKS } });
   usePlaceStore.setState({ active: 'work' });
   keysAnswer = () => summary();
@@ -185,25 +182,6 @@ it('Video look: chips from the Watch looks, the active one lit, a click uses the
   expect(feathered.getAttribute('aria-pressed')).toBe('true');
   expect(screen.getByText('How video sits in the sky on Watch')).toBeTruthy();
   expect(screen.queryByRole('button', { name: 'Off' })).toBeNull();
-});
-
-it('Saved Spotify playlists: two chips with tips, a hint that says the risk, on by default, a click toggles and stores the choice', async () => {
-  await openIt();
-  const drawer = screen.getByLabelText('Tools');
-  expect(drawer.textContent).toContain('Saved Spotify playlists');
-  expect(screen.getByText("Reading the public page is against Spotify's developer terms and may stop working.")).toBeTruthy();
-  const read = screen.getByRole('button', { name: 'Read public page' });
-  const only = screen.getByRole('button', { name: 'Only while playing' });
-  expect([read.getAttribute('aria-pressed'), only.getAttribute('aria-pressed')]).toEqual(['true', 'false']);
-  expect(read.hasAttribute('data-tip')).toBe(true);
-  expect(only.hasAttribute('data-tip')).toBe(true);
-  fireEvent.click(only);
-  expect([read.getAttribute('aria-pressed'), only.getAttribute('aria-pressed')]).toEqual(['false', 'true']);
-  expect(usePublicPage.getState().on).toBe(false);
-  expect(localStorage.getItem(PUBLIC_PAGE_KEY)).toBe('off');
-  fireEvent.click(read);
-  expect(usePublicPage.getState().on).toBe(true);
-  expect(localStorage.getItem(PUBLIC_PAGE_KEY)).toBe('on');
 });
 
 it('Keys file: count and read time, Open calls the fixed command, Reload reads again', async () => {

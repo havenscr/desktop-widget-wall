@@ -1352,7 +1352,7 @@ describe('a saved playlist that is not his (Spotify shows its songs only to its 
     await flush();
   };
 
-  // These pages are about what shows when no list can be read: the Tools switch is off here, so the public page is never asked
+  // These pages are about what shows when no list can be read: the public page is turned off here, so the public page is never asked
   // (the saved-playlist tests cover the page itself). The switch-off line and "Press Play" replace the old copy-it advice.
   it('at rest: the switch-off line, Play and Shuffle, and no Retry', async () => {
     await setup();

@@ -4,7 +4,6 @@ import { invoke } from '../bridge/tauri';
 import { formatBuild, type BuildInfo } from '../clock/format';
 import { clockText } from '../meet/model';
 import { hover } from './hover';
-import { usePublicPage } from '../unwind/spotify/model';
 import { LOOKS } from '../unwind/watch/looks';
 import { useWatchStore } from '../unwind/watch/store';
 import { errorText, isAbsent } from '../work/deckModel';
@@ -103,26 +102,6 @@ function VideoLook() {
         })}
       </div>
       <div className="tools-hint">{perKind ? 'A look per kind is set on Watch. Pick one here to use it for everything.' : 'How video sits in the sky on Watch'}</div>
-    </div>
-  );
-}
-
-/** Whether the wall may read a saved Spotify playlist's public web page to list its songs before Play (the owner's choice; on by default). */
-function SpotifyPageChoice() {
-  const on = usePublicPage((s) => s.on);
-  const setOn = usePublicPage((s) => s.setOn);
-  return (
-    <div>
-      <div className="tools-k sm">Saved Spotify playlists</div>
-      <div className="tools-chips">
-        <button type="button" className={on ? 'tools-chip on' : 'tools-chip'} aria-pressed={on} {...hover('List the songs of a playlist you saved before you press Play, from its public web page.')} onClick={() => setOn(true)}>
-          Read public page
-        </button>
-        <button type="button" className={on ? 'tools-chip' : 'tools-chip on'} aria-pressed={!on} {...hover("Show songs only while the playlist plays, inside Spotify's rules.")} onClick={() => setOn(false)}>
-          Only while playing
-        </button>
-      </div>
-      <div className="tools-hint">Reading the public page is against Spotify's developer terms and may stop working.</div>
     </div>
   );
 }
@@ -290,7 +269,6 @@ function Drawer() {
             <Accounts />
           </div>
           <VideoLook />
-          <SpotifyPageChoice />
           <KeysFile />
         </div>
         <div className="kl-stack">

@@ -766,8 +766,12 @@ function SongsView({ item, tall, backLabel, onBack, onNote }: { item: SpotifyIte
   const isNow = useIsNow();
   const mounted = useRef(true);
   const loading = useRef(false);
-  // The Tools switch is read when the page opens: turning it off later leaves a list that already shows until the page is opened again.
-  const [pageOn] = useState(() => usePublicPage.getState().on);
+  // The public page switch is read when the page opens; the buttons on this page (turn off, read) change it and take effect at once.
+  const [pageOn, setPageOn] = useState(() => usePublicPage.getState().on);
+  const choosePage = (on: boolean) => {
+    usePublicPage.getState().setOn(on);
+    setPageOn(on);
+  };
   useEffect(() => {
     mounted.current = true;
     return () => {
@@ -829,7 +833,7 @@ function SongsView({ item, tall, backLabel, onBack, onNote }: { item: SpotifyIte
   // A playlist the owner saved but did not make: Spotify lists no songs for it, so the public page (if allowed) or the "while it plays" view takes over.
   const saved = st.problem === 'notYours' && kind === 'playlist' && st.items.length === 0;
   const { list: pub, retry: retryPage } = usePublicList(item, saved && pageOn);
-  const pageList = saved && pub.state === 'ready' && pub.items.length > 0 ? pub : null;
+  const pageList = saved && pageOn && pub.state === 'ready' && pub.items.length > 0 ? pub : null;
   const rows = pageList ? pageList.items : st.items;
   const total = pageList ? item.count ?? pageList.listed : st.total;
   const owner = kindLine(item).replace(/^(Playlist|Album)( by )?/, '');
@@ -875,13 +879,13 @@ function SongsView({ item, tall, backLabel, onBack, onNote }: { item: SpotifyIte
         {saved ? (
           pageList ? (
             <>
-              <PageTag listed={pageList.listed} total={item.count} />
+              <PageTag listed={pageList.listed} total={item.count} onTurnOff={() => choosePage(false)} />
               {rows.map((t, i) => (
                 <TrackRow key={`${t.id ?? 'local'}-${i}`} t={t} index={i} on={isNow(t)} onPlay={playFrom} />
               ))}
             </>
           ) : !pageOn ? (
-            <WhilePlays item={item} line={PAGE_OFF_LINE} onNote={onNote} onPlayFrom={playFrom} />
+            <WhilePlays item={item} line={PAGE_OFF_LINE} onTurnOn={() => choosePage(true)} onNote={onNote} onPlayFrom={playFrom} />
           ) : pub.state === 'failed' ? (
             <WhilePlays item={item} line={pageLine(pub.problem)} onRetry={pub.problem === 'connection' || pub.problem === 'failed' ? retryPage : undefined} onNote={onNote} onPlayFrom={playFrom} />
           ) : pub.state === 'ready' ? (

@@ -5,7 +5,7 @@ import { mediaTarget, useNowPlayingStore } from '../../music/store';
 import { tip } from '../../ui/HoverTip';
 import { useVisible } from '../../ui/useVisible';
 import '../../styles/spotify-saved.css';
-import { NOTHING_HEARD, NOTHING_QUEUED, PAGE_TAG_TIP, pageProblem, pageTag, WHILE_HEADINGS, WHILE_PLAYS, trackLength, type PageProblem } from './model';
+import { NOTHING_HEARD, NOTHING_QUEUED, PAGE_TAG_TIP, PAGE_TURN_OFF, PAGE_TURN_OFF_TIP, PAGE_TURN_ON, PAGE_TURN_ON_TIP, pageProblem, pageTag, WHILE_HEADINGS, WHILE_PLAYS, trackLength, type PageProblem } from './model';
 import { PlayingBars } from './Tile';
 import { QUEUE_POLL_MS, runSkips, skipPlan } from './UpNext';
 
@@ -45,8 +45,8 @@ export function usePublicList(item: SpotifyItem, active: boolean): { list: Publi
   return { list, retry };
 }
 
-/** The source line above the rows: where the list came from, and "first N of M" when the page held only part. */
-export function PageTag({ listed, total }: { listed: number; total: number | null }) {
+/** The source line above the rows: where the list came from, "first N of M" when the page held only part, and the button that turns the page off. */
+export function PageTag({ listed, total, onTurnOff }: { listed: number; total: number | null; onTurnOff: () => void }) {
   return (
     <li
       className="sp-hintline sp-source"
@@ -57,6 +57,18 @@ export function PageTag({ listed, total }: { listed: number; total: number | nul
       ))}
     >
       {pageTag(listed, total)}
+      <button
+        type="button"
+        className="sp-linkbtn"
+        {...tip(() => (
+          <div className="sp-tipline">
+            <span>{PAGE_TURN_OFF_TIP}</span>
+          </div>
+        ))}
+        onClick={onTurnOff}
+      >
+        {PAGE_TURN_OFF}
+      </button>
     </li>
   );
 }
@@ -124,7 +136,7 @@ const NOTHING: PlayingState = { playback: null, next: [], heard: [] };
  * changes and every 20 seconds while the page shows; the heard list on open and when the song changes. Nothing is read
  * while the page is hidden, and nothing is stored.
  */
-export function WhilePlays({ item, line, onRetry, onNote, onPlayFrom }: { item: SpotifyItem; line: string; onRetry?: () => void; onNote: (n: string | null) => void; onPlayFrom: (t: SpotifyTrack) => void }) {
+export function WhilePlays({ item, line, onRetry, onTurnOn, onNote, onPlayFrom }: { item: SpotifyItem; line: string; onRetry?: () => void; onTurnOn?: () => void; onNote: (n: string | null) => void; onPlayFrom: (t: SpotifyTrack) => void }) {
   const title = useNowPlayingStore((s) => s.info?.title ?? '');
   const visible = useVisible();
   const [state, setState] = useState<PlayingState>(NOTHING);
@@ -188,6 +200,20 @@ export function WhilePlays({ item, line, onRetry, onNote, onPlayFrom }: { item: 
         {onRetry ? (
           <button type="button" className="sp-btn" onClick={onRetry}>
             Retry
+          </button>
+        ) : null}
+        {onTurnOn ? (
+          <button
+            type="button"
+            className="sp-btn"
+            {...tip(() => (
+              <div className="sp-tipline">
+                <span>{PAGE_TURN_ON_TIP}</span>
+              </div>
+            ))}
+            onClick={onTurnOn}
+          >
+            {PAGE_TURN_ON}
           </button>
         ) : null}
         <span className="sp-hintline">{WHILE_PLAYS}</span>

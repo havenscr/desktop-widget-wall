@@ -63,7 +63,7 @@ export function spotifyProblem(e: unknown): SpotifyProblem {
 
 /** Spotify shows a playlist's songs only to the person who made or co-edits it: what to do instead (Retry never helps here). */
 export const NOT_YOURS_LINE = 'Spotify shows the songs only for playlists you made. To see these, copy it into a playlist of your own in Spotify. Play and Shuffle still work.';
-/** Tools: may the wall read a saved playlist's public web page? Only a stored 'off' turns it off. */
+/** May the wall read a saved playlist's public web page? On by default (the owner's choice); only a stored 'off' turns it off. The buttons on the playlist page change it. */
 export const PUBLIC_PAGE_KEY = 'wall2-spotify-public-page';
 
 function readPublicPage(): boolean {
@@ -109,11 +109,17 @@ export function pageTag(listed: number, total: number | null): string {
   const base = "From Spotify's public page";
   return total !== null && total > 0 && listed < total ? `${base}, first ${listed} of ${total}` : base;
 }
-export const PAGE_TAG_TIP = "The wall read this list from the playlist's public web page, because Spotify's app rules hide the songs of playlists you did not make. Reading it is against Spotify's developer terms and may stop working. Turn it off in Tools.";
+export const PAGE_TAG_TIP = "The wall read this list from the playlist's public web page, because Spotify's app rules hide the songs of playlists you did not make. Reading it is against Spotify's developer terms and may stop working. Turn it off with the button beside this line.";
 export const PAGE_READING = "Reading Spotify's public page.";
 export const WHILE_PLAYS = 'Press Play or Shuffle: while it plays, this page shows the song playing, what comes next and what you have heard.';
-/** The line when the Tools switch is off (no page is read). */
+/** The line when the public page is turned off (no page is read). */
 export const PAGE_OFF_LINE = 'Spotify lists the songs only for playlists you made.';
+
+/** The buttons on the playlist page that turn the public page off and on (the choice lives on the page it changes, with a stored key). */
+export const PAGE_TURN_OFF = 'Turn off';
+export const PAGE_TURN_OFF_TIP = "Stop reading Spotify's public page. Saved playlists then show their songs only while they play.";
+export const PAGE_TURN_ON = 'Read public page';
+export const PAGE_TURN_ON_TIP = "List the songs of a playlist you saved before you press Play, from its public web page. This is against Spotify's developer terms and may stop working.";
 
 /** The line for no list: the switch is off (`null`) or the page failed. */
 export function pageLine(p: PageProblem | null): string {

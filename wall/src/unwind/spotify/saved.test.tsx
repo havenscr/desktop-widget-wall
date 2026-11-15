@@ -11,6 +11,10 @@ import {
   PAGE_OFF_LINE,
   PAGE_READING,
   PAGE_TAG_TIP,
+  PAGE_TURN_OFF,
+  PAGE_TURN_OFF_TIP,
+  PAGE_TURN_ON,
+  PAGE_TURN_ON_TIP,
   PUBLIC_PAGE_KEY,
   pageLine,
   pageProblem,
@@ -198,7 +202,7 @@ describe('a saved playlist with the public page on', () => {
     await flush(1000);
     expect(document.body.textContent).toContain(PAGE_TAG_TIP);
     expect(PAGE_TAG_TIP).toContain('against Spotify');
-    expect(PAGE_TAG_TIP).toContain('Turn it off in Tools');
+    expect(PAGE_TAG_TIP).toContain('Turn it off with the button beside this line');
   });
 
   it('plays the playlist from a clicked row, and does nothing for a row that cannot play', async () => {
@@ -290,22 +294,50 @@ describe('a saved playlist with no list', () => {
     expect(screen.getByText("Spotify's public page does not list this playlist. It may be private.")).toBeTruthy();
   });
 
-  it('turning the switch off while a list shows leaves the list until the page is opened again', async () => {
+  it('Turn off on the tag stops the list at once and stores the choice; Read public page on the off line reads again', async () => {
     await setup({ page: { items: rows(3), listed: 3 }, count: 3 });
     await openList(SAVED);
     expect(trackRows()).toHaveLength(3);
-    await act(async () => usePublicPage.getState().setOn(false));
+    await act(async () => screen.getByRole('button', { name: PAGE_TURN_OFF }).click());
     await flush();
-    expect(trackRows()).toHaveLength(3);
-    await act(async () => (document.querySelector('.sp-back') as HTMLButtonElement).click());
-    await flush();
-    const before = count('wall2_spotify_public_page');
-    await openList(SAVED);
     expect(trackRows()).toHaveLength(0);
     expect(screen.getByText(PAGE_OFF_LINE)).toBeTruthy();
-    expect(count('wall2_spotify_public_page')).toBe(before);
+    expect(screen.getByText(WHILE_PLAYS)).toBeTruthy();
+    expect(usePublicPage.getState().on).toBe(false);
+    expect(localStorage.getItem(PUBLIC_PAGE_KEY)).toBe('off');
+    expect(count('wall2_spotify_public_page')).toBe(1);
+    await act(async () => screen.getByRole('button', { name: PAGE_TURN_ON }).click());
+    await flush();
+    expect(trackRows()).toHaveLength(3);
+    expect(usePublicPage.getState().on).toBe(true);
+    expect(localStorage.getItem(PUBLIC_PAGE_KEY)).toBe('on');
+    expect(count('wall2_spotify_public_page')).toBe(2);
+  });
+
+  it('the tag and off line buttons say what they do on hover', async () => {
+    await setup({ page: { items: rows(3), listed: 3 }, count: 3 });
+    await openList(SAVED);
+    await act(async () => void fireEvent.mouseEnter(screen.getByRole('button', { name: PAGE_TURN_OFF })));
+    await flush(1000);
+    expect(document.body.textContent).toContain(PAGE_TURN_OFF_TIP);
+    await act(async () => screen.getByRole('button', { name: PAGE_TURN_OFF }).click());
+    await flush();
+    hideTip(true);
+    await act(async () => void fireEvent.mouseEnter(screen.getByRole('button', { name: PAGE_TURN_ON })));
+    await flush(1000);
+    expect(document.body.textContent).toContain(PAGE_TURN_ON_TIP);
+    expect(PAGE_TURN_ON_TIP).toContain('against Spotify');
+  });
+
+  it('the off line from the start also offers Read public page', async () => {
+    await setup();
+    usePublicPage.getState().setOn(false);
+    await openList(SAVED);
+    expect(screen.getByRole('button', { name: PAGE_TURN_ON })).toBeTruthy();
+    expect(count('wall2_spotify_public_page')).toBe(0);
   });
 });
+
 
 describe('while it plays (no list)', () => {
   const failPage = () =>
@@ -412,7 +444,7 @@ describe('while it plays (no list)', () => {
   });
 });
 
-describe('the Tools choice', () => {
+describe('the public page choice', () => {
   it('stays on by default, survives a restart when off, and works with storage blocked', () => {
     expect(usePublicPage.getState().on).toBe(true);
     usePublicPage.getState().setOn(false);
