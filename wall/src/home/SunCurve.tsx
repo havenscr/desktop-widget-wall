@@ -1,6 +1,6 @@
 import { IconSunrise, IconSunset } from '@tabler/icons-react';
 import { tip } from '../ui/HoverTip';
-import { CURVE_BASE, CURVE_H, CURVE_W, labelSpots, type DayCurve } from './dayCurve';
+import { CURVE_BASE, CURVE_H, CURVE_W, labelSpots, labelText, type DayCurve } from './dayCurve';
 
 /**
  * The day as a low curve under the headline, midnight to midnight: the sun's place on it by
@@ -49,12 +49,12 @@ export function SunCurve({ curve: c }: { curve: DayCurve }) {
         )}
       </svg>
       <span className="lw-label rise" style={labelStyle(spots.rise)}>
-        {!spots.rise.compact && <IconSunrise size={20} stroke={1.7} color="#ffc24d" aria-hidden="true" />}
-        {c.riseText}
+        {spots.rise.form === 'full' && <IconSunrise size={20} stroke={1.7} color="#ffc24d" aria-hidden="true" />}
+        {labelText(c.riseText, spots.rise.form)}
       </span>
       <span className="lw-label set" style={labelStyle(spots.set)}>
-        {!spots.set.compact && <IconSunset size={20} stroke={1.7} color="#ff8fc0" aria-hidden="true" />}
-        {c.setText}
+        {spots.set.form === 'full' && <IconSunset size={20} stroke={1.7} color="#ff8fc0" aria-hidden="true" />}
+        {labelText(c.setText, spots.set.form)}
       </span>
     </div>
   );

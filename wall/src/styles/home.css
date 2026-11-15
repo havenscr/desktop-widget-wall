@@ -1075,10 +1075,10 @@
 
 /* Home left third (the day curve, the weather row and the house row). */
 .home-wing .lw-head {
-  height: 33px;
-  line-height: 33px;
+  height: 34px;
+  line-height: 34px;
   white-space: nowrap;
-  margin-bottom: 13px;
+  margin-bottom: 12px;
   color: var(--tx);
 }
 .home-wing .lw-head.soon {
@@ -1155,6 +1155,9 @@
 .lw-house {
   width: 458px;
   flex: none;
+}
+.lw-house .lw-row {
+  margin-bottom: 0;
 }
 .house-asof {
   margin-left: auto;

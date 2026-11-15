@@ -115,38 +115,43 @@ export function dayCurve(ms: number): DayCurve | null {
   };
 }
 
+/** How much of a label is drawn: glyph and time, the time alone, or the time without AM or PM. */
+export type LabelForm = 'full' | 'plain' | 'short';
+
 export interface LabelSpot {
   /** Which edge `px` is measured from. */
   side: 'left' | 'right';
   px: number;
-  /** True when the glyph is dropped so the text fits. */
-  compact: boolean;
+  form: LabelForm;
 }
 
 /** About how wide a label's time is at 18 px, and its glyph with the gap before the text. */
 const CHAR_PX = 9.6;
 const GLYPH_PX = 26;
-const labelWidth = (text: string, compact: boolean) => text.length * CHAR_PX + (compact ? 0 : GLYPH_PX);
+const FORMS: LabelForm[] = ['full', 'plain', 'short'];
+
+/** The time as the label draws it in each form ("7:13 AM", "7:13"). */
+export const labelText = (text: string, form: LabelForm) => (form === 'short' ? text.replace(/ [AP]M$/, '') : text);
+const labelWidth = (text: string, form: LabelForm) => labelText(text, form).length * CHAR_PX + (form === 'full' ? GLYPH_PX : 0);
 
 /**
  * Where the two labels sit: the sunrise label ends 12 px left of its crossing, the sunset label
- * starts 12 px right of its. On a long day a crossing is near an edge: the glyph is dropped, then
- * the label is held inside the box (it may then touch its crossing, never leave the box).
+ * starts 12 px right of its. On a long day a crossing is near an edge: first the glyph is dropped,
+ * then the AM or PM (the hover card and the text alternative keep the whole time); the labels
+ * always fit between their crossing and the box's edge.
  */
 export function labelSpots(xRise: number, xSet: number, riseText: string, setText: string): { rise: LabelSpot; set: LabelSpot } {
   const rise = ((): LabelSpot => {
-    for (const compact of [false, true]) {
-      const room = xRise - LABEL_GAP;
-      if (room >= labelWidth(riseText, compact)) return { side: 'right', px: CURVE_W - xRise + LABEL_GAP, compact };
+    for (const form of FORMS) {
+      if (xRise - LABEL_GAP >= labelWidth(riseText, form)) return { side: 'right', px: CURVE_W - xRise + LABEL_GAP, form };
     }
-    return { side: 'left', px: 0, compact: true };
+    return { side: 'left', px: 0, form: 'short' };
   })();
   const set = ((): LabelSpot => {
-    for (const compact of [false, true]) {
-      const room = CURVE_W - (xSet + LABEL_GAP);
-      if (room >= labelWidth(setText, compact)) return { side: 'left', px: xSet + LABEL_GAP, compact };
+    for (const form of FORMS) {
+      if (CURVE_W - (xSet + LABEL_GAP) >= labelWidth(setText, form)) return { side: 'left', px: xSet + LABEL_GAP, form };
     }
-    return { side: 'right', px: 0, compact: true };
+    return { side: 'right', px: 0, form: 'short' };
   })();
   return { rise, set };
 }

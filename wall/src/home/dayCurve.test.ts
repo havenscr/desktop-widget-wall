@@ -1,7 +1,7 @@
 import { expect, it } from 'vitest';
 import { usePacificTime } from '../ribbon/testZone';
 import { sunTimes } from '../ribbon/sun';
-import { CURVE_BASE, CURVE_DIP, CURVE_H, CURVE_HUMP, CURVE_W, curveGeometry, dayCurve, labelSpots } from './dayCurve';
+import { CURVE_BASE, CURVE_DIP, CURVE_H, CURVE_HUMP, CURVE_W, curveGeometry, dayCurve, labelSpots, labelText } from './dayCurve';
 
 usePacificTime();
 
@@ -74,21 +74,27 @@ it('keeps both labels inside the box on a short winter day and a long summer day
     const c = dayCurve(Date.parse(`${day}T12:00:00-0${day.startsWith('2026-06') ? 7 : 8}:00`))!;
     const { rise, set } = labelSpots(c.xRise, c.xSet, c.riseText, c.setText);
     // Estimated widths: 9.6 px a character, 26 px more for the glyph.
-    const w = (t: string, compact: boolean) => t.length * 9.6 + (compact ? 0 : 26);
-    const riseLeft = rise.side === 'right' ? CURVE_W - rise.px - w(c.riseText, rise.compact) : rise.px;
-    const setLeft = set.side === 'left' ? set.px : CURVE_W - set.px - w(c.setText, set.compact);
+    const w = (t: string, form: 'full' | 'plain' | 'short') => labelText(t, form).length * 9.6 + (form === 'full' ? 26 : 0);
+    const riseLeft = rise.side === 'right' ? CURVE_W - rise.px - w(c.riseText, rise.form) : rise.px;
+    const setLeft = set.side === 'left' ? set.px : CURVE_W - set.px - w(c.setText, set.form);
     expect(riseLeft).toBeGreaterThanOrEqual(0);
-    expect(setLeft + w(c.setText, set.compact)).toBeLessThanOrEqual(CURVE_W + 0.01);
-    // The two labels never meet.
-    expect(riseLeft + w(c.riseText, rise.compact)).toBeLessThan(setLeft);
+    expect(setLeft + w(c.setText, set.form)).toBeLessThanOrEqual(CURVE_W + 0.01);
+    // The sunrise label ends before its crossing and the sunset label starts after its own, so the two never meet.
+    expect(riseLeft + w(c.riseText, rise.form)).toBeLessThanOrEqual(c.xRise - 11.99);
+    expect(setLeft).toBeGreaterThanOrEqual(c.xSet + 11.99);
   }
 });
 
-it('drops the glyph, then holds the label in the box, when a crossing is near an edge', () => {
-  const near = labelSpots(40, 400, '4:20 AM', '9:35 PM');
-  expect(near.rise).toEqual({ side: 'left', px: 0, compact: true });
-  expect(near.set.compact).toBe(true);
-  const roomy = labelSpots(140, 300, '7:13 AM', '4:33 PM');
-  expect(roomy.rise).toEqual({ side: 'right', px: CURVE_W - 140 + 12, compact: false });
-  expect(roomy.set).toEqual({ side: 'left', px: 312, compact: false });
+it('drops the glyph, then AM or PM, as a crossing nears an edge', () => {
+  expect(labelSpots(140, 300, '7:13 AM', '4:33 PM')).toEqual({
+    rise: { side: 'right', px: CURVE_W - 140 + 12, form: 'full' },
+    set: { side: 'left', px: 312, form: 'full' },
+  });
+  // Sunrise at 90 px: no room for glyph and time (96 px), room for the time (67 px); sunset at 391: only room for "8:33".
+  const long = labelSpots(90, 391, '4:50 AM', '8:33 PM');
+  expect(long.rise.form).toBe('plain');
+  expect(long.set.form).toBe('short');
+  expect(labelText('8:33 PM', 'short')).toBe('8:33');
+  // A crossing closer to the edge than any label is wide still keeps the label in the box.
+  expect(labelSpots(20, 440, '1:00 AM', '11:00 PM')).toEqual({ rise: { side: 'left', px: 0, form: 'short' }, set: { side: 'right', px: 0, form: 'short' } });
 });
