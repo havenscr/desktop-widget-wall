@@ -2017,7 +2017,7 @@ clock's date line to the last row).
 - **Pins.** Three places, each a Watch list item or an empty dashed "Add a pin". A click plays the item with the
   Watch store's `play` (which also switches to Watch, so a pin works from Listen); the pin that plays is lit and a
   click on it does nothing new. The name and kind always come from the Watch list, so a rename shows on the pin, and
-  an item that left the list leaves an empty place. Right-click (or the menu key, or Shift+F10) opens a small menu:
+  an item that left the list leaves an empty place. A word too long for a pin ends in an ellipsis on its line (the full label is in the hover tip). Right-click (or the menu key, or Shift+F10) opens a small menu:
   Replace and Remove on a pin, and the list ("Pin from the Watch list") on an empty place; with an empty Watch list it
   says to add a video first and has an Open Watch button. The pins are kept as three keys under `wall2-watch-pins`
   and read strictly on every load (`watch/pins.ts`). The art square is a drawn gradient from the item's key: no
@@ -2033,11 +2033,16 @@ clock's date line to the last row).
   (playing out of sight). Twitch keeps its own volume, so the row shows dim and disabled for it.
 - **Stop in 30 min** (`watch/sleep.ts`). A click steps Off, 30, 60, 90, Off, each counting from the click; the chip
   then reads "Stops in 24 min". It lives at module level (it runs while Unwind is not shown) and is not kept across
-  a restart. At the end it stops the wall's video with the reason `sleep` ("Stopped by the sleep timer.") and pauses
-  the player the wall follows: Spotify's own pause when Spotify is signed in, otherwise one play and pause key, only
-  when a fresh read says the player was playing (never for the wall's own video or an app it does not know, since a
-  toggle must never start music). It cannot stop an app the wall does not follow. The end is also checked when the
-  page shows again, so a PC that slept past the end stops on wake.
+  a restart. At the end it takes one observation (a one-shot `get_now_playing` that also works while the page is hidden,
+  three seconds at most; a failed or silent read is "unknown", never an answer cached earlier), then, in order:
+  Spotify by its own state (signed in and its own playback says playing: one `spotify.pause()`, whatever session the
+  observation names and whether or not a wall video is on; paused or unreadable: nothing); the play and pause key, at
+  most once, only when the observation names a known outside app (not the wall's own web view, not an unknown or
+  missing source, not Spotify when it is signed in) that says playing, aimed at that session and sent before the video
+  stops; then the wall's video is stopped with the reason `sleep` ("Stopped by the sleep timer."), always. A toggle
+  never starts music. It cannot stop an app the wall does not follow, and an app Windows cannot name is left alone. The
+  end is also checked when the page shows again, so a PC that slept past the end stops on wake; the chip's words
+  update every ten seconds only while the page shows.
 - **Rest and shown.** At rest the rows are quiet (dim text, 42 percent fills, faint borders) but never gone; the
   pointer anywhere on the column from the date line to the last row, an open pin menu, or keyboard focus inside brings
   them to full strength, and they go quiet `CTL_REST_MS` after the last of those leaves.
