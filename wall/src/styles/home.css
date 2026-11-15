@@ -676,7 +676,7 @@
   box-sizing: border-box;
   padding: 4px 8px;
   border-radius: 7px;
-  font: 600 12px/1 var(--disp);
+  font: 600 16px/1 var(--disp);
   letter-spacing: 0.12em;
   text-transform: uppercase;
   text-decoration: none;
@@ -715,7 +715,7 @@
 .sound-lbl {
   flex: none;
   padding: 0 10px 0 8px;
-  font: 600 14px/1 var(--disp);
+  font: 600 16px/1 var(--disp);
   letter-spacing: 0.16em;
   text-transform: uppercase;
   color: var(--faint);
@@ -2188,10 +2188,10 @@
   left: auto;
   right: 6px;
   top: 10px;
-  padding: 3px 4px;
-  font-size: 10px;
-  letter-spacing: 0.05em;
-  max-width: calc(100% - 56px);
+  padding: 3px 3px;
+  font-size: 11px;
+  letter-spacing: 0.02em;
+  max-width: calc(100% - 48px);
 }
 .sound-panel.l2 .sound-chip .sound-art {
   width: 36px;
