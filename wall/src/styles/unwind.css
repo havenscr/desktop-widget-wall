@@ -657,6 +657,15 @@
   line-height: 1.3;
   color: var(--dim);
 }
+.w-by {
+  max-width: 100%;
+  font-size: 24px;
+  line-height: 1.3;
+  color: var(--dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 .w-ctl {
   display: flex;
   flex-wrap: nowrap;
@@ -1212,6 +1221,33 @@
   font-size: 17px;
   line-height: 1.3;
   color: var(--amber);
+}
+.w-offer {
+  flex: none;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 12px;
+  margin-top: 8px;
+  font-size: 17px;
+  line-height: 1.3;
+  color: var(--dim);
+}
+.w-offer button {
+  height: 36px;
+  padding: 0 16px;
+  border-radius: 12px;
+  font: 600 16px/1 var(--disp);
+  color: var(--cyan);
+  background: rgba(53, 230, 234, 0.1);
+  border: 1px solid rgba(53, 230, 234, 0.4);
+}
+.w-offer button:hover {
+  background: rgba(53, 230, 234, 0.2);
+}
+.w-offer button:focus-visible {
+  outline: 3px solid var(--cyan);
+  outline-offset: 2px;
 }
 .w-card.empty .w-explain {
   margin: 14px 0 0;
@@ -2172,11 +2208,11 @@
    line, the play row (the gear is its last button) and the time bar fade to nothing and take no
    pointer (they can still take focus, which brings them back); the title stays at half strength
    with no glow. The left block's box still feels the pointer, which brings it back. */
-.w-now > :is(.u-src, .w-sub, .w-ctl, .w-time),
+.w-now > :is(.u-src, .w-sub, .w-by, .w-ctl, .w-time),
 .w-now > .w-title {
   transition: opacity 250ms ease;
 }
-.w-now[data-ctl='rest'] > :is(.u-src, .w-sub, .w-ctl, .w-time) {
+.w-now[data-ctl='rest'] > :is(.u-src, .w-sub, .w-by, .w-ctl, .w-time) {
   opacity: 0;
   pointer-events: none;
 }
@@ -2185,7 +2221,7 @@
   text-shadow: none;
 }
 @media (prefers-reduced-motion: reduce) {
-  .w-now > :is(.u-src, .w-sub, .w-ctl, .w-time),
+  .w-now > :is(.u-src, .w-sub, .w-by, .w-ctl, .w-time),
   .w-now > .w-title {
     transition: none;
   }

@@ -1,13 +1,16 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from 'react';
 import { IconBrandTwitch, IconBrandYoutube, IconBroadcast, IconCheck, IconPencil, IconPlaylist, IconX } from '@tabler/icons-react';
 import { useSkyKeepClear } from '../../horizon/sky';
+import { tip } from '../../ui/HoverTip';
 import { useSignalStore } from '../../signals/store';
-import { kindName, refKey, type WatchKind } from './links';
+import { kindName, parseLink, refKey, type WatchKind, type WatchRef } from './links';
 import { MAX_LABEL, MAX_SAVED, type SavedItem } from './saved';
 import { useWatchStore } from './store';
 
 /** How long a refusal line stays under the field. */
 export const PASTE_ERROR_MS = 6000;
+/** How long the offer of a second choice (the playlist a pasted video link also names) stays under the field. */
+export const OFFER_MS = 20_000;
 
 export function KindIcon({ kind, size = 22 }: { kind: WatchKind; size?: number }) {
   switch (kind) {
@@ -96,8 +99,26 @@ export function WatchCard() {
   const inCall = useSignalStore((s) => s.call !== null);
   const [text, setText] = useState('');
   const [error, setError] = useState<string | null>(null);
+  // The playlist a just saved video link also names, offered once; kept here, never saved.
+  const [offer, setOffer] = useState<WatchRef | null>(null);
   const errTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
-  useEffect(() => () => clearTimeout(errTimer.current), []);
+  const offerTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
+  useEffect(
+    () => () => {
+      clearTimeout(errTimer.current);
+      clearTimeout(offerTimer.current);
+    },
+    [],
+  );
+  const dropOffer = () => {
+    clearTimeout(offerTimer.current);
+    setOffer(null);
+  };
+  const showError = (line: string) => {
+    setError(line);
+    clearTimeout(errTimer.current);
+    errTimer.current = setTimeout(() => setError(null), PASTE_ERROR_MS);
+  };
   const playingKey = playing ? refKey(playing) : null;
   const list = useMoreBelow(saved.length);
   const st = useWatchStore.getState();
@@ -107,15 +128,28 @@ export function WatchCard() {
 
   const submit = (e: FormEvent) => {
     e.preventDefault();
+    const parsed = parseLink(text);
     const refused = st.addLink(text);
     clearTimeout(errTimer.current);
+    dropOffer();
     if (refused) {
-      setError(refused);
-      errTimer.current = setTimeout(() => setError(null), PASTE_ERROR_MS);
+      showError(refused);
     } else {
       setError(null);
       setText('');
+      if (parsed.ok && parsed.alsoList) {
+        setOffer(parsed.alsoList);
+        offerTimer.current = setTimeout(() => setOffer(null), OFFER_MS);
+      }
     }
+  };
+
+  const savePlaylist = () => {
+    if (!offer) return;
+    // The video's name field, if still open, stays open: only the list changes.
+    const refused = st.addRef(offer, false);
+    dropOffer();
+    if (refused) showError(refused);
   };
 
   const field = (
@@ -128,7 +162,10 @@ export function WatchCard() {
         spellCheck={false}
         autoComplete="off"
         maxLength={4096}
-        onChange={(e) => setText(e.target.value)}
+        onChange={(e) => {
+          setText(e.target.value);
+          dropOffer();
+        }}
       />
       <button type="submit" className="w-add" disabled={!text.trim()} title="Save this link to the list">
         Save
@@ -138,6 +175,15 @@ export function WatchCard() {
   const errLine = error ? (
     <div className="w-err" role="alert">
       {error}
+    </div>
+  ) : null;
+
+  const offerLine = offer ? (
+    <div className="w-offer" role="status">
+      <span>Saved the video. The link also names a playlist.</span>
+      <button type="button" {...tip('Adds that YouTube playlist to the list as its own entry')} onClick={savePlaylist}>
+        Save the playlist too
+      </button>
     </div>
   ) : null;
 
@@ -151,6 +197,7 @@ export function WatchCard() {
         <p className="w-forms">youtu.be/… · youtube.com/watch?v=… · /live/… · /playlist?list=… · twitch.tv/…</p>
         {field}
         {errLine}
+        {offerLine}
       </section>
     );
   }
@@ -203,6 +250,7 @@ export function WatchCard() {
       </ul>
       {field}
       {errLine}
+      {offerLine}
     </section>
   );
 }

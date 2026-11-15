@@ -396,6 +396,8 @@ export function WatchPanel() {
   const paused = useWatchStore((s) => s.paused);
   const needsClick = useWatchStore((s) => s.needsClick);
   const ended = useWatchStore((s) => s.report.ended);
+  const reportTitle = useWatchStore((s) => s.report.title);
+  const reportChannel = useWatchStore((s) => s.report.channel);
   const stopped = useWatchStore((s) => s.stopped);
   const sheetOpen = useWatchStore((s) => s.sheet);
   const peek = useWatchStore((s) => s.peek);
@@ -445,14 +447,37 @@ export function WatchPanel() {
   }
 
   const youtube = playing.kind !== 'twitch';
+  // A single video or live stream shows what the player says it is; until then (and for a playlist or Twitch) the saved label.
+  const single = playing.kind === 'video' || playing.kind === 'live';
+  const byReport = single && reportTitle !== null;
+  const shownTitle = byReport ? reportTitle! : playing.label;
+  const channel = single ? reportChannel : null;
   const ctl = rest ? 'rest' : 'shown';
   return (
     <div className="w-panel" role="tabpanel" id={WATCH_PANEL_ID} aria-labelledby={WATCH_TAB_ID} data-state="playing" data-ctl={ctl}>
       <div className="w-now" ref={setNowEl} data-ctl={ctl} {...zone()}>
         <span className="u-k u-src">{kindName(playing.kind)}</span>
-        <div className="w-title" title={playing.label}>
-          {playing.label}
+        <div
+          className="w-title"
+          {...tip(
+            <>
+              {shownTitle}
+              {byReport && playing.label !== shownTitle ? (
+                <>
+                  <br />
+                  Saved as: {playing.label}
+                </>
+              ) : null}
+            </>,
+          )}
+        >
+          {shownTitle}
         </div>
+        {channel ? (
+          <div className="w-by u-ell" {...tip(`Channel: ${channel}. As the player reports it.`)}>
+            {channel}
+          </div>
+        ) : null}
         <div className="w-sub" title="It plays on when you go to Listen or another place. It stops by itself when the screens or the display go off, Windows locks or a call starts.">
           {!youtube ? 'Live on the wall' : needsClick ? 'Waiting for a click on the video' : ended ? 'Ended' : paused ? 'Paused' : 'Playing on the wall'}
         </div>
