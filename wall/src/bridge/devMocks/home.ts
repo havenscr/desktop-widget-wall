@@ -9,12 +9,15 @@ const now = () => (reviewNow ? reviewNow() : Date.now());
 export function registerHomeMocks(): void {
   mocks.set('wall2_home_security', () => {
     const t = now();
+    const net = knob('net');
+    // `?net=calmbare` is quiet and the home app sent neither a scan time nor any number.
+    const bare = net === 'calmbare';
     return {
       reachable: true,
       stale: false,
-      lastScan: new Date(t - 4 * 60_000).toISOString(),
-      alerts: knob('net') === 'calm' ? 0 : 4,
-      firewalla: { api: 'up', boxOnline: true, checkedAt: new Date(t).toISOString(), alarms24h: 3 },
+      lastScan: bare ? null : new Date(t - 4 * 60_000).toISOString(),
+      alerts: net === 'calm' || bare ? 0 : 4,
+      firewalla: { api: 'up', boxOnline: true, checkedAt: new Date(t).toISOString(), alarms24h: bare ? null : 3 },
       portalUrl: 'https://my.firewalla.net/',
       topAlerts: [
         { text: 'New device joined the guest network', severity: 'high', atMs: t - 12 * 60_000 },
@@ -23,11 +26,15 @@ export function registerHomeMocks(): void {
       ],
       // The home app does not send these yet (PR 24 reads them); here so the dev view shows
       // the full card. `?net=alarms` leaves them out, as the home app answers today.
-      ...(knob('net') === 'alarms' ? {} : { devices: 31, blocked: 412, boxTemp: 61 }),
+      ...(net === 'alarms' || bare ? {} : { devices: 31, blocked: 412, boxTemp: 61 }),
     };
   });
   registerDeskMocks();
-  mocks.set('wall2_links', () => ({ security: true, portal: true }));
+  // `?links=security|portal|none` leaves out a door (the wall has no address for it); the default has both.
+  mocks.set('wall2_links', () => {
+    const k = knob('links');
+    return { security: k !== 'portal' && k !== 'none', portal: k !== 'security' && k !== 'none' };
+  });
   mocks.set('wall2_open_link', () => undefined);
   // `?moods=five` gives the concept's five, `?moods=many` nine (the row scrolls), `?moods=none`
   // an empty list, `?moods=off` not set up, `?moods=down` not reachable; with a review time, Evening is "In 4 min" in five.

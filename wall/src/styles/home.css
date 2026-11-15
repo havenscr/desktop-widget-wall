@@ -456,34 +456,6 @@
   gap: 16px;
 }
 
-/* The links as full-width buttons along the bottom. */
-.net-links {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-.net-link {
-  flex: 1;
-  min-height: 52px;
-  padding: 0 20px;
-  border-radius: 18px;
-  background: rgba(53, 230, 234, 0.08);
-  border: 1px solid rgba(53, 230, 234, 0.28);
-  color: var(--cyan);
-  font: 600 22px/1 var(--body);
-  cursor: pointer;
-}
-.net-link:active {
-  background: rgba(53, 230, 234, 0.18);
-}
-.net-link:focus-visible {
-  outline: 2px solid currentColor;
-  outline-offset: 2px;
-}
-.net-links .s {
-  flex: none;
-}
-
 /* Sound's wait: quiet shapes at the real block's size, no spinner and no text. */
 .sound-skel-row {
   display: grid;
@@ -1284,39 +1256,49 @@
   color: var(--faint);
 }
 
-/* Network and security: the shield in its ring. */
+/* Network and security: the shield in its ring.
+   Quiet (166 high): the ring (112), the text, and at the right two doors (206 wide) that
+   share the card's height; with no door the facts take that place as one box.
+   Alerts open (250 high): the ring (140) and the text above, a row of equal buttons below.
+   Text on the card is 16 px or more; the colours are the wall's (a lighter step of the
+   dim text, #a39bc6, for the small lines). */
 .panel.network.shield {
-  flex-direction: row;
+  display: grid;
+  grid-template-columns: 112px minmax(0, 1fr) 206px;
+  grid-template-rows: 100%;
+  column-gap: 18px;
   align-items: center;
-  gap: 22px;
-  padding: 14px 22px;
+  height: 166px;
+  padding: 15px 19px;
   width: 100%;
   text-align: left;
   color: var(--tx);
   font: inherit;
 }
-button.panel.network.shield {
-  cursor: pointer;
+.panel.network.shield.busy {
+  grid-template-columns: 140px minmax(0, 1fr);
+  grid-template-rows: 140px 50px;
+  column-gap: 22px;
+  row-gap: 20px;
+  align-items: start;
+  height: 250px;
+  padding: 19px 21px;
 }
-button.panel.network.shield:hover {
-  border-color: rgba(53, 230, 234, 0.3);
+.panel.network.shield.noside .shield-txt {
+  grid-column: 2 / -1;
 }
-button.panel.network.shield:focus-visible {
-  outline: 3px solid var(--cyan);
-  outline-offset: 2px;
+/* The text reaches 8 px into the gap before the doors (210 wide), so "31 devices, 412 blocked" fits. */
+.panel.network.shield:not(.busy):not(.noside) .shield-txt {
+  margin-right: -8px;
 }
 .shield-art {
-  flex: none;
   display: block;
-  width: 136px;
-  height: 136px;
-}
-.panel.network.shield.busy {
-  min-height: 250px;
+  width: 112px;
+  height: 112px;
 }
 .panel.network.shield.busy .shield-art {
-  width: 170px;
-  height: 170px;
+  width: 140px;
+  height: 140px;
 }
 .shield-ring {
   display: block;
@@ -1332,11 +1314,12 @@ button.panel.network.shield:focus-visible {
   fill: var(--tx);
 }
 .shield-txt {
-  flex: 1;
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 6px;
+}
+.panel.network.shield.busy .shield-txt {
+  padding-top: 8px;
 }
 .shield-title {
   font: 600 27px/31px var(--body);
@@ -1348,8 +1331,12 @@ button.panel.network.shield:focus-visible {
 .shield-sub {
   display: flex;
   flex-direction: column;
+  margin-top: 2px;
   font: 400 20px/26px var(--body);
   color: var(--dim);
+}
+.panel.network.shield.busy .shield-sub {
+  margin-top: 4px;
 }
 .shield-sub span {
   white-space: nowrap;
@@ -1357,21 +1344,131 @@ button.panel.network.shield:focus-visible {
   text-overflow: ellipsis;
 }
 .panel.network.shield.stale .shield-sub,
-.panel.network.shield.stale .shield-new {
-  opacity: 0.65;
+.panel.network.shield.stale .shield-new,
+.panel.network.shield.stale .shield-hint,
+.panel.network.shield.stale .shield-facts,
+.panel.network.shield.stale .shield-aside {
+  opacity: 0.74;
 }
+
+/* The two fact lines under the sub line: a glyph and one short line each. */
+.shield-facts {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-top: 11px;
+}
+.shield-fact {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  height: 25px;
+  font: 400 16px/1 var(--body);
+  color: var(--dim);
+  white-space: nowrap;
+}
+.shield-fact svg {
+  flex: none;
+  color: #a39bc6;
+}
+.shield-fact span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* The doors: one button each, as tall as the card allows, sharing its height. */
+.shield-doors {
+  align-self: stretch;
+  display: grid;
+  grid-auto-rows: 1fr;
+  gap: 12px;
+  min-width: 0;
+}
+.shield-door {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  padding: 0 16px;
+  border-radius: 16px;
+  border: 1px solid rgba(53, 230, 234, 0.28);
+  background: rgba(53, 230, 234, 0.07);
+  color: var(--cyan);
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+}
+.shield-door:hover {
+  background: rgba(53, 230, 234, 0.13);
+  border-color: rgba(53, 230, 234, 0.5);
+}
+.shield-door:active {
+  background: rgba(53, 230, 234, 0.2);
+}
+.shield-door:focus-visible,
+.shield-btn:focus-visible,
+.shield-new:focus-visible {
+  outline: 2px solid var(--cyan);
+  outline-offset: 2px;
+}
+.shield-door svg {
+  flex: none;
+}
+.shield-door-txt {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+.shield-door-txt b {
+  font: 600 19px/1 var(--body);
+  color: var(--cyan);
+  white-space: nowrap;
+}
+.shield-door-txt span {
+  font: 400 16px/1 var(--body);
+  color: var(--dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* With no door, the facts fill the right side as one quiet box, one row per fact. */
+.shield-aside {
+  align-self: stretch;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 7px;
+  min-width: 0;
+  padding: 0 18px;
+  border-radius: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  background: rgba(255, 255, 255, 0.03);
+}
+
+/* Alerts open: the newest alert on one line, its age and the counts under it. */
 .shield-new {
   display: flex;
   align-items: center;
-  gap: 10px;
-  margin-top: 6px;
-  padding-top: 10px;
-  border-top: 1px solid var(--line);
+  gap: 9px;
+  margin-top: 11px;
+  min-width: 0;
+  min-height: 24px;
+  padding: 0;
+  background: none;
+  border: none;
+  border-radius: 6px;
+  color: var(--tx);
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
 }
 .shield-new b {
   flex: 1;
   min-width: 0;
-  font: 500 20px/26px var(--body);
+  font: 600 19px/24px var(--body);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1380,25 +1477,55 @@ button.panel.network.shield:focus-visible {
   flex: none;
 }
 .shield-hint {
-  display: flex;
+  margin: 8px 0 0 27px;
+  font: 400 16px/24px var(--body);
+  color: #a39bc6;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* The row of equal buttons at the foot: Show all (filled), Security, Firewalla. */
+.shield-btns {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
+  gap: 12px;
+  height: 50px;
+  min-width: 0;
+}
+.shield-btn {
+  display: inline-flex;
   align-items: center;
-  gap: 6px;
-  font: 400 18px/24px var(--body);
-  color: var(--faint);
-}
-.shield-links {
-  display: block;
-  margin-top: 8px;
-}
-.panel.network.shield .net-links {
-  justify-content: flex-start;
-}
-.panel.network.shield .net-link {
-  flex: none;
-  min-height: 40px;
-  padding: 0 16px;
+  justify-content: center;
+  gap: 8px;
+  min-width: 0;
   border-radius: 12px;
-  font-size: 19px;
+  border: 1px solid rgba(53, 230, 234, 0.28);
+  background: rgba(53, 230, 234, 0.08);
+  color: var(--cyan);
+  font: 600 19px/1 var(--body);
+  white-space: nowrap;
+  cursor: pointer;
+}
+.shield-btn:hover {
+  background: rgba(53, 230, 234, 0.16);
+  border-color: rgba(53, 230, 234, 0.5);
+}
+.shield-btn.fill {
+  background: var(--cyan);
+  border-color: transparent;
+  color: #06041a;
+}
+.shield-btn.fill:hover {
+  filter: brightness(1.08);
+}
+.shield-btn svg {
+  flex: none;
+}
+.net-head .net-failed {
+  color: var(--amber);
 }
 
 /* The drawer over the network card: every open alert, Open on each, Clear all. */
