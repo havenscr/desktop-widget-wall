@@ -804,26 +804,54 @@ fn read_key(tag: &Option<String>, not_tag: &Option<String>, list: &Option<String
     )
 }
 
-type ShownReads = Vec<(String, Vec<String>)>;
-
-/// Keep `tasks` as the ids `key`'s read showed: replaces that read's last ids, at most three,
-/// and drops the oldest reads past `MAX_SHOWN_READS`.
-#[cfg(test)]
-fn remember_in(reads: &mut ShownReads, key: &str, tasks: &[TaskItem]) {
-    remember_in_n(reads, key, tasks, TASK_LIMIT);
+/// One kind of read: its key, the ids it showed, the `limit` it asked for and when (epoch seconds).
+#[derive(Debug, Clone, PartialEq)]
+struct Shown {
+    key: String,
+    ids: Vec<String>,
+    limit: usize,
+    at: i64,
 }
 
-/// As `remember_in`, keeping at most `limit` ids (the rows that read asked for).
-fn remember_in_n(reads: &mut ShownReads, key: &str, tasks: &[TaskItem], limit: usize) {
-    reads.retain(|(k, _)| k != key);
-    reads.push((key.to_string(), tasks.iter().take(limit.min(MAX_DUE_LIMIT)).map(|t| t.id.clone()).collect()));
+type ShownReads = Vec<Shown>;
+
+/// How long a short read leaves a longer read's rows remembered (two refresh periods and a bit).
+const SHOWN_FRESH_SECS: i64 = 300;
+
+/// Keep `tasks` as the ids `key`'s read showed (at most three), and drop the oldest reads past
+/// `MAX_SHOWN_READS`.
+#[cfg(test)]
+fn remember_in(reads: &mut ShownReads, key: &str, tasks: &[TaskItem]) {
+    remember_in_n(reads, key, tasks, TASK_LIMIT, 0);
+}
+
+/// As `remember_in`, for a read that asked for `limit` rows, at time `now`. A read replaces
+/// what the same kind of read remembered, EXCEPT a shorter one inside the freshness window:
+/// a one-row read (the "open the first task" key) must not make the rows of the 60 row list
+/// beside it unknown, so it adds its ids in front of the longer read's (bounded union, newest
+/// first, at most `MAX_DUE_LIMIT`) and leaves that read's limit and time alone, so the union
+/// ends with the window and the next full read replaces it. (Keying by the limit instead would
+/// use up the eight kinds; the union costs none.)
+fn remember_in_n(reads: &mut ShownReads, key: &str, tasks: &[TaskItem], limit: usize, now: i64) {
+    let fresh: Vec<String> = tasks.iter().take(limit.min(MAX_DUE_LIMIT)).map(|t| t.id.clone()).collect();
+    let old = reads.iter().position(|r| r.key == key).map(|i| reads.remove(i));
+    let entry = match old {
+        Some(o) if limit < o.limit && now - o.at <= SHOWN_FRESH_SECS => {
+            let mut ids = fresh.clone();
+            ids.extend(o.ids.iter().filter(|id| !fresh.contains(id)).cloned());
+            ids.truncate(MAX_DUE_LIMIT);
+            Shown { key: key.to_string(), ids, limit: o.limit, at: o.at }
+        }
+        _ => Shown { key: key.to_string(), ids: fresh, limit, at: now },
+    };
+    reads.push(entry);
     while reads.len() > MAX_SHOWN_READS {
         reads.remove(0);
     }
 }
 
 fn shown_in(reads: &ShownReads, id: &str) -> bool {
-    reads.iter().any(|(_, ids)| ids.iter().any(|known| known == id))
+    reads.iter().any(|r| r.ids.iter().any(|known| known == id))
 }
 
 fn remember_shown(key: &str, tasks: &[TaskItem]) {
@@ -832,7 +860,7 @@ fn remember_shown(key: &str, tasks: &[TaskItem]) {
 
 fn remember_shown_n(key: &str, tasks: &[TaskItem], limit: usize) {
     if let Ok(mut reads) = SHOWN_TASKS.lock() {
-        remember_in_n(&mut reads, key, tasks, limit);
+        remember_in_n(&mut reads, key, tasks, limit, now_epoch());
     }
 }
 
@@ -1499,7 +1527,7 @@ mod tests {
         assert_eq!((ids(&two), two.remaining), (vec!["1", "2"], 3));
         let mut reads = ShownReads::new();
         let many: Vec<TaskItem> = (0..30).map(|i| shown_task(&format!("lim-{i}"))).collect();
-        remember_in_n(&mut reads, "home", &many, 20);
+        remember_in_n(&mut reads, "home", &many, 20, 0);
         assert!(shown_in(&reads, "lim-19"));
         assert!(!shown_in(&reads, "lim-20"));
     }
@@ -1715,10 +1743,41 @@ mod tests {
         assert_eq!((got.next.len(), got.remaining, got.due_today), (60, 10, Some(70)));
         // Every row the page can tick can be opened and completed: all sixty ids are remembered.
         let mut reads = ShownReads::new();
-        remember_in_n(&mut reads, "due", &got.next, 60);
+        remember_in_n(&mut reads, "due", &got.next, 60, 0);
         assert!(shown_in(&reads, "r59") && !shown_in(&reads, "r60"));
         // The plain read still reports no due count.
         assert_eq!(summarize_n(&due_body(), Filters::default(), NOW, &us_east, 3).due_today, None);
+    }
+
+    #[test]
+    fn a_short_read_does_not_make_the_rows_of_the_long_read_unknown() {
+        // The 60 row list is read, then the "open the first task" key reads one row with the same filters.
+        let sixty: Vec<TaskItem> = (0..60).map(|i| shown_task(&format!("row-{i}"))).collect();
+        let mut reads = ShownReads::new();
+        remember_in_n(&mut reads, "work-due", &sixty, 60, 1000);
+        remember_in_n(&mut reads, "work-due", &sixty[..1], 1, 1100);
+        // Row 12 can still be opened (the check Rust makes before it opens one), and ticking needs only a good id.
+        assert_eq!(check_open_task("wall2", "row-11", &reads), Ok(()));
+        assert!(shown_in(&reads, "row-59"));
+        assert_eq!(reads.len(), 1, "the same kind of read keeps one entry");
+        assert_eq!(reads[0].ids.len(), 60, "the union holds each id once");
+        // The union keeps the long read's limit and time, so a one row read cannot extend it.
+        assert_eq!((reads[0].limit, reads[0].at), (60, 1000));
+        // A newer id from the short read is in front and also openable.
+        let newer = [shown_task("row-new")];
+        remember_in_n(&mut reads, "work-due", &newer, 1, 1200);
+        assert!(shown_in(&reads, "row-new") && shown_in(&reads, "row-11"));
+        assert_eq!(reads[0].ids[0], "row-new");
+        // Past the window a short read replaces, as before: stale rows are not kept for ever.
+        remember_in_n(&mut reads, "work-due", &sixty[..1], 1, 1000 + SHOWN_FRESH_SECS + 1);
+        assert!(shown_in(&reads, "row-0") && !shown_in(&reads, "row-11"));
+        // The next full read replaces the union at once and sets the limit again.
+        remember_in_n(&mut reads, "work-due", &sixty[10..20], 60, 2000);
+        assert!(shown_in(&reads, "row-12") && !shown_in(&reads, "row-0"));
+        assert_eq!(reads[0].limit, 60);
+        // A different kind of read is never merged in.
+        remember_in_n(&mut reads, "other", &sixty[..1], 1, 2001);
+        assert_eq!(reads.len(), 2);
     }
 
     #[test]
