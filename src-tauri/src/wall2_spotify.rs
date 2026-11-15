@@ -553,7 +553,7 @@ fn validate_tracks(kind: &str, id: &str, page: Option<u32>) -> Result<u32, Strin
 fn tracks_path(kind: &str, id: &str, page: u32) -> String { if kind == "playlist" { format!("/playlists/{id}/items?market=from_token&limit=50&offset={}&additional_types=track&fields=items(item(id,name,type,is_local,is_playable,restrictions,artists(name),album(name,images),duration_ms)),next,total", page as usize * PAGE_SIZE) } else { format!("/albums/{id}/tracks?market=from_token&limit=50&offset={}", page as usize * PAGE_SIZE) } }
 fn tracks_with(cfg:&Config,kind:&str,id:&str,page:u32,http:&dyn Http,creds:&dyn Creds)->Result<TrackPage,String>{ let value=get_json_with_limit(cfg,&tracks_path(kind,id,page),TRACK_BODY,http,creds)?; log_refused_covers(&value); Ok(shape_track_page(&value,kind)) }
 #[tauri::command]
-pub async fn wall2_spotify_tracks(window: WebviewWindow, kind: String, id: String, page: Option<u32>) -> Result<TrackPage, String> { require(&window)?; let page = validate_tracks(&kind, &id, page)?; tauri::async_runtime::spawn_blocking(move || { let cfg = config(window.app_handle())?; if kind=="playlist" { return tracks_with(&cfg,&kind,&id,page,&RealHttp,&RealCreds) } let path = tracks_path(&kind, &id, page); let mut value = get_track_json(&cfg, &path)?; let album = get_track_json(&cfg, &format!("/albums/{id}?market=from_token"))?; add_album_to_tracks(&mut value, &album); log_refused_covers(&value); Ok(shape_track_page(&value, &kind)) }).await.map_err(|_| "failed".to_string())? }
+pub async fn wall2_spotify_tracks(window: WebviewWindow, kind: String, id: String, page: Option<u32>) -> Result<TrackPage, String> { require(&window)?; let page = validate_tracks(&kind, &id, page)?; tauri::async_runtime::spawn_blocking(move || { let cfg = config(window.app_handle())?; if kind=="playlist" { return tracks_with(&cfg,&kind,&id,page,&RealHttp,&RealCreds) } let path = tracks_path(&kind, &id, page); let mut value = get_track_json(&cfg, &path)?; let album = get_track_json(&cfg, &format!("/albums/{id}?market=from_token"))?; log_refused_covers(&album); add_album_to_tracks(&mut value, &album); Ok(shape_track_page(&value, &kind)) }).await.map_err(|_| "failed".to_string())? }
 
 #[derive(Debug, Serialize, PartialEq)] pub struct Queue { current: Option<Track>, next: Vec<Track> }
 fn shape_queue(v: &Value) -> Queue { Queue { current: v.get("currently_playing").and_then(shape_track), next: v.get("queue").and_then(Value::as_array).into_iter().flatten().filter_map(shape_track).take(10).collect() } }
@@ -864,6 +864,15 @@ mod tests {
         let oversized = format!("https://i.scdn.co/{}", "a".repeat(2049 - "https://i.scdn.co/".len()));
         assert_eq!(oversized.len(), 2049);
         assert!(!valid_image(&oversized));
+    }
+
+    #[test]
+    fn album_cover_refusals_are_counted_before_the_cover_is_copied_to_tracks() {
+        let album = json!({"images":[{"url":"https://example.com/refused"}]});
+        let mut page = json!({"items":[{}, {}, {}]});
+        assert_eq!(refused_cover_count(&album), 1);
+        add_album_to_tracks(&mut page, &album);
+        assert_eq!(refused_cover_count(&page), 3);
     }
 
     #[test]

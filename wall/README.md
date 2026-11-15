@@ -31,8 +31,8 @@ The port is optional and defaults to 8898. Press Sign in on the wall's Spotify c
 has not been verified against the live Spotify service.
 
 The bounded `wall2-spotify.log` uses only the event words `sign-in-start`, `sign-in-ok`,
-`sign-in-failed`, `sign-out`, `refresh-ok`, `refresh-refused`, `api-failed` and `cover-refused`.
-The `cover-refused` line records only the number of refused cover addresses in the list answer.
+`sign-in-failed`, `sign-out`, `refresh-ok`, `refresh-refused`, `api-failed`, `cover-refused` and
+`no-device`. The `cover-refused` line records only the number of refused cover addresses in that answer.
 
 ### Saving songs (the heart on the player row)
 
