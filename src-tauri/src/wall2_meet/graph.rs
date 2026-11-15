@@ -1655,16 +1655,16 @@ mod tests {
     fn a_name_that_is_a_bare_domain_or_hides_a_company_in_brackets_is_cleaned() {
         assert_eq!(clean_name("corp.example"), None);
         assert_eq!(clean_name("  bit.ly/abc "), None);
-        assert_eq!(clean_name("Avery Example (Tessel Works)").as_deref(), Some("Avery Example"));
-        assert_eq!(clean_name("Avery Example [Tessel Works]").as_deref(), Some("Avery Example"));
-        assert_eq!(clean_name("Avery Example (Ops) (Tessel Works)").as_deref(), Some("Avery Example"));
-        assert_eq!(clean_name("(Tessel Works)"), None);
+        assert_eq!(clean_name("Avery Example (Orchard Example)").as_deref(), Some("Avery Example"));
+        assert_eq!(clean_name("Avery Example [Orchard Example]").as_deref(), Some("Avery Example"));
+        assert_eq!(clean_name("Avery Example (Ops) (Orchard Example)").as_deref(), Some("Avery Example"));
+        assert_eq!(clean_name("(Orchard Example)"), None);
         assert_eq!(clean_name("Dr. Avery Example").as_deref(), Some("Dr. Avery Example"));
-        assert_eq!(clean_name("Avery Example, Tessel Works (EMEA").as_deref(), Some("Avery Example, Tessel Works (EMEA"));
+        assert_eq!(clean_name("Avery Example, Orchard Example (EMEA").as_deref(), Some("Avery Example, Orchard Example (EMEA"));
         assert_eq!(clean_name("Avery\u{200B} Exa\u{200D}mple").as_deref(), Some("Avery Example"));
-        let d = details_of(json!({ "organizer": { "emailAddress": { "name": "Avery Example (Tessel Works)", "address": "a@host.example" } }, "attendees": [attendee("corp.example", "x@corp.example", "accepted"), attendee("Blake Sample [Tessel]", "b@x.example", "accepted")] })).unwrap();
+        let d = details_of(json!({ "organizer": { "emailAddress": { "name": "Avery Example (Orchard Example)", "address": "a@host.example" } }, "attendees": [attendee("corp.example", "x@corp.example", "accepted"), attendee("Blake Sample [Orchard]", "b@x.example", "accepted")] })).unwrap();
         let wire = serde_json::to_string(&d).unwrap();
-        assert_none_of(&wire, &["Tessel", "corp.example", "@"]);
+        assert_none_of(&wire, &["Orchard", "corp.example", "@"]);
         assert_eq!(d.people.len(), 2);
         assert_eq!(d.people_more, 1);
     }
