@@ -48,6 +48,20 @@
 .yt-search.spent input {
   cursor: not-allowed;
 }
+.yt-spent {
+  flex: 1;
+  min-width: 0;
+  font: 400 18px/1 var(--body);
+  color: var(--dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.yt-search.spent input {
+  flex: none;
+  width: 0;
+  padding: 0;
+}
 .yt-left {
   flex: none;
   font: 400 16px/1 var(--body);

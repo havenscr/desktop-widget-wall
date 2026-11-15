@@ -3,7 +3,7 @@ import { IconSearch } from '@tabler/icons-react';
 import type { YtPlaylist, YtVideo } from '../../music/youtube';
 import { tip } from '../../ui/HoverTip';
 import { arrowTarget, gridColumns } from '../spotify/Tile';
-import { MAX_PAGES, PAGE_SIZE, SEARCH_TIP, SPENT_LINE, nearEnd, searchSpent, searchesLine, videosLine } from './model';
+import { MAX_PAGES, PAGE_SIZE, SEARCH_TIP, SPENT_LINE, devSearchKnob, nearEnd, searchSpent, searchesLine, videosLine } from './model';
 import { useYoutubeStatus } from './status';
 import { YtSongs } from './YtSongs';
 import { loadList, openPlaylist, retryMore, runSearch, searchesBack, setTab, useYtLibrary, type Loaded, type YtTab } from './store';
@@ -80,6 +80,8 @@ export function YtBrowse({ tall }: { tall: boolean }) {
   // Opening the card reads the current list again (Rust answers from memory while it is fresh).
   useEffect(() => {
     void loadList(useYtLibrary.getState().tab);
+    const knob = devSearchKnob();
+    if (knob) void runSearch(knob);
   }, []);
   useEffect(() => {
     if (query === '') setText('');
@@ -117,13 +119,14 @@ export function YtBrowse({ tall }: { tall: boolean }) {
           value={text}
           maxLength={100}
           disabled={spent}
-          placeholder={spent ? SPENT_LINE : 'Search music on YouTube'}
+          placeholder={spent ? '' : 'Search music on YouTube'}
           aria-label={spent ? SPENT_LINE : 'Search music on YouTube'}
           onChange={(e) => setText(e.target.value)}
           onKeyDown={(e) => {
             if (e.key === 'Enter') void runSearch(text);
           }}
         />
+        {spent ? <span className="yt-spent">{SPENT_LINE}</span> : null}
         {line && !spent ? <span className="yt-left">{line}</span> : null}
       </label>
     </div>

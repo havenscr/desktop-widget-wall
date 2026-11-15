@@ -193,3 +193,8 @@ export function searchWords(text: string): string | null {
   if (q.length === 0 || [...q].length > 100 || /[\u0000-\u001f\u007f-\u009f​-‏‪-‮⁠-⁯]/.test(q)) return null;
   return q;
 }
+
+/** Development builds only: `ytsearch=<words>` in the address runs that search when the library opens (the review pages have no Enter key). */
+export function devSearchKnob(): string | null {
+  return import.meta.env.DEV ? new URLSearchParams(window.location.search).get('ytsearch') : null;
+}

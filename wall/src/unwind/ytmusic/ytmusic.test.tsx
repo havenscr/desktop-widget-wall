@@ -493,7 +493,7 @@ describe('search', () => {
     const { calls } = await library(false, { status: signedIn(0) });
     const field = (await screen.findByLabelText('Searches are used up until midnight Pacific')) as HTMLInputElement;
     expect(field.disabled).toBe(true);
-    expect(field.placeholder).toBe('Searches are used up until midnight Pacific');
+    expect(screen.getByText('Searches are used up until midnight Pacific', { selector: '.yt-spent' })).toBeTruthy();
     fireEvent.click(screen.getByRole('tab', { name: 'Liked' }));
     await screen.findByText('Clip 11');
     expect(calls.search.length).toBe(0);
