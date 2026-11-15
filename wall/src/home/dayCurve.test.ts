@@ -1,9 +1,16 @@
-import { expect, it } from 'vitest';
+import { expect, it, vi } from 'vitest';
 import { usePacificTime } from '../ribbon/testZone';
 import { sunTimes } from '../ribbon/sun';
 import { CURVE_BASE, CURVE_DIP, CURVE_H, CURVE_HUMP, CURVE_W, curveGeometry, dayCurve, labelSpots, labelText } from './dayCurve';
 
 usePacificTime();
+
+// Sun times can be forced per test, to reach a date whose sunset is not after its sunrise.
+const force = vi.hoisted(() => ({ times: null as { rise: number | null; set: number | null } | null }));
+vi.mock('../ribbon/sun', async (orig) => {
+  const actual = await orig<typeof import('../ribbon/sun')>();
+  return { ...actual, sunTimes: (ms: number) => force.times ?? actual.sunTimes(ms) };
+});
 
 const at = (day: string, t: string) => Date.parse(`${day}T${t}-0${day.startsWith('2026-06') ? 7 : 8}:00`);
 const NOV = '2026-11-11';
@@ -97,4 +104,45 @@ it('drops the glyph, then AM or PM, as a crossing nears an edge', () => {
   expect(labelText('8:33 PM', 'short')).toBe('8:33');
   // A crossing closer to the edge than any label is wide still keeps the label in the box.
   expect(labelSpots(20, 440, '1:00 AM', '11:00 PM')).toEqual({ rise: { side: 'left', px: 0, form: 'short' }, set: { side: 'right', px: 0, form: 'short' } });
+});
+
+/** "6:52 AM" as a fraction of a 24 hour clock face. */
+const faceFraction = (text: string) => {
+  const m = /^(\d+):(\d\d) ([AP])M$/.exec(text)!;
+  return (((Number(m[1]) % 12) + (m[3] === 'P' ? 12 : 0)) * 60 + Number(m[2])) / 1440;
+};
+
+it('a 23 hour day (clocks forward) and a 25 hour day (clocks back) use the 24 hour clock face', () => {
+  for (const [noon, label] of [['2026-03-08T12:00:00-07:00', '23 hour'], ['2026-11-01T12:00:00-08:00', '25 hour']] as const) {
+    const c = dayCurve(Date.parse(noon))!;
+    expect(c.phase, label).toBe('day');
+    // Local noon is the middle of the face, to the pixel.
+    expect(c.xSun, label).toBeCloseTo(CURVE_W / 2, 6);
+    // Each crossing sits at the time it is labelled with.
+    expect(c.xRise, label).toBeCloseTo(CURVE_W * faceFraction(c.riseText), 4);
+    expect(c.xSet, label).toBeCloseTo(CURVE_W * faceFraction(c.setText), 4);
+  }
+  // The same noon on an ordinary day is at the same place.
+  expect(dayCurve(Date.parse('2026-11-11T12:00:00-08:00'))!.xSun).toBeCloseTo(CURVE_W / 2, 6);
+});
+
+it('no curve when the sunset is not after the sunrise', () => {
+  const noon = at(NOV, '12:00:00');
+  force.times = { rise: noon, set: noon };
+  expect(dayCurve(noon)).toBeNull();
+  force.times = { rise: noon + 3_600_000, set: noon };
+  expect(dayCurve(noon)).toBeNull();
+  // Two times that round to the same minute are no day either.
+  force.times = { rise: noon + 10_000, set: noon + 20_000 };
+  expect(dayCurve(noon)).toBeNull();
+  force.times = null;
+  expect(dayCurve(noon)).not.toBeNull();
+});
+
+it('the sun changes sides at the exact sunset, not at the rounded minute', () => {
+  const { rise, set } = sunTimes(at(NOV, '12:00:00'));
+  expect(dayCurve(set! - 1)!.phase).toBe('day');
+  expect(dayCurve(set!)!.phase).toBe('after');
+  expect(dayCurve(rise! - 1)!.phase).toBe('before');
+  expect(dayCurve(rise!)!.phase).toBe('day');
 });

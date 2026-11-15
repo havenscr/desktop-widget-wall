@@ -1,4 +1,4 @@
-import { localMidnight, sunTimes } from '../ribbon/sun';
+import { sunTimes } from '../ribbon/sun';
 import { clockText, span, toMinute } from './sunLine';
 
 /** The curve's drawing box, wall pixels: 458 wide for 24 hours, a 56 px hump, a 13 px dip. */
@@ -10,7 +10,6 @@ export const CURVE_BASE = CURVE_HUMP + 6;
 export const CURVE_H = CURVE_BASE + CURVE_DIP + 8;
 /** Gap between a label and its crossing, and the label's height. */
 export const LABEL_GAP = 12;
-const DAY_MS = 86_400_000;
 /** The drawn curve is sampled every tenth of an hour. */
 const STEP = 0.1 / 24;
 
@@ -38,7 +37,7 @@ export interface CurveGeometry {
  * Only the two crossings and the sun's x are data; the hump's height and the dip's depth are a
  * drawing. Above the base line while the sun is up, below it at night.
  */
-export function curveGeometry(rise: number, set: number, now: number): CurveGeometry {
+export function curveGeometry(rise: number, set: number, now: number, raw: { rise: number; set: number } = { rise, set }): CurveGeometry {
   const night = 1 - (set - rise);
   const x = (f: number) => CURVE_W * f;
   const y = (f: number) => {
@@ -51,7 +50,8 @@ export function curveGeometry(rise: number, set: number, now: number): CurveGeom
     out.push(`${x(b).toFixed(1)},${y(b).toFixed(1)}`);
     return `M${out.join(' L')}`;
   };
-  const phase: SunPhase = now < rise ? 'before' : now <= set ? 'day' : 'after';
+  // The phase follows the exact crossings (as the headline does); only what is drawn and labelled is rounded to the minute.
+  const phase: SunPhase = now < raw.rise ? 'before' : now < raw.set ? 'day' : 'after';
   const xRise = x(rise);
   const xSet = x(set);
   const xSun = x(now);
@@ -87,24 +87,32 @@ function place(phase: SunPhase, share: number): string {
   return share < 0.5 ? 'the sun is before its highest point' : 'the sun is past its highest point';
 }
 
+/** The local clock time of `ms` as a fraction of a 24 hour face (the face of a clock, whatever the day's true length). */
+function clockFraction(ms: number): number {
+  const d = new Date(ms);
+  return (d.getHours() * 3600 + d.getMinutes() * 60 + d.getSeconds() + d.getMilliseconds() / 1000) / 86_400;
+}
+
 /**
- * Today's curve from the horizon's own sun, or null on a date with no sunrise or no sunset
- * (the headline then stands alone). Times are shown to the minute, as the headline's are.
+ * Today's curve from the horizon's own sun, or null on a date with no sunrise or no sunset, or
+ * with the sunset not after the sunrise (the headline then stands alone). Times are shown to the
+ * minute, as the headline's are. x is the local clock time on a fixed 24 hour face, so on a 23 or 25
+ * hour day noon is still the middle and each crossing sits at its displayed time (the repeated
+ * autumn hour overlaps itself).
  */
 export function dayCurve(ms: number): DayCurve | null {
   const { rise, set } = sunTimes(ms);
-  if (rise === null || set === null) return null;
-  const start = localMidnight(ms);
-  const end = localMidnight(start + DAY_MS + 3 * 3_600_000);
-  const total = end - start;
-  const frac = (t: number) => (t - start) / total;
+  if (rise === null || set === null || set <= rise) return null;
   const r = toMinute(rise);
   const s = toMinute(set);
-  const g = curveGeometry(frac(r), frac(s), frac(ms));
+  const fr = clockFraction(r);
+  const fs = clockFraction(s);
+  if (fs <= fr) return null;
+  const g = curveGeometry(fr, fs, clockFraction(ms), { rise: clockFraction(rise), set: clockFraction(set) });
   const riseText = clockText(r);
   const setText = clockText(s);
   const length = span(s - r);
-  const share = (ms - r) / (s - r);
+  const share = (ms - rise) / (set - rise);
   return {
     ...g,
     riseText,

@@ -36,19 +36,20 @@ export function span(ms: number): string {
  * The left wing's sun block, from the horizon's own sun. Within 90 minutes before sunset:
  * "Sunset in N min" in amber. Earlier in the day: the sunset time and the daylight left.
  * Before sunrise: the sunrise time. After sunset: tonight's sunset and tomorrow's sunrise.
- * Null on a day the sun neither rises nor sets.
+ * Null on a day the sun neither rises nor sets. Which state it is, and the 90 minute rule,
+ * follow the exact sunrise and sunset; only what is shown is rounded to the minute.
  */
 export function sunLine(now: number): SunLine | null {
   const times = sunTimes(now);
   if (times.rise === null || times.set === null) return null;
-  // Shown to the minute, so round to the nearest one ("in 1 min" never pairs with a time already past).
   const rise = toMinute(times.rise);
   const set = toMinute(times.set);
-  if (now < rise) {
+  if (now < times.rise) {
     return { key: `Sunrise at ${clockText(rise)}`, text: `Sunset at ${clockText(set)}, ${span(set - rise)} of daylight`, soon: false };
   }
-  if (now < set) {
-    const left = set - now;
+  if (now < times.set) {
+    const left = times.set - now;
+    // Whole minutes, rounded up, so "in 1 min" never pairs with a sunset already past.
     const mins = Math.ceil(left / 60_000);
     if (mins <= SUNSET_SOON_MIN) {
       return { key: `Sunset in ${mins} min`, text: `The sun goes down at ${clockText(set)}`, soon: true };
@@ -68,6 +69,8 @@ export interface SunHeadline {
   text: string;
   /** Amber: sunset is within 90 minutes. */
   soon: boolean;
+  /** The hover card: the exact times and the day's length. */
+  tip: string;
 }
 
 /**
@@ -77,15 +80,18 @@ export interface SunHeadline {
  * has no headline (null).
  */
 export function sunHeadline(now: number): SunHeadline | null {
+  const { rise, set } = sunTimes(now);
   const line = sunLine(now);
   if (line) {
-    if (line.soon) return { text: line.key, soon: true };
+    const r = toMinute(rise!);
+    const s = toMinute(set!);
+    const tip = `Sunrise ${clockText(r)}, sunset ${clockText(s)}. ${span(s - r)} of daylight today.`;
+    if (line.soon) return { text: line.key, soon: true, tip };
     // Before sunrise the sentence is a long one; the curve below carries the sunset.
-    if (line.key.startsWith('Sunrise at')) return { text: line.key, soon: false };
-    return { text: line.text, soon: false };
+    if (line.key.startsWith('Sunrise at')) return { text: line.key, soon: false, tip };
+    return { text: line.text, soon: false, tip };
   }
-  const { rise, set } = sunTimes(now);
-  if (rise !== null) return { text: `Sunrise at ${clockText(toMinute(rise))}`, soon: false };
-  if (set !== null) return { text: `Sunset at ${clockText(toMinute(set))}`, soon: false };
+  if (rise !== null) return { text: `Sunrise at ${clockText(toMinute(rise))}`, soon: false, tip: `Sunrise ${clockText(toMinute(rise))}. No sunset today.` };
+  if (set !== null) return { text: `Sunset at ${clockText(toMinute(set))}`, soon: false, tip: `Sunset ${clockText(toMinute(set))}. No sunrise today.` };
   return null;
 }
