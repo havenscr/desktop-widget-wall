@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { mocks } from '../bridge/tauri';
 import { chooseBackend, directBackend, type KeyLightBackend, type Pair, type Patch, type Target } from './keyLights';
-import { NOTE_MS, resetKeyLights, setBackend, useKeyLights } from './store';
+import { NOTE_MS, QUIET_READ_MS, READ_EVERY_MS, resetKeyLights, setBackend, useKeyLights } from './store';
 
 const flush = async (ms = 0) => {
   await vi.advanceTimersByTimeAsync(ms);
@@ -310,6 +310,50 @@ describe('which answer lands', () => {
     // The left write began after the both write: left shows 20 whatever the order; right was only in the both write.
     expect(useKeyLights.getState().left).toEqual(L(true, 20, 4400));
     expect(useKeyLights.getState().right).toEqual(L(true, 10, 4400));
+  });
+
+  it('a quiet "both" answer that overtook a left write is followed by one read about a second later', async () => {
+    const w = world();
+    await setUp(w);
+    const both = later<Pair>();
+    const only = later<Pair>();
+    let reads = 0;
+    const truth: Pair = { left: L(true, 20, 4400), right: L(true, 10, 4400) };
+    setBackend({
+      read: async () => (reads++, truth),
+      set: (target) => (target === 'both' ? both.promise : only.promise),
+    });
+    const a = useKeyLights.getState().set('left', { brightness: 20 });
+    const b = useKeyLights.getState().set('both', { brightness: 10 });
+    await flush();
+    // The older left write answers after the newer both write began: its answer is not shown.
+    only.resolve({ left: L(true, 20, 4400), right: null });
+    await flush();
+    expect(useKeyLights.getState().left).toEqual(L(true, 60, 4400));
+    // The both write answers "not now" for the left light and with a reading for the right one.
+    both.resolve({ left: 'slow-down', right: L(true, 10, 4400) });
+    await Promise.all([a, b]);
+    expect(useKeyLights.getState().left).toEqual(L(true, 60, 4400));
+    expect(reads).toBe(0);
+    await flush(QUIET_READ_MS - 1);
+    expect(reads).toBe(0);
+    await flush(1);
+    expect(reads).toBe(1);
+    expect(useKeyLights.getState().left).toEqual(L(true, 20, 4400));
+    // One pending read at most, and nothing is left running.
+    await flush(READ_EVERY_MS * 2);
+    expect(reads).toBe(1);
+  });
+
+  it('resetting the store cancels the pending quiet read', async () => {
+    const w = world();
+    await setUp(w);
+    let reads = 0;
+    setBackend({ read: async () => (reads++, { left: L(true, 60, 4400), right: L(true, 60, 4400) }), set: async () => ({ left: 'busy', right: null }) });
+    await useKeyLights.getState().set('left', { brightness: 20 });
+    resetKeyLights();
+    await flush(QUIET_READ_MS * 3);
+    expect(reads).toBe(0);
   });
 
   it('answers that only say "not now" never replace what is shown', async () => {

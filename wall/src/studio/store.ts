@@ -7,6 +7,8 @@ import { notTaken, SIDES, sideReading, type Snapshot } from './model';
 export const NOTE_MS = 5000;
 /** Reads while On Air or the drawer is visible. */
 export const READ_EVERY_MS = 30_000;
+/** After an answer that only said "not now" for a side, the lights are read once more this long after. */
+export const QUIET_READ_MS = 1000;
 
 interface KeyLightState extends Snapshot {
   /** The drawer (Fine tune) is open. */
@@ -31,6 +33,7 @@ interface KeyLightState extends Snapshot {
 
 let backend: KeyLightBackend = chooseBackend();
 let noteTimer: ReturnType<typeof setTimeout> | undefined;
+let quietTimer: ReturnType<typeof setTimeout> | undefined;
 const waiting = new Map<Target, Patch>();
 const running = new Set<Target>();
 /**
@@ -98,6 +101,8 @@ export const useKeyLights = create<KeyLightState>((set, get) => {
     }
     const asked: Patch = {};
     const failedSides = new Set<Side>();
+    // Sides whose newest write answered only "not now": what is shown for them may be old.
+    const quietSides = new Set<Side>();
     let last: Pair = { left: null, right: null };
     try {
       for (let patch = waiting.get(target); patch; patch = waiting.get(target)) {
@@ -119,9 +124,14 @@ export const useKeyLights = create<KeyLightState>((set, get) => {
         const next: Partial<Snapshot> = {};
         for (const side of sides) {
           const r = pair[side];
-          if (r === null || isQuiet(r)) continue;
+          if (r !== null && isQuiet(r)) {
+            if (writeGen[side] === token[side]) quietSides.add(side);
+            continue;
+          }
+          if (r === null) continue;
           if (isLight(r)) {
             failedSides.delete(side);
+            if (writeGen[side] === token[side]) quietSides.delete(side);
             // Only the newest write for a side shows its answer.
             if (writeGen[side] === token[side]) {
               next[side] = r;
@@ -147,6 +157,13 @@ export const useKeyLights = create<KeyLightState>((set, get) => {
       // The follow-up read still runs when another target is busy, and what it read decides the line.
       const pair = await fetchRead();
       for (const side of failedSides) if (isLight(pair?.[side])) refused.add(side);
+    }
+    // One more read soon, so a side that kept an old value after a quiet answer is corrected before the next poll.
+    if (quietSides.size > 0 && quietTimer === undefined) {
+      quietTimer = setTimeout(() => {
+        quietTimer = undefined;
+        void fetchRead();
+      }, QUIET_READ_MS);
     }
     if (refused.size === 2) raise('The key lights did not take that change');
     else if (refused.size === 1) raise(`The ${[...refused][0]} key light did not take that change`);
@@ -192,6 +209,8 @@ usePlaceStore.subscribe((s, prev) => {
 /** Tests only: back to nothing known. */
 export function resetKeyLights(): void {
   clearTimeout(noteTimer);
+  clearTimeout(quietTimer);
+  quietTimer = undefined;
   waiting.clear();
   running.clear();
   readGen.left = readGen.right = writeGen.left = writeGen.right = 0;
