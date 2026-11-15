@@ -200,7 +200,8 @@ export function AddToPlaylistButton({ video }: { video: OwnVideo }) {
   const [open, setOpen] = useState(false);
   const btn = useRef<HTMLButtonElement>(null);
   const [host, setHost] = useState<HTMLElement | null>(null);
-  useLayoutEffect(() => setHost(btn.current?.closest<HTMLElement>('.w-ctl') ?? null), []);
+  // The menu is a child of the left block (not of the control row): its right edge is the block's.
+  useLayoutEffect(() => setHost(btn.current?.closest<HTMLElement>('.w-now') ?? null), []);
   return (
     <>
       <button

@@ -52,12 +52,12 @@ import { knob } from './long';
  *   ?wsleep=<minutes left>|end   a running sleep timer with that many minutes left; `end` ends the timer at once (the video
  *                             stops with its line and the player the wall follows is paused through the mocked commands)
  *   ?wrows=shown              hold the rows under the clock at full strength (they start at rest)
- *   ?wown=lists|draft|edit|drag|menu|playing|repeat|skip|end|none   playlists the owner makes (with `watch=mock`): the list holds two
+ *   ?wown=lists|draft|edit|drag|menu|playing|pill|repeat|skip|end|none   playlists the owner makes (with `watch=mock`): the list holds two
  *                             invented playlists of the owner's own (12 and 5 videos), a connected YouTube playlist, a video, a live
  *                             stream and a Twitch channel (`wlist` is ignored); `draft` presses New playlist; `edit` opens the editor
  *                             (two videos not yet named, one that plays only on YouTube); `drag` is that with a row held by its grip; `menu` opens the play row's add menu (play
  *                             a video with `wplay=3`); `playing` plays the first playlist from its third video with the card following;
- *                             `repeat` is that with repeat on; `skip` skips one video with its note held on screen; `end` and `none`
+ *                             `pill` is that after the back arrow; `repeat` is that with repeat on; `skip` skips one video with its note held on screen; `end` and `none`
  *                             show the block after the playlist ran out, or when nothing in it could play. Pictures are drawn `data:`
  *                             motifs through the `ownThumb` seam: no request ever leaves the page.
  *   ?wplace=work|home|meet    watch behaviour: after it starts, go to that place, so the video
@@ -139,12 +139,14 @@ function runOwn(state: string): void {
         if (list) fire('pointermove', r.left + r.width / 2 + 4, list.top + 2 * 56 + 22);
       }, 400);
   } else if (state === 'menu') setTimeout(() => document.querySelector<HTMLButtonElement>('.w-addpl')?.click(), 300);
-  else if (state === 'playing' || state === 'repeat' || state === 'skip') {
+  else if (state === 'playing' || state === 'repeat' || state === 'skip' || state === 'pill') {
     if (state === 'repeat') own.setRepeat(FRIDAY, true);
     const from = state === 'skip' ? OWN_VIDEOS[4][0] : OWN_VIDEOS[2][0];
     playOwn(FRIDAY, from);
     mockPlayer('video', null);
     hold();
+    // `pill` is `playing` after the back arrow: the Watch list with the playlist's row on and its place in a pill.
+    if (state === 'pill') setFollow(false);
     if (state === 'skip') {
       ownTiming.noteMs = 600_000;
       setFollow(false);

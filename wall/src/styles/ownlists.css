@@ -101,9 +101,6 @@
 }
 
 /* ---- the round add button of the play row, and its menu ---- */
-.w-ctl {
-  position: relative;
-}
 .w-ctl .rd.w-addpl.lit,
 .w-ctl .rd.w-addpl:focus-visible {
   color: var(--cyan);
@@ -388,8 +385,9 @@
   flex: 1 1 0;
   min-height: 0;
   overflow-y: auto;
-  margin: 0 -6px;
-  padding: 0 6px;
+  /* The rows are 506 wide whatever the scrollbar does: it sits in the card's own padding, on the right. */
+  margin: 0 -16px 0 -6px;
+  padding: 0;
   scrollbar-width: thin;
   scrollbar-color: rgba(255, 255, 255, 0.42) rgba(255, 255, 255, 0.07);
 }
@@ -411,6 +409,7 @@
   align-items: center;
   gap: 10px;
   width: 100%;
+  max-width: 506px;
   height: 40px;
   padding: 0 6px;
   border-radius: 10px;
