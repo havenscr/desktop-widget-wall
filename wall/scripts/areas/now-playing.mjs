@@ -124,6 +124,7 @@ const NAMES = {
   station: 'Home, Now Playing: a station with no length',
   noart: 'Home, Now Playing: music with no cover',
   quiet: 'Home, Now Playing: nothing playing',
+  stale: 'Home, Now Playing: not live, dimmed',
   video: 'Home, Now Playing: the wall video',
   playlist: 'Home, Now Playing: a playlist on the wall',
   twitch: 'Home, Now Playing: a Twitch stream on the wall',
@@ -151,6 +152,7 @@ export default {
     state('now playing: heavy Sonos, long names', 'sonos=heavy&np=skip', ['Now playing', 'Extended Mix']),
     state('now playing: not live, dimmed, the bar stopped', 'sonos=timeout&np=skip', ['Night Drive', 'Sonos did not answer in time']),
     state('now playing: nothing playing', QUIET, ['Nothing playing', 'Suggested for this hour']),
+    state('now playing: a TV room is not music, the quiet words stay', `${QUIET}&np=tv`, ['Nothing playing', 'Suggested for this hour', '!On the wall']),
     state('now playing: a Spotify track on a speaker', 'spotifyplay=speaker', ['Now playing', 'Living room']),
     state('now playing: Pause tip', 'np=skip', ['Pause every Sonos speaker'], 'hover:.sound-np .np-rd.big'),
     // The wall's own video alone.
@@ -176,6 +178,7 @@ export default {
       variant(NAMES.station, 'music', 'np=station,skip'),
       variant(NAMES.noart, 'music', 'np=noart'),
       variant(NAMES.quiet, 'quiet', 'sonos=quiet'),
+      variant(NAMES.stale, 'music', 'sonos=timeout&np=skip'),
       variant(NAMES.video, 'video', `sonos=quiet&${WALL}&wplay=0`),
       variant(NAMES.playlist, 'video', `sonos=quiet&${LIST}&wplay=3`),
       variant(NAMES.twitch, 'video', `sonos=quiet&${WALL}&wplay=2`),

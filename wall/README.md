@@ -239,8 +239,9 @@ ignored, and each control stays latched for 800 ms after its write settles.
   - **Music alone**: a 136 px cover (the speaker glyph tile when there is no cover), the
     kicker "Now playing", the title on up to two lines, the artist, a time row with a 6 px
     bar when the track has a length (the position counts on each second from the read that
-    carried it, never past the end, and stops while the read is not live; a station has no
-    length and no bar, and the where line takes the bar's row), and the control row at the
+    carried it, never past the end, and stops while the read is not live; the one-second
+    clock runs only while that bar is on screen; a station has no length and no bar, and
+    the where line sits right under the artist), and the control row at the
     foot: back and next (40 px, only when the service has them), pause (44 px, cyan), then
     the where line. A Spotify track on a house speaker uses the same layout with its own
     cover and times. A TV or line-in room is not music: the quiet words stay.
@@ -254,8 +255,12 @@ ignored, and each control stays latched for 800 ms after its write settles.
     the video on Watch to start it" and there is no pause. A video that has ended is no
     longer shown. The Watch frame lives in the stage layer mounted for every place, so it
     keeps playing and keeps answering `playerLink.send` while Home shows (proved in
-    `home/wallVideo.test.tsx`); if a back or next message is not taken (no loaded frame),
-    both buttons stop with the hover "Open Watch to control this" until another video is on.
+    `home/wallVideo.test.tsx`). A pause or play pressed while the frame is still loading is
+    sent once the frame loads (`PlayerFrame.tsx` tells a newly loaded frame the store's paused
+    state). If a back or next message is not taken (no loaded frame), both buttons stop with
+    the hover "Open Watch to control this" until another item is on (by identity, also the same
+    title replayed), the player reports (it has started, or the frame has loaded and answers),
+    or Home is shown again.
   - **Both at once**: two halves with a hairline, the video above the music; each half has
     a 92 px picture, kicker, one-line title, two small lines and its buttons at the right
     (pause and stop for the video, pause for the music). The split view has no time bar
@@ -268,7 +273,12 @@ ignored, and each control stays latched for 800 ms after its write settles.
     never following a redirect, with a 3 second limit for everything, at most 400 KB, a
     status of 200 only, and bytes that begin as a JPEG, PNG or WebP (whatever type was
     declared). One fetch per distinct address (the last result, a failure too, is kept in
-    memory only); every failure answers nothing and writes one fixed word to the Sonos
+    memory only; a failed address is tried once more when asked for 30 seconds or more after
+    the failure, never a third time, and an address that is not allowed never). The summary
+    carries a short opaque key for the cover (a hash of the address, never the address), and
+    the page fetches again when that key changes, whatever the title is; the previous cover
+    stays while a new one is on its way for at most 2 seconds, and a track with no cover shows
+    the glyph at once. Every failure answers nothing and writes one fixed word to the Sonos
     log (`failed art refused|too-big|not-image|timed-out|no-answer|bad-answer`), never the
     address. Without a cover the glyph tile shows.
   - **Back and next for Sonos**: `GET /api/capabilities` is one more optional read beside the
@@ -276,12 +286,15 @@ ignored, and each control stays latched for 800 ms after its write settles.
     (a 404, a failure) leaves it false and the two buttons are not drawn. The commands
     (`wall2_sonos_skip`, direction exactly `next` or `previous`) are refused unless the last
     read said `canSkip`, is under two minutes old and music plays; they send `POST
-    /api/action/next` or `/api/action/previous` with `{}`, and a 4xx with
+    /api/action/next` or `/api/action/previous` with `{}`; only a JSON answer whose `ok` is exactly `true` is
+    done (any other successful answer is "Sonos could not do that"), and a 4xx with
     `{ "error": "cannot-skip" }` shows "This station cannot skip", `nothing-playing` shows
-    "Nothing is playing". The page reads the summary again after it. Pause still pauses every
-    speaker.
+    "Nothing is playing". The page reads the summary again after it. The two buttons show busy while the
+    write runs and through the 800 ms latch after it (a second click inside it sends nothing).
+    Pause still pauses every speaker.
   - Dev mocks: `?np=` takes `station` (no length), `noart`, `skip` (back and next), `skipfail`
-    (a skip refused as a station that cannot skip) and `long` (long title and artist);
+    (a skip refused as a station that cannot skip), `long` (long title and artist) and `tv`
+    (the studio plays a TV input);
     the wall's video comes from the Watch mocks (`?watch=mock&wlist=three|many&wplay=<n>&wplace=home`,
     `wstate=refused` for the click wait). Review script: `scripts/areas/now-playing.mjs`
     (gallery states, and fit rules with a deliberate break for each).
