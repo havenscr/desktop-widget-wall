@@ -3,7 +3,7 @@ import { createElement as h } from 'react';
 import type { WatchRef } from '../../unwind/watch/links';
 import { LOOKS_KEY, isLook } from '../../unwind/watch/looks';
 import { TUNE_KEY, defaultTune, withPatch } from '../../unwind/watch/lookSettings';
-import { framePoster } from '../../unwind/watch/PlayerFrame';
+import { framePoster, takeVideoInfo } from '../../unwind/watch/PlayerFrame';
 import { SAVED_KEY } from '../../unwind/watch/saved';
 import { useWatchStore } from '../../unwind/watch/store';
 import { ctlTiming } from '../../unwind/watch/Watch';
@@ -17,7 +17,12 @@ import { knob } from './long';
  * drawing's stand-in) is drawn where the player would be, and the tab opens.
  *
  *   ?watch=mock               the poster in place of the frame; opens Watch
- *   ?wlist=none|three|many    nothing saved, three items, or the full 24 (default three)
+ *   ?wlist=none|three|many|default   nothing saved, three items, the full 24 (default three), or
+ *                             a video and a live stream that still carry their kind's default label
+ *   ?wmeta=title|long|none|other   what the mock player reports of the playing video (through the
+ *                             frame's own `takeVideoInfo`): an invented title and channel; a long
+ *                             title and a long channel; nothing; or a report for another video id,
+ *                             which must be ignored (default: nothing)
  *   ?wlook=feather|sky|sun|drivein|holo   one look for everything
  *   ?wplay=<n>                play saved item n (0 is the first)
  *   ?wsheet=one|kind          open the settings sheet (`kind`: a look per kind)
@@ -39,6 +44,20 @@ const THREE = [
   { kind: 'live', id: 'Lofi_Live01', label: 'Lofi beats radio, live' },
   { kind: 'twitch', id: 'pixel_harbor', label: 'pixel_harbor' },
 ];
+const DEFAULTS = [
+  { kind: 'video', id: 'Ab3dEfGh1jK', label: 'YouTube video' },
+  { kind: 'live', id: 'Lofi_Live01', label: 'YouTube live stream' },
+  { kind: 'playlist', id: 'PLmockPlaylist0001', label: 'YouTube playlist' },
+];
+/** What the mock player says of a video (invented, generic words). */
+const META = {
+  title: { title: 'Rooftop synth session, the full set', channel: 'Harbor Light Studio' },
+  long: {
+    title: 'A very long title for the review states, with the whole set list, the story of the night, the guest list and every credit read out in order',
+    channel: 'The Harbor Light Studio and Friends Collective, the long channel name for the review states',
+  },
+  other: { title: 'A title for some other video', channel: 'Some other channel' },
+} as const;
 const WORDS = ['Synthwave set', 'Rain on a city window', 'Concert wide shots', 'Harbor at dusk', 'Desert road', 'Late show replay', 'Jazz trio session', 'Northern lights'];
 
 function many(): typeof THREE {
@@ -123,6 +142,15 @@ function mockPlayer(kind: string, state: string | null): void {
   if (state === 'paused') st.setPaused(true);
 }
 
+/** `?wmeta`: the mock player's title and channel, passed through the frame's own gate (`takeVideoInfo`). */
+function mockMeta(item: WatchRef, meta: string | null): void {
+  if (item.kind === 'twitch' || (meta !== 'title' && meta !== 'long' && meta !== 'other')) return;
+  const m = META[meta];
+  // A playlist's player reports the item it is on, never the playlist's own id; `other` is a stray report.
+  const videoId = meta === 'other' || item.kind === 'playlist' ? 'Zz9yXxWw8vU' : item.id;
+  takeVideoInfo(item, { videoId, title: m.title, channel: m.channel });
+}
+
 export function registerWatchMocks(): void {
   mocks.set('wall2_watch_open', () => undefined);
   if (knob('watch') !== 'mock') return;
@@ -130,7 +158,7 @@ export function registerWatchMocks(): void {
   const list = knob('wlist') ?? 'three';
   try {
     if (list === 'none') localStorage.removeItem(SAVED_KEY);
-    else localStorage.setItem(SAVED_KEY, JSON.stringify(list === 'many' ? many() : THREE));
+    else localStorage.setItem(SAVED_KEY, JSON.stringify(list === 'many' ? many() : list === 'default' ? DEFAULTS : THREE));
     const look = knob('wlook');
     const sheet = knob('wsheet');
     const tune = knob('wtune');
@@ -160,6 +188,7 @@ export function registerWatchMocks(): void {
       useWatchStore.getState().play(item);
       if (knob('wtab') === 'listen') useWatchStore.getState().setTab('listen');
       mockPlayer(item.kind, knob('wstate'));
+      mockMeta(item, knob('wmeta'));
       if (knob('wctl') === 'rest') ctlTiming.restMs = 200;
       else useWatchStore.getState().setPeek(true);
       const away = knob('wplace');
