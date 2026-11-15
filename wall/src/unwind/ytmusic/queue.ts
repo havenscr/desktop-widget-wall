@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import type { YtVideo } from '../../music/youtube';
-import { playerLink } from '../watch/PlayerFrame';
+import { playerLink } from '../watch/playerLink';
 import { useWatchStore, type WatchState } from '../watch/store';
 import { MAX_PAGES } from './model';
 import { loadList, onLibraryReset, useYtLibrary } from './store';

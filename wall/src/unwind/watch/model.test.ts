@@ -62,6 +62,10 @@ describe('parseLink', () => {
     // A name that only contains RD later on is an ordinary list.
     expect(parseLink(`https://www.youtube.com/watch?v=${V}&list=PLRD0000000000`).ok && (parseLink(`https://www.youtube.com/watch?v=${V}&list=PLRD0000000000`) as { alsoList?: unknown }).alsoList).toBeTruthy();
   });
+  it('a list id starting with lowercase rd is an ordinary list (the Mix check is case sensitive)', () => {
+    const list = 'rdMockOrdinaryList00';
+    expect(parseLink(`https://www.youtube.com/watch?v=${V}&list=${list}`)).toEqual({ ok: true, ref: { kind: 'video', id: V }, alsoList: { kind: 'playlist', id: list } });
+  });
   it('offers the exact list id from the link', () => {
     expect(parseLink(`https://www.youtube.com/watch?v=${V}&list=${PL}&index=3`)).toEqual({ ok: true, ref: { kind: 'video', id: V }, alsoList: { kind: 'playlist', id: PL } });
   });

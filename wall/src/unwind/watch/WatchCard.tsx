@@ -146,7 +146,7 @@ export function WatchCard() {
     } else {
       setError(null);
       setText('');
-      if (parsed.ok && parsed.alsoList) showOffer(parsed.alsoList, false);
+      if (parsed.ok && parsed.alsoList && !alreadySaved(parsed.alsoList)) showOffer(parsed.alsoList, false);
     }
   };
 
@@ -189,7 +189,7 @@ export function WatchCard() {
 
   const offerLine = offer ? (
     <div className="w-offer" role="status">
-      <span>{offer.known ? 'That video is already saved. The link also names a playlist.' : 'Saved the video. The link also names a playlist.'}</span>
+      <span>{offer.known ? 'The link also names a playlist.' : 'Saved the video. The link also names a playlist.'}</span>
       <button type="button" {...tip('Adds that YouTube playlist to the list as its own entry')} onClick={savePlaylist}>
         Save the playlist too
       </button>

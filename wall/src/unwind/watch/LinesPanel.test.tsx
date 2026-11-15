@@ -70,6 +70,31 @@ describe('the Lines panel', () => {
     expect(screen.getByRole('switch', { name: 'Reflection' }).tabIndex).toBe(0);
   });
 
+  it('every chip is an enabled native button and its group does not swallow Space or Enter, so the browser\'s own key press chooses it', () => {
+    render(<LinesPanel />);
+    for (const chip of screen.getAllByRole('radio')) {
+      expect(chip.tagName).toBe('BUTTON');
+      expect((chip as HTMLButtonElement).disabled).toBe(false);
+    }
+    // jsdom has no native button activation: this does what a browser does (Enter clicks on keydown, Space on keyup),
+    // unless a handler cancelled the key.
+    const press = (el: HTMLElement, key: 'Enter' | ' ') => {
+      el.focus();
+      const kept = fireEvent.keyDown(el, { key });
+      if (key === 'Enter' && kept) fireEvent.click(el);
+      const up = fireEvent.keyUp(el, { key });
+      if (key === ' ' && kept && up) fireEvent.click(el);
+    };
+    press(screen.getByRole('radio', { name: 'Bars' }), 'Enter');
+    expect(useLinesStore.getState().type).toBe('bars');
+    press(screen.getByRole('radio', { name: 'Skyline' }), ' ');
+    expect(useLinesStore.getState().type).toBe('skyline');
+    press(screen.getByRole('radio', { name: 'Mint' }), ' ');
+    expect(useLinesStore.getState().colours).toBe('mint');
+    press(screen.getByRole('radio', { name: 'Flat' }), 'Enter');
+    expect(useLinesStore.getState().rest).toBe('flat');
+  });
+
   it('every control has a hint line or a tooltip made with tip()', async () => {
     render(
       <>

@@ -141,8 +141,18 @@ export function PlayerFrame({ item, title, shown = true }: { item: WatchRef; tit
     const on = (e: MessageEvent) => {
       const info = readPlayerMessage(e.origin, e.source, ref.current?.contentWindow ?? null, e.data);
       if (!info) return;
+      const first = !heard.current;
       heard.current = true;
+      // This frame's own item: once the store plays something else (the queue moved on), nothing this frame hears may touch it.
+      const mine = () => {
+        const p = useWatchStore.getState().playing;
+        return !!p && p.kind === item.kind && p.id === item.id;
+      };
+      if (!mine()) return;
       const st = useWatchStore.getState();
+      // The pause sent at the frame's load can come before the player listens: the first word heard from it is the
+      // moment to say again that it should be paused, once. Nothing here ever asks it to play.
+      if (first && st.paused) post(commandMessage('pauseVideo'));
       if (info.error !== undefined) st.setReport({ error: info.error });
       if (info.ready) fullVolume();
       const list: { count?: number; index?: number } = {};
@@ -165,10 +175,13 @@ export function PlayerFrame({ item, title, shown = true }: { item: WatchRef; tit
         const r = useWatchStore.getState().report;
         const more = item.kind === 'playlist' && r.count > 1 && r.index < r.count - 1;
         if (!more) {
-          st.setReport({ ended: true });
+          // This item is paused first, then its end is published: publishing can make the queue load the next entry at once.
           followPlayer(true);
+          st.setReport({ ended: true });
         }
       }
+      // After a write that can have advanced the queue, a frame that is no longer the playing one writes nothing more.
+      if (!mine()) return;
       if (info.time === undefined && info.duration === undefined) return;
       // The player reports its position several times a second; the wall takes it once a second and not while hidden.
       const now = Date.now();

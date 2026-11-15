@@ -14,6 +14,8 @@ import { useSpotifyStatus } from './status';
 /** How often the queue is read while Up next shows (and again when the track changes). */
 export const QUEUE_POLL_MS = 20_000;
 export const UP_NEXT_ROWS = 3;
+/** The line when a skip is refused because the player it was aimed at has left. */
+export const PLAYER_GONE_LINE = 'That player is no longer there.';
 
 /**
  * What a click on a queued row does (see `upNextPlan`): skips only while Spotify can be told to: it
@@ -39,6 +41,9 @@ export async function runSkips(skips: number, route: SkipRoute = { via: 'key', t
     void refreshNowPlaying();
     return null;
   } catch (e) {
+    // The media key's own word for a session that left before the skip arrived.
+    const word = (e instanceof Error ? e.message : typeof e === 'string' ? e : '').trim().toLowerCase();
+    if (word === 'gone') return PLAYER_GONE_LINE;
     return playProblemLine(spotifyProblem(e));
   }
 }

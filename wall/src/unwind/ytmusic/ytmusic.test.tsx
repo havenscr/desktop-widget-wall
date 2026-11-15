@@ -9,7 +9,7 @@ import { SpotifyCard } from '../spotify/SpotifyCard';
 import { resetSpotifyStatus } from '../spotify/status';
 import { hintFor, lengthText, mergePage, rowWords, safeThumb, searchesLine, searchSpent, searchWords, sideMode, videosLine, ytProblem, MAX_PAGES } from './model';
 import { resetYoutubeStatus, useYoutubeStatus } from './status';
-import { resetLibrary, useYtLibrary } from './store';
+import { loadList, resetLibrary, runSearch, useYtLibrary } from './store';
 import { useWatchStore } from '../watch/store';
 import { YT_STATUS_POLL_MS } from './status';
 import { YtMusicSide } from './YtMusicSide';
@@ -609,6 +609,40 @@ describe('every state', () => {
   });
 });
 
+describe('a dead page token', () => {
+  it('a next page that fails with invalid forgets the token: Retry reads page one with no token, and the rows are exactly that page', async () => {
+    let n = 0;
+    const calls = setup({
+      playlists: () => {
+        n += 1;
+        if (n === 1) return page([playlist(1), playlist(2)], 'tok_2');
+        if (n === 2) return page([playlist(3)], 'tok_3');
+        if (n === 3) throw new Error('invalid');
+        // Page one again: a stale later-page row (3) is gone, and a repeated id shows once.
+        return page([playlist(4), playlist(1), playlist(1)], null);
+      },
+    });
+    side();
+    await screen.findByText('Mix 1');
+    fireEvent.scroll(document.querySelector('.yt-scroll') as HTMLElement);
+    await screen.findByText('Mix 3');
+    expect(useYtLibrary.getState().playlists.pages).toBe(2);
+    fireEvent.scroll(document.querySelector('.yt-scroll') as HTMLElement);
+    await waitFor(() => expect(useYtLibrary.getState().playlists.problem).toBe('invalid'));
+    expect(calls.playlists[2]).toEqual({ pageToken: 'tok_3', fresh: false });
+    expect(useYtLibrary.getState().playlists.next).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+    await waitFor(() => expect(calls.playlists.length).toBe(4));
+    expect(calls.playlists[3]).toEqual({ pageToken: null, fresh: false });
+    await screen.findByText('Mix 4');
+    const lib = useYtLibrary.getState().playlists;
+    expect(lib.items.map((i) => i.id)).toEqual(['PLtest4', 'PLtest1']);
+    expect(lib.pages).toBe(1);
+    expect(lib.next).toBeNull();
+    expect(screen.queryByText('Mix 3')).toBeNull();
+  });
+});
+
 describe('paging', () => {
   it('reads the next page near the end of the list, and stops at 40 pages with a line that says so', async () => {
     let calls = 0;
@@ -716,6 +750,49 @@ describe('reads and the page being shown', () => {
     side();
     await screen.findByText('Mix 1');
     expect(calls.playlists.length).toBe(2);
+  });
+
+  it('a direct next-page read and a direct search make no native call while the page is hidden, and read again once it shows', async () => {
+    const { calls } = await library(false, { playlists: () => page([playlist(1)], 'tok_2') });
+    const before = calls.playlists.length;
+    act(() => setHidden(true));
+    await act(async () => {
+      await loadList('playlists', true);
+      await runSearch('night drive');
+    });
+    expect(calls.playlists.length).toBe(before);
+    expect(calls.search.length).toBe(0);
+    act(() => setHidden(false));
+    await act(async () => {
+      await loadList('playlists', true);
+    });
+    expect(calls.playlists.length).toBe(before + 1);
+    expect(calls.playlists[before]).toEqual({ pageToken: 'tok_2', fresh: false });
+    await act(async () => {
+      await runSearch('night drive');
+    });
+    expect(calls.search.length).toBe(1);
+  });
+
+  it('every row-only scroll area is a labelled, focusable region', async () => {
+    await library(true);
+    fireEvent.click(screen.getByRole('tab', { name: /Liked/ }));
+    await screen.findByText('Clip 11');
+    const liked = screen.getByRole('region', { name: 'Liked videos' });
+    expect(liked.getAttribute('tabindex')).toBe('0');
+    fireEvent.click(screen.getByRole('tab', { name: /Playlists/ }));
+    fireEvent.click(await screen.findByText('Mix 1'));
+    await screen.findByText('Clip 1');
+    const songs = screen.getByRole('region', { name: 'Videos in Mix 1' });
+    expect(songs.getAttribute('tabindex')).toBe('0');
+    fireEvent.click(screen.getByRole('button', { name: 'Back to Playlists' }));
+    await screen.findByText('Mix 2');
+    const field = screen.getByPlaceholderText('Search music on YouTube') as HTMLInputElement;
+    fireEvent.change(field, { target: { value: 'night' } });
+    fireEvent.keyDown(field, { key: 'Enter' });
+    await screen.findByText('Clip 21');
+    const found = screen.getByRole('region', { name: 'Search results' });
+    expect(found.getAttribute('tabindex')).toBe('0');
   });
 
   it('reads the next page only within 160 px of the end', async () => {

@@ -412,6 +412,15 @@ describe('the paste offer', () => {
     expect(useWatchStore.getState().editing).toBe(`video:${V}`);
   });
 
+  it('does not appear when the playlist the link names is saved already; the video is still saved', async () => {
+    await open([{ kind: 'playlist', id: PL2, label: 'Mine' }]);
+    await paste(`https://www.youtube.com/watch?v=${V}&list=${PL2}`);
+    expect(saved().some((i) => i.kind === 'video' && i.id === V)).toBe(true);
+    expect(saved()).toHaveLength(2);
+    expect(offer()).toBeNull();
+    expect(err()).toBeNull();
+  });
+
   it('does not appear for a plain video link, a playlist link or a refusal', async () => {
     await open();
     await paste(`https://youtu.be/${V}`);
@@ -445,17 +454,6 @@ describe('the paste offer', () => {
     expect(document.querySelector('.hover-tip')!.textContent).toBe('Adds that YouTube playlist to the list as its own entry');
   });
 
-  it('says "already in the list" when the playlist is saved already', async () => {
-    await open([{ kind: 'playlist', id: PL2, label: 'Mine' }]);
-    await paste(`https://www.youtube.com/watch?v=${V}&list=${PL2}`);
-    await act(async () => {
-      fireEvent.click(screen.getByRole('button', { name: 'Save the playlist too' }));
-    });
-    expect(err()!.textContent).toBe(ADD_ERRORS.dup);
-    expect(offer()).toBeNull();
-    expect(saved()).toHaveLength(2);
-  });
-
   it('says "list is full" when the video took the last place', async () => {
     const items: SavedItem[] = Array.from({ length: MAX_SAVED - 1 }, (_, i) => ({ kind: 'video', id: `Fill${String(i).padStart(2, '0')}abcde`.slice(0, 11), label: `Filler ${i}` }));
     await open(items);
@@ -468,12 +466,13 @@ describe('the paste offer', () => {
     expect(saved()).toHaveLength(MAX_SAVED);
   });
 
-  it('a video already in the list with a playlist not saved: the refusal stays and the offer follows, with its own sentence', async () => {
+  it('a video already in the list with a playlist not saved: the refusal stays and the offer follows, with one sentence, not two', async () => {
     await open([{ kind: 'video', id: V, label: 'Mine' }]);
     await paste(`https://www.youtube.com/watch?v=${V}&list=${PL2}`);
     expect(err()!.textContent).toBe(ADD_ERRORS.dup);
-    expect(offer()!.textContent).toContain('That video is already saved. The link also names a playlist.');
+    expect(offer()!.textContent).toContain('The link also names a playlist.');
     expect(offer()!.textContent).not.toContain('Saved the video.');
+    expect(offer()!.textContent).not.toContain('already saved');
     expect(saved()).toHaveLength(1);
     await act(async () => {
       fireEvent.click(screen.getByRole('button', { name: 'Save the playlist too' }));
@@ -509,7 +508,7 @@ describe('the paste offer', () => {
     expect(saved()).toHaveLength(4);
   });
 
-  it('the focus goes to the paste field after the button, whether the save worked or was refused', async () => {
+  it('the focus goes to the paste field after the button', async () => {
     await open();
     await paste(`https://www.youtube.com/watch?v=${V}&list=${PL2}`);
     const button = screen.getByRole('button', { name: 'Save the playlist too' });
@@ -518,15 +517,6 @@ describe('the paste offer', () => {
     await act(async () => {
       fireEvent.click(button);
     });
-    expect(document.activeElement).toBe(field());
-    // Refused: the playlist is in the list already.
-    await paste(`https://www.youtube.com/watch?v=Zz9yXxWw8vU&list=${PL2}`);
-    const again = screen.getByRole('button', { name: 'Save the playlist too' });
-    act(() => again.focus());
-    await act(async () => {
-      fireEvent.click(again);
-    });
-    expect(err()!.textContent).toBe(ADD_ERRORS.dup);
     expect(document.activeElement).toBe(field());
   });
 

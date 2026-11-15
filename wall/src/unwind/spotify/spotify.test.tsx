@@ -15,7 +15,7 @@ import { Unwind } from '../../screens/Unwind';
 import { useWatchStore } from '../watch/store';
 import { finishPlay, SpotifyCard } from './SpotifyCard';
 import { resetSpotifyStatus, useSpotifyStatus } from './status';
-import { UpNext } from './UpNext';
+import { PLAYER_GONE_LINE, UpNext } from './UpNext';
 
 // Fake timers step only as far as each test needs; a loaded machine still gets room.
 vi.setConfig({ testTimeout: 20_000 });
@@ -632,6 +632,45 @@ describe('Up next clicks', () => {
       ['spotify_next', null],
       ['spotify_next', null],
     ]);
+  });
+
+  it('a skip refused because its player is gone says so, never "Could not read Spotify."', async () => {
+    setup(null);
+    mocks.set('media_next', () => {
+      throw new Error('gone');
+    });
+    const shown = { title: 'Song 1', artist: 'Some Artist', playback_status: 'playing', source_app: 'Spotify', source_app_id: 'Spotify.exe', session_key: 'Spotify.exe#1' };
+    useNowPlayingStore.setState({ info: shown as never });
+    render(<UpNext />);
+    await flush();
+    await clickRow(0);
+    expect(screen.getByText(PLAYER_GONE_LINE)).toBeTruthy();
+    expect(PLAYER_GONE_LINE).toBe('That player is no longer there.');
+    expect(screen.queryByText('Could not read Spotify.')).toBeNull();
+  });
+
+  it('any other refused skip keeps its own line', async () => {
+    setup(null);
+    mocks.set('media_next', () => {
+      throw new Error('busy');
+    });
+    useNowPlayingStore.setState({ info: { title: 'Song 1', artist: 'Some Artist', playback_status: 'playing', source_app: 'Spotify', source_app_id: 'Spotify.exe', session_key: 'Spotify.exe#1' } as never });
+    render(<UpNext />);
+    await flush();
+    await clickRow(0);
+    expect(screen.getByText('Spotify is busy, try in a minute.')).toBeTruthy();
+  });
+
+  it('with a Spotify player reported, a refused skip of Spotify\'s own command still reads in Spotify\'s words', async () => {
+    const sent = setup(id(501));
+    mocks.set('wall2_spotify_next', () => {
+      throw new Error('Spotify is busy');
+    });
+    render(<UpNext />);
+    await flush();
+    await clickRow(0);
+    expect(sent).toEqual([]);
+    expect(screen.getByText('Spotify is busy, try in a minute.')).toBeTruthy();
   });
 
   it('sends nothing and says why when another player is in front', async () => {

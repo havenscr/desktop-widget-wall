@@ -53,8 +53,8 @@ export function Rail() {
   // watch behaviour: a video playing out of sight (another place, or Listen) marks Unwind's button.
   const videoTab = useWatchStore((s) => s.tab);
   const video = useWatchStore((s) => s.playing?.label ?? null);
-  // The mark says what the video is doing: playing, or paused (also while it waits for a click); an ended video has none.
-  const videoState = useWatchStore((s) => (s.playing === null || s.report.ended ? null : s.paused || s.needsClick ? 'paused' : 'playing'));
+  // The mark says what the video is doing: playing, or paused (also while a YouTube video waits for a click; Twitch has no such state here); an ended video has none.
+  const videoState = useWatchStore((s) => (s.playing === null || s.report.ended ? null : s.paused || (s.needsClick && s.playing.kind !== 'twitch') ? 'paused' : 'playing'));
   // The wall's music (a YouTube library pick) is heard, never seen: its mark shows whenever he is not on Unwind, and a click goes to Listen.
   const music = useWatchStore((s) => s.source === 'music');
   const videoAway = video !== null && videoState !== null && (music ? active !== 'unwind' : !(active === 'unwind' && videoTab === 'watch'));

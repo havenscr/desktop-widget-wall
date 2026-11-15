@@ -151,7 +151,9 @@ export async function loadList(key: Key, more = false, fresh = false): Promise<v
     if (gone()) return;
     if (!view.mounted) return void set((c) => ({ ...c, loading: false }));
     const problem = ytProblem(e);
-    set((c) => ({ ...c, loading: false, loaded: true, problem, failed: more ? 'more' : 'first', failedFresh: !more && fresh }));
+    // The native side clears its token chain when it says `invalid`: the token held here is dead, so Retry starts from page one.
+    const dead = more && problem === 'invalid';
+    set((c) => ({ ...c, loading: false, loaded: true, problem, failed: more && !dead ? 'more' : 'first', failedFresh: !more && fresh, next: dead ? null : c.next, pages: dead ? 0 : c.pages }));
     if (staleStatus(problem)) void readYoutubeStatus();
   }
 }
