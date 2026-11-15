@@ -9,19 +9,17 @@
   color: var(--amber);
 }
 
-/* Left wing: the sun block below the clock, where the concept puts it. */
+/* Left wing: the third under the clock and the date. Everything starts 23 px under the date
+   (wall y 200) and ends above y 440: the headline, the day as a low curve, the weather row, the
+   house row with its room dots (see "Home left third" below). */
 .home-wing {
   grid-column: 1;
   min-width: 0;
-  padding: 248px 0 0 12px;
-}
-.home-blk {
+  padding: 180px 0 0 12px;
   display: flex;
   flex-direction: column;
-  gap: 10px;
-}
-.home-blk .k.soon {
-  color: var(--amber);
+  box-sizing: border-box;
+  --lw-soft: #a39bc6;
 }
 
 /* Centre: the concept's smaller mood cards in one row, the Rooms row's place (empty until
@@ -1060,42 +1058,129 @@
 
 /* Home round two. */
 
-/* Left wing: with the house line the sun block moves up under the date. */
-.home-wing.with-house {
-  padding-top: 186px;
-  display: flex;
-  flex-direction: column;
-  gap: 22px;
-}
-.home-blk.house {
-  gap: 8px;
-  max-width: 458px;
-}
-.house-asof {
-  margin-left: 12px;
-  font: 400 16px/1 var(--body);
-  letter-spacing: 0;
-  text-transform: none;
-  color: var(--faint);
-}
-.house-line {
-  font: 400 24px/1.25 var(--body);
+/* Home left third (the day curve, the weather row and the house row). */
+.home-wing .lw-head {
+  height: 34px;
+  line-height: 34px;
+  white-space: nowrap;
+  margin-bottom: 12px;
   color: var(--tx);
 }
-.house.stale .house-line,
-.house.stale .house-rooms {
+.home-wing .lw-head.soon {
+  color: var(--amber);
+}
+.lw-curve {
+  position: relative;
+  width: 458px;
+  flex: none;
+  margin-bottom: 13px;
+}
+.lw-curve > svg {
+  position: absolute;
+  inset: 0;
+  overflow: visible;
+}
+.lw-label {
+  position: absolute;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 24px;
+  font: 400 18px/1 var(--body);
+  color: var(--dim);
+  white-space: nowrap;
+  pointer-events: none;
+}
+.lw-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 458px;
+  height: 30px;
+  flex: none;
+  margin-bottom: 6px;
+}
+.lw-glyph {
+  display: inline-flex;
+  flex: none;
+  width: 22px;
+}
+.lw-glyph.warm {
+  color: #ffd27a;
+}
+.lw-glyph.night {
+  color: #b9a8ff;
+}
+.lw-glyph.dim {
+  color: var(--dim);
+}
+.lw-text {
+  font: 400 20px/1 var(--body);
+  color: var(--tx);
+  white-space: nowrap;
+  flex: none;
+}
+.lw-text b {
+  font-weight: 600;
+}
+.lw-side {
+  margin-left: auto;
+  font: 400 17px/1 var(--body);
+  color: var(--lw-soft);
+  white-space: nowrap;
+}
+.lw-dim {
+  font: 400 20px/1 var(--body);
+  color: var(--lw-soft);
+  white-space: nowrap;
+}
+/* Not live or an old reading: the glyph and the sentence are dimmed, the small grey text is not
+   (dimming it by opacity took it under 4.5 to 1 on the lightest part of the sky; measured). */
+.lw-row.outside.stale .lw-glyph,
+.house.stale .lw-glyph {
+  opacity: 0.6;
+}
+.lw-row.outside.stale .lw-text,
+.house.stale .lw-text {
+  opacity: 0.7;
+}
+.lw-house {
+  width: 458px;
+  flex: none;
+}
+.lw-house .lw-row {
+  margin-bottom: 0;
+}
+.house-rooms .house-asof {
+  position: absolute;
+  right: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  margin: 0;
+}
+.house-rooms .house-asof.off {
+  visibility: hidden;
+}
+.house.stale .house-room {
+  color: var(--lw-soft);
+}
+.house.stale .house-room i {
   opacity: 0.6;
 }
 .house-rooms {
   display: flex;
-  flex-wrap: wrap;
-  gap: 4px 18px;
-  max-height: 78px;
+  flex-wrap: nowrap;
+  gap: 0 18px;
+  height: 26px;
+  margin: 4px 0 0 34px;
+  width: 424px;
+  position: relative;
   overflow: hidden;
 }
 .house-room {
   display: inline-flex;
   align-items: center;
+  flex: none;
   gap: 8px;
   height: 26px;
   font: 400 18px/1 var(--body);
@@ -1108,12 +1193,15 @@
   height: 9px;
   border-radius: 50%;
   box-sizing: border-box;
-  border: 1.5px solid var(--faint);
+  border: 1.5px solid var(--lw-soft);
 }
 .house-room.on i {
   border: 0;
   background: var(--amber);
   box-shadow: 0 0 8px rgba(255, 194, 77, 0.6);
+}
+.house-room.more {
+  color: var(--lw-soft);
 }
 
 /* Moods: three large and a narrow More card; the cards slide in slowly. */

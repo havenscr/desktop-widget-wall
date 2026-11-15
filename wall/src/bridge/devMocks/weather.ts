@@ -15,18 +15,21 @@ const localSeconds = (ms: number) => {
   return `${local(ms)}:00:00${sign}${pad(Math.floor(abs / 60))}:${pad(abs % 60)}`;
 };
 
+/** Day from 7 to 18 o'clock, as the hourly points below have it. */
+const isDayAt = (ms: number) => (new Date(ms).getHours() >= 7 && new Date(ms).getHours() < 18 ? 1 : 0);
+
 /** An invented Open-Meteo style reply: 30 hourly points around now. */
 export function openMeteoBody(cold = false): string {
   const t = now();
   const hours = Array.from({ length: 30 }, (_, i) => t + (i - 3) * 3_600_000);
   const temp = cold ? 24 : 58;
   return JSON.stringify({
-    current: { time: local(t), temperature_2m: temp, weather_code: cold ? 73 : 2, is_day: 1 },
+    current: { time: local(t), temperature_2m: temp, weather_code: cold ? 73 : 2, is_day: isDayAt(t) },
     hourly: {
       time: hours.map(local),
       temperature_2m: hours.map((_, i) => temp + Math.round(6 * Math.sin(i / 4))),
       weather_code: hours.map((_, i) => (i % 5 === 0 ? 61 : 2)),
-      is_day: hours.map((ms) => (new Date(ms).getHours() >= 7 && new Date(ms).getHours() < 18 ? 1 : 0)),
+      is_day: hours.map(isDayAt),
     },
     daily: { temperature_2m_max: [temp + 6, temp + 4], temperature_2m_min: [temp - 8, temp - 6] },
   });

@@ -31,6 +31,45 @@ The port is optional and defaults to 8898. Press Sign in on the wall once the Sp
 panel exists. Starting playback from the wall needs Spotify Premium. The integration
 has not been verified against the live Spotify service.
 
+### Saving songs (the heart on the player row)
+
+The sign-in asks for one more permission, `user-library-modify` (the scope Spotify's reference lists
+for saving and removing library items, [Save Items to Library](https://developer.spotify.com/documentation/web-api/reference/save-library-items)
+and [Remove Items from Library](https://developer.spotify.com/documentation/web-api/reference/remove-library-items);
+the older Save Tracks page names the same scope). Nothing else was added to `SCOPE`: reading whether a song is saved needs
+`user-library-read`, which the sign-in already had.
+
+A sign-in made before this permission existed does not hold it, so saving is off until the owner signs in
+once more (Tools, Spotify, Sign out, Sign in). Until then the heart is dim, and a click opens a note with an
+Open Tools button. After the new sign-in the heart works with no restart. The Rust side keeps the `scope`
+list of the last token answer in memory (the code exchange replaces it; a refresh answer replaces it only
+when it names one), and `wall2_spotify_status` carries one more field, `canSave`, with three values: `yes`
+(the list is known and holds the permission), `no` (it is known and does not) and `unknown`. After a restart only
+a refresh token is stored, so the value is `unknown` until the first token refresh answers (and for good if no
+answer ever names the scopes). Only `no` dims the heart and offers the note; on `unknown` the heart looks and
+works as usual and a click tries the save. The heart reads the status again after its first read, which has
+forced a refresh if one was due.
+
+Two commands, both limited to the `wall2` window, with the module's fixed words:
+
+- `wall2_spotify_saved(id)` answers whether the track is in Liked Songs (`GET /me/library/contains`).
+- `wall2_spotify_save(id, on)` saves or removes it (`PUT` or `DELETE /me/library`). A 403 means a missing
+  permission only when Spotify's own wording says so (the error object's message "Insufficient client scope",
+  compared without regard to case, from a body of at most 4 KB) or when the kept list is known and lacks the
+  permission: the answer is then `needs sign in` and `canSave` becomes `no`. Any other 403 answers `refused`
+  and leaves the list alone. A 401 refreshes the token and tries the save once more.
+
+Both take a Spotify track id, exactly 22 letters or digits, checked before anything is sent; the track URI is
+built from it in Rust. Spotify's February 2026 changes removed the per-type `/me/tracks` calls in favour of the
+library calls above, which take a `uris` query (at most 40; the wall sends one).
+
+Whether the playing song is saved is read once per song, never on a timer. A click shows the change at once and
+puts it back, with the line "Could not save this song" in a small note beside the heart that closes after four
+seconds, if Spotify refuses. The first read's answer is kept as the baseline while a click is out, so a refused
+write goes back to what Spotify said whichever answers first; one click operation (the status read included)
+runs per song at a time, and an answer for a song no longer shown changes nothing on screen. A song with no id (a podcast episode,
+a local file) and nothing playing have no heart. Dev mock: `spotifyheart=saved|unsaved|readfail|savefail|nopermission|unknown|unknownlacks|episode`.
+
 Status treats a stored refresh token as signed in. If Spotify has expired that grant,
 the status changes only after the first library or playback call tries to refresh it.
 The panel must render every Spotify name as plain text, including playlist names from
@@ -120,16 +159,39 @@ rejects with a clear error. Inside Tauri, `invoke` calls the real command.
 ## Home moods
 
 Home follows the concept's `f_home` on the frame's zones (`screens/Home.tsx`,
-`styles/home.css`): the sun block under the clock in the left wing; in the centre the
+`styles/home.css`): the left third (headline, day curve, weather and house, below) under the clock in the left wing; in the centre the
 concept's smaller mood cards in one row, the Rooms row's place and the Sound block (see
 "Sound on Home"); Around the house with the network card in the right wing. The Rooms
 row (`home/Rooms.tsx`) and the House line render nothing until the home app reads them
 (PRs 24 and 25): no placeholder card.
 
-- **Sun block** (`home/LeftWing.tsx`, `home/sunLine.ts`): from the horizon's own sun
-  (`ribbon/sun.ts`), to the nearest minute. "Sunset in N min" in amber within 90
-  minutes before sunset; earlier, the sunset time and the daylight left; before
-  sunrise, the sunrise time; after sunset, tomorrow's sunrise.
+- **Left third** (`home/LeftWing.tsx`, `sunLine.ts`, `dayCurve.ts`, `SunCurve.tsx`, `OutsideRow.tsx`,
+  `HouseLine.tsx`; rules under "Home left third" in `styles/home.css`): everything starts 23 px under the
+  date (wall y 200, 458 px wide from x 136) and ends above y 440. In order: the headline, the day as a
+  low curve, one row for the weather outside, and the house row with its room dots. All of it redraws once
+  a minute; nothing animates.
+  - **Headline** (`sunHeadline`): from the horizon's own sun (`ribbon/sun.ts`), to the nearest minute. By day
+    the daylight left; within 90 minutes before sunset "Sunset in N min" in amber; before sunrise the
+    sunrise time; after sunset tomorrow's sunrise. A date with only a sunrise or only a sunset says that
+    one time; a date with neither has no headline.
+  - **Curve** (`dayCurve.ts` for the maths, `SunCurve.tsx` for the drawing): x is the time of day, midnight
+    to midnight (458 px for 24 h); above the base line from sunrise to sunset, a dip below it at night. Only
+    the two crossings and the sun's x are data; the hump's height (56 px) and the dip (13 px) are a drawing.
+    The part of the day already travelled is at full strength, the rest at 38 percent; a disc on the hump
+    by day, a ring on the dip at night. The two time labels sit 12 px outside their crossings; on a long day
+    a label drops its glyph, then its AM or PM, so it always fits between its crossing and the box's edge.
+    Hover card: both times and the day's length. Text alternative: "Sunrise 7:13 AM, sunset 4:33 PM, the sun is
+    past its highest point". A date with no sunrise or no sunset draws no curve.
+  - **Outside row** (`OutsideRow.tsx`): "50° outside, partly cloudy" and the day's high and low, from
+    `useWeather()` (nothing is added under `weather/`). The hover card says when the reading was taken and,
+    for the second source, which one. A reading more than a normal refresh old is dimmed and says "updated N
+    min ago" in place of the high and low; with no usable reading the row is the one dim line the Unwind date
+    line uses ("weather unavailable", its hover card says why); while the first read is out the row is left out.
+  - **House row** (`HouseLine.tsx`): "68° inside. Lights on in two rooms." and a dot per room, as before. It
+    stays hidden while the home app's desk routes are absent; not live, it is dimmed and says "as of" at the
+    right end of the dots row. The dots stay on one line: when the rooms do not all fit, the lit ones come
+    first and the rest are counted as "+N more" (the hover card names them).
+  - Review script rules, gallery states and deliberate breaks live in `scripts/areas/left-third.mjs`.
 - **Columns** are fixed (`.home-wing` 1, `.home-centre` 2, `.home-right` 3), so a zone
   that renders nothing never shifts the others.
 - **Mood cards** (`home/Moods.tsx`, `home/MoodArt.tsx`): one card per mood the home
@@ -1455,8 +1517,7 @@ frame (no ribbon) in the wide zones `470px 1fr 540px`. The parts are in `wall/sr
   marked unavailable with the reason. The time bar can be dragged, or moved five seconds with the arrow
   keys (a held key sends at most one seek per 300 ms and the final position on release), and seeks through
   `wall2_spotify_seek`; the local clock reads the state again when the song's length is reached.
-  There is no Save to Liked: the sign-in's scopes do not include `user-library-modify` and this
-  change adds none. Every list shows loading words (never blank) on its first read, and keeps what is on screen while it reads again, then its empty or error words. A playlist the owner does not make or co-edit cannot have its songs listed (Spotify's rule), so
+  The heart at the right end of the row is Save to Liked (see "Saving songs" under Spotify above). Every list shows loading words (never blank) on its first read, and keeps what is on screen while it reads again, then its empty or error words. A playlist the owner does not make or co-edit cannot have its songs listed (Spotify's rule), so
   opening one says "Spotify shows the songs only for playlists you made. To see these, copy it into a playlist
   of your own in Spotify. Play and Shuffle still work." with no Retry (it could never help); in the tall view a
   dim second line adds "While it plays, Up next shows what is coming." where "Up next" is a button that opens
@@ -2164,8 +2225,8 @@ words: `not-configured`, `absent` (404, the route is not live yet), `failed`, `s
   read. Without a desk token it reads "Clear all: not set up". While the desk route
   is absent the card reads today's `wall2_home_security` and Clear all is hidden.
 - **House line** (`home/HouseLine.tsx`): "68° inside. Lights on in two rooms." and a dot
-  per room (lit when its lights are on; the name and state on hover), under the sun
-  block, which then moves up under the date. Hidden while the routes are absent. The
+  per room (lit when its lights are on; the name and state on hover), under the weather
+  row in the left third (see "Left third" above). Hidden while the routes are absent. The
   "Next" automation line is not built: the home app has no routine schedule yet.
 - **Moods** (`home/Moods.tsx`): three large cards; with more, a narrow More card shows
   the next mood peeking, "N more" and dots, and a click or the wheel slides by three.

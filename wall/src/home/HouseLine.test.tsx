@@ -32,7 +32,7 @@ it('words the line, leaving out what has no reading', () => {
   expect(houseText(null, null)).toBeNull();
 });
 
-it('hides entirely while the desk routes are absent, and the sun block stays where it was', async () => {
+it('hides entirely while the desk routes are absent; the headline, curve and outside row stay', async () => {
   mocks.set('wall2_desk_house', () => Promise.reject(new Error('absent')));
   mocks.set('wall2_desk_rooms', () => Promise.reject(new Error('absent')));
   const { container } = render(<LeftWing now={() => NOW} />);
@@ -42,12 +42,13 @@ it('hides entirely while the desk routes are absent, and the sun block stays whe
   expect(container.querySelector('.home-wing')).toBeTruthy();
 });
 
-it('shows the line and a dot per room, lit when on, with the sun block moved up', async () => {
+it('shows the line and a dot per room, lit when on', async () => {
   mocks.set('wall2_desk_house', () => house());
   mocks.set('wall2_desk_rooms', () => rooms);
   const { container } = render(<LeftWing now={() => NOW} />);
   await flush();
-  expect(screen.getByText('68° inside. Lights on in two rooms.')).toBeTruthy();
+  expect(container.querySelector('.house-line')?.textContent).toBe('68° inside. Lights on in two rooms.');
+  expect(container.querySelector('.house-line b')?.textContent).toBe('68° inside.');
   expect(container.querySelector('.home-wing.with-house')).toBeTruthy();
   expect([...container.querySelectorAll('.house-room')].map((r) => `${r.textContent}:${r.classList.contains('on')}`)).toEqual(['Office:true', 'Den:true', 'Kitchen:false']);
   expect(container.querySelector('.house.stale')).toBeNull();
