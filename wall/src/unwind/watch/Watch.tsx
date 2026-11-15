@@ -536,8 +536,9 @@ export function WatchPanel() {
   // A single video or live stream shows what the player says it is; until then (and for a playlist or Twitch) the saved label.
   const single = playing.kind === 'video' || playing.kind === 'live';
   const byReport = single && reportTitle !== null;
-  const shownTitle = byReport ? reportTitle! : playing.label;
-  const channel = single ? reportChannel : null;
+  // A video of the owner's own playlist: the player's title and channel, else the ones kept on the playlist.
+  const shownTitle = own ? own.title : byReport ? reportTitle! : playing.label;
+  const channel = own ? own.channel || null : single ? reportChannel : null;
   const ctl = rest ? 'rest' : 'shown';
   return (
     <div className="w-panel" role="tabpanel" id={WATCH_PANEL_ID} aria-labelledby={WATCH_TAB_ID} data-state="playing" data-ctl={ctl}>

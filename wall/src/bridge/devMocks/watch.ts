@@ -52,10 +52,10 @@ import { knob } from './long';
  *   ?wsleep=<minutes left>|end   a running sleep timer with that many minutes left; `end` ends the timer at once (the video
  *                             stops with its line and the player the wall follows is paused through the mocked commands)
  *   ?wrows=shown              hold the rows under the clock at full strength (they start at rest)
- *   ?wown=lists|draft|edit|menu|playing|repeat|skip|end|none   playlists the owner makes (with `watch=mock`): the list holds two
+ *   ?wown=lists|draft|edit|drag|menu|playing|repeat|skip|end|none   playlists the owner makes (with `watch=mock`): the list holds two
  *                             invented playlists of the owner's own (12 and 5 videos), a connected YouTube playlist, a video, a live
  *                             stream and a Twitch channel (`wlist` is ignored); `draft` presses New playlist; `edit` opens the editor
- *                             (two videos not yet named, one that plays only on YouTube); `menu` opens the play row's add menu (play
+ *                             (two videos not yet named, one that plays only on YouTube); `drag` is that with a row held by its grip; `menu` opens the play row's add menu (play
  *                             a video with `wplay=3`); `playing` plays the first playlist from its third video with the card following;
  *                             `repeat` is that with repeat on; `skip` skips one video with its note held on screen; `end` and `none`
  *                             show the block after the playlist ran out, or when nothing in it could play. Pictures are drawn `data:`
@@ -124,9 +124,20 @@ function runOwn(state: string): void {
     else useWatchStore.getState().setPeek(true);
   };
   if (state === 'draft') setTimeout(() => document.querySelector<HTMLButtonElement>('.w-new')?.click(), 200);
-  else if (state === 'edit') {
+  else if (state === 'edit' || state === 'drag') {
     markFailed(OWN_VIDEOS[8][0], 'embed');
     own.setOpen(FRIDAY);
+    // `drag` holds the sixth video by its grip, carried to the line between the second and the third (nothing is dropped).
+    if (state === 'drag')
+      setTimeout(() => {
+        const grip = document.querySelectorAll<HTMLElement>('.own-v .own-grip')[5];
+        if (!grip) return;
+        const r = grip.getBoundingClientRect();
+        const fire = (type: string, x: number, y: number) => grip.dispatchEvent(new PointerEvent(type, { bubbles: true, pointerId: 1, button: 0, buttons: 1, clientX: x, clientY: y }));
+        fire('pointerdown', r.left + r.width / 2, r.top + r.height / 2);
+        const list = document.querySelector('.own-vlist')?.getBoundingClientRect();
+        if (list) fire('pointermove', r.left + r.width / 2 + 4, list.top + 2 * 56 + 22);
+      }, 400);
   } else if (state === 'menu') setTimeout(() => document.querySelector<HTMLButtonElement>('.w-addpl')?.click(), 300);
   else if (state === 'playing' || state === 'repeat' || state === 'skip') {
     if (state === 'repeat') own.setRepeat(FRIDAY, true);

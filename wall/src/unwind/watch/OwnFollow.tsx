@@ -41,7 +41,7 @@ export function OwnFollow({ view }: { view: OwnView }) {
         <span className="own-right">
           <button
             type="button"
-            className={`own-tog${view.shuffle ? ' on' : ''}`}
+            className={`w-own-switch${view.shuffle ? ' on' : ''}`}
             aria-label="Shuffle"
             aria-pressed={view.shuffle}
             {...tip(view.shuffle ? 'Shuffle is on' : 'Shuffle: off')}
@@ -51,7 +51,7 @@ export function OwnFollow({ view }: { view: OwnView }) {
           </button>
           <button
             type="button"
-            className={`own-tog${view.repeat ? ' on' : ''}`}
+            className={`w-own-switch${view.repeat ? ' on' : ''}`}
             aria-label="Repeat"
             aria-pressed={view.repeat}
             {...tip(view.repeat ? 'Repeat is on' : 'Repeat: off')}

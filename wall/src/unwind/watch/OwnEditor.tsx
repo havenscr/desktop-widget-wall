@@ -291,7 +291,7 @@ export function OwnEditor({ id }: { id: string }) {
         tabIndex={0}
         data-vid={v.id}
         aria-label={`${i + 1}. ${title}`}
-        className={`own-v two${drag?.from === i ? ' ghosted' : ''}${bad ? ' bad' : ''}`}
+        className={`own-v two w-own-row${drag?.from === i ? ' ghosted' : ''}${bad ? ' bad' : ''}`}
         onKeyDown={keyRow(i, v)}
       >
         <button
@@ -311,7 +311,7 @@ export function OwnEditor({ id }: { id: string }) {
         <OwnThumb id={v.id} />
         <span className="own-tt" {...tip([title, meta].filter(Boolean).join(' · '))}>
           <span className="own-t">{title}</span>
-          <span className="own-s">{meta}</span>
+          <span className="own-s w-sub2">{meta}</span>
         </span>
         <button
           type="button"
@@ -427,7 +427,7 @@ export function OwnEditor({ id }: { id: string }) {
               <OwnThumb id={ghostVideo.id} />
               <span className="own-tt">
                 <span className="own-t">{ghostVideo.title ?? 'YouTube video'}</span>
-                <span className="own-s">{metaText(ghostVideo)}</span>
+                <span className="own-s w-sub2">{metaText(ghostVideo)}</span>
               </span>
             </div>
           </>

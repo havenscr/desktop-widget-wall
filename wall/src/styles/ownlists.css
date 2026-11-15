@@ -323,7 +323,7 @@
 .own-btn:focus-visible,
 .own-back:focus-visible,
 .own-chip:focus-visible,
-.own-tog:focus-visible,
+.w-own-switch:focus-visible,
 .own-grip:focus-visible,
 .own-pillbtn:focus-visible,
 .w-new:focus-visible,
@@ -332,7 +332,8 @@
   outline-offset: 2px;
 }
 .w-pop-row:focus-visible {
-  outline-offset: -2px;
+  /* The menu's focus is the cyan fill and cyan words, as the owner's picture has it. */
+  outline: none;
 }
 .own-line {
   display: flex;
@@ -617,7 +618,7 @@ button.own-v.bad {
   flex: 1;
   min-width: 0;
 }
-.own-tog {
+.w-own-switch {
   flex: none;
   width: 32px;
   height: 32px;
@@ -628,10 +629,10 @@ button.own-v.bad {
   border: 1px solid var(--line);
   background: rgba(255, 255, 255, 0.04);
 }
-.own-tog:hover {
+.w-own-switch:hover {
   color: var(--tx);
 }
-.own-tog.on {
+.w-own-switch.on {
   color: var(--cyan);
   border-color: rgba(83, 230, 235, 0.6);
   background: rgba(53, 230, 234, 0.14);
