@@ -524,14 +524,6 @@ fn normalize_title(raw: &str) -> String {
     spaced.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
-fn fiscal_year(word: &str) -> bool {
-    let upper = word.to_ascii_uppercase();
-    let Some(rest) = upper.strip_prefix("FY") else { return false };
-    let Some((year, end)) = rest.split_once('-') else { return false };
-    year.len() == 4 && year.parse::<u16>().is_ok_and(|n| (1900..=2099).contains(&n))
-        && end.len() == 2 && end.bytes().all(|b| b.is_ascii_digit())
-}
-
 /// A schemeless title link needs a host and a path with a join id or meeting code.
 fn title_join_link(word: &str) -> bool {
     let Some((host, path)) = word.split_once('/') else { return false };
@@ -541,15 +533,57 @@ fn title_join_link(word: &str) -> bool {
         || path.split(|c: char| !c.is_ascii_alphanumeric() && c != '-').any(meeting_code_shaped)
 }
 
-/// Titles use only the narrow word filter, never invite markers or line cutting.
+/// Title numbers use a nine-digit threshold, independently of invite filtering.
+fn strip_title_numbers(text: &str) -> String {
+    let chars: Vec<char> = text.chars().collect();
+    let mut remove = vec![false; chars.len()];
+    let mut i = 0;
+    while i < chars.len() {
+        let start = i;
+        while i < chars.len() && !chars[i].is_whitespace() { i += 1; }
+        if chars[start..i].iter().filter(|c| c.is_ascii_digit()).count() >= 9 {
+            remove[start..i].fill(true);
+        }
+        i += 1;
+    }
+    i = 0;
+    while i < chars.len() {
+        if (chars[i].is_ascii_digit() || matches!(chars[i], '+' | '('))
+            && (i == 0 || !(chars[i - 1].is_alphanumeric() || chars[i - 1] == '.')) {
+            let start = i;
+            let mut digits = 0;
+            while i < chars.len() && (chars[i].is_ascii_digit() || matches!(chars[i], ' ' | '-' | '.' | '(' | ')' | '+')) {
+                digits += usize::from(chars[i].is_ascii_digit());
+                i += 1;
+            }
+            if digits >= 9 { remove[start..i].fill(true); }
+        } else {
+            i += 1;
+        }
+    }
+    let mut out = String::new();
+    for (c, removed) in chars.into_iter().zip(remove) {
+        out.push(if removed { ' ' } else { c });
+    }
+    out
+}
+
+/// Remove empty wrappers and edge separators left behind by removed join details.
+fn tidy_title(text: &str) -> String {
+    let mut out = text.split_whitespace().collect::<Vec<_>>().join(" ");
+    loop {
+        let next = out.replace("( )", "").replace("()", "").replace("[ ]", "").replace("[]", "");
+        let next = next.split_whitespace().collect::<Vec<_>>().join(" ");
+        if next == out { break; }
+        out = next;
+    }
+    out.trim_matches(|c: char| c.is_whitespace() || matches!(c, '-' | '|' | ':' | ';' | ',' | '/' | '+')).to_string()
+}
+
+/// Titles remove join-shaped words and long numbers, never invite markers or line cuts.
 fn clean_title(raw: &str) -> String {
     let normalized = normalize_title(raw);
-    let masked = mask_year_chains(&normalized);
-    let words = normalized.split_whitespace().zip(masked.split_whitespace()).filter(|(word, mask)| {
-        digits_in(mask) < 5 || fiscal_year(word)
-    }).map(|(word, _)| word).collect::<Vec<_>>().join(" ");
-    let text = strip_digit_chains(&words);
-    text.split_whitespace().filter(|word| {
+    let words = normalized.split_whitespace().filter(|word| {
         let lower = word.to_ascii_lowercase();
         // Ignore joiners for link detection, but keep them in the displayed title.
         let probe = lower.replace('\u{200D}', "");
@@ -560,7 +594,8 @@ fn clean_title(raw: &str) -> String {
             || ["tel:", "sip:", "mailto:", "callto:"].iter().any(|p| start.starts_with(p))
             || title_join_link(&probe)
             || meeting_code_shaped(word))
-    }).collect::<Vec<_>>().join(" ")
+    }).collect::<Vec<_>>().join(" ");
+    tidy_title(&strip_title_numbers(&words))
 }
 
 fn cap_title(raw: &str) -> String {
@@ -1091,7 +1126,7 @@ mod tests {
     #[test]
     fn fair_titles_keep_years_technology_names_and_joiners() {
         let joined = "\u{1f469}\u{200D}\u{1f4bb} planning";
-        for title in ["FY 2025 2026 budget", "FY2026-27", "Node.js/React.js", joined, "2025/2026 plan", "Plan 2025 2026 2027", "meet.example/agenda", "xwww.notes"] {
+        for title in ["FY 2025 2026 budget", "FY2026-27", "Node.js/React.js", joined, "2025/2026 plan", "meet.example/agenda", "xwww.notes"] {
             assert_eq!(cap_title(title), title, "{title}");
         }
         for tail in ["https://meet.example/join", "meet.example/j/987654321", "meet.example/abc-defg-hij", "987 6543 2101", "abc-defg-hij"] {
@@ -1099,6 +1134,34 @@ mod tests {
             assert_eq!(cap_title(tail), "Untitled");
         }
         assert_eq!(cap_title("Sync https:\u{200D}//meet.example/join"), "Sync");
+    }
+
+    #[test]
+    fn titles_preserve_short_numbers_with_punctuation() {
+        for title in [
+            "Plan (2026-2027)", "Plan (2026 2027)", "Plan 2026-2027.",
+            "Plan 2026, 2027", "Budget 2026-27", "Review 2026/27",
+            "Offsite (2026-2027) planning", "Q4 2026 / Q1 2027 roadmap",
+            "Release 14.11.2026", "Release 2026-11-14", "Standup 9:30", "v2.1 review",
+            "Q4 2026 2027", "v2.1 2026 2027 review", "Room 12345", "Count 12345678", "12345", "(12345678)", "FY2026-27",
+        ] {
+            assert_eq!(cap_title(title), title, "{title}");
+        }
+    }
+
+    #[test]
+    fn titles_remove_long_numbers_and_tidy_the_remainder() {
+        for tail in ["912 3456 7890", "(912) 345-6789", "91234567890", "123456789",
+            "912.3456.7890", "(9123456789 1)", "https://meet.example/abc-defg-hij", "meet.example/j/123456"] {
+            assert_eq!(cap_title(&format!("Sync {tail}")), "Sync", "{tail}");
+            assert_eq!(cap_title(tail), "Untitled", "{tail}");
+            assert_eq!(cap_title(&format!("Sync [ {tail} ]")), "Sync", "{tail}");
+            assert_eq!(cap_title(&format!("Sync ( {tail} )")), "Sync", "{tail}");
+            assert_eq!(cap_title(&format!("{tail} | Sync | {tail}")), "Sync", "{tail}");
+        }
+        assert_eq!(cap_title("Call +1 555 123 4567"), "Call");
+        assert_eq!(cap_title("Plan 2025 2026 2027"), "Plan");
+        assert_eq!(cap_title("Sync [ ( 91234567890 ) ] next"), "Sync next");
     }
 
     #[test]
@@ -1131,7 +1194,7 @@ mod tests {
         for title in ["Q3 planning 2026", "1:1 with design", "Budget 4.12", "Review example.test launch", "Passcode rotation", "PIN review"] {
             assert_eq!(cap_title(title), title);
         }
-        for title in ["https://meet.example/j/123", "www.meet.example/join", "meet.example/j/12345", "abc-defg-hij", "12345"] {
+        for title in ["https://meet.example/j/123", "www.meet.example/join", "meet.example/j/12345", "abc-defg-hij"] {
             assert_eq!(cap_title(title), "Untitled");
         }
         assert_eq!(cap_title("Sync x987654321"), "Sync");
