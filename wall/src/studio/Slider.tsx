@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type KeyboardEvent, type PointerEvent, type ReactNode } from 'react';
 import { tip } from '../ui/HoverTip';
+import type { Side } from './keyLights';
 import { useKeyLights } from './store';
 
 /**
@@ -22,6 +23,7 @@ export function Slider({
   onInput,
   warm = false,
   down = false,
+  sides,
   tipText,
 }: {
   label: string;
@@ -35,9 +37,11 @@ export function Slider({
   onInput: (v: number) => void;
   warm?: boolean;
   down?: boolean;
+  /** The lights this slider sets. It waits only on writes to these; without it, on every write. */
+  sides?: readonly Side[];
   tipText: string;
 }) {
-  const busy = useKeyLights((s) => s.busy);
+  const busy = useKeyLights((s) => (sides ? sides.reduce((n, side) => n + s.busySides[side], 0) : s.busy));
   // Where the thumb was asked to go, and whether the pointer or a key is working it now.
   const [asked, setAsked] = useState<number | null>(null);
   const [active, setActive] = useState(false);

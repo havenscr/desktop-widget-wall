@@ -1,7 +1,9 @@
+import { renderHook } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { mocks } from '../bridge/tauri';
 import { chooseBackend, directBackend, type KeyLightBackend, type Pair, type Patch, type Target } from './keyLights';
-import { NOTE_MS, resetKeyLights, setBackend, useKeyLights } from './store';
+import { useKeyLightPolling } from './useKeyLightPolling';
+import { NOTE_MS, QUIET_READ_MS, resetKeyLights, setBackend, useKeyLights } from './store';
 
 const flush = async (ms = 0) => {
   await vi.advanceTimersByTimeAsync(ms);
@@ -310,6 +312,151 @@ describe('which answer lands', () => {
     // The left write began after the both write: left shows 20 whatever the order; right was only in the both write.
     expect(useKeyLights.getState().left).toEqual(L(true, 20, 4400));
     expect(useKeyLights.getState().right).toEqual(L(true, 10, 4400));
+  });
+
+  it('a quiet "both" answer that overtook a left write is followed by one read about a second later', async () => {
+    const w = world();
+    await setUp(w);
+    // A screen that shows the lights is polling them: the follow-up read is armed only then.
+    renderHook(() => useKeyLightPolling());
+    await flush();
+    const both = later<Pair>();
+    const only = later<Pair>();
+    let reads = 0;
+    const truth: Pair = { left: L(true, 20, 4400), right: L(true, 10, 4400) };
+    setBackend({
+      read: async () => (reads++, truth),
+      set: (target) => (target === 'both' ? both.promise : only.promise),
+    });
+    const a = useKeyLights.getState().set('left', { brightness: 20 });
+    const b = useKeyLights.getState().set('both', { brightness: 10 });
+    await flush();
+    // The older left write answers after the newer both write began: its answer is not shown.
+    only.resolve({ left: L(true, 20, 4400), right: null });
+    await flush();
+    expect(useKeyLights.getState().left).toEqual(L(true, 60, 4400));
+    // The both write answers "not now" for the left light and with a reading for the right one.
+    both.resolve({ left: 'slow-down', right: L(true, 10, 4400) });
+    await Promise.all([a, b]);
+    expect(useKeyLights.getState().left).toEqual(L(true, 60, 4400));
+    expect(reads).toBe(0);
+    await flush(QUIET_READ_MS - 1);
+    expect(reads).toBe(0);
+    await flush(1);
+    expect(reads).toBe(1);
+    expect(useKeyLights.getState().left).toEqual(L(true, 20, 4400));
+    // One pending read at most: nothing more is read before the next poll.
+    await flush(QUIET_READ_MS * 10);
+    expect(reads).toBe(1);
+  });
+
+  it('a newer write that starts inside the second drops the quiet read: it brings its own read back', async () => {
+    const w = world();
+    await setUp(w);
+    renderHook(() => useKeyLightPolling());
+    await flush();
+    let reads = 0;
+    const second = later<Pair>();
+    let sets = 0;
+    setBackend({
+      read: async () => (reads++, { left: L(true, 60, 4400), right: L(true, 60, 4400) }),
+      set: () => (sets++ === 0 ? Promise.resolve({ left: 'busy', right: null } as Pair) : second.promise),
+    });
+    await useKeyLights.getState().set('left', { brightness: 20 });
+    await flush(QUIET_READ_MS / 2);
+    // A newer write starts while the quiet read waits, and is still out when the second is up.
+    const writing = useKeyLights.getState().set('left', { brightness: 30 });
+    await flush(QUIET_READ_MS);
+    expect(reads).toBe(0);
+    second.resolve({ left: L(true, 30, 4400), right: null });
+    await writing;
+    await flush(QUIET_READ_MS * 3);
+    expect(reads).toBe(0);
+    expect(useKeyLights.getState().left).toEqual(L(true, 30, 4400));
+  });
+
+  it('a write to the other light leaves a pending quiet read alone; one that covers the same light or both drops it', async () => {
+    const w = world();
+    await setUp(w);
+    renderHook(() => useKeyLightPolling());
+    await flush();
+    let reads = 0;
+    const second = later<Pair>();
+    let sets = 0;
+    let answer: (t: Target) => Promise<Pair> = async () => ({ left: 'busy', right: null });
+    setBackend({ read: async () => (reads++, { left: L(true, 60, 4400), right: L(true, 60, 4400) }), set: (t) => answer(t) });
+    await useKeyLights.getState().set('left', { brightness: 20 });
+    await flush(QUIET_READ_MS / 2);
+    // A write to the right light, still out when the second is up: the read for the left one is still made.
+    answer = () => (sets++, second.promise);
+    const writing = useKeyLights.getState().set('right', { brightness: 30 });
+    await flush(QUIET_READ_MS);
+    expect(reads).toBe(1);
+    second.resolve({ left: null, right: L(true, 30, 4400) });
+    await writing;
+    // A write to both lights covers the left one: it drops the read.
+    answer = async () => ({ left: 'busy', right: null });
+    await useKeyLights.getState().set('left', { brightness: 25 });
+    await flush(QUIET_READ_MS / 2);
+    const slow = later<Pair>();
+    answer = () => slow.promise;
+    const both = useKeyLights.getState().set('both', { brightness: 40 });
+    await flush(QUIET_READ_MS * 2);
+    expect(reads).toBe(1);
+    slow.resolve({ left: L(true, 40, 4400), right: L(true, 40, 4400) });
+    await both;
+    await flush(QUIET_READ_MS * 2);
+    expect(reads).toBe(1);
+  });
+
+  it('a quiet answer arms no read when no polling user is mounted (the last one left while the write was out)', async () => {
+    const w = world();
+    await setUp(w);
+    const user = renderHook(() => useKeyLightPolling());
+    await flush();
+    let reads = 0;
+    const out = later<Pair>();
+    setBackend({ read: async () => (reads++, { left: L(true, 60, 4400), right: L(true, 60, 4400) }), set: () => out.promise });
+    const writing = useKeyLights.getState().set('left', { brightness: 20 });
+    await flush();
+    user.unmount();
+    out.resolve({ left: 'busy', right: null });
+    await writing;
+    await flush(QUIET_READ_MS * 3);
+    expect(reads).toBe(0);
+  });
+
+  it('the last polling user going away drops the pending quiet read; one still polling keeps it', async () => {
+    const w = world();
+    await setUp(w);
+    let reads = 0;
+    setBackend({ read: async () => (reads++, { left: L(true, 60, 4400), right: L(true, 60, 4400) }), set: async () => ({ left: 'busy', right: null }) });
+    const a = renderHook(() => useKeyLightPolling());
+    const b = renderHook(() => useKeyLightPolling());
+    await flush();
+    const base = reads;
+    await useKeyLights.getState().set('left', { brightness: 20 });
+    // One of two users goes: the read still happens.
+    a.unmount();
+    await flush(QUIET_READ_MS);
+    expect(reads).toBe(base + 1);
+    await useKeyLights.getState().set('left', { brightness: 25 });
+    b.unmount();
+    await flush(QUIET_READ_MS * 3);
+    expect(reads).toBe(base + 1);
+  });
+
+  it('resetting the store cancels the pending quiet read', async () => {
+    const w = world();
+    await setUp(w);
+    renderHook(() => useKeyLightPolling());
+    await flush();
+    let reads = 0;
+    setBackend({ read: async () => (reads++, { left: L(true, 60, 4400), right: L(true, 60, 4400) }), set: async () => ({ left: 'busy', right: null }) });
+    await useKeyLights.getState().set('left', { brightness: 20 });
+    resetKeyLights();
+    await flush(QUIET_READ_MS * 3);
+    expect(reads).toBe(0);
   });
 
   it('answers that only say "not now" never replace what is shown', async () => {

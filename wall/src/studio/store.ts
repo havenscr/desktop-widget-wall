@@ -7,6 +7,8 @@ import { notTaken, SIDES, sideReading, type Snapshot } from './model';
 export const NOTE_MS = 5000;
 /** Reads while On Air or the drawer is visible. */
 export const READ_EVERY_MS = 30_000;
+/** After an answer that only said "not now" for a side, the lights are read once more this long after. */
+export const QUIET_READ_MS = 1000;
 
 interface KeyLightState extends Snapshot {
   /** The drawer (Fine tune) is open. */
@@ -17,6 +19,8 @@ interface KeyLightState extends Snapshot {
   note: string | null;
   /** Writes in flight or waiting. */
   busy: number;
+  /** The same count per light: a write to both lights counts for each. A slider waits only on its own lights. */
+  busySides: Record<Side, number>;
   /** Counts finished runs of writes (the answer is in). */
   settled: number;
   setDrawer: (open: boolean) => void;
@@ -31,6 +35,9 @@ interface KeyLightState extends Snapshot {
 
 let backend: KeyLightBackend = chooseBackend();
 let noteTimer: ReturnType<typeof setTimeout> | undefined;
+let quietTimer: ReturnType<typeof setTimeout> | undefined;
+/** The sides the pending follow-up read was asked for by a quiet answer. */
+const quietPending = new Set<Side>();
 const waiting = new Map<Target, Patch>();
 const running = new Set<Target>();
 /**
@@ -46,8 +53,27 @@ export function setBackend(b: KeyLightBackend): void {
   backend = b;
 }
 
+/** Drops the follow-up read a quiet answer asked for: a newer write brings its own read back, and with nothing showing the lights there is no one to read for. */
+export function cancelQuietRead(): void {
+  clearTimeout(quietTimer);
+  quietTimer = undefined;
+  quietPending.clear();
+}
+
+let pollUsers = 0;
+/** The polling hook's users: when the last one goes, a waiting follow-up read is dropped with it. */
+export function pollUserChange(by: 1 | -1): void {
+  pollUsers = Math.max(0, pollUsers + by);
+  if (pollUsers === 0) cancelQuietRead();
+}
+
 const fresh = (): Snapshot => ({ status: null, left: null, right: null });
 const sidesOf = (target: Target): readonly Side[] => (target === 'both' ? SIDES : [target]);
+const bump = (counts: Record<Side, number>, sides: readonly Side[], by: number): Record<Side, number> => {
+  const next = { ...counts };
+  for (const side of sides) next[side] = Math.max(0, next[side] + by);
+  return next;
+};
 
 export const useKeyLights = create<KeyLightState>((set, get) => {
   const raise = (text: string) => {
@@ -98,12 +124,17 @@ export const useKeyLights = create<KeyLightState>((set, get) => {
     }
     const asked: Patch = {};
     const failedSides = new Set<Side>();
+    // Sides whose newest write answered only "not now": what is shown for them may be old.
+    const quietSides = new Set<Side>();
     let last: Pair = { left: null, right: null };
     try {
       for (let patch = waiting.get(target); patch; patch = waiting.get(target)) {
         waiting.delete(target);
         Object.assign(asked, patch);
         const token = { left: 0, right: 0 };
+        // This write brings its own read back; one that an earlier quiet answer asked for this side (or both) would land in
+        // its middle. A write to the other light leaves it alone.
+        if (sides.some((side) => quietPending.has(side))) cancelQuietRead();
         for (const side of sides) {
           token[side] = ++writeGen[side];
           // Reads that began before this write cannot know its result.
@@ -119,9 +150,14 @@ export const useKeyLights = create<KeyLightState>((set, get) => {
         const next: Partial<Snapshot> = {};
         for (const side of sides) {
           const r = pair[side];
-          if (r === null || isQuiet(r)) continue;
+          if (r !== null && isQuiet(r)) {
+            if (writeGen[side] === token[side]) quietSides.add(side);
+            continue;
+          }
+          if (r === null) continue;
           if (isLight(r)) {
             failedSides.delete(side);
+            if (writeGen[side] === token[side]) quietSides.delete(side);
             // Only the newest write for a side shows its answer.
             if (writeGen[side] === token[side]) {
               next[side] = r;
@@ -148,9 +184,21 @@ export const useKeyLights = create<KeyLightState>((set, get) => {
       const pair = await fetchRead();
       for (const side of failedSides) if (isLight(pair?.[side])) refused.add(side);
     }
+    // One more read soon, so a side that kept an old value after a quiet answer is corrected before the next poll.
+    // Nothing is armed with no one polling: no screen shows the lights, so there is no one to read for.
+    if (quietSides.size > 0 && pollUsers > 0) {
+      for (const side of quietSides) quietPending.add(side);
+      if (quietTimer === undefined) {
+        quietTimer = setTimeout(() => {
+          quietTimer = undefined;
+          quietPending.clear();
+          void fetchRead();
+        }, QUIET_READ_MS);
+      }
+    }
     if (refused.size === 2) raise('The key lights did not take that change');
     else if (refused.size === 1) raise(`The ${[...refused][0]} key light did not take that change`);
-    set((s) => ({ busy: Math.max(0, s.busy - 1), settled: s.settled + 1 }));
+    set((s) => ({ busy: Math.max(0, s.busy - 1), busySides: bump(s.busySides, sides, -1), settled: s.settled + 1 }));
   };
 
   return {
@@ -159,6 +207,7 @@ export const useKeyLights = create<KeyLightState>((set, get) => {
     linked: true,
     note: null,
     busy: 0,
+    busySides: { left: 0, right: 0 },
     settled: 0,
     setDrawer: (open) => set({ drawer: open }),
     setLinked: (linked) => set({ linked }),
@@ -178,7 +227,7 @@ export const useKeyLights = create<KeyLightState>((set, get) => {
       const merged = { ...waiting.get(target), ...patch };
       waiting.set(target, merged);
       if (running.has(target)) return;
-      set((s) => ({ busy: s.busy + 1 }));
+      set((s) => ({ busy: s.busy + 1, busySides: bump(s.busySides, sidesOf(target), 1) }));
       await drain(target);
     },
   };
@@ -192,9 +241,11 @@ usePlaceStore.subscribe((s, prev) => {
 /** Tests only: back to nothing known. */
 export function resetKeyLights(): void {
   clearTimeout(noteTimer);
+  cancelQuietRead();
+  pollUsers = 0;
   waiting.clear();
   running.clear();
   readGen.left = readGen.right = writeGen.left = writeGen.right = 0;
   backend = chooseBackend();
-  useKeyLights.setState({ ...fresh(), drawer: false, linked: true, note: null, busy: 0, settled: 0 });
+  useKeyLights.setState({ ...fresh(), drawer: false, linked: true, note: null, busy: 0, busySides: { left: 0, right: 0 }, settled: 0 });
 }

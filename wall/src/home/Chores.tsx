@@ -2,6 +2,7 @@ import { IconCheck } from '@tabler/icons-react';
 import { useLayoutEffect, useRef, useState } from 'react';
 import { tip } from '../ui/HoverTip';
 import { reviewNow } from '../ui/reviewClock';
+import { useRemeasure } from '../ui/useRemeasure';
 import { openTask, type TaskItem } from '../tasks/model';
 import { usePendingTicks } from '../tasks/pendingTick';
 import { TaskTags } from '../tasks/TaskTags';
@@ -60,7 +61,7 @@ export function Chores() {
   const listRef = useRef<HTMLDivElement>(null);
   const [pillW, setPillW] = useState(PILL_COLUMN_PX);
   const pillKey = rows.map((t) => chorePill(t, now) ?? '').join('|');
-  useLayoutEffect(() => {
+  const measurePills = () => {
     const el = listRef.current;
     if (!el) return;
     el.style.setProperty('--pill-w', `${PILL_COLUMN_PX}px`);
@@ -68,7 +69,10 @@ export function Chores() {
     for (const pill of Array.from(el.querySelectorAll<HTMLElement>('.est'))) w = Math.max(w, Math.ceil(pill.getBoundingClientRect().width));
     el.style.setProperty('--pill-w', `${w}px`);
     setPillW(w);
-  }, [pillKey]);
+  };
+  useLayoutEffect(measurePills, [pillKey]);
+  // Measured again when the list changes width or the display font arrives after the first paint.
+  useRemeasure(listRef, measurePills);
   // A failed refresh after a good read keeps the rows, dimmed, with a quiet sign by the heading.
   const stale = status === 'error' && tasks.length > 0;
   // Out of view: the rows below the fold, and those past the twenty read.

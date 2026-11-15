@@ -212,8 +212,8 @@ export function infoBoxes(toStage: (x: number, y: number) => { x: number; y: num
   return out;
 }
 
-/** What his seat at the drive-in keeps clear of: the Look switch, the control row, the cards. */
-const SEAT_CLEAR = '.w-lookbar, .w-ctl, .w-card, .w-now, .leave-banner';
+/** What his seat at the drive-in keeps clear of: the control row, the cards, the leave banner. */
+const SEAT_CLEAR = '.w-ctl, .w-card, .w-now, .leave-banner';
 /**
  * The stretches of floor (x to x, stage pixels) covered by those at his seated height, standing on
  * the horizon `hy`: anything whose box reaches into the band `[hy - height, hy]`.
@@ -378,14 +378,22 @@ export function Watt({ now = reviewNow ?? Date.now, inCall = false }: { now?: ()
     const offWatch = useWatchStore.subscribe(follow);
     const offPlace = usePlaceStore.subscribe(follow);
     window.addEventListener('resize', stale);
-    // A control appearing or going (not Watt's own nodes) changes where the controls stand.
+    // A control or card appearing or going (not Watt's own nodes) changes where the controls stand. They are all in
+    // the shell (the rail and the screens), so that is what is watched: a tooltip, a menu or a drawer added to the
+    // page beside it does not wake him. Without a shell (a bare harness) the whole page is watched, as before.
     const mo = new MutationObserver((list) => {
       for (const m of list) if (!(m.target instanceof Element && m.target.closest('.watt'))) return void stale();
     });
-    mo.observe(document.body, { childList: true, subtree: true });
+    const shell = Array.from(actor.current?.parentElement?.children ?? []).find((c) => c.classList.contains('shell'));
+    mo.observe(shell ?? document.body, { childList: true, subtree: true });
+    // The leave banner stands outside the shell; its own flag says when it comes or goes.
+    const offBanner = useChipLayout.subscribe((st, prev) => {
+      if (st.banner !== prev.banner) stale();
+    });
     return () => {
       offWatch();
       offPlace();
+      offBanner();
       window.removeEventListener('resize', stale);
       mo.disconnect();
     };

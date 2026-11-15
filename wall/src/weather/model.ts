@@ -184,6 +184,16 @@ function nwsTemp(p: NwsPeriod): number {
   return p.temperatureUnit === 'C' ? (p.temperature * 9) / 5 + 32 : p.temperature;
 }
 
+/** The same, for a forecast period that may be malformed: null instead of a throw, so its fallback applies. */
+function nwsTempOrNull(p: NwsPeriod | undefined): number | null {
+  if (!p) return null;
+  try {
+    return nwsTemp(p);
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Turn the Weather Service's reply into a reading: `{ hourly, forecast }` (the plain hourly reply
  * also works). "Now" and the next six hours come from the hourly reply (times are local to the place).
@@ -206,10 +216,11 @@ export function parseNws(data: unknown, fetchedAt: number, seenHigh: number | nu
   let high: number;
   let low: number;
   if (forecast && forecast.length > 0) {
-    const daytime = forecast.find((p) => p.isDaytime === true && p.startTime?.slice(0, 10) === day);
-    const night = forecast.find((p) => p.isDaytime === false);
-    high = daytime ? nwsTemp(daytime) : Math.max(now, seenHigh ?? now);
-    low = night ? nwsTemp(night) : Math.min(...ahead);
+    const daytime = forecast.find((p) => p?.isDaytime === true && p.startTime?.slice(0, 10) === day);
+    const night = forecast.find((p) => p?.isDaytime === false);
+    // A forecast period that is missing or malformed gives its value to the fallback; it never fails the whole reading.
+    high = nwsTempOrNull(daytime) ?? Math.max(now, seenHigh ?? now);
+    low = nwsTempOrNull(night) ?? Math.min(...ahead);
   } else {
     high = Math.max(...ahead, seenHigh ?? -Infinity);
     low = Math.min(...ahead);
@@ -243,5 +254,5 @@ export function staleText(fetchedAt: number, now: number): string | null {
   const mins = Math.floor(age / 60_000);
   if (mins < 60) return `updated ${mins} min ago`;
   const hrs = Math.floor(mins / 60);
-  return hrs === 1 ? 'updated 1 hour ago' : `updated ${hrs} hours ago`;
+  return `updated ${hrs} h ago`;
 }

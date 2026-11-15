@@ -322,9 +322,11 @@ describe('opening and closing the tall view', () => {
     await act(async () => fireEvent.pointerDown(document.body));
     view.unmount();
     const count = (list: string[], t: string) => list.filter((x) => x === t).length;
-    for (const t of ['keydown', 'pointerdown', 'mousedown', 'mouseup', 'click']) {
+    for (const t of ['keydown', 'pointerdown', 'mousedown', 'mouseup', 'click', 'visibilitychange']) {
       expect(count(removed, t), t).toBe(count(added, t));
     }
+    // The page-visibility listener is among those counted: the test saw it come and go.
+    expect(count(added, 'visibilitychange')).toBeGreaterThan(0);
     add.mockRestore();
     remove.mockRestore();
     await flush(TALL_CLOSE_MS * 2);

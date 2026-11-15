@@ -15,7 +15,8 @@ const read = (p: string) => readFileSync(p, 'utf8') as string;
 /** The text with every comment blanked and its line breaks kept, so line numbers stay true. */
 const blank = (t: string) => t.replace(/\/\*[\s\S]*?\*\//g, (m) => m.replace(/[^\n]/g, ' '));
 
-const sheets = walk('src/styles').filter((p) => p.endsWith('.css'));
+// Every stylesheet under src, not only the shared ones: Watt's own sheet sits beside its component.
+const sheets = walk('src').filter((p) => p.endsWith('.css'));
 const sources = walk('src').filter((p) => /\.(ts|tsx)$/.test(p) && !/\.test\.tsx?$/.test(p));
 
 /** Tokens a stylesheet declares (`--x: ...`). Outside `var()`, so a use is never read as a definition. */
@@ -41,6 +42,11 @@ describe('stylesheet tokens', () => {
       });
     }
     expect(missing).toEqual([]);
+  });
+
+  it('reads every stylesheet under src, Watt\'s own included', () => {
+    expect(sheets.some((p) => p.endsWith('buddy/watt.css'))).toBe(true);
+    expect(sheets.some((p) => p.endsWith('styles/home.css'))).toBe(true);
   });
 
   it('knows the tokens the play block uses: the pink is --mag, there is no --pink', () => {

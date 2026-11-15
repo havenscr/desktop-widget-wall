@@ -715,7 +715,7 @@
 .sound-lbl {
   flex: none;
   padding: 0 10px 0 8px;
-  font: 600 14px/1 var(--disp);
+  font: 600 16px/1 var(--disp);
   letter-spacing: 0.16em;
   text-transform: uppercase;
   color: var(--faint);

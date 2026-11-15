@@ -209,6 +209,10 @@ export default {
       'left-text': { css: '.lw-label, .lw-side { font-size: 12px !important; }', expect: /^ *FAIL left third: text under 16 px in /m, appliesTo: only(VARIANT_HOUSE) },
       // Both labels dragged to the middle of a long day, then the sunset label to the box's left edge.
       'left-labels': { css: '.lw-label.set { right: auto !important; left: 0 !important; }', expect: /^ *FAIL left third: the sunrise and sunset labels collide|^ *FAIL left third: the sunset label covers its own crossing/m, appliesTo: only(VARIANT_SUMMER) },
+      // "as of" hidden although the two rooms leave it room; the wrong glyph for the hour (`wday` is a dev knob that forces the current reading's day or night).
+      'left-asof': { css: '.house-asof { visibility: hidden !important; }', expect: /^ *FAIL left third: not live with two rooms does not show "as of"/m, appliesTo: only(VARIANT_STALE2) },
+      'left-glyph-day': { query: '&wday=0', expect: /^ *FAIL left third: by day the weather glyph is /m, appliesTo: only(VARIANT_HOUSE) },
+      'left-glyph-night': { query: '&wday=1', expect: /^ *FAIL left third: at night the weather glyph is /m, appliesTo: only(VARIANT_NIGHT) },
       'left-crossing': { css: '.lw-label.rise { right: auto !important; left: 100px !important; }', expect: /^ *FAIL left third: the sunrise label covers its own crossing/m, appliesTo: only(VARIANT_HOUSE) },
     },
   },

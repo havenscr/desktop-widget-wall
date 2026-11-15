@@ -15,6 +15,8 @@ export const WORK_ROWS = 3;
 export const WORK_ROW_PX = 71;
 /** A key step still counts as under way this long, so a held key keeps adding rows. */
 const KEY_SCROLL_MS = 400;
+/** Smooth key scrolling is for people who have not asked for reduced motion (and for browsers that can). */
+const smoothScroll = (el: HTMLElement): boolean => typeof el.scrollTo === 'function' && !window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
 /**
  * Width a Work row leaves for the title and its tags together, counting the gap between them
  * the way `tagLayout` does: the 590 px row (596 less the 6 px scroll gutter), less the 50 px
@@ -195,6 +197,8 @@ function TaskList({ children, rows }: { children: ReactNode; rows: number }) {
   const ref = useRef<HTMLUListElement>(null);
   const [edge, setEdge] = useState({ top: false, bottom: false });
   const anchor = useRef<{ id: string; top: number } | null>(null);
+  // Where the last key step is heading, so a held key adds to it instead of to a half-finished scroll.
+  const heading = useRef<{ top: number; at: number } | null>(null);
 
   const measure = useCallback(() => {
     const el = ref.current;
@@ -225,14 +229,19 @@ function TaskList({ children, rows }: { children: ReactNode; rows: number }) {
           el.style.scrollBehavior = 'auto';
           el.scrollTop += drift;
           el.style.scrollBehavior = '';
+          // Setting scrollTop ends a smooth key scroll that is still on its way: carry it on to the moved target.
+          const h = heading.current;
+          if (h && Date.now() - h.at < KEY_SCROLL_MS) {
+            h.top = Math.min(Math.max(0, el.scrollHeight - el.clientHeight), Math.max(0, h.top + drift));
+            if (smoothScroll(el)) el.scrollTo({ top: h.top, behavior: 'smooth' });
+            else el.scrollTop = h.top;
+          }
         }
       }
     }
     measure();
   }, [children, rows, measure]);
 
-  // Where the last key step is heading, so a held key adds to it instead of to a half-finished scroll.
-  const heading = useRef<{ top: number; at: number } | null>(null);
   const key = (e: KeyboardEvent<HTMLUListElement>) => {
     const el = ref.current;
     if (!el) return;
@@ -243,8 +252,7 @@ function TaskList({ children, rows }: { children: ReactNode; rows: number }) {
     const base = h && Date.now() - h.at < KEY_SCROLL_MS ? h.top : el.scrollTop;
     const top = Math.min(Math.max(0, el.scrollHeight - el.clientHeight), Math.max(0, base + step));
     heading.current = { top, at: Date.now() };
-    const calm = typeof el.scrollTo === 'function' && !window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
-    if (calm) el.scrollTo({ top, behavior: 'smooth' });
+    if (smoothScroll(el)) el.scrollTo({ top, behavior: 'smooth' });
     else el.scrollTop = top;
   };
 

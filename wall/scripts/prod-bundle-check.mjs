@@ -15,6 +15,8 @@ const MARKERS = [
   /Tokyo Burnout|A Very Long Artist Name|Friday social card|Admin pill polish/,
   /registerWatchMocks|data-mock-poster|Night drive mix|PLmockPlaylist0001|get\(["']wlist["']\)/,
   /\blineprobe\b|\bltarget\b|["']lover["']|\.lineProbe\b|\*\{pointer-events:auto !important\}/,
+  // The lines knobs (devMocks/lines.ts) and the horizon's cost probe, as quoted strings (the bundler writes a plain string in backticks): the words alone ("lines") are real code.
+  /["'`](lheight|lcol|lrest|lrefl|ltab|linecost|wday)["'`]/,
   /signedout|get\(["']agents["']\)|has\(["']long["']\)|get\(["']clock["']\)|get\(["']screen["']\)|get\(["']audio["']\)|get\(["']hz["']\)/,
 ];
 const files = (dir) => readdirSync(dir).flatMap((f) => (statSync(join(dir, f)).isDirectory() ? files(join(dir, f)) : [join(dir, f)]));

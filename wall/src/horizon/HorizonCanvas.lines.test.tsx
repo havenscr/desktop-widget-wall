@@ -50,8 +50,8 @@ function hitNow(level: number) {
 }
 
 /** Play on Unwind for 2.5 s so the lines have lifted from rest. */
-function playUnwind(): number {
-  usePlaceStore.setState({ active: 'unwind' });
+function playUnwind(place: 'work' | 'home' | 'unwind' = 'unwind'): number {
+  usePlaceStore.setState({ active: place });
   feedBands(0, 2000);
   render(<HorizonCanvas now={() => NOON} />);
   let ts = 100;
@@ -95,15 +95,20 @@ afterEach(() => {
 });
 
 describe('the Lines setting in the frame', () => {
-  it('defaults: the echo is exactly the old call, its sample reads t - tau unchanged, and nothing else is drawn', () => {
-    const ts = playUnwind();
+  it.each(['work', 'home', 'unwind'] as const)('defaults on %s: the echo is exactly the old call, its sample reads t - tau unchanged, and nothing else is drawn', (place) => {
+    const ts = playUnwind(place);
     rec.log.length = 0;
     runFrame(ts);
     const o = draw.mock.lastCall![1] as HorizonOptions;
     const e = o.echo!;
+    const camera = CAMERAS[place];
+    // Unwind's lines are not scaled by loudness; on Work and Home the live opacity is the camera's ripple times the loudness.
+    const loud = place === 'unwind' ? 1 : e.a / camera.ea;
     // The old path's call: echoOptions(camera, loud, t, gate, rest, default look, default opacity, kick, live tint).
-    const old = echoOptions(CAMERAS.unwind, 1, e.t!, 1, e.rest ?? 0, undefined, undefined, danceKick(), liveTint(performance.now()))!;
-    expect({ ...e, sample: undefined, drift: undefined, n: undefined, swell: undefined }).toEqual({ ...old, sample: undefined, drift: undefined, n: undefined, swell: undefined });
+    const old = echoOptions(camera, loud, e.t!, 1, e.rest ?? 0, undefined, undefined, danceKick(), liveTint(performance.now()))!;
+    // The line count and drift are set per frame and the sample is a function; everything else, swell included, is compared.
+    expect({ ...e, sample: undefined, drift: undefined, n: undefined }).toEqual({ ...old, sample: undefined, drift: undefined, n: undefined });
+    expect(e.swell === undefined).toBe(old.swell === undefined);
     for (const u of [0, 0.3, 0.7, 1]) for (const tau of [0, 0.4, 1.5]) expect(e.sample!(u, tau)).toBe(sampleDance(u, e.t! - tau));
     // After the picture only the reflection's own calls follow: no new type, no rest line.
     expect(rec.log.some((l) => l === 'clip()')).toBe(false);
@@ -204,6 +209,49 @@ describe('the Lines setting in the frame', () => {
     render(<HorizonCanvas now={() => NOON} />);
     expect(draw.mock.lastCall![1].echo).toBeUndefined();
     expect(rec.log).toContain('lineWidth=1.6');
+  });
+
+  it('under reduced motion a changed line type or colour is drawn at once, not at the next minute\'s redraw; after unmount nothing draws', () => {
+    window.matchMedia = ((query: string) => ({ matches: query.includes('reduce'), media: query, addEventListener() {}, removeEventListener() {} })) as unknown as typeof window.matchMedia;
+    usePlaceStore.setState({ active: 'unwind' });
+    const view = render(<HorizonCanvas now={() => NOON} />);
+    expect(rec.log.filter((l) => l.startsWith('arc(')).length).toBe(0);
+    draw.mockClear();
+    act(() => useLinesStore.getState().setLines({ type: 'sparks' }));
+    // No timer ran: the change drew by itself, and the dotted row is there.
+    expect(draw).toHaveBeenCalled();
+    expect(rec.log.filter((l) => l.startsWith('arc(')).length).toBeGreaterThanOrEqual(64 * 4);
+    draw.mockClear();
+    act(() => useLinesStore.getState().setLines({ colours: 'sunset' }));
+    expect(draw).toHaveBeenCalledTimes(1);
+    view.unmount();
+    draw.mockClear();
+    act(() => useLinesStore.getState().setLines({ colours: 'ice' }));
+    expect(draw).not.toHaveBeenCalled();
+  });
+
+  it('a repaint between two frames does not move the sparks: only a frame steps them', () => {
+    useLinesStore.getState().setLines({ type: 'sparks' });
+    const ts = playUnwind();
+    hitNow(1.2);
+    runFrame(ts);
+    // The hit has passed: the sparks fall a little at each frame.
+    hitNow(0);
+    runFrame(ts + 33);
+    const arcs = () => rec.log.filter((l) => l.startsWith('arc('));
+    rec.log.length = 0;
+    window.dispatchEvent(new Event('resize'));
+    const first = arcs();
+    expect(first.length).toBeGreaterThanOrEqual(64 * 4);
+    for (let i = 0; i < 5; i++) {
+      rec.log.length = 0;
+      window.dispatchEvent(new Event('resize'));
+      expect(arcs()).toEqual(first);
+    }
+    // The next frame still moves them: the frame's own step is kept.
+    rec.log.length = 0;
+    runFrame(ts + 66);
+    expect(arcs()).not.toEqual(first);
   });
 
   it('Reflection off draws no reflection', () => {

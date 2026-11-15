@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest';
-import { ageText, alertRows, alertsLine, lastScanText, netNumbers, statusLine, tone, type SecuritySummary } from './model';
+import { ageText, alertRows, alertsLine, netNumbers, statusLine, tone, type SecuritySummary } from './model';
 
 const base = (over: Partial<SecuritySummary> = {}, fw: Partial<NonNullable<SecuritySummary['firewalla']>> | null = {}): SecuritySummary => ({
   reachable: true,
@@ -41,16 +41,10 @@ it('red only when the API is down or the box is offline', () => {
   expect(tone(base({ stale: true }, { boxOnline: false }))).toBe('bad');
 });
 
-it('alert and scan lines', () => {
+it('alert lines', () => {
   expect(alertsLine(0)).toBe('No open alerts');
   expect(alertsLine(1)).toBe('1 open alert');
   expect(alertsLine(2)).toBe('2 open alerts');
-  const now = Date.parse('2026-11-11T12:00:00Z');
-  expect(lastScanText(null, now)).toBeNull();
-  expect(lastScanText('garbage', now)).toBeNull();
-  expect(lastScanText('2026-11-11T11:56:00Z', now)).toBe('last scan 4 min ago');
-  expect(lastScanText('2026-11-11T12:00:00Z', now)).toBe('last scan just now');
-  expect(lastScanText('2026-11-11T09:00:00Z', now)).toBe('last scan 3 hours ago');
 });
 
 it('numbers row shows only the numbers the feed has, in the concept order', () => {

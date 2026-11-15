@@ -111,16 +111,3 @@ export function alertsLine(n: number): string {
   if (n <= 0) return 'No open alerts';
   return n === 1 ? '1 open alert' : `${n} open alerts`;
 }
-
-/** "last scan 4 min ago", or null when there is no readable scan time. */
-export function lastScanText(lastScan: string | null, now: number): string | null {
-  if (!lastScan) return null;
-  const at = Date.parse(lastScan);
-  if (Number.isNaN(at)) return null;
-  const mins = Math.max(0, Math.floor((now - at) / 60_000));
-  if (mins < 1) return 'last scan just now';
-  if (mins < 60) return `last scan ${mins} min ago`;
-  const hrs = Math.floor(mins / 60);
-  if (hrs < 48) return `last scan ${hrs} ${hrs === 1 ? 'hour' : 'hours'} ago`;
-  return `last scan ${Math.floor(hrs / 24)} days ago`;
-}

@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { dayStart } from './days';
-import { clearWorkSeen, noteWorking, resetWorkSeenMemory, seenWorking } from './workSeen';
+import { clearWorkSeen, flushWorkSeen, noteWorking, resetWorkSeenMemory, seenWorking } from './workSeen';
 import { usePacificTime } from './testZone';
 
 usePacificTime();
@@ -39,6 +39,7 @@ it('another day drops the earlier day\'s record', () => {
 it('is bounded: only the newest 200 ids are kept', () => {
   noteWorking(Array.from({ length: 260 }, (_, i) => `s${i}`), at('10:00'));
   for (let i = 0; i < 10; i++) noteWorking([`late${i}`], at('10:00') + 1000 * (i + 1));
+  flushWorkSeen();
   expect(Object.keys(stored().seen).length).toBeLessThanOrEqual(200);
   expect(Object.keys(stored().seen)).toContain('late9');
 });
@@ -65,4 +66,19 @@ it('a blocked or full store never throws and the memory still serves', () => {
   resetWorkSeenMemory();
   expect(() => noteWorking(['a'], at('10:00'))).not.toThrow();
   expect(seenWorking(at('11:00')).get('a')).toBe(at('10:00'));
+});
+
+it('polls every five seconds write the record about twice a minute, and the page leaving writes what waits', () => {
+  const set = vi.spyOn(Storage.prototype, 'setItem');
+  // Ten polls, 5 s apart, each one moving the time of a session that stays busy.
+  for (let i = 0; i < 10; i++) noteWorking(['a'], at('10:00') + i * 5000);
+  expect(set.mock.calls.length).toBeLessThanOrEqual(2);
+  // The memory is current at every poll even when storage is not.
+  expect(seenWorking(at('11:00')).get('a')).toBe(at('10:00') + 45_000);
+  window.dispatchEvent(new Event('pagehide'));
+  expect(stored()).toEqual({ day: D, seen: { a: at('10:00') + 45_000 } });
+  const after = set.mock.calls.length;
+  // Nothing changed since: leaving again writes nothing more.
+  flushWorkSeen();
+  expect(set.mock.calls.length).toBe(after);
 });

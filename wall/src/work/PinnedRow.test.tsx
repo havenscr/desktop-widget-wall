@@ -258,6 +258,74 @@ it('Add a key appends into the next free slot and Remove can leave only the Add 
   expect(localStorage.getItem(PINS_KEY)).toBe('[]');
 });
 
+it('Remove and Add keep a stored key that does not resolve right now', async () => {
+  localStorage.setItem(PINS_KEY, JSON.stringify(['lib:thirds', 'lib:gone', 'lib:snip']));
+  render(<PinnedRow />);
+  await flush();
+  expect(labels()).toEqual(['Thirds', 'Snip']);
+  fireEvent.contextMenu(screen.getByRole('button', { name: 'Thirds' }));
+  await flush();
+  fireEvent.click(screen.getByRole('menuitem', { name: 'Remove from Always here' }));
+  await flush();
+  expect(labels()).toEqual(['Snip']);
+  expect(JSON.parse(localStorage.getItem(PINS_KEY) ?? '')).toEqual(['lib:gone', 'lib:snip']);
+  // Adding into the free places: the unresolved entry stays while there is room, and storage never grows past five.
+  fireEvent.click(screen.getByRole('button', { name: 'Add a key' }));
+  await flush();
+  fireEvent.click(screen.getByRole('button', { name: 'Volume up' }));
+  await flush();
+  expect(labels()).toEqual(['Snip', 'Volume up']);
+  expect(JSON.parse(localStorage.getItem(PINS_KEY) ?? '')).toEqual(['lib:gone', 'lib:snip', 'lib:volume-up']);
+});
+
+it('a keys.json pin that does not resolve once keys.json has loaded is kept on a Remove, and is the first to give way when an Add needs room', async () => {
+  const mine = { ref: 'file:0', label: 'Mine', action: null };
+  localStorage.setItem(PINS_KEY, JSON.stringify([mine, 'lib:gone', 'lib:thirds', 'lib:snip', 'lib:focus']));
+  render(<PinnedRow />);
+  await flush();
+  // keys.json has loaded and has no such key: that pin does not resolve, so three tiles show and two places are free.
+  expect(labels()).toEqual(['Thirds', 'Snip', 'Focus']);
+  fireEvent.contextMenu(screen.getByRole('button', { name: 'Snip' }));
+  await flush();
+  fireEvent.click(screen.getByRole('menuitem', { name: 'Remove from Always here' }));
+  await flush();
+  expect(JSON.parse(localStorage.getItem(PINS_KEY) ?? '')).toEqual([mine, 'lib:gone', 'lib:thirds', 'lib:focus']);
+  fireEvent.click(screen.getByRole('button', { name: 'Add a key' }));
+  await flush();
+  fireEvent.click(screen.getByRole('button', { name: 'Volume up' }));
+  await flush();
+  fireEvent.click(screen.getByRole('button', { name: 'Add a key' }));
+  await flush();
+  fireEvent.click(screen.getByRole('button', { name: 'Volume down' }));
+  await flush();
+  const stored = JSON.parse(localStorage.getItem(PINS_KEY) ?? '') as unknown[];
+  expect(stored).toHaveLength(5);
+  // The oldest entry that did not resolve gave way first.
+  expect(stored).toEqual(['lib:gone', 'lib:thirds', 'lib:focus', 'lib:volume-up', 'lib:volume-down']);
+});
+
+it('a keys.json pin is never given up while keys.json is still loading; an Add that would need its place is refused', async () => {
+  mocks.set('wall2_keys_summary', () => new Promise(() => undefined));
+  const mine = { ref: 'file:0', label: 'Mine', action: null };
+  localStorage.setItem(PINS_KEY, JSON.stringify([mine, 'lib:gone', 'lib:thirds', 'lib:snip', 'lib:focus']));
+  render(<PinnedRow />);
+  await flush();
+  expect(labels()).toEqual(['Thirds', 'Snip', 'Focus']);
+  // Room for one Add comes from the key the library lacks, not from the pin that is still loading.
+  fireEvent.click(screen.getByRole('button', { name: 'Add a key' }));
+  await flush();
+  fireEvent.click(screen.getByRole('button', { name: 'Volume up' }));
+  await flush();
+  expect(JSON.parse(localStorage.getItem(PINS_KEY) ?? '')).toEqual([mine, 'lib:thirds', 'lib:snip', 'lib:focus', 'lib:volume-up']);
+  // A second Add would have to drop it: refused, storage unchanged.
+  fireEvent.click(screen.getByRole('button', { name: 'Add a key' }));
+  await flush();
+  fireEvent.click(screen.getByRole('button', { name: 'Volume down' }));
+  await flush();
+  expect(JSON.parse(localStorage.getItem(PINS_KEY) ?? '')).toEqual([mine, 'lib:thirds', 'lib:snip', 'lib:focus', 'lib:volume-up']);
+  expect(labels()).toEqual(['Thirds', 'Snip', 'Focus', 'Volume up']);
+});
+
 it('clicking a row swaps that key into the slot and keeps it in storage; the others stay', async () => {
   render(<PinnedRow />);
   await flush();

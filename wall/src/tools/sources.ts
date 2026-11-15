@@ -53,7 +53,7 @@ const ago = (at: number, now: number): string => {
   if (mins < 1) return 'less than a minute ago';
   if (mins < 60) return `${mins} min ago`;
   const h = Math.floor(mins / 60);
-  return h === 1 ? '1 hour ago' : `${h} hours ago`;
+  return `${h} h ago`;
 };
 
 /** A source read through `reportRead`: tasks, sound, box. `staleMs` is the age past which its last good read is old. */

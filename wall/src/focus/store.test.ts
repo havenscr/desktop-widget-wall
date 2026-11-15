@@ -51,18 +51,36 @@ it('finishes and releases Do Not Disturb with no screen mounted and the window h
   t.useStore.getState().dispose();
 });
 
-it('pause and reset cancel the end timer', async () => {
+it('pause and reset cancel the end timer, and each gives Do Not Disturb back and clears its marker', async () => {
   const t = setup();
   const s = t.useStore.getState();
   s.init();
   s.start();
+  await vi.advanceTimersByTimeAsync(10);
+  // Started: focus turned Do Not Disturb on and marked it.
+  expect(t.calls).toContain('enable_do_not_disturb');
+  expect(t.mem.get(DND_KEY)).toBe('1');
+  const disables = () => t.calls.filter((c) => c === 'disable_do_not_disturb').length;
+  expect(disables()).toBe(0);
   s.pause();
+  await vi.advanceTimersByTimeAsync(10);
+  // Pause: given back at once, marker gone, and the end timer never fires.
+  expect(disables()).toBe(1);
+  expect(t.mem.has(DND_KEY)).toBe(false);
   await vi.advanceTimersByTimeAsync(60 * MIN);
   expect(t.useStore.getState().state.status).toBe('paused');
+  expect(disables()).toBe(1);
   s.resume();
+  await vi.advanceTimersByTimeAsync(10);
+  expect(t.mem.get(DND_KEY)).toBe('1');
   s.reset();
+  await vi.advanceTimersByTimeAsync(10);
+  // Reset: given back again, marker gone, and the end timer never fires.
+  expect(disables()).toBe(2);
+  expect(t.mem.has(DND_KEY)).toBe(false);
   await vi.advanceTimersByTimeAsync(60 * MIN);
   expect(t.useStore.getState().state.status).toBe('idle');
+  expect(disables()).toBe(2);
   s.dispose();
 });
 

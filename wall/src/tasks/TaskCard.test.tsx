@@ -4,7 +4,7 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { mocks } from '../bridge/tauri';
 import { useFocusStore } from '../focus/store';
 import { TaskCard } from './TaskCard';
-import type { TaskItem } from './model';
+import { REFRESH_MS, type TaskItem } from './model';
 
 const flush = async (ms = 0) => {
   await act(async () => {
@@ -394,6 +394,35 @@ it('a refresh that adds a row above the view keeps the rows in view where they w
   expect(el.style.scrollBehavior).toBe('');
 });
 
+it('a refresh in the middle of a key scroll carries the scroll on to the moved target, smoothly', async () => {
+  let list = Array.from({ length: 10 }, (_, i) => task(`r${i}`, `Row ${i}`));
+  mocks.set('wall2_tasks_summary', async () => ({ next: list, remaining: 0, dueTomorrow: { count: 0, estMinutes: 0 }, dueToday: list.length }));
+  const r = render(<TaskCard />);
+  await flush();
+  const el = r.container.querySelector('.tasks-list') as HTMLUListElement;
+  const pos = (li: Element) => [...(li.parentElement?.children ?? [])].indexOf(li);
+  vi.spyOn(HTMLElement.prototype, 'offsetTop', 'get').mockImplementation(function (this: HTMLElement) {
+    return this.classList.contains('tk3') ? pos(this) * 71 : 0;
+  });
+  vi.spyOn(HTMLElement.prototype, 'offsetHeight', 'get').mockImplementation(function (this: HTMLElement) {
+    return this.classList.contains('tk3') ? 71 : 0;
+  });
+  Object.defineProperty(el, 'clientHeight', { value: 213, configurable: true });
+  Object.defineProperty(el, 'scrollHeight', { value: 1000, configurable: true });
+  const calls: { top: number; behavior: string }[] = [];
+  (el as unknown as { scrollTo: (o: { top: number; behavior: string }) => void }).scrollTo = (o) => calls.push(o);
+  el.scrollTop = 142;
+  fireEvent.scroll(el);
+  await flush(REFRESH_MS - 100);
+  fireEvent.keyDown(el, { key: 'ArrowDown' });
+  expect(calls).toEqual([{ top: 213, behavior: 'smooth' }]);
+  // A refresh puts a row above the view while the smooth scroll is on its way.
+  list = [task('new', 'New overdue'), ...list];
+  await flush(150);
+  expect(calls).toEqual([{ top: 213, behavior: 'smooth' }, { top: 284, behavior: 'smooth' }]);
+  expect(el.style.scrollBehavior).toBe('');
+});
+
 it('an overdue row has one amber mark in its own slot, with how late it is on hover; no other row has anything there', async () => {
   const late = { ...task('o', 'Late one', '30'), due_at: '2026-11-09', due_is_all_day: true };
   const yesterday = { ...task('y', 'Yesterday one', null), due_at: '2026-11-10', due_is_all_day: true };
@@ -591,7 +620,7 @@ it('a closing window completes a waiting tick exactly once', async () => {
   expect(done).toHaveBeenCalledWith({ id: 'a' });
 });
 
-it('the page going hidden completes a waiting tick once; an undone tick sends nothing', async () => {
+it('the page going hidden (a screen lock) does not cut the undo window short; the tick commits once when it ends, an undone tick never', async () => {
   setList(() => [task('a', 'First'), task('b', 'Second')]);
   const done = vi.fn();
   mocks.set('wall2_task_done', done);
@@ -603,7 +632,10 @@ it('the page going hidden completes a waiting tick once; an undone tick sends no
   Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'hidden' });
   try {
     document.dispatchEvent(new Event('visibilitychange'));
-    await flush(TICK_UNDO_MS * 2);
+    await flush(TICK_UNDO_MS - 1000);
+    expect(done).not.toHaveBeenCalled();
+    expect(screen.getByRole('button', { name: 'Undo: First' })).toBeTruthy();
+    await flush(TICK_UNDO_MS);
   } finally {
     Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'visible' });
   }

@@ -37,8 +37,8 @@ it('words the age of an old reading', () => {
   expect(staleText(0, 10 * min)).toBeNull();
   expect(staleText(0, 15 * min)).toBeNull();
   expect(staleText(0, 40 * min)).toBe('updated 40 min ago');
-  expect(staleText(0, 60 * min)).toBe('updated 1 hour ago');
-  expect(staleText(0, 190 * min)).toBe('updated 3 hours ago');
+  expect(staleText(0, 60 * min)).toBe('updated 1 h ago');
+  expect(staleText(0, 190 * min)).toBe('updated 3 h ago');
 });
 
 it('treats a missing or short daily array as a parse failure', () => {
@@ -206,6 +206,24 @@ it('late in the evening the high is the larger of now and the highest reading se
   expect([seen.temp, seen.high, seen.low]).toEqual([44, 57, 41]);
   // A seen value under the temperature now never lowers the high.
   expect(parseNws({ hourly: hourly(evening), forecast }, 0, 30).high).toBe(44);
+});
+
+it('one malformed forecast period gives its value to the fallback; the reading is still made', () => {
+  const afternoon = [hour('2026-11-11T15:00:00-08:00', 57), hour('2026-11-11T16:00:00-08:00', 56), hour('2026-11-11T17:00:00-08:00', 54)];
+  const bad = (p: ReturnType<typeof hour>) => ({ ...p, temperature: 'x' as unknown as number });
+  const day = bad(hour('2026-11-11T14:00:00-08:00', 60, 'Sunny'));
+  const night = hour('2026-11-11T18:00:00-08:00', 43, 'Clear', false);
+  // The day period is malformed: the high comes from now and the hours seen, the low from the night period.
+  const noDay = parseNws({ hourly: hourly(afternoon), forecast: hourly([day, night]) }, 0, 59);
+  expect([noDay.temp, noDay.high, noDay.low]).toEqual([57, 59, 43]);
+  // The night period is malformed: the low comes from the hours still ahead.
+  const noNight = parseNws({ hourly: hourly(afternoon), forecast: hourly([hour('2026-11-11T14:00:00-08:00', 60, 'Sunny'), bad(night)]) }, 0);
+  expect([noNight.high, noNight.low]).toEqual([60, 54]);
+  // An empty slot in the list is skipped the same way.
+  const hole = parseNws({ hourly: hourly(afternoon), forecast: { properties: { periods: [null, hour('2026-11-11T14:00:00-08:00', 60, 'Sunny')] } } }, 0);
+  expect([hole.high, hole.low]).toEqual([60, 54]);
+  // A malformed current or hourly period still fails the reading: there is nothing to fall back to.
+  expect(() => parseNws({ hourly: hourly([bad(hour('2026-11-11T15:00:00-08:00', 57))]), forecast: hourly([night]) }, 0)).toThrow();
 });
 
 it('reads the forecast in either unit, and never puts the high under now or the low over it', () => {
