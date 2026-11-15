@@ -91,8 +91,8 @@ precedence over the top-level kind and id; the top-level values remain validated
 ## YouTube
 
 The wall signs in to YouTube so that it can read the owner's own playlists and liked videos.
-The sign-in and its row in Tools came first; the library came next (see "The library" below).
-Nothing plays yet: playback is a later change. It needs a Google Cloud OAuth client of the
+The sign-in and its row in Tools came first; the library came next, and a pick from it plays on the wall (see
+"Playing a pick" below). It needs a Google Cloud OAuth client of the
 "Desktop app" type, made in your own Google Cloud project.
 
 - **Scope.** Only `https://www.googleapis.com/auth/youtube.readonly` (view the account). The
