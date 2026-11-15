@@ -150,6 +150,40 @@ it('redraws once a minute: the headline follows the clock tick', async () => {
   expect(container.querySelector('.lw-head')?.textContent).not.toBe(before);
 });
 
+it('the minute timer stops while the page is hidden and catches up when it shows', async () => {
+  vi.useFakeTimers();
+  mocks.set('wall2_weather', () => JSON.stringify(owm()));
+  mocks.set('wall2_desk_house', () => Promise.reject(new Error('absent')));
+  mocks.set('wall2_desk_rooms', () => Promise.reject(new Error('absent')));
+  let calls = 0;
+  const clock = () => {
+    calls += 1;
+    return at('15:40:00');
+  };
+  let hidden = false;
+  Object.defineProperty(document, 'hidden', { configurable: true, get: () => hidden });
+  try {
+    render(<LeftWing now={clock} />);
+    await flush(50);
+    hidden = true;
+    await act(async () => {
+      document.dispatchEvent(new Event('visibilitychange'));
+    });
+    const before = calls;
+    await flush(5 * 60_000);
+    expect(calls).toBe(before);
+    hidden = false;
+    await act(async () => {
+      document.dispatchEvent(new Event('visibilitychange'));
+    });
+    expect(calls).toBeGreaterThan(before);
+    await flush(61_000);
+    expect(calls).toBeGreaterThan(before + 1);
+  } finally {
+    Reflect.deleteProperty(document, 'hidden');
+  }
+});
+
 it('outside state: a fresh reading, a second source, and none', () => {
   const now = at('10:28:00');
   const reading = { temp: 50, look: { label: 'Partly cloudy', icon: 'cloud-sun' as const }, high: 56, low: 44, hours: [], fetchedAt: now - 60_000 };
