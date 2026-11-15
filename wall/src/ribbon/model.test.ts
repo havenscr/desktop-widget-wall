@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest';
-import { MIN_CHIP_PX, MORE_GAP, MORE_MIN_PX, allDayChips, allDayText, allDayWidth, chipLayout, chips, focusBars, isAllDay, isLate, needleTip, hourLabels, hourText, needle, RIBBON_WIDTH, RX, shortTime, skyGradient, sunLabels, ticks, wallHour } from './model';
+import { HIDDEN_NAMED, MIN_CHIP_PX, MORE_GAP, MORE_MIN_PX, hiddenNames, allDayChips, allDayText, allDayWidth, chipLayout, chips, focusBars, isAllDay, isLate, needleTip, hourLabels, hourText, needle, RIBBON_WIDTH, RX, shortTime, skyGradient, sunLabels, ticks, wallHour } from './model';
 import { sunTimes } from './sun';
 import { useFixedClock, usePacificTime } from './testZone';
 
@@ -343,6 +343,73 @@ it('with no room at all for a "+N" chip, one item fewer is drawn, and when even 
   expect(hiddenTotal).toBeGreaterThanOrEqual(2);
   const holder = lay.shown.find((c) => (c.hidden ?? []).length > 0);
   if (holder) expect(holder.hidden!.every((h) => h.title.startsWith('Quick'))).toBe(true);
+});
+
+it('a staggered group whose chip stands inside it ends the chip MORE_GAP before the next group; with no next group the chip still ends at the group end', () => {
+  const now = t('07:00');
+  const group = [
+    { key: 'a', title: 'A', start: iso('09:00'), end: iso('09:30') },
+    { key: 'b', title: 'B', start: iso('09:00'), end: iso('09:40') },
+    { key: 'c', title: 'C', start: iso('09:00'), end: iso('09:50') },
+    { key: 'd', title: 'D', start: iso('09:00'), end: iso('10:00') },
+  ];
+  const withNext = chipLayout(chips([...group, { key: 'e', title: 'Next', start: iso('10:00'), end: iso('10:30') }], now));
+  const nextX = withNext.shown.find((c) => c.key === 'e')!.x;
+  expect(withNext.more).toHaveLength(1);
+  expect(withNext.more[0].width).toBeGreaterThanOrEqual(MORE_MIN_PX);
+  expect(withNext.more[0].x + withNext.more[0].width).toBeLessThanOrEqual(nextX - MORE_GAP);
+  overlapFree(withNext.shown, withNext.more);
+  const alone = chipLayout(chips(group, now));
+  expect(alone.more).toHaveLength(1);
+  expect(alone.more[0].x + alone.more[0].width).toBeCloseTo(RX(10));
+  overlapFree(alone.shown, alone.more);
+});
+
+it('with no room, only the items that cannot fit are not drawn: eight at once keep more than one on the row, and the hover names just the hidden', () => {
+  const now = t('07:00');
+  const lay = chipLayout(
+    chips(
+      [
+        { key: 'a', title: 'Long', start: iso('09:00'), end: iso('10:05') },
+        { key: 'b', title: 'Early', start: iso('09:00'), end: iso('09:20') },
+        { key: 'c', title: 'Late', start: iso('09:40'), end: iso('10:00') },
+        ...['d', 'e', 'f', 'g', 'h'].map((k) => ({ key: k, title: `Short ${k}`, start: iso('09:05'), end: iso('09:08') })),
+        { key: 'z', title: 'Next', start: iso('10:05'), end: iso('10:30') },
+      ],
+      now,
+    ),
+  );
+  const group = lay.shown.filter((c) => c.key !== 'z');
+  expect(group.length).toBeGreaterThan(1);
+  // The one that cannot fit before the chip joins the hidden ones in a chip of its own place.
+  expect(lay.more).toHaveLength(1);
+  expect(lay.more[0].items.map((c) => c.key)).toContain('c');
+  const nextX = lay.shown.find((c) => c.key === 'z')!.x;
+  for (const m of lay.more) expect(m.x + m.width).toBeLessThanOrEqual(nextX - MORE_GAP);
+  overlapFree(lay.shown, lay.more);
+  const hidden = [...lay.more.flatMap((m) => m.items.map((c) => c.key)), ...lay.shown.flatMap((c) => (c.hidden ?? []).map((h) => h.key))];
+  expect([...group.map((c) => c.key), ...hidden].sort()).toEqual(['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h']);
+});
+
+it('the hover that names hidden meetings names at most six, each cut at 60 characters, then how many more', () => {
+  const long = 'A very long meeting title that goes on and on and on past sixty characters for sure';
+  const lay = chipLayout(
+    chips(
+      [
+        ...Array.from({ length: 14 }, (_, i) => ({ key: `m${String(i).padStart(2, '0')}`, title: `${long} ${i}`, start: iso('09:00'), end: iso('09:10') })),
+        { key: 'z', title: 'Next', start: iso('09:10'), end: iso('10:00') },
+      ],
+      t('07:00'),
+    ),
+  );
+  const holder = lay.shown.find((c) => (c.hidden ?? []).length > 0);
+  expect(holder).toBeTruthy();
+  expect(holder!.hidden!.length).toBeGreaterThanOrEqual(12);
+  const names = hiddenNames(holder!.hidden!);
+  expect(names.titles).toHaveLength(HIDDEN_NAMED);
+  expect(names.titles.every((x) => x.length <= 60 && x.endsWith('\u2026'))).toBe(true);
+  expect(names.more).toBe(holder!.hidden!.length - HIDDEN_NAMED);
+  expect(hiddenNames([]).titles).toEqual([]);
 });
 
 it('a group of one has no "+N" chip and nothing hidden', () => {

@@ -270,6 +270,17 @@ function titleWidth(title: string, lanes: number): number {
   return Math.ceil(title.length * (lanes > 1 ? 6.8 : 8.6)) + 4;
 }
 
+/** Most hidden titles a hover or label names; the rest are counted ("and 6 more"). */
+export const HIDDEN_NAMED = 6;
+/** Longest title in that list. */
+const HIDDEN_TITLE_CHARS = 60;
+
+/** The hidden events' titles for a hover: at most six, each cut at 60 characters with an ellipsis, then how many more. */
+export function hiddenNames(hidden: readonly Chip[]): { titles: string[]; more: number } {
+  const cut = (t: string) => (t.length > HIDDEN_TITLE_CHARS ? `${t.slice(0, HIDDEN_TITLE_CHARS - 1).trimEnd()}\u2026` : t);
+  return { titles: hidden.slice(0, HIDDEN_NAMED).map((h) => cut(h.title)), more: Math.max(0, hidden.length - HIDDEN_NAMED) };
+}
+
 const ALL_DAY_KEY = '\u0000all-day';
 
 /**
@@ -328,31 +339,36 @@ export function chipLayout(all: readonly Chip[], allDay = 0): { shown: Chip[]; m
       over = place(2);
       const end = Math.max(...g.map((c) => c.x + c.width));
       const next = groups[groups.indexOf(g) + 1]?.[0]?.x ?? RX(END_HOUR) + 40;
-      const nx = end - MORE_CHIP_PX;
+      // The chip ends at least MORE_GAP before the next group, also when it stands inside its own group.
+      const nx = Math.min(end, next - MORE_GAP) - MORE_CHIP_PX;
+      const limit = nx - MORE_GAP;
+      // A chip fits inside the chip's place when it ends before it, or can be drawn shorter and still be a chip.
+      const fitsBefore = (c: Chip) => c.x + c.width <= limit || (c !== pseudo && c.x + MIN_CHIP_PX <= limit);
       // Where the "+N" chip can stand without touching or covering anything: at the end of the group's span (the chips
       // there drawn shorter), else just after it, at most as wide as the room before the next group and never under
       // MORE_MIN_PX. Null when neither has room.
       const placeMore = () => {
         const inGroup = g.filter((c) => !over.includes(c));
-        if (inGroup.every((c) => c.x + c.width <= nx - MORE_GAP || (c !== pseudo && c.x + MIN_CHIP_PX <= nx - MORE_GAP))) {
-          return { mx: nx, mw: MORE_CHIP_PX, inside: inGroup };
-        }
+        if (inGroup.every(fitsBefore)) return { mx: nx, mw: MORE_CHIP_PX, inside: inGroup };
         const room = next - MORE_GAP - (end + MORE_GAP);
         return room >= MORE_MIN_PX ? { mx: end + MORE_GAP, mw: Math.min(MORE_CHIP_PX, room), inside: [] as Chip[] } : null;
       };
       let spot = placeMore();
-      // No room: show one item fewer (the chip then counts one more), the one that reaches furthest, and try again.
-      while (!spot) {
-        const reach = g.filter((c) => c !== pseudo && !over.includes(c)).sort((a, b) => b.x + b.width - (a.x + a.width) || b.x - a.x);
-        if (reach.length <= 1) break;
-        over.push(reach[0]);
-        spot = placeMore();
+      // No room: only the items that cannot fit before the chip's place are not drawn (the chip counts them), as long as
+      // that leaves one drawn and no item that cannot be dropped is in the way; the rest stay.
+      if (!spot) {
+        const blocking = g.filter((c) => !over.includes(c) && !fitsBefore(c));
+        const staying = g.filter((c) => c !== pseudo && !over.includes(c) && fitsBefore(c));
+        if (staying.length > 0 && blocking.every((c) => c !== pseudo)) {
+          over.push(...blocking);
+          spot = placeMore();
+        }
       }
       if (spot) {
         for (const c of spot.inside) if (c.x + c.width > spot.mx - MORE_GAP) c.width = spot.mx - MORE_GAP - c.x;
         groupMore.push({ key: `more-${over[0].key}`, x: spot.mx, width: spot.mw, items: [...over] });
       } else {
-        // Not even one item fewer leaves room: no chip is drawn, and the last shown item's hover names what is hidden.
+        // No room for a chip: none is drawn, and the last shown item's hover names what is hidden.
         const holder = g.filter((c) => c !== pseudo && !over.includes(c)).sort((a, b) => a.x - b.x || a.key.localeCompare(b.key)).pop();
         if (holder) holder.hidden = [...over].sort((a, b) => a.start - b.start || a.key.localeCompare(b.key));
       }
