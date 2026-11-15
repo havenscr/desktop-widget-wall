@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
 import { reviewNow } from '../ui/reviewClock';
 import { houseView, HouseLine } from './HouseLine';
-import { OutsideRow } from './OutsideRow';
+import { useWeather } from '../weather/useWeather';
+import { OutsideRow, outsideState } from './OutsideRow';
 import { SunCurve } from './SunCurve';
 import { dayCurve } from './dayCurve';
 import { sunHeadline } from './sunLine';
@@ -27,6 +28,9 @@ export function LeftWing({ now = reviewNow ?? Date.now }: { now?: () => number }
   const withHouse = houseView(house, rooms) !== null;
   const head = sunHeadline(ms);
   const curve = dayCurve(ms);
+  const outside = outsideState(useWeather(), Date.now());
+  // Nothing to show (no sun times, the first weather read still out, no house line): no wing at all.
+  if (!head && outside.kind === 'loading' && !withHouse) return null;
   return (
     <div className={withHouse ? 'home-wing with-house' : 'home-wing'} aria-label="Sun, weather and house">
       {head && (
@@ -35,7 +39,7 @@ export function LeftWing({ now = reviewNow ?? Date.now }: { now?: () => number }
         </div>
       )}
       {curve && <SunCurve curve={curve} />}
-      <OutsideRow now={() => Date.now()} />
+      <OutsideRow state={outside} />
       <HouseLine />
     </div>
   );

@@ -3,7 +3,6 @@ import { clockText } from '../meet/model';
 import { freshReading, WEATHER_UNAVAILABLE } from '../unwind/model';
 import { WeatherIcon } from '../weather/WeatherIcon';
 import { WEATHER_SOURCE_NAMES, staleText, weatherFailureText, type WeatherFailure, type WeatherReading } from '../weather/model';
-import { useWeather } from '../weather/useWeather';
 
 export interface OutsideView {
   /** "50°" with the reading's own words, "partly cloudy". */
@@ -57,9 +56,7 @@ export function outsideState(w: Input, now: number): OutsideState {
 const WARM = new Set(['sun', 'cloud-sun']);
 
 /** "50° outside, partly cloudy" with the day's high and low, from the reading the wall already has. */
-export function OutsideRow({ now = Date.now }: { now?: () => number }) {
-  const w = useWeather();
-  const s = outsideState(w, now());
+export function OutsideRow({ state: s }: { state: OutsideState }) {
   if (s.kind === 'loading') return null;
   if (s.kind === 'missing') {
     return (
