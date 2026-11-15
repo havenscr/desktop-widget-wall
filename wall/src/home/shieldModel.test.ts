@@ -86,7 +86,9 @@ describe('the alert line\'s age words', () => {
     expect(alertAgeWords(59)).toBe('59 min ago');
     expect(alertAgeWords(60)).toBe('1 h ago');
     expect(alertAgeWords(180)).toBe('3 h ago');
-    expect(alertAgeWords(47 * 60 + 59)).toBe('47 h ago');
+    expect(alertAgeWords(23 * 60 + 59)).toBe('23 h ago');
+    expect(alertAgeWords(24 * 60)).toBe('1 day ago');
+    expect(alertAgeWords(47 * 60 + 59)).toBe('1 day ago');
     expect(alertAgeWords(48 * 60)).toBe('2 days ago');
     expect(alertAgeWords(5 * 24 * 60)).toBe('5 days ago');
     expect(alertAgeWords(null)).toBeNull();

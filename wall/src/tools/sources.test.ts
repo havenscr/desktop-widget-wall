@@ -113,6 +113,12 @@ it('weather keeps all four failed tries visible beside the older reading', () =>
   }
 });
 
+it('a failed try an hour or more old says "h ago", the same word as Home', () => {
+  const at = (age: number) => row(base({ weather: { reading: { fetchedAt: NOW - min(5) } as never, failed: true, failure: 'network', attemptedAt: NOW - age } }), 'weather').reason;
+  expect(at(min(60))).toContain('Last try failed 1 h ago');
+  expect(at(min(190))).toContain('Last try failed 3 h ago');
+});
+
 it('weather names the second source while Open-Meteo is refusing, and the planned next try with no reading', () => {
   const retry = new Date(2026, 10, 14, 15, 15).getTime();
   const nws = { reading: { fetchedAt: NOW - min(5), source: 'nws' } as never, failed: false, nextTryAt: retry };

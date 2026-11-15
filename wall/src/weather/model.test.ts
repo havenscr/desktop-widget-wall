@@ -37,8 +37,8 @@ it('words the age of an old reading', () => {
   expect(staleText(0, 10 * min)).toBeNull();
   expect(staleText(0, 15 * min)).toBeNull();
   expect(staleText(0, 40 * min)).toBe('updated 40 min ago');
-  expect(staleText(0, 60 * min)).toBe('updated 1 hour ago');
-  expect(staleText(0, 190 * min)).toBe('updated 3 hours ago');
+  expect(staleText(0, 60 * min)).toBe('updated 1 h ago');
+  expect(staleText(0, 190 * min)).toBe('updated 3 h ago');
 });
 
 it('treats a missing or short daily array as a parse failure', () => {

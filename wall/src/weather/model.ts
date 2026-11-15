@@ -243,5 +243,5 @@ export function staleText(fetchedAt: number, now: number): string | null {
   const mins = Math.floor(age / 60_000);
   if (mins < 60) return `updated ${mins} min ago`;
   const hrs = Math.floor(mins / 60);
-  return hrs === 1 ? 'updated 1 hour ago' : `updated ${hrs} hours ago`;
+  return `updated ${hrs} h ago`;
 }

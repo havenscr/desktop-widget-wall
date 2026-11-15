@@ -62,14 +62,15 @@ function ageMinutes(atMs: number | null, now: number): number | null {
   return typeof atMs === 'number' && Number.isFinite(atMs) ? Math.max(0, Math.floor((now - atMs) / 60_000)) : null;
 }
 
-/** An alert's age as the card's line says it: "just now", "12 min ago", "3 h ago", "2 days ago". */
+/** An alert's age as the card's line says it: "just now", "12 min ago", "3 h ago", "1 day ago", "2 days ago". */
 export function alertAgeWords(mins: number | null): string | null {
   if (mins === null) return null;
   if (mins < 1) return 'just now';
   if (mins < 60) return `${mins} min ago`;
   const hours = Math.floor(mins / 60);
-  if (hours < 48) return `${hours} h ago`;
-  return `${Math.floor(hours / 24)} days ago`;
+  if (hours < 24) return `${hours} h ago`;
+  const days = Math.floor(hours / 24);
+  return days === 1 ? '1 day ago' : `${days} days ago`;
 }
 
 /** Newest first; unknown times last, in the source's order. */
