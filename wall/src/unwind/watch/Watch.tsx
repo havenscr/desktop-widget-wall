@@ -66,8 +66,8 @@ export function WatchGear() {
     if (!open) return;
     const inSheet = (t: EventTarget | null) => t instanceof Element && t.closest('.w-sheet') !== null;
     inside.current = inSheet(document.activeElement);
-    const onFocus = (e: FocusEvent) => void (inside.current = inSheet(e.target));
-    const onDown = (e: PointerEvent) => void (inside.current = inSheet(e.target));
+    const onFocus = (e: globalThis.FocusEvent) => void (inside.current = inSheet(e.target));
+    const onDown = (e: globalThis.PointerEvent) => void (inside.current = inSheet(e.target));
     document.addEventListener('focusin', onFocus);
     window.addEventListener('pointerdown', onDown, true);
     return () => {
