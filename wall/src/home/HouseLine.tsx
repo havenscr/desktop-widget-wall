@@ -1,6 +1,7 @@
 import { IconHome } from '@tabler/icons-react';
 import { useLayoutEffect, useRef, useState } from 'react';
 import { tip } from '../ui/HoverTip';
+import { useRemeasure } from '../ui/useRemeasure';
 import { HOUSE_REFRESH_MS, maxAge, useDeskHouse, type DeskRooms, type FeedState, type House } from './useDesk';
 
 const WORDS = ['no', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten'];
@@ -101,7 +102,7 @@ export function HouseLine() {
   const [asOfFits, setAsOfFits] = useState(true);
   const asOfKey = v?.asOf ?? '';
   const roomKey = v ? v.rooms.map((r) => r.name).join('|') : '';
-  useLayoutEffect(() => {
+  const measureAsOf = () => {
     const row = rowRef.current;
     const label = row?.querySelector<HTMLElement>('.house-asof');
     if (!row || !label) return;
@@ -109,7 +110,10 @@ export function HouseLine() {
     const last = dots[dots.length - 1];
     const end = last ? last.offsetLeft + last.offsetWidth : 0;
     setAsOfFits(end + ASOF_GAP_PX + label.offsetWidth <= row.clientWidth);
-  }, [asOfKey, roomKey]);
+  };
+  useLayoutEffect(measureAsOf, [asOfKey, roomKey]);
+  // Measured again when the row changes width or the display font arrives after the first paint.
+  useRemeasure(rowRef, measureAsOf, v !== null);
   if (!v) return null;
   const { shown, hidden } = fitRooms(v.rooms);
   const asOf = v.asOf ? `, ${v.asOf}` : '';

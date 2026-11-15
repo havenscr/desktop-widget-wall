@@ -2,6 +2,7 @@ import { IconBan, IconBell, IconChevronRight, IconClock, IconDevices, IconShield
 import type { ReactNode } from 'react';
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { tip } from '../ui/HoverTip';
+import { useRemeasure } from '../ui/useRemeasure';
 import { useLinks, useOpenLink } from './netLinks';
 import { ShieldDrawer, SevShape } from './ShieldDrawer';
 import { MAX_ARCS, alertHint, ringCount, severityCounts, shieldFacts, shieldFrom, shieldSub, type FactKind, type Shield } from './shieldModel';
@@ -138,14 +139,17 @@ export function NetworkTile() {
   // The title is the card's most important line: one line at 27 px when it fits its column, else two lines at 22 px.
   const titleRef = useRef<HTMLSpanElement>(null);
   const [longTitle, setLongTitle] = useState(false);
-  useLayoutEffect(() => {
+  const measureTitle = () => {
     const el = titleRef.current;
     if (!el) return;
     el.classList.remove('long');
     const over = el.scrollWidth > el.clientWidth + 0.5;
     el.classList.toggle('long', over);
     setLongTitle(over);
-  }, [s.title, busy, doors, factsAside]);
+  };
+  useLayoutEffect(measureTitle, [s.title, busy, doors, factsAside]);
+  // Measured again when the column changes width or the display font arrives after the first paint.
+  useRemeasure(titleRef, measureTitle);
   return (
     <section className={open && busy ? 'network-block drawer-open' : 'network-block'} aria-label="Network and security">
       <div className="net-head">
