@@ -1,4 +1,5 @@
 import { IconHome } from '@tabler/icons-react';
+import { useLayoutEffect, useRef, useState } from 'react';
 import { tip } from '../ui/HoverTip';
 import { HOUSE_REFRESH_MS, maxAge, useDeskHouse, type DeskRooms, type FeedState, type House } from './useDesk';
 
@@ -48,8 +49,8 @@ const DOT_PX = 17; // the dot and its gap to the name
 const ROOM_GAP_PX = 18;
 const NAME_CHAR_PX = 9.2;
 const MORE_PX = 74;
-/** Room kept at the right end of the dots row for "as of 9:41 AM" (17 px type) and a gap. */
-export const ASOF_PX = 128;
+/** The gap kept between the last dot and "as of 9:41 AM" at the right end of the row. */
+const ASOF_GAP_PX = 18;
 
 type RoomDot = { id: string; name: string; on: boolean };
 
@@ -89,14 +90,28 @@ function Lead({ text }: { text: string }) {
 
 /**
  * Home's house row under the weather row: the temperature and lit rooms, then a dot per room.
- * Hidden while the home app's desk routes are absent; dimmed with "as of" when not live.
+ * Hidden while the home app's desk routes are absent; dimmed when not live. Every dot that fits
+ * the row's full width shows; "as of 9:41 AM" sits at the row's right end only when the measured
+ * dots leave room for it, otherwise it is in the hover card of the house row (and of each dot).
  */
 export function HouseLine() {
   const { house, rooms } = useDeskHouse();
   const v = houseView(house, rooms);
+  const rowRef = useRef<HTMLDivElement>(null);
+  const [asOfFits, setAsOfFits] = useState(true);
+  const asOfKey = v?.asOf ?? '';
+  const roomKey = v ? v.rooms.map((r) => r.name).join('|') : '';
+  useLayoutEffect(() => {
+    const row = rowRef.current;
+    const label = row?.querySelector<HTMLElement>('.house-asof');
+    if (!row || !label) return;
+    const dots = row.querySelectorAll<HTMLElement>('.house-room');
+    const last = dots[dots.length - 1];
+    const end = last ? last.offsetLeft + last.offsetWidth : 0;
+    setAsOfFits(end + ASOF_GAP_PX + label.offsetWidth <= row.clientWidth);
+  }, [asOfKey, roomKey]);
   if (!v) return null;
-  // Not live: "as of" takes the right end of the dots row, so the dots get that much less.
-  const { shown, hidden } = fitRooms(v.rooms, v.asOf ? ROOMS_ROW_PX - ASOF_PX : ROOMS_ROW_PX);
+  const { shown, hidden } = fitRooms(v.rooms);
   const asOf = v.asOf ? `, ${v.asOf}` : '';
   return (
     <div className={v.stale ? 'lw-house house stale' : 'lw-house house'} aria-label="House">
@@ -109,7 +124,7 @@ export function HouseLine() {
         </span>
       </div>
       {(v.rooms.length > 0 || v.asOf) && (
-        <div className="house-rooms">
+        <div className="house-rooms" ref={rowRef}>
           {shown.map((r) => (
             <span key={r.id} className={r.on ? 'house-room on' : 'house-room'} {...tip(`${r.name}: ${r.on ? 'lights on' : 'lights off'}${asOf}`)}>
               <i aria-hidden="true" />
@@ -121,7 +136,11 @@ export function HouseLine() {
               +{hidden.length} more
             </span>
           )}
-          {v.asOf && <span className="lw-side house-asof">{v.asOf}</span>}
+          {v.asOf && (
+            <span className={asOfFits ? 'lw-side house-asof' : 'lw-side house-asof off'} aria-hidden={asOfFits ? undefined : true}>
+              {v.asOf}
+            </span>
+          )}
         </div>
       )}
       {/* The "Next" automation line goes here once the home app has a routine schedule:
