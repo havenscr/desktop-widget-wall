@@ -518,18 +518,48 @@ pub fn event_link(id: &str, web_link: Option<&str>) -> Option<String> {
 
 // Section: shaping
 
+/// Titles retain joiners used by composed glyphs while removing other hidden format characters.
+fn normalize_title(raw: &str) -> String {
+    let spaced: String = raw.chars().filter_map(|c| if c.is_control() { Some(' ') } else if c == '\u{200D}' || !is_invisible(c) { Some(c) } else { None }).collect();
+    spaced.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+fn fiscal_year(word: &str) -> bool {
+    let upper = word.to_ascii_uppercase();
+    let Some(rest) = upper.strip_prefix("FY") else { return false };
+    let Some((year, end)) = rest.split_once('-') else { return false };
+    year.len() == 4 && year.parse::<u16>().is_ok_and(|n| (1900..=2099).contains(&n))
+        && end.len() == 2 && end.bytes().all(|b| b.is_ascii_digit())
+}
+
+/// A schemeless title link needs a host and a path with a join id or meeting code.
+fn title_join_link(word: &str) -> bool {
+    let Some((host, path)) = word.split_once('/') else { return false };
+    if !host_shaped(host) { return false }
+    let mut run = 0;
+    path.chars().any(|c| { run = if c.is_ascii_digit() { run + 1 } else { 0 }; run >= 5 })
+        || path.split(|c: char| !c.is_ascii_alphanumeric() && c != '-').any(meeting_code_shaped)
+}
+
 /// Titles use only the narrow word filter, never invite markers or line cutting.
 fn clean_title(raw: &str) -> String {
-    let text = strip_digit_chains(&without_long_number_words(&normalize(raw)));
+    let normalized = normalize_title(raw);
+    let masked = mask_year_chains(&normalized);
+    let words = normalized.split_whitespace().zip(masked.split_whitespace()).filter(|(word, mask)| {
+        digits_in(mask) < 5 || fiscal_year(word)
+    }).map(|(word, _)| word).collect::<Vec<_>>().join(" ");
+    let text = strip_digit_chains(&words);
     text.split_whitespace().filter(|word| {
         let lower = word.to_ascii_lowercase();
-        !(lower.contains("://")
-            || lower.contains("www.")
+        // Ignore joiners for link detection, but keep them in the displayed title.
+        let probe = lower.replace('\u{200D}', "");
+        let start = probe.trim_start_matches(|c: char| !c.is_alphanumeric());
+        !(probe.contains("://")
+            || start.starts_with("www.")
             || word.contains('@')
-            || ["tel:", "sip:", "mailto:", "callto:"].iter().any(|p| lower.trim_start_matches(|c: char| !c.is_alphanumeric()).starts_with(p))
-            || (word.contains('/') && host_shaped(word))
-            || meeting_code_shaped(word)
-            || digits_in(word) >= 5)
+            || ["tel:", "sip:", "mailto:", "callto:"].iter().any(|p| start.starts_with(p))
+            || title_join_link(&probe)
+            || meeting_code_shaped(word))
     }).collect::<Vec<_>>().join(" ")
 }
 
@@ -746,13 +776,47 @@ fn has_underscore_run(line: &str) -> bool {
     false
 }
 
+/// Mask only complete chains of one to three plain years, for the numeric filters.
+/// Other digit groups, phone prefixes and dotted dates never receive this exemption.
+fn mask_year_chains(text: &str) -> String {
+    let chars: Vec<char> = text.chars().collect();
+    let mut out = chars.clone();
+    let mut i = 0;
+    while i < chars.len() {
+        if !chars[i].is_ascii_digit() { i += 1; continue; }
+        let start = i;
+        while i < chars.len() && chars[i].is_ascii_digit() { i += 1; }
+        if start > 0 && chars[start - 1].is_alphanumeric() { continue; }
+        let start_boundary = start == 0 || !matches!(chars[start - 1], '.' | ',' | '+' | '(');
+        let mut end = i;
+        let mut groups = vec![(start, i)];
+        loop {
+            let mut next = end;
+            while next < chars.len() && matches!(chars[next], ' ' | '-' | '/') { next += 1; }
+            if next == end || next == chars.len() || !chars[next].is_ascii_digit() { break; }
+            let begin = next;
+            while next < chars.len() && chars[next].is_ascii_digit() { next += 1; }
+            groups.push((begin, next));
+            end = next;
+        }
+        let boundary = end == chars.len() || !(chars[end].is_alphanumeric() || matches!(chars[end], '.' | ','));
+        if start_boundary && boundary && groups.len() <= 3 && groups.iter().all(|&(a, b)| {
+            b - a == 4 && chars[a..b].iter().collect::<String>().parse::<u16>().is_ok_and(|n| (1900..=2099).contains(&n))
+        }) {
+            for &(a, b) in &groups { for c in &mut out[a..b] { *c = 'y'; } }
+        }
+        i = end;
+    }
+    out.into_iter().collect()
+}
+
 /// The longest separated digit run, excluding digits attached directly to a letter.
 /// Spaces, hyphens and round brackets still join phone number groups.
 fn longest_digit_run(text: &str) -> usize {
     let mut best = 0;
     let mut run = 0;
     let mut attached = false;
-    for c in text.chars() {
+    for c in mask_year_chains(text).chars() {
         if c.is_numeric() {
             if !attached {
                 run += 1;
@@ -770,7 +834,9 @@ fn longest_digit_run(text: &str) -> usize {
 
 /// Remove whole long-number words before grouping can leave fragments of them behind.
 fn without_long_number_words(text: &str) -> String {
-    text.split_whitespace().filter(|word| digits_in(word) < 5).collect::<Vec<_>>().join(" ")
+    let masked = mask_year_chains(text);
+    text.split_whitespace().zip(masked.split_whitespace()).filter(|(_, mask)| digits_in(mask) < 5)
+        .map(|(word, _)| word).collect::<Vec<_>>().join(" ")
 }
 
 /// Takes out digit groups (three or more digits each) that are separated only by spaces, hyphens, dots or commas and
@@ -778,6 +844,7 @@ fn without_long_number_words(text: &str) -> String {
 /// "$1,250" are not such runs and stay.
 fn strip_digit_chains(text: &str) -> String {
     let chars: Vec<char> = text.chars().collect();
+    let year_mask: Vec<char> = mask_year_chains(text).chars().collect();
     // Digit runs of three or more.
     let mut runs: Vec<(usize, usize)> = Vec::new();
     let mut i = 0;
@@ -799,11 +866,12 @@ fn strip_digit_chains(text: &str) -> String {
     while k < runs.len() {
         let mut j = k;
         // Extend while the next run follows after nothing but separators.
-        while j + 1 < runs.len() && runs[j + 1].0 > runs[j].1 && chars[runs[j].1..runs[j + 1].0].iter().all(|c| matches!(c, ' ' | '-' | '.' | ',')) {
+        while j + 1 < runs.len() && runs[j + 1].0 > runs[j].1 && chars[runs[j].1..runs[j + 1].0].iter().all(|c| matches!(c, ' ' | '-' | '/' | '.' | ',')) {
             j += 1;
         }
         let total: usize = runs[k..=j].iter().map(|(a, b)| b - a).sum();
-        if total >= 7 {
+        let years_only = runs[k..=j].iter().all(|&(a, b)| year_mask[a..b].iter().all(|c| *c == 'y'));
+        if total >= 7 && !years_only {
             for r in remove.iter_mut().take(runs[j].1).skip(runs[k].0) {
                 *r = true;
             }
@@ -856,7 +924,7 @@ fn dropped_word(word: &str) -> bool {
         || ["tel:", "sip:", "mailto:", "callto:"].iter().any(|p| lower.trim_start_matches(|c: char| !c.is_alphanumeric()).starts_with(p))
         || host_shaped(word)
         || meeting_code_shaped(word)
-        || digits_in(word) >= 5
+        || digits_in(&mask_year_chains(word)) >= 5
 }
 
 /// The invite's own words from `bodyPreview`, as a best effort on text that anyone who can send an invitation
@@ -1006,6 +1074,34 @@ mod tests {
     use super::*;
 
     #[test]
+    fn plain_year_chains_survive_without_preserving_ids_or_phones() {
+        for text in ["Goals for Q3 2026 2027 plan", "2026 2027", "2025-2026", "2025/2026", "FY 2025 2026 budget", "Plan 2025 2026 2027 ahead"] {
+            assert_eq!(clean_invite(text).as_deref(), Some(text), "{text}");
+            assert_eq!(strip_digit_chains(text), text);
+        }
+        for text in ["987 6543 2101", "912-3456-7890", "+1 555 123 4567", "+1 2025 2026", "2024 2025 2026 2027"] {
+            assert_eq!(clean_invite(&format!("Agenda.\n{text}\nLater.")), Some("Agenda.".into()), "{text}");
+        }
+        assert_eq!(clean_invite("Agenda 14.11.2026 later"), Some("Agenda later".into()));
+        for text in ["1899 2026", "2100 2026", "2025.2026", "2025,2026", "2025 2026 999"] {
+            assert_eq!(strip_digit_chains(text).trim(), "", "{text}");
+        }
+    }
+
+    #[test]
+    fn fair_titles_keep_years_technology_names_and_joiners() {
+        let joined = "\u{1f469}\u{200D}\u{1f4bb} planning";
+        for title in ["FY 2025 2026 budget", "FY2026-27", "Node.js/React.js", joined, "2025/2026 plan", "Plan 2025 2026 2027", "meet.example/agenda", "xwww.notes"] {
+            assert_eq!(cap_title(title), title, "{title}");
+        }
+        for tail in ["https://meet.example/join", "meet.example/j/987654321", "meet.example/abc-defg-hij", "987 6543 2101", "abc-defg-hij"] {
+            assert_eq!(cap_title(&format!("Sync {tail}")), "Sync");
+            assert_eq!(cap_title(tail), "Untitled");
+        }
+        assert_eq!(cap_title("Sync https:\u{200D}//meet.example/join"), "Sync");
+    }
+
+    #[test]
     fn short_invite_markers_do_not_cut_inside_agenda_words() {
         for line in ["Q4 spin: the new pricing", "pwdreset notes", "Review spw: notes", "Review épin: notes"] {
             let text = format!("{line}\nNext agenda item.");
@@ -1018,9 +1114,9 @@ mod tests {
 
     #[test]
     fn label_digits_do_not_cut_the_following_agenda() {
-        assert_eq!(longest_digit_run("Goals for Q3 2026 2027"), 8);
-        // The line and following agenda survive; the existing grouped-id rule still removes the digit groups.
-        assert_eq!(clean_invite("Goals for Q3 2026 2027\nNext agenda item."), Some("Goals for Q3 Next agenda item.".into()));
+        assert_eq!(longest_digit_run("Goals for Q3 2026 2027"), 0);
+        // The full year phrase and the following agenda survive.
+        assert_eq!(clean_invite("Goals for Q3 2026 2027\nNext agenda item."), Some("Goals for Q3 2026 2027 Next agenda item.".into()));
         for line in ["+1 555 123 4567", "Meeting 987 6543 2101", "9876543210"] {
             assert!(longest_digit_run(line) >= 9);
             assert_eq!(clean_invite(&format!("Agenda.\n{line}\nLater.")), Some("Agenda.".into()));
@@ -1035,7 +1131,7 @@ mod tests {
         for title in ["Q3 planning 2026", "1:1 with design", "Budget 4.12", "Review example.test launch", "Passcode rotation", "PIN review"] {
             assert_eq!(cap_title(title), title);
         }
-        for title in ["https://meet.example/j/123", "www.meet.example/join", "meet.example/join", "abc-defg-hij", "12345"] {
+        for title in ["https://meet.example/j/123", "www.meet.example/join", "meet.example/j/12345", "abc-defg-hij", "12345"] {
             assert_eq!(cap_title(title), "Untitled");
         }
         assert_eq!(cap_title("Sync x987654321"), "Sync");
