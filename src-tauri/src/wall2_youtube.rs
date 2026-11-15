@@ -2250,7 +2250,7 @@ mod tests {
     fn the_content_security_policy_gains_only_the_thumbnail_host() {
         let conf: Value = serde_json::from_str(include_str!("../tauri.wall2.conf.json")).unwrap();
         let security = &conf["app"]["security"];
-        let images = "'self' data: https://i.scdn.co https://mosaic.scdn.co https://image-cdn-ak.spotifycdn.com https://i.ytimg.com";
+        let images = "'self' data: https://*.scdn.co https://*.spotifycdn.com https://i.ytimg.com";
         let rest = |script: &str, style: &str, connect: &str| json!({
             "default-src": "'none'", "script-src": script, "style-src": style, "img-src": images, "font-src": "'self'", "connect-src": connect,
             "frame-src": "https://www.youtube-nocookie.com https://player.twitch.tv", "frame-ancestors": "'none'", "base-uri": "'none'", "form-action": "'none'", "object-src": "'none'",
