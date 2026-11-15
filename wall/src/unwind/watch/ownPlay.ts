@@ -26,6 +26,8 @@ import { useWatchStore, type PlayerReport, type WatchState } from './store';
  */
 
 export const OWN_NOTE_MS = 6000;
+/** Development only: the dev mocks lengthen the note so a still can catch it. */
+export const ownTiming = { noteMs: OWN_NOTE_MS };
 export const NO_PLAY_LINE = 'None of these can play here';
 
 export type SkipWhy = 'embed' | 'removed' | 'other' | 'mixed';
@@ -72,7 +74,7 @@ function setNote(line: string | null): void {
     noteTimer = setTimeout(() => {
       noteTimer = undefined;
       useOwnPlay.setState({ note: null });
-    }, OWN_NOTE_MS);
+    }, ownTiming.noteMs);
   }
 }
 

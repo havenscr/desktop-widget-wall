@@ -5,6 +5,10 @@ import { LOOKS_KEY, isLook } from '../../unwind/watch/looks';
 import { TUNE_KEY, defaultTune, withPatch } from '../../unwind/watch/lookSettings';
 import { framePoster, takeVideoInfo } from '../../unwind/watch/PlayerFrame';
 import { PINS_KEY, usePins } from '../../unwind/watch/pins';
+import { OWN_KEY, useOwnLists } from '../../unwind/watch/ownLists';
+import { ownTiming, playOwn, setFollow, useOwnPlay } from '../../unwind/watch/ownPlay';
+import { ownThumb } from '../../unwind/watch/OwnParts';
+import { markFailed } from '../../unwind/ytmusic/queue';
 import { SAVED_KEY } from '../../unwind/watch/saved';
 import { endSleepNow, startSleepAt } from '../../unwind/watch/sleep';
 import { useWatchStore, VOLUME_KEY } from '../../unwind/watch/store';
@@ -48,6 +52,14 @@ import { knob } from './long';
  *   ?wsleep=<minutes left>|end   a running sleep timer with that many minutes left; `end` ends the timer at once (the video
  *                             stops with its line and the player the wall follows is paused through the mocked commands)
  *   ?wrows=shown              hold the rows under the clock at full strength (they start at rest)
+ *   ?wown=lists|draft|edit|menu|playing|repeat|skip|end|none   playlists the owner makes (with `watch=mock`): the list holds two
+ *                             invented playlists of the owner's own (12 and 5 videos), a connected YouTube playlist, a video, a live
+ *                             stream and a Twitch channel (`wlist` is ignored); `draft` presses New playlist; `edit` opens the editor
+ *                             (two videos not yet named, one that plays only on YouTube); `menu` opens the play row's add menu (play
+ *                             a video with `wplay=3`); `playing` plays the first playlist from its third video with the card following;
+ *                             `repeat` is that with repeat on; `skip` skips one video with its note held on screen; `end` and `none`
+ *                             show the block after the playlist ran out, or when nothing in it could play. Pictures are drawn `data:`
+ *                             motifs through the `ownThumb` seam: no request ever leaves the page.
  *   ?wplace=work|home|meet    watch behaviour: after it starts, go to that place, so the video
  *                             plays out of sight and the rail marks Unwind
  */
@@ -62,6 +74,80 @@ const LONG_THREE = [
   { kind: 'live', id: 'Lofi_Live01', label: 'Lofi beats radio, live from the harbor studio all night long' },
   { kind: 'twitch', id: 'pixel_harbor', label: 'pixel_harbor_and_the_long_channel_name_of_a_streamer' },
 ];
+/** Invented videos for the owner's own playlists: id, title, channel, seconds, hue of the drawn picture. */
+const OWN_VIDEOS = [
+  ['mockvideo01', 'Tape loops for a small room', 'Marlow Field', 2292, 28],
+  ['mockvideo02', 'Night drive, coast road at dusk', 'Slow Lane Films', 3760, 318],
+  ['mockvideo03', 'Rooftop synth session, the full set', 'Harbor Light Studio', 2710, 200],
+  ['mockvideo04', 'Late train through the valley', 'Slow Lane Films', 3150, 262],
+  ['mockvideo05', 'Rain on a tin roof', 'Quiet Hours', 7200, 215],
+  ['mockvideo06', 'Neon harbor, live at the pier', 'Harbor Light Studio', 4445, 334],
+  ['mockvideo07', 'Desert road 4', 'Open Mile', 1668, 18],
+  ['mockvideo08', 'Lanterns over the lake', 'Quiet Hours', 2480, 46],
+  ['mockvideo09', 'Cassette city, side B', 'Marlow Field', 1985, 290],
+  ['mockvideo10', 'Slow snow, cabin window', 'Quiet Hours', 3480, 190],
+  ['mockvideo11', 'Last bus home', 'Open Mile', 1476, 240],
+  ['mockvideo12', 'Sunrise from the hill', 'Slow Lane Films', 2174, 30],
+] as const;
+const FRIDAY = 'fridaywind01';
+const SLOW = 'slowmorning1';
+/** The list `wown` shows: the owner's two playlists, a connected playlist, a video, a live stream and a Twitch channel. */
+const OWN_SAVED = [
+  { kind: 'own', id: FRIDAY, label: 'Friday wind down' },
+  { kind: 'own', id: SLOW, label: 'Slow mornings' },
+  { kind: 'playlist', id: 'PLmockPlaylist0001', label: 'Weekend cooking' },
+  { kind: 'video', id: 'Ab3dEfGh1jK', label: 'Night drive mix' },
+  { kind: 'live', id: 'Lofi_Live01', label: 'Lofi beats radio, live' },
+  { kind: 'twitch', id: 'pixel_harbor', label: 'pixel_harbor' },
+];
+
+function ownStore(edit: boolean): string {
+  const full = OWN_VIDEOS.map(([id, title, channel, seconds], i) => (edit && (i === 7 || i === 11) ? { id, seconds } : { id, title, channel, seconds }));
+  const slow = [OWN_VIDEOS[8], OWN_VIDEOS[9], OWN_VIDEOS[10], OWN_VIDEOS[6], OWN_VIDEOS[7]].map(([id, title, channel, seconds]) => ({ id, title, channel, seconds }));
+  return JSON.stringify({ v: 1, lists: { [FRIDAY]: { items: full, shuffle: false, repeat: false }, [SLOW]: { items: slow, shuffle: false, repeat: false } } });
+}
+
+/** A drawn picture for a video id: a gradient and a sun in a hue taken from the id, so no request ever leaves the page. */
+function drawnThumb(id: string): string | null {
+  if (!/^[A-Za-z0-9_-]{11}$/.test(id)) return null;
+  const known = OWN_VIDEOS.find((v) => v[0] === id);
+  const hue = known ? known[4] : [...id].reduce((a, c) => (a * 31 + c.charCodeAt(0)) % 360, 7);
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 90"><defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="hsl(${hue} 70% 44%)"/><stop offset="1" stop-color="hsl(${(hue + 300) % 360} 60% 16%)"/></linearGradient><radialGradient id="s" cx=".7" cy=".2" r=".6"><stop offset="0" stop-color="hsl(${(hue + 40) % 360} 90% 70%)" stop-opacity=".85"/><stop offset="1" stop-color="#000" stop-opacity="0"/></radialGradient></defs><rect width="160" height="90" fill="url(#g)"/><rect width="160" height="90" fill="url(#s)"/></svg>`;
+  return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
+}
+
+/** `?wown`: what happens after the tab is up (the lists are already in storage). */
+function runOwn(state: string): void {
+  const own = useOwnLists.getState();
+  const hold = () => {
+    if (knob('wctl') === 'rest') ctlTiming.restMs = 200;
+    else useWatchStore.getState().setPeek(true);
+  };
+  if (state === 'draft') setTimeout(() => document.querySelector<HTMLButtonElement>('.w-new')?.click(), 200);
+  else if (state === 'edit') {
+    markFailed(OWN_VIDEOS[8][0], 'embed');
+    own.setOpen(FRIDAY);
+  } else if (state === 'menu') setTimeout(() => document.querySelector<HTMLButtonElement>('.w-addpl')?.click(), 300);
+  else if (state === 'playing' || state === 'repeat' || state === 'skip') {
+    if (state === 'repeat') own.setRepeat(FRIDAY, true);
+    const from = state === 'skip' ? OWN_VIDEOS[4][0] : OWN_VIDEOS[2][0];
+    playOwn(FRIDAY, from);
+    mockPlayer('video', null);
+    hold();
+    if (state === 'skip') {
+      ownTiming.noteMs = 600_000;
+      setFollow(false);
+      // After the first video's load gap, the player says it cannot play it: the wall skips to the next one and says so.
+      setTimeout(() => {
+        useWatchStore.getState().setReport({ error: 150 });
+        mockPlayer('video', null);
+      }, 1100);
+    }
+  } else if (state === 'end' || state === 'none') {
+    useOwnPlay.setState({ listId: FRIDAY, finished: { listId: FRIDAY, played: state === 'end' ? 12 : 0, total: 12, none: state === 'none' } });
+  }
+}
+
 const DEFAULTS = [
   { kind: 'video', id: 'Ab3dEfGh1jK', label: 'YouTube video' },
   { kind: 'live', id: 'Lofi_Live01', label: 'YouTube live stream' },
@@ -184,8 +270,13 @@ export function registerWatchMocks(): void {
   if (knob('watch') !== 'mock') return;
   framePoster.render = knob('wposter') === 'bright' ? brightPoster : poster;
   const list = knob('wlist') ?? 'three';
+  const ownState = knob('wown');
+  if (ownState) ownThumb.url = drawnThumb;
   try {
-    if (list === 'none') localStorage.removeItem(SAVED_KEY);
+    if (ownState) localStorage.setItem(OWN_KEY, ownStore(ownState === 'edit'));
+    else localStorage.removeItem(OWN_KEY);
+    if (ownState) localStorage.setItem(SAVED_KEY, JSON.stringify(OWN_SAVED));
+    else if (list === 'none') localStorage.removeItem(SAVED_KEY);
     else localStorage.setItem(SAVED_KEY, JSON.stringify(list === 'many' ? many() : list === 'default' ? DEFAULTS : knob('wpins') === 'long' ? LONG_THREE : THREE));
     const pins = knob('wpins');
     const keys = THREE.map((i) => `${i.kind}:${i.id}`);
@@ -215,12 +306,14 @@ export function registerWatchMocks(): void {
   }
   const st = useWatchStore.getState();
   st.load();
+  useOwnLists.getState().load();
   usePins.getState().load();
   underClock.hold = knob('wrows') === 'shown';
   // After the review place is applied (the horizon mounts first), so leaving Work does not stop it.
   setTimeout(() => {
     if (knob('wlast') === 'one') useWatchStore.setState({ lastStopped: useWatchStore.getState().saved[0] ?? null, playing: null });
     if (knob('wtab') !== 'listen') useWatchStore.getState().setTab('watch');
+    if (ownState) runOwn(ownState);
     const n = Number(knob('wplay'));
     const item = useWatchStore.getState().saved[n];
     if (knob('wplay') !== null && item) {
