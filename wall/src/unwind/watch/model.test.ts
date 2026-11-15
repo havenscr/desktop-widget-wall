@@ -24,7 +24,13 @@ describe('parseLink', () => {
     [`https://www.youtube.com/live/${V}?feature=share`, 'live', V],
     [`https://www.youtube.com/LIVE/${V}/`, 'live', V],
     [`https://www.youtube.com/playlist?list=${PL}`, 'playlist', PL],
-    [`https://www.youtube.com/watch?v=${V}&list=${PL}&index=3`, 'playlist', PL],
+    [`https://www.youtube.com/watch?list=${PL}`, 'playlist', PL],
+    [`https://www.youtube.com/watch?list=${PL}&v=short`, 'playlist', PL],
+    [`https://www.youtube.com/shorts/${V}`, 'video', V],
+    [`https://youtube.com/SHORTS/${V}/`, 'video', V],
+    [`https://music.youtube.com/watch?v=${V}`, 'video', V],
+    [`https://MUSIC.youtube.com/watch?v=${V}&si=abc`, 'video', V],
+    [`https://music.youtube.com/playlist?list=${PL}`, 'playlist', PL],
     [`https://www.twitch.tv/pixel_harbor`, 'twitch', 'pixel_harbor'],
     [`twitch.tv/Pixel_Harbor/`, 'twitch', 'pixel_harbor'],
     [`https://m.twitch.tv/abc`, 'twitch', 'abc'],
@@ -32,6 +38,38 @@ describe('parseLink', () => {
   ];
   it.each(accept)('accepts %s', (link, kind, id) => {
     expect(parseLink(link)).toEqual({ ok: true, ref: { kind, id } });
+  });
+
+  // A link that names a video is that video; the list it also carries is a second choice.
+  const alsoList: [string][] = [
+    [`https://www.youtube.com/watch?v=${V}&list=${PL}`],
+    [`https://www.youtube.com/watch?v=${V}&list=${PL}&index=3`],
+    [`https://www.youtube.com/watch?list=${PL}&v=${V}&start_radio=1&pp=abc`],
+    [`https://youtu.be/${V}?list=${PL}`],
+    [`https://music.youtube.com/watch?v=${V}&list=${PL}`],
+  ];
+  it.each(alsoList)('saves %s as the video and offers the playlist', (link) => {
+    const r = parseLink(link);
+    expect(r.ok && r.ref).toEqual({ kind: 'video', id: V });
+    expect(r.ok && r.alsoList?.kind).toBe('playlist');
+    expect(r.ok && r.alsoList && validRef(r.alsoList)).toBe(true);
+  });
+  it('saves the video with no offer for a Mix or radio list, Watch later and Liked videos', () => {
+    for (const list of [`RD${V}`, 'RDCLAK5uy_mockRadioList', 'RDMM', 'WL', 'LL']) {
+      expect(parseLink(`https://www.youtube.com/watch?v=${V}&list=${list}`)).toEqual({ ok: true, ref: { kind: 'video', id: V } });
+      expect(parseLink(`https://youtu.be/${V}?list=${list}`)).toEqual({ ok: true, ref: { kind: 'video', id: V } });
+    }
+    // A name that only contains RD later on is an ordinary list.
+    expect(parseLink(`https://www.youtube.com/watch?v=${V}&list=PLRD0000000000`).ok && (parseLink(`https://www.youtube.com/watch?v=${V}&list=PLRD0000000000`) as { alsoList?: unknown }).alsoList).toBeTruthy();
+  });
+  it('offers the exact list id from the link', () => {
+    expect(parseLink(`https://www.youtube.com/watch?v=${V}&list=${PL}&index=3`)).toEqual({ ok: true, ref: { kind: 'video', id: V }, alsoList: { kind: 'playlist', id: PL } });
+  });
+  it('offers nothing for a plain video link, a bad list, a live link or a list only link', () => {
+    for (const link of [`https://youtu.be/${V}`, `https://www.youtube.com/watch?v=${V}`, `https://www.youtube.com/watch?v=${V}&list=short`, `https://www.youtube.com/live/${V}?list=${PL}`, `https://www.youtube.com/shorts/${V}?list=${PL}`, `https://www.youtube.com/playlist?list=${PL}`, `https://www.youtube.com/watch?list=${PL}`]) {
+      const r = parseLink(link);
+      expect(r.ok && r.alsoList).toBeUndefined();
+    }
   });
 
   it('keeps the id case of YouTube ids and lower-cases Twitch logins', () => {
@@ -69,12 +107,22 @@ describe('parseLink', () => {
     [`https://youtu.be/Ab3dEfGh1j%2F`, LINK_ERRORS.youtube],
     [`https://www.youtube.com/watch?v=Ab3dEfGh1j"`, LINK_ERRORS.youtube],
     [`https://www.youtube.com/watch`, LINK_ERRORS.youtube],
-    [`https://www.youtube.com/shorts/${V}`, LINK_ERRORS.youtube],
+    [`https://www.youtube.com/shorts/short`, LINK_ERRORS.youtube],
+    [`https://www.youtube.com/shorts/${V}x`, LINK_ERRORS.youtube],
+    [`https://www.youtube.com/shorts/${V}/extra`, LINK_ERRORS.youtube],
+    [`https://music.youtube.com/live/${V}`, LINK_ERRORS.youtube],
+    [`https://music.youtube.com/shorts/${V}`, LINK_ERRORS.youtube],
+    [`https://music.youtube.com/watch?v=short`, LINK_ERRORS.youtube],
+    [`https://music.youtube.com/`, LINK_ERRORS.youtube],
+    [`https://music.youtube.com.example.com/watch?v=${V}`, LINK_ERRORS.other],
+    [`https://xmusic.youtube.com/watch?v=${V}`, LINK_ERRORS.other],
+    [`https://www.music.youtube.com/watch?v=${V}`, LINK_ERRORS.other],
+    [`https://m.music.youtube.com/watch?v=${V}`, LINK_ERRORS.other],
+    [`https://studio.youtube.com/watch?v=${V}`, LINK_ERRORS.other],
     [`https://www.youtube.com/embed/${V}`, LINK_ERRORS.youtube],
     [`https://www.youtube.com/playlist?list=PL1`, LINK_ERRORS.youtube],
     [`https://www.youtube.com/playlist?list=${'P'.repeat(65)}`, LINK_ERRORS.youtube],
     [`https://www.youtube.com/live/${V}/x`, LINK_ERRORS.youtube],
-    [`https://music.youtube.com/watch?v=${V}`, LINK_ERRORS.other],
     ['https://www.twitch.tv/', LINK_ERRORS.twitch],
     ['https://www.twitch.tv/ab', LINK_ERRORS.twitch],
     [`https://www.twitch.tv/${'a'.repeat(26)}`, LINK_ERRORS.twitch],

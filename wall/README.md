@@ -1765,9 +1765,25 @@ there, still playing, when the owner comes back (see "The stage layer" below).
 
 - **The list** (`WatchCard.tsx`, right wing above Room): saved items and one field, "Paste a
   YouTube or Twitch link". `links.ts` parses strictly: `youtu.be/<id>`,
-  `youtube.com/watch?v=<id>` (a valid `list=` on it makes it that playlist),
-  `youtube.com/live/<id>`, `youtube.com/playlist?list=<id>` and `twitch.tv/<login>`, with or
-  without the scheme, `www.` or `m.`; video ids are exactly 11 of `[A-Za-z0-9_-]`, playlist ids
+  `youtube.com/watch?v=<id>`, `youtube.com/shorts/<id>`, `youtube.com/live/<id>`,
+  `youtube.com/playlist?list=<id>`, `music.youtube.com/watch?v=<id>` and
+  `music.youtube.com/playlist?list=<id>` (that host exactly, nothing else under it) and
+  `twitch.tv/<login>`, with or without the scheme, `www.` or `m.` (YouTube and Twitch only).
+  **A link that names a video is saved as that video**, even when it also carries a `list=`
+  (what the address bar shows for a video opened from a playlist, a Mix or an album); a
+  `watch` link with only a valid list, or a `playlist` link, is saved as the playlist. The list
+  a video link also names is never taken silently: after the video is saved, one status line
+  under the field reads "Saved the video. The link also names a playlist." with a "Save the
+  playlist too" button (the same save path, so "already in the list" and "list is full" read as
+  for any link; the focus then returns to the field). No offer is made for a Mix or radio list
+  (`list=RD...`) or `WL` and `LL`: those lists are made per viewer or need a sign-in, so a saved
+  entry would often play nothing, and the video alone is saved. A video that is already in the list
+  keeps its "already in the list" answer, and the offer still follows it, worded "That video is
+  already saved. The link also names a playlist.", when that playlist is not saved yet. The line
+  goes on the next paste, when the field is typed in, or after 20 seconds; it is state of the card
+  and is never saved. An entry saved earlier as a playlist
+  from such a link kept no video id (the store writes only kind, id and label), so it is left
+  as it is: remove it and paste the link again. Video ids are exactly 11 of `[A-Za-z0-9_-]`, playlist ids
   13 to 64, Twitch logins 3 to 25 of `[a-z0-9_]` (lower-cased; site pages such as
   `directory` are refused). Anything else, a user name, a port, another scheme or a look-alike
   host, gets one plain line. Saved items (kind, id, label, at most 24) are in local storage
@@ -1814,7 +1830,16 @@ there, still playing, when the owner comes back (see "The stage layer" below).
   an embedded player picks it from its size.
 - **The left block** (`.w-now` in `Watch.tsx`): starts at wall y 30, the line Listen's player
   starts at, so nothing jumps between the two tabs; wall x 624 to 1084. Kind line (y 30), the
-  title (up to two lines), "Playing on the wall", the control row, the time bar. There is no
+  title (up to two lines), for a single video or live stream the channel (one line), "Playing on the wall", the control row, the time bar. The title and
+  channel are the player's own (`videoData` in the YouTube embed's `infoDelivery` and
+  `initialDelivery` messages, read through the same gate `readPlayerMessage`; no request of
+  its own): taken only from the exact embed origin, only when its `video_id` is the id playing,
+  cleaned (control, direction and zero-width characters dropped, 200 and 100 characters at
+  most) and shown as plain text. Until they arrive the block shows the saved label. A video or
+  live item that still has its default label ("YouTube video", "YouTube live stream") takes the
+  title as its label once, unless its name field is open; a label the owner typed is never
+  changed. A playlist keeps its label and shows no channel; Twitch is unchanged. At rest the
+  channel line fades with the kind and status lines. There is no
   Look switch under it and no row of its own for the gear: the looks are chosen in the gear's
   sheet (five picture tiles, or one choice per kind) and in the Tools drawer's Video look.
 - **The control row** (`Watch.tsx`, in the left block under the title, the left wing's small
