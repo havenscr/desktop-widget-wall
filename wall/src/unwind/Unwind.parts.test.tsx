@@ -347,6 +347,49 @@ it('matches only Watch playing or last-stopped titles, including the YouTube suf
   expect(document.body.textContent).not.toContain('msedgewebview2');
 });
 
+it('takes a title match under an unknown id as the wall\'s own video, and never under a known player', async () => {
+  resetWatch();
+  const item = { kind: 'video' as const, id: 'abcdefghijk', label: 'Quiet Coast' };
+  useWatchStore.setState({ saved: [item], playing: item, tab: 'listen' });
+  mocks.set('get_now_playing', () => ({ title: 'Quiet Coast', source_app_id: 'Example.Host_abc123!App', playback_status: 'playing' }));
+  const own = render(<Unwind />);
+  await flush();
+  expect(screen.getByText('Playing in Watch')).toBeTruthy();
+  own.unmount();
+  resetNowPlaying();
+
+  // The same title from Spotify is Spotify, not the wall's video.
+  mocks.set('get_now_playing', () => ({ title: 'Quiet Coast', source_app_id: 'SpotifyAB.SpotifyMusic_zpdnekdrzrea0!Spotify', playback_status: 'playing' }));
+  render(<Unwind />);
+  await flush();
+  expect(screen.queryByText('Playing in Watch')).toBeNull();
+  expect(document.querySelector('.u-src')!.textContent).toBe('Spotify');
+});
+
+it('shows an ended session as last played with the play button, never a full bar with pause', async () => {
+  const toggle = vi.fn();
+  mocks.set('get_now_playing', () => ({
+    title: 'Evening Radio Mix',
+    artist: 'Example Host',
+    source_app_id: 'Example.VideoApp_abc123!App',
+    session_key: 'Example.VideoApp_abc123!App#0',
+    playback_status: 'paused',
+    ended: true,
+    position_seconds: 146,
+    duration_seconds: 146,
+  }));
+  mocks.set('media_play_pause', toggle);
+  render(<Unwind />);
+  await flush();
+  expect(screen.getByText('Last played on Video App')).toBeTruthy();
+  expect(screen.getByText('Evening Radio Mix')).toBeTruthy();
+  expect(screen.queryByRole('progressbar')).toBeNull();
+  expect(screen.queryByLabelText('Pause')).toBeNull();
+  expect((screen.getByLabelText('Play') as HTMLButtonElement).disabled).toBe(false);
+  await act(async () => screen.getByRole('button', { name: 'Play again' }).click());
+  expect(toggle).toHaveBeenCalledWith({ sessionKey: 'Example.VideoApp_abc123!App#0', sourceId: 'Example.VideoApp_abc123!App' });
+});
+
 it('says "Open Spotify to play again" when the last track has no media session', async () => {
   resetLastPlayed({ title: 'Tokyo Burnout', artist: 'Tokyo Rose', source: 'Spotify' });
   mocks.set('get_now_playing', () => ({ playback_status: 'unknown' }));
@@ -513,6 +556,28 @@ it('the date hover keeps a failed weather try visible over an older reading', as
   await flush(TIP_DELAY_MS);
   expect(document.querySelector('.hover-tip')?.textContent).toContain('Last try failed 2 min ago: Could not reach Open-Meteo. Showing the reading from');
   vi.doUnmock('../weather/useWeather');
+});
+
+it('the date hover names the Weather Service for an older reading from it, failed or not', async () => {
+  const wallNow = Date.parse('2026-11-11T21:42:00-08:00');
+  const reading = { temp: 49, look: { label: 'Clear', icon: 'moon' }, fetchedAt: wallNow - 5 * 60_000, source: 'nws' };
+  const hover = async (state: object) => {
+    vi.doMock('../weather/useWeather', () => ({ useWeather: () => state }));
+    vi.resetModules();
+    const { DateLine: Fresh } = await import('./DateLine');
+    const { HoverTipLayer: FreshLayer, TIP_DELAY_MS } = await import('../ui/HoverTip');
+    const r = render(<><Fresh now={() => new Date(wallNow)} wallNow={() => wallNow} /><FreshLayer /></>);
+    fireEvent.mouseEnter(r.container.querySelector('.u-date')!);
+    await flush(TIP_DELAY_MS);
+    const text = document.querySelector('.hover-tip')?.textContent ?? '';
+    r.unmount();
+    vi.doUnmock('../weather/useWeather');
+    return text;
+  };
+  expect(await hover({ reading, failed: true, failure: 'http 429', attemptedAt: wallNow - 60_000, nextTryAt: wallNow + 10 * 60_000 })).toMatch(/Showing the reading from .* \(from the National Weather Service\)\./);
+  expect(await hover({ reading, failed: false })).toContain('Weather from the National Weather Service');
+  // An Open-Meteo reading names no source.
+  expect(await hover({ reading: { ...reading, source: 'open-meteo' }, failed: true, failure: 'network', attemptedAt: wallNow })).not.toContain('National Weather Service');
 });
 
 it('the lights chips mark the one on now, give each a hover, and fold past six into More', async () => {

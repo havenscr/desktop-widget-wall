@@ -936,12 +936,41 @@ the centre card; the date line takes it through the frame's `ClockSlot` portal.
   is already on, leave it alone; otherwise turn it on and remember that focus did
   it (key `wall2-focus-dnd`); turn it off on pause, reset, finish and app start
   only if focus turned it on. Calls run one at a time through a queue.
-- **Weather** (`wall/src/weather/`). Open-Meteo from the front end (same request
-  as the old app: Fahrenheit, mph, `timezone=auto`). Current temperature,
-  condition with an icon, today's high and low, next six hours. Refreshes every
-  15 minutes while visible, and once when the page returns after 15 minutes or
-  more. On failure the last reading stays and shows its age in small text. The
-  code to label and icon map is one pure function, `describeWeather` in `codes.ts`.
+- **Weather** (`wall/src/weather/`). Read natively: the web view never calls a weather
+  service (its security policy no longer lists one). The command `wall2_weather(latitude,
+  longitude, source)` (window `wall2` only; `source` is `open-meteo` or `nws`; the place must
+  be finite and in range) lives in `src-tauri/src/wall2_weather.rs` on the shared HTTP agent and
+  returns the reply text, or fails with `dns`, `connect`, `tls`, `timeout`, `read`, `input` or
+  `http <status>`. The page parses it. Open-Meteo is the first source (same request as the old
+  app: Fahrenheit, mph, `timezone=auto`). When it answers 429 or cannot be reached, the United
+  States National Weather Service (`api.weather.gov`, no key, `points` once and cached, then the
+  hourly forecast and the 12 hour forecast; the app and the public repository named in `User-Agent`)
+  is asked: its short forecast words map to a weather code through one table (`NWS_TABLE` in
+  `model.ts`, a test per row; haze and smoke read as fog, a wintry mix as sleet, frost as clear),
+  "now" is the first hour, today's high is the 12 hour forecast's daytime period of today and the
+  low its night period. Once today's daytime period has passed (the forecast starts at "Tonight") the
+  high is the larger of the temperature now and the highest reading the wall has seen today (kept
+  in memory with its date; after a restart in the evening that is the temperature now). Outside
+  the United States it answers 404 and the first failure stays. A reading says which source it came
+  from (`source`): the Tools Sources row and the Unwind date line's hover name the Weather Service
+  when it is the one. Current temperature, condition with an icon, today's high and low, next six
+  hours. Refreshes every 15 minutes while visible (one minute while there is no reading), and once
+  when the page returns after 15 minutes or more. After a 429 Open-Meteo is left alone for 15
+  minutes, then 30, then 60 at most (only a scheduled try that meets a 429 advances the wait; a success
+  resets it; the Tools drawer's Retry tries at once and never lengthens a wait that is running),
+  and the words say so ("Open-Meteo is refusing this address for now (too many requests). Next
+  try at 3:15 PM."). On failure the last reading stays and shows its age in small text. The reason
+  for a failed read with no reading is printed under "Weather unavailable" on the Work cards (16 px)
+  and kept on hover elsewhere. The code to label and icon map is one pure function, `describeWeather`
+  in `codes.ts`.
+
+  **The weather log.** `wall2-weather.log` and `wall2-weather.log.1` in the app's log folder (same
+  rotation as the Sonos log: append, 64 KB, one older file, shared code in `wall2_sonos_log.rs`) hold
+  one line per failed try and one per recovery: `<UTC time> <open-meteo|nws> failed <kind> <status>
+  [<reason>]` or `<UTC time> <source> recovered`. For an HTTP failure the first 120 characters of the
+  reply's `reason` text are kept (Open-Meteo says which limit: minute, hour or day), as ASCII letters and
+  single spaces only: every digit, sign and punctuation mark is dropped, so a place can never pass as
+  numbers. The place is never logged.
 - **Music** (`wall/src/music/`). One app-wide poll (`store.ts`) shared by Work's now
   playing row, the full music bar and the Unwind view: it polls `get_now_playing` every 2 seconds
   while visible (never while hidden); each call gives up after 5 seconds so a hung
@@ -957,6 +986,35 @@ the centre card; the date line takes it through the frame's `ClockSlot` portal.
   Previous, play or pause, next call `media_previous`, `media_play_pause`,
   `media_next`; failures are swallowed. Stopped or unknown shows a quiet
   "Nothing playing".
+
+  **Which session the player follows (Wall 2).** Windows names one media session "current", but
+  that one can have ended while it still says it plays (a video at its end, a player that stopped
+  sending updates) while another app plays. `get_now_playing` for the `wall2` window reads every
+  session and `wall2_media.rs` picks: the current session when it plays and has not ended; else
+  any other session that plays and has not ended, the most recently updated first; else the
+  current session; else none. Which listed session is Windows' current one is decided by identity
+  (the `windows` crate compares session objects by COM identity; when the manager hands out another
+  wrapper the app id decides, and with several sessions of one app their title, timeline and status).
+  Each listed session has a key, its app id and its place among the sessions with that id in list order
+  (`Example.Browser#0`, `Example.Browser#1`: two tabs of one browser are two sessions), sent as
+  `session_key`. A session has ended when it says playing, its end is known, and
+  either its position plus the time since its last update is past the end by more than 3 seconds,
+  or its position stayed within 1 second of the end on two reads at least 3 seconds apart (kept
+  per session key, forgotten when its last observation is over 10 seconds old, such as after the page
+  was hidden). An ended session that is shown anyway is reported paused with `ended: true`, so the
+  player reads "Last played" with the play button, never a full bar with pause. The first wall
+  (window `main`) still gets Windows' current session unchanged. The media commands take the
+  shown session's key and app id (`sessionKey` and `sourceId`, sent by `sendMediaCommand` in
+  `music/store.ts`, captured when a click starts) and, from the `wall2` window only, act on the session
+  with that key, else the first with that id, else on the current one. The Up next rows skip the way the
+  player row's Next does: Spotify's own command when Spotify reports a player, else the media key to the
+  session captured when the click began. In `Player.tsx` the session is the
+  wall's own Watch video when its title is what Watch plays or last stopped and its id is the web
+  view (`msedgewebview2`) or not a known player (`isKnownPlayer`). The log `wall2-media.log`
+  (same rotation) holds one line when the set of sessions or the choice changes: `<UTC time>
+  rule=<current-playing|other-playing|current-shown|none> chosen=<key> sessions=<key>:<status>;...`
+  (keys cut to 80 characters, `:ended` for a session that plays but ended, `:current` for Windows'
+  choice; no titles, no artists). Review knob `?media=ended` shows an ended session.
 - **Settings** (`wall/src/settings/`). `localStorage` key `wall2-settings`, JSON
   with optional `latitude` and `longitude` (defaults 47.68, -122.21), `zenDimHour` (whole
   hour 18 to 23, default 22) and `zenDimWaitMin` (whole minutes 1 to 60, default 10). No settings
@@ -965,8 +1023,8 @@ the centre card; the date line takes it through the frame's `ClockSlot` portal.
   (`src/bridge/devMocks/`, dev server only); in a review still (`?hz=&at=`) the
   meeting and task mocks follow the review's time. Review knobs: `?meet=none` (no
   meetings), `?box=none` (no box numbers), `?net=alarms` (the network feed with only
-  its alarm count). Weather needs network access to
-  Open-Meteo.
+  its alarm count). The weather command is mocked (`devMocks/weather.ts`); review knobs
+  `?weather=ok|stale|down|cold|dns|refused|second` (see `devMocks/gallery.ts`).
 
 ## Audio, ripple and moon
 
@@ -1266,9 +1324,10 @@ frame (no ribbon) in the wide zones `470px 1fr 540px`. The parts are in `wall/sr
 - **Up next** (`unwind/spotify/UpNext.tsx`), in the left wing under the toggles: the next
   three tracks of the Spotify queue (`wall2_spotify_queue`, every 20 seconds while shown and
   on every track change) with 48 px covers, the title and the artist; hover gives the album
-  and length. A click only skips: the n-th row sends n skips with the media keys (never more than the queue
-  holds), and only when Spotify is the current Windows player, else it sends nothing and says
-  "Open its list to play it". It never plays a list, so it never replaces the queue. Hidden with YouTube
+  and length. A click only skips: the n-th row sends n skips (never more than the queue holds), through Spotify's
+  own Next when Spotify reports a player, else through the media key to the session the player showed
+  when the click began, and only when Spotify is the player, else it sends nothing and says
+  "Open its list to play it". Every skip of one click goes the same way. It never plays a list, so it never replaces the queue. Hidden with YouTube
   Music chosen, with Spotify not set up, and when nothing is queued; signed out it reads
   "Sign in to Spotify in Tools to see what is next" (a click opens Tools).
 - **The Spotify card** (`unwind/spotify/SpotifyCard.tsx`), the upper right (stage x 1740 to
@@ -2372,7 +2431,7 @@ Review knobs (development only): `?screen=onair` opens On Air; `?show=typical|on
 Set in `src-tauri/tauri.wall2.conf.json` under `app.security.csp` (Ridgeline only;
 the old app's config is untouched). It allows own files (`'self'`), data: images,
 own fonts, connections to the Tauri IPC (`ipc:`, `http://ipc.localhost`,
-`https://ipc.localhost`) and `https://api.open-meteo.com`, and frames from the two
+`https://ipc.localhost`), no weather service (the weather is read natively), and frames from the two
 video players only (`frame-src https://www.youtube-nocookie.com https://player.twitch.tv`,
 in `csp` and `devCsp`, for Unwind's Watch tab). Everything else is
 denied (`default-src 'none'`); no `unsafe-eval`, no `unsafe-inline`. React sets

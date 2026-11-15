@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 import { FocusTimer } from '../focus/FocusTimer';
 import type { WeatherState } from '../weather/useWeather';
+import { weatherFailureText } from '../weather/model';
 import { WeatherCardView } from '../weather/WeatherCard';
 import { WeatherIcon } from '../weather/WeatherIcon';
 import { Lanes } from './Lanes';
@@ -25,7 +26,10 @@ function Fill({ weather, note, className = 'centre centre-fill' }: { weather: We
           note={
             <span className="wx-status">
               <WeatherIcon name="cloud" size={24} />
-              {weather.failed ? 'Weather unavailable' : 'Loading weather'}
+              <span className="wx-status-text">
+                {weather.failed ? 'Weather unavailable' : 'Loading weather'}
+                {weather.failed && <span className="wx-why">{weatherFailureText(weather.failure, weather.nextTryAt)}</span>}
+              </span>
             </span>
           }
         />

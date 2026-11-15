@@ -7,7 +7,7 @@ import {
   IconPlayerSkipForwardFilled,
 } from '@tabler/icons-react';
 import { anchorProgress, formatTime, isPlaying, isQuiet, type NowPlayingInfo, type ProgressAnchor } from '../music/model';
-import { playerName, sourceKey } from '../music/players';
+import { isKnownPlayer, playerName, sourceKey } from '../music/players';
 import { rejectArt } from '../music/store';
 import { useSkyKeepClear } from '../horizon/sky';
 import { useNowPlaying } from '../music/useNowPlaying';
@@ -84,7 +84,10 @@ export function Player() {
   const webView = rawSourceLabel?.toLowerCase() === 'msedgewebview2';
   const watchTitle = (value: string | null | undefined) => value?.trim().replace(/ - YouTube$/i, '').trim();
   const sessionTitle = watchTitle(info?.title);
-  const watchMatch = !!sessionTitle && webView && [watchPlaying, watchStopped].some((item) => watchTitle(item?.label) === sessionTitle);
+  // The wall's own video is the web view by name, or any session whose title is what Watch plays
+  // (or last stopped) under an id that is not a known player: the web view's id changes by build.
+  const ownVideo = webView || (source !== null && !isKnownPlayer(source));
+  const watchMatch = !!sessionTitle && ownVideo && [watchPlaying, watchStopped].some((item) => watchTitle(item?.label) === sessionTitle);
   const sourceLabel = watchMatch ? 'Watch' : webView ? 'an app on this PC' : rawSourceLabel;
   // The horizon's moon keeps 40 px clear of the player (it moves to another of its places).
   const [box, setBox] = useState<HTMLDivElement | null>(null);

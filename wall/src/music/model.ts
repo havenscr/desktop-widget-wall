@@ -13,6 +13,13 @@ export interface NowPlayingInfo {
   source_app_id?: string | null;
   /** The track the art belongs to; sent back as `artFor` on the next poll. */
   art_key?: string | null;
+  /**
+   * The session says it plays but its timeline ran past its end (or sat at its end): the native
+   * side reports it as paused and sets this, so the wall shows "last played", never a full bar.
+   */
+  ended?: boolean;
+  /** The shown session's key (its app id and its place among sessions of that app); sent back with every command. */
+  session_key?: string | null;
 }
 
 export const ALLOWED_ART_MIMES = ['image/png', 'image/jpeg', 'image/webp', 'image/gif'] as const;
@@ -37,6 +44,7 @@ export function nextArt(info: NowPlayingInfo, previous: string | null): string |
 /** Quiet state: nothing to show or control. */
 export function isQuiet(info: NowPlayingInfo | null): boolean {
   if (!info) return true;
+  if (info.ended) return true;
   const s = info.playback_status;
   if (s === 'stopped' || s === 'unknown' || !s) return true;
   return !info.title && !info.artist;

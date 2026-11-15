@@ -3,7 +3,7 @@ import { invoke } from '../../bridge/tauri';
 import { spotify, type SpotifyTrack } from '../../music/spotify';
 import { isQuiet } from '../../music/model';
 import { playerName, sourceKey } from '../../music/players';
-import { refreshNowPlaying, useNowPlayingStore } from '../../music/store';
+import { mediaTarget, refreshNowPlaying, useNowPlayingStore } from '../../music/store';
 import { useToolsStore } from '../../tools/store';
 import { tip } from '../../ui/HoverTip';
 import { useVisible } from '../../ui/useVisible';
@@ -15,17 +15,27 @@ import { useSpotifyStatus } from './status';
 export const QUEUE_POLL_MS = 20_000;
 export const UP_NEXT_ROWS = 3;
 
-/** What a click on a queued row does (see `upNextPlan`): skips only while Spotify is the player Windows has in front. */
-export function skipPlan(index: number, queued: number): UpNextPlan {
+/**
+ * What a click on a queued row does (see `upNextPlan`): skips only while Spotify can be told to: it
+ * reports a player (`viaSpotify`), or it is the player Windows has in front.
+ */
+export function skipPlan(index: number, queued: number, viaSpotify = false): UpNextPlan {
   const info = useNowPlayingStore.getState().info;
   const spotifyIsCurrent = !isQuiet(info) && playerName(sourceKey(info)) === 'Spotify';
-  return upNextPlan(index, queued, spotifyIsCurrent);
+  return upNextPlan(index, queued, viaSpotify || spotifyIsCurrent);
 }
 
-/** Send the skips through Windows; the line to show when one failed, else null. */
-export async function runSkips(skips: number): Promise<string | null> {
+/**
+ * How the skips of one click travel, chosen once when the click starts, like the player row's Next:
+ * Spotify's own command when Spotify reports a player (whichever device plays), else the media key to
+ * the session the player showed when the click began (its key and app id captured then).
+ */
+export type SkipRoute = { via: 'spotify' } | { via: 'key'; target: ReturnType<typeof mediaTarget> };
+
+/** Send the skips along one route; the line to show when one failed, else null. */
+export async function runSkips(skips: number, route: SkipRoute = { via: 'key', target: mediaTarget() }): Promise<string | null> {
   try {
-    for (let i = 0; i < skips; i++) await invoke('media_next');
+    for (let i = 0; i < skips; i++) await (route.via === 'spotify' ? spotify.next() : invoke('media_next', route.target));
     void refreshNowPlaying();
     return null;
   } catch (e) {
@@ -35,8 +45,9 @@ export async function runSkips(skips: number): Promise<string | null> {
 
 /**
  * Up next (8B), in the left wing under the toggles: the next three tracks with their covers,
- * title and artist. A click only skips forward (the n-th row is n skips through Windows) while
- * Spotify is the player in front; otherwise it sends nothing and says "Open its list to play it"
+ * title and artist. A click only skips forward (the n-th row is n skips, through Spotify's own
+ * command when Spotify reports a player, else through the media key to the session shown) while
+ * Spotify is the player; otherwise it sends nothing and says "Open its list to play it"
  * (see `upNextPlan`). It never starts a list, so it never replaces the queue. Hover shows the
  * album and the length. Hidden with YouTube Music
  * chosen, with Spotify not set up, and when nothing is queued; signed out it says where to sign in.
@@ -90,15 +101,17 @@ export function UpNext() {
   }
   if (next.length === 0) return null;
 
-  const play = (index: number) => {
-    const plan = skipPlan(index, next.length);
+  const play = async (index: number) => {
+    // Captured when the click starts, so every skip of this click goes the same way to the same session.
+    const target = mediaTarget();
+    const reported = await spotify.playback().catch(() => null);
+    const plan = skipPlan(index, next.length, !!reported);
     if (plan.kind === 'none') {
-      setNote(plan.line);
+      if (mounted.current) setNote(plan.line);
       return;
     }
-    void runSkips(plan.skips).then((line) => {
-      if (line && mounted.current) setNote(line);
-    });
+    const line = await runSkips(plan.skips, reported ? { via: 'spotify' } : { via: 'key', target });
+    if (line && mounted.current) setNote(line);
   };
 
   return (
@@ -120,7 +133,7 @@ export function UpNext() {
                   </span>
                 </div>
               ))}
-              onClick={() => play(i)}
+              onClick={() => void play(i)}
             >
               <Cover src={t.thumbUrl} size={48} />
               <span className="u-next-t">{t.name}</span>
