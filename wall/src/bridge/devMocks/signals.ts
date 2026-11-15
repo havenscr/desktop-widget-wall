@@ -1,3 +1,4 @@
+import { reviewNow } from '../../ui/reviewClock';
 import { mocks } from '../tauri';
 import { EMPTY_USE, type CallKind, type SignalPayload } from '../../signals/model';
 
@@ -10,7 +11,9 @@ export function registerSignalMocks(): void {
   if (kind) mic[kind] = true;
   if (kind && q.get('camera') === '1') camera[kind] = true;
   if (q.get('rec') === '1') mic.recorder = true;
-  const payload: SignalPayload = { known: true, mic, camera, ...(kind ? { mockCall: kind } : {}) };
+  // `callsince=-70`: the call began that many minutes ago (a call that outlasts its meeting).
+  const since = Number(q.get('callsince'));
+  const payload: SignalPayload = { known: true, mic, camera, ...(kind ? { mockCall: kind } : {}), ...(kind && Number.isFinite(since) && since < 0 && q.has('callsince') ? { mockSince: (reviewNow ? reviewNow() : Date.now()) + since * 60_000 } : {}) };
   const leave = q.has('leave') ? Number(q.get('leave')) : Number.NaN;
   if (Number.isFinite(leave) && leave >= 0 && leave <= 180) {
     const now = Date.now();

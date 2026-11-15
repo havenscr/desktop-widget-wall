@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, within } from '@testing-library/react';
+import { act, fireEvent, render, within } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { LIBRARY_DATA } from '../bridge/devMocks/libraryData';
 import { mocks } from '../bridge/tauri';

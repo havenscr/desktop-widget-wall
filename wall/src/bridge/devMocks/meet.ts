@@ -60,8 +60,8 @@ export function registerMeetMocks(): void {
   // `?meet=none`: both read, nothing scheduled. `?meet=busy`: five meetings at once at 1 PM.
   const mode = () => knob('meet') ?? '';
   // `?meet=before|known|new|bare` (the Meet layout): `before` has the next meeting 20 minutes away, `known` and `new` a meeting
-  // under way (40 minutes left) with details, `bare` a live meeting with no details, `stale` the `known` meeting read once and then no account answers (the hero is dimmed with "as of"), `?mtitle=long` gives the hero meeting a 206 character title. `heavy` is in gallery.ts, with details from here.
-  const layout = () => ['before', 'known', 'new', 'bare', 'stale'].includes(mode());
+  // under way (40 minutes left) with details, `bare` a live meeting with no details, `stale` the `known` meeting read once and then no account answers (the hero is dimmed with "as of"), `over` a meeting that ended 12 minutes ago (use `call=teams&callsince=-70`: the call outlasts it), `clash` the `known` meeting with the next one starting 10 minutes before it ends, `?mtitle=long` gives the hero meeting a 206 character title. `heavy` is in gallery.ts, with details from here.
+  const layout = () => ['before', 'known', 'new', 'bare', 'stale', 'over', 'clash'].includes(mode());
   const accounts = () =>
     layout()
       ? [
@@ -99,10 +99,12 @@ export function registerMeetMocks(): void {
           ? { key: '1-0', accountId: 'work', title: 'Intro call with a new client', start: at(-20), end: at(40), canJoin: true, details: MOCK_DETAILS.new }
           : m === 'bare'
             ? { key: '1-0', accountId: 'work', title: 'Catch-up call', start: at(-10), end: at(20), canJoin: true, details: null }
-            : { key: '1-0', accountId: 'work', title: 'Design review with the platform team', start: at(-20), end: at(40), canJoin: true, details: MOCK_DETAILS.known };
+            : m === 'over'
+              ? { key: '1-0', accountId: 'work', title: 'Design review with the platform team', start: at(-72), end: at(-12), canJoin: true, details: MOCK_DETAILS.known }
+              : { key: '1-0', accountId: 'work', title: 'Design review with the platform team', start: at(-20), end: at(40), canJoin: true, details: MOCK_DETAILS.known };
     // `?mtitle=long`: a 206 character title, for the hero's three lines and its ellipsis.
     if (knob('mtitle') === 'long') hero.title = 'Annual planning offsite for the regional leads: budget, hiring, the product roadmap, customer commitments, risks we carry into next year, the support model and who owns each decision after we leave the room';
-    const lunch = Date.parse(hero.end) + 50 * 60_000;
+    const lunch = Date.parse(hero.end) + (m === 'clash' ? -10 : 50) * 60_000;
     return [
       hero,
       { key: '1-1', accountId: 'work', title: 'Lunch with Sam', start: iso(lunch), end: iso(lunch + 60 * 60_000), canJoin: false },

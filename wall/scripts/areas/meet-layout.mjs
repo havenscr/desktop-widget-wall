@@ -15,15 +15,11 @@ const VARIANTS = [
   ['Meet layout, bare meeting: the island shows how the list works', at, 'meet=bare&call=teams&checklist=none'],
   ['Meet layout, nothing scheduled', at, 'meet=none'],
   ['Meet layout, a very long title ends in an ellipsis', at, 'meet=known&call=teams&mtitle=long&checklist=four'],
+  ['Meet layout, eight checklist items', at, 'meet=bare&call=teams&checklist=long'],
+  ['Meet layout, a plain call with no meeting', at, 'meet=none&call=teams&rec=1'],
+  ['Meet layout, the call is 12 minutes past its meeting', at, 'meet=over&call=teams&callsince=-70&rec=1'],
+  ['Meet layout, the next meeting overlaps this one', at, 'meet=clash&call=teams'],
 ];
-const BOXES = {
-  hero: [124, 24, 944, 510],
-  island: [984, 24, 1914, 510],
-  next: [1944, 24, 2540, 380],
-  capture: [1944, 384, 2540, 510],
-};
-const SELS = { hero: '.meet .meet-hero', island: '.meet .meet-island', next: '.meet .meet-later', capture: '.meet .meet-capture' };
-const heroNames = ['Meet layout, next meeting in 20 minutes', 'Meet layout, in a Teams call, known client', 'Meet layout, in a call, new client', 'Meet layout, heavy day: long title, 14 people, back to back', 'Meet layout, bare meeting: the island shows how the list works'];
 
 /** Runs in the page: every measurement of the Meet layout, as plain data. */
 function measureMeet() {
@@ -54,7 +50,7 @@ function measureMeet() {
   }
   // Controls: 40 to 48 px tall (the hero keys 100), as far as the control is drawn.
   const controls = [];
-  for (const [sel, lo, hi] of [['.meet .meet-key', 100, 100], ['.meet .meet-cap-open', 40, 48], ['.meet .meet-arrow', 40, 48], ['.meet .meet-dot', 40, 48], ['.meet .meet-next-act .meet-btn', 40, 48], ['.meet .meet-isl-howrow .meet-btn', 40, 48], ['.meet .meet-isl-item', 40, 48]]) {
+  for (const [sel, lo, hi] of [['.meet .meet-key', 100, 100], ['.meet .meet-cap-open', 40, 48], ['.meet .meet-arrow', 40, 48], ['.meet .meet-dot', 40, 48], ['.meet .meet-next-act .meet-btn', 40, 48], ['.meet .meet-isl-howrow .meet-btn', 40, 48], ['.meet .meet-isl-item', 40, 48], ['.meet .meet-retry', 40, 48], ['.meet .meet-trouble-link', 40, 48], ['.meet .meet-cap', 94, 96], ['.meet .meet-isl-row', 48, 70]]) {
     for (const e of document.querySelectorAll(sel)) {
       const b = e.getBoundingClientRect();
       if (b.width === 0 && b.height === 0) continue;
@@ -73,6 +69,13 @@ function measureMeet() {
   const clockShown = !!clock && getComputedStyle(clock).display !== 'none';
   const body = document.querySelector('.meet .meet-isl-body, .meet .meet-isl-howto');
   const bodyBox = body ? body.getBoundingClientRect() : null;
+  const bodyShown = !!body && getComputedStyle(body).display !== 'none';
+  const bodyText = body && bodyShown ? (body.innerText || '').trim().length : 0;
+  // The checklist pane: every row inside the pane's box.
+  const pane = document.querySelector('.meet .meet-isl-main');
+  const rows = [...document.querySelectorAll('.meet .meet-isl-item')].map((e) => { const b = e.getBoundingClientRect(); return { t: r1(b.top), b: r1(b.bottom) }; });
+  const paneBox = pane ? pane.getBoundingClientRect() : null;
+  const rowsCut = paneBox ? rows.map((r, i) => ({ i, r })).filter(({ r }) => r.t < paneBox.top - 0.5 || r.b > paneBox.bottom + 0.5).map(({ i, r }) => `row ${i + 1} at y ${r.t} to ${r.b} is outside the pane (y ${r1(paneBox.top)} to ${r1(paneBox.bottom)})`) : [];
   const island = document.querySelector('.meet .meet-island');
   const islandText = island ? (island.innerText || '').trim().length : 0;
   const overlaps = [];
@@ -96,7 +99,7 @@ function measureMeet() {
     const keys = hero.querySelector('.meet-keys')?.getBoundingClientRect();
     if (below && keys && below.bottom > keys.top + 0.5) out.push(`the lines under the title end at y ${r1(below.bottom)}, past the keys at y ${r1(keys.top)}`);
   }
-  return { present: true, boxes, small, controls, titleInfo, clockShown, bodyBox: bodyBox && { t: r1(bodyBox.top), b: r1(bodyBox.bottom), h: r1(bodyBox.height) }, islandText, overlaps, out };
+  return { present: true, boxes, small, controls, titleInfo, clockShown, bodyBox: bodyShown && bodyBox ? { t: r1(bodyBox.top), b: r1(bodyBox.bottom), h: r1(bodyBox.height) } : null, bodyText, islandText, overlaps, out, rowCount: rows.length, rowsCut };
 }
 
 export default {
@@ -116,6 +119,10 @@ export default {
       state('calendar not set up', 'meet=off', ['Calendar is not connected yet.', 'No calendar can be read.', 'Open file']),
       state('no account readable', 'meet=down', ['Calendar not available', 'No good read yet', 'No calendar can be read.']),
       state('no account readable, the last meeting kept (dimmed, as of)', 'meet=stale', ['Last known meeting', 'Design review with the platform team', 'as of', 'Calendar not read', '!Join', '!min left']),
+      state('eight checklist items fit the pane', 'meet=bare&call=teams&checklist=long', ['8. Ask what happens', '1. Ask what happens', 'Your first-meeting list']),
+      state('a plain call with no meeting', 'meet=none&call=teams&rec=1', ['In call, Teams', 'Call in progress', 'Mute', 'Recording', 'This call', '!Nothing scheduled']),
+      state('the call is 12 minutes past its meeting', 'meet=over&call=teams&callsince=-70&rec=1', ['In call, Teams', 'Design review with the platform team', 'min over', 'ended', 'Recording', 'Lunch with Sam']),
+      state('the next meeting overlaps this one', 'meet=clash&call=teams', ['Next, overlaps', 'Starts before this one ends', 'Lunch with Sam']),
       state('the hover tip on Mute', 'meet=known&call=teams&checklist=four', ['Sends Ctrl+Shift+M to Teams. The wall cannot see whether you are muted.'], 'hover:.meet-key[data-role="mute"]'),
       state('the island moved to its second kind (arrow click)', 'meet=known&call=teams&checklist=four', ['Who is coming', 'Said yes', 'Also on file', 'Casey Rowe'], '.meet-arrow[aria-label="Next"]'),
     ],
@@ -145,7 +152,10 @@ export default {
         for (const s of m.small.slice(0, 4)) fail(`text under 16 px: ${s}`);
         for (const c of m.controls.slice(0, 4)) fail(`control size: ${c}`);
         if (m.clockShown) fail('the frame clock is drawn on Meet (the hero draws the time)');
-        if (m.islandText === 0) fail('the island is empty');
+        // The island's active body must be drawn, with words in it: hiding the body alone leaves a header and a footer.
+        if (m.islandText === 0 || !m.bodyBox || m.bodyBox.h < 60 || m.bodyText === 0) fail('the island is empty (its body is ' + (m.bodyBox ? m.bodyBox.h + ' px tall with ' + m.bodyText + ' characters' : 'not drawn') + ')');
+        for (const c of m.rowsCut.slice(0, 3)) fail('checklist ' + c);
+        if (variant.name.endsWith('eight checklist items') && m.rowCount !== 8) fail('the checklist pane shows ' + m.rowCount + ' rows, not 8');
         for (const o of m.out) fail(o);
         if (m.titleInfo) {
           const t = m.titleInfo;
@@ -164,7 +174,8 @@ export default {
       'meet-control-size': { css: '.meet .meet-cap-open { height: 24px !important; }', expect: /^ *FAIL meet layout: control size: /m, appliesTo: (v) => v.name === VARIANTS[1][0] },
       'meet-long-title': { css: '.meet .meet-hero-title { -webkit-line-clamp: unset !important; display: block !important; }', expect: /^ *FAIL meet layout: (the long title takes|the title ends)/m, appliesTo: (v) => v.name === VARIANTS[6][0] },
       'meet-clock': { css: ".main[data-place='meet'] > .top > div:has(> .clk) { display: block !important; }", expect: /^ *FAIL meet layout: the frame clock is drawn/m, appliesTo: (v) => v.name === VARIANTS[1][0] },
-      'meet-island-empty': { css: '.meet .meet-island-body, .meet .meet-isl-body, .meet .meet-isl-howto { display: none !important; } .meet .meet-isl-hd, .meet .meet-isl-foot { display: none !important; }', expect: /^ *FAIL meet layout: the island is empty/m, appliesTo: (v) => v.name === VARIANTS[4][0] },
+      'meet-checklist-clipped': { css: '.meet .meet-isl-check { gap: 12px !important; }', expect: /^ *FAIL meet layout: checklist row \d+ at y /m, appliesTo: (v) => v.name.endsWith('eight checklist items') },
+      'meet-island-empty': { css: '.meet .meet-isl-body, .meet .meet-isl-howto { display: none !important; }', expect: /^ *FAIL meet layout: the island is empty/m, appliesTo: (v) => v.name === VARIANTS[4][0] },
     },
   },
 };
