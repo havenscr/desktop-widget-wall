@@ -581,13 +581,45 @@ pub struct Details {
     pub invite: Option<String>,
 }
 
-/// A name that is safe to pass: control characters turned to spaces, whitespace collapsed, cut at
-/// 60 characters. None when nothing is left or when the text looks like an address or a link
-/// (Outlook fills the name with the address when it knows no name).
+/// Characters that never reach the page and never hide a word from the rules below: every control character
+/// (Cc) and the invisible format characters (Cf) that could split `://` or `www.`: the soft hyphen, the arabic
+/// letter mark, zero-width and direction marks and overrides, the word joiner and invisible operators, the
+/// byte order mark.
+fn is_invisible(c: char) -> bool {
+    c.is_control()
+        || matches!(c, '\u{00AD}' | '\u{061C}' | '\u{180E}' | '\u{200B}'..='\u{200F}' | '\u{202A}'..='\u{202E}' | '\u{2060}'..='\u{2064}' | '\u{2066}'..='\u{2069}' | '\u{FEFF}')
+}
+
+/// A line with every control character turned to a space, every invisible format character removed
+/// and the whitespace collapsed to single spaces. The rules below always look at this form.
+fn normalize(raw: &str) -> String {
+    let spaced: String = raw.chars().filter_map(|c| if c.is_control() { Some(' ') } else if is_invisible(c) { None } else { Some(c) }).collect();
+    spaced.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+/// A word shaped like a host, or a host with a path: a dot followed by two or more letters inside the word
+/// ("meet.example/abc", "bit.ly/x"). The ends are trimmed of punctuation first, so "start." stays a word.
+fn host_shaped(word: &str) -> bool {
+    let t = word.trim_matches(|c: char| !c.is_alphanumeric() && c != '/');
+    let chars: Vec<char> = t.chars().collect();
+    chars.windows(3).any(|w| w[0] == '.' && w[1].is_alphabetic() && w[2].is_alphabetic())
+}
+
+/// A name that is safe to pass: control and invisible characters dealt with, whitespace collapsed, a trailing
+/// bracketed part (a company in brackets) removed, cut at 60 characters. None when nothing is left or when the
+/// text looks like an address, a link or a bare domain (Outlook fills the name with the address when it
+/// knows no name).
 pub fn clean_name(raw: &str) -> Option<String> {
-    let spaced: String = raw.chars().map(|c| if c.is_control() { ' ' } else { c }).collect();
-    let name = spaced.split_whitespace().collect::<Vec<_>>().join(" ");
-    if name.is_empty() || name.contains('@') || name.contains("://") || name.to_ascii_lowercase().contains("www.") {
+    let mut name = normalize(raw);
+    loop {
+        let open = if name.ends_with(')') { name.rfind('(') } else if name.ends_with(']') { name.rfind('[') } else { None };
+        match open {
+            Some(i) => name = name[..i].trim().to_string(),
+            None => break,
+        }
+    }
+    let lower = name.to_ascii_lowercase();
+    if name.is_empty() || name.contains('@') || lower.contains("://") || lower.contains("www.") || (!name.contains(' ') && host_shaped(&name)) {
         return None;
     }
     Some(name.chars().take(MAX_NAME_CHARS).collect::<String>().trim().to_string()).filter(|n| !n.is_empty())
@@ -603,8 +635,30 @@ fn reply_word(response: Option<&str>) -> &'static str {
     }
 }
 
-/// Lines of the invite preview that start the join block; the text is cut before the first one.
-const INVITE_MARKERS: [&str; 6] = ["microsoft teams", "join on your computer", "join zoom", "meeting id", "passcode", "dial in"];
+/// Lines of the invite preview that start the join block; the text is cut before the first one. They are
+/// looked for in the normalized, lower case line, so a tab, a hidden character or a double space cannot hide one.
+const INVITE_MARKERS: [&str; 20] = [
+    "microsoft teams",
+    "join on your computer",
+    "join zoom",
+    "google meet",
+    "webex",
+    "meeting id",
+    "meeting-id",
+    "meeting number",
+    "meeting-number",
+    "conference id",
+    "access code",
+    "kenncode",
+    "code secret",
+    "passcode",
+    "password",
+    "pin:",
+    "join by phone",
+    "dial in",
+    "dial-in",
+    "-::~:~::",
+];
 
 fn has_underscore_run(line: &str) -> bool {
     let mut run = 0;
@@ -617,24 +671,68 @@ fn has_underscore_run(line: &str) -> bool {
     false
 }
 
-/// The invite's own words from `bodyPreview`: cut before the first line of the join block, every
-/// word that holds a link or an address removed, whitespace collapsed, at most 400 characters.
-/// None when nothing is left.
+/// The longest run of digits once spaces, hyphens and round brackets are taken out ("+1 555 123-4567" is eleven).
+fn longest_digit_run(text: &str) -> usize {
+    let mut best = 0;
+    let mut run = 0;
+    for c in text.chars().filter(|c| !matches!(c, ' ' | '-' | '(' | ')')) {
+        run = if c.is_ascii_digit() { run + 1 } else { 0 };
+        best = best.max(run);
+    }
+    best
+}
+
+/// Sentences of one line, each with its end punctuation and the space after it.
+fn sentences(line: &str) -> Vec<&str> {
+    let mut out = Vec::new();
+    let mut start = 0;
+    let bytes = line.as_bytes();
+    for (i, c) in line.char_indices() {
+        if matches!(c, '.' | '!' | '?') && bytes.get(i + 1) == Some(&b' ') {
+            out.push(&line[start..=i]);
+            start = i + 1;
+        }
+    }
+    if start < line.len() {
+        out.push(&line[start..]);
+    }
+    out
+}
+
+/// True for a word the invite never keeps: a link, an address, a phone or sip address, anything shaped like a
+/// host (with or without a path), and a number of five or more digits (an id, a code, a phone number).
+fn dropped_word(word: &str) -> bool {
+    let lower = word.to_ascii_lowercase();
+    lower.contains("://")
+        || lower.contains("www.")
+        || word.contains('@')
+        || ["tel:", "sip:", "mailto:", "callto:"].iter().any(|p| lower.trim_start_matches(|c: char| !c.is_alphanumeric()).starts_with(p))
+        || host_shaped(word)
+        || word.chars().filter(char::is_ascii_digit).count() >= 5
+}
+
+/// The invite's own words from `bodyPreview`, as a best effort on text that anyone who can send an invitation
+/// controls. Each line is normalized first (control and invisible characters, whitespace). The text is cut
+/// before the first line that holds a join-block marker or a run of 8 underscores, and before the first line
+/// or sentence with 9 or more digits. Every word that is a link, an address, a phone or sip address, host shaped
+/// or has 5 or more digits is removed. The rest is collapsed and stops at 400 characters. None when
+/// nothing is left.
 pub fn clean_invite(raw: &str) -> Option<String> {
-    let mut kept: Vec<&str> = Vec::new();
-    for line in raw.split(['\n', '\r']) {
-        let lower = line.to_ascii_lowercase();
-        if has_underscore_run(line) || INVITE_MARKERS.iter().any(|m| lower.contains(m)) {
+    let mut kept: Vec<String> = Vec::new();
+    'lines: for line in raw.split(['\n', '\r']) {
+        let norm = normalize(line);
+        let lower = norm.to_lowercase();
+        if has_underscore_run(&norm) || INVITE_MARKERS.iter().any(|m| lower.contains(m)) {
             break;
         }
-        kept.push(line);
+        for sentence in sentences(&norm) {
+            if longest_digit_run(sentence) >= 9 {
+                break 'lines;
+            }
+            kept.push(sentence.to_string());
+        }
     }
-    let words: Vec<String> = kept
-        .iter()
-        .flat_map(|l| l.split_whitespace())
-        .map(|w| w.chars().filter(|c| !c.is_control()).collect::<String>())
-        .filter(|w| !w.is_empty() && !w.contains("://") && !w.to_ascii_lowercase().contains("www.") && !w.contains('@'))
-        .collect();
+    let words: Vec<&str> = kept.iter().flat_map(|l| l.split_whitespace()).filter(|w| !dropped_word(w)).collect();
     let text: String = words.join(" ").chars().take(MAX_INVITE_CHARS).collect::<String>().trim().to_string();
     if text.is_empty() {
         None
@@ -650,24 +748,33 @@ pub fn shape_details(e: &Value) -> Option<Details> {
         return None;
     }
     let called_by = str_at(e, &["organizer", "emailAddress", "name"]).and_then(clean_name);
+    // The organizer is found among the attendees by identity (the address, kept in Rust and never sent; the
+    // cleaned name when neither side has an address) before any cap, so they are listed once whatever their place.
+    let org_address = str_at(e, &["organizer", "emailAddress", "address"]).map(|a| a.trim().to_ascii_lowercase()).filter(|a| !a.is_empty());
+    let attendees: &[Value] = e.get("attendees").and_then(Value::as_array).map(Vec::as_slice).unwrap_or(&[]);
+    let is_organizer = |a: &Value| {
+        let addr = str_at(a, &["emailAddress", "address"]).map(|x| x.trim().to_ascii_lowercase()).filter(|x| !x.is_empty());
+        match (&org_address, &addr) {
+            (Some(o), Some(x)) => o == x,
+            _ => called_by.is_some() && str_at(a, &["emailAddress", "name"]).and_then(clean_name).as_ref().map(|n| n.eq_ignore_ascii_case(called_by.as_deref().unwrap_or(""))) == Some(true),
+        }
+    };
     let mut people: Vec<Person> = Vec::new();
     let mut more: u32 = 0;
-    for a in e.get("attendees").and_then(Value::as_array).map(Vec::as_slice).unwrap_or(&[]) {
+    let mut organizer_seen = false;
+    if let Some(name) = &called_by {
+        people.push(Person { name: name.clone(), reply: "organizer" });
+        organizer_seen = true;
+    }
+    let mut organizer_matched = false;
+    for a in attendees {
+        if organizer_seen && !organizer_matched && is_organizer(a) {
+            organizer_matched = true;
+            continue;
+        }
         match str_at(a, &["emailAddress", "name"]).and_then(clean_name) {
             Some(name) if people.len() < MAX_PEOPLE => people.push(Person { name, reply: reply_word(str_at(a, &["status", "response"])) }),
             _ => more = more.saturating_add(1),
-        }
-    }
-    // The organizer is listed too (Graph often leaves them out of the attendees), once.
-    if let Some(name) = &called_by {
-        if !people.iter().any(|p| p.name.eq_ignore_ascii_case(name)) {
-            if people.len() < MAX_PEOPLE {
-                people.insert(0, Person { name: name.clone(), reply: "organizer" });
-            } else {
-                more = more.saturating_add(1);
-            }
-        } else if let Some(p) = people.iter_mut().find(|p| p.name.eq_ignore_ascii_case(name)) {
-            p.reply = "organizer";
         }
     }
     let invite = e.get("bodyPreview").and_then(Value::as_str).and_then(clean_invite);
@@ -1463,5 +1570,118 @@ mod tests {
         let mut c = cand(None, "2026-11-12T18:00:00Z", "work");
         c.details = d;
         assert!(!format!("{c:?}").contains("Avery"));
+    }
+
+    // Section: the cleaner on other services' invites and on hostile text (invented tokens, ids and hosts)
+
+    /// The final serialized `details` for an event with this body preview and organizer name.
+    fn wire_of(body: &str, organizer: &str) -> String {
+        let d = details_of(json!({ "bodyPreview": body, "organizer": { "emailAddress": { "name": organizer, "address": "org@host.example" } } }));
+        serde_json::to_string(&d).unwrap()
+    }
+
+    fn assert_none_of(wire: &str, secrets: &[&str]) {
+        for secret in secrets {
+            assert!(!wire.contains(secret), "{secret} reached the answer: {wire}");
+        }
+    }
+
+    #[test]
+    fn a_google_meet_invite_keeps_nothing_of_the_room_the_number_or_the_pin() {
+        let invite = "Planning sync for the quarter.\r\nJoin with Google Meet\r\nhttps://meet.example/abc-defg-hij\r\nOr dial: (US) +1 555-123-4567 PIN: 123456789#";
+        assert_eq!(clean_invite(invite).as_deref(), Some("Planning sync for the quarter."));
+        // A bare link before any marker, and a number alone on a line.
+        let bare = "Agenda first.\r\nRoom: meet.example/abc-defg-hij\r\nDial +1 555 123 4567 then 987654321";
+        assert_eq!(clean_invite(bare).as_deref(), Some("Agenda first. Room:"));
+        let wire = wire_of(invite, "Avery Example");
+        assert_none_of(&wire, &["meet.example", "abc-defg-hij", "555", "123456789", "PIN", "https"]);
+        assert_none_of(&wire_of(bare, "Avery Example"), &["meet.example", "abc-defg-hij", "555", "987654321"]);
+    }
+
+    #[test]
+    fn a_webex_invite_keeps_nothing_of_the_number_or_the_password() {
+        let invite = "Quarterly review with the team.\r\nJoin from Webex\r\nMeeting number: 2551 234 5678\r\nPassword: Tk3xYz\r\nhttps://team.webex.example/meet/avery";
+        assert_eq!(clean_invite(invite).as_deref(), Some("Quarterly review with the team."));
+        let no_webex_word = "Quarterly review.\r\nMeeting number: 2551 234 5678\r\nPassword: Tk3xYz";
+        assert_eq!(clean_invite(no_webex_word).as_deref(), Some("Quarterly review."));
+        assert_none_of(&wire_of(invite, "Avery Example"), &["2551", "5678", "Tk3xYz", "webex", "avery"]);
+    }
+
+    #[test]
+    fn a_german_zoom_invite_cannot_hide_behind_the_hyphen() {
+        let invite = "Kurze Vorstellung der Zahlen.\r\nMeeting-ID: 912 3456 7890\r\nKenncode: 123456";
+        assert_eq!(clean_invite(invite).as_deref(), Some("Kurze Vorstellung der Zahlen."));
+        assert_eq!(clean_invite("Kurz.\r\nCode secret : 654321").as_deref(), Some("Kurz."));
+        assert_eq!(clean_invite("Kurz.\r\nAccess code 111222").as_deref(), Some("Kurz."));
+        assert_eq!(clean_invite("Kurz.\r\nConference ID 5551212").as_deref(), Some("Kurz."));
+        assert_eq!(clean_invite("Kurz.\r\nJoin by phone +49 30 123456").as_deref(), Some("Kurz."));
+        assert_eq!(clean_invite("Kurz.\r\nDial-in: x").as_deref(), Some("Kurz."));
+        assert_eq!(clean_invite("Kurz.\r\n-::~:~::~:~:~:~:~:~:~:~:~:~:~:~:~:~:~:~:~:~:~:~::~:~::-").as_deref(), Some("Kurz."));
+        assert_none_of(&wire_of(invite, "Avery Example"), &["912", "7890", "123456", "Kenncode"]);
+    }
+
+    #[test]
+    fn links_with_no_scheme_phone_and_sip_addresses_and_ids_are_removed_word_by_word() {
+        let text = "Notes at host.example/j/12345?pwd=secret and tel:+1555 and sip:room.example plus short.example/Ab3 and code 54321 end.";
+        assert_eq!(clean_invite(text).as_deref(), Some("Notes at and and plus and code end."));
+        // The digit rule cuts a sentence with nine or more digits, however they are spaced.
+        assert_eq!(clean_invite("Fine words. Call 555 123 4567 now. Never seen.").as_deref(), Some("Fine words."));
+        assert_eq!(clean_invite("Fine words. Call (555) 123-4567 now.").as_deref(), Some("Fine words."));
+        assert_none_of(&wire_of(text, "Avery Example"), &["host.example", "secret", "tel:", "sip:", "short.example", "54321"]);
+    }
+
+    #[test]
+    fn an_invisible_character_inside_a_scheme_or_www_cannot_hide_it() {
+        for hidden in ["\u{200B}", "\u{200C}", "\u{200D}", "\u{2060}", "\u{FEFF}", "\u{202E}", "\u{200E}", "\u{00AD}"] {
+            let text = format!("Words. ht{hidden}tps://secret.example/x ww{hidden}w.corp.example and ma{hidden}ry@corp.example done.");
+            let got = clean_invite(&text).unwrap();
+            assert_eq!(got, "Words. and done.", "hidden {hidden:?}");
+            assert_none_of(&wire_of(&text, "Avery Example"), &["secret", "corp", "https", "ww"]);
+        }
+        // A marker split by a hidden character or a tab is still a marker.
+        assert_eq!(clean_invite("Words.\nMeeting\tID: 123456").as_deref(), Some("Words."));
+        assert_eq!(clean_invite("Words.\nMeet\u{200B}ing  I\u{200D}D: 1").as_deref(), Some("Words."));
+        assert_eq!(clean_invite("Words.\nPASS\u{FEFF}CODE 12").as_deref(), Some("Words."));
+    }
+
+    #[test]
+    fn ordinary_words_that_end_a_sentence_stay() {
+        assert_eq!(clean_invite("The review will start. Bring your notes.").as_deref(), Some("The review will start. Bring your notes."));
+        assert_eq!(clean_invite("Version v1.2 ships. See e.g. the list.").as_deref(), Some("Version v1.2 ships. See e.g. the list."));
+        assert_eq!(clean_invite("Room 4 is booked until 11.").as_deref(), Some("Room 4 is booked until 11."));
+    }
+
+    #[test]
+    fn a_name_that_is_a_bare_domain_or_hides_a_company_in_brackets_is_cleaned() {
+        assert_eq!(clean_name("corp.example"), None);
+        assert_eq!(clean_name("  bit.ly/abc "), None);
+        assert_eq!(clean_name("Avery Example (Tessel Works)").as_deref(), Some("Avery Example"));
+        assert_eq!(clean_name("Avery Example [Tessel Works]").as_deref(), Some("Avery Example"));
+        assert_eq!(clean_name("Avery Example (Ops) (Tessel Works)").as_deref(), Some("Avery Example"));
+        assert_eq!(clean_name("(Tessel Works)"), None);
+        assert_eq!(clean_name("Dr. Avery Example").as_deref(), Some("Dr. Avery Example"));
+        assert_eq!(clean_name("Avery Example, Tessel Works (EMEA").as_deref(), Some("Avery Example, Tessel Works (EMEA"));
+        assert_eq!(clean_name("Avery\u{200B} Exa\u{200D}mple").as_deref(), Some("Avery Example"));
+        let d = details_of(json!({ "organizer": { "emailAddress": { "name": "Avery Example (Tessel Works)", "address": "a@host.example" } }, "attendees": [attendee("corp.example", "x@corp.example", "accepted"), attendee("Blake Sample [Tessel]", "b@x.example", "accepted")] })).unwrap();
+        let wire = serde_json::to_string(&d).unwrap();
+        assert_none_of(&wire, &["Tessel", "corp.example", "@"]);
+        assert_eq!(d.people.len(), 2);
+        assert_eq!(d.people_more, 1);
+    }
+
+    #[test]
+    fn an_organizer_beyond_the_first_twenty_attendees_is_counted_once() {
+        let mut rows: Vec<Value> = (0..24).map(|n| attendee(&format!("Person {n}"), &format!("p{n}@corp.test"), "accepted")).collect();
+        rows.insert(20, attendee("Avery Example", "AVERY@example.test", "accepted"));
+        let d = details_of(json!({ "organizer": { "emailAddress": { "name": "Avery Example", "address": "avery@example.test" } }, "attendees": rows })).unwrap();
+        assert_eq!(d.people.len(), MAX_PEOPLE);
+        assert_eq!(d.people[0], Person { name: "Avery Example".into(), reply: "organizer" });
+        // 25 attendees including the organizer: 20 listed, 5 counted, 25 in all.
+        assert_eq!(d.people_more, 5);
+        assert_eq!(d.people.len() as u32 + d.people_more, 25);
+        assert_eq!(d.people.iter().filter(|p| p.name == "Avery Example").count(), 1);
+        // With the organizer absent from the attendees they are one more person.
+        let d2 = details_of(json!({ "organizer": { "emailAddress": { "name": "Avery Example", "address": "avery@example.test" } }, "attendees": [attendee("Blake Sample", "b@x.test", "accepted")] })).unwrap();
+        assert_eq!(d2.people.len() as u32 + d2.people_more, 2);
     }
 }

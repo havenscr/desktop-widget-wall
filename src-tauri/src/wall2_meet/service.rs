@@ -1004,11 +1004,12 @@ mod tests {
 
     #[derive(Clone, Copy)]
     enum GraphStep { Ok, Unauthorized, Status(u16) }
-    struct ScriptGraph { steps: RefCell<Vec<GraphStep>>, expanded: RefCell<Vec<bool>> }
+    struct ScriptGraph { steps: RefCell<Vec<GraphStep>>, expanded: RefCell<Vec<bool>>, wide: RefCell<Vec<bool>> }
     impl ScriptGraph {
-        fn new(steps: Vec<GraphStep>) -> Self { Self { steps: RefCell::new(steps), expanded: RefCell::new(Vec::new()) } }
-        fn next(&self, expanded: bool) -> (GraphReply, Option<Diag>) {
+        fn new(steps: Vec<GraphStep>) -> Self { Self { steps: RefCell::new(steps), expanded: RefCell::new(Vec::new()), wide: RefCell::new(Vec::new()) } }
+        fn next(&self, expanded: bool, wide: bool) -> (GraphReply, Option<Diag>) {
             self.expanded.borrow_mut().push(expanded);
+            self.wide.borrow_mut().push(wide);
             let step = self.steps.borrow_mut().remove(0);
             match step {
                 GraphStep::Ok => (GraphReply::Ok(body("Meeting", "script")), None),
@@ -1021,9 +1022,9 @@ mod tests {
         }
     }
     impl GraphClient for ScriptGraph {
-        fn calendar_view(&self, _access: &str, _start: &str, _end: &str) -> GraphReply { self.next(true).0 }
-        fn calendar_view_diag(&self, _access: &str, _start: &str, _end: &str, _ctx: &Ctx) -> (GraphReply, Option<Diag>) { self.next(true) }
-        fn calendar_view_without_expand_diag(&self, _access: &str, _start: &str, _end: &str, _ctx: &Ctx) -> (GraphReply, Option<Diag>) { self.next(false) }
+        fn calendar_view(&self, _access: &str, _start: &str, _end: &str) -> GraphReply { self.next(true, false).0 }
+        fn calendar_view_diag(&self, _access: &str, _start: &str, _end: &str, ctx: &Ctx) -> (GraphReply, Option<Diag>) { self.next(true, ctx.wide()) }
+        fn calendar_view_without_expand_diag(&self, _access: &str, _start: &str, _end: &str, ctx: &Ctx) -> (GraphReply, Option<Diag>) { self.next(false, ctx.wide()) }
     }
 
     fn acct(id: &str) -> Account {
@@ -1130,6 +1131,9 @@ mod tests {
         assert_eq!(p.meetings.len(), 1);
         assert!(p.meetings[0].details.is_none());
         assert_eq!(graph.steps.borrow().len(), 0);
+        // The first ask was for the wider fields, the second for the plain ones, both with the expand.
+        assert_eq!(*graph.wide.borrow(), vec![true, false]);
+        assert_eq!(*graph.expanded.borrow(), vec![true, true]);
     }
 
     #[test]
@@ -1140,6 +1144,18 @@ mod tests {
         let graph = ScriptGraph::new(vec![GraphStep::Status(403), GraphStep::Status(403)]);
         let p = read_next_only(&[acct("work")], &store, &tokens, &graph, &core, &links, NOW, Only::All);
         assert_eq!(p.accounts[0].state, "unavailable");
+        // Wide once, plain once, and then it gives up: a refused plain read is not asked again.
+        assert_eq!(*graph.wide.borrow(), vec![true, false]);
+    }
+
+    #[test]
+    fn the_day_read_never_asks_for_the_wider_fields() {
+        let (store, core) = setup();
+        let links = Mutex::new(Links::default());
+        let tokens = FakeTokens::new(vec![ok_token("a", None)]);
+        let graph = ScriptGraph::new(vec![GraphStep::Ok]);
+        read_day(&[acct("work")], &store, &tokens, &graph, &core, &links, NOW, NOW, NOW + 3600);
+        assert_eq!(*graph.wide.borrow(), vec![false]);
     }
 
     #[test]

@@ -60,6 +60,8 @@ pub(crate) fn checklist_from(bytes: Option<&[u8]>, len: u64) -> Checklist {
         return empty("refused", Some(OVER_SIZE));
     }
     let Ok(text) = std::str::from_utf8(bytes) else { return empty("refused", Some(NOT_TEXT)) };
+    // An editor may start the file with a byte order mark; it is not part of the first item.
+    let text = text.strip_prefix('\u{FEFF}').unwrap_or(text);
     Checklist { state: "ok", items: parse_items(text), reason: None }
 }
 
@@ -164,6 +166,14 @@ mod tests {
         assert_eq!((bad.state, bad.reason.as_deref()), ("refused", Some("meet-checklist.txt is not UTF-8 text")));
         let empty = checklist_from(Some(b""), 0);
         assert_eq!((empty.state, empty.items.len()), ("ok", 0));
+    }
+
+    #[test]
+    fn a_byte_order_mark_is_not_part_of_the_first_item() {
+        let with = checklist_from(Some("\u{FEFF}Who decides\nNext\n".as_bytes()), 20);
+        assert_eq!(with.items, ["Who decides", "Next"]);
+        let comment = checklist_from(Some("\u{FEFF}# note\nOne\n".as_bytes()), 20);
+        assert_eq!(comment.items, ["One"]);
     }
 
     #[test]
