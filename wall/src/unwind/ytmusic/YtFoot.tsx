@@ -4,7 +4,7 @@ import { usePlaceStore } from '../../state/places';
 import { tip } from '../../ui/HoverTip';
 import { formatTime } from '../../music/model';
 import { kindName } from '../watch/links';
-import { playerLink } from '../watch/PlayerFrame';
+import { playerLink } from '../watch/playerLink';
 import { useWatchStore } from '../watch/store';
 import { seekPosition } from '../spotify/model';
 import { AUTOPLAY_LINE, musicControls, next, previous, useMusicView } from './queue';
