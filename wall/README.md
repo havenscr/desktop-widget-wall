@@ -120,16 +120,39 @@ rejects with a clear error. Inside Tauri, `invoke` calls the real command.
 ## Home moods
 
 Home follows the concept's `f_home` on the frame's zones (`screens/Home.tsx`,
-`styles/home.css`): the sun block under the clock in the left wing; in the centre the
+`styles/home.css`): the left third (headline, day curve, weather and house, below) under the clock in the left wing; in the centre the
 concept's smaller mood cards in one row, the Rooms row's place and the Sound block (see
 "Sound on Home"); Around the house with the network card in the right wing. The Rooms
 row (`home/Rooms.tsx`) and the House line render nothing until the home app reads them
 (PRs 24 and 25): no placeholder card.
 
-- **Sun block** (`home/LeftWing.tsx`, `home/sunLine.ts`): from the horizon's own sun
-  (`ribbon/sun.ts`), to the nearest minute. "Sunset in N min" in amber within 90
-  minutes before sunset; earlier, the sunset time and the daylight left; before
-  sunrise, the sunrise time; after sunset, tomorrow's sunrise.
+- **Left third** (`home/LeftWing.tsx`, `sunLine.ts`, `dayCurve.ts`, `SunCurve.tsx`, `OutsideRow.tsx`,
+  `HouseLine.tsx`; rules under "Home left third" in `styles/home.css`): everything starts 23 px under the
+  date (wall y 200, 458 px wide from x 136) and ends above y 440. In order: the headline, the day as a
+  low curve, one row for the weather outside, and the house row with its room dots. All of it redraws once
+  a minute; nothing animates.
+  - **Headline** (`sunHeadline`): from the horizon's own sun (`ribbon/sun.ts`), to the nearest minute. By day
+    the daylight left; within 90 minutes before sunset "Sunset in N min" in amber; before sunrise the
+    sunrise time; after sunset tomorrow's sunrise. A date with only a sunrise or only a sunset says that
+    one time; a date with neither has no headline.
+  - **Curve** (`dayCurve.ts` for the maths, `SunCurve.tsx` for the drawing): x is the time of day, midnight
+    to midnight (458 px for 24 h); above the base line from sunrise to sunset, a dip below it at night. Only
+    the two crossings and the sun's x are data; the hump's height (56 px) and the dip (13 px) are a drawing.
+    The part of the day already travelled is at full strength, the rest at 38 percent; a disc on the hump
+    by day, a ring on the dip at night. The two time labels sit 12 px outside their crossings; on a long day
+    a label drops its glyph, then its AM or PM, so it always fits between its crossing and the box's edge.
+    Hover card: both times and the day's length. Text alternative: "Sunrise 7:13 AM, sunset 4:33 PM, the sun is
+    past its highest point". A date with no sunrise or no sunset draws no curve.
+  - **Outside row** (`OutsideRow.tsx`): "50° outside, partly cloudy" and the day's high and low, from
+    `useWeather()` (nothing is added under `weather/`). The hover card says when the reading was taken and,
+    for the second source, which one. A reading more than a normal refresh old is dimmed and says "updated N
+    min ago" in place of the high and low; with no usable reading the row is the one dim line the Unwind date
+    line uses ("weather unavailable", its hover card says why); while the first read is out the row is left out.
+  - **House row** (`HouseLine.tsx`): "68° inside. Lights on in two rooms." and a dot per room, as before. It
+    stays hidden while the home app's desk routes are absent; not live, it is dimmed and says "as of" at the
+    right end of the dots row. The dots stay on one line: when the rooms do not all fit, the lit ones come
+    first and the rest are counted as "+N more" (the hover card names them).
+  - Review script rules, gallery states and deliberate breaks live in `scripts/areas/left-third.mjs`.
 - **Columns** are fixed (`.home-wing` 1, `.home-centre` 2, `.home-right` 3), so a zone
   that renders nothing never shifts the others.
 - **Mood cards** (`home/Moods.tsx`, `home/MoodArt.tsx`): one card per mood the home
@@ -1991,8 +2014,8 @@ words: `not-configured`, `absent` (404, the route is not live yet), `failed`, `s
   read. Without a desk token it reads "Clear all: not set up". While the desk route
   is absent the card reads today's `wall2_home_security` and Clear all is hidden.
 - **House line** (`home/HouseLine.tsx`): "68° inside. Lights on in two rooms." and a dot
-  per room (lit when its lights are on; the name and state on hover), under the sun
-  block, which then moves up under the date. Hidden while the routes are absent. The
+  per room (lit when its lights are on; the name and state on hover), under the weather
+  row in the left third (see "Left third" above). Hidden while the routes are absent. The
   "Next" automation line is not built: the home app has no routine schedule yet.
 - **Moods** (`home/Moods.tsx`): three large cards; with more, a narrow More card shows
   the next mood peeking, "N more" and dots, and a click or the wheel slides by three.

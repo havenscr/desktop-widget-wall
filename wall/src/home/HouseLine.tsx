@@ -48,6 +48,8 @@ const DOT_PX = 17; // the dot and its gap to the name
 const ROOM_GAP_PX = 18;
 const NAME_CHAR_PX = 9.4;
 const MORE_PX = 74;
+/** Room kept at the right end of the dots row for "as of 9:41 AM" (17 px type) and a gap. */
+export const ASOF_PX = 150;
 
 type RoomDot = { id: string; name: string; on: boolean };
 
@@ -93,7 +95,8 @@ export function HouseLine() {
   const { house, rooms } = useDeskHouse();
   const v = houseView(house, rooms);
   if (!v) return null;
-  const { shown, hidden } = fitRooms(v.rooms);
+  // Not live: "as of" takes the right end of the dots row, so the dots get that much less.
+  const { shown, hidden } = fitRooms(v.rooms, v.asOf ? ROOMS_ROW_PX - ASOF_PX : ROOMS_ROW_PX);
   const asOf = v.asOf ? `, ${v.asOf}` : '';
   return (
     <div className={v.stale ? 'lw-house house stale' : 'lw-house house'} aria-label="House">
@@ -104,9 +107,8 @@ export function HouseLine() {
         <span className="lw-text house-line">
           <Lead text={v.text} />
         </span>
-        {v.asOf && <span className="lw-side house-asof">{v.asOf}</span>}
       </div>
-      {v.rooms.length > 0 && (
+      {(v.rooms.length > 0 || v.asOf) && (
         <div className="house-rooms">
           {shown.map((r) => (
             <span key={r.id} className={r.on ? 'house-room on' : 'house-room'} {...tip(`${r.name}: ${r.on ? 'lights on' : 'lights off'}${asOf}`)}>
@@ -119,6 +121,7 @@ export function HouseLine() {
               +{hidden.length} more
             </span>
           )}
+          {v.asOf && <span className="lw-side house-asof">{v.asOf}</span>}
         </div>
       )}
       {/* The "Next" automation line goes here once the home app has a routine schedule:

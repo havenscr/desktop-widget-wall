@@ -1133,7 +1133,7 @@
   font: 400 20px/1 var(--body);
   color: var(--tx);
   white-space: nowrap;
-  min-width: 0;
+  flex: none;
 }
 .lw-text b {
   font-weight: 600;
@@ -1159,11 +1159,12 @@
 .lw-house .lw-row {
   margin-bottom: 0;
 }
-.house-asof {
+.house-rooms .house-asof {
   margin-left: auto;
+  align-self: center;
 }
 .house.stale .lw-row,
-.house.stale .house-rooms {
+.house.stale .house-room {
   opacity: 0.6;
 }
 .house-rooms {

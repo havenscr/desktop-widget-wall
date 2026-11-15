@@ -61,6 +61,8 @@ function measureLeftThird() {
     house: box(document.querySelector('.home .house')),
     outside: box(document.querySelector('.home .outside')),
     weatherText: document.querySelector('.home .outside')?.textContent ?? null,
+    // Inside each row (and the dots row) the children, left to right: none may overlap the next.
+    lines: [...document.querySelectorAll('.home .home-wing .lw-row, .home .home-wing .house-rooms')].map((row) => ({ row: box(row), kids: [...row.children].map((c) => ({ name: (c.className || c.tagName).toString().split(' ')[0], ...box(c) })).filter((c) => c.r - c.x > 0) })),
   };
 }
 
@@ -125,6 +127,13 @@ function ruleLeftThird(variantEntry, results, emit) {
   } else {
     fails.push('left third: the curve is not drawn');
   }
+  // Inside a row, one part never runs into the next (the line into "as of", the sentence into the high and low).
+  for (const { row, kids: line } of m.lines ?? []) {
+    for (let i = 1; i < line.length; i++) {
+      if (line[i].x < line[i - 1].r - 0.5) fails.push(`left third: ${line[i - 1].name} runs into ${line[i].name} (ends at x ${line[i - 1].r.toFixed(1)}, the next starts at ${line[i].x.toFixed(1)})`);
+    }
+    for (const c of line) if (c.r > row.r + 0.5) fails.push(`left third: ${c.name} leaves its row (ends at x ${c.r.toFixed(1)}, the row at ${row.r.toFixed(1)})`);
+  }
   // The rows after the curve keep their order and do not overlap each other.
   const rowsAfter = kids.filter((p) => p.name === 'lw-row' || p.name === 'lw-house');
   for (let i = 1; i < rowsAfter.length; i++) if (rowsAfter[i].y < rowsAfter[i - 1].b - 0.5) fails.push('left third: two rows overlap');
@@ -178,6 +187,8 @@ export default {
       'left-date': { css: '.home-wing .lw-head { position: relative !important; top: -60px !important; }', expect: /^ *FAIL left third: .* overlaps the date/m, appliesTo: only(VARIANT_HOUSE) },
       // A row stretched across the gap into the card to its right.
       'left-card': { css: '.lw-row.outside { width: 700px !important; }', expect: /^ *FAIL left third: lw-row reaches x [\d.]+, within 8 px of the card to its right/m, appliesTo: only(VARIANT_HOUSE) },
+      // The weather sentence set too large: it pushes the high and low out of the row.
+      'left-run': { css: '.lw-text { font-size: 34px !important; }', expect: /^ *FAIL left third: lw-side leaves its row/m, appliesTo: only(VARIANT_HOUSE) },
       'left-text': { css: '.lw-label, .lw-side { font-size: 12px !important; }', expect: /^ *FAIL left third: text under 16 px in /m, appliesTo: only(VARIANT_HOUSE) },
       // Both labels dragged to the middle of a long day, then the sunset label to the box's left edge.
       'left-labels': { css: '.lw-label.set { right: auto !important; left: 0 !important; }', expect: /^ *FAIL left third: the sunrise and sunset labels collide|^ *FAIL left third: the sunset label covers its own crossing/m, appliesTo: only(VARIANT_SUMMER) },
