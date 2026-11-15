@@ -6,7 +6,7 @@ import { clockText, reasonText, type MeetAccount } from '../meet/model';
 import { POLL_MS as MUSIC_POLL_MS, refreshNowPlaying, useNowPlayingStore } from '../music/store';
 import { REFRESH_MS as TASKS_REFRESH_MS } from '../tasks/model';
 import { STALE_MS as SOUND_STALE_MS } from '../home/soundModel';
-import { REFRESH_MS as WEATHER_REFRESH_MS, staleText, weatherFailureText } from '../weather/model';
+import { REFRESH_MS as WEATHER_REFRESH_MS, staleText, WEATHER_SOURCE_NAMES, weatherFailureText } from '../weather/model';
 import { refreshWeather, useWeatherStore, type WeatherState } from '../weather/useWeather';
 import { refreshMeetingFeed, useMeetingFeed } from '../work/useNextMeeting';
 import { reviewNow } from '../ui/reviewClock';
@@ -43,7 +43,7 @@ export interface SourceSnapshot {
   calendar: { asOf: number | null; failed: boolean; feedStale: boolean; noCalendar: boolean; reads: number; accounts?: MeetAccount[] };
   agents: AgentsState;
   security: Pick<SecurityState, 'status' | 'summary' | 'readAt'>;
-  weather: Pick<WeatherState, 'reading' | 'failed' | 'failure' | 'attemptedAt'>;
+  weather: Pick<WeatherState, 'reading' | 'failed' | 'failure' | 'attemptedAt' | 'nextTryAt'>;
   music: { at: number };
   reports: Partial<Record<ReportId, Report>>;
 }
@@ -136,13 +136,14 @@ export function buildSources(s: SourceSnapshot): SourceRow[] {
     const id = 'weather' as const;
     const name = 'Weather';
     const w = s.weather.reading;
-    if (!w) rows.push(s.weather.failed ? { id, name, tone: 'down', at: s.weather.attemptedAt ?? null, reason: weatherFailureText(s.weather.failure) } : { id, name, tone: 'none', at: null, reason: 'Not read yet.' });
+    if (!w) rows.push(s.weather.failed ? { id, name, tone: 'down', at: s.weather.attemptedAt ?? null, reason: weatherFailureText(s.weather.failure, s.weather.nextTryAt) } : { id, name, tone: 'none', at: null, reason: 'Not read yet.' });
     else if (s.weather.failed) {
       const attempted = s.weather.attemptedAt ?? now;
-      rows.push({ id, name, tone: 'warn', at: w.fetchedAt, reason: `Last try failed ${ago(attempted, now)}: ${weatherFailureText(s.weather.failure)} Showing the reading from ${new Date(w.fetchedAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}.` });
+      rows.push({ id, name, tone: 'warn', at: w.fetchedAt, reason: `Last try failed ${ago(attempted, now)}: ${weatherFailureText(s.weather.failure, s.weather.nextTryAt)} Showing the reading from ${new Date(w.fetchedAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}${w.source === 'nws' ? ` (${WEATHER_SOURCE_NAMES.nws})` : ''}.` });
     } else {
       const old = staleText(w.fetchedAt, now);
       if (old) rows.push({ id, name, tone: 'warn', at: w.fetchedAt, reason: `The reading is old (${old}). It refreshes every ${WEATHER_REFRESH_MS / 60_000} min.` });
+      else if (w.source === 'nws') rows.push({ id, name, tone: 'ok', at: w.fetchedAt, reason: `Reading from ${WEATHER_SOURCE_NAMES.nws} while Open-Meteo is not answering${s.weather.nextTryAt ? `. Open-Meteo is tried again at ${clockText(s.weather.nextTryAt)}` : ''}.` });
       else rows.push({ id, name, tone: 'ok', at: w.fetchedAt, reason: 'Reading normally.' });
     }
   }

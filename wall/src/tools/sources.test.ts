@@ -113,6 +113,18 @@ it('weather keeps all four failed tries visible beside the older reading', () =>
   }
 });
 
+it('weather names the second source while Open-Meteo is refusing, and the planned next try with no reading', () => {
+  const retry = new Date(2026, 10, 14, 15, 15).getTime();
+  const nws = { reading: { fetchedAt: NOW - min(5), source: 'nws' } as never, failed: false, nextTryAt: retry };
+  const got = row(base({ weather: nws }), 'weather');
+  expect(got.tone).toBe('ok');
+  expect(got.reason).toContain('National Weather Service');
+  expect(got.reason).toContain('3:15 PM');
+  const refused = row(base({ weather: { reading: null, failed: true, failure: 'http 429', nextTryAt: retry, attemptedAt: NOW } }), 'weather');
+  expect(refused.tone).toBe('down');
+  expect(refused.reason).toBe('Open-Meteo is refusing this address for now (too many requests). Next try at 3:15 PM.');
+});
+
 it('music is amber when the 2 second poll has gone quiet, grey before the first answer', () => {
   expect(row(base({ music: { at: 0 } }), 'music').tone).toBe('none');
   expect(row(base({ music: { at: NOW - 60_000 } }), 'music').tone).toBe('warn');

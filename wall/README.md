@@ -170,8 +170,8 @@ no `homeBaseUrl` the row says "Not set up"; with no moods it shows the one compa
 
 ### Sound on Home
 
-`home/Sound.tsx`, `home/useSonos.ts`, `home/soundModel.ts`, `src-tauri/src/wall2_sonos.rs`
-(its reads: `wall2_sonos_read.rs`; its log: `wall2_sonos_log.rs`).
+`home/Sound.tsx`, `home/NowBlock.tsx`, `home/wallVideo.ts`, `home/useSonos.ts`, `home/soundModel.ts`,
+`src-tauri/src/wall2_sonos.rs` (its reads and the cover fetch: `wall2_sonos_read.rs`; its log: `wall2_sonos_log.rs`).
 The owner's Sonos service on the home box, read every 30 seconds while the wall is
 visible. Nothing on the wall plays or changes volume without a click, and one deliberate
 click is one write: the second click of a double click and the repeats of a held key are
@@ -228,9 +228,76 @@ ignored, and each control stays latched for 800 ms after its write settles.
   speaker to 40 or less (a line-in group, the PC's own sound, does not count).
 - **Play and pause**: "Sonos Off" pauses every speaker while music plays; with nothing
   playing the button names the suggestion ("Play Evening") and is off when no routine fits
-  the hour. The service has no next or resume command, so there is no Next button.
+  the hour. The service has no resume command, so there is no Play after a pause. Back and
+  next on the music appear only when the sound service says it has them (see "Now Playing").
   **Sleep** offers 30, 60 or 90 minutes (5 minute fade); the soonest running timer shows
   its minutes left and cancels on a click.
+- **Now Playing** (`home/NowBlock.tsx`, the rules in `styles/home.css`): the left of the
+  card, one box of 390 by 226 at the default card (its rows give it its height; every layout
+  is a layer that fills it, so a change of layout never moves the card), with three
+  layouts and the quiet block. They cross-fade over 200 ms (none under reduced motion).
+  - **Music alone**: a 136 px cover (the speaker glyph tile when there is no cover), the
+    kicker "Now playing", the title on up to two lines, the artist, a time row with a 6 px
+    bar when the track has a length (the position counts on each second from the read that
+    carried it, never past the end, and stops while the read is not live; the one-second
+    clock runs only while that bar is on screen; a station has no length and no bar, and
+    the where line sits right under the artist), and the control row at the
+    foot: back and next (40 px, only when the service has them), pause (44 px, cyan), then
+    the where line. A Spotify track on a house speaker uses the same layout with its own
+    cover and times. A TV or line-in room is not music: the quiet words stay.
+  - **The wall's own video alone** (`home/wallVideo.ts` reads the Watch store and acts
+    through its own actions and `playerLink`; no second player is mounted): the same block
+    with a cyan tile, "On the wall", the title, "YouTube video", "YouTube live stream",
+    "YouTube playlist, 4 of 24" or "Twitch stream", the time row when the player reports a
+    length, and pause or play, stop and "Open Watch" (to the Unwind place's Watch tab);
+    back and next only for a playlist the player reports with more than one item. A Twitch
+    item takes only Stop and Open Watch. While autoplay was refused the line reads "Click
+    the video on Watch to start it" and there is no pause. A video that has ended is no
+    longer shown. The Watch frame lives in the stage layer mounted for every place, so it
+    keeps playing and keeps answering `playerLink.send` while Home shows (proved in
+    `home/wallVideo.test.tsx`). A pause or play pressed while the frame is still loading is
+    sent once the frame loads (`PlayerFrame.tsx` tells a newly loaded frame the store's paused
+    state). If a back or next message is not taken (no loaded frame), both buttons stop with
+    the hover "Open Watch to control this" until another item is on (by identity, also the same
+    title replayed), the player reports (it has started, or the frame has loaded and answers),
+    or Home is shown again.
+  - **Both at once**: two halves with a hairline, the video above the music; each half has
+    a 92 px picture, kicker, one-line title, two small lines and its buttons at the right
+    (pause and stop for the video, pause for the music). The split view has no time bar
+    and no back or next.
+  - **Cover art**: the page never loads a cover itself. Rust fetches it (`wall2_sonos_art`,
+    which takes no address from the page): the `albumArtURI` the last good read held for the
+    playing speaker, only when it is `http` to a literal private IPv4 address on port 1400
+    (a speaker's own address) or `https` to `i.scdn.co` or `mzstatic.com` (or a name under
+    them), rebuilt from checked parts (no user info, fragment, backslash or non-ASCII),
+    never following a redirect, with a 3 second limit for everything, at most 400 KB, a
+    status of 200 only, and bytes that begin as a JPEG, PNG or WebP (whatever type was
+    declared). One fetch per distinct address (the last result, a failure too, is kept in
+    memory only; a failed address is tried once more when asked for 30 seconds or more after
+    the failure, never a third time, and an address that is not allowed never). The summary
+    carries a short opaque key for the cover (a hash of the address, never the address), and
+    the page fetches again when that key changes, whatever the title is; the previous cover
+    stays while a new one is on its way for at most 2 seconds, and a track with no cover shows
+    the glyph at once. Every failure answers nothing and writes one fixed word to the Sonos
+    log (`failed art refused|too-big|not-image|timed-out|no-answer|bad-answer`), never the
+    address. Without a cover the glyph tile shows.
+  - **Back and next for Sonos**: `GET /api/capabilities` is one more optional read beside the
+    others; `{ "skip": true }` (exactly) makes the summary's `canSkip` true, anything else
+    (a 404, a failure) leaves it false and the two buttons are not drawn. The commands
+    (`wall2_sonos_skip`, direction exactly `next` or `previous`) are refused unless the last
+    read said `canSkip`, is under two minutes old and music plays; they send `POST
+    /api/action/next` or `/api/action/previous` with `{}`; only a JSON answer whose `ok` is exactly `true` is
+    done (any other successful answer is "Sonos could not do that"), and a 4xx with
+    `{ "error": "cannot-skip" }` shows "This station cannot skip", `nothing-playing` shows
+    "Nothing is playing". The page reads the summary again after it. The two buttons show busy while the
+    write runs and through the 800 ms latch after it (a second click inside it sends nothing).
+    Pause still pauses every speaker.
+  - Dev mocks: `?np=` takes `station` (no length), `noart`, `skip` (back and next), `skipfail`
+    (a skip refused as a station that cannot skip), `long` (long title and artist) and `tv`
+    (the studio plays a TV input);
+    the wall's video comes from the Watch mocks (`?watch=mock&wlist=three|many&wplay=<n>&wplace=home`,
+    `wstate=refused` for the click wait). Review script: `scripts/areas/now-playing.mjs`
+    (gallery states, and fit rules with a deliberate break for each).
 - Every action shows a brief result beside the heading ("Playing Evening", "Could not
   reach Sonos", "Some speakers did not change", which reads again at once). A read that
   failed twice in a row, or one over two minutes old, dims the card, says what happened
@@ -260,7 +327,7 @@ ignored, and each control stays latched for 800 ms after its write settles.
 
 Rust (`wall2_sonos`, every command answers the `wall2` window only): reads `GET
 /api/status`, `/api/speakers` and `/api/routines` (all needed), `/api/groups`,
-`/api/group-presets`, `/api/scenes` and `/api/sleep-timers` (each may fail alone), side by
+`/api/group-presets`, `/api/scenes`, `/api/sleep-timers` and `/api/capabilities` (each may fail alone), side by
 side, with a 4 second timeout, no redirects and a 1 MB cap per answer. An answer with
 more than 500 entries in a map or list is refused as malformed, and collecting stops at
 each cap. The summary is bounded (24 speakers, 24 groups, 12 presets, 48 routines, 12
@@ -279,7 +346,10 @@ for the key whose last unforced call was skipped within a minute, `POST
 /api/group-presets/<id>/apply`, `POST /api/action/volume` `{room, volume}` per speaker
 (a group's per-speaker writes in parallel, line-in, offline and unknown-level speakers
 left out; 0 to 100, clamped), `POST /api/action/pause-all`, `POST /api/sleep-timer`
-`{minutes, fadeMinutes: 5}` (30, 60 or 90 only) and `DELETE /api/sleep-timer/<id>`.
+`{minutes, fadeMinutes: 5}` (30, 60 or 90 only), `DELETE /api/sleep-timer/<id>` and the skip
+described under "Now Playing". The track's `duration` and `position` (finite numbers, 0 to
+86,400 seconds; a zero or missing length gives no time at all, a position past the length is
+clamped to it) travel in `nowPlaying` with a flag for a cover address that may be fetched.
 Each "asks first" case above answers `needs-confirm` without `confirm: true`. Errors are
 fixed strings ("Could not reach Sonos", "Sonos could not do that", "Sonos status is out
 of date", "Some speakers did not change"); a failed summary read answers one fixed word
@@ -936,12 +1006,41 @@ the centre card; the date line takes it through the frame's `ClockSlot` portal.
   is already on, leave it alone; otherwise turn it on and remember that focus did
   it (key `wall2-focus-dnd`); turn it off on pause, reset, finish and app start
   only if focus turned it on. Calls run one at a time through a queue.
-- **Weather** (`wall/src/weather/`). Open-Meteo from the front end (same request
-  as the old app: Fahrenheit, mph, `timezone=auto`). Current temperature,
-  condition with an icon, today's high and low, next six hours. Refreshes every
-  15 minutes while visible, and once when the page returns after 15 minutes or
-  more. On failure the last reading stays and shows its age in small text. The
-  code to label and icon map is one pure function, `describeWeather` in `codes.ts`.
+- **Weather** (`wall/src/weather/`). Read natively: the web view never calls a weather
+  service (its security policy no longer lists one). The command `wall2_weather(latitude,
+  longitude, source)` (window `wall2` only; `source` is `open-meteo` or `nws`; the place must
+  be finite and in range) lives in `src-tauri/src/wall2_weather.rs` on the shared HTTP agent and
+  returns the reply text, or fails with `dns`, `connect`, `tls`, `timeout`, `read`, `input` or
+  `http <status>`. The page parses it. Open-Meteo is the first source (same request as the old
+  app: Fahrenheit, mph, `timezone=auto`). When it answers 429 or cannot be reached, the United
+  States National Weather Service (`api.weather.gov`, no key, `points` once and cached, then the
+  hourly forecast and the 12 hour forecast; the app and the public repository named in `User-Agent`)
+  is asked: its short forecast words map to a weather code through one table (`NWS_TABLE` in
+  `model.ts`, a test per row; haze and smoke read as fog, a wintry mix as sleet, frost as clear),
+  "now" is the first hour, today's high is the 12 hour forecast's daytime period of today and the
+  low its night period. Once today's daytime period has passed (the forecast starts at "Tonight") the
+  high is the larger of the temperature now and the highest reading the wall has seen today (kept
+  in memory with its date; after a restart in the evening that is the temperature now). Outside
+  the United States it answers 404 and the first failure stays. A reading says which source it came
+  from (`source`): the Tools Sources row and the Unwind date line's hover name the Weather Service
+  when it is the one. Current temperature, condition with an icon, today's high and low, next six
+  hours. Refreshes every 15 minutes while visible (one minute while there is no reading), and once
+  when the page returns after 15 minutes or more. After a 429 Open-Meteo is left alone for 15
+  minutes, then 30, then 60 at most (only a scheduled try that meets a 429 advances the wait; a success
+  resets it; the Tools drawer's Retry tries at once and never lengthens a wait that is running),
+  and the words say so ("Open-Meteo is refusing this address for now (too many requests). Next
+  try at 3:15 PM."). On failure the last reading stays and shows its age in small text. The reason
+  for a failed read with no reading is printed under "Weather unavailable" on the Work cards (16 px)
+  and kept on hover elsewhere. The code to label and icon map is one pure function, `describeWeather`
+  in `codes.ts`.
+
+  **The weather log.** `wall2-weather.log` and `wall2-weather.log.1` in the app's log folder (same
+  rotation as the Sonos log: append, 64 KB, one older file, shared code in `wall2_sonos_log.rs`) hold
+  one line per failed try and one per recovery: `<UTC time> <open-meteo|nws> failed <kind> <status>
+  [<reason>]` or `<UTC time> <source> recovered`. For an HTTP failure the first 120 characters of the
+  reply's `reason` text are kept (Open-Meteo says which limit: minute, hour or day), as ASCII letters and
+  single spaces only: every digit, sign and punctuation mark is dropped, so a place can never pass as
+  numbers. The place is never logged.
 - **Music** (`wall/src/music/`). One app-wide poll (`store.ts`) shared by Work's now
   playing row, the full music bar and the Unwind view: it polls `get_now_playing` every 2 seconds
   while visible (never while hidden); each call gives up after 5 seconds so a hung
@@ -957,6 +1056,35 @@ the centre card; the date line takes it through the frame's `ClockSlot` portal.
   Previous, play or pause, next call `media_previous`, `media_play_pause`,
   `media_next`; failures are swallowed. Stopped or unknown shows a quiet
   "Nothing playing".
+
+  **Which session the player follows (Wall 2).** Windows names one media session "current", but
+  that one can have ended while it still says it plays (a video at its end, a player that stopped
+  sending updates) while another app plays. `get_now_playing` for the `wall2` window reads every
+  session and `wall2_media.rs` picks: the current session when it plays and has not ended; else
+  any other session that plays and has not ended, the most recently updated first; else the
+  current session; else none. Which listed session is Windows' current one is decided by identity
+  (the `windows` crate compares session objects by COM identity; when the manager hands out another
+  wrapper the app id decides, and with several sessions of one app their title, timeline and status).
+  Each listed session has a key, its app id and its place among the sessions with that id in list order
+  (`Example.Browser#0`, `Example.Browser#1`: two tabs of one browser are two sessions), sent as
+  `session_key`. A session has ended when it says playing, its end is known, and
+  either its position plus the time since its last update is past the end by more than 3 seconds,
+  or its position stayed within 1 second of the end on two reads at least 3 seconds apart (kept
+  per session key, forgotten when its last observation is over 10 seconds old, such as after the page
+  was hidden). An ended session that is shown anyway is reported paused with `ended: true`, so the
+  player reads "Last played" with the play button, never a full bar with pause. The first wall
+  (window `main`) still gets Windows' current session unchanged. The media commands take the
+  shown session's key and app id (`sessionKey` and `sourceId`, sent by `sendMediaCommand` in
+  `music/store.ts`, captured when a click starts) and, from the `wall2` window only, act on the session
+  with that key, else the first with that id, else on the current one. The Up next rows skip the way the
+  player row's Next does: Spotify's own command when Spotify reports a player, else the media key to the
+  session captured when the click began. In `Player.tsx` the session is the
+  wall's own Watch video when its title is what Watch plays or last stopped and its id is the web
+  view (`msedgewebview2`) or not a known player (`isKnownPlayer`). The log `wall2-media.log`
+  (same rotation) holds one line when the set of sessions or the choice changes: `<UTC time>
+  rule=<current-playing|other-playing|current-shown|none> chosen=<key> sessions=<key>:<status>;...`
+  (keys cut to 80 characters, `:ended` for a session that plays but ended, `:current` for Windows'
+  choice; no titles, no artists). Review knob `?media=ended` shows an ended session.
 - **Settings** (`wall/src/settings/`). `localStorage` key `wall2-settings`, JSON
   with optional `latitude` and `longitude` (defaults 47.68, -122.21), `zenDimHour` (whole
   hour 18 to 23, default 22) and `zenDimWaitMin` (whole minutes 1 to 60, default 10). No settings
@@ -965,8 +1093,8 @@ the centre card; the date line takes it through the frame's `ClockSlot` portal.
   (`src/bridge/devMocks/`, dev server only); in a review still (`?hz=&at=`) the
   meeting and task mocks follow the review's time. Review knobs: `?meet=none` (no
   meetings), `?box=none` (no box numbers), `?net=alarms` (the network feed with only
-  its alarm count). Weather needs network access to
-  Open-Meteo.
+  its alarm count). The weather command is mocked (`devMocks/weather.ts`); review knobs
+  `?weather=ok|stale|down|cold|dns|refused|second` (see `devMocks/gallery.ts`).
 
 ## Audio, ripple and moon
 
@@ -1266,9 +1394,10 @@ frame (no ribbon) in the wide zones `470px 1fr 540px`. The parts are in `wall/sr
 - **Up next** (`unwind/spotify/UpNext.tsx`), in the left wing under the toggles: the next
   three tracks of the Spotify queue (`wall2_spotify_queue`, every 20 seconds while shown and
   on every track change) with 48 px covers, the title and the artist; hover gives the album
-  and length. A click only skips: the n-th row sends n skips with the media keys (never more than the queue
-  holds), and only when Spotify is the current Windows player, else it sends nothing and says
-  "Open its list to play it". It never plays a list, so it never replaces the queue. Hidden with YouTube
+  and length. A click only skips: the n-th row sends n skips (never more than the queue holds), through Spotify's
+  own Next when Spotify reports a player, else through the media key to the session the player showed
+  when the click began, and only when Spotify is the player, else it sends nothing and says
+  "Open its list to play it". Every skip of one click goes the same way. It never plays a list, so it never replaces the queue. Hidden with YouTube
   Music chosen, with Spotify not set up, and when nothing is queued; signed out it reads
   "Sign in to Spotify in Tools to see what is next" (a click opens Tools).
 - **The Spotify card** (`unwind/spotify/SpotifyCard.tsx`), the upper right (stage x 1740 to
@@ -1950,8 +2079,9 @@ words: `not-configured`, `absent` (404, the route is not live yet), `failed`, `s
   read shows playing) the cover, title, artist, where it plays, pause and progress; a
   track on this PC is never shown as the house playing. The position counts on from the
   Spotify read that carries it. Otherwise the play's name or the
-  Sonos track, where it plays and pause; with nothing playing, the hour's suggestion.
-  There is no next button: the wall has no Spotify skip.
+  Sonos track, where it plays and pause; with nothing playing, the hour's suggestion. The
+  block's layouts (music, the wall's video, both) are described under "Sound on Home".
+  Back and next show only when the sound service says it has them.
 
 Dev mocks: `?desk=absent|typical|stale|down` (absent by default), `?alerts=0|1|6|20`,
 `?rooms=0|2|4|8`, `?moods=3|7|12`, `?desktoken=none|lan`, and `?spotifyplay=speaker` pairs a
@@ -2385,7 +2515,7 @@ Review knobs (development only): `?screen=onair` opens On Air; `?show=typical|on
 Set in `src-tauri/tauri.wall2.conf.json` under `app.security.csp` (Ridgeline only;
 the old app's config is untouched). It allows own files (`'self'`), data: images,
 own fonts, connections to the Tauri IPC (`ipc:`, `http://ipc.localhost`,
-`https://ipc.localhost`) and `https://api.open-meteo.com`, and frames from the two
+`https://ipc.localhost`), no weather service (the weather is read natively), and frames from the two
 video players only (`frame-src https://www.youtube-nocookie.com https://player.twitch.tv`,
 in `csp` and `devCsp`, for Unwind's Watch tab). Everything else is
 denied (`default-src 'none'`); no `unsafe-eval`, no `unsafe-inline`. React sets

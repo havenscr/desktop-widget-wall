@@ -23,22 +23,28 @@ impl Event {
 
 /// Which read a line is about. `Lists` is the whole answer set refused for an over-long list.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub enum Read { Status, Speakers, Routines, Groups, Presets, Scenes, Timers, Lists }
+pub enum Read { Status, Speakers, Routines, Groups, Presets, Scenes, Timers, Capabilities, Lists, Art }
 impl Read {
     fn word(self) -> &'static str {
         match self {
             Self::Status => "status", Self::Speakers => "speakers", Self::Routines => "routines", Self::Groups => "groups",
-            Self::Presets => "presets", Self::Scenes => "scenes", Self::Timers => "timers", Self::Lists => "lists",
+            Self::Presets => "presets", Self::Scenes => "scenes", Self::Timers => "timers", Self::Capabilities => "capabilities",
+            Self::Lists => "lists", Self::Art => "art",
         }
     }
 }
 
-/// The kind of a failed read. The same words reach the page as the summary's error text.
+/// The kind of a failed read. The same words reach the page as the summary's error text. The last
+/// three are only for a cover art fetch: an address not on the allow list, a body over the size
+/// limit, and a body that does not begin as a JPEG, PNG or WebP picture.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub enum Kind { None, TimedOut, NoAnswer, BadAnswer }
+pub enum Kind { None, TimedOut, NoAnswer, BadAnswer, Refused, TooBig, NotImage }
 impl Kind {
     pub fn word(self) -> &'static str {
-        match self { Self::None => "none", Self::TimedOut => "timed-out", Self::NoAnswer => "no-answer", Self::BadAnswer => "bad-answer" }
+        match self {
+            Self::None => "none", Self::TimedOut => "timed-out", Self::NoAnswer => "no-answer", Self::BadAnswer => "bad-answer",
+            Self::Refused => "refused", Self::TooBig => "too-big", Self::NotImage => "not-image",
+        }
     }
 }
 
@@ -56,8 +62,11 @@ pub fn write_line(line: String) {
 /// older one) and a new file starts, so the two never pass about twice the cap and the newest lines
 /// are always in the current file. Nothing here panics or blocks a read: a file that cannot be
 /// opened, moved or written drops its lines.
-struct Writer {
+pub(crate) struct Writer {
     dir: PathBuf,
+    /// The current file's name and the older file's name (one pair for each log that shares this code).
+    name: &'static str,
+    older: &'static str,
     cap: u64,
     file: Option<File>,
     bytes: u64,
@@ -70,19 +79,25 @@ struct Writer {
 }
 
 impl Writer {
+    #[cfg(test)]
     fn open(dir: &Path, cap: u64) -> Option<Writer> {
+        Writer::open_named(dir, cap, NAME, OLDER)
+    }
+
+    /// The same writer for another log file (the media and weather logs share this code).
+    pub(crate) fn open_named(dir: &Path, cap: u64, name: &'static str, older: &'static str) -> Option<Writer> {
         std::fs::create_dir_all(dir).ok()?;
-        let file = OpenOptions::new().create(true).append(true).open(dir.join(NAME)).ok()?;
+        let file = OpenOptions::new().create(true).append(true).open(dir.join(name)).ok()?;
         let bytes = file.metadata().map(|m| m.len()).unwrap_or(0);
-        Some(Writer { dir: dir.to_path_buf(), cap, file: Some(file), bytes, stuck: false, mv: |a, b| std::fs::rename(a, b), rm: |a| std::fs::remove_file(a) })
+        Some(Writer { dir: dir.to_path_buf(), name, older, cap, file: Some(file), bytes, stuck: false, mv: |a, b| std::fs::rename(a, b), rm: |a| std::fs::remove_file(a) })
     }
 
     /// Moves the current file aside and starts a new one. False when neither moving nor removing the
     /// current file worked: the file is left alone and nothing more is written to it.
     fn rotate(&mut self) -> bool {
         self.file = None;
-        let current = self.dir.join(NAME);
-        if (self.mv)(&current, &self.dir.join(OLDER)).is_err() && (self.rm)(&current).is_err() {
+        let current = self.dir.join(self.name);
+        if (self.mv)(&current, &self.dir.join(self.older)).is_err() && (self.rm)(&current).is_err() {
             self.stuck = true;
             return false;
         }
@@ -92,13 +107,13 @@ impl Writer {
         true
     }
 
-    fn write(&mut self, line: &str) {
+    pub(crate) fn write(&mut self, line: &str) {
         let full = self.file.is_some() && self.bytes > 0 && self.bytes + line.len() as u64 > self.cap;
         if (self.stuck || full) && !self.rotate() {
             return;
         }
         if self.file.is_none() {
-            self.file = OpenOptions::new().create(true).append(true).open(self.dir.join(NAME)).ok();
+            self.file = OpenOptions::new().create(true).append(true).open(self.dir.join(self.name)).ok();
             self.bytes = self.file.as_ref().and_then(|f| f.metadata().ok()).map_or(0, |m| m.len());
         }
         if let Some(f) = self.file.as_mut() {
@@ -111,15 +126,29 @@ impl Writer {
     }
 }
 
-pub fn start(dir: Option<PathBuf>) {
-    let Some(dir) = dir else { return };
-    let Some(mut writer) = Writer::open(&dir, LOG_CAP) else { return };
+/// Starts a logging thread for one named log and returns the sender for its lines (the media and
+/// weather logs use this; each keeps its own sender). None when the folder cannot be used.
+pub(crate) fn start_named(dir: &Path, name: &'static str, older: &'static str, thread: &str) -> Option<SyncSender<String>> {
+    let mut writer = Writer::open_named(dir, LOG_CAP, name, older)?;
     let (tx, rx) = std::sync::mpsc::sync_channel::<String>(64);
-    if std::thread::Builder::new().name("wall2-sonos-log".into()).spawn(move || {
+    std::thread::Builder::new().name(thread.into()).spawn(move || {
         while let Ok(line) = rx.recv() {
             writer.write(&line);
         }
-    }).is_ok() { let _ = TX.set(tx); }
+    }).ok()?;
+    Some(tx)
+}
+
+pub fn start(dir: Option<PathBuf>) {
+    let Some(dir) = dir else { return };
+    if let Some(tx) = start_named(&dir, NAME, OLDER, "wall2-sonos-log") { let _ = TX.set(tx); }
+}
+
+/// `YYYY-MM-DDTHH:MM:SSZ` for a Unix time in seconds (UTC), the time stamp of the media and weather logs.
+pub(crate) fn stamp(unix_secs: i64) -> String {
+    let (y, m, d) = crate::wall2_meet::civil_from_days(unix_secs.div_euclid(86_400));
+    let rem = unix_secs.rem_euclid(86_400);
+    format!("{y:04}-{m:02}-{d:02}T{:02}:{:02}:{:02}Z", rem / 3600, rem % 3600 / 60, rem % 60)
 }
 
 #[cfg(test)]
@@ -127,8 +156,27 @@ mod tests {
     use super::*;
 
     const EVENTS: [Event; 2] = [Event::Failed, Event::Slow];
-    const READS: [Read; 8] = [Read::Status, Read::Speakers, Read::Routines, Read::Groups, Read::Presets, Read::Scenes, Read::Timers, Read::Lists];
-    const KINDS: [Kind; 4] = [Kind::None, Kind::TimedOut, Kind::NoAnswer, Kind::BadAnswer];
+    const READS: [Read; 10] = [Read::Status, Read::Speakers, Read::Routines, Read::Groups, Read::Presets, Read::Scenes, Read::Timers, Read::Capabilities, Read::Lists, Read::Art];
+    const KINDS: [Kind; 7] = [Kind::None, Kind::TimedOut, Kind::NoAnswer, Kind::BadAnswer, Kind::Refused, Kind::TooBig, Kind::NotImage];
+
+    #[test]
+    fn stamp_formats_utc_time() {
+        assert_eq!(stamp(0), "1970-01-01T00:00:00Z");
+        assert_eq!(stamp(1_700_000_000), "2023-11-14T22:13:20Z");
+        assert_eq!(stamp(86_399), "1970-01-01T23:59:59Z");
+    }
+
+    #[test]
+    fn a_named_writer_uses_its_own_file_names() {
+        let t = Tmp::new("named");
+        let mut w = Writer::open_named(&t.0, 20, "other.log", "other.log.1").unwrap();
+        for i in 0..4 {
+            w.write(&numbered(i));
+        }
+        assert!(read(&t.0, "other.log").ends_with(&numbered(3)));
+        assert!(!read(&t.0, "other.log.1").is_empty());
+        assert_eq!(read(&t.0, NAME), "");
+    }
 
     #[test]
     fn each_kind_and_a_slow_success_have_their_own_line() {
@@ -136,11 +184,15 @@ mod tests {
         assert_eq!(line(Event::Failed, Read::Speakers, Kind::NoAnswer, 0, 12), "failed speakers no-answer 0 12\n");
         assert_eq!(line(Event::Failed, Read::Routines, Kind::BadAnswer, 503, 87), "failed routines bad-answer 503 87\n");
         assert_eq!(line(Event::Slow, Read::Status, Kind::None, 200, 2310), "slow status none 200 2310\n");
+        assert_eq!(line(Event::Failed, Read::Capabilities, Kind::BadAnswer, 404, 6), "failed capabilities bad-answer 404 6\n");
+        assert_eq!(line(Event::Failed, Read::Art, Kind::Refused, 0, 0), "failed art refused 0 0\n");
+        assert_eq!(line(Event::Failed, Read::Art, Kind::TooBig, 200, 41), "failed art too-big 200 41\n");
+        assert_eq!(line(Event::Failed, Read::Art, Kind::NotImage, 200, 7), "failed art not-image 200 7\n");
     }
 
     #[test]
     fn no_line_holds_anything_but_fixed_words_and_numbers() {
-        let words = ["failed", "slow", "status", "speakers", "routines", "groups", "presets", "scenes", "timers", "lists", "none", "timed-out", "no-answer", "bad-answer"];
+        let words = ["failed", "slow", "status", "speakers", "routines", "groups", "presets", "scenes", "timers", "capabilities", "lists", "art", "none", "timed-out", "no-answer", "bad-answer", "refused", "too-big", "not-image"];
         for event in EVENTS {
             for read in READS {
                 for kind in KINDS {
