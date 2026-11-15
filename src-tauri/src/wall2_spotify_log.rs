@@ -8,15 +8,15 @@ const LOG_CAP: usize = 64 * 1024;
 static TX: OnceLock<SyncSender<String>> = OnceLock::new();
 
 #[derive(Clone, Copy)]
-pub enum Event { SignInStart, SignInOk, SignInFailed, SignOut, RefreshOk, RefreshRefused, ApiFailed, CoverRefused }
+pub enum Event { SignInStart, SignInOk, SignInFailed, SignOut, RefreshOk, RefreshRefused, ApiFailed, CoverRefused, PageRead, PageFailed }
 impl Event {
-    fn word(self) -> &'static str { match self { Self::SignInStart => "sign-in-start", Self::SignInOk => "sign-in-ok", Self::SignInFailed => "sign-in-failed", Self::SignOut => "sign-out", Self::RefreshOk => "refresh-ok", Self::RefreshRefused => "refresh-refused", Self::ApiFailed => "api-failed", Self::CoverRefused => "cover-refused" } }
+    fn word(self) -> &'static str { match self { Self::SignInStart => "sign-in-start", Self::SignInOk => "sign-in-ok", Self::SignInFailed => "sign-in-failed", Self::SignOut => "sign-out", Self::RefreshOk => "refresh-ok", Self::RefreshRefused => "refresh-refused", Self::ApiFailed => "api-failed", Self::CoverRefused => "cover-refused", Self::PageRead => "page-read", Self::PageFailed => "page-failed" } }
 }
 
 #[derive(Clone, Copy)]
-pub enum Reason { None, Busy, Down, Failed, SignInAgain, NoDevice, PortBusy }
+pub enum Reason { None, Busy, Down, Failed, SignInAgain, NoDevice, PortBusy, Missing, Changed, TooBig }
 impl Reason {
-    fn word(self) -> &'static str { match self { Self::None => "none", Self::Busy => "busy", Self::Down => "down", Self::Failed => "failed", Self::SignInAgain => "sign-in-again", Self::NoDevice => "no-device", Self::PortBusy => "port-busy" } }
+    fn word(self) -> &'static str { match self { Self::None => "none", Self::Busy => "busy", Self::Down => "down", Self::Failed => "failed", Self::SignInAgain => "sign-in-again", Self::NoDevice => "no-device", Self::PortBusy => "port-busy", Self::Missing => "missing", Self::Changed => "changed", Self::TooBig => "too-big" } }
 }
 
 pub fn line(event: Event, reason: Reason, status: u16, elapsed_ms: u128) -> String {
@@ -61,8 +61,13 @@ mod tests {
         assert_eq!(fields, ["api-failed", "down", "503", "42"]);
         assert!(fields[2].bytes().all(|b| b.is_ascii_digit()));
         assert!(fields[3].bytes().all(|b| b.is_ascii_digit()));
-        for event in [Event::SignInStart, Event::SignInOk, Event::SignInFailed, Event::SignOut, Event::RefreshOk, Event::RefreshRefused, Event::ApiFailed, Event::CoverRefused] {
+        for event in [Event::SignInStart, Event::SignInOk, Event::SignInFailed, Event::SignOut, Event::RefreshOk, Event::RefreshRefused, Event::ApiFailed, Event::CoverRefused, Event::PageRead, Event::PageFailed] {
             assert!(line(event, Reason::Failed, 0, 1).bytes().all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || matches!(b, b'-' | b' ' | b'\n')));
+        }
+        assert_eq!(line(Event::PageRead, Reason::None, 200, 80), "page-read none 200 80\n");
+        assert_eq!(line(Event::PageFailed, Reason::TooBig, 200, 5), "page-failed too-big 200 5\n");
+        for reason in [Reason::Missing, Reason::Changed, Reason::TooBig, Reason::Busy, Reason::Down] {
+            assert!(line(Event::PageFailed, reason, 0, 1).bytes().all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || matches!(b, b'-' | b' ' | b'\n')));
         }
         assert_eq!(device_line(4, 1, 2, 1), "no-device 4 1 2 1\n");
     }
