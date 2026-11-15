@@ -123,6 +123,21 @@ describe('the wall drives the player', () => {
     expect(post).toHaveBeenCalledWith(JSON.stringify({ event: 'command', func: 'pauseVideo', args: [] }), YOUTUBE_EMBED_ORIGIN);
   });
 
+  it('paused before the player is ready: the first message heard gets one pauseVideo and never a playVideo', async () => {
+    const { win, post } = await playing('video', undefined, false);
+    act(() => useWatchStore.getState().setPaused(true));
+    act(() => fireEvent.load(document.querySelector('iframe')!));
+    post.mockClear();
+    const pause = JSON.stringify({ event: 'command', func: 'pauseVideo', args: [] });
+    const play = JSON.stringify({ event: 'command', func: 'playVideo', args: [] });
+    send(win, { event: 'onReady' });
+    expect(post.mock.calls.filter((c) => c[0] === pause)).toHaveLength(1);
+    send(win, { event: 'infoDelivery', info: { currentTime: 1, duration: 100 } });
+    send(win, { event: 'infoDelivery', info: { currentTime: 2, duration: 100 } });
+    expect(post.mock.calls.filter((c) => c[0] === pause)).toHaveLength(1);
+    expect(post.mock.calls.some((c) => c[0] === play)).toBe(false);
+  });
+
   it('sets the player to full volume, unmuted, when playback starts, and again on Sound on', async () => {
     const { win, post } = await playing('video');
     const volume = JSON.stringify({ event: 'command', func: 'setVolume', args: [PLAYER_VOLUME] });

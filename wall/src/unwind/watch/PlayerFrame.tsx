@@ -141,8 +141,12 @@ export function PlayerFrame({ item, title, shown = true }: { item: WatchRef; tit
     const on = (e: MessageEvent) => {
       const info = readPlayerMessage(e.origin, e.source, ref.current?.contentWindow ?? null, e.data);
       if (!info) return;
+      const first = !heard.current;
       heard.current = true;
       const st = useWatchStore.getState();
+      // The pause sent at the frame's load can come before the player listens: the first word heard from it is the
+      // moment to say again that it should be paused, once. Nothing here ever asks it to play.
+      if (first && st.paused) post(commandMessage('pauseVideo'));
       if (info.error !== undefined) st.setReport({ error: info.error });
       if (info.ready) fullVolume();
       const list: { count?: number; index?: number } = {};
