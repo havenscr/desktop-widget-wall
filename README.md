@@ -221,6 +221,11 @@ Native features (audio mixer, system stats) only work in the Tauri app, not brow
 npm run tauri dev  # Use this instead of npm run dev
 ```
 
+## Privacy
+
+What Ridgeline does with data from a Google account (the YouTube sign-in) is described in
+[PRIVACY.md](PRIVACY.md).
+
 ## License
 
 Proprietary - Havens Consulting Inc.
