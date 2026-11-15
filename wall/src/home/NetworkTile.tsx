@@ -148,7 +148,13 @@ export function NetworkTile() {
           side && <span className={s.stale ? 'xs stale' : 'xs'}>{side}</span>
         )}
       </div>
-      <div className={cls}>
+      <div
+        className={cls}
+        // With alerts open a click on the card's own face opens the drawer, as the whole card did before; its buttons act for themselves.
+        onClick={(e) => {
+          if (busy && !(e.target as Element).closest('button')) setOpen((o) => !o);
+        }}
+      >
         <span className="shield-art" {...tip(ringTip(s))}>
           <ShieldRing s={s} />
         </span>

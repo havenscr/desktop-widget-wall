@@ -415,3 +415,24 @@ it('not live and quiet: "Nothing was open.", the facts as of their time, never a
   expect(container.querySelector('.net-head .xs')?.textContent).toMatch(/^as of /);
   expect(container.querySelector('.panel.network.stale .shield-facts')).toBeTruthy();
 });
+
+it('with alerts open a click on the card\'s face opens the drawer, and a click on a door does not', async () => {
+  const opened: unknown[] = [];
+  mocks.set('wall2_home_security', () => summary);
+  mocks.set('wall2_desk_security', () => desk(3));
+  mocks.set('wall2_links', () => ({ security: true, portal: true }));
+  mocks.set('wall2_open_link', (a) => void opened.push(a));
+  const { container } = render(<NetworkTile />);
+  await flush();
+  fireEvent.click(screen.getByRole('button', { name: 'Security' }));
+  await flush();
+  expect(screen.queryByRole('dialog')).toBeNull();
+  fireEvent.click(container.querySelector('.panel.network') as HTMLElement);
+  await flush();
+  expect(screen.getByRole('dialog', { name: 'Open alerts' })).toBeTruthy();
+  // The same click again closes it.
+  fireEvent.click(container.querySelector('.panel.network') as HTMLElement);
+  await flush();
+  expect(screen.queryByRole('dialog')).toBeNull();
+  expect(opened).toEqual([{ kind: 'security' }]);
+});

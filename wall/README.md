@@ -1922,7 +1922,7 @@ words: `not-configured`, `absent` (404, the route is not live yet), `failed`, `s
   alert in one line with its shape (amber triangle high, violet diamond medium, open ring
   low). Quiet is a whole mint ring with a check, "All quiet", two fact lines and two doors
   at the right (see "Network and Security card" below). Stale is a grey ring and "as of"
-  a time, never mint. Show all (or the newest alert's line) opens the drawer
+  a time, never mint. Show all (or the newest alert's line, or a click on the card's face) opens the drawer
   (`home/ShieldDrawer.tsx`) with every alert, Open on each and one
   Clear all, which marks every current alert seen in the home app (it has no clear for
   one alert). Clear all clears every alert the home app holds at that moment, including

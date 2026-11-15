@@ -1291,6 +1291,9 @@
 .panel.network.shield:not(.busy):not(.noside) .shield-txt {
   margin-right: -8px;
 }
+.panel.network.shield.busy {
+  cursor: pointer;
+}
 .shield-art {
   display: block;
   width: 112px;
