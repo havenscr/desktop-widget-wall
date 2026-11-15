@@ -1,16 +1,19 @@
 import { useEffect } from 'react';
-import { IconArrowLeft } from '@tabler/icons-react';
+import { IconArrowLeft, IconArrowsShuffle, IconPlayerPlayFilled } from '@tabler/icons-react';
 import { tip } from '../../ui/HoverTip';
 import { MAX_PAGES, PAGE_SIZE, nearEnd, readTime, videosLine } from './model';
+import { playAll, playFrom, queueable, useYtQueue, type QueueFrom } from './queue';
 import { closePlaylist, loadList, refreshSongs, retryList, useYtLibrary } from './store';
 import { RowSkeletons, YtEmpty, YtRows, YtState, YtThumb } from './YtParts';
 
 /**
  * A playlist opened: Back, its picture, kicker, name and count, one real Refresh (it reads this
- * playlist from YouTube again) with the time it was last read, and its videos as rows, read 50 at
- * a time as the list scrolls. At rest it is the header row of Spotify's songs view with Refresh at
- * its right; tall, a left column of 248 and the rows on the right. The rows are not buttons: nothing
- * plays from here yet. Escape goes back (the card's own Escape leaves a `.sp-songs` view alone).
+ * playlist from YouTube again) and its videos as rows, read 50 at a time as the list scrolls. Play and
+ * Shuffle start the wall's queue (see `queue.ts`) from the first playable row or in a random order; a row
+ * starts it from that row. At rest it is the header row of Spotify's songs view with Play, Shuffle and
+ * Refresh at its right (when it was last read is in Refresh's hover card); tall, a left column of 248 (Play
+ * and Shuffle under the facts, then Refresh and the time it was last read) and the rows on the right.
+ * Escape goes back (the card's own Escape leaves a `.sp-songs` view alone).
  */
 export function YtSongs({ tall }: { tall: boolean }) {
   const opened = useYtLibrary((s) => s.opened);
@@ -22,7 +25,11 @@ export function YtSongs({ tall }: { tall: boolean }) {
     document.addEventListener('keydown', key);
     return () => document.removeEventListener('keydown', key);
   }, []);
+  const failed = useYtQueue((s) => s.failed);
   if (!opened) return null;
+  const list: QueueFrom = { list: 'songs', playlistId: opened.id };
+  const readable = songs.items.some((v) => queueable(v, failed));
+  const NONE = 'None of these videos plays outside YouTube';
   const capped = !!songs.next && songs.pages >= MAX_PAGES;
   const first = songs.items.length === 0;
   return (
@@ -41,10 +48,28 @@ export function YtSongs({ tall }: { tall: boolean }) {
           <span className="sp-line">{videosLine(opened.count)}</span>
         </span>
         <span className="yt-shactions">
-          <button type="button" className="sp-btn plain yt-refresh" disabled={songs.loading} {...tip('Reads this playlist from YouTube again')} onClick={refreshSongs}>
-            Refresh
-          </button>
-          {songs.readAt ? <span className="yt-readat">Read at {readTime(songs.readAt)}</span> : null}
+          <span className="yt-playbtns">
+            <button type="button" className="sp-btn fill big yt-playall" aria-disabled={!readable} data-disabled={readable ? undefined : ''} {...tip(readable ? 'Play this playlist on the wall, sound only' : NONE)} onClick={() => readable && playAll(songs.items, false, list)}>
+              <IconPlayerPlayFilled size={18} aria-hidden="true" />
+              Play
+            </button>
+            <button type="button" className="sp-btn plain big yt-shuffle" aria-disabled={!readable} data-disabled={readable ? undefined : ''} {...tip(readable ? 'Play it in a random order' : NONE)} onClick={() => readable && playAll(songs.items, true, list)}>
+              <IconArrowsShuffle size={18} aria-hidden="true" />
+              Shuffle
+            </button>
+          </span>
+          <span className="yt-refreshrow">
+            <button
+              type="button"
+              className="sp-btn plain yt-refresh"
+              disabled={songs.loading}
+              {...tip(tall || !songs.readAt ? 'Reads this playlist from YouTube again' : `Reads this playlist from YouTube again. Last read at ${readTime(songs.readAt)}`)}
+              onClick={refreshSongs}
+            >
+              Refresh
+            </button>
+            {tall && songs.readAt ? <span className="yt-readat">Read at {readTime(songs.readAt)}</span> : null}
+          </span>
         </span>
       </div>
       <div
@@ -67,6 +92,8 @@ export function YtSongs({ tall }: { tall: boolean }) {
         ) : (
           <YtRows
             items={songs.items}
+            list={list}
+            onPlay={(i) => playFrom(songs.items, i, list)}
             foot={
               songs.problem ? (
                 <YtState problem={songs.problem} onRetry={() => retryList('songs')} onBack={closePlaylist} />

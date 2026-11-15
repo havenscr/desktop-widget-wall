@@ -10,6 +10,7 @@ import { resetSpotifyStatus } from '../spotify/status';
 import { hintFor, lengthText, mergePage, rowWords, safeThumb, searchesLine, searchSpent, searchWords, sideMode, videosLine, ytProblem, MAX_PAGES } from './model';
 import { resetYoutubeStatus, useYoutubeStatus } from './status';
 import { resetLibrary, useYtLibrary } from './store';
+import { useWatchStore } from '../watch/store';
 import { YT_STATUS_POLL_MS } from './status';
 import { YtMusicSide } from './YtMusicSide';
 
@@ -384,21 +385,21 @@ describe('the rows', () => {
     await screen.findByText('Clip 1');
   };
 
-  it('are not buttons: no button, no role, no tab stop, and nothing plays on a click', async () => {
+  it('hold a button only when they play: greyed rows are plain list items that do nothing on a click', async () => {
     await open();
     const rows = [...document.querySelectorAll('.yt-row')] as HTMLElement[];
     expect(rows.length).toBe(6);
-    const played: unknown[] = [];
-    mocks.set('wall2_watch_play', (a) => { played.push(a); });
     for (const row of rows) {
-      expect(row.querySelector('button, [role="button"], a, input')).toBeNull();
-      expect(row.getAttribute('role')).toBeNull();
-      expect(row.hasAttribute('tabindex')).toBe(false);
       expect(row.tagName).toBe('LI');
-      fireEvent.click(row);
+      const grey = row.classList.contains('off');
+      expect(!!row.querySelector('button')).toBe(!grey);
+      if (grey) {
+        expect(row.querySelector('button, [role="button"], a, input')).toBeNull();
+        expect(row.hasAttribute('tabindex')).toBe(false);
+        fireEvent.click(row);
+      }
     }
-    expect(played).toEqual([]);
-    expect(screen.queryByRole('button', { name: /^(Play|Shuffle)$/ })).toBeNull();
+    expect(useWatchStore.getState().playing).toBeNull();
   });
 
   it('grey what will not play outside YouTube and say why in their length column', async () => {
@@ -445,7 +446,8 @@ describe('the rows', () => {
     await screen.findByText('Mix 1');
     fireEvent.click(tile('Mix 1'));
     await screen.findByText('Clip 1');
-    expect(screen.getByText(/^Read at \d{1,2}:\d{2} (AM|PM)$/)).toBeTruthy();
+    // At rest the time is in Refresh's hover card, not on the row of buttons (the tall view shows it as text).
+    expect(screen.queryByText(/^Read at /)).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: 'Refresh' }));
     await waitFor(() => expect(calls.items.length).toBe(2));
     expect(calls.items[1]).toEqual({ playlistId: 'PLtest1', pageToken: null, fresh: true });

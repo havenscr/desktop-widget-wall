@@ -4,6 +4,7 @@ import { resetNowPlaying, useNowPlayingStore } from '../../music/store';
 import { resetSpotifyStatus, useSpotifyStatus } from '../spotify/status';
 import { minutesLeft, nextStep, READ_WAIT_MS, resetSleep, sleepWords, startSleepAt, stepSleep, useSleep } from './sleep';
 import { resetWatch, useWatchStore } from './store';
+import { queueActive, resetQueue, useYtQueue } from '../ytmusic/queue';
 
 vi.setConfig({ testTimeout: 20_000 });
 
@@ -15,8 +16,8 @@ let shows: Record<string, unknown> | null | 'hang' | 'fail' = null;
 let own: { playing: boolean } | null | 'fail' = null;
 let reads = 0;
 let unsubscribe: () => void = () => {};
-const playing = (source: string | null, status = 'playing') => {
-  shows = { title: 'Song', artist: 'Band', playback_status: status, ...(source ? { source_app: source } : {}) };
+const playing = (source: string | null, status = 'playing', aimed = true) => {
+  shows = { title: 'Song', artist: 'Band', playback_status: status, ...(source ? { source_app: source } : {}), ...(aimed ? { session_key: 'session-1' } : {}) };
 };
 const spotifyReady = () => useSpotifyStatus.setState({ status: { setup: true, signedIn: true, reason: null }, failed: false });
 const flush = async (ms = 0) => {
@@ -42,6 +43,7 @@ beforeEach(() => {
   own = null;
   reads = 0;
   resetWatch();
+  resetQueue();
   resetSleep();
   resetNowPlaying();
   resetSpotifyStatus();
@@ -295,5 +297,35 @@ describe('the end of the timer', () => {
     await end();
     expect(useSleep.getState().endsAt).toBeNull();
     expect(useWatchStore.getState().playing).toBeNull();
+  });
+});
+
+describe('the wall\'s own music and the key guard', () => {
+  it('is stopped by the end of the timer, and the queue is then inactive (its entries are kept)', async () => {
+    const id = 'Ab3dEfGh1jK';
+    useYtQueue.setState({ entries: [{ id, title: 'Glass Harbor', channel: 'Mira Vale', seconds: 214, thumb: null, at: 0 }], pos: 0 });
+    expect(useWatchStore.getState().playMusic(id, 'Glass Harbor')).toBe(true);
+    expect(useWatchStore.getState().source).toBe('music');
+    expect(queueActive(useWatchStore.getState(), useYtQueue.getState())).toBe(true);
+    await end();
+    const w = useWatchStore.getState();
+    expect(w.playing).toBeNull();
+    expect(w.stopped).toBe('Stopped by the sleep timer.');
+    expect(queueActive(w, useYtQueue.getState())).toBe(false);
+    expect(useYtQueue.getState().entries.length).toBe(1);
+  });
+
+  it('sends no key when the source is known only by an old label, with no session key and no source id', async () => {
+    playOwn();
+    playing('Edge', 'playing', false);
+    await end();
+    expect(calls).toEqual(['stop']);
+  });
+
+  it('still sends the one key when the session can be aimed at', async () => {
+    playOwn();
+    playing('Edge');
+    await end();
+    expect(calls).toEqual(['key', 'stop']);
   });
 });
