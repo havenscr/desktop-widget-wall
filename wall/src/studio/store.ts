@@ -36,6 +36,8 @@ interface KeyLightState extends Snapshot {
 let backend: KeyLightBackend = chooseBackend();
 let noteTimer: ReturnType<typeof setTimeout> | undefined;
 let quietTimer: ReturnType<typeof setTimeout> | undefined;
+/** The sides the pending follow-up read was asked for by a quiet answer. */
+const quietPending = new Set<Side>();
 const waiting = new Map<Target, Patch>();
 const running = new Set<Target>();
 /**
@@ -55,6 +57,7 @@ export function setBackend(b: KeyLightBackend): void {
 export function cancelQuietRead(): void {
   clearTimeout(quietTimer);
   quietTimer = undefined;
+  quietPending.clear();
 }
 
 let pollUsers = 0;
@@ -129,8 +132,9 @@ export const useKeyLights = create<KeyLightState>((set, get) => {
         waiting.delete(target);
         Object.assign(asked, patch);
         const token = { left: 0, right: 0 };
-        // This write brings its own read back; one that an earlier quiet answer asked for would land in its middle.
-        cancelQuietRead();
+        // This write brings its own read back; one that an earlier quiet answer asked for this side (or both) would land in
+        // its middle. A write to the other light leaves it alone.
+        if (sides.some((side) => quietPending.has(side))) cancelQuietRead();
         for (const side of sides) {
           token[side] = ++writeGen[side];
           // Reads that began before this write cannot know its result.
@@ -181,11 +185,16 @@ export const useKeyLights = create<KeyLightState>((set, get) => {
       for (const side of failedSides) if (isLight(pair?.[side])) refused.add(side);
     }
     // One more read soon, so a side that kept an old value after a quiet answer is corrected before the next poll.
-    if (quietSides.size > 0 && quietTimer === undefined) {
-      quietTimer = setTimeout(() => {
-        quietTimer = undefined;
-        void fetchRead();
-      }, QUIET_READ_MS);
+    // Nothing is armed with no one polling: no screen shows the lights, so there is no one to read for.
+    if (quietSides.size > 0 && pollUsers > 0) {
+      for (const side of quietSides) quietPending.add(side);
+      if (quietTimer === undefined) {
+        quietTimer = setTimeout(() => {
+          quietTimer = undefined;
+          quietPending.clear();
+          void fetchRead();
+        }, QUIET_READ_MS);
+      }
     }
     if (refused.size === 2) raise('The key lights did not take that change');
     else if (refused.size === 1) raise(`The ${[...refused][0]} key light did not take that change`);
