@@ -25,7 +25,7 @@ function world(start: Pair = { left: L(true, 60, 4400), right: L(true, 60, 4400)
       for (const side of sides) {
         const cur = lights[side];
         if (typeof cur === 'string' || failing.has(side)) {
-          out[side] = typeof cur === 'string' ? cur : 'failed';
+          out[side] = (typeof cur === 'string' ? cur : 'failed') as never;
           continue;
         }
         if (!stuck.has(side)) {
