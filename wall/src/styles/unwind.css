@@ -3569,8 +3569,7 @@ button.sp-qrow:hover {
   color: var(--dim);
   font-variant-numeric: tabular-nums;
 }
-/* The player row at the foot: cover, title, three buttons, time bar. No heart: the sign-in does not
-   ask Spotify for permission to change the library. */
+/* The player row at the foot: cover, title, three buttons, time bar, and the heart (Save to Liked) at the right end. */
 .sp-player {
   flex: none;
   height: 61px;
@@ -3632,6 +3631,55 @@ button.sp-qrow:hover {
 .sp-pl-btn.off {
   opacity: 0.45;
   cursor: default;
+}
+/* The heart: outline while the song is not saved, filled in the wall's pink when it is; dim, but still clickable, while the sign-in lacks the permission to save. */
+.sp-heart-wrap {
+  position: relative;
+  flex: none;
+  display: flex;
+}
+.sp-pl-btn.sp-heart {
+  color: var(--dim);
+}
+.sp-pl-btn.sp-heart:hover {
+  color: var(--tx);
+}
+.sp-pl-btn.sp-heart.on {
+  color: var(--mag);
+  background: rgba(255, 61, 154, 0.14);
+  border-color: rgba(255, 61, 154, 0.5);
+}
+.sp-pl-btn.sp-heart.off {
+  cursor: pointer;
+}
+/* The note on the dim heart: hung above it, right edges aligned, inside the card. */
+.sp-heart-ask {
+  position: absolute;
+  z-index: 7;
+  right: 0;
+  bottom: 48px;
+  width: 300px;
+  box-sizing: border-box;
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 12px;
+  border-radius: 16px;
+  background: rgba(14, 9, 32, 0.985);
+  border: 1px solid rgba(150, 130, 255, 0.3);
+  box-shadow: 0 18px 60px rgba(4, 2, 12, 0.7);
+}
+.sp-heart-ask.refused {
+  width: max-content;
+  max-width: 300px;
+  padding: 10px 14px;
+  flex-direction: row;
+}
+.sp-heart-ask p {
+  margin: 0;
+  font: 400 16px/22px var(--body);
+  color: var(--tx);
 }
 .sp-pl-time {
   flex: none;

@@ -17,6 +17,9 @@ const NO_DEVICE: &str = "no device";
 const NO_CONNECTION: &str = "no connection";
 const NOT_YOURS: &str = "not yours";
 const GONE: &str = "no longer offered";
+const NEEDS_SIGN_IN: &str = "needs sign in";
+/// The one permission that saves and removes a track in the library. The sign-in asks for it; a sign-in made before it was added does not hold it.
+const LIBRARY_SCOPE: &str = "user-library-modify";
 const STARTING: &str = "starting";
 const CHOOSE: &str = "choose";
 const RESTRICTED: &str = "restricted";
@@ -24,9 +27,11 @@ const DEVICE_GONE: &str = "device gone";
 const SPOTIFY_URI: &str = "spotify:";
 const START_WAIT: Duration = Duration::from_secs(12);
 const CALLBACK: &str = "/callback";
-const SCOPE: &str = "user-read-playback-state user-modify-playback-state user-read-currently-playing playlist-read-private playlist-read-collaborative user-library-read user-read-recently-played";
+const SCOPE: &str = "user-read-playback-state user-modify-playback-state user-read-currently-playing playlist-read-private playlist-read-collaborative user-library-read user-read-recently-played user-library-modify";
 const MAX_BODY: u64 = 1_000_000;
 const ANSWER_BODY: u64 = 64 * 1024;
+/// The most of a 403 answer that is read.
+const FORBIDDEN_BODY: u64 = 4 * 1024;
 const TRACK_BODY: u64 = 512 * 1024;
 const PAGE_SIZE: usize = 50;
 
@@ -134,7 +139,7 @@ impl Http for RealHttp {
     fn api_timeout(&self, method: &str, path: &str, bearer: &str, payload: Option<&Value>, limit: u64, timeout: Duration) -> Result<HttpReply, ()> {
         let url = format!("https://api.spotify.com/v1{path}");
         let bounded = ureq::AgentBuilder::new().timeout(timeout.max(Duration::from_millis(1))).redirects(0).build();
-        let request = match method { "GET" => bounded.get(&url), "PUT" => bounded.put(&url), "POST" => bounded.post(&url), _ => return Err(()) }.set("Authorization", &format!("Bearer {bearer}"));
+        let request = match method { "GET" => bounded.get(&url), "PUT" => bounded.put(&url), "POST" => bounded.post(&url), "DELETE" => bounded.delete(&url), _ => return Err(()) }.set("Authorization", &format!("Bearer {bearer}"));
         let result = match payload { Some(value) => request.set("Content-Type", "application/json").send_string(&value.to_string()), None if method == "POST" => request.send_string(""), None => request.call() };
         http_reply_with_limit(result, limit)
     }
@@ -147,7 +152,9 @@ fn http_reply_with_limit(result: Result<ureq::Response, ureq::Error>, limit: u64
     let response = match result { Ok(r) | Err(ureq::Error::Status(_, r)) => r, Err(_) => return Err(()) };
     let status = response.status();
     let retry_after = response.header("Retry-After").and_then(|v| v.parse::<u64>().ok());
-    let bytes = if (200..300).contains(&status) || status == 400 { match body(response, limit) { Ok(bytes) => bytes, Err(_) => return Ok(HttpReply { status: 598, retry_after: None, body: Vec::new() }) } } else { Vec::new() };
+    let bytes = if (200..300).contains(&status) || status == 400 { match body(response, limit) { Ok(bytes) => bytes, Err(_) => return Ok(HttpReply { status: 598, retry_after: None, body: Vec::new() }) } }
+        // A 403 keeps a short body so the one wording that means "missing permission" can be told from any other refusal; an oversized one is dropped, not an error.
+        else if status == 403 { body(response, FORBIDDEN_BODY).unwrap_or_default() } else { Vec::new() };
     Ok(HttpReply { status, retry_after, body: bytes })
 }
 
@@ -186,7 +193,31 @@ fn read_limited(reader: &mut dyn Read, limit: u64) -> Result<Vec<u8>, &'static s
 fn body(resp: ureq::Response, limit: u64) -> Result<Vec<u8>, &'static str> { read_limited(&mut resp.into_reader(), limit) }
 
 #[derive(Debug, PartialEq)]
-enum TokenReply { Ok(String, u64, Option<String>), Refused, Busy(Duration), Down }
+/// `Ok(access token, seconds it lasts, a replacement refresh token, the scopes Spotify says the token holds)`.
+enum TokenReply { Ok(String, u64, Option<String>, Option<String>), Refused, Busy(Duration), Down }
+
+/// The `scope` field of a token answer, or nothing when it is absent, not text or implausibly long.
+fn scope_field(v: &Value) -> Option<String> { v.get("scope").and_then(Value::as_str).filter(|s| s.len() <= 2048).map(str::to_string) }
+
+/// The scopes the last token answer named. Nothing until an answer has: after a restart only a refresh token is stored, so the list is
+/// unknown until the first refresh answers. A refresh answer without the field leaves the last known list.
+static SCOPES: OnceLock<Mutex<Option<String>>> = OnceLock::new();
+fn scopes() -> &'static Mutex<Option<String>> { SCOPES.get_or_init(|| Mutex::new(None)) }
+fn has_scope(list: Option<&str>, wanted: &str) -> bool { list.is_some_and(|l| l.split_whitespace().any(|s| s == wanted)) }
+/// What the page is told about saving songs: `Yes` when the list is known and holds the library permission, `No` when it is known and does not,
+/// `Unknown` until a token answer has named a list (after a restart, or when no answer ever does). Only `No` dims the heart.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize)]
+#[serde(rename_all = "lowercase")]
+enum CanSave { Yes, No, Unknown }
+fn can_save() -> CanSave { match scopes().lock().unwrap().as_deref() { None => CanSave::Unknown, Some(l) if has_scope(Some(l), LIBRARY_SCOPE) => CanSave::Yes, Some(_) => CanSave::No } }
+/// A refresh answer: replace the list when it names one, keep the last known list when it does not.
+fn note_refresh_scope(scope: Option<String>) { if scope.is_some() { *scopes().lock().unwrap() = scope } }
+/// Spotify refused a save for a missing scope: the list no longer holds the library permission, whatever it said before.
+fn note_scope_missing() {
+    let mut list = scopes().lock().unwrap();
+    let kept = list.as_deref().unwrap_or("").split_whitespace().filter(|s| *s != LIBRARY_SCOPE).collect::<Vec<_>>().join(" ");
+    *list = Some(kept);
+}
 
 fn token_reply(result: Result<HttpReply, ()>) -> TokenReply {
     match result {
@@ -195,7 +226,7 @@ fn token_reply(result: Result<HttpReply, ()>) -> TokenReply {
             let Some(access) = v.get("access_token").and_then(Value::as_str) else { return TokenReply::Down };
             let expiry = v.get("expires_in").and_then(Value::as_u64).unwrap_or(3600).min(86400);
             let refresh = v.get("refresh_token").and_then(Value::as_str).map(str::to_string);
-            TokenReply::Ok(access.to_string(), expiry, refresh)
+            TokenReply::Ok(access.to_string(), expiry, refresh, scope_field(&v))
         }
         Ok(resp) if resp.status == 429 => TokenReply::Busy(retry_after(resp.retry_after)),
         Ok(resp) if resp.status == 401 => TokenReply::Refused,
@@ -240,8 +271,9 @@ fn access_with_deadline(cfg: &Config, force: bool, http: &dyn Http, creds: &dyn 
     let timeout=deadline.map(|at| at.saturating_duration_since(Instant::now()));
     if timeout.is_some_and(|left| left.is_zero()) { return Err(NO_DEVICE.into()) }
     match refresh(http, cfg, &refresh_value, timeout) {
-        TokenReply::Ok(access, seconds, replacement) => {
+        TokenReply::Ok(access, seconds, replacement, scope) => {
             if let Some(v) = replacement { if !creds.save(&v) { return Err("failed".into()) } }
+            note_refresh_scope(scope);
             *token().lock().unwrap() = Some(Token { access: access.clone(), expires: Instant::now() + Duration::from_secs(seconds) });
             crate::wall2_spotify_log::write(crate::wall2_spotify_log::Event::RefreshOk, crate::wall2_spotify_log::Reason::None, 200, started.elapsed().as_millis());
             Ok(access)
@@ -352,25 +384,27 @@ fn page_path(page: Option<u32>) -> usize { (page.unwrap_or(0).min(100) as usize)
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct Status { setup: bool, signed_in: bool, reason: Option<String> }
+pub struct Status { setup: bool, signed_in: bool, reason: Option<String>, can_save: CanSave }
 
 #[tauri::command]
 pub async fn wall2_spotify_status(window: WebviewWindow) -> Result<Status, String> {
     require(&window)?;
     let app = window.app_handle().clone();
     tauri::async_runtime::spawn_blocking(move || {
-        if config(&app).is_err() { return Ok(Status { setup: false, signed_in: false, reason: Some(NOT_SETUP.into()) }) }
-        match load_refresh() { Ok(Some(_)) => Ok(Status { setup: true, signed_in: true, reason: None }), Ok(None) => Ok(Status { setup: true, signed_in: false, reason: None }), Err(_) => Ok(Status { setup: true, signed_in: false, reason: Some("failed".into()) }) }
+        if config(&app).is_err() { return Ok(Status { setup: false, signed_in: false, reason: Some(NOT_SETUP.into()), can_save: CanSave::Unknown }) }
+        match load_refresh() { Ok(Some(_)) => Ok(Status { setup: true, signed_in: true, reason: None, can_save: can_save() }), Ok(None) => Ok(Status { setup: true, signed_in: false, reason: None, can_save: CanSave::Unknown }), Err(_) => Ok(Status { setup: true, signed_in: false, reason: Some("failed".into()), can_save: CanSave::Unknown }) }
     }).await.map_err(|_| "failed".to_string())?
 }
 
 static SIGNING_IN: AtomicBool = AtomicBool::new(false);
 static CANCEL_SIGN_IN: AtomicBool = AtomicBool::new(false);
 fn begin_sign_in() -> Result<(), String> { if SIGNING_IN.swap(true, Ordering::SeqCst) { Err(BUSY.into()) } else { CANCEL_SIGN_IN.store(false, Ordering::SeqCst); Ok(()) } }
-fn save_sign_in(creds: &dyn Creds, refresh_value: &str, access_value: String, seconds: u64) -> Result<(), String> {
+fn save_sign_in(creds: &dyn Creds, refresh_value: &str, access_value: String, seconds: u64, scope: Option<String>) -> Result<(), String> {
     let _refresh_guard = refresh_lock().lock().unwrap();
     if CANCEL_SIGN_IN.load(Ordering::SeqCst) || !creds.save(refresh_value) { return Err("cancelled".into()) }
     *token().lock().unwrap() = Some(Token { access: access_value, expires: Instant::now() + Duration::from_secs(seconds) });
+    // A new sign-in is a new grant: its list replaces the old one, and is unknown when the answer names none.
+    *scopes().lock().unwrap() = scope;
     PROFILE_GEN.fetch_add(1, Ordering::SeqCst); *profile_cache().lock().unwrap() = None;
     Ok(())
 }
@@ -379,6 +413,7 @@ fn sign_out_with(creds: &dyn Creds) {
     let _refresh_guard = refresh_lock().lock().unwrap();
     creds.delete();
     *token().lock().unwrap() = None;
+    *scopes().lock().unwrap() = None;
     PROFILE_GEN.fetch_add(1, Ordering::SeqCst); *profile_cache().lock().unwrap() = None;
 }
 struct SignInGuard { started: Instant, success: bool }
@@ -408,8 +443,8 @@ pub async fn wall2_spotify_sign_in(window: WebviewWindow) -> Result<(), String> 
         let code = crate::wall2_oauth::wait_for_callback_cancelled(&server, CALLBACK, &state, Duration::from_secs(180), || CANCEL_SIGN_IN.load(Ordering::SeqCst)).map_err(str::to_string)?;
         if CANCEL_SIGN_IN.load(Ordering::SeqCst) { return Err("cancelled".into()) }
         let result = match exchange(&RealHttp, &cfg, &code, &verifier) {
-            TokenReply::Ok(access_value, seconds, Some(refresh_value)) => {
-                save_sign_in(&RealCreds, &refresh_value, access_value, seconds)?; guard.success = true; Ok(())
+            TokenReply::Ok(access_value, seconds, Some(refresh_value), scope) => {
+                save_sign_in(&RealCreds, &refresh_value, access_value, seconds, scope)?; guard.success = true; Ok(())
             }
             TokenReply::Busy(wait) => { back_off_for(wait); Err(BUSY.into()) },
             _ => Err("failed".into()),
@@ -683,6 +718,48 @@ fn seek_path(position_ms: u32) -> Result<String, String> {
 fn shuffle_with(cfg: &Config, on: bool, http: &dyn Http, creds: &dyn Creds, computer: Option<&str>) -> Result<(), String> { let devices = shape_devices(&get_json_with(cfg, "/me/player/devices", http, creds)?); let DeviceChoice::Ready(device) = choose_device(&devices, None, computer) else { return Err(NO_DEVICE.into()) }; put_with(cfg, &format!("/me/player/shuffle?state={on}&device_id={device}"), None, http, creds) }
 #[tauri::command] pub async fn wall2_spotify_shuffle(window: WebviewWindow, on: bool) -> Result<(), String> { require(&window)?; tauri::async_runtime::spawn_blocking(move || { let cfg = config(window.app_handle())?; let computer = std::env::var("COMPUTERNAME").ok(); shuffle_with(&cfg, on, &RealHttp, &RealCreds, computer.as_deref()) }).await.map_err(|_| "failed".to_string())? }
 
+/// Saved songs: the playing song's heart. Spotify's 2026 library calls take a track URI in the `uris` query, one at a time here.
+fn track_uri_query(id: &str) -> String { format!("uris=spotify%3Atrack%3A{id}") }
+fn saved_path(id: &str) -> String { format!("/me/library/contains?{}", track_uri_query(id)) }
+fn library_path(id: &str) -> String { format!("/me/library?{}", track_uri_query(id)) }
+/// The answer of "check saved" for one URI: an array of one boolean. Anything else is not an answer.
+fn shape_saved(v: &Value) -> Result<bool, String> { match v.as_array().map(Vec::as_slice) { Some([one]) => one.as_bool().ok_or_else(|| "down".to_string()), _ => Err("down".into()) } }
+fn saved_with(cfg: &Config, id: &str, http: &dyn Http, creds: &dyn Creds) -> Result<bool, String> {
+    if !valid_id(id) { return Err("invalid id".into()) }
+    shape_saved(&get_json_with(cfg, &saved_path(id), http, creds)?)
+}
+/// Spotify's own wording for a 403 that means the token lacks a scope: the error object's message, whatever its case. Nothing from the body is kept.
+fn insufficient_scope(body: &[u8]) -> bool {
+    body.len() as u64 <= FORBIDDEN_BODY && serde_json::from_slice::<Value>(body).ok().and_then(|v| v.get("error")?.get("message")?.as_str().map(|m| m.trim().eq_ignore_ascii_case("insufficient client scope"))).unwrap_or(false)
+}
+/// The list is known and does not hold the library permission.
+fn scope_known_lacking() -> bool { can_save() == CanSave::No }
+/// Saves (`on`) or removes one track. A 403 means the sign-in lacks the library permission only when Spotify's answer says so, or when the kept list is
+/// known and lacks it: the fixed word asks for a new sign-in and the list loses the permission until a token answer says otherwise. Any other 403
+/// keeps the list and answers `refused`. A 401 refreshes the token and tries once more. Nothing but the fixed words leaves this function.
+fn save_with(cfg: &Config, id: &str, on: bool, http: &dyn Http, creds: &dyn Creds) -> Result<(), String> {
+    if !valid_id(id) { return Err("invalid id".into()) }
+    let _guard = begin_write()?;
+    check_backoff()?;
+    let started = Instant::now();
+    for attempt in 0..2 {
+        let bearer = access_with(cfg, attempt == 1, http, creds)?;
+        match http.api(if on { "PUT" } else { "DELETE" }, &library_path(id), &bearer, None, ANSWER_BODY) {
+            Ok(resp) if (200..300).contains(&resp.status) => return Ok(()),
+            Ok(resp) if resp.status == 403 && (insufficient_scope(&resp.body) || scope_known_lacking()) => { note_scope_missing(); crate::wall2_spotify_log::write(crate::wall2_spotify_log::Event::ApiFailed, crate::wall2_spotify_log::Reason::SignInAgain, 403, started.elapsed().as_millis()); return Err(NEEDS_SIGN_IN.into()) }
+            Ok(resp) if resp.status == 403 => { crate::wall2_spotify_log::write(crate::wall2_spotify_log::Event::ApiFailed, crate::wall2_spotify_log::Reason::Down, 403, started.elapsed().as_millis()); return Err("refused".into()) }
+            Ok(resp) if resp.status == 429 => { back_off_for(retry_after(resp.retry_after)); crate::wall2_spotify_log::write(crate::wall2_spotify_log::Event::ApiFailed, crate::wall2_spotify_log::Reason::Busy, 429, started.elapsed().as_millis()); return Err(BUSY.into()) }
+            Ok(resp) if resp.status == 401 && attempt == 0 => continue,
+            Ok(resp) if resp.status == 401 => return Err(SIGN_AGAIN.into()),
+            Ok(resp) => { crate::wall2_spotify_log::write(crate::wall2_spotify_log::Event::ApiFailed, crate::wall2_spotify_log::Reason::Down, resp.status, started.elapsed().as_millis()); return Err(status_answer(resp.status, false)) }
+            Err(_) => { crate::wall2_spotify_log::write(crate::wall2_spotify_log::Event::ApiFailed, crate::wall2_spotify_log::Reason::Down, 0, started.elapsed().as_millis()); return Err(NO_CONNECTION.into()) }
+        }
+    }
+    Err(SIGN_AGAIN.into())
+}
+#[tauri::command] pub async fn wall2_spotify_saved(window: WebviewWindow, id: String) -> Result<bool, String> { require(&window)?; if !valid_id(&id) { return Err("invalid id".into()) } tauri::async_runtime::spawn_blocking(move || { let cfg = config(window.app_handle())?; saved_with(&cfg, &id, &RealHttp, &RealCreds) }).await.map_err(|_| "failed".to_string())? }
+#[tauri::command] pub async fn wall2_spotify_save(window: WebviewWindow, id: String, on: bool) -> Result<(), String> { require(&window)?; if !valid_id(&id) { return Err("invalid id".into()) } tauri::async_runtime::spawn_blocking(move || { let cfg = config(window.app_handle())?; save_with(&cfg, &id, on, &RealHttp, &RealCreds) }).await.map_err(|_| "failed".to_string())? }
+
 pub fn start_log(dir: Option<std::path::PathBuf>) { crate::wall2_spotify_log::start(dir); }
 
 #[cfg(test)]
@@ -924,7 +1001,9 @@ mod tests {
     #[test]
     fn token_replies_cover_success_refused_network_and_retry_after() {
         let reply = |status, body: &str| HttpReply { status, retry_after: None, body: body.as_bytes().to_vec() };
-        assert_eq!(token_reply(Ok(reply(200,r#"{"access_token":"a","expires_in":90,"refresh_token":"r"}"#))), TokenReply::Ok("a".into(),90,Some("r".into())));
+        assert_eq!(token_reply(Ok(reply(200,r#"{"access_token":"a","expires_in":90,"refresh_token":"r"}"#))), TokenReply::Ok("a".into(),90,Some("r".into()),None));
+        assert_eq!(token_reply(Ok(reply(200,r#"{"access_token":"a","expires_in":90,"scope":"user-library-read user-library-modify"}"#))), TokenReply::Ok("a".into(),90,None,Some("user-library-read user-library-modify".into())));
+        assert_eq!(token_reply(Ok(reply(200,r#"{"access_token":"a","scope":7}"#))), TokenReply::Ok("a".into(),3600,None,None));
         assert_eq!(token_reply(Ok(HttpReply { status:429,retry_after:Some(90),body:vec![] })), TokenReply::Busy(Duration::from_secs(60)));
         assert_eq!(token_reply(Ok(reply(400,r#"{"error":"invalid_grant"}"#))), TokenReply::Refused);
         assert_eq!(token_reply(Ok(reply(403,r#"{"error":"forbidden"}"#))), TokenReply::Down);
@@ -953,7 +1032,7 @@ mod tests {
     }
     fn hr(status:u16, body:&str) -> Result<HttpReply,()> { Ok(HttpReply{status,retry_after:None,body:body.as_bytes().to_vec()}) }
     fn token_ok(refresh: Option<&str>) -> Result<HttpReply,()> { hr(200, &format!(r#"{{"access_token":"access","expires_in":3600{}}}"#, refresh.map(|r| format!(r#", "refresh_token":"{r}""#)).unwrap_or_default())) }
-    fn reset_state() { *token().lock().unwrap()=None; *not_before().lock().unwrap()=None; *profile_cache().lock().unwrap()=None; CANCEL_SIGN_IN.store(false,Ordering::SeqCst); SIGNING_IN.store(false,Ordering::SeqCst); }
+    fn reset_state() { *scopes().lock().unwrap()=None; *token().lock().unwrap()=None; *not_before().lock().unwrap()=None; *profile_cache().lock().unwrap()=None; CANCEL_SIGN_IN.store(false,Ordering::SeqCst); SIGNING_IN.store(false,Ordering::SeqCst); }
     fn cfg() -> Config { Config { client_id:"a".repeat(32),redirect_port:8898 } }
 
     #[test]
@@ -1024,7 +1103,7 @@ mod tests {
         assert_eq!(put_with(&cfg(),"/x",None,&write,&creds),Err(BUSY.into())); assert_eq!(write.counts(),(1,1));
         for status in [404u16] { reset_state(); let creds=FakeCreds::new(Some("old")); *token().lock().unwrap()=Some(Token{access:"ok".into(),expires:Instant::now()+Duration::from_secs(3600)}); let http=FakeHttp::new(vec![],vec![hr(status,"")]); assert_eq!(put_with(&cfg(),"/x",None,&http,&creds),Err(NO_DEVICE.into())); }
 
-        reset_state(); assert!(begin_sign_in().is_ok()); assert_eq!(begin_sign_in(),Err(BUSY.into())); CANCEL_SIGN_IN.store(true,Ordering::SeqCst); let creds=FakeCreds::new(None); assert_eq!(save_sign_in(&creds,"new","access".into(),3600),Err("cancelled".into())); assert_eq!(creds.value(),None); SIGNING_IN.store(false,Ordering::SeqCst);
+        reset_state(); assert!(begin_sign_in().is_ok()); assert_eq!(begin_sign_in(),Err(BUSY.into())); CANCEL_SIGN_IN.store(true,Ordering::SeqCst); let creds=FakeCreds::new(None); assert_eq!(save_sign_in(&creds,"new","access".into(),3600,None),Err("cancelled".into())); assert_eq!(creds.value(),None); SIGNING_IN.store(false,Ordering::SeqCst);
 
         reset_state(); let creds=Arc::new(FakeCreds::new(Some("old"))); let replaced=ReplacingRefusedHttp(creds.clone());
         assert_eq!(access_with(&cfg(),true,&replaced,&*creds),Err(SIGN_AGAIN.into())); assert_eq!(creds.value().as_deref(),Some("newer"));
@@ -1042,7 +1121,7 @@ mod tests {
         let creds=FakeCreds::new(Some("old")); let http=FakeHttp::new(vec![],vec![hr(200,r#"{"id":"me","display_name":"Owner"}"#)]);
         let first=profile_with(&cfg(),&http,&creds).unwrap(); let second=profile_with(&cfg(),&http,&creds).unwrap();
         assert_eq!(first,second); assert_eq!(first.display_name.as_deref(),Some("Owner")); assert_eq!(http.counts().1,1);
-        assert!(save_sign_in(&creds,"new","access".into(),3600).is_ok()); assert!(profile_cache().lock().unwrap().is_none());
+        assert!(save_sign_in(&creds,"new","access".into(),3600,None).is_ok()); assert!(profile_cache().lock().unwrap().is_none());
         *profile_cache().lock().unwrap()=Some(first);
         sign_out_with(&creds); assert!(profile_cache().lock().unwrap().is_none());
     }
@@ -1098,5 +1177,165 @@ mod tests {
             assert_eq!(waiting.join().unwrap(),Err("cancelled"));
         });
         assert!(started.elapsed()<Duration::from_secs(1));
+    }
+
+    fn token_with_scope(refresh: Option<&str>, scope: Option<&str>) -> Result<HttpReply,()> {
+        let mut body = json!({"access_token":"access","expires_in":3600});
+        if let Some(r) = refresh { body["refresh_token"] = json!(r); }
+        if let Some(sc) = scope { body["scope"] = json!(sc); }
+        hr(200, &body.to_string())
+    }
+    fn signed_token() { *token().lock().unwrap()=Some(Token{access:"ok".into(),expires:Instant::now()+Duration::from_secs(3600)}); }
+    const OLD_SCOPES: &str = "user-read-playback-state user-library-read";
+    const NEW_SCOPES: &str = "user-read-playback-state user-library-read user-library-modify";
+
+    #[test]
+    fn the_sign_in_asks_for_the_library_permission_and_only_that_one_more() {
+        let words: Vec<&str> = SCOPE.split_whitespace().collect();
+        assert_eq!(words.iter().filter(|w| **w == LIBRARY_SCOPE).count(), 1);
+        assert_eq!(LIBRARY_SCOPE, "user-library-modify");
+        assert_eq!(words.last(), Some(&LIBRARY_SCOPE));
+        // The seven permissions the wall already used, in order, then the one new one.
+        assert_eq!(words[..7], ["user-read-playback-state","user-modify-playback-state","user-read-currently-playing","playlist-read-private","playlist-read-collaborative","user-library-read","user-read-recently-played"]);
+        assert_eq!(words.len(), 8);
+        let c = Config { client_id: "a".repeat(32), redirect_port: 8898 };
+        assert!(authorize_url(&c, "challenge", "state").contains("user-library-modify"));
+    }
+
+    #[test]
+    fn scope_bookkeeping_follows_the_exchange_the_refresh_and_a_refusal() {
+        let _test_guard = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        // Unknown until a token answer names the list.
+        reset_state(); assert_eq!(can_save(), CanSave::Unknown);
+        // A sign-in made before the permission existed: the refresh answer lists the old scopes, so saving is off.
+        let creds=FakeCreds::new(Some("old")); let http=FakeHttp::new(vec![token_with_scope(None,Some(OLD_SCOPES))],vec![]);
+        assert!(access_with(&cfg(),true,&http,&creds).is_ok()); assert_eq!(can_save(), CanSave::No);
+        // A refresh answer without the field keeps the last known list.
+        let http=FakeHttp::new(vec![token_with_scope(None,None)],vec![]); assert!(access_with(&cfg(),true,&http,&creds).is_ok()); assert_eq!(can_save(), CanSave::No);
+        assert_eq!(scopes().lock().unwrap().as_deref(), Some(OLD_SCOPES));
+        // A fresh sign-in whose exchange lists the new scope turns saving on at once, with no restart.
+        assert!(save_sign_in(&creds,"new","access".into(),3600,Some(NEW_SCOPES.into())).is_ok()); assert_eq!(can_save(), CanSave::Yes);
+        // A later refresh without the field keeps it on; one with a shorter list turns it off.
+        let http=FakeHttp::new(vec![token_with_scope(None,None)],vec![]); assert!(access_with(&cfg(),true,&http,&creds).is_ok()); assert_eq!(can_save(), CanSave::Yes);
+        let http=FakeHttp::new(vec![token_with_scope(None,Some(OLD_SCOPES))],vec![]); assert!(access_with(&cfg(),true,&http,&creds).is_ok()); assert_eq!(can_save(), CanSave::No);
+        // The word must match whole: a longer permission name does not count.
+        assert!(!has_scope(Some("user-library-modify-extra"), LIBRARY_SCOPE)); assert!(has_scope(Some("a  user-library-modify\tb"), LIBRARY_SCOPE)); assert!(!has_scope(None, LIBRARY_SCOPE));
+        // An exchange that names no list leaves it unknown; signing out forgets it.
+        assert!(save_sign_in(&creds,"new","access".into(),3600,Some(NEW_SCOPES.into())).is_ok()); assert!(save_sign_in(&creds,"new","access".into(),3600,None).is_ok()); assert_eq!(can_save(), CanSave::Unknown);
+        assert!(save_sign_in(&creds,"new","access".into(),3600,Some(NEW_SCOPES.into())).is_ok()); sign_out_with(&creds); assert_eq!(can_save(), CanSave::Unknown); assert_eq!(*scopes().lock().unwrap(), None);
+        assert_eq!(scope_field(&json!({"scope":"x".repeat(2049)})), None); assert_eq!(scope_field(&json!({"scope":"a b"})).as_deref(), Some("a b"));
+    }
+
+    #[test]
+    fn track_ids_for_the_heart_are_exactly_22_letters_and_digits() {
+        assert!(valid_id(ID)); assert!(valid_id("abcdefghijklmnopqrstuv")); assert!(valid_id("ABCDEFGHIJKLMNOPQRSTUV"));
+        for bad in ["", "short", "0123456789ABCDEFGHIJK", "0123456789ABCDEFGHIJKLM", "0123456789ABCDEFGHIJK-", "0123456789ABCDEFGHIJK/", "0123456789ABCDEFGHIJK?", "spotify:track:0123456789ABCDEFGHIJKL", "https://open.spotify.com/track/0123456789ABCDEFGHIJKL", "0123456789ABCDEFGHIJK,L", "0123456789ABCDEFGHIJK L", "0123456789ABCDEFGHIJK\n", "0123456789ABCDEFGHIJK\u{e9}"] { assert!(!valid_id(bad), "{bad:?}"); }
+        // Nothing reaches the network for a bad id.
+        let _test_guard = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner()); reset_state(); signed_token(); let creds=FakeCreds::new(Some("old")); let http=FakeHttp::new(vec![],vec![hr(200,"[true]")]);
+        assert_eq!(saved_with(&cfg(),"short",&http,&creds), Err("invalid id".into())); assert_eq!(save_with(&cfg(),"a/../b",true,&http,&creds), Err("invalid id".into())); assert_eq!(http.counts(), (0,0));
+    }
+
+    #[test]
+    fn the_library_calls_use_the_2026_paths_with_one_track_uri_each() {
+        assert_eq!(saved_path(ID), format!("/me/library/contains?uris=spotify%3Atrack%3A{ID}"));
+        assert_eq!(library_path(ID), format!("/me/library?uris=spotify%3Atrack%3A{ID}"));
+        let _test_guard = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner()); reset_state(); signed_token(); let creds=FakeCreds::new(Some("old"));
+        let http=FakeHttp::new(vec![],vec![hr(200,"[true]"),hr(200,""),hr(200,"")]);
+        assert_eq!(saved_with(&cfg(),ID,&http,&creds), Ok(true)); assert_eq!(save_with(&cfg(),ID,true,&http,&creds), Ok(())); assert_eq!(save_with(&cfg(),ID,false,&http,&creds), Ok(()));
+        assert_eq!(http.methods(), vec!["GET","PUT","DELETE"]);
+        assert_eq!(http.paths(), vec![saved_path(ID), library_path(ID), library_path(ID)]);
+    }
+
+    #[test]
+    fn a_saved_read_answers_true_false_or_a_fixed_word() {
+        let _test_guard = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner()); let creds=FakeCreds::new(Some("old"));
+        let ask = |status: u16, body: &str| { reset_state(); signed_token(); saved_with(&cfg(),ID,&FakeHttp::new(vec![],vec![hr(status,body)]),&creds) };
+        assert_eq!(ask(200,"[true]"), Ok(true)); assert_eq!(ask(200,"[false]"), Ok(false));
+        for bad in ["[]", "[true,false]", "[1]", "{}", "null", "nope", "[\"true\"]"] { assert_eq!(ask(200,bad), Err("down".into()), "{bad}"); }
+        assert_eq!(ask(204,""), Err("down".into()));
+        assert_eq!(ask(403,""), Err("refused".into())); assert_eq!(ask(404,""), Err(GONE.into())); assert_eq!(ask(429,""), Err(BUSY.into())); assert_eq!(ask(503,""), Err("server-503".into()));
+        reset_state(); signed_token(); assert_eq!(saved_with(&cfg(),ID,&FakeHttp::new(vec![],vec![Err(())]),&creds), Err(NO_CONNECTION.into()));
+    }
+
+    #[test]
+    fn a_save_or_remove_answers_in_fixed_words() {
+        let _test_guard = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner()); let creds=FakeCreds::new(Some("old"));
+        let run = |on: bool, status: u16| { reset_state(); *scopes().lock().unwrap()=Some(NEW_SCOPES.into()); signed_token(); save_with(&cfg(),ID,on,&FakeHttp::new(vec![],vec![hr(status,"")]),&creds) };
+        for on in [true,false] {
+            assert_eq!(run(on,200), Ok(())); assert_eq!(can_save(), CanSave::Yes);
+            assert_eq!(run(on,404), Err(GONE.into())); assert_eq!(run(on,400), Err("status-400".into())); assert_eq!(run(on,503), Err("server-503".into())); assert_eq!(can_save(), CanSave::Yes);
+            assert_eq!(run(on,429), Err(BUSY.into())); assert!(not_before().lock().unwrap().is_some());
+            // An empty 403 with a known grant is some other refusal: its own fixed word, and the list is kept.
+            assert_eq!(run(on,403), Err("refused".into())); assert_eq!(can_save(), CanSave::Yes);
+        }
+        reset_state(); signed_token(); assert_eq!(save_with(&cfg(),ID,true,&FakeHttp::new(vec![],vec![Err(())]),&creds), Err(NO_CONNECTION.into()));
+        reset_state(); *scopes().lock().unwrap()=Some(NEW_SCOPES.into()); note_scope_missing(); assert_eq!(scopes().lock().unwrap().as_deref(), Some(OLD_SCOPES));
+        // The word the card reads maps to its "sign in" problem; the other one does not.
+        assert!(NEEDS_SIGN_IN.contains("sign in")); assert!(!"refused".contains("sign in"));
+    }
+
+    const INSUFFICIENT: &str = r#"{"error":{"status":403,"message":"Insufficient client scope"}}"#;
+    #[test]
+    fn only_spotifys_own_wording_for_a_403_means_the_permission_is_missing() {
+        let _test_guard = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner()); let creds=FakeCreds::new(Some("old"));
+        let run = |known: Option<&str>, body: &str| { reset_state(); *scopes().lock().unwrap()=known.map(str::to_string); signed_token(); save_with(&cfg(),ID,true,&FakeHttp::new(vec![],vec![hr(403,body)]),&creds) };
+        // A known grant: the insufficient-scope body flips it; an empty body, other JSON, text that is not JSON do not.
+        assert_eq!(run(Some(NEW_SCOPES),INSUFFICIENT), Err(NEEDS_SIGN_IN.into())); assert_eq!(can_save(), CanSave::No);
+        assert_eq!(scopes().lock().unwrap().as_deref(), Some(OLD_SCOPES));
+        for body in ["", r#"{"error":{"status":403,"message":"Spotify is unavailable in this country"}}"#, "Insufficient client scope", "<html>Insufficient client scope</html>", r#"{"error":"Insufficient client scope"}"#, r#"{"message":"Insufficient client scope"}"#, r#"{"error":{"message":7}}"#, "null"] {
+            assert_eq!(run(Some(NEW_SCOPES),body), Err("refused".into()), "{body}"); assert_eq!(can_save(), CanSave::Yes, "{body}"); assert_eq!(scopes().lock().unwrap().as_deref(), Some(NEW_SCOPES));
+        }
+        // The case of the wording does not matter, and spaces around it do not either.
+        for body in [r#"{"error":{"message":"insufficient client scope"}}"#, r#"{"error":{"message":"INSUFFICIENT CLIENT SCOPE "}}"#] { assert_eq!(run(Some(NEW_SCOPES),body), Err(NEEDS_SIGN_IN.into()), "{body}"); }
+        // An unknown list: the wording flips it to known and lacking; anything else leaves it unknown.
+        assert_eq!(run(None,INSUFFICIENT), Err(NEEDS_SIGN_IN.into())); assert_eq!(can_save(), CanSave::No);
+        for body in ["", "nope", r#"{"error":{"message":"Forbidden"}}"#] { assert_eq!(run(None,body), Err("refused".into()), "{body}"); assert_eq!(can_save(), CanSave::Unknown, "{body}"); assert_eq!(*scopes().lock().unwrap(), None); }
+        // A list that is known and lacks the permission: any 403 asks for the sign-in.
+        assert_eq!(run(Some(OLD_SCOPES),""), Err(NEEDS_SIGN_IN.into())); assert_eq!(can_save(), CanSave::No);
+        // An oversized body is not trusted, even if it holds the wording.
+        let pad = "x".repeat(5000); let big = format!(r#"{{"error":{{"message":"Insufficient client scope","pad":"{pad}"}}}}"#);
+        assert!(big.len() > 4096); assert_eq!(run(Some(NEW_SCOPES),&big), Err("refused".into())); assert_eq!(can_save(), CanSave::Yes);
+        assert!(insufficient_scope(INSUFFICIENT.as_bytes())); assert!(!insufficient_scope(big.as_bytes())); assert!(!insufficient_scope(&[0xff, 0xfe]));
+        // Exactly 4096 bytes is still read; one more is not.
+        let head = r#"{"error":{"message":"Insufficient client scope"},"pad":""#; let exact = format!("{head}{}\"}}", "x".repeat(4096 - head.len() - 2)); let over = format!("{head}{}\"}}", "x".repeat(4096 - head.len() - 1));
+        assert_eq!((exact.len(), over.len()), (4096, 4097)); assert!(insufficient_scope(exact.as_bytes())); assert!(!insufficient_scope(over.as_bytes()));
+        assert_eq!(FORBIDDEN_BODY, 4096);
+    }
+
+    #[test]
+    fn the_status_is_yes_no_or_unknown_and_only_yes_and_no_are_named() {
+        let _test_guard = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        reset_state(); assert_eq!(can_save(), CanSave::Unknown);
+        *scopes().lock().unwrap()=Some(NEW_SCOPES.into()); assert_eq!(can_save(), CanSave::Yes);
+        *scopes().lock().unwrap()=Some(OLD_SCOPES.into()); assert_eq!(can_save(), CanSave::No);
+        *scopes().lock().unwrap()=Some(String::new()); assert_eq!(can_save(), CanSave::No);
+        assert_eq!(serde_json::to_value(CanSave::Yes).unwrap(), json!("yes")); assert_eq!(serde_json::to_value(CanSave::No).unwrap(), json!("no")); assert_eq!(serde_json::to_value(CanSave::Unknown).unwrap(), json!("unknown"));
+        let st = serde_json::to_value(Status { setup: true, signed_in: true, reason: None, can_save: CanSave::Unknown }).unwrap(); assert_eq!(st["canSave"], json!("unknown"));
+        // A refresh that never names the list leaves it unknown for good.
+        reset_state(); let creds=FakeCreds::new(Some("old")); for _ in 0..2 { let http=FakeHttp::new(vec![token_with_scope(None,None)],vec![]); assert!(access_with(&cfg(),true,&http,&creds).is_ok()); assert_eq!(can_save(), CanSave::Unknown); }
+    }
+
+    #[test]
+    fn a_401_on_a_save_refreshes_the_token_and_tries_once_more() {
+        let _test_guard = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner()); let creds=FakeCreds::new(Some("old"));
+        let setup = || { reset_state(); *token().lock().unwrap()=Some(Token{access:"stale".into(),expires:Instant::now()+Duration::from_secs(3600)}); };
+        for on in [true,false] {
+            setup(); let http=FakeHttp::new(vec![token_ok(None)],vec![hr(401,""),hr(200,"")]);
+            assert_eq!(save_with(&cfg(),ID,on,&http,&creds), Ok(())); assert_eq!(http.counts(),(1,2)); assert_eq!(http.paths(),vec![library_path(ID),library_path(ID)]); assert_eq!(http.methods(), vec![if on {"PUT"} else {"DELETE"}; 2]);
+        }
+        setup(); let twice=FakeHttp::new(vec![token_ok(None)],vec![hr(401,""),hr(401,"")]); assert_eq!(save_with(&cfg(),ID,true,&twice,&creds), Err(SIGN_AGAIN.into())); assert_eq!(twice.counts(),(1,2));
+        // The retry meets a refusal: its own answer. The refresh fails: the refresh's answer, with one call sent.
+        setup(); let then403=FakeHttp::new(vec![token_ok(None)],vec![hr(401,""),hr(403,"")]); *scopes().lock().unwrap()=Some(NEW_SCOPES.into()); assert_eq!(save_with(&cfg(),ID,true,&then403,&creds), Err("refused".into()));
+        setup(); let down=FakeHttp::new(vec![Err(())],vec![hr(401,"")]); assert_eq!(save_with(&cfg(),ID,true,&down,&creds), Err("down".into())); assert_eq!(down.counts(),(1,1));
+    }
+
+    #[test]
+    fn the_two_commands_check_the_window_first() {
+        assert_eq!(crate::wall2_meet::require_wall2("main"), Err("forbidden".to_string())); assert!(crate::wall2_meet::require_wall2(crate::WALL2_LABEL).is_ok());
+        let src = include_str!("wall2_spotify.rs");
+        for name in ["pub async fn wall2_spotify_saved(", "pub async fn wall2_spotify_save("] {
+            let at = src.find(name).expect("command"); let body = &src[at..]; let open = body.find('{').expect("body"); let first = body[open + 1..].trim_start();
+            assert!(first.starts_with("require(&window)?;"), "{name}"); assert!(body[..body.find("\n").unwrap()].contains("spawn_blocking"), "{name}");
+        }
     }
 }
