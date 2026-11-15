@@ -1920,9 +1920,10 @@ words: `not-configured`, `absent` (404, the route is not live yet), `failed`, `s
 - **Shield card** (`home/NetworkTile.tsx`, `home/shieldModel.ts`): a ring with one arc
   per open alert (twelve at most, "12+" inside past that), the count inside, the newest
   alert in one line with its shape (amber triangle high, violet diamond medium, open ring
-  low). Quiet is a whole mint ring with a check, "All quiet", the device and blocked
-  numbers and the two links. Stale is a grey ring and "as of" a time, never mint. A
-  click opens the drawer (`home/ShieldDrawer.tsx`) with every alert, Open on each and one
+  low). Quiet is a whole mint ring with a check, "All quiet", two fact lines and two doors
+  at the right (see "Network and Security card" below). Stale is a grey ring and "as of"
+  a time, never mint. Show all (or the newest alert's line) opens the drawer
+  (`home/ShieldDrawer.tsx`) with every alert, Open on each and one
   Clear all, which marks every current alert seen in the home app (it has no clear for
   one alert). Clear all clears every alert the home app holds at that moment, including
   any raised after the wall's last read, which the drawer never showed. After it the list
@@ -1956,6 +1957,18 @@ Dev mocks: `?desk=absent|typical|stale|down` (absent by default), `?alerts=0|1|6
 `?rooms=0|2|4|8`, `?moods=3|7|12`, `?desktoken=none|lan`, and `?spotifyplay=speaker` pairs a
 Spotify track with a Sonos speaker. `npm --prefix wall run fit:home` checks the right
 column, the drawer, the house area and the mood card widths (`--self-test` breaks each).
+
+### Network and Security card (Home tab, right; two doors at the right)
+
+`home/NetworkTile.tsx`, `home/shieldModel.ts` (`shieldFacts`, `severityCounts`, `alertHint`), the card's rules in `styles/home.css`. The card keeps its sizes: 596 by 166 when quiet, not live or not set up, 596 by 250 with alerts open (so Around the house keeps five rows, and three with alerts).
+
+- **Quiet.** The ring (112), the title, "Nothing is open." and two fact lines (16 px, a glyph each) at the left; at the right two doors, 206 wide and 61 high with 12 between: Security ("Home app alarms", opens the home app's alarms page) and Firewalla ("Its own portal"). Each door shows only when the wall has its address (`wall2_links`), the same rule and the same click as before; one door takes the full height. With no door and at least one fact, the facts move to a quiet box at the right, one row each (scan, devices, blocked, alarms); with no door and no fact the text takes the whole width.
+- **The fact lines** are drawn only from numbers the home app sent: line one is "Scan 10:24 AM"; line two is "31 devices, 412 blocked" (or whichever of the two exists), or, when it sent neither, "3 alarms in 24 h"; with none of them there is no second line. A fact with no number is never drawn. Hovering a fact says what it is, and "Not live, as of ..." while stale.
+- **Alerts open.** The ring (140) with one arc per alert and the count, the title, "3 alerts open, 31 devices at home", the newest alert on one line (its line opens the drawer; long text ends in an ellipsis, the full text and "Show all N open alerts" on hover), the age and the counts by severity ("12m ago. 1 high, 2 medium."; the counts show only when every open alert is listed and has a severity, so no count is ever short), and a row of equal 50 px buttons: Show all N (filled), Security, Firewalla (the last two only with an address; with neither, Show all stands alone).
+- **Not live.** A grey ring, "Nothing was open." (or the alerts as before), the facts dimmed, and the heading's "as of 9:41 AM". The wall never shows a stale read as live.
+- **Not set up, loading, down.** The grey ring and the title (with "Checks again every 5 minutes." when down); no facts, no doors.
+- **Could not open** (a door that fails) shows in amber on the heading's right for three seconds.
+- Dev stills: `?net=calmbare` (quiet, the home app sent no scan time and no number), `?links=security|portal|none` (which doors have an address), `?desk=typical&alerts=0|1|2|3`, `?desk=stale`, `?home=off`. The gallery states and the fit rules (the card's size in each state, 16 px from the card's edge, nothing overlapping, the right side within 24 px of the edge, text 16 px or more, long text ending in an ellipsis; each rule has a break in `--self-test`) are in `wall/scripts/areas/network-card.mjs`.
 
 ### Network tile (Home tab, right)
 

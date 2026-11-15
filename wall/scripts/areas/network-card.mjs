@@ -46,7 +46,7 @@ function measureNet() {
     // The doors, the buttons and the ring keep 16 px to the card's edge on every side; the doors and buttons are 40 px or more.
     const edged = [...doorEls, ...card.querySelectorAll('.shield-art')];
     if (aside) edged.push(aside);
-    for (const e of edged) {
+    for (const e of edged.filter((x) => r(x).width > 0)) {
       const b = r(e);
       const gaps = { top: b.top - c.top, left: b.left - c.left, bottom: c.bottom - b.bottom, right: c.right - b.right };
       for (const [side, v] of Object.entries(gaps)) {
@@ -56,7 +56,8 @@ function measureNet() {
     }
     // The right half is not empty: the doors, the buttons or the facts box reach within 24 px of the card's right edge.
     if (doorEls.length || aside) {
-      const right = Math.max(...[...doorEls, ...(aside ? [aside] : [])].map((e) => r(e).right));
+      // A hidden door or box has no size and counts for nothing: the right side then stops at the card's left edge.
+      const right = Math.max(c.left, ...[...doorEls, ...(aside ? [aside] : [])].filter((e) => r(e).width > 0).map((e) => r(e).right));
       const gap = Math.round((c.right - right) * 10) / 10;
       if (gap > 24.5) out.push('net card: the right side stops ' + gap + ' px short of the card\'s edge (24 at most)');
     }
@@ -74,7 +75,7 @@ function measureNet() {
     }
     // Text 16 px or more (the ring's own number is drawn inside its picture and scales with it).
     const small = [...card.querySelectorAll('*')].filter((e) => !e.closest('svg') && [...e.childNodes].some((n) => n.nodeType === 3 && n.textContent.trim()) && parseFloat(getComputedStyle(e).fontSize) < 16 - 0.01);
-    for (const e of small) out.push('net card: text under 16 px in ' + e.className + ' (' + parseFloat(getComputedStyle(e).fontSize) + ' px)');
+    for (const e of small) out.push('net card: text under 16 px in ' + (e.className || e.tagName.toLowerCase()) + ' (' + parseFloat(getComputedStyle(e).fontSize) + ' px)');
     // Long text ends in an ellipsis inside its own box and leaves nothing outside the card.
     const lines = kind === 'busylong' ? [card.querySelector('.shield-new b')] : kind === 'quietlong' ? [card.querySelector('.shield-fact:last-child span')] : [];
     for (const e of lines.filter(Boolean)) {
@@ -151,7 +152,7 @@ export default {
       'net-size': { css: '.panel.network.shield { height: 190px !important; }', expect: /^ *FAIL net card: the card is [\d.]+ by [\d.]+ px, main has 596 by \d+/m, appliesTo: (v) => ALL_NAMES.includes(v.name) },
       'net-edge': { css: '.panel.network.shield { padding-right: 4px !important; }', expect: /^ *FAIL net card: shield-\w+ is [\d.-]+ px from the card's right edge/m, appliesTo: (v) => DOOR_NAMES.includes(v.name) },
       'net-overlap': { css: '.shield-art { transform: translateX(90px); }', expect: /^ *FAIL net card: .* overlap/m, appliesTo: (v) => ALL_NAMES.includes(v.name) },
-      'net-empty-right': { css: '.shield-doors, .shield-aside, .shield-btns { display: none !important; }', expect: /^ *FAIL net card: expected \d (doors|buttons)|^ *FAIL net card: expected the facts box/m, appliesTo: (v) => RIGHT_NAMES.includes(v.name) },
+      'net-empty-right': { css: '.shield-doors, .shield-aside, .shield-btns { display: none !important; }', expect: /^ *FAIL net card: the right side stops [\d.]+ px short/m, appliesTo: (v) => RIGHT_NAMES.includes(v.name) },
       'net-gap': { css: '.shield-doors, .shield-aside { margin-right: 60px !important; } .shield-btns { margin-right: 60px !important; }', expect: /^ *FAIL net card: the right side stops [\d.]+ px short/m, appliesTo: (v) => [...DOOR_NAMES, NAMES.quietnone, ...BUSY_NAMES].includes(v.name) },
       'net-text': { css: '.shield-door-txt span, .shield-fact, .shield-hint, .shield-btn { font-size: 12px !important; }', expect: /^ *FAIL net card: text under 16 px in /m, appliesTo: (v) => ALL_NAMES.includes(v.name) },
       'net-ellipsis': { css: '.shield-new b { text-overflow: clip !important; } .shield-fact span { text-overflow: clip !important; }', expect: /^ *FAIL net card: a long line does not end in an ellipsis/m, appliesTo: (v) => v.name === NAMES.busylong || v.name === NAMES.quietlong },
