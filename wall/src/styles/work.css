@@ -748,7 +748,7 @@
   font-size: 27px;
 }
 
-/* Right wing: the next three, as the concept's .tk3 rows (70 px tall: 2 px each, 6 in all, go to the deck's taller keys). */
+/* Right wing: Due today, as the concept's .tk3 rows (70 px tall: 2 px each, 6 in all, go to the deck's taller keys). */
 .tasks {
   display: flex;
   flex-direction: column;
@@ -756,13 +756,116 @@
 }
 .tasks-hd {
   margin-bottom: 6px;
+  /* The height the heading has with its right-hand text, so the block is the same with none. */
+  min-height: 24.7px;
+}
+/* The block keeps the height of three rows in every state (one row, none, loading, not set up,
+   unavailable), rows at the top, so Always here below never moves. */
+.tasks-body {
+  height: 213px;
+  overflow: hidden;
 }
 .tasks-list {
   list-style: none;
   margin: 0;
-  padding: 0;
+  padding: 0 6px 0 0;
   display: flex;
   flex-direction: column;
+  position: relative;
+  /* Three rows (70 px and a 1 px rule each) in view, the rest a scroll away; the page never scrolls with it. */
+  max-height: 213px;
+  overflow-x: hidden;
+  overflow-y: hidden;
+  overscroll-behavior: contain;
+}
+/* More than three rows: the wheel scrolls the block and a calm 6 px bar shows (it takes the 6 px the padding held). */
+.tasks-list.scrolls {
+  overflow-y: scroll;
+  padding-right: 0;
+}
+.tasks-list::-webkit-scrollbar {
+  width: 6px;
+}
+.tasks-list::-webkit-scrollbar-track {
+  background: transparent;
+}
+.tasks-list::-webkit-scrollbar-thumb {
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.28);
+}
+.tasks-list::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.42);
+}
+/* A soft fade at an edge while rows wait beyond it: at the foot until the end, at the head once scrolled. */
+.tasks-list.fade-bottom {
+  mask-image: linear-gradient(to top, transparent 0, #000 22px);
+}
+.tasks-list.fade-top {
+  mask-image: linear-gradient(to bottom, transparent 0, #000 22px);
+}
+.tasks-list.fade-top.fade-bottom {
+  mask-image: linear-gradient(to bottom, transparent 0, #000 22px, #000 calc(100% - 22px), transparent 100%);
+}
+/* The overdue slot: just left of the time column, 18 px wide on every row so the tags line up; only
+   an overdue row has a mark in it, the Tabler clock with an exclamation mark in the wall's amber. */
+.od-slot {
+  flex: none;
+  width: 18px;
+  margin-right: -6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.od-mark {
+  display: inline-flex;
+  color: var(--amber);
+}
+/* The time column: a fixed width so the tags of every row line up down the list. */
+.chip-col {
+  flex: none;
+  width: 78px;
+  display: flex;
+  justify-content: center;
+}
+
+/* A row's tags (Work's Due today and Home's Around the house): the first as a chip, the rest as dots.
+   --c is the tag's colour as r,g,b; a tag with no colour uses the wall's dim text. */
+.t-tags {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.t-tag {
+  --c: 183, 175, 214;
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 28px;
+  color: rgb(var(--c));
+  background: rgba(var(--c), 0.14);
+  border: 1px solid rgba(var(--c), 0.38);
+}
+.t-tag svg {
+  flex: none;
+}
+.t-dot {
+  width: 28px;
+  border-radius: 50%;
+}
+.t-chip {
+  gap: 6px;
+  max-width: 170px;
+  padding: 0 11px 0 9px;
+  border-radius: 14px;
+  font: 600 16px/1 var(--body);
+  white-space: nowrap;
+}
+.t-chip .t-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .tk3 {
   display: flex;

@@ -1,4 +1,11 @@
 import { invoke } from '../bridge/tauri';
+/** One tag on a task row, as Rust shapes it: a display label, and the task app's icon and colour names when it has them. */
+export interface TaskTag {
+  label: string;
+  icon?: string | null;
+  color?: string | null;
+}
+
 export interface TaskItem {
   id: string;
   title: string;
@@ -7,6 +14,8 @@ export interface TaskItem {
   quadrant: string | null;
   /** Effort estimate in minutes: '15', '30', '45' or '60plus'. */
   est?: '15' | '30' | '45' | '60plus' | null;
+  /** Up to three tags (never the one the read filtered by). Absent on reads that predate tags. */
+  tags?: TaskTag[];
 }
 
 /** The error text the native side sends when `feeds.json` has no address for the service. */
@@ -27,6 +36,7 @@ export function estText(est: TaskItem['est']): string | null {
 }
 
 const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+const FULL_DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 const DAY_MS = 86_400_000;
 
@@ -49,23 +59,48 @@ function allDayDate(raw: string): Date | null {
   return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
 }
 
-/**
- * The small due line under a task title: "today 3 PM", "today", "tomorrow",
- * "Fri" (within the next six days), "Nov 20" (later), "overdue", or null.
- */
-export function dueLine(task: Pick<TaskItem, 'due_at' | 'due_is_all_day'>, now: Date): string | null {
+/** The task's due moment as a local date, and how many calendar days it is from `now` (negative: past), or null. */
+function dueWhen(task: Pick<TaskItem, 'due_at' | 'due_is_all_day'>, now: Date): { when: Date; days: number; dateOnly: boolean } | null {
   if (!task.due_at) return null;
   // A bare date (no time) is a calendar date, read as local, never shifted by time zone.
   const bare = /^\d{4}-\d{2}-\d{2}$/.test(task.due_at);
   const dateOnly = task.due_is_all_day || bare;
   const when = dateOnly ? allDayDate(task.due_at) : new Date(task.due_at);
   if (!when || Number.isNaN(when.getTime())) return null;
-  const days = Math.round((startOfDay(when) - startOfDay(now)) / DAY_MS);
+  return { when, days: Math.round((startOfDay(when) - startOfDay(now)) / DAY_MS), dateOnly };
+}
+
+/**
+ * The small due line under a task title: "today 3 PM", "today", "tomorrow",
+ * "Fri" (within the next six days), "Nov 20" (later), "overdue", or null.
+ */
+export function dueLine(task: Pick<TaskItem, 'due_at' | 'due_is_all_day'>, now: Date): string | null {
+  const due = dueWhen(task, now);
+  if (!due) return null;
+  const { when, days, dateOnly } = due;
   if (days < 0) return 'overdue';
   if (days === 0) return dateOnly ? 'today' : `today ${clockText(when)}`;
   if (days === 1) return 'tomorrow';
   if (days <= 6) return DAYS[when.getDay()] ?? null;
   return `${MONTHS[when.getMonth()]} ${when.getDate()}`;
+}
+
+/**
+ * How late an overdue task is, in plain words: "Due yesterday", "Due Monday, 2 days ago" (up to
+ * six days back), "Due 12 days ago". Null for a task that is not overdue.
+ */
+export function overdueText(task: Pick<TaskItem, 'due_at' | 'due_is_all_day'>, now: Date): string | null {
+  const due = dueWhen(task, now);
+  if (!due || due.days >= 0) return null;
+  const late = -due.days;
+  if (late === 1) return 'Due yesterday';
+  if (late <= 6) return `Due ${FULL_DAYS[due.when.getDay()]}, ${late} days ago`;
+  return `Due ${late} days ago`;
+}
+
+/** The estimate chip's hover text: the estimate, and the due line unless the task is overdue (the mark beside it says how late). */
+export function estTipText(due: string | null): string {
+  return due && due !== 'overdue' ? `Estimate. Due ${due}` : 'Estimate';
 }
 
 /** Small text for a list that could not be refreshed; null while it is recent. */

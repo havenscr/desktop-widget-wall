@@ -31,6 +31,20 @@ pub struct TaskItem {
     pub quadrant: Option<String>,
     /// Effort estimate (the row's `estimate`): `15`, `30`, `45` or `60plus`; None when the task has none.
     pub est: Option<String>,
+    /// Up to three of the row's tags, shaped for display (see `shape_tags`).
+    pub tags: Vec<TaskTag>,
+}
+
+/// One tag on a task row. `icon` and `color` come from the task app's tag list and are
+/// names only (never markup or CSS); both are None when the list had no usable entry.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct TaskTag {
+    pub label: String,
+    pub icon: Option<String>,
+    pub color: Option<String>,
+    /// The tag lower-cased: the key into the tag list. Not sent to the page.
+    #[serde(skip)]
+    key: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -317,9 +331,225 @@ fn open_tasks(body: &Value, f: Filters) -> Vec<TaskItem> {
                 due_is_all_day: t.get("due_is_all_day").and_then(Value::as_bool).unwrap_or(false),
                 quadrant: t.get("quadrant").and_then(Value::as_str).map(str::to_string),
                 est: read_est(t.get("estimate")),
+                tags: shape_tags(t.get("tags"), f.tag),
             })
         })
         .collect()
+}
+
+// Section: task tags
+
+/// Tags a row shows at most.
+const MAX_ROW_TAGS: usize = 3;
+/// Characters a displayed tag may have.
+const MAX_TAG_CHARS: usize = 40;
+/// Entries kept from the task app's tag list.
+const MAX_TAG_META: usize = 200;
+/// How long the last good tag list is reused before it is read again.
+const TAG_META_TTL_SECS: i64 = 600;
+/// After a failed tag list read, how long before the next try (the tasks read still goes on).
+const TAG_META_RETRY_SECS: i64 = 60;
+/// How long the last good tag list keeps serving when every read since has failed.
+const TAG_META_KEEP_SECS: i64 = 3600;
+/// The task app's colour names; anything else in its tag list is dropped.
+const TAG_COLORS: [&str; 11] = ["teal", "blue", "green", "pink", "magenta", "lime", "brown", "slate", "khaki", "orange", "red"];
+
+/// A character a displayed tag or tag name may not hold: a control character, or one of the
+/// invisible format characters that can reorder or hide text (direction marks and overrides,
+/// isolates, zero width characters, the soft hyphen, the byte order mark).
+fn is_unsafe_char(c: char) -> bool {
+    c.is_control()
+        || matches!(c, '\u{ad}' | '\u{61c}' | '\u{200b}'..='\u{200f}' | '\u{202a}'..='\u{202e}' | '\u{2060}'..='\u{2064}' | '\u{2066}'..='\u{206f}' | '\u{feff}')
+}
+
+/// The tags a row shows: each tag string trimmed, empty ones dropped, those with a control
+/// or invisible format character, or over 40 characters, dropped, duplicates dropped after lower-casing, the tag
+/// the read filtered by (`drop`, case ignored) dropped, and at most three kept. The rule is
+/// looser than `valid_tag` (which guards the filters the page sends): the owner's own tags
+/// may carry accents or dots. The text stays plain text; the page never reads it as markup.
+fn shape_tags(raw: Option<&Value>, drop: Option<&str>) -> Vec<TaskTag> {
+    let Some(list) = raw.and_then(Value::as_array) else {
+        return Vec::new();
+    };
+    let drop = drop.map(|d| d.trim().to_lowercase());
+    let mut out: Vec<TaskTag> = Vec::new();
+    for name in list.iter().filter_map(Value::as_str) {
+        let name = name.trim();
+        if name.is_empty() || name.chars().count() > MAX_TAG_CHARS || name.chars().any(is_unsafe_char) {
+            continue;
+        }
+        let key = name.to_lowercase();
+        if drop.as_deref() == Some(key.as_str()) || out.iter().any(|t| t.key == key) {
+            continue;
+        }
+        out.push(TaskTag { label: tag_label(name), icon: None, color: None, key });
+        if out.len() == MAX_ROW_TAGS {
+            break;
+        }
+    }
+    out
+}
+
+/// Two letter words that stay in ordinary title case ("To Do", "My Garden"), not capitals.
+const SHORT_WORDS: [&str; 26] = [
+    "am", "an", "as", "at", "be", "by", "do", "go", "he", "if", "in", "is", "it", "me", "my", "no", "of", "oh", "ok", "on", "or", "so", "to", "up", "us", "we",
+];
+
+/// A tag as it reads on the wall. A tag typed with any capital letter keeps its text.
+/// Otherwise the first letter of the tag and of each word after a space, slash, hyphen or
+/// ampersand is a capital ("r&d" is "R&D": the letters around an ampersand each start a
+/// word), with two generic acronym rules: a word of exactly two letters is written in
+/// capitals unless it is one of the common words in `SHORT_WORDS`, and a word of up to five
+/// letters with no vowel (a, e, i, o, u, y) is written in capitals. There is no table of tag
+/// names here; a tag that reads wrong can be given an exception.
+fn tag_label(name: &str) -> String {
+    if name.chars().any(char::is_uppercase) {
+        return name.to_string();
+    }
+    let mut out = String::with_capacity(name.len());
+    let mut word = String::new();
+    let flush = |word: &mut String, out: &mut String| {
+        let letters = word.chars().count();
+        let all_alpha = word.chars().all(char::is_alphabetic);
+        let no_vowel = !word.chars().any(|c| matches!(c, 'a' | 'e' | 'i' | 'o' | 'u' | 'y'));
+        let two_letter_acronym = letters == 2 && !SHORT_WORDS.contains(&word.as_str());
+        if all_alpha && (two_letter_acronym || ((1..=5).contains(&letters) && no_vowel)) {
+            out.extend(word.chars().flat_map(char::to_uppercase));
+        } else {
+            let mut chars = word.chars();
+            if let Some(first) = chars.next() {
+                out.extend(first.to_uppercase());
+                out.push_str(chars.as_str());
+            }
+        }
+        word.clear();
+    };
+    for c in name.chars() {
+        if matches!(c, ' ' | '/' | '-' | '&') {
+            flush(&mut word, &mut out);
+            out.push(c);
+        } else {
+            word.push(c);
+        }
+    }
+    flush(&mut word, &mut out);
+    out
+}
+
+/// What the task app's tag list says about one tag.
+#[derive(Debug, Clone, PartialEq)]
+struct TagMeta {
+    icon: Option<String>,
+    color: Option<String>,
+}
+
+type TagMetaMap = std::collections::HashMap<String, TagMeta>;
+
+/// A Tabler icon name: 1 to 64 of `a-z`, `0-9` and `-`.
+fn valid_icon_name(icon: &str) -> bool {
+    (1..=64).contains(&icon.len()) && icon.bytes().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == b'-')
+}
+
+/// The task app's `GET /api/tags` answer as a map from lower-cased name to icon and colour.
+/// At most 200 entries; an entry that is not an object or has no usable name is dropped; an
+/// icon that is not a plain Tabler name and a colour outside the eleven names are dropped
+/// from their entry.
+fn parse_tag_meta(body: &Value) -> TagMetaMap {
+    let mut map = TagMetaMap::new();
+    let Some(list) = body.get("tags").and_then(Value::as_array) else {
+        return map;
+    };
+    for entry in list.iter().take(MAX_TAG_META) {
+        let Some(obj) = entry.as_object() else {
+            continue;
+        };
+        let Some(name) = obj.get("name").and_then(Value::as_str) else {
+            continue;
+        };
+        let key = name.trim().to_lowercase();
+        if key.is_empty() || key.chars().count() > MAX_TAG_CHARS || key.chars().any(is_unsafe_char) {
+            continue;
+        }
+        let icon = obj.get("icon").and_then(Value::as_str).filter(|i| valid_icon_name(i)).map(str::to_string);
+        let color = obj.get("color").and_then(Value::as_str).filter(|c| TAG_COLORS.contains(c)).map(str::to_string);
+        map.insert(key, TagMeta { icon, color });
+    }
+    map
+}
+
+/// Give every row tag its icon and colour from the tag list (matched by lower-cased name).
+fn join_tag_meta(tasks: &mut [TaskItem], meta: &TagMetaMap) {
+    for tag in tasks.iter_mut().flat_map(|t| t.tags.iter_mut()) {
+        if let Some(m) = meta.get(&tag.key) {
+            tag.icon = m.icon.clone();
+            tag.color = m.color.clone();
+        }
+    }
+}
+
+/// The last good tag list and when it was read or last failed (epoch seconds).
+#[derive(Default)]
+struct TagCache {
+    map: TagMetaMap,
+    good_at: Option<i64>,
+    failed_at: Option<i64>,
+}
+
+static TAG_CACHE: Mutex<Option<TagCache>> = Mutex::new(None);
+
+/// Whether the tag list should be read now: never read, or the good copy is ten minutes
+/// old, and not within a minute of a failed attempt.
+fn tag_meta_due(now: i64, good_at: Option<i64>, failed_at: Option<i64>) -> bool {
+    if failed_at.is_some_and(|f| now - f < TAG_META_RETRY_SECS) {
+        return false;
+    }
+    good_at.map_or(true, |g| now - g >= TAG_META_TTL_SECS)
+}
+
+/// The task app's tag list for the rows in `tasks`, from memory when it is under ten
+/// minutes old. A failed read never fails the tasks read: the last good list keeps serving
+/// for at most an hour from when it was read, after which the rows carry their tags with no
+/// icon and no colour until a read works. Not read at all when no row has a tag.
+fn tag_meta_for(base: &str, tasks: &[TaskItem]) -> TagMetaMap {
+    tag_meta_with(&TAG_CACHE, now_epoch(), tasks, &|| get_json(&format!("{base}/api/tags")))
+}
+
+/// `tag_meta_for` with its cache, clock and read handed in, so a test can drive the real
+/// decisions: a good read, time passing, a failed read, more time passing.
+fn tag_meta_with(cache: &Mutex<Option<TagCache>>, now: i64, tasks: &[TaskItem], fetch: &dyn Fn() -> Result<Value, String>) -> TagMetaMap {
+    if tasks.iter().all(|t| t.tags.is_empty()) {
+        return TagMetaMap::new();
+    }
+    // What the cache can serve now: its list while under an hour old, else nothing.
+    let serve = |c: Option<&TagCache>| match c {
+        Some(c) if c.good_at.is_some_and(|g| now - g < TAG_META_KEEP_SECS) => c.map.clone(),
+        _ => TagMetaMap::new(),
+    };
+    let (due, held) = match cache.lock() {
+        Ok(guard) => {
+            let c = guard.as_ref();
+            (tag_meta_due(now, c.and_then(|c| c.good_at), c.and_then(|c| c.failed_at)), serve(c))
+        }
+        Err(_) => return TagMetaMap::new(),
+    };
+    if !due {
+        return held;
+    }
+    // The lock is not held across the request, so another read never waits on it.
+    let fetched = fetch().map(|body| parse_tag_meta(&body));
+    let Ok(mut guard) = cache.lock() else {
+        return held;
+    };
+    let entry = guard.get_or_insert_with(TagCache::default);
+    match fetched {
+        Ok(map) => {
+            entry.map = map;
+            entry.good_at = Some(now);
+            entry.failed_at = None;
+        }
+        Err(_) => entry.failed_at = Some(now),
+    }
+    serve(Some(entry))
 }
 
 /// Open tasks only, the first three in server order.
@@ -342,6 +572,9 @@ pub struct TasksSummary {
     pub next: Vec<TaskItem>,
     pub remaining: u64,
     pub due_tomorrow: DueTomorrow,
+    /// With the `due` filter: how many tasks are due today or overdue, before the limit.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub due_today: Option<u64>,
 }
 
 /// A tag: 1 to 40 characters, `^[A-Za-z0-9][A-Za-z0-9 &/_-]{0,39}$`.
@@ -396,20 +629,82 @@ fn due_tomorrow(t: &TaskItem, tomorrow: i64, after: i64, tomorrow_date: &str) ->
 }
 
 /// The three next tasks, how many more are open, and what is due tomorrow (local day).
+#[cfg(test)]
 fn summarize(body: &Value, f: Filters, now: i64, off: &dyn Fn(i64) -> i64) -> TasksSummary {
     summarize_n(body, f, now, off, TASK_LIMIT)
 }
 
 /// Home's chores ask for more rows than three (a list that scrolls): at most this many.
 const MAX_TASK_LIMIT: usize = 20;
+/// The `due` filter lists every task due today or overdue: at most this many rows.
+const MAX_DUE_LIMIT: usize = 60;
 
-/// The `limit` a caller asked for, 1 to `MAX_TASK_LIMIT`; three when it names none.
-fn task_limit(limit: Option<u32>) -> usize {
-    limit.map_or(TASK_LIMIT, |n| (n as usize).clamp(1, MAX_TASK_LIMIT))
+/// The `limit` a caller asked for, 1 to `MAX_TASK_LIMIT` (`MAX_DUE_LIMIT` with the `due`
+/// filter); three when it names none.
+fn task_limit(limit: Option<u32>, due: bool) -> usize {
+    let cap = if due { MAX_DUE_LIMIT } else { MAX_TASK_LIMIT };
+    limit.map_or(TASK_LIMIT, |n| (n as usize).clamp(1, cap))
+}
+
+/// The one value `due` may have.
+fn check_due(due: Option<String>) -> Result<bool, String> {
+    match due.as_deref().map(str::trim) {
+        None => Ok(false),
+        Some("today") => Ok(true),
+        Some(_) => Err("Invalid due filter".to_string()),
+    }
+}
+
+/// Where a task's due date falls against the local day that starts at `today` and ends at
+/// `tomorrow` (epoch seconds); `today_date` is that day as `YYYY-MM-DD`. A timed task is
+/// compared by instant, an all-day one (or a bare date) by its date text. No due date or an
+/// unreadable one is `Later`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum DueWhen {
+    Overdue,
+    Today,
+    Later,
+}
+
+fn due_when(t: &TaskItem, today: i64, tomorrow: i64, today_date: &str) -> DueWhen {
+    let Some(due) = t.due_at.as_deref() else {
+        return DueWhen::Later;
+    };
+    let bare = due.len() == 10;
+    if t.due_is_all_day || bare {
+        let Some(date) = due.get(..10).filter(|d| {
+            d.bytes().enumerate().all(|(i, c)| if i == 4 || i == 7 { c == b'-' } else { c.is_ascii_digit() })
+        }) else {
+            return DueWhen::Later;
+        };
+        return match date.cmp(today_date) {
+            std::cmp::Ordering::Less => DueWhen::Overdue,
+            std::cmp::Ordering::Equal => DueWhen::Today,
+            std::cmp::Ordering::Greater => DueWhen::Later,
+        };
+    }
+    match parse_iso(due) {
+        Some(secs) if secs < today as f64 => DueWhen::Overdue,
+        Some(secs) if secs < tomorrow as f64 => DueWhen::Today,
+        _ => DueWhen::Later,
+    }
 }
 
 /// As `summarize`, with the first `limit` tasks as `next`.
+#[cfg(test)]
 fn summarize_n(body: &Value, f: Filters, now: i64, off: &dyn Fn(i64) -> i64, limit: usize) -> TasksSummary {
+    summarize_core(body, f, now, off, limit, false)
+}
+
+/// The tasks due today or overdue (local day), overdue ones first and each group in server
+/// order (`open_tasks` keeps the task app's own order, which is not sorted by due date),
+/// the first `limit` of them as `next`, `remaining` the rest, `due_today` the whole count.
+#[cfg(test)]
+fn summarize_due(body: &Value, f: Filters, now: i64, off: &dyn Fn(i64) -> i64, limit: usize) -> TasksSummary {
+    summarize_core(body, f, now, off, limit, true)
+}
+
+fn summarize_core(body: &Value, f: Filters, now: i64, off: &dyn Fn(i64) -> i64, limit: usize, due_only: bool) -> TasksSummary {
     let all = open_tasks(body, f);
     let today = local_midnight(now, off);
     let tomorrow = local_midnight(today + 36 * 3600, off);
@@ -422,9 +717,26 @@ fn summarize_n(body: &Value, f: Filters, now: i64, off: &dyn Fn(i64) -> i64, lim
         count += 1;
         est_total += est_minutes(t.est.as_deref());
     }
+    let (all, due_today) = if due_only {
+        let (y, m, d) = crate::wall2_meet::civil_from_days((today + off(today)).div_euclid(86_400));
+        let today_date = format!("{y:04}-{m:02}-{d:02}");
+        let (mut overdue, mut todays) = (Vec::new(), Vec::new());
+        for t in all {
+            match due_when(&t, today, tomorrow, &today_date) {
+                DueWhen::Overdue => overdue.push(t),
+                DueWhen::Today => todays.push(t),
+                DueWhen::Later => {}
+            }
+        }
+        overdue.extend(todays);
+        let n = overdue.len() as u64;
+        (overdue, Some(n))
+    } else {
+        (all, None)
+    };
     let remaining = all.len().saturating_sub(limit) as u64;
     let next = all.into_iter().take(limit).collect();
-    TasksSummary { next, remaining, due_tomorrow: DueTomorrow { count, est_minutes: est_total } }
+    TasksSummary { next, remaining, due_tomorrow: DueTomorrow { count, est_minutes: est_total }, due_today }
 }
 
 /// The next tasks with optional filters: `tag`, `notTag` (task tags) and `list` (a list
@@ -438,9 +750,11 @@ pub async fn wall2_tasks_summary(
     notTag: Option<String>,
     list: Option<String>,
     limit: Option<u32>,
+    due: Option<String>,
 ) -> Result<TasksSummary, String> {
     let (tag, notTag, list) = check_filters(tag, notTag, list)?;
-    let limit = task_limit(limit);
+    let due = check_due(due)?;
+    let limit = task_limit(limit, due);
     let base = read_base(&app, "tasksBaseUrl", true)?;
     tauri::async_runtime::spawn_blocking(move || {
         let bucket_id = match list.as_deref() {
@@ -449,14 +763,17 @@ pub async fn wall2_tasks_summary(
                 let buckets = get_json(&format!("{base}/api/buckets"))?;
                 match find_bucket(&buckets, name) {
                     Some(id) => Some(id),
-                    None => return Ok(summarize(&Value::Null, Filters::default(), now_epoch(), &local_offset_secs)),
+                    None => return Ok(summarize_core(&Value::Null, Filters::default(), now_epoch(), &local_offset_secs, TASK_LIMIT, due)),
                 }
             }
         };
         let body = get_json(&format!("{base}/api/tasks?status=open"))?;
         let f = Filters { tag: tag.as_deref(), not_tag: notTag.as_deref(), bucket_id: bucket_id.as_deref() };
-        let summary = summarize_n(&body, f, now_epoch(), &local_offset_secs, limit);
-        remember_shown_n(&read_key(&tag, &notTag, &list), &summary.next, limit);
+        let mut summary = summarize_core(&body, f, now_epoch(), &local_offset_secs, limit, due);
+        // The tag list is read only when a row has tags, and a failed read leaves the rows as they are.
+        let meta = tag_meta_for(&base, &summary.next);
+        join_tag_meta(&mut summary.next, &meta);
+        remember_shown_n(&read_key(&tag, &notTag, &list, due), &summary.next, limit);
         Ok(summary)
     })
     .await
@@ -501,35 +818,69 @@ pub async fn wall2_task_done(app: tauri::AppHandle, id: String) -> Result<(), St
 /// summary's filters), oldest first. Only these can be opened, so the web view cannot ask
 /// the system to open an address for an id it made up. The filters come from the web view,
 /// so the list keeps at most `MAX_SHOWN_READS` kinds (the oldest goes first); each holds at
-/// most the three ids its read showed.
+/// most the ids its read showed (up to 60 for the `due` read).
 static SHOWN_TASKS: Mutex<ShownReads> = Mutex::new(Vec::new());
 const MAX_SHOWN_READS: usize = 8;
 
 /// One key per kind of read, so Work's list and Home's chores do not replace each other.
-fn read_key(tag: &Option<String>, not_tag: &Option<String>, list: &Option<String>) -> String {
-    format!("summary|{}|{}|{}", tag.as_deref().unwrap_or(""), not_tag.as_deref().unwrap_or(""), list.as_deref().unwrap_or(""))
+fn read_key(tag: &Option<String>, not_tag: &Option<String>, list: &Option<String>, due: bool) -> String {
+    format!(
+        "summary|{}|{}|{}|{}",
+        tag.as_deref().unwrap_or(""),
+        not_tag.as_deref().unwrap_or(""),
+        list.as_deref().unwrap_or(""),
+        if due { "due" } else { "" }
+    )
 }
 
-type ShownReads = Vec<(String, Vec<String>)>;
+/// One kind of read: its key, the ids it showed, the `limit` it asked for and when (epoch seconds).
+#[derive(Debug, Clone, PartialEq)]
+struct Shown {
+    key: String,
+    ids: Vec<String>,
+    limit: usize,
+    at: i64,
+}
 
-/// Keep `tasks` as the ids `key`'s read showed: replaces that read's last ids, at most three,
-/// and drops the oldest reads past `MAX_SHOWN_READS`.
+type ShownReads = Vec<Shown>;
+
+/// How long a short read leaves a longer read's rows remembered (two refresh periods and a bit).
+const SHOWN_FRESH_SECS: i64 = 300;
+
+/// Keep `tasks` as the ids `key`'s read showed (at most three), and drop the oldest reads past
+/// `MAX_SHOWN_READS`.
 #[cfg(test)]
 fn remember_in(reads: &mut ShownReads, key: &str, tasks: &[TaskItem]) {
-    remember_in_n(reads, key, tasks, TASK_LIMIT);
+    remember_in_n(reads, key, tasks, TASK_LIMIT, 0);
 }
 
-/// As `remember_in`, keeping at most `limit` ids (the rows that read asked for).
-fn remember_in_n(reads: &mut ShownReads, key: &str, tasks: &[TaskItem], limit: usize) {
-    reads.retain(|(k, _)| k != key);
-    reads.push((key.to_string(), tasks.iter().take(limit.min(MAX_TASK_LIMIT)).map(|t| t.id.clone()).collect()));
+/// As `remember_in`, for a read that asked for `limit` rows, at time `now`. A read replaces
+/// what the same kind of read remembered, EXCEPT a shorter one inside the freshness window:
+/// a one-row read (the "open the first task" key) must not make the rows of the 60 row list
+/// beside it unknown, so it adds its ids in front of the longer read's (bounded union, newest
+/// first, at most `MAX_DUE_LIMIT`) and leaves that read's limit and time alone, so the union
+/// ends with the window and the next full read replaces it. (Keying by the limit instead would
+/// use up the eight kinds; the union costs none.)
+fn remember_in_n(reads: &mut ShownReads, key: &str, tasks: &[TaskItem], limit: usize, now: i64) {
+    let fresh: Vec<String> = tasks.iter().take(limit.min(MAX_DUE_LIMIT)).map(|t| t.id.clone()).collect();
+    let old = reads.iter().position(|r| r.key == key).map(|i| reads.remove(i));
+    let entry = match old {
+        Some(o) if limit < o.limit && now - o.at <= SHOWN_FRESH_SECS => {
+            let mut ids = fresh.clone();
+            ids.extend(o.ids.iter().filter(|id| !fresh.contains(id)).cloned());
+            ids.truncate(MAX_DUE_LIMIT);
+            Shown { key: key.to_string(), ids, limit: o.limit, at: o.at }
+        }
+        _ => Shown { key: key.to_string(), ids: fresh, limit, at: now },
+    };
+    reads.push(entry);
     while reads.len() > MAX_SHOWN_READS {
         reads.remove(0);
     }
 }
 
 fn shown_in(reads: &ShownReads, id: &str) -> bool {
-    reads.iter().any(|(_, ids)| ids.iter().any(|known| known == id))
+    reads.iter().any(|r| r.ids.iter().any(|known| known == id))
 }
 
 fn remember_shown(key: &str, tasks: &[TaskItem]) {
@@ -538,7 +889,7 @@ fn remember_shown(key: &str, tasks: &[TaskItem]) {
 
 fn remember_shown_n(key: &str, tasks: &[TaskItem], limit: usize) {
     if let Ok(mut reads) = SHOWN_TASKS.lock() {
-        remember_in_n(&mut reads, key, tasks, limit);
+        remember_in_n(&mut reads, key, tasks, limit, now_epoch());
     }
 }
 
@@ -1046,7 +1397,7 @@ mod tests {
     }
 
     fn shown_task(id: &str) -> TaskItem {
-        TaskItem { id: id.to_string(), title: "A".to_string(), due_at: None, due_is_all_day: false, quadrant: None, est: None }
+        TaskItem { id: id.to_string(), title: "A".to_string(), due_at: None, due_is_all_day: false, quadrant: None, est: None, tags: Vec::new() }
     }
 
     #[test]
@@ -1064,7 +1415,8 @@ mod tests {
         assert!(!shown_in(&reads, "open-test-9"));
         assert!(!valid_task_id("../x"));
         assert_eq!(task_link("https://example.invalid:8443", "open-test-2"), "https://example.invalid:8443/");
-        assert_ne!(read_key(&Some("home".into()), &None, &None), read_key(&None, &Some("home".into()), &None));
+        assert_ne!(read_key(&Some("home".into()), &None, &None, false), read_key(&None, &Some("home".into()), &None, false));
+        assert_ne!(read_key(&None, &Some("home".into()), &None, false), read_key(&None, &Some("home".into()), &None, true));
     }
 
     #[test]
@@ -1193,10 +1545,10 @@ mod tests {
 
     #[test]
     fn summary_limit_asks_for_more_rows_and_remembers_them() {
-        assert_eq!(task_limit(None), 3);
-        assert_eq!(task_limit(Some(0)), 1);
-        assert_eq!(task_limit(Some(5)), 5);
-        assert_eq!(task_limit(Some(500)), MAX_TASK_LIMIT);
+        assert_eq!(task_limit(None, false), 3);
+        assert_eq!(task_limit(Some(0), false), 1);
+        assert_eq!(task_limit(Some(5), false), 5);
+        assert_eq!(task_limit(Some(500), false), MAX_TASK_LIMIT);
         let got = summarize_n(&summary_body(), Filters::default(), NOW, &us_east, 20);
         assert_eq!(ids(&got), ["1", "2", "3", "4", "5"]);
         assert_eq!(got.remaining, 0);
@@ -1204,7 +1556,7 @@ mod tests {
         assert_eq!((ids(&two), two.remaining), (vec!["1", "2"], 3));
         let mut reads = ShownReads::new();
         let many: Vec<TaskItem> = (0..30).map(|i| shown_task(&format!("lim-{i}"))).collect();
-        remember_in_n(&mut reads, "home", &many, 20);
+        remember_in_n(&mut reads, "home", &many, 20, 0);
         assert!(shown_in(&reads, "lim-19"));
         assert!(!shown_in(&reads, "lim-20"));
     }
@@ -1215,6 +1567,315 @@ mod tests {
         assert_eq!(ids(&got), ["1", "3", "4"]);
         assert_eq!(got.remaining, 0);
         assert_eq!(got.due_tomorrow, DueTomorrow { count: 2, est_minutes: 15 + 45 });
+    }
+
+    fn tag_names(t: &TaskItem) -> Vec<&str> {
+        t.tags.iter().map(|g| g.label.as_str()).collect()
+    }
+
+    #[test]
+    fn row_tags_are_shaped_for_display() {
+        let long = "y".repeat(40);
+        let body = json!({"tasks": [
+            {"id": "1", "title": "A", "kind": "task", "status": "open", "tags": ["home", "errands", "  Garden  ", "phone call", "repairs"]},
+            {"id": "2", "title": "B", "kind": "task", "status": "open", "tags": ["Errands", "errands", "ERRANDS", "", "   "]},
+            {"id": "3", "title": "C", "kind": "task", "status": "open", "tags": ["fine", "bad\ttab", "bell\u{7}", "x".repeat(41), long]},
+            {"id": "4", "title": "D", "kind": "task", "status": "open", "tags": ["<b onload=x>Hi</b>", 5, null, {"a": 1}]},
+            {"id": "5", "title": "E", "kind": "task", "status": "open"},
+            {"id": "6", "title": "F", "kind": "task", "status": "open", "tags": "home"}
+        ]});
+        let rows = open_tasks(&body, Filters::default());
+        // Without a filter the `home` tag is kept like any other, and the cap is three.
+        assert_eq!(tag_names(&rows[0]), ["Home", "Errands", "Garden"]);
+        // With the filtered tag dropped (case and outer spaces ignored) the next ones fill the three.
+        let tags = shape_tags(body["tasks"][0].get("tags"), Some(" HOME "));
+        assert_eq!(tags.iter().map(|t| t.label.as_str()).collect::<Vec<_>>(), ["Errands", "Garden", "Phone Call"]);
+        // Duplicates after lower-casing and empty tags go; the first spelling wins.
+        assert_eq!(tag_names(&rows[1]), ["Errands"]);
+        // A control character or more than 40 characters drops that tag only; exactly 40 stays.
+        let forty = format!("Y{}", "y".repeat(39));
+        assert_eq!(tag_names(&rows[2]), ["Fine", forty.as_str()]);
+        // Hostile text is kept as plain text, untouched when it has a capital letter; non-strings are ignored.
+        assert_eq!(tag_names(&rows[3]), ["<b onload=x>Hi</b>"]);
+        assert!(rows[4].tags.is_empty() && rows[5].tags.is_empty());
+    }
+
+    #[test]
+    fn tag_labels_follow_the_rule() {
+        let table = [
+            ("errands", "Errands"),
+            ("phone call", "Phone Call"),
+            ("Phone call", "Phone call"),
+            ("iPhone", "iPhone"),
+            ("AE", "AE"),
+            ("ae", "AE"),
+            ("hc", "HC"),
+            ("tv", "TV"),
+            ("dbx", "DBX"),
+            ("msft", "MSFT"),
+            ("power bi", "Power BI"),
+            ("qa gate", "QA Gate"),
+            ("eos", "Eos"),
+            // Common two letter words keep ordinary title case; other two letter words are acronyms.
+            ("to do", "To Do"),
+            ("my to do", "My To Do"),
+            ("to-do/later", "To-Do/Later"),
+            ("go live", "Go Live"),
+            ("up next", "Up Next"),
+            ("ok", "Ok"),
+            ("us", "Us"),
+            ("is it", "Is It"),
+            ("r&d", "R&D"),
+            ("q&a", "Q&A"),
+            ("xy", "XY"),
+            ("ux", "UX"),
+            ("gym", "Gym"),
+            ("rhythm", "Rhythm"),
+            ("x", "X"),
+            ("a", "A"),
+            ("plant-2", "Plant-2"),
+            ("home/garden", "Home/Garden"),
+            ("front-door repairs", "Front-Door Repairs"),
+            ("\u{e9}cole", "\u{c9}cole"),
+        ];
+        for (raw, want) in table {
+            assert_eq!(tag_label(raw), want, "{raw}");
+        }
+    }
+
+    #[test]
+    fn tag_list_parse_keeps_only_safe_names() {
+        let mut many: Vec<Value> = (0..250).map(|i| json!({"name": format!("t{i}"), "icon": "tag", "color": "teal"})).collect();
+        let body = json!({"tags": [
+            {"name": "Errands", "icon": "shopping-cart", "color": "orange"},
+            {"name": "garden", "icon": "Plant 2", "color": "chartreuse"},
+            {"name": "  Phone Call ", "icon": null, "color": "blue"},
+            {"name": "", "icon": "tag", "color": "red"},
+            {"name": "bad\u{7}", "icon": "tag"},
+            {"icon": "tag"},
+            "text",
+            5,
+            {"name": "iconless", "icon": "<svg onload=x>", "color": "<b>"},
+            {"name": "long", "icon": "a".repeat(65), "color": "slate"}
+        ]});
+        let map = parse_tag_meta(&body);
+        assert_eq!(map.get("errands"), Some(&TagMeta { icon: Some("shopping-cart".into()), color: Some("orange".into()) }));
+        assert_eq!(map.get("garden"), Some(&TagMeta { icon: None, color: None }), "a bad icon and a bad colour are dropped, the entry stays");
+        assert_eq!(map.get("phone call"), Some(&TagMeta { icon: None, color: Some("blue".into()) }));
+        assert_eq!(map.get("iconless"), Some(&TagMeta { icon: None, color: None }));
+        assert_eq!(map.get("long"), Some(&TagMeta { icon: None, color: Some("slate".into()) }));
+        assert_eq!(map.len(), 5, "empty, control-character and nameless entries and non-objects are dropped");
+        for c in TAG_COLORS {
+            assert!(parse_tag_meta(&json!({"tags": [{"name": "k", "color": c}]})).get("k").is_some_and(|m| m.color.as_deref() == Some(c)));
+        }
+        many.insert(0, json!({"name": "first"}));
+        let capped = parse_tag_meta(&json!({"tags": many}));
+        assert_eq!(capped.len(), MAX_TAG_META);
+        assert!(capped.contains_key("first") && capped.contains_key("t198") && !capped.contains_key("t199"));
+        assert!(parse_tag_meta(&json!([1, 2])).is_empty());
+        assert!(parse_tag_meta(&json!({"tags": "x"})).is_empty());
+        assert!(parse_tag_meta(&Value::Null).is_empty());
+    }
+
+    #[test]
+    fn row_tags_join_the_tag_list_by_lower_case_name() {
+        let body = json!({"tasks": [{"id": "1", "title": "A", "kind": "task", "status": "open", "tags": ["Errands", "unlisted", "PHONE call"]}]});
+        let mut rows = open_tasks(&body, Filters::default());
+        let meta = parse_tag_meta(&json!({"tags": [
+            {"name": "errands", "icon": "shopping-cart", "color": "orange"},
+            {"name": "phone call", "icon": "phone", "color": "blue"}
+        ]}));
+        join_tag_meta(&mut rows, &meta);
+        let t = &rows[0].tags;
+        assert_eq!((t[0].icon.as_deref(), t[0].color.as_deref()), (Some("shopping-cart"), Some("orange")));
+        assert_eq!((t[1].icon.as_deref(), t[1].color.as_deref()), (None, None), "a tag the list does not know has neither");
+        assert_eq!((t[2].icon.as_deref(), t[2].color.as_deref(), t[2].label.as_str()), (Some("phone"), Some("blue"), "PHONE call"));
+        // What the page receives: label, icon and colour only.
+        let sent = serde_json::to_value(&rows[0]).unwrap();
+        assert_eq!(sent["tags"][0], json!({"label": "Errands", "icon": "shopping-cart", "color": "orange"}));
+    }
+
+    #[test]
+    fn a_failed_tag_list_read_still_returns_the_rows() {
+        let body = json!({"tasks": [{"id": "1", "title": "A", "kind": "task", "status": "open", "tags": ["errands"]}]});
+        let mut got = summarize_n(&body, Filters::default(), NOW, &us_east, 3);
+        // A failed read joins nothing: the tag stays with no icon and no colour.
+        join_tag_meta(&mut got.next, &TagMetaMap::new());
+        assert_eq!(ids(&got), ["1"]);
+        assert_eq!(got.next[0].tags[0], TaskTag { label: "Errands".into(), icon: None, color: None, key: "errands".into() });
+        // The read is skipped when no row has tags, so a bare list never waits on it.
+        assert!(tag_meta_for("https://example.invalid", &[shown_task("1")]).is_empty());
+    }
+
+    #[test]
+    fn the_tag_list_is_read_again_after_ten_minutes_and_not_right_after_a_failure() {
+        assert!(tag_meta_due(1000, None, None));
+        assert!(!tag_meta_due(1000 + 599, Some(1000), None));
+        assert!(tag_meta_due(1000 + 600, Some(1000), None));
+        assert!(!tag_meta_due(1030, None, Some(1000)), "a failure waits a minute");
+        assert!(tag_meta_due(1060, None, Some(1000)));
+        assert!(!tag_meta_due(1000 + 700, Some(1000), Some(1000 + 690)), "a recent failure holds back even a stale copy");
+    }
+
+    fn due_body() -> Value {
+        json!({"tasks": [
+            {"id": "later", "title": "L", "kind": "task", "status": "open", "tags": ["home"], "due_at": "2026-03-09T04:00:00Z"},
+            {"id": "none", "title": "N", "kind": "task", "status": "open", "tags": ["home"]},
+            {"id": "today-last", "title": "T", "kind": "task", "status": "open", "tags": ["home"], "due_at": "2026-03-09T03:59:00Z"},
+            {"id": "overdue-timed", "title": "O", "kind": "task", "status": "open", "tags": ["home"], "due_at": "2026-03-08T04:59:00Z"},
+            {"id": "today-first", "title": "F", "kind": "task", "status": "open", "tags": ["work"], "due_at": "2026-03-08T05:00:00Z"},
+            {"id": "all-day-today", "title": "A", "kind": "task", "status": "open", "tags": ["work"], "due_at": "2026-03-08", "due_is_all_day": true},
+            {"id": "all-day-old", "title": "D", "kind": "task", "status": "open", "tags": ["work"], "due_at": "2026-03-07T00:00:00Z", "due_is_all_day": true},
+            {"id": "all-day-next", "title": "X", "kind": "task", "status": "open", "tags": ["work"], "due_at": "2026-03-09", "due_is_all_day": true},
+            {"id": "bare", "title": "B", "kind": "task", "status": "open", "tags": ["work"], "due_at": "2026-03-08"},
+            {"id": "junk", "title": "J", "kind": "task", "status": "open", "tags": ["work"], "due_at": "soon"},
+            {"id": "done", "title": "Z", "kind": "task", "status": "done", "due_at": "2026-03-08T12:00:00Z"}
+        ]})
+    }
+
+    #[test]
+    fn the_last_good_tag_list_serves_for_an_hour_through_failed_reads_then_stops() {
+        let rows = open_tasks(&json!({"tasks": [{"id": "1", "title": "A", "kind": "task", "status": "open", "tags": ["errands"]}]}), Filters::default());
+        let plain = [shown_task("1")];
+        let cache: Mutex<Option<TagCache>> = Mutex::new(None);
+        let calls = std::cell::Cell::new(0);
+        let good = json!({"tags": [{"name": "errands", "icon": "shopping-cart", "color": "orange"}]});
+        let ok = || {
+            calls.set(calls.get() + 1);
+            Ok(good.clone())
+        };
+        let err = || {
+            calls.set(calls.get() + 1);
+            Err("The service answered 500".to_string())
+        };
+        let has = |m: &TagMetaMap| m.get("errands").is_some_and(|t| t.icon.as_deref() == Some("shopping-cart"));
+        // A good read.
+        assert!(has(&tag_meta_with(&cache, 0, &rows, &ok)));
+        assert_eq!(calls.get(), 1);
+        // Within ten minutes nothing is read again.
+        assert!(has(&tag_meta_with(&cache, 599, &rows, &err)));
+        assert_eq!(calls.get(), 1);
+        // Ten minutes on, the read fails: the old list still serves.
+        assert!(has(&tag_meta_with(&cache, 700, &rows, &err)));
+        assert_eq!(calls.get(), 2);
+        // Within a minute of the failure nothing is tried; a minute on it is tried and fails again.
+        assert!(has(&tag_meta_with(&cache, 759, &rows, &err)));
+        assert_eq!(calls.get(), 2);
+        assert!(has(&tag_meta_with(&cache, 760, &rows, &err)));
+        assert_eq!(calls.get(), 3);
+        // One second short of an hour from the good read, the list still serves; at the hour it stops.
+        assert!(has(&tag_meta_with(&cache, 3599, &rows, &err)));
+        let expired = tag_meta_with(&cache, 3600, &rows, &err);
+        assert!(expired.is_empty(), "after an hour of failures the rows carry no icon and no colour");
+        let mut joined = rows.clone();
+        join_tag_meta(&mut joined, &expired);
+        assert_eq!((joined[0].tags[0].icon.clone(), joined[0].tags[0].color.clone()), (None, None));
+        // It stays empty while reads keep failing, and a read that works brings the list back.
+        assert!(tag_meta_with(&cache, 3700, &rows, &err).is_empty());
+        assert!(has(&tag_meta_with(&cache, 3800, &rows, &ok)));
+        // Rows with no tags never read it, whatever the cache holds.
+        let before = calls.get();
+        assert!(tag_meta_with(&cache, 99_999, &plain, &err).is_empty());
+        assert_eq!(calls.get(), before);
+    }
+
+    #[test]
+    fn invisible_format_characters_are_dropped_like_control_characters() {
+        let tags = json!(["fine", "a\u{200e}b", "a\u{200f}b", "a\u{202a}b", "a\u{202e}b", "a\u{2066}b", "a\u{2069}b", "a\u{200b}b", "a\u{feff}b", "a\u{ad}b", "ok\u{e9}"]);
+        let got = shape_tags(Some(&tags), None);
+        assert_eq!(got.iter().map(|t| t.label.as_str()).collect::<Vec<_>>(), ["Fine", "Ok\u{e9}"]);
+        let meta = parse_tag_meta(&json!({"tags": [{"name": "a\u{202e}b", "color": "red"}, {"name": "plain", "color": "red"}]}));
+        assert_eq!(meta.len(), 1);
+        assert!(meta.contains_key("plain"));
+    }
+
+    #[test]
+    fn due_today_keeps_today_and_overdue_with_overdue_first() {
+        // Now is 2026-03-08 14:00 local (UTC-4 after the clock change); the local day is 05:00Z to 04:00Z.
+        let got = summarize_due(&due_body(), Filters::default(), NOW, &us_east, 60);
+        assert_eq!(ids(&got), ["overdue-timed", "all-day-old", "today-last", "today-first", "all-day-today", "bare"]);
+        assert_eq!((got.due_today, got.remaining), (Some(6), 0));
+        // A task with no due date, an unreadable one, tomorrow's and a done one never show.
+        for id in ["later", "none", "junk", "done", "all-day-next"] {
+            assert!(!ids(&got).contains(&id), "{id}");
+        }
+        // The filters still apply: only `work` tasks, or not `home`.
+        let work = summarize_due(&due_body(), Filters { tag: Some("work"), ..Filters::default() }, NOW, &us_east, 60);
+        assert_eq!(ids(&work), ["all-day-old", "today-first", "all-day-today", "bare"]);
+        let not_home = summarize_due(&due_body(), Filters { not_tag: Some("home"), ..Filters::default() }, NOW, &us_east, 60);
+        assert_eq!(ids(&not_home), ids(&work));
+    }
+
+    #[test]
+    fn due_today_follows_the_local_day_in_a_positive_offset() {
+        let ahead = |_: i64| 10 * 3600;
+        // NOW is 04:00 on 2026-03-09 local; that day is 2026-03-08T14:00Z to 2026-03-09T14:00Z.
+        let body = json!({"tasks": [
+            {"id": "late", "title": "A", "kind": "task", "status": "open", "due_at": "2026-03-09T13:59:00Z"},
+            {"id": "after", "title": "B", "kind": "task", "status": "open", "due_at": "2026-03-09T14:00:00Z"},
+            {"id": "yesterday", "title": "C", "kind": "task", "status": "open", "due_at": "2026-03-08T13:59:00Z"},
+            {"id": "date", "title": "D", "kind": "task", "status": "open", "due_at": "2026-03-09", "due_is_all_day": true},
+            {"id": "date-old", "title": "E", "kind": "task", "status": "open", "due_at": "2026-03-08", "due_is_all_day": true}
+        ]});
+        let got = summarize_due(&body, Filters::default(), NOW, &ahead, 60);
+        assert_eq!(ids(&got), ["yesterday", "date-old", "late", "date"]);
+        // The same body against UTC-4: the all-day 03-09 is tomorrow there.
+        let behind = summarize_due(&body, Filters::default(), NOW, &us_east, 60);
+        assert_eq!(ids(&behind), ["yesterday", "date-old"]);
+    }
+
+    #[test]
+    fn due_today_limit_counts_and_remembers_up_to_sixty() {
+        assert_eq!(task_limit(Some(500), true), MAX_DUE_LIMIT);
+        assert_eq!(task_limit(Some(60), true), 60);
+        assert_eq!(task_limit(Some(60), false), MAX_TASK_LIMIT);
+        assert_eq!(task_limit(None, true), 3);
+        assert_eq!(check_due(None), Ok(false));
+        assert_eq!(check_due(Some("today".into())), Ok(true));
+        assert!(check_due(Some("tomorrow".into())).is_err());
+        assert!(check_due(Some("".into())).is_err());
+        let rows: Vec<Value> = (0..70)
+            .map(|i| json!({"id": format!("r{i}"), "title": "R", "kind": "task", "status": "open", "due_at": "2026-03-08T12:00:00Z"}))
+            .collect();
+        let got = summarize_due(&json!({"tasks": rows}), Filters::default(), NOW, &us_east, 60);
+        assert_eq!((got.next.len(), got.remaining, got.due_today), (60, 10, Some(70)));
+        // Every row the page can tick can be opened and completed: all sixty ids are remembered.
+        let mut reads = ShownReads::new();
+        remember_in_n(&mut reads, "due", &got.next, 60, 0);
+        assert!(shown_in(&reads, "r59") && !shown_in(&reads, "r60"));
+        // The plain read still reports no due count.
+        assert_eq!(summarize_n(&due_body(), Filters::default(), NOW, &us_east, 3).due_today, None);
+    }
+
+    #[test]
+    fn a_short_read_does_not_make_the_rows_of_the_long_read_unknown() {
+        // The 60 row list is read, then the "open the first task" key reads one row with the same filters.
+        let sixty: Vec<TaskItem> = (0..60).map(|i| shown_task(&format!("row-{i}"))).collect();
+        let mut reads = ShownReads::new();
+        remember_in_n(&mut reads, "work-due", &sixty, 60, 1000);
+        remember_in_n(&mut reads, "work-due", &sixty[..1], 1, 1100);
+        // Row 12 can still be opened (the check Rust makes before it opens one), and ticking needs only a good id.
+        assert_eq!(check_open_task("wall2", "row-11", &reads), Ok(()));
+        assert!(shown_in(&reads, "row-59"));
+        assert_eq!(reads.len(), 1, "the same kind of read keeps one entry");
+        assert_eq!(reads[0].ids.len(), 60, "the union holds each id once");
+        // The union keeps the long read's limit and time, so a one row read cannot extend it.
+        assert_eq!((reads[0].limit, reads[0].at), (60, 1000));
+        // A newer id from the short read is in front and also openable.
+        let newer = [shown_task("row-new")];
+        remember_in_n(&mut reads, "work-due", &newer, 1, 1200);
+        assert!(shown_in(&reads, "row-new") && shown_in(&reads, "row-11"));
+        assert_eq!(reads[0].ids[0], "row-new");
+        // Past the window a short read replaces, as before: stale rows are not kept for ever.
+        remember_in_n(&mut reads, "work-due", &sixty[..1], 1, 1000 + SHOWN_FRESH_SECS + 1);
+        assert!(shown_in(&reads, "row-0") && !shown_in(&reads, "row-11"));
+        // The next full read replaces the union at once and sets the limit again.
+        remember_in_n(&mut reads, "work-due", &sixty[10..20], 60, 2000);
+        assert!(shown_in(&reads, "row-12") && !shown_in(&reads, "row-0"));
+        assert_eq!(reads[0].limit, 60);
+        // A different kind of read is never merged in.
+        remember_in_n(&mut reads, "other", &sixty[..1], 1, 2001);
+        assert_eq!(reads.len(), 2);
     }
 
     #[test]
@@ -1238,7 +1899,7 @@ mod tests {
     #[test]
     fn summary_of_a_missing_body_is_empty() {
         let got = summarize(&Value::Null, Filters::default(), NOW, &us_east);
-        assert_eq!(got, TasksSummary { next: vec![], remaining: 0, due_tomorrow: DueTomorrow { count: 0, est_minutes: 0 } });
+        assert_eq!(got, TasksSummary { next: vec![], remaining: 0, due_tomorrow: DueTomorrow { count: 0, est_minutes: 0 }, due_today: None });
     }
 
     #[test]
