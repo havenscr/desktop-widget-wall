@@ -15,8 +15,10 @@ export interface TasksState {
   hidden: ReadonlySet<string>;
   /** Time of the last good list, or null. */
   lastOk: number | null;
-  /** Open tasks after the three shown (summary reads only), or null. */
+  /** Open tasks after the rows shown (summary reads only), or null. */
   remaining: number | null;
+  /** A `due: 'today'` read found nothing due, so these rows are the next three tasks instead. */
+  nextUp: boolean;
   now: number;
   complete: (id: string) => void;
 }
@@ -25,7 +27,15 @@ export interface TasksState {
 export interface TasksQuery {
   tag?: string;
   notTag?: string;
+  /**
+   * `today`: every task due today or overdue (up to `DUE_LIMIT`), overdue first. When none is
+   * due, the hook reads the next three instead (the same filters, no `due`) and sets `nextUp`.
+   */
+  due?: 'today';
 }
+
+/** Rows a due-today read asks for: Rust allows up to 60 with the filter. */
+export const DUE_LIMIT = 60;
 
 interface SummaryAnswer {
   next?: TaskItem[];
@@ -40,8 +50,9 @@ interface SummaryAnswer {
  */
 export function useTasks(query?: TasksQuery): TasksState {
   const visible = useVisible();
-  const queryKey = query ? JSON.stringify({ tag: query.tag, notTag: query.notTag }) : null;
+  const queryKey = query ? JSON.stringify({ tag: query.tag, notTag: query.notTag, due: query.due }) : null;
   const [remaining, setRemaining] = useState<number | null>(null);
+  const [nextUp, setNextUp] = useState(false);
   const [status, setStatus] = useState<TasksStatus>('loading');
   const [tasks, setTasks] = useState<TaskItem[]>([]);
   const [marks, setMarks] = useState<Record<string, RowMark>>({});
@@ -74,14 +85,19 @@ export function useTasks(query?: TasksQuery): TasksState {
     try {
       let list: unknown;
       let more: number | null = null;
+      let fallback = false;
       if (queryKey) {
         const args = JSON.parse(queryKey) as TasksQuery;
-        const r = await invoke<SummaryAnswer>('wall2_tasks_summary', {
-          ...(args.tag ? { tag: args.tag } : {}),
-          ...(args.notTag ? { notTag: args.notTag } : {}),
-        });
+        const filters = { ...(args.tag ? { tag: args.tag } : {}), ...(args.notTag ? { notTag: args.notTag } : {}) };
+        let r = await invoke<SummaryAnswer>('wall2_tasks_summary', args.due ? { ...filters, due: args.due, limit: DUE_LIMIT } : filters);
         // A summary without a `next` list is a bad answer, not an empty one.
         if (!Array.isArray(r?.next)) throw new Error('bad answer');
+        if (args.due && r.next.length === 0) {
+          // Nothing due today: show the next three, as the card always has.
+          r = await invoke<SummaryAnswer>('wall2_tasks_summary', filters);
+          if (!Array.isArray(r?.next)) throw new Error('bad answer');
+          fallback = true;
+        }
         list = r.next;
         more = typeof r?.remaining === 'number' && r.remaining > 0 ? r.remaining : 0;
       } else {
@@ -92,6 +108,7 @@ export function useTasks(query?: TasksQuery): TasksState {
       if (!mounted.current) return;
       const fresh = list as TaskItem[];
       setRemaining(more);
+      setNextUp(fallback);
       // A list fetched after a completed row was saved and faded decides that row from now on:
       // gone, or open again (reopened, or a recurring task that keeps its id).
       const settled: string[] = [];
@@ -207,5 +224,5 @@ export function useTasks(query?: TasksQuery): TasksState {
     [refresh],
   );
 
-  return { status, tasks, marks, hidden, lastOk, remaining, now, complete };
+  return { status, tasks, marks, hidden, lastOk, remaining, nextUp, now, complete };
 }
