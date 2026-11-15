@@ -93,7 +93,7 @@ export function PlayerFrame({ item, title, shown = true }: { item: WatchRef; tit
 
   // Posts go only to the loaded frame's own window and only to the exact embed origin, never `*`.
   const post = (msg: string): boolean => {
-    if (!loadedRef.current) return false;
+    if (!loadedRef.current || !target) return false;
     const win = ref.current?.contentWindow;
     if (!win) return false;
     try {

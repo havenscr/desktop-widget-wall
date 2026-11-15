@@ -42,8 +42,8 @@ interface QueueSnapshot {
   pos: number;
 }
 
-const KIND_WORDS: Record<WatchKind, string> = { video: 'YouTube video', live: 'YouTube live stream', playlist: 'YouTube playlist', twitch: 'Twitch stream' };
-const SHORT_WORDS: Record<WatchKind, string> = { video: 'Video', live: 'Live stream', playlist: 'Playlist', twitch: 'Twitch stream' };
+const KIND_WORDS: Record<WatchKind, string> = { video: 'YouTube video', live: 'YouTube live stream', playlist: 'YouTube playlist', twitch: 'Twitch stream', own: 'Your playlist' };
+const SHORT_WORDS: Record<WatchKind, string> = { video: 'Video', live: 'Live stream', playlist: 'Playlist', twitch: 'Twitch stream', own: 'Your playlist' };
 
 /**
  * What Home shows for the store's state; null when nothing plays or the video has ended (nothing left to control).
