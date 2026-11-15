@@ -8,8 +8,13 @@
   height: 462px;
 }
 
+/* The library's header has no hint beside the switch (the chosen picture has none). */
+.sp-card.yt:has(.yt-lib) .sp-hint {
+  display: none;
+}
+
 .yt-lib {
-  --yt-sb: 8px;
+  --yt-sb: 10px;
   flex: 1;
   min-height: 0;
   min-width: 0;
@@ -103,16 +108,16 @@
   color: var(--dim);
 }
 
-/* Rows: number, title, channel, length. 52 px, not buttons: no pointer, no play mark. */
+/* Rows: number, title, channel, length. 42 px as drawn, not buttons: no pointer, no play mark. */
 .yt-list {
   list-style: none;
   margin: 0;
   padding: 0;
 }
 .yt-row {
-  height: 52px;
+  height: 42px;
   display: grid;
-  grid-template-columns: 34px minmax(0, 1.4fr) minmax(0, 1fr) auto;
+  grid-template-columns: 34px minmax(0, 1.4fr) minmax(0, 1fr) 130px;
   align-items: center;
   gap: 12px;
   padding: 0 8px;
@@ -215,7 +220,7 @@
   width: 40%;
 }
 .yt-skel-row {
-  height: 52px;
+  height: 42px;
   display: grid;
   grid-template-columns: 34px minmax(0, 1.4fr) minmax(0, 1fr) 52px;
   align-items: center;

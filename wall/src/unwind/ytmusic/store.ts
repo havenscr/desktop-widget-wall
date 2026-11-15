@@ -46,6 +46,14 @@ const initial = (): LibraryState => ({ tab: 'playlists', playlists: blank(), lik
 
 export const useYtLibrary = create<LibraryState>(() => initial());
 
+/**
+ * Answers to searches already run, by lower-cased words, so the same words again make no call at all
+ * (Rust would answer from its own memory for free; this also skips the round trip). Emptied by a reset.
+ */
+const memo = new Map<string, { at: number; page: YtPage<YtVideo> }>();
+const MEMO_MS = 60 * 60 * 1000;
+const MEMO_MAX = 30;
+
 /** Bumped by a reset: an answer that arrives after one is dropped. */
 let epoch = 0;
 
@@ -129,10 +137,18 @@ export async function runSearch(text: string): Promise<void> {
   const words = searchWords(text);
   if (!words) return;
   const mine = epoch;
+  const key = words.toLowerCase();
+  const seen = memo.get(key);
+  if (seen && Date.now() - seen.at < MEMO_MS) {
+    useYtLibrary.setState({ opened: null, songs: blank(), query: words, found: { items: seen.page.items, next: null, pages: 1, loading: false, loaded: true, problem: null, readAt: seen.at } });
+    return;
+  }
   useYtLibrary.setState({ opened: null, songs: blank(), query: words, found: { ...blank<YtVideo>(), loading: true } });
   try {
     const page = shaped(await youtube.search(words));
     if (mine !== epoch || useYtLibrary.getState().query !== words) return;
+    memo.set(key, { at: Date.now(), page });
+    if (memo.size > MEMO_MAX) memo.delete(memo.keys().next().value as string);
     useYtLibrary.setState({ found: { items: page.items, next: null, pages: 1, loading: false, loaded: true, problem: null, readAt: Date.now() } });
   } catch (e) {
     if (mine !== epoch || useYtLibrary.getState().query !== words) return;
@@ -156,5 +172,6 @@ export function searchesBack(): void {
 /** Empty everything: signed out, a new client, or a status that is not signed in. */
 export function resetLibrary(): void {
   epoch += 1;
+  memo.clear();
   useYtLibrary.setState(initial());
 }
