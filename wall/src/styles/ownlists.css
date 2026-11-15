@@ -107,6 +107,11 @@
 }
 
 /* ---- the round add button of the play row, and its menu ---- */
+.w-ctl .rd.w-addpl {
+  /* The row stays full with this button in it: its 20 px keep the room a wider "YouTube" label needs on another machine, so
+     the label gives way (never the gear) and the row never grows. The gear is flush right either way. */
+  margin-right: 20px;
+}
 .w-ctl .rd.w-addpl.lit,
 .w-ctl .rd.w-addpl:focus-visible {
   color: var(--cyan);
