@@ -224,7 +224,7 @@ describe('the drive-in', () => {
   it('his seat keeps 22 px clear of a control standing at his height, and the answer is measured once, not per frame', () => {
     reduced(true);
     const bar = document.createElement('div');
-    bar.className = 'w-lookbar';
+    bar.className = 'w-ctl';
     document.body.appendChild(bar);
     const spy = vi.fn();
     const at = (left: number, right: number) => {
@@ -267,7 +267,7 @@ describe('the drive-in', () => {
 
   it('without reduced motion the layout is read when the screen or layout changes, never every frame (no seat)', () => {
     const bar = document.createElement('div');
-    bar.className = 'w-lookbar';
+    bar.className = 'w-ctl';
     document.body.appendChild(bar);
     const spy = vi.fn();
     bar.getBoundingClientRect = () => {
@@ -291,6 +291,49 @@ describe('the drive-in', () => {
       expect(spy.mock.calls.length).toBeLessThan(reads + 6);
     } finally {
       bar.remove();
+    }
+  });
+
+  it('only a change inside the shell makes him measure his seat again: a node added to the page beside it does not', async () => {
+    const ctl = document.createElement('div');
+    ctl.className = 'w-ctl';
+    const spy = vi.fn();
+    ctl.getBoundingClientRect = () => {
+      spy();
+      return { left: 500, right: 1200, top: 0, bottom: 2000, width: 700, height: 2000, x: 500, y: 0, toJSON: () => ({}) };
+    };
+    const outside = document.createElement('div');
+    try {
+      const { container } = render(
+        <div className="stage">
+          <Watt now={day} />
+          <div className="shell" />
+        </div>,
+      );
+      container.querySelector('.shell')!.appendChild(ctl);
+      // Let the page's own observer report that arrival before the count starts.
+      await act(async () => {});
+      runFor(1.5);
+      play(A);
+      runFor(5);
+      expect(showOf(container)).toBe('seated');
+      const reads = spy.mock.calls.length;
+      expect(reads).toBeGreaterThan(0);
+      // A tooltip, a menu or a drawer lands in the page outside the shell: no new read of the controls.
+      await act(async () => {
+        document.body.appendChild(outside);
+        container.querySelector('.stage')!.appendChild(document.createElement('div'));
+      });
+      runFor(5);
+      expect(spy.mock.calls.length).toBe(reads);
+      // A control appearing inside the shell does.
+      await act(async () => {
+        container.querySelector('.shell')!.appendChild(document.createElement('div'));
+      });
+      runFor(5);
+      expect(spy.mock.calls.length).toBeGreaterThan(reads);
+    } finally {
+      outside.remove();
     }
   });
 
