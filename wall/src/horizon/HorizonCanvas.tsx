@@ -37,7 +37,7 @@ import { publishCamera } from './signal';
 import { frontHost, moonFor, useSkyClaim, useSkyStore, type SkyBox } from './sky';
 import { drawVeil, veilStrength } from './veil';
 import { drawHorizon, type HorizonGrid, type HorizonOptions } from './index';
-import { lineSettings } from './linesSettings';
+import { lineSettings, useLinesStore } from './linesSettings';
 import { parseLineProbe } from './lineProbe';
 import {
   FLAT_REST_OPACITY,
@@ -213,7 +213,9 @@ export function HorizonCanvas({ now = Date.now }: { now?: () => number }) {
     let T = 0;
     let last = 0;
     let raf = 0;
-    let drawDt = 1 / 30;
+    // The seconds the moving parts of a new type advance in this paint: the frame's own step, and nothing for a
+    // repaint (a resize, a visibility change, a changed setting), which only draws what is already there.
+    let drawDt = 0;
     const measureCost = import.meta.env.DEV && new URLSearchParams(window.location.search).has('linecost');
     let costFrames = 0;
     let costMs = 0;
@@ -433,6 +435,7 @@ export function HorizonCanvas({ now = Date.now }: { now?: () => number }) {
       grid.current = stepGridPulse(pulse.current, dt, input);
       if (glide.current.cinematic && glide.current.progress >= 0.5) cinematicDay.current = localDay(nowRef.current());
       paint();
+      drawDt = 0;
     };
 
     // Reduced motion shows the cameras without a glide, so settle it before the first still paint;
@@ -442,8 +445,11 @@ export function HorizonCanvas({ now = Date.now }: { now?: () => number }) {
     paint();
     window.addEventListener('resize', paint);
     let timer = 0;
+    let offLines = () => {};
     if (still) {
       if (!review) timer = window.setInterval(paint, REDRAW_MS);
+      // A changed line type or colour is drawn at once, not at the next minute's redraw (the loop does it on its next frame).
+      offLines = useLinesStore.subscribe(paint);
       // Also in review mode: a frame skipped while hidden is drawn when the page shows.
       document.addEventListener('visibilitychange', paint);
     } else {
@@ -453,6 +459,7 @@ export function HorizonCanvas({ now = Date.now }: { now?: () => number }) {
       window.removeEventListener('resize', paint);
       document.removeEventListener('visibilitychange', paint);
       window.clearInterval(timer);
+      offLines();
       cancelAnimationFrame(raf);
     };
   }, [reduced, review, zen, demo]);
