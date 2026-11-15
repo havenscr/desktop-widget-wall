@@ -51,6 +51,19 @@ export function setBackend(b: KeyLightBackend): void {
   backend = b;
 }
 
+/** Drops the follow-up read a quiet answer asked for: a newer write brings its own read back, and with nothing showing the lights there is no one to read for. */
+export function cancelQuietRead(): void {
+  clearTimeout(quietTimer);
+  quietTimer = undefined;
+}
+
+let pollUsers = 0;
+/** The polling hook's users: when the last one goes, a waiting follow-up read is dropped with it. */
+export function pollUserChange(by: 1 | -1): void {
+  pollUsers = Math.max(0, pollUsers + by);
+  if (pollUsers === 0) cancelQuietRead();
+}
+
 const fresh = (): Snapshot => ({ status: null, left: null, right: null });
 const sidesOf = (target: Target): readonly Side[] => (target === 'both' ? SIDES : [target]);
 const bump = (counts: Record<Side, number>, sides: readonly Side[], by: number): Record<Side, number> => {
@@ -116,6 +129,8 @@ export const useKeyLights = create<KeyLightState>((set, get) => {
         waiting.delete(target);
         Object.assign(asked, patch);
         const token = { left: 0, right: 0 };
+        // This write brings its own read back; one that an earlier quiet answer asked for would land in its middle.
+        cancelQuietRead();
         for (const side of sides) {
           token[side] = ++writeGen[side];
           // Reads that began before this write cannot know its result.
@@ -217,8 +232,8 @@ usePlaceStore.subscribe((s, prev) => {
 /** Tests only: back to nothing known. */
 export function resetKeyLights(): void {
   clearTimeout(noteTimer);
-  clearTimeout(quietTimer);
-  quietTimer = undefined;
+  cancelQuietRead();
+  pollUsers = 0;
   waiting.clear();
   running.clear();
   readGen.left = readGen.right = writeGen.left = writeGen.right = 0;
