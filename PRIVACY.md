@@ -29,10 +29,14 @@ nothing else.
 ## Where it is kept
 
 - **The lists** stay in the app's memory. They are gone when you sign out or close the app.
-- **A video or playlist you save to the wall's own list** is kept in the app's local storage
-  on this PC, with its title, channel and length, until you remove it.
-- **The sign-in** (Google's refresh token, and your client id and client secret) is kept in
-  Windows Credential Manager. The short-lived access token stays in memory only.
+- **An item you add to the wall's own watch list** is kept in the app's local storage on this
+  PC until you remove it: its kind, its id and the name shown for it (the video's title unless
+  you rename it). That list is built from links you paste. Nothing is copied into it from your
+  YouTube library on its own.
+- **The sign-in** (Google's refresh token) is kept in Windows Credential Manager. Your client
+  id and client secret are kept there too when you enter them in the app. If you supply them
+  as a `youtube.json` file in the app's config folder instead, they stay in that file, which
+  you made and the app only reads. The short-lived access token stays in memory only.
 - **The log** `wall2-youtube.log` holds fixed words, an HTTP status and a duration. It never
   holds an id, a token, a title, a channel or the words of a search.
 
@@ -45,7 +49,8 @@ YouTube's own picture host and player for the small pictures and for playback.
 ## Taking the access away
 
 - In the app: Tools, YouTube, Sign out. The app tells Google to end the grant and deletes the
-  stored sign-in.
+  stored sign-in. If you are offline, the stored sign-in is still deleted, and you can end the
+  grant at Google as below.
 - At Google: remove the app at <https://myaccount.google.com/permissions>.
 - Uninstalling the app does not sign out for you. Sign out first, or remove the app at Google.
 
