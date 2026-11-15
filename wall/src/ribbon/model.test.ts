@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest';
-import { MIN_CHIP_PX, allDayChips, allDayText, allDayWidth, chipLayout, chips, focusBars, isAllDay, isLate, needleTip, hourLabels, hourText, needle, RIBBON_WIDTH, RX, shortTime, skyGradient, sunLabels, ticks, wallHour } from './model';
+import { MIN_CHIP_PX, MORE_GAP, MORE_MIN_PX, allDayChips, allDayText, allDayWidth, chipLayout, chips, focusBars, isAllDay, isLate, needleTip, hourLabels, hourText, needle, RIBBON_WIDTH, RX, shortTime, skyGradient, sunLabels, ticks, wallHour } from './model';
 import { sunTimes } from './sun';
 import { useFixedClock, usePacificTime } from './testZone';
 
@@ -278,6 +278,26 @@ it('a short group of four puts its "+N" just after it, narrower if the next meet
   expect(more[0].items.map((c) => c.key)).toEqual(['c', 'd']);
   expect(more[0].x).toBeGreaterThanOrEqual(RX(9) + MIN_CHIP_PX);
   expect(more[0].x + more[0].width).toBeLessThanOrEqual(RX(9.5));
+  overlapFree(shown, more);
+});
+
+it('the "+N" after a short group takes the room left, not a fixed 24 px that runs into the next group', () => {
+  const now = t('07:00');
+  const all = chips(
+    [
+      ...['a', 'b', 'c', 'd'].map((k) => ({ key: k, title: `Quick ${k}`, start: iso('09:00'), end: iso('09:10') })),
+      { key: 'e', title: 'Next', start: iso('09:24'), end: iso('10:00') },
+    ],
+    now,
+  );
+  const { shown, more } = chipLayout(all);
+  const nextX = shown.find((c) => c.key === 'e')!.x;
+  expect(more).toHaveLength(1);
+  const room = nextX - MORE_GAP - more[0].x;
+  // A gap of roughly 30 px before the next group: the old floor of 24 px was wider than the 22 px of room.
+  expect(room).toBeGreaterThanOrEqual(MORE_MIN_PX);
+  expect(room).toBeLessThan(24);
+  expect(more[0].x + more[0].width).toBeLessThanOrEqual(nextX - MORE_GAP);
   overlapFree(shown, more);
 });
 

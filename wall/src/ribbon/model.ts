@@ -236,10 +236,10 @@ export function allDayWidth(n: number): number {
 export const CHIP_LANES = 3;
 /** Width of a "+N" chip. */
 export const MORE_CHIP_PX = 44;
-/** The narrowest a "+N" chip gets when it must squeeze in after its group. */
-export const MORE_MIN_PX = 24;
+/** The narrowest a "+N" chip ever gets (room for "+9"), even when the room after its group is smaller. */
+export const MORE_MIN_PX = 16;
 /** Gap between a "+N" chip and the chips beside it. */
-const MORE_GAP = 4;
+export const MORE_GAP = 4;
 /** Gap between a narrow chip and the title written beside it, and before the next chip. */
 const BESIDE_GAP = 6;
 /** A title beside its chip needs at least this much room, else it is in the hover only. */
@@ -336,6 +336,7 @@ export function chipLayout(all: readonly Chip[], allDay = 0): { shown: Chip[]; m
         for (const c of inGroup) if (c.x + c.width > nx - MORE_GAP) c.width = nx - MORE_GAP - c.x;
       } else {
         mx = end + MORE_GAP;
+        // Clamped to the room before the next group; only the absolute floor can take it past that room.
         mw = Math.max(MORE_MIN_PX, Math.min(MORE_CHIP_PX, next - MORE_GAP - mx));
       }
       groupMore.push({ key: `more-${over[0].key}`, x: mx, width: mw, items: [...over] });
