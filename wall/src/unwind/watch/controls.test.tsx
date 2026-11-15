@@ -182,6 +182,33 @@ describe('the wall drives the player', () => {
       resetQueue();
     });
 
+    it('the same video twice in a row: the owner\'s pause after the restart still reaches the player once', async () => {
+      localStorage.clear();
+      resetWatch();
+      resetQueue();
+      useWatchStore.getState().setTab('listen');
+      playAll([song(1), song(1)], false, { list: 'liked' });
+      const r = render(<UnwindView />);
+      await flush(LOAD_GAP_MS + 1500);
+      const frame = document.querySelector('iframe')!;
+      const win = frame.contentWindow!;
+      const post = vi.spyOn(win, 'postMessage').mockImplementation(() => {});
+      act(() => fireEvent.load(frame));
+      send(win, { event: 'infoDelivery', info: { playerState: 1, currentTime: 190, duration: 200 } });
+      await flush(1500);
+      // The end is published and the queue restarts the same video at once (no remount, `paused` false again).
+      send(win, { event: 'infoDelivery', info: { playerState: 0, currentTime: 199, duration: 200 } });
+      expect(useWatchStore.getState().paused).toBe(false);
+      expect(document.querySelector('iframe')).toBe(frame);
+      await flush(0);
+      post.mockClear();
+      await act(async () => screen.getByRole('button', { name: 'Pause' }).click());
+      expect(useWatchStore.getState().paused).toBe(true);
+      expect(post.mock.calls.filter((c) => c[0] === pauseMsg)).toHaveLength(1);
+      r.unmount();
+      resetQueue();
+    });
+
     it('a Watch playlist\'s last item ending (no queue) reads ended and paused', async () => {
       const { win } = await playing('playlist');
       send(win, { event: 'infoDelivery', info: { playerState: 1, playlist: ['a', 'b'], playlistIndex: 1 } });

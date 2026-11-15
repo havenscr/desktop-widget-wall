@@ -195,3 +195,34 @@ describe('the lists store', () => {
     set.mockRestore();
   });
 });
+
+describe('the watch store and own playlists', () => {
+  it('play refuses kind own', () => {
+    const r = w().create('L');
+    if (!r.ok) throw new Error('create');
+    useWatchStore.getState().play({ kind: 'own', id: r.id });
+    expect(useWatchStore.getState().playing).toBeNull();
+  });
+  it('playOwnVideo sets source own and never saves or changes the tab', () => {
+    const saved = localStorage.getItem(SAVED_KEY);
+    expect(useWatchStore.getState().playOwnVideo(vid(1), 'One')).toBe(true);
+    const st = useWatchStore.getState();
+    expect(st.playing).toEqual({ kind: 'video', id: vid(1), label: 'One' });
+    expect(st.source).toBe('own');
+    expect(st.tab).toBe('listen');
+    expect(localStorage.getItem(SAVED_KEY)).toBe(saved);
+    expect(st.playOwnVideo('bad', 'x')).toBe(false);
+    expect(useWatchStore.getState().playMusic(vid(2), 'Two')).toBe(true);
+    expect(useWatchStore.getState().source).toBe('music');
+  });
+  it('the same video again does not replace the item', () => {
+    useWatchStore.getState().playOwnVideo(vid(1), 'One');
+    const first = useWatchStore.getState().playing;
+    useWatchStore.setState({ paused: true, report: { ...useWatchStore.getState().report, ended: true } });
+    useWatchStore.getState().playOwnVideo(vid(1), 'One');
+    const st = useWatchStore.getState();
+    expect(st.playing).toBe(first);
+    expect(st.paused).toBe(false);
+    expect(st.report.ended).toBe(false);
+  });
+});
