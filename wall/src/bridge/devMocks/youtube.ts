@@ -1,5 +1,7 @@
 import { mocks } from '../tauri';
 import type { YtPage, YtPlayable, YtPlaylist, YtVideo } from '../../music/youtube';
+import { FIVE_LINE, playFrom, setNote } from '../../unwind/ytmusic/queue';
+import { useWatchStore } from '../../unwind/watch/store';
 
 /**
  * `youtube=` picks what the YouTube row in Tools shows (a development knob only):
@@ -15,6 +17,14 @@ import type { YtPage, YtPlayable, YtPlaylist, YtVideo } from '../../music/youtub
  * `slow` (never answers), `down`, `busy`, `again` (sign in again), `gone` (the playlist read answers
  * not found), `low` (12 searches left), `spent` (none left), `long` (very long names, a list of 2000).
  * Names are invented; pictures are drawn motifs, never an address.
+ *
+ * `ytplay=` (with `youtube=in` and the mock frame, `watch=mock`: it never loads a real player, and without it nothing
+ * is played) starts a pick on the wall about 700 ms after the page is up, as a click on a row would, and sets what the
+ * player would have reported: `on` (Night Drive from its first row, 1:06 of 3:34), `paused`, `refused` (autoplay was not
+ * allowed: the line and "Start it on Watch"), `skipped` (the first video fails with code 101: the note line, its row
+ * greyed, the next one plays a second later), `five` (stopped after five videos in a row would not play), `ended` (the
+ * last entry of the list has ended), `watch` (a Watch video plays: the foot shows it), `liked` (a Liked row plays)
+ * and `search` (a row of the search answer for `ytsearch=night` plays). Add `wtab=listen` to stay on Listen.
  */
 const PALETTES = [['#1b1440', '#ff5c96', '#ffb054', '#35e6ea'], ['#10243a', '#7dd3c7', '#f5cf77', '#f2b8c6'], ['#241038', '#9a7bff', '#ff3d9a', '#ffd9a0'], ['#0e2030', '#5cc4ff', '#d8f1ff', '#7df0c2'], ['#2a1430', '#ff7a6b', '#ffc24d', '#5df2b6'], ['#141a3c', '#92a8d1', '#f2b8c6', '#f5cf77']];
 /** A drawn 16:9 motif (six shapes, six palettes) as a data address: stands in for a picture from YouTube. */
@@ -53,7 +63,7 @@ export function registerYoutubeMocks(): void {
     id: vid(n),
     title: long() ? `${stem[0]}, ${LONG_STEM}` : stem[0],
     channel: long() ? `${stem[1]} and the Lantern Choir with the Quiet Geometry Orchestra, a very long channel name` : stem[1],
-    seconds: playable === 'removed' || playable === 'private' ? 0 : 150 + ((n * 37) % 240),
+    seconds: playable === 'removed' || playable === 'private' ? 0 : n === 0 ? 214 : 150 + ((n * 37) % 240),
     thumb: motif(n),
     playable,
   });
@@ -128,4 +138,53 @@ export function registerYoutubeMocks(): void {
     waitingNative = false;
   });
   mocks.set('wall2_youtube_sign_out', () => { signedIn = false; });
+  const play = new URLSearchParams(window.location.search).get('ytplay');
+  if (play && new URLSearchParams(window.location.search).get('watch') === 'mock') setTimeout(() => startPlayMock(play), 700);
+
+  /** What `ytplay=` does: the same calls a click makes, then the reports the player would send. */
+  function startPlayMock(what: string): void {
+    const night = Array.from({ length: 41 }, (_, i) => video(i, GREY[i] ?? 'yes'));
+    const songs = { list: 'songs', playlistId: listId(0) } as const;
+    const report = (v: YtVideo, time: number) => useWatchStore.getState().setReport({ started: true, time, duration: v.seconds || 214, title: v.title, channel: v.channel });
+    if (what === 'watch') {
+      const st = useWatchStore.getState();
+      const item = st.saved[0];
+      if (!item) return;
+      st.play(item);
+      st.setTab('listen');
+      st.setReport({ started: true, time: 754, duration: 2710, title: item.label, channel: 'Night Garden Radio' });
+      return;
+    }
+    if (what === 'liked') {
+      const liked = Array.from({ length: 30 }, (_, i) => video(100 + i, i === 6 ? 'embed' : 'yes', SONGS[(i + 5) % SONGS.length]));
+      playFrom(liked, 2, { list: 'liked' });
+      report(liked[2]!, 66);
+      return;
+    }
+    if (what === 'search') {
+      const found = Array.from({ length: 12 }, (_, i) => video(200 + i, 'yes', SONGS[i % SONGS.length]));
+      playFrom(found, 1, { list: 'found', query: 'night' });
+      report(found[1]!, 66);
+      return;
+    }
+    if (what === 'ended') {
+      playFrom(night, 40, songs);
+      report(night[40]!, night[40]!.seconds);
+      useWatchStore.getState().setReport({ ended: true });
+      useWatchStore.getState().setPaused(true);
+      return;
+    }
+    playFrom(night, 0, songs);
+    if (what === 'refused') {
+      useWatchStore.getState().setNeedsClick(true);
+      return;
+    }
+    report(night[0]!, 66);
+    if (what === 'paused') useWatchStore.getState().setPaused(true);
+    if (what === 'skipped') setTimeout(() => useWatchStore.getState().setReport({ error: 101 }), 60);
+    if (what === 'five') {
+      useWatchStore.getState().stop();
+      setNote(FIVE_LINE);
+    }
+  }
 }

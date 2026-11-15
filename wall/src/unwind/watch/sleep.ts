@@ -120,7 +120,8 @@ function limited<T>(call: Promise<T>): Promise<Read<T>> {
  *     or not a wall video is on and whatever session the observation names. Paused or unreadable: nothing for Spotify.
  *  2. The play and pause key, at most once, only when the observation succeeded and names a known outside app (not the
  *     wall's own web view, not an unknown or missing source, not Spotify when it is signed in, since step 1 owns it)
- *     that says `playing`; aimed at that session. A wall video being on does not forbid it. It is sent before the video
+ *     that says `playing`, and only when the observation carries a session key or a source id to aim at (else Windows
+ *     would choose the session); aimed at that session. A wall video being on does not forbid it. It is sent before the video
  *     is stopped.
  *  3. The wall's video is stopped with its reason, always, also when the read failed.
  * Every failure is silent; the chip is already Off.
@@ -137,7 +138,9 @@ async function finish(): Promise<void> {
       const info = seen.value;
       const source = sourceKey(info);
       const spotifyOwned = ready && playerName(source) === 'Spotify';
-      if (outsideApp(source) && !spotifyOwned && isPlaying(info) && !info.ended) sends.push(limited(invoke('media_play_pause', mediaTarget(info))));
+      // No session key and no source id (a source known only by an old label): the key would go to whatever session Windows calls current, so none is sent.
+      const target = mediaTarget(info);
+      if (target && outsideApp(source) && !spotifyOwned && isPlaying(info) && !info.ended) sends.push(limited(invoke('media_play_pause', target)));
     }
     await Promise.all(sends);
   } catch {

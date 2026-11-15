@@ -245,9 +245,16 @@ export function searchesBack(): void {
   if (useYtLibrary.getState().searchQuota) useYtLibrary.setState({ searchQuota: false });
 }
 
+const resetHooks = new Set<() => void>();
+/** Something that holds a per-session fact about the library (the queue's failed videos) says how to clear it with the library. */
+export function onLibraryReset(fn: () => void): void {
+  resetHooks.add(fn);
+}
+
 /** Empty everything: signed out, a new client, or a status that is not signed in. */
 export function resetLibrary(): void {
   epoch += 1;
+  resetHooks.forEach((fn) => fn());
   memo.clear();
   flights.clear();
   useYtLibrary.setState(initial());

@@ -3,6 +3,8 @@ import { Player } from '../unwind/Player';
 import { SpotifyCard } from '../unwind/spotify/SpotifyCard';
 import { useSpotifyStatusPoll } from '../unwind/spotify/status';
 import { UpNext } from '../unwind/spotify/UpNext';
+import { YtUpNext } from '../unwind/ytmusic/YtUpNext';
+import { useQueueActive } from '../unwind/ytmusic/queue';
 import { StatusLine } from '../unwind/StatusLine';
 import { LISTEN_PANEL_ID, LISTEN_TAB_ID, Tabs } from '../unwind/Tabs';
 import { Tomorrow } from '../unwind/Tomorrow';
@@ -38,6 +40,7 @@ export function Unwind() {
   const tab = useWatchStore((s) => s.tab);
   const sheet = useWatchStore((s) => s.sheet);
   const watch = tab === 'watch';
+  const wallMusic = useQueueActive();
   useCoverTintFollow();
   return (
     <section className="unwind zones wide" data-place="unwind" data-tab={tab} aria-label="Unwind">
@@ -45,7 +48,7 @@ export function Unwind() {
         <DateLine now={reviewDate} />
         <Tabs />
         <UnderClock />
-        {watch ? null : <UpNext rows={1} />}
+        {watch ? null : wallMusic ? <YtUpNext rows={1} /> : <UpNext rows={1} />}
         <div className="u-foot">
           <Tomorrow now={reviewNow} />
           <StatusLine />

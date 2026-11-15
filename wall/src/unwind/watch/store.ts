@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { usePlaceStore } from '../../state/places';
-import { defaultLabel, parseLink, refKey, type WatchRef } from './links';
+import { defaultLabel, parseLink, refKey, validId, type WatchRef } from './links';
+import { playerLink } from './playerLink';
 import { PLAYER_VOLUME } from './urls';
 import { driveInMode } from './DriveInFrame';
 import { DRIVE_IN_SCREEN, lookFor, loadLooks, saveLooks, type LookId, type LookSettings, type WallRect } from './looks';
@@ -30,7 +31,7 @@ function writeTuneSoon(): void {
   tuneDirty = true;
   if (tuneTimer === null) tuneTimer = setTimeout(flushTune, TUNE_WRITE_MS);
 }
-import { addSaved, cleanLabel, loadSaved, removeSaved, renameSaved, saveSaved, type SavedItem } from './saved';
+import { addSaved, cleanLabel, cleanText, loadSaved, MAX_LABEL, removeSaved, renameSaved, saveSaved, type SavedItem } from './saved';
 import { stopLine, type StopReason } from './stops';
 
 export type UnwindTab = 'listen' | 'watch';
@@ -78,9 +79,14 @@ export interface PlayerReport {
   /** The video's own title and channel, as the player reported them for the item now on (video and live stream only); null until then. */
   title: string | null;
   channel: string | null;
+  /** The player's own error code for the item now on (`onError`, 0 to 999); null while it has reported none. */
+  error: number | null;
 }
 
-export const NO_REPORT: PlayerReport = { started: false, time: null, duration: null, count: 0, index: 0, ended: false, title: null, channel: null };
+export const NO_REPORT: PlayerReport = { started: false, time: null, duration: null, count: 0, index: 0, ended: false, title: null, channel: null, error: null };
+
+/** What put the item in the frame: the Watch tab (a saved item, a pin) or a pick from the YouTube library on Listen (`playMusic`). */
+export type PlaySource = 'watch' | 'music';
 
 export interface WatchState {
   /** Which view Unwind shows. The one value any switch (today the tabs) sets; nothing in Watch reads where that switch is. */
@@ -91,6 +97,8 @@ export interface WatchState {
   tune: LookTune;
   /** The item in the frame, or null: no frame at all. */
   playing: SavedItem | null;
+  /** What put `playing` there (see `PlaySource`); `play` sets 'watch', `playMusic` sets 'music'. */
+  source: PlaySource;
   /** The item most recently stopped in Watch, used only to identify its stopped media session. */
   lastStopped: SavedItem | null;
   /** The owner's own pause and mute (YouTube only); the frame's state messages may correct `paused`. */
@@ -123,6 +131,11 @@ export interface WatchState {
   rename: (key: string, label: string) => void;
   setEditing: (key: string | null) => void;
   play: (ref: WatchRef) => void;
+  /**
+   * Play a video picked in the YouTube library: needs only a valid video id (it is never saved, never changes the tab).
+   * The same video already in the frame is not reloaded: it starts again from 0. False for an id that does not pass.
+   */
+  playMusic: (id: string, label: string) => boolean;
   stop: (why?: StopReason) => void;
   setPaused: (p: boolean) => void;
   setMuted: (m: boolean) => void;
@@ -146,6 +159,7 @@ export const useWatchStore = create<WatchState>((set, get) => ({
   looks: loadLooks(),
   tune: loadTune(),
   playing: null,
+  source: 'watch',
   lastStopped: null,
   paused: false,
   muted: false,
@@ -210,7 +224,23 @@ export const useWatchStore = create<WatchState>((set, get) => ({
   play: (ref) => {
     const item = get().saved.find((i) => refKey(i) === refKey(ref));
     if (!item) return;
-    set({ playing: item, lastStopped: null, paused: false, muted: false, report: NO_REPORT, needsClick: false, clickHint: false, stopped: null, tab: 'watch' });
+    set({ playing: item, source: 'watch', lastStopped: null, paused: false, muted: false, report: NO_REPORT, needsClick: false, clickHint: false, stopped: null, tab: 'watch' });
+  },
+  playMusic: (id, label) => {
+    if (!validId('video', id)) return false;
+    const st = get();
+    const cur = st.playing;
+    if (cur && cur.kind === 'video' && cur.id === id) {
+      // The same video: the frame is keyed by it, so it is not reloaded; it starts again from the top.
+      playerLink.send('seekTo', [0, true]);
+      // An error code that was acted on is cleared, so a replay of an id that errored before is not skipped at once.
+      set({ source: 'music', paused: false, report: st.report.ended || st.report.error !== null ? { ...st.report, ended: false, error: null } : st.report, needsClick: false, clickHint: false, stopped: null });
+      return true;
+    }
+    const item: SavedItem = { kind: 'video', id, label: cleanText(label, MAX_LABEL) || 'YouTube video' };
+    // The saved list, the tab and the owner's mute are left alone; the item it replaces is remembered for the top player's match.
+    set({ playing: item, source: 'music', lastStopped: cur ?? st.lastStopped, paused: false, report: NO_REPORT, needsClick: false, clickHint: false, stopped: null });
+    return true;
   },
   stop: (why) => {
     const playing = get().playing;
@@ -245,7 +275,7 @@ export const useWatchStore = create<WatchState>((set, get) => ({
   setReport: (r) => {
     const cur = get().report;
     const next = { ...cur, ...r };
-    if (next.started === cur.started && next.time === cur.time && next.duration === cur.duration && next.count === cur.count && next.index === cur.index && next.ended === cur.ended && next.title === cur.title && next.channel === cur.channel) return;
+    if (next.started === cur.started && next.time === cur.time && next.duration === cur.duration && next.count === cur.count && next.index === cur.index && next.ended === cur.ended && next.title === cur.title && next.channel === cur.channel && next.error === cur.error) return;
     set({ report: next });
   },
   setNeedsClick: (needsClick) => {
@@ -325,5 +355,5 @@ usePlaceStore.subscribe((s) => {
 /** Tests only: back to a fresh store over whatever local storage holds now. */
 export function resetWatch(): void {
   cancelTuneWrite();
-  useWatchStore.setState({ tab: 'listen', saved: loadSaved(), looks: loadLooks(), tune: loadTune(), volume: loadVolume(), playing: null, lastStopped: null, paused: false, muted: false, report: NO_REPORT, needsClick: false, clickHint: false, sheet: false, stopped: null, editing: null, peek: false });
+  useWatchStore.setState({ tab: 'listen', saved: loadSaved(), looks: loadLooks(), tune: loadTune(), volume: loadVolume(), playing: null, source: 'watch', lastStopped: null, paused: false, muted: false, report: NO_REPORT, needsClick: false, clickHint: false, sheet: false, stopped: null, editing: null, peek: false });
 }

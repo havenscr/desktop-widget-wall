@@ -5,6 +5,7 @@ import { tip } from '../../ui/HoverTip';
 import { useVisible } from '../../ui/useVisible';
 import { arrowTarget, gridColumns } from '../spotify/Tile';
 import { MAX_PAGES, PAGE_SIZE, SEARCH_TIP, SPENT_LINE, devSearchKnob, nearEnd, searchSpent, searchesLine, videosLine } from './model';
+import { playFrom } from './queue';
 import { useYoutubeStatus } from './status';
 import { YtSongs } from './YtSongs';
 import { libraryMounted, libraryVisible, loadList, openPlaylist, retryList, runSearch, searchesBack, setTab, startReads, useYtLibrary, type Loaded, type YtTab } from './store';
@@ -67,7 +68,8 @@ function ListFoot({ cur, name }: { cur: Loaded<unknown>; name: 'playlists' | 'li
  * The library on the YouTube side: one row with the tabs Playlists and Liked and the search field,
  * and under it the owner's playlists as tiles (four columns at rest, five tall), or his liked videos
  * or the answer to a search as rows. A tile opens its videos. Search runs on Enter only, never on
- * typing (each search that is not repeated spends one of about 100 a day). Nothing plays from here.
+ * typing (each search that is not repeated spends one of about 100 a day). A row of Liked or of the search
+ * answer plays from that row on the wall (see `queue.ts`).
  */
 export function YtBrowse({ tall }: { tall: boolean }) {
   const tab = useYtLibrary((s) => s.tab);
@@ -163,7 +165,7 @@ export function YtBrowse({ tall }: { tall: boolean }) {
           ) : found.items.length === 0 ? (
             <YtEmpty text="Nothing found. Try other words." />
           ) : (
-            <YtRows items={found.items} />
+            <YtRows items={found.items} list={{ list: 'found', query }} onPlay={(i) => playFrom(found.items, i, { list: 'found', query })} />
           )}
         </div>
       </div>
@@ -188,7 +190,7 @@ export function YtBrowse({ tall }: { tall: boolean }) {
         <ListFoot cur={lists} name="playlists" />
       </>
     ) : (
-      <YtRows items={lists.items as YtVideo[]} foot={<ListFoot cur={lists} name="liked" />} />
+      <YtRows items={lists.items as YtVideo[]} list={{ list: 'liked' }} onPlay={(i) => playFrom(lists.items as YtVideo[], i, { list: 'liked' })} foot={<ListFoot cur={lists} name="liked" />} />
     );
     main = (
       <div

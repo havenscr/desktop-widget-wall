@@ -155,10 +155,19 @@ export function rowReason(playable: YtPlayable): string | null {
   }
 }
 
-/** The tip of a row: title, channel and length, and why when it is greyed. */
-export function rowTip(v: YtVideo): string[] {
+/** What a row says it will do when it plays: the end of its hover card. */
+export const PLAY_TIP = 'Click to play it on the wall';
+
+/** The tip of a row: title, channel and length, then why when it is greyed (`why` overrides the reason: a video that failed this session), or what a click does when it plays. */
+export function rowTip(v: YtVideo, why?: string | null): string[] {
   const second = [v.channel, lengthText(v.seconds)].filter(Boolean).join(' · ');
-  return [v.title, second, rowReason(v.playable) ?? ''].filter(Boolean);
+  const last = why ?? rowReason(v.playable) ?? (v.playable === 'yes' ? PLAY_TIP : '');
+  return [v.title, second, last].filter(Boolean);
+}
+
+/** The tip of a video that failed to play this session, by why. */
+export function failedReason(why: 'embed' | 'removed'): string {
+  return why === 'embed' ? 'The owner of this video allows it to play only on YouTube.' : 'YouTube no longer has this video.';
 }
 
 /** Add a page to a list without repeating a video that is already there. */

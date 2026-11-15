@@ -91,6 +91,8 @@ export interface PlayerInfo {
   /** The video's title and channel as the player reports them, cleaned, cut to `MAX_TITLE` and `MAX_CHANNEL`. */
   title?: string;
   channel?: string;
+  /** The player's own error code (`onError`), a whole number from 0 to 999; nothing else is read from that message. */
+  error?: number;
 }
 
 /** The largest message read, in characters. */
@@ -127,7 +129,7 @@ function stateOf(v: unknown): PlayState | undefined {
  * The gate for every message from a player frame (outside input). Accepted only when the
  * sender is exactly the YouTube embed origin AND the message came from this frame's own
  * window; the data must be a JSON string under `MAX_MESSAGE` characters with one of the
- * player's four known events. Only the fields above are read, each by its expected type
+ * player's five known events (the fifth, `onError`, gives only a whole error code from 0 to 999). Only the fields above are read, each by its expected type
  * (numbers finite and clamped, the playlist only counted, the video's id by its exact shape,
  * its title and channel as plain strings cleaned of control, direction and zero-width
  * characters and cut short); nothing is evaluated or turned into markup. Null for anything else.
@@ -145,6 +147,7 @@ export function readPlayerMessage(origin: unknown, source: unknown, frame: unkno
   if (!msg || typeof msg !== 'object' || Array.isArray(msg)) return null;
   const m = msg as { event?: unknown; info?: unknown };
   if (m.event === 'onReady') return { ready: true };
+  if (m.event === 'onError') return typeof m.info === 'number' && Number.isInteger(m.info) && m.info >= 0 && m.info <= 999 ? { error: m.info } : null;
   if (m.event === 'onStateChange') {
     const state = stateOf(m.info);
     return state ? { state } : null;
