@@ -4,8 +4,11 @@ import type { WatchRef } from '../../unwind/watch/links';
 import { LOOKS_KEY, isLook } from '../../unwind/watch/looks';
 import { TUNE_KEY, defaultTune, withPatch } from '../../unwind/watch/lookSettings';
 import { framePoster, takeVideoInfo } from '../../unwind/watch/PlayerFrame';
+import { PINS_KEY, usePins } from '../../unwind/watch/pins';
 import { SAVED_KEY } from '../../unwind/watch/saved';
-import { useWatchStore } from '../../unwind/watch/store';
+import { endSleepNow, startSleepAt } from '../../unwind/watch/sleep';
+import { useWatchStore, VOLUME_KEY } from '../../unwind/watch/store';
+import { underClock } from '../../unwind/UnderClock';
 import { ctlTiming } from '../../unwind/watch/Watch';
 import { usePlaceStore } from '../../state/places';
 import { mocks } from '../tauri';
@@ -39,6 +42,12 @@ import { knob } from './long';
  *   ?wctl=rest                watch behaviour: the controls fade as with no pointer near (after
  *                             200 ms, so a still catches it); by default the stills hold them
  *                             shown, as with the pointer over the video's lower edge
+ *   ?wpins=none|one|three|long|gone   the pins under the clock: nothing pinned; the first item; the three items of the
+ *                             mock list (default none); three with long labels; one pin whose item left the Watch list
+ *   ?wvol=<0..100>            the video's level under the clock (default 100)
+ *   ?wsleep=<minutes left>|end   a running sleep timer with that many minutes left; `end` ends the timer at once (the video
+ *                             stops with its line and the player the wall follows is paused through the mocked commands)
+ *   ?wrows=shown              hold the rows under the clock at full strength (they start at rest)
  *   ?wplace=work|home|meet    watch behaviour: after it starts, go to that place, so the video
  *                             plays out of sight and the rail marks Unwind
  */
@@ -46,6 +55,12 @@ const THREE = [
   { kind: 'video', id: 'Ab3dEfGh1jK', label: 'Night drive mix' },
   { kind: 'live', id: 'Lofi_Live01', label: 'Lofi beats radio, live' },
   { kind: 'twitch', id: 'pixel_harbor', label: 'pixel_harbor' },
+];
+/** The three items with labels long enough to need two lines (and an ellipsis) on a pin. */
+const LONG_THREE = [
+  { kind: 'video', id: 'Ab3dEfGh1jK', label: 'Night drive mix for the long way home, the whole album with the extended intro and the bonus tracks' },
+  { kind: 'live', id: 'Lofi_Live01', label: 'Lofi beats radio, live from the harbor studio all night long' },
+  { kind: 'twitch', id: 'pixel_harbor', label: 'pixel_harbor_and_the_long_channel_name_of_a_streamer' },
 ];
 const DEFAULTS = [
   { kind: 'video', id: 'Ab3dEfGh1jK', label: 'YouTube video' },
@@ -171,7 +186,16 @@ export function registerWatchMocks(): void {
   const list = knob('wlist') ?? 'three';
   try {
     if (list === 'none') localStorage.removeItem(SAVED_KEY);
-    else localStorage.setItem(SAVED_KEY, JSON.stringify(list === 'many' ? many() : list === 'default' ? DEFAULTS : THREE));
+    else localStorage.setItem(SAVED_KEY, JSON.stringify(list === 'many' ? many() : list === 'default' ? DEFAULTS : knob('wpins') === 'long' ? LONG_THREE : THREE));
+    const pins = knob('wpins');
+    const keys = THREE.map((i) => `${i.kind}:${i.id}`);
+    if (pins === 'one') localStorage.setItem(PINS_KEY, JSON.stringify([keys[0]]));
+    else if (pins === 'three' || pins === 'long') localStorage.setItem(PINS_KEY, JSON.stringify(keys));
+    else if (pins === 'gone') localStorage.setItem(PINS_KEY, JSON.stringify(['video:Zz9yXxWw8vU']));
+    else localStorage.removeItem(PINS_KEY);
+    const vol = Number(knob('wvol'));
+    if (knob('wvol') !== null && Number.isFinite(vol)) localStorage.setItem(VOLUME_KEY, String(Math.min(100, Math.max(0, Math.round(vol)))));
+    else localStorage.removeItem(VOLUME_KEY);
     const look = knob('wlook');
     const sheet = knob('wsheet');
     const tune = knob('wtune');
@@ -191,6 +215,8 @@ export function registerWatchMocks(): void {
   }
   const st = useWatchStore.getState();
   st.load();
+  usePins.getState().load();
+  underClock.hold = knob('wrows') === 'shown';
   // After the review place is applied (the horizon mounts first), so leaving Work does not stop it.
   setTimeout(() => {
     if (knob('wlast') === 'one') useWatchStore.setState({ lastStopped: useWatchStore.getState().saved[0] ?? null, playing: null });
@@ -207,6 +233,9 @@ export function registerWatchMocks(): void {
       const away = knob('wplace');
       if (away === 'work' || away === 'home' || away === 'meet') usePlaceStore.getState().setActive(away);
     }
+    const sleep = knob('wsleep');
+    if (sleep === 'end') void endSleepNow();
+    else if (sleep !== null && Number.isFinite(Number(sleep)) && Number(sleep) > 0) startSleepAt(Date.now() + Number(sleep) * 60_000, 30);
     if (knob('wsheet')) useWatchStore.getState().setSheet(true);
     const link = knob('wpaste');
     if (link) setTimeout(() => pasteLink(link), 150);

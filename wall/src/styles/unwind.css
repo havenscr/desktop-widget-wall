@@ -2284,11 +2284,12 @@
 }
 
 /* Up next (stage 124, 266): three rows of 48 px covers, the title and the artist. The rows end by
-   stage y 440, so Watt walking the horizon below never covers their words. */
+   stage y 440, so Watt walking the horizon below never covers their words. Under the clock's two
+   rows (stage y 372) it starts at 382 and keeps one song. */
 .u-next {
   position: absolute;
   left: 0;
-  top: 246px;
+  top: 362px;
   width: 470px;
   display: flex;
   flex-direction: column;
@@ -3848,6 +3849,259 @@ button.sp-qrow:hover {
     animation: none;
   }
   .sp-play {
+    transition: none;
+  }
+}
+
+/* ---- Under the clock (vote W3, D): three pins, then the volume and "Stop in 30 min". Positions are in
+   .unwind's own pixels (stage x less 124, y less 20): row one at stage y 272, row two at 330. ---- */
+.u-zone {
+  position: absolute;
+  left: 0;
+  top: 120px;
+  width: 470px;
+  height: 230px;
+  pointer-events: none;
+}
+.u-quick {
+  position: absolute;
+  left: 0;
+  top: 252px;
+  z-index: 2;
+  width: 470px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.u-pins {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  height: 48px;
+}
+.u-pinslot {
+  position: relative;
+  min-width: 0;
+}
+.u-pin {
+  width: 100%;
+  height: 48px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 8px 0 6px;
+  border-radius: 14px;
+  background: rgba(10, 7, 28, 0.72);
+  border: 1px solid var(--line);
+  color: var(--tx);
+  font: 500 16px/18px var(--body);
+  text-align: left;
+  min-width: 0;
+  transition: background 150ms ease, border-color 150ms ease, color 150ms ease;
+}
+.u-pin:hover {
+  border-color: rgba(83, 230, 235, 0.45);
+}
+.u-pin.on {
+  border-color: rgba(83, 230, 235, 0.65);
+  background: rgba(53, 230, 234, 0.12);
+  color: var(--cyan);
+}
+.u-pin.add {
+  border-style: dashed;
+  color: var(--dim);
+  padding-left: 12px;
+  gap: 8px;
+}
+.u-pin-art {
+  flex: none;
+  width: 36px;
+  height: 36px;
+  border-radius: 9px;
+  display: grid;
+  place-items: center;
+  color: #fff;
+  transition: opacity 150ms ease;
+}
+.u-pin-name {
+  min-width: 0;
+  flex: 1;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+/* Each word is its own box: a word too long for the pin is cut with an ellipsis on its line (the full label is in the tip). */
+.u-pin-word {
+  display: inline-block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: top;
+}
+.u-pin-add {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.u-qsound {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 40px;
+}
+.u-snd {
+  flex: none;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: rgba(8, 6, 26, 0.86);
+  border: 1px solid var(--line);
+  color: var(--tx);
+  transition: background 150ms ease, border-color 150ms ease, color 150ms ease;
+}
+.u-snd:hover:not([data-disabled]) {
+  border-color: rgba(83, 230, 235, 0.45);
+}
+.u-snd[data-disabled],
+.u-qvol[data-disabled] {
+  opacity: 0.45;
+}
+.u-snd[data-disabled] {
+  cursor: default;
+}
+.u-qvol {
+  flex: none;
+  width: 197px;
+  height: 40px;
+  transition: opacity 150ms ease;
+}
+/* The grab area is 40 px tall; the drawn track and thumb stay as they are. */
+.u-qvol input {
+  height: 40px;
+}
+.u-qvol[data-dim] {
+  opacity: 0.5;
+}
+.u-qvol input:disabled {
+  pointer-events: none;
+  cursor: default;
+}
+.u-qval {
+  flex: none;
+  width: 36px;
+  text-align: right;
+  font: 17px/1 var(--body);
+  color: var(--dim);
+  font-variant-numeric: tabular-nums;
+}
+.u-sleep {
+  flex: none;
+  width: 173px;
+  height: 40px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 0 8px;
+  border-radius: 20px;
+  background: rgba(10, 7, 28, 0.72);
+  border: 1px solid var(--line);
+  color: var(--tx);
+  font: 500 17px/1 var(--body);
+  white-space: nowrap;
+  transition: background 150ms ease, border-color 150ms ease, color 150ms ease;
+}
+.u-sleep:hover {
+  border-color: rgba(83, 230, 235, 0.45);
+}
+.u-sleep.on {
+  border-color: rgba(83, 230, 235, 0.65);
+  background: rgba(53, 230, 234, 0.12);
+  color: var(--cyan);
+}
+.u-quick :is(.u-pin, .u-snd, .u-sleep):focus-visible,
+.u-quick .u-qvol input:focus-visible {
+  outline: 3px solid var(--cyan);
+  outline-offset: 2px;
+}
+/* At rest: quiet but never gone. Text dim, fills at 42 percent, borders faint, art at 72 percent, the slider at 70;
+   a lit item stays cyan. */
+.u-quick[data-rest] :is(.u-pin:not(.on), .u-sleep:not(.on), .u-snd) {
+  color: var(--dim);
+  background: rgba(10, 7, 28, 0.42);
+  border-color: rgba(150, 130, 255, 0.16);
+}
+.u-quick[data-rest] .u-pin-art {
+  opacity: 0.72;
+}
+.u-quick[data-rest] .u-qvol:not([data-dim]):not([data-disabled]) {
+  opacity: 0.7;
+}
+/* The pin menu: the key deck's look (rows 38 px, 18 px text, title 16 px). It opens down from its pin. */
+.u-pin-menu {
+  position: absolute;
+  z-index: 45;
+  top: 54px;
+  left: 0;
+  width: 350px;
+  padding: 6px;
+  border: 2px solid rgba(220, 211, 251, 0.58);
+  border-radius: 14px;
+  background: rgb(14, 12, 34);
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.55);
+}
+.u-pin-menu-title {
+  padding: 8px 10px;
+  color: var(--dim);
+  font: 500 16px/1.2 var(--body);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.u-pin-menu-note {
+  margin: 0;
+  padding: 4px 10px 8px;
+  color: var(--tx);
+  font: 500 18px/1.3 var(--body);
+}
+.u-pin-menu-list {
+  max-height: 304px;
+  overflow-y: auto;
+}
+.u-pin-menu button {
+  width: 100%;
+  height: 38px;
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  padding: 0 10px;
+  border-radius: 9px;
+  color: var(--tx);
+  font: 600 18px/1 var(--body);
+  text-align: left;
+  cursor: pointer;
+}
+.u-pin-menu button span {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.u-pin-menu button:hover,
+.u-pin-menu button:focus-visible {
+  background: rgba(53, 230, 234, 0.14);
+  outline: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  .u-pin,
+  .u-pin-art,
+  .u-snd,
+  .u-qvol,
+  .u-sleep {
     transition: none;
   }
 }

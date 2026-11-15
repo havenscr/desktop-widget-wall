@@ -6,6 +6,7 @@ import { UpNext } from '../unwind/spotify/UpNext';
 import { StatusLine } from '../unwind/StatusLine';
 import { LISTEN_PANEL_ID, LISTEN_TAB_ID, Tabs } from '../unwind/Tabs';
 import { Tomorrow } from '../unwind/Tomorrow';
+import { UnderClock } from '../unwind/UnderClock';
 import { useCoverTintFollow } from '../unwind/useCoverTintFollow';
 import { WatchSheet } from '../unwind/watch/Sheet';
 import { useWatchStore } from '../unwind/watch/store';
@@ -43,7 +44,8 @@ export function Unwind() {
       <div className="u-wing">
         <DateLine now={reviewDate} />
         <Tabs />
-        {watch ? null : <UpNext />}
+        <UnderClock />
+        {watch ? null : <UpNext rows={1} />}
         <div className="u-foot">
           <Tomorrow now={reviewNow} />
           <StatusLine />
