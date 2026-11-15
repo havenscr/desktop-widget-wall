@@ -1,9 +1,10 @@
-import { IconChevronRight } from '@tabler/icons-react';
-import { useEffect, useState } from 'react';
+import { IconBan, IconBell, IconChevronRight, IconClock, IconDevices, IconShield, IconWorld } from '@tabler/icons-react';
+import type { ReactNode } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { tip } from '../ui/HoverTip';
 import { useLinks, useOpenLink } from './netLinks';
 import { ShieldDrawer, SevShape } from './ShieldDrawer';
-import { MAX_ARCS, ringCount, shieldFrom, shieldSub, type Shield } from './shieldModel';
+import { MAX_ARCS, alertHint, ringCount, severityCounts, shieldFacts, shieldFrom, shieldSub, type FactKind, type Shield } from './shieldModel';
 import { useClearedNote, useDeskSecurity } from './useDesk';
 import { useSecurity } from './useSecurity';
 
@@ -35,7 +36,8 @@ export function ShieldRing({ s }: { s: Shield }) {
       {n > 0 &&
         Array.from({ length: n }, (_, i) => {
           const sev = s.alerts[i]?.severity;
-          const colour = grey ? 'var(--faint)' : sev ? SEV_COLOUR[sev] : 'var(--amber)';
+          // A severity the wall was not told (a listed alert with none, or one past the listed three) is neutral, never amber.
+          const colour = grey ? 'var(--faint)' : sev ? SEV_COLOUR[sev] : 'var(--faint)';
           return (
             <circle
               key={i}
@@ -64,16 +66,33 @@ export function ShieldRing({ s }: { s: Shield }) {
   );
 }
 
+const FACT_ICON: Record<FactKind, typeof IconClock> = { scan: IconClock, devices: IconDevices, blocked: IconBan, alarms: IconBell };
+
+/** What the ring says when hovered: the state in words, never more than the wall was sent. */
+function ringTip(s: Shield): string {
+  if (s.kind === 'off') return 'The home app is not set up on this wall';
+  if (s.kind === 'loading') return 'Reading the home app';
+  if (s.kind === 'down') return 'The home app could not be reached. Checks again every 5 minutes';
+  const asOf = s.stale && s.asOf ? ` (${s.asOf})` : '';
+  if (s.open <= 0) return s.stale ? `Nothing was open${s.asOf ? `, ${s.asOf}` : ''}. This is not a live read` : 'Nothing is open. The ring is whole and green';
+  const by = severityCounts(s);
+  return `${s.open} open ${s.open === 1 ? 'alert' : 'alerts'}${by ? `: ${by}` : ''}${asOf}`;
+}
+
 /**
- * Network and security as a shield you can read from across the room: the ring with one
- * lit arc per open alert and the count inside, the newest alert in one line, and a click
- * that opens the drawer with all of them (Open on each, and Clear all once the home app's
- * desk route and the desk token exist). Quiet, it is a whole mint ring, "All quiet", the
- * device and blocked numbers, and the Security and Firewalla links.
+ * Network and security as a shield you can read from across the room. Quiet: the ring,
+ * the title, a line saying nothing is open, two fact lines (only numbers the home app
+ * sent), and at the right two doors, Security (the home app's alarms) and Firewalla (its
+ * portal), each only when the wall has its address. With open alerts the card is taller:
+ * the ring with one lit arc per alert, the newest alert in one line with its age and the
+ * counts by severity, and a row of buttons, Show all (the drawer with every alert, Open on
+ * each, and Clear all once the desk route and token exist), Security and Firewalla.
  */
 export function NetworkTile() {
   const s = useShield();
   const { attempts } = useSecurity();
+  const avail = useLinks(attempts);
+  const { open: openLink, failed } = useOpenLink();
   const [open, setOpen] = useState(false);
   const busy = s.kind === 'ready' && s.open > 0;
   // Nothing to list any more (cleared, or the read went away): the drawer closes itself.
@@ -81,91 +100,129 @@ export function NetworkTile() {
     if (!busy) setOpen(false);
   }, [busy]);
   const newest = s.alerts[0] ?? null;
-  const sub = shieldSub(s);
-  const cls = ['panel', 'network', 'shield', busy ? 'busy' : 'calm', s.stale ? 'stale' : ''].filter(Boolean).join(' ');
+  const sub = shieldSub(s).filter(Boolean);
+  const facts = shieldFacts(s);
+  const doors = s.kind === 'ready' && (avail.security || avail.portal);
+  const cls = ['panel', 'network', 'shield', busy ? 'busy' : 'calm', s.stale ? 'stale' : '', !busy && !doors && !(s.kind === 'ready' && facts.all.length > 0) ? 'noside' : ''].filter(Boolean).join(' ');
   const detail = [...sub, ...s.detail].filter(Boolean).join('. ');
   // Not live: the count says when it was read ("6 open as of 3:12 PM"), never as if current.
   const side = busy ? [`${s.open} open`, s.stale ? s.asOf : null].filter(Boolean).join(' ') : s.asOf;
   // After Clear all the drawer closes; the card says what was cleared for a few seconds.
   const cleared = useClearedNote((n) => n.text);
-  const body = (
-    <>
-      <span className="shield-art">
-        <ShieldRing s={s} />
+  const hint = busy ? alertHint(s) : '';
+  const asOfTip = s.stale && s.asOf ? `Not live, ${s.asOf}. ` : '';
+  const factRow = (f: { kind: FactKind; text: string }) => {
+    const Icon = FACT_ICON[f.kind];
+    // The scan time is the firewall's own clock, not the home app's: the heading's "as of" is a different one.
+    const hover = f.kind === 'scan' && s.scan ? `The firewall's own last scan, ${s.scan}` : `${asOfTip}${f.text}`;
+    return (
+      <span key={f.kind} className="shield-fact" {...tip(hover)}>
+        <Icon size={17} stroke={1.8} aria-hidden="true" />
+        <span>{f.text}</span>
       </span>
-      <span className="shield-txt">
-        <span className="shield-title">{s.title}</span>
-        <span className="shield-sub" {...tip(detail || s.title)}>
-          {sub.map((l, i) => (
-            <span key={i}>{l}</span>
-          ))}
-        </span>
-        {busy && newest && (
-          <span className="shield-new">
-            <SevShape sev={newest.severity} size={20} />
-            <b>{newest.text}</b>
-          </span>
-        )}
-        {busy && (
-          <span className="shield-hint">
-            {[newest?.age ? `${newest.age} ago` : null, `Click for all ${s.open}`].filter(Boolean).join('. ')}
-            <IconChevronRight size={16} stroke={2} aria-hidden="true" />
-          </span>
-        )}
-        {!busy && s.kind === 'ready' && (
-          <span className="shield-links">
-            <Links refresh={attempts} />
-          </span>
-        )}
+    );
+  };
+  const door = (kind: 'security' | 'portal', icon: ReactNode, name: string, what: string, tipText: string) => (
+    <button type="button" className="shield-door" onClick={() => openLink(kind)} {...tip(tipText)}>
+      {icon}
+      <span className="shield-door-txt">
+        <b>{name}</b>
+        <span>{what}</span>
       </span>
-    </>
+    </button>
   );
+  const SECURITY_TIP = 'Open the network alarms in the home app';
+  const PORTAL_TIP = 'Open the Firewalla portal in the browser';
+  // Quiet and with no door to open, the facts take the right side as one box, each on its own row.
+  const factsAside = !busy && s.kind === 'ready' && !doors && facts.all.length > 0;
+  // The title is the card's most important line: one line at 27 px when it fits its column, else two lines at 22 px.
+  const titleRef = useRef<HTMLSpanElement>(null);
+  const [longTitle, setLongTitle] = useState(false);
+  useLayoutEffect(() => {
+    const el = titleRef.current;
+    if (!el) return;
+    el.classList.remove('long');
+    const over = el.scrollWidth > el.clientWidth + 0.5;
+    el.classList.toggle('long', over);
+    setLongTitle(over);
+  }, [s.title, busy, doors, factsAside]);
   return (
     <section className={open && busy ? 'network-block drawer-open' : 'network-block'} aria-label="Network and security">
       <div className="net-head">
         <span className="k">Network and security</span>
-        {cleared ? (
+        {failed ? (
+          <span className="xs net-failed" role="status">
+            Could not open
+          </span>
+        ) : cleared ? (
           <span className="xs net-cleared" role="status">
             {cleared}
           </span>
         ) : (
-          side && <span className={s.stale ? 'xs stale' : 'xs'}>{side}</span>
+          side && (
+            <span className={s.stale ? 'xs stale' : 'xs'} {...(s.asOf ? tip(`The home app's last answer, ${s.asOf.replace(/^as of /, '')}`) : {})}>
+              {side}
+            </span>
+          )
         )}
       </div>
-      {busy ? (
-        <button type="button" className={cls} aria-expanded={open} aria-haspopup="dialog" onClick={() => setOpen((o) => !o)} {...tip(`Show all ${s.open} open alerts`)}>
-          {body}
-        </button>
-      ) : (
-        <div className={cls}>{body}</div>
-      )}
+      <div
+        className={cls}
+        // With alerts open a click on the card's own face opens the drawer, as the whole card did before; its buttons act for themselves.
+        onClick={(e) => {
+          if (busy && !(e.target as Element).closest('button')) setOpen((o) => !o);
+        }}
+      >
+        <span className="shield-art" {...tip(ringTip(s))}>
+          <ShieldRing s={s} />
+        </span>
+        <span className={longTitle ? 'shield-txt longtitle' : 'shield-txt'}>
+          <span ref={titleRef} className={longTitle ? 'shield-title long' : 'shield-title'} {...tip(s.title)}>
+            {s.title}
+          </span>
+          <span className="shield-sub" {...tip(detail || s.title)}>
+            {sub.map((l, i) => (
+              <span key={i}>{l}</span>
+            ))}
+          </span>
+          {busy && newest && (
+            <button type="button" className="shield-new" onClick={() => setOpen((o) => !o)} aria-expanded={open} aria-haspopup="dialog" {...tip(`${newest.text}. Show all ${s.open} open alerts`)}>
+              <SevShape sev={newest.severity} size={18} />
+              <b>{newest.text}</b>
+            </button>
+          )}
+          {busy && hint && <span className="shield-hint">{hint}</span>}
+          {!busy && facts.lines.length > 0 && !factsAside && <span className="shield-facts">{facts.lines.map(factRow)}</span>}
+        </span>
+        {!busy && doors && (
+          <span className="shield-doors">
+            {avail.security && door('security', <IconShield size={24} stroke={1.7} aria-hidden="true" />, 'Security', 'Home app alarms', SECURITY_TIP)}
+            {avail.portal && door('portal', <IconWorld size={24} stroke={1.7} aria-hidden="true" />, 'Firewalla', 'Its own portal', PORTAL_TIP)}
+          </span>
+        )}
+        {factsAside && <span className="shield-aside">{facts.all.map(factRow)}</span>}
+        {busy && (
+          <span className="shield-btns">
+            <button type="button" className="shield-btn fill" onClick={() => setOpen((o) => !o)} aria-expanded={open} aria-haspopup="dialog" {...tip(`Show all ${s.open} open alerts`)}>
+              Show all {s.open}
+              <IconChevronRight size={18} stroke={2} aria-hidden="true" />
+            </button>
+            {avail.security && (
+              <button type="button" className="shield-btn" onClick={() => openLink('security')} {...tip(SECURITY_TIP)}>
+                <IconShield size={20} stroke={1.8} aria-hidden="true" />
+                Security
+              </button>
+            )}
+            {avail.portal && (
+              <button type="button" className="shield-btn" onClick={() => openLink('portal')} {...tip(PORTAL_TIP)}>
+                <IconWorld size={20} stroke={1.8} aria-hidden="true" />
+                Firewalla
+              </button>
+            )}
+          </span>
+        )}
+      </div>
       {open && busy && <ShieldDrawer s={s} refresh={attempts} onClose={() => setOpen(false)} />}
     </section>
-  );
-}
-
-/** The Security and Firewalla buttons, each only when Rust has its address. */
-function Links({ refresh }: { refresh: number }) {
-  const avail = useLinks(refresh);
-  const { open, failed } = useOpenLink();
-  if (!avail.security && !avail.portal) return null;
-  return (
-    <span className="net-links">
-      {avail.security && (
-        <button type="button" className="net-link" onClick={() => open('security')} {...tip('Open the network alarms in the home app')}>
-          Security
-        </button>
-      )}
-      {avail.portal && (
-        <button type="button" className="net-link" onClick={() => open('portal')} {...tip('Open the Firewalla portal in the browser')}>
-          Firewalla
-        </button>
-      )}
-      {failed && (
-        <span className="s" role="status">
-          Could not open
-        </span>
-      )}
-    </span>
   );
 }

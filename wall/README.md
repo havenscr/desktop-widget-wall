@@ -2146,9 +2146,10 @@ words: `not-configured`, `absent` (404, the route is not live yet), `failed`, `s
 - **Shield card** (`home/NetworkTile.tsx`, `home/shieldModel.ts`): a ring with one arc
   per open alert (twelve at most, "12+" inside past that), the count inside, the newest
   alert in one line with its shape (amber triangle high, violet diamond medium, open ring
-  low). Quiet is a whole mint ring with a check, "All quiet", the device and blocked
-  numbers and the two links. Stale is a grey ring and "as of" a time, never mint. A
-  click opens the drawer (`home/ShieldDrawer.tsx`) with every alert, Open on each and one
+  low). Quiet is a whole mint ring with a check, "All quiet", two fact lines and two doors
+  at the right (see "Network and Security card" below). Stale is a grey ring and "as of"
+  a time, never mint. Show all (or the newest alert's line, or a click on the card's face) opens the drawer
+  (`home/ShieldDrawer.tsx`) with every alert, Open on each and one
   Clear all, which marks every current alert seen in the home app (it has no clear for
   one alert). Clear all clears every alert the home app holds at that moment, including
   any raised after the wall's last read, which the drawer never showed. After it the list
@@ -2184,24 +2185,20 @@ Dev mocks: `?desk=absent|typical|stale|down` (absent by default), `?alerts=0|1|6
 Spotify track with a Sonos speaker. `npm --prefix wall run fit:home` checks the right
 column, the drawer, the house area and the mood card widths (`--self-test` breaks each).
 
-### Network tile (Home tab, right)
+### Network and Security card (Home tab, right)
 
-`wall/src/home/`. Reads `GET /api/security?lite=1` and shows, as the concept draws it:
-the heading "Network and security" above the card (like "Around the house"), then a
-shield and status line ("All quiet" when nothing is open) with the scan age on its right,
-the numbers the feed has spread evenly (devices, alarms in 24 hours, blocked, box
-temperature; today the home app sends only the alarms, and PR 24 adds the rest), up to
-three open alerts as one-line rows (severity dot, text, age) with "N more open" beside
-the heading, and the two links as full-width buttons along the bottom. The numbers row
-shows only when at least three numbers exist; one or two go on the status line's right
-instead ("Up, box online" and "7 alarms in 24 h"), and the scan age then moves beside
-the heading when "N more open" is not there. The card is as
-tall as what it holds, so it is never half empty. Refreshes every 5 minutes while
-visible. The open count follows the home app's own page: an alert whose
-reviewed request is waiting is hidden; a done request hides it until a newer
-summary arrives; a failed request hides nothing.
+`home/NetworkTile.tsx`, `home/shieldModel.ts` (`shieldFacts`, `severityCounts`, `alertHint`), the card's rules in `styles/home.css`. The card keeps its sizes: 596 by 166 when quiet, not live or not set up, 596 by 250 with alerts open (so Around the house keeps five rows, and three with alerts).
 
-The alert rows come from Rust (`top_alerts` in `wall2_feeds.rs`): the visible alerts,
+- **Quiet.** The ring (112), the title, "Nothing is open." and two fact lines (16 px, a glyph each) at the left; at the right two doors, 206 wide and 61 high with 12 between: Security ("Home app alarms", opens the home app's alarms page) and Firewalla ("Its own portal"). Each door shows only when the wall has its address (`wall2_links`), the same rule and the same click as before; one door takes the full height. With no door and at least one fact, the facts move to a quiet box at the right, one row each (scan, devices, blocked, alarms); with no door and no fact the text takes the whole width.
+- **The fact lines** are drawn only from numbers the home app sent: line one is "Scan 10:24 AM"; line two is "31 devices, 412 blocked" (or whichever of the two exists), or, when it sent neither, "3 alarms in 24 h"; with none of them there is no second line. A fact with no number is never drawn. Hovering a fact says what it is, and "Not live, as of ..." while stale.
+- **Alerts open.** The ring (140) with one arc per alert and the count, the title, "3 alerts open, 31 devices at home", the newest alert on one line (its line opens the drawer; long text ends in an ellipsis, the full text and "Show all N open alerts" on hover), the age and the counts by severity ("12 min ago. 1 high, 2 medium."; the age reads "just now", "12 min ago", "3 h ago" or "2 days ago", while the drawer keeps its short "12m"; the counts show only when every open alert is listed and has a severity, so no count is ever short), and a row of equal 50 px buttons: Show all N (filled), Security, Firewalla (the last two only with an address; with neither, Show all stands alone).
+- **The title** is one line at 27 px; when it does not fit its column ("Firewall box offline", "Firewall status unknown", "Home app not reachable") it takes two lines at 22 px, the card's box unchanged, and the full title is on hover. The ring's arcs take the alert's severity colour (amber high, violet medium, grey low); an alert whose severity the wall was never told, and every alert past the three the read lists, is a neutral grey, never amber.
+- **Not live.** A grey ring, "Nothing was open." (or the alerts as before), the facts dimmed, and the heading's "as of 9:41 AM" (hover: "The home app's last answer"). The scan line is the firewall's own clock (hover: "The firewall's own last scan"), so it can differ from the heading's time. The wall never shows a stale read as live.
+- **Not set up, loading, down.** The grey ring and the title (with "Checks again every 5 minutes." when down); no facts, no doors.
+- **Could not open** (a door that fails) shows in amber on the heading's right for three seconds.
+- Dev stills: `?net=calmbare` (quiet, the home app sent no scan time and no number), `?fw=offline|unknown|unreachable` (the long status titles with doors), `?home=loading`, `?links=security|portal|none` (which doors have an address), `?desk=typical&alerts=0|1|2|3`, `?desk=stale`, `?home=off`. The gallery states and the fit rules (the card's size in each state, 16 px from the card's edge, nothing overlapping, the right side within 24 px of the edge, text 16 px or more, long text ending in an ellipsis; each rule has a break in `--self-test`) are in `wall/scripts/areas/network-card.mjs`.
+
+**Where the alerts come from.** The card reads `GET /api/security?lite=1` every 5 minutes while visible (and the desk route when it answers). The open count follows the home app's own page: an alert whose reviewed request is waiting is hidden; a done request hides it until a newer summary arrives; a failed request hides nothing. The alert rows come from Rust (`top_alerts` in `wall2_feeds.rs`): the visible alerts,
 newest first, reading the text from `title`, `message`, `text`, `summary`, `reason` or
 `type` (a type slug is turned into words: `abnormal_upload` reads "Abnormal upload"),
 the severity from `severity`, `level` or `priority` (mapped to high, medium or
