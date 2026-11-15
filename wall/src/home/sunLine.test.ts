@@ -1,7 +1,7 @@
 import { expect, it } from 'vitest';
 import { usePacificTime } from '../ribbon/testZone';
 import { sunTimes } from '../ribbon/sun';
-import { clockText, sunLine } from './sunLine';
+import { clockText, sunHeadline, sunLine } from './sunLine';
 
 usePacificTime();
 
@@ -32,4 +32,22 @@ it('before sunrise gives the sunrise time; after sunset, tomorrow sunrise', () =
 it('formats clock times with minutes', () => {
   expect(clockText(at('16:05:00'))).toBe('4:05 PM');
   expect(clockText(at('00:30:00'))).toBe('12:30 AM');
+});
+
+it('headline: daylight left by day, Sunset in N min in amber inside 90 minutes, tomorrow sunrise after sunset', () => {
+  const set = Math.round(sunTimes(at('12:00:00')).set! / 60_000) * 60_000;
+  expect(sunHeadline(at('10:28:00'))).toEqual({ text: expect.stringMatching(/^6 h \d+ min of daylight left$/), soon: false });
+  expect(sunHeadline(set - 53 * 60_000)).toEqual({ text: 'Sunset in 53 min', soon: true });
+  expect(sunHeadline(at('21:10:00'))).toEqual({ text: expect.stringMatching(/^Sunrise at 7:\d\d AM tomorrow$/), soon: false });
+});
+
+it('headline: the 90 minute rule flips at exactly 90 and 91 minutes', () => {
+  const set = Math.round(sunTimes(at('12:00:00')).set! / 60_000) * 60_000;
+  expect(sunHeadline(set - 90 * 60_000)!.soon).toBe(true);
+  expect(sunHeadline(set - 91 * 60_000)!.soon).toBe(false);
+  expect(sunHeadline(set - 91 * 60_000)!.text).toMatch(/of daylight left$/);
+});
+
+it('headline: before sunrise is the short sunrise line, not the long sentence', () => {
+  expect(sunHeadline(at('05:30:00'))).toEqual({ text: expect.stringMatching(/^Sunrise at 7:0\d AM$/), soon: false });
 });

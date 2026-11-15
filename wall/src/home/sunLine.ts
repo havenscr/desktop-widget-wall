@@ -21,10 +21,10 @@ export function clockText(ms: number): string {
   return `${hour}:${String(d.getMinutes()).padStart(2, '0')} ${h < 12 ? 'AM' : 'PM'}`;
 }
 
-const toMinute = (ms: number) => Math.round(ms / 60_000) * 60_000;
+export const toMinute = (ms: number) => Math.round(ms / 60_000) * 60_000;
 
 /** "3 h 12 min", "45 min" */
-function span(ms: number): string {
+export function span(ms: number): string {
   const mins = Math.max(1, Math.round(ms / 60_000));
   const h = Math.floor(mins / 60);
   const m = mins % 60;
@@ -62,4 +62,30 @@ export function sunLine(now: number): SunLine | null {
     text: next === null ? 'The sun is down' : `Sunrise at ${clockText(next)} tomorrow`,
     soon: false,
   };
+}
+
+export interface SunHeadline {
+  text: string;
+  /** Amber: sunset is within 90 minutes. */
+  soon: boolean;
+}
+
+/**
+ * The one line under the date. By day the daylight left (`sunLine().text`); within 90 minutes
+ * of sunset "Sunset in N min" in amber; before sunrise the sunrise time; after sunset tomorrow's
+ * sunrise. A date with only a sunrise or only a sunset says that one time; a date with neither
+ * has no headline (null).
+ */
+export function sunHeadline(now: number): SunHeadline | null {
+  const line = sunLine(now);
+  if (line) {
+    if (line.soon) return { text: line.key, soon: true };
+    // Before sunrise the sentence is a long one; the curve below carries the sunset.
+    if (line.key.startsWith('Sunrise at')) return { text: line.key, soon: false };
+    return { text: line.text, soon: false };
+  }
+  const { rise, set } = sunTimes(now);
+  if (rise !== null) return { text: `Sunrise at ${clockText(toMinute(rise))}`, soon: false };
+  if (set !== null) return { text: `Sunset at ${clockText(toMinute(set))}`, soon: false };
+  return null;
 }

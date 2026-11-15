@@ -1,15 +1,21 @@
 import { useEffect, useState } from 'react';
 import { reviewNow } from '../ui/reviewClock';
-import { HouseLine, houseView } from './HouseLine';
-import { sunLine } from './sunLine';
+import { houseView, HouseLine } from './HouseLine';
+import { OutsideRow } from './OutsideRow';
+import { SunCurve } from './SunCurve';
+import { dayCurve } from './dayCurve';
+import { sunHeadline } from './sunLine';
 import { useDeskHouse } from './useDesk';
 
-const TICK_MS = 30_000;
+/** The curve and the headline redraw once a minute; nothing here animates. */
+const TICK_MS = 60_000;
 
 /**
- * Home's left wing under the clock: the sun block ("Sunset in 4 min" and a line) and, once
- * the home app's desk routes answer, the house line under it. With the house line the sun
- * block moves up under the date, as the concept draws it; without it, it stays where it was.
+ * Home's left third under the clock and the date: the headline ("6 h 5 min of daylight left",
+ * "Sunset in 53 min" in amber, "Sunrise at 7:15 AM tomorrow"), the day drawn as a low curve with
+ * the sun's place on it, one row for the weather outside, and, once the home app's desk routes
+ * answer, the house row with its room dots. On a date with no sunrise or no sunset the curve is
+ * left out and the headline stands alone.
  */
 export function LeftWing({ now = reviewNow ?? Date.now }: { now?: () => number }) {
   const [ms, setMs] = useState(now);
@@ -19,16 +25,17 @@ export function LeftWing({ now = reviewNow ?? Date.now }: { now?: () => number }
   }, [now]);
   const { house, rooms } = useDeskHouse();
   const withHouse = houseView(house, rooms) !== null;
-  const line = sunLine(ms);
-  if (!line && !withHouse) return null;
+  const head = sunHeadline(ms);
+  const curve = dayCurve(ms);
   return (
-    <div className={withHouse ? 'home-wing with-house' : 'home-wing'} aria-label="Sun and house">
-      {line && (
-        <div className="home-blk" aria-label="Sun">
-          <span className={line.soon ? 'k soon' : 'k'}>{line.key}</span>
-          <div className="t2">{line.text}</div>
+    <div className={withHouse ? 'home-wing with-house' : 'home-wing'} aria-label="Sun, weather and house">
+      {head && (
+        <div className={head.soon ? 't2 lw-head home-blk soon' : 't2 lw-head home-blk'} aria-label="Sun">
+          {head.text}
         </div>
       )}
+      {curve && <SunCurve curve={curve} />}
+      <OutsideRow now={() => Date.now()} />
       <HouseLine />
     </div>
   );
