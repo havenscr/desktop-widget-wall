@@ -6,12 +6,11 @@ const KEYS = 'Deck, tidy: a key tile holds only its icon and its label';
 const soundQuery = '?hz=home&at=2026-11-11T10:24:00-08:00&clock=review&weather=ok&long=1&moods=five&where=none&tidycheck=sound';
 const keysQuery = '?hz=work&at=2026-11-11T16:10:00-08:00&long=1&agents=3&keys=typical&tidycheck=keys';
 
-// The "Where" label has room for the 16 px floor. The "Suggested" tag keeps the size it has on main (it cannot be 16 px in its
-// tile; that is listed for the owner in the pull request), so it is only held to being whole and clear of the key's icon.
+// The "Where" label has room for the 16 px floor. The "Suggested" mark is an 18 px icon; it is held to being whole and clear of the key's icon.
 
 /**
  * Runs in the page (it references nothing outside its own body). Reports only when the URL asks (`tidycheck`).
- * sound: the "Suggested" tag whole and clear of the icon beside it; the "Where" label at 16 px or more.
+ * sound: the "Suggested" mark whole and clear of the icon beside it; the "Where" label at 16 px or more.
  * keys: each key tile's element children are its icon and its `.deck-lbl` and nothing else, and nothing inside draws generated content.
  */
 function measureTidyWeb() {
@@ -20,13 +19,13 @@ function measureTidyWeb() {
   if (kind === 'sound') {
     const tag = document.querySelector('.home .sound-chip .sound-tag.sug');
     const label = document.querySelector('.home .sound-lbl');
-    if (!tag) out.push('tidy sound: the "Suggested" tag is not on the page');
+    if (!tag) out.push('tidy sound: the "Suggested" mark is not on the page');
     else {
-      if (tag.scrollWidth > tag.clientWidth + 0.5) out.push('tidy sound: the "Suggested" tag is cut (' + tag.scrollWidth + ' px of text in ' + tag.clientWidth + ')');
+      if (tag.scrollWidth > tag.clientWidth + 0.5) out.push('tidy sound: the "Suggested" mark is cut (' + tag.scrollWidth + ' px of text in ' + tag.clientWidth + ')');
       const art = tag.closest('.sound-chip')?.querySelector('.sound-art');
       if (art) {
         const gap = Math.round((tag.getBoundingClientRect().left - art.getBoundingClientRect().right) * 10) / 10;
-        if (gap < 2) out.push('tidy sound: the "Suggested" tag is ' + gap + " px from the chip's icon (2 or more clear)");
+        if (gap < 2) out.push('tidy sound: the "Suggested" mark is ' + gap + " px from the chip's icon (2 or more clear)");
       }
     }
     if (!label) out.push('tidy sound: the "Where" label is not on the page');
@@ -63,14 +62,14 @@ export default {
         for (const failure of found) emit(`  FAIL ${failure}`);
         if (found.length) return true;
         emit(variant.name === SOUND
-          ? '  ok   tidy sound: the "Suggested" tag whole and clear of the icon; the "Where" label 16 px or more'
+          ? '  ok   tidy sound: the "Suggested" mark whole and clear of the icon; the "Where" label 16 px or more'
           : '  ok   tidy keys: every key tile holds only its icon and its label, with no generated content inside');
         return false;
       },
     },
     breaks: {
       // The tag set big enough to be cut or touch the icon; the label set small; generated content added inside a key.
-      'tidy-sound-tag-big': { css: '.sound-tag { font-size: 14px !important; }', expect: /^ *FAIL tidy sound: the "Suggested" tag is (cut|-?[\d.]+ px from the chip's icon)/m, appliesTo: (v) => v.name === SOUND },
+      'tidy-sound-tag-big': { css: '.sound-tag svg { width: 200px !important; height: 200px !important; }', expect: /^ *FAIL tidy sound: the "Suggested" mark is (cut|-?[\d.]+ px from the chip's icon)/m, appliesTo: (v) => v.name === SOUND },
       'tidy-sound-label': { css: '.sound-lbl { font-size: 12px !important; }', expect: /^ *FAIL tidy sound: the "Where" label is [\d.]+ px \(16 or more\)/m, appliesTo: (v) => v.name === SOUND },
       'tidy-key-corner': { css: '.key-tile .deck-lbl::after { content: "x"; }', expect: /^ *FAIL tidy keys: key ".*" has generated content inside it/m, appliesTo: (v) => v.name === KEYS },
     },
