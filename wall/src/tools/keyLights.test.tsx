@@ -25,7 +25,7 @@ let saveWord: string | null;
 
 beforeEach(() => {
   vi.useFakeTimers();
-  vi.setSystemTime(Date.parse('2026-11-14T09:42:00-08:00'));
+  vi.setSystemTime(new Date(2026, 10, 14, 9, 42, 0));
   resetKeyLights();
   resetTip();
   saved = { left: false, right: false };
