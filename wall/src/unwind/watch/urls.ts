@@ -1,4 +1,5 @@
-import { validRef, type WatchRef } from './links';
+import { validId, validRef, type WatchRef } from './links';
+import { cleanText } from './saved';
 
 /** The only two hosts a frame is ever pointed at (and the only `frame-src` in the CSP). */
 export const YOUTUBE_EMBED_ORIGIN = 'https://www.youtube-nocookie.com';
@@ -85,6 +86,11 @@ export interface PlayerInfo {
   index?: number;
   /** True for the frame's ready message (`onReady` or `initialDelivery`). */
   ready?: boolean;
+  /** The video the player says it is on (`videoData.video_id`), only when it has a video id's exact shape. */
+  videoId?: string;
+  /** The video's title and channel as the player reports them, cleaned, cut to `MAX_TITLE` and `MAX_CHANNEL`. */
+  title?: string;
+  channel?: string;
 }
 
 /** The largest message read, in characters. */
@@ -93,6 +99,9 @@ export const MAX_MESSAGE = 20_000;
 export const MAX_SECONDS = 7 * 24 * 3600;
 /** The most playlist items counted. */
 export const MAX_ITEMS = 5000;
+/** The longest title and channel name taken from a player's report, in characters. */
+export const MAX_TITLE = 200;
+export const MAX_CHANNEL = 100;
 
 function num(v: unknown, max: number): number | undefined {
   if (typeof v !== 'number' || !Number.isFinite(v)) return undefined;
@@ -119,8 +128,9 @@ function stateOf(v: unknown): PlayState | undefined {
  * sender is exactly the YouTube embed origin AND the message came from this frame's own
  * window; the data must be a JSON string under `MAX_MESSAGE` characters with one of the
  * player's four known events. Only the fields above are read, each by its expected type
- * (numbers finite and clamped, the playlist only counted); nothing is evaluated or turned
- * into markup. Null for anything else.
+ * (numbers finite and clamped, the playlist only counted, the video's id by its exact shape,
+ * its title and channel as plain strings cleaned of control, direction and zero-width
+ * characters and cut short); nothing is evaluated or turned into markup. Null for anything else.
  */
 export function readPlayerMessage(origin: unknown, source: unknown, frame: unknown, data: unknown): PlayerInfo | null {
   if (origin !== YOUTUBE_EMBED_ORIGIN) return null;
@@ -154,5 +164,14 @@ export function readPlayerMessage(origin: unknown, source: unknown, frame: unkno
   else if (i.playlist === null) out.count = 0;
   const index = num(i.playlistIndex, MAX_ITEMS);
   if (index !== undefined) out.index = Math.floor(index);
+  const vd = i.videoData;
+  if (vd && typeof vd === 'object' && !Array.isArray(vd)) {
+    const d = vd as Record<string, unknown>;
+    if (validId('video', d.video_id)) out.videoId = d.video_id;
+    const title = cleanText(d.title, MAX_TITLE);
+    if (title) out.title = title;
+    const channel = cleanText(d.author, MAX_CHANNEL);
+    if (channel) out.channel = channel;
+  }
   return Object.keys(out).length ? out : null;
 }

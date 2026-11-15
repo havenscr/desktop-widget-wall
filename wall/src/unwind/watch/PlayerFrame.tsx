@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import type { WatchRef } from './links';
+import { refKey, type WatchRef } from './links';
 import { useWatchStore } from './store';
 import {
   commandMessage,
@@ -12,6 +12,7 @@ import {
   PLAYER_VOLUME,
   playerOrigin,
   readPlayerMessage,
+  type PlayerInfo,
   type YouTubeCommand,
 } from './urls';
 
@@ -39,6 +40,24 @@ export const REPORT_EVERY_MS = 1000;
 export const playerLink: { send: (func: YouTubeCommand, args?: readonly (number | boolean)[]) => boolean } = {
   send: () => false,
 };
+
+/**
+ * The video's own title and channel from a player report, taken for a single video or a live
+ * stream only, and only when the report names exactly the item this frame holds (a report for
+ * another id, an advert's or a stale one, is ignored). Unchanged values set nothing. A title also
+ * fills the saved label once while it is still the kind's default (see `fillLabel` in the store).
+ */
+export function takeVideoInfo(item: WatchRef, info: Pick<PlayerInfo, 'videoId' | 'title' | 'channel'>): void {
+  if (item.kind !== 'video' && item.kind !== 'live') return;
+  if (info.title === undefined && info.channel === undefined) return;
+  if (info.videoId !== item.id) return;
+  const st = useWatchStore.getState();
+  const next: { title?: string; channel?: string } = {};
+  if (info.title !== undefined) next.title = info.title;
+  if (info.channel !== undefined) next.channel = info.channel;
+  st.setReport(next);
+  if (info.title !== undefined) st.fillLabel(refKey(item), info.title);
+}
 
 function pageHidden(): boolean {
   return typeof document !== 'undefined' && document.visibilityState === 'hidden';
@@ -123,6 +142,7 @@ export function PlayerFrame({ item, title, shown = true }: { item: WatchRef; tit
       if (info.count !== undefined) list.count = info.count;
       if (info.index !== undefined) list.index = info.index;
       if (Object.keys(list).length) st.setReport(list);
+      takeVideoInfo(item, info);
       if (info.state === 'playing') {
         followPlayer(false);
         if (!st.report.started) {

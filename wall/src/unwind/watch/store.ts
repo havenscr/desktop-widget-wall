@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { usePlaceStore } from '../../state/places';
-import { parseLink, refKey, type WatchRef } from './links';
+import { defaultLabel, parseLink, refKey, type WatchRef } from './links';
 import { driveInMode } from './DriveInFrame';
 import { DRIVE_IN_SCREEN, lookFor, loadLooks, saveLooks, type LookId, type LookSettings, type WallRect } from './looks';
 import { lookBox, loadTune, resetLook, saveTune, withPatch, type LookTune } from './lookSettings';
@@ -29,7 +29,7 @@ function writeTuneSoon(): void {
   tuneDirty = true;
   if (tuneTimer === null) tuneTimer = setTimeout(flushTune, TUNE_WRITE_MS);
 }
-import { addSaved, loadSaved, removeSaved, renameSaved, saveSaved, type SavedItem } from './saved';
+import { addSaved, cleanLabel, loadSaved, removeSaved, renameSaved, saveSaved, type SavedItem } from './saved';
 import { stopLine, type StopReason } from './stops';
 
 export type UnwindTab = 'listen' | 'watch';
@@ -46,9 +46,12 @@ export interface PlayerReport {
   index: number;
   /** True once a single video, a live stream or a playlist's last item has ended (no command is sent for it). */
   ended: boolean;
+  /** The video's own title and channel, as the player reported them for the item now on (video and live stream only); null until then. */
+  title: string | null;
+  channel: string | null;
 }
 
-export const NO_REPORT: PlayerReport = { started: false, time: null, duration: null, count: 0, index: 0, ended: false };
+export const NO_REPORT: PlayerReport = { started: false, time: null, duration: null, count: 0, index: 0, ended: false, title: null, channel: null };
 
 export interface WatchState {
   /** Which view Unwind shows. The one value any switch (today the tabs) sets; nothing in Watch reads where that switch is. */
@@ -81,6 +84,10 @@ export interface WatchState {
   setTab: (t: UnwindTab) => void;
   /** Read and save a pasted link; returns the refusal line, or null when it was added. */
   addLink: (text: string) => string | null;
+  /** Save one checked item at the top of the list (the same path as a pasted link); the refusal line, or null. `openName` false leaves the name field alone. */
+  addRef: (ref: WatchRef, openName?: boolean) => string | null;
+  /** Give a saved video or live stream that still has its default label the player's title for it, once; false when nothing changed. */
+  fillLabel: (key: string, title: string) => boolean;
   remove: (key: string) => void;
   rename: (key: string, label: string) => void;
   setEditing: (key: string | null) => void;
@@ -128,12 +135,29 @@ export const useWatchStore = create<WatchState>((set, get) => ({
   addLink: (text) => {
     const parsed = parseLink(text);
     if (!parsed.ok) return parsed.error;
-    const r = addSaved(get().saved, parsed.ref);
+    return get().addRef(parsed.ref);
+  },
+  addRef: (ref, openName = true) => {
+    const r = addSaved(get().saved, ref);
     if (!r.ok) return r.error;
     saveSaved(r.items);
     // A new item starts with its kind as its label; its name field opens so it can be named.
-    set({ saved: r.items, editing: refKey(r.added) });
+    set(openName ? { saved: r.items, editing: refKey(r.added) } : { saved: r.items });
     return null;
+  },
+  fillLabel: (key, title) => {
+    const st = get();
+    if (st.editing === key) return false;
+    const item = st.saved.find((i) => refKey(i) === key);
+    if (!item || (item.kind !== 'video' && item.kind !== 'live')) return false;
+    if (item.label !== defaultLabel(item)) return false;
+    const label = cleanLabel(title, item);
+    if (label === item.label) return false;
+    const items = st.saved.map((i) => (refKey(i) === key ? { ...i, label } : i));
+    saveSaved(items);
+    const playing = st.playing;
+    set({ saved: items, playing: playing && refKey(playing) === key ? { ...playing, label } : playing });
+    return true;
   },
   remove: (key) => {
     const items = removeSaved(get().saved, key);
@@ -181,7 +205,7 @@ export const useWatchStore = create<WatchState>((set, get) => ({
   setReport: (r) => {
     const cur = get().report;
     const next = { ...cur, ...r };
-    if (next.started === cur.started && next.time === cur.time && next.duration === cur.duration && next.count === cur.count && next.index === cur.index && next.ended === cur.ended) return;
+    if (next.started === cur.started && next.time === cur.time && next.duration === cur.duration && next.count === cur.count && next.index === cur.index && next.ended === cur.ended && next.title === cur.title && next.channel === cur.channel) return;
     set({ report: next });
   },
   setNeedsClick: (needsClick) => {

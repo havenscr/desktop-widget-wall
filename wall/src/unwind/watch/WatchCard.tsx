@@ -1,13 +1,16 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from 'react';
 import { IconBrandTwitch, IconBrandYoutube, IconBroadcast, IconCheck, IconPencil, IconPlaylist, IconX } from '@tabler/icons-react';
 import { useSkyKeepClear } from '../../horizon/sky';
+import { tip } from '../../ui/HoverTip';
 import { useSignalStore } from '../../signals/store';
-import { kindName, refKey, type WatchKind } from './links';
-import { MAX_LABEL, MAX_SAVED, type SavedItem } from './saved';
+import { kindName, parseLink, refKey, type WatchKind, type WatchRef } from './links';
+import { ADD_ERRORS, MAX_LABEL, MAX_SAVED, type SavedItem } from './saved';
 import { useWatchStore } from './store';
 
 /** How long a refusal line stays under the field. */
 export const PASTE_ERROR_MS = 6000;
+/** How long the offer of a second choice (the playlist a pasted video link also names) stays under the field. */
+export const OFFER_MS = 20_000;
 
 export function KindIcon({ kind, size = 22 }: { kind: WatchKind; size?: number }) {
   switch (kind) {
@@ -96,8 +99,27 @@ export function WatchCard() {
   const inCall = useSignalStore((s) => s.call !== null);
   const [text, setText] = useState('');
   const [error, setError] = useState<string | null>(null);
+  // The playlist a pasted video link also names, offered once (`known`: the video was in the list already); kept here, never saved.
+  const [offer, setOffer] = useState<{ ref: WatchRef; known: boolean } | null>(null);
+  const fieldRef = useRef<HTMLInputElement>(null);
   const errTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
-  useEffect(() => () => clearTimeout(errTimer.current), []);
+  const offerTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
+  useEffect(
+    () => () => {
+      clearTimeout(errTimer.current);
+      clearTimeout(offerTimer.current);
+    },
+    [],
+  );
+  const dropOffer = () => {
+    clearTimeout(offerTimer.current);
+    setOffer(null);
+  };
+  const showError = (line: string) => {
+    setError(line);
+    clearTimeout(errTimer.current);
+    errTimer.current = setTimeout(() => setError(null), PASTE_ERROR_MS);
+  };
   const playingKey = playing ? refKey(playing) : null;
   const list = useMoreBelow(saved.length);
   const st = useWatchStore.getState();
@@ -105,22 +127,43 @@ export function WatchCard() {
   const [card, setCard] = useState<HTMLElement | null>(null);
   useSkyKeepClear('watch-card', card);
 
+  const alreadySaved = (ref: WatchRef) => useWatchStore.getState().saved.some((i) => refKey(i) === refKey(ref));
+  const showOffer = (ref: WatchRef, known: boolean) => {
+    setOffer({ ref, known });
+    offerTimer.current = setTimeout(() => setOffer(null), OFFER_MS);
+  };
+
   const submit = (e: FormEvent) => {
     e.preventDefault();
+    const parsed = parseLink(text);
     const refused = st.addLink(text);
     clearTimeout(errTimer.current);
+    dropOffer();
     if (refused) {
-      setError(refused);
-      errTimer.current = setTimeout(() => setError(null), PASTE_ERROR_MS);
+      showError(refused);
+      // A video already in the list can still bring a playlist that is not: the refusal stays as it is, the offer follows it.
+      if (refused === ADD_ERRORS.dup && parsed.ok && parsed.alsoList && !alreadySaved(parsed.alsoList)) showOffer(parsed.alsoList, true);
     } else {
       setError(null);
       setText('');
+      if (parsed.ok && parsed.alsoList) showOffer(parsed.alsoList, false);
     }
+  };
+
+  const savePlaylist = () => {
+    if (!offer) return;
+    // The video's name field, if still open, stays open: only the list changes.
+    const refused = st.addRef(offer.ref, false);
+    dropOffer();
+    if (refused) showError(refused);
+    // The button goes with the offer: the focus moves on to the paste field rather than falling to the page.
+    fieldRef.current?.focus();
   };
 
   const field = (
     <form className="w-field" onSubmit={submit}>
       <input
+        ref={fieldRef}
         className="w-paste"
         value={text}
         placeholder="Paste a YouTube or Twitch link"
@@ -128,7 +171,10 @@ export function WatchCard() {
         spellCheck={false}
         autoComplete="off"
         maxLength={4096}
-        onChange={(e) => setText(e.target.value)}
+        onChange={(e) => {
+          setText(e.target.value);
+          dropOffer();
+        }}
       />
       <button type="submit" className="w-add" disabled={!text.trim()} title="Save this link to the list">
         Save
@@ -138,6 +184,15 @@ export function WatchCard() {
   const errLine = error ? (
     <div className="w-err" role="alert">
       {error}
+    </div>
+  ) : null;
+
+  const offerLine = offer ? (
+    <div className="w-offer" role="status">
+      <span>{offer.known ? 'That video is already saved. The link also names a playlist.' : 'Saved the video. The link also names a playlist.'}</span>
+      <button type="button" {...tip('Adds that YouTube playlist to the list as its own entry')} onClick={savePlaylist}>
+        Save the playlist too
+      </button>
     </div>
   ) : null;
 
@@ -151,6 +206,7 @@ export function WatchCard() {
         <p className="w-forms">youtu.be/… · youtube.com/watch?v=… · /live/… · /playlist?list=… · twitch.tv/…</p>
         {field}
         {errLine}
+        {offerLine}
       </section>
     );
   }
@@ -203,6 +259,7 @@ export function WatchCard() {
       </ul>
       {field}
       {errLine}
+      {offerLine}
     </section>
   );
 }
