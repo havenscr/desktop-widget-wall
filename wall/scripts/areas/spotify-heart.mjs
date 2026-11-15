@@ -35,6 +35,9 @@ function measureHeart() {
     end: box(times[1]),
     ask: box(ask),
     askButton: box(askButton),
+    askRefused: !!ask?.classList.contains('refused'),
+    // The sentence is shown whole: no ellipsis or clipping in the note's text, and the note holds it.
+    askClipped: !!askText && (askText.scrollWidth > askText.clientWidth + 1 || askText.scrollHeight > askText.clientHeight + 1 || (ask && ask.scrollWidth > ask.clientWidth + 1)),
     askFont: askText ? parseFloat(getComputedStyle(askText).fontSize) : 0,
     askButtonFont: askButton ? parseFloat(getComputedStyle(askButton).fontSize) : 0,
   };
@@ -45,6 +48,7 @@ const night = '2026-11-11T22%3A30%3A00-08%3A00';
 const fitQuery = (extra) => `?hz=unwind&at=${at}&long=1&agents=3${extra}`;
 const NO_HEART = 'Heart, the tall view, an episode has no heart';
 const NOTE = 'Heart, the tall view, the note on the dim heart';
+const REFUSED = 'Heart, the tall view, the save refused';
 const SAVED = 'Heart, the tall view, saved';
 const variant = (name, extra, click) => ({ name, q: fitQuery(extra), checks: ['.sp-card'], ...(click ? { click } : {}) });
 const base = `hz=unwind&at=${night}&clock=review&weather=ok&audio=demo`;
@@ -61,6 +65,8 @@ export default {
       state('just removed by a click', '&spotifyheart=saved', { expectNote: 'the heart went back to an outline after the click' }, '.sp-grow >> .sp-heart'),
       state('Spotify refused the save', '&spotifyheart=savefail', { expect: ['Could not save this song'] }, '.sp-grow >> .sp-heart'),
       state('the saved read failed', '&spotifyheart=readfail', { expect: ['Could not check if it is saved.'] }, '.sp-grow >> hover:.sp-heart'),
+      state('permission not known yet, the heart works', '&spotifyheart=unknown', { expect: ['Save to Liked Songs'] }, '.sp-grow >> hover:.sp-heart'),
+      state('permission not known yet, then refused for it', '&spotifyheart=unknownlacks', { expect: ['Saving songs needs one more permission. Sign in to Spotify again in Tools.'] }, '.sp-grow >> .sp-heart'),
       state('permission missing, pointer on it', '&spotifyheart=nopermission', { expect: ['Needs one more Spotify permission. Click to see how.'] }, '.sp-grow >> hover:.sp-heart'),
       state('permission missing, the note', '&spotifyheart=nopermission', { expect: ['Saving songs needs one more permission. Sign in to Spotify again in Tools.', 'Open Tools'] }, '.sp-grow >> .sp-heart'),
       state('permission missing, Open Tools', '&spotifyheart=nopermission', { expect: ['Spotify', 'Sign in'] }, '.sp-grow >> .sp-heart >> .sp-heart-ask .sp-btn'),
@@ -73,7 +79,9 @@ export default {
     variants: [
       variant(SAVED, '&audio=demo&spotifyheart=saved', '.sp-grow'),
       variant('Heart, the tall view, not saved', '&audio=demo&spotifyheart=unsaved', '.sp-grow'),
-      variant('Heart, the tall view, the save refused', '&audio=demo&spotifyheart=savefail', '.sp-grow >> .sp-heart'),
+      variant(REFUSED, '&audio=demo&spotifyheart=savefail', '.sp-grow >> .sp-heart'),
+      variant('Heart, the tall view, the permission not known yet', '&audio=demo&spotifyheart=unknown', '.sp-grow'),
+      variant('Heart, the tall view, the note after a refusal that names the permission', '&audio=demo&spotifyheart=unknownlacks', '.sp-grow >> .sp-heart'),
       variant('Heart, the tall view, the dim heart', '&audio=demo&spotifyheart=nopermission', '.sp-grow'),
       variant(NOTE, '&audio=demo&spotifyheart=nopermission', '.sp-grow >> .sp-heart'),
       variant('Heart, the tall view, long names', '&spotify=long&media=long&spotifyheart=saved', '.sp-grow'),
@@ -118,10 +126,12 @@ export default {
           if (m.ask.l < m.card.l - 0.5 || m.ask.r > m.card.r + 0.5 || m.ask.t < m.card.t - 0.5 || m.ask.b > m.card.b + 0.5) fails.push('heart: the note leaves the card');
           if (m.heart && m.ask.r > m.heart.r + 1) fails.push('heart: the note runs past the heart to the right');
           if (m.heart && m.ask.b > m.heart.t + 0.5) fails.push('heart: the note covers the heart');
-          if (m.askFont < 15.99 || m.askButtonFont < 15.99) fails.push(`heart: text under 16 px in the note (${m.askFont} and ${m.askButtonFont})`);
-          if (!m.askButton || m.askButton.h < 31.5 || m.askButton.w < 31.5) fails.push('heart: the Open Tools button is under 32 px');
-        } else if (variant.name === NOTE) {
-          fails.push('heart: the note did not open on a click');
+          if (m.heart && Math.abs(m.ask.r - m.heart.r) > 2) fails.push(`heart: the note is not beside the heart (its right edge is ${Math.round(m.heart.r - m.ask.r)} px from the heart's)`);
+          if (m.askFont < 15.99 || (m.askButton && m.askButtonFont < 15.99)) fails.push(`heart: text under 16 px in the note (${m.askFont} and ${m.askButtonFont})`);
+          if (m.askClipped) fails.push('heart: the sentence in the note is cut off');
+          if (!m.askRefused && (!m.askButton || m.askButton.h < 31.5 || m.askButton.w < 31.5)) fails.push('heart: the Open Tools button is under 32 px');
+        } else if (variant.name === NOTE || variant.name === REFUSED) {
+          fails.push(variant.name === NOTE ? 'heart: the note did not open on a click' : 'heart: the refusal note did not show after the refused save');
         }
         for (const f of fails) emit(`  FAIL ${f}`);
         if (fails.length) return true;
@@ -141,6 +151,14 @@ export default {
       'heart-play': { css: '.sp-pl-btn.big { width: 36px !important; height: 36px !important; }', expect: /^ *FAIL heart: Play or Pause is \d+ by \d+ px \(44 by 44\)/m, appliesTo: (v) => v.name === SAVED },
       'heart-note-out': { css: '.sp-heart-ask { right: -420px !important; }', expect: /^ *FAIL heart: the note leaves the card/m, appliesTo: (v) => v.name === NOTE },
       'heart-note-text': { css: '.sp-heart-ask p { font-size: 13px !important; }', expect: /^ *FAIL heart: text under 16 px in the note/m, appliesTo: (v) => v.name === NOTE },
+      'heart-prev': { css: '[data-control="previous"] { width: 30px !important; height: 30px !important; }', expect: /^ *FAIL heart: Previous is \d+ by \d+ px \(36 by 36\)/m, appliesTo: (v) => v.name === SAVED },
+      'heart-next': { css: '[data-control="next"] { width: 30px !important; height: 30px !important; }', expect: /^ *FAIL heart: Next is \d+ by \d+ px \(36 by 36\)/m, appliesTo: (v) => v.name === SAVED },
+      'heart-bar': { css: '.sp-seek { height: 10px !important; }', expect: /^ *FAIL heart: the time bar is \d+ px tall \(6\)/m, appliesTo: (v) => v.name === SAVED },
+      // The mock keeps an id on the episode, so a heart appears for an item that should have none.
+      'heart-noid': { query: '&spotifyheartid=1', expect: /^ *FAIL heart: a song without an id still has a heart/m, appliesTo: (v) => v.name === NO_HEART },
+      'heart-open-tools': { css: '.sp-heart-ask .sp-btn { height: 24px !important; }', expect: /^ *FAIL heart: the Open Tools button is under 32 px/m, appliesTo: (v) => v.name === NOTE },
+      'heart-note-beside': { css: '.sp-heart-ask { right: 70px !important; }', expect: /^ *FAIL heart: the note is not beside the heart/m, appliesTo: (v) => v.name === NOTE },
+      'heart-refusal-cut': { css: '.sp-heart-ask.refused { width: 90px !important; max-width: 90px !important; } .sp-heart-ask.refused p { overflow: hidden !important; white-space: nowrap !important; text-overflow: ellipsis !important; }', expect: /^ *FAIL heart: the sentence in the note is cut off/m, appliesTo: (v) => v.name === REFUSED },
       'heart-note-cover': { css: '.sp-heart-ask { bottom: 20px !important; }', expect: /^ *FAIL heart: the note covers the heart/m, appliesTo: (v) => v.name === NOTE },
     },
   },

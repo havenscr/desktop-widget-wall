@@ -43,23 +43,32 @@ A sign-in made before this permission existed does not hold it, so saving is off
 once more (Tools, Spotify, Sign out, Sign in). Until then the heart is dim, and a click opens a note with an
 Open Tools button. After the new sign-in the heart works with no restart. The Rust side keeps the `scope`
 list of the last token answer in memory (the code exchange replaces it; a refresh answer replaces it only
-when it names one), and `wall2_spotify_status` carries one more boolean, `canSave`: true only when that list
-is known and holds the permission. After a restart only a refresh token is stored, so the list is unknown, and
-`canSave` is false, until the first token refresh answers; the heart reads the status again after its first read.
+when it names one), and `wall2_spotify_status` carries one more field, `canSave`, with three values: `yes`
+(the list is known and holds the permission), `no` (it is known and does not) and `unknown`. After a restart only
+a refresh token is stored, so the value is `unknown` until the first token refresh answers (and for good if no
+answer ever names the scopes). Only `no` dims the heart and offers the note; on `unknown` the heart looks and
+works as usual and a click tries the save. The heart reads the status again after its first read, which has
+forced a refresh if one was due.
 
 Two commands, both limited to the `wall2` window, with the module's fixed words:
 
 - `wall2_spotify_saved(id)` answers whether the track is in Liked Songs (`GET /me/library/contains`).
-- `wall2_spotify_save(id, on)` saves or removes it (`PUT` or `DELETE /me/library`). A 403 answers
-  `needs sign in` and turns `canSave` off.
+- `wall2_spotify_save(id, on)` saves or removes it (`PUT` or `DELETE /me/library`). A 403 means a missing
+  permission only when Spotify's own wording says so (the error object's message "Insufficient client scope",
+  compared without regard to case, from a body of at most 4 KB) or when the kept list is known and lacks the
+  permission: the answer is then `needs sign in` and `canSave` becomes `no`. Any other 403 answers `refused`
+  and leaves the list alone. A 401 refreshes the token and tries the save once more.
 
 Both take a Spotify track id, exactly 22 letters or digits, checked before anything is sent; the track URI is
 built from it in Rust. Spotify's February 2026 changes removed the per-type `/me/tracks` calls in favour of the
 library calls above, which take a `uris` query (at most 40; the wall sends one).
 
 Whether the playing song is saved is read once per song, never on a timer. A click shows the change at once and
-puts it back with one line ("Could not save this song") if Spotify refuses. A song with no id (a podcast episode,
-a local file) and nothing playing have no heart. Dev mock: `spotifyheart=saved|unsaved|readfail|savefail|nopermission|episode`.
+puts it back, with the line "Could not save this song" in a small note beside the heart that closes after four
+seconds, if Spotify refuses. The first read's answer is kept as the baseline while a click is out, so a refused
+write goes back to what Spotify said whichever answers first; one click operation (the status read included)
+runs per song at a time, and an answer for a song no longer shown changes nothing on screen. A song with no id (a podcast episode,
+a local file) and nothing playing have no heart. Dev mock: `spotifyheart=saved|unsaved|readfail|savefail|nopermission|unknown|unknownlacks|episode`.
 
 Status treats a stored refresh token as signed in. If Spotify has expired that grant,
 the status changes only after the first library or playback call tries to refresh it.
