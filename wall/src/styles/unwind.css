@@ -3046,37 +3046,29 @@
   background: rgba(53, 230, 234, 0.12);
 }
 .sp-dev {
-  max-width: 300px;
+  width: 40px;
   height: 40px;
-  padding: 0 12px 0 14px;
-  border-radius: 20px;
-  display: flex;
-  align-items: center;
-  gap: 8px;
+  flex: none;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  color: var(--dim);
+  background: rgba(255, 255, 255, 0.06);
   border: 1px solid var(--line);
-  background: rgba(255, 255, 255, 0.05);
-  color: var(--dim);
-  font: 500 17px/1 var(--body);
 }
-.sp-dev small {
-  font: 400 16px/1 var(--body);
-  color: var(--dim);
-  white-space: nowrap;
-}
-.sp-dev > span {
-  min-width: 0;
-  color: var(--tx);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+/* A chosen target draws its icon in the accent colour; with none the icon stays muted. */
+.sp-dev.chosen svg {
+  color: var(--cyan);
 }
 .sp-dev svg {
   flex: none;
 }
 .sp-dev:hover,
+.sp-dev:focus-visible,
 .sp-dev.on {
+  color: var(--cyan);
   border-color: rgba(53, 230, 234, 0.55);
-  background: rgba(53, 230, 234, 0.1);
+  background: rgba(53, 230, 234, 0.12);
 }
 /* The chooser hangs under the chip, inside the card (right 70 px, top 70 px of the card). */
 .sp-devices {
@@ -3102,7 +3094,7 @@
 .sp-dev.locked {
   border-color: rgba(255, 194, 77, 0.45);
 }
-.sp-dev-lock {
+.sp-dev.locked svg {
   color: var(--amber);
 }
 .sp-devices.stale .sp-device {
