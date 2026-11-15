@@ -1,8 +1,9 @@
 import { defineConfig } from 'vitest/config';
 import react from '@vitejs/plugin-react';
+import { tablerIconData } from './vite-plugin-tabler-icons.mjs';
 
 export default defineConfig({
-  plugins: [react()],
+  plugins: [react(), tablerIconData()],
   clearScreen: false,
   server: { port: 1421, strictPort: true },
   build: { target: 'es2022' },

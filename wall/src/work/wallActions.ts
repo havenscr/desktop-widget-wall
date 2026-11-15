@@ -27,15 +27,19 @@ function nextJoinable(now: number) {
   return m ?? refuse('No meeting coming up');
 }
 
-/** The first task of "Next three", read fresh; its id came from the task read Rust remembers. */
+/**
+ * The first row of Work's "Due today" list (or of "Next up" when nothing is due), read fresh;
+ * its id came from the task read Rust remembers.
+ */
 async function firstTaskId(): Promise<string> {
-  let list: unknown;
+  const read = (args: Record<string, unknown>) => invoke<{ next?: { id?: unknown }[] }>('wall2_tasks_summary', args);
+  let first: { id?: unknown } | undefined;
   try {
-    list = await invoke<unknown>('wall2_tasks_next');
+    first = (await read({ notTag: 'home', due: 'today', limit: 1 }))?.next?.[0];
+    if (!first) first = (await read({ notTag: 'home', limit: 1 }))?.next?.[0];
   } catch {
     return refuse('The task app is not answering');
   }
-  const first = Array.isArray(list) ? (list as { id?: unknown }[])[0] : undefined;
   return typeof first?.id === 'string' ? first.id : refuse('No tasks to open');
 }
 

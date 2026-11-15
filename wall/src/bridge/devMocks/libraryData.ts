@@ -628,7 +628,7 @@ export const LIBRARY_DATA: LibGroup[] = [
     "label": "Open today's first task",
     "icon": "checklist",
     "kind": "wall",
-    "how": "the top of Next three",
+    "how": "the top of Due today",
     "action": "task:first",
     "runnable": true
    },
