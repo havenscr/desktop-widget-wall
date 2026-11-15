@@ -1093,7 +1093,7 @@ fn choose_session(
 
 /// The session a media command acts on. From Wall 2 the session with this key, else the first with
 /// this app id, when one is given and still exists (`wall2_media::resolve`); from any other window,
-/// and when nothing is found, Windows' current session.
+/// Windows' current session. An explicit Wall 2 target that is gone is refused.
 fn session_for(
     manager: &GlobalSystemMediaTransportControlsSessionManager,
     window_label: &str,
@@ -1101,13 +1101,14 @@ fn session_for(
     source_id: Option<&str>,
 ) -> Result<GlobalSystemMediaTransportControlsSession, String> {
     if wall2_media::honour_keys(window_label) {
-        if let Ok(list) = manager.GetSessions() {
-            let sessions: Vec<GlobalSystemMediaTransportControlsSession> = list.into_iter().collect();
-            let sources: Vec<String> = sessions.iter().map(session_app_id).collect();
-            let keys = wall2_media::session_keys(&sources);
-            if let Some(i) = wall2_media::resolve(&keys, &sources, session_key, source_id) {
-                return Ok(sessions[i].clone());
-            }
+        let sessions: Vec<GlobalSystemMediaTransportControlsSession> = manager.GetSessions()
+            .map(|list| list.into_iter().collect()).unwrap_or_default();
+        let sources: Vec<String> = sessions.iter().map(session_app_id).collect();
+        let keys = wall2_media::session_keys(&sources);
+        match wall2_media::target(window_label, &keys, &sources, session_key, source_id) {
+            wall2_media::Target::Found(i) => return Ok(sessions[i].clone()),
+            wall2_media::Target::Gone => return Err("gone".into()),
+            wall2_media::Target::Current => {}
         }
     }
     manager.GetCurrentSession().map_err(|e| e.to_string())
@@ -1120,15 +1121,11 @@ fn read_thumbnail_sync(
     use windows::Storage::Streams::DataReader;
 
     let stream = thumbnail_ref.OpenReadAsync().ok()?.get().ok()?;
-    let size = stream.Size().ok()? as u32;
-    if size == 0 {
+    let size = stream.Size().ok()?;
+    if size == 0 || size > wall2_media::THUMBNAIL_MAX {
         return None;
     }
-
-    let content_type = stream
-        .ContentType()
-        .map(|s| s.to_string())
-        .unwrap_or_else(|_| "image/jpeg".to_string());
+    let size = size as u32;
 
     let reader = DataReader::CreateDataReader(&stream).ok()?;
     reader.LoadAsync(size).ok()?.get().ok()?;
@@ -1136,7 +1133,8 @@ fn read_thumbnail_sync(
     let mut buffer = vec![0u8; size as usize];
     reader.ReadBytes(&mut buffer).ok()?;
 
-    Some((BASE64.encode(&buffer), content_type))
+    let content_type = wall2_media::thumbnail_ok(size as u64, &buffer)?;
+    Some((BASE64.encode(&buffer), content_type.to_string()))
 }
 
 /// Last (title|artist|album|app) we shipped album art for. The 2s
@@ -1150,12 +1148,13 @@ static LAST_ART_TRACK_KEY: Mutex<Option<String>> = Mutex::new(None);
 /// it, the art is skipped only while it matches the current track, whatever other callers
 /// did. Without it (the first wall), the shared last-sent key decides, as before.
 #[tauri::command]
-async fn get_now_playing(window: tauri::WebviewWindow, art_for: Option<String>) -> NowPlayingInfo {
+async fn get_now_playing(window: tauri::WebviewWindow, art_for: Option<String>) -> Result<NowPlayingInfo, String> {
+    static IN_FLIGHT: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
     // Wall 2 follows the session that really plays (`wall2_media`); the first wall keeps
     // Windows' "current" session exactly as before.
     let wall2 = window.label() == WALL2_LABEL;
     // Run Windows Media Session API calls in a blocking thread pool
-    tauri::async_runtime::spawn_blocking(move || {
+    tauri::async_runtime::spawn_blocking(move || wall2_media::run_bounded(move || {
         // Try to get session manager
         let manager = match GlobalSystemMediaTransportControlsSessionManager::RequestAsync() {
             Ok(async_op) => match async_op.get() {
@@ -1302,9 +1301,9 @@ async fn get_now_playing(window: tauri::WebviewWindow, art_for: Option<String>) 
         }
 
         info
-    })
+    }, std::time::Duration::from_secs(4), &IN_FLIGHT))
     .await
-    .unwrap_or_default()
+    .map_err(|_| "worker failed".to_string())?
 }
 
 /// Toggle play/pause (async to avoid blocking main thread)

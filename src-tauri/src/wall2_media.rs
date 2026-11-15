@@ -117,7 +117,7 @@ pub fn session_keys(sources: &[String]) -> Vec<String> {
 }
 
 /// Which listed session a media command acts on: the one with this key, else the first with this app
-/// id, else None (the caller then uses Windows' current session). `keys` and `sources` are the
+/// id, else None (a targeted Wall 2 command must refuse). `keys` and `sources` are the
 /// listed sessions' keys and app ids in list order.
 pub fn resolve(keys: &[String], sources: &[String], key: Option<&str>, id: Option<&str>) -> Option<usize> {
     let key = key.map(str::trim).filter(|k| !k.is_empty());
@@ -128,6 +128,64 @@ pub fn resolve(keys: &[String], sources: &[String], key: Option<&str>, id: Optio
         }
     }
     id.and_then(|id| sources.iter().position(|s| s == id))
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub enum Target {
+    Found(usize),
+    Gone,
+    Current,
+}
+
+/// Resolve an explicit Wall 2 target, refusing it when no listed session matches.
+/// Other windows and commands with no target keep Windows' current-session behaviour.
+pub fn target(window_label: &str, keys: &[String], sources: &[String], key: Option<&str>, id: Option<&str>) -> Target {
+    if !honour_keys(window_label) || !key.into_iter().chain(id).any(|s| !s.trim().is_empty()) {
+        return Target::Current;
+    }
+    resolve(keys, sources, key, id).map_or(Target::Gone, Target::Found)
+}
+
+/// Wait at most `timeout`, allowing only one worker until it really finishes.
+pub fn run_bounded<T: Send + 'static>(
+    f: impl FnOnce() -> T + Send + 'static,
+    timeout: std::time::Duration,
+    busy: &'static std::sync::atomic::AtomicBool,
+) -> Result<T, String> {
+    use std::sync::atomic::Ordering;
+    if busy.compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire).is_err() {
+        return Err("busy".into());
+    }
+    struct InFlight(&'static std::sync::atomic::AtomicBool);
+    impl Drop for InFlight {
+        fn drop(&mut self) {
+            self.0.store(false, Ordering::Release);
+        }
+    }
+    let (tx, rx) = std::sync::mpsc::sync_channel(1);
+    if std::thread::Builder::new().spawn(move || {
+        let guard = InFlight(busy);
+        let result = f();
+        drop(guard);
+        let _ = tx.send(result);
+    }).is_err() {
+        busy.store(false, Ordering::Release);
+        return Err("worker unavailable".into());
+    }
+    rx.recv_timeout(timeout).map_err(|e| match e {
+        std::sync::mpsc::RecvTimeoutError::Timeout => "timed out".into(),
+        std::sync::mpsc::RecvTimeoutError::Disconnected => "worker failed".into(),
+    })
+}
+
+pub const THUMBNAIL_MAX: u64 = 1024 * 1024;
+
+/// Accept only bounded image bytes; never trust the stream's declared content type.
+pub fn thumbnail_ok(size: u64, bytes: &[u8]) -> Option<&'static str> {
+    if size == 0 || size > THUMBNAIL_MAX || bytes.len() as u64 > THUMBNAIL_MAX {
+        return None;
+    }
+    crate::wall2_sonos_read::sniff_image(bytes)
 }
 
 /// A session key counts only from the second window; any other window acts on the current session.
@@ -323,6 +381,56 @@ mod tests {
     }
 
     #[test]
+    fn targeted_commands_refuse_missing_sessions() {
+        let sources = strings(&["a", "b"]);
+        let keys = session_keys(&sources);
+        for (window, key, id, expected) in [
+            ("wall2", Some("b#0"), Some("a"), Target::Found(1)),
+            ("wall2", None, Some("a"), Target::Found(0)),
+            ("wall2", Some("gone#0"), None, Target::Gone),
+            ("wall2", None, Some("gone"), Target::Gone),
+            ("wall2", None, None, Target::Current),
+            ("wall2", Some(" "), Some(""), Target::Current),
+            ("main", Some("gone#0"), None, Target::Current),
+        ] {
+            assert_eq!(target(window, &keys, &sources, key, id), expected);
+        }
+        assert_eq!(target("wall2", &[], &[], Some("a#0"), Some("a")), Target::Gone);
+        assert_eq!(target("wall2", &[], &[], None, Some("a")), Target::Gone);
+    }
+
+    #[test]
+    fn bounded_read_finishes_or_times_out_without_another_worker() {
+        use std::sync::atomic::{AtomicBool, Ordering};
+        use std::time::Duration;
+        let busy: &'static AtomicBool = Box::leak(Box::new(AtomicBool::new(false)));
+        assert_eq!(run_bounded(|| 7, Duration::from_secs(1), busy), Ok(7));
+        assert!(!busy.load(Ordering::Acquire));
+        let (release, held) = std::sync::mpsc::channel();
+        assert_eq!(run_bounded(move || held.recv().unwrap(), Duration::from_millis(20), busy), Err("timed out".into()));
+        assert_eq!(run_bounded(|| panic!("must not start"), Duration::from_millis(20), busy), Err::<(), _>("busy".into()));
+        release.send(()).unwrap();
+        let deadline = Instant::now() + Duration::from_secs(2);
+        while busy.load(Ordering::Acquire) && Instant::now() < deadline {
+            std::thread::yield_now();
+        }
+        assert!(!busy.load(Ordering::Acquire));
+        assert_eq!(run_bounded(|| 9, Duration::from_secs(1), busy), Ok(9));
+    }
+
+    #[test]
+    fn thumbnails_require_bounded_image_bytes() {
+        let png = b"\x89PNG\r\n\x1a\n";
+        assert_eq!(thumbnail_ok(THUMBNAIL_MAX + 1, png), None);
+        assert_eq!(thumbnail_ok(0, png), None);
+        assert_eq!(thumbnail_ok(png.len() as u64, png), Some("image/png"));
+        assert_eq!(thumbnail_ok(THUMBNAIL_MAX, png), Some("image/png"));
+        assert_eq!(thumbnail_ok(4, b"text"), None);
+        assert_eq!(thumbnail_ok(3, &[0xff, 0xd8, 0xff]), Some("image/jpeg"));
+        assert_eq!(thumbnail_ok(12, b"RIFF1234WEBP"), Some("image/webp"));
+    }
+
+    #[test]
     fn current_playing_wins_even_when_another_plays_too() {
         let s = [c("a", "playing", 10.0, 200.0, 1.0, true), c("b", "playing", 5.0, 100.0, 0.0, false)];
         assert_eq!(picked(&s), Some((0, Rule::CurrentPlaying, false)));
@@ -495,7 +603,7 @@ mod tests {
         // A key that is gone falls back to the first session with the id.
         assert_eq!(resolve(&keys, &sources, Some("a#7"), Some("a")), Some(0));
         assert_eq!(resolve(&keys, &sources, None, Some("b")), Some(1));
-        // Nothing found: the caller uses Windows' current session.
+        // Nothing found: a targeted Wall 2 command must refuse.
         assert_eq!(resolve(&keys, &sources, Some("zzz#0"), Some("zzz")), None);
         assert_eq!(resolve(&keys, &sources, None, None), None);
         assert_eq!(resolve(&keys, &sources, Some("  "), Some("")), None);
