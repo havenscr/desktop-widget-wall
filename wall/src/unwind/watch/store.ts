@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { usePlaceStore } from '../../state/places';
 import { defaultLabel, parseLink, refKey, validId, type WatchRef } from './links';
-import { playerLink } from './PlayerFrame';
+import { playerLink } from './playerLink';
 import { PLAYER_VOLUME } from './urls';
 import { driveInMode } from './DriveInFrame';
 import { DRIVE_IN_SCREEN, lookFor, loadLooks, saveLooks, type LookId, type LookSettings, type WallRect } from './looks';
@@ -233,7 +233,8 @@ export const useWatchStore = create<WatchState>((set, get) => ({
     if (cur && cur.kind === 'video' && cur.id === id) {
       // The same video: the frame is keyed by it, so it is not reloaded; it starts again from the top.
       playerLink.send('seekTo', [0, true]);
-      set({ source: 'music', paused: false, report: st.report.ended ? { ...st.report, ended: false } : st.report, needsClick: false, clickHint: false, stopped: null });
+      // An error code that was acted on is cleared, so a replay of an id that errored before is not skipped at once.
+      set({ source: 'music', paused: false, report: st.report.ended || st.report.error !== null ? { ...st.report, ended: false, error: null } : st.report, needsClick: false, clickHint: false, stopped: null });
       return true;
     }
     const item: SavedItem = { kind: 'video', id, label: cleanText(label, MAX_LABEL) || 'YouTube video' };

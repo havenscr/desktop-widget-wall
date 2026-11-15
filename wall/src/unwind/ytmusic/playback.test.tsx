@@ -16,7 +16,7 @@ import { SAVED_KEY } from '../watch/saved';
 import { resetWatch, useWatchStore } from '../watch/store';
 import { UnwindView } from '../watch/testView';
 import { FOOT_SEEK_GAP_MS, FOOT_SEEK_STEP_S } from './YtFoot';
-import { AUTOPLAY_LINE, LOAD_GAP_MS, playAll, playFrom, resetQueue, useYtQueue } from './queue';
+import { AUTOPLAY_LINE, LOAD_GAP_MS, playAgain, playAll, playFrom, resetQueue, useYtQueue } from './queue';
 import { resetYoutubeStatus } from './status';
 import { resetLibrary } from './store';
 import { YtMusicSide } from './YtMusicSide';
@@ -207,6 +207,52 @@ describe('the rows play', () => {
   });
 });
 
+describe('a row the wall cannot play', () => {
+  it('is greyed with its reason when it is marked playable but its id has no video id shape, and is not a button', async () => {
+    serve([video(1), { ...video(2), id: 'not-an-id' }, video(3)]);
+    render(<YtMusicSide tall={false} remote={null} />);
+    await flush(10);
+    fireEvent.click(screen.getByText('Mix 1').closest('button')!);
+    await flush(10);
+    await flush(10);
+    expect(rowBtn('Clip 1')).not.toBeNull();
+    expect(rowBtn('Clip 2')).toBeNull();
+    expect(rowEl('Clip 2').classList.contains('off')).toBe(true);
+    expect(rowEl('Clip 2').getAttribute('data-playable')).toBe('no');
+    expect(within(rowEl('Clip 2')).getByText('Not available')).toBeTruthy();
+    fireEvent.click(rowEl('Clip 2'));
+    expect(w().playing).toBeNull();
+  });
+});
+
+describe('sound', () => {
+  it('a pick the owner asks for is heard even when a Watch video left the player muted; an automatic advance never changes mute', async () => {
+    await openList(false);
+    act(() => w().setMuted(true));
+    fireEvent.click(rowBtn('Clip 1')!);
+    expect(w().muted).toBe(false);
+    // Muted again by the owner: a skip or an advance leaves it as it is.
+    act(() => w().setMuted(true));
+    act(() => w().setReport({ started: true, ended: true }));
+    await flush(LOAD_GAP_MS + 5);
+    expect(nowId()).toBe(id(3));
+    expect(w().muted).toBe(true);
+    // Play and Shuffle and Play again are the owner's too.
+    cleanup();
+    act(() => w().setMuted(true));
+    resetQueue();
+    resetWatch();
+    act(() => w().setMuted(true));
+    playAll([video(1), video(3)], true, LIST);
+    expect(w().muted).toBe(false);
+    act(() => w().stop());
+    act(() => w().setMuted(true));
+    await flush(LOAD_GAP_MS);
+    playAgain();
+    expect(w().muted).toBe(false);
+  });
+});
+
 describe('Play and Shuffle', () => {
   it.each([true, false])('start the queue from the first playable row or in a random order (tall %s)', async (tall) => {
     await openList(tall);
@@ -326,6 +372,28 @@ describe('the foot player', () => {
     fireEvent.keyUp(bar, { key: 'ArrowRight' });
     expect(sent.length).toBe(3);
     expect(sent[2]).toEqual(['seekTo', [100 + FOOT_SEEK_STEP_S * 4, true]]);
+  });
+
+  it('drops a keyboard seek that is still waiting when another video takes the frame (it never lands on the next video)', async () => {
+    await openList(true);
+    fireEvent.click(rowBtn('Clip 1')!);
+    act(() => w().setReport({ started: true, time: 60, duration: 200 }));
+    await flush(LOAD_GAP_MS);
+    sent.length = 0;
+    const bar = slider();
+    // A first key goes out at once; the second waits inside the 300 ms window.
+    fireEvent.keyDown(bar, { key: 'ArrowRight' });
+    fireEvent.keyDown(bar, { key: 'ArrowRight' });
+    expect(sent.length).toBe(1);
+    // Next, inside that window: the pending seek must not fire on the new entry.
+    fireEvent.click(within(foot()).getByRole('button', { name: 'Next' }));
+    await flush(FOOT_SEEK_GAP_MS + 50);
+    await flush(LOAD_GAP_MS);
+    expect(nowId()).toBe(id(3));
+    expect(sent.filter(([f]) => f === 'seekTo')).toEqual([['seekTo', [65, true]]]);
+    // The key's release does not send the dropped position either.
+    fireEvent.keyUp(bar, { key: 'ArrowRight' });
+    expect(sent.filter(([f]) => f === 'seekTo').length).toBe(1);
   });
 
   it('says autoplay was refused with one button that goes to Watch', async () => {
@@ -521,6 +589,24 @@ describe('Home, the rail, Up next and Watch', () => {
     fireEvent.click(nextBtn);
     expect(nowId()).toBe(id(2));
     expect(sent.filter(([f]) => f === 'nextVideo')).toEqual([]);
+  });
+
+  it('a Watch video with the same id as the queue\'s entry keeps its own Previous and Next (a plain video has none)', async () => {
+    framePoster.render = () => null;
+    localStorage.setItem(SAVED_KEY, JSON.stringify([{ kind: 'video', id: id(1), label: 'Same video' }]));
+    w().load();
+    playAll([video(1), video(3)], false, LIST);
+    act(() => w().play({ kind: 'video', id: id(1) }));
+    act(() => w().setTab('watch'));
+    render(<UnwindView />);
+    await flush(20);
+    expect((screen.getByRole('button', { name: 'Next' }) as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByRole('button', { name: 'Previous' }) as HTMLButtonElement).disabled).toBe(true);
+    expect(wallVideoControls.next()).toBe(true);
+    expect(sent).toContainEqual(['nextVideo', undefined]);
+    await flush(LOAD_GAP_MS * 2);
+    expect(w().source).toBe('watch');
+    expect(nowId()).toBe(id(1));
   });
 
   it('puts the frame address on the no-cookie embed host for the id, and keeps the frame when the same pick is played again', async () => {

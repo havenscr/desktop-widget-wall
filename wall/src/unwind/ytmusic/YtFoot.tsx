@@ -69,6 +69,16 @@ export function YtFoot() {
     },
     [],
   );
+  // Another item in the frame (Next, a pick, a Watch play): a seek still waiting belongs to the old one and is dropped, with the
+  // pending position, the drag and the throttle's anchor, so it can never land on the new video.
+  const itemKey = playing ? `${playing.kind}:${playing.id}` : '';
+  useEffect(() => {
+    if (keyTimer.current) clearTimeout(keyTimer.current);
+    keyTimer.current = null;
+    keyPos.current = null;
+    lastSeekAt.current = 0;
+    setDrag(null);
+  }, [itemKey]);
   const total = duration ?? 0;
   const position = Math.min(total, Math.max(0, drag ?? time ?? 0));
   const fraction = total > 0 ? position / total : 0;

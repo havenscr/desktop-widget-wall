@@ -97,7 +97,7 @@ function measureYoutubeLibrary() {
     }
     // Playable rows are play targets (a button with a pointer cursor); greyed rows are not (no button, no pointer cursor on the row or anything in it).
     for (const row of libEl.querySelectorAll('.yt-row')) {
-      const grey = row.classList.contains('off');
+      const grey = row.classList.contains('off') || row.getAttribute('data-playable') !== 'yes';
       const btn = row.querySelector('button');
       if (grey && (btn || row.querySelector('[role="button"], a, input'))) { fails.push('a greyed row holds a button, a link or a field'); break; }
       if (!grey && !btn) { fails.push('a playable row holds no button'); break; }

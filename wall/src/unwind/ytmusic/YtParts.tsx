@@ -6,7 +6,7 @@ import { useToolsStore } from '../../tools/store';
 import { useWatchStore } from '../watch/store';
 import { PlayingBars } from '../spotify/Tile';
 import { failedReason, lengthText, problemAction, problemLine, rowTip, rowWords, safeThumb, type YtProblem } from './model';
-import { failedWords, sameList, useYtQueue, type QueueFrom } from './queue';
+import { failedWords, sameList, useYtQueue, validVideoId, type QueueFrom } from './queue';
 
 /**
  * A picture from YouTube's picture host, or a neutral tile with a music note when there is none or it
@@ -103,10 +103,12 @@ export function YtRows({ items, foot, list, onPlay }: { items: YtVideo[]; foot?:
       <ol className="yt-list">
         {items.map((v, i) => {
           const gone = failed.get(v.id);
-          const words = gone ? failedWords(gone) : rowWords(v.playable);
+          // A row marked playable whose id does not have a video id's shape cannot be played: it is greyed, not a button that does nothing.
+          const bad = v.playable === 'yes' && !validVideoId(v.id);
+          const words = gone ? failedWords(gone) : bad ? 'Not available' : rowWords(v.playable);
           const plays = !words && !!onPlay && v.playable === 'yes';
           const on = now !== null && now.id === v.id && now.at === i;
-          const lines = rowTip(v, gone ? failedReason(gone) : null);
+          const lines = rowTip(v, gone ? failedReason(gone) : bad ? 'This video cannot be played here: YouTube gave it an address the wall cannot use.' : null);
           const cells = (
             <>
               <span className="yt-n">
@@ -128,7 +130,7 @@ export function YtRows({ items, foot, list, onPlay }: { items: YtVideo[]; foot?:
             <li
               key={`${v.id}-${i}`}
               className={`yt-row${words ? ' off' : ''}${on ? ' on' : ''}`}
-              data-playable={gone ? 'no' : v.playable}
+              data-playable={gone || bad ? 'no' : v.playable}
               {...tip(() => (
                 <div className="sp-tipline">
                   <b>{lines[0]}</b>

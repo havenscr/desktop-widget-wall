@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { refKey, type WatchRef } from './links';
+import { playerLink } from './playerLink';
 import { useWatchStore } from './store';
 import {
   commandMessage,
@@ -12,7 +13,6 @@ import {
   playerOrigin,
   readPlayerMessage,
   type PlayerInfo,
-  type YouTubeCommand,
 } from './urls';
 
 /**
@@ -34,13 +34,7 @@ export const REPORT_EVERY_MS = 1000;
 /** A change of the level under the clock reaches the player at most this often (the last value always does). */
 export const LEVEL_EVERY_MS = 100;
 
-/**
- * The wall's controls send their commands here; the frame on screen fills it in while it is
- * mounted. Returns false when there is no loaded YouTube frame to talk to.
- */
-export const playerLink: { send: (func: YouTubeCommand, args?: readonly (number | boolean)[]) => boolean } = {
-  send: () => false,
-};
+export { playerLink };
 
 /**
  * The video's own title and channel from a player report, taken for a single video or a live

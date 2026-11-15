@@ -66,11 +66,24 @@ export const MAX_FAILED = 500;
 /** A line stays this long (or until the next play). */
 export const NOTE_MS = 8000;
 export const ERRORS_STOP = 5;
+/** A video counts as played once its reported time passes this many seconds. */
+export const PLAYED_S = 2;
 
 export const FIVE_LINE = 'Stopped after five videos in a row would not play.';
 export const AUTOPLAY_LINE = 'YouTube did not start the sound.';
 
 const ID = /^[A-Za-z0-9_-]{11}$/;
+
+/** True for an id with a video id's exact shape: the queue's own test of whether a row can be a control. */
+export const validVideoId = (id: unknown): boolean => typeof id === 'string' && ID.test(id);
+
+/** The line when the entry that would not play was the last one. */
+export function lastLine(title: string, why: FailedWhy | null): string {
+  const t = title || 'This video';
+  if (why === 'embed') return `${t} would not play: it plays only on YouTube. That was the last one.`;
+  if (why === 'removed') return `${t} would not play: it is no longer on YouTube. That was the last one.`;
+  return `${t} would not play. That was the last one.`;
+}
 
 export function skipLine(title: string, why: FailedWhy | null): string {
   const t = title || 'this video';
@@ -125,8 +138,7 @@ function shuffle<T>(items: T[]): T[] {
   return out;
 }
 
-// ---------------------------------------------------------------------------------------------------------------
-// The one note, the one load timer.
+// Section: The one note, the one load timer.
 
 let noteTimer: ReturnType<typeof setTimeout> | undefined;
 
@@ -149,8 +161,15 @@ let loadTimer: ReturnType<typeof setTimeout> | undefined;
 /** The entry (position and id) whose end or error has been acted on, so a second report of it does nothing. */
 let advancedFor: string | null = null;
 let errorFor: string | null = null;
-/** Set by Play, Shuffle and a row click until the queue holds `AHEAD_ROWS` or the list has no more. */
+/** Set by Play, Shuffle and a row click until the list has been read `AHEAD_ROWS` rows past the pick, or has no more. */
 let ahead = false;
+/**
+ * Reading ahead and growing near the end are bounded by rows READ, not by entries accepted: the list is never read past
+ * this place (a row count in the list). A pick sets it to the picked row plus `AHEAD_ROWS`; each entry that plays moves it
+ * on to its own place (or, for a shuffled queue near its end, to the rows read) plus `AHEAD_ROWS`. A list of mostly
+ * private, removed or blocked rows therefore stops at 200 rows past the place, however few of them could play.
+ */
+let readCeiling = AHEAD_ROWS;
 
 const keyOf = (pos: number, id: string) => `${pos}:${id}`;
 
@@ -160,7 +179,7 @@ function cancelPending(): void {
   pending = null;
 }
 
-function markFailed(id: string, why: FailedWhy): void {
+export function markFailed(id: string, why: FailedWhy): void {
   const failed = new Map(useYtQueue.getState().failed);
   failed.delete(id);
   failed.set(id, why);
@@ -191,6 +210,8 @@ function load(pos: number, keepNote = false): void {
   lastLoadAt = Date.now();
   advancedFor = null;
   errorFor = null;
+  const q0 = useYtQueue.getState();
+  readCeiling = Math.max(readCeiling, (q0.shuffled ? (q0.entries.length - pos <= NEAR_END ? q0.readTo : 0) : e.at) + AHEAD_ROWS);
   // `pos` first, so the queue is already the player's when the Watch store announces the new item.
   useYtQueue.setState({ pos });
   // A skip keeps the line that says why; a play the owner asked for clears it.
@@ -223,12 +244,14 @@ function request(pos: number, keepNote = false): void {
   }
 }
 
-// ---------------------------------------------------------------------------------------------------------------
-// Starting a queue.
+// Section: Starting a queue.
 
-function start(entries: QueueEntry[], pos: number, from: QueueFrom, rows: number, shuffled: boolean): void {
+function start(entries: QueueEntry[], pos: number, from: QueueFrom, rows: number, shuffled: boolean, place: number): void {
   if (entries.length === 0 || !entries[pos]) return;
   ahead = true;
+  readCeiling = place + AHEAD_ROWS;
+  // A play the owner asked for is heard, and starts the count of videos that would not play again.
+  useWatchStore.getState().setMuted(false);
   useYtQueue.setState({ entries, pos, note: null, from, shuffled, errorsInRow: 0, readTo: rows });
   request(pos);
 }
@@ -244,7 +267,7 @@ export function playFrom(rows: readonly YtVideo[], index: number, from: QueueFro
     entries.push(toEntry(v, i));
   });
   if (pos < 0) return;
-  start(entries, pos, from, rows.length, false);
+  start(entries, pos, from, rows.length, false, index);
 }
 
 /** Play: from the first playable row. Shuffle: every playable row once, in a random order. */
@@ -252,10 +275,16 @@ export function playAll(rows: readonly YtVideo[], doShuffle: boolean, from: Queu
   const failed = useYtQueue.getState().failed;
   let entries = rows.flatMap((v, i) => (queueable(v, failed) ? [toEntry(v, i)] : []));
   if (doShuffle) entries = shuffle(entries);
-  start(entries, 0, from, rows.length, doShuffle);
+  start(entries, 0, from, rows.length, doShuffle, 0);
+}
+
+/** Every play the owner asks for starts the count of videos in a row that would not play again. */
+function owner(): void {
+  if (useYtQueue.getState().errorsInRow > 0) useYtQueue.setState({ errorsInRow: 0 });
 }
 
 export function next(): void {
+  owner();
   const base = pending?.pos ?? useYtQueue.getState().pos;
   const n = nextPlayable(base + 1);
   if (n !== null) request(n);
@@ -263,6 +292,7 @@ export function next(): void {
 
 /** Back: the start of this entry when more than 3 seconds in (or at the first), else the entry before. */
 export function previous(): void {
+  owner();
   const q = useYtQueue.getState();
   const base = pending?.pos ?? q.pos;
   const time = useWatchStore.getState().report.time ?? 0;
@@ -272,6 +302,7 @@ export function previous(): void {
 
 /** Up next: play the entry at this place in the queue. */
 export function jump(index: number): void {
+  owner();
   const q = useYtQueue.getState();
   const e = q.entries[index];
   if (e && !q.failed.has(e.id)) request(index);
@@ -280,7 +311,11 @@ export function jump(index: number): void {
 /** "Play again": the entry at `pos`, from the start, from the owner's click. */
 export function playAgain(): void {
   const q = useYtQueue.getState();
-  if (q.entries[q.pos]) request(q.pos);
+  if (!q.entries[q.pos]) return;
+  owner();
+  // A play the owner asked for is heard, even after a Watch video was muted.
+  useWatchStore.getState().setMuted(false);
+  request(q.pos);
 }
 
 /** The queue stops being anyone's: gone, with its note and timers (tests, and a sign-out). */
@@ -292,11 +327,11 @@ export function resetQueue(): void {
   advancedFor = null;
   errorFor = null;
   ahead = false;
+  readCeiling = AHEAD_ROWS;
   useYtQueue.setState(fresh());
 }
 
-// ---------------------------------------------------------------------------------------------------------------
-// Growing, only through the library store.
+// Section: Growing, only through the library store.
 
 function listOf(from: QueueFrom): { items: YtVideo[]; next: string | null; loading: boolean; problem: unknown; pages: number; key: 'songs' | 'liked' | null } | null {
   const lib = useYtLibrary.getState();
@@ -322,9 +357,13 @@ function maybeGrow(): void {
   absorb();
   const q = useYtQueue.getState();
   if (!q.from) return;
-  if (q.entries.length >= AHEAD_ROWS) ahead = false;
-  const need = q.entries.length - q.pos <= NEAR_END || (ahead && q.entries.length < AHEAD_ROWS);
-  if (!need) return;
+  const near = q.entries.length - q.pos <= NEAR_END;
+  // Never more than `readCeiling` rows of the list, whatever share of them could play.
+  if (q.readTo >= readCeiling) {
+    ahead = false;
+    return;
+  }
+  if (!near && !ahead) return;
   const l = listOf(q.from);
   if (!l) {
     ahead = false;
@@ -346,8 +385,7 @@ onLibraryReset(() => {
   useYtQueue.setState({ failed: new Map() });
 });
 
-// ---------------------------------------------------------------------------------------------------------------
-// Following the player.
+// Section: Following the player.
 
 useWatchStore.subscribe((s, p) => {
   // The queue is no longer the player's (a Watch play, a pin, a stop): a load that was waiting never happens.
@@ -358,7 +396,8 @@ useWatchStore.subscribe((s, p) => {
   if (!e || e.id !== s.playing.id) return;
   const key = keyOf(q.pos, e.id);
   const r = s.report;
-  if (r.started && q.errorsInRow > 0 && r.error === null) useYtQueue.setState({ errorsInRow: 0 });
+  // The count of videos in a row that would not play starts again only when one has really played (past 2 seconds).
+  if (q.errorsInRow > 0 && r.error === null && (r.time ?? 0) > PLAYED_S) useYtQueue.setState({ errorsInRow: 0 });
   if (r.error !== null && errorFor !== key) {
     errorFor = key;
     onError(r.error, q.pos, e);
@@ -375,20 +414,27 @@ function onError(code: number, pos: number, e: QueueEntry): void {
   const why: FailedWhy | null = code === 100 ? 'removed' : code === 101 || code === 150 ? 'embed' : null;
   if (why) markFailed(e.id, why);
   const errors = useYtQueue.getState().errorsInRow + 1;
-  useYtQueue.setState({ errorsInRow: errors });
   if (errors >= ERRORS_STOP) {
     cancelPending();
+    useYtQueue.setState({ errorsInRow: 0 });
     useWatchStore.getState().stop();
     setNote(FIVE_LINE);
     return;
   }
-  setNote(skipLine(e.title, why));
+  useYtQueue.setState({ errorsInRow: errors });
   const n = nextPlayable(pos + 1);
-  if (n !== null) request(n, true);
+  if (n === null) {
+    // The last one: the queue ends as it does after the last entry ends (the wall's player stops, the entries are kept, Play again is offered).
+    cancelPending();
+    useWatchStore.getState().stop();
+    setNote(lastLine(e.title, why));
+    return;
+  }
+  setNote(skipLine(e.title, why));
+  request(n, true);
 }
 
-// ---------------------------------------------------------------------------------------------------------------
-// What the rest of the wall reads.
+// Section: What the rest of the wall reads.
 
 /** The wall's music as one value (null while no music item is in the frame and no queue is kept). */
 export interface MusicView {

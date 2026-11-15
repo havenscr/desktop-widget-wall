@@ -6,7 +6,7 @@ import { playerLink } from '../watch/PlayerFrame';
 import { SAVED_KEY } from '../watch/saved';
 import { NO_REPORT, resetWatch, useWatchStore } from '../watch/store';
 import { commandMessage, readPlayerMessage, YOUTUBE_EMBED_ORIGIN } from '../watch/urls';
-import { AHEAD_ROWS, FIVE_LINE, LOAD_GAP_MS, NOTE_MS, jump, musicView, next, playAgain, playAll, playFrom, previous, queueActive, resetQueue, upcoming, useYtQueue } from './queue';
+import { AHEAD_ROWS, FIVE_LINE, MAX_FAILED, markFailed, LOAD_GAP_MS, NOTE_MS, jump, musicView, next, playAgain, playAll, playFrom, previous, queueActive, resetQueue, upcoming, useYtQueue } from './queue';
 import { libraryMounted, libraryVisible, openPlaylist, resetLibrary, useYtLibrary } from './store';
 
 vi.setConfig({ testTimeout: 20_000 });
@@ -261,6 +261,37 @@ describe('moving through it', () => {
     expect(sent.filter(([f]) => f === 'seekTo')).toEqual([]);
   });
 
+  it('the once-per-entry guard keeps a later report of the same end from undoing a skip the owner made meanwhile', async () => {
+    // The first load was just now, so the advance after the end waits (pending on entry 1).
+    w().setReport({ started: true, ended: true });
+    next();
+    // The report changes again while it is still ended: without the guard this would ask for entry 1 again and drop the owner's skip.
+    useWatchStore.setState({ report: { ...w().report, time: 5 } });
+    useWatchStore.setState({ report: { ...w().report, time: 6 } });
+    await flush(LOAD_GAP_MS + 5);
+    expect(nowId()).toBe(id(2));
+  });
+
+  it('is active only for music: a Watch video with the same id as the entry now on does not make the queue active', async () => {
+    const same = id(0);
+    localStorage.setItem(SAVED_KEY, JSON.stringify([{ kind: 'video', id: same, label: 'Same video' }]));
+    w().load();
+    expect(active()).toBe(true);
+    w().play({ kind: 'video', id: same });
+    expect(nowId()).toBe(same);
+    expect(q().entries[q().pos]!.id).toBe(same);
+    expect(w().source).toBe('watch');
+    expect(active()).toBe(false);
+    expect(musicView(w(), q())).toBeNull();
+    // Next and Previous on Watch are then the Watch video's own (a plain video has none), and never move the queue.
+    sent.length = 0;
+    const pos = q().pos;
+    w().setReport({ started: true, time: 40 });
+    await flush(LOAD_GAP_MS * 2);
+    expect(q().pos).toBe(pos);
+    expect(nowId()).toBe(same);
+  });
+
   it('Play again starts the entry now on from the beginning', async () => {
     w().stop();
     expect(active()).toBe(false);
@@ -320,8 +351,11 @@ describe('what the player says about an entry', () => {
     await flush(LOAD_GAP_MS);
     await fail(2);
     await flush(LOAD_GAP_MS);
-    // One plays: the count starts again.
+    // A report that it started, with no time played, does not start the count again.
     w().setReport({ started: true });
+    expect(q().errorsInRow).toBe(2);
+    // One really plays (past 2 seconds): the count starts again.
+    w().setReport({ started: true, time: 3 });
     expect(q().errorsInRow).toBe(0);
     for (let n = 0; n < 4; n += 1) {
       await fail(2);
@@ -334,6 +368,76 @@ describe('what the player says about an entry', () => {
     await flush(LOAD_GAP_MS * 3);
     expect(w().playing).toBeNull();
     expect(active()).toBe(false);
+    // After the stop the count is back at 0: the next play, and one error, do not stop again.
+    expect(q().errorsInRow).toBe(0);
+    playAgain();
+    await flush(LOAD_GAP_MS);
+    await fail(2);
+    expect(w().playing).not.toBeNull();
+  });
+
+  it('a player that alternates started and error still reaches the five-error stop', async () => {
+    for (let n = 0; n < 4; n += 1) {
+      await fail(2);
+      w().setReport({ started: true });
+      await flush(LOAD_GAP_MS);
+    }
+    await fail(2);
+    expect(w().playing).toBeNull();
+    expect(q().note).toBe(FIVE_LINE);
+  });
+
+  it('every play the owner asks for starts the count again', async () => {
+    await fail(2);
+    await flush(LOAD_GAP_MS);
+    expect(q().errorsInRow).toBe(1);
+    next();
+    expect(q().errorsInRow).toBe(0);
+    await flush(LOAD_GAP_MS);
+    await fail(2);
+    await flush(LOAD_GAP_MS);
+    jump(5);
+    expect(q().errorsInRow).toBe(0);
+    await flush(LOAD_GAP_MS);
+    await fail(2);
+    previous();
+    expect(q().errorsInRow).toBe(0);
+    playAll(rows(8), false, LIST);
+    expect(q().errorsInRow).toBe(0);
+  });
+
+  it('an error on the last entry ends the queue: the player stops, the entries stay, a line says it was the last one, and Play again plays it', async () => {
+    jump(7);
+    await flush(LOAD_GAP_MS);
+    expect(nowId()).toBe(id(7));
+    w().setReport({ error: 150 });
+    expect(w().playing).toBeNull();
+    expect(active()).toBe(false);
+    expect(q().entries.length).toBe(8);
+    expect(q().failed.get(id(7))).toBe('embed');
+    expect(q().note).toBe('Clip 7 would not play: it plays only on YouTube. That was the last one.');
+    await flush(LOAD_GAP_MS * 3);
+    expect(w().playing).toBeNull();
+    expect(musicView(w(), q())).toMatchObject({ state: 'stopped' });
+    // Any other code uses the plain words.
+    useYtQueue.setState({ failed: new Map() });
+    playAgain();
+    await flush(LOAD_GAP_MS);
+    expect(nowId()).toBe(id(7));
+    w().setReport({ error: 2 });
+    expect(q().note).toBe('Clip 7 would not play. That was the last one.');
+  });
+
+  it('plays an id again that errored before: the consumed error code is gone', async () => {
+    jump(3);
+    await flush(LOAD_GAP_MS);
+    expect(nowId()).toBe(id(3));
+    w().setReport({ error: 2 });
+    expect(w().report.error).toBe(2);
+    // The owner plays that same id again before the skip has loaded: it is not skipped at once.
+    expect(w().playMusic(id(3), 'Clip 3')).toBe(true);
+    expect(w().report.error).toBeNull();
+    expect(sent).toContainEqual(['seekTo', [0, true]]);
   });
 
   it('shows the line for 8 seconds and clears it at the next play, with one timer only while a line shows', async () => {
@@ -475,6 +579,26 @@ describe('growing, only through the library store', () => {
     unmount();
   });
 
+  it('bounds the read-ahead by rows read, not by entries accepted: a list of mostly unplayable rows stops at 200 rows past the pick', async () => {
+    const mostly = (n: number) => Array.from({ length: n }, (_, i) => vid(i, i % 50 === 0 ? 'yes' : 'removed'));
+    mocks.set('wall2_youtube_items', (a) => {
+      tokens.push(a?.pageToken);
+      const start = typeof a?.pageToken === 'string' ? Number(a.pageToken.replace('p', '')) : 0;
+      const end = Math.min(2000, start + 50);
+      return { items: mostly(2000).slice(start, end), next: end < 2000 ? `p${end}` : null };
+    });
+    const unmount = seed(mostly(50), 'p50');
+    playFrom(mostly(50), 0, LIST);
+    for (let i = 0; i < 12; i += 1) await flush(0);
+    // 200 rows read in all (50 at the start and three pages), however few of them could play.
+    expect(useYtLibrary.getState().songs.items.length).toBe(200);
+    expect(tokens).toEqual(['p50', 'p100', 'p150']);
+    expect(q().entries.length).toBe(4);
+    for (let i = 0; i < 5; i += 1) await flush(1000);
+    expect(tokens.length).toBe(3);
+    unmount();
+  });
+
   it('a shuffled queue takes the new page shuffled, after what it holds', async () => {
     serve(100);
     const unmount = seed(rows(50), 'p50');
@@ -521,6 +645,23 @@ describe('growing, only through the library store', () => {
     await flush(0);
     expect(q().entries.some((e) => e.id === id(900))).toBe(false);
     unmount();
+  });
+});
+
+describe('the failed list', () => {
+  it('holds at most 500 videos, dropping the oldest, and an id that fails again counts as the newest', () => {
+    for (let n = 0; n < MAX_FAILED + 100; n += 1) markFailed(id(n), n % 2 ? 'embed' : 'removed');
+    const failed = q().failed;
+    expect(failed.size).toBe(MAX_FAILED);
+    expect(failed.has(id(0))).toBe(false);
+    expect(failed.has(id(99))).toBe(false);
+    expect(failed.has(id(100))).toBe(true);
+    expect(failed.has(id(MAX_FAILED + 99))).toBe(true);
+    markFailed(id(100), 'embed');
+    for (let n = 0; n < 10; n += 1) markFailed(id(2000 + n), 'embed');
+    expect(q().failed.has(id(100))).toBe(true);
+    expect(q().failed.has(id(101))).toBe(false);
+    expect(q().failed.size).toBe(MAX_FAILED);
   });
 });
 
