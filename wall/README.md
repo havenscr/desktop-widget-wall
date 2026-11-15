@@ -6,9 +6,9 @@ label `wall2`, the app identifier) keep that name on purpose. It lives beside th
 existing app (`src/`, untouched) and is built with Vite, React and TypeScript
 (strict). It runs in a plain browser for development and inside Tauri as a second
 app, "Ridgeline". So far: a scaled stage, the live horizon, a left rail with
-three places, a clock, the Work tab basics (weather, music, focus timer), a task
+Work, Home and Unwind and below them Meet, On air, Zen, Tools and (in the app) a fullscreen button, a clock, the Work tab basics (weather, music, focus timer), a task
 card, a network tile and mood buttons on Home, the Unwind tab with Watt the sheep, a sound ripple
-on the horizon, the Zen place with Dream, a small Tauri bridge and tests. Home has its moods, Sonos controls and a network tile; the Rooms row is still to come.
+on the horizon, the Zen place with Dream, a small Tauri bridge and tests. Home has its moods, a Rooms row, Sonos controls and a network tile.
 
 ## Requirements
 
@@ -27,8 +27,7 @@ any name and description, add the redirect URI exactly
 { "clientId": "0123456789abcdef0123456789abcdef", "redirectPort": 8898 }
 ```
 
-The port is optional and defaults to 8898. Press Sign in on the wall once the Spotify
-panel exists. Starting playback from the wall needs Spotify Premium. The integration
+The port is optional and defaults to 8898. Press Sign in on the wall's Spotify card. Starting playback from the wall needs Spotify Premium. The integration
 has not been verified against the live Spotify service.
 
 ### Saving songs (the heart on the player row)
@@ -2600,7 +2599,7 @@ were cleaned on the helper's side. That is why a row from a saved record may ope
 - **Shelf** (`Shelf.tsx`): "N parked sessions" (or "Nothing parked"; hover: "put aside with a note; open OmniGent to resume one"; a click brings OmniGent forward) and usage: one small meter per subscription from a newer helper ("Claude 1", "Claude 2", "Codex"; "n/a" when the helper has no recent reading), with the five hour figure inline when there are two or fewer and the reset time on hover. Amber goes only to a figure the meter shows (the fullest, above 90 percent); a five hour figure above 90 that is not shown inline gets a small amber mark, its number in the hover. From an older helper, the Claude five hour figure and "Claude this week" with a bar, as before. The mail count waits for the mail scope (D7).
 - **Ribbon** (`ribbon/AgentRow.tsx`, Work only): one sub-row per session with a span today, in the cards' order, then sessions that ended today. Every sub-row is 8 px tall so a mouse can hit it, and three fit; with more sessions the third row becomes "+N more", whose hover lists each folded session (name, stage, state) and whose click shows the first of them in the cards. No two sessions ever share pixels. The card's number sits at the left of each session's first bar and its stage colour is the bar's left notch. Running cyan, waiting on you amber, a finished run grey, done grey with a mint cap, up to now. Hover shows the session's name (from the names map for a session with no card, else "An earlier session"), stage and spans in plain words ("working 2:10 to 3:40, waiting on you since 3:40"); a click opens it in OmniGent. Hover on the row's icon gives the day in one line ("Today: 5 h 10 m of agent work across 4 sessions, 40 min waiting on you"). A task due label that would sit on the bars shows only its diamond, the label in its hover.
 - **Clock carry-over**: any change of the helper's `now` counts as movement, so a helper clock that is corrected backwards never reads as frozen.
-- **Hooks for other places**: `useAgentStatusLine()` gives one line ("Two agents still working, nothing needs you") or null when not set up, for Unwind and Dream; `useAgentsWaiting()` is true while something waits, for the amber dot over Watt. Both share the same poll.
+- **Hooks for other places**: `useAgentStatusLine()` gives one line ("Two agents still working, nothing needs you") or null when not set up, for Watt's status line; `useAgentsWaiting()` is true while something waits, for the amber dot over Watt. Both share the same poll.
 
 ## The key deck (Work, right wing)
 
