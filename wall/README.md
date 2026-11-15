@@ -1837,20 +1837,28 @@ The right wing of Work, as the concept's rows (`.tk3`), 70 pixels tall with a 1 
 `wall/src/tasks/`. **Due today** is a small list of every open task without the home tag
 that is due today or overdue, a mini version of the task app. Work reads
 `wall2_tasks_summary({ notTag: "home", due: "today", limit: 60 })`. The block keeps the
-height of three rows (213 px with the heading above it); three rows are in view and the rest
-are a scroll away: the mouse wheel with the pointer over the list, a calm 6 px bar at the
+height of three rows in every state (one row, two, none, loading, not set up, unavailable):
+the heading is at least 24.7 px and the body under it is always 213 px, rows at the top, so
+"Always here" below never moves (the fit check asserts the same block box as before in every
+state). Three rows are in view and the rest are a scroll away: the mouse wheel with the pointer over the list, a calm 6 px bar at the
 right (shown whenever there are more than three rows), a soft fade at the foot while more
 rows wait below and at the head once scrolled, and the arrow keys and Page Up and Down when a
-row has focus. The page itself never scrolls with it. A refresh, or a ticked row leaving the
-list, keeps the first row in view where it was. The heading reads "Due today" with the count at
+row has focus (a key step scrolls smoothly and a held key keeps adding rows to where the last
+step was heading; with reduced motion it jumps). The page itself never scrolls with it. A refresh,
+or a ticked row leaving the list, keeps the first row in view where it was, instantly. The heading reads "Due today" with the count at
 its right ("7", or "7, 2 overdue"); there is no "N more can wait" line on Work. Overdue rows
-come first (Rust puts them first, each group in the task app's own order). Each row: a check
-circle, the title, the row's tags (see "Tags on task rows"), and the estimate chip ("15 m",
-"45 m", "60+ m") in a fixed 78 px column so the tags line up down the list.
+come first (Rust puts them first, each group in the task app's own order), and each carries one
+small amber mark, the Tabler `clock-exclamation` glyph at 18 px, in an 18 px slot just left of the
+time column (every row keeps the slot so the tags line up; only an overdue row fills it). Its hover
+card says how late in plain words: "Due yesterday", "Due Monday, 2 days ago" (up to six days back),
+"Due 12 days ago". Each row: a check circle, the title, the row's tags (see "Tags on task rows"), the
+mark slot, and the estimate chip ("15 m", "45 m", "60+ m") in a fixed 78 px column. The chip's hover
+card says "Estimate", with the due line for a task that is not overdue.
 
 When nothing is due today the block reads **Next up**, shows the next three tasks (the
 read without `due`, as the old "Next three" did, so it is never an empty box) and says "Nothing
-due today" in dim text at the heading's right. A failing refresh puts "updated N min ago" in
+due today" in dim text at the heading's right. An account with no open task at all keeps the
+heading "Due today" and the body reads "Nothing due today". A failing refresh puts "updated N min ago" in
 that slot. Refreshes every 2 minutes while visible and after each completion.
 (`useTasks()` with no filter still reads `wall2_tasks_next`; Zen uses that.)
 
@@ -1912,25 +1920,31 @@ owner's task app draws them: the first tag as a named chip (28 px high, a 16 px 
 glyph in the tag's colour on a 14 percent wash of it with a 38 percent edge. Each chip and dot
 has a hover card with the tag's name; tags are not buttons. When the chip would leave the title
 under 180 px, every tag of the row is a dot. A row with no tags looks as it did. On Home the
-tags sit after the title against a fixed 62 px pill column (a row with no pill keeps the room).
+tags sit after the title against the pill column, which is as wide as the widest pill in the list (never under 62 px;
+a timed chore's "4:30 PM" needs about 88 px), the same on every row so the tags still line up, and a row with no pill keeps
+the room. The list measures its pills and sets `--pill-w`; the pill text never wraps or clips.
 
 Where it comes from: `open_tasks` in `wall2_feeds.rs` keeps up to three tags per row, from the
 task's own `tags` strings: trimmed, empty ones dropped, duplicates dropped after lower-casing,
 the tag the read filtered by (`home` on Home) dropped, and a tag over 40 characters or with a
-control character dropped. This display rule is looser than the filter rule above, so tags with
+control character or invisible format character (direction marks and overrides, isolates, zero width characters) dropped.
+This display rule is looser than the filter rule above, so tags with
 accents or dots show. `wall2_tasks_summary` also reads the task app's tag list (`GET /api/tags`,
 the same timeout and size cap), keeps at most 200 entries as name (lower-cased), icon (only a
 plain Tabler name, `^[a-z0-9-]{1,64}$`) and colour (only one of the eleven names `teal blue
 green pink magenta lime brown slate khaki orange red`), and joins them to the row tags by
 lower-cased name. The list is kept in memory for ten minutes, so the two minute task read does
 not fetch it again, and a failed read of it (retried after a minute) never fails the tasks read:
-rows then carry their tags with no icon and no colour. Nothing else of the tag list reaches the
+the last good list keeps serving for at most an hour from when it was read, after which rows carry
+their tags with no icon and no colour until a read works. Nothing else of the tag list reaches the
 page; the page only ever gets names, never markup or CSS.
 
 - **Label**: the tag as the owner typed it when it has any capital letter; otherwise title case
-  (a capital for the first letter after the start, a space, a slash or a hyphen) with two generic
-  acronym rules: a word of exactly two letters is written in capitals ("hr" is "HR"), and so is
-  a word of up to five letters with no vowel (a, e, i, o, u, y; "dbx" is "DBX"). There is no table
+  (a capital for the first letter after the start, a space, a slash, a hyphen or an ampersand, so
+  "r&d" is "R&D") with two generic acronym rules: a word of exactly two letters is written in
+  capitals ("hr" is "HR") unless it is a common word (am an as at be by do go he if in is it me my no
+  of oh ok on or so to up us we), which keeps ordinary title case ("to do" is "To Do"), and a word of
+  up to five letters with no vowel (a, e, i, o, u, y; "dbx" is "DBX") is written in capitals. There is no table
   of tag names. A tag that reads wrong (a two letter word that is not an acronym, say) can be
   given an exception in `tag_label` later.
 - **Colours** (`tagStyle.ts`): the eleven names map to eight hues as the task app does: teal
