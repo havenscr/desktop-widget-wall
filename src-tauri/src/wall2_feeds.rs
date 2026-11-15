@@ -845,6 +845,7 @@ struct Shown {
 type ShownReads = Vec<Shown>;
 
 /// How long a short read leaves a longer read's rows remembered (two refresh periods and a bit).
+#[cfg(test)]
 const SHOWN_FRESH_SECS: i64 = 300;
 
 /// Keep `tasks` as the ids `key`'s read showed (at most three), and drop the oldest reads past
@@ -859,13 +860,13 @@ fn remember_in(reads: &mut ShownReads, key: &str, tasks: &[TaskItem]) {
 /// a one-row read (the "open the first task" key) must not make the rows of the 60 row list
 /// beside it unknown, so it adds its ids in front of the longer read's (bounded union, newest
 /// first, at most `MAX_DUE_LIMIT`) and leaves that read's limit and time alone, so the union
-/// ends with the window and the next full read replaces it. (Keying by the limit instead would
+/// lasts until the next full read replaces it. (Keying by the limit instead would
 /// use up the eight kinds; the union costs none.)
 fn remember_in_n(reads: &mut ShownReads, key: &str, tasks: &[TaskItem], limit: usize, now: i64) {
     let fresh: Vec<String> = tasks.iter().take(limit.min(MAX_DUE_LIMIT)).map(|t| t.id.clone()).collect();
     let old = reads.iter().position(|r| r.key == key).map(|i| reads.remove(i));
     let entry = match old {
-        Some(o) if limit < o.limit && now - o.at <= SHOWN_FRESH_SECS => {
+        Some(o) if limit < o.limit => {
             let mut ids = fresh.clone();
             ids.extend(o.ids.iter().filter(|id| !fresh.contains(id)).cloned());
             ids.truncate(MAX_DUE_LIMIT);
@@ -1883,9 +1884,9 @@ mod tests {
         remember_in_n(&mut reads, "work-due", &newer, 1, 1200);
         assert!(shown_in(&reads, "row-new") && shown_in(&reads, "row-11"));
         assert_eq!(reads[0].ids[0], "row-new");
-        // Past the window a short read replaces, as before: stale rows are not kept for ever.
+        // Even after five minutes, a short read must preserve rows the page still shows.
         remember_in_n(&mut reads, "work-due", &sixty[..1], 1, 1000 + SHOWN_FRESH_SECS + 1);
-        assert!(shown_in(&reads, "row-0") && !shown_in(&reads, "row-11"));
+        assert!(shown_in(&reads, "row-0") && shown_in(&reads, "row-11"));
         // The next full read replaces the union at once and sets the limit again.
         remember_in_n(&mut reads, "work-due", &sixty[10..20], 60, 2000);
         assert!(shown_in(&reads, "row-12") && !shown_in(&reads, "row-0"));
