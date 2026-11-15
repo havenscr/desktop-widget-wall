@@ -44,7 +44,7 @@ export function StatusLine() {
         const s = await invoke<StatusSummary>('wall2_omni_summary');
         if (!mounted.current) return;
         const ok = s && Array.isArray(s.lanes) && s.yourMove && typeof s.yourMove === 'object';
-        setSummary(ok ? { stale: s.stale === true, now: s.now, lanes: s.lanes, yourMove: s.yourMove, linksAvailable: s.linksAvailable === true } : null);
+        setSummary(ok ? { stale: s.stale === true, now: s.now, lanes: s.lanes, sessionsList: Array.isArray(s.sessionsList) ? s.sessionsList : null, yourMove: s.yourMove, linksAvailable: s.linksAvailable === true } : null);
       } catch {
         if (mounted.current) setSummary(null);
       }

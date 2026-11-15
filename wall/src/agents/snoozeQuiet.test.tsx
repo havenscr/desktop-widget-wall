@@ -1,4 +1,4 @@
-import { act, cleanup, render } from '@testing-library/react';
+import { act, cleanup, render, renderHook } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { mocks } from '../bridge/tauri';
 import { useFocusStore } from '../focus/store';
@@ -6,7 +6,7 @@ import { usePacificTime } from '../ribbon/testZone';
 import { StatusLine } from '../unwind/StatusLine';
 import { Dream } from '../zen/Dream';
 import { lane, summary } from './fixtures';
-import { resetSnooze, snooze, SNOOZE_MS } from './snooze';
+import { resetSnooze, snooze, SNOOZE_MS, useSnoozed, useSnoozeStore } from './snooze';
 import { resetAgents } from './useAgents';
 
 usePacificTime();
@@ -96,4 +96,46 @@ it('Dream: a snoozed chat and an unsnoozed one count only the unsnoozed one', as
   await flush();
   expect(dream()).toContain('An agent needs you');
   expect(dream()).not.toContain('2 agents need you');
+});
+
+/** The same request as `waiting(false)`, read `later` ms afterwards: the helper's clock and the waiting counter both moved on. */
+const readLater = (later: number, withList = false) => {
+  const s = summary({
+    now: new Date(Date.parse(NOW) + later).toISOString(),
+    lanes: [lane({ id: A, waiting: true, state: 'blocked', waitingSinceS: 120 + later / 1000 })],
+    yourMove: { total: 1, first: ask(A, 'Which one?'), ids: [A] },
+  });
+  return withList ? { ...s, sessionsList: s.lanes } : s;
+};
+
+it('Unwind and Dream reading the same request 45 s later do not end a snooze Work still shows', async () => {
+  const work = waiting(false);
+  snooze(A, work);
+  mocks.set('wall2_omni_summary', () => readLater(45_000));
+  const r = render(<StatusLine />);
+  await flush();
+  expect(line()).toBe('Work is put away. No agent needs you.');
+  expect(useSnoozeStore.getState().entries[A]).toBeDefined();
+  r.unmount();
+  resetAgents();
+  render(<Dream onWake={() => undefined} />);
+  await flush();
+  expect(dream()).toContain('No agent needs you');
+  expect(useSnoozeStore.getState().entries[A]).toBeDefined();
+  // Work's own read of the same moment still says snoozed.
+  const { result } = renderHook(() => useSnoozed(readLater(45_000)));
+  expect(result.current.ids.has(A)).toBe(true);
+});
+
+it('a chat that waits only in the session list keeps its snooze on Unwind (no your-move ids)', async () => {
+  const mk = (later: number) => {
+    const s = readLater(later, true);
+    return { ...s, lanes: [], yourMove: { total: 1, first: null } };
+  };
+  snooze(A, mk(0));
+  mocks.set('wall2_omni_summary', () => mk(45_000));
+  render(<StatusLine />);
+  await flush();
+  expect(useSnoozeStore.getState().entries[A]).toBeDefined();
+  expect(line()).toBe('Work is put away. No agent needs you.');
 });
