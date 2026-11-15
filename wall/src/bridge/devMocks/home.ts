@@ -8,13 +8,21 @@ const now = () => (reviewNow ? reviewNow() : Date.now());
 /** The network tile and the Home moods. */
 export function registerHomeMocks(): void {
   mocks.set('wall2_home_security', () => {
+    // `?home=loading` is a first read that never answers (the card reads "Loading").
+    if (knob('home') === 'loading') return new Promise(() => undefined);
     const t = now();
+    const net = knob('net');
+    // `?fw=offline|unknown|unreachable` gives the card the long status titles ("Firewall box offline", "Firewall status unknown",
+    // "Home app not reachable") while its doors are shown.
+    const fw = knob('fw');
+    // `?net=calmbare` is quiet and the home app sent neither a scan time nor any number.
+    const bare = net === 'calmbare';
     return {
-      reachable: true,
+      reachable: fw !== 'unreachable',
       stale: false,
-      lastScan: new Date(t - 4 * 60_000).toISOString(),
-      alerts: knob('net') === 'calm' ? 0 : 4,
-      firewalla: { api: 'up', boxOnline: true, checkedAt: new Date(t).toISOString(), alarms24h: 3 },
+      lastScan: bare ? null : new Date(t - 4 * 60_000).toISOString(),
+      alerts: net === 'calm' || bare ? 0 : 4,
+      firewalla: { api: fw === 'unknown' ? 'unknown' : 'up', boxOnline: fw === 'offline' ? false : true, checkedAt: new Date(t).toISOString(), alarms24h: bare ? null : 3 },
       portalUrl: 'https://my.firewalla.net/',
       topAlerts: [
         { text: 'New device joined the guest network', severity: 'high', atMs: t - 12 * 60_000 },
@@ -23,11 +31,15 @@ export function registerHomeMocks(): void {
       ],
       // The home app does not send these yet (PR 24 reads them); here so the dev view shows
       // the full card. `?net=alarms` leaves them out, as the home app answers today.
-      ...(knob('net') === 'alarms' ? {} : { devices: 31, blocked: 412, boxTemp: 61 }),
+      ...(net === 'alarms' || bare ? {} : { devices: 31, blocked: 412, boxTemp: 61 }),
     };
   });
   registerDeskMocks();
-  mocks.set('wall2_links', () => ({ security: true, portal: true }));
+  // `?links=security|portal|none` leaves out a door (the wall has no address for it); the default has both.
+  mocks.set('wall2_links', () => {
+    const k = knob('links');
+    return { security: k !== 'portal' && k !== 'none', portal: k !== 'security' && k !== 'none' };
+  });
   mocks.set('wall2_open_link', () => undefined);
   // `?moods=five` gives the concept's five, `?moods=many` nine (the row scrolls), `?moods=none`
   // an empty list, `?moods=off` not set up, `?moods=down` not reachable; with a review time, Evening is "In 4 min" in five.
