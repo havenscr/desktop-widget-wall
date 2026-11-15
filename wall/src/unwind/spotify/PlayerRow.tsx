@@ -1,13 +1,15 @@
 import { useCallback, useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
-import { IconPlayerPauseFilled, IconPlayerPlayFilled, IconPlayerSkipBackFilled, IconPlayerSkipForwardFilled } from '@tabler/icons-react';
+import { IconHeart, IconHeartFilled, IconPlayerPauseFilled, IconPlayerPlayFilled, IconPlayerSkipBackFilled, IconPlayerSkipForwardFilled } from '@tabler/icons-react';
 import { isQuiet } from '../../music/model';
 import { playerName, sourceKey } from '../../music/players';
 import { spotify, type SpotifyPlayback } from '../../music/spotify';
 import { useNowPlaying } from '../../music/useNowPlaying';
+import { useToolsStore } from '../../tools/store';
 import { tip } from '../../ui/HoverTip';
 import { useVisible } from '../../ui/useVisible';
 import { Cover } from './Cover';
 import { problemLine, seekPosition, spotifyProblem, trackLength, useSpotifyNow } from './model';
+import { readSpotifyStatus, useSpotifyStatus } from './status';
 
 /** Playback is read again this often while the player row shows and music plays (and whenever the song changes). */
 export const PLAYBACK_POLL_MS = 20_000;
@@ -20,6 +22,14 @@ const AFTER_PRESS_MS = 800;
 /** The local clock re-reads the state when a song's length is reached, then not again for this long. */
 const END_READ_GAP_MS = 3_000;
 const NOTE_MS = 6_000;
+/** The note under the heart that says Spotify refused a save closes by itself after this long. */
+export const REFUSED_NOTE_MS = 4_000;
+
+/** The line under the song when Spotify refuses a save or a removal. */
+export const SAVE_FAILED_LINE = 'Could not save this song';
+export const REMOVE_FAILED_LINE = 'Could not remove this song';
+/** The note on the dim heart: the sign-in predates the permission to save songs. */
+export const NEEDS_PERMISSION_LINE = 'Saving songs needs one more permission. Sign in to Spotify again in Tools.';
 
 interface Anchor {
   playback: SpotifyPlayback | null;
@@ -29,6 +39,17 @@ interface Anchor {
 
 type Press = 'previous' | 'play' | 'next';
 
+interface HeartState {
+  id: string;
+  /** What Spotify last said about the song: the read, or a write that worked. Null until the first answer. */
+  confirmed: boolean | null;
+  /** The value a click is writing now. */
+  pending: boolean | null;
+  /** The read failed and nothing else is known. */
+  failed: boolean;
+}
+type HeartNote = { kind: 'permission' } | { kind: 'refused'; text: string };
+
 /**
  * The player row at the foot of the tall view: the song's cover, title and artist, previous, play or
  * pause, next, and a time bar that can be dragged (or moved with the arrow keys) to seek. What plays
@@ -36,8 +57,13 @@ type Press = 'previous' | 'play' | 'next';
  * (this PC, a phone, a speaker) the three buttons act on that player through Spotify's own commands, so
  * the row controls what it shows wherever the music plays; Windows' media keys are used only when Spotify
  * reports no player and the Windows session is Spotify on this PC. After a press, and when a song's
- * length is reached, the state is read again. Save to Liked is not here: the sign-in does not ask
- * Spotify for permission to change the library.
+ * length is reached, the state is read again.
+ *
+ * The heart at the right end saves the playing song to Liked Songs and removes it again. Whether the
+ * song is saved is read once per song (never on a timer); a click shows the change at once and puts it
+ * back with one line if Spotify refuses. A song without an id (a podcast episode, a local file) and
+ * nothing playing have no heart. A sign-in made before the permission to save was asked for leaves the
+ * heart dim: a click explains and offers Tools, where signing in again fixes it with no restart.
  */
 export function PlayerRow() {
   const visible = useVisible();
@@ -114,6 +140,134 @@ export function PlayerRow() {
     endReadAt.current = Date.now();
     read();
   }, [running, base, duration, read]);
+
+  // The heart. What Spotify says about the song that plays now is kept per song id, so another song's answer is never shown:
+  // `confirmed` is the last answer Spotify gave (the read, or a write that worked), `pending` the value a click is writing.
+  // The heart shows `pending ?? confirmed`; a refused write drops `pending`, so the heart goes back to what Spotify said,
+  // whichever of the read and the write answers first.
+  const trackId = song?.id ?? null;
+  const permission = useSpotifyStatus((st) => st.status?.canSave ?? 'unknown');
+  // Only a known "no" dims the heart: before the first token answer after a restart the list is unknown and the heart works as usual.
+  const dim = permission === 'no';
+  const [liked, setLiked] = useState<HeartState | null>(null);
+  const [heartNote, setHeartNote] = useState<HeartNote | null>(null);
+  const heart = liked && liked.id === trackId ? liked : null;
+  const saved = (heart?.pending ?? heart?.confirmed) === true;
+  const wrap = useRef<HTMLSpanElement | null>(null);
+  const heartBtn = useRef<HTMLButtonElement | null>(null);
+  // The song shown now and its heart, as the latest render saw them (the callbacks below run later).
+  const trackRef = useRef(trackId);
+  trackRef.current = trackId;
+  const heartRef = useRef(heart);
+  heartRef.current = heart;
+  // The id whose state a write that worked has set: a read that answers later must not undo it.
+  const settled = useRef<string | null>(null);
+  // The click in progress, status read included: one at a time per song, and a song other than the one shown changes nothing on screen.
+  const operation = useRef<{ id: string } | null>(null);
+  useEffect(() => {
+    setHeartNote(null);
+    settled.current = null;
+    if (!trackId) return;
+    setLiked({ id: trackId, confirmed: null, pending: null, failed: false });
+    let live = true;
+    spotify.saved(trackId).then(
+      (answer) => {
+        if (!live) return;
+        if (settled.current !== trackId) setLiked((cur) => (cur && cur.id === trackId ? { ...cur, confirmed: answer, failed: false } : cur));
+        // That call refreshed the token if it had to, so Spotify has now said which permissions the sign-in holds.
+        if (useSpotifyStatus.getState().status?.canSave !== 'yes') void readSpotifyStatus();
+      },
+      () => {
+        if (live) setLiked((cur) => (cur && cur.id === trackId && cur.confirmed === null ? { ...cur, failed: true } : cur));
+      },
+    );
+    return () => {
+      live = false;
+    };
+  }, [trackId]);
+  const noteKind = heartNote?.kind ?? null;
+  useEffect(() => {
+    if (!noteKind) return;
+    const outside = (e: PointerEvent) => {
+      if (e.target instanceof Node && !wrap.current?.contains(e.target)) setHeartNote(null);
+    };
+    // Escape closes the permission note first, the innermost thing: on the window in the capture phase, so the card's own Escape (which closes the tall view) does not also run.
+    const escape = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape' || noteKind !== 'permission') return;
+      e.stopPropagation();
+      setHeartNote(null);
+      heartBtn.current?.focus();
+    };
+    document.addEventListener('pointerdown', outside, true);
+    window.addEventListener('keydown', escape, true);
+    return () => {
+      document.removeEventListener('pointerdown', outside, true);
+      window.removeEventListener('keydown', escape, true);
+    };
+  }, [noteKind]);
+  /** Spotify said the sign-in lacks the permission: the capability is "no" whichever song is shown. */
+  const markNoPermission = () => useSpotifyStatus.setState((st) => ({ status: st.status ? { ...st.status, canSave: 'no' } : st.status }));
+  const write = (id: string, mine: { id: string }) => {
+    const finish = () => {
+      if (operation.current === mine) operation.current = null;
+    };
+    const shown = () => mounted.current && trackRef.current === id;
+    const now = heartRef.current;
+    const on = !((now?.pending ?? now?.confirmed) === true);
+    setLiked((cur) => (cur && cur.id === id ? { ...cur, pending: on } : cur));
+    spotify.save(id, on).then(
+      () => {
+        finish();
+        if (!shown()) return;
+        settled.current = id;
+        setLiked((cur) => (cur && cur.id === id ? { ...cur, confirmed: on, pending: null, failed: false } : cur));
+      },
+      (e) => {
+        finish();
+        const needsSignIn = spotifyProblem(e) === 'needsSignIn';
+        if (needsSignIn) markNoPermission();
+        if (!shown()) return;
+        setLiked((cur) => (cur && cur.id === id ? { ...cur, pending: null } : cur));
+        if (needsSignIn) {
+          setHeartNote({ kind: 'permission' });
+          return;
+        }
+        const refused: HeartNote = { kind: 'refused', text: on ? SAVE_FAILED_LINE : REMOVE_FAILED_LINE };
+        setHeartNote(refused);
+        later(() => setHeartNote((cur) => (cur === refused ? null : cur)), REFUSED_NOTE_MS);
+      },
+    );
+  };
+  const heartClick = () => {
+    const id = trackRef.current;
+    if (!id || operation.current?.id === id) return;
+    const mine = { id };
+    operation.current = mine;
+    const shown = () => mounted.current && trackRef.current === id;
+    if (useSpotifyStatus.getState().status?.canSave !== 'no') {
+      write(id, mine);
+      return;
+    }
+    // The sign-in may have been renewed since the status was read: ask again before explaining.
+    spotify.status().then(
+      (st) => {
+        if (st && typeof st === 'object') useSpotifyStatus.setState({ status: st, failed: false });
+        if (!shown() || operation.current !== mine) {
+          if (operation.current === mine) operation.current = null;
+          return;
+        }
+        if (st?.canSave === 'no') {
+          operation.current = null;
+          setHeartNote({ kind: 'permission' });
+        } else write(id, mine);
+      },
+      () => {
+        if (operation.current === mine) operation.current = null;
+        if (shown()) setHeartNote({ kind: 'permission' });
+      },
+    );
+  };
+  const heartLabel = dim ? 'Save to Liked Songs (needs a new sign-in)' : saved ? 'Remove from Liked Songs' : 'Save to Liked Songs';
 
   const fromWindows = !isQuiet(info) && playerName(sourceKey(info)) === 'Spotify';
   // Spotify reports a player: its own commands, whichever device plays. None: Windows' keys, but only for Spotify on this PC.
@@ -253,6 +407,58 @@ export function PlayerRow() {
         <u style={{ left: `${fraction * 100}%` }} />
       </div>
       <span className="sp-pl-time">{song ? trackLength(duration) : '0:00'}</span>
+      {trackId ? (
+        <span className="sp-heart-wrap" ref={wrap}>
+          <button
+            ref={heartBtn}
+            type="button"
+            className={`sp-pl-btn sp-heart${!dim && saved ? ' on' : ''}${dim ? ' off' : ''}`}
+            aria-label={heartLabel}
+            aria-pressed={dim ? undefined : saved}
+            data-control="heart"
+            data-saved={saved ? 'true' : 'false'}
+            {...tip(() => (
+              <div className="sp-tipline">
+                <b>{!dim && saved ? 'Remove from Liked Songs' : 'Save to Liked Songs'}</b>
+                {dim ? <span>Needs one more Spotify permission. Click to see how.</span> : heart?.failed ? <span>Could not check if it is saved.</span> : null}
+              </div>
+            ))}
+            onClick={heartClick}
+            // Enter and Space are handled here, the way the wall's other buttons do, so a key press is one activation: Enter on the key down, Space on the key up.
+            onKeyDown={(e) => {
+              if (e.key !== 'Enter' && e.key !== ' ') return;
+              e.preventDefault();
+              if (e.key === 'Enter' && !e.repeat) heartClick();
+            }}
+            onKeyUp={(e) => {
+              if (e.key !== ' ') return;
+              e.preventDefault();
+              heartClick();
+            }}
+          >
+            {saved ? <IconHeartFilled size={18} aria-hidden="true" /> : <IconHeart size={18} aria-hidden="true" />}
+          </button>
+          {heartNote?.kind === 'permission' ? (
+            <div className="sp-heart-ask" role="group" aria-label="Saving songs">
+              <p>{NEEDS_PERMISSION_LINE}</p>
+              <button
+                type="button"
+                className="sp-btn"
+                onClick={() => {
+                  setHeartNote(null);
+                  useToolsStore.getState().openDrawer('accounts');
+                }}
+              >
+                Open Tools
+              </button>
+            </div>
+          ) : heartNote ? (
+            <div className="sp-heart-ask refused" role="status">
+              <p>{heartNote.text}</p>
+            </div>
+          ) : null}
+        </span>
+      ) : null}
     </div>
   );
 }

@@ -3,7 +3,9 @@ import { invoke } from '../bridge/tauri';
 export type SpotifyMode = 'playlist' | 'album' | 'track';
 export interface SpotifyItem { id: string; name: string; kind: SpotifyMode; imageUrl: string | null; thumbUrl: string | null; subtitle: string | null; count: number | null; /** Only a song of a search answer has its length. */ durationMs?: number }
 export interface SpotifyDevice { id: string; name: string; kind: string; active: boolean; restricted?: boolean; volume: number | null }
-export interface SpotifyStatus { setup: boolean; signedIn: boolean; reason: string | null }
+/** `canSave`: does the sign-in hold the permission to save songs? `no` for a sign-in made before that permission was asked for; `unknown` until the first token answer after a restart (and for good if no answer names the permissions). Only `no` is a reason to dim the heart. */
+export type SpotifyCanSave = 'yes' | 'no' | 'unknown';
+export interface SpotifyStatus { setup: boolean; signedIn: boolean; reason: string | null; canSave?: SpotifyCanSave }
 export interface SpotifySearch { tracks: SpotifyItem[]; albums: SpotifyItem[]; playlists: SpotifyItem[] }
 export interface SpotifyTrack { id: string | null; name: string; artists: string; album: string; durationMs: number; imageUrl: string | null; thumbUrl: string | null; playable: boolean }
 export interface SpotifyTrackPage { items: SpotifyTrack[]; total: number; more: boolean }
@@ -36,5 +38,9 @@ export const spotify = {
   resume: () => invoke<void>('wall2_spotify_resume'),
   next: () => invoke<void>('wall2_spotify_next'),
   previous: () => invoke<void>('wall2_spotify_previous'),
+  /** Whether the song (a 22 character Spotify id) is in Liked Songs. */
+  saved: (id: string) => invoke<boolean>('wall2_spotify_saved', { id }),
+  /** Saves (`on`) or removes the song in Liked Songs. Rejects with `needs sign in` when the sign-in lacks the permission. */
+  save: (id: string, on: boolean) => invoke<void>('wall2_spotify_save', { id, on }),
   shuffle: (on: boolean) => invoke<void>('wall2_spotify_shuffle', { on }),
 };
