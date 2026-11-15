@@ -193,8 +193,8 @@ no `homeBaseUrl` the row says "Not set up"; with no moods it shows the one compa
 
 ### Sound on Home
 
-`home/Sound.tsx`, `home/useSonos.ts`, `home/soundModel.ts`, `src-tauri/src/wall2_sonos.rs`
-(its reads: `wall2_sonos_read.rs`; its log: `wall2_sonos_log.rs`).
+`home/Sound.tsx`, `home/NowBlock.tsx`, `home/wallVideo.ts`, `home/useSonos.ts`, `home/soundModel.ts`,
+`src-tauri/src/wall2_sonos.rs` (its reads and the cover fetch: `wall2_sonos_read.rs`; its log: `wall2_sonos_log.rs`).
 The owner's Sonos service on the home box, read every 30 seconds while the wall is
 visible. Nothing on the wall plays or changes volume without a click, and one deliberate
 click is one write: the second click of a double click and the repeats of a held key are
@@ -251,9 +251,76 @@ ignored, and each control stays latched for 800 ms after its write settles.
   speaker to 40 or less (a line-in group, the PC's own sound, does not count).
 - **Play and pause**: "Sonos Off" pauses every speaker while music plays; with nothing
   playing the button names the suggestion ("Play Evening") and is off when no routine fits
-  the hour. The service has no next or resume command, so there is no Next button.
+  the hour. The service has no resume command, so there is no Play after a pause. Back and
+  next on the music appear only when the sound service says it has them (see "Now Playing").
   **Sleep** offers 30, 60 or 90 minutes (5 minute fade); the soonest running timer shows
   its minutes left and cancels on a click.
+- **Now Playing** (`home/NowBlock.tsx`, the rules in `styles/home.css`): the left of the
+  card, one box of 390 by 226 at the default card (its rows give it its height; every layout
+  is a layer that fills it, so a change of layout never moves the card), with three
+  layouts and the quiet block. They cross-fade over 200 ms (none under reduced motion).
+  - **Music alone**: a 136 px cover (the speaker glyph tile when there is no cover), the
+    kicker "Now playing", the title on up to two lines, the artist, a time row with a 6 px
+    bar when the track has a length (the position counts on each second from the read that
+    carried it, never past the end, and stops while the read is not live; the one-second
+    clock runs only while that bar is on screen; a station has no length and no bar, and
+    the where line sits right under the artist), and the control row at the
+    foot: back and next (40 px, only when the service has them), pause (44 px, cyan), then
+    the where line. A Spotify track on a house speaker uses the same layout with its own
+    cover and times. A TV or line-in room is not music: the quiet words stay.
+  - **The wall's own video alone** (`home/wallVideo.ts` reads the Watch store and acts
+    through its own actions and `playerLink`; no second player is mounted): the same block
+    with a cyan tile, "On the wall", the title, "YouTube video", "YouTube live stream",
+    "YouTube playlist, 4 of 24" or "Twitch stream", the time row when the player reports a
+    length, and pause or play, stop and "Open Watch" (to the Unwind place's Watch tab);
+    back and next only for a playlist the player reports with more than one item. A Twitch
+    item takes only Stop and Open Watch. While autoplay was refused the line reads "Click
+    the video on Watch to start it" and there is no pause. A video that has ended is no
+    longer shown. The Watch frame lives in the stage layer mounted for every place, so it
+    keeps playing and keeps answering `playerLink.send` while Home shows (proved in
+    `home/wallVideo.test.tsx`). A pause or play pressed while the frame is still loading is
+    sent once the frame loads (`PlayerFrame.tsx` tells a newly loaded frame the store's paused
+    state). If a back or next message is not taken (no loaded frame), both buttons stop with
+    the hover "Open Watch to control this" until another item is on (by identity, also the same
+    title replayed), the player reports (it has started, or the frame has loaded and answers),
+    or Home is shown again.
+  - **Both at once**: two halves with a hairline, the video above the music; each half has
+    a 92 px picture, kicker, one-line title, two small lines and its buttons at the right
+    (pause and stop for the video, pause for the music). The split view has no time bar
+    and no back or next.
+  - **Cover art**: the page never loads a cover itself. Rust fetches it (`wall2_sonos_art`,
+    which takes no address from the page): the `albumArtURI` the last good read held for the
+    playing speaker, only when it is `http` to a literal private IPv4 address on port 1400
+    (a speaker's own address) or `https` to `i.scdn.co` or `mzstatic.com` (or a name under
+    them), rebuilt from checked parts (no user info, fragment, backslash or non-ASCII),
+    never following a redirect, with a 3 second limit for everything, at most 400 KB, a
+    status of 200 only, and bytes that begin as a JPEG, PNG or WebP (whatever type was
+    declared). One fetch per distinct address (the last result, a failure too, is kept in
+    memory only; a failed address is tried once more when asked for 30 seconds or more after
+    the failure, never a third time, and an address that is not allowed never). The summary
+    carries a short opaque key for the cover (a hash of the address, never the address), and
+    the page fetches again when that key changes, whatever the title is; the previous cover
+    stays while a new one is on its way for at most 2 seconds, and a track with no cover shows
+    the glyph at once. Every failure answers nothing and writes one fixed word to the Sonos
+    log (`failed art refused|too-big|not-image|timed-out|no-answer|bad-answer`), never the
+    address. Without a cover the glyph tile shows.
+  - **Back and next for Sonos**: `GET /api/capabilities` is one more optional read beside the
+    others; `{ "skip": true }` (exactly) makes the summary's `canSkip` true, anything else
+    (a 404, a failure) leaves it false and the two buttons are not drawn. The commands
+    (`wall2_sonos_skip`, direction exactly `next` or `previous`) are refused unless the last
+    read said `canSkip`, is under two minutes old and music plays; they send `POST
+    /api/action/next` or `/api/action/previous` with `{}`; only a JSON answer whose `ok` is exactly `true` is
+    done (any other successful answer is "Sonos could not do that"), and a 4xx with
+    `{ "error": "cannot-skip" }` shows "This station cannot skip", `nothing-playing` shows
+    "Nothing is playing". The page reads the summary again after it. The two buttons show busy while the
+    write runs and through the 800 ms latch after it (a second click inside it sends nothing).
+    Pause still pauses every speaker.
+  - Dev mocks: `?np=` takes `station` (no length), `noart`, `skip` (back and next), `skipfail`
+    (a skip refused as a station that cannot skip), `long` (long title and artist) and `tv`
+    (the studio plays a TV input);
+    the wall's video comes from the Watch mocks (`?watch=mock&wlist=three|many&wplay=<n>&wplace=home`,
+    `wstate=refused` for the click wait). Review script: `scripts/areas/now-playing.mjs`
+    (gallery states, and fit rules with a deliberate break for each).
 - Every action shows a brief result beside the heading ("Playing Evening", "Could not
   reach Sonos", "Some speakers did not change", which reads again at once). A read that
   failed twice in a row, or one over two minutes old, dims the card, says what happened
@@ -283,7 +350,7 @@ ignored, and each control stays latched for 800 ms after its write settles.
 
 Rust (`wall2_sonos`, every command answers the `wall2` window only): reads `GET
 /api/status`, `/api/speakers` and `/api/routines` (all needed), `/api/groups`,
-`/api/group-presets`, `/api/scenes` and `/api/sleep-timers` (each may fail alone), side by
+`/api/group-presets`, `/api/scenes`, `/api/sleep-timers` and `/api/capabilities` (each may fail alone), side by
 side, with a 4 second timeout, no redirects and a 1 MB cap per answer. An answer with
 more than 500 entries in a map or list is refused as malformed, and collecting stops at
 each cap. The summary is bounded (24 speakers, 24 groups, 12 presets, 48 routines, 12
@@ -302,7 +369,10 @@ for the key whose last unforced call was skipped within a minute, `POST
 /api/group-presets/<id>/apply`, `POST /api/action/volume` `{room, volume}` per speaker
 (a group's per-speaker writes in parallel, line-in, offline and unknown-level speakers
 left out; 0 to 100, clamped), `POST /api/action/pause-all`, `POST /api/sleep-timer`
-`{minutes, fadeMinutes: 5}` (30, 60 or 90 only) and `DELETE /api/sleep-timer/<id>`.
+`{minutes, fadeMinutes: 5}` (30, 60 or 90 only), `DELETE /api/sleep-timer/<id>` and the skip
+described under "Now Playing". The track's `duration` and `position` (finite numbers, 0 to
+86,400 seconds; a zero or missing length gives no time at all, a position past the length is
+clamped to it) travel in `nowPlaying` with a flag for a cover address that may be fetched.
 Each "asks first" case above answers `needs-confirm` without `confirm: true`. Errors are
 fixed strings ("Could not reach Sonos", "Sonos could not do that", "Sonos status is out
 of date", "Some speakers did not change"); a failed summary read answers one fixed word
@@ -2031,8 +2101,9 @@ words: `not-configured`, `absent` (404, the route is not live yet), `failed`, `s
   read shows playing) the cover, title, artist, where it plays, pause and progress; a
   track on this PC is never shown as the house playing. The position counts on from the
   Spotify read that carries it. Otherwise the play's name or the
-  Sonos track, where it plays and pause; with nothing playing, the hour's suggestion.
-  There is no next button: the wall has no Spotify skip.
+  Sonos track, where it plays and pause; with nothing playing, the hour's suggestion. The
+  block's layouts (music, the wall's video, both) are described under "Sound on Home".
+  Back and next show only when the sound service says it has them.
 
 Dev mocks: `?desk=absent|typical|stale|down` (absent by default), `?alerts=0|1|6|20`,
 `?rooms=0|2|4|8`, `?moods=3|7|12`, `?desktoken=none|lan`, and `?spotifyplay=speaker` pairs a

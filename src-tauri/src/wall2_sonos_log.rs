@@ -23,22 +23,28 @@ impl Event {
 
 /// Which read a line is about. `Lists` is the whole answer set refused for an over-long list.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub enum Read { Status, Speakers, Routines, Groups, Presets, Scenes, Timers, Lists }
+pub enum Read { Status, Speakers, Routines, Groups, Presets, Scenes, Timers, Capabilities, Lists, Art }
 impl Read {
     fn word(self) -> &'static str {
         match self {
             Self::Status => "status", Self::Speakers => "speakers", Self::Routines => "routines", Self::Groups => "groups",
-            Self::Presets => "presets", Self::Scenes => "scenes", Self::Timers => "timers", Self::Lists => "lists",
+            Self::Presets => "presets", Self::Scenes => "scenes", Self::Timers => "timers", Self::Capabilities => "capabilities",
+            Self::Lists => "lists", Self::Art => "art",
         }
     }
 }
 
-/// The kind of a failed read. The same words reach the page as the summary's error text.
+/// The kind of a failed read. The same words reach the page as the summary's error text. The last
+/// three are only for a cover art fetch: an address not on the allow list, a body over the size
+/// limit, and a body that does not begin as a JPEG, PNG or WebP picture.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub enum Kind { None, TimedOut, NoAnswer, BadAnswer }
+pub enum Kind { None, TimedOut, NoAnswer, BadAnswer, Refused, TooBig, NotImage }
 impl Kind {
     pub fn word(self) -> &'static str {
-        match self { Self::None => "none", Self::TimedOut => "timed-out", Self::NoAnswer => "no-answer", Self::BadAnswer => "bad-answer" }
+        match self {
+            Self::None => "none", Self::TimedOut => "timed-out", Self::NoAnswer => "no-answer", Self::BadAnswer => "bad-answer",
+            Self::Refused => "refused", Self::TooBig => "too-big", Self::NotImage => "not-image",
+        }
     }
 }
 
@@ -150,8 +156,8 @@ mod tests {
     use super::*;
 
     const EVENTS: [Event; 2] = [Event::Failed, Event::Slow];
-    const READS: [Read; 8] = [Read::Status, Read::Speakers, Read::Routines, Read::Groups, Read::Presets, Read::Scenes, Read::Timers, Read::Lists];
-    const KINDS: [Kind; 4] = [Kind::None, Kind::TimedOut, Kind::NoAnswer, Kind::BadAnswer];
+    const READS: [Read; 10] = [Read::Status, Read::Speakers, Read::Routines, Read::Groups, Read::Presets, Read::Scenes, Read::Timers, Read::Capabilities, Read::Lists, Read::Art];
+    const KINDS: [Kind; 7] = [Kind::None, Kind::TimedOut, Kind::NoAnswer, Kind::BadAnswer, Kind::Refused, Kind::TooBig, Kind::NotImage];
 
     #[test]
     fn stamp_formats_utc_time() {
@@ -178,11 +184,15 @@ mod tests {
         assert_eq!(line(Event::Failed, Read::Speakers, Kind::NoAnswer, 0, 12), "failed speakers no-answer 0 12\n");
         assert_eq!(line(Event::Failed, Read::Routines, Kind::BadAnswer, 503, 87), "failed routines bad-answer 503 87\n");
         assert_eq!(line(Event::Slow, Read::Status, Kind::None, 200, 2310), "slow status none 200 2310\n");
+        assert_eq!(line(Event::Failed, Read::Capabilities, Kind::BadAnswer, 404, 6), "failed capabilities bad-answer 404 6\n");
+        assert_eq!(line(Event::Failed, Read::Art, Kind::Refused, 0, 0), "failed art refused 0 0\n");
+        assert_eq!(line(Event::Failed, Read::Art, Kind::TooBig, 200, 41), "failed art too-big 200 41\n");
+        assert_eq!(line(Event::Failed, Read::Art, Kind::NotImage, 200, 7), "failed art not-image 200 7\n");
     }
 
     #[test]
     fn no_line_holds_anything_but_fixed_words_and_numbers() {
-        let words = ["failed", "slow", "status", "speakers", "routines", "groups", "presets", "scenes", "timers", "lists", "none", "timed-out", "no-answer", "bad-answer"];
+        let words = ["failed", "slow", "status", "speakers", "routines", "groups", "presets", "scenes", "timers", "capabilities", "lists", "art", "none", "timed-out", "no-answer", "bad-answer", "refused", "too-big", "not-image"];
         for event in EVENTS {
             for read in READS {
                 for kind in KINDS {

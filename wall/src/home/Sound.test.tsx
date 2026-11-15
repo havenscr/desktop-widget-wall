@@ -49,9 +49,10 @@ function summary(over: Partial<SonosSummary> = {}): SonosSummary {
     controls: [{ key: 'Group_All', name: 'Group Everything', action: 'groupAll', loud: [] }],
     scenes: [],
     sleepTimers: [],
-    nowPlaying: { speaker: 'Den', track: 'Song A', artist: 'Band B' },
+    nowPlaying: { speaker: 'Den', track: 'Song A', artist: 'Band B', duration: null, position: null, art: null },
     currentGroup: 'G2',
     readAtMs: NOW,
+    canSkip: false,
     ...over,
   };
 }
@@ -60,7 +61,7 @@ let writes: { cmd: string; args: unknown }[] = [];
 function wire(read: () => unknown = () => summary()) {
   writes = [];
   mocks.set('wall2_sonos_summary', read);
-  for (const cmd of ['wall2_sonos_play', 'wall2_sonos_preset', 'wall2_sonos_volume', 'wall2_sonos_pause_all', 'wall2_sonos_sleep', 'wall2_sonos_sleep_cancel', 'open_volume_mixer']) {
+  for (const cmd of ['wall2_sonos_play', 'wall2_sonos_preset', 'wall2_sonos_volume', 'wall2_sonos_pause_all', 'wall2_sonos_sleep', 'wall2_sonos_sleep_cancel', 'wall2_sonos_skip', 'open_volume_mixer']) {
     mocks.set(cmd, (args) => {
       writes.push({ cmd, args });
     });
@@ -854,11 +855,90 @@ it('the progress counts from the Spotify read that carries the position, not fro
   const { container } = render(<Sound />);
   await flush();
   await flush(20_000);
-  // The block's clock moves on every 15 seconds; the shown position is 1:05 plus the time
-  // since the Spotify read landed (counting from the Sonos read would add five seconds).
+  // The bar's own clock moves each second; the shown position is 1:05 plus the time since the
+  // Spotify read landed (counting from the Sonos read would add five seconds).
   const shown = container.querySelector('.np-prog span')?.textContent ?? '';
   const [m, sec] = shown.split(':').map(Number);
-  const tick = Math.floor((Date.now() - NOW) / 15_000) * 15_000 + NOW;
   expect(landed).toBeGreaterThan(NOW);
-  expect(m * 60 + sec).toBe(65 + Math.floor((tick - landed) / 1000));
+  expect(m * 60 + sec).toBe(65 + Math.floor((Date.now() - landed) / 1000));
+});
+
+it('back and next appear only when the sound service has the commands', async () => {
+  wire();
+  const without = render(<Sound />);
+  await flush(1_000);
+  expect(without.container.querySelector('[aria-label="Next track"]')).toBeNull();
+  expect(without.container.querySelector('[aria-label="Previous track"]')).toBeNull();
+  without.unmount();
+  wire(() => summary({ canSkip: true }));
+  const { container } = render(<Sound />);
+  await flush(1_000);
+  expect(container.querySelector('[aria-label="Next track"]')).toBeTruthy();
+  expect(container.querySelector('[aria-label="Previous track"]')).toBeTruthy();
+});
+
+it('next and back send their direction, then read the summary again', async () => {
+  let reads = 0;
+  wire(() => {
+    reads += 1;
+    return summary({ canSkip: true });
+  });
+  const { container } = render(<Sound />);
+  await flush(1_000);
+  const before = reads;
+  fireEvent.click(container.querySelector('[aria-label="Next track"]')!);
+  await flush(100);
+  expect(writes.filter((w) => w.cmd === 'wall2_sonos_skip')).toEqual([{ cmd: 'wall2_sonos_skip', args: { direction: 'next' } }]);
+  expect(reads).toBeGreaterThan(before);
+  await flush(LATCH_MS + 100);
+  fireEvent.click(container.querySelector('[aria-label="Previous track"]')!);
+  await flush(100);
+  expect(writes.filter((w) => w.cmd === 'wall2_sonos_skip').map((w) => w.args)).toEqual([{ direction: 'next' }, { direction: 'previous' }]);
+});
+
+it('a station that cannot skip, and nothing playing, show their own sentences', async () => {
+  for (const [word, sentence] of [['cannot-skip', 'This station cannot skip'], ['nothing-playing', 'Nothing is playing']] as const) {
+    wire(() => summary({ canSkip: true }));
+    mocks.set('wall2_sonos_skip', () => Promise.reject(new Error(word)));
+    const { container, unmount } = render(<Sound />);
+    await flush(1_000);
+    fireEvent.click(container.querySelector('[aria-label="Next track"]')!);
+    await flush(100);
+    expect(screen.getByText(sentence)).toBeTruthy();
+    unmount();
+  }
+});
+
+it('with a stale read the skip buttons are off and nothing is sent', async () => {
+  let n = 0;
+  wire(() => {
+    n += 1;
+    return n === 1 ? summary({ canSkip: true }) : Promise.reject(new Error('timed-out'));
+  });
+  const { container } = render(<Sound />);
+  await flush(1_000);
+  await flush(40_000);
+  const next = container.querySelector('[aria-label="Next track"]') as HTMLButtonElement;
+  expect(next.disabled).toBe(true);
+  fireEvent.click(next);
+  expect(writes.filter((w) => w.cmd === 'wall2_sonos_skip')).toEqual([]);
+});
+
+it('the skip buttons show busy through the 800 ms latch, and a second click inside it sends nothing', async () => {
+  wire(() => summary({ canSkip: true }));
+  const { container } = render(<Sound />);
+  await flush(1_000);
+  const next = () => container.querySelector('[aria-label="Next track"]') as HTMLButtonElement;
+  expect(next().getAttribute('aria-busy')).toBeNull();
+  fireEvent.click(next());
+  await flush(50);
+  expect(next().getAttribute('aria-busy')).toBe('true');
+  fireEvent.click(next());
+  await flush(50);
+  expect(writes.filter((w) => w.cmd === 'wall2_sonos_skip')).toHaveLength(1);
+  await flush(LATCH_MS + 100);
+  expect(next().getAttribute('aria-busy')).toBeNull();
+  fireEvent.click(next());
+  await flush(50);
+  expect(writes.filter((w) => w.cmd === 'wall2_sonos_skip')).toHaveLength(2);
 });
