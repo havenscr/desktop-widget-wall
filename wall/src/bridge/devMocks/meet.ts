@@ -110,7 +110,13 @@ export function registerMeetMocks(): void {
       { key: '1-3', accountId: 'work', title: 'Weekly planning', start: iso(lunch + 300 * 60_000), end: iso(lunch + 330 * 60_000), canJoin: true },
     ];
   };
-  mocks.set('wall2_meet_next', (args) => mode() === 'stale' && args?.only ? { accounts: STALE_ACCOUNTS, meetings: [] } : {
+  // The native side renews every action key on each read; so do the mocks, so the screen cannot lean on one.
+  let reads = 0;
+  const rotate = <T extends { key: string }>(list: T[]): T[] => {
+    reads += 1;
+    return list.map((x, n) => ({ ...x, key: `${reads}-${n}` }));
+  };
+  const answer = (args: Record<string, unknown> | undefined) => mode() === 'stale' && args?.only ? { accounts: STALE_ACCOUNTS, meetings: [] } : {
     accounts: accounts(),
     meetings: layout() ? layoutMeetings() : mode() === 'down' || mode() === 'none' ? [] : [
       { key: '1-0', accountId: 'work', title: longOr('Design review with the platform team', 'Quarterly planning and roadmap review with the whole platform team'), start: at(-10), end: at(20), canJoin: true, details: MOCK_DETAILS.known },
@@ -118,6 +124,10 @@ export function registerMeetMocks(): void {
       { key: '1-2', accountId: 'work', title: 'Lunch with Sam', start: at(150), end: at(210), canJoin: false },
       ...(second ? [{ key: '1-3', accountId: 'second', title: 'Board prep', start: at(320), end: at(380), canJoin: true }] : []),
     ],
+  };
+  mocks.set('wall2_meet_next', (args) => {
+    const a = answer(args as Record<string, unknown> | undefined);
+    return { ...a, meetings: rotate(a.meetings) };
   });
   // The day feed: local midnight to the end of tomorrow, past events included.
   mocks.set('wall2_meet_day', () => {

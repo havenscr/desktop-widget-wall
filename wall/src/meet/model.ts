@@ -16,14 +16,18 @@ export interface Person {
   reply: Reply;
 }
 
-/** Who is in a meeting and what the invite says, from the next read only; null when the calendar gave none. */
+/**
+ * Who is in a meeting and what the invite says, from the next read only; null when the calendar gave none. Names and
+ * words only: Rust removes join links, meeting ids, passcodes, phone numbers and addresses by fixed rules (a best effort
+ * on text that anyone who can send an invitation controls), and never sends an address.
+ */
 export interface MeetingDetails {
   calledBy: string | null;
   /** At most 20 named people. */
   people: Person[];
   /** Invited people not in `people`: past the 20 kept, or with no usable name. */
   peopleMore: number;
-  /** The invite's own words, cleaned in Rust (no link, address, meeting id or passcode); null when none. */
+  /** The invite's own words, cleaned in Rust by the rules above (links, ids, passcodes, phone numbers and addresses removed); null when none. */
   invite: string | null;
 }
 
@@ -46,6 +50,17 @@ export interface MeetData {
   stale?: boolean;
   /** Settle order on the native side: an answer with a lower number is older. */
   seq?: number;
+}
+
+/**
+ * The identity of one occurrence of a meeting: account, start, end and a hash of the title. Unlike `key` (which the
+ * native side renews on every read and which only commands use) it is the same on every read of the same event, so
+ * ticks, the chosen island kind and a call's meeting survive a refresh.
+ */
+export function occurrenceId(m: Pick<Meeting, 'accountId' | 'start' | 'end' | 'title'>): string {
+  let h = 5381;
+  for (const c of m.title) h = ((h * 33) ^ c.codePointAt(0)!) >>> 0;
+  return `${m.accountId}|${m.start}|${m.end}|${h.toString(16)}`;
 }
 
 export const NOT_CONFIGURED = 'not-configured';

@@ -85,7 +85,7 @@ function NotesPane({ marks }: { marks: readonly CallMark[] }) {
 }
 
 /** When no kind has anything: how the checklist file works, and its Open file button. Never an empty box. */
-function HowTo({ checklist, reload }: { checklist: ChecklistRead; reload: () => void }) {
+function HowTo({ checklist, reloadSoon }: { checklist: ChecklistRead; reloadSoon: () => void }) {
   const [note, setNote] = useState<string | null>(null);
   return (
     <section className="panel meet-island" aria-label="Meeting notes">
@@ -113,7 +113,7 @@ function HowTo({ checklist, reload }: { checklist: ChecklistRead; reload: () => 
               void invoke('wall2_meet_checklist_open').then(
                 () => {
                   setNote(null);
-                  setTimeout(reload, 3000);
+                  reloadSoon();
                 },
                 () => setNote('Could not open meet-checklist.txt'),
               )
@@ -134,12 +134,15 @@ function HowTo({ checklist, reload }: { checklist: ChecklistRead; reload: () => 
  * The island: one kind large at the left, "Also on file" at the right, the order line, arrows and dots under them.
  * Arrows, a click on an index row and the dots change the large kind; nothing turns by itself.
  */
-export function Island({ details, checklist, reload, meetingKey, marks }: { details: MeetingDetails | null | undefined; checklist: ChecklistRead; reload: () => void; meetingKey: string; marks: readonly CallMark[] }) {
-  const ticked = useMeetStore((s) => s.ticks[meetingKey]) ?? [];
+export function Island({ details, checklist, reloadSoon, meetingId, marks }: { details: MeetingDetails | null | undefined; checklist: ChecklistRead; reloadSoon: () => void; meetingId: string; marks: readonly CallMark[] }) {
+  // Ticks and the chosen kind belong to the occurrence of the meeting, so a refresh of the calendar keeps them.
+  const ticked = useMeetStore((s) => s.ticks[meetingId]) ?? [];
   const toggle = useMeetStore((s) => s.toggleTick);
-  const [sel, setSel] = useState<KindId | null>(null);
+  const sel = useMeetStore((s) => s.selected[meetingId]) ?? null;
+  const select = useMeetStore((s) => s.select);
+  const setSel = (k: KindId) => select(meetingId, k);
   const kinds = islandKinds({ details, checklist: checklist.items, marks });
-  if (kinds.length === 0) return <HowTo checklist={checklist} reload={reload} />;
+  if (kinds.length === 0) return <HowTo checklist={checklist} reloadSoon={reloadSoon} />;
   const found = kinds.findIndex((k) => k.id === sel);
   const index = found < 0 ? 0 : found;
   const cur = kinds[index];
@@ -148,7 +151,7 @@ export function Island({ details, checklist, reload, meetingKey, marks }: { deta
   let pane: ReactNode = null;
   if (cur.id === 'invite' && details?.invite) pane = <InvitePane text={details.invite} />;
   else if (cur.id === 'people' && details) pane = <PeoplePane d={details} />;
-  else if (cur.id === 'checklist') pane = <ChecklistPane items={checklist.items} ticked={ticked} onTick={(i) => toggle(meetingKey, i)} />;
+  else if (cur.id === 'checklist') pane = <ChecklistPane items={checklist.items} ticked={ticked} onTick={(i) => toggle(meetingId, i)} />;
   else if (cur.id === 'notes') pane = <NotesPane marks={marks} />;
   const many = kinds.length > 1;
   return (

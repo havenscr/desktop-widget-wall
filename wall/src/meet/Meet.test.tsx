@@ -284,7 +284,8 @@ it('says Calendar not available when no account can be read', async () => {
   expect(screen.getByText('Calendar not available')).toBeTruthy();
   expect(screen.getByText(/2 calendars need attention\./)).toBeTruthy();
   // One link only: the Later card carries it, the other card just says what is wrong.
-  expect(screen.getAllByRole('button', { name: 'Open Tools' })).toHaveLength(1);
+  // One link in the hero, under the title, and one in the Next card that says why it is empty.
+  expect(screen.getAllByRole('button', { name: 'Open Tools' })).toHaveLength(2);
   expect(screen.getByLabelText('Later meetings').textContent).toContain('Open Tools');
 });
 
@@ -522,7 +523,7 @@ it('a failed account keeps its last known meeting, but a signed-out one never do
   expect(screen.queryByText('Design review')).toBeNull();
 });
 
-it('Join is filled only for a live or within 15 minutes meeting, quiet otherwise', async () => {
+it('the hero Join is filled, with a glow when live or within 15 minutes; the Join after it is outlined until then', async () => {
   mocks.set('wall2_meet_next', () => ({
     accounts: [{ id: 'work', label: 'Work', state: 'ok' }],
     meetings: [

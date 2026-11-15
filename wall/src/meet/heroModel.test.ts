@@ -11,8 +11,10 @@ import {
   invitedCount,
   leaveIsFor,
   matchDayEvent,
+  leaveWords,
   nextHeading,
   peopleBlock,
+  relationLine,
   ringOf,
   statusLine,
 } from './heroModel';
@@ -45,8 +47,9 @@ it('the ring: fraction and colour for a table of times', () => {
   expect(ringOf(meeting(30, 80), NOW, false).frac).toBe(1);
   expect(ringOf(meeting(90, 120), NOW, false).frac).toBe(1);
   expect(ringOf(meeting(3, 80), NOW, false).frac).toBeCloseTo(0.1, 5);
-  expect(ringOf(meeting(20, 80), NOW, true).tone).toBe('cyan');
-  expect(ringOf(meeting(20, 80), NOW, false).under).toMatch(/^starts /);
+  // A call joined before the start is violet, like any call.
+  expect(ringOf(meeting(20, 80), NOW, true).tone).toBe('violet');
+  expect(ringOf(meeting(20, 80), NOW, false).under).toMatch(/^\d+(:\d\d)? [AP]M to \d+(:\d\d)? [AP]M$/);
   // Hours when a meeting is more than 99 minutes away.
   expect(ringOf(meeting(100, 160), NOW, false)).toMatchObject({ value: 1, unit: 'h to go' });
   expect(ringOf(meeting(200, 260), NOW, false)).toMatchObject({ value: 3, unit: 'h to go' });
@@ -62,6 +65,16 @@ it('the ring: fraction and colour for a table of times', () => {
   expect(ringOf(meeting(-50, 10), NOW, false).tone).toBe('amber');
   expect(ringOf(meeting(-50, 0.4), NOW, true)).toMatchObject({ value: 1, tone: 'amber' });
   expect(ringOf(meeting(-50, 0.4), NOW, true).frac).toBeGreaterThan(0);
+  // Past the end (a call that runs over): minutes over in amber, a full ring, "ended" under it; never "1 min left".
+  const over = ringOf(meeting(-72, -12), NOW, true);
+  expect(over).toMatchObject({ value: 12, unit: 'min over', tone: 'amber', frac: 1 });
+  expect(over.under).toMatch(/^ended /);
+  expect(ringOf(meeting(-72, 0), NOW, true)).toMatchObject({ value: 0, unit: 'min over', tone: 'amber' });
+  expect(ringOf(meeting(-72, -12), NOW, false).unit).toBe('min over');
+  // A zero-length meeting that has begun is over at once.
+  expect(ringOf(meeting(-5, -5), NOW, true)).toMatchObject({ value: 5, unit: 'min over' });
+  expect(ringOf(meeting(0, 0), NOW, true)).toMatchObject({ value: 0, unit: 'min over' });
+  expect(ringOf(meeting(-300, -100), NOW, true)).toMatchObject({ value: 1, unit: 'h over' });
   // A long meeting counts in hours past 99 minutes.
   expect(ringOf(meeting(-10, 190), NOW, true)).toMatchObject({ value: 3, unit: 'h left' });
 });
@@ -126,30 +139,53 @@ it('the call keys by kind: Teams and Zoom from the library, none for the browser
   expect(MUTE_TIP('zoom')).toContain('Alt+A');
 });
 
-it('Open invite matches a day event by start and title, and only one Outlook can open', () => {
-  const ev = [
-    { key: 'd1', title: 'Review', start: at(10), canOpen: false },
-    { key: 'd2', title: 'Review', start: at(10), canOpen: true },
-    { key: 'd3', title: 'Review', start: at(20), canOpen: true },
-    { key: 'd4', title: 'Other', start: at(10), canOpen: true },
-  ];
-  expect(matchDayEvent({ title: 'Review', start: at(10) }, ev)?.key).toBe('d2');
-  expect(matchDayEvent({ title: 'Review', start: at(30) }, ev)).toBeUndefined();
-  expect(matchDayEvent({ title: 'Review', start: at(10) }, [])).toBeUndefined();
+it('Open invite matches account, start, end and title, and only when exactly one day event matches and Outlook can open it', () => {
+  const base = { accountId: 'work', title: 'Review', start: at(10), end: at(40) };
+  const ev = (key: string, over: Record<string, unknown> = {}) => ({ key, ...base, canOpen: true, ...over });
+  const hero = base;
+  expect(matchDayEvent(hero, [ev('d1')])?.key).toBe('d1');
+  expect(matchDayEvent(hero, [ev('d1', { canOpen: false })])).toBeUndefined();
+  expect(matchDayEvent(hero, [ev('d1', { accountId: 'second' })])).toBeUndefined();
+  expect(matchDayEvent(hero, [ev('d1', { end: at(41) })])).toBeUndefined();
+  expect(matchDayEvent(hero, [ev('d1', { start: at(11) })])).toBeUndefined();
+  expect(matchDayEvent(hero, [ev('d1', { title: 'Other' })])).toBeUndefined();
+  // Two look-alikes could open the wrong one: no key.
+  expect(matchDayEvent(hero, [ev('d1'), ev('d2')])).toBeUndefined();
+  expect(matchDayEvent(hero, [ev('d1'), ev('d2', { canOpen: false })])).toBeUndefined();
+  expect(matchDayEvent(hero, [ev('d1'), ev('d2', { title: 'Other' })])?.key).toBe('d1');
+  expect(matchDayEvent(hero, [])).toBeUndefined();
 });
 
-it('the Next card heading: Next in a call, After this before, and back to back (amber) within 2 minutes of the end', () => {
+it('the Next card heading: Next in a call, After this before, back to back within 2 minutes either side of the end, overlaps before that', () => {
   const hero = meeting(-20, 40);
   const after = (mins: number) => ({ start: at(mins) });
-  expect(nextHeading(hero, after(90), true)).toEqual({ text: 'Next', amber: false });
-  expect(nextHeading(hero, after(90), false)).toEqual({ text: 'After this', amber: false });
-  expect(nextHeading(hero, after(40), true)).toEqual({ text: 'Next, back to back', amber: true });
-  expect(nextHeading(hero, after(42), false)).toEqual({ text: 'Next, back to back', amber: true });
+  expect(nextHeading(hero, after(90), true)).toEqual({ text: 'Next', amber: false, relation: 'apart' });
+  expect(nextHeading(hero, after(90), false)).toEqual({ text: 'After this', amber: false, relation: 'apart' });
+  expect(nextHeading(hero, after(40), true)).toEqual({ text: 'Next, back to back', amber: true, relation: 'back' });
+  expect(nextHeading(hero, after(42), false).relation).toBe('back');
+  expect(nextHeading(hero, after(38), false).relation).toBe('back');
+  expect(nextHeading(hero, after(43), false).relation).toBe('apart');
   expect(nextHeading(hero, after(43), false).amber).toBe(false);
   expect(nextHeading(hero, undefined, false).text).toBe('After this');
+  expect(nextHeading(undefined, after(10), true)).toEqual({ text: 'Next', amber: false, relation: 'apart' });
   expect(BACK_TO_BACK_MS).toBe(120_000);
-  // A meeting that starts before the hero ends (an overlap) is back to back too.
-  expect(nextHeading(hero, after(30), false).amber).toBe(true);
+  // A larger overlap is its own thing, not back to back (the old test blessed ten minutes).
+  expect(nextHeading(hero, after(30), false)).toEqual({ text: 'Next, overlaps', amber: true, relation: 'overlap' });
+  expect(nextHeading(hero, after(37), false).relation).toBe('overlap');
+  expect(relationLine('back')).toBe('Starts as this one ends');
+  expect(relationLine('overlap')).toBe('Starts before this one ends');
+  expect(relationLine('apart')).toBeNull();
+});
+
+it('the leave line: minutes after the hero ends in a call, amber when the leave time is before it ends', () => {
+  const hero = meeting(-20, 40);
+  const leaveAt = (mins: number) => NOW + mins * 60_000;
+  expect(leaveWords(leaveAt(50), hero, true)).toEqual({ text: expect.stringMatching(/^Leave by .*, 10 min after this$/), amber: false });
+  expect(leaveWords(leaveAt(40), hero, true).text).toMatch(/, 0 min after this$/);
+  expect(leaveWords(leaveAt(35), hero, true)).toEqual({ text: expect.stringMatching(/^Leave by .*, before this ends$/), amber: true });
+  // Before the meeting, or with no hero, only the time.
+  expect(leaveWords(leaveAt(50), hero, false).text).toMatch(/^Leave by \d+(:\d\d)? [AP]M$/);
+  expect(leaveWords(leaveAt(50), undefined, true).text).toMatch(/^Leave by \d+(:\d\d)? [AP]M$/);
 });
 
 it('the leave signal belongs to the meeting whose start it names', () => {

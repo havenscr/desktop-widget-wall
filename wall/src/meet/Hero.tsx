@@ -1,8 +1,7 @@
 import { IconCalendarEvent, IconNotes, IconVideo } from '@tabler/icons-react';
 import { invoke } from '../bridge/tauri';
-import { useDayFeed } from '../ribbon/useDayEvents';
+import type { DayEvent } from '../ribbon/model';
 import { formatClock } from '../clock/format';
-import { RecordingChipBody } from '../signals/RecordingChip';
 import { useSignalStore } from '../signals/store';
 import { tip } from '../ui/HoverTip';
 import { troubleLine } from '../tools/trouble';
@@ -11,7 +10,7 @@ import { useLibGroups } from '../work/keyLibrary';
 import { keyboardOnMouseKey, useKeyPress } from '../work/keyPress';
 import { allKeys, type LibGroup } from '../work/libraryModel';
 import { useBrief } from '../work/useBrief';
-import { TroubleLine } from './parts';
+import { HeroChip, TroubleLine } from './parts';
 import {
   BROWSER_KEYS,
   BROWSER_TIP,
@@ -19,6 +18,7 @@ import {
   MUTE_TIP,
   calledByLine,
   callKeys,
+  callWord,
   initials,
   matchDayEvent,
   peopleBlock,
@@ -84,7 +84,7 @@ function CallKey({ spec, groups, camera, kind, press, onKeyDown }: {
 }
 
 /** The keys under the title: Join and Open invite before a call, the four call keys during one. */
-function Keys({ meeting, m, openKey, showBrief }: { meeting: Meeting; m: MeetState; openKey: string | undefined; showBrief: (t: string) => void }) {
+function Keys({ meeting, m, openKey, showBrief }: { meeting: Meeting | undefined; m: MeetState; openKey: string | undefined; showBrief: (t: string) => void }) {
   const call = useSignalStore((s) => s.call);
   const { groups } = useLibGroups();
   const { press, onKeyDown } = useKeyPress(showBrief, () => undefined);
@@ -110,6 +110,7 @@ function Keys({ meeting, m, openKey, showBrief }: { meeting: Meeting; m: MeetSta
       </div>
     );
   }
+  if (!meeting) return null;
   const urgent = joinIsUrgent(meeting, m.now);
   const canOpen = openKey !== undefined;
   if (!meeting.canJoin && !canOpen) {
@@ -126,10 +127,10 @@ function Keys({ meeting, m, openKey, showBrief }: { meeting: Meeting; m: MeetSta
       {meeting.canJoin && (
         <button
           type="button"
-          className={urgent ? 'meet-key join' : 'meet-key join quiet'}
+          className={urgent ? 'meet-key join urgent' : 'meet-key join'}
           aria-label={`Join: ${meeting.title}`}
           onClick={() => m.join(meeting.key)}
-          {...tip(urgent ? 'Join this meeting now' : 'Join this meeting. It has not started yet.')}
+          {...tip(urgent ? 'Join this meeting now' : 'Join this meeting. It starts later.')}
         >
           <IconVideo size={32} stroke={1.8} aria-hidden="true" />
           <span>Join</span>
@@ -151,24 +152,27 @@ function Keys({ meeting, m, openKey, showBrief }: { meeting: Meeting; m: MeetSta
   );
 }
 
-/** The hero: the meeting that is next or running, large at the left, with its ring, keys and people. */
-export function Hero({ m, meeting, label }: { m: MeetState; meeting: Meeting; label: string }) {
+/**
+ * The hero: the meeting that is next or running, large at the left, with its ring, keys and people. With no
+ * `meeting` it is a plain call (an ad hoc call, or the calendar cannot be read): the status, the time, the four
+ * keys and nothing else, under "Call in progress".
+ */
+export function Hero({ m, meeting, label, events }: { m: MeetState; meeting: Meeting | undefined; label: string; events: readonly DayEvent[] }) {
   const call = useSignalStore((s) => s.call);
-  const recording = useSignalStore((s) => s.recording);
-  const day = useDayFeed(true);
   const [brief, showBrief] = useBrief();
-  const openKey = matchDayEvent(meeting, day.events)?.key;
-  const status = statusLine(meeting, m.now, call);
-  const ring = ringOf(meeting, m.now, call !== null);
+  const openKey = meeting ? matchDayEvent(meeting, events)?.key : undefined;
+  const status = meeting ? statusLine(meeting, m.now, call) : { text: call ? `In call, ${callWord(call.kind)}` : 'Call', tone: 'call' as const };
+  const ring = meeting ? ringOf(meeting, m.now, call !== null) : null;
   const clock = formatClock(new Date(m.now));
-  const long = meeting.title.length > LONG_TITLE;
-  const by = calledByLine(meeting.details, label);
-  const agenda = meeting.details?.invite ?? null;
-  const people = peopleBlock(meeting.details);
+  const title = meeting?.title ?? 'Call in progress';
+  const long = title.length > LONG_TITLE;
+  const by = meeting ? calledByLine(meeting.details, label) : null;
+  const agenda = meeting?.details?.invite ?? null;
+  const people = meeting ? peopleBlock(meeting.details) : null;
   const trouble = troubleLine(m.data?.accounts ?? []);
-  const outOfDate = mayBeOutOfDate(m.data?.accounts ?? []);
+  const outOfDate = meeting ? mayBeOutOfDate(m.data?.accounts ?? []) : false;
   return (
-    <div className="meet-hero" aria-label="Next meeting" data-tone={status.tone}>
+    <div className="meet-hero" aria-label="Next meeting" data-tone={status.tone} data-plain={meeting ? undefined : 'true'}>
       <div className="meet-hero-st">
         <span className="meet-st" data-tone={status.tone}>
           <i aria-hidden="true" />
@@ -179,8 +183,8 @@ export function Hero({ m, meeting, label }: { m: MeetState; meeting: Meeting; la
           <small>{clock.meridiem}</small>
         </span>
       </div>
-      <div className="meet-hero-title" data-long={long ? 'true' : undefined} {...tip(meeting.title)}>
-        {meeting.title}
+      <div className="meet-hero-title" data-long={long ? 'true' : undefined} {...tip(title)}>
+        {title}
       </div>
       <div className="meet-hero-below" data-trouble={trouble ? 'true' : undefined}>
         {by && (
@@ -196,10 +200,12 @@ export function Hero({ m, meeting, label }: { m: MeetState; meeting: Meeting; la
         )}
         {trouble ? <TroubleLine text={trouble} /> : outOfDate && <div className="meet-stale">may be out of date</div>}
       </div>
-      <div className="meet-ring" {...tip(ring.unit.endsWith('to go') ? 'Time until this meeting starts. The ring fills for the last 30 minutes.' : 'Time left in this meeting. The ring is the share of the meeting still to go.')}>
-        <Ring value={ring.value} unit={ring.unit} frac={ring.frac} tone={ring.tone} />
-        <span className="meet-ring-under">{ring.under}</span>
-      </div>
+      {ring && (
+        <div className="meet-ring" {...tip(ring.unit.endsWith('to go') ? 'Time until this meeting starts. The ring fills for the last 30 minutes.' : ring.unit.endsWith('over') ? 'This meeting has ended and the call is still on. The number is the time over.' : 'Time left in this meeting. The ring is the share of the meeting still to go.')}>
+          <Ring value={ring.value} unit={ring.unit} frac={ring.frac} tone={ring.tone} />
+          <span className="meet-ring-under">{ring.under}</span>
+        </div>
+      )}
       <Keys meeting={meeting} m={m} openKey={openKey} showBrief={showBrief} />
       {people && (
         <div className="meet-ppl" {...tip(`${people.head}. ${people.replies}. Names are in the island.`)}>
@@ -226,7 +232,7 @@ export function Hero({ m, meeting, label }: { m: MeetState; meeting: Meeting; la
           </span>
         ) : (
           <>
-            {recording && <RecordingChipBody place="header" />}
+            <HeroChip />
             {!call && <span className="meet-xxs">The wall switches to the call by itself when it starts.</span>}
             {m.notice && <span className="meet-notice meet-xxs">{m.notice}</span>}
           </>

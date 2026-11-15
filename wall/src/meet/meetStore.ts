@@ -1,38 +1,56 @@
 import { create } from 'zustand';
 import { useSignalStore } from '../signals/store';
-import type { CallMark } from './islandModel';
+import type { CallMark, KindId } from './islandModel';
+import type { Meeting } from './model';
 
 interface MeetStore {
-  /** The call these marks belong to (its `since`), or null when no call has run. */
-  callSince: number | null;
+  /** When the running call began (its first `since`), or null with no call. A change of the call's kind inside it does not change this. */
+  callId: number | null;
   /** The marks made in this call, oldest first. Kept in memory only. */
   marks: CallMark[];
-  /** Items ticked for a meeting: its key to the item numbers. Memory only, this meeting only. */
+  /** The meeting this call belongs to, kept until the call ends (the list no longer holds a meeting that has ended). */
+  anchor: { callId: number; meeting: Meeting } | null;
+  /** Items ticked for a meeting occurrence: its identity (see `occurrenceId`) to the item numbers. Memory only. */
   ticks: Record<string, number[]>;
-  addMark: (m: CallMark) => void;
-  toggleTick: (key: string, index: number) => void;
+  /** The island kind chosen for an occurrence. */
+  selected: Record<string, KindId>;
+  /** Adds a mark only when the store still belongs to the call it was made in; true when it was added. */
+  addMark: (callId: number, m: CallMark) => boolean;
+  setAnchor: (callId: number, meeting: Meeting) => void;
+  toggleTick: (id: string, index: number) => void;
+  select: (id: string, kind: KindId) => void;
 }
 
-export const useMeetStore = create<MeetStore>((set) => ({
-  callSince: null,
+export const useMeetStore = create<MeetStore>((set, get) => ({
+  callId: useSignalStore.getState().call?.since ?? null,
   marks: [],
+  anchor: null,
   ticks: {},
-  addMark: (m) => set((s) => ({ marks: [...s.marks, m] })),
-  toggleTick: (key, index) =>
+  selected: {},
+  addMark: (callId, m) => {
+    if (get().callId !== callId) return false;
+    set((s) => ({ marks: [...s.marks, m] }));
+    return true;
+  },
+  setAnchor: (callId, meeting) => set((s) => (s.callId === callId ? { anchor: { callId, meeting } } : s)),
+  toggleTick: (id, index) =>
     set((s) => {
-      const now = s.ticks[key] ?? [];
-      return { ticks: { ...s.ticks, [key]: now.includes(index) ? now.filter((n) => n !== index) : [...now, index] } };
+      const now = s.ticks[id] ?? [];
+      return { ticks: { ...s.ticks, [id]: now.includes(index) ? now.filter((n) => n !== index) : [...now, index] } };
     }),
+  select: (id, kind) => set((s) => ({ selected: { ...s.selected, [id]: kind } })),
 }));
 
-/** Tests: forget every mark and tick. */
+/** Tests: forget every mark, tick and choice. */
 export function resetMeetStore(): void {
-  useMeetStore.setState({ callSince: null, marks: [], ticks: {} });
+  useMeetStore.setState({ callId: useSignalStore.getState().call?.since ?? null, marks: [], anchor: null, ticks: {}, selected: {} });
 }
 
-// The marks of a call end with it: a call ending, or a different call starting, clears them.
+// A call's marks and meeting live as long as the call: they start with it and end with it. A new kind inside the
+// same call (Teams to Zoom) changes the signal's `since` but not the call, so nothing resets then.
 useSignalStore.subscribe((s, prev) => {
-  const since = s.call?.since ?? null;
-  if (since === (prev.call?.since ?? null)) return;
-  if (since === null || since !== useMeetStore.getState().callSince) useMeetStore.setState({ callSince: since, marks: [] });
+  const was = prev.call !== null;
+  const is = s.call !== null;
+  if (!was && is) useMeetStore.setState({ callId: s.call!.since, marks: [], anchor: null });
+  else if (was && !is) useMeetStore.setState({ callId: null, marks: [], anchor: null });
 });

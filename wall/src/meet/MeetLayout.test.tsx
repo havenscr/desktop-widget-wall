@@ -10,7 +10,7 @@ import { HoverTipLayer, resetTip, TIP_DELAY_MS } from '../ui/HoverTip';
 import { resetLibIndex } from '../work/keyLibrary';
 import { Meet } from './Meet';
 import { resetMeetStore, useMeetStore } from './meetStore';
-import type { Meeting, MeetingDetails, MeetData } from './model';
+import { occurrenceId, type Meeting, type MeetingDetails, type MeetData } from './model';
 
 // Fake timers step through several minutes here, and the limit is generous for a slow runner.
 vi.setConfig({ testTimeout: 20_000 });
@@ -162,13 +162,13 @@ it('before a call: Join (filled within 15 minutes) and Open invite, from the mat
   const hero = m('1-0', 'Design review', 10, 40, { canJoin: true, details });
   serve([hero, m('1-1', 'Lunch', 70, 130)], {
     day: [
-      { key: 'd-other', title: 'Design review', start: at(11), end: at(40), canOpen: true },
-      { key: 'd-hero', title: 'Design review', start: hero.start, end: hero.end, canOpen: true },
+      { key: 'd-other', accountId: 'work', title: 'Design review', start: at(11), end: at(40), canOpen: true },
+      { key: 'd-hero', accountId: 'work', title: 'Design review', start: hero.start, end: hero.end, canOpen: true },
     ],
   });
   await renderMeet();
   const join = screen.getByRole('button', { name: 'Join: Design review' });
-  expect(join.className).not.toContain('quiet');
+  expect(join.className).toContain('urgent');
   fireEvent.click(join);
   expect(sent).toContainEqual({ command: 'wall2_meet_join', args: { key: '1-0' } });
   fireEvent.click(screen.getByRole('button', { name: 'Open invite' }));
@@ -177,10 +177,12 @@ it('before a call: Join (filled within 15 minutes) and Open invite, from the mat
   expect(screen.getByText('Next, in 10 min')).toBeTruthy();
 });
 
-it('Join is outlined when the meeting is far off, and Open invite is absent when no day event matches', async () => {
-  serve([m('1-0', 'Design review', 90, 120, { canJoin: true })], { day: [{ key: 'd1', title: 'Another', start: at(90), end: at(120), canOpen: true }] });
+it('Join is filled even when the meeting is far off (no glow), and Open invite is absent when no day event matches', async () => {
+  serve([m('1-0', 'Design review', 90, 120, { canJoin: true })], { day: [{ key: 'd1', accountId: 'work', title: 'Another', start: at(90), end: at(120), canOpen: true }] });
   await renderMeet();
-  expect(screen.getByRole('button', { name: 'Join: Design review' }).className).toContain('quiet');
+  const far = screen.getByRole('button', { name: 'Join: Design review' });
+  expect(far.className).toBe('meet-key join');
+  expect(far.className).not.toContain('quiet');
   expect(screen.queryByRole('button', { name: 'Open invite' })).toBeNull();
 });
 
@@ -304,7 +306,7 @@ it('"Leave by" shows in cyan when the leave signal is for the meeting after the 
   await setCall(call());
   act(() => useSignalStore.setState({ leave: { key: 'travel', leaveAt: NOW + 40 * 60_000, startsAt: NOW + 60 * 60_000 } }));
   const { container } = await renderMeet();
-  const line = within(next(container)).getByText(/^Leave by \d+(:\d\d)? [AP]M$/);
+  const line = within(next(container)).getByText(/^Leave by \d+(:\d\d)? [AP]M, \d+ min after this$/);
   expect(line.className).toContain('cyan');
   // A leave signal for some other meeting shows nothing here.
   act(() => useSignalStore.setState({ leave: { key: 'travel', leaveAt: NOW + 40 * 60_000, startsAt: NOW + 200 * 60_000 } }));
@@ -399,7 +401,7 @@ it('the checklist ticks an item for this meeting only', async () => {
   fireEvent.click(item);
   expect(isl.getByRole('checkbox', { name: /Who decides/ }).getAttribute('aria-checked')).toBe('true');
   expect(isl.getByRole('checkbox', { name: /Next step/ }).getAttribute('aria-checked')).toBe('false');
-  expect(useMeetStore.getState().ticks).toEqual({ '1-0': [0] });
+  expect(useMeetStore.getState().ticks).toEqual({ [occurrenceId(meetings[0])]: [0] });
   // The next meeting starts with a clean list.
   serve([m('1-5', 'Other', -10, 20)], { checklist: ['Who decides', 'Next step'] });
   await flush(5 * 60_000 + 10);
@@ -407,7 +409,7 @@ it('the checklist ticks an item for this meeting only', async () => {
   // Ticking again takes the tick back.
   fireEvent.click(within(island(container)).getByRole('checkbox', { name: /Who decides/ }));
   fireEvent.click(within(island(container)).getByRole('checkbox', { name: /Who decides/ }));
-  expect(useMeetStore.getState().ticks['1-5']).toEqual([]);
+  expect(useMeetStore.getState().ticks[occurrenceId(m('1-5', 'Other', -10, 20))]).toEqual([]);
 });
 
 const capture = (c: HTMLElement) => c.querySelector('.meet-capture') as HTMLElement;

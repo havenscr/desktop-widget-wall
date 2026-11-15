@@ -1,5 +1,5 @@
 import { IconBookmark, IconFileText } from '@tabler/icons-react';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { invoke } from '../bridge/tauri';
 import { useSignalStore } from '../signals/store';
 import { tip } from '../ui/HoverTip';
@@ -33,28 +33,41 @@ export function markErrorText(e: unknown): string {
  */
 export function Capture({ title }: { title: string | undefined }) {
   const call = useSignalStore((s) => s.call);
+  const callId = useMeetStore((s) => s.callId);
   const marks = useMeetStore((s) => s.marks);
   const addMark = useMeetStore((s) => s.addMark);
   const [note, setNote] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const alive = useRef(true);
+  useEffect(() => {
+    alive.current = true;
+    return () => {
+      alive.current = false;
+    };
+  }, []);
+  // An error line belongs to the call it happened in.
+  useEffect(() => setNote(null), [callId]);
   const live = call !== null;
   const line = note ?? (marks.length > 0 ? marksLine(marks) : 'Marks the time in the call to marks.txt');
+  const base = live ? 'Write the time in this call and the meeting title to marks.txt, for finding the moment later. A second click within a second counts once.' : 'Wakes when the call starts';
 
   const mark = async () => {
     if (!call || busy) return;
+    // The call this click belongs to: its start, kept while the call runs (a change of kind inside it is the same call).
+    const id = callId ?? call.since;
     const now = Date.now();
     const last = marks[marks.length - 1];
     if (last && now - last.at < MARK_QUIET_MS) return;
     setBusy(true);
-    const showMs = Math.max(0, Math.floor(now - call.since));
+    const showMs = Math.max(0, Math.floor(now - id));
     try {
       await invoke('wall2_onair_mark', { showMs, part: markPart(title) });
-      addMark({ at: now, showMs });
-      setNote(null);
+      // The line is in marks.txt either way; the call's list takes it only if the store still belongs to this call.
+      if (addMark(id, { at: now, showMs }) && alive.current) setNote(null);
     } catch (e) {
-      setNote(markErrorText(e));
+      if (alive.current && useMeetStore.getState().callId === id) setNote(markErrorText(e));
     } finally {
-      setBusy(false);
+      if (alive.current) setBusy(false);
     }
   };
 
@@ -75,7 +88,7 @@ export function Capture({ title }: { title: string | undefined }) {
             if (e.detail > 1) return;
             void mark();
           }}
-          {...tip(live ? 'Write the time in this call and the meeting title to marks.txt, for finding the moment later. A second click within a second counts once.' : 'Wakes when the call starts')}
+          {...tip(live && (note || marks.length > 0) ? `${base}\n${line}` : base)}
         >
           <span className="meet-cap-ico" aria-hidden="true">
             <IconBookmark size={30} stroke={1.8} />
@@ -90,7 +103,7 @@ export function Capture({ title }: { title: string | undefined }) {
         <button
           type="button"
           className="meet-cap-open"
-          onClick={() => void invoke('wall2_onair_open', { which: 'marks' }).catch(() => setNote('Could not open marks.txt'))}
+          onClick={() => void invoke('wall2_onair_open', { which: 'marks' }).catch(() => alive.current && setNote('Could not open marks.txt'))}
           {...tip('Open marks.txt in the default editor: one line a mark, with the local time, the time in the call and the meeting title')}
         >
           <IconFileText size={20} aria-hidden="true" />

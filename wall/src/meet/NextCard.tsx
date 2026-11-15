@@ -1,74 +1,87 @@
 import { IconVideo } from '@tabler/icons-react';
 import { tip } from '../ui/HoverTip';
 import { useToolsStore } from '../tools/store';
-import { leaveIsFor, nextHeading } from './heroModel';
-import { clockText, joinIsUrgent, laterEmpty, timeRange, type Meeting, type MeetAccount } from './model';
+import { leaveIsFor, leaveWords, nextHeading, relationLine } from './heroModel';
+import { daysAhead, dayWord, whenText } from './todayModel';
+import { clockText, joinIsUrgent, laterEmpty, occurrenceId, timeRange, type Meeting, type MeetAccount } from './model';
 import type { LeaveSignal } from '../signals/model';
 
 /** Later one-liners under the next meeting. */
 export const LATER_LINES = 2;
 
-const END_WORDS = (m: Meeting) => `the last ends ${clockText(Date.parse(m.end))}`;
-
-/** The one meeting after the hero, with Join or the leave time, and what comes after it. */
-function After({ after, rest, hero, labels, now, inCall, leave, onJoin }: {
+/** The meeting after the hero, with the Leave line or Join, and what comes after it. */
+function After({ after, rest, hero, labels, now, inCall, leave, onJoin, todayCount, todayLastEnd }: {
   after: Meeting;
   rest: Meeting[];
-  hero: Meeting;
+  hero: Meeting | undefined;
   labels: Map<string, string>;
   now: number;
   inCall: boolean;
   leave: LeaveSignal | null;
   onJoin: (key: string) => void;
+  todayCount: number;
+  todayLastEnd: number | null;
 }) {
   const heading = nextHeading(hero, after, inCall);
-  const total = rest.length + 1;
+  const note = relationLine(heading.relation);
   const lines = rest.slice(0, LATER_LINES);
-  const more = rest.slice(LATER_LINES);
-  const leaveHere = leaveIsFor(leave, after) ? leave : null;
+  // What the card shows of today, so the "+N" only counts what it does not show.
+  const shown = [after, ...lines].filter((x) => daysAhead(Date.parse(x.start), now) === 0).length;
+  const extra = todayCount - shown;
+  const leaveHere = leaveIsFor(leave, after) && leave ? leaveWords(leave.leaveAt, hero, inCall) : null;
   const urgent = joinIsUrgent(after, now);
+  const startMs = Date.parse(after.start);
+  const day = dayWord(startMs, now);
   return (
     <>
       <div className="row sb meet-next-hd">
         <span className="k meet-k" data-amber={heading.amber ? 'true' : undefined}>
           {heading.text}
         </span>
-        <span className="meet-xxs">{total} more today</span>
+        <span className="meet-xxs">{todayCount > 0 ? `${todayCount} more today` : 'Nothing more today'}</span>
       </div>
       <div className="meet-next-title" data-long={after.title.length > 40 ? 'true' : undefined} {...tip(after.title)}>
         {after.title}
       </div>
       <div className="meet-next-when">
+        {day ? `${day} ` : ''}
         {timeRange(after)} · {labels.get(after.accountId) ?? ''}
       </div>
-      {(after.canJoin || leaveHere) && (
+      {/* One row: the leave time when the leave signal is for this meeting, otherwise Join (with the amber line when it applies). */}
+      {(leaveHere || after.canJoin) && (
         <div className="meet-next-act">
-          {after.canJoin && (
-            <button type="button" className={urgent ? 'meet-btn cy' : 'meet-btn'} aria-label={`Join: ${after.title}`} onClick={() => onJoin(after.key)} {...tip('Join this meeting')}>
-              <IconVideo size={22} stroke={1.8} aria-hidden="true" />
-              Join
-            </button>
-          )}
-          {heading.amber && <span className="meet-next-note amber">Starts as this one ends</span>}
-          {leaveHere && (
-            <span className="meet-next-note cyan" {...tip('Time to set off, from the travel block in the calendar')}>
-              Leave by {clockText(leaveHere.leaveAt)}
+          {leaveHere ? (
+            <span className={`meet-next-note ${leaveHere.amber ? 'amber' : 'cyan'}`} {...tip('Time to set off, from the travel block in the calendar')}>
+              {leaveHere.text}
             </span>
+          ) : (
+            <>
+              <button type="button" className={urgent ? 'meet-btn cy' : 'meet-btn'} aria-label={`Join: ${after.title}`} onClick={() => onJoin(after.key)} {...tip('Join this meeting')}>
+                <IconVideo size={22} stroke={1.8} aria-hidden="true" />
+                Join
+              </button>
+              {note && <span className="meet-next-note amber">{note}</span>}
+            </>
           )}
         </div>
       )}
-      {(lines.length > 0 || more.length > 0) && (
+      {!leaveHere && !after.canJoin && note && (
+        <div className="meet-next-act">
+          <span className="meet-next-note amber">{note}</span>
+        </div>
+      )}
+      {(lines.length > 0 || extra > 0) && (
         <div className="meet-after-list">
           <span className="k meet-k sm">Later</span>
           {lines.map((x) => (
-            <div key={x.key} className="meet-later-row" {...tip(`${x.title}\n${timeRange(x)} · ${labels.get(x.accountId) ?? ''}`)}>
-              <span className="meet-later-t">{clockText(Date.parse(x.start))}</span>
+            <div key={occurrenceId(x)} className="meet-later-row" {...tip(`${x.title}\n${dayWord(Date.parse(x.start), now) ? `${dayWord(Date.parse(x.start), now)} ` : ''}${timeRange(x)} · ${labels.get(x.accountId) ?? ''}`)}>
+              <span className="meet-later-t">{whenText(Date.parse(x.start), now)}</span>
               <span className="meet-later-n ellipsis">{x.title}</span>
             </div>
           ))}
-          {more.length > 0 && (
+          {extra > 0 && todayLastEnd !== null && (
             <div className="meet-xxs meet-later-more">
-              +{more.length} more today, {END_WORDS(more[more.length - 1])}
+              +{extra} more today, the last ends {clockText(todayLastEnd)}
             </div>
           )}
         </div>
@@ -124,7 +137,7 @@ function Note({ text, link }: { text: string; link?: boolean }) {
 }
 
 export type NextCardProps =
-  | { kind: 'after'; hero: Meeting; later: Meeting[]; labels: Map<string, string>; now: number; inCall: boolean; leave: LeaveSignal | null; onJoin: (key: string) => void; accounts: readonly MeetAccount[]; lastOk: number | null }
+  | { kind: 'after'; hero: Meeting | undefined; later: Meeting[]; todayCount: number; todayLastEnd: number | null; labels: Map<string, string>; now: number; inCall: boolean; leave: LeaveSignal | null; onJoin: (key: string) => void; accounts: readonly MeetAccount[]; lastOk: number | null }
   | { kind: 'nothing'; accounts: readonly MeetAccount[]; lastOk: number | null; heading?: string }
   | { kind: 'note'; text: string; link?: boolean };
 
@@ -139,7 +152,7 @@ export function NextCard(p: NextCardProps) {
       ) : p.later.length === 0 ? (
         <Nothing accounts={p.accounts} lastOk={p.lastOk} heading={nextHeading(p.hero, undefined, p.inCall).text} />
       ) : (
-        <After after={p.later[0]} rest={p.later.slice(1)} hero={p.hero} labels={p.labels} now={p.now} inCall={p.inCall} leave={p.leave} onJoin={p.onJoin} />
+        <After after={p.later[0]} rest={p.later.slice(1)} hero={p.hero} labels={p.labels} now={p.now} inCall={p.inCall} leave={p.leave} onJoin={p.onJoin} todayCount={p.todayCount} todayLastEnd={p.todayLastEnd} />
       )}
     </section>
   );

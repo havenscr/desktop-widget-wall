@@ -1,5 +1,5 @@
 import type { CallKind, CallSignal, LeaveSignal } from '../signals/model';
-import { clockText, type Meeting, type MeetingDetails, type Person } from './model';
+import { clockText, timeRange, type Meeting, type MeetingDetails, type Person } from './model';
 
 const MIN = 60_000;
 
@@ -36,22 +36,28 @@ export interface Ring {
   /** 0 to 1, how much of the ring is drawn. */
   frac: number;
   tone: RingTone;
-  /** Under the ring: "ends 11:30 AM" once started, "starts 10:30 AM" before. */
+  /** Under the ring: the time range before the meeting, "ends 11:30 AM" during it, "ended 11:00 AM" after it. */
   under: string;
 }
 
 /**
- * The ring. Before the start it counts minutes to go and fills for the last 30 minutes; once the
- * meeting has started it counts minutes left and its fraction is the time left of the meeting's
- * length. Cyan before or with no call sensed, violet in a call, amber with 10 minutes or less left.
+ * The ring. Before the start it counts minutes to go and fills for the last 30 minutes; once the meeting has
+ * started it counts minutes left, as a share of the meeting's length; past the end of the meeting (a call that
+ * runs over) it counts the minutes over, in amber, full, under "ended 11:00 AM". Cyan before or with no call
+ * sensed, violet in a call (also before the start, for a call joined early), amber with 10 minutes or less
+ * left and when over.
  */
 export function ringOf(m: Pick<Meeting, 'start' | 'end'>, now: number, inCall: boolean): Ring {
   const start = Date.parse(m.start);
   const end = Date.parse(m.end);
+  if (now >= end && now >= start) {
+    const over = Math.floor((now - end) / MIN);
+    return { value: over > 99 ? Math.floor(over / 60) : over, unit: over > 99 ? 'h over' : 'min over', frac: 1, tone: 'amber', under: `ended ${clockText(end)}` };
+  }
   if (start > now) {
     const togo = Math.ceil((start - now) / MIN);
     const hours = togo > 99;
-    return { value: hours ? Math.floor(togo / 60) : togo, unit: hours ? 'h to go' : 'min to go', frac: Math.min(1, togo / 30), tone: 'cyan', under: `starts ${clockText(start)}` };
+    return { value: hours ? Math.floor(togo / 60) : togo, unit: hours ? 'h to go' : 'min to go', frac: Math.min(1, togo / 30), tone: inCall ? 'violet' : 'cyan', under: timeRange(m) };
   }
   const left = Math.max(1, Math.ceil((end - now) / MIN));
   const length = Math.max(1, end - start);
@@ -141,23 +147,58 @@ export const BROWSER_KEYS: readonly { role: CallKeySpec['role']; label: string }
 export const MUTE_TIP = (kind: CallKind): string => `Sends ${kind === 'zoom' ? 'Alt+A' : 'Ctrl+Shift+M'} to ${callWord(kind)}. The wall cannot see whether you are muted.`;
 export const BROWSER_TIP = 'A call in the browser takes no shortcuts from the wall';
 
-/** The day event Open invite opens: same start and title as the hero meeting, and one Outlook can open. */
-export function matchDayEvent<T extends { key: string; title: string; start: string; canOpen?: boolean }>(m: Pick<Meeting, 'title' | 'start'>, events: readonly T[]): T | undefined {
-  return events.find((e) => e.canOpen === true && e.start === m.start && e.title === m.title);
+/**
+ * The day event Open invite opens: the one whose account, start, end and title are the hero meeting's, and only when
+ * exactly one day event matches (two look-alikes would open the wrong one) and Outlook can open it.
+ */
+export function matchDayEvent<T extends { key: string; accountId?: string; title: string; start: string; end: string; canOpen?: boolean }>(m: Pick<Meeting, 'accountId' | 'title' | 'start' | 'end'>, events: readonly T[]): T | undefined {
+  const hits = events.filter((e) => e.accountId === m.accountId && e.start === m.start && e.end === m.end && e.title === m.title);
+  return hits.length === 1 && hits[0].canOpen === true ? hits[0] : undefined;
 }
 
 export interface NextHeading {
   text: string;
   amber: boolean;
+  /** How the meeting after the hero sits against its end. */
+  relation: 'apart' | 'back' | 'overlap';
 }
 
-/** An after-meeting this close to the hero's end is back to back. */
+/** An after-meeting starting from this long before to this long after the hero's end is back to back. */
 export const BACK_TO_BACK_MS = 2 * MIN;
 
-/** "Next" in a call, "After this" before the hero starts, "Next, back to back" (amber) when the next one starts within 2 minutes of the hero's end. */
-export function nextHeading(hero: Pick<Meeting, 'start' | 'end'>, after: Pick<Meeting, 'start'> | undefined, inCall: boolean): NextHeading {
-  if (after && Date.parse(after.start) - Date.parse(hero.end) <= BACK_TO_BACK_MS) return { text: 'Next, back to back', amber: true };
-  return { text: inCall ? 'Next' : 'After this', amber: false };
+/**
+ * "Next" in a call, "After this" before the hero starts. In amber: "Next, back to back" when the next meeting starts
+ * from 2 minutes before to 2 minutes after the hero's end, and "Next, overlaps" when it starts earlier than that.
+ */
+export function nextHeading(hero: Pick<Meeting, 'start' | 'end'> | undefined, after: Pick<Meeting, 'start'> | undefined, inCall: boolean): NextHeading {
+  if (hero && after) {
+    const gap = Date.parse(after.start) - Date.parse(hero.end);
+    if (Math.abs(gap) <= BACK_TO_BACK_MS) return { text: 'Next, back to back', amber: true, relation: 'back' };
+    if (gap < 0) return { text: 'Next, overlaps', amber: true, relation: 'overlap' };
+  }
+  return { text: inCall ? 'Next' : 'After this', amber: false, relation: 'apart' };
+}
+
+/** The amber line under the heading when the next meeting is back to back or overlaps. */
+export function relationLine(rel: NextHeading['relation']): string | null {
+  return rel === 'back' ? 'Starts as this one ends' : rel === 'overlap' ? 'Starts before this one ends' : null;
+}
+
+export interface LeaveWords {
+  text: string;
+  /** Amber when the leave time is before the hero ends. */
+  amber: boolean;
+}
+
+/**
+ * "Leave by 11:40 AM"; in a call, ", 10 min after this" (minutes from the hero's end to the leave time) when that is 0 or
+ * more, and "Leave by 11:40 AM, before this ends" in amber when it is earlier than the hero's end.
+ */
+export function leaveWords(leaveAt: number, hero: Pick<Meeting, 'end'> | undefined, inCall: boolean): LeaveWords {
+  const base = `Leave by ${clockText(leaveAt)}`;
+  if (!hero || !inCall) return { text: base, amber: false };
+  const mins = Math.round((leaveAt - Date.parse(hero.end)) / MIN);
+  return mins >= 0 ? { text: `${base}, ${mins} min after this`, amber: false } : { text: `${base}, before this ends`, amber: true };
 }
 
 /** True when the leave signal is for this meeting: the real start it names is this meeting's start. */

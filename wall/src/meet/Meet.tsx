@@ -1,27 +1,30 @@
+import { useEffect } from 'react';
 import { formatClock } from '../clock/format';
+import { useDayFeed } from '../ribbon/useDayEvents';
+import { usePlaceStore } from '../state/places';
 import { useSignalStore } from '../signals/store';
 import { troubleLine } from '../tools/trouble';
 import { tip } from '../ui/HoverTip';
+import { useVisible } from '../ui/useVisible';
 import { Capture } from './Capture';
 import { Hero } from './Hero';
 import { Island } from './Island';
 import { NextCard, type NextCardProps } from './NextCard';
+import { pickCallMeeting, refreshCallMeeting } from './callMeeting';
 import {
   calendarNotAvailable,
   clockText,
-  laterMeetings,
   nextMeeting,
+  occurrenceId,
   timeRange,
   visibleMeetings,
   type Meeting,
 } from './model';
-import { TroubleLine } from './parts';
+import { HeroChip, TroubleLine } from './parts';
 import { useMeetStore } from './meetStore';
+import { latestEnd, meetingsAfter, todayRest } from './todayModel';
 import { useChecklist } from './useChecklist';
 import { useMeet, type MeetState } from './useMeet';
-
-/** The most meetings the day lists in the Next card's "+N more" count; the card itself shows the next one and two more. */
-export const LATER_MAX = 14;
 
 /** A hero that only says one thing (not set up, loading, nothing scheduled): a label, a headline and a line or two. */
 function HeroNote({ label, headline, lines, children }: { label?: string; headline: string; lines?: (string | null)[]; children?: React.ReactNode }) {
@@ -35,6 +38,7 @@ function HeroNote({ label, headline, lines, children }: { label?: string; headli
         </div>
       ))}
       {children}
+      <HeroChip />
     </div>
   );
 }
@@ -48,10 +52,10 @@ function UnavailableHero({ m }: { m: MeetState }) {
         <div className="meet-headline">Calendar not available</div>
         <div className="meet-xs meet-dimline">{m.lastOk !== null ? `Last good read at ${clockText(m.lastOk)}` : 'No good read yet'}</div>
       </div>
-      {/* The Next card beside this carries the one Open Tools link. */}
-      {trouble && <TroubleLine text={trouble} plain />}
+      {trouble && <TroubleLine text={trouble} />}
       {m.notice && <div className="meet-xs meet-notice">{m.notice}</div>}
       <ReadAgain m={m} />
+      <HeroChip />
     </div>
   );
 }
@@ -108,6 +112,7 @@ function StaleHero({ m, meeting, label, at }: { m: MeetState; meeting: Meeting; 
       </div>
       <div className="meet-hero-last">
         <ReadAgain m={m} />
+        <HeroChip />
       </div>
     </div>
   );
@@ -126,20 +131,58 @@ function Layout({ hero, next, island, title }: { hero: React.ReactNode; next: Ne
   );
 }
 
+/** What a state of the calendar puts on the screen, before a running call takes the hero. */
+interface Parts {
+  hero: React.ReactNode;
+  next: NextCardProps;
+  /** The meeting the island and Capture are about, if any. */
+  meeting?: Meeting;
+  /** Details the island may show (none for a dimmed, last known meeting). */
+  details?: Meeting['details'];
+  /** True when the calendar is in its ordinary state (a meeting is next), so a call's Next card can be rebuilt. */
+  ordinary?: boolean;
+}
+
 /**
  * The Meet tab: the next or running meeting as the hero at the left, an island of what the wall knows about it in the
  * centre, the meeting after it at the upper right and Capture under it. The frame clock is hidden here; the hero
- * draws the time. Every state keeps its words and fills its place.
+ * draws the time. Every state keeps its words and fills its place. While a call is sensed the hero is the call: the
+ * meeting that was current when it started, kept until it ends (or a plain call when there is none), whatever the
+ * calendar says.
  */
 export function Meet() {
   const m = useMeet();
   const call = useSignalStore((s) => s.call);
   const leave = useSignalStore((s) => s.leave);
   const marks = useMeetStore((s) => s.marks);
-  const { read, reload } = useChecklist();
-  const island = (meeting: Meeting | undefined, details: Meeting['details']) => (
-    <Island key={meeting?.key ?? 'none'} details={details} checklist={read} reload={reload} meetingKey={meeting?.key ?? 'none'} marks={marks} />
-  );
+  const callId = useMeetStore((s) => s.callId);
+  const stored = useMeetStore((s) => s.anchor);
+  const setAnchor = useMeetStore((s) => s.setAnchor);
+  const visible = useVisible();
+  const onMeet = usePlaceStore((s) => s.active === 'meet');
+  const day = useDayFeed(visible && onMeet);
+  const { read, reloadSoon } = useChecklist();
+
+  const accounts = m.data?.accounts ?? [];
+  const labels = new Map(accounts.map((a) => [a.id, a.label]));
+  const list = visibleMeetings(m.data);
+
+  // The meeting a running call belongs to: kept for the call's whole life, found again (same occurrence) in each new read.
+  const cid = call ? (callId ?? call.since) : null;
+  const kept = call && stored && stored.callId === cid ? stored.meeting : undefined;
+  const callMeeting = cid === null ? undefined : kept ? refreshCallMeeting(kept, list) : pickCallMeeting(list, cid);
+  useEffect(() => {
+    if (cid !== null && callMeeting && callMeeting !== kept) setAnchor(cid, callMeeting);
+  }, [cid, callMeeting, kept, setAnchor]);
+
+  /** The Next card's words about what follows `hero`: today's count and latest end come from the day feed (the larger of it and the read). */
+  const after = (hero: Meeting | undefined, inCall: boolean, leaveSignal: typeof leave): NextCardProps => {
+    const later = meetingsAfter(list, hero, m.now);
+    const fromDay = todayRest(day.at !== null ? day.events : [], hero, m.now);
+    const fromRead = todayRest(later, hero, m.now);
+    const rest = fromDay.length >= fromRead.length ? fromDay : fromRead;
+    return { kind: 'after', hero, later, todayCount: rest.length, todayLastEnd: latestEnd(rest), labels, now: m.now, inCall, leave: leaveSignal, onJoin: m.join, accounts, lastOk: m.lastOk };
+  };
 
   let message: string | null = null;
   let hint: string | null = null;
@@ -155,56 +198,63 @@ export function Meet() {
     message = 'Calendar unavailable';
   }
 
-  if (message) {
-    return (
-      <Layout
-        hero={
-          <HeroNote label="Meet" headline={message} lines={[hint]}>
-            {m.status === 'error' && (
-              <button type="button" className="meet-btn cy meet-retry" onClick={m.refresh} {...tip('Read the calendar again')}>
-                Try again
-              </button>
-            )}
-          </HeroNote>
-        }
-        island={island(undefined, null)}
-        next={m.status === 'loading' ? { kind: 'note', text: 'Calendar not read yet.' } : { kind: 'note', text: 'No calendar can be read.', link: true }}
-      />
-    );
-  }
-
-  const accounts = m.data?.accounts ?? [];
-  const labels = new Map(accounts.map((a) => [a.id, a.label]));
   const none = calendarNotAvailable(accounts);
   // When no account can be read, the last known meeting stays up, dimmed and marked "as of"; the headline only when there is none.
   const lastNext = none && m.lastKnown ? nextMeeting(m.lastKnown.meetings, m.now) : undefined;
-  const empty = none ? !lastNext : !nextMeeting(visibleMeetings(m.data), m.now);
+  const empty = none ? !lastNext : !nextMeeting(list, m.now);
 
-  if (none && empty) {
-    return <Layout hero={<UnavailableHero m={m} />} island={island(undefined, null)} next={{ kind: 'note', text: 'No calendar can be read.', link: true }} />;
+  let parts: Parts;
+  if (message) {
+    parts = {
+      hero: (
+        <HeroNote label="Meet" headline={message} lines={[hint]}>
+          {m.status === 'error' && (
+            <button type="button" className="meet-btn cy meet-retry" onClick={m.refresh} {...tip('Read the calendar again')}>
+              Try again
+            </button>
+          )}
+        </HeroNote>
+      ),
+      next: m.status === 'loading' ? { kind: 'note', text: 'Calendar not read yet.' } : { kind: 'note', text: 'No calendar can be read.', link: true },
+    };
+  } else if (none && empty) {
+    parts = { hero: <UnavailableHero m={m} />, next: { kind: 'note', text: 'No calendar can be read.', link: true } };
+  } else if (none && m.lastKnown && lastNext) {
+    parts = {
+      hero: <StaleHero m={m} meeting={lastNext} label={labels.get(lastNext.accountId) ?? ''} at={m.lastKnown.at} />,
+      meeting: lastNext,
+      next: after(lastNext, false, null),
+    };
+  } else if (empty) {
+    parts = { hero: <EmptyHero m={m} />, next: { kind: 'nothing', accounts, lastOk: m.lastOk } };
+  } else {
+    const hero = nextMeeting(list, m.now) as Meeting;
+    parts = {
+      hero: <Hero m={m} meeting={hero} label={labels.get(hero.accountId) ?? ''} events={day.events} />,
+      meeting: hero,
+      details: hero.details,
+      next: after(hero, false, leave),
+      ordinary: true,
+    };
   }
-  if (none && m.lastKnown && lastNext) {
-    const later = laterMeetings(visibleMeetings(m.data), m.now).slice(0, LATER_MAX);
-    return (
-      <Layout
-        hero={<StaleHero m={m} meeting={lastNext} label={labels.get(lastNext.accountId) ?? ''} at={m.lastKnown.at} />}
-        island={island(lastNext, null)}
-        next={{ kind: 'after', hero: lastNext, later, labels, now: m.now, inCall: false, leave: null, onJoin: m.join, accounts, lastOk: m.lastOk }}
-        title={lastNext.title}
-      />
-    );
+  if (call) {
+    // The call is the hero, whatever the calendar says; the Next card shows what follows the call's meeting.
+    parts = {
+      ...parts,
+      hero: <Hero m={m} meeting={callMeeting} label={callMeeting ? (labels.get(callMeeting.accountId) ?? '') : ''} events={day.events} />,
+      meeting: callMeeting,
+      details: callMeeting?.details,
+      next: parts.ordinary || (parts.next.kind === 'after' && !none) ? after(callMeeting, true, leave) : parts.next,
+    };
   }
-  if (empty) {
-    return <Layout hero={<EmptyHero m={m} />} island={island(undefined, null)} next={{ kind: 'nothing', accounts, lastOk: m.lastOk }} />;
-  }
-  const hero = nextMeeting(visibleMeetings(m.data), m.now) as Meeting;
-  const later = laterMeetings(visibleMeetings(m.data), m.now).slice(0, LATER_MAX);
+
+  const title = call ? (callMeeting?.title ?? 'Call') : parts.meeting?.title;
   return (
     <Layout
-      hero={<Hero m={m} meeting={hero} label={labels.get(hero.accountId) ?? ''} />}
-      island={island(hero, hero.details)}
-      next={{ kind: 'after', hero, later, labels, now: m.now, inCall: call !== null, leave, onJoin: m.join, accounts, lastOk: m.lastOk }}
-      title={hero.title}
+      hero={parts.hero}
+      island={<Island key={parts.meeting ? occurrenceId(parts.meeting) : 'none'} details={parts.details} checklist={read} reloadSoon={reloadSoon} meetingId={parts.meeting ? occurrenceId(parts.meeting) : 'none'} marks={marks} />}
+      next={parts.next}
+      title={title}
     />
   );
 }

@@ -10,8 +10,8 @@
 .main[data-place='meet'] > .top > div:has(> .clk) {
   display: none;
 }
-/* The hero carries the recording chip itself; the floating one would double it. */
-:root:has(.meet-hero) .rec-float {
+/* Every hero carries the recording chip itself while a recorder runs; the floating one would double it. */
+:root:has(.meet-hero .rec-chip) .rec-float {
   visibility: hidden;
 }
 .meet .amber,
@@ -227,7 +227,11 @@
   font: 600 19px/1.3 var(--body);
   text-decoration: underline;
   text-underline-offset: 3px;
-  padding: 4px 0;
+  display: inline-flex;
+  align-items: center;
+  height: 40px;
+  padding: 0 4px;
+  vertical-align: middle;
 }
 .meet-trouble-link:hover {
   color: var(--tx);
@@ -236,9 +240,9 @@
 /* The ring: 164 px at stage x 756, y 80, with its line under it. */
 .meet-ring {
   position: absolute;
-  left: 632px;
+  left: 624px;
   top: 56px;
-  width: 188px;
+  width: 196px;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -344,14 +348,9 @@
   background: #6af0f3;
   border-color: transparent;
 }
-.meet-key.join.quiet {
-  background: rgba(53, 230, 234, 0.08);
-  border: 1px solid rgba(53, 230, 234, 0.45);
-  color: var(--cyan);
-}
-.meet-key.join.quiet:hover:not(.off) {
-  background: rgba(53, 230, 234, 0.16);
-  border-color: var(--cyan);
+/* Filled whenever the meeting can be joined; a meeting that is live or within 15 minutes adds a soft glow. */
+.meet-key.join.urgent {
+  box-shadow: 0 0 26px -6px var(--cyan);
 }
 .meet-key.off {
   background: rgba(11, 8, 32, 0.62);
@@ -540,6 +539,10 @@
   flex-direction: column;
   gap: 6px;
   min-width: 0;
+}
+/* Eight 40 px rows and their gaps fit the pane (about 346 px): 8 * 40 + 7 * 3. */
+.meet-isl-check {
+  gap: 3px;
 }
 .meet-isl-person {
   display: flex;
@@ -800,7 +803,7 @@
 .meet-later-t {
   font: 500 17px/1 var(--disp);
   letter-spacing: 0.04em;
-  width: 88px;
+  min-width: 88px;
   flex: none;
   color: var(--dim);
   white-space: nowrap;
@@ -921,4 +924,10 @@
 .meet-cap-open:hover {
   background: rgba(255, 255, 255, 0.12);
   border-color: var(--dim);
+}
+
+/* A hero that only says one thing keeps the recording chip at its foot while a recorder runs. */
+.meet-hero-note .rec-chip {
+  align-self: flex-start;
+  margin-top: 8px;
 }
