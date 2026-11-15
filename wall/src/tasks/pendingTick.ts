@@ -64,18 +64,14 @@ export function usePendingTicks(commit: (id: string) => void): PendingTicks {
   }, []);
 
   useEffect(() => {
-    // The window or web view going away (or hidden) may skip React's cleanup, so the page's own
-    // lifecycle events commit what waits: the owner has moved on.
-    const onHide = () => {
-      if (document.visibilityState === 'hidden') flush();
-    };
+    // The window or web view going away may skip React's cleanup, so the page's own lifecycle
+    // events commit what waits: the owner has moved on. A page merely hidden (the screen locks)
+    // is not leaving: its undo window runs on and the timer commits when it ends.
     window.addEventListener('pagehide', flush);
     window.addEventListener('beforeunload', flush);
-    document.addEventListener('visibilitychange', onHide);
     return () => {
       window.removeEventListener('pagehide', flush);
       window.removeEventListener('beforeunload', flush);
-      document.removeEventListener('visibilitychange', onHide);
       flush();
     };
   }, [flush]);
