@@ -25,12 +25,16 @@ let sent: Record<string, unknown>[];
 let ignore: Set<string>;
 let refuse: Set<string>;
 let gate: Promise<void> | null;
-/** Holds every write's answer until the returned function is called. */
-const hold = () => {
+/** The side whose writes the gate holds; null holds every write. */
+let gateSide: string | null = null;
+/** Holds every write's answer (or only one side's) until the returned function is called. */
+const hold = (side: string | null = null) => {
   let open!: () => void;
   gate = new Promise<void>((r) => (open = r));
+  gateSide = side;
   return () => {
     gate = null;
+    gateSide = null;
     open();
   };
 };
@@ -45,6 +49,7 @@ beforeEach(() => {
   ignore = new Set();
   refuse = new Set();
   gate = null;
+  gateSide = null;
   round = 0;
   left = good();
   right = good();
@@ -52,7 +57,7 @@ beforeEach(() => {
   mocks.set('wall2_keylights_read', () => ({ left: reading(left), right: reading(right) }));
   mocks.set('wall2_keylights_set', async (args) => {
     sent.push(args ?? {});
-    if (gate) await gate;
+    if (gate && (gateSide === null || args?.side === gateSide)) await gate;
     const out: Record<string, unknown> = { left: null, right: null };
     for (const side of args?.side === 'both' ? ['left', 'right'] : [String(args?.side)]) {
       const c = side === 'left' ? left : right;
@@ -210,6 +215,30 @@ it('a pointer drag let go while a write is still out: the thumb stays where it w
   await flush();
   expect(numberBeside(name)).toBe('68%');
   expect(thumbAt(name)).toBeCloseTo(frac(68), 0);
+});
+
+it('split: a released slider goes to the report at once while the other light\'s write is still out', async () => {
+  round = 2;
+  await open();
+  fireEvent.click(screen.getByText('Linked'));
+  const name = 'Right key light brightness';
+  const el = dragTrack(name);
+  const releaseLeft = hold('left');
+  // A write to the left light is out and held.
+  await press(slider('Left key light brightness'), 'ArrowRight', 3);
+  expect(sent.at(-1)).toMatchObject({ side: 'left' });
+  // The right slider is dragged and let go: its own write is answered, the left one is still waiting.
+  fireEvent.pointerDown(el, { clientX: px(70), button: 0, pointerId: 1 });
+  await flush();
+  fireEvent.pointerUp(el, { pointerId: 1 });
+  await flush();
+  expect(sent.at(-1)).toMatchObject({ side: 'right' });
+  expect(numberBeside(name)).toBe('68%');
+  expect(thumbAt(name)).toBeCloseTo(frac(68), 0);
+  // The left slider, whose own write is out, still holds its asked place.
+  expect(thumbAt('Left key light brightness')).toBeCloseTo(frac(63), 0);
+  releaseLeft();
+  await flush();
 });
 
 it('a cancelled pointer lets go as an up does', async () => {

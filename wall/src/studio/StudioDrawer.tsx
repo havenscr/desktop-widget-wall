@@ -38,6 +38,7 @@ function Pair({ targets, down, light, label }: { targets: Side[]; down: boolean;
         step={1}
         format={pct}
         down={down}
+        sides={targets}
         onInput={(v) => send({ brightness: v })}
         tipText={`Brightness of ${label.toLowerCase()}, ${BRI_MIN} to ${BRI_MAX} percent. Moving it turns an off light on. The number after you let go is what the light reports.`}
       />
@@ -51,6 +52,7 @@ function Pair({ targets, down, light, label }: { targets: Side[]; down: boolean;
         format={kel}
         warm
         down={down}
+        sides={targets}
         onInput={(v) => send({ kelvin: v })}
         tipText={`Warmth of ${label.toLowerCase()}: ${KELVIN_MIN} K is warm, ${KELVIN_MAX} K is cool. The number after you let go is what the light reports.`}
       />

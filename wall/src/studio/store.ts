@@ -19,6 +19,8 @@ interface KeyLightState extends Snapshot {
   note: string | null;
   /** Writes in flight or waiting. */
   busy: number;
+  /** The same count per light: a write to both lights counts for each. A slider waits only on its own lights. */
+  busySides: Record<Side, number>;
   /** Counts finished runs of writes (the answer is in). */
   settled: number;
   setDrawer: (open: boolean) => void;
@@ -51,6 +53,11 @@ export function setBackend(b: KeyLightBackend): void {
 
 const fresh = (): Snapshot => ({ status: null, left: null, right: null });
 const sidesOf = (target: Target): readonly Side[] => (target === 'both' ? SIDES : [target]);
+const bump = (counts: Record<Side, number>, sides: readonly Side[], by: number): Record<Side, number> => {
+  const next = { ...counts };
+  for (const side of sides) next[side] = Math.max(0, next[side] + by);
+  return next;
+};
 
 export const useKeyLights = create<KeyLightState>((set, get) => {
   const raise = (text: string) => {
@@ -167,7 +174,7 @@ export const useKeyLights = create<KeyLightState>((set, get) => {
     }
     if (refused.size === 2) raise('The key lights did not take that change');
     else if (refused.size === 1) raise(`The ${[...refused][0]} key light did not take that change`);
-    set((s) => ({ busy: Math.max(0, s.busy - 1), settled: s.settled + 1 }));
+    set((s) => ({ busy: Math.max(0, s.busy - 1), busySides: bump(s.busySides, sides, -1), settled: s.settled + 1 }));
   };
 
   return {
@@ -176,6 +183,7 @@ export const useKeyLights = create<KeyLightState>((set, get) => {
     linked: true,
     note: null,
     busy: 0,
+    busySides: { left: 0, right: 0 },
     settled: 0,
     setDrawer: (open) => set({ drawer: open }),
     setLinked: (linked) => set({ linked }),
@@ -195,7 +203,7 @@ export const useKeyLights = create<KeyLightState>((set, get) => {
       const merged = { ...waiting.get(target), ...patch };
       waiting.set(target, merged);
       if (running.has(target)) return;
-      set((s) => ({ busy: s.busy + 1 }));
+      set((s) => ({ busy: s.busy + 1, busySides: bump(s.busySides, sidesOf(target), 1) }));
       await drain(target);
     },
   };
@@ -215,5 +223,5 @@ export function resetKeyLights(): void {
   running.clear();
   readGen.left = readGen.right = writeGen.left = writeGen.right = 0;
   backend = chooseBackend();
-  useKeyLights.setState({ ...fresh(), drawer: false, linked: true, note: null, busy: 0, settled: 0 });
+  useKeyLights.setState({ ...fresh(), drawer: false, linked: true, note: null, busy: 0, busySides: { left: 0, right: 0 }, settled: 0 });
 }
