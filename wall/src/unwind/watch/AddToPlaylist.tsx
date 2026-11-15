@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent } from
 import { createPortal } from 'react-dom';
 import { IconCheck, IconPlaylistAdd, IconPlus } from '@tabler/icons-react';
 import { create } from 'zustand';
-import { tip } from '../../ui/HoverTip';
+import { quietFocus, tip } from '../../ui/HoverTip';
 import { ADD_ERRORS, MAX_LABEL, MAX_SAVED } from './saved';
 import { MAX_OWN_VIDEOS, ownEntries, useOwnLists, type OwnVideo } from './ownLists';
 import { countText, OwnTile } from './OwnParts';
@@ -55,7 +55,9 @@ export function AddMenu({ video, anchor, host, edge = 'anchor', onClose }: { vid
   }, []);
   // The first row takes the focus when it opens.
   useEffect(() => {
-    if (at) menu.current?.querySelector<HTMLElement>('[role="menuitem"]')?.focus();
+    if (!at) return;
+    quietFocus();
+    menu.current?.querySelector<HTMLElement>('[role="menuitem"]')?.focus();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [at === null]);
   useEffect(() => {
@@ -77,7 +79,10 @@ export function AddMenu({ video, anchor, host, edge = 'anchor', onClose }: { vid
 
   const close = (back: boolean) => {
     onClose();
-    if (back) anchor.focus();
+    if (back) {
+      quietFocus();
+      anchor.focus();
+    }
   };
   const onKey = (e: KeyboardEvent<HTMLDivElement>) => {
     if (e.key === 'Escape') {
@@ -136,8 +141,8 @@ export function AddMenu({ video, anchor, host, edge = 'anchor', onClose }: { vid
               <OwnTile size={26} />
               <span className="u-ell">{e.label}</span>
               {has ? <IconCheck size={18} aria-hidden="true" className="w-pop-check" /> : null}
-              <em>{count}</em>
-              <span className="w-vh">{countText(count)}</span>
+              <em aria-hidden="true">{count}</em>
+              <span className="w-vh">, {countText(count).toLowerCase()}</span>
             </button>
           );
         })}
