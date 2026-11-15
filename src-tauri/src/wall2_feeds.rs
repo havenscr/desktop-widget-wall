@@ -844,7 +844,7 @@ struct Shown {
 
 type ShownReads = Vec<Shown>;
 
-/// How long a short read leaves a longer read's rows remembered (two refresh periods and a bit).
+/// The old freshness boundary, retained only to pin the stale-list regression test.
 #[cfg(test)]
 const SHOWN_FRESH_SECS: i64 = 300;
 
@@ -856,7 +856,7 @@ fn remember_in(reads: &mut ShownReads, key: &str, tasks: &[TaskItem]) {
 }
 
 /// As `remember_in`, for a read that asked for `limit` rows, at time `now`. A read replaces
-/// what the same kind of read remembered, EXCEPT a shorter one inside the freshness window:
+/// what the same kind of read remembered, except a shorter one:
 /// a one-row read (the "open the first task" key) must not make the rows of the 60 row list
 /// beside it unknown, so it adds its ids in front of the longer read's (bounded union, newest
 /// first, at most `MAX_DUE_LIMIT`) and leaves that read's limit and time alone, so the union
