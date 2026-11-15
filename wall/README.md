@@ -2009,6 +2009,42 @@ there, still playing, when the owner comes back (see "The stage layer" below).
   controls shown unless `?wctl=rest` (they fade after 200 ms); `?wplace=work|home|meet` goes
   to that place once the video starts. The gallery and the fit check have Watch states.
 
+### Under the clock (Listen and Watch)
+
+Two rows sit under the Listen and Watch toggles on both tabs (`unwind/UnderClock.tsx`, in the left wing from the
+clock's date line to the last row).
+
+- **Pins.** Three places, each a Watch list item or an empty dashed "Add a pin". A click plays the item with the
+  Watch store's `play` (which also switches to Watch, so a pin works from Listen); the pin that plays is lit and a
+  click on it does nothing new. The name and kind always come from the Watch list, so a rename shows on the pin, and
+  an item that left the list leaves an empty place. Right-click (or the menu key, or Shift+F10) opens a small menu:
+  Replace and Remove on a pin, and the list ("Pin from the Watch list") on an empty place; with an empty Watch list it
+  says to add a video first and has an Open Watch button. The pins are kept as three keys under `wall2-watch-pins`
+  and read strictly on every load (`watch/pins.ts`). The art square is a drawn gradient from the item's key: no
+  thumbnail is fetched.
+- **Volume.** On Watch the slider and sound button drive the wall's own video through the YouTube player's own
+  `setVolume` (the level is kept in the Watch store under `wall2-watch-volume`, default 100, so nothing changes until
+  it is moved; the sound button is the same mute as the play row's). The Windows session is not used for the wall's
+  video on purpose: the session is found by process name, but `set_audio_session_volume` changes every session whose
+  name contains the given one, and all web view apps (and the wall's own sounds) share `msedgewebview2.exe`, so
+  setting it would also move the browser and every other web view app. For the same reason this row never sets a web
+  view or browser session, even on Listen. On Listen it drives the player the wall follows through `useAppVolume`
+  (the same session and path as the player's own slider, which stays), unless the wall's video is on and not paused
+  (playing out of sight). Twitch keeps its own volume, so the row shows dim and disabled for it.
+- **Stop in 30 min** (`watch/sleep.ts`). A click steps Off, 30, 60, 90, Off, each counting from the click; the chip
+  then reads "Stops in 24 min". It lives at module level (it runs while Unwind is not shown) and is not kept across
+  a restart. At the end it stops the wall's video with the reason `sleep` ("Stopped by the sleep timer.") and pauses
+  the player the wall follows: Spotify's own pause when Spotify is signed in, otherwise one play and pause key, only
+  when a fresh read says the player was playing (never for the wall's own video or an app it does not know, since a
+  toggle must never start music). It cannot stop an app the wall does not follow. The end is also checked when the
+  page shows again, so a PC that slept past the end stops on wake.
+- **Rest and shown.** At rest the rows are quiet (dim text, 42 percent fills, faint borders) but never gone; the
+  pointer anywhere on the column from the date line to the last row, an open pin menu, or keyboard focus inside brings
+  them to full strength, and they go quiet `CTL_REST_MS` after the last of those leaves.
+- **Up next** on Listen moves under the rows and keeps one song (`UpNext` takes a `rows` prop).
+- **Dev**: `?wpins=none|one|three|long|gone`, `?wvol=<0..100>`, `?wsleep=<minutes left>|end` and `?wrows=shown`
+  (all with `?watch=mock`). The gallery and the fit check have states in `scripts/areas/under-clock.mjs`.
+
 ## Home feeds (task card and network tile)
 
 Two cards read your home services. The web view cannot call them (the task
