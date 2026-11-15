@@ -19,6 +19,13 @@ function measureNet() {
       quietnone: { busy: false, doors: 0, aside: true },
       quietbare: { busy: false, doors: 0, aside: false },
       quietlong: { busy: false, doors: 2, aside: false },
+      titleoffline: { busy: false, doors: 2, aside: false },
+      titleunknown: { busy: false, doors: 2, aside: false },
+      titleunreach: { busy: false, doors: 2, aside: false },
+      off: { busy: false, doors: 0, aside: false },
+      loading: { busy: false, doors: 0, aside: false },
+      down: { busy: false, doors: 0, aside: false },
+      stalebusy: { busy: true, doors: 3, aside: false },
       stale: { busy: false, doors: 2, aside: false },
       busy: { busy: true, doors: 3, aside: false },
       busy1: { busy: true, doors: 2, aside: false },
@@ -37,12 +44,19 @@ function measureNet() {
     const r = (e) => e.getBoundingClientRect();
     const c = r(card);
     const wantH = WANT.busy ? 250 : 166;
-    if (card.classList.contains('busy') !== WANT.busy) out.push('net card: expected the ' + (WANT.busy ? 'alerts open' : 'quiet') + ' card');
+    if (card.classList.contains('busy') !== WANT.busy) out.push('net card: expected the ' + (WANT.busy ? 'alerts open' : 'quiet') + ' card (kind check)');
     if (Math.abs(c.width - 596) > 0.5 || Math.abs(c.height - wantH) > 0.5) out.push('net card: the card is ' + Math.round(c.width * 10) / 10 + ' by ' + Math.round(c.height * 10) / 10 + ' px, main has 596 by ' + wantH);
     const doorEls = [...card.querySelectorAll(WANT.busy ? '.shield-btn' : '.shield-door')];
     if (doorEls.length !== WANT.doors) out.push('net card: expected ' + WANT.doors + (WANT.busy ? ' buttons' : ' doors') + ', found ' + doorEls.length);
     const aside = card.querySelector('.shield-aside');
     if (!!aside !== WANT.aside) out.push('net card: expected ' + (WANT.aside ? 'the facts box at the right' : 'no facts box') + ', found ' + (aside ? 'one' : 'none'));
+    // The title is never cut: no ellipsis in effect, nothing hidden by a line clamp; one line when it fits, two when not.
+    const title = card.querySelector('.shield-title');
+    if (title && (title.scrollWidth > title.clientWidth + 1 || title.scrollHeight > title.clientHeight + 1)) out.push('net card: the title "' + title.textContent + '" is cut off (' + title.scrollWidth + ' by ' + title.scrollHeight + ' in a ' + title.clientWidth + ' by ' + title.clientHeight + ' box)');
+    // The newest alert's line is a button with a hit area of 40 px or more.
+    const newest = card.querySelector('.shield-new');
+    if (WANT.busy && !newest) out.push('net card: the newest alert\'s line is missing');
+    if (newest && (r(newest).height < 40 - 0.5 || r(newest).width < 40)) out.push('net card: the newest alert\'s line is ' + Math.round(r(newest).width) + ' by ' + Math.round(r(newest).height * 10) / 10 + ' px (40 or more each way)');
     // The doors, the buttons and the ring keep 16 px to the card's edge on every side; the doors and buttons are 40 px or more.
     const edged = [...doorEls, ...card.querySelectorAll('.shield-art')];
     if (aside) edged.push(aside);
@@ -57,9 +71,11 @@ function measureNet() {
     // The right half is not empty: the doors, the buttons or the facts box reach within 24 px of the card's right edge.
     if (doorEls.length || aside) {
       // A hidden door or box has no size and counts for nothing: the right side then stops at the card's left edge.
-      const right = Math.max(c.left, ...[...doorEls, ...(aside ? [aside] : [])].filter((e) => r(e).width > 0).map((e) => r(e).right));
+      const shown = [...doorEls, ...(aside ? [aside] : [])].filter((e) => r(e).width > 0);
+      const right = Math.max(c.left, ...shown.map((e) => r(e).right));
       const gap = Math.round((c.right - right) * 10) / 10;
-      if (gap > 24.5) out.push('net card: the right side stops ' + gap + ' px short of the card\'s edge (24 at most)');
+      if (!shown.length) out.push('net card: nothing shows at the right (the ' + (WANT.busy ? 'buttons are' : 'doors and the facts box are') + ' hidden)');
+      else if (gap > 24.5) out.push('net card: the right side stops ' + gap + ' px short of the card\'s edge (24 at most)');
     }
     // Nothing overlaps: the ring, the text lines, the facts, the doors and the buttons never share pixels.
     const parts = [...card.querySelectorAll('.shield-art, .shield-title, .shield-sub, .shield-fact, .shield-door, .shield-aside, .shield-new, .shield-hint, .shield-btn')];
@@ -100,11 +116,20 @@ const NAMES = {
   busy1: 'Home, Network card: alerts open, two buttons',
   busynone: 'Home, Network card: alerts open, Show all alone',
   busylong: 'Home, Network card: alerts open, a long alert text',
+  stalebusy: 'Home, Network card: not live, alerts open',
+  titleoffline: 'Home, Network card: long title, Firewall box offline',
+  titleunknown: 'Home, Network card: long title, Firewall status unknown',
+  titleunreach: 'Home, Network card: long title, Home app not reachable',
+  off: 'Home, Network card: not set up',
+  loading: 'Home, Network card: loading',
+  down: 'Home, Network card: home app not reachable (never read)',
 };
-const DOOR_NAMES = [NAMES.quiet, NAMES.quiet1, NAMES.quietlong, NAMES.stale];
-const BUSY_NAMES = [NAMES.busy, NAMES.busy1, NAMES.busynone, NAMES.busylong];
+const TITLE_NAMES = [NAMES.titleoffline, NAMES.titleunknown, NAMES.titleunreach];
+const IDLE_NAMES = [NAMES.off, NAMES.loading, NAMES.down];
+const DOOR_NAMES = [NAMES.quiet, NAMES.quiet1, NAMES.quietlong, NAMES.stale, ...TITLE_NAMES];
+const BUSY_NAMES = [NAMES.busy, NAMES.busy1, NAMES.busynone, NAMES.busylong, NAMES.stalebusy];
 const ALL_NAMES = Object.values(NAMES);
-const RIGHT_NAMES = ALL_NAMES.filter((n) => n !== NAMES.quietbare);
+const RIGHT_NAMES = ALL_NAMES.filter((n) => n !== NAMES.quietbare && !IDLE_NAMES.includes(n));
 
 export default {
   name: 'network-card',
@@ -123,6 +148,11 @@ export default {
     state('network card: not live', 'desk=stale&alerts=0', ['All quiet', 'Nothing was open.', 'Home app alarms', 'as of ']),
     state('network card: not live, alerts open', 'desk=stale&alerts=3', ['3 alerts open', 'Show all 3', 'as of ']),
     state('network card: not set up', 'home=off', ['Not set up', '!Home app alarms']),
+    state('network card: loading', 'home=loading', ['Loading', '!Home app alarms']),
+    state('network card: home app not reachable (never read)', 'home=down', ['Home app not reachable', 'Checks again every 5 minutes.', '!Home app alarms']),
+    state('network card: long title, Firewall box offline', 'net=calm&fw=offline', ['Firewall box offline', 'Home app alarms', 'Its own portal']),
+    state('network card: long title, Firewall status unknown', 'net=calm&fw=unknown', ['Firewall status unknown', 'Home app alarms', 'Its own portal']),
+    state('network card: long title, Home app not reachable', 'net=calm&fw=unreachable', ['Home app not reachable', 'Home app alarms', 'Its own portal']),
   ] },
   fit: {
     variants: [
@@ -136,6 +166,13 @@ export default {
       variant(NAMES.busy1, 'desk=typical&alerts=3&links=security', 'busy1'),
       variant(NAMES.busynone, 'desk=typical&alerts=3&links=none', 'busynone'),
       variant(NAMES.busylong, 'desk=typical&alerts=3', 'busylong'),
+      variant(NAMES.stalebusy, 'desk=stale&alerts=3', 'stalebusy'),
+      variant(NAMES.titleoffline, 'net=calm&fw=offline', 'titleoffline'),
+      variant(NAMES.titleunknown, 'net=calm&fw=unknown', 'titleunknown'),
+      variant(NAMES.titleunreach, 'net=calm&fw=unreachable', 'titleunreach'),
+      variant(NAMES.off, 'home=off', 'off'),
+      variant(NAMES.loading, 'home=loading', 'loading'),
+      variant(NAMES.down, 'home=down', 'down'),
     ],
     measurements: { network: measureNet },
     rules: {
@@ -143,7 +180,7 @@ export default {
         if (!/[?&]netcheck=/.test(variantEntry.q)) return false;
         for (const failure of results.network) emit(`  FAIL ${failure}`);
         if (results.network.length) return true;
-        emit('  ok   net card: today\'s size, 16 px clear of the edge, nothing overlapping, the right side filled, text 16 px or more, long text ends in an ellipsis');
+        emit('  ok   net card: today\'s size, 16 px clear of the edge, nothing overlapping, the right side filled, text 16 px or more, the title never cut, the newest alert 40 px high, long text ends in an ellipsis');
         return false;
       },
     },
@@ -152,10 +189,17 @@ export default {
       'net-size': { css: '.panel.network.shield { height: 190px !important; }', expect: /^ *FAIL net card: the card is [\d.]+ by [\d.]+ px, main has 596 by \d+/m, appliesTo: (v) => ALL_NAMES.includes(v.name) },
       'net-edge': { css: '.panel.network.shield { padding-right: 4px !important; }', expect: /^ *FAIL net card: shield-\w+ is [\d.-]+ px from the card's right edge/m, appliesTo: (v) => DOOR_NAMES.includes(v.name) },
       'net-overlap': { css: '.shield-art { transform: translateX(90px); }', expect: /^ *FAIL net card: .* overlap/m, appliesTo: (v) => ALL_NAMES.includes(v.name) },
-      'net-empty-right': { css: '.shield-doors, .shield-aside, .shield-btns { display: none !important; }', expect: /^ *FAIL net card: the right side stops [\d.]+ px short/m, appliesTo: (v) => RIGHT_NAMES.includes(v.name) },
+      'net-empty-right': { css: '.shield-doors, .shield-aside, .shield-btns { display: none !important; }', expect: /^ *FAIL net card: nothing shows at the right/m, appliesTo: (v) => RIGHT_NAMES.includes(v.name) },
       'net-gap': { css: '.shield-doors, .shield-aside { margin-right: 60px !important; } .shield-btns { margin-right: 60px !important; }', expect: /^ *FAIL net card: the right side stops [\d.]+ px short/m, appliesTo: (v) => [...DOOR_NAMES, NAMES.quietnone, ...BUSY_NAMES].includes(v.name) },
       'net-text': { css: '.shield-door-txt span, .shield-fact, .shield-hint, .shield-btn { font-size: 12px !important; }', expect: /^ *FAIL net card: text under 16 px in /m, appliesTo: (v) => ALL_NAMES.includes(v.name) },
       'net-ellipsis': { css: '.shield-new b { text-overflow: clip !important; } .shield-fact span { text-overflow: clip !important; }', expect: /^ *FAIL net card: a long line does not end in an ellipsis/m, appliesTo: (v) => v.name === NAMES.busylong || v.name === NAMES.quietlong },
+      // The door or button count; the facts box; the card kind; a line running under a door; the title cut; the newest alert's line too small.
+      'net-doors': { query: '&links=none', expect: /^ *FAIL net card: expected \d buttons, found \d/m, appliesTo: (v) => v.name === NAMES.busy },
+      'net-aside': { query: '&links=none', expect: /^ *FAIL net card: expected no facts box, found one/m, appliesTo: (v) => v.name === NAMES.quiet },
+      'net-kind': { query: '&desk=typical&alerts=3', expect: /^ *FAIL net card: expected the quiet card \(kind check\)/m, appliesTo: (v) => v.name === NAMES.quietbare },
+      'net-under-door': { css: '.shield-txt { margin-right: -130px !important; }', expect: /^ *FAIL net card: a long line runs under a door/m, appliesTo: (v) => v.name === NAMES.quietlong },
+      'net-title-cut': { css: '.shield-title.long { font-size: 27px !important; white-space: nowrap !important; display: block !important; -webkit-line-clamp: unset !important; }', expect: /^ *FAIL net card: the title ".*" is cut off/m, appliesTo: (v) => TITLE_NAMES.includes(v.name) },
+      'net-hit': { css: '.shield-new { min-height: 24px !important; padding: 0 !important; }', expect: /^ *FAIL net card: the newest alert's line is \d+ by [\d.]+ px/m, appliesTo: (v) => BUSY_NAMES.includes(v.name) },
       'net-short': { css: '.shield-door, .shield-btn { max-height: 30px !important; }', expect: /^ *FAIL net card: a (door|button) is [\d]+ by [\d]+ px \(40 or more/m, appliesTo: (v) => [...DOOR_NAMES, ...BUSY_NAMES].includes(v.name) },
     },
   },
