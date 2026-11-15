@@ -44,7 +44,8 @@ function measureNet() {
     const r = (e) => e.getBoundingClientRect();
     const c = r(card);
     const wantH = WANT.busy ? 250 : 166;
-    if (card.classList.contains('busy') !== WANT.busy) out.push('net card: expected the ' + (WANT.busy ? 'alerts open' : 'quiet') + ' card (kind check)');
+    // The wrong kind of card: say so and stop, so no later rule (size, doors, facts) adds lines about a card that was never the one asked for.
+    if (card.classList.contains('busy') !== WANT.busy) return ['net card: expected the ' + (WANT.busy ? 'alerts open' : 'quiet') + ' card (kind check)'];
     if (Math.abs(c.width - 596) > 0.5 || Math.abs(c.height - wantH) > 0.5) out.push('net card: the card is ' + Math.round(c.width * 10) / 10 + ' by ' + Math.round(c.height * 10) / 10 + ' px, main has 596 by ' + wantH);
     const doorEls = [...card.querySelectorAll(WANT.busy ? '.shield-btn' : '.shield-door')];
     if (doorEls.length !== WANT.doors) out.push('net card: expected ' + WANT.doors + (WANT.busy ? ' buttons' : ' doors') + ', found ' + doorEls.length);
@@ -195,7 +196,8 @@ export default {
       'net-ellipsis': { css: '.shield-new b { text-overflow: clip !important; } .shield-fact span { text-overflow: clip !important; }', expect: /^ *FAIL net card: a long line does not end in an ellipsis/m, appliesTo: (v) => v.name === NAMES.busylong || v.name === NAMES.quietlong },
       // The door or button count; the facts box; the card kind; a line running under a door; the title cut; the newest alert's line too small.
       'net-doors': { query: '&links=none', expect: /^ *FAIL net card: expected \d buttons, found \d/m, appliesTo: (v) => v.name === NAMES.busy },
-      'net-aside': { query: '&links=none', expect: /^ *FAIL net card: expected no facts box, found one/m, appliesTo: (v) => v.name === NAMES.quiet },
+      // On the card with no door and nothing sent, the desk's facts (a source of its own) bring the box in: no door is left to miscount.
+      'net-aside': { query: '&desk=typical&alerts=0', expect: /^ *FAIL net card: expected no facts box, found one/m, appliesTo: (v) => v.name === NAMES.quietbare },
       'net-kind': { query: '&desk=typical&alerts=3', expect: /^ *FAIL net card: expected the quiet card \(kind check\)/m, appliesTo: (v) => v.name === NAMES.quietbare },
       'net-under-door': { css: '.shield-txt { margin-right: -130px !important; }', expect: /^ *FAIL net card: a long line runs under a door/m, appliesTo: (v) => v.name === NAMES.quietlong },
       'net-title-cut': { css: '.shield-title.long { font-size: 27px !important; white-space: nowrap !important; display: block !important; -webkit-line-clamp: unset !important; }', expect: /^ *FAIL net card: the title ".*" is cut off/m, appliesTo: (v) => TITLE_NAMES.includes(v.name) },
