@@ -226,7 +226,7 @@ it('at the limit the meter says so in amber; a past day counts its recorded span
   const panel = r.container.querySelector('.agents-today') as HTMLElement;
   expect(panel.className).toContain('past');
   // 9:00 to 10:00 and 10:30 to 11:00 one, 10:00 to 10:30 two: from the record's stage spans, labelled.
-  expect([...panel.querySelectorAll('.at-busy-s')].map((x) => x.textContent)).toEqual(['at 11 h 30 m', 'at 230 m', 'at 30 m', 'at 40 m', 'more than 40 m']);
+  expect([...panel.querySelectorAll('.at-busy-s')].map((x) => x.textContent)).toEqual(['at 11 h 30 m', 'at 230 m', '3 or more0 m']);
   // The record cannot tell running from waiting, so it says what it counted and never says "over your limit".
   expect(panel.querySelector('.at-busy-k')!.textContent).toBe('Open at once');
   expect(panel.querySelector('.at-busy-sum')!.textContent).toBe('Up to 2 open at once, from the saved record');

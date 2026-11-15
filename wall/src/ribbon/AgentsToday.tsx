@@ -66,6 +66,13 @@ function BusyLine({ spans, limit, today }: { spans: BusySpan[]; limit: number; t
   const rule = today
     ? 'Counts sessions working at once: runs in the live day log of parent and standalone sessions; a session and its helpers count once, waiting does not count.'
     : 'Sessions open at once, from the saved record. The record has stage spans only, with no runs and no waits, so every session with a recorded span counts, working or not.';
+  // A saved day draws every step from 3 up in one violet, so its legend says it once: "3 or more".
+  const entries = (() => {
+    const all = stepsFor(limit);
+    if (today || limit < 3) return all.map((st) => ({ key: String(st), cls: today ? st : Math.min(3, st), words: today ? stepWords(st, limit) : stepWords(st, limit).replace('over', 'more than'), ms: by[st], over: today && st === 5 }));
+    const low = all.filter((st) => st < 3).map((st) => ({ key: String(st), cls: st, words: stepWords(st, limit), ms: by[st], over: false }));
+    return [...low, { key: '3+', cls: 3, words: '3 or more', ms: by[3] + by[4] + by[5], over: false }];
+  })();
   return (
     <div
       className="at-busy"
@@ -78,11 +85,11 @@ function BusyLine({ spans, limit, today }: { spans: BusySpan[]; limit: number; t
       ))}
     >
       <span className="at-busy-k">{today ? 'Busy at once' : 'Open at once'}</span>
-      {stepsFor(limit).map((st) => (
-        <span key={st} className="at-busy-s">
-          <i className={`sw b${today ? st : Math.min(3, st)}`} aria-hidden="true" />
-          <span className="w">{today ? stepWords(st, limit) : stepWords(st, limit).replace('over', 'more than')}</span>
-          <b className={by[st] >= 60_000 ? (today && st === 5 ? 'over' : '') : 'none'}>{shortSpan(by[st])}</b>
+      {entries.map((e) => (
+        <span key={e.key} className="at-busy-s">
+          <i className={`sw b${e.cls}`} aria-hidden="true" />
+          <span className="w">{e.words}</span>
+          <b className={e.ms >= 60_000 ? (e.over ? 'over' : '') : 'none'}>{shortSpan(e.ms)}</b>
         </span>
       ))}
       <span className={`at-busy-sum${over ? ' over' : ''}`}>
