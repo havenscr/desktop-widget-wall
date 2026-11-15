@@ -35,11 +35,18 @@ describe('useRemeasure', () => {
   const realRO = globalThis.ResizeObserver;
   const realFonts = Object.getOwnPropertyDescriptor(document, 'fonts');
 
+  let boxed = true;
+  const hidden = (on: boolean) => Object.defineProperty(document, 'hidden', { configurable: true, value: on });
   beforeEach(() => {
+    boxed = true;
+    // jsdom has no layout: the element has a box unless a test says it has not.
+    vi.spyOn(Element.prototype, 'getClientRects').mockImplementation(() => (boxed ? [{}] : []) as unknown as DOMRectList);
     observers = [];
     (globalThis as { ResizeObserver: unknown }).ResizeObserver = FakeObserver;
   });
   afterEach(() => {
+    vi.restoreAllMocks();
+    hidden(false);
     globalThis.ResizeObserver = realRO;
     if (realFonts) Object.defineProperty(document, 'fonts', realFonts);
     else delete (document as unknown as { fonts?: unknown }).fonts;
@@ -87,5 +94,48 @@ describe('useRemeasure', () => {
     observers[0].fire(100);
     expect(first).not.toHaveBeenCalled();
     expect(second).toHaveBeenCalledTimes(1);
+  });
+
+  it('measures nothing while the page is hidden, then once when it shows again', async () => {
+    let ready: () => void = () => undefined;
+    Object.defineProperty(document, 'fonts', { configurable: true, value: { ready: new Promise<void>((r) => (ready = r)) } });
+    hidden(true);
+    const measure = vi.fn();
+    render(<Probe measure={measure} />);
+    // The fonts arrive and the width changes while the screen is locked: nothing is read.
+    ready();
+    await Promise.resolve();
+    await Promise.resolve();
+    observers[0].fire(300);
+    observers[0].fire(340);
+    expect(measure).not.toHaveBeenCalled();
+    hidden(false);
+    document.dispatchEvent(new Event('visibilitychange'));
+    expect(measure).toHaveBeenCalledTimes(1);
+    // Nothing was waiting any more: another show measures nothing.
+    document.dispatchEvent(new Event('visibilitychange'));
+    expect(measure).toHaveBeenCalledTimes(1);
+  });
+
+  it('measures nothing while the element has no layout box, and when it gets one', () => {
+    boxed = false;
+    const measure = vi.fn();
+    render(<Probe measure={measure} />);
+    observers[0].fire(0);
+    expect(measure).not.toHaveBeenCalled();
+    boxed = true;
+    observers[0].fire(320);
+    expect(measure).toHaveBeenCalledTimes(1);
+  });
+
+  it('stops listening for the page showing when it unmounts', () => {
+    hidden(true);
+    const measure = vi.fn();
+    const { unmount } = render(<Probe measure={measure} />);
+    observers[0].fire(300);
+    unmount();
+    hidden(false);
+    document.dispatchEvent(new Event('visibilitychange'));
+    expect(measure).not.toHaveBeenCalled();
   });
 });
