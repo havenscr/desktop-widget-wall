@@ -291,3 +291,8 @@ export function ownEntries(saved: readonly { kind: string; id: string; label: st
 }
 
 export const EMPTY_LIST: OwnList = { items: [], shuffle: false, repeat: false };
+
+// Leaving the Watch tab closes the editor (nothing needs saving: every change is written at once).
+useWatchStore.subscribe((w, prev) => {
+  if (w.tab !== prev.tab && w.tab !== 'watch' && useOwnLists.getState().open !== null) useOwnLists.setState({ open: null });
+});

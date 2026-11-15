@@ -461,8 +461,10 @@ describe('the looks are chosen in the gear sheet, with no Look switch on the pag
       const gear = screen.getByRole('button', { name: 'How video is shown' });
       expect(row.lastElementChild).toBe(gear);
       expect(gear.className).toContain('w-gear');
-      // The open button comes just before it.
-      expect(gear.previousElementSibling?.className).toContain('w-open');
+      // The open button comes just before it; for a single video the round add button sits between the two.
+      const before = kind === 'video' ? gear.previousElementSibling?.previousElementSibling : gear.previousElementSibling;
+      expect(before?.className).toContain('w-open');
+      if (kind === 'video') expect(gear.previousElementSibling?.className).toContain('w-addpl');
       unmount();
     }
   });

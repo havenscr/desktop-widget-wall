@@ -308,6 +308,7 @@ export function resetOwnPlay(): void {
   loadNo = 0;
   roundPlayed = new Set();
   learnedKey = '';
+  reported.clear();
   useOwnPlay.setState(fresh());
 }
 
@@ -324,6 +325,22 @@ function onError(code: number, id: string): void {
   advance(afterPos(), true);
 }
 
+/** What the player has reported for each video this session (title, channel, length), at most `MAX_REPORTED`; a list row's add uses it. */
+const MAX_REPORTED = 200;
+const reported = new Map<string, { title?: string; channel?: string; seconds?: number }>();
+
+/** What was reported for this video this session, or nothing. */
+export function reportedFor(id: string): { title?: string; channel?: string; seconds?: number } {
+  return reported.get(id) ?? {};
+}
+
+function remember(id: string, info: { title?: string; channel?: string; seconds?: number }): void {
+  const cur = reported.get(id) ?? {};
+  reported.delete(id);
+  reported.set(id, { ...cur, ...(info.title ? { title: info.title } : {}), ...(info.channel ? { channel: info.channel } : {}), ...(info.seconds !== undefined ? { seconds: info.seconds } : {}) });
+  while (reported.size > MAX_REPORTED) reported.delete(reported.keys().next().value as string);
+}
+
 function learnFrom(w: WatchState): void {
   const p = w.playing;
   if (!p || p.kind !== 'video') return;
@@ -333,6 +350,7 @@ function learnFrom(w: WatchState): void {
   const key = `${p.id}|${r.title ?? ''}|${r.channel ?? ''}|${seconds ?? ''}`;
   if (key === learnedKey) return;
   learnedKey = key;
+  remember(p.id, { title: r.title ?? undefined, channel: r.channel ?? undefined, seconds });
   useOwnLists.getState().learn(p.id, { title: r.title ?? undefined, channel: r.channel ?? undefined, seconds });
 }
 

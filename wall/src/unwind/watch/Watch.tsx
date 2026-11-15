@@ -1,12 +1,15 @@
 import { useCallback, useEffect, useRef, useState, type FocusEvent, type KeyboardEvent, type MouseEvent, type PointerEvent } from 'react';
 import {
   IconExternalLink,
+  IconInfoCircle,
   IconMovie,
   IconPlayerPauseFilled,
   IconPlayerPlayFilled,
   IconPlayerSkipBackFilled,
   IconPlayerSkipForwardFilled,
+  IconPencil,
   IconPlayerStopFilled,
+  IconRotate,
   IconSettings,
   IconVolume,
   IconVolumeOff,
@@ -23,6 +26,10 @@ import { playerLink } from './PlayerFrame';
 import { useWatchSky } from './StageLayer';
 import { useWatchStore } from './store';
 import { next as queueNext, previous as queuePrevious, useMusicView } from '../ytmusic/queue';
+import { AddToPlaylistButton, useAddMenuOpen } from './AddToPlaylist';
+import { useOwnLists } from './ownLists';
+import { next as ownNext, NO_PLAY_LINE, playAgain as ownPlayAgain, previous as ownPrevious, useOwnFinished, useOwnView, type OwnView } from './ownPlay';
+import { countText } from './OwnParts';
 
 export const WATCH_PANEL_ID = 'u-panel-watch';
 export const WATCH_TAB_ID = 'u-tab-watch';
@@ -191,6 +198,11 @@ function Controls({ item, openFailed, setOpenFailed }: { item: WatchRef & { labe
   // A pick from the YouTube library: Previous and Next are the queue's (the list it came from), not the player's.
   const music = useMusicView();
   const queued = !!music && music.state !== 'stopped';
+  // A video of a playlist the owner made: Previous and Next are the playlist's own.
+  const own = useOwnView();
+  const duration = useWatchStore((s) => s.report.duration);
+  const reportTitle = useWatchStore((s) => s.report.title);
+  const reportChannel = useWatchStore((s) => s.report.channel);
   const failTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
   useEffect(
     () => () => {
@@ -207,7 +219,9 @@ function Controls({ item, openFailed, setOpenFailed }: { item: WatchRef & { labe
       failTimer.current = setTimeout(() => setOpenFailed(false), OPEN_ERROR_MS);
     }
   };
-  const label = openLabel(item.kind);
+  // Only a single YouTube video can go in a playlist: its button joins the row and "Open in YouTube" shortens to make room.
+  const canAdd = item.kind === 'video';
+  const label = canAdd ? 'YouTube' : openLabel(item.kind);
   const listTip = list ? `Item ${index + 1} of ${count}` : 'Only for a playlist';
   let line = null;
   if (openFailed)
@@ -241,13 +255,13 @@ function Controls({ item, openFailed, setOpenFailed }: { item: WatchRef & { labe
       <div className="w-ctl">
         {youtube ? (
           <>
-            <button type="button" className="rd" aria-label="Previous" disabled={!list && !queued} {...tip(queued ? 'Previous in the list' : list ? `Previous. ${listTip}` : 'Previous: only for a playlist')} onClick={() => (queued ? queuePrevious() : playerLink.send('previousVideo'))}>
+            <button type="button" className="rd" aria-label="Previous" disabled={!list && !queued && !own} {...tip(own ? 'Previous in the playlist' : queued ? 'Previous in the list' : list ? `Previous. ${listTip}` : 'Previous: only for a playlist')} onClick={() => (own ? ownPrevious() : queued ? queuePrevious() : playerLink.send('previousVideo'))}>
               <IconPlayerSkipBackFilled size={20} aria-hidden="true" />
             </button>
             <button type="button" className="rd big" aria-label={paused ? 'Play' : 'Pause'} {...tip(paused ? 'Play' : 'Pause')} onClick={() => st.setPaused(!paused)}>
               {paused ? <IconPlayerPlayFilled size={22} aria-hidden="true" /> : <IconPlayerPauseFilled size={22} aria-hidden="true" />}
             </button>
-            <button type="button" className="rd" aria-label="Next" disabled={queued ? !music?.hasNext : !list} {...tip(queued ? (music?.hasNext ? 'Next in the list' : 'This is the last video in the list') : list ? `Next. ${listTip}` : 'Next: only for a playlist')} onClick={() => (queued ? queueNext() : playerLink.send('nextVideo'))}>
+            <button type="button" className="rd" aria-label="Next" disabled={own ? false : queued ? !music?.hasNext : !list} {...tip(own ? (own.last && !own.repeat ? 'This is the last video' : 'Next in the playlist') : queued ? (music?.hasNext ? 'Next in the list' : 'This is the last video in the list') : list ? `Next. ${listTip}` : 'Next: only for a playlist')} onClick={() => (own ? ownNext() : queued ? queueNext() : playerLink.send('nextVideo'))}>
               <IconPlayerSkipForwardFilled size={20} aria-hidden="true" />
             </button>
             <button
@@ -265,14 +279,26 @@ function Controls({ item, openFailed, setOpenFailed }: { item: WatchRef & { labe
         <button type="button" className={`rd${youtube ? '' : ' big'}`} aria-label="Stop" {...tip('Stop and remove the video')} onClick={() => st.stop()}>
           <IconPlayerStopFilled size={20} aria-hidden="true" />
         </button>
-        <button type="button" className="w-open" {...tip(`Opens this ${kindName(item.kind).toLowerCase()} on its own site in your web browser`)} onClick={() => void open()}>
+        <button type="button" className="w-open" aria-label={canAdd ? openLabel(item.kind) : undefined} {...tip(`Opens this ${kindName(item.kind).toLowerCase()} on its own site in your web browser`)} onClick={() => void open()}>
           <IconExternalLink size={18} aria-hidden="true" />
           <span className="w-open-t">{label}</span>
         </button>
+        {canAdd ? <AddToPlaylistButton video={{ id: item.id, ...(reportTitle ? { title: reportTitle } : {}), ...(reportChannel ? { channel: reportChannel } : {}), ...(duration !== null && duration > 0 ? { seconds: duration } : {}) }} /> : null}
         <WatchGear />
       </div>
       <div className="w-time">{line}</div>
+      {own?.next ? <NextLine own={own} /> : null}
     </>
+  );
+}
+
+/** The Next line (a playlist of the owner's own): "Next" and the title of the video after this one. */
+function NextLine({ own }: { own: OwnView }) {
+  return (
+    <div className="w-next" {...tip(own.next!.title)}>
+      <span className="w-next-k">Next</span>
+      <b className="u-ell">{own.next!.title}</b>
+    </div>
   );
 }
 
@@ -299,7 +325,7 @@ function keyboardFocus(el: Element): boolean {
 
 /** True while something that takes Escape first is open: the Watch sheet, the tools drawer, a dialog, a menu or Watt's menu. */
 function somethingOpen(): boolean {
-  if (useWatchStore.getState().sheet || useToolsStore.getState().open) return true;
+  if (useWatchStore.getState().sheet || useToolsStore.getState().open || useOwnLists.getState().open !== null) return true;
   return document.querySelector('[role="dialog"], [role="menu"], .watt-menu') !== null;
 }
 
@@ -417,7 +443,11 @@ export function WatchPanel() {
   const ended = useWatchStore((s) => s.report.ended);
   const reportTitle = useWatchStore((s) => s.report.title);
   const reportChannel = useWatchStore((s) => s.report.channel);
-  const fromMusic = useWatchStore((s) => s.source === 'music');
+  const fromMusic = useWatchStore((s) => s.source === 'music' || s.source === 'own');
+  const own = useOwnView();
+  const finished = useOwnFinished();
+  const lists = useOwnLists((s) => s.lists);
+  const menuOpen = useAddMenuOpen((s) => s.open);
   const stopped = useWatchStore((s) => s.stopped);
   const sheetOpen = useWatchStore((s) => s.sheet);
   const peek = useWatchStore((s) => s.peek);
@@ -429,10 +459,46 @@ export function WatchPanel() {
   const [openFailed, setOpenFailed] = useState(false);
   // Notices never hide: the click line, the hint line and an open failure keep the block shown.
   // So does the sheet the gear opened: the row (and the lit gear) stays while it is open.
-  const canRest = playing !== null && !paused && !ended && !needsClick && !openFailed && !sheetOpen;
+  const canRest = playing !== null && !paused && !ended && !needsClick && !openFailed && !sheetOpen && !menuOpen;
   const { rest, wake, zone } = useControlsFade(canRest, peek);
   useWatchKeys(playing !== null, playing !== null && playing.kind !== 'twitch', wake);
 
+  const finishedEntry = finished ? saved.find((i) => i.kind === 'own' && i.id === finished.listId) : undefined;
+  if (!playing && finished && finishedEntry) {
+    // The playlist ran out (repeat off) or nothing in it could play: the frame is gone and this block says so, with the way on.
+    const firstVideo = lists[finished.listId]?.items[0];
+    const bye = finished.none ? NO_PLAY_LINE : finished.played === finished.total ? `All ${countText(finished.total).toLowerCase()} played` : `${finished.played} of ${countText(finished.total).toLowerCase()} played`;
+    return (
+      <div className="w-panel" role="tabpanel" id={WATCH_PANEL_ID} aria-labelledby={WATCH_TAB_ID} data-state="idle">
+        <div className="w-now" ref={setNowEl} data-ctl="shown">
+          <span className="u-k u-src">Your playlist · ended</span>
+          <div className="w-title" {...tip(finishedEntry.label)}>
+            {finishedEntry.label}
+          </div>
+          <div className="w-by u-ell">{bye}</div>
+          <div className="w-sub">{finished.none ? 'Every video was skipped' : 'Stopped after the last video'}</div>
+          <div className="w-ctl w-idle own-ended">
+            {finished.none ? (
+              <button type="button" className="own-pillbtn cy" disabled={!firstVideo} {...tip('Opens the first video on YouTube in your web browser')} onClick={() => firstVideo && void openInBrowser({ kind: 'video', id: firstVideo.id })}>
+                <IconExternalLink size={18} aria-hidden="true" />
+                Open in YouTube
+              </button>
+            ) : (
+              <button type="button" className="own-pillbtn cy" disabled={inCall} {...tip(inCall ? 'Video waits until the call ends' : 'Play the playlist again from the start')} onClick={() => ownPlayAgain()}>
+                <IconRotate size={18} aria-hidden="true" />
+                Play again
+              </button>
+            )}
+            <button type="button" className="own-pillbtn" {...tip(`Edit ${finishedEntry.label}`)} onClick={() => useOwnLists.getState().setOpen(finished.listId)}>
+              <IconPencil size={16} aria-hidden="true" />
+              Edit the playlist
+            </button>
+            <WatchGear />
+          </div>
+        </div>
+      </div>
+    );
+  }
   if (!playing) {
     const first = saved[0];
     const kind = first?.kind ?? 'video';
@@ -476,7 +542,7 @@ export function WatchPanel() {
   return (
     <div className="w-panel" role="tabpanel" id={WATCH_PANEL_ID} aria-labelledby={WATCH_TAB_ID} data-state="playing" data-ctl={ctl}>
       <div className="w-now" ref={setNowEl} data-ctl={ctl} {...zone()}>
-        <span className="u-k u-src">{kindName(playing.kind)}</span>
+        <span className="u-k u-src">{own ? `Your playlist · ${own.place} of ${own.count}` : kindName(playing.kind)}</span>
         <div
           className="w-title"
           {...tip(
@@ -499,7 +565,24 @@ export function WatchPanel() {
           </div>
         ) : null}
         <div className="w-sub" title="It plays on when you go to Listen or another place. It stops by itself when the screens or the display go off, Windows locks or a call starts.">
-          {!youtube ? 'Live on the wall' : needsClick ? 'Waiting for a click on the video' : ended ? 'Ended' : paused ? 'Paused' : 'Playing on the wall'}
+          {own?.note ? (
+            <span className="own-skip" role="status">
+              <IconInfoCircle size={22} aria-hidden="true" />
+              <span>{own.note}</span>
+            </span>
+          ) : !youtube ? (
+            'Live on the wall'
+          ) : needsClick ? (
+            'Waiting for a click on the video'
+          ) : ended ? (
+            'Ended'
+          ) : paused ? (
+            'Paused'
+          ) : own ? (
+            <span className="own-playing u-ell">Playing {own.name}</span>
+          ) : (
+            'Playing on the wall'
+          )}
         </div>
         <Controls item={playing} openFailed={openFailed} setOpenFailed={setOpenFailed} />
       </div>
