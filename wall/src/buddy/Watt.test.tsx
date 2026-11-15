@@ -800,17 +800,17 @@ describe('quiet and silent cases', () => {
   });
 
   describe('meetings keep her quiet', () => {
-    const meeting = (ms: number) => ({
+    const meeting = (ms: number, canJoin = true) => ({
       key: 'k',
       accountId: 'a',
       title: 'Planning',
       start: new Date(ms - 10 * 60_000).toISOString(),
       end: new Date(ms + 30 * 60_000).toISOString(),
-      canJoin: false,
+      canJoin,
     });
-    const withMeeting = (ms: number) =>
+    const withMeeting = (ms: number, canJoin = true) =>
       invokeMock.mockImplementation(((cmd: string) =>
-        cmd === 'wall2_meet_next' ? Promise.resolve({ accounts: [], meetings: [meeting(ms)] }) : defaultInvoke(cmd)) as never);
+        cmd === 'wall2_meet_next' ? Promise.resolve({ accounts: [], meetings: [meeting(ms, canJoin)] }) : defaultInvoke(cmd)) as never);
     const flush = () => act(async () => void (await Promise.resolve()));
     const pet = (c: HTMLElement) => fireEvent.click(c.querySelector('.watt-hit')!);
 
@@ -844,6 +844,57 @@ describe('quiet and silent cases', () => {
       ms += 10_000;
       pet(container);
       expect(container.querySelector('.watt-bubble')).not.toBeNull();
+    });
+
+    describe('the menu and a calendar entry', () => {
+      const items = ['Hop', 'Spin', 'Nap', 'Come here', 'Stay'];
+      const btn = (name: string) => [...document.querySelectorAll<HTMLButtonElement>('.watt-menu button')].find((b) => b.textContent?.startsWith(name))!;
+      const disabled = (b: HTMLElement) => b.getAttribute('aria-disabled') === 'true';
+      const openMenu = async (ms: number, canJoin: boolean) => {
+        withMeeting(ms, canJoin);
+        const r = render(<Watt now={() => ms} />);
+        await flush();
+        runFor(1.5);
+        fireEvent.contextMenu(r.container.querySelector<HTMLElement>('.watt-hit')!);
+        return r;
+      };
+      afterEach(() => useSignalStore.setState({ known: false, recording: false, call: null }));
+
+      it('a plain calendar block in progress leaves her free to speak and every item enabled', async () => {
+        const ms = day();
+        const { container } = await openMenu(ms, false);
+        for (const t of items) expect(disabled(btn(t)), t).toBe(false);
+        expect(container.querySelector('.wm-why')).toBeNull();
+        fireEvent.keyDown(window, { key: 'Escape' });
+        fireEvent.click(container.querySelector('.watt-hit')!);
+        expect(container.querySelector('.watt-bubble')).not.toBeNull();
+      });
+
+      it('a joinable meeting in progress keeps her from speaking on her own but never refuses her menu', async () => {
+        const ms = day();
+        const { container } = await openMenu(ms, true);
+        for (const t of items) expect(disabled(btn(t)), t).toBe(false);
+        expect(container.querySelector('.wm-why')).toBeNull();
+        fireEvent.click(btn('Hop'));
+        runFor(1);
+        expect(container.querySelector('.watt-bubble')).toBeNull();
+      });
+
+      it('a call the wall knows of refuses the menu with its own line', async () => {
+        const ms = day();
+        act(() => useSignalStore.setState({ call: { kind: 'teams', since: ms, camera: false } }));
+        const { container } = await openMenu(ms, false);
+        for (const t of items) expect(disabled(btn(t)), t).toBe(true);
+        expect(container.querySelector('.wm-why')!.textContent).toBe('Not during a call.');
+      });
+
+      it('being on air refuses the menu with its own line', async () => {
+        const ms = day();
+        act(() => useSignalStore.setState({ known: true, recording: true }));
+        const { container } = await openMenu(ms, false);
+        for (const t of items) expect(disabled(btn(t)), t).toBe(true);
+        expect(container.querySelector('.wm-why')!.textContent).toBe('Not while on air.');
+      });
     });
   });
 

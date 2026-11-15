@@ -302,8 +302,8 @@ interface WattDebug {
  * weather asks, naps when the display is idle, eats the odd clover, and likes being petted. Click
  * her to pet her; hover for her card. Everything she knows comes from the wall's own hooks.
  *
- * `inCall` hides it on Meet; nothing detects a call yet (the in-call pull request wires it). A
- * meeting in progress also keeps her quiet. `now` (epoch milliseconds) defaults to the review clock
+ * `inCall` hides it on Meet. A call the wall knows of (or the prop) and a calendar meeting with a join
+ * link in progress keep her quiet on her own; only a known call or being on air refuses her menu. `now` (epoch milliseconds) defaults to the review clock
  * in a dev review still, the system clock otherwise.
  */
 export function Watt({ now = reviewNow ?? Date.now, inCall = false }: { now?: () => number; inCall?: boolean }) {
@@ -466,15 +466,23 @@ export function Watt({ now = reviewNow ?? Date.now, inCall = false }: { now?: ()
   // Dusk: after sunset and before his bedtime a firefly drifts near him (not under reduced motion, not in a call).
   const sunset = sunTimes(nowMs).set;
   const dusk = sunset !== null && nowMs >= sunset && !isNight(new Date(nowMs));
-  const meetingStart = next.meeting && !next.stale ? Date.parse(next.meeting.start) : NaN;
-  const meetingEnd = next.meeting && !next.stale ? Date.parse(next.meeting.end) : NaN;
-  // A stale or missing feed keeps the last known meeting's quiet time until its end.
+  // Only a calendar entry with an online join link is a meeting for him; a plain block changes nothing.
+  const joinable = next.meeting?.canJoin ? next.meeting : undefined;
+  const meetingStart = joinable && !next.stale ? Date.parse(joinable.start) : NaN;
+  const meetingEnd = joinable && !next.stale ? Date.parse(joinable.end) : NaN;
+  // A stale or missing feed keeps the last known joinable meeting's quiet time until its end.
   const lastMeeting = useRef<{ start: number; end: number } | null>(null);
   if (Number.isFinite(meetingStart) && Number.isFinite(meetingEnd)) lastMeeting.current = { start: meetingStart, end: meetingEnd };
   // A fresh feed without it (cancelled or finished) ends the quiet time at once.
   else if (!next.stale) lastMeeting.current = null;
   const win = lastMeeting.current;
   const inMeeting = win !== null && win.start <= now() && now() < win.end;
+  // The wall knows he is in a call (the signals' call state, or the `inCall` prop): the one thing besides
+  // being on air that refuses what he clicks in his menu.
+  const signalCall = useSignalStore((st) => st.call !== null);
+  const callKnown = inCall || signalCall;
+  const callKnownRef = useRef(callKnown);
+  callKnownRef.current = callKnown;
   const meetingSoon = meetingStart - now() > 0 && meetingStart - now() <= MEETING_SOON_MS;
   const [clover, setClover] = useState<Clover | null>(null);
   const cloverRef = useRef(clover);
@@ -503,7 +511,7 @@ export function Watt({ now = reviewNow ?? Date.now, inCall = false }: { now?: ()
   // owner can still pet him, open his menu and carry him).
   const recordingQuiet = useSignalStore((st) => isQuietForRecording(st));
   m.quiet = recordingQuiet;
-  m.firefly = dusk && !reduced && !inCall && !inMeeting && !recordingQuiet;
+  m.firefly = dusk && !reduced && !callKnown && !inMeeting && !recordingQuiet;
   m.cosmetic = pet.cosmetic;
   // Dev review stills only (`window.__watt.set`): kept over the hooks' values on every render.
   const debugMind = useRef<Partial<Mind>>({});
@@ -519,7 +527,7 @@ export function Watt({ now = reviewNow ?? Date.now, inCall = false }: { now?: ()
   const quiet = useRef<Quiet>({ chatty: 'sometimes', inCall: false, idle: false, away: true, focusSince: null });
   const q = quiet.current;
   q.chatty = pet.chatty;
-  q.inCall = inCall || inMeeting;
+  q.inCall = callKnown || inMeeting;
   q.idle = idle;
   q.focusSince = focus.status === 'running' ? focus.endAt - focus.minutes * 60_000 : null;
   q.recording = recordingQuiet;
@@ -640,7 +648,7 @@ export function Watt({ now = reviewNow ?? Date.now, inCall = false }: { now?: ()
   const lookedAt = useRef<string | null>(null);
   const prevMeeting = useRef<{ key: string; end: number } | null>(null);
   useEffect(() => {
-    const mtg = next.meeting;
+    const mtg = joinable;
     const prev = prevMeeting.current;
     const t = nowRef.current();
     if (prev && (!mtg || mtg.key !== prev.key) && prev.end <= t && t - prev.end < 5 * 60_000) note('meetingEnded', t);
@@ -651,7 +659,7 @@ export function Watt({ now = reviewNow ?? Date.now, inCall = false }: { now?: ()
       if (!mind.current.quiet) startReact.current('look', -1);
       check();
     }
-  }, [next.meeting, next.stale, meetingSoon, note, check]);
+  }, [joinable, next.stale, meetingSoon, note, check]);
 
   // Music: songs counted by track changes while playing; a line when it stops after a while.
   const prevTrack = useRef(track);
@@ -1182,7 +1190,7 @@ export function Watt({ now = reviewNow ?? Date.now, inCall = false }: { now?: ()
         lie: m.lie,
         nap: m.nap,
         reading: m.focus,
-        inCall: q.inCall,
+        inCall: callKnownRef.current,
         recording: m.quiet,
         reacting: m.react !== null && m.reactT < reactLength(m),
         watching: m.watching,
@@ -1221,7 +1229,8 @@ export function Watt({ now = reviewNow ?? Date.now, inCall = false }: { now?: ()
     if (!p.place || p.opacity < 0.5) return 'Watt is away';
     // Asleep is the reason he would give first, whatever else is going on.
     if (p.night) return 'Watt is asleep';
-    if (q.inCall) return 'Not during a call or meeting';
+    if (callKnown) return 'Not during a call';
+    if (mind.current.quiet) return 'Not while on air';
     if (q.focusSince !== null && nowRef.current() - q.focusSince < FOCUS_QUIET_MS) return 'Not in the first minute of focus';
     return null;
   };
