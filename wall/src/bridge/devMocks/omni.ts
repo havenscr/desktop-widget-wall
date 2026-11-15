@@ -4,7 +4,7 @@ import { mocks } from '../tauri';
 
 /**
  * Dev only: `?agents=` picks a helper state for review stills and the fit check:
- * `3` (default), `2`, `1`, `0`, `7` or `12` sessions from a helper 1.1.0 answer, `helpers`
+ * `3` (default), `2`, `1`, `0`, `6`, `7`, `12` or `30` sessions from a helper 1.1.0 answer, `helpers`
  * (one idle own turn with agents, a command and a child still running), `ask` (one
  * waiting, with a question), `ask2` (two waiting, one of them not on a card), `7ask` (seven sessions, the fifth waiting), `12busy` (twelve open, nine working at once, over the limit of 4 since mid morning, one waiting, one failed, one idle, and a helper's run that never counts), `12ask` (twelve sessions, two waiting) and `12staleask` (the same, stale), `staleask` (one waiting, then the answer goes stale), `failed` (one failed), `old`
  * (three lanes as the older helper sends them), `stale`, `off` (not set up) and `down` (set
@@ -45,12 +45,18 @@ export function registerOmniMocks(): void {
     const id = (i: number) => `a1b2c3d4-${String(i + 1).padStart(4, '0')}`;
     const old = AGENTS === 'old';
     const noLimit = knob('limit') === '0';
-    const count = { '0': 0, '1': 1, '2': 2, '7': 7, '7ask': 7, '12': 12, '12ask': 12, '12staleask': 12, '12busy': 12, helpers: 3 }[AGENTS] ?? 3;
+    const count = { '0': 0, '1': 1, '2': 2, '6': 6, '7': 7, '7ask': 7, '12': 12, '30': 30, '12ask': 12, '12staleask': 12, '12busy': 12, helpers: 3 }[AGENTS] ?? 3;
     const busy12 = AGENTS === '12busy';
     const helperWork = AGENTS === 'helpers';
     const stale = AGENTS === 'stale' || AGENTS === 'staleask' || AGENTS === '12staleask';
     const waitOn = busy12 ? [4] : AGENTS === 'ask' || AGENTS === 'ask2' || AGENTS === 'staleask' || old ? [1] : AGENTS === '7ask' ? [4] : AGENTS === '12ask' || AGENTS === '12staleask' ? [1, 4] : [];
-    const all = POOL.map(([title, long, stage, state, line, next, mins], i) => {
+    // `6` and `30` sessions: past the twelve the pool starts again, with a number on the title.
+    const pool = Array.from({ length: Math.max(POOL.length, count) }, (_, i): (typeof POOL)[number] => {
+      const [t, long, ...rest] = POOL[i % POOL.length];
+      const n = Math.floor(i / POOL.length) + 1;
+      return n === 1 ? POOL[i] : [`${t} ${n}`, `${long} ${n}`, ...rest];
+    });
+    const all = pool.map(([title, long, stage, state, line, next, mins], i) => {
       const waiting = waitOn.includes(i);
       const failed = (AGENTS === 'failed' && i === 0) || (busy12 && i === 7);
       // `12busy`: everyone works but the waiting one, the failed one and the last (idle).
