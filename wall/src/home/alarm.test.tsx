@@ -189,3 +189,40 @@ it('the shared poll reads nothing while the page is hidden, and stops and restar
   await flush(300_000);
   expect(calls).toBe(4);
 });
+
+it('two readers share one poll: it reads nothing while hidden, survives one reader leaving, and stops with the last', async () => {
+  let calls = 0;
+  mocks.set('wall2_home_security', () => {
+    calls += 1;
+    return sec();
+  });
+  const rail = render(<Rail />);
+  const tile = render(<NetworkTile />);
+  await flush();
+  // One read for both readers.
+  expect(calls).toBe(1);
+  try {
+    await act(async () => hide(true));
+    await flush(300_000 * 3);
+    expect(calls).toBe(1);
+    await act(async () => hide(false));
+    await flush();
+    expect(calls).toBe(2);
+    // One reader goes: the poll carries on for the other, and the hidden pause still holds for it.
+    rail.unmount();
+    await flush(300_000);
+    expect(calls).toBe(3);
+    await act(async () => hide(true));
+    await flush(300_000 * 3);
+    expect(calls).toBe(3);
+    await act(async () => hide(false));
+    await flush();
+    expect(calls).toBe(4);
+  } finally {
+    Object.defineProperty(document, 'hidden', { configurable: true, value: false });
+  }
+  // The last reader goes: nothing reads any more.
+  tile.unmount();
+  await flush(300_000 * 3);
+  expect(calls).toBe(4);
+});
