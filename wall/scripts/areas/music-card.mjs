@@ -72,6 +72,11 @@ function measureTallMusic() {
     const a = chipEl.getBoundingClientRect(), b = growEl.getBoundingClientRect();
     if (Math.abs(a.top + a.height / 2 - (b.top + b.height / 2)) > 2 || a.right > b.left - 4) fails.push('listen: the Play on chip and the round button are not on one line, apart');
   }
+  if (chipEl && growEl) {
+    const a = chipEl.getBoundingClientRect(), b = growEl.getBoundingClientRect();
+    if (Math.abs(a.width - b.width) > 1 || Math.abs(a.height - b.height) > 1) fails.push('listen: the Play on button is ' + Math.round(a.width) + ' by ' + Math.round(a.height) + ', not the size of the round expand button (' + Math.round(b.width) + ' by ' + Math.round(b.height) + ')');
+    if (b.left - a.right > 12) fails.push('listen: the Play on button is ' + Math.round(b.left - a.right) + ' px from the round expand button (12 or less)');
+  }
   const pop = cardEl?.querySelector('.sp-devices')?.getBoundingClientRect();
   if (pop && card && (pop.left < 0 || pop.top < 0 || pop.right > 2560 || pop.bottom > 720 || pop.left < card.left - 0.5 || pop.right > card.right + 0.5 || pop.bottom > card.bottom + 0.5 || pop.top < card.top - 0.5)) fails.push('listen: the Play on list is at x ' + Math.round(pop.left) + ' to ' + Math.round(pop.right) + ', y ' + Math.round(pop.top) + ' to ' + Math.round(pop.bottom) + ', outside the wall or the card');
   return { card: true, tall, fails };
@@ -155,6 +160,7 @@ export default {
       'tall-clip': { css: '.sp-card.tall .sp-pl-title { flex: 0 0 60px !important; } .sp-card.tall .sp-pl-title b { text-overflow: clip !important; }', expect: /^ *FAIL listen tall: text clipped in /m, appliesTo: (v) => v.name === TALL_OPEN },
       'tall-out': { css: '.sp-card.tall .sp-hx { margin-right: -60px !important; }', expect: /^ *FAIL listen tall: .* sticks out of the card/m, appliesTo: (v) => v.name === TALL_OPEN },
       'tall-rest': { css: '.sp-card { width: 760px !important; }', expect: /^ *FAIL listen: the resting card is \d+ by \d+ \(800 by 462\)/m, appliesTo: (v) => v.name === REST },
+      'listen-chip-wide': { css: '.sp-dev { width: 120px !important; }', expect: /^ *FAIL listen: the Play on button is \d+ by \d+, not the size/m, appliesTo: (v) => v.name === REST },
       'tall-pop': { css: '.sp-devices { right: -700px !important; }', expect: /^ *FAIL listen: the Play on list is at /m, appliesTo: (v) => v.name === 'Listen, the tall view, Play on open' },
       'tall-btns': { css: '.sp-shbtns .sp-btn { flex: none !important; padding: 0 34px !important; }', expect: /^ *FAIL listen tall: .* runs past its column by \d+ px/m, appliesTo: (v) => v.name === 'Listen, the tall view, a playlist opened' },
       // A moon forced into the open view is not drawn at all (the card claims its box), so the night check finds none.
