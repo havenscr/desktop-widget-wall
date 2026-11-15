@@ -180,6 +180,13 @@ export function PlayerFrame({ item, title, shown = true }: { item: WatchRef; tit
     };
   }, [youtube, poster, loaded]);
 
+  // Once the frame has loaded, it is told the store's paused state once: a pause or play pressed while it was still
+  // loading (from Home, say) was dropped by `post` and the store already says what was asked.
+  useEffect(() => {
+    if (!youtube || poster || !loaded) return;
+    post(commandMessage(useWatchStore.getState().paused ? 'pauseVideo' : 'playVideo'));
+  }, [youtube, poster, loaded]);
+
   useEffect(() => {
     if (fromPlayer.current) {
       fromPlayer.current = false;
