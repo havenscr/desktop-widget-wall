@@ -561,6 +561,10 @@ impl Coalescer {
     }
 
     pub(crate) fn write(&self, env: &Env, ip: Ipv4Addr, side: Side, patch: Patch) -> Result<Light, Word> {
+        self.write_with_wait_limit(env, ip, side, patch, Duration::from_secs(10))
+    }
+
+    fn write_with_wait_limit(&self, env: &Env, ip: Ipv4Addr, side: Side, patch: Patch, wait_limit: Duration) -> Result<Light, Word> {
         let mut g = lock(&self.slot);
         match g.pending.as_mut() {
             Some(p) => p.merge(&patch),
@@ -573,8 +577,14 @@ impl Coalescer {
                 return Err(Word::Busy);
             }
             g.waiters += 1;
+            let began = Instant::now();
             while g.done < mine {
-                g = self.cv.wait(g).unwrap_or_else(|e| e.into_inner());
+                let remaining = wait_limit.saturating_sub(began.elapsed());
+                if remaining.is_zero() {
+                    g.waiters = g.waiters.saturating_sub(1);
+                    return Err(Word::Timeout);
+                }
+                g = self.cv.wait_timeout(g, remaining).unwrap_or_else(|e| e.into_inner()).0;
             }
             g.waiters = g.waiters.saturating_sub(1);
             return g.result;
@@ -908,6 +918,37 @@ mod tests {
     }
 
     // ---- the address rule ----
+
+    #[test]
+    fn a_write_waiter_times_out_and_releases_its_slot() {
+        let (entered_tx, entered_rx) = std::sync::mpsc::channel();
+        let (release_tx, release_rx) = std::sync::mpsc::channel::<()>();
+        let release_rx = Mutex::new(release_rx);
+        let first = AtomicUsize::new(0);
+        let http = Arc::new(Fake::new(move |method, _, _, _| {
+            if method == "PUT" && first.fetch_add(1, Ordering::SeqCst) == 0 {
+                entered_tx.send(()).unwrap();
+                release_rx.lock().unwrap().recv().unwrap();
+            }
+            if method == "PUT" { ok("{}") } else { ok(&state(1, 40, 227)) }
+        }));
+        let co = Arc::new(Coalescer::new());
+        let (writer, transport) = (co.clone(), http.clone());
+        let handle = std::thread::spawn(move || run(&rig(), &transport, |env|
+            writer.write(env, Ipv4Addr::LOCALHOST, Side::Left, Patch { bri: Some(30), ..Patch::default() })));
+        entered_rx.recv_timeout(Duration::from_secs(2)).unwrap();
+        let began = Instant::now();
+        let result = run(&rig(), &http, |env| co.write_with_wait_limit(env, Ipv4Addr::LOCALHOST,
+            Side::Left, Patch { bri: Some(40), ..Patch::default() }, Duration::from_millis(20)));
+        let waiters = lock(&co.slot).waiters;
+        let still_running = lock(&co.slot).running;
+        release_tx.send(()).unwrap();
+        assert_eq!(result, Err(Word::Timeout));
+        assert_eq!(waiters, 0);
+        assert!(still_running);
+        assert!(began.elapsed() < Duration::from_secs(2));
+        assert!(handle.join().unwrap().is_ok());
+    }
 
     #[test]
     fn each_private_range_and_its_edges_pass() {
