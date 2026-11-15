@@ -1,8 +1,8 @@
 import { tip } from '../ui/HoverTip';
 import { clockText } from '../meet/model';
-import { freshReading, WEATHER_UNAVAILABLE } from '../unwind/model';
+import { WEATHER_UNAVAILABLE } from '../unwind/model';
 import { WeatherIcon } from '../weather/WeatherIcon';
-import { WEATHER_SOURCE_NAMES, staleText, weatherFailureText, type WeatherFailure, type WeatherReading } from '../weather/model';
+import { REFRESH_MS, WEATHER_SOURCE_NAMES, weatherFailureText, type WeatherFailure, type WeatherReading } from '../weather/model';
 
 export interface OutsideView {
   /** "50°" with the reading's own words, "partly cloudy". */
@@ -25,30 +25,39 @@ interface Input {
   nextTryAt?: number | null;
 }
 
+/** "updated 12 min ago", "updated 2 h ago": how old a kept reading is. */
+export function updatedText(ageMs: number): string {
+  const mins = Math.max(1, Math.floor(ageMs / 60_000));
+  return mins < 60 ? `updated ${mins} min ago` : `updated ${Math.floor(mins / 60)} h ago`;
+}
+
 /**
- * The outside row's state from the weather hook's public shape. A reading under an hour old
- * shows (dimmed, with its age, when a normal refresh is overdue); no usable reading says so
- * once it is known to be missing, and says nothing while the first read is still out.
+ * The outside row's state from the weather hook's public shape. The hook keeps the last good
+ * reading through an outage on purpose, so any usable reading shows: dimmed, with its age in
+ * place of the high and low, once a normal refresh is overdue, and with the failed refresh's
+ * reason in the hover card. "Unavailable" is only for no reading at all, said once it is known
+ * to be missing; nothing is said while the first read is still out.
  */
 export function outsideState(w: Input, now: number): OutsideState {
-  const fresh = freshReading(w.reading, now);
-  if (!fresh) {
-    if (!w.failed && w.reading === null) return { kind: 'loading' };
+  const r = w.reading;
+  if (!r || !Number.isFinite(r.fetchedAt) || !Number.isFinite(r.temp)) {
+    if (!w.failed && r === null) return { kind: 'loading' };
     const tried = w.attemptedAt ? clockText(w.attemptedAt) : 'recently';
     return { kind: 'missing', tip: `${weatherFailureText(w.failure, w.nextTryAt)} Last tried ${tried}.` };
   }
-  const age = staleText(fresh.fetchedAt, now);
-  const from = fresh.source === 'nws' ? ` (from ${WEATHER_SOURCE_NAMES.nws}, while Open-Meteo is not answering)` : '';
+  const age = now - r.fetchedAt;
+  const stale = age >= REFRESH_MS + 60_000;
+  const from = r.source === 'nws' ? ` (from ${WEATHER_SOURCE_NAMES.nws}, while Open-Meteo is not answering)` : '';
   const failedNote = w.failed ? ` The last try failed: ${weatherFailureText(w.failure, w.nextTryAt)}` : '';
   return {
     kind: 'reading',
     view: {
-      temp: fresh.temp,
-      look: fresh.look.label.toLowerCase(),
-      icon: fresh.look.icon,
-      side: age ?? `${fresh.high}° / ${fresh.low}°`,
-      stale: age !== null,
-      tip: `Weather read at ${clockText(fresh.fetchedAt)}${from}. Today's high ${fresh.high}°, low ${fresh.low}°.${failedNote}`,
+      temp: r.temp,
+      look: r.look.label.toLowerCase(),
+      icon: r.look.icon,
+      side: stale ? updatedText(age) : `${r.high}° / ${r.low}°`,
+      stale,
+      tip: `Weather read at ${clockText(r.fetchedAt)}${from}. Today's high ${r.high}°, low ${r.low}°.${failedNote}${stale ? ` ${updatedText(age)}.` : ''}`,
     },
   };
 }
