@@ -1,7 +1,8 @@
 import { fireEvent, render, screen } from '@testing-library/react';
-import { beforeEach, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it } from 'vitest';
 import { Rail } from './Rail';
 import { usePlaceStore } from '../state/places';
+import { resetWatch, useWatchStore } from '../unwind/watch/store';
 
 beforeEach(() => usePlaceStore.setState({ active: 'work' }));
 
@@ -76,4 +77,36 @@ it('arrow keys go Work, Home, Unwind, Meet, On air, Zen and wrap', () => {
   expect(key('On air', 'ArrowUp')).toBe('meet');
   expect(key('Meet', 'ArrowUp')).toBe('unwind');
   expect(key('Unwind', 'ArrowUp')).toBe('home');
+});
+
+describe('the Unwind mark for a video playing away from Watch', () => {
+  beforeEach(() => {
+    resetWatch();
+    usePlaceStore.setState({ active: 'work' });
+  });
+  const mark = () => document.querySelector('.rb-play');
+  const unwind = () => screen.getByRole('button', { name: 'Unwind' });
+
+  it('a YouTube video that needs a click shows as paused', () => {
+    useWatchStore.setState({ playing: { kind: 'video', id: 'Ab3dEfGh1jK', label: 'Night drive' }, tab: 'watch' });
+    useWatchStore.getState().setNeedsClick(true);
+    render(<Rail />);
+    expect(mark()!.className).toContain('rb-paused');
+    expect(unwind().getAttribute('aria-description')).toContain('is paused');
+  });
+
+  it('a Twitch channel that needs a click does not show as paused', () => {
+    useWatchStore.setState({ playing: { kind: 'twitch', id: 'pixel_harbor', label: 'pixel_harbor' }, tab: 'watch' });
+    useWatchStore.getState().setNeedsClick(true);
+    render(<Rail />);
+    expect(mark()!.className).not.toContain('rb-paused');
+    expect(unwind().getAttribute('aria-description')).toContain('is playing');
+  });
+
+  it('a paused Twitch channel still shows as paused', () => {
+    useWatchStore.setState({ playing: { kind: 'twitch', id: 'pixel_harbor', label: 'pixel_harbor' }, tab: 'watch' });
+    useWatchStore.getState().setPaused(true);
+    render(<Rail />);
+    expect(mark()!.className).toContain('rb-paused');
+  });
 });
