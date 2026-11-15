@@ -214,6 +214,7 @@ function PlacedMenu({ index, item, places, saved, byKeyboard, onClose }: { index
 function useSound() {
   const tab = useWatchStore((s) => s.tab);
   const playing = useWatchStore((s) => s.playing);
+  const music = useWatchStore((s) => s.source === 'music');
   const paused = useWatchStore((s) => s.paused);
   const muted = useWatchStore((s) => s.muted);
   const volume = useWatchStore((s) => s.volume);
@@ -237,7 +238,7 @@ function useSound() {
       blank: twitch,
       who: 'Watch',
       buttonTip: twitch ? TWITCH_SOUND : muted ? 'Sound on' : 'Mute the video',
-      sliderTip: twitch ? TWITCH_SOUND : playing ? `Volume of what plays: Watch, ${volume} percent` : `The next video starts at ${volume} percent`,
+      sliderTip: twitch ? TWITCH_SOUND : playing ? `Volume of what plays: ${music ? 'YouTube, on the wall' : 'Watch'}, ${volume} percent` : `The next video starts at ${volume} percent`,
       toggle: () => useWatchStore.getState().setMuted(!muted),
       set: (v: number) => useWatchStore.getState().setVolume(v),
     };

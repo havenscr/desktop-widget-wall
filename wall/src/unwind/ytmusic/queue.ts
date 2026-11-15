@@ -72,7 +72,7 @@ export const AUTOPLAY_LINE = 'YouTube did not start the sound.';
 
 const ID = /^[A-Za-z0-9_-]{11}$/;
 
-function skipLine(title: string, why: FailedWhy | null): string {
+export function skipLine(title: string, why: FailedWhy | null): string {
   const t = title || 'this video';
   if (why === 'embed') return `Skipped ${t}: it plays only on YouTube.`;
   if (why === 'removed') return `Skipped ${t}: it is no longer on YouTube.`;
@@ -130,7 +130,8 @@ function shuffle<T>(items: T[]): T[] {
 
 let noteTimer: ReturnType<typeof setTimeout> | undefined;
 
-function setNote(line: string | null): void {
+/** Show one quiet line (it goes after `NOTE_MS` or at the next play); null clears it. */
+export function setNote(line: string | null): void {
   clearTimeout(noteTimer);
   noteTimer = undefined;
   useYtQueue.setState({ note: line });
@@ -143,7 +144,7 @@ function setNote(line: string | null): void {
 }
 
 let lastLoadAt = -Infinity;
-let pending: { pos: number } | null = null;
+let pending: { pos: number; keepNote: boolean } | null = null;
 let loadTimer: ReturnType<typeof setTimeout> | undefined;
 /** The entry (position and id) whose end or error has been acted on, so a second report of it does nothing. */
 let advancedFor: string | null = null;
@@ -181,7 +182,7 @@ function prevPlayable(from: number): number | null {
 }
 
 /** Put the entry at `pos` in the frame now (the spacing is `request`'s business). */
-function load(pos: number): void {
+function load(pos: number, keepNote = false): void {
   const e = useYtQueue.getState().entries[pos];
   if (!e) return;
   clearTimeout(loadTimer);
@@ -192,31 +193,32 @@ function load(pos: number): void {
   errorFor = null;
   // `pos` first, so the queue is already the player's when the Watch store announces the new item.
   useYtQueue.setState({ pos });
-  setNote(null);
+  // A skip keeps the line that says why; a play the owner asked for clears it.
+  if (!keepNote) setNote(null);
   // The id is checked again right here (`playMusic` refuses anything that is not a video id).
   if (!ID.test(e.id) || !useWatchStore.getState().playMusic(e.id, e.title)) {
     const n = nextPlayable(pos + 1);
     markFailed(e.id, 'removed');
-    if (n !== null) load(n);
+    if (n !== null) load(n, keepNote);
     return;
   }
   maybeGrow();
 }
 
 /** Ask for the entry at `pos`: at once when a second has passed since the last load, else after the rest of it (the last request wins). */
-function request(pos: number): void {
+function request(pos: number, keepNote = false): void {
   const wait = lastLoadAt + LOAD_GAP_MS - Date.now();
   if (wait <= 0 && pending === null) {
-    load(pos);
+    load(pos, keepNote);
     return;
   }
-  pending = { pos };
+  pending = { pos, keepNote };
   if (loadTimer === undefined) {
     loadTimer = setTimeout(() => {
       loadTimer = undefined;
       const p = pending;
       pending = null;
-      if (p) load(p.pos);
+      if (p) load(p.pos, p.keepNote);
     }, Math.max(0, wait));
   }
 }
@@ -382,7 +384,7 @@ function onError(code: number, pos: number, e: QueueEntry): void {
   }
   setNote(skipLine(e.title, why));
   const n = nextPlayable(pos + 1);
-  if (n !== null) request(n);
+  if (n !== null) request(n, true);
 }
 
 // ---------------------------------------------------------------------------------------------------------------
