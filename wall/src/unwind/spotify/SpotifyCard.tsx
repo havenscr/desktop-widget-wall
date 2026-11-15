@@ -26,13 +26,16 @@ import { YtMusicSide } from '../ytmusic/YtMusicSide';
 import { Cover } from './Cover';
 import { PlayOn } from './PlayOn';
 import { PlayerRow } from './PlayerRow';
-import { PlayingBars, Tile } from './Tile';
+import { PageTag, TrackRow, usePublicList, WhilePlays } from './SavedPlaylist';
+import { Tile } from './Tile';
 import { QueueView, SearchGroups } from './TallViews';
 import {
   isNowPlaying,
-  NOT_YOURS_UP_NEXT,
   kindLine,
   confirmPlayer,
+  PAGE_OFF_LINE,
+  PAGE_READING,
+  pageLine,
   playDeviceId,
   playFailureLine,
   problemLine,
@@ -42,8 +45,8 @@ import {
   spotifyProblem,
   STARTING_NOTE,
   TALL_CLOSE_MS,
-  trackLength,
   useListenSource,
+  usePublicPage,
   useSpotifyNow,
   useSpotifyStart,
   type ListenSource,
@@ -663,7 +666,7 @@ function Browser({ tall }: { tall: boolean }) {
         )}
       </div>
     );
-  const songsView = open ? <SongsView item={open} tall={tall} backLabel={tabs.find((t) => t.id === tab)?.label ?? 'Back'} onBack={() => setOpen(null)} onNote={setNote} onUpNext={tall ? () => { setOpen(null); setTab('queue'); } : undefined} /> : null;
+  const songsView = open ? <SongsView item={open} tall={tall} backLabel={tabs.find((t) => t.id === tab)?.label ?? 'Back'} onBack={() => setOpen(null)} onNote={setNote} /> : null;
   return (
     <div className="sp-body">
       {tall ? (
@@ -757,12 +760,14 @@ interface SongsState {
  * inside the card and never grows it). A click plays from that song on, in its list; the song
  * now playing is marked; a song that cannot be played (a local file) is dimmed and says why.
  */
-function SongsView({ item, tall, backLabel, onBack, onNote, onUpNext }: { item: SpotifyItem; tall: boolean; backLabel: string; onBack: () => void; onNote: (n: string | null) => void; onUpNext?: () => void }) {
+function SongsView({ item, tall, backLabel, onBack, onNote }: { item: SpotifyItem; tall: boolean; backLabel: string; onBack: () => void; onNote: (n: string | null) => void }) {
   const kind = item.kind === 'album' ? 'album' : 'playlist';
   const [st, setSt] = useState<SongsState>({ items: [], total: item.count ?? 0, page: 0, more: false, loading: true, problem: null });
   const isNow = useIsNow();
   const mounted = useRef(true);
   const loading = useRef(false);
+  // The Tools switch is read when the page opens: turning it off later leaves a list that already shows until the page is opened again.
+  const [pageOn] = useState(() => usePublicPage.getState().on);
   useEffect(() => {
     mounted.current = true;
     return () => {
@@ -821,10 +826,16 @@ function SongsView({ item, tall, backLabel, onBack, onNote, onUpNext }: { item: 
       }
     })();
   };
+  // A playlist the owner saved but did not make: Spotify lists no songs for it, so the public page (if allowed) or the "while it plays" view takes over.
+  const saved = st.problem === 'notYours' && kind === 'playlist' && st.items.length === 0;
+  const { list: pub, retry: retryPage } = usePublicList(item, saved && pageOn);
+  const pageList = saved && pub.state === 'ready' && pub.items.length > 0 ? pub : null;
+  const rows = pageList ? pageList.items : st.items;
+  const total = pageList ? item.count ?? pageList.listed : st.total;
   const owner = kindLine(item).replace(/^(Playlist|Album)( by )?/, '');
-  const all = !st.more && st.items.length > 0 && st.items.length >= st.total;
-  const length = all ? totalLength(st.items.reduce((a, t) => a + (Number.isFinite(t.durationMs) ? t.durationMs : 0), 0)) : null;
-  const facts = [st.total > 0 ? songs(st.total) : null, length, owner ? `by ${owner}` : null].filter(Boolean).join(' · ');
+  const all = !st.more && rows.length > 0 && rows.length >= total;
+  const length = all ? totalLength(rows.reduce((a, t) => a + (Number.isFinite(t.durationMs) ? t.durationMs : 0), 0)) : null;
+  const facts = [total > 0 ? songs(total) : null, length, owner ? `by ${owner}` : null].filter(Boolean).join(' · ');
 
   const playButtons = (
     <>
@@ -861,24 +872,34 @@ function SongsView({ item, tall, backLabel, onBack, onNote, onUpNext }: { item: 
           if (st.more && !st.loading && nearEnd(e)) load(st.page + 1);
         }}
       >
-        {st.problem && st.items.length === 0 ? (
+        {saved ? (
+          pageList ? (
+            <>
+              <PageTag listed={pageList.listed} total={item.count} />
+              {rows.map((t, i) => (
+                <TrackRow key={`${t.id ?? 'local'}-${i}`} t={t} index={i} on={isNow(t)} onPlay={playFrom} />
+              ))}
+            </>
+          ) : !pageOn ? (
+            <WhilePlays item={item} line={PAGE_OFF_LINE} onNote={onNote} onPlayFrom={playFrom} />
+          ) : pub.state === 'failed' ? (
+            <WhilePlays item={item} line={pageLine(pub.problem)} onRetry={pub.problem === 'connection' || pub.problem === 'failed' ? retryPage : undefined} onNote={onNote} onPlayFrom={playFrom} />
+          ) : pub.state === 'ready' ? (
+            <WhilePlays item={item} line={pageLine('notPublic')} onNote={onNote} onPlayFrom={playFrom} />
+          ) : (
+            <li className="sp-empty" aria-busy="true">
+              {PAGE_READING}
+            </li>
+          )
+        ) : st.problem && st.items.length === 0 ? (
           <li className="sp-empty">
             {problemLine(st.problem)}
-            {/* A playlist that is not his: Spotify will never list it, so Retry cannot help and is not offered. */}
+            {/* An album Spotify will not list: Retry cannot help and is not offered. */}
             {st.problem === 'notYours' ? null : (
               <button type="button" className="sp-btn" onClick={() => load(0)}>
                 Retry
               </button>
             )}
-            {st.problem === 'notYours' && onUpNext ? (
-              <span className="sp-hintline">
-                {NOT_YOURS_UP_NEXT[0]}
-                <button type="button" className="sp-linkbtn" onClick={onUpNext}>
-                  {NOT_YOURS_UP_NEXT[1]}
-                </button>
-                {NOT_YOURS_UP_NEXT[2]}
-              </span>
-            ) : null}
           </li>
         ) : st.loading && st.items.length === 0 ? (
           <li className="sp-empty" aria-busy="true">
@@ -887,41 +908,7 @@ function SongsView({ item, tall, backLabel, onBack, onNote, onUpNext }: { item: 
         ) : !st.loading && st.items.length === 0 ? (
           <li className="sp-empty">No songs in this {kind}.</li>
         ) : (
-          st.items.map((t, i) => {
-            const on = isNow(t);
-            const ok = t.playable && !!t.id;
-            return (
-              <li key={`${t.id ?? 'local'}-${i}`}>
-                <button
-                  type="button"
-                  className={`sp-track${on ? ' on' : ''}${ok ? '' : ' off'}`}
-                  aria-disabled={!ok}
-                  aria-current={on ? 'true' : undefined}
-                  {...tip(() => (
-                    <div className="sp-tipline">
-                      <b>{t.name}</b>
-                      <span>{ok ? [t.artists, t.album, trackLength(t.durationMs)].filter(Boolean).join(' · ') : 'This song cannot be played here: it is a local file, or not available in this country.'}</span>
-                    </div>
-                  ))}
-                  onClick={() => playFrom(t)}
-                >
-                  <span className="sp-n">
-                    {on ? (
-                      <PlayingBars />
-                    ) : (
-                      <>
-                        <span className="sp-num">{i + 1}</span>
-                        {ok && <IconPlayerPlayFilled className="sp-hov" size={16} aria-hidden="true" />}
-                      </>
-                    )}
-                  </span>
-                  <span className="sp-tname">{t.name}</span>
-                  <span className="sp-tart">{t.artists}</span>
-                  <span className="sp-tlen">{trackLength(t.durationMs)}</span>
-                </button>
-              </li>
-            );
-          })
+          st.items.map((t, i) => <TrackRow key={`${t.id ?? 'local'}-${i}`} t={t} index={i} on={isNow(t)} onPlay={playFrom} />)
         )}
       </ol>
     </div>
