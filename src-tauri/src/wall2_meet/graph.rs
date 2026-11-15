@@ -1346,19 +1346,19 @@ mod tests {
     #[test]
     fn people_are_names_and_replies_never_addresses() {
         let d = details_of(json!({
-            "organizer": { "emailAddress": { "name": "Morgan Example", "address": "morgan@example.test" } },
+            "organizer": { "emailAddress": { "name": "Avery Example", "address": "avery@example.test" } },
             "attendees": [
-                attendee("Morgan Example", "morgan@example.test", "organizer"),
-                attendee("Priya Sample", "priya@sample.test", "accepted"),
+                attendee("Avery Example", "avery@example.test", "organizer"),
+                attendee("Blake Sample", "blake@sample.test", "accepted"),
                 attendee("Lee Demo", "lee@demo.test", "tentativelyAccepted"),
                 attendee("Jo Mock", "jo@mock.test", "declined"),
                 attendee("Sam Fake", "sam@fake.test", "notResponded"),
             ]
         }))
         .unwrap();
-        assert_eq!(d.called_by.as_deref(), Some("Morgan Example"));
+        assert_eq!(d.called_by.as_deref(), Some("Avery Example"));
         let got: Vec<(&str, &str)> = d.people.iter().map(|p| (p.name.as_str(), p.reply)).collect();
-        assert_eq!(got, [("Morgan Example", "organizer"), ("Priya Sample", "yes"), ("Lee Demo", "maybe"), ("Jo Mock", "no"), ("Sam Fake", "none")]);
+        assert_eq!(got, [("Avery Example", "organizer"), ("Blake Sample", "yes"), ("Lee Demo", "maybe"), ("Jo Mock", "no"), ("Sam Fake", "none")]);
         assert_eq!(d.people_more, 0);
         let wire = serde_json::to_string(&d).unwrap();
         assert!(!wire.contains('@') && !wire.contains("example.test") && !wire.contains(".test"), "{wire}");
@@ -1368,12 +1368,12 @@ mod tests {
     #[test]
     fn the_organizer_is_listed_once_even_when_the_attendees_leave_them_out() {
         let d = details_of(json!({
-            "organizer": { "emailAddress": { "name": "Morgan Example", "address": "morgan@example.test" } },
-            "attendees": [attendee("Priya Sample", "priya@sample.test", "accepted")]
+            "organizer": { "emailAddress": { "name": "Avery Example", "address": "avery@example.test" } },
+            "attendees": [attendee("Blake Sample", "blake@sample.test", "accepted")]
         }))
         .unwrap();
         assert_eq!(d.people.len(), 2);
-        assert_eq!(d.people[0], Person { name: "Morgan Example".into(), reply: "organizer" });
+        assert_eq!(d.people[0], Person { name: "Avery Example".into(), reply: "organizer" });
     }
 
     #[test]
@@ -1383,7 +1383,7 @@ mod tests {
                 attendee("alex@corp.test", "alex@corp.test", "accepted"),
                 attendee("", "blank@corp.test", "accepted"),
                 attendee("   ", "space@corp.test", "none"),
-                attendee("Priya Sample", "priya@sample.test", "accepted"),
+                attendee("Blake Sample", "blake@sample.test", "accepted"),
                 json!({ "type": "required" }),
             ]
         }))
@@ -1396,7 +1396,7 @@ mod tests {
 
     #[test]
     fn names_lose_control_characters_and_stop_at_sixty() {
-        assert_eq!(clean_name("Priya\u{0}\u{7}\n  Sample\t"), Some("Priya Sample".into()));
+        assert_eq!(clean_name("Blake\u{0}\u{7}\n  Sample\t"), Some("Blake Sample".into()));
         let long = "N".repeat(90);
         assert_eq!(clean_name(&long).unwrap().chars().count(), MAX_NAME_CHARS);
         assert_eq!(clean_name("\u{1}\u{2}"), None);
@@ -1459,9 +1459,9 @@ mod tests {
 
     #[test]
     fn debug_output_of_a_candidate_hides_the_details() {
-        let d = details_of(json!({ "organizer": { "emailAddress": { "name": "Morgan Example", "address": "m@example.test" } } }));
+        let d = details_of(json!({ "organizer": { "emailAddress": { "name": "Avery Example", "address": "m@example.test" } } }));
         let mut c = cand(None, "2026-11-12T18:00:00Z", "work");
         c.details = d;
-        assert!(!format!("{c:?}").contains("Morgan"));
+        assert!(!format!("{c:?}").contains("Avery"));
     }
 }

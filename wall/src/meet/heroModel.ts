@@ -112,7 +112,7 @@ export function peopleBlock(d: MeetingDetails | null | undefined): PeopleBlock |
   };
 }
 
-/** "Called by Morgan Ellis · Work", from the person and the account label; null with neither. */
+/** "Called by Avery Example · Work", from the person and the account label; null with neither. */
 export function calledByLine(d: MeetingDetails | null | undefined, label: string): string | null {
   const parts = [d?.calledBy ? `Called by ${d.calledBy}` : '', label].filter(Boolean);
   return parts.length > 0 ? parts.join(' · ') : null;
