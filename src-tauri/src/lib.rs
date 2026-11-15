@@ -75,6 +75,8 @@ mod wall2_sonos_read;
 mod wall2_watch;
 mod wall2_tools;
 mod wall2_onair;
+mod wall2_keylights;
+mod wall2_keylights_cmd;
 mod wall2_weather;
 use audio_analysis::{AudioAnalyzer, AudioLevels};
 
@@ -4128,7 +4130,13 @@ pub fn run() {
             wall2_onair::wall2_onair_show,
             wall2_onair::wall2_onair_mark,
             wall2_onair::wall2_onair_marks_today,
-            wall2_onair::wall2_onair_open
+            wall2_onair::wall2_onair_open,
+            wall2_keylights_cmd::wall2_keylights_status,
+            wall2_keylights_cmd::wall2_keylights_set_address,
+            wall2_keylights_cmd::wall2_keylights_forget,
+            wall2_keylights_cmd::wall2_keylights_test,
+            wall2_keylights_cmd::wall2_keylights_read,
+            wall2_keylights_cmd::wall2_keylights_set
         ])
         .setup(|app| {
             #[cfg(windows)]
@@ -4286,6 +4294,7 @@ pub fn run() {
                 wall2_sonos_log::start(app.path().app_log_dir().ok());
                 wall2_media::start_log(app.path().app_log_dir().ok());
                 wall2_weather::start_log(app.path().app_log_dir().ok());
+                wall2_keylights_cmd::start_log(app.path().app_log_dir().ok());
                 #[cfg(windows)]
                 {
                     start_displays_worker();

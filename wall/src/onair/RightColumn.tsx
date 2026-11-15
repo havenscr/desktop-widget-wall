@@ -1,4 +1,5 @@
 import { IconBookmark, IconFileText, IconKeyboard, type Icon } from '@tabler/icons-react';
+import { StudioBlock } from '../studio/StudioBlock';
 import { RECORDING_KEYS, recordingKeyTip } from '../signals/recordingKeys';
 import { useSignalStore } from '../signals/store';
 import { tip } from '../ui/HoverTip';
@@ -150,6 +151,7 @@ export function RightColumn() {
       <span className="k oa-k">Mark</span>
       <MarkTile />
       <RecordingKeys />
+      <StudioBlock />
       <span className="oa-foot">First version: a timer, a text file and keys. No chat, viewer count or prompter link yet.</span>
     </div>
   );
