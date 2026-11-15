@@ -1,7 +1,7 @@
 //! The silent refresh and the calendar read, behind traits so tests can fake the network.
 
 use super::auth::{TokenClient, TokenReply, SCOPE};
-use super::graph::{merge, merge_capped, shape_events, Clock, Ctx, Diag, Kind, RealClock, BUDGET, MAX_DAY_EVENTS, READ_TIMEOUT, utc_iso, Candidate, GraphClient, GraphReply};
+use super::graph::{merge, merge_capped, shape_events, Details, Clock, Ctx, Diag, Kind, RealClock, BUDGET, MAX_DAY_EVENTS, READ_TIMEOUT, utc_iso, Candidate, GraphClient, GraphReply};
 use super::meetlog::{format_line, format_line_detail};
 use super::reason::{is_valid_reason, GRAPH_TIMEOUT, STORE_READ, STORE_WRITE};
 use super::store::{Fetch, SecretStore};
@@ -274,6 +274,8 @@ pub struct MeetingOut {
     pub start: String,
     pub end: String,
     pub can_join: bool,
+    /// Names and cleaned invite text, from the next read only. Never an address, link or id.
+    pub details: Option<Details>,
 }
 
 #[derive(Debug, Serialize)]
@@ -502,6 +504,11 @@ fn read_window(
             refreshed = true;
             continue;
         }
+        // The wider next read (people, invite text) refused: the same read once more with the plain fields.
+        if ctx.wide() && matches!(reply, GraphReply::Failed(_)) && diag.as_ref().is_some_and(|d| d.status == 403) {
+            ctx.fall_back_to_plain();
+            continue;
+        }
         if expanded && !fell_back && diag.as_ref().is_some_and(|d| matches!(d.status, 400 | 501)) {
             refusal_pending = true;
             expanded = false;
@@ -680,7 +687,7 @@ pub fn read_next_only(
             if let Some(url) = cand.join {
                 guard.map.insert(key.clone(), (cand.account_id.clone(), url));
             }
-            MeetingOut { key, account_id: cand.account_id, title: cand.title, start: cand.start, end: cand.end, can_join }
+            MeetingOut { key, account_id: cand.account_id, title: cand.title, start: cand.start, end: cand.end, can_join, details: cand.details }
         })
         .collect();
     drop(guard);
@@ -1110,6 +1117,29 @@ mod tests {
         core.lock().unwrap().expand_refused.insert("work".into(), ExpandRefusal { signature: account_signature(&acct("work")), retry_at: NOW + 9, logged: true });
         sign_out("work", &store, &core, &links);
         assert!(core.lock().unwrap().expand_refused.is_empty());
+    }
+
+    #[test]
+    fn a_refused_wider_next_read_is_asked_again_with_the_plain_fields() {
+        let (store, core) = setup();
+        let links = Mutex::new(Links::default());
+        let tokens = FakeTokens::new(vec![ok_token("a", None)]);
+        let graph = ScriptGraph::new(vec![GraphStep::Status(403), GraphStep::Ok]);
+        let p = read_next_only(&[acct("work")], &store, &tokens, &graph, &core, &links, NOW, Only::All);
+        assert_eq!(p.accounts[0].state, "ok");
+        assert_eq!(p.meetings.len(), 1);
+        assert!(p.meetings[0].details.is_none());
+        assert_eq!(graph.steps.borrow().len(), 0);
+    }
+
+    #[test]
+    fn a_refused_plain_read_still_fails_the_account() {
+        let (store, core) = setup();
+        let links = Mutex::new(Links::default());
+        let tokens = FakeTokens::new(vec![ok_token("a", None)]);
+        let graph = ScriptGraph::new(vec![GraphStep::Status(403), GraphStep::Status(403)]);
+        let p = read_next_only(&[acct("work")], &store, &tokens, &graph, &core, &links, NOW, Only::All);
+        assert_eq!(p.accounts[0].state, "unavailable");
     }
 
     #[test]

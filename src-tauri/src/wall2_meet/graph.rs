@@ -3,6 +3,7 @@
 use super::reason::{clean_code, graph_reason, GRAPH_BODY, GRAPH_NETWORK, GRAPH_TIMEOUT, MAX_ERROR_BODY};
 use super::{MAX_BODY, MAX_TITLE_CHARS};
 use base64::Engine;
+use serde::Serialize;
 use serde_json::Value;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -24,6 +25,8 @@ pub struct Candidate {
     pub web: Option<String>,
     /// Classic Outlook EntryID as validated uppercase hex. Stays in Rust.
     pub entry: Option<String>,
+    /// Names and a cleaned invite text, only from the next-meetings read (see `shape_details`).
+    pub details: Option<Details>,
 }
 
 impl std::fmt::Debug for Candidate {
@@ -37,6 +40,7 @@ impl std::fmt::Debug for Candidate {
             .field("join", &self.join)
             .field("web", &self.web)
             .field("entry", &self.entry.as_ref().map(|_| "<redacted>"))
+            .field("details", &self.details.as_ref().map(|_| "<redacted>"))
             .finish()
     }
 }
@@ -98,12 +102,22 @@ pub struct Ctx {
     pub clock: Arc<dyn Clock + Send + Sync>,
     pub began_ms: u64,
     pub deadline_ms: u64,
+    /// Set when Graph refused the wider next read: the rest of this read asks for the plain fields.
+    plain: Arc<std::sync::atomic::AtomicBool>,
 }
 
 impl Ctx {
     pub fn new(kind: Kind, clock: Arc<dyn Clock + Send + Sync>, budget: Duration) -> Ctx {
         let began_ms = clock.now_ms();
-        Ctx { kind, clock, began_ms, deadline_ms: began_ms + budget.as_millis() as u64 }
+        Ctx { kind, clock, began_ms, deadline_ms: began_ms + budget.as_millis() as u64, plain: Arc::new(std::sync::atomic::AtomicBool::new(false)) }
+    }
+    /// True when this read asks for people and invite text: the next read, until Graph refuses it.
+    pub fn wide(&self) -> bool {
+        self.kind == Kind::Next && !self.plain.load(std::sync::atomic::Ordering::SeqCst)
+    }
+    /// Graph refused the wider fields: ask for the plain ones from now on.
+    pub fn fall_back_to_plain(&self) {
+        self.plain.store(true, std::sync::atomic::Ordering::SeqCst);
     }
     pub fn elapsed_ms(&self) -> u64 {
         self.clock.now_ms().saturating_sub(self.began_ms)
@@ -333,25 +347,37 @@ pub fn run_attempts(ctx: &Ctx, send: &mut dyn FnMut(u32, Duration) -> Raw) -> (G
 }
 
 pub const SELECT: &str = "id,subject,start,end,isAllDay,isCancelled,responseStatus,onlineMeeting,onlineMeetingUrl,iCalUId,webLink";
+/// The next-meetings read also asks for who is in the meeting and the first words of the invite
+/// (`shape_details` keeps names and cleaned text only). The day read keeps the plain `SELECT`.
+pub const SELECT_DETAILS: &str = "id,subject,start,end,isAllDay,isCancelled,responseStatus,onlineMeeting,onlineMeetingUrl,iCalUId,webLink,organizer,attendees,bodyPreview";
 pub const TOP: u32 = 50;
 pub const CALENDAR_VIEW_PATH: &str = "https://graph.microsoft.com/v1.0/me/calendarView";
 pub const PREFER: &str = "outlook.timezone=\"UTC\"";
 const ENTRY_EXPAND_ENCODED: &str = "singleValueExtendedProperties%28%24filter%3Did%20eq%20%27Binary%200x0FFF%27%29";
 
-/// The calendarView request: the documented options only (`startDateTime`, `endDateTime`,
-/// `$select`, `$orderby` on the start time, `$top`), both date-times in UTC with a `Z`.
+/// The next-meetings calendarView request: the documented options only (`startDateTime`,
+/// `endDateTime`, `$select`, `$orderby` on the start time, `$top`), both date-times in UTC with a `Z`.
 pub fn calendar_view_url(start: &str, end: &str) -> String {
-    calendar_view_url_inner(start, end, true)
+    calendar_view_url_inner(start, end, true, SELECT_DETAILS)
 }
 
 pub fn calendar_view_url_without_expand(start: &str, end: &str) -> String {
-    calendar_view_url_inner(start, end, false)
+    calendar_view_url_inner(start, end, false, SELECT_DETAILS)
 }
 
-fn calendar_view_url_inner(start: &str, end: &str, expand: bool) -> String {
+/// The day read's request: the same, with the plain `SELECT` (no people, no invite text).
+pub fn calendar_view_url_day(start: &str, end: &str) -> String {
+    calendar_view_url_inner(start, end, true, SELECT)
+}
+
+pub fn calendar_view_url_day_without_expand(start: &str, end: &str) -> String {
+    calendar_view_url_inner(start, end, false, SELECT)
+}
+
+fn calendar_view_url_inner(start: &str, end: &str, expand: bool, select: &str) -> String {
     let expand = if expand { format!("&$expand={ENTRY_EXPAND_ENCODED}") } else { String::new() };
     format!(
-        "{CALENDAR_VIEW_PATH}?startDateTime={}&endDateTime={}&$select={SELECT}&$orderby=start/dateTime&$top={TOP}{expand}",
+        "{CALENDAR_VIEW_PATH}?startDateTime={}&endDateTime={}&$select={select}&$orderby=start/dateTime&$top={TOP}{expand}",
         urlencoding::encode(start),
         urlencoding::encode(end),
     )
@@ -526,6 +552,131 @@ pub fn is_entry_property_id(value: &str) -> bool {
         && tag.strip_prefix("0x").or_else(|| tag.strip_prefix("0X")).and_then(|hex| u32::from_str_radix(hex, 16).ok()) == Some(0x0fff)
 }
 
+// Section: details (people and invite text)
+
+/// People kept per meeting; the rest are only counted.
+pub const MAX_PEOPLE: usize = 20;
+/// A person's name is cut at this many characters.
+pub const MAX_NAME_CHARS: usize = 60;
+/// The cleaned invite text is cut at this many characters.
+pub const MAX_INVITE_CHARS: usize = 400;
+
+/// One invited person as the web view gets them: a name and how they replied. Never an address.
+#[derive(Clone, Debug, PartialEq, Serialize)]
+pub struct Person {
+    pub name: String,
+    /// `yes`, `maybe`, `no`, `none` or `organizer`.
+    pub reply: &'static str,
+}
+
+/// What the next-meetings read passes about who is in a meeting and what the invite says.
+/// Names and plain text only: no address, no domain, no link, no meeting id, no passcode.
+#[derive(Clone, Debug, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Details {
+    pub called_by: Option<String>,
+    pub people: Vec<Person>,
+    /// Invited people not in `people`: past the 20 kept, or with no usable name.
+    pub people_more: u32,
+    pub invite: Option<String>,
+}
+
+/// A name that is safe to pass: control characters turned to spaces, whitespace collapsed, cut at
+/// 60 characters. None when nothing is left or when the text looks like an address or a link
+/// (Outlook fills the name with the address when it knows no name).
+pub fn clean_name(raw: &str) -> Option<String> {
+    let spaced: String = raw.chars().map(|c| if c.is_control() { ' ' } else { c }).collect();
+    let name = spaced.split_whitespace().collect::<Vec<_>>().join(" ");
+    if name.is_empty() || name.contains('@') || name.contains("://") || name.to_ascii_lowercase().contains("www.") {
+        return None;
+    }
+    Some(name.chars().take(MAX_NAME_CHARS).collect::<String>().trim().to_string()).filter(|n| !n.is_empty())
+}
+
+fn reply_word(response: Option<&str>) -> &'static str {
+    match response {
+        Some("accepted") => "yes",
+        Some("tentativelyAccepted") => "maybe",
+        Some("declined") => "no",
+        Some("organizer") => "organizer",
+        _ => "none",
+    }
+}
+
+/// Lines of the invite preview that start the join block; the text is cut before the first one.
+const INVITE_MARKERS: [&str; 6] = ["microsoft teams", "join on your computer", "join zoom", "meeting id", "passcode", "dial in"];
+
+fn has_underscore_run(line: &str) -> bool {
+    let mut run = 0;
+    for c in line.chars() {
+        run = if c == '_' { run + 1 } else { 0 };
+        if run >= 8 {
+            return true;
+        }
+    }
+    false
+}
+
+/// The invite's own words from `bodyPreview`: cut before the first line of the join block, every
+/// word that holds a link or an address removed, whitespace collapsed, at most 400 characters.
+/// None when nothing is left.
+pub fn clean_invite(raw: &str) -> Option<String> {
+    let mut kept: Vec<&str> = Vec::new();
+    for line in raw.split(['\n', '\r']) {
+        let lower = line.to_ascii_lowercase();
+        if has_underscore_run(line) || INVITE_MARKERS.iter().any(|m| lower.contains(m)) {
+            break;
+        }
+        kept.push(line);
+    }
+    let words: Vec<String> = kept
+        .iter()
+        .flat_map(|l| l.split_whitespace())
+        .map(|w| w.chars().filter(|c| !c.is_control()).collect::<String>())
+        .filter(|w| !w.is_empty() && !w.contains("://") && !w.to_ascii_lowercase().contains("www.") && !w.contains('@'))
+        .collect();
+    let text: String = words.join(" ").chars().take(MAX_INVITE_CHARS).collect::<String>().trim().to_string();
+    if text.is_empty() {
+        None
+    } else {
+        Some(text)
+    }
+}
+
+/// People and invite text of one event, or None when the event carries none of them (the day
+/// read does not ask for them, and a refused wider read falls back to the plain one).
+pub fn shape_details(e: &Value) -> Option<Details> {
+    if e.get("organizer").is_none() && e.get("attendees").is_none() && e.get("bodyPreview").is_none() {
+        return None;
+    }
+    let called_by = str_at(e, &["organizer", "emailAddress", "name"]).and_then(clean_name);
+    let mut people: Vec<Person> = Vec::new();
+    let mut more: u32 = 0;
+    for a in e.get("attendees").and_then(Value::as_array).map(Vec::as_slice).unwrap_or(&[]) {
+        match str_at(a, &["emailAddress", "name"]).and_then(clean_name) {
+            Some(name) if people.len() < MAX_PEOPLE => people.push(Person { name, reply: reply_word(str_at(a, &["status", "response"])) }),
+            _ => more = more.saturating_add(1),
+        }
+    }
+    // The organizer is listed too (Graph often leaves them out of the attendees), once.
+    if let Some(name) = &called_by {
+        if !people.iter().any(|p| p.name.eq_ignore_ascii_case(name)) {
+            if people.len() < MAX_PEOPLE {
+                people.insert(0, Person { name: name.clone(), reply: "organizer" });
+            } else {
+                more = more.saturating_add(1);
+            }
+        } else if let Some(p) = people.iter_mut().find(|p| p.name.eq_ignore_ascii_case(name)) {
+            p.reply = "organizer";
+        }
+    }
+    let invite = e.get("bodyPreview").and_then(Value::as_str).and_then(clean_invite);
+    if called_by.is_none() && people.is_empty() && more == 0 && invite.is_none() {
+        return None;
+    }
+    Some(Details { called_by, people, people_more: more, invite })
+}
+
 /// Events of one account: not cancelled, not declined, not all-day, with a valid start and end.
 pub fn shape_events(body: &Value, account_id: &str) -> Vec<Candidate> {
     let Some(rows) = body.get("value").and_then(Value::as_array) else {
@@ -562,6 +713,7 @@ pub fn shape_events(body: &Value, account_id: &str) -> Vec<Candidate> {
                     .and_then(|rows| rows.iter().find(|row| str_at(row, &["id"]).is_some_and(is_entry_property_id)))
                     .and_then(|row| str_at(row, &["value"]))
                     .and_then(entry_hex),
+                details: shape_details(e),
             })
         })
         .collect()
@@ -609,6 +761,7 @@ mod tests {
             join: None,
             web: None,
             entry: None,
+            details: None,
         };
         let a: Vec<_> = (0..12).map(|n| one(n, "a")).collect();
         let b: Vec<_> = (0..12).map(|n| one(n, "b")).collect();
@@ -832,11 +985,16 @@ mod tests {
         let url = calendar_view_url("2026-11-12T17:00:00Z", "2026-11-13T17:00:00Z");
         assert_eq!(
             url,
-            "https://graph.microsoft.com/v1.0/me/calendarView?startDateTime=2026-11-12T17%3A00%3A00Z&endDateTime=2026-11-13T17%3A00%3A00Z&$select=id,subject,start,end,isAllDay,isCancelled,responseStatus,onlineMeeting,onlineMeetingUrl,iCalUId,webLink&$orderby=start/dateTime&$top=50&$expand=singleValueExtendedProperties%28%24filter%3Did%20eq%20%27Binary%200x0FFF%27%29"
+            "https://graph.microsoft.com/v1.0/me/calendarView?startDateTime=2026-11-12T17%3A00%3A00Z&endDateTime=2026-11-13T17%3A00%3A00Z&$select=id,subject,start,end,isAllDay,isCancelled,responseStatus,onlineMeeting,onlineMeetingUrl,iCalUId,webLink,organizer,attendees,bodyPreview&$orderby=start/dateTime&$top=50&$expand=singleValueExtendedProperties%28%24filter%3Did%20eq%20%27Binary%200x0FFF%27%29"
         );
         let names: Vec<&str> = url.split_once('?').unwrap().1.split('&').map(|p| p.split('=').next().unwrap()).collect();
         assert_eq!(names, ["startDateTime", "endDateTime", "$select", "$orderby", "$top", "$expand"]);
         assert_eq!(calendar_view_url_without_expand("2026-11-12T17:00:00Z", "2026-11-13T17:00:00Z"), url.split("&$expand=").next().unwrap());
+        // The day read keeps the plain fields: no people, no invite text.
+        let day = calendar_view_url_day("2026-11-12T17:00:00Z", "2026-11-13T17:00:00Z");
+        assert_eq!(day, url.replace(SELECT_DETAILS, SELECT));
+        assert!(!day.contains("attendees") && !day.contains("bodyPreview") && !day.contains("organizer"));
+        assert_eq!(calendar_view_url_day_without_expand("2026-11-12T17:00:00Z", "2026-11-13T17:00:00Z"), day.split("&$expand=").next().unwrap());
         assert_eq!(PREFER, "outlook.timezone=\"UTC\"");
     }
 
@@ -914,6 +1072,7 @@ mod tests {
             join: None,
             web: None,
             entry: None,
+            details: None,
         }
     }
 
@@ -1150,5 +1309,159 @@ mod tests {
         for url in bad {
             assert!(!web_link_allowed(url), "should reject {url}");
         }
+    }
+
+    // Section: details tests (invented people and invites only)
+
+    fn event_with(extra: Value) -> Value {
+        let mut e = json!({
+            "subject": "Planning",
+            "start": { "dateTime": "2026-11-12T17:00:00.0000000" },
+            "end": { "dateTime": "2026-11-12T18:00:00.0000000" },
+            "isAllDay": false, "isCancelled": false,
+            "responseStatus": { "response": "accepted" }
+        });
+        for (k, v) in extra.as_object().unwrap() {
+            e[k] = v.clone();
+        }
+        e
+    }
+
+    fn attendee(name: &str, address: &str, response: &str) -> Value {
+        json!({ "type": "required", "status": { "response": response, "time": "0001-01-01T00:00:00Z" }, "emailAddress": { "name": name, "address": address } })
+    }
+
+    fn details_of(extra: Value) -> Option<Details> {
+        let body = json!({ "value": [event_with(extra)] });
+        shape_events(&body, "work").remove(0).details
+    }
+
+    #[test]
+    fn an_event_without_the_wider_fields_has_no_details() {
+        assert_eq!(details_of(json!({})), None);
+        // Fields present but empty: nothing to show, so null too.
+        assert_eq!(details_of(json!({ "attendees": [], "bodyPreview": "" })), None);
+    }
+
+    #[test]
+    fn people_are_names_and_replies_never_addresses() {
+        let d = details_of(json!({
+            "organizer": { "emailAddress": { "name": "Morgan Example", "address": "morgan@example.test" } },
+            "attendees": [
+                attendee("Morgan Example", "morgan@example.test", "organizer"),
+                attendee("Priya Sample", "priya@sample.test", "accepted"),
+                attendee("Lee Demo", "lee@demo.test", "tentativelyAccepted"),
+                attendee("Jo Mock", "jo@mock.test", "declined"),
+                attendee("Sam Fake", "sam@fake.test", "notResponded"),
+            ]
+        }))
+        .unwrap();
+        assert_eq!(d.called_by.as_deref(), Some("Morgan Example"));
+        let got: Vec<(&str, &str)> = d.people.iter().map(|p| (p.name.as_str(), p.reply)).collect();
+        assert_eq!(got, [("Morgan Example", "organizer"), ("Priya Sample", "yes"), ("Lee Demo", "maybe"), ("Jo Mock", "no"), ("Sam Fake", "none")]);
+        assert_eq!(d.people_more, 0);
+        let wire = serde_json::to_string(&d).unwrap();
+        assert!(!wire.contains('@') && !wire.contains("example.test") && !wire.contains(".test"), "{wire}");
+        assert!(wire.contains("\"calledBy\"") && wire.contains("\"peopleMore\""));
+    }
+
+    #[test]
+    fn the_organizer_is_listed_once_even_when_the_attendees_leave_them_out() {
+        let d = details_of(json!({
+            "organizer": { "emailAddress": { "name": "Morgan Example", "address": "morgan@example.test" } },
+            "attendees": [attendee("Priya Sample", "priya@sample.test", "accepted")]
+        }))
+        .unwrap();
+        assert_eq!(d.people.len(), 2);
+        assert_eq!(d.people[0], Person { name: "Morgan Example".into(), reply: "organizer" });
+    }
+
+    #[test]
+    fn a_name_that_is_an_address_or_empty_is_counted_not_listed() {
+        let d = details_of(json!({
+            "attendees": [
+                attendee("alex@corp.test", "alex@corp.test", "accepted"),
+                attendee("", "blank@corp.test", "accepted"),
+                attendee("   ", "space@corp.test", "none"),
+                attendee("Priya Sample", "priya@sample.test", "accepted"),
+                json!({ "type": "required" }),
+            ]
+        }))
+        .unwrap();
+        assert_eq!(d.people.len(), 1);
+        assert_eq!(d.people_more, 4);
+        assert_eq!(clean_name("see www.corp.test"), None);
+        assert_eq!(clean_name("https://corp.test/x"), None);
+    }
+
+    #[test]
+    fn names_lose_control_characters_and_stop_at_sixty() {
+        assert_eq!(clean_name("Priya\u{0}\u{7}\n  Sample\t"), Some("Priya Sample".into()));
+        let long = "N".repeat(90);
+        assert_eq!(clean_name(&long).unwrap().chars().count(), MAX_NAME_CHARS);
+        assert_eq!(clean_name("\u{1}\u{2}"), None);
+    }
+
+    #[test]
+    fn at_most_twenty_people_and_the_rest_are_counted() {
+        let rows: Vec<Value> = (0..27).map(|n| attendee(&format!("Person {n}"), &format!("p{n}@corp.test"), "accepted")).collect();
+        let d = details_of(json!({ "attendees": rows })).unwrap();
+        assert_eq!(d.people.len(), MAX_PEOPLE);
+        assert_eq!(d.people_more, 7);
+        assert_eq!(d.people[19].name, "Person 19");
+    }
+
+    const TEAMS_INVITE: &str = "Agenda: capacity sizing and the cost estimate.\r\nPlease read the draft first.\r\n\r\n________________________________________________________________________________\r\nMicrosoft Teams meeting\r\nJoin: https://teams.example.test/l/meetup-join/19%3ameeting_SECRETTOKEN/0\r\nMeeting ID: 123 456 789 012\r\nPasscode: aB3dEf";
+    const ZOOM_INVITE: &str = "Quick intro and a look at the depot list. Notes at www.docs.example.test/notes or mail ana@corp.test\r\nJoin Zoom Meeting\r\nhttps://zoom.example.test/j/98765432101?pwd=SECRETPWD\r\nMeeting ID: 987 6543 2101\r\nPasscode: 424242";
+
+    #[test]
+    fn a_teams_invite_keeps_the_agenda_and_drops_the_join_block() {
+        let text = clean_invite(TEAMS_INVITE).unwrap();
+        assert_eq!(text, "Agenda: capacity sizing and the cost estimate. Please read the draft first.");
+        for secret in ["https", "teams.example", "SECRETTOKEN", "123 456", "Passcode", "aB3dEf", "Microsoft Teams", "____"] {
+            assert!(!text.contains(secret), "{secret} reached the answer");
+        }
+    }
+
+    #[test]
+    fn a_zoom_invite_keeps_the_words_and_never_the_link_id_or_passcode() {
+        let text = clean_invite(ZOOM_INVITE).unwrap();
+        assert_eq!(text, "Quick intro and a look at the depot list. Notes at or mail");
+        for secret in ["zoom.example", "SECRETPWD", "9876543", "987 6543", "424242", "Passcode", "www.", "@"] {
+            assert!(!text.contains(secret), "{secret} reached the answer");
+        }
+        let d = details_of(json!({ "bodyPreview": ZOOM_INVITE })).unwrap();
+        let wire = serde_json::to_string(&d).unwrap();
+        assert!(!wire.contains("SECRETPWD") && !wire.contains("424242") && !wire.contains("zoom.example"), "{wire}");
+    }
+
+    #[test]
+    fn each_cut_marker_ends_the_invite_and_a_bare_join_block_leaves_nothing() {
+        for marker in ["Microsoft Teams", "Join on your computer", "Join Zoom", "Meeting ID", "Passcode", "Dial in"] {
+            let raw = format!("Words before.\r\nthing {marker} here\r\nWords after.");
+            assert_eq!(clean_invite(&raw).as_deref(), Some("Words before."), "{marker}");
+        }
+        assert_eq!(clean_invite("Words before.\n________\nWords after.").as_deref(), Some("Words before."));
+        assert_eq!(clean_invite("Words 7_______ stay.").as_deref(), Some("Words 7_______ stay."));
+        assert_eq!(clean_invite("Microsoft Teams meeting\r\nhttps://t.example.test/x"), None);
+        assert_eq!(clean_invite("  \r\n  "), None);
+        assert_eq!(clean_invite("https://a.example.test www.b.example.test c@d.test"), None);
+    }
+
+    #[test]
+    fn the_invite_stops_at_four_hundred_characters_and_collapses_whitespace() {
+        let raw = format!("a   b\t\tc {}", "word ".repeat(200));
+        let text = clean_invite(&raw).unwrap();
+        assert!(text.starts_with("a b c word"));
+        assert!(text.chars().count() <= MAX_INVITE_CHARS);
+        assert!(!text.contains("  "));
+    }
+
+    #[test]
+    fn debug_output_of_a_candidate_hides_the_details() {
+        let d = details_of(json!({ "organizer": { "emailAddress": { "name": "Morgan Example", "address": "m@example.test" } } }));
+        let mut c = cand(None, "2026-11-12T18:00:00Z", "work");
+        c.details = d;
+        assert!(!format!("{c:?}").contains("Morgan"));
     }
 }
