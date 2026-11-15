@@ -1,5 +1,6 @@
 import { reviewNow } from '../../ui/reviewClock';
 import { mocks } from '../tauri';
+import { knob } from './long';
 
 const now = () => (reviewNow ? reviewNow() : Date.now());
 const pad = (n: number) => String(n).padStart(2, '0');
@@ -18,13 +19,18 @@ const localSeconds = (ms: number) => {
 /** Day from 7 to 18 o'clock, as the hourly points below have it. */
 const isDayAt = (ms: number) => (new Date(ms).getHours() >= 7 && new Date(ms).getHours() < 18 ? 1 : 0);
 
-/** An invented Open-Meteo style reply: 30 hourly points around now. */
+/**
+ * An invented Open-Meteo style reply: 30 hourly points around now. `?wday=0|1` (dev only) forces the current
+ * reading to night or day whatever the hour is, so a review break can show the wrong glyph on purpose.
+ */
 export function openMeteoBody(cold = false): string {
   const t = now();
   const hours = Array.from({ length: 30 }, (_, i) => t + (i - 3) * 3_600_000);
   const temp = cold ? 24 : 58;
+  const wday = knob('wday');
+  const forcedDay = wday === '0' ? 0 : wday === '1' ? 1 : null;
   return JSON.stringify({
-    current: { time: local(t), temperature_2m: temp, weather_code: cold ? 73 : 2, is_day: isDayAt(t) },
+    current: { time: local(t), temperature_2m: temp, weather_code: cold ? 73 : 2, is_day: forcedDay ?? isDayAt(t) },
     hourly: {
       time: hours.map(local),
       temperature_2m: hours.map((_, i) => temp + Math.round(6 * Math.sin(i / 4))),
