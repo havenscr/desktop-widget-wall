@@ -514,7 +514,7 @@ fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
     m.lock().unwrap_or_else(|e| e.into_inner())
 }
 
-/// Frees the queue if the leading call ever leaves without finishing (a panic).
+/// Frees the queue if the thread that is writing ever leaves without finishing (a panic).
 struct Lead<'a>(&'a Coalescer, bool);
 
 impl Drop for Lead<'_> {
