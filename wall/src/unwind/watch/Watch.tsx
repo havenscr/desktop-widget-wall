@@ -22,6 +22,7 @@ import { lookFor } from './looks';
 import { playerLink } from './PlayerFrame';
 import { useWatchSky } from './StageLayer';
 import { useWatchStore } from './store';
+import { next as queueNext, previous as queuePrevious, useMusicView } from '../ytmusic/queue';
 
 export const WATCH_PANEL_ID = 'u-panel-watch';
 export const WATCH_TAB_ID = 'u-tab-watch';
@@ -172,6 +173,9 @@ function Controls({ item, openFailed, setOpenFailed }: { item: WatchRef & { labe
   const st = useWatchStore.getState();
   const youtube = item.kind !== 'twitch';
   const list = item.kind === 'playlist' && count > 1;
+  // A pick from the YouTube library: Previous and Next are the queue's (the list it came from), not the player's.
+  const music = useMusicView();
+  const queued = !!music && music.state !== 'stopped';
   const failTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
   useEffect(
     () => () => {
@@ -222,13 +226,13 @@ function Controls({ item, openFailed, setOpenFailed }: { item: WatchRef & { labe
       <div className="w-ctl">
         {youtube ? (
           <>
-            <button type="button" className="rd" aria-label="Previous" disabled={!list} {...tip(list ? `Previous. ${listTip}` : 'Previous: only for a playlist')} onClick={() => playerLink.send('previousVideo')}>
+            <button type="button" className="rd" aria-label="Previous" disabled={!list && !queued} {...tip(queued ? 'Previous in the list' : list ? `Previous. ${listTip}` : 'Previous: only for a playlist')} onClick={() => (queued ? queuePrevious() : playerLink.send('previousVideo'))}>
               <IconPlayerSkipBackFilled size={20} aria-hidden="true" />
             </button>
             <button type="button" className="rd big" aria-label={paused ? 'Play' : 'Pause'} {...tip(paused ? 'Play' : 'Pause')} onClick={() => st.setPaused(!paused)}>
               {paused ? <IconPlayerPlayFilled size={22} aria-hidden="true" /> : <IconPlayerPauseFilled size={22} aria-hidden="true" />}
             </button>
-            <button type="button" className="rd" aria-label="Next" disabled={!list} {...tip(list ? `Next. ${listTip}` : 'Next: only for a playlist')} onClick={() => playerLink.send('nextVideo')}>
+            <button type="button" className="rd" aria-label="Next" disabled={queued ? !music?.hasNext : !list} {...tip(queued ? (music?.hasNext ? 'Next in the list' : 'This is the last video in the list') : list ? `Next. ${listTip}` : 'Next: only for a playlist')} onClick={() => (queued ? queueNext() : playerLink.send('nextVideo'))}>
               <IconPlayerSkipForwardFilled size={20} aria-hidden="true" />
             </button>
             <button
@@ -398,6 +402,7 @@ export function WatchPanel() {
   const ended = useWatchStore((s) => s.report.ended);
   const reportTitle = useWatchStore((s) => s.report.title);
   const reportChannel = useWatchStore((s) => s.report.channel);
+  const fromMusic = useWatchStore((s) => s.source === 'music');
   const stopped = useWatchStore((s) => s.stopped);
   const sheetOpen = useWatchStore((s) => s.sheet);
   const peek = useWatchStore((s) => s.peek);
@@ -462,7 +467,7 @@ export function WatchPanel() {
           {...tip(
             <>
               {shownTitle}
-              {byReport && playing.label !== shownTitle ? (
+              {byReport && !fromMusic && playing.label !== shownTitle ? (
                 <>
                   <br />
                   Saved as: {playing.label}

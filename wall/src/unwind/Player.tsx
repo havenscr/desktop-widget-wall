@@ -15,6 +15,9 @@ import { useVisible } from '../ui/useVisible';
 import { useLastPlayed } from './lastPlayed';
 import { Volume } from './Volume';
 import { useWatchStore } from './watch/store';
+import { AUTOPLAY_LINE, musicControls, next as queueNext, playAgain, previous as queuePrevious, useMusicView, type MusicView } from './ytmusic/queue';
+import { StartOnWatch } from './ytmusic/YtFoot';
+import { safeThumb } from './ytmusic/model';
 
 /** Position and duration, advanced locally between polls while playing. Re-renders twice a second, only while visible. */
 function useProgress(info: NowPlayingInfo | null, anchor: ProgressAnchor | null) {
@@ -101,6 +104,14 @@ export function Player() {
         ? { ...lastPlayed.last, art: lastPlayed.art }
         : null
     : null;
+
+  // The wall's own music (a pick from the YouTube library) is drawn from the stores, not from Windows: while it plays when
+  // Windows names it (or offers no playing session), and, stopped or ended, when nothing else was played since. Spotify or
+  // another app playing at the same time keeps today's rule (the Windows session shows).
+  const music = useMusicView();
+  const lastOwn = !lastPlayed.last || lastPlayed.last.source.toLowerCase() === 'msedgewebview2' || [music?.entry.title, music?.title].some((t) => !!t && watchTitle(lastPlayed.last?.title) === watchTitle(t));
+  const ownMusic = music !== null && (music.state === 'playing' || music.state === 'paused' ? quiet || watchMatch : quiet && lastOwn);
+  if (ownMusic && music) return <MusicPlayer music={music} setBox={setBox} />;
 
   const progressBar = progress ? (
     <div className="u-progress">
@@ -203,6 +214,74 @@ export function Player() {
           {sourceLabel ? <span className="u-k u-src">{watchMatch ? 'Playing in Watch' : sourceLabel}</span> : null}
           <div className="u-np u-ell">{info?.title || 'Unknown title'}</div>
           <div className="u-artist u-ell">{info?.artist || info?.album || ''}</div>
+          {transport}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * The top player for the wall's own music: kicker "YouTube, on the wall", the title and channel, the picture of the
+ * pick, the time bar from the frame's once-a-second report, and previous, play or pause and next that drive the
+ * queue (not Windows' media keys). Stopped or ended with the queue kept it says "Last played on the wall" with
+ * "Play again". Autoplay refused: one line and a button to Watch. No volume here: the slider under the clock is the
+ * wall's video level.
+ */
+function MusicPlayer({ music, setBox }: { music: MusicView; setBox: (el: HTMLDivElement | null) => void }) {
+  const live = music.state === 'playing' || music.state === 'paused';
+  const dur = music.duration ?? 0;
+  const pos = Math.min(dur, music.time ?? 0);
+  const art = safeThumb(music.thumb);
+  const [failed, setFailed] = useState<string | null>(null);
+  const showArt = art && failed !== art;
+  const toggle = () => (live ? musicControls.togglePause() : playAgain());
+  const bar =
+    live && dur > 0 ? (
+      <div className="u-progress">
+        <span className="u-t">{formatTime(pos)}</span>
+        <div className="u-bar" role="progressbar" aria-label="Track position" aria-valuemin={0} aria-valuemax={Math.round(dur)} aria-valuenow={Math.round(pos)}>
+          <i style={{ width: `${((pos / dur) * 100).toFixed(2)}%` }} />
+        </div>
+        <span className="u-t">{formatTime(dur)}</span>
+      </div>
+    ) : null;
+  const transport = (
+    <div className="u-transport">
+      <button type="button" className="u-rd" aria-label="Previous" disabled={!live} onClick={queuePrevious}>
+        <IconPlayerSkipBackFilled size={30} aria-hidden="true" />
+      </button>
+      <button type="button" className="u-rd big" aria-label={music.state === 'playing' ? 'Pause' : 'Play'} onClick={toggle}>
+        {music.state === 'playing' ? <IconPlayerPauseFilled size={40} aria-hidden="true" /> : <IconPlayerPlayFilled size={40} aria-hidden="true" />}
+      </button>
+      <button type="button" className="u-rd" aria-label="Next" disabled={!live || !music.hasNext} onClick={queueNext}>
+        <IconPlayerSkipForwardFilled size={30} aria-hidden="true" />
+      </button>
+      {bar}
+      {music.needsClick ? (
+        <>
+          <span className="u-again-off">{AUTOPLAY_LINE}</span>
+          <StartOnWatch />
+        </>
+      ) : !live ? (
+        <button type="button" className="u-again" onClick={playAgain}>
+          <IconPlayerPlayFilled size={22} aria-hidden="true" />
+          Play again
+        </button>
+      ) : null}
+    </div>
+  );
+  return (
+    <div ref={setBox} className={`u-player${live ? '' : ' quiet'}`} data-state={live ? 'playing' : 'idle'} data-wall-music="true">
+      <div className="u-now">
+        <div className={`u-art${live ? '' : ' dim'}`}>
+          {showArt ? <img src={art} alt="" referrerPolicy="no-referrer" onError={() => setFailed(art)} /> : <IconMusic size={72} stroke={1.25} aria-hidden="true" />}
+          <VideoCorner />
+        </div>
+        <div className="u-meta">
+          <span className="u-k u-src">{live ? 'YouTube, on the wall' : 'Last played on the wall'}</span>
+          <div className={`u-np u-ell${live ? '' : ' u-was'}`}>{music.title}</div>
+          <div className="u-artist u-ell">{music.channel}</div>
           {transport}
         </div>
       </div>

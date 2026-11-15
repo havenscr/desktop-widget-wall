@@ -1,6 +1,7 @@
 /* The YouTube library in the music card (vote L2, option A). Prefix yt-. It builds on the card's own
    classes (.sp-card, .sp-tabs, .sp-search, .sp-tile, .sp-songs, .sp-shead, .sp-back, .sp-btn) and is
-   loaded after unwind.css. Nothing here plays: rows are plain, not buttons. */
+   loaded after unwind.css. A playable row is a button that plays the list on the wall; the foot player and the
+   quiet note line are the playback additions (prefix yt-foot, yt-note). */
 
 /* At rest the library is the same box as Spotify's card: 800 by 462 at wall 1740, 24. The tall view keeps
    its own 624 (:not(.tall), so this does not tie with .sp-card.yt.tall). */
@@ -133,7 +134,8 @@
   color: var(--dim);
 }
 
-/* Rows: number, title, channel, length. 42 px as drawn, not buttons: no pointer, no play mark. */
+/* Rows: number, title, channel, length. 42 px as drawn. A playable row is a button (pointer, a play mark in
+   place of its number on hover); a greyed row is plain. The row now playing is cyan. */
 .yt-list {
   list-style: none;
   margin: 0;
@@ -141,23 +143,66 @@
 }
 .yt-row {
   height: 42px;
+  border-radius: 12px;
+  min-width: 0;
+}
+.yt-cells {
+  box-sizing: border-box;
+  width: 100%;
+  height: 42px;
   display: grid;
   grid-template-columns: 34px minmax(0, 1.4fr) minmax(0, 1fr) 56px;
   align-items: center;
   gap: 12px;
   padding: 0 8px;
   border-radius: 12px;
-  cursor: default;
   min-width: 0;
+  text-align: left;
+  cursor: default;
+}
+.yt-play {
+  cursor: pointer;
+}
+.yt-play:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+.yt-play:focus-visible {
+  outline: 3px solid var(--cyan);
+  outline-offset: -3px;
+  background: rgba(255, 255, 255, 0.06);
+}
+.yt-row.on {
+  background: rgba(53, 230, 234, 0.1);
+}
+.yt-row.on .yt-play:hover {
+  background: rgba(53, 230, 234, 0.16);
 }
 .yt-row.off {
   opacity: 0.45;
 }
 .yt-n {
-  text-align: right;
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
   font: 400 16px/1 var(--body);
   color: var(--dim);
   font-variant-numeric: tabular-nums;
+}
+.yt-n .sp-hov {
+  display: none;
+  color: var(--cyan);
+}
+.yt-play:hover .yt-n .sp-hov,
+.yt-play:focus-visible .yt-n .sp-hov {
+  display: block;
+}
+.yt-play:hover .yt-n:has(.sp-hov) .yt-num,
+.yt-play:focus-visible .yt-n:has(.sp-hov) .yt-num {
+  display: none;
+}
+.yt-row.on .yt-n,
+.yt-row.on .yt-title {
+  color: var(--cyan);
 }
 .yt-title {
   font: 600 18px/22px var(--body);
@@ -296,18 +341,42 @@
   line-height: 20px;
   color: var(--dim);
 }
+/* Play, Shuffle and Refresh: one row at rest (at the right of the header), tall a column in the left
+   column: Play and Shuffle under the facts, then Refresh with the time it was last read. */
 .yt-shactions {
   flex: none;
   margin-left: auto;
   display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: 4px;
+  align-items: center;
+  gap: 8px;
+}
+.yt-playbtns,
+.yt-refreshrow {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 .yt-songs.tall .yt-shactions {
   margin: 12px 0 0;
+  flex-direction: column;
   align-items: flex-start;
-  gap: 8px;
+  gap: 12px;
+}
+.yt-songs.tall .yt-refreshrow {
+  gap: 12px;
+}
+.yt-songs.tall .yt-playbtns .sp-btn {
+  /* Play and Shuffle together stay inside the 248 px column. */
+  padding: 0 11px;
+  gap: 6px;
+  font-size: 17px;
+  min-width: 0;
+}
+.yt-playall[data-disabled],
+.yt-shuffle[data-disabled] {
+  opacity: 0.45;
+  cursor: default;
 }
 .yt-refresh:disabled {
   opacity: 0.6;
@@ -331,4 +400,71 @@
 .yt-hint-text {
   flex: 1;
   min-width: 0;
+}
+
+/* The foot player of the tall view: the Spotify side's own player row (.sp-player) with these small changes. */
+.yt-foot .yt-fcover {
+  width: 48px;
+  height: 48px;
+  border-radius: 8px;
+}
+.yt-foot .sp-pl-title b {
+  font-size: 17px;
+}
+.yt-foot .yt-ftime {
+  min-width: 36px;
+}
+.yt-fseek:focus-visible {
+  outline: 3px solid var(--cyan);
+  outline-offset: 6px;
+}
+.yt-fask {
+  flex: 1;
+  min-width: 0;
+  font: 400 16px/20px var(--body);
+  color: var(--amber);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.yt-startwatch {
+  flex: none;
+}
+
+/* One quiet line inside the card (a skip, the stop after five, autoplay refused): at the foot of the card at rest, just
+   above the foot player when tall. The same look as the Spotify card's note. */
+.yt-note {
+  position: absolute;
+  left: 26px;
+  right: 26px;
+  bottom: 22px;
+  z-index: 4;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 8px 12px;
+  border-radius: 12px;
+  font: 400 18px/24px var(--body);
+  color: var(--amber);
+  background: rgba(10, 7, 28, 0.94);
+  border: 1px solid rgba(255, 194, 77, 0.3);
+}
+.yt-note.ask {
+  color: var(--tx);
+  border-color: rgba(53, 230, 234, 0.35);
+}
+.yt-note.ask span {
+  flex: 1;
+  min-width: 0;
+}
+.sp-card.tall .yt-note {
+  bottom: 88px;
+}
+
+/* Up next with the wall's music: the picture is 48 by 48, as the Spotify side's cover is. */
+.yt-upcover {
+  width: 48px;
+  height: 48px;
+  border-radius: 10px;
 }

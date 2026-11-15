@@ -1,9 +1,12 @@
 import { useState, type ReactNode } from 'react';
-import { IconMusic } from '@tabler/icons-react';
+import { IconMusic, IconPlayerPlayFilled } from '@tabler/icons-react';
 import type { YtVideo } from '../../music/youtube';
 import { tip } from '../../ui/HoverTip';
 import { useToolsStore } from '../../tools/store';
-import { lengthText, problemAction, problemLine, rowTip, rowWords, safeThumb, type YtProblem } from './model';
+import { useWatchStore } from '../watch/store';
+import { PlayingBars } from '../spotify/Tile';
+import { failedReason, lengthText, problemAction, problemLine, rowTip, rowWords, safeThumb, type YtProblem } from './model';
+import { failedWords, sameList, useYtQueue, type QueueFrom } from './queue';
 
 /**
  * A picture from YouTube's picture host, or a neutral tile with a music note when there is none or it
@@ -80,23 +83,52 @@ export function RowSkeletons({ count }: { count: number }) {
 }
 
 /**
- * The rows of a list of videos: number, title, channel, length. Not buttons: nothing plays from
- * here yet, so a row has no click, no pointer cursor and no play mark, only a hover card with the
- * whole title, the channel, the length and, for a greyed row, why. A row that will not play outside
- * YouTube is greyed and its length says so.
+ * The rows of a list of videos: number, title, channel, length. A row that plays outside YouTube is a
+ * button (the play mark in place of its number on hover, Enter and Space as for any button) and plays the
+ * list from that row on the wall; the row now playing (the queue's, same list, same place) is cyan with the
+ * moving bars in place of its number (its number, in cyan, while paused). A row that will not play (it
+ * plays only on YouTube, is private or removed, or failed this session) is greyed, with its words in the
+ * length column, and is a plain `li`: no button, no click, and its hover card says why. Every row has a hover
+ * card with the whole title, the channel, the length and what a click does.
  */
-export function YtRows({ items, foot }: { items: YtVideo[]; foot?: ReactNode }) {
+export function YtRows({ items, foot, list, onPlay }: { items: YtVideo[]; foot?: ReactNode; list?: QueueFrom; onPlay?: (index: number) => void }) {
+  const failed = useYtQueue((s) => s.failed);
+  const from = useYtQueue((s) => s.from);
+  const entry = useYtQueue((s) => s.entries[s.pos]);
+  const live = useWatchStore((s) => (s.source === 'music' ? (s.playing?.id ?? null) : null));
+  const paused = useWatchStore((s) => s.paused || s.needsClick);
+  const now = list && entry && live === entry.id && sameList(from, list) ? entry : null;
   return (
     <>
       <ol className="yt-list">
         {items.map((v, i) => {
-          const words = rowWords(v.playable);
-          const lines = rowTip(v);
+          const gone = failed.get(v.id);
+          const words = gone ? failedWords(gone) : rowWords(v.playable);
+          const plays = !words && !!onPlay && v.playable === 'yes';
+          const on = now !== null && now.id === v.id && now.at === i;
+          const lines = rowTip(v, gone ? failedReason(gone) : null);
+          const cells = (
+            <>
+              <span className="yt-n">
+                {on && !paused ? (
+                  <PlayingBars />
+                ) : (
+                  <>
+                    <span className="yt-num">{i + 1}</span>
+                    {plays && !on ? <IconPlayerPlayFilled className="sp-hov" size={16} aria-hidden="true" /> : null}
+                  </>
+                )}
+              </span>
+              <span className="yt-title">{v.title}</span>
+              <span className="yt-chan">{v.channel}</span>
+              <span className="yt-len">{words ?? lengthText(v.seconds)}</span>
+            </>
+          );
           return (
             <li
               key={`${v.id}-${i}`}
-              className={`yt-row${words ? ' off' : ''}`}
-              data-playable={v.playable}
+              className={`yt-row${words ? ' off' : ''}${on ? ' on' : ''}`}
+              data-playable={gone ? 'no' : v.playable}
               {...tip(() => (
                 <div className="sp-tipline">
                   <b>{lines[0]}</b>
@@ -106,10 +138,13 @@ export function YtRows({ items, foot }: { items: YtVideo[]; foot?: ReactNode }) 
                 </div>
               ))}
             >
-              <span className="yt-n">{i + 1}</span>
-              <span className="yt-title">{v.title}</span>
-              <span className="yt-chan">{v.channel}</span>
-              <span className="yt-len">{words ?? lengthText(v.seconds)}</span>
+              {plays ? (
+                <button type="button" className="yt-play yt-cells" aria-current={on ? 'true' : undefined} aria-label={`Play ${v.title}`} onClick={() => onPlay?.(i)}>
+                  {cells}
+                </button>
+              ) : (
+                <div className="yt-cells">{cells}</div>
+              )}
             </li>
           );
         })}

@@ -55,7 +55,9 @@ export function Rail() {
   const video = useWatchStore((s) => s.playing?.label ?? null);
   // The mark says what the video is doing: playing, or paused (also while it waits for a click); an ended video has none.
   const videoState = useWatchStore((s) => (s.playing === null || s.report.ended ? null : s.paused || s.needsClick ? 'paused' : 'playing'));
-  const videoAway = video !== null && videoState !== null && !(active === 'unwind' && videoTab === 'watch');
+  // The wall's music (a YouTube library pick) is heard, never seen: its mark shows whenever he is not on Unwind, and a click goes to Listen.
+  const music = useWatchStore((s) => s.source === 'music');
+  const videoAway = video !== null && videoState !== null && (music ? active !== 'unwind' : !(active === 'unwind' && videoTab === 'watch'));
 
   const onKeyDown = (e: KeyboardEvent<HTMLElement>) => {
     if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
@@ -80,7 +82,7 @@ export function Rail() {
         const away = id === 'unwind' && videoAway;
         const goWatch = () => {
           setActive('unwind');
-          useWatchStore.getState().setTab('watch');
+          useWatchStore.getState().setTab(music ? 'listen' : 'watch');
         };
         return (
           <button
