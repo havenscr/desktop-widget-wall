@@ -468,6 +468,68 @@ describe('the paste offer', () => {
     expect(saved()).toHaveLength(MAX_SAVED);
   });
 
+  it('a video already in the list with a playlist not saved: the refusal stays and the offer follows, with its own sentence', async () => {
+    await open([{ kind: 'video', id: V, label: 'Mine' }]);
+    await paste(`https://www.youtube.com/watch?v=${V}&list=${PL2}`);
+    expect(err()!.textContent).toBe(ADD_ERRORS.dup);
+    expect(offer()!.textContent).toContain('That video is already saved. The link also names a playlist.');
+    expect(offer()!.textContent).not.toContain('Saved the video.');
+    expect(saved()).toHaveLength(1);
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Save the playlist too' }));
+    });
+    expect(saved().map((i) => `${i.kind}:${i.id}`)).toEqual([`playlist:${PL2}`, `video:${V}`]);
+    expect(offer()).toBeNull();
+  });
+
+  it('a video and its playlist both saved already: only the refusal, no offer', async () => {
+    await open([
+      { kind: 'video', id: V, label: 'Mine' },
+      { kind: 'playlist', id: PL2, label: 'Mine too' },
+    ]);
+    await paste(`https://www.youtube.com/watch?v=${V}&list=${PL2}`);
+    expect(err()!.textContent).toBe(ADD_ERRORS.dup);
+    expect(offer()).toBeNull();
+  });
+
+  it('a video already saved with a Mix list: only the refusal, no offer', async () => {
+    await open([{ kind: 'video', id: V, label: 'Mine' }]);
+    await paste(`https://www.youtube.com/watch?v=${V}&list=RD${V}`);
+    expect(err()!.textContent).toBe(ADD_ERRORS.dup);
+    expect(offer()).toBeNull();
+  });
+
+  it('a new video with a Mix, radio, Watch later or Liked list is saved with no offer', async () => {
+    await open();
+    for (const [i, list] of [`RD${V}`, 'RDCLAK5uy_mockRadioList', 'WL', 'LL'].entries()) {
+      await paste(`https://www.youtube.com/watch?v=Mix000000${i}x&list=${list}`);
+      expect(offer()).toBeNull();
+      expect(err()).toBeNull();
+    }
+    expect(saved()).toHaveLength(4);
+  });
+
+  it('the focus goes to the paste field after the button, whether the save worked or was refused', async () => {
+    await open();
+    await paste(`https://www.youtube.com/watch?v=${V}&list=${PL2}`);
+    const button = screen.getByRole('button', { name: 'Save the playlist too' });
+    act(() => button.focus());
+    expect(document.activeElement).toBe(button);
+    await act(async () => {
+      fireEvent.click(button);
+    });
+    expect(document.activeElement).toBe(field());
+    // Refused: the playlist is in the list already.
+    await paste(`https://www.youtube.com/watch?v=Zz9yXxWw8vU&list=${PL2}`);
+    const again = screen.getByRole('button', { name: 'Save the playlist too' });
+    act(() => again.focus());
+    await act(async () => {
+      fireEvent.click(again);
+    });
+    expect(err()!.textContent).toBe(ADD_ERRORS.dup);
+    expect(document.activeElement).toBe(field());
+  });
+
   it('goes on the next paste', async () => {
     await open();
     await paste(`https://www.youtube.com/watch?v=${V}&list=${PL2}`);

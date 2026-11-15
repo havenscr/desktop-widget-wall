@@ -107,9 +107,18 @@ const TWITCH_PAGES = new Set([
 const fail = (error: string): ParseResult => ({ ok: false, error });
 const ok = (kind: WatchKind, id: string): ParseResult => ({ ok: true, ref: { kind, id } });
 
-/** A video, with the playlist the link also names when that id is valid. */
+/**
+ * True for a list the offer may name: a valid playlist id that the embedded player can be trusted
+ * to play. A Mix or radio list (`RD...`) is made per viewer, and `WL` and `LL` (Watch later and
+ * Liked videos) need a sign-in, so a saved entry for one would often play nothing.
+ */
+function offerable(list: string | null): list is string {
+  return validId('playlist', list) && !list.startsWith('RD') && list !== 'WL' && list !== 'LL';
+}
+
+/** A video, with the playlist the link also names when that list may be offered. */
 function video(id: string, list: string | null): ParseResult {
-  if (list !== null && validId('playlist', list)) return { ok: true, ref: { kind: 'video', id }, alsoList: { kind: 'playlist', id: list } };
+  if (offerable(list)) return { ok: true, ref: { kind: 'video', id }, alsoList: { kind: 'playlist', id: list } };
   return ok('video', id);
 }
 
@@ -136,7 +145,7 @@ function parts(pathname: string): string[] {
  * `twitch.tv/<login>`, with or without `https://` (or `http://`), `www.` or `m.` (YouTube and
  * Twitch only), in any case for the host and the path words. A link that names a video is that
  * video; a valid `list=` beside it comes back as `alsoList`, a second choice, never taken
- * silently. A `watch` link with only a list is that playlist. Other parameters and a fragment
+ * silently (not for a Mix or radio list `RD...`, nor `WL` or `LL`: the video alone is saved). A `watch` link with only a list is that playlist. Other parameters and a fragment
  * are ignored. Anything else, including user names, ports, other schemes and look-alike hosts,
  * is refused with one plain line.
  */

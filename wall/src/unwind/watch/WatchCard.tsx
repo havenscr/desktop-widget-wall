@@ -4,19 +4,13 @@ import { useSkyKeepClear } from '../../horizon/sky';
 import { tip } from '../../ui/HoverTip';
 import { useSignalStore } from '../../signals/store';
 import { kindName, parseLink, refKey, type WatchKind, type WatchRef } from './links';
-import { MAX_LABEL, MAX_SAVED, type SavedItem } from './saved';
+import { ADD_ERRORS, MAX_LABEL, MAX_SAVED, type SavedItem } from './saved';
 import { useWatchStore } from './store';
 
 /** How long a refusal line stays under the field. */
 export const PASTE_ERROR_MS = 6000;
 /** How long the offer of a second choice (the playlist a pasted video link also names) stays under the field. */
 export const OFFER_MS = 20_000;
-
-/**
- * Development only: the dev mocks (`?woffer=1`) set this so stills and the fit check show the
- * paste offer without a paste. A production build never sets it, so it is always null.
- */
-export const offerPoster: { ref: WatchRef | null } = { ref: null };
 
 export function KindIcon({ kind, size = 22 }: { kind: WatchKind; size?: number }) {
   switch (kind) {
@@ -105,8 +99,9 @@ export function WatchCard() {
   const inCall = useSignalStore((s) => s.call !== null);
   const [text, setText] = useState('');
   const [error, setError] = useState<string | null>(null);
-  // The playlist a just saved video link also names, offered once; kept here, never saved.
-  const [offer, setOffer] = useState<WatchRef | null>(() => offerPoster.ref);
+  // The playlist a pasted video link also names, offered once (`known`: the video was in the list already); kept here, never saved.
+  const [offer, setOffer] = useState<{ ref: WatchRef; known: boolean } | null>(null);
+  const fieldRef = useRef<HTMLInputElement>(null);
   const errTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
   const offerTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
   useEffect(
@@ -132,6 +127,12 @@ export function WatchCard() {
   const [card, setCard] = useState<HTMLElement | null>(null);
   useSkyKeepClear('watch-card', card);
 
+  const alreadySaved = (ref: WatchRef) => useWatchStore.getState().saved.some((i) => refKey(i) === refKey(ref));
+  const showOffer = (ref: WatchRef, known: boolean) => {
+    setOffer({ ref, known });
+    offerTimer.current = setTimeout(() => setOffer(null), OFFER_MS);
+  };
+
   const submit = (e: FormEvent) => {
     e.preventDefault();
     const parsed = parseLink(text);
@@ -140,27 +141,29 @@ export function WatchCard() {
     dropOffer();
     if (refused) {
       showError(refused);
+      // A video already in the list can still bring a playlist that is not: the refusal stays as it is, the offer follows it.
+      if (refused === ADD_ERRORS.dup && parsed.ok && parsed.alsoList && !alreadySaved(parsed.alsoList)) showOffer(parsed.alsoList, true);
     } else {
       setError(null);
       setText('');
-      if (parsed.ok && parsed.alsoList) {
-        setOffer(parsed.alsoList);
-        offerTimer.current = setTimeout(() => setOffer(null), OFFER_MS);
-      }
+      if (parsed.ok && parsed.alsoList) showOffer(parsed.alsoList, false);
     }
   };
 
   const savePlaylist = () => {
     if (!offer) return;
     // The video's name field, if still open, stays open: only the list changes.
-    const refused = st.addRef(offer, false);
+    const refused = st.addRef(offer.ref, false);
     dropOffer();
     if (refused) showError(refused);
+    // The button goes with the offer: the focus moves on to the paste field rather than falling to the page.
+    fieldRef.current?.focus();
   };
 
   const field = (
     <form className="w-field" onSubmit={submit}>
       <input
+        ref={fieldRef}
         className="w-paste"
         value={text}
         placeholder="Paste a YouTube or Twitch link"
@@ -186,7 +189,7 @@ export function WatchCard() {
 
   const offerLine = offer ? (
     <div className="w-offer" role="status">
-      <span>Saved the video. The link also names a playlist.</span>
+      <span>{offer.known ? 'That video is already saved. The link also names a playlist.' : 'Saved the video. The link also names a playlist.'}</span>
       <button type="button" {...tip('Adds that YouTube playlist to the list as its own entry')} onClick={savePlaylist}>
         Save the playlist too
       </button>

@@ -4,7 +4,6 @@ import type { WatchRef } from '../../unwind/watch/links';
 import { LOOKS_KEY, isLook } from '../../unwind/watch/looks';
 import { TUNE_KEY, defaultTune, withPatch } from '../../unwind/watch/lookSettings';
 import { framePoster, takeVideoInfo } from '../../unwind/watch/PlayerFrame';
-import { offerPoster } from '../../unwind/watch/WatchCard';
 import { SAVED_KEY } from '../../unwind/watch/saved';
 import { useWatchStore } from '../../unwind/watch/store';
 import { ctlTiming } from '../../unwind/watch/Watch';
@@ -30,8 +29,9 @@ import { knob } from './long';
  *   ?wtune=sky.size=80,sky.soft=0,sun.up=-100   settings of a look (look.key=value, a switch as 0 or 1)
  *   ?wtab=listen              stay on Listen (for the art's Video corner)
  *   ?wposter=bright           a pale bright picture, the worst case for text over video
- *   ?woffer=1                the paste offer under the field, as after pasting a video link that also names a
- *                             playlist (no paste needed)
+ *   ?wpaste=<link>            after the tab is up, paste this link into the list's field and press Save, through
+ *                             the real field and form (the link is a URL-encoded query value, so it can carry
+ *                             `v=` and `list=`); the offer, the refusal lines and the new row come from the real code
  *   ?wstate=paused|refused|silent|start|end   a mock player: paused; autoplay refused (the click line;
  *                             for Twitch the "Not started?" hint);
  *                             or a player that has reported nothing yet (default: playing at
@@ -154,10 +154,19 @@ function mockMeta(item: WatchRef, meta: string | null): void {
   takeVideoInfo(item, { videoId, title: m.title, channel: m.channel });
 }
 
+/** `?wpaste`: what the owner does, step by step, in the real field: type the link, press Save. */
+function pasteLink(link: string): void {
+  const field = document.querySelector<HTMLInputElement>('.w-paste');
+  if (!field) return;
+  Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set?.call(field, link);
+  field.dispatchEvent(new Event('input', { bubbles: true }));
+  // After React has taken the value, so the button is enabled.
+  setTimeout(() => document.querySelector<HTMLButtonElement>('.w-add')?.click(), 50);
+}
+
 export function registerWatchMocks(): void {
   mocks.set('wall2_watch_open', () => undefined);
   if (knob('watch') !== 'mock') return;
-  if (knob('woffer') === '1') offerPoster.ref = { kind: 'playlist', id: 'PLmockPlaylist0002' };
   framePoster.render = knob('wposter') === 'bright' ? brightPoster : poster;
   const list = knob('wlist') ?? 'three';
   try {
@@ -199,5 +208,7 @@ export function registerWatchMocks(): void {
       if (away === 'work' || away === 'home' || away === 'meet') usePlaceStore.getState().setActive(away);
     }
     if (knob('wsheet')) useWatchStore.getState().setSheet(true);
+    const link = knob('wpaste');
+    if (link) setTimeout(() => pasteLink(link), 150);
   }, 600);
 }

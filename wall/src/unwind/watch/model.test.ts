@@ -47,13 +47,20 @@ describe('parseLink', () => {
     [`https://www.youtube.com/watch?list=${PL}&v=${V}&start_radio=1&pp=abc`],
     [`https://youtu.be/${V}?list=${PL}`],
     [`https://music.youtube.com/watch?v=${V}&list=${PL}`],
-    [`https://m.youtube.com/watch?v=${V}&list=RD${V}`],
   ];
   it.each(alsoList)('saves %s as the video and offers the playlist', (link) => {
     const r = parseLink(link);
     expect(r.ok && r.ref).toEqual({ kind: 'video', id: V });
     expect(r.ok && r.alsoList?.kind).toBe('playlist');
     expect(r.ok && r.alsoList && validRef(r.alsoList)).toBe(true);
+  });
+  it('saves the video with no offer for a Mix or radio list, Watch later and Liked videos', () => {
+    for (const list of [`RD${V}`, 'RDCLAK5uy_mockRadioList', 'RDMM', 'WL', 'LL']) {
+      expect(parseLink(`https://www.youtube.com/watch?v=${V}&list=${list}`)).toEqual({ ok: true, ref: { kind: 'video', id: V } });
+      expect(parseLink(`https://youtu.be/${V}?list=${list}`)).toEqual({ ok: true, ref: { kind: 'video', id: V } });
+    }
+    // A name that only contains RD later on is an ordinary list.
+    expect(parseLink(`https://www.youtube.com/watch?v=${V}&list=PLRD0000000000`).ok && (parseLink(`https://www.youtube.com/watch?v=${V}&list=PLRD0000000000`) as { alsoList?: unknown }).alsoList).toBeTruthy();
   });
   it('offers the exact list id from the link', () => {
     expect(parseLink(`https://www.youtube.com/watch?v=${V}&list=${PL}&index=3`)).toEqual({ ok: true, ref: { kind: 'video', id: V }, alsoList: { kind: 'playlist', id: PL } });
