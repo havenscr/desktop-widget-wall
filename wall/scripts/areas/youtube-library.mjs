@@ -13,7 +13,7 @@ const lib = (knob, extra = '') => base(`youtube=in&ytlib=${knob}${extra}`);
 const state = (name, query, expect, actions) => ({ screen: 'unwind', name: `youtube library: ${name}`, query, custom: true, expect, actions });
 const steps = (...s) => s.join(' >> ');
 
-const NAMES = ['Night Drive', 'Rainy Window', '41 videos', 'Search music on YouTube'];
+const NAMES = ['Night Drive', 'Rainy Window', '41 videos', 'Liked'];
 
 /**
  * Runs in the page (it references nothing outside its own body). The YouTube side of the music card.
@@ -125,20 +125,20 @@ export default {
       state('rest, a playlist opened', lib('full'), ['Refresh', 'Read at', 'Glass Harbor', 'Only on YouTube', 'Private', 'Removed', 'Night Drive', '41 videos'], steps(SWITCH, TILE)),
       state('rest, search results', lib('full', '&ytsearch=night'), ['Results for', 'Back to Playlists', 'Glass Harbor', 'Mira Vale'], SWITCH),
       state('tall, Playlists', lib('full'), NAMES.concat(['Static Bloom Sessions']), steps(SWITCH, TALL)),
-      state('tall, a playlist opened', lib('full'), ['Refresh', 'Read at', 'Playlist', 'Night Drive', '41 videos', 'Glass Harbor', 'Mira Vale', 'Search music on YouTube'], steps(SWITCH, TALL, TILE)),
-      state('tall, Liked', lib('full'), ['Cassette Rain', 'Only on YouTube', 'Search music on YouTube'], steps(SWITCH, TALL, LIKED)),
+      state('tall, a playlist opened', lib('full'), ['Refresh', 'Read at', 'Playlist', 'Night Drive', '41 videos', 'Glass Harbor', 'Mira Vale', 'Liked'], steps(SWITCH, TALL, TILE)),
+      state('tall, Liked', lib('full'), ['Cassette Rain', 'Only on YouTube', 'Liked'], steps(SWITCH, TALL, LIKED)),
       state('tall, search results', lib('full', '&ytsearch=night'), ['Results for', 'Back to Playlists', 'Glass Harbor'], steps(SWITCH, TALL)),
       state('12 searches left', lib('low'), ['12 searches left today', 'Night Drive'], SWITCH),
       state('no searches left', lib('spent'), ['Searches are used up until midnight Pacific', 'Night Drive', 'Playlists', 'Liked'], SWITCH),
       state('empty, Playlists', lib('empty'), ['No playlists yet'], SWITCH),
       state('empty, Liked', lib('empty'), ['No liked videos yet'], steps(SWITCH, LIKED)),
       state('empty, search', lib('full', '&ytsearch=nothing'), ['Nothing found. Try other words.', 'Back to Playlists'], SWITCH),
-      state('loading', lib('slow'), ['Search music on YouTube', '!Night Drive', '!No playlists yet'], SWITCH),
+      state('loading', lib('slow'), ['Liked', '!Night Drive', '!No playlists yet'], SWITCH),
       state('not answering', lib('down'), ['YouTube is not answering.', 'Retry'], SWITCH),
       state('busy', lib('busy'), ['YouTube is busy. Try again in a minute.', 'Retry'], SWITCH),
       state('sign in again', lib('again'), ['YouTube needs a new sign-in.', 'Open Tools'], SWITCH),
       state('a playlist that is gone', lib('gone'), ['This playlist is gone.', 'Back'], steps(SWITCH, TILE)),
-      state('long names, tall', lib('long'), ['2,000 videos', 'Search music on YouTube'], steps(SWITCH, TALL)),
+      state('long names, tall', lib('long'), ['2,000 videos', 'Liked'], steps(SWITCH, TALL)),
       state('long names, a playlist opened', lib('long'), ['2,000 videos', 'Refresh', 'Read at'], steps(SWITCH, TALL, TILE)),
       state('a row’s hover card', lib('full'), ['The owner of this video allows it to play only on YouTube.', 'Afterglow Avenue'], steps(SWITCH, TILE, 'hover:.yt-row:nth-child(5)')),
       state('not set up: the remote and its line', base('youtube=off'), ['Set up YouTube in Tools to see your playlists here. About ten minutes, once.', 'Open Tools', 'Open YouTube Music'], SWITCH),

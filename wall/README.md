@@ -51,10 +51,10 @@ precedence over the top-level kind and id; the top-level values remain validated
 
 ## YouTube
 
-The wall signs in to YouTube so that later changes can read the owner's own playlists and
-liked videos. This change builds only the sign-in and its row in Tools; it reads no
-playlists and plays nothing, and the library and playback arrive in later changes. It needs
-a Google Cloud OAuth client of the "Desktop app" type, made in your own Google Cloud project.
+The wall signs in to YouTube so that it can read the owner's own playlists and liked videos.
+The sign-in and its row in Tools came first; the library came next (see "The library" below).
+Nothing plays yet: playback is a later change. It needs a Google Cloud OAuth client of the
+"Desktop app" type, made in your own Google Cloud project.
 
 - **Scope.** Only `https://www.googleapis.com/auth/youtube.readonly` (view the account). The
   wall cannot change, post or delete anything. A grant that comes back without that scope,
@@ -86,16 +86,70 @@ a Google Cloud OAuth client of the "Desktop app" type, made in your own Google C
   token, the one in memory and the note; the client stays, so Sign in works again at once.
 - **Status.** `wall2_youtube_status` answers only `{ setup, signedIn, reason, searchesLeft }`
   with `reason` one of `not set up`, `sign in again`, `setup broken` or `failed`;
-  `searchesLeft` is for the search of a later change and is empty for now.
+  `searchesLeft` is the search budget of the day (about 100, see "The library"), a number only while
+  signed in and empty otherwise.
 - **Links.** The row carries the two links YouTube API Services asks for, YouTube Terms and
   Google Privacy Policy. The page sends only the kind word (`youtube-terms`, `google-privacy`)
   to `wall2_open_link`; the addresses are fixed in Rust.
 - **The log `wall2-youtube.log`** (app log folder, 64 KB cap) holds lines of four fields:
   an event (`sign-in-start`, `sign-in-ok`, `sign-in-failed`, `sign-out`, `revoke-failed`,
-  `refresh-ok`, `refresh-refused`, `refresh-failed`, `client-saved`, `client-forgotten`), a
+  `refresh-ok`, `refresh-refused`, `refresh-failed`, `client-saved`, `client-forgotten`,
+  `read-ok`, `read-failed`, `search-ok`, `search-failed`), a
   reason (`none`, `busy`, `down`, `failed`, `sign-in-again`, `setup-broken`, `denied`,
-  `cancelled`, `timed-out`), an HTTP status and milliseconds. Never an id, token, client value,
-  title or query.
+  `cancelled`, `timed-out`, `quota`, `quota-all`, `not-found`, `invalid`), an HTTP status and
+  milliseconds. Never an id, page token, token, client value, title, channel or search words.
+- **The library** (`wall2_youtube.rs`, the YouTube side of the music card). Four commands, each
+  opening with the window check and running its read on a blocking thread:
+  `wall2_youtube_playlists(page_token?, fresh?)`, `wall2_youtube_items(playlist_id, page_token?,
+  fresh?)`, `wall2_youtube_liked(page_token?, fresh?)` and `wall2_youtube_search(query)`. They read
+  YouTube's Data API v3 with the bearer token (`playlists.list mine=true`; `playlistItems.list`
+  then `videos.list` for the page's ids; `videos.list myRating=like`; `search.list type=video
+  videoCategoryId=<Music> videoEmbeddable=true maxResults=25` then `videos.list`; the Music category
+  from one `videoCategories.list` a run, falling back to 10). Endpoints are constants
+  (`https://www.googleapis.com/youtube/v3/` plus one of five names), every query value is
+  URL-encoded, every call carries a `fields=` mask (titles, the channel's name, one length, the
+  embed, privacy and region flags; never a description), the agent follows no redirect and gives up
+  after 6 seconds, and a 401 forces one refresh and one retry. Pages are 50. Answers are shaped
+  records and nothing else: `{ items, next }` with a playlist `{ id, title, count, thumb }` or a
+  video `{ id, title, channel, seconds, thumb, playable }`, `playable` one of `yes`, `embed` (not
+  embeddable), `private`, `removed` (deleted, or missing from the `videos.list` answer) and
+  `region` (blocked in the constant region `US`). Everything from Google is checked before use: a
+  video id is 11 of `A-Za-z0-9_-`, a playlist id 2 to 64, a page token 1 to 128 (the page checks the
+  same patterns before it calls), a playlist item counts only when its kind is `youtube#video`,
+  lengths come from `PT#H#M#S` only and stop at 7 days, titles lose control and bidirectional
+  characters and stop at 200 (channels at 100), and a body over 512 KB (16 KB for an error) is
+  `down`, never a partial parse. A video's picture is built by Rust from its checked id as
+  `https://i.ytimg.com/vi/<id>/mqdefault.jpg`; a playlist's is taken from its snippet only when it
+  is exactly that host and path shape (https, no port, no user, a checked id), then rebuilt the same
+  way; otherwise `null`. No Google address crosses to the page, which draws a picture only from
+  `https://i.ytimg.com/vi/` (a development build also draws the mocks' own `data:image/svg+xml`
+  motifs), without a referrer, lazily, with a neutral tile as the fallback.
+- **Errors, cache and the search budget.** Errors are fixed words taken from the status and the
+  first error reason only: `not set up`, `sign in again`, `setup broken`, `busy` (429, or a 403
+  `rateLimitExceeded`), `quota` (a 403 `quotaExceeded` on search), `quota-all` (the same elsewhere),
+  `not found`, `invalid` and `down`. The cache is Rust memory only: playlists and a playlist's pages
+  1 hour, liked 10 minutes, video details 24 hours by id, search answers 24 hours by the trimmed,
+  lower-cased words; at most 200 lists, 5000 video details and 100 searches (the oldest goes first);
+  `fresh` skips the cache for that one list (a search is never re-run by it); the page reads at most
+  40 pages of one list (it then says "Showing the first 2,000"). Sign-out, a new client and a
+  forgotten client clear every cache and the search count. Rust counts `search.list` calls since the
+  last midnight Pacific (a pure function from Unix seconds, with the US rule: daylight time from 2:00 on
+  the second Sunday of March to 2:00 on the first Sunday of November, no extra crate); the status carries
+  `searchesLeft` (100 minus the count) while signed in, a 403 `quotaExceeded` on search sets the count
+  to 100 until midnight, and search words are trimmed, 1 to 100 characters, with no control or
+  bidirectional character, and never logged.
+- **In the card** (`wall/src/unwind/ytmusic/`). Set up and signed in, the YouTube side is the library:
+  one row with the tabs Playlists and Liked and the search field, and under it the playlists as 16:9
+  tiles (four columns at rest, five tall) or the liked videos or a search answer as rows. A tile opens
+  its videos (Back and Escape return; Refresh reads that playlist from YouTube again and the line
+  under it says when it was read). Search runs on Enter only, never on typing; the same words again
+  make no call. Under 20 searches left the field says how many; at none it is disabled and says so,
+  while Playlists and Liked keep working. A row that will not play outside YouTube is greyed and its
+  length column says "Only on YouTube", "Private" or "Removed". Rows are plain: not buttons, no click,
+  no pointer cursor; each has a hover card. Not set up, signed out, a dead sign-in or a refused setup
+  keep today's remote with one line and one button under it. Nothing plays and nothing pretends to:
+  playback is the next change. `?youtube=in&ytlib=full|few|empty|slow|down|busy|again|gone|low|spent|long`
+  picks the library's state (development mock only), and `?ytsearch=<words>` runs a search on open.
 - **No test talks to Google.** Every path runs against fake `Http` and `Creds` traits; the real
   sign-in, Google's warning page and whether its token exchange needs the secret are checked by
   hand.
@@ -1420,9 +1474,9 @@ frame (no ribbon) in the wide zones `470px 1fr 540px`. The parts are in `wall/sr
   in), not answering (with Retry), busy (the list stays, "Spotify is busy, try in a
   minute"), no device after a play ("Open Spotify on this PC first, then try again"), an
   empty library. YouTube Music chosen: what Windows says is playing, previous, play and
-  next through Windows, and "Open YouTube Music" (`wall2_open_link`). No YouTube browsing.
+  next through Windows, and "Open YouTube Music" (`wall2_open_link`). Signed in to YouTube, this side is the library instead (see "YouTube" above).
   At the right end of the top row, where the hint "Which player the wall follows" used to
-  stand on the Spotify side (the hint stays on the YouTube Music side and where Spotify cannot
+  stand on the Spotify side (the hint stays on the YouTube Music side until the library shows, and where Spotify cannot
   be browsed), sit the "Play on" chip and one round button (below).
 - **The tall view and "Play on"** (`SpotifyCard.tsx`, `PlayOn.tsx`, `PlayerRow.tsx`,
   `TallViews.tsx`, `Tile.tsx`). The round button at the card's top right (or a click on the
@@ -2579,7 +2633,9 @@ Review knobs (development only): `?screen=onair` opens On Air; `?show=typical|on
 Set in `src-tauri/tauri.wall2.conf.json` under `app.security.csp` (Ridgeline only;
 the old app's config is untouched). It allows own files (`'self'`), data: images,
 own fonts, connections to the Tauri IPC (`ipc:`, `http://ipc.localhost`,
-`https://ipc.localhost`), no weather service (the weather is read natively), and frames from the two
+`https://ipc.localhost`), pictures only from the card's own picture hosts (`img-src` lists
+`https://i.scdn.co`, `https://mosaic.scdn.co`, `https://image-cdn-ak.spotifycdn.com` and, for the
+YouTube library's thumbnails, `https://i.ytimg.com`), no weather service (the weather is read natively), and frames from the two
 video players only (`frame-src https://www.youtube-nocookie.com https://player.twitch.tv`,
 in `csp` and `devCsp`, for Unwind's Watch tab). Everything else is
 denied (`default-src 'none'`); no `unsafe-eval`, no `unsafe-inline`. React sets
