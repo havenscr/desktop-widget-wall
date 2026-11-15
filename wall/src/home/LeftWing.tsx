@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react';
+import { tip } from '../ui/HoverTip';
 import { reviewNow } from '../ui/reviewClock';
+import { useVisible } from '../ui/useVisible';
 import { houseView, HouseLine } from './HouseLine';
 import { useWeather } from '../weather/useWeather';
 import { OutsideRow, outsideState } from './OutsideRow';
@@ -20,21 +22,25 @@ const TICK_MS = 60_000;
  */
 export function LeftWing({ now = reviewNow ?? Date.now }: { now?: () => number }) {
   const [ms, setMs] = useState(now);
+  // The minute timer runs only while the page is visible; on show it catches up at once.
+  const visible = useVisible();
   useEffect(() => {
+    if (!visible) return;
+    setMs(now());
     const id = setInterval(() => setMs(now()), TICK_MS);
     return () => clearInterval(id);
-  }, [now]);
+  }, [now, visible]);
   const { house, rooms } = useDeskHouse();
   const withHouse = houseView(house, rooms) !== null;
   const head = sunHeadline(ms);
   const curve = dayCurve(ms);
-  const outside = outsideState(useWeather(), Date.now());
+  const outside = outsideState(useWeather(), ms);
   // Nothing to show (no sun times, the first weather read still out, no house line): no wing at all.
   if (!head && outside.kind === 'loading' && !withHouse) return null;
   return (
     <div className={withHouse ? 'home-wing with-house' : 'home-wing'} aria-label="Sun, weather and house">
       {head && (
-        <div className={head.soon ? 't2 lw-head home-blk soon' : 't2 lw-head home-blk'} aria-label="Sun">
+        <div className={head.soon ? 't2 lw-head home-blk soon' : 't2 lw-head home-blk'} aria-label="Sun" {...tip(head.tip)}>
           {head.text}
         </div>
       )}

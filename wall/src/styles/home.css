@@ -1162,8 +1162,15 @@
   color: var(--lw-soft);
   white-space: nowrap;
 }
-.lw-row.outside.stale {
+/* Not live or an old reading: the glyph and the sentence are dimmed, the small grey text is not
+   (dimming it by opacity took it under 4.5 to 1 on the lightest part of the sky; measured). */
+.lw-row.outside.stale .lw-glyph,
+.house.stale .lw-glyph {
   opacity: 0.6;
+}
+.lw-row.outside.stale .lw-text,
+.house.stale .lw-text {
+  opacity: 0.7;
 }
 .lw-house {
   width: 458px;
@@ -1173,11 +1180,19 @@
   margin-bottom: 0;
 }
 .house-rooms .house-asof {
-  margin-left: auto;
-  align-self: center;
+  position: absolute;
+  right: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  margin: 0;
 }
-.house.stale .lw-row,
+.house-rooms .house-asof.off {
+  visibility: hidden;
+}
 .house.stale .house-room {
+  color: var(--lw-soft);
+}
+.house.stale .house-room i {
   opacity: 0.6;
 }
 .house-rooms {
@@ -1187,6 +1202,7 @@
   height: 26px;
   margin: 4px 0 0 34px;
   width: 424px;
+  position: relative;
   overflow: hidden;
 }
 .house-room {

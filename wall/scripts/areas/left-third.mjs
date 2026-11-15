@@ -61,8 +61,14 @@ function measureLeftThird() {
     house: box(document.querySelector('.home .house')),
     outside: box(document.querySelector('.home .outside')),
     weatherText: document.querySelector('.home .outside')?.textContent ?? null,
+    // The outside glyph: its tone class and the icon's own name (warm for sun, night for moon).
+    glyphTone: (document.querySelector('.home .outside .lw-glyph')?.className ?? '').replace('lw-glyph', '').trim(),
+    glyphIcon: (document.querySelector('.home .outside .lw-glyph svg')?.getAttribute('class') ?? '').replace('tabler-icon ', ''),
+    more: !!document.querySelector('.home .house-room.more'),
+    dotCount: [...document.querySelectorAll('.home .house-room:not(.more)')].filter((e) => getComputedStyle(e).display !== 'none').length,
+    asOfShown: (() => { const a = document.querySelector('.home .house-asof'); return !!a && getComputedStyle(a).visibility !== 'hidden'; })(),
     // Inside each row (and the dots row) the children, left to right: none may overlap the next.
-    lines: [...document.querySelectorAll('.home .home-wing .lw-row, .home .home-wing .house-rooms')].map((row) => ({ row: box(row), kids: [...row.children].map((c) => ({ name: (c.className || c.tagName).toString().split(' ')[0], ...box(c) })).filter((c) => c.r - c.x > 0) })),
+    lines: [...document.querySelectorAll('.home .home-wing .lw-row, .home .home-wing .house-rooms')].map((row) => ({ row: box(row), kids: [...row.children].filter((c) => getComputedStyle(c).visibility !== 'hidden').map((c) => ({ name: (c.className || c.tagName).toString().split(' ')[0], ...box(c) })).filter((c) => c.r - c.x > 0) })),
   };
 }
 
@@ -71,6 +77,7 @@ const VARIANT_LATE = 'Home, left third: late afternoon, house live';
 const VARIANT_NIGHT = 'Home, left third: night, house live';
 const VARIANT_ABSENT = 'Home, left third: morning, house line absent';
 const VARIANT_STALE = 'Home, left third: morning, house not live';
+const VARIANT_STALE2 = 'Home, left third: morning, house not live, two rooms';
 const VARIANT_NOWX = 'Home, left third: morning, no weather reading';
 const VARIANT_ROOMS = 'Home, left third: morning, eight rooms';
 const VARIANT_WINTER = 'Home, left third: short winter day, house live';
@@ -78,8 +85,8 @@ const VARIANT_SUMMER = 'Home, left third: long summer day, house live';
 const CHECKS = ['.home .home-wing', '.home .lw-head', '.home .lw-curve', '.home .outside', '.home .house'];
 const NO_HOUSE = CHECKS.filter((c) => c !== '.home .house');
 const variant = (name, when, knobs) => ({ name, q: fitQuery(when, knobs), checks: knobs.includes('desk=') ? CHECKS : NO_HOUSE });
-const NAMES = new Set([VARIANT_HOUSE, VARIANT_LATE, VARIANT_NIGHT, VARIANT_ABSENT, VARIANT_STALE, VARIANT_NOWX, VARIANT_ROOMS, VARIANT_WINTER, VARIANT_SUMMER]);
-const WITH_HOUSE = new Set([VARIANT_HOUSE, VARIANT_LATE, VARIANT_NIGHT, VARIANT_STALE, VARIANT_ROOMS, VARIANT_WINTER, VARIANT_SUMMER]);
+const NAMES = new Set([VARIANT_HOUSE, VARIANT_LATE, VARIANT_NIGHT, VARIANT_ABSENT, VARIANT_STALE, VARIANT_STALE2, VARIANT_NOWX, VARIANT_ROOMS, VARIANT_WINTER, VARIANT_SUMMER]);
+const WITH_HOUSE = new Set([VARIANT_HOUSE, VARIANT_LATE, VARIANT_NIGHT, VARIANT_STALE, VARIANT_STALE2, VARIANT_ROOMS, VARIANT_WINTER, VARIANT_SUMMER]);
 const START_Y = 200;
 const END_Y = 440;
 
@@ -138,6 +145,12 @@ function ruleLeftThird(variantEntry, results, emit) {
   const rowsAfter = kids.filter((p) => p.name === 'lw-row' || p.name === 'lw-house');
   for (let i = 1; i < rowsAfter.length; i++) if (rowsAfter[i].y < rowsAfter[i - 1].b - 0.5) fails.push('left third: two rows overlap');
   if (WITH_HOUSE.has(variantEntry.name) && !m.house) fails.push('left third: the house row is not showing');
+  // Not live: every dot that fits stays (four rooms are four dots, no "+N more"); "as of" shows only where there is room.
+  if (variantEntry.name === VARIANT_STALE && (m.dotCount !== 4 || m.more)) fails.push(`left third: not live with four rooms shows ${m.dotCount} dots${m.more ? ' and a "+N more" chip' : ''} (all four expected)`);
+  if (variantEntry.name === VARIANT_STALE2 && !m.asOfShown) fails.push('left third: not live with two rooms does not show "as of" at the right end of the dots row');
+  // The weather glyph follows the hour: a sun-cloud by day, a moon-cloud at night.
+  if ((variantEntry.name === VARIANT_HOUSE || variantEntry.name === VARIANT_LATE) && !(m.glyphTone === 'warm' && !/moon/.test(m.glyphIcon))) fails.push(`left third: by day the weather glyph is "${m.glyphIcon}" in tone "${m.glyphTone}" (a warm sun glyph expected)`);
+  if (variantEntry.name === VARIANT_NIGHT && !(m.glyphTone === 'night' && /moon/.test(m.glyphIcon))) fails.push(`left third: at night the weather glyph is "${m.glyphIcon}" in tone "${m.glyphTone}" (a night moon glyph expected)`);
   if (variantEntry.name === VARIANT_ABSENT && m.house) fails.push('left third: the house row shows while the home app is absent');
   if (variantEntry.name === VARIANT_NOWX && !/weather unavailable/.test(m.weatherText ?? '')) fails.push('left third: with no weather reading the row does not say so');
   for (const f of fails) emit(`  FAIL ${f}`);
@@ -154,13 +167,14 @@ export default {
     states: [
       state('morning, house live', MORNING, 'desk=typical', ['of daylight left', 'outside', '68° inside.']),
       state('morning, house line absent', MORNING, '', ['of daylight left', 'outside', '!inside.']),
-      state('morning, house not live', MORNING, 'desk=stale', ['of daylight left', '68° inside.', 'as of']),
+      state('morning, house not live', MORNING, 'desk=stale', ['of daylight left', '68° inside.', 'Office', 'Bedroom']),
+      state('morning, house not live, two rooms', MORNING, 'desk=stale&rooms=2', ['of daylight left', '68° inside.', 'as of']),
       state('late afternoon, house live', LATE, 'desk=typical', ['Sunset in', 'outside', '68° inside.']),
       state('late afternoon, house line absent', LATE, '', ['Sunset in', 'outside', '!inside.']),
-      state('late afternoon, house not live', LATE, 'desk=stale', ['Sunset in', '68° inside.', 'as of']),
+      state('late afternoon, house not live', LATE, 'desk=stale', ['Sunset in', '68° inside.', 'Bedroom']),
       state('night, house live', NIGHT, 'desk=typical', ['tomorrow', 'outside', '68° inside.']),
       state('night, house line absent', NIGHT, '', ['tomorrow', 'outside', '!inside.']),
-      state('night, house not live', NIGHT, 'desk=stale', ['tomorrow', '68° inside.', 'as of']),
+      state('night, house not live', NIGHT, 'desk=stale', ['tomorrow', '68° inside.', 'Bedroom']),
       state('morning, no weather reading', MORNING, 'desk=typical&weather=down', ['of daylight left', 'weather unavailable', '68° inside.']),
       state('morning, eight rooms', MORNING, 'desk=typical&rooms=8', ['68° inside.', 'Office']),
     ].map((s) => (s.query.includes('weather=down') ? { ...s, query: s.query.replace('weather=ok&', '') } : s)),
@@ -172,6 +186,7 @@ export default {
       variant(VARIANT_NIGHT, NIGHT, 'desk=typical'),
       variant(VARIANT_ABSENT, MORNING, ''),
       variant(VARIANT_STALE, MORNING, 'desk=stale'),
+      variant(VARIANT_STALE2, MORNING, 'desk=stale&rooms=2'),
       { ...variant(VARIANT_NOWX, MORNING, 'desk=typical&weather=down'), q: fitQuery(MORNING, 'desk=typical').replace('weather=ok&', '') + '&weather=down' },
       variant(VARIANT_ROOMS, MORNING, 'desk=typical&rooms=8'),
       variant(VARIANT_WINTER, WINTER, 'desk=typical'),
@@ -189,6 +204,8 @@ export default {
       'left-card': { css: '.lw-row.outside { width: 700px !important; }', expect: /^ *FAIL left third: lw-row reaches x [\d.]+, within 8 px of the card to its right/m, appliesTo: only(VARIANT_HOUSE) },
       // The weather sentence set too large: it pushes the high and low out of the row.
       'left-run': { css: '.lw-text { font-size: 34px !important; }', expect: /^ *FAIL left third: lw-side leaves its row/m, appliesTo: only(VARIANT_HOUSE) },
+      // Dots lost to make room for "as of": two of the four rooms vanish.
+      'left-dots': { css: '.house-rooms .house-room:nth-child(n+3):not(.more) { display: none !important; }', expect: /^ *FAIL left third: not live with four rooms shows/m, appliesTo: only(VARIANT_STALE) },
       'left-text': { css: '.lw-label, .lw-side { font-size: 12px !important; }', expect: /^ *FAIL left third: text under 16 px in /m, appliesTo: only(VARIANT_HOUSE) },
       // Both labels dragged to the middle of a long day, then the sunset label to the box's left edge.
       'left-labels': { css: '.lw-label.set { right: auto !important; left: 0 !important; }', expect: /^ *FAIL left third: the sunrise and sunset labels collide|^ *FAIL left third: the sunset label covers its own crossing/m, appliesTo: only(VARIANT_SUMMER) },

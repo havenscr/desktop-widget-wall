@@ -150,19 +150,43 @@ it('redraws once a minute: the headline follows the clock tick', async () => {
   expect(container.querySelector('.lw-head')?.textContent).not.toBe(before);
 });
 
-it('outside state: a fresh reading, an old one with its age, a second source, a failure that kept a reading, and none', () => {
+it('outside state: a fresh reading, a second source, and none', () => {
   const now = at('10:28:00');
   const reading = { temp: 50, look: { label: 'Partly cloudy', icon: 'cloud-sun' as const }, high: 56, low: 44, hours: [], fetchedAt: now - 60_000 };
   const fresh = outsideState({ reading, failed: false }, now);
   expect(fresh.kind === 'reading' && fresh.view).toMatchObject({ temp: 50, look: 'partly cloudy', side: '56° / 44°', stale: false });
-  const old = outsideState({ reading: { ...reading, fetchedAt: now - 40 * 60_000 }, failed: true, failure: 'network' }, now);
-  expect(old.kind === 'reading' && old.view).toMatchObject({ side: 'updated 40 min ago', stale: true });
-  expect(old.kind === 'reading' && old.view.tip).toMatch(/The last try failed/);
   const second = outsideState({ reading: { ...reading, source: 'nws' }, failed: false }, now);
   expect(second.kind === 'reading' && second.view.tip).toMatch(/while Open-Meteo is not answering/);
-  expect(outsideState({ reading: { ...reading, fetchedAt: now - 2 * 3_600_000 }, failed: true, failure: 'timeout' }, now).kind).toBe('missing');
   expect(outsideState({ reading: null, failed: true, failure: 'network' }, now).kind).toBe('missing');
   expect(outsideState({ reading: null, failed: false }, now).kind).toBe('loading');
+});
+
+it('outside state: a kept reading 30 minutes, 61 minutes and 5 hours old after a failed refresh still shows, dimmed, with its age and the reason', () => {
+  const now = at('10:28:00');
+  const reading = { temp: 50, look: { label: 'Partly cloudy', icon: 'cloud-sun' as const }, high: 56, low: 44, hours: [], fetchedAt: now };
+  const cases: [number, string][] = [[30, 'updated 30 min ago'], [61, 'updated 1 h ago'], [300, 'updated 5 h ago']];
+  for (const [mins, side] of cases) {
+    const s = outsideState({ reading: { ...reading, fetchedAt: now - mins * 60_000 }, failed: true, failure: 'timeout' }, now);
+    expect(s.kind).toBe('reading');
+    if (s.kind !== 'reading') continue;
+    expect(s.view).toMatchObject({ temp: 50, side, stale: true });
+    expect(s.view.tip).toMatch(/The last try failed: Open-Meteo did not answer in time\./);
+  }
+  // A reading with no usable time or temperature is no reading.
+  expect(outsideState({ reading: { ...reading, fetchedAt: Number.NaN }, failed: true, failure: 'timeout' }, now).kind).toBe('missing');
+});
+
+it('house not live with four rooms: all four dots show and the sentence is dimmed', async () => {
+  vi.useFakeTimers();
+  vi.setSystemTime(at('10:28:00'));
+  const four = { rooms: [{ id: '1', name: 'Office', on: true }, { id: '2', name: 'Living room', on: true }, { id: '3', name: 'Kitchen', on: false }, { id: '4', name: 'Bedroom', on: false }], stale: false };
+  mocks.set('wall2_weather', () => JSON.stringify(owm()));
+  mocks.set('wall2_desk_house', () => ({ ...house, stale: true }));
+  mocks.set('wall2_desk_rooms', () => four);
+  const { container } = render(<LeftWing now={() => at('10:28:00')} />);
+  await flush(50);
+  expect([...container.querySelectorAll('.house-room')].map((e) => e.textContent)).toEqual(['Office', 'Living room', 'Kitchen', 'Bedroom']);
+  expect(container.querySelector('.house.stale')).toBeTruthy();
 });
 
 it('fits the room dots on one line: all of them when they fit, else the lit ones first and a count', () => {
