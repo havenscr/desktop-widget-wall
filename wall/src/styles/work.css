@@ -743,6 +743,14 @@
 }
 .tasks-hd {
   margin-bottom: 6px;
+  /* The height the heading has with its right-hand text, so the block is the same with none. */
+  min-height: 24.7px;
+}
+/* The block keeps the height of three rows in every state (one row, none, loading, not set up,
+   unavailable), rows at the top, so Always here below never moves. */
+.tasks-body {
+  height: 213px;
+  overflow: hidden;
 }
 .tasks-list {
   list-style: none;
@@ -756,7 +764,6 @@
   overflow-x: hidden;
   overflow-y: hidden;
   overscroll-behavior: contain;
-  scroll-behavior: smooth;
 }
 /* More than three rows: the wheel scrolls the block and a calm 6 px bar shows (it takes the 6 px the padding held). */
 .tasks-list.scrolls {
@@ -786,10 +793,19 @@
 .tasks-list.fade-top.fade-bottom {
   mask-image: linear-gradient(to bottom, transparent 0, #000 22px, #000 calc(100% - 22px), transparent 100%);
 }
-@media (prefers-reduced-motion: reduce) {
-  .tasks-list {
-    scroll-behavior: auto;
-  }
+/* The overdue slot: just left of the time column, 18 px wide on every row so the tags line up; only
+   an overdue row has a mark in it, the Tabler clock with an exclamation mark in the wall's amber. */
+.od-slot {
+  flex: none;
+  width: 18px;
+  margin-right: -6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.od-mark {
+  display: inline-flex;
+  color: var(--amber);
 }
 /* The time column: a fixed width so the tags of every row line up down the list. */
 .chip-col {

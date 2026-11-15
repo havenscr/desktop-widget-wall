@@ -50,7 +50,7 @@ it('shows Nothing due for an empty list', async () => {
   setList(() => []);
   render(<TaskCard />);
   await flush();
-  expect(screen.getByText('Nothing due')).toBeTruthy();
+  expect(screen.getByText('Nothing due today')).toBeTruthy();
 });
 
 it('marks a row done at once, fades it after 2 seconds, then refreshes', async () => {
@@ -236,7 +236,7 @@ it('treats a summary with no next list as a failed read, not as nothing due', as
   render(<TaskCard />);
   await flush();
   expect(screen.getByText('Tasks unavailable')).toBeTruthy();
-  expect(screen.queryByText('Nothing due')).toBeNull();
+  expect(screen.queryByText('Nothing due today')).toBeNull();
 });
 
 it('reads the due-today tasks without the home tag, shows estimates, and has no "more can wait" line', async () => {
@@ -281,19 +281,20 @@ it('Next up with no tasks at all reads Due today with Nothing due', async () => 
   render(<TaskCard />);
   await flush();
   expect(screen.getByText('Due today')).toBeTruthy();
-  expect(screen.getByText('Nothing due')).toBeTruthy();
+  expect(screen.getByText('Nothing due today')).toBeTruthy();
 });
 
 it('the list scrolls only with more than three rows, and the arrow keys and Page keys move it by rows', async () => {
   const many = Array.from({ length: 12 }, (_, i) => task(`r${i}`, `Row ${i}`));
-  setList(() => many);
   mocks.set('wall2_tasks_summary', async () => ({ next: many, remaining: 0, dueTomorrow: { count: 0, estMinutes: 0 }, dueToday: 12 }));
   const r = render(<TaskCard />);
   await flush();
   const list = r.container.querySelector('.tasks-list') as HTMLUListElement;
   expect(list.classList.contains('scrolls')).toBe(true);
   expect(r.container.querySelectorAll('.tk3').length).toBe(12);
+  // jsdom has no layout: 12 rows of 71 px in a 213 px view.
   Object.defineProperty(list, 'clientHeight', { value: 213, configurable: true });
+  Object.defineProperty(list, 'scrollHeight', { value: 852, configurable: true });
   fireEvent.keyDown(list, { key: 'ArrowDown' });
   expect(list.scrollTop).toBe(71);
   fireEvent.keyDown(list, { key: 'PageDown' });
@@ -302,6 +303,31 @@ it('the list scrolls only with more than three rows, and the arrow keys and Page
   expect(list.scrollTop).toBe(71 + 213 - 71);
   fireEvent.keyDown(list, { key: 'a' });
   expect(list.scrollTop).toBe(71 + 213 - 71);
+  // Never past the ends.
+  fireEvent.keyDown(list, { key: 'PageUp' });
+  fireEvent.keyDown(list, { key: 'PageUp' });
+  expect(list.scrollTop).toBe(0);
+  for (let i = 0; i < 12; i++) fireEvent.keyDown(list, { key: 'PageDown' });
+  expect(list.scrollTop).toBe(852 - 213);
+});
+
+it('a held arrow key adds to where the last step is heading, not to a half-finished smooth scroll', async () => {
+  const many = Array.from({ length: 12 }, (_, i) => task(`r${i}`, `Row ${i}`));
+  mocks.set('wall2_tasks_summary', async () => ({ next: many, remaining: 0, dueTomorrow: { count: 0, estMinutes: 0 }, dueToday: 12 }));
+  const r = render(<TaskCard />);
+  await flush();
+  const list = r.container.querySelector('.tasks-list') as HTMLUListElement;
+  Object.defineProperty(list, 'clientHeight', { value: 213, configurable: true });
+  Object.defineProperty(list, 'scrollHeight', { value: 852, configurable: true });
+  // A smooth scroll that has not moved yet: scrollTop stays 0 while the key repeats.
+  const targets: number[] = [];
+  (list as unknown as { scrollTo: (o: { top: number; behavior: string }) => void }).scrollTo = (o) => {
+    targets.push(o.top);
+    expect(o.behavior).toBe('smooth');
+  };
+  for (let i = 0; i < 4; i++) fireEvent.keyDown(list, { key: 'ArrowDown' });
+  expect(targets).toEqual([71, 142, 213, 284]);
+  expect(list.scrollTop).toBe(0);
 });
 
 it('three rows or fewer do not scroll', async () => {
@@ -311,7 +337,7 @@ it('three rows or fewer do not scroll', async () => {
   expect(r.container.querySelector('.tasks-list')?.classList.contains('scrolls')).toBe(false);
 });
 
-it('a ticked row does not move the rows in view when the list is scrolled', async () => {
+it('ticking the first row in view while scrolled does not jump the list: the same place, the next row slides in', async () => {
   const many = Array.from({ length: 10 }, (_, i) => task(`r${i}`, `Row ${i}`));
   let list = many;
   mocks.set('wall2_tasks_summary', async () => ({ next: list, remaining: 0, dueTomorrow: { count: 0, estMinutes: 0 }, dueToday: list.length }));
@@ -331,12 +357,62 @@ it('a ticked row does not move the rows in view when the list is scrolled', asyn
   });
   el.scrollTop = 142;
   fireEvent.scroll(el);
-  // Row 0 above the view is ticked, saved and faded out; the rows in view keep their place.
-  fireEvent.click(screen.getByLabelText('Mark done: Row 0'));
+  const firstInView = () => [...el.children].find((li) => (li as HTMLElement).offsetTop + 71 > el.scrollTop + 1) as HTMLElement;
+  expect(firstInView().dataset.task).toBe('r2');
+  // Tick the first row in view (row 2), let it save and fade out.
+  fireEvent.click(screen.getByLabelText('Mark done: Row 2'));
   await flush(TICK_UNDO_MS);
   await flush(2100);
+  expect(screen.queryByText('Row 2')).toBeNull();
+  // The list did not jump: the offset is the same, and the next row now fills the first place in view.
+  expect(el.scrollTop).toBe(142);
+  expect(firstInView().dataset.task).toBe('r3');
+  expect(firstInView().offsetTop - el.scrollTop).toBe(0);
+  // The correction a refresh makes is instant, never smooth (the style is put back after it).
+  expect(el.style.scrollBehavior).toBe('');
+});
+
+it('a refresh that adds a row above the view keeps the rows in view where they were, instantly', async () => {
+  let list = Array.from({ length: 10 }, (_, i) => task(`r${i}`, `Row ${i}`));
+  mocks.set('wall2_tasks_summary', async () => ({ next: list, remaining: 0, dueTomorrow: { count: 0, estMinutes: 0 }, dueToday: list.length }));
+  const r = render(<TaskCard />);
+  await flush();
+  const el = r.container.querySelector('.tasks-list') as HTMLUListElement;
+  const pos = (li: Element) => [...(li.parentElement?.children ?? [])].indexOf(li);
+  vi.spyOn(HTMLElement.prototype, 'offsetTop', 'get').mockImplementation(function (this: HTMLElement) {
+    return this.classList.contains('tk3') ? pos(this) * 71 : 0;
+  });
+  vi.spyOn(HTMLElement.prototype, 'offsetHeight', 'get').mockImplementation(function (this: HTMLElement) {
+    return this.classList.contains('tk3') ? 71 : 0;
+  });
+  el.scrollTop = 142;
+  fireEvent.scroll(el);
+  list = [task('new', 'New overdue'), ...list];
+  await flush(120_000);
   const first = [...el.children].find((li) => (li as HTMLElement).dataset.task === 'r2') as HTMLElement;
   expect(first.offsetTop - el.scrollTop).toBe(0);
+  expect(el.style.scrollBehavior).toBe('');
+});
+
+it('an overdue row has one amber mark in its own slot, with how late it is on hover; no other row has anything there', async () => {
+  const late = { ...task('o', 'Late one', '30'), due_at: '2026-11-09', due_is_all_day: true };
+  const yesterday = { ...task('y', 'Yesterday one', null), due_at: '2026-11-10', due_is_all_day: true };
+  const today = { ...task('t', 'Today one', '15'), due_at: '2026-11-11', due_is_all_day: true };
+  mocks.set('wall2_tasks_summary', async () => ({ next: [late, yesterday, today, task('n', 'No date')], remaining: 0, dueTomorrow: { count: 0, estMinutes: 0 } }));
+  const r = render(<TaskCard />);
+  await flush();
+  const rows = [...r.container.querySelectorAll('.tk3')];
+  // Every row keeps the slot, so the tags and the time column line up; only the overdue rows fill it.
+  expect(rows.map((row) => row.querySelectorAll('.od-slot').length)).toEqual([1, 1, 1, 1]);
+  expect(rows.map((row) => row.querySelectorAll('.od-slot .od-mark').length)).toEqual([1, 1, 0, 0]);
+  expect(rows[0]!.querySelector('.od-mark')?.getAttribute('aria-label')).toBe('Due Monday, 2 days ago');
+  expect(rows[1]!.querySelector('.od-mark')?.getAttribute('aria-label')).toBe('Due yesterday');
+  expect(rows[0]!.querySelector('.od-mark svg')?.getAttribute('class')).toContain('tabler-icon-clock-exclamation');
+  expect(rows[0]!.querySelector('.od-mark svg')?.getAttribute('width')).toBe('18');
+  // The slot sits between the title and tags and the time column.
+  const kids = [...rows[0]!.querySelector('.tk-main')!.children].map((c) => c.className.split(' ')[0]);
+  expect(kids.slice(-2)).toEqual(['od-slot', 'chip-col']);
+  expect(screen.getByText('4, 2 overdue')).toBeTruthy();
 });
 
 it('shows each row\'s tags: the first as a named chip, the rest as dots, with the tag name on hover', async () => {
@@ -429,7 +505,7 @@ it('queues one trailing refresh when a refresh is requested during a request', a
   await flush(0);
   expect(screen.queryByText('First')).toBeNull();
   expect(screen.queryByText('Second')).toBeNull();
-  expect(screen.getByText('Nothing due')).toBeTruthy();
+  expect(screen.getByText('Nothing due today')).toBeTruthy();
 });
 
 it('a tick waits five seconds with Done and Undo before completing', async () => {

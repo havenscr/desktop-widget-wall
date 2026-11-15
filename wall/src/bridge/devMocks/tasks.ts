@@ -10,6 +10,8 @@ interface MockTask {
   due: number;
   allDay: boolean;
   hour: number;
+  /** Minute of the hour for a timed task (0 when absent). */
+  minute?: number;
   estimate: Est;
   tags: string[];
   /** Index into BUCKETS. */
@@ -71,7 +73,7 @@ function toItem(t: MockTask, filtered: string | null = null) {
   return {
     id: t.id,
     title: t.title,
-    due_at: t.allDay ? date : new Date(d.getFullYear(), d.getMonth(), d.getDate(), t.hour).toISOString(),
+    due_at: t.allDay ? date : new Date(d.getFullYear(), d.getMonth(), d.getDate(), t.hour, t.minute ?? 0).toISOString(),
     due_is_all_day: t.allDay,
     quadrant: null,
     est: t.estimate,
@@ -96,7 +98,7 @@ export function registerTaskMocks(): void {
     { id: 't10', title: 'Write the workshop outline for the spring conference', due: 16, allDay: true, hour: 0, estimate: '60plus', tags: ['work'], bucket: 0 },
     { id: 't11', title: 'Clear the shared drive', due: 20, allDay: true, hour: 0, estimate: null, tags: [], bucket: 0 },
   ];
-  // Due today (Work's list). `?due=none|one|three|twelve` sets how many are due today or overdue; without it
+  // Due today (Work's list). `?due=none|one|two|three|twelve` sets how many are due today or overdue; without it
   // six are due, one of them overdue. Tags run from none to three, with long titles and a long tag.
   const dueToday: MockTask[] = [
     { id: 'd1', title: 'Send the signed engagement letter', due: -2, allDay: true, hour: 0, estimate: '15', tags: ['finance'], bucket: 1 },
@@ -116,13 +118,18 @@ export function registerTaskMocks(): void {
   const inDue = (t: MockTask) => t.due <= 0;
   if (dueMode === 'none') tasks = tasks.filter((t) => !inDue(t));
   else if (dueMode === 'one') tasks = [...tasks.filter((t) => !inDue(t) || t.id === 't1')];
+  else if (dueMode === 'two') tasks = [...tasks.filter((t) => !inDue(t) || t.id === 't1'), dueToday[0]!];
   else if (dueMode === 'three') tasks = [...tasks.filter((t) => !inDue(t) || t.id === 't1'), ...dueToday.slice(1, 3)];
   else if (dueMode === 'twelve') tasks = [...tasks, ...dueToday.slice(0, 11)];
   else tasks = [...tasks, ...dueToday.slice(0, 5)];
-  // `?chores=many`: thirteen home chores (Home shows five rows that scroll, and "8 more").
-  if (typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('chores') === 'many') {
+  // `?chores=many`: thirteen home chores; `?chores=timed` adds one due this afternoon at 4:30 PM beside the estimate pills (Home shows five rows that scroll, and "8 more").
+  const chores = knob('chores');
+  if (chores === 'many' || chores === 'timed') {
     const extra = ['Change the furnace filter', 'Call the chimney sweep', 'Renew the car tabs', 'Clean the gutters', 'Oil the squeaky hinge', 'Test the smoke alarms', 'Wash the front windows', 'Restock the pantry'];
     tasks = [...tasks, ...extra.map((title, i): MockTask => ({ id: `th${i + 1}`, title, due: 3 + i, allDay: true, hour: 0, estimate: i % 3 === 0 ? '15' : i % 3 === 1 ? '30' : null, tags: ['home'], bucket: 2 }))];
+  }
+  if (chores === 'timed') {
+    tasks = [{ id: 'tt1', title: 'Pick up the dry cleaning', due: 0, allDay: false, hour: 16, minute: 30, estimate: '15', tags: ['home', 'errands'], bucket: 2 }, ...tasks];
   }
   mocks.set('wall2_tasks_next', () => tasks.slice(0, 3).map((t) => toItem(t)));
   mocks.set('wall2_open_task', () => undefined);

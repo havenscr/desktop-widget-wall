@@ -4,7 +4,7 @@ import type { TaskTag } from './model';
 /**
  * The task app's eleven colour names as the app draws them: eight hues, with khaki, orange
  * and red as aliases of lime, brown and pink. Text and glyph are this colour on a 14 percent
- * wash of it; each hue measures 4.5 or more as 16 px text there (see `tagStyle.test.ts`),
+ * wash of it; each hue measures 4.5 or more as 16 px text there (`TaskTags.test.tsx` holds it on every background a row has),
  * so none needed lightening.
  */
 export const TAG_HUES: Record<string, string> = {

@@ -1,4 +1,5 @@
 import { IconCheck } from '@tabler/icons-react';
+import { useLayoutEffect, useRef, useState } from 'react';
 import { tip } from '../ui/HoverTip';
 import { reviewNow } from '../ui/reviewClock';
 import { openTask, type TaskItem } from '../tasks/model';
@@ -16,7 +17,7 @@ export const ROWS_ALERTS = 3;
 
 /** Width a chore row leaves for the title and its tags together: the 580 px row, less the 52 px tick, the 62 px pill column and two 12 px gaps (the third gap before the tags is counted by the tag layout). */
 export const CHORE_ROOM = 442;
-/** The fixed pill column: every row keeps it, with a pill or without one, so the tags line up down the list. */
+/** The pill column is never narrower than this; it grows to the widest pill in the list ("4:30 PM" needs about 75), the same on every row, so the tags line up down the list. */
 export const PILL_COLUMN_PX = 62;
 
 const EST: Record<string, string> = { '15': '15 m', '30': '30 m', '45': '45 m', '60plus': '1 h+' };
@@ -54,6 +55,20 @@ export function Chores() {
   const ticks = usePendingTicks(complete);
   const now = reviewNow ? reviewNow() : Date.now();
   const rows = tasks.filter((t) => !hidden.has(t.id));
+  // The pill column: as wide as the widest pill (never under 62 px), measured with every pill at its natural
+  // width, then set on the list as `--pill-w` for every pill and every empty column.
+  const listRef = useRef<HTMLDivElement>(null);
+  const [pillW, setPillW] = useState(PILL_COLUMN_PX);
+  const pillKey = rows.map((t) => chorePill(t, now) ?? '').join('|');
+  useLayoutEffect(() => {
+    const el = listRef.current;
+    if (!el) return;
+    el.style.setProperty('--pill-w', `${PILL_COLUMN_PX}px`);
+    let w = PILL_COLUMN_PX;
+    for (const pill of Array.from(el.querySelectorAll<HTMLElement>('.est'))) w = Math.max(w, Math.ceil(pill.getBoundingClientRect().width));
+    el.style.setProperty('--pill-w', `${w}px`);
+    setPillW(w);
+  }, [pillKey]);
   // A failed refresh after a good read keeps the rows, dimmed, with a quiet sign by the heading.
   const stale = status === 'error' && tasks.length > 0;
   // Out of view: the rows below the fold, and those past the twenty read.
@@ -77,7 +92,7 @@ export function Chores() {
     );
   } else {
     body = (
-      <div className={[`chore-rows fit${fit}`, stale ? 'stale' : '', rows.length > fit ? 'scrolls' : ''].filter(Boolean).join(' ')}>
+      <div ref={listRef} className={[`chore-rows fit${fit}`, stale ? 'stale' : '', rows.length > fit ? 'scrolls' : ''].filter(Boolean).join(' ')}>
         {rows.map((t) => {
           const mark = marks[t.id];
           const pending = ticks.pending.has(t.id);
@@ -113,7 +128,7 @@ export function Chores() {
                     </>
                   ) : (
                     <>
-                      <TaskTags tags={t.tags} room={CHORE_ROOM} />
+                      <TaskTags tags={t.tags} room={CHORE_ROOM - (pillW - PILL_COLUMN_PX)} />
                       {pill ? <span className="est">{pill}</span> : <span className="pill-ph" aria-hidden="true" />}
                     </>
                   )}

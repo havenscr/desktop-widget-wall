@@ -39,18 +39,30 @@ const mix = (fg: string, bg: string, a: number) => {
   return '#' + [16, 8, 0].map((s) => part(s).toString(16).padStart(2, '0')).join('');
 };
 
-it('every hue is 4.5 or more as 16 px text on its own 14 percent wash, over the wall\'s lightest row backgrounds', () => {
-  // Rows sit on the dark glass; #1a1440 is a light end for the backdrop behind it (measured on the stills).
-  for (const bg of ['#0a071c', '#1a1440']) {
-    for (const hex of new Set(Object.values(TAG_HUES))) {
+/**
+ * The backgrounds a task row meets, measured on the gallery stills at morning, noon, dusk and night:
+ * the darkest sky, the typical sky, the brightest sky pixel behind Work's block (dusk), the brightest
+ * behind Home's list, and a lighter navy beyond any of them.
+ */
+const BACKGROUNDS = ['#06071d', '#0a0e2b', '#15072e', '#101a3d', '#1a1440'];
+const NO_COLOUR = '#b7afd6'; // the wall's --dim, which a tag with no colour uses
+
+it('every hue and the no-colour grey is 4.5 or more as 16 px text on its own 14 percent wash, on every background a row has', () => {
+  const hues = [...new Set(Object.values(TAG_HUES)), NO_COLOUR];
+  expect(hues.length).toBe(9);
+  for (const bg of BACKGROUNDS) {
+    for (const hex of hues) {
+      // The wash is the tag's colour at 14 percent over the background, under the text and the glyph.
       const wash = mix(hex, bg, 0.14);
       const ratio = (lum(hex) + 0.05) / (lum(wash) + 0.05);
       expect(ratio, `${hex} on ${bg}`).toBeGreaterThanOrEqual(4.5);
     }
   }
-  // The no-colour tag draws in the wall's dim text.
-  const dim = '#b7afd6';
-  expect((lum(dim) + 0.05) / (lum(mix('#b7afd6', '#1a1440', 0.14)) + 0.05)).toBeGreaterThanOrEqual(4.5);
+});
+
+it('the contrast check can fail: a dim colour on a light background is under 4.5', () => {
+  const ratio = (lum('#7f779f') + 0.05) / (lum(mix('#7f779f', '#1a1440', 0.14)) + 0.05);
+  expect(ratio).toBeLessThan(4.5);
 });
 
 it('the first tag is a chip with its name, the rest are dots, and each carries its name for the hover card', () => {

@@ -1,6 +1,6 @@
 // Turns the Tabler outline icon set (installed as data by `@tabler/icons`) into one compact
 // virtual module, `virtual:tabler-icon-data`: a map from icon name to a string of paths.
-// Only `src/tasks/tagIcons.ts` imports it, and only through `import()`, so a production
+// Only `src/tasks/tagIcons.tsx` imports it, and only through `import()`, so a production
 // build emits it as its own chunk that the first load never fetches.
 //
 // One icon is its paths joined by `|`. A path is its `d` text, with a one letter prefix and

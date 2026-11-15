@@ -1,7 +1,7 @@
-import { IconCheck } from '@tabler/icons-react';
+import { IconCheck, IconClockExclamation } from '@tabler/icons-react';
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 import { useFocusStore } from '../focus/store';
-import { dueLine, estText, HOLD_SLOP_PX, LONG_PRESS_MS, openTask, updatedText, visibleRows, type TaskItem } from './model';
+import { dueLine, estText, estTipText, HOLD_SLOP_PX, LONG_PRESS_MS, openTask, overdueText, updatedText, visibleRows, type TaskItem } from './model';
 import { tip } from '../ui/HoverTip';
 import { usePendingTicks } from './pendingTick';
 import { TaskTags } from './TaskTags';
@@ -13,12 +13,15 @@ const WORK_QUERY: TasksQuery = { notTag: 'home', due: 'today' };
 /** Rows in view in the block, and a row's pitch: 70 px and its 1 px rule (the block keeps the height three rows gave it). */
 export const WORK_ROWS = 3;
 export const WORK_ROW_PX = 71;
+/** A key step still counts as under way this long, so a held key keeps adding rows. */
+const KEY_SCROLL_MS = 400;
 /**
  * Width a Work row leaves for the title and its tags together, counting the gap between them
  * the way `tagLayout` does: the 590 px row (596 less the 6 px scroll gutter), less the 50 px
- * tick, the fixed 78 px time column and the 16 px gap before it.
+ * tick, the fixed 78 px time column, the 18 px overdue slot and the gaps before them (16 px,
+ * and 10 px between the slot and the time column).
  */
-const WORK_ROOM = 442;
+const WORK_ROOM = 414;
 
 /**
  * One task as the concept draws it (`.tk3`): a check circle, the title and the estimate.
@@ -69,6 +72,7 @@ function TaskRow({
   const startFocus = () => useFocusStore.getState().startLabeled(task.title);
   const est = estText(task.est);
   const due = dueLine(task, new Date(now));
+  const late = overdueText(task, new Date(now));
 
   const ticked = mark === 'done' || pending;
   return (
@@ -140,7 +144,16 @@ function TaskRow({
             {mark === 'failed' ? (
               <span className="xs task-err">Could not complete.</span>
             ) : (
-              <span className="chip-col">{est && <span className="est" {...tip(due ? `Estimate. Due ${due}` : 'Estimate')}>{est}</span>}</span>
+              <>
+                <span className="od-slot">
+                  {late && (
+                    <span className="od-mark" role="img" aria-label={late} {...tip(late)}>
+                      <IconClockExclamation size={18} stroke={2} aria-hidden="true" />
+                    </span>
+                  )}
+                </span>
+                <span className="chip-col">{est && <span className="est" {...tip(estTipText(due))}>{est}</span>}</span>
+              </>
             )}
           </button>
           {mark === 'failed' && (
@@ -207,19 +220,32 @@ function TaskList({ children, rows }: { children: ReactNode; rows: number }) {
       const li = (Array.from(el.children) as HTMLElement[]).find((c) => c.dataset.task === a.id);
       if (li) {
         const drift = li.offsetTop - el.scrollTop - a.top;
-        if (drift !== 0) el.scrollTop += drift;
+        if (drift !== 0) {
+          // A correction is instant: smooth scrolling is only for a person's own key steps.
+          el.style.scrollBehavior = 'auto';
+          el.scrollTop += drift;
+          el.style.scrollBehavior = '';
+        }
       }
     }
     measure();
   }, [children, rows, measure]);
 
+  // Where the last key step is heading, so a held key adds to it instead of to a half-finished scroll.
+  const heading = useRef<{ top: number; at: number } | null>(null);
   const key = (e: KeyboardEvent<HTMLUListElement>) => {
     const el = ref.current;
     if (!el) return;
     const step = e.key === 'ArrowDown' ? WORK_ROW_PX : e.key === 'ArrowUp' ? -WORK_ROW_PX : e.key === 'PageDown' ? el.clientHeight : e.key === 'PageUp' ? -el.clientHeight : 0;
     if (!step) return;
     e.preventDefault();
-    el.scrollTop += step;
+    const h = heading.current;
+    const base = h && Date.now() - h.at < KEY_SCROLL_MS ? h.top : el.scrollTop;
+    const top = Math.min(Math.max(0, el.scrollHeight - el.clientHeight), Math.max(0, base + step));
+    heading.current = { top, at: Date.now() };
+    const calm = typeof el.scrollTo === 'function' && !window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+    if (calm) el.scrollTo({ top, behavior: 'smooth' });
+    else el.scrollTop = top;
   };
 
   const more = rows > WORK_ROWS;
@@ -257,7 +283,8 @@ export function TaskCard() {
   } else if (t.status === 'error' && t.lastOk === null) {
     body = <div className="s">Tasks unavailable</div>;
   } else if (rows.length === 0) {
-    body = <div className="s">Nothing due</div>;
+    // No open task at all: the heading stays "Due today" (Next up is only ever the next tasks).
+    body = <div className="s">Nothing due today</div>;
   } else {
     body = (
       <TaskList rows={rows.length}>
@@ -283,7 +310,7 @@ export function TaskCard() {
         <span className="k">{nextUp ? 'Next up' : 'Due today'}</span>
         {side && <span className="xs">{side}</span>}
       </div>
-      {body}
+      <div className="tasks-body">{body}</div>
     </section>
   );
 }
