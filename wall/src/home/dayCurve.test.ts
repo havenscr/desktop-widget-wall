@@ -56,7 +56,7 @@ it('travelled part: nothing before sunrise, up to the sun by day, the whole day 
 
 it('gives the curve from the horizon sun with words for the hover card and a screen reader', () => {
   const c = dayCurve(at(NOV, '10:28:00'))!;
-  const { rise, set } = sunTimes(at(NOV, '10:28:00'));
+  const { rise } = sunTimes(at(NOV, '10:28:00'));
   expect(c.phase).toBe('day');
   expect(c.riseText).toMatch(/^7:\d\d AM$/);
   expect(c.setText).toMatch(/^4:\d\d PM$/);
