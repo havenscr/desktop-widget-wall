@@ -70,6 +70,27 @@ describe('the Lines panel', () => {
     expect(screen.getByRole('switch', { name: 'Reflection' }).tabIndex).toBe(0);
   });
 
+  it('Space and Enter on a focused chip choose it: the group does not swallow the keys, so the native button press goes through', () => {
+    render(<LinesPanel />);
+    // jsdom has no native button activation: this does what a browser does (Enter clicks on keydown, Space on keyup),
+    // unless a handler cancelled the key.
+    const press = (el: HTMLElement, key: 'Enter' | ' ') => {
+      el.focus();
+      const kept = fireEvent.keyDown(el, { key });
+      if (key === 'Enter' && kept) fireEvent.click(el);
+      const up = fireEvent.keyUp(el, { key });
+      if (key === ' ' && kept && up) fireEvent.click(el);
+    };
+    press(screen.getByRole('radio', { name: 'Bars' }), 'Enter');
+    expect(useLinesStore.getState().type).toBe('bars');
+    press(screen.getByRole('radio', { name: 'Skyline' }), ' ');
+    expect(useLinesStore.getState().type).toBe('skyline');
+    press(screen.getByRole('radio', { name: 'Mint' }), ' ');
+    expect(useLinesStore.getState().colours).toBe('mint');
+    press(screen.getByRole('radio', { name: 'Flat' }), 'Enter');
+    expect(useLinesStore.getState().rest).toBe('flat');
+  });
+
   it('every control has a hint line or a tooltip made with tip()', async () => {
     render(
       <>
