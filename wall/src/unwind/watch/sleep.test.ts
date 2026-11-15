@@ -139,6 +139,67 @@ describe('the end', () => {
     expect(calls).toEqual([]);
   });
 
+  it('wall video playing and nothing else: stopping it is the whole job, no command', async () => {
+    playOwn();
+    playing('msedgewebview2.exe');
+    stepSleep();
+    await flush(30 * MIN + 10);
+    expect(useWatchStore.getState().playing).toBeNull();
+    expect(calls).toEqual([]);
+  });
+
+  it('wall video playing while Spotify is paused in the background: no command, Spotify stays paused', async () => {
+    useSpotifyStatus.setState({ status: { setup: true, signedIn: true, reason: null }, failed: false });
+    playOwn();
+    playing('Spotify', 'paused');
+    stepSleep();
+    await flush(30 * MIN + 10);
+    expect(useWatchStore.getState().playing).toBeNull();
+    expect(calls).toEqual([]);
+  });
+
+  it('wall video playing while another app is playing: no media key (it could land on the wrong session)', async () => {
+    playOwn();
+    playing('Edge');
+    stepSleep();
+    await flush(30 * MIN + 10);
+    expect(useWatchStore.getState().playing).toBeNull();
+    expect(calls).toEqual([]);
+  });
+
+  it('wall video playing while Spotify plays too: Spotify gets its own pause, never a key', async () => {
+    useSpotifyStatus.setState({ status: { setup: true, signedIn: true, reason: null }, failed: false });
+    playOwn();
+    playing('Spotify');
+    stepSleep();
+    await flush(30 * MIN + 10);
+    expect(calls).toEqual(['spotify.pause']);
+  });
+
+  it('another app playing and no wall video: one command', async () => {
+    playing('Edge');
+    stepSleep();
+    await flush(30 * MIN + 10);
+    expect(calls).toEqual(['media_play_pause']);
+  });
+
+  it('stale playing information for the wall own session after the stop: no command', async () => {
+    playOwn();
+    // The player still reports the web view as playing before and after the stop.
+    playing('msedgewebview2.exe');
+    stepSleep();
+    await flush(30 * MIN + 10);
+    await flush(READ_WAIT_MS + 10);
+    expect(useWatchStore.getState().stopped).toBe('Stopped by the sleep timer.');
+    expect(calls).toEqual([]);
+    // An unknown id for the same session (the web view id changes by build) is no different.
+    playOwn();
+    playing('0a1b2c3d4e5f6a7b!App');
+    stepSleep();
+    await flush(30 * MIN + 10);
+    expect(calls).toEqual([]);
+  });
+
   it('catches up at once when the page shows again after the PC slept past the end', async () => {
     playOwn();
     startSleepAt(Date.now() + 20 * MIN);

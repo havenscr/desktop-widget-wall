@@ -118,29 +118,36 @@ function freshRead(): Promise<void> {
 }
 
 /**
- * What the timer's end does to the player the wall follows. Spotify, when signed in: its own pause (a
- * real pause, never a toggle). Any other known player: one play and pause key, only when the player
- * said `playing` a moment ago. Anything else (paused, no information, a stale answer, the wall's own
- * video, an app the wall does not know): nothing, because a toggle must never start music.
+ * What the timer's end does to the player the wall follows, decided from what was true BEFORE the wall's video was
+ * stopped (`wallVideo`, and the player's answer read just before). When the wall's own video was on, stopping it is the
+ * whole job: no media key is ever sent, because once the video is gone its session lingers in the player's answer and
+ * a key sent then lands on whatever session Windows has current, which could start Spotify or another app. Spotify,
+ * when signed in, gets its own pause (a real pause, never a toggle), and with the wall's video on only when it said
+ * `playing`. With no wall video, another known player gets one play and pause key, only when its fresh answer says
+ * `playing`. Anything else (paused, no information, a stale answer, an app the wall does not know): nothing, because
+ * a toggle must never start music.
  */
-async function pausePlayer(): Promise<void> {
-  await freshRead();
-  const { info, at } = useNowPlayingStore.getState();
+function pausePlayer(wallVideo: boolean, info: NowPlayingInfo | null, at: number): void {
   const source = sourceKey(info);
+  const playingNow = !!info && isPlaying(info) && Date.now() - at <= INFO_FRESH_MS;
   if (playerName(source) === 'Spotify' && spotifyReady(useSpotifyStatus.getState())) {
-    spotify.pause().catch(() => {});
+    if (!wallVideo || playingNow) spotify.pause().catch(() => {});
     return;
   }
-  if (!info || !isPlaying(info as NowPlayingInfo) || ownVideo(source) || Date.now() - at > INFO_FRESH_MS) return;
+  if (wallVideo || ownVideo(source) || !playingNow) return;
   sendMediaCommand('media_play_pause');
 }
 
 async function finish(): Promise<void> {
   clearSleep();
   try {
-    // The wall's own video goes first (removed with its reason); then the player the wall follows is read again and paused.
+    // The player is read again first (the video still plays meanwhile), then the decision is taken from that
+    // answer and from whether the wall's video is on, and only then the video is stopped with its reason.
+    await freshRead();
+    const wallVideo = useWatchStore.getState().playing !== null;
+    const { info, at } = useNowPlayingStore.getState();
     useWatchStore.getState().stop('sleep');
-    await pausePlayer();
+    pausePlayer(wallVideo, info, at);
   } catch {
     /* every failure is silent apart from the chip going back to Off */
   }
