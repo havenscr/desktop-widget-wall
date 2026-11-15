@@ -1,0 +1,334 @@
+/* The YouTube library in the music card (vote L2, option A). Prefix yt-. It builds on the card's own
+   classes (.sp-card, .sp-tabs, .sp-search, .sp-tile, .sp-songs, .sp-shead, .sp-back, .sp-btn) and is
+   loaded after unwind.css. Nothing here plays: rows are plain, not buttons. */
+
+/* At rest the library is the same box as Spotify's card: 800 by 462 at wall 1740, 24. The tall view keeps
+   its own 624 (:not(.tall), so this does not tie with .sp-card.yt.tall). */
+.sp-card.yt:not(.tall):has(.yt-lib) {
+  height: 462px;
+}
+
+/* The library's header has no hint beside the switch (the chosen picture has none). */
+.sp-card.yt:has(.yt-lib) .sp-hint {
+  display: none;
+}
+
+.yt-lib {
+  --yt-sb: 10px;
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  position: relative;
+  /* The scrollers below reach into the card's padding on the right (their scrollbar sits there): the
+     library's own box reaches it too, so nothing of it overflows its box. */
+  margin-right: calc(-5px - var(--yt-sb));
+  padding-right: calc(5px + var(--yt-sb));
+}
+
+/* Tabs and the search field share one row (46 px), the field filling the rest. */
+.yt-bar {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+.yt-bar .sp-tabs {
+  align-self: auto;
+}
+.yt-bar .sp-search {
+  flex: 1;
+  color: var(--dim);
+}
+.yt-bar .sp-search input::placeholder {
+  color: var(--dim);
+}
+.yt-search.spent {
+  opacity: 0.75;
+}
+.yt-search.spent input {
+  cursor: not-allowed;
+}
+.yt-spent {
+  flex: 1;
+  min-width: 0;
+  font: 400 18px/1 var(--body);
+  color: var(--dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.yt-search.spent input {
+  flex: none;
+  width: 0;
+  padding: 0;
+}
+.yt-left {
+  flex: none;
+  font: 400 16px/1 var(--body);
+  color: var(--dim);
+  white-space: nowrap;
+}
+
+.yt-main {
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+/* The scroller reaches 5 px past the card's padding (room for a tile's focus ring) and its scrollbar
+   sits in the margin, so the content keeps the card's own width. */
+.yt-scroll {
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(154, 123, 255, 0.75) rgba(255, 255, 255, 0.05);
+  scrollbar-gutter: stable;
+  margin: -5px calc(-5px - var(--yt-sb)) 0 -5px;
+  padding: 5px 5px 0 5px;
+}
+/* A list of rows takes the keyboard (arrows, Page Up and Down, Home and End scroll it): its ring is inside the box. */
+.yt-rowscroll:focus-visible {
+  outline: 2px solid var(--cyan);
+  outline-offset: -2px;
+  border-radius: 12px;
+}
+/* Rows fade at their foot while more is below. */
+.yt-rowscroll {
+  -webkit-mask-image: linear-gradient(180deg, #000 calc(100% - 34px), rgba(0, 0, 0, 0.25));
+  mask-image: linear-gradient(180deg, #000 calc(100% - 34px), rgba(0, 0, 0, 0.25));
+}
+
+/* Playlists as 16:9 tiles: four columns at rest (176 by 99), five tall. */
+.yt-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  column-gap: 18px;
+  row-gap: 14px;
+  align-content: start;
+}
+.yt-lib[data-tall='true'] .yt-grid {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+}
+.yt-tile .yt-cover {
+  aspect-ratio: 16 / 9;
+}
+.yt-tile .sp-tname2 {
+  margin-top: 6px;
+  font-size: 18px;
+  line-height: 22px;
+}
+.yt-tile .yt-count {
+  font-size: 16px;
+  line-height: 20px;
+  color: var(--dim);
+}
+
+/* Rows: number, title, channel, length. 42 px as drawn, not buttons: no pointer, no play mark. */
+.yt-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.yt-row {
+  height: 42px;
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1.4fr) minmax(0, 1fr) 56px;
+  align-items: center;
+  gap: 12px;
+  padding: 0 8px;
+  border-radius: 12px;
+  cursor: default;
+  min-width: 0;
+}
+.yt-row.off {
+  opacity: 0.45;
+}
+.yt-n {
+  text-align: right;
+  font: 400 16px/1 var(--body);
+  color: var(--dim);
+  font-variant-numeric: tabular-nums;
+}
+.yt-title {
+  font: 600 18px/22px var(--body);
+  color: var(--tx);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.yt-chan {
+  font: 400 18px/22px var(--body);
+  color: var(--dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* The length column is 56 px, as drawn. The words of a greyed row ("Only on YouTube") are wider: they grow
+   to the left over the channel's room, which a greyed row gives up (its channel stops 90 px short). */
+.yt-row.off .yt-chan {
+  margin-right: 90px;
+}
+.yt-len {
+  display: flex;
+  justify-content: flex-end;
+  text-align: right;
+  font: 400 16px/1 var(--body);
+  color: var(--dim);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* One line and the one thing to do about it, in the place of the list. */
+.yt-state {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 14px;
+  padding: 12px 4px;
+  font-size: 20px;
+  line-height: 1.35;
+  color: var(--dim);
+}
+.yt-cap {
+  padding: 12px 8px;
+  text-align: center;
+  font: 400 16px/20px var(--body);
+  color: var(--dim);
+}
+.yt-resultsbar {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  height: 40px;
+}
+.yt-resultsfor {
+  flex: 1;
+  min-width: 0;
+  font: 400 18px/22px var(--body);
+  color: var(--dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.yt-resultsfor b {
+  font-weight: 600;
+  color: var(--tx);
+}
+
+/* Skeletons while a first page is read: still blocks, no spinner, no text. */
+.yt-skel {
+  display: block;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.07);
+}
+.yt-skel-tile {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+.yt-skel-cover {
+  aspect-ratio: 16 / 9;
+  border-radius: 12px;
+  border: 1px solid var(--line);
+}
+.yt-skel-line {
+  height: 14px;
+  width: 70%;
+}
+.yt-skel-line.short {
+  width: 40%;
+}
+.yt-skel-row {
+  height: 42px;
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1.4fr) minmax(0, 1fr) 52px;
+  align-items: center;
+  gap: 12px;
+  padding: 0 8px;
+}
+.yt-skel-row .yt-skel {
+  height: 14px;
+}
+
+/* A playlist opened. At rest: the header row of the songs view (Back, picture, name, Refresh at the
+   right). Tall: a left column of 248 and the rows on the right. */
+/* No slide-in for the opened list: the card has just changed size, and the review scripts measure it settled. */
+.yt-songs {
+  animation: none;
+  /* While the card is still growing the opened list is taller than the card for a moment: it is clipped, so it
+     never makes the card or the library scroll. Its box reaches 5 px past the library's content on the left and
+     top (room for a focus ring) and into the library's right padding (where the rows' scrollbar sits). */
+  overflow: clip;
+  margin: -5px calc(-5px - var(--yt-sb)) 0 -5px;
+  padding: 5px calc(5px + var(--yt-sb)) 0 5px;
+}
+.yt-songs .yt-songthumb {
+  width: 114px;
+  height: 64px;
+  border-radius: 10px;
+}
+.yt-songs.tall .sp-shead {
+  flex: 0 0 248px;
+  width: 248px;
+}
+.yt-songs.tall .yt-songthumb {
+  width: 248px;
+  height: 140px;
+  border-radius: 14px;
+}
+.yt-songs .sp-kick {
+  font-size: 16px;
+}
+.yt-songs .sp-line {
+  font-size: 16px;
+  line-height: 20px;
+  color: var(--dim);
+}
+.yt-shactions {
+  flex: none;
+  margin-left: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+}
+.yt-songs.tall .yt-shactions {
+  margin: 12px 0 0;
+  align-items: flex-start;
+  gap: 8px;
+}
+.yt-refresh:disabled {
+  opacity: 0.6;
+}
+.yt-readat {
+  font: 400 16px/20px var(--body);
+  color: var(--dim);
+  white-space: nowrap;
+}
+
+/* While the library cannot show: the remote stays, with one line and one button under it. */
+.yt-hint {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-height: 40px;
+  font: 400 16px/22px var(--body);
+  color: var(--dim);
+}
+.yt-hint-text {
+  flex: 1;
+  min-width: 0;
+}

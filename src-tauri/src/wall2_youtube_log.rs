@@ -9,7 +9,7 @@ const LOG_CAP: usize = 64 * 1024;
 static TX: OnceLock<SyncSender<String>> = OnceLock::new();
 
 #[derive(Clone, Copy)]
-pub enum Event { SignInStart, SignInOk, SignInFailed, SignOut, RevokeFailed, RefreshOk, RefreshRefused, RefreshFailed, ClientSaved, ClientForgotten }
+pub enum Event { SignInStart, SignInOk, SignInFailed, SignOut, RevokeFailed, RefreshOk, RefreshRefused, RefreshFailed, ClientSaved, ClientForgotten, ReadOk, ReadFailed, SearchOk, SearchFailed }
 impl Event {
     fn word(self) -> &'static str {
         match self {
@@ -23,12 +23,16 @@ impl Event {
             Self::RefreshFailed => "refresh-failed",
             Self::ClientSaved => "client-saved",
             Self::ClientForgotten => "client-forgotten",
+            Self::ReadOk => "read-ok",
+            Self::ReadFailed => "read-failed",
+            Self::SearchOk => "search-ok",
+            Self::SearchFailed => "search-failed",
         }
     }
 }
 
 #[derive(Clone, Copy)]
-pub enum Reason { None, Busy, Down, Failed, SignInAgain, SetupBroken, Denied, Cancelled, TimedOut }
+pub enum Reason { None, Busy, Down, Failed, SignInAgain, SetupBroken, Denied, Cancelled, TimedOut, Quota, QuotaAll, NotFound, Invalid }
 impl Reason {
     fn word(self) -> &'static str {
         match self {
@@ -41,6 +45,10 @@ impl Reason {
             Self::Denied => "denied",
             Self::Cancelled => "cancelled",
             Self::TimedOut => "timed-out",
+            Self::Quota => "quota",
+            Self::QuotaAll => "quota-all",
+            Self::NotFound => "not-found",
+            Self::Invalid => "invalid",
         }
     }
 }
@@ -81,13 +89,17 @@ pub fn start(dir: Option<std::path::PathBuf>) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    const EVENTS: [Event; 10] = [Event::SignInStart, Event::SignInOk, Event::SignInFailed, Event::SignOut, Event::RevokeFailed, Event::RefreshOk, Event::RefreshRefused, Event::RefreshFailed, Event::ClientSaved, Event::ClientForgotten];
-    const REASONS: [Reason; 9] = [Reason::None, Reason::Busy, Reason::Down, Reason::Failed, Reason::SignInAgain, Reason::SetupBroken, Reason::Denied, Reason::Cancelled, Reason::TimedOut];
+    const EVENTS: [Event; 14] = [Event::SignInStart, Event::SignInOk, Event::SignInFailed, Event::SignOut, Event::RevokeFailed, Event::RefreshOk, Event::RefreshRefused, Event::RefreshFailed, Event::ClientSaved, Event::ClientForgotten, Event::ReadOk, Event::ReadFailed, Event::SearchOk, Event::SearchFailed];
+    const REASONS: [Reason; 13] = [Reason::None, Reason::Busy, Reason::Down, Reason::Failed, Reason::SignInAgain, Reason::SetupBroken, Reason::Denied, Reason::Cancelled, Reason::TimedOut, Reason::Quota, Reason::QuotaAll, Reason::NotFound, Reason::Invalid];
 
     #[test]
     fn every_event_and_reason_renders_to_fixed_words_and_numbers_only() {
         let got = line(Event::RefreshRefused, Reason::SignInAgain, 400, 42);
         assert_eq!(got, "refresh-refused sign-in-again 400 42\n");
+        assert_eq!(line(Event::SearchFailed, Reason::QuotaAll, 403, 7), "search-failed quota-all 403 7\n");
+        assert_eq!(line(Event::ReadFailed, Reason::NotFound, 404, 7), "read-failed not-found 404 7\n");
+        assert_eq!(line(Event::ReadOk, Reason::Invalid, 400, 1), "read-ok invalid 400 1\n");
+        assert_eq!(line(Event::SearchOk, Reason::Quota, 200, 1), "search-ok quota 200 1\n");
         for event in EVENTS {
             for reason in REASONS {
                 let text = line(event, reason, 503, 1_000_000_000);

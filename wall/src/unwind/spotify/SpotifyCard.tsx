@@ -22,6 +22,7 @@ import { refreshNowPlaying, useNowPlayingStore } from '../../music/store';
 import { useNowPlaying } from '../../music/useNowPlaying';
 import { useToolsStore } from '../../tools/store';
 import { quietFocus, tip } from '../../ui/HoverTip';
+import { YtMusicSide } from '../ytmusic/YtMusicSide';
 import { Cover } from './Cover';
 import { PlayOn } from './PlayOn';
 import { PlayerRow } from './PlayerRow';
@@ -319,7 +320,7 @@ export function SpotifyCard() {
           </button>
         </div>
       </div>
-      {source === 'youtube' ? <YouTubeSide /> : <SpotifyBrowse tall={tall} />}
+      {source === 'youtube' ? <YtMusicSide tall={tall} remote={<YouTubeSide />} /> : <SpotifyBrowse tall={tall} />}
     </section>
   );
 }
