@@ -1,0 +1,99 @@
+import { act, cleanup, render } from '@testing-library/react';
+import { afterEach, beforeEach, expect, it, vi } from 'vitest';
+import { mocks } from '../bridge/tauri';
+import { useFocusStore } from '../focus/store';
+import { usePacificTime } from '../ribbon/testZone';
+import { StatusLine } from '../unwind/StatusLine';
+import { Dream } from '../zen/Dream';
+import { lane, summary } from './fixtures';
+import { resetSnooze, snooze, SNOOZE_MS } from './snooze';
+import { resetAgents } from './useAgents';
+
+usePacificTime();
+
+const A = 'a1b2c3d4-0001';
+const B = 'a1b2c3d4-0002';
+const NOW = new Date(2026, 10, 11, 10, 24).toISOString();
+
+const ask = (id: string, question: string) => ({ sessionId: id, title: 'A chat', kind: 'gate' as const, since: null, question });
+/** One chat waits (A), or two (A and B). */
+const waiting = (both: boolean) =>
+  summary({
+    now: NOW,
+    lanes: [lane({ id: A, waiting: true, state: 'blocked', waitingSinceS: 120 }), ...(both ? [lane({ id: B, waiting: true, state: 'blocked', waitingSinceS: 60 })] : [])],
+    yourMove: { total: both ? 2 : 1, first: ask(A, 'Which one?'), ids: both ? [A, B] : [A] },
+  });
+
+async function flush(ms = 0) {
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(ms);
+  });
+}
+
+beforeEach(() => {
+  vi.useFakeTimers();
+  vi.setSystemTime(new Date(2026, 10, 11, 10, 24));
+  localStorage.clear();
+  resetSnooze();
+  resetAgents();
+  useFocusStore.setState({ loaded: true });
+  mocks.set('wall2_meet_day', () => ({ events: [] }));
+});
+afterEach(() => {
+  cleanup();
+  resetSnooze();
+  resetAgents();
+  mocks.clear();
+  vi.useRealTimers();
+});
+
+const line = () => document.querySelector('.u-line')?.textContent ?? '';
+const dream = () => document.querySelector('.dream-status')?.textContent ?? '';
+
+it('Unwind: a snoozed chat raises no chip and no line; it comes back when the snooze ends', async () => {
+  const s = waiting(false);
+  mocks.set('wall2_omni_summary', () => s);
+  snooze(A, s);
+  render(<StatusLine />);
+  await flush();
+  expect(line()).toBe('Work is put away. No agent needs you.');
+  expect(document.querySelector('.u-act.amber')).toBeNull();
+  await flush(SNOOZE_MS + 1000);
+  expect(line()).toBe('Work is put away. One thing needs you.');
+  expect(document.querySelector('.u-act.amber')).not.toBeNull();
+});
+
+it('Unwind: a snoozed chat and an unsnoozed one count only the unsnoozed one, and the chip opens that chat', async () => {
+  const s = waiting(true);
+  mocks.set('wall2_omni_summary', () => s);
+  snooze(A, s);
+  render(<StatusLine />);
+  await flush();
+  expect(line()).toBe('Work is put away. One thing needs you.');
+  const opened: unknown[] = [];
+  mocks.set('wall2_open_session', (a) => void opened.push(a));
+  await act(async () => (document.querySelector('.u-act.amber') as HTMLButtonElement).click());
+  expect(opened).toEqual([{ id: B }]);
+});
+
+it('Dream: a snoozed chat raises no needs-you line; it comes back when the snooze ends', async () => {
+  const s = waiting(false);
+  mocks.set('wall2_omni_summary', () => s);
+  snooze(A, s);
+  render(<Dream onWake={() => undefined} />);
+  await flush();
+  expect(dream()).toContain('No agent needs you');
+  expect(dream()).not.toMatch(/(An agent|\d+ agents) need/);
+  await flush(SNOOZE_MS + 1000);
+  expect(dream()).toContain('An agent needs you');
+});
+
+it('Dream: a snoozed chat and an unsnoozed one count only the unsnoozed one', async () => {
+  const s = waiting(true);
+  mocks.set('wall2_omni_summary', () => s);
+  snooze(A, s);
+  render(<Dream onWake={() => undefined} />);
+  await flush();
+  expect(dream()).toContain('An agent needs you');
+  expect(dream()).not.toContain('2 agents need you');
+});

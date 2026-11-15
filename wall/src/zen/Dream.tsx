@@ -2,6 +2,7 @@ import { IconCalendar } from '@tabler/icons-react';
 import { useEffect, useState, type ReactNode } from 'react';
 import { agentsStale, useAgents } from '../agents/useAgents';
 import { needsYouCount } from '../agents/model';
+import { useSnoozed } from '../agents/snooze';
 import { SheepSvg } from '../buddy/Watt';
 import { SPRITES, SPRITE_PX } from '../buddy/sprites';
 import { formatClock } from '../clock/format';
@@ -59,7 +60,9 @@ function DreamStatus({ now }: { now: () => Date }) {
   const fresh = st.status === 'ready' && st.summary !== null && !agentsStale(st);
   // The same rule as Work: a lane that waits on the owner is not working.
   const working = fresh ? dreamWorkingCount(st.summary!) : null;
-  const needs = fresh ? needsYouCount(st.summary!) : null;
+  // A chat snoozed with "Later" on Work stays quiet here until its snooze ends.
+  const snoozed = useSnoozed(st.summary);
+  const needs = fresh ? needsYouCount(st.summary!, snoozed.ids) : null;
   const text = dreamStatusText(working, needs, onMoodLabel(now().getTime()));
   if (!text) return null;
   return <div className="dream-status">{text}</div>;
