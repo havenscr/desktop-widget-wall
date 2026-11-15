@@ -4,6 +4,7 @@ import type { WatchRef } from '../../unwind/watch/links';
 import { LOOKS_KEY, isLook } from '../../unwind/watch/looks';
 import { TUNE_KEY, defaultTune, withPatch } from '../../unwind/watch/lookSettings';
 import { framePoster, takeVideoInfo } from '../../unwind/watch/PlayerFrame';
+import { offerPoster } from '../../unwind/watch/WatchCard';
 import { SAVED_KEY } from '../../unwind/watch/saved';
 import { useWatchStore } from '../../unwind/watch/store';
 import { ctlTiming } from '../../unwind/watch/Watch';
@@ -29,6 +30,8 @@ import { knob } from './long';
  *   ?wtune=sky.size=80,sky.soft=0,sun.up=-100   settings of a look (look.key=value, a switch as 0 or 1)
  *   ?wtab=listen              stay on Listen (for the art's Video corner)
  *   ?wposter=bright           a pale bright picture, the worst case for text over video
+ *   ?woffer=1                the paste offer under the field, as after pasting a video link that also names a
+ *                             playlist (no paste needed)
  *   ?wstate=paused|refused|silent|start|end   a mock player: paused; autoplay refused (the click line;
  *                             for Twitch the "Not started?" hint);
  *                             or a player that has reported nothing yet (default: playing at
@@ -154,6 +157,7 @@ function mockMeta(item: WatchRef, meta: string | null): void {
 export function registerWatchMocks(): void {
   mocks.set('wall2_watch_open', () => undefined);
   if (knob('watch') !== 'mock') return;
+  if (knob('woffer') === '1') offerPoster.ref = { kind: 'playlist', id: 'PLmockPlaylist0002' };
   framePoster.render = knob('wposter') === 'bright' ? brightPoster : poster;
   const list = knob('wlist') ?? 'three';
   try {

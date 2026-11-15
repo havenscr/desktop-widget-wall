@@ -12,6 +12,12 @@ export const PASTE_ERROR_MS = 6000;
 /** How long the offer of a second choice (the playlist a pasted video link also names) stays under the field. */
 export const OFFER_MS = 20_000;
 
+/**
+ * Development only: the dev mocks (`?woffer=1`) set this so stills and the fit check show the
+ * paste offer without a paste. A production build never sets it, so it is always null.
+ */
+export const offerPoster: { ref: WatchRef | null } = { ref: null };
+
 export function KindIcon({ kind, size = 22 }: { kind: WatchKind; size?: number }) {
   switch (kind) {
     case 'twitch':
@@ -100,7 +106,7 @@ export function WatchCard() {
   const [text, setText] = useState('');
   const [error, setError] = useState<string | null>(null);
   // The playlist a just saved video link also names, offered once; kept here, never saved.
-  const [offer, setOffer] = useState<WatchRef | null>(null);
+  const [offer, setOffer] = useState<WatchRef | null>(() => offerPoster.ref);
   const errTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
   const offerTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
   useEffect(
