@@ -143,46 +143,72 @@ pub fn target(window_label: &str, keys: &[String], sources: &[String], key: Opti
     if !honour_keys(window_label) || !key.into_iter().chain(id).any(|s| !s.trim().is_empty()) {
         return Target::Current;
     }
-    resolve(keys, sources, key, id).map_or(Target::Gone, Target::Found)
+    resolve(keys, sources, key, id).filter(|&i| i < keys.len() && i < sources.len()).map_or(Target::Gone, Target::Found)
 }
 
-/// Wait at most `timeout`, allowing only one worker until it really finishes.
-pub fn run_bounded<T: Send + 'static>(
+struct PendingRead<T> {
+    deadline: Instant,
+    result: Mutex<Option<Result<T, String>>>,
+    ready: std::sync::Condvar,
+}
+
+/// One shared read. Completed answers belong to their waiting callers, not future polls.
+pub struct BoundedRead<T> {
+    current: Mutex<Option<std::sync::Arc<PendingRead<T>>>>,
+}
+
+impl<T> BoundedRead<T> {
+    pub const fn new() -> Self { Self { current: Mutex::new(None) } }
+}
+
+/// Join an active read under its original deadline. A still-hung expired worker is busy.
+pub fn run_bounded<T: Clone + Send + 'static>(
     f: impl FnOnce() -> T + Send + 'static,
     timeout: std::time::Duration,
-    busy: &'static std::sync::atomic::AtomicBool,
+    shared: &BoundedRead<T>,
 ) -> Result<T, String> {
-    use std::sync::atomic::Ordering;
-    if busy.compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire).is_err() {
-        return Err("busy".into());
-    }
-    struct InFlight(&'static std::sync::atomic::AtomicBool);
-    impl Drop for InFlight {
-        fn drop(&mut self) {
-            self.0.store(false, Ordering::Release);
+    use std::sync::Arc;
+    let (read, start) = {
+        let mut current = shared.current.lock().unwrap_or_else(|e| e.into_inner());
+        let active = current.as_ref().filter(|r| r.result.lock().unwrap_or_else(|e| e.into_inner()).is_none());
+        if let Some(read) = active {
+            if Instant::now() >= read.deadline { return Err("busy".into()); }
+            (read.clone(), false)
+        } else {
+            let read = Arc::new(PendingRead { deadline: Instant::now() + timeout, result: Mutex::new(None), ready: std::sync::Condvar::new() });
+            *current = Some(read.clone());
+            (read, true)
+        }
+    };
+    if start {
+        let worker = read.clone();
+        if std::thread::Builder::new().spawn(move || {
+            let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(f)).map_err(|_| "worker failed".to_string());
+            let result = if Instant::now() >= worker.deadline { Err("timed out".into()) } else { result };
+            *worker.result.lock().unwrap_or_else(|e| e.into_inner()) = Some(result);
+            worker.ready.notify_all();
+        }).is_err() {
+            *read.result.lock().unwrap_or_else(|e| e.into_inner()) = Some(Err("worker unavailable".into()));
+            read.ready.notify_all();
         }
     }
-    let (tx, rx) = std::sync::mpsc::sync_channel(1);
-    if std::thread::Builder::new().spawn(move || {
-        let guard = InFlight(busy);
-        let result = f();
-        drop(guard);
-        let _ = tx.send(result);
-    }).is_err() {
-        busy.store(false, Ordering::Release);
-        return Err("worker unavailable".into());
+    let mut result = read.result.lock().unwrap_or_else(|e| e.into_inner());
+    loop {
+        if let Some(answer) = result.as_ref() { return answer.clone(); }
+        let remaining = read.deadline.saturating_duration_since(Instant::now());
+        if remaining.is_zero() { return Err("timed out".into()); }
+        result = read.ready.wait_timeout(result, remaining).unwrap_or_else(|e| e.into_inner()).0;
     }
-    rx.recv_timeout(timeout).map_err(|e| match e {
-        std::sync::mpsc::RecvTimeoutError::Timeout => "timed out".into(),
-        std::sync::mpsc::RecvTimeoutError::Disconnected => "worker failed".into(),
-    })
 }
 
 pub const THUMBNAIL_MAX: u64 = 1024 * 1024;
 
+/// Check the stream size before narrowing it or allocating a thumbnail buffer.
+pub fn thumbnail_size_ok(size: u64) -> bool { (1..=THUMBNAIL_MAX).contains(&size) }
+
 /// Accept only bounded image bytes; never trust the stream's declared content type.
 pub fn thumbnail_ok(size: u64, bytes: &[u8]) -> Option<&'static str> {
-    if size == 0 || size > THUMBNAIL_MAX || bytes.len() as u64 > THUMBNAIL_MAX {
+    if !thumbnail_size_ok(size) || bytes.len() as u64 > THUMBNAIL_MAX {
         return None;
     }
     crate::wall2_sonos_read::sniff_image(bytes)
@@ -387,6 +413,7 @@ mod tests {
         for (window, key, id, expected) in [
             ("wall2", Some("b#0"), Some("a"), Target::Found(1)),
             ("wall2", None, Some("a"), Target::Found(0)),
+            ("wall2", Some("gone#0"), Some("a"), Target::Found(0)),
             ("wall2", Some("gone#0"), None, Target::Gone),
             ("wall2", None, Some("gone"), Target::Gone),
             ("wall2", None, None, Target::Current),
@@ -397,25 +424,76 @@ mod tests {
         }
         assert_eq!(target("wall2", &[], &[], Some("a#0"), Some("a")), Target::Gone);
         assert_eq!(target("wall2", &[], &[], None, Some("a")), Target::Gone);
+        assert_eq!(target("wall2", &keys, &sources[..1], Some("b#0"), None), Target::Gone);
+        assert_eq!(target("wall2", &keys[..1], &sources, None, Some("b")), Target::Gone);
     }
 
     #[test]
-    fn bounded_read_finishes_or_times_out_without_another_worker() {
-        use std::sync::atomic::{AtomicBool, Ordering};
+    fn concurrent_readers_share_one_answer_and_a_later_poll_reads_again() {
+        use std::sync::{Arc, mpsc};
         use std::time::Duration;
-        let busy: &'static AtomicBool = Box::leak(Box::new(AtomicBool::new(false)));
-        assert_eq!(run_bounded(|| 7, Duration::from_secs(1), busy), Ok(7));
-        assert!(!busy.load(Ordering::Acquire));
-        let (release, held) = std::sync::mpsc::channel();
-        assert_eq!(run_bounded(move || held.recv().unwrap(), Duration::from_millis(20), busy), Err("timed out".into()));
-        assert_eq!(run_bounded(|| panic!("must not start"), Duration::from_millis(20), busy), Err::<(), _>("busy".into()));
-        release.send(()).unwrap();
-        let deadline = Instant::now() + Duration::from_secs(2);
-        while busy.load(Ordering::Acquire) && Instant::now() < deadline {
+        let shared = Arc::new(BoundedRead::new());
+        let (entered, started) = mpsc::channel();
+        let (release, held) = mpsc::channel();
+        let first = shared.clone();
+        let a = std::thread::spawn(move || run_bounded(move || {
+            entered.send(()).unwrap(); held.recv().unwrap(); 7
+        }, Duration::from_secs(2), &first));
+        started.recv_timeout(Duration::from_secs(1)).unwrap();
+        let second = shared.clone();
+        let b = std::thread::spawn(move || run_bounded(|| panic!("second worker"), Duration::from_secs(2), &second));
+        let until = Instant::now() + Duration::from_secs(1);
+        while shared.current.lock().unwrap().as_ref().map_or(0, Arc::strong_count) < 4 && Instant::now() < until {
             std::thread::yield_now();
         }
-        assert!(!busy.load(Ordering::Acquire));
-        assert_eq!(run_bounded(|| 9, Duration::from_secs(1), busy), Ok(9));
+        let joined = shared.current.lock().unwrap().as_ref().map_or(0, Arc::strong_count) >= 4;
+        release.send(()).unwrap();
+        assert!(joined, "second reader joined the pending answer");
+        assert_eq!(a.join().unwrap(), Ok(7));
+        assert_eq!(b.join().unwrap(), Ok(7));
+        assert_eq!(run_bounded(|| 9, Duration::from_secs(1), &shared), Ok(9));
+    }
+
+    #[test]
+    fn hung_read_times_out_its_waiters_and_refuses_a_late_third_reader() {
+        use std::sync::{Arc, mpsc};
+        use std::time::Duration;
+        let shared = Arc::new(BoundedRead::new());
+        let (entered, started) = mpsc::channel();
+        let (release, held) = mpsc::channel();
+        let first = shared.clone();
+        let a = std::thread::spawn(move || run_bounded(move || {
+            entered.send(()).unwrap(); held.recv().unwrap(); 7
+        }, Duration::from_secs(1), &first));
+        started.recv_timeout(Duration::from_secs(1)).unwrap();
+        assert_eq!(run_bounded(|| panic!("second worker"), Duration::from_secs(2), &shared), Err("timed out".into()));
+        assert_eq!(a.join().unwrap(), Err("timed out".into()));
+        assert_eq!(run_bounded(|| panic!("third worker"), Duration::from_secs(2), &shared), Err("busy".into()));
+        release.send(()).unwrap();
+        let until = Instant::now() + Duration::from_secs(1);
+        while shared.current.lock().unwrap().as_ref().unwrap().result.lock().unwrap().is_none() && Instant::now() < until {
+            std::thread::yield_now();
+        }
+        assert_eq!(run_bounded(|| 9, Duration::from_secs(1), &shared), Ok(9));
+    }
+
+    #[test]
+    fn panicked_read_frees_the_worker_slot() {
+        let shared = BoundedRead::<u32>::new();
+        assert_eq!(run_bounded(|| panic!("fixture panic"), std::time::Duration::from_secs(1), &shared), Err("worker failed".into()));
+        assert_eq!(run_bounded(|| 1, std::time::Duration::from_secs(1), &shared), Ok(1));
+    }
+
+    #[test]
+    fn thumbnail_size_is_checked_before_allocation() {
+        for (size, accepted) in [(0, false), (1, true), (THUMBNAIL_MAX, true), (THUMBNAIL_MAX + 1, false), (u64::MAX, false)] {
+            assert_eq!(thumbnail_size_ok(size), accepted);
+        }
+        let source = include_str!("lib.rs");
+        let body = source.split("fn read_thumbnail_sync(").nth(1).unwrap().split("/// Last").next().unwrap();
+        let check = body.find("thumbnail_size_ok(size)").unwrap();
+        assert!(check < body.find("size as u32").unwrap());
+        assert!(check < body.find("vec![0u8;").unwrap());
     }
 
     #[test]

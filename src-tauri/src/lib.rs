@@ -1106,7 +1106,7 @@ fn session_for(
         let sources: Vec<String> = sessions.iter().map(session_app_id).collect();
         let keys = wall2_media::session_keys(&sources);
         match wall2_media::target(window_label, &keys, &sources, session_key, source_id) {
-            wall2_media::Target::Found(i) => return Ok(sessions[i].clone()),
+            wall2_media::Target::Found(i) => return sessions.get(i).cloned().ok_or_else(|| "gone".into()),
             wall2_media::Target::Gone => return Err("gone".into()),
             wall2_media::Target::Current => {}
         }
@@ -1122,7 +1122,7 @@ fn read_thumbnail_sync(
 
     let stream = thumbnail_ref.OpenReadAsync().ok()?.get().ok()?;
     let size = stream.Size().ok()?;
-    if size == 0 || size > wall2_media::THUMBNAIL_MAX {
+    if !wall2_media::thumbnail_size_ok(size) {
         return None;
     }
     let size = size as u32;
@@ -1137,9 +1137,8 @@ fn read_thumbnail_sync(
     Some((BASE64.encode(&buffer), content_type.to_string()))
 }
 
-/// Last (title|artist|album|app) we shipped album art for. The 2s
-/// now-playing poll skips the thumbnail stream read + base64 encode (often
-/// 100KB+ per poll) while this key is unchanged.
+/// Last track whose artwork was delivered to the legacy window.
+/// Shared snapshots retain full artwork; suppression belongs to each caller.
 static LAST_ART_TRACK_KEY: Mutex<Option<String>> = Mutex::new(None);
 
 /// Get current now playing information from Windows Media Session (async to avoid blocking main thread)
@@ -1149,12 +1148,36 @@ static LAST_ART_TRACK_KEY: Mutex<Option<String>> = Mutex::new(None);
 /// did. Without it (the first wall), the shared last-sent key decides, as before.
 #[tauri::command]
 async fn get_now_playing(window: tauri::WebviewWindow, art_for: Option<String>) -> Result<NowPlayingInfo, String> {
-    static IN_FLIGHT: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
-    // Wall 2 follows the session that really plays (`wall2_media`); the first wall keeps
-    // Windows' "current" session exactly as before.
+    static READ: wall2_media::BoundedRead<(bool, NowPlayingInfo)> = wall2_media::BoundedRead::new();
     let wall2 = window.label() == WALL2_LABEL;
-    // Run Windows Media Session API calls in a blocking thread pool
-    tauri::async_runtime::spawn_blocking(move || wall2_media::run_bounded(move || {
+    tauri::async_runtime::spawn_blocking(move || {
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(4);
+        let mut info = loop {
+            let remaining = deadline.saturating_duration_since(std::time::Instant::now());
+            if remaining.is_zero() { return Err("timed out".into()); }
+            let (mode, info) = wall2_media::run_bounded(move || (wall2, read_now_playing_sync(wall2)), remaining, &READ)?;
+            // Different window modes wait for the worker, then read their own selected session.
+            if mode == wall2 { break info; }
+        };
+        let unchanged = info.art_key.as_ref().is_some_and(|key| match art_for.as_deref() {
+            Some(held) => held == key,
+            None => LAST_ART_TRACK_KEY.lock().map(|last| last.as_ref() == Some(key)).unwrap_or(false),
+        });
+        if unchanged {
+            info.art_unchanged = true;
+            info.album_art_base64 = None;
+            info.album_art_mime = None;
+        }
+        if art_for.is_none() {
+            if let Ok(mut last) = LAST_ART_TRACK_KEY.lock() { *last = info.art_key.clone(); }
+        }
+        Ok(info)
+    }).await.map_err(|_| "worker failed".to_string())?
+}
+
+/// One full snapshot, shared before each caller decides whether it already holds the art.
+fn read_now_playing_sync(wall2: bool) -> NowPlayingInfo {
+        static ART_CACHE: Mutex<Option<(String, String, String)>> = Mutex::new(None);
         // Try to get session manager
         let manager = match GlobalSystemMediaTransportControlsSessionManager::RequestAsync() {
             Ok(async_op) => match async_op.get() {
@@ -1179,12 +1202,8 @@ async fn get_now_playing(window: tauri::WebviewWindow, art_for: Option<String>) 
         let session = match chosen {
             Some(s) => s,
             None => {
-                // No active session: forget the art key so the art is re-sent
-                // when playback resumes (the frontend shows a placeholder in
-                // the meantime and needs the bytes again).
-                if let Ok(mut key) = LAST_ART_TRACK_KEY.lock() {
-                    *key = None;
-                }
+                // A later session must fetch its own artwork, even if its track key repeats.
+                if let Ok(mut cache) = ART_CACHE.lock() { *cache = None; }
                 return NowPlayingInfo::default();
             }
         };
@@ -1257,9 +1276,8 @@ async fn get_now_playing(window: tauri::WebviewWindow, art_for: Option<String>) 
                     }
                 }
 
-                // Album art is the heavy part of this poll (WinRT stream read
-                // + base64 of often 100KB+, every 2s). Skip it while the
-                // track key is unchanged; the frontend keeps the art it has.
+                // Keep bounded artwork bytes for the unchanged track so every concurrent
+                // reader can get a complete snapshot without another stream read.
                 let track_key = format!(
                     "{}|{}|{}|{}",
                     info.title.as_deref().unwrap_or(""),
@@ -1267,29 +1285,14 @@ async fn get_now_playing(window: tauri::WebviewWindow, art_for: Option<String>) 
                     info.album.as_deref().unwrap_or(""),
                     info.source_app.as_deref().unwrap_or("")
                 );
-                let unchanged = match art_for.as_deref() {
-                    Some(held) => held == track_key,
-                    None => LAST_ART_TRACK_KEY
-                        .lock()
-                        .map(|key| key.as_deref() == Some(track_key.as_str()))
-                        .unwrap_or(false),
-                };
-
-                if unchanged {
-                    info.art_unchanged = true;
-                } else {
-                    if let Ok(thumbnail) = props.Thumbnail() {
-                        if let Some((data, mime)) = read_thumbnail_sync(&thumbnail) {
-                            info.album_art_base64 = Some(data);
-                            info.album_art_mime = Some(mime);
-                        }
-                    }
-                    if art_for.is_none() {
-                        if let Ok(mut key) = LAST_ART_TRACK_KEY.lock() {
-                            *key = Some(track_key.clone());
-                        }
-                    }
-                }
+                let cached = ART_CACHE.lock().ok().and_then(|cache| cache.as_ref()
+                    .filter(|(key, _, _)| key == &track_key).map(|(_, data, mime)| (data.clone(), mime.clone())));
+                let art = cached.or_else(|| props.Thumbnail().ok().and_then(|thumbnail| read_thumbnail_sync(&thumbnail)));
+                if let Some((data, mime)) = art {
+                    if let Ok(mut cache) = ART_CACHE.lock() { *cache = Some((track_key.clone(), data.clone(), mime.clone())); }
+                    info.album_art_base64 = Some(data);
+                    info.album_art_mime = Some(mime);
+                } else if let Ok(mut cache) = ART_CACHE.lock() { *cache = None; }
                 info.art_key = Some(track_key);
             }
         }
@@ -1301,9 +1304,6 @@ async fn get_now_playing(window: tauri::WebviewWindow, art_for: Option<String>) 
         }
 
         info
-    }, std::time::Duration::from_secs(4), &IN_FLIGHT))
-    .await
-    .map_err(|_| "worker failed".to_string())?
 }
 
 /// Toggle play/pause (async to avoid blocking main thread)
