@@ -1,10 +1,11 @@
-import { IconAlertTriangle, IconBrightnessUp, IconBulb, IconLink, IconLinkOff, IconRefresh, IconTemperature, IconX } from '@tabler/icons-react';
+import { IconAlertTriangle, IconBrightnessUp, IconBulb, IconLink, IconLinkOff, IconRefresh, IconSettings, IconTemperature, IconX } from '@tabler/icons-react';
 import { useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { overlayOwnsPointer } from '../ribbon/DrawerScrim';
 import { tip } from '../ui/HoverTip';
 import { BRI_MAX, BRI_MIN, KELVIN_MAX, KELVIN_MIN, KELVIN_STEP, isLight, type Light, type Side } from './keyLights';
-import { anyOn, downWord, kelvinColour, mismatched, shown as shownLight, sideName, sideReading, viewOf, wordLine, working, withOn, type Snapshot } from './model';
+import { useToolsStore } from '../tools/store';
+import { anyOn, downWord, kelvinColour, mismatched, savedDown, shown as shownLight, sideName, sideReading, singleLight, wordLine, working, withOn, type Snapshot } from './model';
 import { Slider } from './Slider';
 import { useKeyLights } from './store';
 
@@ -69,15 +70,22 @@ function SideColumn({ snap, side }: { snap: Snapshot; side: Side }) {
   return (
     <div className="st-side" data-side={side} data-down={word ? '' : undefined}>
       <div className="st-side-hd">
-        <span className={`st-side-name${word ? ' amber' : ''}`}>
+        <span className={`st-side-name${word && word !== 'not-set-up' ? ' amber' : ''}`}>
           {sideName(side)}
-          {word ? ': not answering' : ''}
+          {word === 'not-set-up' ? ': not set up' : word ? ': not answering' : ''}
         </span>
-        {word && (
-          <button type="button" className="st-lk" onClick={() => void useKeyLights.getState().refresh()} {...tip(`${wordLine(side, word)}. Reads it again now.`)}>
-            <IconRefresh size={18} aria-hidden="true" />
-            Try again
+        {word === 'not-set-up' ? (
+          <button type="button" className="st-lk" onClick={() => useToolsStore.getState().openDrawer('keylights')} {...tip("Opens Tools at Key lights, where each light's address is typed once")}>
+            <IconSettings size={18} aria-hidden="true" />
+            Open Tools
           </button>
+        ) : (
+          word && (
+            <button type="button" className="st-lk" onClick={() => void useKeyLights.getState().refresh()} {...tip(`${wordLine(side, word)}. Reads it again now.`)}>
+              <IconRefresh size={18} aria-hidden="true" />
+              Try again
+            </button>
+          )
         )}
       </div>
       <Pair targets={[side]} down={word !== null || light === null} light={light} label={`${sideName(side)} key light`} />
@@ -96,6 +104,34 @@ export function StudioDrawer() {
   const ref = useRef<HTMLElement>(null);
   const idle = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const close = () => useKeyLights.getState().setDrawer(false);
+
+  // Focus goes into the drawer when it opens and back to the control that opened it when it closes.
+  useEffect(() => {
+    const node = ref.current;
+    const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    node?.querySelector<HTMLElement>('.st-x')?.focus();
+    return () => {
+      const now = document.activeElement;
+      // Not taken from a control the pointer or a key has already moved focus to.
+      if (opener?.isConnected && (!now || now === document.body || node?.contains(now))) opener.focus();
+    };
+  }, []);
+  // Tab stays inside while it is open.
+  const trap = (e: React.KeyboardEvent) => {
+    if (e.key !== 'Tab') return;
+    const items = [...(ref.current?.querySelectorAll<HTMLElement>('button:not(:disabled), [tabindex="0"]') ?? [])];
+    if (items.length === 0) return;
+    const first = items[0];
+    const last = items[items.length - 1];
+    const now = document.activeElement;
+    if (e.shiftKey && (now === first || !ref.current?.contains(now))) {
+      e.preventDefault();
+      last.focus();
+    } else if (!e.shiftKey && (now === last || !ref.current?.contains(now))) {
+      e.preventDefault();
+      first.focus();
+    }
+  };
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -124,11 +160,12 @@ export function StudioDrawer() {
     return () => clearTimeout(idle.current);
   }, []);
 
-  const v = viewOf(snap);
   const w = working(snap);
-  // One light that does not answer splits the pair by itself, so its side can say so.
-  const forcedSplit = v === 'one' || v === 'none';
-  const split = forcedSplit || !linked;
+  // A light with an address that does not answer splits the pair by itself, so its side can say so.
+  // A side with no address is not that: it is a setup to do, and one light on its own has nothing to link.
+  const forcedSplit = savedDown(snap).length > 0;
+  const lone = singleLight(snap);
+  const split = forcedSplit || (!linked && !lone);
   const on = anyOn(snap);
   const mismatch = !split && mismatched(snap);
   const first = shownLight(snap);
@@ -136,7 +173,7 @@ export function StudioDrawer() {
 
   const host = document.querySelector('.stage') ?? document.body;
   return createPortal(
-    <section ref={ref} className="st-drawer" aria-label="Studio lights" onPointerEnter={() => clearTimeout(idle.current)} onPointerLeave={startIdle}>
+    <section ref={ref} className="st-drawer" aria-label="Studio lights" onKeyDown={trap} onPointerEnter={() => clearTimeout(idle.current)} onPointerLeave={startIdle}>
       <div className="st-d-top">
         <IconBulb size={22} className="st-bulb" aria-hidden="true" />
         <span className="k st-title">Studio lights</span>
@@ -167,6 +204,7 @@ export function StudioDrawer() {
           )}
           <span className="st-h">Key lights</span>
           <span className="st-spacer" />
+          {lone ? null : (
           <button
             type="button"
             className={`st-lk${split ? '' : ' on'}`}
@@ -184,8 +222,22 @@ export function StudioDrawer() {
             {split ? <IconLinkOff size={18} aria-hidden="true" /> : <IconLink size={18} aria-hidden="true" />}
             {split ? 'Split' : 'Linked'}
           </button>
+          )}
         </div>
-        {split ? (
+        {lone ? (
+          <>
+            <Pair targets={[w[0].side]} down={false} light={w[0].light} label={`${sideName(w[0].side)} key light`} />
+            <div className="st-line st-hint st-lone">
+              <span>
+                The {w[0].side === 'left' ? 'right' : 'left'} key light is not set up.
+              </span>
+              <button type="button" className="st-lk" onClick={() => useToolsStore.getState().openDrawer('keylights')} {...tip("Opens Tools at Key lights, where each light's address is typed once")}>
+                <IconSettings size={18} aria-hidden="true" />
+                Open Tools
+              </button>
+            </div>
+          </>
+        ) : split ? (
           <div className="st-sides">
             <SideColumn snap={snap} side="left" />
             <SideColumn snap={snap} side="right" />

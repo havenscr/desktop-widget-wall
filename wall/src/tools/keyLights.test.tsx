@@ -153,30 +153,68 @@ it('only one form is open at a time', async () => {
   expect(row('right').querySelector('.kl-field')).toBeTruthy();
 });
 
-it('Test reads the light and says it answered at the time, with the whole line as a tip', async () => {
+it('Test reads the light and the row itself says it answered at the time', async () => {
   saved = { left: true, right: true };
   await show();
   fireEvent.click(btn('left', 'Test'));
   await flush();
   expect(calls).toEqual([{ command: 'test', args: { side: 'left' } }]);
-  expect(row('left').textContent).toContain('Answered');
-  expect(await tipOf(row('left').querySelector('.tools-line')!)).toBe('Left key light answered at 9:42 AM');
+  expect(row('left').querySelector('.kl-state')?.textContent).toBe('Left key light answered at 9:42 AM');
   expect(await tipOf(btn('left', 'Test'))).toBe('Reads the light once and says whether it answered');
 });
 
-it('a Test that fails says the fixed words, in the row and in a line under it', async () => {
+it('a Test that fails says the fixed words in the row itself', async () => {
   saved = { left: true, right: true };
   tests = { left: 'no-answer', right: 'other-model' };
   await show();
   fireEvent.click(btn('left', 'Test'));
   fireEvent.click(btn('right', 'Test'));
   await flush();
-  expect(row('left').textContent).toContain('No answer');
-  expect(row('left').textContent).toContain('Left key light: no answer');
-  expect(row('right').textContent).toContain('Different answer');
-  expect(testLine('right', 'other-model')).toBe('Right key light: answered, but not the way the wall expects');
+  expect(row('left').querySelector('.kl-state')?.textContent).toBe('Left key light: no answer');
+  expect(row('right').querySelector('.kl-state')?.textContent).toBe('Right key light: different model');
+  expect(testLine('right', 'other-model')).toBe('Right key light: different model');
   expect(testLine('left', 'timeout')).toBe('Left key light: no answer');
-  expect(testLine('left', 'failed')).toBe('Left key light: the answer could not be used');
+  expect(testLine('left', 'failed')).toBe('Left key light: bad answer');
+});
+
+it('a saved row has Test, Change and Forget side by side, and Forget needs no form', async () => {
+  saved = { left: true, right: false };
+  await show();
+  expect([...row('left').querySelectorAll('.kl-head button')].map((b) => b.textContent)).toEqual(['Test', 'Change', 'Forget']);
+  fireEvent.click(btn('left', 'Forget'));
+  await flush();
+  expect(calls).toEqual([{ command: 'forget', args: { side: 'left' } }]);
+  expect(row('left').textContent).toContain('Not set up');
+});
+
+it('"slow-down" on a save or a test is a quiet line, not a fault', async () => {
+  saved = { left: true, right: false };
+  tests = { left: 'slow-down' };
+  await show();
+  fireEvent.click(btn('left', 'Test'));
+  await flush();
+  expect(row('left').querySelector('.kl-state')?.textContent).toBe('Left key light: try again soon');
+  expect(row('left').querySelector('.kl-state.bad')).toBeNull();
+  fireEvent.click(btn('right', 'Set up'));
+  saveWord = 'slow-down';
+  type(ADDRESS);
+  fireEvent.click(btn('right', 'Save'));
+  await flush();
+  const line = screen.getByRole('alert');
+  expect(line.textContent).toBe('Too many tries. Wait a minute, then try again.');
+  expect(line.classList.contains('bad')).toBe(false);
+  expect(saveError('busy')).toBe(saveError('slow-down'));
+});
+
+it('a file that cannot be read says so once, in one line, until an address is typed again', async () => {
+  mocks.set('wall2_keylights_status', () => ({ left: { set: saved.left }, right: { set: saved.right }, unreadable: !saved.left }));
+  await show();
+  expect(screen.getAllByText('The saved addresses could not be read. Type them again.')).toHaveLength(1);
+  fireEvent.click(btn('left', 'Set up'));
+  type(ADDRESS);
+  fireEvent.click(btn('left', 'Save'));
+  await flush();
+  expect(screen.queryByText('The saved addresses could not be read. Type them again.')).toBeNull();
 });
 
 it('Change opens the field again, with Forget; Forget removes the address and the row goes back to Not set up', async () => {

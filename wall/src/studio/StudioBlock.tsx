@@ -1,9 +1,8 @@
 import { IconAdjustmentsHorizontal, IconAlertTriangle, IconBulb, IconRefresh, IconSettings } from '@tabler/icons-react';
-import { useEffect } from 'react';
 import { tip } from '../ui/HoverTip';
 import { useToolsStore } from '../tools/store';
 import { StudioDrawer } from './StudioDrawer';
-import { anyOn, kelvinColour, noneTitle, summaryLine, viewOf, working, type Snapshot } from './model';
+import { anyOn, kelvinColour, noneTitle, savedDown, singleLight, summaryLine, viewOf, working, type Snapshot } from './model';
 import { useKeyLights } from './store';
 import { useKeyLightPolling } from './useKeyLightPolling';
 
@@ -23,14 +22,14 @@ export function StudioBlock() {
   const drawer = useKeyLights((s) => s.drawer);
   const snap: Snapshot = { status, left, right };
   useKeyLightPolling();
-  // Leaving On Air closes the drawer with it.
-  useEffect(() => () => useKeyLights.getState().setDrawer(false), []);
 
   const v = viewOf(snap);
   const sum = note ? { text: note, tone: 'amber' as const } : summaryLine(snap);
   const target = turnTargets(snap);
   const on = anyOn(snap);
   const knob = kelvinColour(working(snap)[0]?.light.kelvin ?? 4400);
+  // A side with no address is a setup to do, not a fault: no warning on the tile.
+  const warnTile = v === 'one' && savedDown(snap).length > 0;
   const checkAgain = () => void useKeyLights.getState().refresh();
   const flip = () => {
     if (target) void useKeyLights.getState().set(target, { on: !on });
@@ -57,11 +56,11 @@ export function StudioBlock() {
         type="button"
         role="switch"
         aria-checked={on}
-        className={`st-tg${on ? ' on' : ''}${v === 'one' ? ' warn' : ''}`}
+        className={`st-tg${on ? ' on' : ''}${warnTile ? ' warn' : ''}`}
         onClick={flip}
         {...tip(
           v === 'one'
-            ? `Turns the key light that answers ${on ? 'off' : 'on'}. The other one is not answering.`
+            ? `Turns the key light that answers ${on ? 'off' : 'on'}. The other one is ${warnTile ? 'not answering' : 'not set up'}.`
             : on
               ? 'Turns both key lights off. The sliders in Fine tune keep their values.'
               : 'Turns both key lights on, at the brightness and warmth they last had.',
@@ -71,7 +70,7 @@ export function StudioBlock() {
           <i />
         </i>
         <span>Key lights</span>
-        {v === 'one' && <IconAlertTriangle size={20} aria-hidden="true" className="st-tg-warn" />}
+        {warnTile && <IconAlertTriangle size={20} aria-hidden="true" className="st-tg-warn" />}
       </button>
     );
     action = (
@@ -87,6 +86,17 @@ export function StudioBlock() {
         Fine tune
       </button>
     );
+    if (singleLight(snap)) {
+      action = (
+        <>
+          {action}
+          <button type="button" className="st-chip" onClick={() => useToolsStore.getState().openDrawer('keylights')} {...tip("Opens Tools at Key lights, where each light's address is typed once")}>
+            <IconSettings size={20} aria-hidden="true" />
+            Open Tools
+          </button>
+        </>
+      );
+    }
   } else if (v === 'unset') {
     tile = (
       <span className="st-tg dis" aria-disabled="true" {...tip('The key lights need their addresses, typed once in Tools')}>

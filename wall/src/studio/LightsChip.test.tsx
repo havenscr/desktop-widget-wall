@@ -108,3 +108,18 @@ it('stops reading when the recording ends and nothing else shows it', async () =
   await flush(120_000);
   expect(read.mock.calls.length).toBe(n);
 });
+
+it('is compact on request: Lights 60%', async () => {
+  const view = render(<LightsChip compact />);
+  await flush();
+  expect(view.getByText('Lights 60%')).toBeTruthy();
+});
+
+it('a header that remounts while the drawer is open keeps it open', async () => {
+  useKeyLights.getState().setDrawer(true);
+  const first = await show();
+  first.unmount();
+  expect(useKeyLights.getState().drawer).toBe(true);
+  await show();
+  expect(document.querySelector('.st-drawer')).toBeTruthy();
+});

@@ -1,5 +1,4 @@
 import { IconBulb } from '@tabler/icons-react';
-import { useEffect } from 'react';
 import { useSignalStore } from '../signals/store';
 import { tip } from '../ui/HoverTip';
 import { chipWord, type Snapshot } from './model';
@@ -12,17 +11,15 @@ import { useKeyLightPolling } from './useKeyLightPolling';
  * doing in a few words. A click opens the same drawer as Fine tune on On Air. Hidden when no recording
  * runs, and when the key lights are not set up (there is nothing to say or open).
  */
-export function LightsChip() {
+export function LightsChip({ compact = false }: { compact?: boolean }) {
   const recording = useSignalStore((s) => s.recording);
   const drawer = useKeyLights((s) => s.drawer);
   const status = useKeyLights((s) => s.status);
   const left = useKeyLights((s) => s.left);
   const right = useKeyLights((s) => s.right);
   useKeyLightPolling(recording || drawer);
-  // Leaving Work closes the drawer with it.
-  useEffect(() => () => useKeyLights.getState().setDrawer(false), []);
   const snap: Snapshot = { status, left, right };
-  const word = chipWord(snap);
+  const word = chipWord(snap, compact);
   return (
     <>
       {recording && word !== null && (

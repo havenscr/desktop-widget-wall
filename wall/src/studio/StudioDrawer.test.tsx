@@ -24,6 +24,18 @@ let right: Cell;
 let sent: Record<string, unknown>[];
 let ignore: Set<string>;
 let refuse: Set<string>;
+let gate: Promise<void> | null;
+/** Holds every write's answer until the returned function is called. */
+const hold = () => {
+  let open!: () => void;
+  gate = new Promise<void>((r) => (open = r));
+  return () => {
+    gate = null;
+    open();
+  };
+};
+/** A light that reports a little off what it was asked for, as the real one rounds. */
+let round: number;
 
 beforeEach(() => {
   vi.useFakeTimers();
@@ -32,12 +44,15 @@ beforeEach(() => {
   sent = [];
   ignore = new Set();
   refuse = new Set();
+  gate = null;
+  round = 0;
   left = good();
   right = good();
   mocks.set('wall2_keylights_status', () => ({ left: { set: left.set }, right: { set: right.set } }));
   mocks.set('wall2_keylights_read', () => ({ left: reading(left), right: reading(right) }));
-  mocks.set('wall2_keylights_set', (args) => {
+  mocks.set('wall2_keylights_set', async (args) => {
     sent.push(args ?? {});
+    if (gate) await gate;
     const out: Record<string, unknown> = { left: null, right: null };
     for (const side of args?.side === 'both' ? ['left', 'right'] : [String(args?.side)]) {
       const c = side === 'left' ? left : right;
@@ -47,7 +62,7 @@ beforeEach(() => {
       }
       if (c.light && !ignore.has(side)) {
         if (typeof args?.on === 'boolean') c.light.on = args.on;
-        if (typeof args?.brightness === 'number') c.light.brightness = args.brightness;
+        if (typeof args?.brightness === 'number') c.light.brightness = args.brightness - round;
         if (typeof args?.kelvin === 'number') c.light.kelvin = args.kelvin;
       }
       out[side] = reading(c);
@@ -75,6 +90,7 @@ const open = async () => {
 const slider = (name: string) => screen.getByRole('slider', { name });
 const press = async (el: HTMLElement, key: string, n = 1) => {
   for (let i = 0; i < n; i++) fireEvent.keyDown(el, { key });
+  fireEvent.keyUp(el, { key });
   await flush();
 };
 const text = (el: Element) => el.getAttribute('aria-valuetext');
@@ -103,16 +119,109 @@ it('a move sets both lights, and the number after it is what they report', async
   expect(left.light?.kelvin).toBe(4300);
 });
 
-it('the number shown is the read back, never the value dragged to', async () => {
+const thumbAt = (name: string): number => parseFloat((slider(name).querySelector('.st-th') as HTMLElement).style.left);
+const numberBeside = (name: string): string => slider(name).parentElement?.querySelector('.st-val')?.textContent ?? '';
+const frac = (v: number) => ((v - 3) / 97) * 100;
+
+it('the number and the ARIA value are what the light reported, also while a write is out; only the thumb says where it was asked to go', async () => {
   await open();
+  const name = 'Both key lights brightness';
+  const release = hold();
+  fireEvent.keyDown(slider(name), { key: 'ArrowRight' });
+  fireEvent.keyDown(slider(name), { key: 'ArrowRight' });
+  await flush();
+  // In flight: the thumb is at 62, the light still reports 60.
+  expect(thumbAt(name)).toBeCloseTo(frac(62), 1);
+  expect(numberBeside(name)).toBe('60%');
+  expect(slider(name).getAttribute('aria-valuenow')).toBe('60');
+  expect(text(slider(name))).toBe('setting to 62%, the light reports 60%');
+  release();
+  fireEvent.keyUp(slider(name), { key: 'ArrowRight' });
+  await flush();
+  expect(numberBeside(name)).toBe('62%');
+  expect(thumbAt(name)).toBeCloseTo(frac(62), 1);
+  expect(text(slider(name))).toBe('62%');
+});
+
+it('lights that keep their value: during the write the thumb is where it was asked, after it the thumb is back at what they report', async () => {
+  await open();
+  const name = 'Both key lights brightness';
   ignore.add('left');
   ignore.add('right');
-  await press(slider('Both key lights brightness'), 'End');
-  // The lights kept their value, so the slider is back at 60 once the answer is in.
-  expect(text(slider('Both key lights brightness'))).toBe('60%');
+  const release = hold();
+  fireEvent.keyDown(slider(name), { key: 'End' });
+  fireEvent.keyUp(slider(name), { key: 'End' });
+  await flush();
+  expect(thumbAt(name)).toBeCloseTo(100, 1);
+  expect(numberBeside(name)).toBe('60%');
+  release();
+  await flush();
+  expect(thumbAt(name)).toBeCloseTo(frac(60), 1);
+  expect(text(slider(name))).toBe('60%');
   ignore.clear();
-  await press(slider('Both key lights brightness'), 'ArrowRight');
-  expect(text(slider('Both key lights brightness'))).toBe('61%');
+  await press(slider(name), 'ArrowRight');
+  expect(text(slider(name))).toBe('61%');
+});
+
+/** A pointer drag with a real pointer: down, move, a held answer, the answer, up (or up first). */
+const dragTrack = (name: string) => {
+  const el = slider(name);
+  el.getBoundingClientRect = () => ({ left: 0, right: 1000, top: 0, bottom: 26, width: 1000, height: 26, x: 0, y: 0, toJSON: () => ({}) });
+  return el;
+};
+const px = (v: number) => (frac(v) / 100) * 1000;
+
+it('a pointer drag whose answer comes before the button is up: the thumb follows the pointer, the number is what the light reports, and on letting go the thumb goes to the report at once', async () => {
+  round = 1;
+  await open();
+  const name = 'Both key lights brightness';
+  const el = dragTrack(name);
+  const release = hold();
+  fireEvent.pointerDown(el, { clientX: px(53), button: 0, pointerId: 1 });
+  fireEvent.pointerMove(el, { clientX: px(55), pointerId: 1 });
+  await flush();
+  expect(thumbAt(name)).toBeCloseTo(frac(55), 0);
+  expect(numberBeside(name)).toBe('60%');
+  release();
+  await flush();
+  // The write is answered while the button is still down: the light reports 54 for the 55 asked.
+  expect(numberBeside(name)).toBe('54%');
+  expect(slider(name).getAttribute('aria-valuenow')).toBe('54');
+  expect(thumbAt(name)).toBeCloseTo(frac(55), 0);
+  fireEvent.pointerUp(el, { pointerId: 1 });
+  await flush();
+  expect(thumbAt(name)).toBeCloseTo(frac(54), 0);
+  expect(text(slider(name))).toBe('54%');
+});
+
+it('a pointer drag let go while a write is still out: the thumb stays where it was asked until the answer, then goes to the report', async () => {
+  round = 2;
+  await open();
+  const name = 'Both key lights brightness';
+  const el = dragTrack(name);
+  const release = hold();
+  fireEvent.pointerDown(el, { clientX: px(70), button: 0, pointerId: 1 });
+  await flush();
+  fireEvent.pointerUp(el, { pointerId: 1 });
+  await flush();
+  expect(thumbAt(name)).toBeCloseTo(frac(70), 0);
+  expect(numberBeside(name)).toBe('60%');
+  release();
+  await flush();
+  expect(numberBeside(name)).toBe('68%');
+  expect(thumbAt(name)).toBeCloseTo(frac(68), 0);
+});
+
+it('a cancelled pointer lets go as an up does', async () => {
+  await open();
+  const name = 'Both key lights brightness';
+  const el = dragTrack(name);
+  fireEvent.pointerDown(el, { clientX: px(80), button: 0, pointerId: 1 });
+  await flush();
+  fireEvent.pointerCancel(el, { pointerId: 1 });
+  await flush();
+  expect(thumbAt(name)).toBeCloseTo(frac(80), 0);
+  expect(numberBeside(name)).toBe('80%');
 });
 
 it('moving a slider on lights that are off turns them on', async () => {
@@ -237,4 +346,77 @@ it('every control has a tip', async () => {
     fireEvent.mouseLeave(el);
     await flush(10);
   }
+});
+
+it('a side with no address is not set up, not "not answering": no Try again, no split, and Open Tools', async () => {
+  right = { set: false, light: null, word: null };
+  await open();
+  expect(screen.queryByText(/not answering/)).toBeNull();
+  expect(screen.queryByText('Try again')).toBeNull();
+  // One light on its own has nothing to link: no Linked or Split chip, one pair of sliders for it.
+  expect(screen.queryByText('Linked')).toBeNull();
+  expect(screen.queryByText('Split')).toBeNull();
+  expect(screen.getByText('The right key light is not set up.')).toBeTruthy();
+  await press(slider('Left key light brightness'), 'ArrowRight');
+  expect(sent.at(-1)).toMatchObject({ side: 'left' });
+  fireEvent.click(screen.getByText('Open Tools'));
+  const { useToolsStore } = await import('../tools/store');
+  expect(useToolsStore.getState().focus).toBe('keylights');
+});
+
+it('a light with an address that is silent still splits the pair, while the one without an address does not', async () => {
+  left = silent();
+  right = { set: false, light: null, word: null };
+  await open();
+  expect(screen.getByText('Left: not answering')).toBeTruthy();
+  expect(screen.getByText('Right: not set up')).toBeTruthy();
+  expect(screen.getAllByText('Try again')).toHaveLength(1);
+});
+
+it('a write answered with "slow-down" or "busy" leaves what is shown alone and says nothing', async () => {
+  await open();
+  mocks.set('wall2_keylights_set', () => ({ left: 'busy', right: 'slow-down' }));
+  await press(slider('Both key lights brightness'), 'ArrowRight');
+  expect(text(slider('Both key lights brightness'))).toBe('60%');
+  expect(useKeyLights.getState().note).toBeNull();
+  expect(useKeyLights.getState().left).toEqual(on());
+});
+
+it('takes focus when it opens, keeps Tab inside, and gives focus back to the control that opened it', async () => {
+  const opener = document.createElement('button');
+  opener.textContent = 'Fine tune';
+  document.body.appendChild(opener);
+  opener.focus();
+  await useKeyLights.getState().refresh();
+  useKeyLights.getState().setDrawer(true);
+  const view = render(<StudioDrawer />);
+  await flush();
+  const close = screen.getByLabelText('Close Studio lights');
+  expect(document.activeElement).toBe(close);
+  // Shift+Tab from the first control wraps to the last, Tab from the last wraps to the first.
+  fireEvent.keyDown(close, { key: 'Tab', shiftKey: true });
+  const last = [...document.querySelectorAll<HTMLElement>('.st-drawer button:not(:disabled), .st-drawer [tabindex="0"]')].at(-1)!;
+  expect(document.activeElement).toBe(last);
+  fireEvent.keyDown(last, { key: 'Tab' });
+  expect(document.activeElement).toBe(close);
+  // Closing returns focus to what opened it.
+  view.unmount();
+  expect(document.activeElement).toBe(opener);
+  opener.remove();
+});
+
+it('does not take focus back from a control the pointer already moved it to', async () => {
+  const opener = document.createElement('button');
+  const other = document.createElement('button');
+  document.body.append(opener, other);
+  opener.focus();
+  await useKeyLights.getState().refresh();
+  useKeyLights.getState().setDrawer(true);
+  const view = render(<StudioDrawer />);
+  await flush();
+  other.focus();
+  view.unmount();
+  expect(document.activeElement).toBe(other);
+  opener.remove();
+  other.remove();
 });

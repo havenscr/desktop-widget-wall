@@ -3,10 +3,13 @@ import { tip } from '../ui/HoverTip';
 import { useKeyLights } from './store';
 
 /**
- * A slider for a pointer: a 6 px track in a 26 px high hit area, a 20 px thumb. It shows the value
- * dragged to while the pointer works it, then keeps showing it until the write's answer is in, and
- * from then on only what the light reported. `down` is a light that does not answer: dim, grey thumb,
- * no value, nothing to drag.
+ * A slider for a pointer: a 6 px track in a 26 px high hit area, a 20 px thumb.
+ *
+ * The number beside it and its ARIA value are always what the light last reported. The thumb is a
+ * promise of that, and says where it was asked to go: it follows the pointer only while the button is
+ * down or a key is held, and stays at the requested place only while a write is out. On letting go
+ * with nothing in flight it goes to the reported value at once; otherwise when the write settles.
+ * `down` is a light that does not answer: dim, grey thumb, no value, nothing to drag.
  */
 export function Slider({
   label,
@@ -23,6 +26,7 @@ export function Slider({
 }: {
   label: string;
   icon: ReactNode;
+  /** What the light reported last. */
   value: number;
   min: number;
   max: number;
@@ -33,41 +37,50 @@ export function Slider({
   down?: boolean;
   tipText: string;
 }) {
-  const settled = useKeyLights((s) => s.settled);
-  const [held, setHeld] = useState<number | null>(null);
-  const dragging = useRef(false);
+  const busy = useKeyLights((s) => s.busy);
+  // Where the thumb was asked to go, and whether the pointer or a key is working it now.
+  const [asked, setAsked] = useState<number | null>(null);
+  const [active, setActive] = useState(false);
   const track = useRef<HTMLSpanElement>(null);
-  // A finished write lets go of the dragged value: from here the slider shows what the light reports.
-  useEffect(() => {
-    if (!dragging.current) setHeld(null);
-  }, [settled]);
 
-  const shown = Math.min(max, Math.max(min, held ?? value));
-  const frac = (shown - min) / (max - min);
-  const move = (v: number) => {
+  const pending = busy > 0;
+  const following = asked !== null && (active || pending);
+  const thumb = Math.min(max, Math.max(min, following ? (asked as number) : value));
+  const frac = (thumb - min) / (max - min);
+  const reported = Math.min(max, Math.max(min, value));
+
+  const request = (v: number) => {
     const next = Math.min(max, Math.max(min, Math.round(v / step) * step));
-    if (next === shown && held === null) return;
-    setHeld(next);
-    if (next !== held) onInput(next);
+    if (next === asked && following) return;
+    setAsked(next);
+    onInput(next);
   };
   const at = (e: PointerEvent) => {
     const r = track.current?.getBoundingClientRect();
     if (!r || r.width === 0) return;
-    move(min + Math.min(1, Math.max(0, (e.clientX - r.left) / r.width)) * (max - min));
+    request(min + Math.min(1, Math.max(0, (e.clientX - r.left) / r.width)) * (max - min));
   };
   const key = (e: KeyboardEvent) => {
     if (e.key === 'Home' || e.key === 'End') {
       e.preventDefault();
-      move(e.key === 'Home' ? min : max);
+      setActive(true);
+      request(e.key === 'Home' ? min : max);
       return;
     }
     const big = e.key === 'PageUp' || e.key === 'PageDown';
     const delta = e.key === 'ArrowRight' || e.key === 'ArrowUp' || e.key === 'PageUp' ? 1 : e.key === 'ArrowLeft' || e.key === 'ArrowDown' || e.key === 'PageDown' ? -1 : 0;
     if (delta === 0) return;
     e.preventDefault();
-    move(shown + delta * step * (big ? 10 : 1));
+    setActive(true);
+    request(thumb + delta * step * (big ? 10 : 1));
   };
+  // A new answer for a thumb nobody is moving and no write waits on: nothing to hold.
+  useEffect(() => {
+    if (!active && !pending) setAsked(null);
+  }, [active, pending]);
 
+  const hoverTip = tip(down ? `${label}: this light is not answering` : tipText);
+  const text = down ? 'not answering' : following && thumb !== reported ? `setting to ${format(thumb)}, the light reports ${format(reported)}` : format(reported);
   return (
     <div className={`st-srow${down ? ' down' : ''}`}>
       <span className="st-srow-ico" aria-hidden="true">
@@ -80,31 +93,34 @@ export function Slider({
         aria-label={label}
         aria-valuemin={min}
         aria-valuemax={max}
-        aria-valuenow={down ? undefined : shown}
-        aria-valuetext={down ? 'not answering' : format(shown)}
+        aria-valuenow={down ? undefined : reported}
+        aria-valuetext={text}
         aria-disabled={down || undefined}
         tabIndex={down ? -1 : 0}
         onPointerDown={(e) => {
           if (down || e.button !== 0) return;
           e.currentTarget.setPointerCapture?.(e.pointerId);
-          dragging.current = true;
+          setActive(true);
           at(e);
         }}
-        onPointerMove={(e) => dragging.current && at(e)}
-        onPointerUp={() => {
-          dragging.current = false;
-        }}
-        onPointerCancel={() => {
-          dragging.current = false;
-        }}
+        onPointerMove={(e) => active && at(e)}
+        onPointerUp={() => setActive(false)}
+        onPointerCancel={() => setActive(false)}
+        onLostPointerCapture={() => setActive(false)}
         onKeyDown={down ? undefined : key}
-        {...tip(down ? `${label}: this light is not answering` : tipText)}
+        // A key held down repeats: the thumb follows until it comes up, or focus leaves.
+        onKeyUp={() => setActive(false)}
+        {...hoverTip}
+        onBlur={() => {
+          setActive(false);
+          hoverTip.onBlur();
+        }}
       >
         <i className="st-tr" />
         {!warm && !down && <i className="st-fi" style={{ width: `${frac * 100}%` }} />}
         <i className="st-th" style={{ left: `${frac * 100}%` }} />
       </span>
-      <span className="st-val">{down ? '' : format(shown)}</span>
+      <span className="st-val">{down ? '' : format(reported)}</span>
     </div>
   );
 }

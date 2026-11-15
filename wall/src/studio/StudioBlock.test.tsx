@@ -191,3 +191,39 @@ it('reads when it opens and every 30 seconds, and not while the page is hidden',
   await flush();
   expect(reads.mock.calls.length).toBe(n + 1);
 });
+
+it('one side with no address is a setup to do: its own plain line, no warning tile, Open Tools beside Fine tune', async () => {
+  right = unset();
+  const { container } = await show();
+  expect(screen.getByText('The right key light is not set up. Add it in Tools.')).toBeTruthy();
+  expect(screen.queryByText(/not answering/)).toBeNull();
+  expect(container.querySelector('.st-tg.warn')).toBeNull();
+  expect(container.querySelector('.st-sum.amber')).toBeNull();
+  expect(screen.getByText('Fine tune')).toBeTruthy();
+  fireEvent.click(screen.getByText('Open Tools'));
+  expect(useToolsStore.getState().focus).toBe('keylights');
+  // The light that is set up still switches.
+  fireEvent.click(screen.getByRole('switch'));
+  await flush();
+  expect(sent[0]).toEqual({ side: 'left', on: false });
+});
+
+it('only one light set up and it does not answer: the block names that light', async () => {
+  right = unset();
+  left = silent();
+  await show();
+  expect(screen.getByText('The left key light is not answering. Check it is on and on this network.')).toBeTruthy();
+  // The tile says it too, once, and Check again is there.
+  expect(screen.getAllByText('The left key light is not answering')).toHaveLength(1);
+  expect(screen.queryByText('Neither light answered', { exact: false })).toBeNull();
+  expect(screen.getByText('Check again')).toBeTruthy();
+});
+
+it('a write the lights answered with "busy" shows no line on the block', async () => {
+  await show();
+  mocks.set('wall2_keylights_set', () => ({ left: 'busy', right: 'busy' }));
+  fireEvent.click(screen.getByRole('switch'));
+  await flush();
+  expect(screen.queryByText(/did not take/)).toBeNull();
+  expect(screen.getByText('Key lights 60%, 4400 K')).toBeTruthy();
+});

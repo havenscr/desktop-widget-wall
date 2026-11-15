@@ -12,8 +12,11 @@ export type Side = 'left' | 'right';
 export type Target = Side | 'both';
 
 /** The fixed words the native side answers with. */
-export const WORDS = ['not-set-up', 'bad-address', 'no-answer', 'timeout', 'failed', 'too-big', 'other-model', 'refused'] as const;
+export const WORDS = ['not-set-up', 'bad-address', 'no-answer', 'timeout', 'failed', 'too-big', 'other-model', 'refused', 'slow-down', 'busy'] as const;
 export type Word = (typeof WORDS)[number];
+
+/** Words that say "not now", not "broken": nothing on the block, and the next read corrects it. */
+export const isQuiet = (w: unknown): boolean => w === 'slow-down' || w === 'busy';
 
 /** What a light reports: percent 3 to 100, kelvin to the nearest 50. */
 export interface Light {
@@ -92,9 +95,9 @@ export const directBackend: KeyLightBackend = {
 };
 
 /** Which saved sides there are: `{ left, right }`, true when an address is saved. Never the address. */
-export async function readStatus(): Promise<{ left: boolean; right: boolean }> {
-  const raw = (await invoke('wall2_keylights_status')) as { left?: { set?: unknown }; right?: { set?: unknown } } | null;
-  return { left: raw?.left?.set === true, right: raw?.right?.set === true };
+export async function readStatus(): Promise<{ left: boolean; right: boolean; unreadable: boolean }> {
+  const raw = (await invoke('wall2_keylights_status')) as { left?: { set?: unknown }; right?: { set?: unknown }; unreadable?: unknown } | null;
+  return { left: raw?.left?.set === true, right: raw?.right?.set === true, unreadable: raw?.unreadable === true };
 }
 
 /**

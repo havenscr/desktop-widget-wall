@@ -92,7 +92,7 @@ describe('reading', () => {
     const w = world();
     await setUp(w);
     const s = useKeyLights.getState();
-    expect(s.status).toEqual({ left: true, right: true });
+    expect(s.status).toEqual({ left: true, right: true, unreadable: false });
     expect(s.left).toEqual(L(true, 60, 4400));
     expect(s.right).toEqual(L(true, 60, 4400));
   });
@@ -240,5 +240,202 @@ describe('Linked and the drawer', () => {
     expect(useKeyLights.getState().linked).toBe(false);
     useKeyLights.getState().setDrawer(true);
     expect(useKeyLights.getState().drawer).toBe(true);
+  });
+});
+
+/** A promise to answer by hand. */
+const later = <T,>() => {
+  let resolve!: (v: T) => void;
+  const promise = new Promise<T>((r) => (resolve = r));
+  return { promise, resolve };
+};
+
+describe('which answer lands', () => {
+  it('a slow poll that began before a write never puts the old numbers back over its read back', async () => {
+    const w = world();
+    await setUp(w);
+    const poll = later<Pair>();
+    let reads = 0;
+    setBackend({
+      read: () => (reads++ === 0 ? poll.promise : w.backend.read()),
+      set: w.backend.set,
+    });
+    const slow = useKeyLights.getState().read();
+    await useKeyLights.getState().set('both', { brightness: 80 });
+    expect(useKeyLights.getState().left).toEqual(L(true, 80, 4400));
+    // The poll answers last, with what the lights said before the write.
+    poll.resolve({ left: L(true, 60, 4400), right: L(true, 60, 4400) });
+    await slow;
+    expect(useKeyLights.getState().left).toEqual(L(true, 80, 4400));
+    expect(useKeyLights.getState().right).toEqual(L(true, 80, 4400));
+  });
+
+  it('a read that began while a write was out cannot hide the write own answer, which comes after it', async () => {
+    const w = world();
+    await setUp(w);
+    const answer = later<Pair>();
+    setBackend({ read: w.backend.read, set: () => answer.promise });
+    const writing = useKeyLights.getState().set('left', { brightness: 80 });
+    await flush();
+    await useKeyLights.getState().read();
+    answer.resolve({ left: L(true, 80, 4400), right: null });
+    await writing;
+    expect(useKeyLights.getState().left).toEqual(L(true, 80, 4400));
+  });
+
+  it.each([
+    ['the left answer first', true],
+    ['the both answer first', false],
+  ])('a both write and a left write that overlap: the older answer never lands after the newer one (%s)', async (_name, leftFirst) => {
+    const w = world();
+    await setUp(w);
+    const both = later<Pair>();
+    const only = later<Pair>();
+    setBackend({ read: w.backend.read, set: (target) => (target === 'both' ? both.promise : only.promise) });
+    const a = useKeyLights.getState().set('both', { brightness: 10 });
+    const b = useKeyLights.getState().set('left', { brightness: 20 });
+    await flush();
+    const answerBoth = () => both.resolve({ left: L(true, 10, 4400), right: L(true, 10, 4400) });
+    const answerLeft = () => only.resolve({ left: L(true, 20, 4400), right: null });
+    if (leftFirst) {
+      answerLeft();
+      await flush();
+      answerBoth();
+    } else {
+      answerBoth();
+      await flush();
+      answerLeft();
+    }
+    await Promise.all([a, b]);
+    // The left write began after the both write: left shows 20 whatever the order; right was only in the both write.
+    expect(useKeyLights.getState().left).toEqual(L(true, 20, 4400));
+    expect(useKeyLights.getState().right).toEqual(L(true, 10, 4400));
+  });
+
+  it('answers that only say "not now" never replace what is shown', async () => {
+    const w = world();
+    await setUp(w);
+    setBackend({ read: async () => ({ left: 'slow-down', right: 'busy' }), set: w.backend.set });
+    await useKeyLights.getState().read();
+    expect(useKeyLights.getState().left).toEqual(L(true, 60, 4400));
+    expect(useKeyLights.getState().right).toEqual(L(true, 60, 4400));
+  });
+});
+
+describe('a write the light accepted but did not take', () => {
+  it('says so when the read back is still what it was and not what was asked, and keeps the reported number', async () => {
+    const w = world();
+    await setUp(w);
+    w.stuck.add('left');
+    await useKeyLights.getState().set('both', { brightness: 80 });
+    const s = useKeyLights.getState();
+    expect(s.note).toBe('The left key light did not take that change');
+    expect(s.left).toEqual(L(true, 60, 4400));
+    expect(s.right).toEqual(L(true, 80, 4400));
+  });
+
+  it('says so once for both lights, and for warmth and for on and off', async () => {
+    const w = world();
+    await setUp(w);
+    w.stuck.add('left');
+    w.stuck.add('right');
+    await useKeyLights.getState().set('both', { kelvin: 6000 });
+    expect(useKeyLights.getState().note).toBe('The key lights did not take that change');
+    await vi.advanceTimersByTimeAsync(NOTE_MS + 1);
+    await useKeyLights.getState().set('both', { on: false });
+    expect(useKeyLights.getState().note).toBe('The key lights did not take that change');
+  });
+
+  it('a read back that moved to within the light\'s own rounding is a success and shows the reported number', async () => {
+    const w = world();
+    await setUp(w);
+    const rounding: KeyLightBackend = {
+      read: w.backend.read,
+      set: async (_t, p) => ({ left: L(true, (p.brightness ?? 60) - 2, (p.kelvin ?? 4400) + 100), right: null }),
+    };
+    setBackend(rounding);
+    await useKeyLights.getState().set('left', { brightness: 80, kelvin: 5000 });
+    expect(useKeyLights.getState().note).toBeNull();
+    expect(useKeyLights.getState().left).toEqual(L(true, 78, 5100));
+  });
+
+  it('a read back that moved part of the way is not called a refusal', async () => {
+    const w = world();
+    await setUp(w);
+    setBackend({ read: w.backend.read, set: async () => ({ left: L(true, 70, 4400), right: null }) });
+    await useKeyLights.getState().set('left', { brightness: 90 });
+    expect(useKeyLights.getState().note).toBeNull();
+    expect(useKeyLights.getState().left).toEqual(L(true, 70, 4400));
+  });
+
+  it('asking for what the light already has is not a refusal', async () => {
+    const w = world();
+    await setUp(w);
+    w.stuck.add('left');
+    await useKeyLights.getState().set('left', { brightness: 61 });
+    expect(useKeyLights.getState().note).toBeNull();
+  });
+
+  it('judges the last value of a burst against the value from before the burst', async () => {
+    const w = world();
+    await setUp(w);
+    w.stuck.add('left');
+    const release = w.hold();
+    const first = useKeyLights.getState().set('left', { brightness: 70 });
+    void useKeyLights.getState().set('left', { brightness: 90 });
+    release();
+    await first;
+    await flush();
+    expect(useKeyLights.getState().note).toBe('The left key light did not take that change');
+  });
+
+  it('the follow-up read after a failed write still runs while another target is busy, so the line is not lost', async () => {
+    const w = world();
+    await setUp(w);
+    const right = later<Pair>();
+    setBackend({
+      read: w.backend.read,
+      set: async (target) => (target === 'right' ? right.promise : { left: 'failed', right: null }),
+    });
+    const busyRight = useKeyLights.getState().set('right', { brightness: 70 });
+    await flush();
+    await useKeyLights.getState().set('left', { brightness: 90 });
+    expect(useKeyLights.getState().note).toBe('The left key light did not take that change');
+    right.resolve({ left: null, right: L(true, 70, 4400) });
+    await busyRight;
+  });
+
+  it('a second line replaces the first and the five seconds count from the second', async () => {
+    const w = world();
+    await setUp(w);
+    w.stuck.add('left');
+    await useKeyLights.getState().set('left', { brightness: 80 });
+    await vi.advanceTimersByTimeAsync(3000);
+    await useKeyLights.getState().set('left', { brightness: 85 });
+    // 5.5 s after the first line: its timer would have cleared this one.
+    await vi.advanceTimersByTimeAsync(2500);
+    expect(useKeyLights.getState().note).toBe('The left key light did not take that change');
+    await vi.advanceTimersByTimeAsync(2600);
+    expect(useKeyLights.getState().note).toBeNull();
+  });
+
+  it('"busy" and "slow-down" answers raise no line', async () => {
+    const w = world();
+    await setUp(w);
+    setBackend({ read: w.backend.read, set: async () => ({ left: 'busy', right: 'slow-down' }) });
+    await useKeyLights.getState().set('both', { brightness: 80 });
+    expect(useKeyLights.getState().note).toBeNull();
+  });
+});
+
+describe('the drawer follows the place', () => {
+  it('closes when the place changes, and stays open while it does not', async () => {
+    const { usePlaceStore } = await import('../state/places');
+    usePlaceStore.setState({ active: 'onair' });
+    useKeyLights.getState().setDrawer(true);
+    usePlaceStore.setState({ active: 'onair' });
+    expect(useKeyLights.getState().drawer).toBe(true);
+    usePlaceStore.setState({ active: 'work' });
+    expect(useKeyLights.getState().drawer).toBe(false);
   });
 });

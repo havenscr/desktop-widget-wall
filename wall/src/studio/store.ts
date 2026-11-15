@@ -1,6 +1,7 @@
 import { create } from 'zustand';
-import { chooseBackend, isLight, readStatus, wordOf, type KeyLightBackend, type Pair, type Patch, type Side, type Target, type Word } from './keyLights';
-import { SIDES, sideReading, type Snapshot } from './model';
+import { usePlaceStore } from '../state/places';
+import { chooseBackend, isLight, isQuiet, readStatus, wordOf, type KeyLightBackend, type Light, type Pair, type Patch, type Reading, type Side, type Target, type Word } from './keyLights';
+import { notTaken, SIDES, sideReading, type Snapshot } from './model';
 
 /** The amber line after a write a light did not take stays this long. */
 export const NOTE_MS = 5000;
@@ -16,7 +17,7 @@ interface KeyLightState extends Snapshot {
   note: string | null;
   /** Writes in flight or waiting. */
   busy: number;
-  /** Counts finished runs of writes (the answer is in); a slider lets go of the value it held then. */
+  /** Counts finished runs of writes (the answer is in). */
   settled: number;
   setDrawer: (open: boolean) => void;
   setLinked: (linked: boolean) => void;
@@ -29,10 +30,16 @@ interface KeyLightState extends Snapshot {
 }
 
 let backend: KeyLightBackend = chooseBackend();
-let readSeq = 0;
 let noteTimer: ReturnType<typeof setTimeout> | undefined;
 const waiting = new Map<Target, Patch>();
 const running = new Set<Target>();
+/**
+ * Which answer may land. Per side, a read answers only if no newer read, write start or write answer
+ * has happened since it began (`readGen`); a write answers only if no newer write for that side has
+ * started (`writeGen`). So an older answer never lands after a newer one, whichever target it came from.
+ */
+const readGen: Record<Side, number> = { left: 0, right: 0 };
+const writeGen: Record<Side, number> = { left: 0, right: 0 };
 
 /** Tests only: another back end. */
 export function setBackend(b: KeyLightBackend): void {
@@ -40,14 +47,9 @@ export function setBackend(b: KeyLightBackend): void {
 }
 
 const fresh = (): Snapshot => ({ status: null, left: null, right: null });
+const sidesOf = (target: Target): readonly Side[] => (target === 'both' ? SIDES : [target]);
 
 export const useKeyLights = create<KeyLightState>((set, get) => {
-  const apply = (pair: Pair) => {
-    const next: Partial<Snapshot> = {};
-    if (pair.left !== null) next.left = pair.left;
-    if (pair.right !== null) next.right = pair.right;
-    set(next);
-  };
   const raise = (text: string) => {
     clearTimeout(noteTimer);
     set({ note: text });
@@ -58,38 +60,96 @@ export const useKeyLights = create<KeyLightState>((set, get) => {
     right: target === 'left' ? null : word,
   });
 
+  /** Both lights from the back end. Applies each side only while it is still the newest answer; always returns what was read. */
+  const fetchRead = async (): Promise<Pair | null> => {
+    const status = get().status;
+    if (status === null || status === 'failed') return null;
+    if (!status.left && !status.right) {
+      set({ left: null, right: null });
+      return null;
+    }
+    const token = { left: ++readGen.left, right: ++readGen.right };
+    let pair: Pair;
+    try {
+      pair = await backend.read();
+    } catch (e) {
+      const w = wordOf(e);
+      pair = { left: status.left ? w : null, right: status.right ? w : null };
+    }
+    const next: Partial<Snapshot> = {};
+    for (const side of SIDES) {
+      const r: Reading | null = pair[side];
+      // A word that only says "not now" never replaces what is shown; the next read corrects it.
+      if (r !== null && !isQuiet(r) && readGen[side] === token[side]) next[side] = r;
+    }
+    set(next);
+    return pair;
+  };
+
   /** One run for a target: send what is waiting, again while more arrived, then show what the lights say. */
   const drain = async (target: Target) => {
     running.add(target);
+    const sides = sidesOf(target);
+    const state = get();
+    const before: Partial<Record<Side, Light>> = {};
+    for (const side of sides) {
+      const r = sideReading(state, side);
+      if (isLight(r)) before[side] = r;
+    }
+    const asked: Patch = {};
     const failedSides = new Set<Side>();
+    let last: Pair = { left: null, right: null };
     try {
       for (let patch = waiting.get(target); patch; patch = waiting.get(target)) {
         waiting.delete(target);
+        Object.assign(asked, patch);
+        const token = { left: 0, right: 0 };
+        for (const side of sides) {
+          token[side] = ++writeGen[side];
+          // Reads that began before this write cannot know its result.
+          readGen[side]++;
+        }
         let pair: Pair;
         try {
           pair = await backend.set(target, patch);
         } catch (e) {
           pair = failedPair(target, wordOf(e));
         }
-        for (const side of SIDES) {
+        last = pair;
+        const next: Partial<Snapshot> = {};
+        for (const side of sides) {
           const r = pair[side];
-          if (r !== null && !isLight(r)) failedSides.add(side);
-          if (r !== null && isLight(r)) failedSides.delete(side);
+          if (r === null || isQuiet(r)) continue;
+          if (isLight(r)) {
+            failedSides.delete(side);
+            // Only the newest write for a side shows its answer.
+            if (writeGen[side] === token[side]) {
+              next[side] = r;
+              readGen[side]++;
+            }
+          } else {
+            failedSides.add(side);
+          }
         }
-        // A light that took the write shows what it reports; one that did not is settled by the read below.
-        const ok: Pair = { left: isLight(pair.left) ? pair.left : null, right: isLight(pair.right) ? pair.right : null };
-        apply(ok);
+        set(next);
       }
     } finally {
       running.delete(target);
     }
-    if (failedSides.size > 0) {
-      await get().read();
-      // Still answering: the write failed and the slider springs back to what the light reports.
-      const stillThere = [...failedSides].filter((side) => isLight(sideReading(get(), side)));
-      if (stillThere.length === 2) raise('The key lights did not take that change');
-      else if (stillThere.length === 1) raise(`The ${stillThere[0]} key light did not take that change`);
+    // A write the light took in words but not in fact: the read back still equals what it was before.
+    const refused = new Set<Side>();
+    for (const side of sides) {
+      const r = last[side];
+      const b = before[side];
+      if (isLight(r) && b && !failedSides.has(side) && notTaken(b, asked, r)) refused.add(side);
     }
+    if (failedSides.size > 0) {
+      // The follow-up read still runs when another target is busy, and what it read decides the line.
+      const pair = await fetchRead();
+      for (const side of failedSides) if (isLight(pair?.[side])) refused.add(side);
+    }
+    if (refused.size === 2) raise('The key lights did not take that change');
+    else if (refused.size === 1) raise(`The ${[...refused][0]} key light did not take that change`);
     set((s) => ({ busy: Math.max(0, s.busy - 1), settled: s.settled + 1 }));
   };
 
@@ -112,23 +172,7 @@ export const useKeyLights = create<KeyLightState>((set, get) => {
       await get().read();
     },
     async read() {
-      const status = get().status;
-      if (status === null || status === 'failed') return;
-      if (!status.left && !status.right) {
-        set({ left: null, right: null });
-        return;
-      }
-      const seq = ++readSeq;
-      let pair: Pair;
-      try {
-        pair = await backend.read();
-      } catch (e) {
-        const w = wordOf(e);
-        pair = { left: status.left ? w : null, right: status.right ? w : null };
-      }
-      // An older read never replaces a newer answer, and nothing replaces a value a write is still working on.
-      if (seq !== readSeq || running.size > 0) return;
-      apply(pair);
+      await fetchRead();
     },
     async set(target, patch) {
       const merged = { ...waiting.get(target), ...patch };
@@ -140,12 +184,17 @@ export const useKeyLights = create<KeyLightState>((set, get) => {
   };
 });
 
+// Leaving the place a drawer was opened on closes it: its host is a different one on each place.
+usePlaceStore.subscribe((s, prev) => {
+  if (s.active !== prev.active && useKeyLights.getState().drawer) useKeyLights.getState().setDrawer(false);
+});
+
 /** Tests only: back to nothing known. */
 export function resetKeyLights(): void {
   clearTimeout(noteTimer);
   waiting.clear();
   running.clear();
-  readSeq = 0;
+  readGen.left = readGen.right = writeGen.left = writeGen.right = 0;
   backend = chooseBackend();
   useKeyLights.setState({ ...fresh(), drawer: false, linked: true, note: null, busy: 0, settled: 0 });
 }

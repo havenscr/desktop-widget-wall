@@ -374,6 +374,11 @@ button.st-tg:hover {
 .st-mismatch {
   margin-top: 6px;
 }
+.st-lone {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
 .st-mismatch {
   display: flex;
   align-items: center;
@@ -424,7 +429,7 @@ button.st-tg:hover {
 .kl-stack {
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 10px;
   min-width: 0;
 }
 .kl-top .tools-k {
@@ -439,8 +444,8 @@ button.st-tg:hover {
 .kl-row {
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  padding: 5px 0;
+  gap: 2px;
+  padding: 3px 0;
   border-top: 1px solid var(--line);
 }
 .kl-row:first-child {
@@ -454,12 +459,20 @@ button.st-tg:hover {
 }
 .kl-name {
   flex: none;
-  width: 46px;
   font: 600 18px/1.2 var(--body);
 }
-.kl-head .tools-line {
+.kl-head .kl-name {
   flex: 1;
-  min-width: 0;
+}
+.kl-state {
+  white-space: normal;
+  overflow: visible;
+  line-height: 1.25;
+}
+.kl-unreadable {
+  padding-bottom: 6px;
+  white-space: normal;
+  line-height: 1.25;
 }
 .tools-btn.kl-btn {
   padding: 0 10px;

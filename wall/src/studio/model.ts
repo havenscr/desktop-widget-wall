@@ -3,7 +3,7 @@ import { isLight, type Light, type Reading, type Side, type Word } from './keyLi
 /** What the page knows about the two lights. A side not read yet is null. */
 export interface Snapshot {
   /** Which sides have a saved address; null until the first answer, `failed` when it could not be asked. */
-  status: { left: boolean; right: boolean } | null | 'failed';
+  status: { left: boolean; right: boolean; unreadable?: boolean } | null | 'failed';
   left: Reading | null;
   right: Reading | null;
 }
@@ -91,8 +91,24 @@ export function wordLine(side: Side, word: Word): string {
   }
 }
 
+/** The sides that have an address saved and do not answer (a side with no address is not one of them). */
+export function savedDown(s: Snapshot): { side: Side; word: Word }[] {
+  const out: { side: Side; word: Word }[] = [];
+  for (const side of SIDES) {
+    const w = downWord(s, side);
+    if (w !== null && w !== 'not-set-up') out.push({ side, word: w });
+  }
+  return out;
+}
+
+/** Exactly one light is set up and it answers: the other has no address. */
+export const singleLight = (s: Snapshot): boolean => working(s).length === 1 && SIDES.some((side) => downWord(s, side) === 'not-set-up');
+
 /** What neither light answering says: the same word on both sides names the cause when it is a known one. */
 export function noneTitle(s: Snapshot): string {
+  const down = savedDown(s);
+  // Only one light is set up and it fails: name it.
+  if (down.length === 1) return wordLine(down[0].side, down[0].word);
   const a = downWord(s, 'left');
   const b = downWord(s, 'right');
   if (a === 'other-model' && b === 'other-model') return 'Key lights answer differently than expected';
@@ -106,12 +122,16 @@ export function summaryLine(s: Snapshot): { text: string; tone: 'plain' | 'amber
   if (v === 'unavailable') return { text: 'Key lights are not available in this build', tone: 'plain' };
   if (v === 'unset') return { text: 'Key lights: type their addresses in Tools', tone: 'plain' };
   if (v === 'none') {
+    const down = savedDown(s);
+    if (down.length === 1) return { text: `${wordLine(down[0].side, down[0].word)}. Check it is on and on this network.`, tone: 'amber' };
     const other = downWord(s, 'left') === 'other-model' && downWord(s, 'right') === 'other-model';
     return { text: other ? 'Both lights answered, but not in a way the wall knows.' : 'Neither light answered. Check they are on and on this network.', tone: 'amber' };
   }
   const w = working(s);
   if (v === 'one') {
     const down = SIDES.find((side) => downWord(s, side) !== null) ?? 'right';
+    // A side with no address is not a fault: it is a setup left to do.
+    if (downWord(s, down) === 'not-set-up') return { text: `The ${down} key light is not set up. Add it in Tools.`, tone: 'plain' };
     return { text: `${wordLine(down, downWord(s, down) ?? 'no-answer')}. The other one works.`, tone: 'amber' };
   }
   if (!anyOn(s)) return { text: 'Key lights are off', tone: 'plain' };
@@ -120,17 +140,35 @@ export function summaryLine(s: Snapshot): { text: string; tone: 'plain' | 'amber
 }
 
 /** The Work chip's words, or null when the chip is hidden (the key lights are not set up). */
-export function chipWord(s: Snapshot): string | null {
+export function chipWord(s: Snapshot, compact = false): string | null {
   const v = viewOf(s);
   if (v === 'checking' || v === 'unavailable' || v === 'unset') return null;
   const w = working(s);
-  if (w.length === 0) return 'Lights: key lights not answering';
-  if (!anyOn(s)) return 'Lights: key lights off';
-  if (w.length === 2 && !mismatched(s)) return `Lights: key lights ${w[0].light.brightness}%`;
-  return 'Lights: key lights on';
+  // Compact, the chip gives way first when the header is tight: "Lights 60%", "Lights on", "Lights off".
+  const head = compact ? 'Lights' : 'Lights: key lights';
+  if (w.length === 0) return `${head} not answering`;
+  if (!anyOn(s)) return `${head} off`;
+  if (w.length === 2 && !mismatched(s)) return `${head} ${w[0].light.brightness}%`;
+  return `${head} on`;
 }
 
 /** A patch for a slider move: it turns an off light on, as the light's own app does. */
 export function withOn<T extends { brightness?: number; kelvin?: number }>(patch: T, targets: { light: Light }[]): T & { on?: boolean } {
   return targets.some((t) => !t.light.on) ? { ...patch, on: true } : patch;
+}
+
+/** How far the light's own rounding may sit from what was asked and still count as taken. */
+export const BRI_TOLERANCE = 2;
+export const KELVIN_TOLERANCE = 100;
+
+/**
+ * A write the light accepted but did not take: for some field that was asked for, the read back
+ * still equals the value from before the write and is not within the light's rounding of the request.
+ * A read back that moved part of the way, or to within rounding of the request, is a success.
+ */
+export function notTaken(before: Light, asked: { on?: boolean; brightness?: number; kelvin?: number }, after: Light): boolean {
+  if (asked.on !== undefined && after.on === before.on && after.on !== asked.on) return true;
+  if (asked.brightness !== undefined && after.brightness === before.brightness && Math.abs(after.brightness - asked.brightness) > BRI_TOLERANCE) return true;
+  if (asked.kelvin !== undefined && after.kelvin === before.kelvin && Math.abs(after.kelvin - asked.kelvin) > KELVIN_TOLERANCE) return true;
+  return false;
 }

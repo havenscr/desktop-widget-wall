@@ -13,6 +13,9 @@ export function saveError(word: Word): string {
       return 'That is not an address on your own network. Use four numbers like 192.168.x.x.';
     case 'refused':
       return 'This window cannot change the key lights.';
+    case 'slow-down':
+    case 'busy':
+      return 'Too many tries. Wait a minute, then try again.';
     default:
       return 'Could not save the address.';
   }
@@ -27,26 +30,14 @@ export function testLine(side: Side, word: Word | null): string {
     case 'timeout':
       return `${who}: no answer`;
     case 'other-model':
-      return `${who}: answered, but not the way the wall expects`;
+      return `${who}: different model`;
     case 'not-set-up':
-      return `${who}: no address saved yet`;
+      return `${who}: no address saved`;
+    case 'slow-down':
+    case 'busy':
+      return `${who}: try again soon`;
     default:
-      return `${who}: the answer could not be used`;
-  }
-}
-
-/** The row's own few words for a failed test (the line under the row says the whole sentence). */
-function shortWord(word: Word): string {
-  switch (word) {
-    case 'no-answer':
-    case 'timeout':
-      return 'No answer';
-    case 'other-model':
-      return 'Different answer';
-    case 'not-set-up':
-      return 'Not set up';
-    default:
-      return 'Bad answer';
+      return `${who}: bad answer`;
   }
 }
 
@@ -61,6 +52,7 @@ function Row({ side, saved, editing, setEditing, onChanged }: { side: Side; save
   const [value, setValue] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [errorQuiet, setErrorQuiet] = useState(false);
   const [result, setResult] = useState<Result | null>(null);
   const mounted = useRef(true);
   const field = useRef<HTMLInputElement>(null);
@@ -85,6 +77,7 @@ function Row({ side, saved, editing, setEditing, onChanged }: { side: Side; save
     if (!ready || busy) return;
     setBusy(true);
     setError(null);
+    setErrorQuiet(false);
     invoke('wall2_keylights_set_address', { side, address: value.trim() }).then(
       () => {
         if (!mounted.current) return;
@@ -98,7 +91,9 @@ function Row({ side, saved, editing, setEditing, onChanged }: { side: Side; save
         if (!mounted.current) return;
         setBusy(false);
         setValue('');
-        setError(saveError(wordOf(e)));
+        const w = wordOf(e);
+        setErrorQuiet(w === 'slow-down' || w === 'busy');
+        setError(saveError(w));
       },
     );
   };
@@ -141,16 +136,14 @@ function Row({ side, saved, editing, setEditing, onChanged }: { side: Side; save
     close();
   };
 
-  const state = !saved ? 'Not set up' : result === null ? 'Saved' : result.word === null ? 'Answered' : shortWord(result.word);
-  const full = !saved ? undefined : result ? (result.word === null ? `${testLine(side, null)} at ${clockText(result.at)}` : testLine(side, result.word)) : `The ${side} key light's address is saved on this PC. It is never shown again.`;
-  const bad = saved && result !== null && result.word !== null;
+  // The row says it in full: Saved, "Left key light answered at 9:42 AM", or what went wrong.
+  const state = !saved ? 'Not set up' : result === null ? 'Saved' : result.word === null ? `${NAME[side]} key light answered at ${clockText(result.at)}` : testLine(side, result.word);
+  const quiet = result !== null && (result.word === 'slow-down' || result.word === 'busy');
+  const bad = saved && result !== null && result.word !== null && !quiet;
   return (
     <li className="kl-row" data-side={side} data-saved={saved ? '' : undefined} onKeyDown={editing ? escape : undefined}>
       <div className="kl-head">
         <span className="kl-name">{NAME[side]}</span>
-        <span className={bad ? 'tools-line bad one' : 'tools-line one'} role="status" {...(full ? hover(full) : {})}>
-          {state}
-        </span>
         {saved && !editing && (
           <button type="button" className="tools-btn kl-btn" disabled={busy} onClick={test} {...hover('Reads the light once and says whether it answered')}>
             Test
@@ -161,12 +154,17 @@ function Row({ side, saved, editing, setEditing, onChanged }: { side: Side; save
             {saved ? 'Change' : 'Set up'}
           </button>
         )}
-        {editing && saved && (
+        {saved && (
           <button type="button" className="tools-btn kl-btn" disabled={busy} onClick={forget} {...hover('Removes the saved address from this PC. The light goes back to Not set up.')}>
             Forget
           </button>
         )}
       </div>
+      {!editing && (
+        <div className={bad ? 'tools-line bad kl-state' : 'tools-line kl-state'} role="status" {...(saved && result === null ? hover(`The ${side} key light's address is saved on this PC. It is never shown again.`) : {})}>
+          {state}
+        </div>
+      )}
       {editing && (
         <div className="kl-form">
           <input
@@ -194,9 +192,9 @@ function Row({ side, saved, editing, setEditing, onChanged }: { side: Side; save
           </button>
         </div>
       )}
-      {(error || (bad && !editing)) && (
-        <div className="tools-note bad kl-note" role="alert">
-          {error ?? full}
+      {error && (
+        <div className={errorQuiet ? 'tools-note kl-note' : 'tools-note bad kl-note'} role="alert">
+          {error}
         </div>
       )}
     </li>
@@ -211,6 +209,7 @@ export function KeyLights({ ringed = false }: { ringed?: boolean }) {
   }, []);
   const refresh = () => void useKeyLights.getState().refresh();
   const set = status === null || status === 'failed' ? { left: false, right: false } : status;
+  const unreadable = status !== null && status !== 'failed' && status.unreadable === true;
   // One address form at a time: opening the second closes the first.
   const [editing, setEditing] = useState<Side | null>(null);
   return (
@@ -221,6 +220,11 @@ export function KeyLights({ ringed = false }: { ringed?: boolean }) {
         </span>
         <span className="tools-faint">on this PC only</span>
       </div>
+      {unreadable && (
+        <div className="tools-note bad kl-note kl-unreadable" role="alert">
+          The saved addresses could not be read. Type them again.
+        </div>
+      )}
       <ul className="tools-list" aria-label="Key lights">
         {(['left', 'right'] as const).map((side) => (
           <Row key={side} side={side} saved={set[side]} editing={editing === side} setEditing={(on) => setEditing(on ? side : editing === side ? null : editing)} onChanged={refresh} />

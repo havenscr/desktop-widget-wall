@@ -6,7 +6,7 @@ import { knob } from './long';
  * value is invented. The addresses a Tools form saves are checked loosely and then dropped: the
  * mock keeps only which sides are saved, as the native side's status does.
  *
- *   ?keys2=none|both|off|left-silent|right-silent|neither|other-model|mismatch|writefail
+ *   ?keys2=none|both|off|left-silent|right-silent|neither|other-model|mismatch|writefail|right-unset|right-unset-silent|unreadable
  *
  *   none          no address saved for either light (the day-one state, and the default)
  *   both          both saved, both on at 60 percent, 4400 K
@@ -16,6 +16,9 @@ import { knob } from './long';
  *   other-model   both saved, both answer in a shape the wall does not know
  *   mismatch      left 60 percent at 4400 K, right 45 percent at 4700 K
  *   writefail     both answer reads, every write fails and the lights keep their values
+ *   stuck         both answer, every write is accepted and the lights keep their values
+ *   right-unset   only the left light has an address, and it works (right-unset-silent: it does not answer)
+ *   unreadable    the saved addresses could not be read: nothing set, and Tools says so until an address is saved
  */
 
 interface Light {
@@ -30,26 +33,34 @@ const good = (light: Light): Cell => ({ set: true, light, word: null });
 const silent = (word = 'no-answer'): Cell => ({ set: true, light: on(), word });
 const unset = (): Cell => ({ set: false, light: null, word: null });
 
-function start(kind: string | null): { left: Cell; right: Cell; failWrites: boolean } {
+function start(kind: string | null): { left: Cell; right: Cell; failWrites: boolean; stuck: boolean; unreadable: boolean } {
   switch (kind) {
     case 'both':
-      return { left: good(on()), right: good(on()), failWrites: false };
+      return { left: good(on()), right: good(on()), failWrites: false, stuck: false, unreadable: false };
     case 'off':
-      return { left: good({ on: false, brightness: 40, kelvin: 3800 }), right: good({ on: false, brightness: 40, kelvin: 3800 }), failWrites: false };
+      return { left: good({ on: false, brightness: 40, kelvin: 3800 }), right: good({ on: false, brightness: 40, kelvin: 3800 }), failWrites: false, stuck: false, unreadable: false };
     case 'left-silent':
-      return { left: silent(), right: good(on()), failWrites: false };
+      return { left: silent(), right: good(on()), failWrites: false, stuck: false, unreadable: false };
     case 'right-silent':
-      return { left: good(on()), right: silent(), failWrites: false };
+      return { left: good(on()), right: silent(), failWrites: false, stuck: false, unreadable: false };
     case 'neither':
-      return { left: silent(), right: silent('timeout'), failWrites: false };
+      return { left: silent(), right: silent('timeout'), failWrites: false, stuck: false, unreadable: false };
     case 'other-model':
-      return { left: silent('other-model'), right: silent('other-model'), failWrites: false };
+      return { left: silent('other-model'), right: silent('other-model'), failWrites: false, stuck: false, unreadable: false };
     case 'mismatch':
-      return { left: good(on(60, 4400)), right: good(on(45, 4700)), failWrites: false };
+      return { left: good(on(60, 4400)), right: good(on(45, 4700)), failWrites: false, stuck: false, unreadable: false };
+    case 'stuck':
+      return { left: good(on()), right: good(on()), failWrites: false, stuck: true, unreadable: false };
+    case 'right-unset':
+      return { left: good(on()), right: unset(), failWrites: false, stuck: false, unreadable: false };
+    case 'right-unset-silent':
+      return { left: silent(), right: unset(), failWrites: false, stuck: false, unreadable: false };
+    case 'unreadable':
+      return { left: unset(), right: unset(), failWrites: false, stuck: false, unreadable: true };
     case 'writefail':
-      return { left: good(on()), right: good(on()), failWrites: true };
+      return { left: good(on()), right: good(on()), failWrites: true, stuck: false, unreadable: false };
     default:
-      return { left: unset(), right: unset(), failWrites: false };
+      return { left: unset(), right: unset(), failWrites: false, stuck: false, unreadable: false };
   }
 }
 
@@ -70,12 +81,13 @@ export function registerStudioMocks(): void {
     return side;
   };
 
-  mocks.set('wall2_keylights_status', () => ({ left: { set: state.left.set }, right: { set: state.right.set } }));
+  mocks.set('wall2_keylights_status', () => ({ left: { set: state.left.set }, right: { set: state.right.set }, unreadable: state.unreadable }));
   mocks.set('wall2_keylights_read', () => ({ left: reading(state.left), right: reading(state.right) }));
   mocks.set('wall2_keylights_set_address', (args) => {
     const side = oneSide(args?.side);
     if (typeof args?.address !== 'string' || !PRIVATE.test(args.address)) throw 'bad-address';
     state[side] = good(on());
+    state.unreadable = false;
   });
   mocks.set('wall2_keylights_forget', (args) => {
     state[oneSide(args?.side)] = unset();
@@ -98,6 +110,10 @@ export function registerStudioMocks(): void {
       }
       if (c.word) {
         out[side] = c.word;
+        continue;
+      }
+      if (state.stuck) {
+        out[side] = { ...(c.light as Light) };
         continue;
       }
       if (state.failWrites) {

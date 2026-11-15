@@ -153,14 +153,17 @@ export function Lanes({ summary, stale, freshAt, now, idle }: { summary: OmniSum
   const hd = useRef<HTMLDivElement>(null);
   const meter = useMeterCount(summary, now);
   const fitKey = `${meter.n}|${meter.limit}|${count}|${ask.text}|${ask.title ?? ''}|${ask.more ?? ''}|${ask.tone}|${alarms}|${stale}|${freshAt}|${recording}|${lightsWord ?? ''}`;
-  const [fitState, setFitState] = useState<{ key: string; level: HeaderFit }>({ key: fitKey, level: 0 });
+  // The Lights chip gives way first ("Lights 60%"); only then do the header's own parts give way.
+  const [fitState, setFitState] = useState<{ key: string; level: HeaderFit; chip: boolean }>({ key: fitKey, level: 0, chip: false });
   const fit: HeaderFit = fitState.key === fitKey ? fitState.level : 0;
+  const chipShort = fitState.key === fitKey ? fitState.chip : false;
   useLayoutEffect(() => {
     const el = hd.current;
     if (!el) return;
-    if (fit < 3 && headerTight(el)) setFitState({ key: fitKey, level: (fit + 1) as HeaderFit });
-    else if (fitState.key !== fitKey) setFitState({ key: fitKey, level: fit });
-  }, [fitKey, fit, fitState.key]);
+    if (headerTight(el) && lightsWord !== null && !chipShort) setFitState({ key: fitKey, level: fit, chip: true });
+    else if (fit < 3 && headerTight(el)) setFitState({ key: fitKey, level: (fit + 1) as HeaderFit, chip: chipShort });
+    else if (fitState.key !== fitKey) setFitState({ key: fitKey, level: fit, chip: chipShort });
+  }, [fitKey, fit, chipShort, lightsWord, fitState.key]);
 
   const openAsk = (id: string | null) => focusSession(canOpen ? id : null);
   /** "as of 4 min ago" (or "at an unknown time") for a stale answer. */
@@ -192,7 +195,7 @@ export function Lanes({ summary, stale, freshAt, now, idle }: { summary: OmniSum
           )}
           {stale && <span className="xs lanes-age">{ageText(freshAt, now)}</span>}
           <HeaderRecordingChip compact={fit >= 3} />
-          <LightsChip />
+          <LightsChip compact={chipShort} />
         </div>
         {ask.tone === 'amber' && stale ? (
           // Old data never reads as live: grey words, not a button.

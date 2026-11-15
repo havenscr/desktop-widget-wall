@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { isLight, readingOf, wordOf, type Light, type Reading } from './keyLights';
-import { anyOn, chipWord, downWord, kelvinColour, mismatched, noneTitle, summaryLine, viewOf, withOn, working, type Snapshot } from './model';
+import { anyOn, chipWord, downWord, kelvinColour, mismatched, noneTitle, notTaken, savedDown, singleLight, summaryLine, viewOf, withOn, working, type Snapshot } from './model';
 
 const L = (on: boolean, brightness: number, kelvin: number): Light => ({ on, brightness, kelvin });
 const snap = (left: Reading | null, right: Reading | null, status: Snapshot['status'] = { left: true, right: true }): Snapshot => ({ status, left, right });
@@ -91,5 +91,54 @@ describe('what the native side sends is checked before it is shown', () => {
     expect(wordOf(new Error('other-model'))).toBe('other-model');
     expect(wordOf('weird')).toBe('failed');
     expect(wordOf(undefined)).toBe('failed');
+  });
+});
+
+describe('a side with no address', () => {
+  const one = (left: Reading | null) => snap(left, null, { left: true, right: false });
+  it('is not set up, not a fault: its own plain line, and the tile is not a warning', () => {
+    expect(summaryLine(one(L(true, 60, 4400)))).toEqual({ text: 'The right key light is not set up. Add it in Tools.', tone: 'plain' });
+    expect(savedDown(one(L(true, 60, 4400)))).toEqual([]);
+    expect(singleLight(one(L(true, 60, 4400)))).toBe(true);
+    expect(singleLight(both)).toBe(false);
+    expect(singleLight(snap(L(true, 60, 4400), 'no-answer'))).toBe(false);
+  });
+  it('only one light set up and it fails: the line names that light', () => {
+    expect(savedDown(one('no-answer'))).toEqual([{ side: 'left', word: 'no-answer' }]);
+    expect(summaryLine(one('no-answer'))).toEqual({ text: 'The left key light is not answering. Check it is on and on this network.', tone: 'amber' });
+    expect(noneTitle(one('timeout'))).toBe('The left key light is too slow to answer');
+    expect(viewOf(one('no-answer'))).toBe('none');
+    // Both saved and both failing keeps the plural line.
+    expect(summaryLine(snap('no-answer', 'no-answer')).text).toBe('Neither light answered. Check they are on and on this network.');
+  });
+});
+
+describe('a write the light did not take', () => {
+  const before = L(true, 60, 4400);
+  it('is a field still at its old value that is not within rounding of the request', () => {
+    expect(notTaken(before, { brightness: 80 }, L(true, 60, 4400))).toBe(true);
+    expect(notTaken(before, { kelvin: 6000 }, L(true, 60, 4400))).toBe(true);
+    expect(notTaken(before, { on: false }, L(true, 60, 4400))).toBe(true);
+    expect(notTaken(L(false, 60, 4400), { on: true }, L(false, 60, 4400))).toBe(true);
+  });
+  it('is not one when the light moved, even part of the way, or the request was already the value', () => {
+    expect(notTaken(before, { brightness: 80 }, L(true, 78, 4400))).toBe(false);
+    expect(notTaken(before, { brightness: 80 }, L(true, 70, 4400))).toBe(false);
+    expect(notTaken(before, { brightness: 62 }, L(true, 60, 4400))).toBe(false);
+    expect(notTaken(before, { brightness: 61 }, L(true, 60, 4400))).toBe(false);
+    expect(notTaken(before, { kelvin: 4500 }, L(true, 60, 4400))).toBe(false);
+    expect(notTaken(before, { kelvin: 4550 }, L(true, 60, 4400))).toBe(true);
+    expect(notTaken(before, { on: true }, L(true, 60, 4400))).toBe(false);
+    expect(notTaken(before, {}, L(true, 60, 4400))).toBe(false);
+  });
+});
+
+describe('the compact chip words', () => {
+  it('give way first: Lights 60%, Lights on, Lights off', () => {
+    expect(chipWord(both, true)).toBe('Lights 60%');
+    expect(chipWord(snap(L(true, 60, 4400), L(true, 45, 4400)), true)).toBe('Lights on');
+    expect(chipWord(snap(L(false, 60, 4400), L(false, 60, 4400)), true)).toBe('Lights off');
+    expect(chipWord(snap('no-answer', 'no-answer'), true)).toBe('Lights not answering');
+    expect(chipWord(snap(null, null, { left: false, right: false }), true)).toBeNull();
   });
 });
