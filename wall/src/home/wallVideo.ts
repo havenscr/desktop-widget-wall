@@ -3,6 +3,7 @@ import { usePlaceStore } from '../state/places';
 import { playerLink } from '../unwind/watch/PlayerFrame';
 import type { SavedItem } from '../unwind/watch/saved';
 import { useWatchStore, type PlayerReport, type PlaySource, type WatchState } from '../unwind/watch/store';
+import { isOwnActive, next as ownNext, previous as ownPrevious, useOwnView, type OwnView } from '../unwind/watch/ownPlay';
 import { next as queueNext, previous as queuePrevious, queueActive, useYtQueue, type QueueEntry } from '../unwind/ytmusic/queue';
 import type { WatchKind } from '../unwind/watch/links';
 import { clockMs } from './soundModel';
@@ -50,14 +51,20 @@ const SHORT_WORDS: Record<WatchKind, string> = { video: 'Video', live: 'Live str
  * A music item (a pick from the YouTube library) reads "YouTube Music", with its place in the queue ("2 of 41")
  * and the queue's previous and next; its title is the player's own once it has said it, else the pick's.
  */
-export function wallVideoView(s: Snapshot, q?: QueueSnapshot): WallVideoView | null {
+export function wallVideoView(s: Snapshot, q?: QueueSnapshot, own?: OwnView | null): WallVideoView | null {
   const item = s.playing;
   if (!item || s.report.ended) return null;
   const r = s.report;
+  const time0 = item.kind !== 'twitch' && r.time !== null && r.duration !== null && r.duration > 0 ? { pos: Math.min(r.time, r.duration), dur: r.duration } : null;
+  // A playlist the owner made: its place and its own previous and next; the title is the player's, else the stored one.
+  if (own && s.source === 'own' && own.videoId === item.id) {
+    const place = `Your playlist, ${own.place} of ${own.count}`;
+    return { item, report: r, title: own.title, kind: item.kind, sub: place, shortSub: place, youtube: true, paused: s.paused, needsClick: s.needsClick, time: time0, list: { index: own.place - 1, count: own.count } };
+  }
   const music = s.source === 'music' && !!q && q.entries[q.pos]?.id === item.id;
   const list = music ? (q!.entries.length > 1 ? { index: q!.pos, count: q!.entries.length } : null) : item.kind === 'playlist' && r.count > 1 ? { index: r.index, count: r.count } : null;
   const place = list ? `, ${list.index + 1} of ${list.count}` : '';
-  const time = item.kind !== 'twitch' && r.time !== null && r.duration !== null && r.duration > 0 ? { pos: Math.min(r.time, r.duration), dur: r.duration } : null;
+  const time = time0;
   return {
     item,
     report: r,
@@ -82,7 +89,8 @@ export function useWallVideo(): WallVideoView | null {
   const source = useWatchStore((s) => s.source);
   const entries = useYtQueue((s) => s.entries);
   const pos = useYtQueue((s) => s.pos);
-  return useMemo(() => wallVideoView({ playing, paused, needsClick, report, source }, { entries, pos }), [playing, paused, needsClick, report, source, entries, pos]);
+  const own = useOwnView();
+  return useMemo(() => wallVideoView({ playing, paused, needsClick, report, source }, { entries, pos }, own), [playing, paused, needsClick, report, source, entries, pos, own]);
 }
 
 /** True while the wall's music is the player: its previous and next are the queue's. */
@@ -95,8 +103,8 @@ export const wallVideoControls = {
     st.setPaused(!st.paused);
   },
   stop: (): void => useWatchStore.getState().stop(),
-  previous: (): boolean => (musicOn() ? (queuePrevious(), true) : playerLink.send('previousVideo')),
-  next: (): boolean => (musicOn() ? (queueNext(), true) : playerLink.send('nextVideo')),
+  previous: (): boolean => (isOwnActive() ? (ownPrevious(), true) : musicOn() ? (queuePrevious(), true) : playerLink.send('previousVideo')),
+  next: (): boolean => (isOwnActive() ? (ownNext(), true) : musicOn() ? (queueNext(), true) : playerLink.send('nextVideo')),
   /** Goes to the Unwind place's Watch tab, as the rail's mark does. */
   openWatch: (): void => {
     usePlaceStore.getState().setActive('unwind');
