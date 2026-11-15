@@ -518,8 +518,23 @@ pub fn event_link(id: &str, web_link: Option<&str>) -> Option<String> {
 
 // Section: shaping
 
+/// Titles use only the narrow word filter, never invite markers or line cutting.
+fn clean_title(raw: &str) -> String {
+    let text = strip_digit_chains(&normalize(raw));
+    text.split_whitespace().filter(|word| {
+        let lower = word.to_ascii_lowercase();
+        !(lower.contains("://")
+            || lower.contains("www.")
+            || word.contains('@')
+            || ["tel:", "sip:", "mailto:", "callto:"].iter().any(|p| lower.trim_start_matches(|c: char| !c.is_alphanumeric()).starts_with(p))
+            || (word.contains('/') && host_shaped(word))
+            || meeting_code_shaped(word)
+            || digits_in(word) >= 5)
+    }).collect::<Vec<_>>().join(" ")
+}
+
 fn cap_title(raw: &str) -> String {
-    let t: String = raw.trim().chars().take(MAX_TITLE_CHARS).collect();
+    let t: String = clean_title(raw).chars().take(MAX_TITLE_CHARS).collect();
     let t = t.trim().to_string();
     if t.is_empty() {
         "Untitled".to_string()
@@ -675,6 +690,19 @@ const INVITE_MARKERS: [&str; 17] = [
     "pwd",
 ];
 
+/// Short credential markers cut at word boundaries, not inside agenda words.
+fn invite_marker_cuts(lower: &str) -> bool {
+    INVITE_MARKERS.iter().any(|marker| {
+        if !matches!(*marker, "pin:" | "pw:" | "pwd") {
+            return lower.contains(marker);
+        }
+        lower.match_indices(marker).any(|(at, _)| {
+            !lower[..at].chars().next_back().is_some_and(char::is_alphanumeric)
+                && (*marker != "pwd" || !lower[at + marker.len()..].chars().next().is_some_and(char::is_alphabetic))
+        })
+    })
+}
+
 /// Everyday words that are also the start of a join block ("Password: AbCd1234", "Join the Webex meeting"). A line is cut at
 /// one only when it starts the line, or the rest of the line holds a colon or a word with a digit; otherwise a sentence
 /// that merely mentions it ("rotate the shared password list") stays whole.
@@ -718,13 +746,24 @@ fn has_underscore_run(line: &str) -> bool {
     false
 }
 
-/// The longest run of digits once spaces, hyphens and round brackets are taken out ("+1 555 123-4567" is eleven).
+/// The longest separated digit run, excluding digits attached directly to a letter.
+/// Spaces, hyphens and round brackets still join phone number groups.
 fn longest_digit_run(text: &str) -> usize {
     let mut best = 0;
     let mut run = 0;
-    for c in text.chars().filter(|c| !matches!(c, ' ' | '-' | '(' | ')')) {
-        run = if c.is_numeric() { run + 1 } else { 0 };
-        best = best.max(run);
+    let mut attached = false;
+    for c in text.chars() {
+        if c.is_numeric() {
+            if !attached {
+                run += 1;
+                best = best.max(run);
+            }
+        } else {
+            attached = c.is_alphabetic();
+            if !matches!(c, ' ' | '-' | '(' | ')') {
+                run = 0;
+            }
+        }
     }
     best
 }
@@ -826,7 +865,7 @@ pub fn clean_invite(raw: &str) -> Option<String> {
     'lines: for line in raw.split(['\n', '\r']) {
         let norm = normalize(line);
         let lower = norm.to_lowercase();
-        if has_underscore_run(&norm) || INVITE_MARKERS.iter().chain(DIVIDERS.iter()).any(|m| lower.contains(m)) || everyday_marker_cuts(&lower) {
+        if has_underscore_run(&norm) || invite_marker_cuts(&lower) || DIVIDERS.iter().any(|m| lower.contains(m)) || everyday_marker_cuts(&lower) {
             break;
         }
         for sentence in sentences(&norm) {
@@ -960,6 +999,44 @@ pub fn merge_capped(per_account: Vec<Vec<Candidate>>, cap: usize) -> Vec<Candida
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn short_invite_markers_do_not_cut_inside_agenda_words() {
+        for line in ["Q4 spin: the new pricing", "pwdreset notes", "Review spw: notes", "Review épin: notes"] {
+            let text = format!("{line}\nNext agenda item.");
+            assert_eq!(clean_invite(&text), Some(format!("{line} Next agenda item.")));
+        }
+        for line in ["PIN: 1234", "PW: x", "pwd x", "pwd123", "https://meet.example/j/98765432101?pwd=x"] {
+            assert_eq!(clean_invite(&format!("Agenda.\n{line}\nLater.")), Some("Agenda.".into()));
+        }
+    }
+
+    #[test]
+    fn label_digits_do_not_cut_the_following_agenda() {
+        assert_eq!(longest_digit_run("Goals for Q3 2026 2027"), 8);
+        // The line and following agenda survive; the existing grouped-id rule still removes the digit groups.
+        assert_eq!(clean_invite("Goals for Q3 2026 2027\nNext agenda item."), Some("Goals for Q3 Next agenda item.".into()));
+        for line in ["+1 555 123 4567", "Meeting 987 6543 2101", "9876543210"] {
+            assert!(longest_digit_run(line) >= 9);
+            assert_eq!(clean_invite(&format!("Agenda.\n{line}\nLater.")), Some("Agenda.".into()));
+        }
+        assert_eq!(clean_invite("ID9 8765 4321\nNext agenda item."), Some("ID9 Next agenda item.".into()));
+        assert_eq!(clean_invite("Agenda x987654321\nNext agenda item."), Some("Agenda Next agenda item.".into()));
+    }
+
+    #[test]
+    fn titles_drop_join_details_without_invite_line_cuts() {
+        assert_eq!(cap_title("Sync 987 6543 2101 zoom.example.test/j/98765432101"), "Sync");
+        for title in ["Q3 planning 2026", "1:1 with design", "Budget 4.12", "Review example.test launch", "Passcode rotation", "PIN review"] {
+            assert_eq!(cap_title(title), title);
+        }
+        for title in ["https://meet.example/j/123", "www.meet.example/join", "meet.example/join", "abc-defg-hij", "12345"] {
+            assert_eq!(cap_title(title), "Untitled");
+        }
+        assert_eq!(cap_title("Sync tel:1234 sip:fixture mailto:fixture callto:fixture"), "Sync");
+        assert_eq!(cap_title("Sync https:\u{200B}//meet.example/join"), "Sync");
+        assert_eq!(cap_title(&"x".repeat(MAX_TITLE_CHARS + 10)).chars().count(), MAX_TITLE_CHARS);
+    }
 
     #[test]
     fn capped_merge_keeps_more_and_still_dedupes() {
