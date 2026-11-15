@@ -1090,7 +1090,7 @@
   flex: none;
   margin-bottom: 13px;
 }
-.lw-curve svg {
+.lw-curve > svg {
   position: absolute;
   inset: 0;
   overflow: visible;
