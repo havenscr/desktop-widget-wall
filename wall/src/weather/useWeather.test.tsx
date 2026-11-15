@@ -291,3 +291,29 @@ it('keeps the last good reading through failed reads for a day, then drops it an
   expect(useWeatherStore.getState().reading).toBeNull();
   expect(useWeatherStore.getState().failed).toBe(true);
 });
+
+it('sets the windy flag from the reading before it: on at a gust of 30, held at 25, off at 20', async () => {
+  const windy = (gust: number) => JSON.stringify({ ...body, current: { ...body.current, wind_speed_10m: 5, wind_gusts_10m: gust } });
+  let next = windy(31);
+  mocks.set('wall2_weather', async () => next);
+  renderHook(() => useWeather());
+  await waitFor(() => expect(useWeatherStore.getState().reading?.windy).toBe(true));
+  expect(useWeatherStore.getState().reading?.wind).toEqual({ speed: 5, gust: 31 });
+  next = windy(25);
+  await act(async () => {
+    await refreshWeather();
+  });
+  expect(useWeatherStore.getState().reading?.windy).toBe(true);
+  next = windy(20);
+  await act(async () => {
+    await refreshWeather();
+  });
+  expect(useWeatherStore.getState().reading?.windy).toBe(false);
+  // a first reading at 25 is not windy: the hold only applies after an on reading
+  next = windy(25);
+  resetWeatherStore();
+  await act(async () => {
+    await refreshWeather();
+  });
+  expect(useWeatherStore.getState().reading?.windy).toBe(false);
+});

@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest';
-import { asksSecondSource, failureFromError, NWS_TABLE, nwsCode, parseNws, parseWeather, REFRESH_MS, shouldRefresh, staleText, weatherFailureText } from './model';
+import { asksSecondSource, failureFromError, isWindy, NWS_TABLE, nwsCode, parseNws, parseWeather, rainLevel, REFRESH_MS, shouldRefresh, staleText, weatherFailureText } from './model';
 
 const sample = {
   current: { time: '2026-11-11T10:15', temperature_2m: 57.6, weather_code: 3, is_day: 1 },
@@ -261,4 +261,82 @@ it('rejects a Weather Service reply without hours or with a bad temperature', ()
   expect(() => parseNws({}, 0)).toThrow();
   expect(() => parseNws({ properties: { periods: [] } }, 0)).toThrow();
   expect(() => parseNws({ properties: { periods: [{ startTime: '2026-11-11T10:00:00-08:00', temperature: 'warm' }] } }, 0)).toThrow();
+});
+
+const withWind = (cur: Record<string, unknown>, units?: Record<string, unknown>) => ({
+  ...sample,
+  current: { ...sample.current, ...cur },
+  ...(units ? { current_units: units } : {}),
+});
+
+it('reads the wind from the first source and drops every unusable value', () => {
+  expect(parseWeather(withWind({ wind_speed_10m: 22, wind_gusts_10m: 34 }), 0).wind).toEqual({ speed: 22, gust: 34 });
+  for (const bad of [null, '22', -1, Number.NaN, 201, Infinity, {}]) {
+    expect(parseWeather(withWind({ wind_speed_10m: bad, wind_gusts_10m: 34 }), 0).wind).toEqual({ gust: 34 });
+  }
+  for (const bad of [null, '34', -1, Number.NaN, 251]) {
+    expect(parseWeather(withWind({ wind_speed_10m: 22, wind_gusts_10m: bad }), 0).wind).toEqual({ speed: 22 });
+  }
+  expect(parseWeather(withWind({ wind_speed_10m: 200, wind_gusts_10m: 250 }), 0).wind).toEqual({ speed: 200, gust: 250 });
+  expect(parseWeather(withWind({ wind_speed_10m: 0 }), 0).wind).toEqual({ speed: 0 });
+  expect(parseWeather(withWind({ wind_speed_10m: null, wind_gusts_10m: 'x' }), 0).wind).toBeUndefined();
+});
+
+it('a reply in another wind unit counts as no wind, an mp/h reply stays', () => {
+  const cur = { wind_speed_10m: 22, wind_gusts_10m: 34 };
+  expect(parseWeather(withWind(cur, { wind_speed_10m: 'km/h' }), 0).wind).toEqual({ gust: 34 });
+  expect(parseWeather(withWind(cur, { wind_gusts_10m: 'm/s' }), 0).wind).toEqual({ speed: 22 });
+  expect(parseWeather(withWind(cur, { wind_speed_10m: 'mp/h', wind_gusts_10m: 'mp/h' }), 0).wind).toEqual({ speed: 22, gust: 34 });
+  expect(parseWeather(withWind(cur, {}), 0).wind).toEqual({ speed: 22, gust: 34 });
+  expect(parseWeather(withWind(cur, 'weird' as unknown as Record<string, unknown>), 0).wind).toEqual({ speed: 22, gust: 34 });
+});
+
+it('a reply without wind fields parses as before and keeps the code', () => {
+  const r = parseWeather(sample, 0);
+  expect('wind' in r).toBe(false);
+  expect(r.code).toBe(3);
+  expect(parseWeather(withWind({ weather_code: 61.5 }), 0).code).toBe(-1);
+  expect(parseWeather(withWind({ weather_code: 'x' }), 0).code).toBe(-1);
+  expect(parseWeather(withWind({ weather_code: 65 }), 0).code).toBe(65);
+});
+
+const nwsHourly = (extra: Record<string, unknown>, words = 'Light Rain') => ({
+  properties: { periods: Array.from({ length: 8 }, (_, i) => ({ startTime: `2026-11-11T${String(10 + i).padStart(2, '0')}:00:00-08:00`, isDaytime: true, temperature: 40, temperatureUnit: 'F', shortForecast: words, ...(i === 0 ? extra : {}) })) },
+});
+
+it('reads the Weather Service wind text and keeps the code', () => {
+  expect(parseNws(nwsHourly({ windSpeed: '15 mph' }), 0).wind).toEqual({ speed: 15 });
+  expect(parseNws(nwsHourly({ windSpeed: '10 to 20 mph' }), 0).wind).toEqual({ speed: 20 });
+  expect(parseNws(nwsHourly({ windSpeed: ' 8 MPH ', windGust: '35 mph' }), 0).wind).toEqual({ speed: 8, gust: 35 });
+  for (const bad of ['calm', '15 km/h', 15, null, '', '1500 mph', '300 mph', '15 mph and more']) {
+    expect(parseNws(nwsHourly({ windSpeed: bad }), 0).wind).toBeUndefined();
+  }
+  expect(parseNws(nwsHourly({ windSpeed: '15 mph', windGust: 40 }), 0).wind).toEqual({ speed: 15 });
+  expect(parseNws(nwsHourly({}), 0).wind).toBeUndefined();
+  expect(parseNws(nwsHourly({}), 0).code).toBe(61);
+  expect(parseNws(nwsHourly({}, 'Heavy Rain'), 0).code).toBe(65);
+  expect(parseNws(nwsHourly({}, 'Strange'), 0).code).toBe(-1);
+});
+
+it('is very windy from a gust of 30 or a speed of 20, holds down to 24 and 16, and is off when unknown', () => {
+  expect(isWindy(false, undefined)).toBe(false);
+  expect(isWindy(true, undefined)).toBe(false);
+  expect(isWindy(false, {})).toBe(false);
+  expect(isWindy(false, { gust: 30 })).toBe(true);
+  expect(isWindy(false, { gust: 29.9 })).toBe(false);
+  expect(isWindy(false, { speed: 20 })).toBe(true);
+  expect(isWindy(false, { speed: 19, gust: 28 })).toBe(false);
+  // the hold
+  expect(isWindy(true, { gust: 24 })).toBe(true);
+  expect(isWindy(true, { gust: 23 })).toBe(false);
+  expect(isWindy(true, { speed: 16 })).toBe(true);
+  expect(isWindy(true, { speed: 15, gust: 20 })).toBe(false);
+  expect(isWindy(true, { speed: 15 })).toBe(false);
+});
+
+it('maps WMO codes to a rain strength', () => {
+  for (const c of [51, 53, 55, 56, 57, 61, 80]) expect(rainLevel(c)).toBe(0);
+  for (const c of [63, 66, 67, 81]) expect(rainLevel(c)).toBe(0.5);
+  for (const c of [65, 82, 95, 96, 99]) expect(rainLevel(c)).toBe(1);
+  for (const c of [-1, 0, 3, 45, 71, 75, 85, 100]) expect(rainLevel(c)).toBe(-1);
 });

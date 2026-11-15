@@ -186,7 +186,7 @@ it('the minute timer stops while the page is hidden and catches up when it shows
 
 it('outside state: a fresh reading, a second source, and none', () => {
   const now = at('10:28:00');
-  const reading = { temp: 50, look: { label: 'Partly cloudy', icon: 'cloud-sun' as const }, high: 56, low: 44, hours: [], fetchedAt: now - 60_000 };
+  const reading = { temp: 50, look: { label: 'Partly cloudy', icon: 'cloud-sun' as const }, high: 56, low: 44, hours: [], fetchedAt: now - 60_000, code: 2 };
   const fresh = outsideState({ reading, failed: false }, now);
   expect(fresh.kind === 'reading' && fresh.view).toMatchObject({ temp: 50, look: 'partly cloudy', side: '56° / 44°', stale: false });
   const second = outsideState({ reading: { ...reading, source: 'nws' }, failed: false }, now);
@@ -197,7 +197,7 @@ it('outside state: a fresh reading, a second source, and none', () => {
 
 it('outside state: a kept reading 30 minutes, 61 minutes and 5 hours old after a failed refresh still shows, dimmed, with its age and the reason', () => {
   const now = at('10:28:00');
-  const reading = { temp: 50, look: { label: 'Partly cloudy', icon: 'cloud-sun' as const }, high: 56, low: 44, hours: [], fetchedAt: now };
+  const reading = { temp: 50, look: { label: 'Partly cloudy', icon: 'cloud-sun' as const }, high: 56, low: 44, hours: [], fetchedAt: now, code: 2 };
   const cases: [number, string][] = [[30, 'updated 30 min ago'], [61, 'updated 1 h ago'], [300, 'updated 5 h ago']];
   for (const [mins, side] of cases) {
     const s = outsideState({ reading: { ...reading, fetchedAt: now - mins * 60_000 }, failed: true, failure: 'timeout' }, now);

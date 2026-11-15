@@ -9,6 +9,7 @@ import {
   failureFromError,
   parseNws,
   parseWeather,
+  isWindy,
   shouldRefresh,
   type WeatherFailure,
   type WeatherReading,
@@ -154,6 +155,7 @@ async function run(force = false): Promise<void> {
     }
     if (mine !== epoch) return;
     if (reading) rememberHigh(reading);
+    if (reading) reading.windy = isWindy(useWeatherStore.getState().reading?.windy === true, reading.wind);
     if (reading) useWeatherStore.setState({ reading, failed: false, failure: null, nextTryAt: reading.source === 'nws' && failure === 'http 429' ? blockedUntil : null });
     /* a failure keeps the last good reading, and the card shows its age; one older than a day is dropped, so the card says it is unavailable */
     else {
