@@ -1334,6 +1334,19 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
+.shield-title.long {
+  font-size: 22px;
+  line-height: 24px;
+  white-space: normal;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+/* Two title lines: the facts close up so the column keeps its height (134). */
+.panel.network.shield:not(.busy) .shield-txt.longtitle .shield-facts {
+  margin-top: 8px;
+  gap: 0;
+}
 .shield-sub {
   display: flex;
   flex-direction: column;
@@ -1459,10 +1472,12 @@
   display: flex;
   align-items: center;
   gap: 9px;
-  margin-top: 11px;
+  /* A 40 px hit area; the text stays where a 24 px row put it (the padding is the row's own space). */
+  margin-top: 3px;
   min-width: 0;
-  min-height: 24px;
-  padding: 0;
+  min-height: 40px;
+  padding: 8px 0;
+  box-sizing: border-box;
   background: none;
   border: none;
   border-radius: 6px;
@@ -1483,8 +1498,8 @@
   flex: none;
 }
 .shield-hint {
-  margin: 6px 0 0 27px;
-  font: 400 16px/20px var(--body);
+  margin: 0 0 0 27px;
+  font: 400 16px/18px var(--body);
   color: #a39bc6;
   white-space: nowrap;
   overflow: hidden;

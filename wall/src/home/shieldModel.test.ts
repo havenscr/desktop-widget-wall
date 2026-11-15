@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { alertHint, severityCounts, shieldFacts, shieldSub, type Shield, type ShieldAlert } from './shieldModel';
+import { alertAgeWords, alertHint, severityCounts, shieldFacts, shieldSub, type Shield, type ShieldAlert } from './shieldModel';
 
 const base: Shield = {
   kind: 'ready',
@@ -21,7 +21,7 @@ const base: Shield = {
   alarms: null,
 };
 const shield = (over: Partial<Shield> = {}): Shield => ({ ...base, ...over });
-const alert = (severity: ShieldAlert['severity'], age: string | null = '12m', i = 0): ShieldAlert => ({ key: `a${i}`, severity, text: `Alert ${i}`, age, atMs: null });
+const alert = (severity: ShieldAlert['severity'], ageMins: number | null = 12, i = 0): ShieldAlert => ({ key: `a${i}`, severity, text: `Alert ${i}`, age: null, ageMins, atMs: null });
 const texts = (s: Shield) => shieldFacts(s).lines.map((f) => f.text);
 
 describe('the quiet card\'s fact lines', () => {
@@ -61,20 +61,38 @@ describe('the quiet card\'s fact lines', () => {
 });
 
 describe('the alerts row', () => {
-  const three = shield({ open: 3, alerts: [alert('high', '12m', 0), alert('medium', '3h', 1), alert('medium', '5h', 2)] });
+  const three = shield({ open: 3, alerts: [alert('high', 12, 0), alert('medium', 180, 1), alert('medium', 300, 2)] });
   it('counts by severity when every open alert is listed and rated', () => {
     expect(severityCounts(three)).toBe('1 high, 2 medium');
-    expect(alertHint(three)).toBe('12m ago. 1 high, 2 medium.');
+    expect(alertHint(three)).toBe('12 min ago. 1 high, 2 medium.');
     expect(severityCounts(shield({ open: 1, alerts: [alert('low')] }))).toBe('1 low');
   });
   it('no counts when some open alert is not listed or has no severity (a count must be true)', () => {
     expect(severityCounts(shield({ open: 4, alerts: three.alerts }))).toBeNull();
-    expect(severityCounts(shield({ open: 2, alerts: [alert('high'), alert(null, '1h', 1)] }))).toBeNull();
-    expect(alertHint(shield({ open: 4, alerts: three.alerts }))).toBe('12m ago.');
+    expect(severityCounts(shield({ open: 2, alerts: [alert('high'), alert(null, 60, 1)] }))).toBeNull();
+    expect(alertHint(shield({ open: 4, alerts: three.alerts }))).toBe('12 min ago.');
   });
   it('no age and no counts: no line', () => {
     expect(alertHint(shield({ open: 2, alerts: [alert(null, null)] }))).toBe('');
     expect(alertHint(shield())).toBe('');
+  });
+});
+
+describe('the alert line\'s age words', () => {
+  it('just now, minutes, hours, days', () => {
+    expect(alertAgeWords(0)).toBe('just now');
+    expect(alertAgeWords(1)).toBe('1 min ago');
+    expect(alertAgeWords(12)).toBe('12 min ago');
+    expect(alertAgeWords(59)).toBe('59 min ago');
+    expect(alertAgeWords(60)).toBe('1 h ago');
+    expect(alertAgeWords(180)).toBe('3 h ago');
+    expect(alertAgeWords(47 * 60 + 59)).toBe('47 h ago');
+    expect(alertAgeWords(48 * 60)).toBe('2 days ago');
+    expect(alertAgeWords(5 * 24 * 60)).toBe('5 days ago');
+    expect(alertAgeWords(null)).toBeNull();
+  });
+  it('an alert under a minute old never reads "now ago"', () => {
+    expect(alertHint(shield({ open: 1, alerts: [alert('low', 0)] }))).toBe('just now. 1 low.');
   });
 });
 

@@ -11,6 +11,8 @@ export interface ShieldAlert {
   text: string;
   /** "12m", "3h"; null when the time is unknown. */
   age: string | null;
+  /** Whole minutes since it was raised (0 when under a minute); null when the time is unknown. */
+  ageMins: number | null;
   /** When it was raised, epoch ms, for the tooltip; null when unknown. */
   atMs: number | null;
 }
@@ -56,6 +58,20 @@ function timeText(ms: number): string {
   return new Date(ms).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
 }
 
+function ageMinutes(atMs: number | null, now: number): number | null {
+  return typeof atMs === 'number' && Number.isFinite(atMs) ? Math.max(0, Math.floor((now - atMs) / 60_000)) : null;
+}
+
+/** An alert's age as the card's line says it: "just now", "12 min ago", "3 h ago", "2 days ago". */
+export function alertAgeWords(mins: number | null): string | null {
+  if (mins === null) return null;
+  if (mins < 1) return 'just now';
+  if (mins < 60) return `${mins} min ago`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 48) return `${hours} h ago`;
+  return `${Math.floor(hours / 24)} days ago`;
+}
+
 /** Newest first; unknown times last, in the source's order. */
 function newestFirst(list: ShieldAlert[]): ShieldAlert[] {
   return list.map((a, i) => ({ a, i })).sort((x, y) => (y.a.atMs ?? -Infinity) - (x.a.atMs ?? -Infinity) || x.i - y.i).map((x) => x.a);
@@ -66,7 +82,7 @@ function fromDesk(d: DeskSecurity, readAt: number | null, failed: boolean, now: 
     d.alerts.map((a, i) => {
       const at = a.at ? Date.parse(a.at) : NaN;
       const atMs = Number.isFinite(at) ? at : typeof a.ageSeconds === 'number' && readAt !== null ? readAt - a.ageSeconds * 1000 : null;
-      return { key: a.id ?? `n${i}`, severity: a.severity, text: a.text, age: ageText(atMs, now), atMs };
+      return { key: a.id ?? `n${i}`, severity: a.severity, text: a.text, age: ageText(atMs, now), ageMins: ageMinutes(atMs, now), atMs };
     }),
   );
   const old = readAt === null || now - readAt > maxAge(REFRESH_MS);
@@ -132,7 +148,7 @@ function fromLegacy(sec: Pick<SecurityState, 'status' | 'summary' | 'now' | 'rea
   const alerts = newestFirst(
     (Array.isArray(s.topAlerts) ? s.topAlerts : [])
       .filter((r) => r && typeof r.text === 'string' && r.text.trim() !== '')
-      .map((r, i) => ({ key: `t${i}`, severity: r.severity, text: r.text, age: ageText(r.atMs, now), atMs: r.atMs })),
+      .map((r, i) => ({ key: `t${i}`, severity: r.severity, text: r.text, age: ageText(r.atMs, now), ageMins: ageMinutes(r.atMs, now), atMs: r.atMs })),
   );
   const scan = s.lastScan ? Date.parse(s.lastScan) : NaN;
   const asOfMs = Number.isFinite(scan) ? scan : sec.readAt;
@@ -226,9 +242,9 @@ export function severityCounts(s: Shield): string | null {
   return parts.length ? parts.join(', ') : null;
 }
 
-/** The line under the newest alert: "12m ago. 1 high, 2 medium."; empty when neither is known. */
+/** The line under the newest alert: "12 min ago. 1 high, 2 medium."; empty when neither is known. */
 export function alertHint(s: Shield): string {
   const newest = s.alerts[0];
-  const parts = [newest?.age ? `${newest.age} ago` : null, severityCounts(s)].filter(Boolean);
+  const parts = [alertAgeWords(newest?.ageMins ?? null), severityCounts(s)].filter(Boolean);
   return parts.length ? `${parts.join('. ')}.` : '';
 }

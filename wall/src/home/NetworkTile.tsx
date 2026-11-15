@@ -1,6 +1,6 @@
 import { IconBan, IconBell, IconChevronRight, IconClock, IconDevices, IconShield, IconWorld } from '@tabler/icons-react';
 import type { ReactNode } from 'react';
-import { useEffect, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { tip } from '../ui/HoverTip';
 import { useLinks, useOpenLink } from './netLinks';
 import { ShieldDrawer, SevShape } from './ShieldDrawer';
@@ -36,7 +36,8 @@ export function ShieldRing({ s }: { s: Shield }) {
       {n > 0 &&
         Array.from({ length: n }, (_, i) => {
           const sev = s.alerts[i]?.severity;
-          const colour = grey ? 'var(--faint)' : sev ? SEV_COLOUR[sev] : 'var(--amber)';
+          // A severity the wall was not told (a listed alert with none, or one past the listed three) is neutral, never amber.
+          const colour = grey ? 'var(--faint)' : sev ? SEV_COLOUR[sev] : 'var(--faint)';
           return (
             <circle
               key={i}
@@ -112,8 +113,10 @@ export function NetworkTile() {
   const asOfTip = s.stale && s.asOf ? `Not live, ${s.asOf}. ` : '';
   const factRow = (f: { kind: FactKind; text: string }) => {
     const Icon = FACT_ICON[f.kind];
+    // The scan time is the firewall's own clock, not the home app's: the heading's "as of" is a different one.
+    const hover = f.kind === 'scan' && s.scan ? `The firewall's own last scan, ${s.scan}` : `${asOfTip}${f.text}`;
     return (
-      <span key={f.kind} className="shield-fact" {...tip(`${asOfTip}${f.text}`)}>
+      <span key={f.kind} className="shield-fact" {...tip(hover)}>
         <Icon size={17} stroke={1.8} aria-hidden="true" />
         <span>{f.text}</span>
       </span>
@@ -132,6 +135,17 @@ export function NetworkTile() {
   const PORTAL_TIP = 'Open the Firewalla portal in the browser';
   // Quiet and with no door to open, the facts take the right side as one box, each on its own row.
   const factsAside = !busy && s.kind === 'ready' && !doors && facts.all.length > 0;
+  // The title is the card's most important line: one line at 27 px when it fits its column, else two lines at 22 px.
+  const titleRef = useRef<HTMLSpanElement>(null);
+  const [longTitle, setLongTitle] = useState(false);
+  useLayoutEffect(() => {
+    const el = titleRef.current;
+    if (!el) return;
+    el.classList.remove('long');
+    const over = el.scrollWidth > el.clientWidth + 0.5;
+    el.classList.toggle('long', over);
+    setLongTitle(over);
+  }, [s.title, busy, doors, factsAside]);
   return (
     <section className={open && busy ? 'network-block drawer-open' : 'network-block'} aria-label="Network and security">
       <div className="net-head">
@@ -145,7 +159,11 @@ export function NetworkTile() {
             {cleared}
           </span>
         ) : (
-          side && <span className={s.stale ? 'xs stale' : 'xs'}>{side}</span>
+          side && (
+            <span className={s.stale ? 'xs stale' : 'xs'} {...(s.asOf ? tip(`The home app's last answer, ${s.asOf.replace(/^as of /, '')}`) : {})}>
+              {side}
+            </span>
+          )
         )}
       </div>
       <div
@@ -158,8 +176,10 @@ export function NetworkTile() {
         <span className="shield-art" {...tip(ringTip(s))}>
           <ShieldRing s={s} />
         </span>
-        <span className="shield-txt">
-          <span className="shield-title">{s.title}</span>
+        <span className={longTitle ? 'shield-txt longtitle' : 'shield-txt'}>
+          <span ref={titleRef} className={longTitle ? 'shield-title long' : 'shield-title'} {...tip(s.title)}>
+            {s.title}
+          </span>
           <span className="shield-sub" {...tip(detail || s.title)}>
             {sub.map((l, i) => (
               <span key={i}>{l}</span>
