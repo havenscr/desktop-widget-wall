@@ -49,11 +49,17 @@ async function mountedText(search: string): Promise<Record<string, string>> {
   return text;
 }
 
-it('keeps real Work, Home, Unwind and Meet text unchanged with the call development knobs set (the call has no screen yet)', async () => {
+it('keeps real Home and Unwind text unchanged with the call development knobs set; Meet shows the call and opens by itself', async () => {
   vi.useFakeTimers();
   vi.setSystemTime(new Date(2026, 10, 12, 10, 0));
   vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, json: async () => weather })));
   const none = await mountedText('?call=none');
   const all = await mountedText('?call=teams&camera=1');
-  expect(all).toEqual(none);
+  expect(all.home).toEqual(none.home);
+  expect(all.unwind).toEqual(none.unwind);
+  // The call opens Meet by itself (so the first place read here is Meet's text too), and Meet is where the call shows.
+  expect(none.meet).not.toContain('In call');
+  expect(all.meet).toContain('In call, Teams');
+  expect(all.meet).toContain('Camera on');
+  expect(all.work).toBe(all.meet);
 });

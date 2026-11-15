@@ -3,6 +3,11 @@ import { reviewNow } from '../../ui/reviewClock';
 import type { MeetingDetails, Person, Reply } from '../../meet/model';
 import { mocks } from '../tauri';
 
+const STALE_ACCOUNTS = [
+  { id: 'work', label: 'Work', state: 'unavailable', reason: 'graph-503-UnknownError' },
+  { id: 'second', label: 'Second', state: 'unavailable', reason: 'graph-503-UnknownError' },
+];
+
 const p = (name: string, reply: Reply): Person => ({ name, reply });
 
 /** Invented people and invite words for the Meet layout's mock meetings. Nothing here is real. */
@@ -55,8 +60,8 @@ export function registerMeetMocks(): void {
   // `?meet=none`: both read, nothing scheduled. `?meet=busy`: five meetings at once at 1 PM.
   const mode = () => knob('meet') ?? '';
   // `?meet=before|known|new|bare` (the Meet layout): `before` has the next meeting 20 minutes away, `known` and `new` a meeting
-  // under way (40 minutes left) with details, `bare` a live meeting with no details, `?mtitle=long` gives the hero meeting a 206 character title. `heavy` is in gallery.ts, with details from here.
-  const layout = () => ['before', 'known', 'new', 'bare'].includes(mode());
+  // under way (40 minutes left) with details, `bare` a live meeting with no details, `stale` the `known` meeting read once and then no account answers (the hero is dimmed with "as of"), `?mtitle=long` gives the hero meeting a 206 character title. `heavy` is in gallery.ts, with details from here.
+  const layout = () => ['before', 'known', 'new', 'bare', 'stale'].includes(mode());
   const accounts = () =>
     layout()
       ? [
@@ -105,7 +110,7 @@ export function registerMeetMocks(): void {
       { key: '1-3', accountId: 'work', title: 'Weekly planning', start: iso(lunch + 300 * 60_000), end: iso(lunch + 330 * 60_000), canJoin: true },
     ];
   };
-  mocks.set('wall2_meet_next', () => ({
+  mocks.set('wall2_meet_next', (args) => mode() === 'stale' && args?.only ? { accounts: STALE_ACCOUNTS, meetings: [] } : {
     accounts: accounts(),
     meetings: layout() ? layoutMeetings() : mode() === 'down' || mode() === 'none' ? [] : [
       { key: '1-0', accountId: 'work', title: longOr('Design review with the platform team', 'Quarterly planning and roadmap review with the whole platform team'), start: at(-10), end: at(20), canJoin: true, details: MOCK_DETAILS.known },
@@ -113,7 +118,7 @@ export function registerMeetMocks(): void {
       { key: '1-2', accountId: 'work', title: 'Lunch with Sam', start: at(150), end: at(210), canJoin: false },
       ...(second ? [{ key: '1-3', accountId: 'second', title: 'Board prep', start: at(320), end: at(380), canJoin: true }] : []),
     ],
-  }));
+  });
   // The day feed: local midnight to the end of tomorrow, past events included.
   mocks.set('wall2_meet_day', () => {
     // A review still (`?hz=&at=`) gets its day on the review's date.

@@ -115,6 +115,7 @@ export default {
       state('nothing scheduled', 'meet=none', ['Nothing scheduled in the next 24 hours', 'Nothing else today', 'Your first-meeting list', 'Open file']),
       state('calendar not set up', 'meet=off', ['Calendar is not connected yet.', 'No calendar can be read.', 'Open file']),
       state('no account readable', 'meet=down', ['Calendar not available', 'No good read yet', 'No calendar can be read.']),
+      state('no account readable, the last meeting kept (dimmed, as of)', 'meet=stale', ['Last known meeting', 'Design review with the platform team', 'as of', 'Calendar not read', '!Join', '!min left']),
       state('the hover tip on Mute', 'meet=known&call=teams&checklist=four', ['Sends Ctrl+Shift+M to Teams. The wall cannot see whether you are muted.'], 'hover:.meet-key[data-role="mute"]'),
       state('the island moved to its second kind (arrow click)', 'meet=known&call=teams&checklist=four', ['Who is coming', 'Said yes', 'Also on file', 'Casey Rowe'], '.meet-arrow[aria-label="Next"]'),
     ],

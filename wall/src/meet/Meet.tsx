@@ -51,7 +51,17 @@ function UnavailableHero({ m }: { m: MeetState }) {
       {/* The Next card beside this carries the one Open Tools link. */}
       {trouble && <TroubleLine text={trouble} plain />}
       {m.notice && <div className="meet-xs meet-notice">{m.notice}</div>}
+      <ReadAgain m={m} />
     </div>
+  );
+}
+
+/** Reads the calendar again now, for a state where nothing can be shown fresh. */
+function ReadAgain({ m }: { m: MeetState }) {
+  return (
+    <button type="button" className="meet-btn meet-retry" onClick={m.refresh} {...tip('Read the calendar again now')}>
+      Read again
+    </button>
   );
 }
 
@@ -95,6 +105,9 @@ function StaleHero({ m, meeting, label, at }: { m: MeetState; meeting: Meeting; 
         </div>
         <div className="meet-xs meet-stale">as of {clockText(at)}</div>
         {trouble && <TroubleLine text={trouble} />}
+      </div>
+      <div className="meet-hero-last">
+        <ReadAgain m={m} />
       </div>
     </div>
   );

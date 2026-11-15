@@ -436,6 +436,9 @@
   align-self: flex-start;
   margin-top: 8px;
 }
+.meet-hero-last .meet-retry {
+  margin-top: 0;
+}
 .meet-headline-block {
   display: flex;
   flex-direction: column;
