@@ -130,3 +130,69 @@ it('says the frame did not take a message when none is loaded (the controls then
   expect(wallVideoControls.next()).toBe(false);
   expect(wallVideoControls.previous()).toBe(false);
 });
+
+// Entry 1 of the first fix round: a pause or play pressed while the frame is still loading is sent once the frame loads.
+async function loadingFrame() {
+  const st = useWatchStore.getState();
+  st.setTab('watch');
+  st.play({ kind: 'video', id: V });
+  render(<WatchStageLayer />);
+  await act(async () => {});
+  const frame = document.querySelector('iframe') as HTMLIFrameElement;
+  const posted: string[] = [];
+  vi.spyOn(frame.contentWindow!, 'postMessage').mockImplementation(((msg: unknown) => {
+    posted.push(String(msg));
+  }) as typeof window.postMessage);
+  const load = () =>
+    act(async () => {
+      frame.dispatchEvent(new Event('load'));
+    });
+  const state = (word: string) => posted.filter((m) => m.includes(word)).length;
+  return { posted, load, state };
+}
+
+it('a pause pressed before the frame has loaded is sent when it loads, once', async () => {
+  const { load, state } = await loadingFrame();
+  await act(async () => {
+    wallVideoControls.togglePause();
+  });
+  expect(useWatchStore.getState().paused).toBe(true);
+  // Nothing could be sent to a frame that is not loaded.
+  expect(state('pauseVideo') + state('playVideo')).toBe(0);
+  await load();
+  expect(state('pauseVideo')).toBe(1);
+  expect(state('playVideo')).toBe(0);
+});
+
+it('a play pressed early (pause, then play, before the load) is sent when it loads, once', async () => {
+  const { load, state } = await loadingFrame();
+  await act(async () => {
+    wallVideoControls.togglePause();
+  });
+  await act(async () => {
+    wallVideoControls.togglePause();
+  });
+  expect(useWatchStore.getState().paused).toBe(false);
+  await load();
+  expect(state('playVideo')).toBe(1);
+  expect(state('pauseVideo')).toBe(0);
+});
+
+it('in the ordinary case no pause or play message is sent twice', async () => {
+  const { load, state } = await loadingFrame();
+  await load();
+  expect(state('playVideo')).toBe(1);
+  expect(state('pauseVideo')).toBe(0);
+  // Pressing Pause once the frame is loaded sends one pause message, not two.
+  await act(async () => {
+    wallVideoControls.togglePause();
+  });
+  expect(state('pauseVideo')).toBe(1);
+  expect(state('playVideo')).toBe(1);
+  // A re-render with nothing changed sends nothing more.
+  await act(async () => {
+    useWatchStore.getState().setReport({ time: 5, duration: 100 });
+  });
+  expect(state('pauseVideo')).toBe(1);
+  expect(state('playVideo')).toBe(1);
+});
