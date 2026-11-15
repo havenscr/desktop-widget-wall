@@ -211,16 +211,16 @@ The sign-in and its row in Tools came first; the library came next, and a pick f
   There is one player: a pick replaces a Watch video and a Watch play or a pin replaces the music; Spotify and the
   wall's player can still play together. It stops as a Watch video does (the page hidden, the display off or
   Windows locked, Screens off, a call, the sleep timer) and nothing starts it again. A pick is never saved and
-  never changes the tab; on the Watch tab it shows as the single video it is, with its real title and channel.
+  never changes the tab; a pick the owner starts (a row, Play, Shuffle, Play again) is heard even if a Watch video left the player muted, while an automatic advance never changes mute; on the Watch tab it shows as the single video it is, with its real title and channel.
   The queue is the list the pick came from, in memory only (never kept across a restart) and never wrapping. It
   grows only through the library store (within 10 entries of its end, and up to 200 rows after Play, Shuffle or a
-  click): it takes the rows the store has read and asks the store for its next page; it never reads with a page
+  click, counted in rows read of the list, however few of them can play): it takes the rows the store has read and asks the store for its next page; it never reads with a page
   token of its own, and it ends where its rows end once the list has left the store. Loads are at least a second
   apart (a click inside that time waits and the last click wins), a video that ends advances once, and Previous
   restarts the video after 3 seconds. The player's `onError` code is read (a whole number from 0 to 999, nothing
   else of that message): 100 greys the row as "Removed" for the session, 101 and 150 as "Only on YouTube", and
   any code skips with one quiet line in the card ("Skipped Glass Harbor: it plays only on YouTube." and its
-  two siblings); five in a row stop the queue ("Stopped after five videos in a row would not play."). The line goes
+  two siblings); on the last entry the queue ends instead ("Glass Harbor would not play. That was the last one.", Play again offered); five in a row stop the queue ("Stopped after five videos in a row would not play."; the count starts again only when a video has played past 2 seconds or the owner asks for a play). The line goes
   after 8 seconds or at the next play. If YouTube does not start the sound, the foot (tall) and the note line (at
   rest) say so with one button, "Start it on Watch", which shows the video on Watch where one click starts it.
   Tall, the foot player (791 by 61) shows whatever the wall's player holds: the music with the queue's previous
