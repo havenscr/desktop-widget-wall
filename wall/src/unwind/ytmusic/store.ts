@@ -22,6 +22,10 @@ export interface Loaded<T> {
   loading: boolean;
   loaded: boolean;
   problem: YtProblem | null;
+  /** Which read the problem belongs to, so Retry repeats that one (the first page or a next page); null without a problem. */
+  failed: 'first' | 'more' | null;
+  /** Whether the failed first-page read asked Rust to skip its cache (a Refresh), so Retry does the same. */
+  failedFresh: boolean;
   /** When the first page was last read from YouTube, as a clock time (ms). */
   readAt: number | null;
 }
@@ -29,7 +33,7 @@ export interface Loaded<T> {
 export type YtTab = 'playlists' | 'liked';
 type Key = 'playlists' | 'liked' | 'songs';
 
-const blank = <T,>(): Loaded<T> => ({ items: [], next: null, pages: 0, loading: false, loaded: false, problem: null, readAt: null });
+const blank = <T,>(): Loaded<T> => ({ items: [], next: null, pages: 0, loading: false, loaded: false, problem: null, failed: null, failedFresh: false, readAt: null });
 
 interface LibraryState {
   tab: YtTab;
@@ -57,6 +61,44 @@ const MEMO_MAX = 30;
 /** Bumped by a reset: an answer that arrives after one is dropped. */
 let epoch = 0;
 
+/**
+ * Whether the library is on screen: mounted (the YouTube side shows it) and the page visible. Nothing is
+ * read while it is not, and `seq` changes whenever it is shown or closed, so a read that was started by an
+ * earlier showing never writes its answer into the store (what is loaded stays).
+ */
+const view = { mounted: false, visible: true, seq: 0 };
+const canRead = () => view.mounted && view.visible;
+/** The library was mounted; the returned function says it is gone. */
+export function libraryMounted(): () => void {
+  view.mounted = true;
+  view.seq += 1;
+  return () => {
+    view.mounted = false;
+    view.seq += 1;
+  };
+}
+export function libraryVisible(visible: boolean): void {
+  view.visible = visible;
+}
+
+/** How long a loaded list is trusted before the card reads it again on being shown (Rust's own cache times). */
+const STALE_MS: Record<'playlists' | 'liked', number> = { playlists: 60 * 60 * 1000, liked: 10 * 60 * 1000 };
+
+/**
+ * Start the reads the library is waiting for, once it can read: the first page of the shown list when it has
+ * none (or its read failed with nothing to show, or it is older than Rust keeps it), and the opened playlist's
+ * first page when that never got read. What is already loaded, with the pages read, stays: Refresh re-reads.
+ */
+export function startReads(now = Date.now()): void {
+  if (!canRead()) return;
+  const s = useYtLibrary.getState();
+  if (s.opened && !s.songs.loaded && !s.songs.loading) void loadList('songs');
+  const cur = s[s.tab];
+  if (cur.loading) return;
+  const old = cur.readAt !== null && now - cur.readAt > STALE_MS[s.tab];
+  if (!cur.loaded || old || (cur.problem && cur.items.length === 0)) void loadList(s.tab);
+}
+
 function shaped<T>(page: YtPage<T> | null | undefined): YtPage<T> {
   return {
     items: Array.isArray(page?.items) ? page.items : [],
@@ -79,38 +121,49 @@ const staleStatus = (p: YtProblem) => p === 'needsSignIn' || p === 'broken' || p
  * while the first page is read again. `fresh` asks Rust to skip its own cache for this one list.
  */
 export async function loadList(key: Key, more = false, fresh = false): Promise<void> {
+  if (!canRead()) return;
   const state = useYtLibrary.getState();
   const cur = state[key] as Loaded<YtPlaylist | YtVideo>;
   if (cur.loading) return;
   if (more && (!cur.next || cur.pages >= MAX_PAGES || cur.problem)) return;
   const mine = epoch;
+  const shown = view.seq;
   const forId = key === 'songs' ? state.opened?.id : null;
   const set = (patch: (c: Loaded<YtPlaylist | YtVideo>) => Loaded<YtPlaylist | YtVideo>) => useYtLibrary.setState((s) => ({ [key]: patch(s[key] as Loaded<YtPlaylist | YtVideo>) }) as Partial<LibraryState>);
-  set((c) => ({ ...c, loading: true, problem: null }));
+  const gone = () => mine !== epoch || (key === 'songs' && useYtLibrary.getState().opened?.id !== forId);
+  set((c) => ({ ...c, loading: true, problem: null, failed: null }));
   try {
     const page = shaped(await read(key, more ? cur.next : null, fresh));
-    if (mine !== epoch || (key === 'songs' && useYtLibrary.getState().opened?.id !== forId)) return;
+    if (gone()) return;
+    // The library was closed (or shown again) while this read ran: what is loaded stays as it was.
+    if (shown !== view.seq) return void set((c) => ({ ...c, loading: false }));
     set((c) => ({
-      items: more ? (mergePage(c.items as { id: string }[], page.items as { id: string }[]) as typeof c.items) : page.items,
+      // One rule for every page: a video already in the list is not added again.
+      items: mergePage(more ? (c.items as { id: string }[]) : [], page.items as { id: string }[]) as typeof c.items,
       next: page.next,
       pages: more ? c.pages + 1 : 1,
       loading: false,
       loaded: true,
       problem: null,
+      failed: null,
+      failedFresh: false,
       readAt: more ? c.readAt : Date.now(),
     }));
   } catch (e) {
-    if (mine !== epoch || (key === 'songs' && useYtLibrary.getState().opened?.id !== forId)) return;
+    if (gone()) return;
+    if (shown !== view.seq) return void set((c) => ({ ...c, loading: false }));
     const problem = ytProblem(e);
-    set((c) => ({ ...c, loading: false, loaded: true, problem }));
+    set((c) => ({ ...c, loading: false, loaded: true, problem, failed: more ? 'more' : 'first', failedFresh: !more && fresh }));
     if (staleStatus(problem)) void readYoutubeStatus();
   }
 }
 
-/** Try the failed next page again (a problem on a later page keeps the rows already read). */
-export function retryMore(key: Key): void {
-  useYtLibrary.setState((s) => ({ [key]: { ...s[key], problem: null } }) as Partial<LibraryState>);
-  void loadList(key, true);
+/** Retry the read that failed: the first page (a failed Refresh or re-read) or the next page. */
+export function retryList(key: Key): void {
+  const cur = useYtLibrary.getState()[key] as Loaded<YtPlaylist | YtVideo>;
+  const more = (cur.failed ?? 'more') === 'more';
+  useYtLibrary.setState((s) => ({ [key]: { ...s[key], problem: null, failed: null } }) as Partial<LibraryState>);
+  void loadList(key, more, !more && cur.failedFresh);
 }
 
 export function setTab(tab: YtTab): void {
@@ -132,28 +185,54 @@ export function refreshSongs(): void {
   void loadList('songs', false, true);
 }
 
+/** Each search takes the next number; an answer applies only while it still carries the latest one. */
+let searchSeq = 0;
+/** Searches in flight by lower-cased words: the same words asked again share the call. */
+const flights = new Map<string, Promise<YtPage<YtVideo>>>();
+
 /** Run a search. Only ever called by Enter: each one that is not repeated spends one of the day's searches. */
 export async function runSearch(text: string): Promise<void> {
   const words = searchWords(text);
-  if (!words) return;
+  if (!words || !canRead()) return;
   const mine = epoch;
+  const shown = view.seq;
+  const seq = ++searchSeq;
   const key = words.toLowerCase();
   const seen = memo.get(key);
   if (seen && Date.now() - seen.at < MEMO_MS) {
-    useYtLibrary.setState({ opened: null, songs: blank(), query: words, found: { items: seen.page.items, next: null, pages: 1, loading: false, loaded: true, problem: null, readAt: seen.at } });
+    useYtLibrary.setState({ opened: null, songs: blank(), query: words, found: { items: seen.page.items, next: null, pages: 1, loading: false, loaded: true, problem: null, failed: null, failedFresh: false, readAt: seen.at } });
     return;
   }
   useYtLibrary.setState({ opened: null, songs: blank(), query: words, found: { ...blank<YtVideo>(), loading: true } });
+  let flight = flights.get(key);
+  if (!flight) {
+    flight = youtube.search(words);
+    flights.set(key, flight);
+    const started = flight;
+    const done = () => {
+      if (flights.get(key) === started) flights.delete(key);
+    };
+    started.then(done, done);
+  }
+  // This search is over for the page if it is old (a newer one was asked), or if the library was closed meanwhile.
+  const stale = () => mine !== epoch || seq !== searchSeq;
+  const closed = () => {
+    if (shown === view.seq) return false;
+    if (seq === searchSeq) useYtLibrary.setState({ query: '', found: null });
+    return true;
+  };
   try {
-    const page = shaped(await youtube.search(words));
-    if (mine !== epoch || useYtLibrary.getState().query !== words) return;
-    memo.set(key, { at: Date.now(), page });
-    if (memo.size > MEMO_MAX) memo.delete(memo.keys().next().value as string);
-    useYtLibrary.setState({ found: { items: page.items, next: null, pages: 1, loading: false, loaded: true, problem: null, readAt: Date.now() } });
+    const page = shaped(await flight);
+    if (mine === epoch) {
+      memo.set(key, { at: Date.now(), page });
+      if (memo.size > MEMO_MAX) memo.delete(memo.keys().next().value as string);
+    }
+    if (stale() || closed()) return;
+    useYtLibrary.setState({ found: { items: mergePage<YtVideo>([], page.items), next: null, pages: 1, loading: false, loaded: true, problem: null, failed: null, failedFresh: false, readAt: Date.now() } });
   } catch (e) {
-    if (mine !== epoch || useYtLibrary.getState().query !== words) return;
+    if (stale() || closed()) return;
     const problem = ytProblem(e);
-    useYtLibrary.setState((s) => ({ found: { ...blank<YtVideo>(), loaded: true, problem }, searchQuota: s.searchQuota || problem === 'quota' }));
+    useYtLibrary.setState((s) => ({ found: { ...blank<YtVideo>(), loaded: true, problem, failed: 'first' }, searchQuota: s.searchQuota || problem === 'quota' }));
     if (staleStatus(problem)) void readYoutubeStatus();
   }
   // The count of searches left changed (or the answer came from memory and it did not): ask.
@@ -173,5 +252,6 @@ export function searchesBack(): void {
 export function resetLibrary(): void {
   epoch += 1;
   memo.clear();
+  flights.clear();
   useYtLibrary.setState(initial());
 }

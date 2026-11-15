@@ -96,6 +96,12 @@
   margin: -5px calc(-5px - var(--yt-sb)) 0 -5px;
   padding: 5px 5px 0 5px;
 }
+/* A list of rows takes the keyboard (arrows, Page Up and Down, Home and End scroll it): its ring is inside the box. */
+.yt-rowscroll:focus-visible {
+  outline: 2px solid var(--cyan);
+  outline-offset: -2px;
+  border-radius: 12px;
+}
 /* Rows fade at their foot while more is below. */
 .yt-rowscroll {
   -webkit-mask-image: linear-gradient(180deg, #000 calc(100% - 34px), rgba(0, 0, 0, 0.25));
@@ -117,6 +123,7 @@
   aspect-ratio: 16 / 9;
 }
 .yt-tile .sp-tname2 {
+  margin-top: 6px;
   font-size: 18px;
   line-height: 22px;
 }
@@ -135,7 +142,7 @@
 .yt-row {
   height: 42px;
   display: grid;
-  grid-template-columns: 34px minmax(0, 1.4fr) minmax(0, 1fr) 130px;
+  grid-template-columns: 34px minmax(0, 1.4fr) minmax(0, 1fr) 56px;
   align-items: center;
   gap: 12px;
   padding: 0 8px;
@@ -160,14 +167,20 @@
   text-overflow: ellipsis;
 }
 .yt-chan {
-  font: 400 16px/20px var(--body);
+  font: 400 18px/22px var(--body);
   color: var(--dim);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
+/* The length column is 56 px, as drawn. The words of a greyed row ("Only on YouTube") are wider: they grow
+   to the left over the channel's room, which a greyed row gives up (its channel stops 90 px short). */
+.yt-row.off .yt-chan {
+  margin-right: 90px;
+}
 .yt-len {
-  min-width: 52px;
+  display: flex;
+  justify-content: flex-end;
   text-align: right;
   font: 400 16px/1 var(--body);
   color: var(--dim);

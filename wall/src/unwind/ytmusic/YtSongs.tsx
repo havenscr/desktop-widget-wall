@@ -2,7 +2,7 @@ import { useEffect } from 'react';
 import { IconArrowLeft } from '@tabler/icons-react';
 import { tip } from '../../ui/HoverTip';
 import { MAX_PAGES, PAGE_SIZE, nearEnd, readTime, videosLine } from './model';
-import { closePlaylist, loadList, refreshSongs, retryMore, useYtLibrary } from './store';
+import { closePlaylist, loadList, refreshSongs, retryList, useYtLibrary } from './store';
 import { RowSkeletons, YtEmpty, YtRows, YtState, YtThumb } from './YtParts';
 
 /**
@@ -49,6 +49,9 @@ export function YtSongs({ tall }: { tall: boolean }) {
       </div>
       <div
         className="yt-scroll yt-rowscroll"
+        tabIndex={0}
+        role="region"
+        aria-label={`Videos in ${opened.title}`}
         onScroll={(e) => {
           if (songs.next && !songs.loading && !songs.problem && nearEnd(e)) void loadList('songs', true);
         }}
@@ -66,7 +69,7 @@ export function YtSongs({ tall }: { tall: boolean }) {
             items={songs.items}
             foot={
               songs.problem ? (
-                <YtState problem={songs.problem} onRetry={() => retryMore('songs')} onBack={closePlaylist} />
+                <YtState problem={songs.problem} onRetry={() => retryList('songs')} onBack={closePlaylist} />
               ) : capped ? (
                 <div className="yt-cap">Showing the first {(MAX_PAGES * PAGE_SIZE).toLocaleString('en-US')}</div>
               ) : null

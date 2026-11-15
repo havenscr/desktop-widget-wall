@@ -100,8 +100,8 @@ export function YtRows({ items, foot }: { items: YtVideo[]; foot?: ReactNode }) 
               {...tip(() => (
                 <div className="sp-tipline">
                   <b>{lines[0]}</b>
-                  {lines.slice(1).map((l) => (
-                    <span key={l}>{l}</span>
+                  {lines.slice(1).map((l, n) => (
+                    <span key={n}>{l}</span>
                   ))}
                 </div>
               ))}

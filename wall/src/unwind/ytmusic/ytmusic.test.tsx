@@ -10,6 +10,7 @@ import { resetSpotifyStatus } from '../spotify/status';
 import { hintFor, lengthText, mergePage, rowWords, safeThumb, searchesLine, searchSpent, searchWords, sideMode, videosLine, ytProblem, MAX_PAGES } from './model';
 import { resetYoutubeStatus, useYoutubeStatus } from './status';
 import { resetLibrary, useYtLibrary } from './store';
+import { YT_STATUS_POLL_MS } from './status';
 import { YtMusicSide } from './YtMusicSide';
 
 vi.setConfig({ testTimeout: 20_000 });
@@ -56,6 +57,9 @@ const library = async (tall = false, opts?: Parameters<typeof setup>[0]) => {
 };
 const tile = (name: string) => screen.getByText(name).closest('button') as HTMLButtonElement;
 
+let calls0 = 0;
+beforeEach(() => { calls0 = 0; });
+
 describe('model', () => {
   it('maps the bridge words to problems and lines', () => {
     expect(ytProblem(new Error('not set up'))).toBe('notsetup');
@@ -100,6 +104,7 @@ describe('model', () => {
     const merged = mergePage([video(1), video(2)], [video(2), video(3)]);
     expect(merged.map((v) => v.id)).toEqual([video(1).id, video(2).id, video(3).id]);
     expect(mergePage([], [])).toEqual([]);
+    expect(mergePage([], [video(1), video(1), video(2)]).map((v) => v.id)).toEqual([video(1).id, video(2).id]);
   });
 
   it('draws only pictures from YouTube’s picture host (and the mocks’ own motif in a development build)', () => {
@@ -333,14 +338,22 @@ describe('the library', () => {
     expect(document.querySelector('.yt-songs.tall')).toBeNull();
   });
 
-  it('keeps the opened playlist when the tall view opens and closes', async () => {
-    await library(false);
-    fireEvent.click(tile('Mix 1'));
-    await screen.findByText('Clip 1');
-    const r = render(<div />);
-    r.unmount();
-    expect(useYtLibrary.getState().opened?.id).toBe('PLtest1');
-    expect(useYtLibrary.getState().songs.items.length).toBe(6);
+  it('keeps the opened playlist and three read pages when the tall view opens and closes', async () => {
+    const calls = setup({ playlists: () => page([playlist(calls0++)], 'next_tok') });
+    useYoutubeStatus.setState({ status: signedIn(), failed: false });
+    const r = render(<YtMusicSide tall={false} remote={null} />);
+    await screen.findByText('Mix 0');
+    for (let i = 0; i < 2; i += 1) {
+      await act(async () => { fireEvent.scroll(document.querySelector('.yt-scroll') as HTMLElement); });
+      await waitFor(() => expect(useYtLibrary.getState().playlists.loading).toBe(false));
+    }
+    expect(calls.playlists.length).toBe(3);
+    r.rerender(<YtMusicSide tall remote={null} />);
+    r.rerender(<YtMusicSide tall={false} remote={null} />);
+    await act(async () => { await new Promise((ok) => setTimeout(ok, 30)); });
+    expect(calls.playlists.length).toBe(3);
+    expect(useYtLibrary.getState().playlists.items.length).toBe(3);
+    expect(screen.getByText('Mix 2')).toBeTruthy();
   });
 
   it('keeps the arrow-key walk between tiles', async () => {
@@ -621,5 +634,258 @@ describe('paging', () => {
     await act(async () => { fireEvent.scroll(document.querySelector('.yt-scroll') as HTMLElement); });
     await screen.findByText('Mix 3');
     expect(document.querySelectorAll('.yt-tile').length).toBe(3);
+  });
+});
+
+// ---- fix round -----------------------------------------------------------------------------
+
+function deferred<T>() {
+  let resolve!: (v: T) => void;
+  let reject!: (e: unknown) => void;
+  const promise = new Promise<T>((a, b) => {
+    resolve = a;
+    reject = b;
+  });
+  return { promise, resolve, reject };
+}
+let hiddenNow = false;
+function setHidden(hidden: boolean) {
+  hiddenNow = hidden;
+  Object.defineProperty(document, 'hidden', { configurable: true, get: () => hiddenNow });
+  document.dispatchEvent(new Event('visibilitychange'));
+}
+const signedInStatus = () => useYoutubeStatus.setState({ status: signedIn(), failed: false });
+const scrollFar = (el: HTMLElement, top: number, client: number, height: number) => {
+  Object.defineProperty(el, 'clientHeight', { configurable: true, value: client });
+  Object.defineProperty(el, 'scrollHeight', { configurable: true, value: height });
+  el.scrollTop = top;
+  fireEvent.scroll(el);
+};
+
+describe('reads and the page being shown', () => {
+  afterEach(() => setHidden(false));
+
+  it('reads nothing while the page is hidden, and the pending first read once it shows', async () => {
+    const calls = setup();
+    setHidden(true);
+    signedInStatus();
+    side();
+    await act(async () => { await new Promise((ok) => setTimeout(ok, 40)); });
+    expect(calls.playlists.length).toBe(0);
+    act(() => setHidden(false));
+    await screen.findByText('Mix 1');
+    expect(calls.playlists.length).toBe(1);
+  });
+
+  it('polls the status every minute while shown and not at all while hidden', async () => {
+    vi.useFakeTimers();
+    try {
+      const calls = setup();
+      render(<YtMusicSide tall={false} remote={null} />);
+      await act(async () => { await vi.advanceTimersByTimeAsync(10); });
+      const first = calls.status;
+      expect(first).toBeGreaterThan(0);
+      await act(async () => { await vi.advanceTimersByTimeAsync(YT_STATUS_POLL_MS); });
+      expect(calls.status).toBe(first + 1);
+      act(() => setHidden(true));
+      await act(async () => { await vi.advanceTimersByTimeAsync(YT_STATUS_POLL_MS * 3); });
+      expect(calls.status).toBe(first + 1);
+      act(() => setHidden(false));
+      await act(async () => { await vi.advanceTimersByTimeAsync(10); });
+      expect(calls.status).toBe(first + 2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('writes nothing from a read that was still running when the library was closed', async () => {
+    const held = deferred<YtPage<YtPlaylist>>();
+    const calls = setup({ playlists: () => held.promise });
+    signedInStatus();
+    const r = side();
+    await waitFor(() => expect(calls.playlists.length).toBe(1));
+    r.unmount();
+    held.resolve(page([playlist(1)]));
+    await act(async () => { await new Promise((ok) => setTimeout(ok, 30)); });
+    expect(useYtLibrary.getState().playlists.items.length).toBe(0);
+    expect(useYtLibrary.getState().playlists.loading).toBe(false);
+    expect(useYtLibrary.getState().playlists.loaded).toBe(false);
+    // Shown again, it reads once and shows the list.
+    side();
+    await screen.findByText('Mix 1');
+    expect(calls.playlists.length).toBe(2);
+  });
+
+  it('reads the next page only within 160 px of the end', async () => {
+    let n = 0;
+    const calls = setup({ playlists: () => page([playlist(++n)], 'more_tok') });
+    signedInStatus();
+    side();
+    await screen.findByText('Mix 1');
+    const el = document.querySelector('.yt-scroll') as HTMLElement;
+    scrollFar(el, 0, 300, 2000);
+    scrollFar(el, 1000, 300, 2000);
+    scrollFar(el, 1539, 300, 2000);
+    await act(async () => { await new Promise((ok) => setTimeout(ok, 30)); });
+    expect(calls.playlists.length).toBe(1);
+    scrollFar(el, 1540, 300, 2000);
+    await screen.findByText('Mix 2');
+    expect(calls.playlists.length).toBe(2);
+  });
+});
+
+describe('searches that overlap', () => {
+  const enter = (value: string) => {
+    const field = screen.getByPlaceholderText('Search music on YouTube');
+    fireEvent.change(field, { target: { value } });
+    fireEvent.keyDown(field, { key: 'Enter' });
+  };
+
+  it('never lets an older answer replace a newer one, whatever order they come back in', async () => {
+    const held: Record<string, ReturnType<typeof deferred<YtPage<YtVideo>>>> = { aaa: deferred(), bbb: deferred() };
+    await library(false, { search: (q) => held[q].promise as never });
+    enter('aaa');
+    enter('bbb');
+    await waitFor(() => expect(Object.keys(held).length).toBe(2));
+    held.bbb.resolve(page([video(31)]));
+    await screen.findByText('Clip 31');
+    held.aaa.resolve(page([video(32)]));
+    await act(async () => { await new Promise((ok) => setTimeout(ok, 30)); });
+    expect(screen.queryByText('Clip 32')).toBeNull();
+    expect(screen.getByText('Results for', { exact: false }).textContent).toBe('Results for bbb');
+  });
+
+  it('keeps the newest search when the older one answers first', async () => {
+    const held: Record<string, ReturnType<typeof deferred<YtPage<YtVideo>>>> = { aaa: deferred(), bbb: deferred() };
+    await library(false, { search: (q) => held[q].promise as never });
+    enter('aaa');
+    enter('bbb');
+    held.aaa.resolve(page([video(32)]));
+    await act(async () => { await new Promise((ok) => setTimeout(ok, 30)); });
+    expect(screen.queryByText('Clip 32')).toBeNull();
+    held.bbb.resolve(page([video(31)]));
+    await screen.findByText('Clip 31');
+  });
+
+  it('makes one call for the same words asked twice while the first is on its way, and the second still applies', async () => {
+    const held = deferred<YtPage<YtVideo>>();
+    const { calls } = await library(false, { search: () => held.promise as never });
+    enter('night');
+    enter('Night ');
+    expect(calls.search.length).toBe(1);
+    held.resolve(page([video(41)]));
+    await screen.findByText('Clip 41');
+    expect(calls.search.length).toBe(1);
+    // An older search with other words, asked in between, cannot spoil the shared answer either.
+    expect(useYtLibrary.getState().found?.items.length).toBe(1);
+  });
+
+  it('the same words asked again after another search wait for the call already out', async () => {
+    const held: Record<string, ReturnType<typeof deferred<YtPage<YtVideo>>>> = { aaa: deferred(), bbb: deferred() };
+    const { calls } = await library(false, { search: (q) => held[q].promise as never });
+    enter('aaa');
+    enter('bbb');
+    enter('aaa');
+    expect(calls.search.length).toBe(2);
+    held.aaa.resolve(page([video(51)]));
+    await screen.findByText('Clip 51');
+    held.bbb.resolve(page([video(52)]));
+    await act(async () => { await new Promise((ok) => setTimeout(ok, 30)); });
+    expect(screen.queryByText('Clip 52')).toBeNull();
+    expect(screen.getByText('Results for', { exact: false }).textContent).toBe('Results for aaa');
+  });
+
+  it('repeats a failed search by asking again (Rust keeps the answer and reads the details only)', async () => {
+    let n = 0;
+    const { calls } = await library(false, { search: () => { n += 1; if (n === 1) throw new Error('down'); return page([video(61)]); } });
+    enter('retry me');
+    await screen.findByText('YouTube is not answering.');
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+    await screen.findByText('Clip 61');
+    expect(calls.search).toEqual([{ query: 'retry me' }, { query: 'retry me' }]);
+  });
+});
+
+describe('Retry repeats the read that failed', () => {
+  it('a failed Refresh retries the first page, not the next one', async () => {
+    let n = 0;
+    const calls = setup({ items: () => { n += 1; if (n === 2) throw new Error('busy'); return page([video(1), video(2)], null); } });
+    side();
+    await screen.findByText('Mix 1');
+    fireEvent.click(tile('Mix 1'));
+    await screen.findByText('Clip 1');
+    fireEvent.click(screen.getByRole('button', { name: 'Refresh' }));
+    await screen.findByText('YouTube is busy. Try again in a minute.');
+    expect(screen.getByText('Clip 1')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+    await waitFor(() => expect(calls.items.length).toBe(3));
+    expect(calls.items[2]).toEqual({ playlistId: 'PLtest1', pageToken: null, fresh: true });
+    await waitFor(() => expect(screen.queryByText('YouTube is busy. Try again in a minute.')).toBeNull());
+  });
+
+  it('a failed re-read of a list with rows and no next page retries too', async () => {
+    let n = 0;
+    const calls = setup({ playlists: () => { n += 1; return page([playlist(1)]); }, liked: () => { throw new Error('busy'); } });
+    side();
+    await screen.findByText('Mix 1');
+    useYtLibrary.setState((s) => ({ playlists: { ...s.playlists, problem: 'busy', failed: 'first' } }));
+    await screen.findByText('YouTube is busy. Try again in a minute.');
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+    await waitFor(() => expect(calls.playlists.length).toBe(2));
+    expect(n).toBe(2);
+  });
+
+  it('a failed next page still retries the next page', async () => {
+    let n = 0;
+    const calls = setup({ playlists: () => { n += 1; if (n === 2) throw new Error('busy'); return page([playlist(n)], n === 1 ? 'tok_n' : null); } });
+    side();
+    await screen.findByText('Mix 1');
+    await act(async () => { fireEvent.scroll(document.querySelector('.yt-scroll') as HTMLElement); });
+    await screen.findByText('YouTube is busy. Try again in a minute.');
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+    await screen.findByText('Mix 3');
+    expect(calls.playlists[2]).toEqual({ pageToken: 'tok_n', fresh: false });
+  });
+});
+
+describe('the keyboard', () => {
+  it('lets each list of rows take focus, labelled, so the arrow and page keys scroll it', async () => {
+    await library(false);
+    fireEvent.click(screen.getByRole('tab', { name: 'Liked' }));
+    await screen.findByText('Clip 11');
+    const liked = screen.getByRole('region', { name: 'Liked videos' });
+    expect(liked.getAttribute('tabindex')).toBe('0');
+    fireEvent.click(screen.getByRole('tab', { name: 'Playlists' }));
+    fireEvent.click(tile('Mix 1'));
+    await screen.findByText('Clip 1');
+    expect(screen.getByRole('region', { name: 'Videos in Mix 1' }).getAttribute('tabindex')).toBe('0');
+    fireEvent.click(screen.getByRole('button', { name: 'Back to Playlists' }));
+    const field = screen.getByPlaceholderText('Search music on YouTube');
+    fireEvent.change(field, { target: { value: 'night' } });
+    fireEvent.keyDown(field, { key: 'Enter' });
+    await screen.findByText('Clip 21');
+    expect(screen.getByRole('region', { name: 'Search results' }).getAttribute('tabindex')).toBe('0');
+  });
+
+  it('keeps one tab reachable while a search shows', async () => {
+    await library(false);
+    const field = screen.getByPlaceholderText('Search music on YouTube');
+    fireEvent.change(field, { target: { value: 'night' } });
+    fireEvent.keyDown(field, { key: 'Enter' });
+    await screen.findByText('Clip 21');
+    const tabs = screen.getAllByRole('tab');
+    expect(tabs.filter((t) => t.getAttribute('tabindex') === '0').length).toBe(1);
+    expect(tabs.every((t) => t.getAttribute('aria-selected') === 'false')).toBe(true);
+  });
+});
+
+describe('paging rules of the store', () => {
+  it('shows a video repeated on the first page once', async () => {
+    setup({ liked: () => page([video(1), video(1), video(2)]) });
+    side();
+    await screen.findByText('Mix 1');
+    fireEvent.click(screen.getByRole('tab', { name: 'Liked' }));
+    await screen.findByText('Clip 2');
+    expect(document.querySelectorAll('.yt-row').length).toBe(2);
   });
 });

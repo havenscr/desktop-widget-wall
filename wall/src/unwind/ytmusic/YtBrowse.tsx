@@ -1,12 +1,13 @@
-import { useEffect, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react';
+import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react';
 import { IconSearch } from '@tabler/icons-react';
 import type { YtPlaylist, YtVideo } from '../../music/youtube';
 import { tip } from '../../ui/HoverTip';
+import { useVisible } from '../../ui/useVisible';
 import { arrowTarget, gridColumns } from '../spotify/Tile';
 import { MAX_PAGES, PAGE_SIZE, SEARCH_TIP, SPENT_LINE, devSearchKnob, nearEnd, searchSpent, searchesLine, videosLine } from './model';
 import { useYoutubeStatus } from './status';
 import { YtSongs } from './YtSongs';
-import { loadList, openPlaylist, retryMore, runSearch, searchesBack, setTab, useYtLibrary, type Loaded, type YtTab } from './store';
+import { libraryMounted, libraryVisible, loadList, openPlaylist, retryList, runSearch, searchesBack, setTab, startReads, useYtLibrary, type Loaded, type YtTab } from './store';
 import { RowSkeletons, TileSkeletons, YtEmpty, YtRows, YtState, YtThumb } from './YtParts';
 
 const TABS: { id: YtTab; label: string }[] = [
@@ -57,7 +58,7 @@ function PlaylistTile({ p }: { p: YtPlaylist }) {
 
 /** What stands under a list: a failed next page with its Retry, or the cap. */
 function ListFoot({ cur, name }: { cur: Loaded<unknown>; name: 'playlists' | 'liked' }) {
-  if (cur.problem) return <YtState problem={cur.problem} onRetry={() => retryMore(name)} />;
+  if (cur.problem) return <YtState problem={cur.problem} onRetry={() => retryList(name)} />;
   if (cur.next && cur.pages >= MAX_PAGES) return <div className="yt-cap">Showing the first {(MAX_PAGES * PAGE_SIZE).toLocaleString('en-US')}</div>;
   return null;
 }
@@ -77,12 +78,20 @@ export function YtBrowse({ tall }: { tall: boolean }) {
   const quotaSaid = useYtLibrary((s) => s.searchQuota);
   const left = useYoutubeStatus((s) => s.status?.searchesLeft ?? null);
   const [text, setText] = useState('');
-  // Opening the card reads the current list again (Rust answers from memory while it is fresh).
+  // The library tells the store when it is on screen: nothing is read while the page is hidden or after the
+  // side is gone, and what is waiting is read once it shows. What is loaded stays across the tall view
+  // opening and closing (Refresh is the way to read again); only a list older than Rust keeps it is read.
+  const visible = useVisible();
+  useEffect(() => libraryMounted(), []);
+  const knobRun = useRef(false);
   useEffect(() => {
-    void loadList(useYtLibrary.getState().tab);
-    const knob = devSearchKnob();
+    libraryVisible(visible);
+    if (!visible) return;
+    startReads();
+    const knob = knobRun.current ? null : devSearchKnob();
+    knobRun.current = true;
     if (knob) void runSearch(knob);
-  }, []);
+  }, [visible]);
   useEffect(() => {
     if (query === '') setText('');
   }, [query]);
@@ -107,7 +116,7 @@ export function YtBrowse({ tall }: { tall: boolean }) {
     <div className="yt-bar">
       <div className="sp-tabs" role="tablist" aria-label="Your YouTube library" onKeyDown={tabKey}>
         {TABS.map((t) => (
-          <button key={t.id} type="button" role="tab" aria-selected={!searching && tab === t.id} tabIndex={!searching && tab === t.id ? 0 : -1} className={!searching && tab === t.id ? 'on' : ''} onClick={() => setTab(t.id)}>
+          <button key={t.id} type="button" role="tab" aria-selected={!searching && tab === t.id} tabIndex={(!searching && tab === t.id) || (searching && t.id === 'playlists') ? 0 : -1} className={!searching && tab === t.id ? 'on' : ''} onClick={() => setTab(t.id)}>
             {t.label}
           </button>
         ))}
@@ -146,7 +155,7 @@ export function YtBrowse({ tall }: { tall: boolean }) {
             Back to Playlists
           </button>
         </div>
-        <div className="yt-scroll yt-rowscroll">
+        <div className="yt-scroll yt-rowscroll" tabIndex={0} role="region" aria-label="Search results">
           {found?.problem ? (
             <YtState problem={found.problem} onRetry={() => void runSearch(query)} />
           ) : !found || found.loading || !found.loaded ? (
@@ -184,6 +193,7 @@ export function YtBrowse({ tall }: { tall: boolean }) {
     main = (
       <div
         className={`yt-scroll${tab === 'liked' ? ' yt-rowscroll' : ''}`}
+        {...(tab === 'liked' ? { tabIndex: 0, role: 'region', 'aria-label': 'Liked videos' } : {})}
         onScroll={(e) => {
           if (lists.next && !lists.loading && !lists.problem && nearEnd(e)) void loadList(tab, true);
         }}
