@@ -74,6 +74,12 @@ function ChipTip({ c, account }: { c: Chip; account: string | null }) {
         {spanText(c.start, c.end)}
         {account ? `, ${account}` : ''}
       </span>
+      {c.hidden && c.hidden.length > 0 && <span className="tip-t">{c.hidden.length} more at this time, no room to draw them</span>}
+      {c.hidden?.map((h) => (
+        <span key={h.key} className="tip-s">
+          {h.title}, {spanText(h.start, h.end)}
+        </span>
+      ))}
       {c.canOpen && <span className="tip-k">Click to open it in Outlook</span>}
     </>
   );
@@ -314,7 +320,7 @@ export function Ribbon({ kind, now = Date.now }: { kind: RibbonKind; now?: () =>
                 style={{ left: c.x, width: c.width, ...(box ?? {}) }}
                 role={c.canOpen ? 'button' : undefined}
                 tabIndex={c.canOpen ? 0 : undefined}
-                aria-label={`${c.title}, ${spanText(c.start, c.end)}${account ? `, ${account}` : ''}${c.canOpen ? '. Opens it in Outlook' : ''}`}
+                aria-label={`${c.title}, ${spanText(c.start, c.end)}${account ? `, ${account}` : ''}${c.canOpen ? '. Opens it in Outlook' : ''}${c.hidden?.length ? `. ${c.hidden.length} more at this time: ${c.hidden.map((h) => h.title).join(', ')}` : ''}`}
                 onClick={c.canOpen ? () => openEvent(c.key) : undefined}
                 onKeyDown={
                   c.canOpen

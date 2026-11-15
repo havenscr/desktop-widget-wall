@@ -148,6 +148,8 @@ export interface Chip {
   canOpen: boolean;
   /** The calendar holds a join link for it. */
   canJoin?: boolean;
+  /** Events of its group that had no room for a "+N" chip, named in its hover (`chipLayout`). */
+  hidden?: Chip[];
 }
 
 const DAY_MS = 86_400_000;
@@ -326,20 +328,34 @@ export function chipLayout(all: readonly Chip[], allDay = 0): { shown: Chip[]; m
       over = place(2);
       const end = Math.max(...g.map((c) => c.x + c.width));
       const next = groups[groups.indexOf(g) + 1]?.[0]?.x ?? RX(END_HOUR) + 40;
-      const inGroup = g.filter((c) => !over.includes(c));
       const nx = end - MORE_CHIP_PX;
-      const fitsInside = inGroup.every((c) => c.x + c.width <= nx - MORE_GAP || (c !== pseudo && c.x + MIN_CHIP_PX <= nx - MORE_GAP));
-      let mx: number;
-      let mw = MORE_CHIP_PX;
-      if (fitsInside) {
-        mx = nx;
-        for (const c of inGroup) if (c.x + c.width > nx - MORE_GAP) c.width = nx - MORE_GAP - c.x;
-      } else {
-        mx = end + MORE_GAP;
-        // Clamped to the room before the next group; only the absolute floor can take it past that room.
-        mw = Math.max(MORE_MIN_PX, Math.min(MORE_CHIP_PX, next - MORE_GAP - mx));
+      // Where the "+N" chip can stand without touching or covering anything: at the end of the group's span (the chips
+      // there drawn shorter), else just after it, at most as wide as the room before the next group and never under
+      // MORE_MIN_PX. Null when neither has room.
+      const placeMore = () => {
+        const inGroup = g.filter((c) => !over.includes(c));
+        if (inGroup.every((c) => c.x + c.width <= nx - MORE_GAP || (c !== pseudo && c.x + MIN_CHIP_PX <= nx - MORE_GAP))) {
+          return { mx: nx, mw: MORE_CHIP_PX, inside: inGroup };
+        }
+        const room = next - MORE_GAP - (end + MORE_GAP);
+        return room >= MORE_MIN_PX ? { mx: end + MORE_GAP, mw: Math.min(MORE_CHIP_PX, room), inside: [] as Chip[] } : null;
+      };
+      let spot = placeMore();
+      // No room: show one item fewer (the chip then counts one more), the one that reaches furthest, and try again.
+      while (!spot) {
+        const reach = g.filter((c) => c !== pseudo && !over.includes(c)).sort((a, b) => b.x + b.width - (a.x + a.width) || b.x - a.x);
+        if (reach.length <= 1) break;
+        over.push(reach[0]);
+        spot = placeMore();
       }
-      groupMore.push({ key: `more-${over[0].key}`, x: mx, width: mw, items: [...over] });
+      if (spot) {
+        for (const c of spot.inside) if (c.x + c.width > spot.mx - MORE_GAP) c.width = spot.mx - MORE_GAP - c.x;
+        groupMore.push({ key: `more-${over[0].key}`, x: spot.mx, width: spot.mw, items: [...over] });
+      } else {
+        // Not even one item fewer leaves room: no chip is drawn, and the last shown item's hover names what is hidden.
+        const holder = g.filter((c) => c !== pseudo && !over.includes(c)).sort((a, b) => a.x - b.x || a.key.localeCompare(b.key)).pop();
+        if (holder) holder.hidden = [...over].sort((a, b) => a.start - b.start || a.key.localeCompare(b.key));
+      }
     }
     kept.push(...g.filter((c) => !over.includes(c)));
     if (kept.length > 0 && over.length === 0) lanes = Math.max(...kept.map((c) => c.lane)) + 1;

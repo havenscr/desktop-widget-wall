@@ -301,6 +301,57 @@ it('the "+N" after a short group takes the room left, not a fixed 24 px that run
   overlapFree(shown, more);
 });
 
+it.each([
+  ['back to back', '09:10'],
+  ['about 11 px', '09:15'],
+  ['about 19 px', '09:19'],
+  ['about 30 px', '09:24'],
+])('a short group of four with the next meeting %s after it: the "+N" never touches the next group and is never under 16 px, and nothing is lost', (_name, nextStart) => {
+  const now = t('07:00');
+  const all = chips(
+    [
+      ...['a', 'b', 'c', 'd'].map((k) => ({ key: k, title: `Quick ${k}`, start: iso('09:00'), end: iso('09:10') })),
+      { key: 'e', title: 'Next', start: iso(nextStart), end: iso('10:00') },
+    ],
+    now,
+  );
+  const { shown, more } = chipLayout(all);
+  const nextX = shown.find((c) => c.key === 'e')!.x;
+  for (const m of more) {
+    expect(m.width).toBeGreaterThanOrEqual(MORE_MIN_PX);
+    expect(m.x + m.width).toBeLessThanOrEqual(nextX - MORE_GAP);
+  }
+  overlapFree(shown, more);
+  // Every event is drawn, in a "+N" chip, or named in the hover of the last item shown in its group.
+  const named = [
+    ...shown.map((c) => c.key),
+    ...more.flatMap((m) => m.items.map((c) => c.key)),
+    ...shown.flatMap((c) => (c.hidden ?? []).map((h) => h.key)),
+  ].sort();
+  expect(named).toEqual(['a', 'b', 'c', 'd', 'e']);
+  // A "+N" chip, or a hover that holds the hidden ones: one of the two, never neither.
+  expect(more.length > 0 || shown.some((c) => (c.hidden ?? []).length > 0)).toBe(true);
+});
+
+it('with no room at all for a "+N" chip, one item fewer is drawn, and when even that leaves none the hover names the hidden ones', () => {
+  const now = t('07:00');
+  const group = ['a', 'b', 'c', 'd'].map((k) => ({ key: k, title: `Quick ${k}`, start: iso('09:00'), end: iso('09:10') }));
+  const lay = chipLayout(chips([...group, { key: 'e', title: 'Next', start: iso('09:10'), end: iso('10:00') }], now));
+  const hiddenTotal = lay.more.reduce((n, m) => n + m.items.length, 0) + lay.shown.reduce((n, c) => n + (c.hidden?.length ?? 0), 0);
+  // The group is two lanes of real chips and two hidden; with no room the extra one is not drawn: at most two of the group show.
+  expect(lay.shown.filter((c) => c.key !== 'e').length).toBeLessThanOrEqual(2);
+  expect(hiddenTotal).toBeGreaterThanOrEqual(2);
+  const holder = lay.shown.find((c) => (c.hidden ?? []).length > 0);
+  if (holder) expect(holder.hidden!.every((h) => h.title.startsWith('Quick'))).toBe(true);
+});
+
+it('a group of one has no "+N" chip and nothing hidden', () => {
+  const lay = chipLayout(chips([{ key: 'a', title: 'Solo', start: iso('09:00'), end: iso('09:30') }, { key: 'b', title: 'Later', start: iso('09:31'), end: iso('10:00') }], t('07:00')));
+  expect(lay.more).toEqual([]);
+  expect(lay.shown.map((c) => c.key)).toEqual(['a', 'b']);
+  expect(lay.shown.every((c) => !c.hidden)).toBe(true);
+});
+
 it('four at once: the "+N" chip takes the ones that do not fit and any chip under it', () => {
   const now = t('08:00');
   const all = chips(
