@@ -520,7 +520,7 @@ pub fn event_link(id: &str, web_link: Option<&str>) -> Option<String> {
 
 /// Titles use only the narrow word filter, never invite markers or line cutting.
 fn clean_title(raw: &str) -> String {
-    let text = strip_digit_chains(&normalize(raw));
+    let text = strip_digit_chains(&without_long_number_words(&normalize(raw)));
     text.split_whitespace().filter(|word| {
         let lower = word.to_ascii_lowercase();
         !(lower.contains("://")
@@ -768,6 +768,11 @@ fn longest_digit_run(text: &str) -> usize {
     best
 }
 
+/// Remove whole long-number words before grouping can leave fragments of them behind.
+fn without_long_number_words(text: &str) -> String {
+    text.split_whitespace().filter(|word| digits_in(word) < 5).collect::<Vec<_>>().join(" ")
+}
+
 /// Takes out digit groups (three or more digits each) that are separated only by spaces, hyphens, dots or commas and
 /// total seven or more digits, as one run: a phone number or an id written in groups. "10:30", "2026", "4.12" and
 /// "$1,250" are not such runs and stay.
@@ -872,7 +877,7 @@ pub fn clean_invite(raw: &str) -> Option<String> {
             if longest_digit_run(sentence) >= 9 {
                 break 'lines;
             }
-            kept.push(strip_digit_chains(sentence));
+            kept.push(strip_digit_chains(&without_long_number_words(sentence)));
         }
     }
     let words: Vec<&str> = kept.iter().flat_map(|l| l.split_whitespace()).filter(|w| !dropped_word(w)).collect();
@@ -1033,6 +1038,7 @@ mod tests {
         for title in ["https://meet.example/j/123", "www.meet.example/join", "meet.example/join", "abc-defg-hij", "12345"] {
             assert_eq!(cap_title(title), "Untitled");
         }
+        assert_eq!(cap_title("Sync x987654321"), "Sync");
         assert_eq!(cap_title("Sync tel:1234 sip:fixture mailto:fixture callto:fixture"), "Sync");
         assert_eq!(cap_title("Sync https:\u{200B}//meet.example/join"), "Sync");
         assert_eq!(cap_title(&"x".repeat(MAX_TITLE_CHARS + 10)).chars().count(), MAX_TITLE_CHARS);
