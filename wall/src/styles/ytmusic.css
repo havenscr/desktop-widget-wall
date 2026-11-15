@@ -254,10 +254,12 @@
 /* No slide-in for the opened list: the card has just changed size, and the review scripts measure it settled. */
 .yt-songs {
   animation: none;
-  /* While the card is still growing the opened list is taller than the card for a moment: it is clipped
-     (a little room is kept for a focus ring), so it never makes the card or the library scroll. */
+  /* While the card is still growing the opened list is taller than the card for a moment: it is clipped, so it
+     never makes the card or the library scroll. Its box reaches 5 px past the library's content on the left and
+     top (room for a focus ring) and into the library's right padding (where the rows' scrollbar sits). */
   overflow: clip;
-  overflow-clip-margin: 8px;
+  margin: -5px calc(-5px - var(--yt-sb)) 0 -5px;
+  padding: 5px calc(5px + var(--yt-sb)) 0 5px;
 }
 .yt-songs .yt-songthumb {
   width: 114px;
