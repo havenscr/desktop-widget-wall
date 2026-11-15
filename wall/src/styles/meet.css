@@ -12,7 +12,7 @@
 }
 /* The hero carries the recording chip itself; the floating one would double it. */
 :root:has(.meet-hero) .rec-float {
-  display: none;
+  visibility: hidden;
 }
 .meet .amber,
 .meet-notice {

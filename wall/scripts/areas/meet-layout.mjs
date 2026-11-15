@@ -14,6 +14,7 @@ const VARIANTS = [
   ['Meet layout, heavy day: long title, 14 people, back to back', atLate, 'meet=heavy&call=teams&long=1&checklist=long'],
   ['Meet layout, bare meeting: the island shows how the list works', at, 'meet=bare&call=teams&checklist=none'],
   ['Meet layout, nothing scheduled', at, 'meet=none'],
+  ['Meet layout, a very long title ends in an ellipsis', at, 'meet=known&call=teams&mtitle=long&checklist=four'],
 ];
 const BOXES = {
   hero: [124, 24, 944, 510],
@@ -66,7 +67,7 @@ function measureMeet() {
   if (title) {
     const tb = title.getBoundingClientRect();
     const lh = parseFloat(getComputedStyle(title).lineHeight) || 1;
-    titleInfo = { lines: Math.round(tb.height / lh), fits: title.scrollHeight <= title.clientHeight + 1, long: title.dataset.long === 'true', chars: (title.textContent || '').length, bottom: r1(tb.bottom), width: r1(tb.width), by: box('.meet .meet-hero-below')?.t ?? null };
+    titleInfo = { lines: Math.round(tb.height / lh), long: title.dataset.long === 'true', chars: (title.textContent || '').length, bottom: r1(tb.bottom), width: r1(tb.width), by: box('.meet .meet-hero-below')?.t ?? null };
   }
   const clock = document.querySelector('.main[data-place="meet"] > .top > div:has(> .clk)');
   const clockShown = !!clock && getComputedStyle(clock).display !== 'none';
@@ -147,7 +148,6 @@ export default {
         for (const o of m.out) fail(o);
         if (m.titleInfo) {
           const t = m.titleInfo;
-          if (!t.fits) fail(`the title does not fit its box (${t.chars} characters)`);
           if (t.long && t.lines > 3) fail(`the long title takes ${t.lines} lines (three at most)`);
           if (!t.long && t.lines > 2) fail(`the title takes ${t.lines} lines (two at most)`);
           if (t.by !== null && t.bottom > t.by + 0.5) fail(`the title ends at y ${t.bottom}, below where the lines under it begin (y ${t.by})`);
@@ -161,7 +161,7 @@ export default {
       'meet-overlap': { css: '.meet .meet-capture { top: 200px !important; }', expect: /^ *FAIL meet layout: overlap: /m, appliesTo: (v) => v.name === VARIANTS[1][0] },
       'meet-text-size': { css: '.meet .meet-ppl-n { font-size: 13px !important; }', expect: /^ *FAIL meet layout: text under 16 px: /m, appliesTo: (v) => v.name === VARIANTS[1][0] },
       'meet-control-size': { css: '.meet .meet-cap-open { height: 24px !important; }', expect: /^ *FAIL meet layout: control size: /m, appliesTo: (v) => v.name === VARIANTS[1][0] },
-      'meet-long-title': { css: '.meet .meet-hero-title { -webkit-line-clamp: unset !important; display: block !important; }', expect: /^ *FAIL meet layout: (the title does not fit|the long title takes|the title ends)/m, appliesTo: (v) => v.name === VARIANTS[3][0] },
+      'meet-long-title': { css: '.meet .meet-hero-title { -webkit-line-clamp: unset !important; display: block !important; }', expect: /^ *FAIL meet layout: (the long title takes|the title ends)/m, appliesTo: (v) => v.name === VARIANTS[6][0] },
       'meet-clock': { css: ".main[data-place='meet'] > .top > div:has(> .clk) { display: block !important; }", expect: /^ *FAIL meet layout: the frame clock is drawn/m, appliesTo: (v) => v.name === VARIANTS[1][0] },
       'meet-island-empty': { css: '.meet .meet-island-body, .meet .meet-isl-body, .meet .meet-isl-howto { display: none !important; } .meet .meet-isl-hd, .meet .meet-isl-foot { display: none !important; }', expect: /^ *FAIL meet layout: the island is empty/m, appliesTo: (v) => v.name === VARIANTS[4][0] },
     },

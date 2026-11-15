@@ -1,5 +1,5 @@
 import type { CallKind, CallSignal, LeaveSignal } from '../signals/model';
-import { clockText, timeRange, type Meeting, type MeetingDetails, type Person } from './model';
+import { clockText, type Meeting, type MeetingDetails, type Person } from './model';
 
 const MIN = 60_000;
 
@@ -36,7 +36,7 @@ export interface Ring {
   /** 0 to 1, how much of the ring is drawn. */
   frac: number;
   tone: RingTone;
-  /** Under the ring: "ends 11:30 AM" once started, the time range before. */
+  /** Under the ring: "ends 11:30 AM" once started, "starts 10:30 AM" before. */
   under: string;
 }
 
@@ -51,7 +51,7 @@ export function ringOf(m: Pick<Meeting, 'start' | 'end'>, now: number, inCall: b
   if (start > now) {
     const togo = Math.ceil((start - now) / MIN);
     const hours = togo > 99;
-    return { value: hours ? Math.floor(togo / 60) : togo, unit: hours ? 'h to go' : 'min to go', frac: Math.min(1, togo / 30), tone: 'cyan', under: timeRange(m) };
+    return { value: hours ? Math.floor(togo / 60) : togo, unit: hours ? 'h to go' : 'min to go', frac: Math.min(1, togo / 30), tone: 'cyan', under: `starts ${clockText(start)}` };
   }
   const left = Math.max(1, Math.ceil((end - now) / MIN));
   const length = Math.max(1, end - start);
@@ -79,8 +79,11 @@ export function invitedCount(d: MeetingDetails | null | undefined): number {
   return d ? d.people.length + d.peopleMore : 0;
 }
 
+/** The most round things (initials circles and the "+N" one) the people block holds: 5 circles of 40 px overlapping by 8 are 168 px. */
+export const MAX_CIRCLES = 5;
+
 export interface PeopleBlock {
-  /** Up to five names drawn as initials circles. */
+  /** The names drawn as initials circles: five, or four when a "+N" circle follows. */
   circles: Person[];
   /** "+N": the drawn people past five, and every invited person not named. */
   more: number;
@@ -98,9 +101,12 @@ export function peopleBlock(d: MeetingDetails | null | undefined): PeopleBlock |
   const yes = d.people.filter((p) => p.reply === 'yes' || p.reply === 'organizer').length;
   const maybe = d.people.filter((p) => p.reply === 'maybe').length;
   const parts = [yes > 0 ? `${yes} said yes` : '', maybe > 0 ? `${maybe} maybe` : ''].filter(Boolean);
+  // At most five round things fit the block: five circles, or four and the "+N" that counts everyone else.
+  const room = MAX_CIRCLES - (d.peopleMore > 0 ? 1 : 0);
+  const circles = drawn.length <= room ? drawn : drawn.slice(0, MAX_CIRCLES - 1);
   return {
-    circles: drawn.slice(0, 5),
-    more: Math.max(0, drawn.length - 5) + d.peopleMore,
+    circles,
+    more: drawn.length - circles.length + d.peopleMore,
     head: `${total} invited`,
     replies: parts.length > 0 ? parts.join(', ') : 'No replies yet',
   };

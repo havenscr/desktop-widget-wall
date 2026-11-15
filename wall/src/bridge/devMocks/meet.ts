@@ -55,7 +55,7 @@ export function registerMeetMocks(): void {
   // `?meet=none`: both read, nothing scheduled. `?meet=busy`: five meetings at once at 1 PM.
   const mode = () => knob('meet') ?? '';
   // `?meet=before|known|new|bare` (the Meet layout): `before` has the next meeting 20 minutes away, `known` and `new` a meeting
-  // under way (40 minutes left) with details, `bare` a live meeting with no details. `heavy` is in gallery.ts, with details from here.
+  // under way (40 minutes left) with details, `bare` a live meeting with no details, `?mtitle=long` gives the hero meeting a 206 character title. `heavy` is in gallery.ts, with details from here.
   const layout = () => ['before', 'known', 'new', 'bare'].includes(mode());
   const accounts = () =>
     layout()
@@ -95,6 +95,8 @@ export function registerMeetMocks(): void {
           : m === 'bare'
             ? { key: '1-0', accountId: 'work', title: 'Catch-up call', start: at(-10), end: at(20), canJoin: true, details: null }
             : { key: '1-0', accountId: 'work', title: 'Design review with the platform team', start: at(-20), end: at(40), canJoin: true, details: MOCK_DETAILS.known };
+    // `?mtitle=long`: a 206 character title, for the hero's three lines and its ellipsis.
+    if (knob('mtitle') === 'long') hero.title = 'Annual planning offsite for the regional leads: budget, hiring, the product roadmap, customer commitments, risks we carry into next year, the support model and who owns each decision after we leave the room';
     const lunch = Date.parse(hero.end) + 50 * 60_000;
     return [
       hero,
