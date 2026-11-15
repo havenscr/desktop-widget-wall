@@ -227,7 +227,7 @@ describe('Add to a playlist', () => {
     const add = screen.getByRole('button', { name: 'Add to a playlist' });
     expect(add).toBeTruthy();
     const open = screen.getByRole('button', { name: 'Open in YouTube' });
-    expect(open.textContent).toBe('YouTube');
+    expect(open.querySelector('.w-open-t')!.textContent).toBe('YouTube');
     expect(add.previousElementSibling).toBe(open);
   });
 
@@ -239,7 +239,7 @@ describe('Add to a playlist', () => {
       act(() => w().play({ kind, id }));
       await flush();
       expect(screen.queryByRole('button', { name: 'Add to a playlist' })).toBeNull();
-      expect(screen.getByRole('button', { name: words }).textContent).toBe(words);
+      expect(screen.getByRole('button', { name: words }).querySelector('.w-open-t')!.textContent).toBe(words);
     }
   });
 

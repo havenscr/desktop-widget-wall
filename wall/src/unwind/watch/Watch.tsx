@@ -282,6 +282,8 @@ function Controls({ item, openFailed, setOpenFailed }: { item: WatchRef & { labe
         <button type="button" className="w-open" aria-label={canAdd ? openLabel(item.kind) : undefined} {...tip(`Opens this ${kindName(item.kind).toLowerCase()} on its own site in your web browser`)} onClick={() => void open()}>
           <IconExternalLink size={18} aria-hidden="true" />
           <span className="w-open-t">{label}</span>
+          {/* The shown word is shorter to make room for the add button; the page text keeps the button's whole name. */}
+          {canAdd ? <span className="w-vh">{openLabel(item.kind)}</span> : null}
         </button>
         {canAdd ? <AddToPlaylistButton video={{ id: item.id, ...(reportTitle ? { title: reportTitle } : {}), ...(reportChannel ? { channel: reportChannel } : {}), ...(duration !== null && duration > 0 ? { seconds: duration } : {}) }} /> : null}
         <WatchGear />
