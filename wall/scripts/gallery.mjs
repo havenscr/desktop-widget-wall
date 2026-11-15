@@ -648,7 +648,7 @@ const EXPECT = [
   ['home', 'twenty alerts', ['12+', '20 alerts open']],
   ['home', 'desk absent', ['Click for all 4', '!inside.']],
   ['home', 'desk stale', ['as of', 'Lights on in two rooms']],
-  ['home', 'house line', ['Lights on in three rooms', 'Guest room']],
+  ['home', 'house line', ['Lights on in three rooms', 'Hall']],
   ['home', 'seven moods', ['7 moods', '4 more']],
   ['home', 'moods slid', ['Movie', '1 more']],
   ['home', 'chores five', ['Sort the recycling', '8 more can wait']],
