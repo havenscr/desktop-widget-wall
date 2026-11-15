@@ -13,6 +13,9 @@ import { Shelf } from './Shelf';
 import { AlarmChip } from '../home/AlarmChip';
 import { useOpenAlarms } from '../home/useSecurity';
 import { HeaderRecordingChip } from '../signals/RecordingChip';
+import { LightsChip } from '../studio/LightsChip';
+import { useKeyLights } from '../studio/store';
+import { chipWord } from '../studio/model';
 import { useSignalStore } from '../signals/store';
 
 /** Cards in view at once; the rest scroll. */
@@ -145,9 +148,11 @@ export function Lanes({ summary, stale, freshAt, now, idle }: { summary: OmniSum
   // Nothing in the header wraps: when it is tight its parts give way in order (`HeaderFit`).
   const alarms = useOpenAlarms();
   const recording = useSignalStore((s) => s.recording);
+  // The Lights chip's words change the header's width, so a new word asks for a fresh fit.
+  const lightsWord = useKeyLights((s) => (recording ? chipWord(s) : null));
   const hd = useRef<HTMLDivElement>(null);
   const meter = useMeterCount(summary, now);
-  const fitKey = `${meter.n}|${meter.limit}|${count}|${ask.text}|${ask.title ?? ''}|${ask.more ?? ''}|${ask.tone}|${alarms}|${stale}|${freshAt}|${recording}`;
+  const fitKey = `${meter.n}|${meter.limit}|${count}|${ask.text}|${ask.title ?? ''}|${ask.more ?? ''}|${ask.tone}|${alarms}|${stale}|${freshAt}|${recording}|${lightsWord ?? ''}`;
   const [fitState, setFitState] = useState<{ key: string; level: HeaderFit }>({ key: fitKey, level: 0 });
   const fit: HeaderFit = fitState.key === fitKey ? fitState.level : 0;
   useLayoutEffect(() => {
@@ -187,6 +192,7 @@ export function Lanes({ summary, stale, freshAt, now, idle }: { summary: OmniSum
           )}
           {stale && <span className="xs lanes-age">{ageText(freshAt, now)}</span>}
           <HeaderRecordingChip compact={fit >= 3} />
+          <LightsChip />
         </div>
         {ask.tone === 'amber' && stale ? (
           // Old data never reads as live: grey words, not a button.

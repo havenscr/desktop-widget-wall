@@ -1,0 +1,479 @@
+/* Studio lights: the block on On Air (right column, x 1920 to 2540, y 314 to 462), the Fine tune drawer
+   (x 1680, y 20, 860 wide), the Lights chip on Work and the Key lights section in Tools.
+   Mouse sizes: controls 40 px on the page, 34 px inside the drawer, text 16 px or more. */
+
+/* ---- the block ---- */
+.st-block {
+  box-sizing: border-box;
+  flex: none;
+  height: 134px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+.st-block,
+.st-block *,
+.st-drawer,
+.st-drawer * {
+  box-sizing: border-box;
+}
+.st-hd {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 26px;
+}
+.st-bulb {
+  flex: none;
+  color: var(--cyan);
+}
+.st-title {
+  white-space: nowrap;
+}
+.st-d-top .st-office {
+  margin-left: 0;
+}
+.st-office {
+  margin-left: auto;
+  font: 16px/1.2 var(--body);
+  color: var(--dim);
+  white-space: nowrap;
+}
+.st-row {
+  display: flex;
+  gap: 8px;
+  height: 40px;
+}
+.st-line {
+  font: 16px/1.3 var(--body);
+  color: var(--dim);
+}
+.st-sum {
+  font: 500 17px/22px var(--body);
+  min-height: 22px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.st-line.amber,
+.st-side-name.amber {
+  color: var(--amber);
+}
+.st-quiet {
+  color: var(--dim);
+}
+
+/* A switch tile: the switch, its name. The knob takes the colour of the light's warmth. */
+.st-tg {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 40px;
+  padding: 0 12px;
+  border-radius: 12px;
+  background: rgba(14, 10, 36, 0.78);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  color: var(--dim);
+  font: 500 17px/1 var(--body);
+  white-space: nowrap;
+  text-align: left;
+  transition: border-color 160ms ease, color 160ms ease;
+}
+button.st-tg {
+  cursor: pointer;
+}
+button.st-tg:hover {
+  border-color: rgba(53, 230, 234, 0.8);
+  box-shadow: 0 0 0 2px rgba(53, 230, 234, 0.28);
+  color: var(--tx);
+}
+.st-tg.on {
+  color: var(--tx);
+}
+.st-tg.dis {
+  border-style: dashed;
+  border-color: rgba(183, 175, 214, 0.5);
+  background: rgba(14, 10, 36, 0.5);
+}
+.st-tg.warn {
+  border: 1px dashed rgba(255, 194, 77, 0.85);
+  color: var(--amber);
+}
+.st-tg.on.warn {
+  color: var(--tx);
+}
+.st-tg-warn {
+  margin-left: auto;
+  color: var(--amber);
+  flex: none;
+}
+.st-sw {
+  position: relative;
+  display: block;
+  flex: none;
+  width: 36px;
+  height: 20px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.12);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.3);
+}
+.st-sw > i {
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #8f88b3;
+}
+.st-sw.on {
+  background: rgba(53, 230, 234, 0.28);
+  box-shadow: inset 0 0 0 1px rgba(53, 230, 234, 0.85);
+}
+.st-sw.on > i {
+  left: 19px;
+  background: var(--c, #fff);
+  box-shadow: 0 0 8px rgba(255, 255, 255, 0.55);
+}
+.st-sw.dis > i {
+  background: #6f6894;
+}
+
+/* A 40 px button on the page. */
+.st-chip {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  height: 40px;
+  padding: 0 16px;
+  border-radius: 12px;
+  background: rgba(14, 10, 36, 0.78);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  color: var(--tx);
+  font: 600 17px/1 var(--body);
+  white-space: nowrap;
+  cursor: pointer;
+  transition: border-color 160ms ease;
+}
+.st-chip:hover {
+  border-color: rgba(53, 230, 234, 0.8);
+}
+.st-chip[aria-expanded='true'] {
+  border-color: rgba(53, 230, 234, 0.55);
+  color: var(--cyan);
+}
+.st-block button:focus-visible,
+.st-drawer button:focus-visible,
+.st-sl:focus-visible,
+.lights-chip:focus-visible {
+  outline: 3px solid var(--cyan);
+  outline-offset: 2px;
+}
+
+/* ---- the drawer ---- */
+.st-drawer {
+  position: absolute;
+  z-index: 46;
+  left: 1680px;
+  top: 20px;
+  width: 860px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 18px 26px 14px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.055), rgba(255, 255, 255, 0.016)), rgb(11, 8, 30);
+  border: 1px solid var(--line);
+  border-radius: 26px;
+  box-shadow: 0 18px 60px -10px rgba(2, 1, 10, 0.8);
+  color: var(--tx);
+}
+.st-d-top {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  height: 36px;
+}
+.st-x {
+  margin-left: auto;
+  width: 36px;
+  height: 36px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--dim);
+  cursor: pointer;
+}
+.st-x:hover {
+  color: var(--tx);
+  border-color: var(--dim);
+}
+.st-d-keys {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+}
+.st-k-hd {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  height: 36px;
+}
+.st-h {
+  font: 600 20px/1 var(--body);
+  white-space: nowrap;
+}
+.st-spacer {
+  flex: 1;
+}
+.st-swbtn {
+  display: flex;
+  align-items: center;
+  height: 34px;
+  padding: 0 4px;
+  border-radius: 10px;
+  cursor: pointer;
+}
+.st-swbtn:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+.st-lk {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 34px;
+  padding: 0 12px;
+  border-radius: 17px;
+  flex: none;
+  background: rgba(14, 10, 36, 0.78);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  color: var(--dim);
+  font: 500 16px/1 var(--body);
+  white-space: nowrap;
+  cursor: pointer;
+}
+.st-lk:hover:not(:disabled) {
+  border-color: rgba(53, 230, 234, 0.8);
+  color: var(--tx);
+}
+.st-lk.on {
+  background: rgba(53, 230, 234, 0.14);
+  border-color: rgba(53, 230, 234, 0.55);
+  color: var(--cyan);
+}
+.st-lk:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+.st-sides {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 30px;
+}
+.st-side {
+  min-width: 0;
+}
+.st-side-hd {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 34px;
+}
+.st-side-name {
+  font: 600 17px/1 var(--body);
+}
+.st-srow {
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr) 74px;
+  align-items: center;
+  gap: 10px;
+  height: 34px;
+}
+.st-srow-ico {
+  display: flex;
+  color: var(--dim);
+}
+.st-srow.down .st-srow-ico {
+  color: var(--faint);
+}
+.st-sl {
+  position: relative;
+  display: block;
+  height: 26px;
+  min-width: 0;
+  cursor: pointer;
+  touch-action: none;
+  user-select: none;
+}
+.st-sl > i {
+  position: absolute;
+  display: block;
+}
+.st-tr {
+  left: 0;
+  right: 0;
+  top: 10px;
+  height: 6px;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.16);
+}
+.st-sl.warm .st-tr {
+  background: linear-gradient(90deg, #ffae5e, #fff1dd 52%, #cfe2ff);
+}
+.st-sl.down .st-tr {
+  background: rgba(255, 255, 255, 0.1);
+}
+.st-fi {
+  left: 0;
+  top: 10px;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--cyan);
+}
+.st-th {
+  top: 3px;
+  width: 20px;
+  height: 20px;
+  margin-left: -10px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 0 0 2px rgba(11, 8, 34, 0.95), 0 2px 6px rgba(0, 0, 0, 0.6);
+  transition: box-shadow 120ms ease;
+}
+.st-sl:hover .st-th,
+.st-sl:focus-visible .st-th {
+  box-shadow: 0 0 0 2px rgba(11, 8, 34, 0.95), 0 0 0 6px rgba(53, 230, 234, 0.4);
+}
+.st-sl.down {
+  cursor: default;
+}
+.st-sl.down .st-th {
+  background: #6f6894;
+  box-shadow: 0 0 0 2px rgba(11, 8, 34, 0.95);
+}
+.st-val {
+  text-align: right;
+  font: 600 18px/1 var(--disp);
+  white-space: nowrap;
+}
+.st-scale {
+  display: flex;
+  justify-content: space-between;
+  padding: 0 84px 0 30px;
+  margin-top: -2px;
+}
+.st-hint,
+.st-mismatch {
+  margin-top: 6px;
+}
+.st-mismatch {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--tx);
+}
+.st-mismatch svg {
+  color: var(--amber);
+  flex: none;
+}
+.st-note {
+  margin-top: -2px;
+}
+.st-d-foot {
+  display: flex;
+  justify-content: space-between;
+  gap: 20px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+  white-space: nowrap;
+}
+
+/* ---- the Lights chip on Work: 32 px, after the Recording chip ---- */
+.lanes-hd button.lights-chip,
+.lights-chip {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 32px;
+  box-sizing: border-box;
+  padding: 0 14px;
+  border-radius: 16px;
+  background: linear-gradient(rgba(53, 230, 234, 0.12), rgba(53, 230, 234, 0.12)), rgba(10, 7, 28, 0.9);
+  border: 1px solid rgba(53, 230, 234, 0.55);
+  color: var(--cyan);
+  font: 600 16px/1 var(--disp);
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.lanes-hd button.lights-chip:hover {
+  border-color: rgba(53, 230, 234, 0.9);
+  color: var(--tx);
+}
+
+/* ---- Tools: Key lights, under Sources in the right column (about 316 px wide) ---- */
+.kl-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-width: 0;
+}
+.kl-top .tools-k {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 16px;
+}
+.kl-top .tools-faint {
+  font-size: 16px;
+}
+.kl-row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 5px 0;
+  border-top: 1px solid var(--line);
+}
+.kl-row:first-child {
+  border-top: 0;
+}
+.kl-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 34px;
+}
+.kl-name {
+  flex: none;
+  width: 46px;
+  font: 600 18px/1.2 var(--body);
+}
+.kl-head .tools-line {
+  flex: 1;
+  min-width: 0;
+}
+.tools-btn.kl-btn {
+  padding: 0 10px;
+}
+.kl-form {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.kl-field {
+  flex: 1;
+  min-width: 0;
+}
+.kl-note {
+  white-space: normal;
+  line-height: 1.25;
+}

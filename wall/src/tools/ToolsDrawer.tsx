@@ -10,6 +10,7 @@ import { errorText, isAbsent } from '../work/deckModel';
 import { joinKeys, reloadKeys, useKeysFeedStore, type Read } from '../work/keysFeed';
 import type { KeysSummary } from '../work/keysModel';
 import { Accounts } from './accounts';
+import { KeyLights } from './KeyLights';
 import { readText, readUnmountedSources, retrySource, SOURCE_NAMES, useSources, type SourceId, type SourceRow } from './sources';
 import { anySignInWaiting, useToolsStore } from './store';
 import { overlayOwnsPointer } from '../ribbon/DrawerScrim';
@@ -194,6 +195,7 @@ function Drawer() {
   const opened = useToolsStore((s) => s.opened);
   const ref = useRef<HTMLElement>(null);
   const [ring, setRing] = useState(focus === 'accounts');
+  const [ringKeys, setRingKeys] = useState(focus === 'keylights');
   const idle = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const startIdle = useMemo(() => {
     const start = (): void => {
@@ -212,6 +214,16 @@ function Drawer() {
     }
     setRing(true);
     const id = setTimeout(() => setRing(false), RING_MS);
+    return () => clearTimeout(id);
+  }, [focus, opened]);
+  // The same for Key lights, when the drawer opens from the On Air block.
+  useEffect(() => {
+    if (focus !== 'keylights') {
+      setRingKeys(false);
+      return;
+    }
+    setRingKeys(true);
+    const id = setTimeout(() => setRingKeys(false), RING_MS);
     return () => clearTimeout(id);
   }, [focus, opened]);
 
@@ -259,7 +271,10 @@ function Drawer() {
           <VideoLook />
           <KeysFile />
         </div>
-        <Sources />
+        <div className="kl-stack">
+          <Sources />
+          <KeyLights ringed={ringKeys} />
+        </div>
       </div>
       <BuildStamp />
     </section>
