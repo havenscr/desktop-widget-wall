@@ -118,6 +118,7 @@ const EXPECT = {
   sun: /^ *FAIL pointer at .*reaches w-stage w-sun/m,
   tools: /^ *FAIL tools drawer: .*outside x 1700 to 2560/m,
   toolsnames: /^ *FAIL tools: .* is cut with no tooltip/m,
+  toolsedge: /^ *FAIL tools drawer: bottom edge /m,
   'yt-clip': /^ *FAIL youtube row: .* past the Accounts column/m,
   'yt-text': /^ *FAIL youtube row: text under 16 px/m,
   'yt-control': /^ *FAIL youtube row: control .* px/m,
@@ -243,6 +244,8 @@ const OVERFLOWS = {
   // The Tools drawer 1400 px wide runs past the right edge of the stage.
   tools: '.tools-drawer { width: 1400px !important; }',
   // A 20 px name column cuts the account and source names (they carry no tooltip of their own).
+  // The Tools drawer 12 px lower (as if 12 px taller) ends past its old bottom edge (y 697) with the public page switch shown.
+  toolsedge: '.tools-drawer { translate: 0 12px; }',
   toolsnames: '.tools-name, .tools-srcname { width: 20px !important; max-width: 20px !important; flex: none !important; overflow: hidden; }',
   // YouTube row: the Set up form's inputs 700 px wide run past the Accounts column.
   'yt-clip': '.tools-yt-form .tools-input { flex: none !important; width: 700px !important; }',
@@ -1220,6 +1223,8 @@ try {
       const rail = document.querySelector('.rail');
       if (dr.left < 1700 - 0.5 || dr.right > 2560 + 0.5 || dr.top < -0.5 || dr.bottom > 720 + 0.5) toolsOut.push('tools drawer: x ' + Math.round(dr.left) + ' to ' + Math.round(dr.right) + ', y ' + Math.round(dr.top) + ' to ' + Math.round(dr.bottom) + ' is outside x 1700 to 2560, y 0 to 720');
       if (rail && hit(dr, rail.getBoundingClientRect())) toolsOut.push('tools drawer: covers the rail');
+      // The Spotify public page switch lives in the Accounts row: with Spotify connected and the switch shown the drawer must not end lower than it did before the switch (y 697). A state with a text field open (a form that grows the drawer on purpose) is not held to it.
+      if (dr.bottom > 697 + 0.5 && drawer.querySelector('button[aria-label^="Public page reads"]') && !drawer.querySelector('input, textarea')) toolsOut.push('tools drawer: bottom edge y ' + (Math.round(dr.bottom * 10) / 10) + ' passes its old limit y 697 with Spotify connected and the public page switch shown');
       for (const e of drawer.querySelectorAll('.tools-name, .tools-srcname, .tools-line, .tools-hint, .tools-note, .tools-chip, .tools-btn, .tools-faint')) {
         if (e.scrollWidth > e.clientWidth + 1 && !e.closest('[data-tip]')) toolsOut.push('tools: "' + (e.textContent || '').trim().slice(0, 40) + '" is cut with no tooltip');
         // The row's hover card does not excuse a cut name or a cut read time: those cells must show whole.
@@ -1849,6 +1854,7 @@ try {
     picker: (v) => v.name.startsWith('Deck, the key picker open over'),
     tools: (v) => v.name === 'Tools, over Work, typical',
     toolsnames: (v) => v.name === 'Tools, over Work, typical',
+    toolsedge: (v) => v.name === 'Tools, over Work, typical',
     'yt-clip': (v) => v.name === 'Tools, YouTube setup form open',
     'yt-text': (v) => v.name === 'Tools, YouTube setup form open',
     'yt-control': (v) => v.name === 'Tools, YouTube setup form open',

@@ -215,7 +215,7 @@ describe('the store keeps what the player reports', () => {
       st.setEditing(`video:${V}`);
       st.fillLabel(`video:${V}`, 'Late title');
       st.remove(`video:${V}`);
-      st.addRef({ kind: 'video', id: V, label: 'YouTube video' }, false);
+      st.addRef({ kind: 'video', id: V }, false);
       expect(useWatchStore.getState().saved.find((i) => i.id === V)?.label).toBe('YouTube video');
     });
 

@@ -177,7 +177,7 @@ describe('a single video can always be saved on its own', () => {
     seed([{ kind: 'own', id: 'ownlist00001', label: 'Mine' }, { kind: 'video', id: SINGLE, label: 'Kept name' }]);
     render(<UnwindView />);
     await flush();
-    act(() => w().play({ kind: 'video', id: SINGLE, label: 'Kept name' }));
+    act(() => w().play({ kind: 'video', id: SINGLE }));
     await flush();
     expect(w().playing?.id).toBe(SINGLE);
     await act(async () => screen.getByRole('button', { name: 'Add to a playlist' }).click());
