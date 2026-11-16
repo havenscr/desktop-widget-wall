@@ -2195,9 +2195,9 @@ mod tests {
               "weekResetsAt": "2026-11-20T01:00:00Z", "weekAsOf": "2026-11-15T13:45:00Z", "weekOld": true },
             { "provider": "claude", "label": "Claude 2", "weekPct": 0, "weekAsOf": "yesterday", "weekOld": "yes" },
         ]);
-        let u = shape_summary(&body).unwrap().usage.unwrap();
-        assert_eq!((u.accounts[0].week_as_of.as_deref(), u.accounts[0].week_old), (Some("2026-11-15T13:45:00Z"), true));
-        assert_eq!((u.accounts[1].week_as_of.as_deref(), u.accounts[1].week_old), (None, false));
+        let n = shape_summary(&body).unwrap().usage.unwrap();
+        assert_eq!((n.accounts[0].week_as_of.as_deref(), n.accounts[0].week_old), (Some("2026-11-15T13:45:00Z"), true));
+        assert_eq!((n.accounts[1].week_as_of.as_deref(), n.accounts[1].week_old), (None, false));
         assert_eq!((u.accounts[1].week_pct, u.accounts[1].five_hour_pct, u.accounts[1].week_resets_at.as_deref()), (Some(100.0), Some(12.5), None));
         assert_eq!(u.accounts[2].provider, "other");
         let v = serde_json::to_value(shape_summary(&body).unwrap()).unwrap();
