@@ -9,6 +9,7 @@ import { usePlaceStore } from './state/places';
 import { Screens } from './screens/Screens';
 import { Stage } from './stage/Stage';
 import { HoverTipLayer } from './ui/HoverTip';
+import { ScreensOffLayer } from './ui/ScreensOffLayer';
 import { ToolsDrawer } from './tools/ToolsDrawer';
 import { useSignalStore } from './signals/store';
 import { startAutoSwitch } from './meet/autoSwitch';
@@ -44,6 +45,7 @@ export function App() {
       <DrawerScrim />
       <LeaveBanner />
       <FloatingRecordingChip />
+      <ScreensOffLayer />
       <ToolsDrawer />
       <HoverTipLayer />
     </Stage>

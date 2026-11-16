@@ -1,0 +1,103 @@
+/* Hide screen, the one control for every place (ui/ScreensOffLayer.tsx): 36 px at stage x 2504,
+   y 664, the same box on all of them. Above each place's content (z 44), below the Tools drawer
+   (45) and the Day drawer (47). Zen and Dream draw over the whole stage at z 50, so there it
+   rides at 51. */
+.so-layer {
+  position: absolute;
+  left: 2504px;
+  top: 664px;
+  width: 36px;
+  height: 36px;
+  z-index: 44;
+}
+.so-layer[data-place='zen'] {
+  z-index: 51;
+}
+
+/* At rest the 36 px icon circle; under the pointer or keyboard focus it grows to the left into
+   a pill with its name (in place of a tooltip). It is anchored at its right edge, so the icon
+   never moves, and the 36 px box it sits in never changes size. At rest it is one step brighter
+   than the wall's faint text (--dim at 0.8: 3.7 to 1 or better on every place). */
+.screens-off {
+  position: absolute;
+  right: 0;
+  top: 0;
+  display: flex;
+  align-items: center;
+  height: 36px;
+  /* 5 + 22 + 7 + the 1 px border each side: 36 px, with the icon where the grown pill keeps it. */
+  padding: 0 7px 0 5px;
+  border-radius: 18px;
+  color: var(--dim);
+  opacity: 0.8;
+  background: transparent;
+  border: 1px solid transparent;
+  font: 500 17px/1 var(--body);
+  white-space: nowrap;
+  cursor: pointer;
+  transition: opacity 200ms ease, background 200ms ease, border-color 200ms ease, padding 200ms ease, color 200ms ease;
+}
+.screens-off-lbl {
+  max-width: 0;
+  margin-right: 0;
+  overflow: hidden;
+  opacity: 0;
+  transition: max-width 200ms ease, margin-right 200ms ease, opacity 200ms ease;
+}
+.screens-off:hover,
+.screens-off:focus-visible,
+.screens-off[data-failed='true'] {
+  padding: 0 7px 0 16px;
+  opacity: 1;
+  color: var(--tx);
+  background: rgba(20, 15, 48, 0.92);
+  border-color: rgba(255, 255, 255, 0.16);
+}
+.screens-off:hover .screens-off-lbl,
+.screens-off:focus-visible .screens-off-lbl,
+.screens-off[data-failed='true'] .screens-off-lbl {
+  max-width: 160px;
+  margin-right: 10px;
+  opacity: 1;
+}
+/* The failure words are longer than the names: the pill takes 200 px of label. */
+.screens-off[data-failed='true'] .screens-off-lbl {
+  max-width: 200px;
+}
+.screens-off[aria-pressed='true'] {
+  color: var(--cyan);
+  opacity: 1;
+}
+.screens-off:active svg {
+  transform: scale(0.95);
+}
+.screens-off:focus-visible {
+  outline: 3px solid var(--cyan);
+  outline-offset: 2px;
+}
+.screens-off[data-pending='true'] {
+  opacity: 0.6;
+}
+.screens-off svg {
+  flex: none;
+}
+.screens-off-wrap {
+  position: relative;
+  width: 36px;
+  height: 36px;
+}
+/* The failure words are carried in the pill; this copy is only for a screen reader. */
+.screens-off-note {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+@media (prefers-reduced-motion: reduce) {
+  .screens-off,
+  .screens-off-lbl {
+    transition: none;
+  }
+}

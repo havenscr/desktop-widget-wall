@@ -16,7 +16,6 @@ import { WatchPanel } from '../unwind/watch/Watch';
 import { LinesGear } from '../unwind/watch/LinesPanel';
 import { WatchCard } from '../unwind/watch/WatchCard';
 import { UNWIND_ROOM_HEIGHT, UNWIND_ROOM_TOP } from './frameLayout';
-import { ScreensOff } from '../ui/ScreensOff';
 import { reviewDate, reviewNow } from '../ui/reviewClock';
 
 /** Spotify's status is read only while Listen shows (the card and Up next need it). */
@@ -78,9 +77,6 @@ export function Unwind() {
       {/* Kept empty for an office-only lights control (the owner is still choosing it). It takes no
           space and no pointer while empty. Unwind never controls any other room than the office. */}
       <div className="u-office-slot" data-slot="office-lights" aria-hidden="true" />
-      <div className="u-corner">
-        <ScreensOff />
-      </div>
       <div className="u-right" style={{ ['--room-top' as string]: `${UNWIND_ROOM_TOP}px`, ['--room-height' as string]: `${UNWIND_ROOM_HEIGHT}px` }}>
         {watch ? <WatchCard /> : null}
       </div>
