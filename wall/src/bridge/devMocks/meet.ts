@@ -118,9 +118,19 @@ export function registerMeetMocks(): void {
     reads += 1;
     return list.map((x, n) => ({ ...x, key: `${reads}-${n}` }));
   };
+  // `?meetnow=1` (the new On Air frame): the one meeting a call belongs to, 10:00 to 11:00 at the review's date when the review clock reads 10:24, in place of the list below. `?meetlong=1` gives it a 120 character title.
+  const nowMeeting = () => ({
+    key: '1-0',
+    accountId: 'work',
+    title: knob('meetlong') === '1' ? 'Community talk: November. The monthly session for everyone who builds reports, with demos, the guest of the month and a long question time'.slice(0, 120) : 'Community talk: November',
+    start: at(-24),
+    end: at(36),
+    canJoin: true,
+    details: { calledBy: 'Event host', people: Array.from({ length: 20 }, (_, i) => p(`Guest ${i + 1}`, 'yes')), peopleMore: 22, invite: null },
+  });
   const answer = (args: Record<string, unknown> | undefined) => mode() === 'stale' && args?.only ? { accounts: STALE_ACCOUNTS, meetings: [] } : {
     accounts: accounts(),
-    meetings: layout() ? layoutMeetings() : mode() === 'down' || mode() === 'none' ? [] : [
+    meetings: knob('meetnow') === '1' ? [nowMeeting()] : layout() ? layoutMeetings() : mode() === 'down' || mode() === 'none' ? [] : [
       { key: '1-0', accountId: 'work', title: longOr('Design review with the platform team', 'Quarterly planning and roadmap review with the whole platform team'), start: at(-10), end: at(20), canJoin: true, details: MOCK_DETAILS.known },
       { key: '1-1', accountId: 'work', title: 'Weekly planning', start: at(48), end: at(78), canJoin: true },
       { key: '1-2', accountId: 'work', title: 'Lunch with Sam', start: at(150), end: at(210), canJoin: false },

@@ -1,0 +1,322 @@
+/* The new On Air frame (development only, behind ?onair=v2). Boxes are in stage pixels: CSS left is wall x minus 124,
+   CSS top is wall y minus 20. Every block ends at or above wall y 510, the band under it is Watt's. */
+.oa2 {
+  position: absolute;
+  inset: 0;
+  font: 20px/1.3 var(--body);
+  color: var(--tx);
+}
+.oa2,
+.oa2 * {
+  box-sizing: border-box;
+}
+.oa2-b {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+.oa2 .panel.oa2-b {
+  gap: 0;
+  padding: 20px 24px 18px;
+}
+
+/* ---- the modes row ---- */
+.oa2-modes {
+  left: 0;
+  top: 4px;
+  width: 640px;
+  height: 40px;
+  flex-direction: row;
+  align-items: center;
+  gap: 12px;
+}
+.oa2-seg {
+  display: flex;
+  flex: none;
+  height: 40px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 12px;
+  background: rgba(14, 10, 36, 0.78);
+  overflow: hidden;
+}
+.oa2-segb {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 100%;
+  padding: 0 14px;
+  font: 600 18px/1 var(--body);
+  color: var(--dim);
+  border-right: 1px solid rgba(255, 255, 255, 0.1);
+  transition: background 160ms ease, color 160ms ease;
+}
+.oa2-segb:last-child {
+  border-right: 0;
+}
+.oa2-segb:hover:not([aria-checked='true']) {
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--tx);
+}
+.oa2-segb[aria-checked='true'] {
+  background: rgba(53, 230, 234, 0.14);
+  color: var(--cyan);
+}
+.oa2-segb:focus-visible,
+.oa2-auto:focus-visible,
+.oa2 .deck-tile:focus-visible {
+  outline: 3px solid var(--cyan);
+  outline-offset: -3px;
+}
+.oa2-dot {
+  width: 10px;
+  height: 10px;
+  flex: none;
+  border-radius: 50%;
+  background: var(--red);
+}
+.oa2-dot[data-mode='rec'] {
+  background: var(--mag);
+}
+.oa2-dot[data-mode='meet'] {
+  background: var(--mint);
+}
+.oa2-auto {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 8px;
+  height: 40px;
+  padding: 0 12px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 12px;
+  background: rgba(14, 10, 36, 0.78);
+  font: 500 17px/1 var(--body);
+  color: var(--tx);
+  transition: border-color 160ms ease;
+}
+.oa2-auto:hover {
+  border-color: rgba(53, 230, 234, 0.55);
+}
+.oa2-why {
+  flex: 1;
+  min-width: 0;
+  font: 500 17px/22px var(--body);
+  color: var(--dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ---- block headings ---- */
+.oa2-hd {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 26px;
+  flex: none;
+  white-space: nowrap;
+  min-width: 0;
+}
+.oa2-hd > svg {
+  color: var(--dim);
+  flex: none;
+}
+.oa2-hd .k {
+  flex: none;
+  min-width: 0;
+}
+.oa2-hd .k.ellipsis {
+  flex: 0 1 auto;
+}
+.oa2-hd-r {
+  margin-left: auto;
+  min-width: 0;
+  font: 500 17px/26px var(--body);
+  color: var(--dim);
+}
+.oa2-hd-r b {
+  color: var(--tx);
+  font-weight: 600;
+}
+.oa2-brief {
+  font: 500 18px/26px var(--body);
+  color: var(--cyan);
+  min-width: 0;
+}
+
+/* ---- timers and chips ---- */
+.oa2-timer {
+  display: flex;
+  flex-direction: column;
+}
+.oa2-timer .oa-time-row {
+  margin-top: 6px;
+}
+.oa2-sub {
+  margin-top: 4px;
+  font: 400 19px/25px var(--body);
+  color: var(--dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.oa2-sub b {
+  color: var(--tx);
+  font-weight: 600;
+}
+.oa2-chips {
+  display: flex;
+  flex-direction: row;
+  gap: 8px;
+  align-items: center;
+  min-width: 0;
+}
+.oa2-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 36px;
+  padding: 0 14px;
+  border-radius: 18px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: rgba(14, 10, 36, 0.78);
+  font: 600 17px/1 var(--body);
+  color: var(--tx);
+  white-space: nowrap;
+  flex: none;
+}
+.oa2-chip span {
+  font-weight: 500;
+  color: #cfc8ea;
+}
+.oa2-chip svg {
+  color: var(--dim);
+}
+.oa2-chip[data-kind='rec'] {
+  border-color: rgba(255, 61, 154, 0.85);
+  background: linear-gradient(rgba(255, 61, 154, 0.2), rgba(255, 61, 154, 0.08)), rgba(14, 10, 36, 0.9);
+}
+.oa2-chip[data-kind='call'] {
+  border-color: rgba(93, 242, 182, 0.6);
+  background: linear-gradient(rgba(93, 242, 182, 0.14), rgba(93, 242, 182, 0.05)), rgba(14, 10, 36, 0.9);
+}
+.oa2-chip[data-kind='stale'] {
+  border-style: dashed;
+  border-color: rgba(255, 255, 255, 0.3);
+  color: var(--dim);
+}
+.oa2-timer .oa2-chip {
+  /* 28 px from the time: the row's own 24 px gap and this. */
+  margin-left: 4px;
+}
+
+/* ---- rows ---- */
+.oa2-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-top: 6px;
+}
+.oa2-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 34px;
+  font: 500 18px/1.25 var(--body);
+  color: var(--dim);
+  white-space: nowrap;
+  min-width: 0;
+}
+.oa2-row b {
+  color: var(--tx);
+  font-weight: 600;
+}
+.oa2-row > svg {
+  flex: none;
+  color: var(--dim);
+}
+.oa2-row.ok > svg:first-child {
+  color: var(--mint);
+}
+.oa2-row-t {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.oa2-title {
+  margin-top: 6px;
+  font: 600 25px/30px var(--body);
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.oa2-fine {
+  margin-top: 6px;
+  font: 400 16px/21px var(--body);
+  color: var(--dim);
+}
+.oa2-fine.amber {
+  color: var(--amber);
+}
+.oa2 .oa2-open {
+  margin-top: 8px;
+  align-self: flex-start;
+}
+
+/* ---- key tiles ---- */
+.oa2-tiles {
+  display: grid;
+  gap: 8px;
+  margin-top: 6px;
+}
+.oa2 .oa2-tiles .deck-tile.key-tile {
+  height: 76px;
+  grid-template-rows: 22px 32px;
+  width: auto;
+  min-width: 0;
+  padding-top: 9px;
+  font-size: 17px;
+  line-height: 16px;
+}
+.oa2 .oa2-tiles .deck-tile.key-tile svg {
+  width: 22px;
+  height: 22px;
+}
+.oa2-tiles + .oa2-tiles {
+  margin-top: 8px;
+}
+.oa2-quiet {
+  margin-top: 6px;
+}
+
+/* ---- the boxes: Recording ---- */
+.oa2-marks { left: 0; top: 64px; width: 640px; height: 230px; }
+.oa2 .oa-card.oa2-outline { left: 676px; top: 4px; width: 890px; height: 486px; }
+.oa2-take { left: 1596px; top: 4px; width: 820px; height: 166px; }
+.oa2-reckeys { left: 1596px; top: 182px; width: 820px; height: 110px; }
+.oa2-lights-rec { left: 1596px; top: 308px; width: 820px; height: 154px; }
+/* Boxes kept empty for a later pull request: they hold their place and draw nothing. */
+.oa2-empty-rec { left: 0; top: 316px; width: 640px; height: 104px; }
+.oa2-empty-meet { left: 1796px; top: 210px; width: 620px; height: 104px; }
+/* ---- the boxes: Presenting ---- */
+.oa2-talk { left: 0; top: 56px; width: 640px; height: 166px; }
+.oa2-callchips { left: 0; top: 230px; width: 640px; height: 36px; }
+.oa2-meeting { left: 0; top: 278px; width: 640px; height: 212px; }
+.oa2 .oa-card.oa2-speaker { left: 676px; top: 4px; width: 1080px; height: 486px; }
+.oa2-callkeys { left: 1796px; top: 4px; width: 620px; height: 192px; }
+.oa2-lights-meet { left: 1796px; top: 328px; width: 620px; height: 154px; }
+.oa2-lights-rec > .st-block,
+.oa2-lights-meet > .st-block {
+  height: 148px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .oa2-segb,
+  .oa2-auto {
+    transition: none;
+  }
+}

@@ -15,7 +15,14 @@ export interface SignalPayload {
 }
 export interface CallSignal { kind: CallKind; since: number; camera: boolean }
 export interface LeaveSignal { key: string; leaveAt: number; startsAt: number }
-export interface DerivedSignals { known: boolean; call: CallSignal | null; recording: boolean; leave: LeaveSignal | null }
+export interface DerivedSignals {
+  known: boolean;
+  call: CallSignal | null;
+  recording: boolean;
+  leave: LeaveSignal | null;
+  /** A browser holds the camera and the microphone and it is not a joinable meeting (a broadcast from the browser). */
+  browserAv: boolean;
+}
 
 const MIN = 60_000;
 export const EMPTY_USE: DeviceUse = { teams: false, zoom: false, browser: false, recorder: false, other: false };
