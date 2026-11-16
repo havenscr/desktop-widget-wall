@@ -114,7 +114,7 @@ export function ShieldDrawer({ s, refresh, onClose }: { s: Shield; refresh: numb
           </button>
         )}
         {s.clearNotSetUp && (
-          <span className="sd-txt off" {...tip('Clear all needs homeDeskToken in feeds.json on this PC (and the same token in the home app).')}>
+          <span className="sd-txt off" {...tip('Clear all needs the desk token typed in Tools, Home app, on this PC (and the same token in the home app).')}>
             Clear all: not set up
           </span>
         )}

@@ -8,6 +8,9 @@ import { useToolsStore } from '../tools/store';
 import { anyOn, downWord, kelvinColour, mismatched, savedDown, shown as shownLight, sideName, sideReading, singleLight, wordLine, working, withOn, type Snapshot } from './model';
 import { drawerBox, openerColumn } from './drawerBox';
 import { Slider } from './Slider';
+import { ABSENT_LINE, DOWN_LINE } from './homeModel';
+import { SheetPresets, SheetRooms, useSheetHome } from './SheetHome';
+import { useHomePolling } from './useHomePolling';
 import { useKeyLights } from './store';
 
 /** The drawer closes by itself after this long with no pointer over it, as the Tools drawer does. */
@@ -104,6 +107,8 @@ export function StudioDrawer() {
   const linked = useKeyLights((s) => s.linked);
   const note = useKeyLights((s) => s.note);
   const snap: Snapshot = { status, left, right };
+  useHomePolling();
+  const home = useSheetHome();
   const ref = useRef<HTMLElement>(null);
   const idle = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const close = () => useKeyLights.getState().setDrawer(false);
@@ -204,6 +209,8 @@ export function StudioDrawer() {
           <IconX size={18} aria-hidden="true" />
         </button>
       </div>
+      {home.studio && <SheetPresets studio={home.studio} may={home.may} away={home.away} />}
+      <div className={home.studio ? 'st-d-body' : 'st-d-body one'}>
       <div className="st-d-keys" data-split={split ? '' : undefined}>
         <div className="st-k-hd">
           {target ? (
@@ -278,12 +285,14 @@ export function StudioDrawer() {
           </>
         )}
       </div>
+      {home.studio && <SheetRooms studio={home.studio} may={home.may} />}
+      </div>
       {note && (
         <div className="st-line st-note amber" role="status">
           {note}
         </div>
       )}
-      <div className="st-line st-quiet">Presets and room lights come with a later home app change.</div>
+      {!home.studio && home.view !== 'checking' && <div className="st-line st-quiet">{home.view === 'down' ? `${DOWN_LINE}.` : ABSENT_LINE}</div>}
       <div className="st-d-foot st-line">
         <span>Range {KELVIN_MIN} K to {KELVIN_MAX} K, the maker&apos;s figure</span>
         <span>Esc or a click outside closes it</span>

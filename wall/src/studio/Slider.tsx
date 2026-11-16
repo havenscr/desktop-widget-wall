@@ -25,6 +25,8 @@ export function Slider({
   down = false,
   sides,
   tipText,
+  floor,
+  busyCount,
 }: {
   label: string;
   icon: ReactNode;
@@ -40,8 +42,13 @@ export function Slider({
   /** The lights this slider sets. It waits only on writes to these; without it, on every write. */
   sides?: readonly Side[];
   tipText: string;
+  /** A comfort floor (same unit as the value): the part under it is hatched, marked, and the slider stops at it. */
+  floor?: number;
+  /** Writes in flight for this slider when it is not a key light slider (a room light). */
+  busyCount?: number;
 }) {
-  const busy = useKeyLights((s) => (sides ? sides.reduce((n, side) => n + s.busySides[side], 0) : s.busy));
+  const keyBusy = useKeyLights((s) => (sides ? sides.reduce((n, side) => n + s.busySides[side], 0) : s.busy));
+  const busy = busyCount ?? keyBusy;
   // Where the thumb was asked to go, and whether the pointer or a key is working it now.
   const [asked, setAsked] = useState<number | null>(null);
   const [active, setActive] = useState(false);
@@ -49,12 +56,13 @@ export function Slider({
 
   const pending = busy > 0;
   const following = asked !== null && (active || pending);
-  const thumb = Math.min(max, Math.max(min, following ? (asked as number) : value));
+  const lowest = Math.max(min, floor ?? min);
+  const thumb = Math.min(max, Math.max(lowest, following ? (asked as number) : value));
   const frac = (thumb - min) / (max - min);
   const reported = Math.min(max, Math.max(min, value));
 
   const request = (v: number) => {
-    const next = Math.min(max, Math.max(min, Math.round(v / step) * step));
+    const next = Math.min(max, Math.max(floor ?? min, min, Math.round(v / step) * step));
     if (next === asked && following) return;
     setAsked(next);
     onInput(next);
@@ -121,6 +129,12 @@ export function Slider({
         }}
       >
         <i className="st-tr" />
+        {floor !== undefined && floor > min && (
+          <>
+            <i className="st-hatch" style={{ width: `${((floor - min) / (max - min)) * 100}%` }} />
+            <i className="st-floor" style={{ left: `${((floor - min) / (max - min)) * 100}%` }} />
+          </>
+        )}
         {!warm && !down && <i className="st-fi" style={{ width: `${frac * 100}%` }} />}
         <i className="st-th" style={{ left: `${frac * 100}%` }} />
       </span>

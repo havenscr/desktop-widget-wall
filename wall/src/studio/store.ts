@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { usePlaceStore } from '../state/places';
-import { chooseBackend, isLight, isQuiet, readStatus, wordOf, type KeyLightBackend, type Light, type Pair, type Patch, type Reading, type Side, type Target, type Word } from './keyLights';
+import { chooseBackend, currentInfo, resetSeam, isLight, isQuiet, readStatus, wordOf, type KeyLightBackend, type Light, type Pair, type Patch, type Reading, type Side, type Target, type Word } from './keyLights';
 import { notTaken, SIDES, sideReading, type Snapshot } from './model';
 
 /** The amber line after a write a light did not take stays this long. */
@@ -33,7 +33,8 @@ interface KeyLightState extends Snapshot {
   set: (target: Target, patch: Patch) => Promise<void>;
 }
 
-let backend: KeyLightBackend = chooseBackend();
+/** Tests only: a fixed back end. Otherwise the seam chooses on every read and write. */
+let override: KeyLightBackend | null = null;
 let noteTimer: ReturnType<typeof setTimeout> | undefined;
 let quietTimer: ReturnType<typeof setTimeout> | undefined;
 /** The sides the pending follow-up read was asked for by a quiet answer. */
@@ -50,7 +51,7 @@ const writeGen: Record<Side, number> = { left: 0, right: 0 };
 
 /** Tests only: another back end. */
 export function setBackend(b: KeyLightBackend): void {
-  backend = b;
+  override = b;
 }
 
 /** Drops the follow-up read a quiet answer asked for: a newer write brings its own read back, and with nothing showing the lights there is no one to read for. */
@@ -76,6 +77,15 @@ const bump = (counts: Record<Side, number>, sides: readonly Side[], by: number):
 };
 
 export const useKeyLights = create<KeyLightState>((set, get) => {
+  /** The back end now: which sides have an address, what the direct one has answered, what the home app can set. */
+  const backend = {
+    read: () => (override ?? choose()).read(),
+    set: (target: Target, patch: Patch) => (override ?? choose()).set(target, patch),
+  };
+  function choose(): KeyLightBackend {
+    const st = get().status;
+    return chooseBackend(currentInfo(st && st !== 'failed' ? { left: st.left, right: st.right } : null));
+  }
   const raise = (text: string) => {
     clearTimeout(noteTimer);
     set({ note: text });
@@ -246,6 +256,7 @@ export function resetKeyLights(): void {
   waiting.clear();
   running.clear();
   readGen.left = readGen.right = writeGen.left = writeGen.right = 0;
-  backend = chooseBackend();
+  override = null;
+  resetSeam();
   useKeyLights.setState({ ...fresh(), drawer: false, linked: true, note: null, busy: 0, busySides: { left: 0, right: 0 }, settled: 0 });
 }

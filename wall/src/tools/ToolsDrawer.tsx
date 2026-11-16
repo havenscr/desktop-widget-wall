@@ -10,6 +10,7 @@ import { errorText, isAbsent } from '../work/deckModel';
 import { joinKeys, reloadKeys, useKeysFeedStore, type Read } from '../work/keysFeed';
 import type { KeysSummary } from '../work/keysModel';
 import { Accounts } from './accounts';
+import { DeskToken } from './DeskToken';
 import { KeyLights } from './KeyLights';
 import { readText, readUnmountedSources, retrySource, SOURCE_NAMES, useSources, type SourceId, type SourceRow } from './sources';
 import { anySignInWaiting, useToolsStore } from './store';
@@ -196,6 +197,7 @@ function Drawer() {
   const ref = useRef<HTMLElement>(null);
   const [ring, setRing] = useState(focus === 'accounts');
   const [ringKeys, setRingKeys] = useState(focus === 'keylights');
+  const [ringDesk, setRingDesk] = useState(focus === 'desktoken');
   const idle = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const startIdle = useMemo(() => {
     const start = (): void => {
@@ -224,6 +226,17 @@ function Drawer() {
     }
     setRingKeys(true);
     const id = setTimeout(() => setRingKeys(false), RING_MS);
+    return () => clearTimeout(id);
+  }, [focus, opened]);
+
+  // The same for Home app, when the drawer opens from the studio lights.
+  useEffect(() => {
+    if (focus !== 'desktoken') {
+      setRingDesk(false);
+      return;
+    }
+    setRingDesk(true);
+    const id = setTimeout(() => setRingDesk(false), RING_MS);
     return () => clearTimeout(id);
   }, [focus, opened]);
 
@@ -274,6 +287,7 @@ function Drawer() {
         <div className="kl-stack">
           <Sources />
           <KeyLights ringed={ringKeys} />
+          <DeskToken ringed={ringDesk} />
         </div>
       </div>
       <BuildStamp />
