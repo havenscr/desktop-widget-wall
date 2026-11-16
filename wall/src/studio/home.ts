@@ -18,6 +18,7 @@ export const HOME_WORDS = [
   'not-answering',
   'room-dark',
   'nothing-to-undo',
+  'on-air',
   'busy',
   'unknown',
   'refused',
@@ -89,6 +90,8 @@ export interface Studio {
 export interface Moods {
   stale: boolean;
   moods: Mood[];
+  /** Present only when the home app offers Off (its `off.offered` is `true`); `active` is the office lights being off now. */
+  off: { active: boolean } | null;
   canWrite: boolean;
   writeBlock: WriteBlock | null;
 }
@@ -183,7 +186,8 @@ export function moodsOf(raw: unknown): Moods | null {
     const label = str(r?.label);
     if (r && id && label) moods.push({ id, label, line: str(r.line), active: bool(r.active) });
   }
-  return { stale: o.stale !== false, moods, canWrite: bool(o.canWrite), writeBlock: block(o.writeBlock) };
+  const off = obj(o.off);
+  return { stale: o.stale !== false, moods, off: off ? { active: bool(off.active) } : null, canWrite: bool(o.canWrite), writeBlock: block(o.writeBlock) };
 }
 
 async function studio(command: string, args?: Record<string, unknown>): Promise<Studio> {
@@ -206,6 +210,7 @@ export const applyLook = (id: string) => studio('wall2_studio_look', { id });
 export const setHomeKeys = (which: 'left' | 'right' | 'both', patch: { on?: boolean; brightness?: number; kelvin?: number }) => studio('wall2_studio_keys', { which, ...patch });
 export const readMoods = () => moods('wall2_office_moods');
 export const applyMood = (id: string) => moods('wall2_office_mood', { id });
+export const applyOff = () => moods('wall2_office_off');
 
 export async function readTokenStatus(): Promise<TokenStatus> {
   const o = obj(await invoke('wall2_desk_token_status'));

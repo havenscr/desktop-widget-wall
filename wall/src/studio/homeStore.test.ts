@@ -4,7 +4,7 @@ import { IDLE } from '../onair/model';
 import { useOnAirStore } from '../onair/store';
 import { useSignalStore } from '../signals/store';
 import { studioAnswer, studioWith } from './homeKit';
-import { canChange, HOME_READ_EVERY_MS, homePollChange, homeView, moodsPollChange, OFFER_MS, resetHome, TEXT, useHome } from './homeStore';
+import { canChange, HOME_READ_EVERY_MS, homePollChange, homeView, moodsPollChange, OFF_READ_DELAY_MS, OFFER_MS, OFFICE_OFF, resetHome, TEXT, useHome } from './homeStore';
 import { NOTE_MS, resetKeyLights } from './store';
 
 vi.setConfig({ testTimeout: 20_000 });
@@ -49,10 +49,10 @@ beforeEach(() => {
       return answer;
     });
   }
-  record('wall2_office_moods', () => ({ stale: false, moods: [{ id: 'focus', label: 'Focus', line: 'Room 70%', active: false }], canWrite: true, writeBlock: null }));
+  record('wall2_office_moods', () => ({ stale: false, moods: [{ id: 'brightDesk', label: 'Bright desk', line: 'Room 70%', active: false }], canWrite: true, writeBlock: null }));
   record('wall2_office_mood', (args) => {
     if (writeWord) throw writeWord;
-    return { stale: false, moods: [{ id: 'focus', label: 'Focus', line: 'Room 70%', active: args?.id === 'focus' }], canWrite: true, writeBlock: null };
+    return { stale: false, moods: [{ id: 'brightDesk', label: 'Bright desk', line: 'Room 70%', active: args?.id === 'brightDesk' }], canWrite: true, writeBlock: null };
   });
 });
 afterEach(() => {
@@ -174,7 +174,7 @@ it('the moods poll is separate: one read, then every 60 seconds, then stops', as
   moodsPollChange(-1);
   await flush(HOME_READ_EVERY_MS * 2);
   expect(calls.filter((c) => c.command === 'wall2_office_moods')).toHaveLength(2);
-  expect(useHome.getState().moods?.moods.map((m) => m.id)).toEqual(['focus']);
+  expect(useHome.getState().moods?.moods.map((m) => m.id)).toEqual(['brightDesk']);
 });
 
 // Section: writes
@@ -344,7 +344,7 @@ it('no desk token at the home app and a refused token stay until a write works o
   expect(useHome.getState().sticky).toBeNull();
   expect(useHome.getState().token).toEqual({ set: true, unreadable: false });
   expect(reads()).toBe(n + 1);
-  // The moods are not read from Tools: that row is not built yet.
+  // The moods are read after a token change only while Unwind shows them (nobody does here).
   expect(calls.filter((c) => c.command === 'wall2_office_moods')).toHaveLength(0);
 });
 
@@ -352,14 +352,14 @@ it('office moods: a refused apply keeps the chip as read back and names the word
   await useHome.getState().readMoods();
   expect(useHome.getState().moods?.moods[0].active).toBe(false);
   writeWord = 'not-answering';
-  await useHome.getState().applyMood('focus');
+  await useHome.getState().applyMood('brightDesk');
   await flush();
-  expect(useHome.getState().moodFail).toEqual({ id: 'focus', word: 'not-answering' });
+  expect(useHome.getState().moodFail).toEqual({ id: 'brightDesk', word: 'not-answering' });
   expect(useHome.getState().moods?.moods[0].active).toBe(false);
   await flush(NOTE_MS + 10);
   expect(useHome.getState().moodFail).toBeNull();
   writeWord = null;
-  await useHome.getState().applyMood('focus');
+  await useHome.getState().applyMood('brightDesk');
   expect(useHome.getState().moods?.moods[0].active).toBe(true);
   // Moods that were never offered are hidden by every hiding word.
   for (const word of ['absent', 'not-configured', 'unreachable', 'failed']) {
@@ -369,6 +369,100 @@ it('office moods: a refused apply keeps the chip as read back and names the word
     await useHome.getState().readMoods();
     expect(useHome.getState().moodsWord).toBe(word);
   }
+});
+
+// Section: office Off
+
+const offAnswer = (offActive: boolean, brightOn = false) => ({
+  stale: false,
+  moods: [{ id: 'brightDesk', label: 'Bright desk', line: 'Room 70%', active: brightOn }],
+  off: { offered: true, active: offActive },
+  canWrite: true,
+  writeBlock: null,
+});
+const offCalls = () => calls.filter((c) => c.command === 'wall2_office_off');
+
+it('applyOff: the write answer replaces the chips, and the read that follows waits about a second and a half', async () => {
+  record('wall2_office_moods', () => offAnswer(false, true));
+  record('wall2_office_off', () => offAnswer(true));
+  moodsPollChange(1);
+  await flush();
+  expect(useHome.getState().moods?.off).toEqual({ active: false });
+  const reads0 = calls.filter((c) => c.command === 'wall2_office_moods').length;
+  await useHome.getState().applyOff();
+  expect(offCalls()).toHaveLength(1);
+  expect(offCalls()[0].args).toBeUndefined();
+  expect(useHome.getState().moods?.off).toEqual({ active: true });
+  expect(useHome.getState().moods?.moods[0].active).toBe(false);
+  expect(useHome.getState().applying).toBeNull();
+  // The answer is trusted: no read at once, one after the delay while Unwind still shows the row.
+  await flush(OFF_READ_DELAY_MS - 10);
+  expect(calls.filter((c) => c.command === 'wall2_office_moods')).toHaveLength(reads0);
+  await flush(20);
+  expect(calls.filter((c) => c.command === 'wall2_office_moods')).toHaveLength(reads0 + 1);
+  moodsPollChange(-1);
+});
+
+it('applyOff: no read after the delay once Unwind has left', async () => {
+  record('wall2_office_moods', () => offAnswer(false));
+  record('wall2_office_off', () => offAnswer(true));
+  moodsPollChange(1);
+  await flush();
+  await useHome.getState().applyOff();
+  moodsPollChange(-1);
+  const n = calls.filter((c) => c.command === 'wall2_office_moods').length;
+  await flush(OFF_READ_DELAY_MS + 100);
+  expect(calls.filter((c) => c.command === 'wall2_office_moods')).toHaveLength(n);
+});
+
+it('applyOff: a refusal sets moodFail on the Off id for 5 seconds and reads again; on-air has its own words', async () => {
+  record('wall2_office_moods', () => offAnswer(false, true));
+  let word = 'on-air';
+  record('wall2_office_off', () => {
+    throw word;
+  });
+  await useHome.getState().readMoods();
+  const n = calls.filter((c) => c.command === 'wall2_office_moods').length;
+  await useHome.getState().applyOff();
+  expect(useHome.getState().moodFail).toEqual({ id: OFFICE_OFF, word: 'on-air' });
+  expect(calls.filter((c) => c.command === 'wall2_office_moods')).toHaveLength(n + 1);
+  expect(useHome.getState().moods?.moods[0].active).toBe(true);
+  expect(TEXT.onAir).toBe('The studio is on air. End it with Back to normal on On Air first.');
+  await flush(NOTE_MS + 10);
+  expect(useHome.getState().moodFail).toBeNull();
+  word = 'forbidden';
+  await useHome.getState().applyOff();
+  expect(useHome.getState().sticky).toBe('forbidden');
+});
+
+it('a mood or Off click is ignored while a write of the page is out', async () => {
+  record('wall2_office_moods', () => offAnswer(false));
+  let release: (() => void) | undefined;
+  record('wall2_office_off', () => new Promise((r) => (release = () => r(offAnswer(true)))));
+  await useHome.getState().readMoods();
+  const first = useHome.getState().applyOff();
+  await flush();
+  expect(useHome.getState().applying).toBe(OFFICE_OFF);
+  void useHome.getState().applyOff();
+  void useHome.getState().applyMood('brightDesk');
+  await flush();
+  expect(offCalls()).toHaveLength(1);
+  expect(calls.filter((c) => c.command === 'wall2_office_mood')).toHaveLength(0);
+  release?.();
+  await first;
+  expect(useHome.getState().applying).toBeNull();
+});
+
+it('a token change reads the moods only while the moods poll has users', async () => {
+  mocks.set('wall2_desk_token_status', () => ({ set: true, unreadable: false }));
+  await useHome.getState().tokenChanged();
+  expect(calls.filter((c) => c.command === 'wall2_office_moods')).toHaveLength(0);
+  moodsPollChange(1);
+  await flush();
+  const n = calls.filter((c) => c.command === 'wall2_office_moods').length;
+  await useHome.getState().tokenChanged();
+  expect(calls.filter((c) => c.command === 'wall2_office_moods')).toHaveLength(n + 1);
+  moodsPollChange(-1);
 });
 
 // Section: the offer
@@ -570,6 +664,20 @@ it('Reset raises nothing more, not a stop offer and never a start offer', async 
   await flush();
   expect(useHome.getState().offer).toBeNull();
   answer = studioAnswer();
+  resetTimer();
+  await flush();
+  expect(useHome.getState().offer).toBeNull();
+});
+
+it('a start, a stop with no preset on, the start offer dismissed, then Reset: no offer of any kind', async () => {
+  homePollChange(1);
+  startTimer();
+  await flush();
+  expect(useHome.getState().offer).toMatchObject({ kind: 'start', what: 'timer' });
+  stopTimer();
+  await flush();
+  useHome.getState().dismissOffer();
+  expect(useHome.getState().offer).toBeNull();
   resetTimer();
   await flush();
   expect(useHome.getState().offer).toBeNull();

@@ -25,7 +25,8 @@ import { knob } from './long';
  *   ?studio=absent|notsetup|ready|onair|recording|changed|stale|nozone|threelooks|sixlooks|down|lost|slow
  *   ?studiowrite=ok|forbidden|homeunset|dark|busy|lights|unknown|unreachable|refused|private|notset|failed
  *   ?desktoken=unset|set|unreadable|insecure
- *   ?office=absent|empty|two|six|down
+ *   ?office=absent|empty|two|five|six|twelve|down
+ *   ?officeoff=none|offered|on   ?officemood=<id>|none   ?officestale=1   ?officeslow=1
  *
  *   absent        the home app does not offer studio routes (the default: every older page is the day-one page)
  *   notsetup      the home app says the studio is not set up (the same quiet line as absent)
@@ -42,7 +43,12 @@ import { knob } from './long';
  *   slow          ready, but a preset answers after 3 seconds
  *   studiowrite   the answer of every write: ok (default), or the home app's refusal
  *   desktoken     unset (default): no token on this PC; set; unreadable; insecure: set, but the base may not carry it
- *   office        absent (default), empty, two or six moods, or down
+ *   office        absent (default), empty, two, five, six or twelve moods (twelve with names near 40 characters and
+ *                 lines near 120), or down
+ *   officeoff     none (default: the answer has no `off`), offered (the Off chip), on (offered, and the lights are off)
+ *   officemood    the id of the mood on at the start, or none (default)
+ *   officestale   1: the moods answer says stale
+ *   officeslow    1: a mood or Off write never answers (the in-flight look stays)
  */
 
 interface Light {
@@ -118,13 +124,29 @@ const SIX_LOOKS = [
   { id: 'aurora', label: 'Aurora' },
 ];
 const MOODS = [
-  { id: 'focus', label: 'Focus', line: 'Room 70%, neon 20%' },
+  { id: 'brightDesk', label: 'Bright desk', line: 'Room 70%, neon 20%' },
   { id: 'reading', label: 'Reading', line: 'Room 60%, desk lamp on' },
   { id: 'relax', label: 'Relax', line: 'Room 35%, neon 30%' },
   { id: 'gaming', label: 'Gaming', line: 'Room 25%, panels 10%' },
   { id: 'meeting', label: 'Meeting', line: 'Room 80%, desk lamp on' },
   { id: 'night', label: 'Night', line: 'Room 10%' },
 ];
+
+/** Twelve moods with names near the native cap of 40 characters and lines near the cap of 120. */
+const TWELVE = [
+  ['brightDesk', 'Bright desk for the long afternoon sessions', 'Room 70%, neon 20%, desk lamp on, panels off, the window side kept low so the screen has no glare on it at all'],
+  ['readLamp', 'Late evening reading with the lamp low', 'Room 35%, desk lamp on, neon off, panels warm and dim, the key lights stay off for the whole evening session'],
+  ['windDown', 'Wind down before bed, slow and warm', 'Room 20%, neon 10%, panels amber, everything else off, and the room stays this way until it is switched'],
+  ['gaming', 'Gaming with the panels turned up high', 'Room 25%, panels 60%, neon 40%, the desk lamp off so the glare stays off the monitor during long matches'],
+  ['meeting', 'Camera ready for a long video call', 'Room 80%, desk lamp on, key lights on and matched, panels soft white so faces look even on the camera'],
+  ['nightRun', 'Night run with only the neon showing', 'Room 5%, neon 30%, nothing else on, a quiet low glow that never lights the walls or the ceiling at all'],
+  ['partyMusic', 'Music on, colours moving with the beat', 'Room 40%, panels cycle through the colour looks slowly, neon 50%, desk lamp off, no key lights at all'],
+  ['softScreen', 'Easy on the eyes for a long screen day', 'Room 55%, panels pale and warm, desk lamp on low, the neon off, a steady light that never changes'],
+  ['workDay', 'Plain bright working light, nothing fancy', 'Room 90%, desk lamp on, neon off, panels white, the whole office evenly lit for a normal working day'],
+  ['calmMorning', 'Calm morning with the blinds still shut', 'Room 45%, panels warm, neon 15%, desk lamp on low, a soft start that never feels sharp or too bright'],
+  ['stream', 'Live on stream, key lights and a clean wall', 'Room 60%, key lights on, panels in the stream look, neon 30%, the desk lamp off so the shot stays clean'],
+  ['tidyUp', 'Tidy up with every light up and bright', 'Room 100%, every light on and bright so nothing is missed, switched back to a mood once the room is tidy'],
+] as const;
 
 const group = (id: string, label: string, on: boolean, level: number, over: Partial<MockGroup> = {}): MockGroup => ({
   id,
@@ -239,7 +261,21 @@ function registerHomeHalf(keys: LightMock): void {
   const tokenKind = knob('desktoken') ?? 'unset';
   const token = { set: tokenKind === 'set' || tokenKind === 'insecure', unreadable: tokenKind === 'unreadable', insecure: tokenKind === 'insecure' };
   const officeKind = knob('office') ?? 'absent';
-  let activeMood: string | null = null;
+  const offKind = knob('officeoff') ?? 'none';
+  const initialMood = knob('officemood');
+  let activeMood: string | null = initialMood && initialMood !== 'none' ? initialMood : null;
+  let offActive = offKind === 'on';
+  const slowWrites = knob('officeslow') === '1';
+  const moodSet = (): readonly { id: string; label: string; line: string }[] =>
+    officeKind === 'empty'
+      ? []
+      : officeKind === 'two'
+        ? MOODS.slice(0, 2)
+        : officeKind === 'five'
+          ? MOODS.slice(0, 5)
+          : officeKind === 'twelve'
+            ? TWELVE.map(([id, label, line]) => ({ id, label, line }))
+            : MOODS;
 
   const block = (): 'not-set-up' | 'needs-private-address' | null => (!token.set ? 'not-set-up' : token.insecure ? 'needs-private-address' : null);
   const studio = () => ({
@@ -257,12 +293,13 @@ function registerHomeHalf(keys: LightMock): void {
   });
   const moods = () => ({
     ok: true,
-    stale: false,
-    moods: (officeKind === 'empty' ? [] : officeKind === 'two' ? MOODS.slice(0, 2) : MOODS).map((m) => ({ ...m, active: activeMood === m.id })),
+    stale: knob('officestale') === '1',
+    moods: moodSet().map((m) => ({ ...m, active: activeMood === m.id })),
+    ...(offKind === 'none' ? {} : { off: { offered: true, active: offActive && activeMood === null } }),
     canWrite: block() === null,
     writeBlock: block(),
   });
-  const wordsFor: Record<string, string> = { forbidden: 'forbidden', homeunset: 'home-not-set-up', dark: 'room-dark', busy: 'busy', lights: 'not-answering', unknown: 'unknown', unreachable: 'unreachable', refused: 'refused', private: 'needs-private-address', notset: 'not-set-up', failed: 'failed' };
+  const wordsFor: Record<string, string> = { forbidden: 'forbidden', homeunset: 'home-not-set-up', dark: 'room-dark', busy: 'busy', lights: 'not-answering', unknown: 'unknown', unreachable: 'unreachable', refused: 'refused', private: 'needs-private-address', notset: 'not-set-up', failed: 'failed', onair: 'on-air' };
   /** A write: refused without a token or on an unsafe base (nothing sent), else the review knob's answer. */
   const gate = (): void => {
     const b = block();
@@ -346,13 +383,26 @@ function registerHomeHalf(keys: LightMock): void {
     if (officeKind === 'down') throw 'unreachable';
     return moods();
   });
-  mocks.set('wall2_office_mood', (args) => {
+  mocks.set('wall2_office_mood', async (args) => {
     if (officeKind === 'absent') throw 'absent';
     if (officeKind === 'down') throw 'unreachable';
     gate();
     const id = String(args?.id);
-    if (!MOODS.some((m) => m.id === id)) throw 'refused';
+    if (!moodSet().some((m) => m.id === id)) throw 'refused';
+    if (slowWrites) await new Promise<never>(() => undefined);
     activeMood = id;
+    offActive = false;
+    return moods();
+  });
+  mocks.set('wall2_office_off', async () => {
+    if (officeKind === 'absent') throw 'absent';
+    if (officeKind === 'down') throw 'unreachable';
+    gate();
+    // Off is refused unless the home app offered it, as the native side does.
+    if (offKind === 'none') throw 'refused';
+    if (slowWrites) await new Promise<never>(() => undefined);
+    activeMood = null;
+    offActive = true;
     return moods();
   });
 

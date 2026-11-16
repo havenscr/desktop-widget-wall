@@ -3749,17 +3749,163 @@ button.sp-qrow:hover {
     transform: scaleX(0.5);
   }
 }
-/* The empty slot kept for office lights (7A's quiet row at the foot): right edge 70 px from the
-   stage's right edge, top 662, 34 tall, 420 wide at most. No content, border or pointer. */
+/* The Office moods row (`studio/OfficeMoods.tsx`). It is the office-lights slot: right edge at wall x
+   2490, top y 662, 34 tall. Empty it is the old 420 by 34 box with no pointer; shown it is as wide as its
+   parts, 420 to 1250 (the 1250 is the row's left limit, wall x 1240, where the vote found free space in
+   every state). The box takes no pointer, only the chips do. */
 .u-office-slot {
   position: absolute;
   right: 50px;
   top: 642px;
-  width: 420px;
+  width: max-content;
+  min-width: 420px;
+  max-width: 1250px;
   height: 34px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
   pointer-events: none;
 }
+.u-mood-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 26px;
+  padding: 0 9px;
+  margin-right: 2px;
+  border-radius: 11px;
+  background: rgba(10, 7, 28, 0.72);
+  color: var(--dim);
+  font: 600 16px/1 var(--disp);
+  letter-spacing: 3px;
+  text-transform: uppercase;
+  white-space: nowrap;
+  flex: none;
+}
+.u-mood {
+  pointer-events: auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  height: 34px;
+  min-width: 88px;
+  padding: 0 13px 0 10px;
+  border-radius: 17px;
+  border: 1px solid var(--line);
+  background: rgba(10, 7, 28, 0.72);
+  color: var(--dim);
+  font: 500 17px/1 var(--body);
+  white-space: nowrap;
+  flex: none;
+  cursor: pointer;
+  transition: border-color 200ms ease, color 200ms ease, opacity 200ms ease;
+}
+.u-mood.off {
+  min-width: 0;
+  padding: 0 14px;
+}
+.u-mood-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.u-mood-sw {
+  display: inline-flex;
+  width: 24px;
+  height: 14px;
+  border-radius: 5px;
+  overflow: hidden;
+  flex: none;
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.25);
+}
+.u-mood-sw i {
+  flex: 1;
+}
+.u-mood-ico {
+  flex: none;
+}
+.u-mood-ico.warn {
+  color: var(--amber);
+}
+.u-mood:hover,
+.u-mood:focus-visible {
+  border-color: rgba(83, 230, 235, 0.45);
+  color: var(--tx);
+}
+.u-mood.lit {
+  background: rgba(9, 32, 50, 0.88);
+  border-color: rgba(83, 230, 235, 0.65);
+  color: var(--cyan);
+}
+.u-mood.lit:hover,
+.u-mood.lit:focus-visible {
+  border-color: rgba(83, 230, 235, 0.85);
+  color: var(--cyan);
+}
+.u-mood:focus-visible {
+  outline: 3px solid var(--cyan);
+  outline-offset: 2px;
+}
+/* A stale read: dimmed, the lit chip keeps only its outline (never shown as live). */
+.u-office-slot[data-stale='true'] .u-mood {
+  opacity: 0.6;
+}
+.u-office-slot[data-stale='true'] .u-mood.lit {
+  background: rgba(10, 7, 28, 0.72);
+}
+/* This PC may not change the home app: dashed, swatches faint, a click sends nothing. */
+.u-mood.blocked {
+  border-style: dashed;
+  border-color: rgba(183, 175, 214, 0.4);
+  cursor: default;
+}
+.u-mood.blocked .u-mood-sw {
+  opacity: 0.45;
+}
+.u-mood.blocked.lit {
+  background: rgba(10, 7, 28, 0.72);
+  border-color: rgba(83, 230, 235, 0.5);
+}
+.u-mood[data-busy='true'] {
+  cursor: progress;
+}
+.u-office-line {
+  position: absolute;
+  right: 845px;
+  top: 610px;
+  max-width: 760px;
+  padding: 2px 10px;
+  border-radius: 11px;
+  background: rgba(10, 7, 28, 0.72);
+  color: var(--dim);
+  font: 500 17px/22px var(--body);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  pointer-events: none;
+}
+.u-office-line b {
+  font-weight: 600;
+  color: var(--tx);
+}
+.u-office-line.warn,
+.u-office-line.warn b {
+  color: var(--amber);
+}
+.u-mood-tip {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.u-mood-warn {
+  color: var(--amber);
+}
 @media (prefers-reduced-motion: reduce) {
+  .u-mood {
+    transition: none;
+  }
   .sp-songs {
     animation: none;
   }

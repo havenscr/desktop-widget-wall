@@ -27,7 +27,14 @@ export const TEXT = {
   notSetUp: "To change these, type the home app's desk token in Tools.",
   needsPrivate: 'The desk token is not sent over plain http. Use https or the tailnet.',
   nothingToUndo: 'Nothing to go back from. This is what the home app reports now.',
+  /** Off refused because the studio is on air (the home app's "Studio on air"). */
+  onAir: 'The studio is on air. End it with Back to normal on On Air first.',
 } as const;
+
+/** The office moods row's own key for the Off chip in `applying` and `moodFail`. A hyphen is never in a mood id, so a mood named Off cannot collide. */
+export const OFFICE_OFF = 'office-off';
+/** After an Off write the lights' own report trails the write: the read that follows waits this long. */
+export const OFF_READ_DELAY_MS = 1500;
 
 /** What the page can show of the home half: not read yet, not offered here, not answering, or ready. */
 export type HomeView = 'checking' | 'absent' | 'down' | 'ready';
@@ -71,6 +78,8 @@ export interface HomeState {
   setGroup: (id: GroupId, on: boolean, level?: number) => Promise<void>;
   applyLook: (id: string) => Promise<void>;
   applyMood: (id: string) => Promise<void>;
+  /** Turns the office lights off (only when the last moods read offered Off). */
+  applyOff: () => Promise<void>;
   dismissOffer: () => void;
   refreshToken: () => Promise<void>;
   /** The token was saved or forgotten: the amber line goes and the studio is read again. */
@@ -80,8 +89,11 @@ export interface HomeState {
 let noteTimer: ReturnType<typeof setTimeout> | undefined;
 let moodFailTimer: ReturnType<typeof setTimeout> | undefined;
 let offerTimer: ReturnType<typeof setTimeout> | undefined;
+let offReadTimer: ReturnType<typeof setTimeout> | undefined;
 let studioGen = 0;
 let moodsGen = 0;
+let moodUsers = 0;
+let moodTimer: ReturnType<typeof setInterval> | undefined;
 
 export const useHome = create<HomeState>((set, get) => {
   const raise = (text: string) => {
@@ -170,6 +182,35 @@ export const useHome = create<HomeState>((set, get) => {
       }
     });
 
+  /** One office mood write (a mood or Off). Ignored while a write of the page is running: a click queued behind a slow write would land long after it. */
+  const moodWrite = (key: string, id: string, call: () => Promise<Moods>, delayRead = false): Promise<void> => {
+    if (get().applying !== null) return Promise.resolve();
+    return enqueue(key, async () => {
+      set({ applying: id });
+      try {
+        applyMoods(await call());
+        set({ sticky: null });
+        // The answer is trusted; the lights' own report trails an Off, so the read that follows waits a moment.
+        if (delayRead) {
+          clearTimeout(offReadTimer);
+          offReadTimer = setTimeout(() => {
+            if (moodUsers > 0) void get().readMoods();
+          }, OFF_READ_DELAY_MS);
+        }
+      } catch (e) {
+        const w = homeWordOf(e);
+        if (w === 'home-not-set-up' || w === 'forbidden') set({ sticky: w });
+        clearTimeout(moodFailTimer);
+        set({ moodFail: { id, word: w } });
+        moodFailTimer = setTimeout(() => set({ moodFail: null }), NOTE_MS);
+        // The chip keeps what the home app reports now, not what was clicked.
+        await get().readMoods();
+      } finally {
+        set({ applying: null });
+      }
+    });
+  };
+
   return {
     studio: null,
     readWord: null,
@@ -220,23 +261,10 @@ export const useHome = create<HomeState>((set, get) => {
       return studioWrite(`look:${id}`, () => api.applyLook(id));
     },
     applyMood(id) {
-      return enqueue(`mood:${id}`, async () => {
-        set({ applying: id });
-        try {
-          applyMoods(await api.applyMood(id));
-          set({ sticky: null });
-        } catch (e) {
-          const w = homeWordOf(e);
-          if (w === 'home-not-set-up' || w === 'forbidden') set({ sticky: w });
-          clearTimeout(moodFailTimer);
-          set({ moodFail: { id, word: w } });
-          moodFailTimer = setTimeout(() => set({ moodFail: null }), NOTE_MS);
-          // The chip keeps what the home app reports now, not what was clicked.
-          await get().readMoods();
-        } finally {
-          set({ applying: null });
-        }
-      });
+      return moodWrite(`mood:${id}`, id, () => api.applyMood(id));
+    },
+    applyOff() {
+      return moodWrite('office:off', OFFICE_OFF, () => api.applyOff(), true);
     },
     dismissOffer() {
       clearTimeout(offerTimer);
@@ -253,6 +281,7 @@ export const useHome = create<HomeState>((set, get) => {
       set({ sticky: null });
       await get().refreshToken();
       await get().readStudio();
+      if (moodUsers > 0) await get().readMoods();
     },
   };
 });
@@ -291,9 +320,6 @@ export function homePollChange(by: 1 | -1): void {
     pollTimer = undefined;
   }
 }
-
-let moodUsers = 0;
-let moodTimer: ReturnType<typeof setInterval> | undefined;
 
 /** Unwind joins while it is the shown place and awake: one read, then every 60 s. */
 export function moodsPollChange(by: 1 | -1): void {
@@ -415,6 +441,7 @@ export function resetHome(): void {
   clearTimeout(noteTimer);
   clearTimeout(moodFailTimer);
   clearTimeout(offerTimer);
+  clearTimeout(offReadTimer);
   clearInterval(pollTimer);
   clearInterval(moodTimer);
   pollTimer = moodTimer = undefined;
