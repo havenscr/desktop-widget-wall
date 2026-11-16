@@ -10,16 +10,18 @@ interface ModePayload {
 
 /** How long the pending look lasts at most (the helper waits 500 ms, then reports). */
 export const PENDING_MS = 1500;
-/** How long the failure line stays. */
+/** How long the failure words stay. */
 export const FAILURE_MS = 5000;
+const FAILURE_TEXT = 'Could not watch input';
 
 /**
- * "Hide screen", a toggle in the lower right corner of Unwind: at rest the icon alone; under
- * the pointer (or keyboard focus) it grows to the left and shows its name, which stands in for
- * a tooltip. It reads "Hiding" while pending and "Cancel hide" while active. 500 ms after
+ * "Hide screen", a toggle in the lower right corner of every place (see `ScreensOffLayer`): at
+ * rest the icon alone; under the pointer (or keyboard focus) it grows to the left and shows its
+ * name, which stands in for a tooltip. It reads "Hiding" while pending and "Cancel hide" while active. 500 ms after
  * the tap the monitors go off and the helper watches for a phantom mouse nudge, sending them off again; a second tap cancels and leaves the
  * screens as they are. A key, click, touch or real movement also ends the watch (rule R3).
- * If the helper cannot watch input it does not turn the screens off and says so briefly.
+ * If the helper cannot watch input it does not turn the screens off and says so briefly, in
+ * the pill itself (it stays grown while the words show), so nothing lands on the place beneath.
  */
 export function ScreensOff({ className = '' }: { className?: string }) {
   const [active, setActive] = useState(false);
@@ -82,7 +84,8 @@ export function ScreensOff({ className = '' }: { className?: string }) {
     );
   };
 
-  // The words show only while the button is grown (hover or focus); they are also its accessible name.
+  // The words show only while the button is grown (hover, focus, or the failure words); the
+  // label is also its accessible name.
   const label = pending ? 'Hiding' : active ? 'Cancel hide' : 'Hide screen';
   return (
     <div className="screens-off-wrap">
@@ -92,16 +95,17 @@ export function ScreensOff({ className = '' }: { className?: string }) {
         aria-pressed={active}
         aria-label={label}
         data-pending={pending ? 'true' : undefined}
+        data-failed={failed ? 'true' : undefined}
         onClick={tap}
       >
         <span className="screens-off-lbl" aria-hidden="true">
-          {label}
+          {failed ? FAILURE_TEXT : label}
         </span>
         <IconDeviceDesktopOff size={22} aria-hidden="true" />
       </button>
       {failed ? (
         <div className="screens-off-note" role="status">
-          Could not watch input
+          {FAILURE_TEXT}
         </div>
       ) : null}
     </div>

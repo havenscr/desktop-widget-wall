@@ -823,7 +823,7 @@ const EXPECT = [
   ['unwind', 'recording: unwind', ['Recording00:', 'Hide screen']],
   ['meet', 'recording: meet', ['Recording00:', 'Design review with the platform team']],
   ['zen', 'recording: none on zen', ['Breathe in', '!Recording00']],
-  ['unwind', 'unwind: hide screen note', ['Could not watch input', 'Hide screen']],
+  ['unwind', 'unwind: hide screen note', ['Could not watch input']],
   // unwind listen
   ['unwind', 'listen: playing', ['Tokyo Burnout', 'Up next', 'Lantern Song 2', 'Road Trip 1', '!Which player the wall follows']],
   ['unwind', 'listen: nothing playing', ['Nothing playing', 'Road Trip 1']],

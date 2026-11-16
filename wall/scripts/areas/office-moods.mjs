@@ -64,7 +64,7 @@ function measureMoods() {
   const lineBox = line ? line.getBoundingClientRect() : null;
   out.enters = [];
   for (const e of document.querySelectorAll('.stage *')) {
-    if (e === slot || slot.contains(e) || e === line || line?.contains(e) || e.closest('.u-corner') || e.closest('.horizon-canvas') || e.tagName === 'CANVAS' || e.closest('.hover-tip') || !draws(e)) continue;
+    if (e === slot || slot.contains(e) || e === line || line?.contains(e) || e.closest('.screens-off-wrap') || e.closest('.horizon-canvas') || e.tagName === 'CANVAS' || e.closest('.hover-tip') || !draws(e)) continue;
     const q = shown(e);
     // A drawing laid over the whole wall (the drive-in tower's svg) is a layer, not a thing at the row: what it paints is judged by its own checks.
     if (q.width <= 0 || q.height <= 0 || q.width > 2000) continue;
