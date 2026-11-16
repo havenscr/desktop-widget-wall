@@ -386,9 +386,9 @@ mod tests {
 
     #[test]
     fn titles_are_cleaned_and_cut() {
-        let controls = shape_page(&with_list("[{\"title\":\"  Lantern\\u0007 \\u202eSong\\u200b  \",\"subtitle\":\"Paper\\u0000 Kites\"}]"), ID).unwrap();
+        let controls = shape_page(&with_list("[{\"title\":\"  Lantern\\u0007 \\u202eSong\\u200b  \",\"subtitle\":\"Willow\\u0000 Lantern\"}]"), ID).unwrap();
         assert_eq!(controls.items[0].name, "Lantern Song");
-        assert_eq!(controls.items[0].artists, "Paper Kites");
+        assert_eq!(controls.items[0].artists, "Willow Lantern");
         let long = "L".repeat(500);
         let cut = shape_page(&with_list(&format!("[{{\"title\":\"{long}\",\"subtitle\":\"{long}\"}}]")), ID).unwrap();
         assert_eq!(cut.items[0].name.chars().count(), 80);
