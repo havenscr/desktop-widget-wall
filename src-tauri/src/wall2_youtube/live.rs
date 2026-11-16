@@ -387,7 +387,11 @@ fn rfc3339(text: &str) -> Option<u64> {
     if &text[4..5] != "-" || &text[7..8] != "-" || &text[10..11] != "T"
         || &text[13..14] != ":" || &text[16..17] != ":"
     { return None }
-    let n = |a, b| text.get(a..b)?.parse::<i64>().ok();
+    let n = |a, b| {
+        let field = text.get(a..b)?;
+        field.bytes().all(|v| v.is_ascii_digit())
+            .then(|| field.parse::<i64>().ok())?
+    };
     let (y, m, d, h, min, sec) = (n(0,4)?, n(5,7)?, n(8,10)?, n(11,13)?, n(14,16)?, n(17,19)?);
     let md = [31, if leap(y) {29} else {28}, 31,30,31,30,31,31,30,31,30,31];
     if !(1970..=9999).contains(&y) || !(1..=12).contains(&m) || !(1..=md[(m-1) as usize]).contains(&d) || h > 23 || min > 59 || sec > 59 { return None }
@@ -923,7 +927,10 @@ mod tests {
             status_with(ctx, Some(saved_channel()), T0, false, false)
         });
         assert_eq!(hidden.read_at, None);
-        with_live(|v| v.status.read_at = Some(T0));
+        with_live(|v| {
+            v.status.read_at = Some(T0);
+            v.details_attempt = Some(T0);
+        });
         let floored = run(&empty, &signed, &now, |ctx| {
             status_with(ctx, Some(saved_channel()), T0 + 59, false, true)
         });
@@ -965,6 +972,7 @@ mod tests {
             v.status.state = "none";
             v.status.read_at = Some(T0);
             v.candidates_at = Some(T0);
+            v.details_attempt = Some(T0);
         });
         let http = FakeHttp::reads(vec![ok(videos(vec![]))], vec![]);
         let creds = FakeCreds::new(Some("refresh"));
@@ -1549,7 +1557,7 @@ mod tests {
 
         reset_for_test(); prime_token(); set_live_memory(T0 - 61);
         with_live(|v| {
-            v.candidates = vec![video_id(1)]; v.find_attempt = Some(T0);
+            v.candidates = vec![video_id(1)]; v.find_attempt = Some(T0 - 61);
             v.page_token = Some("old-page".into());
             v.chat.messages.push(ChatMessage { id: "old.message".into(), name: "Viewer".into(), text: "Old".into(), at: T0, super_chat: None });
         });
@@ -1770,8 +1778,9 @@ mod tests {
         assert_eq!(rfc3339("2024-02-29T12:34:56Z"), Some(1_709_210_096));
         for bad in [
             "2023-02-29T00:00:00Z", "2024-01-01T24:00:00Z",
-            "2024-01-01T00:00:00+00:00", "2024-1-01T00:00:00Z",
+            "2024-1-01T00:00:00Z",
         ] { assert_eq!(rfc3339(bad), None); }
+        assert_eq!(rfc3339("2024-01-01T00:00:00+00:00"), Some(T0));
     }
 
     #[test]
