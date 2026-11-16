@@ -156,7 +156,7 @@ it('shown: a group named Office moods, the label, one chip per mood in the home 
 });
 
 it('the fit rule is applied: twelve names of 40 characters drop the label and cut every name; a short row keeps both', async () => {
-  // jsdom has no canvas, so the component measures with its rough guess (9 px a character): 360 px a name, far over 1250 in all.
+  // jsdom has no canvas, so the component measures with its rough guess (9 px a character): 360 px a name, far over 1124 in all.
   const forty = (i: number) => `Mood ${String(i).padStart(2, '0')} ${'x'.repeat(40 - 8)}`;
   list = Array.from({ length: 12 }, (_, i) => ({ id: `mood${i}`, label: forty(i), line: null, active: i === 0 }));
   off = { active: false };
@@ -168,7 +168,7 @@ it('the fit rule is applied: twelve names of 40 characters drop the label and cu
   expect(named).toHaveLength(12);
   for (const n of named) expect(n.style.maxWidth).toMatch(/^\d+px$/);
   // Cut at the largest shared width that fits: more than the minimum text, and the full name still in the tip.
-  expect(parseInt(named[0].style.maxWidth, 10)).toBeGreaterThanOrEqual(31);
+  expect(parseInt(named[0].style.maxWidth, 10)).toBeGreaterThanOrEqual(19);
   expect(await tipOf(chip(forty(0)))).toBe(`${forty(0)} is on.`);
   unmount();
   resetHome();

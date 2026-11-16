@@ -1,5 +1,5 @@
 // The Office moods row at the foot of Unwind: gallery states, fit variants, one browser measurement with its rule, and the deliberate
-// breaks. The two big review scripts are only edited for the slot's three rules (its width up to 1250, its content allowed while
+// breaks. The two big review scripts are only edited for the slot's three rules (its width up to 1124, its content allowed while
 // the row is shown, and the row and its line left out of the "nothing else enters the slot" scan). Every state comes from the
 // `?office=`, `?officeoff=`, `?officemood=`, `?officestale=`, `?officeslow=`, `?studiowrite=` and `?desktoken=` knobs of the
 // development mocks. Mock moods are invented.
@@ -86,16 +86,16 @@ const rule = (variant, results, emit) => {
   if (!m || m.missing) fails.push('officemoods: the office lights slot is not on the page');
   else if (variant.name === HIDDEN_V) {
     if (m.shownRow || !m.empty || m.ariaHidden !== 'true' || m.line) fails.push('officemoods: the slot is not the empty aria-hidden box with no line');
-    if (!m.slot || Math.abs(m.slot.w - 420) > 0.5 || Math.abs(m.slot.h - 34) > 1 || Math.abs(m.slot.r - 2490) > 1) fails.push('officemoods: the empty slot is ' + r1(m.slot.w) + ' by ' + r1(m.slot.h) + ' (420 by 34 at right edge 2490)');
+    if (!m.slot || Math.abs(m.slot.w - 420) > 0.5 || Math.abs(m.slot.h - 34) > 1 || Math.abs(m.slot.r - 2364) > 1) fails.push('officemoods: the empty slot is ' + r1(m.slot.w) + ' by ' + r1(m.slot.h) + ' (420 by 34 at right edge 2364)');
   } else if (!m.shownRow) fails.push('officemoods: the row is not shown in a state that must show it');
   else {
     const s = m.slot;
-    if (Math.abs(s.r - 2490) > 1 || Math.abs(s.t - 662) > 1 || Math.abs(s.h - 34) > 1) fails.push('officemoods: the row is at right edge ' + r1(s.r) + ', top ' + r1(s.t) + ', ' + r1(s.h) + ' tall (2490, 662, 34)');
+    if (Math.abs(s.r - 2364) > 1 || Math.abs(s.t - 662) > 1 || Math.abs(s.h - 34) > 1) fails.push('officemoods: the row is at right edge ' + r1(s.r) + ', top ' + r1(s.t) + ', ' + r1(s.h) + ' tall (2364, 662, 34)');
     if (s.l < 1239.5) fails.push('officemoods: the row starts at x ' + r1(s.l) + ' (1240 at most to the left)');
     if (m.pointer !== 'none') fails.push('officemoods: the row box takes the pointer');
     for (const c of m.chips) {
       if (c.h < 33 || c.h > 35) fails.push('officemoods: chip "' + c.text + '" is ' + r1(c.h) + ' px tall (34)');
-      if (c.w < 87.5 && c.text !== 'Off') fails.push('officemoods: chip "' + c.text + '" is ' + r1(c.w) + ' px wide (88 at least)');
+      if (c.w < 75.5 && c.text !== 'Off') fails.push('officemoods: chip "' + c.text + '" is ' + r1(c.w) + ' px wide (76 at least)');
       if (c.pointer !== 'auto') fails.push('officemoods: chip "' + c.text + '" does not take the pointer');
       if (c.l < s.l - 0.5 || c.r > s.r + 0.5) fails.push('officemoods: chip "' + c.text + '" leaves the row box');
     }
@@ -118,7 +118,7 @@ const rule = (variant, results, emit) => {
   if (fails.length) return true;
   emit(variant.name === HIDDEN_V
     ? '  ok   officemoods: the slot is the empty 420 by 34 aria-hidden box with no line'
-    : '  ok   officemoods: the row is at right edge 2490, top 662, 34 tall, from x 1240 or more; chips 34 tall and 88 or wider; the line inside x 935 to 1695, y 630 to 656; nothing else draws inside either; text 16 px or more');
+    : '  ok   officemoods: the row is at right edge 2364, top 662, 34 tall, from x 1240 or more; chips 34 tall and 76 or wider; the line inside x 935 to 1695, y 630 to 656; nothing else draws inside either; text 16 px or more');
   return false;
 };
 

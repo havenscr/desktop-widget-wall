@@ -28,7 +28,7 @@ const LABEL = { work: 'Work', home: 'Home', meet: 'Meet', onair: 'On Air', liste
 const name = (what, place) => `Hide screen, ${what}: ${LABEL[place]}`;
 const checks = ['.so-layer', '.screens-off'];
 
-// Unwind's Office moods row at its widest (twelve long names and the Off chip): its right edge is wall x 2490, 14 px short of this control.
+// Unwind's Office moods row at its widest (twelve long names and the Off chip): its right edge is wall x 2364, 140 px short of this control, so the grown 154 px pill is clear of every chip.
 const MOODS12 = '&desktoken=set&office=twelve&officeoff=offered&officemood=brightDesk';
 const OFFICE = [
   ['at rest', '', null, 'rest'],
@@ -233,8 +233,8 @@ function rule(v, results, emit) {
     // It covers no control and no words, except what sits in the day strip's last hour while it is pointed at.
     for (const c of m.covers) {
       if (c.rib && m.hasRib) continue;
-      // The Office moods row sits under the grown pill: measured and reported (the owner's call), not a failure of this rule.
-      if (c.mood && m.moods) continue;
+      // The Office moods row ends before the control: the grown pill covering any chip is a failure. Only the five second failure words may reach the Off chip (accepted by the vote).
+      if (c.mood && m.moods && m.mode === 'failed') continue;
       // The failure words (five seconds, rare) are wider than the name and may sit over Dream's hint, which is not a control.
       if (m.mode === 'failed' && c.hint) continue;
       fails.push(`the grown pill covers ${c.kind} "${c.what}"`);
@@ -250,7 +250,8 @@ function rule(v, results, emit) {
     const mo = m.moods;
     if (m.mode === 'rest' && !(mo.restGap >= 8)) fails.push(`the control's box starts ${mo.restGap} px from the row's last chip (8 at least; ${mo.chips} chips)`);
     if (m.mode === 'rest' && mo.overlaps.length) fails.push('at rest the row overlaps the control: ' + mo.overlaps.map((o) => `${o.what} ${o.w}x${o.h}`).join(', '));
-    if (m.mode !== 'rest') emit(`  note hide screen: with ${mo.chips} Office moods${mo.offChip ? ' and Off' : ''} the grown ${Math.round(r.w)} px pill covers ${mo.overlaps.length ? mo.overlaps.map((o) => `${o.off ? 'the Off chip' : 'chip "' + o.what + '"'} by ${o.w} x ${o.h} px`).join(', ') : 'no chip'} (the row's last chip ends at x ${mo.lastRight}; reported, not a failure)`);
+    if (m.mode === 'grown' && mo.overlaps.length) fails.push('the grown pill covers the Office moods row: ' + mo.overlaps.map((o) => `${o.off ? 'the Off chip' : 'chip "' + o.what + '"'} ${o.w}x${o.h}`).join(', '));
+    if (m.mode === 'failed') emit(`  note hide screen: with ${mo.chips} Office moods${mo.offChip ? ' and Off' : ''} the grown ${Math.round(r.w)} px pill covers ${mo.overlaps.length ? mo.overlaps.map((o) => `${o.off ? 'the Off chip' : 'chip "' + o.what + '"'} by ${o.w} x ${o.h} px`).join(', ') : 'no chip'} (the row's last chip ends at x ${mo.lastRight}; the failure words may reach the Off chip for five seconds, reported, not a failure)`);
   }
   if (fails.length) {
     for (const f of fails) emit(`  FAIL hide screen: ${f}`);
@@ -319,6 +320,7 @@ export default {
       'hide-failure-width': { css: ".screens-off[data-failed='true'] { padding-left: 120px !important; }", expect: FAIL('the pill is \\d+ px wide'), appliesTo: on(name('failure words', 'work')) },
       'hide-failure-words': { css: ".screens-off[data-failed='true'] .screens-off-lbl { max-width: 0 !important; margin-right: 0 !important; }", expect: FAIL('it did not grow'), appliesTo: on(name('failure words', 'zen')) },
       'hide-moods-rest': { css: '.u-office-slot { right: 10px !important; }', expect: FAIL('(at rest the row overlaps the control|at rest it sits over|the control.s box starts)'), appliesTo: on('Hide screen, at rest: Unwind with twelve Office moods and Off') },
+      'hide-moods-hover': { css: '.u-office-slot { right: 50px !important; max-width: 1250px !important; }', expect: FAIL('the grown pill covers the Office moods row'), appliesTo: on('Hide screen, pointer on it: Unwind with twelve Office moods and Off') },
       'hide-no-tab': { query: '&hidebreak=notab', expect: FAIL('not a button in the tab order'), appliesTo: on(name('at rest', 'listen')) },
       'hide-not-inert': { query: '&hidebreak=uninert', expect: FAIL('the control is not inert while a drawer is open'), appliesTo: on(name('Tools open', 'work')) },
       'hide-not-inert-day': { query: '&hidebreak=uninert', expect: FAIL('the control is not inert while a drawer is open'), appliesTo: on(name('Day drawer open', 'work')) },

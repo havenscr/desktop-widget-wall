@@ -3779,16 +3779,17 @@ button.sp-qrow:hover {
   }
 }
 /* The Office moods row (`studio/OfficeMoods.tsx`). It is the office-lights slot: right edge at wall x
-   2490, top y 662, 34 tall. Empty it is the old 420 by 34 box with no pointer; shown it is as wide as its
-   parts, 420 to 1250 (the 1250 is the row's left limit, wall x 1240, where the vote found free space in
-   every state). The box takes no pointer, only the chips do. */
+   2364, top y 662, 34 tall. The row ends 126 px before the old edge so the Hide screen control, which grows to
+   a 154 px pill when pointed at, never covers a chip. Empty it is the old 420 by 34 box with no pointer; shown
+   it is as wide as its parts, 420 to 1124 (the 1124 is the row's left limit, wall x 1240, where the vote found
+   free space in every state). The box takes no pointer, only the chips do. */
 .u-office-slot {
   position: absolute;
-  right: 50px;
+  right: 176px;
   top: 642px;
   width: max-content;
   min-width: 420px;
-  max-width: 1250px;
+  max-width: 1124px;
   height: 34px;
   display: flex;
   align-items: center;
@@ -3819,7 +3820,7 @@ button.sp-qrow:hover {
   justify-content: center;
   gap: 8px;
   height: 34px;
-  min-width: 88px;
+  min-width: 76px;
   padding: 0 13px 0 10px;
   border-radius: 17px;
   border: 1px solid var(--line);

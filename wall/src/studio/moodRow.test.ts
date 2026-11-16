@@ -39,7 +39,7 @@ it('fitMoodRow: as is when it fits, the label goes first, then long names shrink
   // Fits: as is.
   expect(fitMoodRow([60, 70, 80], label, off)).toEqual({ label: true, cap: null });
   // Six names that overflow only with the label: the label drops, no name is cut.
-  const six = [150, 140, 130, 125, 120, 115];
+  const six = [120, 110, 100, 95, 90, 85];
   expect(chipsWidth(six, off, label)).toBeGreaterThan(ROW_MAX);
   expect(chipsWidth(six, off)).toBeLessThanOrEqual(ROW_MAX);
   expect(fitMoodRow(six, label, off)).toEqual({ label: false, cap: null });
@@ -56,7 +56,7 @@ it('fitMoodRow: as is when it fits, the label goes first, then long names shrink
   expect(cap).toBeGreaterThan(NAME_MIN);
 });
 
-it('fitMoodRow: twelve 40 character names, with Off, stay within 1250 and never under the minimum text', () => {
+it('fitMoodRow: twelve 40 character names, with Off, stay within 1124 and never under the minimum text', () => {
   const names = Array.from({ length: 12 }, () => 330);
   const fit = fitMoodRow(names, 170, 80);
   expect(fit.label).toBe(false);
@@ -66,9 +66,9 @@ it('fitMoodRow: twelve 40 character names, with Off, stay within 1250 and never 
   // Off is counted: with a very wide Off chip the cap is smaller.
   const wide = fitMoodRow(names, 170, 300);
   expect(wide.cap as number).toBeLessThan(fit.cap as number);
-  // The least a chip can be is the 88 px a click needs.
-  expect(CHIP_FIXED + NAME_MIN).toBeGreaterThanOrEqual(88);
-  // Twelve at the minimum with Off and gaps never pass 1250.
+  // The least a chip can be is the 76 px a click needs.
+  expect(CHIP_FIXED + NAME_MIN).toBeGreaterThanOrEqual(76);
+  // Twelve at the minimum with Off and gaps never pass 1124.
   expect(chipsWidth(Array(12).fill(NAME_MIN), 80)).toBeLessThanOrEqual(ROW_MAX);
   // Too wide even at the minimum is clamped to the minimum.
   expect(fitMoodRow(Array(12).fill(500), 170, 600).cap).toBe(NAME_MIN);
