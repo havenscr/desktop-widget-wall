@@ -195,15 +195,32 @@ The sign-in and its row in Tools came first; the library came next, and a pick f
   with `reason` one of `not set up`, `sign in again`, `setup broken` or `failed`;
   `searchesLeft` is the search budget of the day (about 100, see "The library"), a number only while
   signed in and empty otherwise.
+- **Live state and chat (native only).** Five Rust commands provide plumbing that no page uses yet:
+  `wall2_ytlive_channel` reads whether a channel is set and its public title;
+  `wall2_ytlive_set_channel(text)` resolves a checked handle, channel id or channel link;
+  `wall2_ytlive_forget_channel` removes it; `wall2_ytlive_status(fresh?)` answers live, scheduled or
+  neither with start time, viewer count, freshness and remaining budgets; and `wall2_ytlive_chat`
+  answers up to 30 checked messages. The resolved id and public title are the only values written to
+  `onair-channel.json` in the app config folder. Status reads have a 60 second floor (15 seconds for
+  Check again), refresh the uploads candidates at most every five minutes, and use at most 1,200 API
+  units per Pacific day. Chat follows Google's polling hint with a 10 to 60 second floor and uses at
+  most 4,000 units per Pacific day. A unit is counted only for an outgoing GET attempt, including a
+  retry after a 401. The floors run from the last attempt, and a concurrent read of the same kind gets
+  the answer already in memory while the first read is held. Daily counts, the all-day quota stop and
+  the 60 second busy stop survive channel, sign-in, sign-out and client clears; only the Pacific day
+  turning resets the daily state. Chat ids,
+  page tokens, author names and message text stay in memory; none is stored or logged. The commands
+  never post, reply or delete.
 - **Links.** The row carries the two links YouTube API Services asks for, YouTube Terms and
   Google Privacy Policy. The page sends only the kind word (`youtube-terms`, `google-privacy`)
   to `wall2_open_link`; the addresses are fixed in Rust.
 - **The log `wall2-youtube.log`** (app log folder, 64 KB cap) holds lines of four fields:
   an event (`sign-in-start`, `sign-in-ok`, `sign-in-failed`, `sign-out`, `revoke-failed`,
   `refresh-ok`, `refresh-refused`, `refresh-failed`, `client-saved`, `client-forgotten`,
-  `read-ok`, `read-failed`, `search-ok`, `search-failed`), a
+  `read-ok`, `read-failed`, `search-ok`, `search-failed`, `live-ok`, `live-failed`, `chat-ok`,
+  `chat-failed`), a
   reason (`none`, `busy`, `down`, `failed`, `sign-in-again`, `setup-broken`, `denied`,
-  `cancelled`, `timed-out`, `quota`, `quota-all`, `not-found`, `invalid`), an HTTP status and
+  `cancelled`, `timed-out`, `quota`, `quota-all`, `not-found`, `invalid`, `ended`), an HTTP status and
   milliseconds. Never an id, page token, token, client value, title, channel or search words.
 - **The library** (`wall2_youtube.rs`, the YouTube side of the music card). Five commands, each
   opening with the window check and running its read on a blocking thread:

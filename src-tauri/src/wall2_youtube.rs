@@ -15,6 +15,8 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Mutex, MutexGuard};
 use std::time::{Duration, Instant};
 
+pub mod live;
+
 const NOT_SETUP: &str = "not set up";
 const SIGN_AGAIN: &str = "sign in again";
 const SIGN_OUT_FIRST: &str = "sign out first";
@@ -196,7 +198,7 @@ static CANCEL_SIGN_IN: AtomicBool = AtomicBool::new(false);
 fn set_note(word: Option<&'static str>) { *lock(&NOTE) = word; }
 /// Forget the access token, the note, every cache and the search count: sign-out, a client
 /// change and a forgotten client all come through here.
-fn reset_session() { *lock(&TOKEN) = None; set_note(None); clear_library(false); }
+fn reset_session() { *lock(&TOKEN) = None; set_note(None); clear_library(false); live::clear(false); }
 
 #[derive(PartialEq)]
 enum TokenReply {
@@ -287,6 +289,7 @@ fn access_with(client: &Client, force: bool, http: &dyn Http, creds: &dyn Creds)
             // Whatever the library holds was read under this grant: a later sign-in (maybe another account)
             // must not be served it. The day's search count stays (see `clear_library`).
             clear_library(true);
+            live::clear(true);
             set_note(Some(SIGN_AGAIN));
             write(Event::RefreshRefused, Reason::SignInAgain, 400, started.elapsed().as_millis());
             Err(SIGN_AGAIN)
@@ -389,6 +392,7 @@ fn save_sign_in(creds: &dyn Creds, refresh_value: &str, access_value: String, se
     *lock(&TOKEN) = Some(Token { access: access_value, expires: Instant::now() + Duration::from_secs(seconds) });
     // A new sign-in starts with an empty library, whoever signed in before (the search count stays).
     clear_library(true);
+    live::clear(true);
     set_note(None);
     Ok(())
 }
@@ -1097,10 +1101,11 @@ mod tests {
     use std::io::Write;
     use std::net::TcpStream;
 
-    static TEST_LOCK: Mutex<()> = Mutex::new(());
-    fn exclusive() -> MutexGuard<'static, ()> {
+    pub(super) static TEST_LOCK: Mutex<()> = Mutex::new(());
+    pub(super) fn exclusive() -> MutexGuard<'static, ()> {
         let guard = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         reset_session();
+        live::reset_for_test();
         SIGNING_IN.store(false, Ordering::SeqCst);
         CANCEL_SIGN_IN.store(false, Ordering::SeqCst);
         guard
@@ -1109,12 +1114,12 @@ mod tests {
     // Secret-shaped values are built at run time, never written as literals.
     fn good_id() -> String { format!("{}-{}.apps.googleusercontent.com", "1".repeat(12), "a".repeat(32)) }
     fn good_secret() -> String { format!("GOCSPX-{}", "x".repeat(28)) }
-    fn client() -> Client { Client { id: good_id(), secret: good_secret() } }
+    pub(super) fn client() -> Client { Client { id: good_id(), secret: good_secret() } }
     fn id_with(digits: usize, name: usize) -> String { format!("{}-{}.apps.googleusercontent.com", "7".repeat(digits), "b".repeat(name)) }
 
-    struct FakeCreds { refresh: Mutex<Option<String>>, client: Mutex<Option<String>>, client_read_fails: AtomicBool, saves_fail: AtomicBool }
+    pub(super) struct FakeCreds { refresh: Mutex<Option<String>>, client: Mutex<Option<String>>, client_read_fails: AtomicBool, saves_fail: AtomicBool }
     impl FakeCreds {
-        fn new(refresh: Option<&str>) -> Self { Self { refresh: Mutex::new(refresh.map(str::to_string)), client: Mutex::new(None), client_read_fails: AtomicBool::new(false), saves_fail: AtomicBool::new(false) } }
+        pub(super) fn new(refresh: Option<&str>) -> Self { Self { refresh: Mutex::new(refresh.map(str::to_string)), client: Mutex::new(None), client_read_fails: AtomicBool::new(false), saves_fail: AtomicBool::new(false) } }
         fn refresh_value(&self) -> Option<String> { lock(&self.refresh).clone() }
         fn client_value(&self) -> Option<String> { lock(&self.client).clone() }
     }
@@ -1132,12 +1137,13 @@ mod tests {
     }
 
     type Call = (String, Vec<(String, String)>);
-    struct FakeHttp { replies: Mutex<VecDeque<Result<HttpReply, ()>>>, calls: Mutex<Vec<Call>>, gets: Mutex<VecDeque<Result<HttpReply, ()>>>, get_calls: Mutex<Vec<(String, String)>> }
+    pub(super) struct FakeHttp { replies: Mutex<VecDeque<Result<HttpReply, ()>>>, calls: Mutex<Vec<Call>>, gets: Mutex<VecDeque<Result<HttpReply, ()>>>, get_calls: Mutex<Vec<(String, String)>> }
     impl FakeHttp {
         fn new(replies: Vec<Result<HttpReply, ()>>) -> Self { Self { replies: Mutex::new(replies.into()), calls: Mutex::new(Vec::new()), gets: Mutex::new(VecDeque::new()), get_calls: Mutex::new(Vec::new()) } }
         /// Answers for the reads (GET); `posts` answer the token calls.
-        fn reads(gets: Vec<Result<HttpReply, ()>>, posts: Vec<Result<HttpReply, ()>>) -> Self { let h = Self::new(posts); *lock(&h.gets) = gets.into(); h }
-        fn get_urls(&self) -> Vec<String> { lock(&self.get_calls).iter().map(|c| c.0.clone()).collect() }
+        pub(super) fn reads(gets: Vec<Result<HttpReply, ()>>, posts: Vec<Result<HttpReply, ()>>) -> Self { let h = Self::new(posts); *lock(&h.gets) = gets.into(); h }
+        pub(super) fn get_urls(&self) -> Vec<String> { lock(&self.get_calls).iter().map(|c| c.0.clone()).collect() }
+        pub(super) fn get_bearers(&self) -> Vec<String> { lock(&self.get_calls).iter().map(|c| c.1.clone()).collect() }
         fn calls(&self) -> Vec<Call> { lock(&self.calls).clone() }
         fn urls(&self) -> Vec<String> { self.calls().into_iter().map(|c| c.0).collect() }
     }
@@ -1151,8 +1157,8 @@ mod tests {
             lock(&self.gets).pop_front().unwrap_or(Err(()))
         }
     }
-    fn reply(status: u16, body: &str) -> Result<HttpReply, ()> { Ok(HttpReply { status, body: body.as_bytes().to_vec() }) }
-    fn tokens(refresh: Option<&str>, scope: Option<&str>) -> Result<HttpReply, ()> {
+    pub(super) fn reply(status: u16, body: &str) -> Result<HttpReply, ()> { Ok(HttpReply { status, body: body.as_bytes().to_vec() }) }
+    pub(super) fn tokens(refresh: Option<&str>, scope: Option<&str>) -> Result<HttpReply, ()> {
         let mut v = json!({ "access_token": "access-one", "expires_in": 3599 });
         if let Some(r) = refresh { v["refresh_token"] = json!(r); }
         if let Some(s) = scope { v["scope"] = json!(s); }

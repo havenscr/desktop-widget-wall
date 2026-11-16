@@ -9,7 +9,7 @@ const LOG_CAP: usize = 64 * 1024;
 static TX: OnceLock<SyncSender<String>> = OnceLock::new();
 
 #[derive(Clone, Copy)]
-pub enum Event { SignInStart, SignInOk, SignInFailed, SignOut, RevokeFailed, RefreshOk, RefreshRefused, RefreshFailed, ClientSaved, ClientForgotten, ReadOk, ReadFailed, SearchOk, SearchFailed }
+pub enum Event { SignInStart, SignInOk, SignInFailed, SignOut, RevokeFailed, RefreshOk, RefreshRefused, RefreshFailed, ClientSaved, ClientForgotten, ReadOk, ReadFailed, SearchOk, SearchFailed, LiveOk, LiveFailed, ChatOk, ChatFailed }
 impl Event {
     fn word(self) -> &'static str {
         match self {
@@ -27,12 +27,16 @@ impl Event {
             Self::ReadFailed => "read-failed",
             Self::SearchOk => "search-ok",
             Self::SearchFailed => "search-failed",
+            Self::LiveOk => "live-ok",
+            Self::LiveFailed => "live-failed",
+            Self::ChatOk => "chat-ok",
+            Self::ChatFailed => "chat-failed",
         }
     }
 }
 
 #[derive(Clone, Copy)]
-pub enum Reason { None, Busy, Down, Failed, SignInAgain, SetupBroken, Denied, Cancelled, TimedOut, Quota, QuotaAll, NotFound, Invalid }
+pub enum Reason { None, Busy, Down, Failed, SignInAgain, SetupBroken, Denied, Cancelled, TimedOut, Quota, QuotaAll, NotFound, Invalid, Ended }
 impl Reason {
     fn word(self) -> &'static str {
         match self {
@@ -49,6 +53,7 @@ impl Reason {
             Self::QuotaAll => "quota-all",
             Self::NotFound => "not-found",
             Self::Invalid => "invalid",
+            Self::Ended => "ended",
         }
     }
 }
@@ -89,8 +94,8 @@ pub fn start(dir: Option<std::path::PathBuf>) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    const EVENTS: [Event; 14] = [Event::SignInStart, Event::SignInOk, Event::SignInFailed, Event::SignOut, Event::RevokeFailed, Event::RefreshOk, Event::RefreshRefused, Event::RefreshFailed, Event::ClientSaved, Event::ClientForgotten, Event::ReadOk, Event::ReadFailed, Event::SearchOk, Event::SearchFailed];
-    const REASONS: [Reason; 13] = [Reason::None, Reason::Busy, Reason::Down, Reason::Failed, Reason::SignInAgain, Reason::SetupBroken, Reason::Denied, Reason::Cancelled, Reason::TimedOut, Reason::Quota, Reason::QuotaAll, Reason::NotFound, Reason::Invalid];
+    const EVENTS: [Event; 18] = [Event::SignInStart, Event::SignInOk, Event::SignInFailed, Event::SignOut, Event::RevokeFailed, Event::RefreshOk, Event::RefreshRefused, Event::RefreshFailed, Event::ClientSaved, Event::ClientForgotten, Event::ReadOk, Event::ReadFailed, Event::SearchOk, Event::SearchFailed, Event::LiveOk, Event::LiveFailed, Event::ChatOk, Event::ChatFailed];
+    const REASONS: [Reason; 14] = [Reason::None, Reason::Busy, Reason::Down, Reason::Failed, Reason::SignInAgain, Reason::SetupBroken, Reason::Denied, Reason::Cancelled, Reason::TimedOut, Reason::Quota, Reason::QuotaAll, Reason::NotFound, Reason::Invalid, Reason::Ended];
 
     #[test]
     fn every_event_and_reason_renders_to_fixed_words_and_numbers_only() {
