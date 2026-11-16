@@ -3825,6 +3825,12 @@ button.sp-qrow:hover {
 }
 .u-mood-ico {
   flex: none;
+  display: inline-flex;
+  justify-content: center;
+  width: 24px;
+}
+.u-mood.off .u-mood-ico {
+  width: 14px;
 }
 .u-mood-ico.warn {
   color: var(--amber);
@@ -3875,6 +3881,7 @@ button.sp-qrow:hover {
   position: absolute;
   right: 845px;
   top: 610px;
+  box-sizing: border-box;
   max-width: 760px;
   padding: 2px 10px;
   border-radius: 11px;

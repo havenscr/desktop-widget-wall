@@ -1426,12 +1426,13 @@ try {
       if (!slot) listen.push('listen: the office lights slot is not there');
       else {
         const sr = slot.getBoundingClientRect();
-        // Its stage box (7A's foot row): right edge 70 px from the stage's right edge, top 662, 34 tall.
-        if (Math.abs(sr.right - 2490) > 1 || Math.abs(sr.top - 662) > 1 || Math.abs(sr.height - 34) > 1 || sr.width > 420.5) listen.push('listen: the office lights slot is at x ' + Math.round(sr.left) + ' to ' + Math.round(sr.right) + ', y ' + Math.round(sr.top) + ' to ' + Math.round(sr.bottom) + ' (right edge 2490, top 662, 34 tall, 420 wide at most)');
+        // Its stage box (7A's foot row): right edge 70 px from the stage's right edge, top 662, 34 tall; 420 wide empty, up to 1250 with the moods row.
+        if (Math.abs(sr.right - 2490) > 1 || Math.abs(sr.top - 662) > 1 || Math.abs(sr.height - 34) > 1 || sr.width < 419.5 || sr.width > 1250.5) listen.push('listen: the office lights slot is at x ' + Math.round(sr.left) + ' to ' + Math.round(sr.right) + ', y ' + Math.round(sr.top) + ' to ' + Math.round(sr.bottom) + ' (right edge 2490, top 662, 34 tall, 420 to 1250 wide)');
         const bn = document.querySelector('.leave-banner')?.getBoundingClientRect();
         const ln = document.querySelector('.u-line')?.getBoundingClientRect();
         if (bn && ln && hit(bn, ln)) listen.push('listen: the leave banner covers the status line');
-        if (slot.childNodes.length || getComputedStyle(slot).pointerEvents !== 'none') listen.push('listen: the office lights slot is not empty or takes the pointer');
+        // The moods row fills the slot on purpose (its own area judges that); the box itself never takes the pointer.
+        if ((slot.dataset.moods !== 'shown' && slot.childNodes.length) || getComputedStyle(slot).pointerEvents !== 'none') listen.push('listen: the office lights slot is not empty or takes the pointer');
         const draws = (e) => ['IMG', 'svg', 'BUTTON', 'INPUT', 'CANVAS'].includes(e.tagName) || [...e.childNodes].some((c) => c.nodeType === 3 && c.textContent.trim());
         // What shows of an element: its box cut by every ancestor that clips (a scrolled list hides its far rows).
         const shown = (e) => {
@@ -1445,7 +1446,7 @@ try {
           }
           return { left: l, top: t, right: r, bottom: b, width: r - l, height: b - t };
         };
-        const inside = [...document.querySelectorAll('.stage *')].filter((e) => e !== slot && !e.closest('.u-corner') && !e.closest('.horizon-canvas') && e.tagName !== 'CANVAS' && draws(e)).filter((e) => { const q = shown(e); return q.width > 0 && q.height > 0 && hit(q, sr); });
+        const inside = [...document.querySelectorAll('.stage *')].filter((e) => e !== slot && !slot.contains(e) && !e.closest('.u-office-line') && !e.closest('.u-corner') && !e.closest('.horizon-canvas') && e.tagName !== 'CANVAS' && draws(e)).filter((e) => { const q = shown(e); return q.width > 0 && q.height > 0 && hit(q, sr); });
         for (const e of inside.slice(0, 3)) listen.push('listen: ' + (e.className?.baseVal ?? e.className ?? e.tagName) + ' "' + (e.textContent || '').trim().slice(0, 30) + '" enters the office lights slot');
       }
     }

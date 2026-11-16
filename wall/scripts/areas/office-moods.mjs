@@ -1,0 +1,222 @@
+// The Office moods row at the foot of Unwind: gallery states, fit variants, one browser measurement with its rule, and the deliberate
+// breaks. The two big review scripts are only edited for the slot's three rules (its width up to 1250, its content allowed while
+// the row is shown, and the row and its line left out of the "nothing else enters the slot" scan). Every state comes from the
+// `?office=`, `?officeoff=`, `?officemood=`, `?officestale=`, `?officeslow=`, `?studiowrite=` and `?desktoken=` knobs of the
+// development mocks. Mock moods are invented.
+
+/**
+ * Runs in the page (it references nothing outside its own body). With the row shown: the slot's box, the label, every chip
+ * with its text size, the line, and whatever else draws inside the row's box or the line's box. With the row hidden: the
+ * slot's box and whether anything is in it. Transitions are switched off first so the Spotify card is measured settled.
+ */
+function measureMoods() {
+  const st = document.createElement('style');
+  st.textContent = '.sp-card { transition: none !important; } .sp-songs { animation: none !important; }';
+  document.head.appendChild(st);
+  const params = new URLSearchParams(location.search);
+  const box = (e) => {
+    if (!e) return null;
+    const r = e.getBoundingClientRect();
+    return { l: r.left, t: r.top, r: r.right, b: r.bottom, w: r.width, h: r.height };
+  };
+  const slot = document.querySelector('[data-slot="office-lights"]');
+  if (!slot) return { missing: true };
+  if (params.get('omfocus')) document.querySelector(params.get('omfocus'))?.focus();
+  const line = document.querySelector('.u-office-line');
+  const shownRow = slot.dataset.moods === 'shown';
+  const small = [];
+  const texts = (root, label) => {
+    if (!root) return;
+    for (const e of [root, ...root.querySelectorAll('*')]) {
+      if (![...e.childNodes].some((n) => n.nodeType === 3 && n.textContent.trim())) continue;
+      const cs = getComputedStyle(e);
+      if (cs.display === 'none' || cs.visibility === 'hidden') continue;
+      const px = parseFloat(cs.fontSize);
+      if (px < 15.99) small.push(label + ': "' + e.textContent.trim().slice(0, 24) + '" is ' + px + ' px');
+    }
+  };
+  texts(slot, 'row');
+  texts(line, 'line');
+  const out = { shownRow, slot: box(slot), empty: slot.childNodes.length === 0, ariaHidden: slot.getAttribute('aria-hidden'), pointer: getComputedStyle(slot).pointerEvents, line: box(line), small };
+  if (!shownRow) return out;
+  out.label = box(slot.querySelector('.u-mood-label'));
+  out.chips = [...slot.querySelectorAll('.u-mood')].map((c) => {
+    const name = c.querySelector('.u-mood-name');
+    return { text: (name?.textContent ?? '').trim().slice(0, 24), ...box(c), cut: !!name && name.scrollWidth > name.clientWidth + 1, pointer: getComputedStyle(c).pointerEvents };
+  });
+  out.lineCut = !!line && line.scrollWidth > line.clientWidth + 1;
+  out.lineCs = line ? { ws: getComputedStyle(line).whiteSpace, ov: getComputedStyle(line).textOverflow } : null;
+  // What else draws inside either box: images, svgs, buttons, inputs, canvases, or own text, cut by every ancestor that clips.
+  const draws = (e) => ['IMG', 'svg', 'BUTTON', 'INPUT', 'CANVAS'].includes(e.tagName) || [...e.childNodes].some((c) => c.nodeType === 3 && c.textContent.trim());
+  const shown = (e) => {
+    const q = e.getBoundingClientRect();
+    let l = q.left, t = q.top, r = q.right, b = q.bottom;
+    for (let a = e.parentElement; a; a = a.parentElement) {
+      const cs = getComputedStyle(a);
+      if (cs.overflowX === 'visible' && cs.overflowY === 'visible') continue;
+      const c = a.getBoundingClientRect();
+      l = Math.max(l, c.left); t = Math.max(t, c.top); r = Math.min(r, c.right); b = Math.min(b, c.bottom);
+    }
+    return { left: l, top: t, right: r, bottom: b, width: r - l, height: b - t };
+  };
+  const hit = (a, b) => a.left < b.right - 0.5 && b.left < a.right - 0.5 && a.top < b.bottom - 0.5 && b.top < a.bottom - 0.5;
+  const rowBox = slot.getBoundingClientRect();
+  const lineBox = line ? line.getBoundingClientRect() : null;
+  out.enters = [];
+  for (const e of document.querySelectorAll('.stage *')) {
+    if (e === slot || slot.contains(e) || e === line || line?.contains(e) || e.closest('.u-corner') || e.closest('.horizon-canvas') || e.tagName === 'CANVAS' || e.closest('.hover-tip') || !draws(e)) continue;
+    const q = shown(e);
+    // A drawing laid over the whole wall (the drive-in tower's svg) is a layer, not a thing at the row: what it paints is judged by its own checks.
+    if (q.width <= 0 || q.height <= 0 || q.width > 2000) continue;
+    if (hit(q, rowBox)) out.enters.push('row <- ' + String(e.className?.baseVal ?? e.className ?? e.tagName) + ' "' + (e.textContent || '').trim().slice(0, 24) + '"');
+    else if (lineBox && hit(q, lineBox)) out.enters.push('line <- ' + String(e.className?.baseVal ?? e.className ?? e.tagName) + ' "' + (e.textContent || '').trim().slice(0, 24) + '"');
+  }
+  return out;
+}
+
+const r1 = (n) => Math.round(n * 10) / 10;
+const HIDDEN_V = 'Office moods, the home app absent';
+// Twelve long names may be cut by the fit rule (the full name is in each chip's tip).
+const CUTS_OK = ['Office moods, twelve long names, Off', 'Office moods, twelve moods, the tall Spotify panel on Up next'];
+
+const rule = (variant, results, emit) => {
+  const m = results.moods;
+  if (!variant.name.startsWith('Office moods')) return false;
+  const fails = [];
+  if (!m || m.missing) fails.push('officemoods: the office lights slot is not on the page');
+  else if (variant.name === HIDDEN_V) {
+    if (m.shownRow || !m.empty || m.ariaHidden !== 'true' || m.line) fails.push('officemoods: the slot is not the empty aria-hidden box with no line');
+    if (!m.slot || Math.abs(m.slot.w - 420) > 0.5 || Math.abs(m.slot.h - 34) > 1 || Math.abs(m.slot.r - 2490) > 1) fails.push('officemoods: the empty slot is ' + r1(m.slot.w) + ' by ' + r1(m.slot.h) + ' (420 by 34 at right edge 2490)');
+  } else if (!m.shownRow) fails.push('officemoods: the row is not shown in a state that must show it');
+  else {
+    const s = m.slot;
+    if (Math.abs(s.r - 2490) > 1 || Math.abs(s.t - 662) > 1 || Math.abs(s.h - 34) > 1) fails.push('officemoods: the row is at right edge ' + r1(s.r) + ', top ' + r1(s.t) + ', ' + r1(s.h) + ' tall (2490, 662, 34)');
+    if (s.l < 1239.5) fails.push('officemoods: the row starts at x ' + r1(s.l) + ' (1240 at most to the left)');
+    if (m.pointer !== 'none') fails.push('officemoods: the row box takes the pointer');
+    for (const c of m.chips) {
+      if (c.h < 33 || c.h > 35) fails.push('officemoods: chip "' + c.text + '" is ' + r1(c.h) + ' px tall (34)');
+      if (c.w < 87.5 && c.text !== 'Off') fails.push('officemoods: chip "' + c.text + '" is ' + r1(c.w) + ' px wide (88 at least)');
+      if (c.pointer !== 'auto') fails.push('officemoods: chip "' + c.text + '" does not take the pointer');
+      if (c.l < s.l - 0.5 || c.r > s.r + 0.5) fails.push('officemoods: chip "' + c.text + '" leaves the row box');
+    }
+    for (let i = 1; i < m.chips.length; i++) if (m.chips[i].l < m.chips[i - 1].r - 0.5) fails.push('officemoods: chips "' + m.chips[i - 1].text + '" and "' + m.chips[i].text + '" overlap');
+    if (m.label && m.chips.length && m.label.r > m.chips[0].l + 0.5) fails.push('officemoods: the label overlaps the first chip');
+    const ln = m.line;
+    if (!ln) fails.push('officemoods: the line above the row is missing');
+    else {
+      if (ln.r > 1695.5) fails.push('officemoods: the line ends at x ' + r1(ln.r) + ' (1695 at most, 12 px left of the tall Spotify panel)');
+      if (Math.abs(ln.t - 630) > 1 || ln.b > 656.5) fails.push('officemoods: the line is at y ' + r1(ln.t) + ' to ' + r1(ln.b) + ' (630 to 656)');
+      if (ln.l < 934.5) fails.push('officemoods: the line starts at x ' + r1(ln.l) + ' (935 at least, clear of the status line)');
+      if (ln.b > s.t - 3) fails.push('officemoods: the line is not clear of the row (ends y ' + r1(ln.b) + ', the row starts ' + r1(s.t) + ')');
+      if (m.lineCs && (m.lineCs.ws !== 'nowrap' || m.lineCs.ov !== 'ellipsis')) fails.push('officemoods: the line is not one line with an ellipsis');
+    }
+    for (const e of m.enters.slice(0, 3)) fails.push('officemoods: something else draws inside the ' + e);
+    if (m.chips.some((c) => c.cut) && !CUTS_OK.includes(variant.name)) fails.push('officemoods: a chip name is cut in a state that must show every name whole (' + m.chips.filter((c) => c.cut).map((c) => c.text).join(', ') + ')');
+  }
+  if (m && m.small) for (const x of m.small) fails.push('officemoods: text under 16 px: ' + x);
+  for (const f of fails) emit('  FAIL ' + f);
+  if (fails.length) return true;
+  emit(variant.name === HIDDEN_V
+    ? '  ok   officemoods: the slot is the empty 420 by 34 aria-hidden box with no line'
+    : '  ok   officemoods: the row is at right edge 2490, top 662, 34 tall, from x 1240 or more; chips 34 tall and 88 or wider; the line inside x 935 to 1695, y 630 to 656; nothing else draws inside either; text 16 px or more');
+  return false;
+};
+
+const at = '2026-11-11T10:24:00-08:00';
+const night = '2026-11-11T22:30:00-08:00';
+const TOKEN = '&desktoken=set';
+const q = (extra, when = at) => `?hz=unwind&at=${when}&long=1&agents=3&audio=demo${extra}`;
+const V = (name, extra, more = {}) => ({ name: `Office moods, ${name}`, q: q(extra), checks: ['.u-office-slot'], ...more });
+
+const SIX = `${TOKEN}&office=six&officeoff=offered&officemood=relax`;
+const TWELVE = `${TOKEN}&office=twelve&officeoff=offered&officemood=brightDesk`;
+const NAMES = {
+  six: 'six moods and Off, one on',
+  five: 'five moods, no Off',
+  twelve: 'twelve long names, Off',
+  hover: 'a hovered chip',
+  focus: 'a focused chip',
+  token: 'no desk token',
+  stale: 'a stale read',
+  flight: 'a write in flight',
+  refused: 'a refused write',
+  tall: 'twelve moods, the tall Spotify panel on Up next',
+  saved: 'six moods, a tall saved playlist',
+  leave: 'six moods, the leave banner',
+  drivein: 'six moods, the Watch drive-in',
+  own: 'six moods, a tall own playlist on Watch',
+  night: 'six moods, Off lit, at night',
+  absent: 'the home app absent',
+};
+
+const variants = [
+  V(NAMES.six, SIX),
+  V(NAMES.five, `${TOKEN}&office=five&officemood=meeting`),
+  V(NAMES.twelve, TWELVE),
+  V(NAMES.hover, SIX, { click: 'hover:[data-mood="gaming"]' }),
+  { ...V(NAMES.focus, SIX), q: q(SIX) + '&omfocus=%5Bdata-mood%3D%22gaming%22%5D' },
+  V(NAMES.token, '&office=six&officeoff=offered&officemood=relax&desktoken=unset'),
+  V(NAMES.stale, `${SIX}&officestale=1`),
+  V(NAMES.flight, `${SIX}&officeslow=1`, { click: '[data-mood="gaming"]' }),
+  V(NAMES.refused, `${SIX}&studiowrite=onair`, { click: '[data-mood="gaming"]' }),
+  V(NAMES.tall, TWELVE, { click: '.sp-grow >> .sp-tabs button:nth-child(5)' }),
+  V(NAMES.saved, `${SIX}&spotify=notyours&spotifypage=first`, { click: '.sp-grow >> .sp-tile' }),
+  V(NAMES.leave, `${SIX}&leave=12`),
+  V(NAMES.drivein, `${SIX}&watch=mock&wlist=three&wlook=drivein&wplay=0`),
+  V(NAMES.own, `${SIX}&watch=mock&wlook=sky&wmeta=title&wown=edit&wplay=3`),
+  { ...V(NAMES.night, `${TOKEN}&office=six&officeoff=on`), q: q(`${TOKEN}&office=six&officeoff=on`, night) },
+  V(NAMES.absent, ''),
+];
+
+const on = (...keys) => (v) => keys.some((k) => v.name === `Office moods, ${NAMES[k]}`);
+
+const gq = (extra) => `hz=unwind&at=${encodeURIComponent(night)}&clock=review&weather=ok&audio=demo${TOKEN}&${extra}`;
+const gstate = (name, extra, expect, actions) => ({ screen: 'unwind', name: `office moods: ${name}`, query: gq(extra), custom: true, expect, ...(actions ? { actions } : {}) });
+const LONG_NAME = 'Bright desk for the long afternoon sessions';
+
+export default {
+  name: 'office-moods',
+  gallery: {
+    states: [
+      gstate('absent, the slot stays empty', 'office=absent', ['!Office moods', '!No mood on.']),
+      gstate('the home app is down, the slot stays empty', 'office=down', ['!Office moods', '!No mood on.']),
+      gstate('an empty list, the slot stays empty', 'office=empty', ['!Office moods', '!No mood on.']),
+      gstate('six moods and Off, a mood on', 'office=six&officeoff=offered&officemood=relax', ['Office moods', 'Bright desk', 'Reading', 'Relax', 'Gaming', 'Meeting', 'Night', 'Off', 'Relax:', 'Room 35%, neon 30%']),
+      gstate('six moods, no Off until the home app offers it', 'office=six&officemood=gaming', ['Office moods', 'Gaming:', 'Room 25%, panels 10%', '!Off']),
+      gstate('five moods, none on', 'office=five', ['Office moods', 'No mood on.', '!Off']),
+      gstate('Off is lit', 'office=six&officeoff=on', ['Office lights are off.', 'Off']),
+      gstate('a click on Off', 'office=six&officeoff=offered&officemood=relax', ['Office lights are off.'], '[data-mood="off"]'),
+      gstate('a click on a mood', 'office=six&officeoff=offered', ['Gaming:', 'Room 25%, panels 10%'], '[data-mood="gaming"]'),
+      gstate('a stale read', 'office=six&officeoff=offered&officemood=relax&officestale=1', ['(not fresh)', 'Relax:']),
+      gstate('no desk token', 'office=six&officeoff=offered&desktoken=unset', ["To change these, type the home app's desk token in Tools."]),
+      gstate('a base the token may not go to', 'office=six&officeoff=offered&desktoken=insecure', ['The desk token is not sent over plain http. Use https or the tailnet.']),
+      gstate('a write that never answers', 'office=six&officeoff=offered&officeslow=1', ['Gaming: asking the home app'], '[data-mood="gaming"]'),
+      gstate('Off that never answers', 'office=six&officeoff=offered&officeslow=1', ['Off: asking the home app'], '[data-mood="off"]'),
+      gstate('a refused write, the studio is on air', 'office=six&officeoff=offered&studiowrite=onair', ['The studio is on air. End it with Back to normal on On Air first.'], '[data-mood="off"]'),
+      gstate('a refused write, a light did not answer', 'office=six&officeoff=offered&studiowrite=lights', ['A light did not answer the home app. This shows what it reports now.'], '[data-mood="gaming"]'),
+      gstate('the home app refused the token', 'office=six&officeoff=offered&studiowrite=forbidden', ['The home app refused the desk token. Type it again in Tools.'], '[data-mood="gaming"]'),
+      gstate('the home app has no desk token yet', 'office=six&officeoff=offered&studiowrite=homeunset', ['The home app has no desk token yet. Set the same token there.'], '[data-mood="gaming"]'),
+      gstate('a hovered chip', 'office=six&officeoff=offered&officemood=relax', ['Gaming: Room 25%, panels 10%'], 'hover:[data-mood="gaming"]'),
+      gstate('a hovered Off chip', 'office=six&officeoff=offered&officemood=relax', ['Turns the office lights off. No other room changes.'], 'hover:[data-mood="off"]'),
+      gstate('a focused chip', 'office=six&officeoff=offered&officemood=relax', ['Meeting: Room 80%, desk lamp on'], 'focus:[data-mood="meeting"]'),
+      gstate('a hovered chip with no token', 'office=six&officeoff=offered&desktoken=unset', ["To change these, type the home app's desk token in Tools.", 'Gaming: Room 25%, panels 10%'], 'hover:[data-mood="gaming"]'),
+      gstate('twelve long names and lines', 'office=twelve&officeoff=offered&officemood=brightDesk', [LONG_NAME, 'Off']),
+      gstate('twelve moods under the tall Spotify panel', 'office=twelve&officeoff=offered&officemood=brightDesk', [LONG_NAME, 'Off'], '.sp-grow >> .sp-tabs button:nth-child(5)'),
+      gstate('a hovered long name shows the whole name and line', 'office=twelve&officeoff=offered&officemood=brightDesk', [`${LONG_NAME}: Room 70%, neon 20%, desk lamp on, panels off`], `hover:[data-mood="brightDesk"]`),
+      gstate('six moods with the leave banner', 'office=six&officeoff=offered&officemood=relax&leave=12', ['Office moods', 'Relax:']),
+      gstate('six moods on Watch with the drive-in', 'office=six&officeoff=offered&officemood=relax&watch=mock&wlist=three&wlook=drivein&wplay=0', ['Office moods', 'Relax:']),
+      gstate('six moods beside a tall own playlist', 'office=six&officeoff=offered&officemood=relax&watch=mock&wlook=sky&wmeta=title&wown=edit&wplay=3', ['Office moods', 'Friday wind down']),
+    ],
+  },
+  fit: {
+    variants,
+    measurements: { moods: measureMoods },
+    rules: { moods: rule },
+    breaks: {
+      'moods-left': { css: '.u-office-slot { max-width: none !important; }', expect: /^ *FAIL officemoods: the row starts at x /m, appliesTo: on('twelve') },
+      'moods-line': { css: '.u-office-line { right: 780px !important; }', expect: /^ *FAIL officemoods: the line ends at x /m, appliesTo: on('tall') },
+      'moods-small': { css: '.u-mood { height: 30px !important; }', expect: /^ *FAIL officemoods: chip ".*" is [\d.]+ px tall/m, appliesTo: on('six') },
+      'moods-text': { css: '.u-mood { font-size: 14px !important; }', expect: /^ *FAIL officemoods: text under 16 px/m, appliesTo: on('six') },
+    },
+  },
+};
