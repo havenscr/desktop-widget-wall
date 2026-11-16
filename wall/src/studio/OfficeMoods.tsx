@@ -1,0 +1,161 @@
+import { IconAlertTriangle, IconBulb, IconLoader2 } from '@tabler/icons-react';
+import { useLayoutEffect, useRef, useState, type CSSProperties } from 'react';
+import { tip } from '../ui/HoverTip';
+import { useHome } from './homeStore';
+import {
+  OFF_BUSY_EXTRA,
+  OFF_FIXED,
+  chipTip,
+  fitMoodRow,
+  rowModel,
+  type ChipModel,
+  type Fit,
+  type RowModel,
+} from './moodRow';
+import { useMoodsPolling } from './useMoodsPolling';
+
+const LABEL_WORD = 'Office moods';
+/** The label pill's own parts: 9 px of padding each side, the 18 px bulb and its 8 px gap, letter spacing 3 px. */
+const LABEL_PAD = 18 + 18 + 8;
+const LABEL_TRACK = 3;
+
+let canvas: CanvasRenderingContext2D | null | undefined;
+/** The width of text in a font, by a canvas; a rough guess where there is no canvas (a test page). */
+function textWidth(text: string, font: string): number {
+  if (canvas === undefined) {
+    try {
+      // A test page (jsdom) has no canvas and says so loudly: it gets the rough guess.
+      const test = typeof navigator !== 'undefined' && /jsdom/i.test(navigator.userAgent);
+      canvas = typeof document === 'undefined' || test ? null : document.createElement('canvas').getContext('2d');
+    } catch {
+      canvas = null;
+    }
+  }
+  if (!canvas) return text.length * 9;
+  canvas.font = font;
+  return canvas.measureText(text).width;
+}
+
+/** The widths the fit rule needs, measured in the chip font, the label font and the Off chip's. */
+function measure(row: RowModel, body: string, disp: string) {
+  const chipFont = `500 17px ${body}`;
+  const names = row.chips.filter((c) => c.id !== null).map((c) => textWidth(c.label, chipFont));
+  const label = LABEL_PAD + textWidth(LABEL_WORD.toUpperCase(), `600 16px ${disp}`) + LABEL_TRACK * LABEL_WORD.length;
+  const off = row.chips.some((c) => c.id === null) ? OFF_FIXED + OFF_BUSY_EXTRA + textWidth('Off', chipFont) : 0;
+  return { names, label, off };
+}
+
+function Tip({ chip }: { chip: ChipModel }) {
+  // The card is drawn from the store as it is when the card shows (and each time it is redrawn).
+  const row = rowModel(useHome.getState());
+  const c = row?.chips.find((x) => x.id === chip.id);
+  if (!row || !c) return null;
+  const t = chipTip(row, c);
+  return (
+    <span className="u-mood-tip">
+      <span>{t.first}</span>
+      {t.second && <span className={t.warn ? 'u-mood-warn' : undefined}>{t.second}</span>}
+    </span>
+  );
+}
+
+function Swatch({ chip }: { chip: ChipModel }) {
+  if (chip.failed) return <IconAlertTriangle className="u-mood-ico warn" size={14} stroke={2} aria-hidden="true" />;
+  if (chip.busy) return <IconLoader2 className="u-mood-ico u-spin" size={14} stroke={2} aria-hidden="true" />;
+  if (!chip.swatch) return null;
+  return (
+    <span className="u-mood-sw" aria-hidden="true">
+      {chip.swatch.map((c) => (
+        <i key={c} style={{ background: c }} />
+      ))}
+    </span>
+  );
+}
+
+function Chip({ chip, row, cap, onClick }: { chip: ChipModel; row: RowModel; cap: number | null; onClick: () => void }) {
+  const off = chip.id === null;
+  const hasIcon = chip.failed || chip.busy;
+  return (
+    <button
+      type="button"
+      className={`u-mood${off ? ' off' : ''}${chip.lit ? ' lit' : ''}${chip.failed ? ' failed' : ''}${row.blocked ? ' blocked' : ''}`}
+      data-mood={off ? 'off' : chip.id}
+      aria-pressed={chip.lit}
+      aria-disabled={row.blocked ? 'true' : undefined}
+      data-busy={chip.busy ? 'true' : undefined}
+      onClick={onClick}
+      {...tip(() => <Tip chip={chip} />)}
+    >
+      {(off ? hasIcon : true) && <Swatch chip={chip} />}
+      <span className="u-mood-name" style={cap !== null && !off ? ({ maxWidth: `${cap}px` } as CSSProperties) : undefined}>
+        {chip.label}
+      </span>
+    </button>
+  );
+}
+
+/**
+ * The Office moods row at the foot of Unwind: a label, one chip per mood the home app lists, an Off chip only
+ * when the home app offers it, and the line above the row's left part that says what is on. It is the
+ * `office-lights` slot itself: hidden states leave the empty 420 by 34 box the older rules know. Chips show
+ * the home app's last read back, never the clicked value. See "Office moods" in `wall/README.md`.
+ */
+export function OfficeMoods() {
+  const moods = useHome((s) => s.moods);
+  const moodsWord = useHome((s) => s.moodsWord);
+  const applying = useHome((s) => s.applying);
+  const moodFail = useHome((s) => s.moodFail);
+  const sticky = useHome((s) => s.sticky);
+  useMoodsPolling();
+  const row = rowModel({ moods, moodsWord, applying, moodFail, sticky });
+  const box = useRef<HTMLDivElement>(null);
+  const [fit, setFit] = useState<Fit>({ label: true, cap: null });
+  const [fontsAt, setFontsAt] = useState(0);
+  useLayoutEffect(() => {
+    if (typeof document === 'undefined' || !document.fonts) return;
+    const again = () => setFontsAt((n) => n + 1);
+    document.fonts.addEventListener?.('loadingdone', again);
+    return () => document.fonts.removeEventListener?.('loadingdone', again);
+  }, []);
+  // The key of what the fit depends on: the names and whether Off is there.
+  const key = row ? row.chips.map((c) => c.label).join('\u0001') : '';
+  useLayoutEffect(() => {
+    if (!row || !box.current) return;
+    const cs = getComputedStyle(document.documentElement);
+    const body = cs.getPropertyValue('--body').trim() || 'sans-serif';
+    const disp = cs.getPropertyValue('--disp').trim() || 'sans-serif';
+    const m = measure(row, body, disp);
+    const next = fitMoodRow(m.names, m.label, m.off);
+    setFit((f) => (f.label === next.label && f.cap === next.cap ? f : next));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [key, fontsAt]);
+
+  if (!row) return <div className="u-office-slot" data-slot="office-lights" aria-hidden="true" />;
+
+  const click = (chip: ChipModel) => {
+    // Nothing is sent while this PC may not write or a write is out; the native side checks again.
+    if (row.blocked || row.waiting) return;
+    const st = useHome.getState();
+    void (chip.id === null ? st.applyOff() : st.applyMood(chip.id));
+  };
+  const line = row.line;
+  return (
+    <>
+      <div className="u-office-slot" data-slot="office-lights" data-moods="shown" data-stale={row.stale ? 'true' : undefined} role="group" aria-label={LABEL_WORD} ref={box}>
+        {fit.label && (
+          <span className="u-mood-label" data-part="label">
+            <IconBulb size={18} aria-hidden="true" />
+            <span>{LABEL_WORD}</span>
+          </span>
+        )}
+        {row.chips.map((c) => (
+          <Chip key={c.id ?? 'office-off'} chip={c} row={row} cap={fit.cap} onClick={() => click(c)} />
+        ))}
+      </div>
+      <div className={`u-office-line${line.warn ? ' warn' : ''}`} data-part="line">
+        {line.lead && <b>{line.lead}</b>}
+        <span>{line.rest}</span>
+      </div>
+    </>
+  );
+}
