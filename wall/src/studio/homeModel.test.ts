@@ -1,0 +1,61 @@
+import { expect, it } from 'vitest';
+import { studioAnswer, studioWith } from './homeKit';
+import { chipPresetWord, homeLine, presetChipLabel, summaryParts, tileState, wouldBeDark, ZONE_TIP } from './homeModel';
+import { studioOf, type Group } from './home';
+import { TEXT } from './homeStore';
+
+const studio = (over: Record<string, unknown> = {}) => studioOf(studioAnswer(over))!;
+const g = (s: ReturnType<typeof studio>, id: string): Group => s.groups.find((x) => x.id === id)!;
+
+it('the summary: label and line when a preset is on, the key light words when none is, only "changed" when it changed', () => {
+  expect(summaryParts(studio(), 'Key lights 60%, 4400 K')).toEqual({ lead: 'No preset on.', rest: ' Key lights 60%, 4400 K', full: 'No preset on. Key lights 60%, 4400 K' });
+  expect(summaryParts(studio(), '').rest).toBe('');
+  const on = studioOf(studioWith('onAir'))!;
+  expect(summaryParts(on, 'ignored')).toEqual({ lead: 'On air:', rest: ' Key lights on, panels glow', full: 'On air: Key lights on, panels glow' });
+  const changed = studioOf(studioWith('onAir', { changed: true }))!;
+  expect(summaryParts(changed, '')).toEqual({ lead: 'On air, changed', rest: ' since it was set', full: 'On air, changed since it was set' });
+});
+
+it('chip words: the preset, with ", changed" only on the one that is on', () => {
+  const changed = studioOf(studioWith('onAir', { changed: true }))!;
+  expect(presetChipLabel(changed.presets[0], true)).toBe('On air, changed');
+  expect(presetChipLabel(changed.presets[1], true)).toBe('Recording');
+  expect(chipPresetWord(changed.presets[0], true)).toBe('Lights: On air, changed');
+  expect(chipPresetWord(null, false)).toBeNull();
+});
+
+it('the dark-room guard: a room light that is the only one on cannot be turned off; panels never count', () => {
+  const s = studio();
+  expect(wouldBeDark(s, g(s, 'overhead'))).toBe(false);
+  const one = studioOf(studioAnswer({ groups: [{ ...g(s, 'behindMonitor'), on: false }, g(s, 'overhead'), g(s, 'panels')] }))!;
+  expect(wouldBeDark(one, g(one, 'overhead'))).toBe(true);
+  expect(wouldBeDark(one, g(one, 'behindMonitor'))).toBe(false);
+  expect(wouldBeDark(one, g(one, 'panels'))).toBe(false);
+  // The other room group missing: the home app could not say, so the wall does not send an off.
+  const alone = studioOf(studioAnswer({ groups: [g(s, 'overhead')] }))!;
+  expect(wouldBeDark(alone, g(alone, 'overhead'))).toBe(true);
+});
+
+it('a tile: needs a zone, not answering, no token, dark room, or ready, each with its words', () => {
+  const s = studio();
+  expect(tileState(s, g(s, 'overhead'), true)).toMatchObject({ disabled: false, dim: false });
+  expect(tileState(s, g(s, 'overhead'), true).tip).toContain('Click to turn it off');
+  expect(tileState(s, g(s, 'overhead'), false)).toMatchObject({ disabled: true });
+  expect(tileState(s, g(s, 'overhead'), false).tip).toContain('desk token');
+  const zone = { ...g(s, 'overhead'), canSwitch: false, setTo: 'Needs a Hue zone' };
+  expect(tileState(s, zone, true)).toEqual({ disabled: true, dim: true, tip: ZONE_TIP });
+  const named = { ...g(s, 'overhead'), setTo: 'Needs a Hue zone' };
+  expect(tileState(s, named, true).disabled).toBe(true);
+  const silent = { ...g(s, 'overhead'), reachable: false };
+  expect(tileState(s, silent, true)).toMatchObject({ disabled: false, dim: true });
+  expect(tileState(s, silent, true).tip).toContain('Not answering');
+});
+
+it('the line that outranks the summary: a note, then a kept amber line with its action', () => {
+  const base = { studio: null, readWord: null, readDone: true, sticky: null, note: null } as const;
+  expect(homeLine(base)).toBeNull();
+  expect(homeLine({ ...base, note: TEXT.busy })).toMatchObject({ text: TEXT.busy, tone: 'amber', action: null });
+  expect(homeLine({ ...base, sticky: 'home-not-set-up' })).toMatchObject({ text: TEXT.homeNotSetUp, action: 'tryAgain' });
+  expect(homeLine({ ...base, sticky: 'forbidden' })).toMatchObject({ text: TEXT.forbidden, action: 'openTools' });
+  expect(homeLine({ ...base, sticky: 'forbidden', note: TEXT.busy })?.text).toBe(TEXT.busy);
+});

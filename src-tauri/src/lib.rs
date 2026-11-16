@@ -59,6 +59,8 @@ mod display_watch;
 mod wall2_feeds;
 mod wall2_home;
 mod wall2_desk;
+mod wall2_desk_token;
+mod wall2_studio;
 mod wall2_meet;
 mod wall2_oauth;
 mod wall2_spotify;
@@ -4132,6 +4134,17 @@ pub fn run() {
             wall2_desk::wall2_desk_rooms,
             wall2_desk::wall2_desk_security,
             wall2_desk::wall2_desk_clear_alerts,
+            wall2_desk_token::wall2_desk_token_status,
+            wall2_desk_token::wall2_desk_token_set,
+            wall2_desk_token::wall2_desk_token_forget,
+            wall2_studio::wall2_studio,
+            wall2_studio::wall2_studio_preset,
+            wall2_studio::wall2_studio_normal,
+            wall2_studio::wall2_studio_group,
+            wall2_studio::wall2_studio_look,
+            wall2_studio::wall2_studio_keys,
+            wall2_studio::wall2_office_moods,
+            wall2_studio::wall2_office_mood,
             wall2_onair::wall2_onair_show,
             wall2_onair::wall2_onair_mark,
             wall2_onair::wall2_onair_marks_today,
