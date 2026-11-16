@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 
-export type ToolsFocus = 'accounts' | 'keylights' | null;
+export type ToolsFocus = 'accounts' | 'keylights' | 'desktoken' | null;
 export type SignInKind = 'calendar' | 'spotify' | 'youtube';
 
 interface ToolsState {

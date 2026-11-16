@@ -2,14 +2,17 @@
    (x 1680, y 20, 860 wide), the Lights chip on Work and the Key lights section in Tools.
    Mouse sizes: controls 40 px on the page, 34 px inside the drawer, text 16 px or more. */
 
-/* ---- the block ---- */
+/* ---- the block ----
+   148 px: header 26, 8, preset row 40, 6, summary 22, 6, switch row 40. The offer bar (68) takes the place of
+   the preset row and the summary. Without the home part, the key light row, the summary and one home line
+   take the same three slots. */
 .st-block {
   box-sizing: border-box;
   flex: none;
-  height: 134px;
+  height: 148px;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 0;
   min-width: 0;
 }
 .st-block,
@@ -44,6 +47,35 @@
   display: flex;
   gap: 8px;
   height: 40px;
+  margin-top: 8px;
+}
+.st-presets {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 40px;
+  margin-top: 8px;
+  min-width: 0;
+}
+.st-switches {
+  display: flex;
+  gap: 7px;
+  height: 40px;
+  margin-top: 6px;
+  min-width: 0;
+}
+.st-homeline {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  height: 40px;
+  margin-top: 6px;
+  min-width: 0;
+}
+.st-line.st-hl-t {
+  flex: 1 1 auto;
+  min-width: 0;
+  line-height: 19px;
 }
 .st-line {
   font: 16px/1.3 var(--body);
@@ -51,7 +83,8 @@
 }
 .st-sum {
   font: 500 17px/22px var(--body);
-  min-height: 22px;
+  height: 22px;
+  margin-top: 6px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -62,6 +95,135 @@
 }
 .st-quiet {
   color: var(--dim);
+}
+
+/* A preset chip on the page row: 40 px, radius 20. On is the cyan state with a check. */
+.st-preset {
+  flex: 0 1 auto;
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 40px;
+  padding: 0 14px;
+  border-radius: 20px;
+  background: rgba(14, 10, 36, 0.78);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  color: var(--dim);
+  font: 500 18px/1 var(--body);
+  white-space: nowrap;
+  cursor: pointer;
+  transition: border-color 160ms ease, color 160ms ease;
+}
+.st-preset > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.st-preset svg {
+  flex: none;
+}
+.st-preset:hover:not(.dis) {
+  border-color: rgba(53, 230, 234, 0.8);
+  color: var(--tx);
+}
+.st-preset.on {
+  background: rgba(53, 230, 234, 0.14);
+  border-color: rgba(53, 230, 234, 0.55);
+  color: var(--cyan);
+}
+.st-preset.dis {
+  border-style: dashed;
+  border-color: rgba(183, 175, 214, 0.5);
+  background: rgba(14, 10, 36, 0.5);
+  cursor: default;
+}
+.st-preset[aria-busy='true'] {
+  border-color: rgba(53, 230, 234, 0.55);
+}
+.st-dot {
+  flex: none;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--amber);
+}
+.st-chip.st-icon {
+  width: 44px;
+  padding: 0;
+}
+.st-lead {
+  font-weight: 600;
+  color: var(--tx);
+}
+.st-stale {
+  color: var(--dim);
+  font-weight: 400;
+}
+.st-switches .st-tg {
+  gap: 8px;
+  padding: 0 8px;
+}
+.st-tg.dim {
+  opacity: 0.65;
+}
+.st-room > span:not(.st-sw) {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* The block is 148 px (the older one was 134): the footnote under it keeps its place in the column by closing up
+   its gap and its line height (two lines of 19 px end at y 507, inside the column). */
+.oa-right > .oa-foot {
+  margin-top: -7px;
+  line-height: 19px;
+}
+/* A key light tile that carries a warning is already dashed and amber: the triangle would crowd the four tiles. */
+.st-switches .st-tg-warn {
+  display: none;
+}
+
+/* The offer bar: 68 px, in place of the preset row and the summary. */
+.st-offer {
+  height: 68px;
+  margin-top: 8px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 14px 0 18px;
+  border-radius: 14px;
+  background: rgba(53, 230, 234, 0.09);
+  border: 1px solid rgba(53, 230, 234, 0.6);
+  min-width: 0;
+}
+.st-offer-tx {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.st-offer-t {
+  font: 600 18px/22px var(--body);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.st-offer-s {
+  font: 16px/20px var(--body);
+  color: #dcd7f2;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.st-chip.st-go {
+  background: var(--cyan);
+  border-color: var(--cyan);
+  color: #06121c;
+}
+.st-chip.st-go:hover {
+  border-color: #fff;
 }
 
 /* A switch tile: the switch, its name. The knob takes the colour of the light's warmth. */
@@ -401,6 +563,236 @@ button.st-tg:hover {
   border-top: 1px solid var(--line);
 }
 
+/* ---- the home part of the sheet: preset tiles, then Key lights (left) and the rooms (right) ----
+   The sheet is as wide as its column (620 px on On Air), so each body column is about 280 px. */
+.st-d-presets {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+.st-pt {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 10px;
+  border-radius: 14px;
+  background: rgba(14, 10, 36, 0.78);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  color: var(--tx);
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 160ms ease;
+}
+.st-pt:hover:not(.dis) {
+  border-color: rgba(53, 230, 234, 0.8);
+}
+.st-pt.on {
+  background: rgba(53, 230, 234, 0.14);
+  border-color: rgba(53, 230, 234, 0.55);
+}
+.st-pt.on .st-pt-n {
+  color: var(--cyan);
+}
+.st-pt.dis {
+  border-style: dashed;
+  border-color: rgba(183, 175, 214, 0.5);
+  background: rgba(14, 10, 36, 0.5);
+  cursor: default;
+}
+.st-pt[aria-busy='true'] {
+  border-color: rgba(53, 230, 234, 0.55);
+}
+.st-pt-n {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font: 600 18px/22px var(--body);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.st-pt-l {
+  font: 16px/19px var(--body);
+  color: var(--dim);
+  min-height: 57px;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+}
+.st-lk.st-why {
+  margin-left: auto;
+  border-color: rgba(255, 194, 77, 0.85);
+  color: var(--amber);
+}
+.st-lk.st-why + .st-x {
+  margin-left: 0;
+}
+.st-d-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 20px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+}
+.st-d-body.one {
+  display: contents;
+}
+/* However much the home app lists, the sheet stays above y 510: the body scrolls with the wheel past that. */
+.st-drawer {
+  max-height: 490px;
+}
+.st-d-body:not(.one) {
+  min-height: 0;
+  overflow-y: auto;
+  padding-inline: 4px;
+  margin-inline: -4px;
+  overscroll-behavior: contain;
+  /* The wall's one scrollbar look: thin, pale, always there when the body scrolls. */
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.3) transparent;
+}
+/* The home sheet gives back what the three-line preset tiles take: tighter gaps. */
+.st-drawer[data-home] {
+  gap: 8px;
+}
+.st-drawer[data-home] .st-d-body {
+  padding-top: 6px;
+}
+.st-drawer[data-home] .st-d-foot {
+  padding-top: 6px;
+}
+/* Split, two lights in one 280 px column: the warmth ends are written once, under the last pair. */
+.st-d-body:not(.one) .st-sides .st-side:first-child .st-scale {
+  display: none;
+}
+.st-d-body:not(.one) .st-side-hd {
+  height: 30px;
+}
+.st-d-body:not(.one) .st-k-hd {
+  gap: 8px;
+}
+.st-d-body:not(.one) .st-d-keys {
+  border-top: 0;
+  padding-top: 0;
+  min-width: 0;
+}
+.st-d-body:not(.one) .st-sides {
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0;
+}
+.st-d-body:not(.one) .st-scale {
+  padding: 0 44px 0 30px;
+  white-space: nowrap;
+  gap: 8px;
+}
+.st-d-rooms {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.st-rm {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  min-width: 0;
+  padding-top: 4px;
+  border-top: 1px solid var(--line);
+}
+.st-d-rooms .st-rm:first-child {
+  border-top: 0;
+  padding-top: 0;
+}
+.st-rm-hd {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 34px;
+}
+.st-d-rooms .st-swbtn {
+  padding: 0 2px;
+}
+.st-rm-n {
+  font-size: 18px;
+}
+.st-rm-r {
+  margin-left: auto;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+.st-rm-s {
+  margin-top: -6px;
+  padding-left: 52px;
+  line-height: 20px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.st-rm.off .st-swbtn {
+  cursor: default;
+}
+.st-looks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding-bottom: 2px;
+}
+.st-look {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 34px;
+  padding: 0 12px;
+  border-radius: 17px;
+  background: rgba(14, 10, 36, 0.78);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  color: var(--dim);
+  font: 500 16px/1 var(--body);
+  white-space: nowrap;
+  cursor: pointer;
+}
+.st-look:hover:not(.dis) {
+  border-color: rgba(53, 230, 234, 0.8);
+  color: var(--tx);
+}
+.st-look.on {
+  background: rgba(53, 230, 234, 0.14);
+  border-color: rgba(53, 230, 234, 0.55);
+  color: var(--cyan);
+}
+.st-look.dis {
+  border-style: dashed;
+  border-color: rgba(183, 175, 214, 0.5);
+  cursor: default;
+}
+.st-hatch {
+  left: 0;
+  top: 10px;
+  height: 6px;
+  border-radius: 3px 0 0 3px;
+  background: repeating-linear-gradient(135deg, rgba(255, 255, 255, 0.5) 0 2px, rgba(255, 255, 255, 0.1) 2px 5px);
+}
+.st-floor {
+  top: 2px;
+  width: 2px;
+  height: 22px;
+  margin-left: -1px;
+  background: var(--amber);
+}
+.st-d-body .st-srow {
+  grid-template-columns: 20px minmax(0, 1fr) 66px;
+}
+.st-drawer button:focus-visible,
+.st-block button:focus-visible {
+  outline: 3px solid var(--cyan);
+  outline-offset: 2px;
+}
+
 /* ---- the Lights chip on Work: 32 px, after the Recording chip ---- */
 .lanes-hd button.lights-chip,
 .lights-chip {
@@ -489,4 +881,33 @@ button.st-tg:hover {
 .kl-note {
   white-space: normal;
   line-height: 1.25;
+}
+
+/* ---- Tools: Home app (the desk token), the last section of the right column ----
+   The drawer had about 18 px of height to spare, so the section is one line (name, state, buttons) under its
+   heading, and the Sources rows above it are 34 px high instead of 44 (their text keeps its size; 34 px is still a mouse size). */
+.dt-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 34px;
+  min-width: 0;
+}
+.dt-state {
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+}
+.dt-name {
+  flex: none;
+}
+.dt-field {
+  flex: 1;
+  min-width: 0;
+}
+.dt-note {
+  padding-top: 2px;
+}
+.kl-stack .tools-src {
+  height: 34px;
 }

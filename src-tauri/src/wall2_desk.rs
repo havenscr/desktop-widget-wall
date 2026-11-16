@@ -1,12 +1,12 @@
 //! Wall 2 Home: the home app's desk routes (house line, rooms, security alerts, clear).
 //!
 //! The base address is `feeds.json` key `homeBaseUrl` (as `wall2_home_security` reads it).
-//! The write token is `feeds.json` key `homeDeskToken`: it is read here only, sent only as
-//! the `X-Desk-Token` header, and never returned to the web view, logged or put in an error.
-//! The web view cannot read `feeds.json` another way either: the old widget config commands
-//! in `lib.rs` refuse the `wall2` window and any key that is not a plain name. The token is
-//! sent only to an `https` base, a loopback address or a tailnet address (see
-//! `token_may_go_to`); to a plain `http` base on the local network the clear is not tried.
+//! The write token is typed once in Tools and kept in Windows Credential Manager by
+//! `wall2_desk_token` (target `WidgetWall2/home/desk/0`); `feeds.json` key `homeDeskToken` is no
+//! longer read. The token is read here only, sent only as the `X-Desk-Token` header, and never
+//! returned to the web view, logged or put in an error. It is sent only to an `https` base, a
+//! loopback address or a tailnet address (see `token_may_go_to`); to a plain `http` base on
+//! the local network the clear is not tried.
 //! Every answer is capped at 64 KB and checked field by field. Errors are fixed words:
 //! `not-configured`, `absent` (the route is not there yet), `failed`, `not-set-up` (no
 //! token), `nothing-to-clear`, `forbidden` and `needs-private-address`. Old data is never an error: each answer
@@ -16,14 +16,13 @@ use crate::wall2_feeds::{read_base, NOT_CONFIGURED};
 use serde::Serialize;
 use serde_json::Value;
 use std::io::Read;
-use tauri::Manager;
 
 const MAX_BODY: u64 = 64 * 1024;
 const MAX_ROOMS: usize = 24;
 const MAX_ROOM_NAME: usize = 40;
 const MAX_ALERTS: usize = 50;
 const MAX_ALERT_TEXT: usize = 120;
-const MAX_TOKEN: usize = 256;
+pub(crate) const MAX_TOKEN: usize = 256;
 
 pub(crate) const ABSENT: &str = "absent";
 pub(crate) const FAILED: &str = "failed";
@@ -157,7 +156,7 @@ fn read_json(http: &dyn DeskHttp, url: &str) -> Result<Value, String> {
 // Section: field checks
 
 /// Trimmed, control characters removed, spaces collapsed, at most `max` characters; None when empty.
-fn clean_text(raw: Option<&Value>, max: usize) -> Option<String> {
+pub(crate) fn clean_text(raw: Option<&Value>, max: usize) -> Option<String> {
     let s = raw?.as_str()?;
     // A control character (a line break, a tab) reads as a space, so "Two\nlines" stays two words.
     let no_ctl: String = s.chars().map(|c| if c.is_control() { ' ' } else { c }).collect();
@@ -193,7 +192,7 @@ fn safe_id(raw: Option<&Value>, max: usize) -> Option<String> {
     ok.then(|| s.to_string())
 }
 
-fn is_stale(body: &Value) -> bool {
+pub(crate) fn is_stale(body: &Value) -> bool {
     body.get("stale").and_then(Value::as_bool).unwrap_or(true)
 }
 
@@ -282,20 +281,6 @@ pub(crate) fn shape_security(body: &Value, can_clear: bool) -> DeskSecurity {
         can_clear,
         clear_insecure: false,
     }
-}
-
-/// The `homeDeskToken` key of `feeds.json` text: 1 to 256 visible ASCII characters, else None.
-pub(crate) fn token_from_config(json_text: Option<&str>) -> Option<String> {
-    let value: Value = serde_json::from_str(json_text?).ok()?;
-    let t = value.get("homeDeskToken")?.as_str()?.trim();
-    let ok = !t.is_empty() && t.len() <= MAX_TOKEN && t.chars().all(|c| c.is_ascii_graphic());
-    ok.then(|| t.to_string())
-}
-
-fn read_token(app: &tauri::AppHandle) -> Option<String> {
-    let dir = app.path().app_config_dir().ok()?;
-    let text = std::fs::read_to_string(dir.join("feeds.json")).ok();
-    token_from_config(text.as_deref())
 }
 
 /// Where the write token may go: an `https` base, a loopback address (`localhost`,
@@ -395,11 +380,11 @@ pub(crate) fn clear_with(http: &dyn DeskHttp, base: &str, token: Option<&str>) -
 
 // Section: commands (wall2 window only; blocking work off the main thread)
 
-fn base(app: &tauri::AppHandle) -> Result<String, String> {
+pub(crate) fn base(app: &tauri::AppHandle) -> Result<String, String> {
     read_base(app, "homeBaseUrl", false).map_err(|e| if e == NOT_CONFIGURED { NOT_CONFIGURED.to_string() } else { FAILED.to_string() })
 }
 
-async fn off_thread<T: Send + 'static>(f: impl FnOnce() -> Result<T, String> + Send + 'static) -> Result<T, String> {
+pub(crate) async fn off_thread<T: Send + 'static>(f: impl FnOnce() -> Result<T, String> + Send + 'static) -> Result<T, String> {
     tauri::async_runtime::spawn_blocking(f).await.map_err(|_| FAILED.to_string())?
 }
 
@@ -421,9 +406,10 @@ pub async fn wall2_desk_rooms(window: tauri::WebviewWindow, app: tauri::AppHandl
 pub async fn wall2_desk_security(window: tauri::WebviewWindow, app: tauri::AppHandle) -> Result<DeskSecurity, String> {
     crate::wall2_meet::require_wall2(window.label())?;
     let base = base(&app)?;
-    let can_clear = read_token(&app).is_some();
-    let clear_insecure = can_clear && !token_may_go_to(&base);
     off_thread(move || {
+        // The token is read from Credential Manager here, off the async thread.
+        let can_clear = crate::wall2_desk_token::read_token().is_some();
+        let clear_insecure = can_clear && !token_may_go_to(&base);
         let mut s = shape_security(&read_json(&RealHttp, &format!("{base}/api/desk/security"))?, can_clear && !clear_insecure);
         s.clear_insecure = clear_insecure;
         Ok(s)
@@ -435,8 +421,11 @@ pub async fn wall2_desk_security(window: tauri::WebviewWindow, app: tauri::AppHa
 pub async fn wall2_desk_clear_alerts(window: tauri::WebviewWindow, app: tauri::AppHandle) -> Result<u32, String> {
     crate::wall2_meet::require_wall2(window.label())?;
     let base = base(&app)?;
-    let token = read_token(&app);
-    off_thread(move || clear_with(&RealHttp, &base, token.as_deref())).await
+    off_thread(move || {
+        let token = crate::wall2_desk_token::read_token();
+        clear_with(&RealHttp, &base, token.as_deref())
+    })
+    .await
 }
 
 #[cfg(test)]
@@ -705,17 +694,5 @@ mod tests {
         let f = fake(200, "{\"ok\":true,\"cleared\":1}");
         assert_eq!(clear_with(&f, "http://h", None).unwrap_err(), NO_TOKEN);
         assert!(f.seen.borrow().is_empty());
-    }
-
-    #[test]
-    fn token_from_config_rules() {
-        assert_eq!(token_from_config(Some(&format!("{{\"homeDeskToken\": \" {TOKEN} \"}}"))).as_deref(), Some(TOKEN));
-        assert_eq!(token_from_config(Some("{\"homeDeskToken\": \"\"}")), None);
-        assert_eq!(token_from_config(Some("{\"homeDeskToken\": \"two words\"}")), None);
-        assert_eq!(token_from_config(Some("{\"homeDeskToken\": \"caf\u{e9}\"}")), None);
-        assert_eq!(token_from_config(Some(&format!("{{\"homeDeskToken\": \"{}\"}}", "a".repeat(257)))), None);
-        assert_eq!(token_from_config(Some("{\"homeDeskToken\": 5}")), None);
-        assert_eq!(token_from_config(Some("not json")), None);
-        assert_eq!(token_from_config(None), None);
     }
 }

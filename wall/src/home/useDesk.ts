@@ -11,7 +11,7 @@ const clock = reviewNow ?? (() => Date.now());
 
 /** The home app's desk routes answer `absent` until its change is live: the parts that read them hide. */
 export const ABSENT = 'absent';
-/** No `homeDeskToken` on this PC (or the home app has none): Clear all says "not set up". */
+/** No desk token typed in Tools, Home app, on this PC (or the home app has none): Clear all says "not set up". */
 export const NOT_SET_UP = 'not-set-up';
 
 export interface House {

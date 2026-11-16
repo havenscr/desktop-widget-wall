@@ -4,6 +4,7 @@ import { mocks } from '../bridge/tauri';
 import { useSignalStore } from '../signals/store';
 import { HoverTipLayer, resetTip } from '../ui/HoverTip';
 import { LightsChip } from './LightsChip';
+import { resetHome } from './homeStore';
 import { resetKeyLights, useKeyLights } from './store';
 
 vi.setConfig({ testTimeout: 20_000 });
@@ -22,6 +23,10 @@ let right: Cell;
 beforeEach(() => {
   vi.useFakeTimers();
   resetKeyLights();
+  resetHome();
+  mocks.set('wall2_studio', () => {
+    throw 'absent';
+  });
   resetTip();
   useSignalStore.setState({ recording: true });
   left = good();
