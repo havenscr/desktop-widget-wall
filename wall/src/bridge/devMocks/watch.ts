@@ -60,6 +60,10 @@ import { knob } from './long';
  *                             `pill` is that after the back arrow; `repeat` is that with repeat on; `skip` skips one video with its note held on screen; `end` and `none`
  *                             show the block after the playlist ran out, or when nothing in it could play. Pictures are drawn `data:`
  *                             motifs through the `ownThumb` seam: no request ever leaves the page.
+ *   ?ytown=none|two|three|five|nine|in|full   playlists of the owner's own for "Add to a playlist" on the rows of the YouTube library (with
+ *                             `watch=mock`, `youtube=in` and `wtab=listen`): none, two (12 and 5 videos), three, five or nine invented ones, two with
+ *                             some library videos already in the first (`in`: the second row of an opened playlist, the fourth of Liked and the
+ *                             fourth search result), or two with the first one full (50). Without `ytown` the stores are empty, as with no playlist yet.
  *   ?wplace=work|home|meet    watch behaviour: after it starts, go to that place, so the video
  *                             plays out of sight and the rail marks Unwind
  */
@@ -100,6 +104,21 @@ const OWN_SAVED = [
   { kind: 'live', id: 'Lofi_Live01', label: 'Lofi beats radio, live' },
   { kind: 'twitch', id: 'pixel_harbor', label: 'pixel_harbor' },
 ];
+
+/** `?ytown`: the owner's own playlists a YouTube library row can be added to (ids of the youtube mock's videos: see `devMocks/youtube.ts`). */
+const YT_NAMES = ['Friday wind down', 'Slow mornings', 'Weekend cooking', 'Late set', 'Rainy day', 'Road trip', 'Focus hour', 'Sunday kitchen', 'Night shift'];
+function ytOwn(kind: string): { saved: { kind: string; id: string; label: string }[]; store: string } {
+  const count = kind === 'none' ? 0 : kind === 'three' ? 3 : kind === 'five' ? 5 : kind === 'nine' ? 9 : 2;
+  const ids = Array.from({ length: count }, (_, i) => (i === 0 ? FRIDAY : i === 1 ? SLOW : `ytown${String(i).padStart(7, '0')}`));
+  const filler = (list: number, n: number) => Array.from({ length: n }, (_, k) => ({ id: `fill${String(list * 100 + k).padStart(7, '0')}`, title: `Filler ${k + 1}`, channel: 'Quiet Hours', seconds: 180 + k }));
+  const held = ['mock0000001', 'mock0000103', 'mock0000203'].map((id) => ({ id, title: 'Held', channel: 'Quiet Hours', seconds: 200 }));
+  const lists: Record<string, unknown> = {};
+  ids.forEach((id, i) => {
+    const items = kind === 'full' && i === 0 ? filler(i, 50) : [...filler(i, i === 0 ? 12 : i === 1 ? 5 : 3 + i), ...(kind === 'in' && i === 0 ? held : [])];
+    lists[id] = { items, shuffle: false, repeat: false };
+  });
+  return { saved: ids.map((id, i) => ({ kind: 'own', id, label: YT_NAMES[i]! })), store: JSON.stringify({ v: 1, lists }) };
+}
 
 function ownStore(edit: boolean): string {
   const full = OWN_VIDEOS.map(([id, title, channel, seconds], i) => (edit && (i === 7 || i === 11) ? { id, seconds } : { id, title, channel, seconds }));
@@ -289,9 +308,13 @@ export function registerWatchMocks(): void {
   const ownState = knob('wown');
   if (ownState) ownThumb.url = drawnThumb;
   try {
+    const ytOwnKnob = knob('ytown');
+    const yt = ytOwnKnob ? ytOwn(ytOwnKnob) : null;
     if (ownState) localStorage.setItem(OWN_KEY, ownStore(ownState === 'edit'));
+    else if (yt) localStorage.setItem(OWN_KEY, yt.store);
     else localStorage.removeItem(OWN_KEY);
     if (ownState) localStorage.setItem(SAVED_KEY, JSON.stringify(OWN_SAVED));
+    else if (yt) localStorage.setItem(SAVED_KEY, JSON.stringify([...yt.saved, ...THREE]));
     else if (list === 'none') localStorage.removeItem(SAVED_KEY);
     else localStorage.setItem(SAVED_KEY, JSON.stringify(list === 'many' ? many() : list === 'default' ? DEFAULTS : knob('wpins') === 'long' ? LONG_THREE : THREE));
     const pins = knob('wpins');

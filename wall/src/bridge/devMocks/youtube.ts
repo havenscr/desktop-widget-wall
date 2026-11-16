@@ -16,7 +16,8 @@ import { useWatchStore } from '../../unwind/watch/store';
  * videos, a playlist of 41 with one row of each greyed kind), `few` (two playlists, three liked), `empty`,
  * `slow` (never answers), `down`, `busy`, `again` (sign in again), `gone` (the playlist read answers
  * not found), `low` (12 searches left), `spent` (none left), `long` (very long names, a list of 2000).
- * Names are invented; pictures are drawn motifs, never an address.
+ * `ytscroll=<px>` scrolls every list of rows to that many pixels once it has more rows than it shows (a still of the menu on a
+ * row near the foot of the list). Names are invented; pictures are drawn motifs, never an address.
  * `ytdetails=` picks own-playlist details: `ok` (default), `none`, `down` or `slow`.
  *
  * `ytplay=` (with `youtube=in` and the mock frame, `watch=mock`: it never loads a real player, and without it nothing
@@ -152,6 +153,17 @@ export function registerYoutubeMocks(): void {
     waitingNative = false;
   });
   mocks.set('wall2_youtube_sign_out', () => { signedIn = false; });
+  const scrolled = Number(new URLSearchParams(window.location.search).get('ytscroll'));
+  if (scrolled > 0) {
+    const seen = new WeakSet<Element>();
+    new MutationObserver(() => {
+      for (const el of document.querySelectorAll('.yt-rowscroll')) {
+        if (seen.has(el) || !el.querySelector('.yt-row') || el.scrollHeight - el.clientHeight < scrolled) continue;
+        seen.add(el);
+        el.scrollTop = scrolled;
+      }
+    }).observe(document.documentElement, { childList: true, subtree: true });
+  }
   const play = new URLSearchParams(window.location.search).get('ytplay');
   if (play && new URLSearchParams(window.location.search).get('watch') === 'mock') setTimeout(() => startPlayMock(play), 700);
 
