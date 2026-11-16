@@ -213,7 +213,7 @@ export default {
     measurements: { moods: measureMoods },
     rules: { moods: rule },
     breaks: {
-      'moods-left': { css: '.u-office-slot { max-width: none !important; }', expect: /^ *FAIL officemoods: the row starts at x /m, appliesTo: on('twelve') },
+      'moods-left': { css: '.u-office-slot { max-width: none !important; } .u-mood-name { max-width: none !important; }', expect: /^ *FAIL officemoods: the row starts at x /m, appliesTo: on('twelve') },
       'moods-line': { css: '.u-office-line { right: 780px !important; }', expect: /^ *FAIL officemoods: the line ends at x /m, appliesTo: on('tall') },
       'moods-small': { css: '.u-mood { height: 30px !important; }', expect: /^ *FAIL officemoods: chip ".*" is [\d.]+ px tall/m, appliesTo: on('six') },
       'moods-text': { css: '.u-mood { font-size: 14px !important; }', expect: /^ *FAIL officemoods: text under 16 px/m, appliesTo: on('six') },
