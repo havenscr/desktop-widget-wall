@@ -800,17 +800,17 @@ describe('quiet and silent cases', () => {
   });
 
   describe('meetings keep her quiet', () => {
-    const meeting = (ms: number) => ({
+    const meeting = (ms: number, canJoin = true) => ({
       key: 'k',
       accountId: 'a',
       title: 'Planning',
       start: new Date(ms - 10 * 60_000).toISOString(),
       end: new Date(ms + 30 * 60_000).toISOString(),
-      canJoin: false,
+      canJoin,
     });
-    const withMeeting = (ms: number) =>
+    const withMeeting = (ms: number, canJoin = true) =>
       invokeMock.mockImplementation(((cmd: string) =>
-        cmd === 'wall2_meet_next' ? Promise.resolve({ accounts: [], meetings: [meeting(ms)] }) : defaultInvoke(cmd)) as never);
+        cmd === 'wall2_meet_next' ? Promise.resolve({ accounts: [], meetings: [meeting(ms, canJoin)] }) : defaultInvoke(cmd)) as never);
     const flush = () => act(async () => void (await Promise.resolve()));
     const pet = (c: HTMLElement) => fireEvent.click(c.querySelector('.watt-hit')!);
 
@@ -844,6 +844,160 @@ describe('quiet and silent cases', () => {
       ms += 10_000;
       pet(container);
       expect(container.querySelector('.watt-bubble')).not.toBeNull();
+    });
+
+    describe('he does not wander on his own while a call or a joinable meeting runs', () => {
+      afterEach(() => useSignalStore.setState({ known: false, recording: false, call: null }));
+      const minutes = (container: HTMLElement, ms0: number, n: number) => {
+        let ms = ms0;
+        const xs = new Set<number>([where(container).x]);
+        for (let i = 0; i < n * 6; i++) {
+          ms += 10_000;
+          runFor(10);
+          xs.add(where(container).x);
+        }
+        return { xs, ms };
+      };
+      it('control: with nothing on he wanders', async () => {
+        const ms = day();
+        withMeeting(ms, false);
+        let now = ms;
+        const { container } = render(<Watt now={() => now} />);
+        await flush();
+        runFor(FADE_IN_S + 0.5);
+        const { xs } = minutes(container, now, 5);
+        expect(xs.size).toBeGreaterThan(1);
+      }, 20_000);
+      it('a joinable meeting in progress: his position does not change in five minutes', async () => {
+        const ms = day();
+        withMeeting(ms, true);
+        const { container } = render(<Watt now={() => ms} />);
+        await flush();
+        runFor(FADE_IN_S + 0.5);
+        const { xs } = minutes(container, ms, 5);
+        expect(xs.size).toBe(1);
+      }, 20_000);
+      it('a call the wall knows of (no inCall prop): his position does not change in five minutes', async () => {
+        const ms = day();
+        withMeeting(ms, false);
+        const { container } = render(<Watt now={() => ms} />);
+        await flush();
+        runFor(FADE_IN_S + 0.5);
+        act(() => useSignalStore.setState({ call: { kind: 'teams', since: ms, camera: false } }));
+        runFor(0.5);
+        const { xs } = minutes(container, ms, 5);
+        expect(xs.size).toBe(1);
+      }, 20_000);
+    });
+
+    describe('the menu and a calendar entry', () => {
+      const items = ['Hop', 'Spin', 'Nap', 'Come here', 'Stay', 'Read with me'];
+      const btn = (name: string) => [...document.querySelectorAll<HTMLButtonElement>('.watt-menu button')].find((b) => b.textContent?.startsWith(name))!;
+      const disabled = (b: HTMLElement) => b.getAttribute('aria-disabled') === 'true';
+      const openMenu = async (ms: number, canJoin: boolean) => {
+        withMeeting(ms, canJoin);
+        const r = render(<Watt now={() => ms} />);
+        await flush();
+        runFor(1.5);
+        fireEvent.contextMenu(r.container.querySelector<HTMLElement>('.watt-hit')!);
+        return r;
+      };
+      afterEach(() => useSignalStore.setState({ known: false, recording: false, call: null }));
+
+      it('a plain calendar block in progress leaves her free to speak and every item enabled', async () => {
+        const ms = day();
+        const { container } = await openMenu(ms, false);
+        for (const t of items) expect(disabled(btn(t)), t).toBe(false);
+        expect(container.querySelector('.wm-why')).toBeNull();
+        fireEvent.keyDown(window, { key: 'Escape' });
+        fireEvent.click(container.querySelector('.watt-hit')!);
+        expect(container.querySelector('.watt-bubble')).not.toBeNull();
+      });
+
+      const hops = (container: HTMLElement) => {
+        const y0 = where(container).feet;
+        let lifted = false;
+        for (let i = 0; i < 20; i++) {
+          tick();
+          if (where(container).feet < y0 - 0.5) lifted = true;
+        }
+        return lifted;
+      };
+
+      it('a joinable meeting in progress keeps her from speaking on her own but the Hop he is asked for still runs', async () => {
+        const ms = day();
+        const { container } = await openMenu(ms, true);
+        for (const t of items) expect(disabled(btn(t)), t).toBe(false);
+        expect(container.querySelector('.wm-why')).toBeNull();
+        fireEvent.click(btn('Hop'));
+        expect(hops(container)).toBe(true);
+        runFor(1);
+        expect(container.querySelector('.watt-bubble')).toBeNull();
+      });
+
+      it('control: with no meeting the same Hop runs and he is free to speak when petted', async () => {
+        const ms = day();
+        const { container } = await openMenu(ms, false);
+        fireEvent.click(btn('Hop'));
+        expect(hops(container)).toBe(true);
+        runFor(1);
+        fireEvent.click(container.querySelector('.watt-hit')!);
+        expect(container.querySelector('.watt-bubble')).not.toBeNull();
+      });
+
+      describe('a plain block that overlaps an online meeting', () => {
+        const at = (ms: number, a: number, b: number) => ({ start: new Date(ms + a * 60_000).toISOString(), end: new Date(ms + b * 60_000).toISOString() });
+        const feed = (ms: number, join: [number, number]) =>
+          invokeMock.mockImplementation(((cmd: string) =>
+            cmd === 'wall2_meet_next'
+              ? Promise.resolve({
+                  accounts: [],
+                  meetings: [
+                    { key: 'plain', accountId: 'a', title: 'Focus block', ...at(ms, -60, 60), canJoin: false },
+                    { key: 'online', accountId: 'a', title: 'Sync', ...at(ms, join[0], join[1]), canJoin: true },
+                  ],
+                })
+              : defaultInvoke(cmd)) as never);
+        it('inside both: he is quiet on his own, does not wander, and every menu item is enabled', async () => {
+          const ms = day();
+          feed(ms, [-10, 20]);
+          const { container } = render(<Watt now={() => ms} />);
+          await flush();
+          runFor(FADE_IN_S + 0.5);
+          const x = where(container).x;
+          for (let i = 0; i < 12; i++) runFor(10);
+          expect(where(container).x).toBe(x);
+          fireEvent.click(container.querySelector('.watt-hit')!);
+          expect(container.querySelector('.watt-bubble')).toBeNull();
+          fireEvent.contextMenu(container.querySelector('.watt-hit')!);
+          for (const t of items) expect(disabled(btn(t)), t).toBe(false);
+          expect(container.querySelector('.wm-why')).toBeNull();
+        }, 20_000);
+        it('a joinable meeting about to start while the plain block runs gets the meeting-soon look', async () => {
+          const ms = day();
+          feed(ms, [3, 33]);
+          const { container } = render(<Watt now={() => ms} />);
+          await flush();
+          runFor(FADE_IN_S + 2);
+          expect(LINES.meetingSoon).toContain(container.querySelector('.watt-bubble')?.textContent ?? '');
+        });
+      });
+
+      it('a call the wall knows of refuses the menu with its own line', async () => {
+        const ms = day();
+        act(() => useSignalStore.setState({ call: { kind: 'teams', since: ms, camera: false } }));
+        const { container } = await openMenu(ms, false);
+        for (const t of items.filter((x) => x !== 'Read with me')) expect(disabled(btn(t)), t).toBe(true);
+        expect(container.querySelector('.wm-why')!.textContent).toBe('Not during a call.');
+      });
+
+      it('being on air refuses the menu with its own line', async () => {
+        const ms = day();
+        act(() => useSignalStore.setState({ known: true, recording: true }));
+        const { container } = await openMenu(ms, false);
+        for (const t of items.filter((x) => x !== 'Read with me')) expect(disabled(btn(t)), t).toBe(true);
+        expect(container.querySelector('.wm-why')!.textContent).toBe('Not while on air.');
+      });
     });
   });
 
@@ -1345,18 +1499,28 @@ describe('carrying him', () => {
         document.dispatchEvent(new Event('visibilitychange'));
       }],
       ['a call starting', (_c, r) => r.rerender(<Watt now={day} inCall />)],
+      ['the wall learning of a call', () => act(() => useSignalStore.setState({ call: { kind: 'teams', since: day(), camera: false } }))],
+      ['a meeting with a join link starting', () => {
+        const ms = day();
+        const j = { key: 'j', accountId: 'a', title: 'Sync', start: new Date(ms - 60_000).toISOString(), end: new Date(ms + 30 * 60_000).toISOString(), canJoin: true };
+        act(() => useMeetingFeed.setState({ meetings: [j] as never, failed: false, feedStale: false, reads: 99 }));
+      }],
       ['the display going idle', (_c, r) => {
         idleState.on = true;
         r.rerender(<Watt now={day} />);
       }],
     ];
+    afterEach(() => {
+      useSignalStore.setState({ call: null });
+      resetMeetingFeed();
+    });
     for (const [name, trigger] of interruptions) {
-      it(name, () => {
+      it(name, async () => {
         const r = start();
         const { container } = r;
         carryAway(container, 450, 80);
         expect(carried(container)).toBe(true);
-        trigger(container, r);
+        await trigger(container, r);
         Object.defineProperty(document, 'hidden', { configurable: true, value: false });
         tick();
         expect(carried(container), name).toBe(false);

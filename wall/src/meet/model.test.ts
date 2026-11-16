@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { accountWords, calendarNotAvailable, countdownText, isSoon, laterMeetings, nextMeeting, reasonLine, reasonText, signInMessage, statusWord, type Meeting } from './model';
+import { accountWords, calendarNotAvailable, countdownText, isSoon, laterMeetings, nextJoinable, nextMeeting, reasonLine, reasonText, signInMessage, statusWord, type Meeting } from './model';
 
 const NOW = Date.parse('2026-11-12T17:00:00Z');
 const at = (mins: number) => new Date(NOW + mins * 60_000).toISOString().replace('.000Z', 'Z');
@@ -219,4 +219,13 @@ it('visibleMeetings drops the meetings of an account that is signed out or needs
   };
   expect(visibleMeetings(data).map((x) => x.accountId)).toEqual(['a', 'c']);
   expect(visibleMeetings(null)).toEqual([]);
+});
+
+describe('nextJoinable', () => {
+  it('skips a plain block that overlaps an online meeting, and a finished online one', () => {
+    const online = (key: string, a: number, b: number): Meeting => ({ ...meeting(key, a, b), canJoin: true });
+    const list = [online('done', -90, -60), meeting('plain', -30, 90), online('sync', -10, 20)];
+    expect(nextJoinable(list, NOW)?.key).toBe('sync');
+    expect(nextJoinable([meeting('plain', -30, 90)], NOW)).toBeUndefined();
+  });
 });
