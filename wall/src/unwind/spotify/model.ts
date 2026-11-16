@@ -37,7 +37,12 @@ export function resetListenSource(): void {
 }
 
 /** What went wrong with a Spotify call, from the bridge's error text. */
-export type SpotifyProblem = 'notsetup' | 'needsSignIn' | 'busy' | 'starting' | 'choose' | 'restricted' | 'devicegone' | 'nodevice' | 'notYours' | 'gone' | 'connection' | 'refused' | 'down' | `server:${number}` | `status:${number}` | 'failed';
+export type SpotifyProblem = 'notsetup' | 'needsSignIn' | 'busy' | 'starting' | 'choose' | 'restricted' | 'devicegone' | 'nodevice' | 'notYours' | 'gone' | 'connection' | 'refused' | 'refusedScope' | 'refusedNotAllowedUser' | 'refusedPremium' | 'refusedMarket' | 'refusedBadRequest' | 'down' | `server:${number}` | `status:${number}` | 'failed';
+
+/** Retry only calls whose answer can change without a separate account or availability change. */
+export function spotifyRetryable(problem: SpotifyProblem): boolean {
+  return !['refusedScope', 'refusedNotAllowedUser', 'refusedPremium', 'refusedMarket', 'notYours'].includes(problem);
+}
 
 export function spotifyProblem(e: unknown): SpotifyProblem {
   const text = (e instanceof Error ? e.message : typeof e === 'string' ? e : '').toLowerCase();
@@ -52,6 +57,11 @@ export function spotifyProblem(e: unknown): SpotifyProblem {
   if (text.includes('not yours')) return 'notYours';
   if (text.includes('no longer offered')) return 'gone';
   if (text.includes('no connection')) return 'connection';
+  if (text.includes('refused-scope')) return 'refusedScope';
+  if (text.includes('refused-not-allowed-user')) return 'refusedNotAllowedUser';
+  if (text.includes('refused-premium')) return 'refusedPremium';
+  if (text.includes('refused-market')) return 'refusedMarket';
+  if (text.includes('refused-bad-request')) return 'refusedBadRequest';
   if (text.includes('refused')) return 'refused';
   if (text.includes('down')) return 'down';
   const server = text.match(/server-(\d{3})/);
@@ -183,7 +193,16 @@ export function problemLine(p: SpotifyProblem): string {
     case 'connection':
       return 'No connection to Spotify.';
     case 'refused':
+    case 'refusedBadRequest':
       return 'Spotify refused this list.';
+    case 'refusedScope':
+      return "Spotify says the wall's sign-in lacks a permission for this. Sign out of Spotify in Tools and sign in again.";
+    case 'refusedNotAllowedUser':
+      return "Spotify says this account is not on the app's user list. Add it in Spotify's developer dashboard under User management.";
+    case 'refusedPremium':
+      return 'Spotify says this needs a Premium account.';
+    case 'refusedMarket':
+      return 'Spotify says this is not available in your country.';
     case 'down':
       return 'Spotify is not answering right now.';
     default:

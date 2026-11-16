@@ -82,7 +82,7 @@ Library items include bounded subtitles, counts and cover images selected near 3
 Track lists use 50 items per page and stop at page 39. Queue reads return at
 most 20 upcoming tracks (Up next still shows 3). Playback reads return no value when Spotify has no active
 session. The seek command (`wall2_spotify_seek`) takes a position in milliseconds, at most 24 hours, and returns the module's fixed words on failure. The YouTube Music action opens the fixed `https://music.youtube.com/` address.
-Track-producing reads send `market=from_token`. A track is unplayable only when
+Search sends no market value, so the signed-in user's country takes priority. Other track-producing reads send `market=from_token`. When Spotify refuses a read, the wall shows a fixed explanation when the answer identifies a permission, user-list, Premium or country restriction. The service's message text is never displayed or logged. A track is unplayable only when
 `is_playable` is present and false, it is restricted or local, or the item is not a
 track; a missing `is_playable` means playable. An unplayable row reaches the web view
 with `playable: false` and `id: null`. Profile, devices and playback state answers are

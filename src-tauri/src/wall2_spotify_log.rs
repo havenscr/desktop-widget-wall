@@ -14,9 +14,9 @@ impl Event {
 }
 
 #[derive(Clone, Copy)]
-pub enum Reason { None, Busy, Down, Failed, SignInAgain, NoDevice, PortBusy, Missing, Changed, TooBig }
+pub enum Reason { None, Busy, Down, Failed, SignInAgain, NoDevice, PortBusy, Missing, Changed, TooBig, Scope, NotAllowedUser, Premium, Market, BadRequest, Other }
 impl Reason {
-    fn word(self) -> &'static str { match self { Self::None => "none", Self::Busy => "busy", Self::Down => "down", Self::Failed => "failed", Self::SignInAgain => "sign-in-again", Self::NoDevice => "no-device", Self::PortBusy => "port-busy", Self::Missing => "missing", Self::Changed => "changed", Self::TooBig => "too-big" } }
+    fn word(self) -> &'static str { match self { Self::None => "none", Self::Busy => "busy", Self::Down => "down", Self::Failed => "failed", Self::SignInAgain => "sign-in-again", Self::NoDevice => "no-device", Self::PortBusy => "port-busy", Self::Missing => "missing", Self::Changed => "changed", Self::TooBig => "too-big", Self::Scope => "scope", Self::NotAllowedUser => "not-allowed-user", Self::Premium => "premium", Self::Market => "market", Self::BadRequest => "bad-request", Self::Other => "other" } }
 }
 
 pub fn line(event: Event, reason: Reason, status: u16, elapsed_ms: u128) -> String {
@@ -66,8 +66,11 @@ mod tests {
         }
         assert_eq!(line(Event::PageRead, Reason::None, 200, 80), "page-read none 200 80\n");
         assert_eq!(line(Event::PageFailed, Reason::TooBig, 200, 5), "page-failed too-big 200 5\n");
-        for reason in [Reason::Missing, Reason::Changed, Reason::TooBig, Reason::Busy, Reason::Down] {
+        for reason in [Reason::Missing, Reason::Changed, Reason::TooBig, Reason::Busy, Reason::Down, Reason::Scope, Reason::NotAllowedUser, Reason::Premium, Reason::Market, Reason::BadRequest, Reason::Other] {
             assert!(line(Event::PageFailed, reason, 0, 1).bytes().all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || matches!(b, b'-' | b' ' | b'\n')));
+        }
+        for (reason, word) in [(Reason::Scope, "scope"), (Reason::NotAllowedUser, "not-allowed-user"), (Reason::Premium, "premium"), (Reason::Market, "market"), (Reason::BadRequest, "bad-request"), (Reason::Other, "other")] {
+            assert_eq!(line(Event::ApiFailed, reason, 403, 1), format!("api-failed {word} 403 1\n"));
         }
         assert_eq!(device_line(4, 1, 2, 1), "no-device 4 1 2 1\n");
     }
