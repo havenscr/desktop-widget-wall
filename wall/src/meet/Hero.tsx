@@ -10,6 +10,7 @@ import { useLibGroups } from '../work/keyLibrary';
 import { keyboardOnMouseKey, useKeyPress } from '../work/keyPress';
 import { allKeys, type LibGroup } from '../work/libraryModel';
 import { useBrief } from '../work/useBrief';
+import { LightsChip } from '../studio/LightsChip';
 import { HeroChip, TroubleLine } from './parts';
 import {
   BROWSER_KEYS,
@@ -228,6 +229,7 @@ export function Hero({ m, meeting, label, events }: { m: MeetState; meeting: Mee
       <div className="meet-hero-last">
         {/* The recording chip stays while a key press line shows; the line sits beside it. */}
         <HeroChip />
+        {call && <LightsChip where="meet" />}
         {brief ? (
           <span className="meet-brief" role="status" {...tip(brief)}>
             {brief}

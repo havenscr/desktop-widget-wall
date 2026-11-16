@@ -203,7 +203,7 @@ function Row({ side, saved, editing, setEditing, onChanged }: { side: Side; save
 
 /** Key lights: the two lights' addresses, typed once and kept on this PC. Nothing here ever shows an address. */
 export function KeyLights({ ringed = false }: { ringed?: boolean }) {
-  const status = useKeyLights((s) => s.status);
+  const status = useKeyLights((s) => s.saved ?? s.status);
   useEffect(() => {
     void useKeyLights.getState().refresh();
   }, []);
