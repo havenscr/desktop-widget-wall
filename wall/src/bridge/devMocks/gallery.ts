@@ -22,6 +22,7 @@ import { MOCK_DETAILS } from './meet';
  *   ?box=max|stale|none|down   (machine numbers; `?pc=down` for the PC side)
  *   ?usage=high|none          (the two usage meters)
  *   ?weather=ok|stale|down|cold|dns|refused|second   (stands in for the native weather read)
+ *   ?reduced=1               (the page reads prefers-reduced-motion as set; the gallery otherwise always emulates no preference)
  *   ?weather=rain|heavy|rainwind|wind|heavywind   (rain, heavy rain, rain with wind, dry wind, heavy rain with wind: weather code and wind in both sources)
  *   ?clock=review           (Date.now starts at the `?at=` moment and then runs, so screens that read it agree)
  *   ?focus=long               (a focus session running under a long title)
@@ -256,6 +257,15 @@ function usage(mode: string): void {
   });
 }
 
+/** The page reads the reduced motion preference as set (before the first render reads it). */
+function reducedMotion(): void {
+  const real = window.matchMedia.bind(window);
+  window.matchMedia = (query: string): MediaQueryList => {
+    if (!query.includes('prefers-reduced-motion')) return real(query);
+    return { matches: true, media: query, onchange: null, addEventListener() {}, removeEventListener() {}, addListener() {}, removeListener() {}, dispatchEvent: () => false };
+  };
+}
+
 /**
  * Stand in for the native weather read (`wall2_weather`), so no state ever depends on the network.
  * `stale`: answers are good until, shortly after the first one lands, the clock jumps 45 minutes,
@@ -344,6 +354,7 @@ export function registerGalleryMocks(): void {
   if (knob('day') === 'empty') emptyDay();
   const w = knob('weather');
   if (w) weather(w);
+  if (knob('reduced') === '1') reducedMotion();
   if (knob('focus') === 'done') setTimeout(() => useFocusStore.setState({ state: { status: 'finished', minutes: 25 } }), 400);
   if (knob('focus') === 'run') setTimeout(() => useFocusStore.getState().startLabeled('Review the draft'), 400);
   if (knob('focus') === 'long') setTimeout(() => useFocusStore.getState().startLabeled(LONG_FOCUS), 400);

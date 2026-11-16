@@ -107,13 +107,19 @@ function VideoLook() {
   );
 }
 
-/** The switch for rain and wind from the forecast on the mountains and on Watt (on by default; kept across restarts). */
+/**
+ * The switch for rain and wind from the forecast on the mountains and on Watt (on by default; kept across restarts).
+ * It sits in the drawer's top row, between the title and the close button: the columns below are full in their worst
+ * case (the drawer is 700 px tall at most), so a block among them would push the drawer past the wall.
+ */
 function SceneWeather() {
   const on = useSceneWeather((s) => s.on);
   const setOn = useSceneWeather((s) => s.setOn);
   return (
     <div className="tools-weather">
-      <div className="tools-k sm">Weather in the scene</div>
+      <span className="tools-k sm" {...hover('Rain and wind from your forecast, on the mountains and on Watt. Off under reduced motion.')}>
+        Weather in the scene
+      </span>
       <div className="tools-chips">
         <button type="button" className={on ? 'tools-chip on' : 'tools-chip'} aria-pressed={on} {...hover('Show rain and wind from the forecast on the mountains and on Watt')} onClick={() => setOn(true)}>
           On
@@ -122,7 +128,7 @@ function SceneWeather() {
           Off
         </button>
       </div>
-      <div className="tools-hint">Rain and wind from your forecast, on the mountains and on Watt. Off under reduced motion.</div>
+      <span className="tools-hint">Rain and wind from your forecast.</span>
     </div>
   );
 }
@@ -279,6 +285,7 @@ function Drawer() {
     <section ref={ref} className="tools-drawer" aria-label="Tools" onPointerEnter={() => clearTimeout(idle.current)} onPointerLeave={startIdle}>
       <div className="tools-top">
         <span className="tools-k tx">Tools</span>
+        <SceneWeather />
         <button type="button" className="tools-x" aria-label="Close Tools" onClick={close}>
           <IconX size={18} aria-hidden="true" />
         </button>
@@ -290,7 +297,6 @@ function Drawer() {
             <Accounts />
           </div>
           <VideoLook />
-          <SceneWeather />
           <KeysFile />
         </div>
         <div className="kl-stack">

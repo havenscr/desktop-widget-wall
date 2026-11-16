@@ -436,7 +436,7 @@ it('unmounting the drawer during a waiting sign-in cancels it (calendar)', async
   expect(cancel).toHaveBeenCalled();
 });
 
-it('Weather in the scene: two chips after Video look, on by default, each stores the choice, shows pressed and carries its tip and the hint', async () => {
+it('Weather in the scene: two chips in the top row, on by default, each stores the choice, shows pressed and carries its tip, the heading its explanation, and the hint is one short line', async () => {
   localStorage.removeItem(SCENE_WEATHER_KEY);
   useSceneWeather.setState({ on: true });
   render(
@@ -449,26 +449,30 @@ it('Weather in the scene: two chips after Video look, on by default, each stores
   await flush();
   const drawer = screen.getByLabelText('Tools');
   const block = drawer.querySelector('.tools-weather')!;
-  expect(block.previousElementSibling?.textContent).toContain('Video look');
-  expect(block.nextElementSibling?.textContent).toContain('Keys file');
+  expect(block.parentElement?.classList.contains('tools-top')).toBe(true);
+  expect(block.previousElementSibling?.textContent).toBe('Tools');
+  expect(block.nextElementSibling?.getAttribute('aria-label')).toBe('Close Tools');
   expect(block.querySelector('.tools-k.sm')?.textContent).toBe('Weather in the scene');
-  expect(block.querySelector('.tools-hint')?.textContent).toBe('Rain and wind from your forecast, on the mountains and on Watt. Off under reduced motion.');
+  expect(block.querySelector('.tools-hint')?.textContent).toBe('Rain and wind from your forecast.');
   const on = screen.getByRole('button', { name: 'On' });
   const off = screen.getByRole('button', { name: 'Off' });
   expect(on.getAttribute('aria-pressed')).toBe('true');
   expect(off.getAttribute('aria-pressed')).toBe('false');
-  fireEvent.mouseEnter(off);
-  await flush(300);
-  expect(document.querySelector('.hover-tip')?.textContent).toBe('Keep the scene and Watt as on a dry day');
-  fireEvent.mouseLeave(off);
+  const tip = async (el: Element) => {
+    fireEvent.mouseEnter(el);
+    await flush(300);
+    const text = document.querySelector('.hover-tip')?.textContent;
+    fireEvent.mouseLeave(el);
+    return text;
+  };
+  expect(await tip(block.querySelector('.tools-k.sm')!)).toBe('Rain and wind from your forecast, on the mountains and on Watt. Off under reduced motion.');
+  expect(await tip(off)).toBe('Keep the scene and Watt as on a dry day');
   fireEvent.click(off);
   expect(useSceneWeather.getState().on).toBe(false);
   expect(localStorage.getItem(SCENE_WEATHER_KEY)).toBe('{"on":false}');
   expect(off.getAttribute('aria-pressed')).toBe('true');
   expect(on.getAttribute('aria-pressed')).toBe('false');
-  fireEvent.mouseEnter(on);
-  await flush(300);
-  expect(document.querySelector('.hover-tip')?.textContent).toBe('Show rain and wind from the forecast on the mountains and on Watt');
+  expect(await tip(on)).toBe('Show rain and wind from the forecast on the mountains and on Watt');
   fireEvent.click(on);
   expect(localStorage.getItem(SCENE_WEATHER_KEY)).toBe('{"on":true}');
   expect(on.getAttribute('aria-pressed')).toBe('true');
