@@ -60,42 +60,164 @@
   gap: 22px;
   width: 470px;
 }
-/* The status line along the bottom; it may run past the wing. Its action parts are quiet
-   chips (amber for what needs the owner), the rest plain text. */
+/* The status line along the bottom as quiet marks: a capsule (the "work is put away" mark, one soft dot
+   per running agent, the network alerts as a shield and a count) and, when something needs the owner, a
+   separate amber pill 10 px to its right. It may run past the wing. Nothing blinks: a dot or the pill fades
+   in once over 400 ms and holds (opacity only; under reduced motion it just appears). Resting words are
+   #a39bc6 (7.5 to 1 on the night floor; --faint measures about 4.7). */
 .u-line {
+  display: flex;
+  align-items: center;
+  gap: 10px;
   width: max-content;
+  height: 36px;
   font-size: 19px;
   line-height: 36px;
-  color: var(--faint);
+  color: #a39bc6;
   white-space: nowrap;
 }
-.u-act {
-  display: inline-block;
-  height: 34px;
-  padding: 0 12px;
-  border-radius: 17px;
+.u-line svg {
+  flex: none;
+  display: block;
+}
+.u-cap {
+  position: relative;
+  display: flex;
+  align-items: center;
+  height: 36px;
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.045);
+}
+/* The ring is drawn over the buttons so a hovered button never covers it. */
+.u-cap::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  box-shadow: inset 0 0 0 1px var(--line);
+  pointer-events: none;
+}
+.u-cap button {
+  position: relative;
+  display: flex;
+  align-items: center;
+  height: 36px;
   font: inherit;
-  line-height: 32px;
-  color: var(--dim);
-  background: rgba(255, 255, 255, 0.06);
-  border: 1px solid var(--line);
+  line-height: 36px;
+  color: inherit;
+  background: transparent;
+  border: 0;
   cursor: pointer;
 }
-.u-act:hover {
+.u-cap button:hover {
   color: var(--tx);
   background: rgba(255, 255, 255, 0.1);
 }
-.u-act.amber {
+.u-cap-work {
+  gap: 12px;
+  padding: 0 12px;
+  border-radius: 18px;
+}
+.u-cap.has-net .u-cap-work {
+  border-radius: 18px 0 0 18px;
+}
+.u-mark.focus {
+  color: var(--cyan);
+}
+.u-dots {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.u-cap:not(.has-net) .u-dots {
+  margin-right: 3px;
+}
+.u-dot {
+  flex: none;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--cyan);
+  opacity: 0.8;
+  box-shadow: 0 0 10px -1px rgba(53, 230, 234, 0.65);
+  animation: u-mark-in 400ms ease-out;
+}
+.u-dot.amber {
+  background: var(--amber);
+  opacity: 1;
+  box-shadow: 0 0 10px -1px rgba(255, 194, 77, 0.6);
+}
+/* The helper has no fresh answer: one hollow grey ring in place of the dots, never an all-clear. */
+.u-ring {
+  flex: none;
+  width: 10px;
+  height: 10px;
+  box-sizing: border-box;
+  border-radius: 50%;
+  border: 1.5px solid #7f779f;
+  animation: u-mark-in 400ms ease-out;
+}
+.u-more {
+  font: 600 16px/1 var(--disp);
+  color: var(--dim);
+}
+.u-cap .u-cap-net {
+  gap: 6px;
+  padding: 0 15px 0 13px;
+  border-radius: 0 18px 18px 0;
+  font: 600 17px/36px var(--disp);
+  color: var(--amber);
+}
+.u-cap-net::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 9px;
+  width: 1px;
+  height: 18px;
+  background: var(--line);
+}
+.u-cap .u-cap-net:hover {
+  color: var(--amber);
+}
+.u-need {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  height: 36px;
+  padding: 0 15px 0 13px;
+  border: 0;
+  border-radius: 18px;
+  font: inherit;
+  line-height: 36px;
   color: var(--amber);
   background: rgba(255, 194, 77, 0.1);
-  border-color: rgba(255, 194, 77, 0.35);
+  box-shadow: inset 0 0 0 1px rgba(255, 194, 77, 0.35);
+  cursor: pointer;
+  animation: u-mark-in 400ms ease-out;
 }
-.u-act.amber:hover {
+.u-need:hover {
   background: rgba(255, 194, 77, 0.18);
 }
-.u-act:focus-visible {
+.u-need .u-dot {
+  animation: none;
+}
+.u-cap button:focus-visible,
+.u-need:focus-visible {
   outline: 3px solid var(--cyan);
   outline-offset: 2px;
+}
+@keyframes u-mark-in {
+  from {
+    opacity: 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .u-dot,
+  .u-ring,
+  .u-need {
+    animation: none;
+  }
 }
 /* Screens off: an icon alone in the lower right corner, quiet until hovered. */
 .u-corner {
@@ -494,11 +616,7 @@
   color: var(--faint);
 }
 
-/* Mouse chips: the status line's action parts are 32 px; Room's "More" chip is quiet. */
-.u-act {
-  height: 32px;
-  line-height: 30px;
-}
+/* Room's "More" chip is quiet. */
 .u-chip.u-more {
   background: transparent;
   border: 1px solid var(--line);

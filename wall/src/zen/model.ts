@@ -158,11 +158,18 @@ export const DREAM_DIM = 0.35;
  * is on (null when the home feed does not say). Empty string when there is nothing to say.
  */
 export function dreamStatusText(working: number | null, needs: number | null, mood: string | null): string {
-  const parts: string[] = [];
-  if (working !== null && working > 0) parts.push(working === 1 ? '1 agent still working' : `${working} agents still working`);
-  if (needs !== null) parts.push(needs === 0 ? 'No agent needs you' : needs === 1 ? 'An agent needs you' : `${needs} agents need you`);
-  if (mood) parts.push(`Lights: ${mood}`);
-  return parts.join(' · ');
+  return dreamStatusParts(working, needs, mood)
+    .map((p) => p.text)
+    .join(' · ');
+}
+
+/** The same parts as `dreamStatusText`, each marked: `needs` is the part that says an agent needs the owner (drawn amber). */
+export function dreamStatusParts(working: number | null, needs: number | null, mood: string | null): { text: string; needs: boolean }[] {
+  const parts: { text: string; needs: boolean }[] = [];
+  if (working !== null && working > 0) parts.push({ text: working === 1 ? '1 agent still working' : `${working} agents still working`, needs: false });
+  if (needs !== null) parts.push({ text: needs === 0 ? 'No agent needs you' : needs === 1 ? 'An agent needs you' : `${needs} agents need you`, needs: needs > 0 });
+  if (mood) parts.push({ text: `Lights: ${mood}`, needs: false });
+  return parts;
 }
 
 /** Dream's text layer drifts along a closed ellipse 30 px wide and 20 px tall, once round in this long. */

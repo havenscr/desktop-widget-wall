@@ -9,6 +9,7 @@ import { usePlaceStore } from '../state/places';
 import { useFocusStore } from '../focus/store';
 import { resetLastPlayed, useLastPlayed } from './lastPlayed';
 import { LAST_MOOD_AT_KEY, ROOM_RETRY_MS, RoomCard } from './RoomCard';
+import { drawnLine } from './statusTestUtil';
 import { Tabs } from './Tabs';
 import { Tomorrow } from './Tomorrow';
 import { useAppVolume, VOLUME_DEBOUNCE_MS } from './Volume';
@@ -408,14 +409,13 @@ it('says "Open Spotify to play again" when the last track has no media session',
   expect((screen.getByLabelText('Play') as HTMLButtonElement).disabled).toBe(true);
 });
 
-it('drops the agent sentences when the helper says its data is stale', async () => {
+it('draws the grey ring, not the agents, when the helper says its data is stale', async () => {
   useFocusStore.setState({ loaded: true });
   mocks.set('get_now_playing', () => ({ playback_status: 'stopped' }));
   mocks.set('wall2_omni_summary', () => ({ stale: true, lanes: [{ state: 'working' }], yourMove: { total: 0 } }));
   render(<Unwind />);
   await flush();
-  expect(document.querySelector('.u-line')!.textContent).toBe('Work is put away.');
-  expect(document.querySelector('.u-act')).toBeNull();
+  expect(drawnLine()).toEqual({ mark: 'put-away', dots: 0, more: null, ring: true, net: null, pill: null });
 });
 
 it('says nothing about work before the focus store has loaded', async () => {
@@ -424,7 +424,7 @@ it('says nothing about work before the focus store has loaded', async () => {
   mocks.set('wall2_omni_summary', () => ({ lanes: [{ state: 'working' }], yourMove: { total: 0 } }));
   render(<Unwind />);
   await flush();
-  expect(document.querySelector('.u-line')!.textContent).toBe('1 agent still running. No agent needs you.');
+  expect(drawnLine()).toMatchObject({ dots: 1, ring: false, pill: null });
   expect(screen.queryByText(/Work is put away/)).toBeNull();
 });
 
@@ -434,7 +434,7 @@ it('lays out the status line, Hide screen and the tabs', async () => {
   mocks.set('wall2_omni_summary', () => ({ lanes: [{ state: 'working' }, { state: 'working' }, { state: 'review' }], yourMove: { total: 0 } }));
   render(<Unwind />);
   await flush();
-  expect(document.querySelector('.u-line')!.textContent).toBe('Work is put away. 2 agents still running. No agent needs you.');
+  expect(drawnLine()).toEqual({ mark: 'put-away', dots: 2, more: null, ring: false, net: null, pill: null });
   // Hide screen is an icon alone in the lower right corner, not beside the line.
   expect(document.querySelector('.u-corner [aria-label="Hide screen"]')).not.toBeNull();
   expect(document.querySelector('.u-foot .screens-off')).toBeNull();
@@ -442,7 +442,7 @@ it('lays out the status line, Hide screen and the tabs', async () => {
   expect(screen.getByText('Nothing playing')).toBeTruthy();
 });
 
-it('makes the action parts of the status line chips: running switches to Work, needs you opens the waiting chat', async () => {
+it('makes the status marks act: the capsule switches to Work, the amber pill opens the waiting chat', async () => {
   useFocusStore.setState({ loaded: true });
   const opened: unknown[] = [];
   mocks.set('get_now_playing', () => ({ playback_status: 'stopped' }));
@@ -454,42 +454,37 @@ it('makes the action parts of the status line chips: running switches to Work, n
   }));
   render(<Unwind />);
   await flush();
-  expect(document.querySelector('.u-line')!.textContent).toBe('Work is put away. 2 agents still running. 2 things need you.');
-  const needs = screen.getByRole('button', { name: '2 things need you.' });
-  expect(needs.className).toContain('amber');
-  expect(needs.getAttribute('title')).toBe('Open the chat that is waiting for you');
+  expect(drawnLine()).toMatchObject({ dots: 2, pill: '2 things need you' });
+  const needs = screen.getByRole('button', { name: '2 things need you' });
+  expect(needs.className).toBe('u-need');
   fireEvent.click(needs);
   await flush();
   expect(opened).toEqual([{ id: 'a1b2c3d4-0002' }]);
-  const running = screen.getByRole('button', { name: '2 agents still running.' });
-  expect(running.getAttribute('title')).toBe('Show the agents on Work');
-  fireEvent.click(running);
+  const capsule = document.querySelector('.u-cap-work') as HTMLButtonElement;
+  expect(capsule.getAttribute('aria-label')).toBe('Work is put away. 2 agents still running. 2 things need you. Show the agents on Work');
+  fireEvent.click(capsule);
   expect(usePlaceStore.getState().active).toBe('work');
-  // "Work is put away." stays plain text.
-  expect(screen.queryByRole('button', { name: 'Work is put away.' })).toBeNull();
 });
 
-it('shows the needs-you part as a chip that switches to Work when links are not available, and no chips when the data is stale', async () => {
+it('shows the amber pill that switches to Work when links are not available, and no pill when the data is stale', async () => {
   useFocusStore.setState({ loaded: true });
   mocks.set('get_now_playing', () => ({ playback_status: 'stopped' }));
   let stale = false;
   mocks.set('wall2_omni_summary', () => ({ stale, lanes: [{ id: 'a1b2c3d4-0002', state: 'blocked', waiting: true }], yourMove: { total: 1, first: { sessionId: 'a1b2c3d4-0002' } }, linksAvailable: false }));
   const r = render(<Unwind />);
   await flush();
-  expect(document.querySelector('.u-line')!.textContent).toBe('Work is put away. One thing needs you.');
-  const chip = screen.getByRole('button', { name: 'One thing needs you.' });
-  expect(chip.getAttribute('title')).toBe('Show the agents on Work');
+  expect(drawnLine()).toMatchObject({ pill: 'One thing needs you' });
+  const chip = screen.getByRole('button', { name: 'One thing needs you' });
   fireEvent.click(chip);
   expect(usePlaceStore.getState().active).toBe('work');
   r.unmount();
   stale = true;
   render(<Unwind />);
   await flush();
-  expect(document.querySelector('.u-line')!.textContent).toBe('Work is put away.');
-  expect(document.querySelector('.u-act')).toBeNull();
+  expect(drawnLine()).toMatchObject({ pill: null, ring: true });
 });
 
-it('a read that fails after a good one drops every agent sentence, so nothing says no agent needs the owner', async () => {
+it('a read that fails after a good one drops the dots for the ring, so nothing says no agent needs the owner', async () => {
   vi.useFakeTimers();
   try {
     useFocusStore.setState({ loaded: true });
@@ -498,24 +493,24 @@ it('a read that fails after a good one drops every agent sentence, so nothing sa
     mocks.set('wall2_omni_summary', () => (fail ? Promise.reject(new Error('down')) : { lanes: [], yourMove: { total: 0 } }));
     render(<Unwind />);
     await flush();
-    expect(document.querySelector('.u-line')!.textContent).toBe('Work is put away. No agent needs you.');
+    expect(drawnLine()).toMatchObject({ dots: 0, ring: false, pill: null });
     fail = true;
     await act(async () => {
       await vi.advanceTimersByTimeAsync(60_000);
     });
-    expect(document.querySelector('.u-line')!.textContent).toBe('Work is put away.');
+    expect(drawnLine()).toMatchObject({ dots: 0, ring: true, pill: null });
   } finally {
     vi.useRealTimers();
   }
 });
 
-it('a waiting lane makes the line say a thing needs the owner, never No agent needs you', async () => {
+it('a waiting lane raises the amber pill, never an all-clear', async () => {
   useFocusStore.setState({ loaded: true });
   mocks.set('get_now_playing', () => ({ playback_status: 'stopped' }));
   mocks.set('wall2_omni_summary', () => ({ lanes: [{ id: 'a1b2c3d4-0009', state: 'working', waiting: true }], yourMove: { total: 0 } }));
   render(<Unwind />);
   await flush();
-  expect(document.querySelector('.u-line')!.textContent).toBe('Work is put away. One thing needs you.');
+  expect(drawnLine()).toMatchObject({ pill: 'One thing needs you' });
 });
 
 it('falls back to the placeholder when the remembered cover on the idle view fails to decode', async () => {
