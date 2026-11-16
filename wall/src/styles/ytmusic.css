@@ -142,6 +142,7 @@
   padding: 0;
 }
 .yt-row {
+  position: relative;
   height: 42px;
   border-radius: 12px;
   min-width: 0;
@@ -163,7 +164,10 @@
 .yt-play {
   cursor: pointer;
 }
-.yt-play:hover {
+/* The row stays lit while the pointer is on its add control and while its menu is open; the play mark in the number's
+   place shows only while the pointer is on the play part (below), so each target says what it does. */
+.yt-row:hover > .yt-play,
+.yt-row.menu-open > .yt-play {
   background: rgba(255, 255, 255, 0.06);
 }
 .yt-play:focus-visible {
@@ -174,7 +178,8 @@
 .yt-row.on {
   background: rgba(53, 230, 234, 0.1);
 }
-.yt-row.on .yt-play:hover {
+.yt-row.on:hover > .yt-play,
+.yt-row.on.menu-open > .yt-play {
   background: rgba(53, 230, 234, 0.16);
 }
 .yt-row.off {
@@ -231,6 +236,56 @@
   color: var(--dim);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
+  transition: opacity 200ms ease;
+}
+
+/* "Add to a playlist" on a row that plays: 30 by 30 at the right end (8 px from the row's end, 6 px from its top and
+   foot), in the length's place. It shows on hover of the row, on keyboard focus within it and while its menu is open;
+   the length of that one row fades out meanwhile, so nothing in the row moves or changes width. Never inside the play
+   button; a click on it never plays. */
+.yt-add {
+  position: absolute;
+  right: 8px;
+  top: 6px;
+  width: 30px;
+  height: 30px;
+  box-sizing: border-box;
+  display: grid;
+  place-items: center;
+  border-radius: 10px;
+  color: #a39bc6;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 200ms ease, background 200ms ease, color 200ms ease;
+}
+.yt-row:hover > .yt-add,
+.yt-row:has(:focus-visible) > .yt-add,
+.yt-row.menu-open > .yt-add {
+  opacity: 1;
+  pointer-events: auto;
+}
+.yt-row.canadd:hover .yt-len,
+.yt-row.canadd:has(:focus-visible) .yt-len,
+.yt-row.canadd.menu-open .yt-len {
+  opacity: 0;
+}
+.yt-add:hover {
+  color: #f1ecff;
+  background: rgba(255, 255, 255, 0.08);
+}
+.yt-add[aria-expanded='true'] {
+  color: var(--cyan);
+  background: rgba(53, 230, 234, 0.12);
+}
+.yt-add:focus-visible {
+  outline: 3px solid var(--cyan);
+  outline-offset: 0;
+}
+@media (prefers-reduced-motion: reduce) {
+  .yt-add,
+  .yt-len {
+    transition: none;
+  }
 }
 
 /* One line and the one thing to do about it, in the place of the list. */
