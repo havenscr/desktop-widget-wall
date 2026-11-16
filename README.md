@@ -145,6 +145,8 @@ On first launch, configure the following in the Settings panel (gear icon):
 4. Copy Client ID and Client Secret
 5. Enter in Widget Wall Settings > Spotify
 
+Spotify search lets the signed-in user's country take priority and sends no market value. When Spotify refuses a read, the wall shows a fixed explanation when the answer identifies a permission, user-list, Premium or country restriction. The service's message text is never displayed or logged.
+
 ## Usage
 
 ### Keyboard Shortcuts
