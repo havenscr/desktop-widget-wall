@@ -175,6 +175,10 @@ export interface Mind {
    * his idle blinks plan nothing, and he notices no clicks.
    */
   watching: boolean;
+  /** Very windy now (the weather's held answer), how hard it rains (-1 when it does not), and the Tools switch for weather on him. */
+  windy: boolean;
+  rainLevel: number;
+  wetOn: boolean;
 }
 
 export function createMind(): Mind {
@@ -210,6 +214,9 @@ export function createMind(): Mind {
     idleLife: true,
     quiet: false,
     watching: false,
+    windy: false,
+    rainLevel: -1,
+    wetOn: true,
   };
 }
 
