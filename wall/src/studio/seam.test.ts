@@ -2,6 +2,7 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { mocks } from '../bridge/tauri';
 import { studioAnswer } from './homeKit';
 import { backendNameFor, chooseBackend, currentInfo, directBackend, homeBackend, noteHomeKeys, resetSeam, type BackendInfo } from './keyLights';
+import { viewOf } from './model';
 import { resetKeyLights, useKeyLights } from './store';
 
 vi.setConfig({ testTimeout: 20_000 });
@@ -107,4 +108,35 @@ it('with the home app unable to set them, a silent direct light shows its own wo
   await useKeyLights.getState().refresh();
   await useKeyLights.getState().refresh();
   expect(useKeyLights.getState().left).toBe('no-answer');
+});
+
+// Fix round: the fallback must be used by the running store, not only chosen.
+it('store level: no address saved on either side and the home app able to set them, a refresh shows the reported pair and a write goes to the home app', async () => {
+  mocks.set('wall2_keylights_status', () => ({ left: { set: false }, right: { set: false } }));
+  mocks.set('wall2_keylights_read', () => {
+    throw new Error('the direct back end must not be asked');
+  });
+  const keys = { canSet: true, left: { on: true, brightness: 35, kelvin: 3300 }, right: { on: true, brightness: 36, kelvin: 3400 } };
+  mocks.set('wall2_studio', () => studioAnswer({ keys }));
+  noteHomeKeys(true);
+  await useKeyLights.getState().refresh();
+  expect(useKeyLights.getState().left).toEqual({ on: true, brightness: 35, kelvin: 3300 });
+  expect(useKeyLights.getState().right).toEqual({ on: true, brightness: 36, kelvin: 3400 });
+  // The pages see lights that answer, and Tools still sees that no address is saved.
+  const s = useKeyLights.getState();
+  expect(viewOf({ status: s.status, left: s.left, right: s.right })).toBe('live');
+  expect(s.saved).toEqual({ left: false, right: false, unreadable: false });
+  const set = vi.fn(() => studioAnswer({ keys: { canSet: true, left: { on: false, brightness: 35, kelvin: 3300 }, right: { on: false, brightness: 36, kelvin: 3400 } } }));
+  mocks.set('wall2_studio_keys', set);
+  await useKeyLights.getState().set('both', { on: false });
+  expect(set).toHaveBeenCalledWith({ which: 'both', on: false });
+  expect(useKeyLights.getState().left).toMatchObject({ on: false });
+});
+
+it('store level: with no usable back end (the home app cannot set them) the old unset result stays', async () => {
+  mocks.set('wall2_keylights_status', () => ({ left: { set: false }, right: { set: false } }));
+  await useKeyLights.getState().refresh();
+  const s = useKeyLights.getState();
+  expect(viewOf({ status: s.status, left: s.left, right: s.right })).toBe('unset');
+  expect(s.left).toBeNull();
 });

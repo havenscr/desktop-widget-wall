@@ -615,9 +615,9 @@ button.st-tg:hover {
 .st-pt-l {
   font: 16px/19px var(--body);
   color: var(--dim);
-  min-height: 38px;
+  min-height: 57px;
   display: -webkit-box;
-  -webkit-line-clamp: 2;
+  -webkit-line-clamp: 3;
   -webkit-box-orient: vertical;
   overflow: hidden;
   overflow-wrap: anywhere;
@@ -649,6 +649,20 @@ button.st-tg:hover {
   overflow-y: auto;
   padding-inline: 4px;
   margin-inline: -4px;
+  overscroll-behavior: contain;
+  /* The wall's one scrollbar look: thin, pale, always there when the body scrolls. */
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.3) transparent;
+}
+/* The home sheet gives back what the three-line preset tiles take: tighter gaps. */
+.st-drawer[data-home] {
+  gap: 8px;
+}
+.st-drawer[data-home] .st-d-body {
+  padding-top: 6px;
+}
+.st-drawer[data-home] .st-d-foot {
+  padding-top: 6px;
 }
 /* Split, two lights in one 280 px column: the warmth ends are written once, under the last pair. */
 .st-d-body:not(.one) .st-sides .st-side:first-child .st-scale {

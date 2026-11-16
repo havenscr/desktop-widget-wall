@@ -1,5 +1,6 @@
 import { invoke } from '../bridge/tauri';
 import { homeWordOf, readStudio, setHomeKeys, type HomeKeySide } from './home';
+import { queueHomeWrite } from './homeQueue';
 
 /**
  * The key light seam. The wall talks to the two desk key lights through one interface, `KeyLightBackend`.
@@ -121,23 +122,31 @@ export const homeBackend: KeyLightBackend = {
     if (!s.keys || !s.keys.canSet) return { left: 'not-set-up', right: 'not-set-up' };
     return { left: homeReading(s.keys.left), right: homeReading(s.keys.right) };
   },
-  async set(target, patch) {
-    const args: { on?: boolean; brightness?: number; kelvin?: number } = {};
-    if (patch.on !== undefined) args.on = patch.on;
-    if (patch.brightness !== undefined) args.brightness = Math.round(patch.brightness);
-    if (patch.kelvin !== undefined) args.kelvin = Math.round(patch.kelvin);
-    let s;
-    try {
-      s = await setHomeKeys(target, args);
-    } catch (e) {
-      // The home app's words that mean "not now" stay quiet; every other one is a plain failure for the page.
-      const w = homeWordOf(e);
-      throw w === 'busy' ? 'busy' : 'failed';
-    }
-    const keys = s.keys;
-    const out: Pair = { left: null, right: null };
-    for (const side of sidesOf(target)) out[side] = keys && keys.canSet ? homeReading(keys[side]) : 'failed';
-    return out;
+  /** Through the same one-at-a-time queue as every other home write, so a slider move waits for a running preset. */
+  set(target, patch) {
+    return queueHomeWrite(
+      `keys:${target}`,
+      async () => {
+        const args: { on?: boolean; brightness?: number; kelvin?: number } = {};
+        if (patch.on !== undefined) args.on = patch.on;
+        if (patch.brightness !== undefined) args.brightness = Math.round(patch.brightness);
+        if (patch.kelvin !== undefined) args.kelvin = Math.round(patch.kelvin);
+        let s;
+        try {
+          s = await setHomeKeys(target, args);
+        } catch (e) {
+          // The home app's words that mean "not now" stay quiet; every other one is a plain failure for the page.
+          const w = homeWordOf(e);
+          throw w === 'busy' ? 'busy' : 'failed';
+        }
+        const keys = s.keys;
+        const out: Pair = { left: null, right: null };
+        for (const side of sidesOf(target)) out[side] = keys && keys.canSet ? homeReading(keys[side]) : 'failed';
+        return out;
+      },
+      // A newer write for the same target took its place: this one reports nothing for either side.
+      { left: null, right: null } as Pair,
+    );
   },
 };
 

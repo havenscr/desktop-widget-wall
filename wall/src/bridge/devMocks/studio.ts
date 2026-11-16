@@ -22,7 +22,7 @@ import { knob } from './long';
  *
  * The home half (the home app's studio answer, its writes, the desk token, office moods):
  *
- *   ?studio=absent|notsetup|ready|onair|recording|changed|stale|nozone|down|lost|slow
+ *   ?studio=absent|notsetup|ready|onair|recording|changed|stale|nozone|sixlooks|down|lost|slow
  *   ?studiowrite=ok|forbidden|homeunset|dark|busy|lights|unknown|unreachable
  *   ?desktoken=unset|set|unreadable|insecure
  *   ?office=absent|empty|two|six|down
@@ -35,6 +35,7 @@ import { knob } from './long';
  *   changed       On air is on and something was changed by hand
  *   stale         ready, but the home app could not read every light (Overhead not answering)
  *   nozone        ready, but Overhead needs a Hue zone
+ *   sixlooks      ready, with six panel looks (the most the home app lists)
  *   down          the home app does not answer
  *   lost          reads are good until the sheet is opened (Fine tune); then the home app is gone
  *   slow          ready, but a preset answers after 3 seconds
@@ -100,12 +101,20 @@ const PRIVATE = /^(10\.\d{1,3}|172\.(1[6-9]|2\d|3[01])\.\d{1,3}|192\.168\.\d{1,3
 type MockGroup = { id: string; label: string; on: boolean; setTo: string; colour: string | null; canSwitch: boolean; canDim: boolean; level: number; floor: number | null; reachable: boolean };
 
 const PRESETS = [
-  { id: 'onAir', label: 'On air', line: 'Key lights on, panels glow, room lights white', setsKeyLights: true },
-  { id: 'recording', label: 'Recording', line: 'Room 80%, panels calm 50%, key lights on', setsKeyLights: true },
+  { id: 'onAir', label: 'On air', line: 'Key lights on, panels glow, monitor and overhead white', setsKeyLights: true },
+  { id: 'recording', label: 'Recording', line: 'Room 80%, panels calm 50%, key lights on, overhead white', setsKeyLights: true },
 ];
 const LOOKS = [
   { id: 'glow', label: 'Glow' },
   { id: 'calm', label: 'Calm' },
+];
+const SIX_LOOKS = [
+  { id: 'glow', label: 'Glow' },
+  { id: 'calm', label: 'Calm' },
+  { id: 'sunrise', label: 'Sunrise' },
+  { id: 'ocean', label: 'Ocean waves' },
+  { id: 'ember', label: 'Ember' },
+  { id: 'aurora', label: 'Aurora' },
 ];
 const MOODS = [
   { id: 'focus', label: 'Focus', line: 'Room 70%, neon 20%' },
@@ -224,6 +233,7 @@ type LightMock = { left: Cell; right: Cell };
 
 function registerHomeHalf(keys: LightMock): void {
   const home = homeStart(knob('studio'));
+  const looks = knob('studio') === 'sixlooks' ? SIX_LOOKS : LOOKS;
   const writeKind = knob('studiowrite') ?? 'ok';
   const tokenKind = knob('desktoken') ?? 'unset';
   const token = { set: tokenKind === 'set' || tokenKind === 'insecure', unreadable: tokenKind === 'unreadable', insecure: tokenKind === 'insecure' };
@@ -238,7 +248,7 @@ function registerHomeHalf(keys: LightMock): void {
     changed: home.changed,
     groups: home.groups.map((g) => ({ ...g })),
     keys: { canSet: false, left: null, right: null },
-    looks: LOOKS.map((l) => ({ ...l, active: home.active !== null && home.look === l.id })),
+    looks: looks.map((l) => ({ ...l, active: home.active !== null && home.look === l.id })),
     canNormal: home.active !== null,
     normalLine: home.active !== null ? 'Goes back to how the room was before' : null,
     canWrite: block() === null,
@@ -318,7 +328,7 @@ function registerHomeHalf(keys: LightMock): void {
     read();
     gate();
     const id = String(args?.id);
-    if (!LOOKS.some((l) => l.id === id)) throw 'refused';
+    if (!looks.some((l) => l.id === id)) throw 'refused';
     home.look = id;
     home.groups[0] = group('panels', 'Panels', true, home.groups[0].level || 70);
     if (home.active === null) home.active = null;

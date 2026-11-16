@@ -11,6 +11,8 @@ export const READ_EVERY_MS = 30_000;
 export const QUIET_READ_MS = 1000;
 
 interface KeyLightState extends Snapshot {
+  /** Which sides have an address saved on this PC (what Tools shows); `status` is what the pages show, which also counts a side the home app can set. */
+  saved: Snapshot['status'];
   /** The drawer (Fine tune) is open. */
   drawer: boolean;
   /** The Linked switch: one pair of sliders for both lights. */
@@ -68,7 +70,7 @@ export function pollUserChange(by: 1 | -1): void {
   if (pollUsers === 0) cancelQuietRead();
 }
 
-const fresh = (): Snapshot => ({ status: null, left: null, right: null });
+const fresh = (): Snapshot & { saved: Snapshot['status'] } => ({ status: null, saved: null, left: null, right: null });
 const sidesOf = (target: Target): readonly Side[] => (target === 'both' ? SIDES : [target]);
 const bump = (counts: Record<Side, number>, sides: readonly Side[], by: number): Record<Side, number> => {
   const next = { ...counts };
@@ -83,9 +85,17 @@ export const useKeyLights = create<KeyLightState>((set, get) => {
     set: (target: Target, patch: Patch) => (override ?? choose()).set(target, patch),
   };
   function choose(): KeyLightBackend {
-    const st = get().status;
+    const st = get().saved ?? get().status;
     return chooseBackend(currentInfo(st && st !== 'failed' ? { left: st.left, right: st.right } : null));
   }
+  /**
+   * What the pages may treat as usable: a side with a saved address, or any side while the last good studio
+   * answer says the home app can set the key lights (then the seam reads and writes through it).
+   */
+  const effective = (raw: Snapshot['status']): Snapshot['status'] => {
+    if (raw === null || raw === 'failed' || !currentInfo().homeCanSet) return raw;
+    return { left: true, right: true, unreadable: raw.unreadable };
+  };
   const raise = (text: string) => {
     clearTimeout(noteTimer);
     set({ note: text });
@@ -98,7 +108,9 @@ export const useKeyLights = create<KeyLightState>((set, get) => {
 
   /** Both lights from the back end. Applies each side only while it is still the newest answer; always returns what was read. */
   const fetchRead = async (): Promise<Pair | null> => {
-    const status = get().status;
+    const raw = get().saved ?? get().status;
+    const status = effective(raw);
+    if (status !== get().status) set({ status });
     if (status === null || status === 'failed') return null;
     if (!status.left && !status.right) {
       set({ left: null, right: null });
@@ -223,9 +235,10 @@ export const useKeyLights = create<KeyLightState>((set, get) => {
     setLinked: (linked) => set({ linked }),
     async refresh() {
       try {
-        set({ status: await readStatus() });
+        const raw = await readStatus();
+        set({ saved: raw, status: effective(raw) });
       } catch {
-        set({ status: 'failed' });
+        set({ saved: 'failed', status: 'failed' });
         return;
       }
       await get().read();

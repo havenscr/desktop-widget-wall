@@ -612,8 +612,9 @@ fn writing() -> &'static AtomicBool {
 
 /// A read: no write guard, the token is read only to say whether a write is possible.
 async fn run_read<T: Send + 'static>(app: tauri::AppHandle, f: impl FnOnce(&Env) -> Result<T, String> + Send + 'static) -> Result<T, String> {
-    let base = base(&app)?;
+    // The base is read from `feeds.json` inside the blocking closure: no disk read on an async worker.
     off_thread(move || {
+        let base = base(&app)?;
         let token = crate::wall2_desk_token::read_token();
         let env = Env { http: &RealHttp, base: &base, token: token.as_deref(), seen: global_seen(), now: Instant::now() };
         f(&env)
@@ -623,9 +624,10 @@ async fn run_read<T: Send + 'static>(app: tauri::AppHandle, f: impl FnOnce(&Env)
 
 /// A write: one at a time from the wall; the guard is held for the whole call.
 async fn run_write<T: Send + 'static>(app: tauri::AppHandle, f: impl FnOnce(&Env) -> Result<T, String> + Send + 'static) -> Result<T, String> {
-    let base = base(&app)?;
     off_thread(move || {
         let Some(_guard) = WriteGuard::try_take(writing()) else { return Err(BUSY.to_string()) };
+        // The base is read here, inside the blocking closure, after the window check in the command.
+        let base = base(&app)?;
         let token = crate::wall2_desk_token::read_token();
         let env = Env { http: &RealHttp, base: &base, token: token.as_deref(), seen: global_seen(), now: Instant::now() };
         f(&env)
@@ -1051,11 +1053,11 @@ mod tests {
         assert_eq!(s.write_block.as_deref(), Some("needs-private-address"));
         let f = Fake::default();
         f.push(200, &moods_body().to_string());
-        let m = read_moods(&env(&f, "http://localhost:5006", Some(TOKEN), &seen, t0)).unwrap();
+        let m = read_moods(&env(&f, "http://localhost:5599", Some(TOKEN), &seen, t0)).unwrap();
         assert!(m.can_write);
         assert_eq!(m.write_block, None);
         // A tailnet base counts too.
-        assert!(env(&f, "http://100.100.1.2:5006", Some(TOKEN), &seen, t0).write_state().0);
+        assert!(env(&f, "http://100.100.1.2:5599", Some(TOKEN), &seen, t0).write_state().0);
     }
 
     #[test]
@@ -1071,7 +1073,7 @@ mod tests {
         assert_eq!(studio_look(&no_token, "glow").unwrap_err(), "not-set-up");
         assert_eq!(studio_keys(&no_token, "both", Some(true), None, None).unwrap_err(), "not-set-up");
         assert_eq!(office_mood(&no_token, "gaming").unwrap_err(), "not-set-up");
-        let lan = env(&f, "http://203.0.113.50:5006", Some(TOKEN), &seen, t0);
+        let lan = env(&f, "http://203.0.113.50:5599", Some(TOKEN), &seen, t0);
         assert_eq!(studio_preset(&lan, "onAir").unwrap_err(), "needs-private-address");
         assert_eq!(studio_normal(&lan).unwrap_err(), "needs-private-address");
         assert_eq!(studio_group(&lan, "panels", true, None).unwrap_err(), "needs-private-address");

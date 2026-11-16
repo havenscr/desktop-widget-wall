@@ -1,6 +1,7 @@
 import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { mocks } from '../bridge/tauri';
+import { IDLE } from '../onair/model';
 import { useOnAirStore } from '../onair/store';
 import { useSignalStore } from '../signals/store';
 import { resetTools, useToolsStore } from '../tools/store';
@@ -31,7 +32,7 @@ beforeEach(() => {
   resetKeyLights();
   resetTools();
   resetTip();
-  useOnAirStore.setState((s) => ({ saved: { ...s.saved, running: false, startedAt: null } }));
+  useOnAirStore.setState({ saved: IDLE });
   useSignalStore.setState({ known: true, recording: false });
   resetHome();
   answer = studioAnswer();
@@ -296,7 +297,8 @@ it('the key lights tile still works with the home part present', async () => {
 
 // Section: the offer
 
-const startTimer = () => useOnAirStore.setState((s) => ({ saved: { ...s.saved, running: true, startedAt: Date.now() } }));
+const startTimer = () => useOnAirStore.setState((s) => ({ saved: { ...s.saved, running: true, startedAt: Date.now(), firstStartAt: s.saved.firstStartAt ?? Date.now() } }));
+const resetTimer = () => useOnAirStore.setState((s) => ({ saved: { ...s.saved, running: false, startedAt: null, accumulatedMs: 0, firstStartAt: null } }));
 
 it('the offer bar takes the place of the preset row and the summary; Set for the stream applies On air', async () => {
   await showBlock();
@@ -324,7 +326,7 @@ it('Not now leaves the lights alone and the bar goes; the bar also goes by itsel
   await flush();
   expect(writes).toHaveLength(0);
   expect(screen.queryByText('Studio lights are not set.')).toBeNull();
-  useOnAirStore.setState((s) => ({ saved: { ...s.saved, running: false, startedAt: null } }));
+  resetTimer();
   await flush();
   useHome.getState().dismissOffer();
   await act(async () => useSignalStore.setState({ recording: true }));
@@ -339,7 +341,7 @@ it('the stop offer names the preset the room is on, with Back to normal and Keep
   await showBlock();
   await act(async () => startTimer());
   await flush();
-  await act(async () => useOnAirStore.setState((s) => ({ saved: { ...s.saved, running: false, startedAt: null } })));
+  await act(async () => resetTimer());
   await flush();
   expect(screen.getByText('The show timer stopped.')).toBeTruthy();
   expect(screen.getByText('The room is still on On air.')).toBeTruthy();
@@ -500,4 +502,42 @@ it('the sheet reads the home app once when it opens', async () => {
   fireEvent.click(screen.getByText('Fine tune'));
   await flush();
   expect(reads.mock.calls.length).toBeGreaterThan(n);
+});
+
+// Section: fix round, the sheet
+
+it('six panel looks: every look chip is there and reachable, and the last one applies', async () => {
+  const looks = ['glow', 'calm', 'sunrise', 'ocean', 'ember', 'aurora'].map((id) => ({ id, label: id.toUpperCase(), active: false }));
+  answer = studioAnswer({ looks });
+  await openSheet();
+  expect(sheet().getAllByRole('button').filter((b) => looks.some((l) => l.label === b.textContent))).toHaveLength(6);
+  fireEvent.click(sheet().getByText('AURORA'));
+  await flush();
+  expect(writes.at(-1)).toEqual({ command: 'wall2_studio_look', args: { id: 'aurora' } });
+});
+
+it('a preset tile carries its whole line in its text and in its tip', async () => {
+  const line = 'Key lights on, panels glow, monitor and overhead white, then the desk lamp at half';
+  const presets = (answer.presets as Record<string, unknown>[]).map((p, i) => (i === 0 ? { ...p, line } : p));
+  answer = studioAnswer({ presets });
+  await openSheet();
+  expect(document.querySelector('.st-pt .st-pt-l')?.textContent).toBe(line);
+  expect(await tipOf(document.querySelector('.st-pt') as Element)).toContain(line);
+});
+
+it('a room slider with a floor fills from the floor, the part under it stays hatched', async () => {
+  await openSheet();
+  const track = sheet().getByRole('slider', { name: 'Behind monitor brightness' });
+  const fill = track.querySelector('.st-fi') as HTMLElement;
+  expect(track.querySelector('.st-hatch')).toBeTruthy();
+  expect(fill.style.left).toBe('45%');
+  expect(fill.style.width).toBe('35%');
+});
+
+it('a click outside closes the sheet, as the footer says', async () => {
+  await openSheet();
+  expect(sheet().getByText('Esc or a click outside closes it')).toBeTruthy();
+  fireEvent.pointerDown(document.body);
+  await flush();
+  expect(document.querySelector('.st-drawer')).toBeNull();
 });

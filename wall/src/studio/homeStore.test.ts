@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { mocks } from '../bridge/tauri';
+import { IDLE } from '../onair/model';
 import { useOnAirStore } from '../onair/store';
 import { useSignalStore } from '../signals/store';
 import { studioAnswer, studioWith } from './homeKit';
@@ -29,7 +30,7 @@ beforeEach(() => {
   vi.useFakeTimers();
   vi.setSystemTime(Date.parse('2026-11-14T10:00:00-08:00'));
   resetKeyLights();
-  useOnAirStore.setState((s) => ({ saved: { ...s.saved, running: false, startedAt: null } }));
+  useOnAirStore.setState({ saved: IDLE });
   useSignalStore.setState({ known: true, recording: false });
   resetHome();
   answer = studioAnswer();
@@ -302,11 +303,14 @@ it('busy, a light not answering, and no answer in time: their lines for 5 second
   }
 });
 
-it('an unknown id or nothing to undo: a fresh read at once and no line; a plain failure says so', async () => {
+it('an unknown id or nothing to undo: a fresh read at once and a line; a plain failure says so', async () => {
   await useHome.getState().readStudio();
   expect(await refuse('unknown', () => useHome.getState().applyLook('calm'))).toBe(1);
+  expect(useHome.getState().note).toBe(TEXT.unknown);
+  await flush(NOTE_MS + 10);
   expect(await refuse('nothing-to-undo', () => useHome.getState().goNormal())).toBe(1);
-  expect(useHome.getState().note).toBeNull();
+  expect(useHome.getState().note).toBe(TEXT.nothingToUndo);
+  await flush(NOTE_MS + 10);
   expect(await refuse('failed', () => useHome.getState().goNormal())).toBe(1);
   expect(useHome.getState().note).toBe(TEXT.failed);
 });
@@ -369,11 +373,18 @@ it('office moods: a refused apply keeps the chip as read back and names the word
 
 // Section: the offer
 
-const startTimer = () => useOnAirStore.setState((s) => ({ saved: { ...s.saved, running: true, startedAt: Date.now() } }));
-const stopTimer = () => useOnAirStore.setState((s) => ({ saved: { ...s.saved, running: false, startedAt: null } }));
+const joinSurface = async () => {
+  homePollChange(1);
+  await flush();
+};
+const startTimer = () => useOnAirStore.setState((s) => ({ saved: { ...s.saved, running: true, startedAt: Date.now(), firstStartAt: s.saved.firstStartAt ?? Date.now(), stoppedAt: null } }));
+/** The Stop button: a pause (the time is kept). */
+const pauseTimer = () => useOnAirStore.setState((s) => ({ saved: { ...s.saved, running: false, startedAt: null, accumulatedMs: 5000, stoppedAt: Date.now() } }));
+/** The end of a show: the timer reset to 00:00 after it was stopped. */
+const stopTimer = () => useOnAirStore.setState((s) => ({ saved: { ...s.saved, running: false, startedAt: null, accumulatedMs: 0, firstStartAt: null, stoppedAt: null } }));
 
 it('the timer starting with nothing set raises the start offer after a fresh read, and it goes away by itself after 60 seconds', async () => {
-  await useHome.getState().readStudio();
+  await joinSurface();
   startTimer();
   await flush();
   expect(useHome.getState().offer).toEqual({ kind: 'start', what: 'timer', label: null });
@@ -384,7 +395,7 @@ it('the timer starting with nothing set raises the start offer after a fresh rea
 });
 
 it('a recording starting raises it too, and an ending recording with a preset on raises the stop offer', async () => {
-  await useHome.getState().readStudio();
+  await joinSurface();
   useSignalStore.setState({ recording: true });
   await flush();
   expect(useHome.getState().offer?.what).toBe('recording');
@@ -397,7 +408,7 @@ it('a recording starting raises it too, and an ending recording with a preset on
 
 it('the timer stopping with a preset on raises the stop offer; with nothing on it raises none', async () => {
   answer = studioWith('onAir');
-  await useHome.getState().readStudio();
+  await joinSurface();
   startTimer();
   await flush();
   expect(useHome.getState().offer).toBeNull(); // a preset is already on: no start offer
@@ -415,12 +426,12 @@ it('the timer stopping with a preset on raises the stop offer; with nothing on i
 });
 
 it('an offer comes once per start and once per stop, not on every poll', async () => {
-  await useHome.getState().readStudio();
+  await joinSurface();
   startTimer();
   await flush();
   useHome.getState().dismissOffer();
   await flush(HOME_READ_EVERY_MS * 3);
-  await useHome.getState().readStudio();
+  await joinSurface();
   expect(useHome.getState().offer).toBeNull();
   // The same running state set again is not a start.
   startTimer();
@@ -440,7 +451,7 @@ it('no offer while the home part is absent, away, without a token, or without an
     answer = studioAnswer();
     mocks.set('wall2_studio', () => answer);
     setup();
-    await useHome.getState().readStudio();
+    await joinSurface();
     startTimer();
     await flush();
     expect(useHome.getState().offer, name).toBeNull();
@@ -450,7 +461,7 @@ it('no offer while the home part is absent, away, without a token, or without an
 });
 
 it('a timer restored from storage at launch, and the first signal answer, are not starts', async () => {
-  await useHome.getState().readStudio();
+  await joinSurface();
   useOnAirStore.setState((s) => ({ saved: { ...s.saved, running: true, startedAt: Date.now() - 60 * 60_000 } }));
   await flush();
   expect(useHome.getState().offer).toBeNull();
@@ -464,7 +475,7 @@ it('a timer restored from storage at launch, and the first signal answer, are no
 });
 
 it('no read and no offer while the page is hidden', async () => {
-  await useHome.getState().readStudio();
+  await joinSurface();
   const n = reads();
   Object.defineProperty(document, 'visibilityState', { value: 'hidden', configurable: true });
   try {
@@ -478,10 +489,135 @@ it('no read and no offer while the page is hidden', async () => {
 });
 
 it('nothing is applied by an offer until it is clicked: the preset write count stays zero', async () => {
-  await useHome.getState().readStudio();
+  await joinSurface();
   startTimer();
   await flush();
   expect(useHome.getState().offer).not.toBeNull();
   await flush(OFFER_MS + 10);
   expect(calls.filter((c) => c.command === 'wall2_studio_preset' || c.command === 'wall2_studio_normal')).toHaveLength(0);
+});
+
+// Section: fix round, offers
+
+const deferred = () => {
+  const out: { resolve: (v: unknown) => void }[] = [];
+  mocks.set('wall2_studio', () => new Promise((r) => out.push({ resolve: r })));
+  return out;
+};
+
+it('a recording that started and ended before the first read came back leaves no offer', async () => {
+  homePollChange(1);
+  await flush();
+  const pending = deferred();
+  useSignalStore.setState({ recording: true });
+  await flush();
+  useSignalStore.setState({ recording: false });
+  await flush();
+  for (const p of pending) p.resolve(studioAnswer());
+  await flush();
+  expect(useHome.getState().offer).toBeNull();
+});
+
+it('an offer the opposite edge made obsolete is cleared', async () => {
+  homePollChange(1);
+  await flush();
+  useSignalStore.setState({ recording: true });
+  await flush();
+  expect(useHome.getState().offer?.kind).toBe('start');
+  answer = studioAnswer();
+  useSignalStore.setState({ recording: false });
+  await flush();
+  expect(useHome.getState().offer).toBeNull();
+});
+
+it('a pause of the show timer raises nothing, and neither does carrying on', async () => {
+  answer = studioWith('onAir');
+  homePollChange(1);
+  startTimer();
+  await flush();
+  useHome.getState().dismissOffer();
+  pauseTimer();
+  await flush();
+  expect(useHome.getState().offer).toBeNull();
+  answer = studioAnswer();
+  startTimer();
+  await flush();
+  expect(useHome.getState().offer).toBeNull();
+});
+
+it('a reset of the show timer with a preset on, and a timer that stopped itself at 24 hours, raise the stop offer', async () => {
+  answer = studioWith('onAir');
+  homePollChange(1);
+  startTimer();
+  await flush();
+  pauseTimer();
+  stopTimer();
+  await flush();
+  expect(useHome.getState().offer).toMatchObject({ kind: 'stop', what: 'timer' });
+  useHome.getState().dismissOffer();
+  startTimer();
+  await flush();
+  useOnAirStore.setState((s) => ({ saved: { ...s.saved, running: false, startedAt: null, accumulatedMs: 24 * 3600_000 } }));
+  await flush();
+  expect(useHome.getState().offer).toMatchObject({ kind: 'stop', what: 'timer' });
+});
+
+it('no read and no offer on an edge while no studio surface is shown; a surface that shows within seconds gets the offer', async () => {
+  useSignalStore.setState({ recording: true });
+  await flush();
+  expect(reads()).toBe(0);
+  expect(useHome.getState().offer).toBeNull();
+  // The chip mounts a moment later: its read settles the edge.
+  homePollChange(1);
+  await flush();
+  expect(reads()).toBe(1);
+  expect(useHome.getState().offer).toMatchObject({ kind: 'start', what: 'recording' });
+});
+
+it('an edge that nobody showed is forgotten after a while', async () => {
+  useSignalStore.setState({ recording: true });
+  await flush(20_000);
+  homePollChange(1);
+  await flush();
+  expect(useHome.getState().offer).toBeNull();
+});
+
+// Section: fix round, a refused action says why
+
+it('a refused action says why in fixed words, then reads again', async () => {
+  await useHome.getState().readStudio();
+  const cases: [string, string][] = [
+    ['refused', TEXT.refused],
+    ['unknown', TEXT.unknown],
+    ['not-set-up', TEXT.notSetUp],
+    ['needs-private-address', TEXT.needsPrivate],
+    ['nothing-to-undo', TEXT.nothingToUndo],
+  ];
+  for (const [word, text] of cases) {
+    const n = await refuse(word, () => useHome.getState().applyPreset('onAir'));
+    expect(n, word).toBe(1);
+    expect(useHome.getState().note, word).toBe(text);
+    await flush(NOTE_MS + 10);
+  }
+  expect(TEXT.needsPrivate).toBe('The home app must be reached over https or the tailnet to take changes.');
+  expect(JSON.stringify(TEXT)).not.toMatch(/https?:\/\//);
+});
+
+it('key light writes through the home app wait their turn behind a preset', async () => {
+  await useHome.getState().readStudio();
+  const { homeBackend } = await import('./keyLights');
+  const releases: (() => void)[] = [];
+  mocks.set('wall2_studio_preset', (args) => {
+    calls.push({ command: 'wall2_studio_preset', args });
+    return new Promise((r) => releases.push(() => r(answer)));
+  });
+  record('wall2_studio_keys', () => studioAnswer({ keys: { canSet: true, left: { on: true, brightness: 50, kelvin: 4000 }, right: { on: true, brightness: 50, kelvin: 4000 } } }));
+  const preset = useHome.getState().applyPreset('onAir');
+  const keys = homeBackend.set('both', { brightness: 50 });
+  await flush();
+  expect(calls.filter((c) => c.command === 'wall2_studio_keys')).toHaveLength(0);
+  releases[0]();
+  await preset;
+  await keys;
+  expect(calls.filter((c) => c.command === 'wall2_studio_keys')).toHaveLength(1);
 });

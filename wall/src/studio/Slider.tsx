@@ -59,6 +59,7 @@ export function Slider({
   const lowest = Math.max(min, floor ?? min);
   const thumb = Math.min(max, Math.max(lowest, following ? (asked as number) : value));
   const frac = (thumb - min) / (max - min);
+  const floorFrac = floor !== undefined && floor > min ? (floor - min) / (max - min) : 0;
   const reported = Math.min(max, Math.max(min, value));
 
   const request = (v: number) => {
@@ -135,7 +136,8 @@ export function Slider({
             <i className="st-floor" style={{ left: `${((floor - min) / (max - min)) * 100}%` }} />
           </>
         )}
-        {!warm && !down && <i className="st-fi" style={{ width: `${frac * 100}%` }} />}
+        {/* The fill starts at the floor when there is one: the part under it stays hatched. */}
+        {!warm && !down && <i className="st-fi" style={{ left: `${floorFrac * 100}%`, width: `${Math.max(0, frac - floorFrac) * 100}%` }} />}
         <i className="st-th" style={{ left: `${frac * 100}%` }} />
       </span>
       <span className="st-val">{down ? '' : format(reported)}</span>

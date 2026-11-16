@@ -200,7 +200,7 @@ export function StudioDrawer() {
 
   const host = document.querySelector('.stage') ?? document.body;
   return createPortal(
-    <section ref={ref} className="st-drawer" style={{ left: box.left, width: box.width }} aria-label="Studio lights" onKeyDown={trap} onPointerEnter={() => clearTimeout(idle.current)} onPointerLeave={startIdle}>
+    <section ref={ref} className="st-drawer" data-home={home.studio ? '' : undefined} style={{ left: box.left, width: box.width }} aria-label="Studio lights" onKeyDown={trap} onPointerEnter={() => clearTimeout(idle.current)} onPointerLeave={startIdle}>
       <div className="st-d-top">
         <IconBulb size={22} className="st-bulb" aria-hidden="true" />
         <span className="k st-title">Studio lights</span>
@@ -296,7 +296,7 @@ export function StudioDrawer() {
       {!home.studio && home.view !== 'checking' && <div className="st-line st-quiet">{home.view === 'down' ? `${DOWN_LINE}.` : ABSENT_LINE}</div>}
       <div className="st-d-foot st-line">
         <span>Range {KELVIN_MIN} K to {KELVIN_MAX} K, the maker&apos;s figure</span>
-        <span>{home.studio ? 'Esc closes it' : 'Esc or a click outside closes it'}</span>
+        <span>Esc or a click outside closes it</span>
       </div>
     </section>,
     host,

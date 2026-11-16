@@ -17,6 +17,8 @@ const LINKED = '.st-k-hd .st-lk';
 const CLOSE = '.st-x';
 const START = '[aria-label="Start timer"]';
 const STOP = '[aria-label="Stop timer"]';
+// The end of a show: Stop pauses, so the show ends with Reset (a second click confirms).
+const END = `${STOP} >> .oa-reset >> .oa-reset`;
 
 const state = (screen, name, query, expect, actions) => ({ screen, name: `studio home: ${name}`, query, custom: true, expect, actions });
 
@@ -49,7 +51,7 @@ function measureHome() {
       const px = parseFloat(cs.fontSize);
       const text = (e.textContent || '').trim().slice(0, 28);
       if (px < 15.99) small.push(label + ': "' + text + '" is ' + px + ' px');
-      if (cs.display !== 'inline' && e.scrollWidth > e.clientWidth + 1 && !e.closest('.st-sum') && !e.closest('.st-pt-l')) cut.push(label + ': ' + text);
+      if (cs.display !== 'inline' && e.scrollWidth > e.clientWidth + 1 && !e.closest('.st-sum')) cut.push(label + ': ' + text);
     }
   };
   const block = q('.st-block');
@@ -63,6 +65,17 @@ function measureHome() {
   const kids = (root) => (root ? qa(root + ' *').map((e) => ({ n: String(typeof e.className === 'string' ? e.className : '') + ' ' + (e.textContent || '').trim().slice(0, 20), b: box(e) })).filter((x) => x.b && x.b.w > 0) : []);
   const row = (sel) => qa(sel).map((e) => ({ n: (e.textContent || '').trim().slice(0, 24), b: box(e) }));
   const hd = chip ? chip.closest('.lanes-hd') : null;
+  // A preset tile's name and line must show whole (the line may take up to three lines).
+  const tiles = qa('.st-pt').map((t) => {
+    const l = t.querySelector('.st-pt-l');
+    const n = t.querySelector('.st-pt-n');
+    return { n: (n ? n.textContent : '').trim().slice(0, 24), lineCut: !!l && l.scrollHeight > l.clientHeight + 1, nameCut: !!n && n.scrollWidth > n.clientWidth + 1 };
+  });
+  // The sheet's body scrolls when the rooms column is taller than the sheet allows.
+  const body = q('.st-d-body:not(.one)');
+  const bodyScroll = body ? { sh: body.scrollHeight, ch: body.clientHeight, ov: getComputedStyle(body).overflowY } : null;
+  const scrolls = !!body && body.scrollHeight > body.clientHeight + 1;
+  const inScroll = (e) => scrolls && body.contains(e);
   const ask = q('.lanes-hd .ask-btn');
   const rec = q('.meet-hero-last .rec-chip');
   const recCut = rec ? [rec, ...rec.querySelectorAll('*')].some((e) => e.scrollWidth > e.clientWidth + 1) : false;
@@ -77,7 +90,13 @@ function measureHome() {
     switches: row('.st-switches > *'),
     offer: box(q('.st-offer')),
     drawer: box(drawer),
-    drawerKids: kids('.st-drawer').map((k) => ({ n: k.n, l: k.b.l, r: k.b.r, t: k.b.t, b: k.b.b })),
+    drawerKids: qa('.st-drawer *')
+      .filter((e) => !inScroll(e))
+      .map((e) => ({ n: String(typeof e.className === 'string' ? e.className : '') + ' ' + (e.textContent || '').trim().slice(0, 20), b: box(e) }))
+      .filter((x) => x.b && x.b.w > 0)
+      .map((k) => ({ n: k.n, l: k.b.l, r: k.b.r, t: k.b.t, b: k.b.b })),
+    tiles,
+    bodyScroll,
     tools: box(q('.tools-drawer')),
     section: box(section),
     sectionKids: kids('[data-section="desktoken"]').map((k) => ({ n: k.n, l: k.b.l, r: k.b.r, t: k.b.t, b: k.b.b })),
@@ -102,6 +121,7 @@ const toolsVariant = (name, q, extra = {}) => ({ name, q, checks: TOOLS_CHECKS, 
 const BLOCK_V = 'Studio home, block, ready';
 const OFFER_V = 'Studio home, block, offer after the timer starts';
 const SHEET_V = 'Studio home, sheet, linked';
+const SIX_V = 'Studio home, sheet, six panel looks, the body scrolls';
 const MEET_V = 'Studio home, Meet chip, in a call';
 const TOOLS_V = 'Studio home, Tools, typing a token';
 
@@ -110,8 +130,8 @@ export default {
   gallery: {
     states: [
       state('onair', 'block, ready, nothing on', onAirGallery(READY), ['Studio lights', 'No preset on.', 'Key lights 60%, 4400 K', 'On air', 'Recording', 'Back to normal', 'Panels', 'Behind monitor', 'Overhead', 'Fine tune']),
-      state('onair', 'block, On air is on', onAirGallery('keys2=both&studio=onair&desktoken=set'), ['On air:', 'Key lights on, panels glow, room lights white', 'Fine tune']),
-      state('onair', 'block, Recording is on', onAirGallery('keys2=both&studio=recording&desktoken=set'), ['Recording:', 'Room 80%, panels calm 50%, key lights on']),
+      state('onair', 'block, On air is on', onAirGallery('keys2=both&studio=onair&desktoken=set'), ['On air:', 'Key lights on, panels glow, monitor and overhead white', 'Fine tune']),
+      state('onair', 'block, Recording is on', onAirGallery('keys2=both&studio=recording&desktoken=set'), ['Recording:', 'Room 80%, panels calm 50%, key lights on, overhead white']),
       state('onair', 'block, changed since it was set', onAirGallery('keys2=both&studio=changed&desktoken=set'), ['On air, changed', 'since it was set']),
       state('onair', 'block, the home app could not read every light', onAirGallery('keys2=both&studio=stale&desktoken=set'), ['(not fresh)', 'Overhead']),
       state('onair', 'block, the home app went away', onAirGallery(READY.replace('studio=ready', 'studio=lost')), ['The home app is not answering.', 'Try again', 'On air', 'Overhead'], `${FINE} >> ${CLOSE}`),
@@ -124,10 +144,13 @@ export default {
       state('onair', 'block, the home app is busy', onAirGallery(`${READY}&studiowrite=busy`), ['The home app is busy with another light change. Try again in a moment.'], '[data-preset="onAir"]'),
       state('onair', 'block, a light did not answer', onAirGallery(`${READY}&studiowrite=lights`), ['A light did not answer the home app. This shows what it reports now.'], '[data-preset="onAir"]'),
       state('onair', 'block, the home app did not answer in time', onAirGallery(`${READY}&studiowrite=unreachable`), ['The home app did not answer in time. This is what it reports now.'], '[data-preset="onAir"]'),
-      state('onair', 'block, a click on On air applies it', onAirGallery(READY), ['On air:', 'Key lights on, panels glow, room lights white', 'Back to normal'], '[data-preset="onAir"]'),
+      state('onair', 'block, a click on On air applies it', onAirGallery(READY), ['On air:', 'Key lights on, panels glow, monitor and overhead white', 'Back to normal'], '[data-preset="onAir"]'),
       state('onair', 'block, offer after the timer starts', onAirGallery(`${READY}`).replace('oatimer=run', 'oatimer=idle'), ['Studio lights are not set.', 'The timer started just now.', 'Set for the stream', 'Not now', 'Panels'], START),
-      state('onair', 'block, offer after the timer stops', onAirGallery('keys2=both&studio=onair&desktoken=set'), ['The show timer stopped.', 'The room is still on On air.', 'Back to normal', 'Keep'], STOP),
-      state('onair', 'block, a hover tip on a preset', onAirGallery(READY), ['Key lights on, panels glow, room lights white'], 'hover:[data-preset="onAir"]'),
+      state('onair', 'block, offer after the show ends (timer reset)', onAirGallery('keys2=both&studio=onair&desktoken=set'), ['The show timer stopped.', 'The room is still on On air.', 'Back to normal', 'Keep'], END),
+      state('onair', 'block, a pause of the timer offers nothing', onAirGallery('keys2=both&studio=onair&desktoken=set'), ['On air:', 'Fine tune', '!The show timer stopped.'], STOP),
+      state('onair', 'block, a refused click says why', onAirGallery(`${READY}&studiowrite=unknown`), ['The home app no longer lists that one. This is what it reports now.'], '[data-preset="onAir"]'),
+      state('onair', 'sheet, six panel looks, the body scrolls', onAirGallery('keys2=both&studio=sixlooks&desktoken=set'), ['Ocean waves', 'Aurora', 'Behind monitor'], FINE),
+      state('onair', 'block, a hover tip on a preset', onAirGallery(READY), ['Key lights on, panels glow, monitor and overhead white'], 'hover:[data-preset="onAir"]'),
       state('onair', 'sheet, ready, linked', onAirGallery(READY), ['On air', 'Recording', 'Back to normal', 'Linked', 'Panels', 'Glow', 'Calm', 'Behind monitor', 'White 80%. Floor 45%', 'Overhead', 'White 90%. Floor 45%'], FINE),
       state('onair', 'sheet, ready, split', onAirGallery(`${READY.replace('keys2=both', 'keys2=mismatch')}`), ['Split', 'Left', 'Right', '45%', '4700 K', 'Behind monitor'], `${FINE} >> ${LINKED}`),
       state('onair', 'sheet, On air is on', onAirGallery('keys2=both&studio=onair&desktoken=set'), ['On air', 'Glow', 'Back to normal', 'Goes back to how the room was before'], FINE),
@@ -160,11 +183,12 @@ export default {
       variant('Studio home, block, no key lights set up', onAirFit(`${READY.replace('keys2=both', 'keys2=none')}`)),
       variant('Studio home, block, the home app does not offer presets', onAirFit('keys2=both&studio=absent'), { checks: COMPAT_CHECKS }),
       variant(OFFER_V, onAirFit(READY).replace('oatimer=run', 'oatimer=idle'), { click: START, checks: OFFER_CHECKS }),
-      variant('Studio home, block, offer after the timer stops', onAirFit('keys2=both&studio=onair&desktoken=set'), { click: STOP, checks: OFFER_CHECKS }),
+      variant('Studio home, block, offer after the show ends', onAirFit('keys2=both&studio=onair&desktoken=set'), { click: END, checks: OFFER_CHECKS }),
       sheetVariant(SHEET_V, onAirFit(READY), FINE),
       sheetVariant('Studio home, sheet, split', onAirFit(READY.replace('keys2=both', 'keys2=mismatch')), `${FINE} >> ${LINKED}`),
       sheetVariant('Studio home, sheet, On air is on and changed', onAirFit('keys2=both&studio=changed&desktoken=set'), FINE),
       sheetVariant('Studio home, sheet, no desk token', onAirFit('keys2=both&studio=ready&desktoken=unset'), FINE),
+      { ...sheetVariant(SIX_V, onAirFit('keys2=both&studio=sixlooks&desktoken=set'), FINE), checks: ['.st-drawer'] },
       sheetVariant('Studio home, sheet, one key light silent', onAirFit(READY.replace('keys2=both', 'keys2=left-silent')), FINE),
       { name: 'Studio home, Work chip, a preset, tight header', q: workFit('agents=ask&long=1&rec=1&keys2=both&studio=onair&desktoken=set'), checks: ['.lanes-hd', '.lanes-hd-l'] },
       { name: MEET_V, q: meetFit('meet=known&call=teams&camera=1&rec=1&checklist=four&keys2=both&studio=onair&desktoken=set'), checks: ['.meet .meet-hero'] },
@@ -229,6 +253,10 @@ export default {
             for (const k of s.drawerKids) if (k.l < d.l - 1 || k.r > d.r + 1 || k.b > d.b + 1) fails.push('studiohome: sheet part "' + k.n.trim() + '" leaves the sheet');
           }
         }
+        if (isSheet) {
+          for (const t of s.tiles) if (t.lineCut || t.nameCut) fails.push('studiohome: preset tile text is cut: "' + t.n + '"');
+          if (v.name === SIX_V && !(s.bodyScroll && s.bodyScroll.sh > s.bodyScroll.ch + 1 && s.bodyScroll.ov === 'auto')) fails.push('studiohome: the sheet with six looks does not scroll its body, so a control is out of reach');
+        }
         if (isTools) {
           const t = s.tools;
           const c = s.section;
@@ -273,6 +301,7 @@ export default {
       'studiohome-block': { css: '.st-block { height: 260px !important; }', expect: /^ *FAIL studiohome: .*(block|footnote)/m, appliesTo: (v) => v.name === BLOCK_V },
       'studiohome-presets': { css: '.st-preset { min-width: 400px !important; }', expect: /^ *FAIL studiohome: preset row part/m, appliesTo: (v) => v.name === BLOCK_V },
       'studiohome-switches': { css: '.st-room { min-width: 300px !important; }', expect: /^ *FAIL studiohome: switch row tile/m, appliesTo: (v) => v.name === BLOCK_V },
+      'studiohome-tiles': { css: '.st-pt-l { -webkit-line-clamp: 1 !important; }', expect: /^ *FAIL studiohome: preset tile text is cut/m, appliesTo: (v) => v.name === SHEET_V },
       'studiohome-sheet': { css: '.st-d-rooms { height: 600px !important; }', expect: /^ *FAIL studiohome: (the sheet is at|sheet part)/m, appliesTo: (v) => v.name === SHEET_V },
       'studiohome-offer': { css: '.st-offer { height: 120px !important; }', expect: /^ *FAIL studiohome: the offer bar/m, appliesTo: (v) => v.name === OFFER_V },
       'studiohome-meet': { css: '.lights-chip { width: 700px !important; }', expect: /^ *FAIL studiohome: (the Meet chip|the recording chip)/m, appliesTo: (v) => v.name === MEET_V },

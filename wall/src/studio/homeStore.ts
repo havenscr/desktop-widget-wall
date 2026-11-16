@@ -1,9 +1,11 @@
 import { create } from 'zustand';
+import { MAX_SHOW_MS } from '../onair/model';
 import { useOnAirStore } from '../onair/store';
 import { useSignalStore } from '../signals/store';
 import * as api from './home';
 import { homeWordOf, type GroupId, type HomeWord, type Moods, type Studio, type TokenStatus } from './home';
-import { noteHomeKeys } from './keyLights';
+import { currentInfo, noteHomeKeys } from './keyLights';
+import { queueHomeWrite, resetHomeQueue, watchHomeWrites } from './homeQueue';
 import { NOTE_MS, useKeyLights } from './store';
 
 /** Reads while a place that shows the home part is visible. */
@@ -19,6 +21,13 @@ export const TEXT = {
   failed: 'The home app did not take that change. This is what it reports now.',
   homeNotSetUp: 'The home app has no desk token yet. Set the same token there.',
   forbidden: 'The home app refused the desk token. Type it again in Tools.',
+  /** The wall's own check refused the click: nothing was sent. */
+  refused: 'That change is not one the home app offers right now. This is what it reports now.',
+  /** The home app no longer knows that preset, group, look or mood. */
+  unknown: 'The home app no longer lists that one. This is what it reports now.',
+  notSetUp: "To change these, type the home app's desk token in Tools.",
+  needsPrivate: 'The home app must be reached over https or the tailnet to take changes.',
+  nothingToUndo: 'There is nothing to go back from. This is what the home app reports now.',
 } as const;
 
 /** What the page can show of the home half: not read yet, not offered here, not answering, or ready. */
@@ -75,10 +84,6 @@ let offerTimer: ReturnType<typeof setTimeout> | undefined;
 let studioGen = 0;
 let moodsGen = 0;
 
-/** One write runs at a time; a write waiting for its turn is replaced by a newer one with the same key. */
-const queue: { key: string; run: () => Promise<void>; done: () => void }[] = [];
-let draining = false;
-
 export const useHome = create<HomeState>((set, get) => {
   const raise = (text: string) => {
     clearTimeout(noteTimer);
@@ -87,8 +92,11 @@ export const useHome = create<HomeState>((set, get) => {
   };
   const applyStudio = (s: Studio) => {
     studioGen++;
+    const could = currentInfo().homeCanSet;
     noteHomeKeys(s.keys?.canSet === true);
     set({ studio: s, readWord: null, readDone: true });
+    // The home app can now (or no longer) set the key lights: the key lights are read through the seam again.
+    if (could !== (s.keys?.canSet === true)) void useKeyLights.getState().read();
   };
   const applyMoods = (m: Moods) => {
     moodsGen++;
@@ -96,37 +104,13 @@ export const useHome = create<HomeState>((set, get) => {
   };
 
   const enqueue = (key: string, run: () => Promise<void>): Promise<void> =>
-    new Promise<void>((resolve) => {
-      const job = async () => {
-        try {
-          await run();
-        } finally {
-          resolve();
-        }
-      };
-      const waiting = queue.findIndex((q) => q.key === key);
-      if (waiting >= 0) {
-        // A newer click for the same control replaces the one that has not started; the older one is done.
-        queue[waiting].done();
-        queue[waiting] = { key, run: job, done: resolve };
-        return;
+    queueHomeWrite(key, async () => {
+      try {
+        await run();
+      } catch {
+        // Every write handles its own words; nothing more to say here.
       }
-      queue.push({ key, run: job, done: resolve });
-      set((s) => ({ writes: s.writes + 1 }));
-      if (!draining) void drain();
-    });
-  const drain = async () => {
-    draining = true;
-    try {
-      while (queue.length > 0) {
-        const next = queue.shift();
-        if (next) await next.run();
-        set((s) => ({ writes: Math.max(0, s.writes - 1) }));
-      }
-    } finally {
-      draining = false;
-    }
-  };
+    }, undefined);
 
   /** What to show and do after a write the home app did not take. */
   const afterStudioWord = async (w: HomeWord) => {
@@ -150,7 +134,23 @@ export const useHome = create<HomeState>((set, get) => {
       case 'failed':
         raise(TEXT.failed);
         break;
+      case 'refused':
+        raise(TEXT.refused);
+        break;
+      case 'unknown':
+        raise(TEXT.unknown);
+        break;
+      case 'not-set-up':
+        raise(TEXT.notSetUp);
+        break;
+      case 'needs-private-address':
+        raise(TEXT.needsPrivate);
+        break;
+      case 'nothing-to-undo':
+        raise(TEXT.nothingToUndo);
+        break;
       default:
+        // Absent, not configured, not set up at the home app: the read that follows shows its own line.
         break;
     }
     await get().readStudio();
@@ -258,6 +258,9 @@ export const useHome = create<HomeState>((set, get) => {
   };
 });
 
+// The page shows how many home writes are running or waiting (the queue is shared with the key light fallback).
+watchHomeWrites((n) => useHome.setState({ writes: n }));
+
 // Section: views
 
 export function homeView(s: Pick<HomeState, 'studio' | 'readWord' | 'readDone'>): HomeView {
@@ -281,7 +284,8 @@ let pollTimer: ReturnType<typeof setInterval> | undefined;
 export function homePollChange(by: 1 | -1): void {
   const before = pollUsers;
   pollUsers = Math.max(0, pollUsers + by);
-  if (by === 1) void useHome.getState().readStudio();
+  // A screen that joins reads at once; an offer waiting for a surface is decided on that read.
+  if (by === 1) void useHome.getState().readStudio().then(() => settleEdges());
   if (before === 0 && pollUsers > 0) pollTimer = setInterval(() => void useHome.getState().readStudio(), HOME_READ_EVERY_MS);
   if (pollUsers === 0) {
     clearInterval(pollTimer);
@@ -325,33 +329,75 @@ export function raiseOffer(kind: 'start' | 'stop', what: 'timer' | 'recording'):
   offerTimer = setTimeout(() => useHome.setState({ offer: null }), OFFER_MS);
 }
 
-let lastRunning = false;
+/** What began or ended, noted when it happens and decided when a studio surface has read the home app. */
+interface Edge {
+  kind: 'start' | 'stop';
+  what: 'timer' | 'recording';
+  at: number;
+}
+
+/** An edge nobody showed within this long is forgotten: it is no longer "just now". */
+const EDGE_FRESH_MS = 15_000;
+const pending: Partial<Record<Edge['what'], Edge>> = {};
+
+let prevSaved = useOnAirStore.getState().saved;
 let lastRecording = false;
 let watching = false;
 
 /** The page is hidden: nothing is read or offered. */
 const hidden = (): boolean => typeof document !== 'undefined' && document.visibilityState === 'hidden';
 
-async function onEdge(kind: 'start' | 'stop', what: 'timer' | 'recording') {
+/** Whether the world still matches an edge: a start that has since ended is no start. */
+function stillTrue(e: Edge): boolean {
+  if (e.what === 'recording') return useSignalStore.getState().recording === (e.kind === 'start');
+  const running = useOnAirStore.getState().saved.running;
+  return e.kind === 'start' ? running : !running;
+}
+
+/**
+ * Raises the offer for edges that are still true and fresh, after a read. Called when a studio surface has
+ * read the home app, never from a read nobody asked for.
+ */
+export function settleEdges(): void {
+  for (const what of ['timer', 'recording'] as const) {
+    const e = pending[what];
+    if (!e) continue;
+    if (Date.now() - e.at > EDGE_FRESH_MS || !stillTrue(e)) {
+      delete pending[what];
+      continue;
+    }
+    delete pending[what];
+    raiseOffer(e.kind, e.what);
+  }
+}
+
+async function onEdge(kind: Edge['kind'], what: Edge['what']) {
   if (hidden()) return;
-  // One fresh read decides: the state may be old when nothing on screen has been polling.
+  // The opposite edge makes the offer for this one obsolete, and an older edge of the same kind of thing.
+  const shown = useHome.getState().offer;
+  if (shown && shown.what === what && shown.kind !== kind) useHome.getState().dismissOffer();
+  const edge: Edge = { kind, what, at: Date.now() };
+  pending[what] = edge;
+  // Only a shown studio surface reads: with none, the edge waits for one to show (a chip a moment later).
+  if (pollUsers === 0) return;
   await useHome.getState().readStudio();
-  raiseOffer(kind, what);
+  if (pending[what] === edge) settleEdges();
 }
 
 /** Starts watching the show timer and the recording signal (read only), once. */
 export function watchOffers(): void {
   if (watching) return;
   watching = true;
-  lastRunning = useOnAirStore.getState().saved.running;
+  prevSaved = useOnAirStore.getState().saved;
   lastRecording = useSignalStore.getState().recording;
   useOnAirStore.subscribe((s) => {
-    const r = s.saved.running;
-    if (r === lastRunning) return;
-    lastRunning = r;
-    // A timer restored from storage at launch started long ago: that is not "just now".
-    if (r && (s.saved.startedAt === null || Date.now() - s.saved.startedAt > JUST_NOW_MS)) return;
-    void onEdge(r ? 'start' : 'stop', 'timer');
+    const p = prevSaved;
+    const n = s.saved;
+    prevSaved = n;
+    // A fresh start (not carrying on after a pause) that is only just now, not a timer restored at launch.
+    if (!p.running && n.running && p.firstStartAt === null && n.startedAt !== null && Date.now() - n.startedAt <= JUST_NOW_MS) void onEdge('start', 'timer');
+    // The show ending: the timer stopped itself at 24 hours, or was reset. A pause (the Stop button) and carrying on raise nothing.
+    else if ((p.running && !n.running && n.accumulatedMs >= MAX_SHOW_MS) || (!n.running && p.firstStartAt !== null && n.firstStartAt === null)) void onEdge('stop', 'timer');
   });
   useSignalStore.subscribe((s, prev) => {
     const r = s.recording;
@@ -374,10 +420,11 @@ export function resetHome(): void {
   clearInterval(moodTimer);
   pollTimer = moodTimer = undefined;
   pollUsers = moodUsers = 0;
-  queue.length = 0;
-  draining = false;
+  resetHomeQueue();
   studioGen = moodsGen = 0;
-  lastRunning = useOnAirStore.getState().saved.running;
+  prevSaved = useOnAirStore.getState().saved;
+  delete pending.timer;
+  delete pending.recording;
   lastRecording = useSignalStore.getState().recording;
   useHome.setState({
     studio: null,
