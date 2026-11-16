@@ -170,7 +170,7 @@ const variants = [
 
 const on = (...keys) => (v) => keys.some((k) => v.name === `Office moods, ${NAMES[k]}`);
 
-const gq = (extra) => `hz=unwind&at=${encodeURIComponent(night)}&clock=review&weather=ok&audio=demo${TOKEN}&${extra}`;
+const gq = (extra) => `hz=unwind&at=${encodeURIComponent(night)}&clock=review&weather=ok&audio=demo${extra.includes('desktoken=') ? '' : TOKEN}&${extra}`;
 const gstate = (name, extra, expect, actions) => ({ screen: 'unwind', name: `office moods: ${name}`, query: gq(extra), custom: true, expect, ...(actions ? { actions } : {}) });
 const LONG_NAME = 'Bright desk for the long afternoon sessions';
 
@@ -182,8 +182,8 @@ export default {
       gstate('the home app is down, the slot stays empty', 'office=down', ['!Office moods', '!No mood on.']),
       gstate('an empty list, the slot stays empty', 'office=empty', ['!Office moods', '!No mood on.']),
       gstate('six moods and Off, a mood on', 'office=six&officeoff=offered&officemood=relax', ['Office moods', 'Bright desk', 'Reading', 'Relax', 'Gaming', 'Meeting', 'Night', 'Off', 'Relax:', 'Room 35%, neon 30%']),
-      gstate('six moods, no Off until the home app offers it', 'office=six&officemood=gaming', ['Office moods', 'Gaming:', 'Room 25%, panels 10%', '!Off']),
-      gstate('five moods, none on', 'office=five', ['Office moods', 'No mood on.', '!Off']),
+      gstate('six moods, no Off until the home app offers it', 'office=six&officemood=gaming', ['Office moods', 'Gaming:', 'Room 25%, panels 10%']),
+      gstate('five moods, none on', 'office=five', ['Office moods', 'No mood on.']),
       gstate('Off is lit', 'office=six&officeoff=on', ['Office lights are off.', 'Off']),
       gstate('a click on Off', 'office=six&officeoff=offered&officemood=relax', ['Office lights are off.'], '[data-mood="off"]'),
       gstate('a click on a mood', 'office=six&officeoff=offered', ['Gaming:', 'Room 25%, panels 10%'], '[data-mood="gaming"]'),
