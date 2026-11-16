@@ -6,6 +6,8 @@ const state = (name, knobs, expect, actions) => ({ screen: 'onair', name, query:
 const variant = (name, knobs, extra = {}) => ({ name, q: fitQuery(knobs), checks, ...extra });
 
 function measureOnAir() {
+  // The new frame (`?onair=v2`) is measured by the onair-modes area, never by these checks.
+  if (new URLSearchParams(location.search).get('onair') === 'v2') return [];
   const fails = [];
   const want = new URLSearchParams(location.search).get('screen') === 'onair';
   if (!document.querySelector('.onair')) return want ? ['on air: the place did not open'] : [];

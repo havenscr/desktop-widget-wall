@@ -25,6 +25,8 @@ export interface Show {
 export interface MarkResult {
   today: number;
   last: string[];
+  /** The part of each of those marks, in the same order, as Rust cut them; an empty text for a mark with no part. Missing in an answer from an older native side. */
+  lastParts?: string[];
 }
 
 /** The show timer and the current part, as kept in local storage (`wall2-onair`). */
@@ -240,5 +242,7 @@ export function isShow(v: unknown): v is Show {
 
 /** A MarkResult answer checked before use. */
 export function isMarkResult(v: unknown): v is MarkResult {
-  return !!v && typeof v === 'object' && typeof (v as MarkResult).today === 'number' && Array.isArray((v as MarkResult).last);
+  if (!v || typeof v !== 'object') return false;
+  const r = v as MarkResult;
+  return typeof r.today === 'number' && Array.isArray(r.last) && (r.lastParts === undefined || (Array.isArray(r.lastParts) && r.lastParts.every((p) => typeof p === 'string')));
 }

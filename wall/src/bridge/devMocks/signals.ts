@@ -11,9 +11,16 @@ export function registerSignalMocks(): void {
   if (kind) mic[kind] = true;
   if (kind && q.get('camera') === '1') camera[kind] = true;
   if (q.get('rec') === '1') mic.recorder = true;
+  // `callbrowserav=1` (the new On Air frame): a browser holds the camera and microphone with no call, as a broadcast from the browser does.
+  if (q.get('callbrowserav') === '1') {
+    mic.browser = true;
+    camera.browser = true;
+  }
   // `callsince=-70`: the call began that many minutes ago (a call that outlasts its meeting).
   const since = Number(q.get('callsince'));
-  const payload: SignalPayload = { known: true, mic, camera, ...(kind ? { mockCall: kind } : {}), ...(kind && Number.isFinite(since) && since < 0 && q.has('callsince') ? { mockSince: (reviewNow ? reviewNow() : Date.now()) + since * 60_000 } : {}) };
+  // `meetnow=1` (the meeting in devMocks/meet.ts, 10:00 to 11:00 on a 10:24 review clock): the call began at 9:56, four minutes before it, unless `callsince` says otherwise.
+  const joinedEarly = q.get('meetnow') === '1' && !q.has('callsince');
+  const payload: SignalPayload = { known: true, mic, camera, ...(kind ? { mockCall: kind } : {}), ...(kind && Number.isFinite(since) && since < 0 && q.has('callsince') ? { mockSince: (reviewNow ? reviewNow() : Date.now()) + since * 60_000 } : kind && joinedEarly ? { mockSince: (reviewNow ? reviewNow() : Date.now()) - 28 * 60_000 } : {}) };
   const leave = q.has('leave') ? Number(q.get('leave')) : Number.NaN;
   if (Number.isFinite(leave) && leave >= 0 && leave <= 180) {
     const now = Date.now();
