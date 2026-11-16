@@ -73,6 +73,21 @@ const measureMarks = () => {
     const effective = (e) => { let o = 1; for (let n = e; n && n.nodeType === 1; n = n.parentElement) o *= Number(getComputedStyle(n).opacity); return o; };
     const visible = (e) => { const r = e.getBoundingClientRect(); const s = getComputedStyle(e); return r.width > 0 && r.height > 0 && s.display !== 'none' && s.visibility !== 'hidden'; };
     const words = (e) => [...e.querySelectorAll('*')].concat([e]).filter((x) => [...x.childNodes].some((c) => c.nodeType === 3 && c.textContent.trim()));
+    if (mode.startsWith('card')) {
+      // The hover card opened (by focus) on a control at the wall's left edge starts at that control's left edge and never reaches the rail.
+      const [sel, name] = { cardwork: ['.u-cap-work', 'the capsule'], cardnet: ['.u-cap-net', 'the alerts button'], cardneed: ['.u-need', 'the amber pill'] }[mode];
+      const anchor = document.querySelector(sel);
+      const card = document.querySelector('.hover-tip');
+      if (!anchor) return { fails: ['status marks: no ' + name + ' to open a card on'], mode };
+      if (!card) return { fails: ['status marks: no card is open on ' + name], mode };
+      const c = R(card);
+      const a = R(anchor);
+      if (!near(c.l, a.l, 1)) fails.push('status marks: the card on ' + name + ' starts at x ' + Math.round(c.l) + ' but the control starts at x ' + Math.round(a.l) + ' (the same, within 1 px)');
+      const rail = document.querySelector('.rail');
+      if (rail && meet(c, R(rail))) fails.push('status marks: the card on ' + name + ' at ' + where(c) + ' overlaps the rail at ' + where(R(rail)));
+      if (c.l < 11.5 || c.r > 2548.5) fails.push('status marks: the card on ' + name + ' at ' + where(c) + ' is closer than 12 px to the wall edge');
+      return { fails, mode, name, left: Math.round(c.l), width: Math.round(c.w) };
+    }
     if (mode === 'dream') {
       const d = document.querySelector('.dream-status');
       if (!d) return { fails: ['status marks: Dream draws no status line'], mode };
@@ -187,7 +202,8 @@ const rule = (variant, results, emit) => {
   if (!r) return false;
   for (const f of r.fails) emit(`  FAIL ${f}`);
   if (r.fails.length) return true;
-  if (r.mode === 'dream') emit(`  ok   status marks: Dream's sentence is 16 px, rgba(241, 236, 255, .54), the needs part amber with an 8 px dot (${r.width} px wide)`);
+  if (r.mode.startsWith('card')) emit(`  ok   status marks: the card on ${r.name} starts at x ${r.left} (the control's left edge), ${r.width} px wide, clear of the rail and 12 px from the wall edge`);
+  else if (r.mode === 'dream') emit(`  ok   status marks: Dream's sentence is 16 px, rgba(241, 236, 255, .54), the needs part amber with an 8 px dot (${r.width} px wide)`);
   else emit(`  ok   status marks: capsule ${r.cap} wide and pill at 36 high from x 124, y 664, the row ${r.width} px wide (right edge ${r.right}, the wing ends at ${r.wing}, the centre column starts at ${r.centre}), no text cut, 16 px or more, nothing overlaps Tomorrow, the controls, Watt or the drive-in`);
   return false;
 };
@@ -204,6 +220,9 @@ const V = {
   watchworst: 'Status marks, Watch with the drive-in, the worst case',
   dream: 'Status marks, Dream, calm',
   dreamNeed: 'Status marks, Dream, an agent needs you',
+  cardWork: 'Status marks, the capsule card open',
+  cardNet: 'Status marks, the alerts button card open',
+  cardNeed: 'Status marks, the amber pill card open',
 };
 const variant = (name, query, mode, checks = ['.u-line', '.u-cap', '.u-tomorrow']) => ({ name, q: `?${query}&smcheck=${mode}`, checks });
 const variants = [
@@ -216,6 +235,9 @@ const variants = [
   variant(V.worst, WORST, 'worst'),
   variant(V.watch, WATCH, 'watch'),
   variant(V.watchworst, WATCH_WORST, 'watchworst'),
+  { ...variant(V.cardWork, CALM, 'cardwork'), click: 'tip:.u-cap-work' },
+  { ...variant(V.cardNet, BUSY, 'cardnet'), click: 'tip:.u-cap-net' },
+  { ...variant(V.cardNeed, NEED, 'cardneed'), click: 'tip:.u-need' },
   variant(V.dream, DREAM('run1'), 'dream', ['.dream-status']),
   variant(V.dreamNeed, DREAM('ask'), 'dream', ['.dream-status']),
 ];
@@ -243,6 +265,10 @@ export default {
       'marks-fade': { css: '.u-dot, .u-need { animation: none !important; }', expect: /^ *FAIL status marks: the u-dot does not fade in over 400 ms/m, appliesTo: on(V.calm) },
       'marks-loop': { css: '.u-need { animation-iteration-count: infinite !important; }', expect: /^ *FAIL status marks: the u-need animation repeats/m, appliesTo: on(V.need) },
       'marks-watch': { css: '.u-line { margin-left: 520px !important; }', expect: /^ *FAIL status marks: the row at [\d,]+ overlaps (the centre column|the drive-in)/m, appliesTo: on(V.watch) },
+      'marks-card-work': { css: '.hover-tip { transform: translateX(-90px) !important; }', expect: /^ *FAIL status marks: the card on the capsule starts at x \d+ but the control starts at x \d+/m, appliesTo: on(V.cardWork) },
+      'marks-card-net': { css: '.hover-tip { transform: translateX(-90px) !important; }', expect: /^ *FAIL status marks: the card on the alerts button starts at x \d+ but the control starts/m, appliesTo: on(V.cardNet) },
+      'marks-card-need': { css: '.hover-tip { transform: translateX(90px) !important; }', expect: /^ *FAIL status marks: the card on the amber pill starts at x \d+ but the control starts/m, appliesTo: on(V.cardNeed) },
+      'marks-card-rail': { css: '.rail { width: 300px !important; }', expect: /^ *FAIL status marks: the card on the capsule at [\d,]+ overlaps the rail/m, appliesTo: on(V.cardWork) },
       'marks-dream-size': { css: '.dream-status { font-size: 13px !important; }', expect: /^ *FAIL status marks: Dream text is \d+ px/m, appliesTo: on(V.dream) },
       'marks-dream-needs': { css: '.dream-needs i { width: 14px !important; }', expect: /^ *FAIL status marks: the Dream needs dot is \d+ by \d+ px/m, appliesTo: on(V.dreamNeed) },
     },

@@ -8,13 +8,13 @@ import { resetAgents } from '../agents/useAgents';
 import { mocks } from '../bridge/tauri';
 import { useFocusStore } from '../focus/store';
 import { AlarmChip } from '../home/AlarmChip';
-import { useSecurityFeed } from '../home/useSecurity';
+import { useOpenAlarms, useSecurityFeed } from '../home/useSecurity';
 import { usePacificTime } from '../ribbon/testZone';
 import { usePlaceStore } from '../state/places';
-import { HoverTipLayer, resetTip } from '../ui/HoverTip';
-import { StatusLine } from './StatusLine';
-import { needsCard, statusCard, statusLine, statusMarks, statusParts, STATUS_MAX_DOTS, type FocusSeen, type StatusSummary } from './model';
-import { drawnLine } from './statusTestUtil';
+import { HoverTipLayer, resetTip, TIP_DELAY_MS, TIP_REFRESH_MS } from '../ui/HoverTip';
+import { StatusLine, STATUS_POLL_MS } from './StatusLine';
+import { needsCard, statusCard, statusMarks, STATUS_MAX_DOTS, type FocusSeen, type StatusSummary } from './model';
+import { drawnLine, statusLine, statusParts } from './statusTestUtil';
 
 usePacificTime();
 
@@ -198,7 +198,11 @@ it('a waiting lane the helper total misses still shows the pill', async () => {
   expect(drawnLine()).toMatchObject({ dots: 0, pill: 'One thing needs you' });
 });
 
-it('the capsule goes to Work on a click; every control is a real button in the tab order', async () => {
+// jsdom does not turn Enter or Space on a button into a click (the browser does, for a real `button`), and
+// `@testing-library/user-event` is not installed. So this checks what makes the keys work (a real button, in the tab
+// order, no key handler of its own, named for a screen reader); the keys themselves are checked in a real browser
+// (see the pull request) and the destination of each control below.
+it('every control is a real button in the tab order, so Enter and Space act as a click', async () => {
   await show(sum({ lanes: [...running(1), waits(A)], yourMove: { total: 1, first: { sessionId: A } } }), 4);
   const buttons = [...document.querySelectorAll('.u-line button')] as HTMLButtonElement[];
   expect(buttons.map((b) => b.className.split(' ')[0])).toEqual(['u-cap-work', 'u-cap-net', 'u-need']);
@@ -209,9 +213,23 @@ it('the capsule goes to Work on a click; every control is a real button in the t
     expect(b.disabled).toBe(false);
     expect(b.getAttribute('aria-label') ?? b.textContent).toBeTruthy();
     expect(b.getAttribute('title')).toBeNull();
+    expect(b.getAttribute('onkeydown')).toBeNull();
   }
-  fireEvent.click(work());
-  expect(usePlaceStore.getState().active).toBe('work');
+});
+
+it.each([
+  ['the capsule', '.u-cap-work', 'work', null, true],
+  ['the alerts button', '.u-cap-net', 'home', null, true],
+  ['the amber pill with a link', '.u-need', 'unwind', A, true],
+  ['the amber pill without a link', '.u-need', 'work', null, false],
+] as const)('%s goes to its destination on a click', async (_name, selector, place, opened, links) => {
+  const calls: unknown[] = [];
+  mocks.set('wall2_open_session', (a) => void calls.push(a));
+  await show(sum({ lanes: [...running(1), waits(A)], yourMove: { total: 1, first: { sessionId: A } }, linksAvailable: links }), 4);
+  fireEvent.click(document.querySelector(selector)!);
+  await flush();
+  expect(usePlaceStore.getState().active).toBe(place);
+  expect(calls).toEqual(opened ? [{ id: opened }] : []);
 });
 
 it('snoozed chats stay quiet: no pill, the card leaves the needs sentence out; one unsnoozed chat still shows', async () => {
@@ -341,15 +359,69 @@ it('table: the alerts count on the button is the count the old chip said', async
   }
 });
 
-it('draws no timers of its own: the marks cost no timer, and while nothing changes none starts', async () => {
-  // The helper poll and the shared security poll are the baseline; a busy night adds none.
-  await show(sum());
-  const calm = vi.getTimerCount();
+/** An answer that changes between reads: the first call gets `first`, every later one `later`. */
+const changing = (first: StatusSummary, later: StatusSummary) => {
+  let calls = 0;
+  return () => (++calls === 1 ? first : later);
+};
+/** Rest on (or focus) a control, let the next helper read land, and give the open card its redraw. */
+async function openAcrossARead(selector: string, how: 'hover' | 'focus') {
+  const el = document.querySelector(selector)!;
+  if (how === 'hover') fireEvent.mouseEnter(el);
+  else fireEvent.focus(el);
+  await flush(TIP_DELAY_MS + 1);
+  const before = document.querySelector('.hover-tip')?.textContent ?? '';
+  await flush(STATUS_POLL_MS);
+  await flush(TIP_REFRESH_MS);
+  return { before, after: document.querySelector('.hover-tip')?.textContent ?? '' };
+}
+
+it.each(['hover', 'focus'] as const)("a capsule card that is open (%s) across a read that sends an agent from running to waiting does not keep the old sentence", async (how) => {
+  await show(changing(sum({ lanes: running(1) }), sum({ lanes: [waits(A)], yourMove: { total: 1, first: { sessionId: A } } })));
+  const { before, after } = await openAcrossARead('.u-cap-work', how);
+  expect(before).toContain('1 agent still running. No agent needs you.');
+  expect(after).toContain('One thing needs you.');
+  expect(after).not.toContain('No agent needs you');
+  expect(after).not.toContain('still running');
+  expect(drawnLine()).toMatchObject({ dots: 0, pill: 'One thing needs you' });
+});
+
+it.each(['hover', 'focus'] as const)('a pill card that is open (%s) across a read that sends one waiting chat to two shows the new title and hint', async (how) => {
+  await show(
+    changing(
+      sum({ lanes: [waits(A)], yourMove: { total: 1, first: { sessionId: A }, ids: [A] } }),
+      sum({ lanes: [waits(A), waits(B)], yourMove: { total: 2, first: { sessionId: A }, ids: [A, B] } }),
+    ),
+  );
+  const { before, after } = await openAcrossARead('.u-need', how);
+  expect(before).toBe('One chat is waiting for youClick to open it');
+  expect(after).toBe('2 chats are waiting for youClick to open the first one');
+});
+
+/** The timers the shared security read keeps (its poll and its clock), measured with nothing else rendered. */
+function Probe() {
+  useOpenAlarms();
+  return null;
+}
+it('draws no timers of its own: exactly the helper poll on top of the shared security read, in every state', async () => {
+  mocks.set('wall2_home_security', () => security(0));
+  mocks.set('wall2_omni_summary', () => sum());
+  const probe = render(<Probe />);
+  await flush();
+  const base = vi.getTimerCount();
+  probe.unmount();
   cleanup();
-  await show(sum({ lanes: [...running(7), waits(A)], yourMove: { total: 1, first: { sessionId: A } } }), 12);
-  expect(vi.getTimerCount()).toBe(calm);
-  await flush(1000);
-  expect(vi.getTimerCount()).toBe(calm);
+  for (const [name, s, alarms] of [
+    ['calm', sum(), 0],
+    ['busy', sum({ lanes: [...running(7), waits(A)], yourMove: { total: 1, first: { sessionId: A } } }), 12],
+  ] as const) {
+    await show(s, alarms);
+    expect(vi.getTimerCount(), name).toBe(base + 1);
+    await flush(1000);
+    expect(vi.getTimerCount(), `${name}, a second later`).toBe(base + 1);
+    cleanup();
+    unsetSecurity();
+  }
 });
 
 const ALL_CSS = readFileSync('src/styles/unwind.css', 'utf8');

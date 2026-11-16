@@ -36,6 +36,8 @@ export function StatusLine() {
   const [summary, setSummary] = useState<StatusSummary | null>(null);
   const [failed, setFailed] = useState(false);
   const mounted = useRef(true);
+  /** The latest card words. A card that is open when an answer lands redraws from this, so it never reads old counts. */
+  const words = useRef<{ card: ReturnType<typeof statusCard>; need: ReturnType<typeof needsCard> | null }>({ card: { title: '', detail: '', hint: '' }, need: null });
   useEffect(() => {
     mounted.current = true;
     return () => {
@@ -72,6 +74,7 @@ export function StatusLine() {
   // Nothing to say and no alarm: nothing is drawn (the focus store has not loaded and the agents have nothing to add).
   if (m.focus === 'unknown' && m.running <= 0 && !ring && needs <= 0 && alarms <= 0) return null;
   const card = statusCard(m);
+  words.current = { card, need: needs > 0 ? needsCard(needs, !!m.open) : null };
   const dots = Math.min(m.running, STATUS_MAX_DOTS);
   const more = m.running - dots;
   const open = m.open;
@@ -86,11 +89,14 @@ export function StatusLine() {
           aria-label={[card.title, card.detail, 'Show the agents on Work'].filter(Boolean).join('. ').replace(/\.\./g, '.')}
           onClick={toWork}
           {...tip(
-            <>
-              <span className="tip-t">{card.title}</span>
-              {card.detail ? <span className="tip-s">{card.detail}</span> : null}
-              <span className="tip-k">{card.hint}</span>
-            </>,
+            () => (
+              <>
+                <span className="tip-t">{words.current.card.title}</span>
+                {words.current.card.detail ? <span className="tip-s">{words.current.card.detail}</span> : null}
+                <span className="tip-k">{words.current.card.hint}</span>
+              </>
+            ),
+            { align: 'start' },
           )}
         >
           <Mark className={`u-mark${m.focus === 'on' ? ' focus' : ''}`} size={22} stroke={1.7} aria-hidden="true" />
@@ -109,10 +115,13 @@ export function StatusLine() {
           className="u-need"
           onClick={() => (open ? openSession(open) : toWork())}
           {...tip(
-            <>
-              <span className="tip-t">{needsCard(needs, !!open).title}</span>
-              <span className="tip-k">{needsCard(needs, !!open).hint}</span>
-            </>,
+            () => (
+              <>
+                <span className="tip-t">{words.current.need?.title}</span>
+                <span className="tip-k">{words.current.need?.hint}</span>
+              </>
+            ),
+            { align: 'start' },
           )}
         >
           <i className="u-dot amber" aria-hidden="true" />

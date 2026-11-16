@@ -29,9 +29,11 @@ interface TipState {
   pinned: boolean;
   /** Beside the anchor (right, else left), top aligned with it, instead of above or below. */
   side: boolean;
+  /** `start`: the card's left edge lines up with its anchor's (a control at the left edge of the wall); the default centres it. */
+  align: 'center' | 'start';
 }
 
-const empty: TipState = { render: null, box: null, anchor: null, pinned: false, side: false };
+const empty: TipState = { render: null, box: null, anchor: null, pinned: false, side: false, align: 'center' };
 const useTipStore = create<TipState>(() => empty);
 let timer: ReturnType<typeof setTimeout> | null = null;
 let quietFocusUntil = 0;
@@ -48,13 +50,13 @@ function designBox(el: Element): TipState['box'] {
 
 const asRender = (content: Content): (() => ReactNode) => (typeof content === 'function' ? (content as () => ReactNode) : () => content);
 
-function show(el: Element, content: Content, delay: number): void {
+function show(el: Element, content: Content, delay: number, align: TipState['align'] = 'center'): void {
   if (useTipStore.getState().pinned) return;
   if (timer) clearTimeout(timer);
   timer = setTimeout(() => {
     timer = null;
     if (!el.isConnected || useTipStore.getState().pinned) return;
-    useTipStore.setState({ render: asRender(content), box: designBox(el), anchor: el, pinned: false, side: false });
+    useTipStore.setState({ render: asRender(content), box: designBox(el), anchor: el, pinned: false, side: false, align });
   }, delay);
 }
 
@@ -77,22 +79,25 @@ export function hideTip(force = false): void {
 export function pinTip(el: Element, content: Content, opts: { side?: boolean } = {}): void {
   if (timer) clearTimeout(timer);
   timer = null;
-  useTipStore.setState({ render: asRender(content), box: designBox(el), anchor: el, pinned: true, side: !!opts.side });
+  useTipStore.setState({ render: asRender(content), box: designBox(el), anchor: el, pinned: true, side: !!opts.side, align: 'center' });
 }
 
 /**
  * Hover (and keyboard focus) handlers that show a small card above an element after a
  * short rest. `content` may be a function, so it is built when shown (and redrawn while
  * it shows). One card at a time, drawn by `HoverTipLayer`. The focus that follows a click
- * does not reopen the card the click just closed.
+ * does not reopen the card the click just closed. `align: 'start'` lines the card's left edge up with the
+ * control's (for a control at the wall's left edge, so the card does not reach over the rail); the default
+ * centres it, and every other card in the app keeps that.
  */
-export function tip(content: Content) {
+export function tip(content: Content, opts: { align?: TipState['align'] } = {}) {
+  const align = opts.align ?? 'center';
   return {
-    onMouseEnter: (e: MouseEvent) => show(e.currentTarget, content, TIP_DELAY_MS),
+    onMouseEnter: (e: MouseEvent) => show(e.currentTarget, content, TIP_DELAY_MS, align),
     onMouseLeave: () => hideTip(),
     onFocus: (e: FocusEvent) => {
       if (Date.now() < quietFocusUntil) return;
-      show(e.currentTarget, content, 0);
+      show(e.currentTarget, content, 0, align);
     },
     onBlur: () => hideTip(),
     onMouseDown: () => {
@@ -128,7 +133,7 @@ export function resetTip(): void {
  * redrawn every 15 seconds while it shows.
  */
 export function HoverTipLayer() {
-  const { render, box, anchor, pinned, side } = useTipStore();
+  const { render, box, anchor, pinned, side, align } = useTipStore();
   const ref = useRef<HTMLDivElement>(null);
   const [pos, setPos] = useState<{ left: number; top: number; below: boolean; side?: 'right' | 'left'; tail: number } | null>(null);
   const [, setTick] = useState(0);
@@ -148,14 +153,14 @@ export function HoverTipLayer() {
       setPos({ left: onRight ? right : Math.max(EDGE, box.x - w - GAP), top, below: false, side: onRight ? 'right' : 'left', tail });
       return;
     }
-    const left = Math.min(STAGE_W - EDGE - w, Math.max(EDGE, box.x + box.w / 2 - w / 2));
+    const left = Math.min(STAGE_W - EDGE - w, Math.max(EDGE, align === 'start' ? box.x : box.x + box.w / 2 - w / 2));
     // Above its control, with a gap for the tail; below when there is no room above. Never over it.
     const above = box.y - h - GAP;
     const below = above < EDGE;
     // The tail points at the control's middle, kept off the card's corners.
     const tail = Math.min(w - 22, Math.max(10, box.x + box.w / 2 - left - 6));
     setPos({ left, top: below ? box.y + box.h + GAP : above, below, tail });
-  }, [render, box, side]);
+  }, [render, box, side, align]);
   // Scrolling (any scroller, the wall's lists included) takes a hover card down; a pinned one stays.
   useEffect(() => {
     if (!render || pinned) return;

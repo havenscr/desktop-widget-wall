@@ -98,16 +98,6 @@ export interface StatusSummary {
 /** The focus timer as the status line sees it: not loaded yet, a session on, or none. */
 export type FocusSeen = 'unknown' | 'on' | 'off';
 
-/**
- * One part of the status line: plain text, the running agents (a chip that switches to
- * Work), or the things that need the owner (an amber chip that opens the first waiting
- * chat, `open` being its session id; null when it cannot be opened, then plain text).
- */
-export type StatusPart =
-  | { kind: 'text'; text: string }
-  | { kind: 'running'; text: string }
-  | { kind: 'needs'; text: string; open: string | null };
-
 /** A weather part that is missing: the date line then ends with this, in dim text. */
 export const WEATHER_UNAVAILABLE = 'weather unavailable';
 
@@ -131,51 +121,12 @@ export function visibleMoods<T extends { id: string }>(moods: readonly T[], on: 
   return extra ? [...first.slice(0, -1), extra] : first;
 }
 
-/**
- * "Work is put away. 2 agents still running. No agent needs you." as parts. The first
- * sentence needs the focus store loaded: a session running or paused says "Focus is still
- * on.", and before it has loaded nothing is said about it. The agent and needs-you parts
- * need a current helper summary: without the helper, or when it says its data is stale,
- * they are left out, and so is a needs-you count that is not a number. "No agent needs
- * you." is plain text; "N things need you" opens the first waiting chat when links are
- * available (the summary's first your-move session, else the first lane that waits).
- */
-export function statusParts(focus: FocusSeen, summary: StatusSummary | null, snoozed: ReadonlySet<string> = new Set()): StatusPart[] {
-  const parts: StatusPart[] = [];
-  if (focus === 'on') parts.push({ kind: 'text', text: 'Focus is still on.' });
-  else if (focus === 'off') parts.push({ kind: 'text', text: 'Work is put away.' });
-  if (summary && summary.stale !== true) {
-    // The same rules Work and Dream use: a lane that waits on the owner is not running, and a
-    // waiting lane counts as needing the owner even when the helper's your-move total is lower.
-    const lanes = cards({ lanes: summary.lanes as Lane[], sessionsList: summary.sessionsList as Lane[] | null | undefined ?? null });
-    const running = lanes.filter(laneWorks).length;
-    if (running > 0) parts.push({ kind: 'running', text: `${running} ${running === 1 ? 'agent' : 'agents'} still running.` });
-    const total = summary.yourMove.total;
-    if (typeof total === 'number' && Number.isFinite(total) && total >= 0) {
-      // A session quietened with "Later" on Work stays quiet here until its snooze ends.
-      const partial = { yourMove: summary.yourMove, lanes } as unknown as OmniSummary;
-      const asks = Math.floor(needsYouCount(partial, snoozed));
-      if (asks === 0) parts.push({ kind: 'text', text: 'No agent needs you.' });
-      else {
-        const first = summary.yourMove.first?.sessionId;
-        const id =
-          (first && !snoozed.has(first) ? first : null) ||
-          waitingIds(partial).find((w) => !snoozed.has(w)) ||
-          summary.lanes.find((l) => (l.waiting || l.state === 'blocked') && !(l.id && snoozed.has(l.id)))?.id ||
-          null;
-        parts.push({ kind: 'needs', text: asks === 1 ? 'One thing needs you.' : `${asks} things need you.`, open: summary.linksAvailable === true && id ? id : null });
-      }
-    }
-  }
-  return parts;
-}
-
 /** How the helper last answered, as the status marks see it: no answer yet or not set up, failing, stale, or current. */
 export type AgentsRead = 'current' | 'stale' | 'failed' | 'unset';
 
 /**
  * The numbers behind the status marks (the capsule, its dots, the amber pill), counted by the same rules
- * as `statusParts` (top-level sessions only; a waiting session is not running). `agents` says how far the
+ * as the old sentence (`statusParts`, now a frozen test reference) (top-level sessions only; a waiting session is not running). `agents` says how far the
  * helper can be trusted: only `current` carries counts, `stale` and `failed` draw the grey ring ("no fresh
  * answer") and `unset` (not set up, or no read yet) draws neither. `needs` is null when the count is not a
  * number; `snoozedWaiting` counts waiting chats quietened with "Later", which are not counted in `needs`.
@@ -194,7 +145,7 @@ export const STATUS_MAX_DOTS = 6;
 
 /**
  * The status line as numbers instead of sentences. `failed` says whether a missing summary is a read that
- * failed (a ring) rather than a helper that is not set up (nothing). Counting is the same as `statusParts`;
+ * failed (a ring) rather than a helper that is not set up (nothing). Counting is the same as the old sentence (`statusParts` in the test helper);
  * a table test holds the two to the same answers.
  */
 export function statusMarks(focus: FocusSeen, summary: StatusSummary | null, snoozed: ReadonlySet<string> = new Set(), failed = false): StatusMarks {
@@ -244,13 +195,6 @@ export function statusCard(m: StatusMarks): { title: string; detail: string; hin
 /** The first line of the amber pill's card, and what a click does. */
 export function needsCard(needs: number, canOpen: boolean): { title: string; hint: string } {
   return { title: needs === 1 ? 'One chat is waiting for you' : `${needs} chats are waiting for you`, hint: canOpen ? (needs === 1 ? 'Click to open it' : 'Click to open the first one') : 'Click to see them on Work' };
-}
-
-/** The status line as one string (the parts' words, in order). */
-export function statusLine(focus: FocusSeen, summary: StatusSummary | null, snoozed: ReadonlySet<string> = new Set()): string {
-  return statusParts(focus, summary, snoozed)
-    .map((p) => p.text)
-    .join(' ');
 }
 
 /** One row of `get_audio_sessions`. */

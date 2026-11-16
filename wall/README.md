@@ -1618,7 +1618,10 @@ frame (no ribbon) in the wide zones `470px 1fr 540px`. The parts are in `wall/sr
   agent, six at most and then "+N" (nothing running: the mark alone). A focus session that is
   on or paused swaps the mark for a cyan target and the card's title for "Focus is still on".
   Network alerts, only from a current good read, are a shield and a count inside the capsule
-  after a thin divider. Resting the pointer on the capsule (or tabbing to it) shows the
+  after a thin divider. The three controls' hover cards start at the control's left edge
+  (`tip(content, { align: 'start' })` in `ui/HoverTip.tsx`; every other card keeps the
+  centred default) so they never cover the rail, and an open card redraws from the latest
+  answer. Resting the pointer on the capsule (or tabbing to it) shows the
   sentences the old line said: "Work is put away", "2 agents still running. No agent needs
   you.", "Click to see the agents on Work"; a click goes to Work, and the alerts button goes
   to Home. When an agent needs the owner, a separate amber pill 10 px to its right says "One
@@ -1637,8 +1640,8 @@ frame (no ribbon) in the wide zones `470px 1fr 540px`. The parts are in `wall/sr
   two digits). With nothing to say and no alarm nothing is drawn. Counting is the same as
   Work's (top-level sessions only; a waiting session is not running), and the line never
   lists, counts or opens a child session or a side chat. `statusMarks` in `unwind/model.ts`
-  gives the numbers; `statusParts` (the old sentence) stays as the reference the table test
-  holds the marks to. Dev knobs: `?agents=runN` (N sessions, all running), `run2ask2` (two
+  gives the numbers; the old sentence builder lives on only in `unwind/statusTestUtil.ts`,
+  frozen as the reference the table test holds the marks to (nothing in the app calls it). Dev knobs: `?agents=runN` (N sessions, all running), `run2ask2` (two
   running, two waiting), `?alarmcount=N` (open alarm count), `?focus=run`. The area file
   `scripts/areas/status-marks.mjs` holds its gallery states and fit rules. When
   the calendar cannot be read (no account answers, or the cached read is over 30 minutes

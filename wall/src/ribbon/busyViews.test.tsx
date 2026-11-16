@@ -13,7 +13,7 @@ import { resetDays, todayRows } from './days';
 import { agentCounts, laneStateWord, settledToday } from './AgentRow';
 import { workingIds } from './busy';
 import { agentsLineParts } from './model';
-import { statusLine as unwindStatusLine } from '../unwind/model';
+import { statusLine as unwindStatusLine } from '../unwind/statusTestUtil';
 import { dreamStatusText, dreamWorkingCount } from '../zen/model';
 import { Ribbon } from './Ribbon';
 import { useFixedClock, usePacificTime } from './testZone';

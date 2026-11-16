@@ -868,6 +868,10 @@ try {
       const at = click.indexOf('='); const el = document.querySelector(click.slice(5, at));
       if (el) { Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set?.call(el, click.slice(at + 1)); el.dispatchEvent(new Event('input', { bubbles: true })); }
     }
+    else if (click.startsWith('tip:')) {
+      // Opens the element's hover card the way keyboard focus does (the shared card shows at once on focus). A focusin event, since headless --dump-dom has no focused page.
+      document.querySelector(click.slice(4))?.dispatchEvent(new FocusEvent('focusin', { bubbles: true }));
+    }
     else if (click.startsWith('hover:')) {
       // Headless --dump-dom has no pointer: every top-level :hover rule is copied for a class that stands in for it.
       const extra = [];

@@ -8,13 +8,13 @@ import {
   freshReading,
   playingSession,
   readLastPlayed,
-  statusLine,
   tomorrowTime,
   visibleMoods,
   volumeLevel,
   writeLastPlayed,
   LAST_PLAYED_KEY,
 } from './model';
+import { statusLine } from './statusTestUtil';
 
 usePacificTime();
 
