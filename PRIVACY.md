@@ -17,6 +17,7 @@ ships no client of its own and receives nothing from yours.
 - Your playlists and the videos in them.
 - Your liked videos.
 - The results of a music search that you type.
+- The title, the channel's name and the length of a video you add to a playlist you made on the wall, and of the videos in such a playlist that still lack them when you open it to edit. Only the video's id is sent.
 
 For each video the app reads the title, the channel's name, the length, and the flags that say
 whether the video can play in an embedded player. It does not read descriptions or comments.
@@ -34,9 +35,10 @@ nothing else.
   you rename it). That list is built from links you paste. Nothing is copied into it from your
   YouTube library on its own. A playlist you make on the wall is one more item in that list (its
   kind, a code made on the wall and its name). Its videos are kept in a second local storage
-  key: for each video its id and, once the player has reported them, its channel and length;
-  its title, once the player has reported it or as the name you gave a saved video that you
-  add; and the playlist's shuffle and repeat switches. Nothing is created on YouTube.
+  key: for each video its id and, once the player has reported them or YouTube has answered
+  for them while you are signed in, its channel and length; its title, the same way or as the
+  name you gave a saved video that you add (a name you gave is never replaced); and the
+  playlist's shuffle and repeat switches. Nothing is created on YouTube.
 - **The sign-in** (Google's refresh token) is kept in Windows Credential Manager. Your client
   id and client secret are kept there too when you enter them in the app. If you supply them
   as a `youtube.json` file in the app's config folder instead, they stay in that file, which

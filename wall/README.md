@@ -141,10 +141,13 @@ The sign-in and its row in Tools came first; the library came next, and a pick f
   reason (`none`, `busy`, `down`, `failed`, `sign-in-again`, `setup-broken`, `denied`,
   `cancelled`, `timed-out`, `quota`, `quota-all`, `not-found`, `invalid`), an HTTP status and
   milliseconds. Never an id, page token, token, client value, title, channel or search words.
-- **The library** (`wall2_youtube.rs`, the YouTube side of the music card). Four commands, each
+- **The library** (`wall2_youtube.rs`, the YouTube side of the music card). Five commands, each
   opening with the window check and running its read on a blocking thread:
   `wall2_youtube_playlists(page_token?, fresh?)`, `wall2_youtube_items(playlist_id, page_token?,
-  fresh?)`, `wall2_youtube_liked(page_token?, fresh?)` and `wall2_youtube_search(query)`. They read
+  fresh?)`, `wall2_youtube_liked(page_token?, fresh?)`, `wall2_youtube_search(query)` and
+  `wall2_youtube_videos(ids)`. The last takes 1 to 50 checked ids for the own playlists, makes one
+  `videos.list` call with the same fields mask, and answers `{ id, title, channel, seconds }` per
+  answered id with absent fields as null. Private and unanswered ids are left out. They read
   YouTube's Data API v3 with the bearer token (`playlists.list mine=true`; `playlistItems.list`
   then `videos.list` for the page's ids; `videos.list myRating=like`; `search.list type=video
   videoCategoryId=<Music> videoEmbeddable=true maxResults=25` then `videos.list`; the Music category
@@ -187,7 +190,9 @@ The sign-in and its row in Tools came first; the library came next, and a pick f
   bidirectional character, and never logged. The day's budget is reserved before the call, atomically (two calls
   starting at 99 spend one), and given back only when no request left the machine; the same words already in
   flight share one call; a search whose details read failed keeps its answer for ten minutes, so a retry reads
-  the details only and spends no second search.
+  the details only and spends no second search. `wall2_youtube_videos` shares the 24 hour details
+  cache, makes at most 60 requests an hour (`busy` past that) and none after a `quota-all` until
+  midnight Pacific; each request costs 1 unit of the daily quota.
 - **In the card** (`wall/src/unwind/ytmusic/`). Set up and signed in, the YouTube side is the library:
   one row with the tabs Playlists and Liked and the search field, and under it the playlists as 16:9
   tiles (four columns at rest, five tall) or the liked videos or a search answer as rows. A tile opens
@@ -202,6 +207,7 @@ The sign-in and its row in Tools came first; the library came next, and a pick f
   pointer cursor) with a hover card that says why. Not set up, signed out, a dead sign-in or a refused setup
   keep today's remote with one line and one button under it. `?youtube=in&ytlib=full|few|empty|slow|down|busy|again|gone|low|spent|long`
   picks the library's state (development mock only), and `?ytsearch=<words>` runs a search on open.
+  `?ytdetails=ok|none|down|slow` picks the own-playlist details answer.
 - **Playing a pick** (`queue.ts`, `YtFoot.tsx`, `YtUpNext.tsx` and the rows in `YtParts.tsx`). A video that
   plays outside YouTube is a button: a click plays the list from that row, and an opened playlist has Play (from
   the first playable row) and Shuffle (every playable row once, in a random order). The pick plays on the wall
@@ -2108,8 +2114,10 @@ there, still playing, when the owner comes back (see "The stage layer" below).
   tolerantly (`parseOwn`: a value over 600,000 characters, bad JSON or another `v` is an empty store; each list is read on its own and
   a bad list is dropped, not the whole value; every field is cleaned and bounded; the lists are made without a prototype). A record
   with no entry in the saved list is ignored and kept as stored, so a damaged saved list never takes the videos with it; at most 48
-  records are written, those with an entry first. Titles, channels and lengths are learned when a video plays on the wall (until then
-  a row reads "YouTube video"); nothing is fetched. Pictures come from `ownThumb.url(id)`, only for a checked id, with no referrer.
+  records are written, those with an entry first. Titles, channels and lengths are learned when a video plays on the wall, and, while
+  the YouTube sign-in is in place, read at once from YouTube for a video that is added (and, when a playlist opens in the editor, for
+  its rows still missing them; once a session per video). Until then a row reads "YouTube video". A field already stored, such as a
+  name the owner gave, is never replaced. Pictures come from `ownThumb.url(id)`, only for a checked id, with no referrer.
   - **New playlist** (the button in the list's head) opens a name row holding "My playlist"; Enter makes it and opens the editor,
     Escape or a click on another row drops it. The pencil on a playlist's row opens the editor; the cross asks once ("Delete <name> and
     its 12 videos?"). Rows show a tile and a count ("12 videos"), a connected YouTube playlist shows the word "YouTube", and the
