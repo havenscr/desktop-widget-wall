@@ -435,9 +435,8 @@ it('lays out the status line, Hide screen and the tabs', async () => {
   render(<Unwind />);
   await flush();
   expect(drawnLine()).toEqual({ mark: 'put-away', dots: 2, more: null, ring: false, net: null, pill: null });
-  // Hide screen is an icon alone in the lower right corner, not beside the line.
-  expect(document.querySelector('.u-corner [aria-label="Hide screen"]')).not.toBeNull();
-  expect(document.querySelector('.u-foot .screens-off')).toBeNull();
+  // Hide screen is the app's one corner control now (ScreensOffLayer), not Unwind's own.
+  expect(document.querySelector('.screens-off')).toBeNull();
   expect(screen.getByRole('tablist', { name: 'Unwind' })).toBeTruthy();
   expect(screen.getByText('Nothing playing')).toBeTruthy();
 });

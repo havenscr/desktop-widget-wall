@@ -90,8 +90,13 @@ it('says it could not watch input, for 5 seconds', async () => {
   await emit({ active: false, reason: 'input-unavailable' });
   expect(screen.getByRole('status').textContent).toBe('Could not watch input');
   expect(button().getAttribute('aria-label')).toBe('Hide screen');
+  // The words are inside the pill, which stays grown while they show.
+  expect(button().querySelector('.screens-off-lbl')?.textContent).toBe('Could not watch input');
+  expect(button().getAttribute('data-failed')).toBe('true');
   await flush(FAILURE_MS + 10);
   expect(screen.queryByRole('status')).toBeNull();
+  expect(button().hasAttribute('data-failed')).toBe(false);
+  expect(button().querySelector('.screens-off-lbl')?.textContent).toBe('Hide screen');
 });
 
 it('is named Hide screen, with its name shown on hover in place of a tooltip', async () => {

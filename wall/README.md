@@ -1649,10 +1649,8 @@ frame (no ribbon) in the wide zones `470px 1fr 540px`. The parts are in `wall/sr
   line ends with "weather unavailable" in dim text. The Room chips mark the mood that is on
   now (the shared last mood, for three hours), give each a tooltip (with the home feed's
   description when it sends one), and sit in a fixed grid of three columns and two rows; past six moods the sixth cell is a "More" chip and the mood that is on takes the place of an ordinary one (never an extra chip). The volume
-  slider shows its number on hover and while dragging. Hide screen is an icon alone (36 px, quiet) in the lower right
-  corner of Unwind; under the pointer or keyboard focus it grows to the left (anchored at its right edge, so the icon
-  stays put) into a pill that reads its name, in place of a tooltip ("Hide screen", "Hiding", "Cancel hide", also its
-  accessible name); a double click sends once; "Could not watch input" shows beside it for five seconds.
+  slider shows its number on hover and while dragging. Hide screen is on every place now, see
+  "Hide screen, on every place".
   The wind down ring (PR 10) goes between the date line and Tomorrow.
 - **Centre.** The toggles (`Tabs.tsx`, under the date line): Listen is this view (its toggle controls the player
   panel); Watch switches the centre to video (see "Watch" below). There is no Dream toggle: Zen dims by itself. The player (`Player.tsx`): 224 px art, the source
@@ -1735,7 +1733,7 @@ frame (no ribbon) in the wide zones `470px 1fr 540px`. The parts are in `wall/sr
 - **The tall view and "Play on"** (`SpotifyCard.tsx`, `PlayOn.tsx`, `PlayerRow.tsx`,
   `TallViews.tsx`, `Tile.tsx`). The round button at the card's top right (or a click on the
   empty part of its top row) opens the card into the right third of the wall: 833 by 624 at
-  wall 1707, 24, ending at y 648 so Screens off and the office lights slot stay free. The
+  wall 1707, 24, ending at y 648 so the Hide screen control and the office lights slot stay free. The
   page behind stays live (no scrim); the sky keeps clear of the bigger box through the same
   keep-clear claim, so the moon does not move. Opening takes 240 ms and closing 400 ms (none
   under reduced motion); the state is not stored, so the wall starts closed. It closes on the
@@ -2865,7 +2863,7 @@ A key is either a **chord** (keys pressed in the program in front) or a **wall a
 | Action | What it does |
 |---|---|
 | `layout:thirds`, `layout:focus`, `layout:record169`, `layout:zones`, `layout:undo` | The window layouts below, and their Undo. Off, with the reason, when there is no big screen. |
-| `screens-off` | The wall's own Hide screen (same command as the Unwind button; says so if they are already off). |
+| `screens-off` | The wall's own Hide screen (same command as the corner control; says so if they are already off). |
 | `focus:start`, `focus:25`, `focus:50`, `focus:stop` | The focus timer at its default length, 25 or 50 minutes, and its reset. Refuses a second start. |
 | `lock` | Locks the PC with `LockWorkStation`. Win+L stays a refused chord. |
 | `displays:off` | Asks Windows to put every monitor to sleep (a `SC_MONITORPOWER` broadcast, as the old app does; the one second limit is per window that does not answer, so it runs on its own thread and never holds the send guard); they wake on input. Different from Hide screen. |
@@ -3181,6 +3179,47 @@ The rail's Tools button (pressed while open) opens a drawer over the right third
 What Tools reads that the screens did not: opening it starts the account reads (the same reads Meet makes), reads Tasks, Sound and Box once when no screen has them mounted, and polls the keys file every 2 seconds while it is open (Work's deck already does that).
 
 Review knobs: `?tools=1` opens the drawer on load (`?tools=accounts` rings Accounts), `?youtube=off|out|waiting|in|again|broken|brokenout|down|refuse|rejectsave` picks the YouTube row's state (development mock only) and `?keys=refused` makes `wall2_keys_summary` refuse the file with a long reason. `fit-check` holds the drawer inside x 1700 to 2560 and y 0 to 720, clear of the rail, with no cut text that has no tooltip, holds the YouTube row, its form, its hint and its links line inside the Accounts column with text 16 px or more, controls 32 px or more and a row built like Spotify's, and holds Meet's upper right filled in every Meet state (the Later card carries a plain line when there is no list).
+
+## Hide screen, on every place
+
+One control, mounted once by the app (`ui/ScreensOffLayer.tsx`, styles in `styles/screens-off.css`), draws the same
+way on all eight screens: Work, Home, Meet, On Air, Unwind (Listen and Watch), Zen and Dream. It is an icon alone,
+36 px, in the lower right corner of the wall (20 px in from the right and bottom edges, stage x 2504, y 664), quiet
+until you point at it. On Work, Home, Meet and On Air that spot is the end of the day strip, just past the day's last
+hour.
+
+- **What it does.** Hide screen turns every monitor off until a key or the mouse is touched. Click it: it reads
+  "Hiding" for half a second, the monitors go dark, and any key or a real move of the mouse brings them back. While
+  the screens are hidden and the helper is watching, it reads "Cancel hide" (cyan); a second click cancels and leaves the
+  screens as they are. A double click sends once. If the helper cannot watch input the screens stay on and the pill says
+  "Could not watch input" for five seconds (the pill stays grown while the words show, so nothing lands on the place
+  beneath). The commands, the half second and the `monitors-off-mode` event are unchanged (`ui/ScreensOff.tsx`).
+- **Pointer and keyboard.** Under the pointer, or with keyboard focus, it grows to the left (its right edge and icon do
+  not move, and its 36 px box never changes) into a pill that reads its name, in place of a tooltip; it is a button in
+  the tab order with the usual focus ring, and Enter and Space work. Under reduced motion the name just shows. At rest
+  it is one step brighter than the built icon was (the dim colour at 0.8 where the built one was the faint colour at 0.7);
+  Hiding is at 0.6. Measured on the real pixels behind it (2x stills of each place's resting icon with the control hidden,
+  the 36 px box, the declared colour at 0.8 over each background pixel), the usual contrast is 6.3 to 6.5 to 1 on every
+  place. The lowest is lower where bright grid lines run under the icon: 2.98 to 1 on one pixel on Unwind Listen, 3.30 on
+  Unwind Watch, 3.61 on Home, 3.77 on Meet and On Air, 4.18 on Zen, 4.68 on Work, 4.87 on Dream (on Listen 7 percent of
+  the box and on Watch 5 percent sits under 3.7 to 1; one pixel in 5184, on Listen, is under 3 to 1).
+- **What it covers.** At rest, nothing. Grown, the pill (154 px; 235 px with the failure words) covers only the last
+  hour of the day strip's bottom rows on the four places that have one, and only while you point at it.
+- **Drawers.** It sits above each place's own content and below the drawers: with Tools, the Day drawer or the Agents
+  panel open it takes no pointer and no focus (the drawer's rounded corner does not leave a sliver where it can be hit).
+- **Zen and Dream.** Both draw over the whole stage, so there the control rides one step above them. On Zen the Leave
+  button and the waiting line sit 28 px higher (`.zen-br`, bottom 72) and on Dream the "Click anywhere to wake" hint sits
+  further left (`.dream-hint`, right 190: it drifts up to 15 px, and the grown pill starts 174 px in), so the grown pill
+  never covers them. A click on the control hides the screens and does not wake Dream; a click anywhere else on Dream
+  still wakes it.
+- **The two keys that also do it.** The Work pinned key (Hide screen, `strip-dark`; the owner can unpin it) and the
+  fourth On Air recording key stay as they are. All three run the same command. Pressed while the screens are already
+  hidden, a key says "Screens are already off" where the corner control cancels.
+- **Checks.** `ui/ScreensOffLayer.test.tsx` (mounted once, the same box, drawers, Dream) and the `hide-screen` area of
+  `scripts/fit-check.mjs` and `scripts/gallery.mjs` (`scripts/areas/hide-screen.mjs`: the same 36 by 36 box on all eight
+  screens, grown inside the stage over nothing outside the day strip, the failure pill's width, Zen and Dream neighbours
+  clear, inert with a drawer open). Dev knobs: `?hide=fail` (the failure words after a click) and `?hide=on` (it reads
+  Cancel hide after a click).
 
 ## Fullscreen keys
 
