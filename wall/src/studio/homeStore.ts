@@ -24,7 +24,7 @@ export const TEXT = {
   refused: 'That is not offered right now. This is what the home app reports.',
   /** The home app no longer knows that preset, group, look or mood. */
   unknown: 'The home app no longer lists that one. This is what it reports now.',
-  notSetUp: "Office moods are view only here. To switch them from the wall, add the home app's desk token in Tools.",
+  notSetUp: "Office moods are view only here. To switch them, add the desk token in Tools.",
   /** A write the wall tried anyway with no desk token: the 5 second line, short enough for the lights block's summary line. */
   writeNotSetUp: "View only here. Add the home app's desk token in Tools.",
   needsPrivate: 'The desk token is not sent over plain http. Use https or the tailnet.',
