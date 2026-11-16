@@ -198,7 +198,7 @@ function PlacedMenu({ index, item, places, saved, byKeyboard, onClose }: { index
   return (
     <PinMenu
       items={pinnable(places, saved)}
-      listHasItems={saved.length > 0}
+      listHasItems={saved.some((i) => i.kind !== 'own')}
       pinned={!!item}
       name={item?.label ?? 'Add a pin'}
       byKeyboard={byKeyboard}

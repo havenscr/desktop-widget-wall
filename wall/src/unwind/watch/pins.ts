@@ -89,7 +89,8 @@ export function dropGone(places: readonly PinPlace[], saved: readonly SavedItem[
 
 /** Pin `key` in place `index` (an item already pinned elsewhere moves there). Unknown items change nothing. */
 export function withPin(places: readonly PinPlace[], saved: readonly SavedItem[], index: number, key: string): PinPlace[] {
-  if (index < 0 || index >= PIN_PLACES || !saved.some((i) => refKey(i) === key)) return dropGone(places, saved);
+  // A playlist made on the wall is never pinned (a pin plays through `play`, and an own entry is never in the frame).
+  if (index < 0 || index >= PIN_PLACES || key.startsWith('own:') || !saved.some((i) => refKey(i) === key)) return dropGone(places, saved);
   const next = dropGone(places, saved).map((k) => (k === key ? null : k));
   next[index] = key;
   return next;
@@ -102,10 +103,10 @@ export function withoutPin(places: readonly PinPlace[], saved: readonly SavedIte
   return next;
 }
 
-/** The Watch list items the add and replace menus offer: every item not already pinned. */
+/** The Watch list items the add and replace menus offer: every item not already pinned, and no playlist made on the wall. */
 export function pinnable(places: readonly PinPlace[], saved: readonly SavedItem[]): SavedItem[] {
   const pinned = new Set(places.filter((k): k is string => !!k));
-  return saved.filter((i) => !pinned.has(refKey(i)));
+  return saved.filter((i) => i.kind !== 'own' && !pinned.has(refKey(i)));
 }
 
 interface PinsState {
