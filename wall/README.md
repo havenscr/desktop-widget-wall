@@ -142,7 +142,7 @@ once a minute and 20 pages an hour in all. The switch on the playlist page turns
   row plays the playlist from that song; a queued row skips forward once per row up to it (as Up next does, because a
   queued song may be one that is not in the playlist); the playing row does nothing. Spotify records a play after about
   half a minute, so the heard list lags.
-- **Dev mocks.** `?spotify=notyours` refuses every playlist's songs. With it, `spotifypage=` is `ok` (40 songs),
+- **Dev mocks.** `?spotify=notyours` refuses every playlist's songs. With it, `spotifypage=` (none means `private`) is `ok` (40 songs),
   `first` (100 of 520), `odd` (a few songs that cannot play), `private`, `changed`, `toobig`, `busy`, `down` or
   `slow`; `spotifyctx=this` or `other` makes the player report this or another playlist as its context (and gives the
   heard list six songs); `spotifypageoff=1` starts with the switch off.
