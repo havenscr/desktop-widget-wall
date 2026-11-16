@@ -1,36 +1,43 @@
 import { tip } from '../ui/HoverTip';
 import type { TaskTag } from './model';
 import { TagGlyph } from './tagIcons';
-import { tagLayout, tagVars } from './tagStyle';
+import { tagVars } from './tagStyle';
 
 /**
- * A row's tags as the owner chose for Around the house: the first tag as a chip (its glyph
- * and name, in the tag's colour on a faint wash of it), each further tag as a round dot with
- * its glyph. `room` is the row's width for the title and the tags together; when the chip
- * would leave the title under 180 px, every tag is a dot. Every chip and dot has a hover
- * card with the tag's name. Tags are not buttons: a click goes through to the row.
+ * A row's tags as the owner chose for Around the house and Due today: each tag is its glyph alone
+ * in a round 26 px pill, the glyph in the tag's colour on a tint of it, 4 px apart. The names are
+ * in the hover card: one card on the tags lists every tag of the row, with its glyph and name.
+ * Tags are not buttons: a click goes through to the row.
  */
-export function TaskTags({ tags, room }: { tags?: TaskTag[]; room: number }) {
+export function TaskTags({ tags }: { tags?: TaskTag[] }) {
   if (!tags || tags.length === 0) return null;
-  const chip = tagLayout(tags, room) === 'chip';
   return (
-    <span className="t-tags" data-layout={chip ? 'chip' : 'dots'}>
-      {tags.map((tag, i) => {
-        const named = chip && i === 0;
-        const cls = ['t-tag', named ? 't-chip' : 't-dot', tag.color ? '' : 't-none'].filter(Boolean).join(' ');
-        return (
-          <span
-            key={`${tag.label}-${i}`}
-            className={cls}
-            style={tagVars(tag)}
-            {...tip(tag.label)}
-            {...(named ? {} : { role: 'img', 'aria-label': tag.label })}
-          >
-            <TagGlyph name={tag.icon} size={16} />
-            {named && <span className="t-label">{tag.label}</span>}
-          </span>
-        );
-      })}
+    <span className="t-tags" {...tip(() => <TagTip tags={tags} />)}>
+      {tags.map((tag, i) => (
+        <span
+          key={`${tag.label}-${i}`}
+          className={['t-tag', 't-dot', tag.color ? '' : 't-none'].filter(Boolean).join(' ')}
+          style={tagVars(tag)}
+          role="img"
+          aria-label={tag.label}
+        >
+          <TagGlyph name={tag.icon} size={16} />
+        </span>
+      ))}
+    </span>
+  );
+}
+
+/** The hover card of a row's tags: a line per tag, glyph and name in the tag's colour. */
+function TagTip({ tags }: { tags: TaskTag[] }) {
+  return (
+    <span className="t-tip">
+      {tags.map((tag, i) => (
+        <span key={`${tag.label}-${i}`} className={['t-tip-row', tag.color ? '' : 't-none'].filter(Boolean).join(' ')} style={tagVars(tag)}>
+          <TagGlyph name={tag.icon} size={18} />
+          <span className="t-tip-name">{tag.label}</span>
+        </span>
+      ))}
     </span>
   );
 }

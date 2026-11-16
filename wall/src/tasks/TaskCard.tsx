@@ -18,14 +18,6 @@ const KEY_SCROLL_MS = 400;
 /** Smooth key scrolling is for people who have not asked for reduced motion (and for browsers that can). */
 const smoothScroll = (el: HTMLElement): boolean => typeof el.scrollTo === 'function' && !window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
 /**
- * Width a Work row leaves for the title and its tags together, counting the gap between them
- * the way `tagLayout` does: the 590 px row (596 less the 6 px scroll gutter), less the 50 px
- * tick, the fixed 78 px time column, the 18 px overdue slot and the gaps before them (16 px,
- * and 10 px between the slot and the time column).
- */
-const WORK_ROOM = 414;
-
-/**
  * One task as the concept draws it (`.tk3`): a check circle, the title and the estimate.
  * A click on the title opens the task in the task app. Holding the row for half a second
  * starts a focus session named after the task instead (that press opens nothing); a
@@ -142,7 +134,7 @@ function TaskRow({
             }}
           >
             <span className="n task-title">{task.title}</span>
-            {mark !== 'failed' && <TaskTags tags={task.tags} room={WORK_ROOM} />}
+            {mark !== 'failed' && <TaskTags tags={task.tags} />}
             {mark === 'failed' ? (
               <span className="xs task-err">Could not complete.</span>
             ) : (

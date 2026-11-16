@@ -457,13 +457,13 @@ it('shows each row\'s tags: the first as a named chip, the rest as dots, with th
   const r = render(<TaskCard />);
   await flush();
   const rows = r.container.querySelectorAll('.tk3');
-  expect(rows[0]!.querySelectorAll('.t-chip').length).toBe(1);
-  expect(rows[0]!.querySelector('.t-chip')?.textContent).toBe('Repairs');
-  expect(rows[0]!.querySelectorAll('.t-dot').length).toBe(2);
-  expect(rows[0]!.querySelectorAll('.t-dot')[0]!.getAttribute('aria-label')).toBe('Phone Call');
-  expect((rows[0]!.querySelector('.t-chip') as HTMLElement).style.getPropertyValue('--c')).toBe('240,138,192');
+  expect(rows[0]!.querySelectorAll('.t-chip').length).toBe(0);
+  expect(rows[0]!.querySelectorAll('.t-dot').length).toBe(3);
+  expect(rows[0]!.querySelectorAll('.t-dot')[0]!.getAttribute('aria-label')).toBe('Repairs');
+  expect(rows[0]!.querySelectorAll('.t-dot')[1]!.getAttribute('aria-label')).toBe('Phone Call');
+  expect((rows[0]!.querySelector('.t-dot') as HTMLElement).style.getPropertyValue('--c')).toBe('240,138,192');
   // A tag with no colour carries no colour variable (the dim default draws it).
-  expect((rows[0]!.querySelectorAll('.t-dot')[1] as HTMLElement).style.getPropertyValue('--c')).toBe('');
+  expect((rows[0]!.querySelectorAll('.t-dot')[2] as HTMLElement).style.getPropertyValue('--c')).toBe('');
   // A row with no tags has nothing extra: just the title and its time column.
   expect(rows[1]!.querySelector('.t-tags')).toBeNull();
   expect(rows[1]!.querySelectorAll('.chip-col').length).toBe(1);
@@ -476,7 +476,7 @@ it('a tag text is plain text, never markup', async () => {
   await flush();
   expect(r.container.querySelector('img')).toBeNull();
   expect(r.container.querySelector('script')).toBeNull();
-  expect(r.container.querySelector('.t-chip')?.textContent).toBe('<img src=x onerror=alert(1)>');
+  expect(r.container.querySelector('.t-dot')?.getAttribute('aria-label')).toBe('<img src=x onerror=alert(1)>');
 });
 
 it('shows a completed task again when a later list has it open (reopened or recurring)', async () => {

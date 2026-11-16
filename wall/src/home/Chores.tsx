@@ -16,8 +16,6 @@ import { useChores } from './useChores';
 export const ROWS_QUIET = 5;
 export const ROWS_ALERTS = 3;
 
-/** Width a chore row leaves for the title and its tags together: the 580 px row, less the 52 px tick, the 62 px pill column and two 12 px gaps (the third gap before the tags is counted by the tag layout). */
-export const CHORE_ROOM = 442;
 /** The pill column is never narrower than this; it grows to the widest pill in the list ("4:30 PM" needs about 75), the same on every row, so the tags line up down the list. */
 export const PILL_COLUMN_PX = 62;
 
@@ -59,7 +57,7 @@ export function Chores() {
   // The pill column: as wide as the widest pill (never under 62 px), measured with every pill at its natural
   // width, then set on the list as `--pill-w` for every pill and every empty column.
   const listRef = useRef<HTMLDivElement>(null);
-  const [pillW, setPillW] = useState(PILL_COLUMN_PX);
+  const [, setPillW] = useState(PILL_COLUMN_PX);
   const pillKey = rows.map((t) => chorePill(t, now) ?? '').join('|');
   const measurePills = () => {
     const el = listRef.current;
@@ -132,7 +130,7 @@ export function Chores() {
                     </>
                   ) : (
                     <>
-                      <TaskTags tags={t.tags} room={CHORE_ROOM - (pillW - PILL_COLUMN_PX)} />
+                      <TaskTags tags={t.tags} />
                       {pill ? <span className="est">{pill}</span> : <span className="pill-ph" aria-hidden="true" />}
                     </>
                   )}

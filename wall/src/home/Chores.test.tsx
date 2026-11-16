@@ -264,10 +264,12 @@ it('shows each chore\'s tags after the title and keeps the 62 px pill column on 
   const { container } = render(<Chores />);
   await flush();
   const rows = [...container.querySelectorAll('.chore-rows .tk3')];
-  expect(rows[0]!.querySelector('.t-chip')?.textContent).toBe('Errands');
+  expect(rows[0]!.querySelectorAll('.t-dot').length).toBe(1);
+  expect(rows[0]!.querySelector('.t-dot')?.getAttribute('aria-label')).toBe('Errands');
+  expect(rows[0]!.querySelector('.t-dot')?.textContent).toBe('');
   expect(rows[1]!.querySelector('.t-tags')).toBeNull();
-  expect(rows[2]!.querySelector('.t-chip')?.textContent).toBe('Repairs');
-  expect(rows[2]!.querySelectorAll('.t-dot').length).toBe(2);
+  expect(rows[2]!.querySelectorAll('.t-dot').length).toBe(3);
+  expect(rows[2]!.querySelector('.t-dot')?.getAttribute('aria-label')).toBe('Repairs');
   // A row from a read with no tags field at all looks as before.
   expect(rows[3]!.querySelector('.t-tags')).toBeNull();
   // The tags come after the title and before the pill (or the empty column that stands for it).
