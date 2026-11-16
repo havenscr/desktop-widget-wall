@@ -9,7 +9,8 @@ const SWITCH = '.sp-switch button:nth-child(2)';
 const TALL = '.sp-grow';
 const TILE = '.yt-tile';
 const LIKED = '.sp-tabs button:nth-child(2)';
-const ROW4 = 'hover:.yt-row:nth-child(4)';
+// The pointer goes to the right end of what it is sent to: on the title, so it is on the play part and not on the add control.
+const ROW4 = 'hover:.yt-row:nth-child(4) .yt-title';
 const steps = (...s) => s.join(' >> ');
 // Windows offers no playing session (`media=none`), so the top player draws the wall's own music; the mock frame stays on Listen.
 const play = (mode, extra = '') => `youtube=in&ytlib=full&media=none&watch=mock&wtab=listen${mode ? `&ytplay=${mode}` : ''}${extra}`;
@@ -118,8 +119,8 @@ function measureYoutubePlayback() {
     }
   }
   if (cardEl) {
-    // Every button and field in the card 32 px or more each way.
-    for (const e of cardEl.querySelectorAll('button, input')) {
+    // Every button and field in the card 32 px or more each way (a library row's 30 by 30 add control is held to its size by the library-add area).
+    for (const e of cardEl.querySelectorAll('button:not(.yt-add), input')) {
       const r = e.getBoundingClientRect();
       if (r.width === 0 || r.height === 0) continue;
       const b = e.tagName === 'INPUT' ? (e.closest('.sp-search') ? e.closest('.sp-search').getBoundingClientRect() : r) : r;

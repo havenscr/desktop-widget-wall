@@ -1,8 +1,10 @@
-import { useState, type ReactNode } from 'react';
-import { IconMusic, IconPlayerPlayFilled } from '@tabler/icons-react';
+import { useEffect, useMemo, useState, type FocusEvent, type MouseEvent, type ReactNode } from 'react';
+import { IconMusic, IconPlayerPlayFilled, IconPlaylistAdd } from '@tabler/icons-react';
 import type { YtVideo } from '../../music/youtube';
-import { tip } from '../../ui/HoverTip';
+import { hideTip, quietFocus, tip } from '../../ui/HoverTip';
 import { useToolsStore } from '../../tools/store';
+import { AddMenu } from '../watch/AddToPlaylist';
+import type { OwnVideo } from '../watch/ownLists';
 import { useWatchStore } from '../watch/store';
 import { PlayingBars } from '../spotify/Tile';
 import { failedReason, lengthText, problemAction, problemLine, rowTip, rowWords, safeThumb, type YtProblem } from './model';
@@ -83,6 +85,44 @@ export function RowSkeletons({ count }: { count: number }) {
 }
 
 /**
+ * The control's own hover card. The row's card goes at once when the pointer lands on the control, and the control's
+ * focus is not also the row's (the row's handler would show its card over this one).
+ */
+const addTip = (() => {
+  const t = tip('Add to a playlist');
+  return {
+    ...t,
+    onMouseEnter: (e: MouseEvent) => {
+      hideTip();
+      t.onMouseEnter(e);
+    },
+    onFocus: (e: FocusEvent) => {
+      e.stopPropagation();
+      t.onFocus(e);
+    },
+  };
+})();
+
+/** Playlist rows the add menu shows before its list scrolls: three at rest, four in the tall view (so it always fits above or below a row). */
+const MENU_ROWS = { rest: 3, tall: 4 } as const;
+
+/** What a row stores in a playlist of the owner's own: what the row already holds, so no read of YouTube is needed (a length of 0, a live video, is left out). */
+export function ownVideo(v: YtVideo): OwnVideo {
+  return { id: v.id, title: v.title, channel: v.channel, ...(v.seconds > 0 ? { seconds: v.seconds } : {}) };
+}
+
+/** The row whose add menu is open: its place in the list, the video and the control the menu hangs from. */
+interface OpenMenu {
+  at: number;
+  id: string;
+  anchor: HTMLElement;
+  host: HTMLElement;
+  /** The rows scroller: the menu stays above its foot and closes when it scrolls. */
+  scroller: HTMLElement | null;
+  tall: boolean;
+}
+
+/**
  * The rows of a list of videos: number, title, channel, length. A row that plays outside YouTube is a
  * button (the play mark in place of its number on hover, Enter and Space as for any button) and plays the
  * list from that row on the wall; the row now playing (the queue's, same list, same place) is cyan with the
@@ -90,6 +130,12 @@ export function RowSkeletons({ count }: { count: number }) {
  * plays only on YouTube, is private or removed, or failed this session) is greyed, with its words in the
  * length column, and is a plain `li`: no button, no click, and its hover card says why. Every row has a hover
  * card with the whole title, the channel, the length and what a click does.
+ *
+ * A row that plays also has "Add to a playlist": a 30 by 30 button of its own at the right end (a sibling of the
+ * play button, never inside it), shown on hover of the row and on keyboard focus within it, in the length's place.
+ * It opens the Watch menu (`AddMenu`) for the video; the menu is not a child of the row, so its keys and focus never
+ * reach the row's hover card. It closes when the list scrolls, when the list or the row changes, on Escape and on a
+ * click outside.
  */
 export function YtRows({ items, foot, list, onPlay }: { items: YtVideo[]; foot?: ReactNode; list?: QueueFrom; onPlay?: (index: number) => void }) {
   const failed = useYtQueue((s) => s.failed);
@@ -98,6 +144,37 @@ export function YtRows({ items, foot, list, onPlay }: { items: YtVideo[]; foot?:
   const live = useWatchStore((s) => (s.source === 'music' ? (s.playing?.id ?? null) : null));
   const paused = useWatchStore((s) => s.paused || s.needsClick);
   const now = list && entry && live === entry.id && sameList(from, list) ? entry : null;
+  const [menu, setMenu] = useState<OpenMenu | null>(null);
+  const listKey = list ? JSON.stringify(list) : '';
+  // The menu goes when the list is another one, or when its row is no longer where it was (Refresh, a new page).
+  useEffect(() => setMenu(null), [listKey]);
+  useEffect(() => {
+    setMenu((m) => (m && items[m.at]?.id === m.id ? m : null));
+  }, [items]);
+  // ... and when the list scrolls (a scroll of the menu's own list is a different box and does not count).
+  useEffect(() => {
+    const scroller = menu?.scroller;
+    if (!menu || !scroller) return;
+    const close = () => {
+      // The focus was in the menu: it goes back to the control, as after Escape.
+      if (document.activeElement?.closest('.w-pop')) {
+        quietFocus();
+        menu.anchor.focus();
+      }
+      setMenu(null);
+    };
+    scroller.addEventListener('scroll', close);
+    return () => scroller.removeEventListener('scroll', close);
+  }, [menu]);
+  const menuVideo = useMemo(() => {
+    const v = menu ? items[menu.at] : undefined;
+    return v ? ownVideo(v) : null;
+  }, [menu, items]);
+  const openAt = (at: number, id: string, anchor: HTMLElement) => {
+    const host = anchor.closest<HTMLElement>('.sp-card');
+    if (!host) return;
+    setMenu((m) => (m && m.at === at ? null : { at, id, anchor, host, scroller: anchor.closest<HTMLElement>('.yt-scroll'), tall: host.classList.contains('tall') }));
+  };
   return (
     <>
       <ol className="yt-list">
@@ -126,19 +203,24 @@ export function YtRows({ items, foot, list, onPlay }: { items: YtVideo[]; foot?:
               <span className="yt-len">{words ?? lengthText(v.seconds)}</span>
             </>
           );
+          const open = menu?.at === i;
+          const rowCard = tip(() => (
+            <div className="sp-tipline">
+              <b>{lines[0]}</b>
+              {lines.slice(1).map((l, n) => (
+                <span key={n}>{l}</span>
+              ))}
+            </div>
+          ));
           return (
             <li
               key={`${v.id}-${i}`}
-              className={`yt-row${words ? ' off' : ''}${on ? ' on' : ''}`}
+              className={`yt-row${words ? ' off' : ''}${on ? ' on' : ''}${plays ? ' canadd' : ''}${open ? ' menu-open' : ''}`}
               data-playable={gone || bad ? 'no' : v.playable}
-              {...tip(() => (
-                <div className="sp-tipline">
-                  <b>{lines[0]}</b>
-                  {lines.slice(1).map((l, n) => (
-                    <span key={n}>{l}</span>
-                  ))}
-                </div>
-              ))}
+              {...rowCard}
+              // The row's card stays away while a menu is open (the control has its own card).
+              onMouseEnter={(e) => (menu ? undefined : rowCard.onMouseEnter(e))}
+              onFocus={(e) => (menu ? undefined : rowCard.onFocus(e))}
             >
               {plays ? (
                 <button type="button" className="yt-play yt-cells" aria-current={on ? 'true' : undefined} aria-label={`Play ${v.title}`} onClick={() => onPlay?.(i)}>
@@ -147,11 +229,25 @@ export function YtRows({ items, foot, list, onPlay }: { items: YtVideo[]; foot?:
               ) : (
                 <div className="yt-cells">{cells}</div>
               )}
+              {plays ? (
+                <button
+                  type="button"
+                  className="yt-add"
+                  aria-label={`Add ${v.title} to a playlist`}
+                  aria-haspopup="menu"
+                  aria-expanded={open}
+                  {...addTip}
+                  onClick={(e) => openAt(i, v.id, e.currentTarget)}
+                >
+                  <IconPlaylistAdd size={18} aria-hidden="true" />
+                </button>
+              ) : null}
             </li>
           );
         })}
       </ol>
       {foot}
+      {menu && menuVideo ? <AddMenu video={menuVideo} anchor={menu.anchor} host={menu.host} limit={menu.scroller} maxRows={menu.tall ? MENU_ROWS.tall : MENU_ROWS.rest} onClose={() => setMenu(null)} /> : null}
     </>
   );
 }

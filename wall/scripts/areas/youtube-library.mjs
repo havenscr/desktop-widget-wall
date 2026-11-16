@@ -61,7 +61,7 @@ function measureYoutubeLibrary() {
   const small = [...cardEl.querySelectorAll('*')].filter((e) => !e.closest('.sp-off') && [...e.childNodes].some((c) => c.nodeType === 3 && c.textContent.trim()) && parseFloat(getComputedStyle(e).fontSize) < 15.99);
   for (const e of small.slice(0, 3)) fails.push('text under 16 px in ' + name(e) + ' "' + (e.textContent || '').trim().slice(0, 24) + '" (' + getComputedStyle(e).fontSize + ')');
   // Every button and the search field 32 px or more each way.
-  for (const e of cardEl.querySelectorAll('button, input')) {
+  for (const e of cardEl.querySelectorAll('button:not(.yt-add), input')) {
     const r = e.getBoundingClientRect();
     if (r.width === 0 || r.height === 0) continue;
     const box = e.tagName === 'INPUT' ? e.closest('.sp-search')?.getBoundingClientRect() ?? r : r;

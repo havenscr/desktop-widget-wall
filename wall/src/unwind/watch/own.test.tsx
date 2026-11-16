@@ -369,6 +369,10 @@ describe('Add to a playlist', () => {
     await click(screen.getByRole('button', { name: 'Add to a playlist' }));
     const full = within(screen.getByRole('menu')).getAllByRole('menuitem')[0]!;
     expect(full.getAttribute('aria-disabled')).toBe('true');
+    // It reads "Full" in plain text (not a count faded to half), and the other playlist still shows its count.
+    expect(full.classList.contains('full')).toBe(true);
+    expect(full.querySelector('em')!.textContent).toBe('Full');
+    expect(within(screen.getByRole('menu')).getAllByRole('menuitem')[1]!.querySelector('em')!.textContent).toBe('5');
     await click(full);
     expect(own().lists[FRIDAY]!.items).toHaveLength(50);
   });
