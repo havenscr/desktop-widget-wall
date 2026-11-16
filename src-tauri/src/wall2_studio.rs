@@ -1071,7 +1071,7 @@ mod tests {
         assert_eq!(studio_look(&no_token, "glow").unwrap_err(), "not-set-up");
         assert_eq!(studio_keys(&no_token, "both", Some(true), None, None).unwrap_err(), "not-set-up");
         assert_eq!(office_mood(&no_token, "gaming").unwrap_err(), "not-set-up");
-        let lan = env(&f, "http://192.168.1.50:5006", Some(TOKEN), &seen, t0);
+        let lan = env(&f, "http://203.0.113.50:5006", Some(TOKEN), &seen, t0);
         assert_eq!(studio_preset(&lan, "onAir").unwrap_err(), "needs-private-address");
         assert_eq!(studio_normal(&lan).unwrap_err(), "needs-private-address");
         assert_eq!(studio_group(&lan, "panels", true, None).unwrap_err(), "needs-private-address");
