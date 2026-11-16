@@ -135,10 +135,10 @@ const RIGHT_NAMES = ALL_NAMES.filter((n) => n !== NAMES.quietbare && !IDLE_NAMES
 export default {
   name: 'network-card',
   gallery: { states: [
-    state('network card: quiet, all facts', 'desk=typical&alerts=0', ['All quiet', 'Nothing is open.', 'Network alarms', 'Devices and rules', '31 devices, 412 blocked', 'Scan ', '!alarms in 24 h']),
-    state('network card: quiet, only the scan and the alarms', 'net=calm', ['All quiet', 'Network alarms', 'Scan ', '3 alarms in 24 h', '!devices', '!blocked']),
+    state('network card: quiet, all facts', 'desk=typical&alerts=0', ['All quiet', 'Nothing is open.', 'Home security', 'Devices and rules', '31 devices, 412 blocked', 'Scan ']),
+    state('network card: quiet, only the scan and the alarms', 'net=calm', ['All quiet', 'Home security', 'Scan ', '3 alarms in 24 h', '!devices', '!blocked']),
     state('network card: quiet, nothing sent', 'net=calmbare', ['All quiet', 'Nothing is open.', 'Network alarms', '!Scan ', '!alarms in 24 h', '!devices', '!blocked']),
-    state('network card: quiet, one door', 'desk=typical&alerts=0&links=security', ['All quiet', 'Network alarms', '!Its own portal']),
+    state('network card: quiet, one door', 'desk=typical&alerts=0&links=security', ['All quiet', 'Home security', '!Firewalla']),
     state('network card: quiet, the other door', 'desk=typical&alerts=0&links=portal', ['All quiet', 'Devices and rules', '!Home app alarms']),
     state('network card: quiet, no door', 'desk=typical&alerts=0&links=none', ['All quiet', '31 devices', '412 blocked', 'Scan ', '!Home app alarms', '!Its own portal']),
     state('network card: alerts open, three kinds', 'desk=typical&alerts=3', ['3 alerts open, 31 devices at home', 'New device on the guest network', 'Show all 3', '1 high, 1 medium, 1 low.', 'Home security', 'Firewalla']),
@@ -151,8 +151,8 @@ export default {
     state('network card: not set up', 'home=off', ['Not set up', '!Home app alarms']),
     state('network card: loading', 'home=loading', ['Loading', '!Home app alarms']),
     state('network card: home app not reachable (never read)', 'home=down', ['Home app not reachable', 'Checks again every 5 minutes.', '!Home app alarms']),
-    state('network card: long title, Firewall box offline', 'net=calm&fw=offline', ['Firewall box offline', 'Network alarms', 'Devices and rules']),
-    state('network card: long title, Firewall status unknown', 'net=calm&fw=unknown', ['Firewall status unknown', 'Network alarms', 'Devices and rules']),
+    state('network card: long title, Firewall box offline', 'net=calm&fw=offline', ['Firewall box offline', 'Home security', 'Devices and rules']),
+    state('network card: long title, Firewall status unknown', 'net=calm&fw=unknown', ['Firewall status unknown', 'Home security', 'Devices and rules']),
     state('network card: long title, Home app not reachable', 'net=calm&fw=unreachable', ['Home app not reachable', 'Network alarms', 'Devices and rules']),
   ] },
   fit: {

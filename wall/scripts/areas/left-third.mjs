@@ -198,9 +198,9 @@ export default {
       state('morning, no weather reading', MORNING, 'desk=typical&weather=down', ['of daylight left', 'weather unavailable', '68° inside.']),
       state('morning, eight rooms', MORNING, 'desk=typical&rooms=8', ['68° inside.', 'Office']),
       state('morning, one room', MORNING, 'desk=typical&rooms=1', ['68° inside.', 'Office', '!Living room']),
-      state('morning, seven lit rooms, two lines', MORNING, 'desk=typical&rooms=7', ['68° inside.', 'Office', 'Den', '!more']),
+      state('morning, seven lit rooms, two lines', MORNING, 'desk=typical&rooms=7', ['68° inside.', 'Office', 'Den']),
       state('morning, twelve rooms, two lines and a count', MORNING, 'desk=typical&rooms=12', ['68° inside.', 'Office', 'more']),
-      state('morning, no rooms', MORNING, 'desk=typical&rooms=0', ['68° inside.', '!Office']),
+      state('morning, no rooms', MORNING, 'desk=typical&rooms=0', ['68° inside.', '!Guest room']),
     ].map((s) => (s.query.includes('weather=down') ? { ...s, query: s.query.replace('weather=ok&', '') } : s)),
   },
   fit: {

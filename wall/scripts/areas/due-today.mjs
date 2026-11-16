@@ -178,7 +178,7 @@ function measureTasks() {
 export default {
   name: 'due-today',
   gallery: { states: [
-    workState('due today: typical, six due with one overdue', 'due=typical', ['Due today', '6, 1 overdue', 'Send the signed engagement letter', 'Finance', '!more can wait', '!Next up']),
+    workState('due today: typical, six due with one overdue', 'due=typical', ['Due today', '6, 1 overdue', 'Send the signed engagement letter', '!more can wait', '!Next up']),
     workState('due today: nothing due, Next up', 'due=none', ['Next up', 'Nothing due today', 'Review the dashboard draft', '!Due today']),
     workState('due today: one due', 'due=one', ['Due today1', 'Send the project proposal', '!overdue', '!more can wait']),
     workState('due today: two due, one overdue', 'due=two', ['Due today2, 1 overdue', 'Send the signed engagement letter', '!more can wait']),
@@ -188,9 +188,9 @@ export default {
     workState('due today: twelve due, two overdue', 'due=twelve', ['Due today12, 2 overdue', 'Send the signed engagement letter', '!more can wait']),
     workState('due today: twelve due with the longest titles', 'due=twelve&long=1', ['Due today12, 2 overdue', 'Send the project proposal with the revised budget and the new timeline']),
     workState('due today: row ticked, Done with Undo', 'due=three', ['Done.', 'Undo'], '.tasks .task-check'),
-    homeState('home tags: five rows, round tag pills, icon only', 'desk=typical&alerts=0&chores=many', ['Order printer paper', 'Errands', 'Repairs', 'Garden']),
-    homeState('home chores: a timed chore beside estimate pills', 'desk=typical&alerts=0&chores=timed', ['Pick up the dry cleaning', '4:30 PM', '15 m', 'Errands']),
-    homeState('home tags: three rows while alerts are open', 'desk=typical&alerts=6&chores=many', ['Order printer paper', 'Errands']),
+    homeState('home tags: five rows, round tag pills, icon only', 'desk=typical&alerts=0&chores=many', ['Order printer paper', 'Sort the recycling']),
+    homeState('home chores: a timed chore beside estimate pills', 'desk=typical&alerts=0&chores=timed', ['Pick up the dry cleaning', '4:30 PM', '15 m']),
+    homeState('home tags: three rows while alerts are open', 'desk=typical&alerts=6&chores=many', ['Order printer paper']),
   ] },
   fit: {
     variants: [
