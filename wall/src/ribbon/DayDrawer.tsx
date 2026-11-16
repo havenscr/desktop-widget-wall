@@ -288,7 +288,7 @@ export function DayDrawer({
                 ))}
             </span>
           </div>
-          <div className="dd-rows">
+          <div className="dd-rows" style={{ ['--dd-n' as string]: Math.max(1, rows.length) }}>
             {!s && <span className="dd-none">{st.status === 'loading' ? '' : st.status === 'unconfigured' ? 'Agents not set up' : 'Agents not reachable'}</span>}
             {s && rows.length === 0 && <span className="dd-none">No open sessions</span>}
             {rows.map(({ l, num, word }) => {

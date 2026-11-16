@@ -82,6 +82,11 @@ export function nextMeeting(meetings: readonly Meeting[], now: number): Meeting 
   return meetings.find((m) => Date.parse(m.end) > now);
 }
 
+/** The first meeting with an online join link that has not ended yet (a plain calendar block never counts). */
+export function nextJoinable(meetings: readonly Meeting[], now: number): Meeting | undefined {
+  return meetings.find((m) => m.canJoin && Date.parse(m.end) > now);
+}
+
 /** Meetings after the next one that have not ended. */
 export function laterMeetings(meetings: readonly Meeting[], now: number): Meeting[] {
   const live = meetings.filter((m) => Date.parse(m.end) > now);
