@@ -163,9 +163,9 @@ export const LINES: Readonly<Record<Topic, readonly string[]>> = {
     'Still playing. Still good.',
   ],
   rain: [
-    'Rain. The window is all drops.',
+    'Rain. Rings all over the lake.',
     'Rain on the wool.',
-    'Wet out there. Dry in here.',
+    'Damp wool. Still cozy.',
     'The rain is doing its thing.',
     'Grey and wet. Cozy.',
     'Rain. The puddles are filling.',

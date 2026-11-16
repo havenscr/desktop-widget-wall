@@ -42,6 +42,20 @@
 .tools-head {
   margin-bottom: 10px;
 }
+/* The weather switch in the top row: heading, the two chips and a short hint on one line, 36 px high like the close button. */
+.tools-weather {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+.tools-weather .tools-chips {
+  flex-wrap: nowrap;
+}
+.tools-weather .tools-hint {
+  margin: 0;
+  white-space: nowrap;
+}
 .tools-k {
   font: 600 18px/1 var(--disp);
   letter-spacing: 0.2em;

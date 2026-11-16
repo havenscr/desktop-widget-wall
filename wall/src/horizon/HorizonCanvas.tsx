@@ -30,6 +30,10 @@ import {
   visualizerWeight,
 } from './echo';
 import { liveTint } from '../music/coverTint';
+import { isNight } from '../buddy/model';
+import { senseWeather } from '../buddy/senses';
+import { useSceneWeather } from '../weather/sceneSetting';
+import { useWeatherStore } from '../weather/useWeather';
 import { frameDelta, shouldDraw } from './pacing';
 import { clearGridPulse, createGridPulse, stepGridPulse } from './pulse';
 import { parseReview, parseSkyReview } from './review';
@@ -39,6 +43,19 @@ import { drawVeil, veilStrength } from './veil';
 import { drawHorizon, type HorizonGrid, type HorizonOptions } from './index';
 import { lineSettings, useLinesStore } from './linesSettings';
 import { parseLineProbe } from './lineProbe';
+import {
+  createWeatherLayer,
+  drawWeatherBack,
+  drawWeatherMid,
+  parseWeatherReview,
+  releaseWeather,
+  setSkipBoxes,
+  setWeatherTarget,
+  snapWeather,
+  stepWeather,
+  weatherOn,
+} from './weatherLayer';
+import { setWeatherOverlay, weatherOverlay } from './weatherOverlay';
 import {
   FLAT_REST_OPACITY,
   ampScale,
@@ -55,6 +72,8 @@ import {
 } from './lineTypes';
 
 const REDRAW_MS = 60_000;
+/** Stands in for `clearRect` while the ground part is drawn over the sky and the weather (see `paint`). */
+const NO_CLEAR = (): void => {};
 /**
  * After a place change the veil's strength is read each frame for this long (its CSS transition is
  * 600 ms); otherwise it is read once, when the front canvas comes, and kept.
@@ -102,12 +121,22 @@ export function HorizonCanvas({ now = Date.now }: { now?: () => number }) {
   const [lineProbe] = useState(() => (import.meta.env.DEV ? parseLineProbe(window.location.search) : null));
   // The picture boxes, kept only for the probe, the one reader of them: production keeps none.
   const lineBoxes = useRef<SkyBox[]>([]);
+  // The weather layer (`weatherLayer.ts`): rain and wind drawn inside this frame. It keeps its own
+  // flat list of the pictures' boxes and the keep-clear cards, so nothing falls over a film or behind a card.
+  const wx = useRef(createWeatherLayer());
+  // Dev builds only: `?wxt=<seconds>` freezes the layer's moment in a review still; `?wxnoskip=1` empties its skip boxes (a fit-check break).
+  const [wxReview] = useState(() => (import.meta.env.DEV ? parseWeatherReview(window.location.search) : null));
   useEffect(() => {
+    wx.current.noSkip = wxReview?.noSkip === true;
+  }, [wxReview]);
+  useEffect(() => () => releaseWeather(wx.current), []);
+  useEffect(() => {
+    setSkipBoxes(wx.current, claims);
     if (!lineProbe) return;
     const boxes = lineBoxes.current;
     boxes.length = 0;
     for (const id in claims) if (claims[id].boxes) boxes.push(...claims[id].boxes!);
-  }, [claims, lineProbe]);
+  }, [claims, lineProbe, wxReview]);
   // Dev builds only: `?sky=front` mounts the front canvas everywhere, `?sky=flat` never, `?skymoon=x,y,r` moves the moon (fit-check breaks, cost measurement).
   const [skyReview] = useState(() => (import.meta.env.DEV ? parseSkyReview(window.location.search) : null));
   const alwaysFront = !zen && skyReview?.front === 'always';
@@ -220,6 +249,28 @@ export function HorizonCanvas({ now = Date.now }: { now?: () => number }) {
     let costFrames = 0;
     let costMs = 0;
 
+    /** The overlay canvas above the place veil, sized to this frame and cleared, or null when the page has none. */
+    const overlayContext = (width: number, height: number): CanvasRenderingContext2D | null => {
+      const o = weatherOverlay();
+      if (!o || !o.isConnected) return null;
+      if (o.width !== width || o.height !== height) {
+        o.width = width;
+        o.height = height;
+      }
+      const x = o.getContext('2d');
+      if (!x) return null;
+      x.setTransform(1, 0, 0, 1, 0, 0);
+      x.clearRect(0, 0, width, height);
+      return x;
+    };
+    /** The weather layer is off: the overlay canvas lets its pixels go (a zero size empties it). */
+    const dropOverlay = () => {
+      const o = weatherOverlay();
+      if (o && (o.width !== 0 || o.height !== 0)) {
+        o.width = 0;
+        o.height = 0;
+      }
+    };
     const paint = () => {
       if (document.hidden) return;
       const costStart = measureCost ? performance.now() : 0;
@@ -342,11 +393,32 @@ export function HorizonCanvas({ now = Date.now }: { now?: () => number }) {
         }
         fctx = fc.getContext('2d');
       }
+      // The weather layer: not under reduced motion, nothing while it is off. A review still draws one frozen moment.
+      const w = wx.current;
+      const wxOn = !reduced && weatherOn(w);
+      const wxTime = review && !demo ? (wxReview?.t ?? 0) : T;
       if (fctx) {
         options.part = 'sky';
         drawHorizon(ctx, options);
+        if (wxOn) drawWeatherBack(ctx, w, wxTime, camera.hy, scale, width, height, awake.current);
         options.part = 'ground';
         drawHorizon(fctx, options);
+      } else if (wxOn) {
+        // Sky, the weather behind the ridge, then the ground: the mountains and the lake hide it. The ground part
+        // begins by clearing its canvas (it is made for the front canvas, which starts empty), which here would wipe
+        // the sky and the weather. Its one clear is switched off for this draw, so the ground goes over them with the
+        // very calls the whole picture makes, and no second canvas or copy is needed.
+        options.part = 'sky';
+        drawHorizon(ctx, options);
+        drawWeatherBack(ctx, w, wxTime, camera.hy, scale, width, height, awake.current);
+        options.part = 'ground';
+        const own = ctx as unknown as { clearRect?: unknown };
+        own.clearRect = NO_CLEAR;
+        try {
+          drawHorizon(ctx, options);
+        } finally {
+          delete own.clearRect;
+        }
       } else {
         drawHorizon(ctx, options);
       }
@@ -370,6 +442,11 @@ export function HorizonCanvas({ now = Date.now }: { now?: () => number }) {
         if (fctx) drawReflection(reflection.current, fctx, width, height, camera.hy, scale, alpha, undefined, canvas);
         else drawReflection(reflection.current, ctx, width, height, camera.hy, scale, alpha);
       }
+      // The weather in front of the ground and the lines, on the canvas the ground is on, before the veil pass.
+      // The mid layer goes ABOVE the place veil, as the picked pictures drew it: with the front canvas, after its veil (below); with one
+      // canvas, on the overlay canvas the page puts after the veil (`WeatherOverlay`), or on this canvas when there is none.
+      if (wxOn && !fctx) drawWeatherMid(overlayContext(width, height) ?? ctx, w, wxTime, camera.hy, scale, width, height, awake.current);
+      else dropOverlay();
       if (fc && fctx) {
         // Left of the main area (the rail's column) the front canvas is cut away: the main canvas
         // takes the ground there over its sky, so the rail's glass shows the whole picture.
@@ -399,6 +476,7 @@ export function HorizonCanvas({ now = Date.now }: { now?: () => number }) {
           }
         }
         drawVeil(fctx, width, height, v.a);
+        if (wxOn) drawWeatherMid(fctx, w, wxTime, camera.hy, scale, width, height, awake.current);
       }
       if (measureCost) {
         costMs += performance.now() - costStart;
@@ -407,6 +485,14 @@ export function HorizonCanvas({ now = Date.now }: { now?: () => number }) {
       }
     };
     repaint.current = paint;
+
+    // Point the weather layer at the weather now (read about once a second, and when the forecast or the Tools switch changes).
+    const syncWeather = () => {
+      const ms = review ? review.ms : nowRef.current();
+      setWeatherTarget(wx.current, senseWeather(useWeatherStore.getState().reading, ms), isNight(new Date(ms)), useSceneWeather.getState().on);
+      // A review still shows the layer in full, at its frozen moment.
+      if (review) snapWeather(wx.current, demo ? wx.current.rt : (wxReview?.t ?? 0));
+    };
 
     const frame = (ts: number) => {
       raf = requestAnimationFrame(frame);
@@ -420,6 +506,13 @@ export function HorizonCanvas({ now = Date.now }: { now?: () => number }) {
       if (driving) loud.current = smoothStep(loud.current, loudness(audio), dt);
       stepEchoMotion(motion.current, driving, dt);
       awake.current = stepEchoFade(awake.current, !idleRef.current, dt);
+      const layer = wx.current;
+      layer.since += dt;
+      if (layer.since >= 1) {
+        layer.since = 0;
+        syncWeather();
+      }
+      stepWeather(layer, dt);
       glide.current = stepGlide(glide.current, dt);
       publish();
       lineCount.current = stepLineCount(lineCount.current, glideCamera(glide.current).en, dt);
@@ -442,20 +535,41 @@ export function HorizonCanvas({ now = Date.now }: { now?: () => number }) {
     // a half-way camera would otherwise stay up until the next redraw.
     if (still) glide.current = settled(glide.current.to);
     publish();
+    if (!reduced) syncWeather();
     paint();
     window.addEventListener('resize', paint);
     let timer = 0;
     let offLines = () => {};
+    let offSwitchNow = () => {};
     if (still) {
       if (!review) timer = window.setInterval(paint, REDRAW_MS);
       // A changed line type or colour is drawn at once, not at the next minute's redraw (the loop does it on its next frame).
       offLines = useLinesStore.subscribe(paint);
+      // A review still shows the weather as soon as the reading (or the Tools switch) arrives.
+      if (!reduced) {
+        const again = () => {
+          syncWeather();
+          paint();
+        };
+        const offReading = useWeatherStore.subscribe(again);
+        const offSwitch = useSceneWeather.subscribe(again);
+        const offLinesOnly = offLines;
+        offLines = () => {
+          offLinesOnly();
+          offReading();
+          offSwitch();
+        };
+      }
       // Also in review mode: a frame skipped while hidden is drawn when the page shows.
       document.addEventListener('visibilitychange', paint);
     } else {
+      // The Tools switch takes effect on the next frame, not at the next one second read.
+      offSwitchNow = useSceneWeather.subscribe(() => void (wx.current.since = 1e9));
       raf = requestAnimationFrame(frame);
     }
     return () => {
+      offSwitchNow();
+      releaseWeather(wx.current);
       window.removeEventListener('resize', paint);
       document.removeEventListener('visibilitychange', paint);
       window.clearInterval(timer);
@@ -537,6 +651,15 @@ export function HorizonCanvas({ now = Date.now }: { now?: () => number }) {
       {skyReview?.front === 'empty' && !zen ? <EmptyLayer place={active} /> : null}
     </>
   );
+}
+
+/**
+ * The canvas the weather's mid layer is drawn on with one canvas: the page puts it right after the place veil (`App.tsx`), so the
+ * rain lies above the veil, as the picked pictures drew it, and under Watt and every card. It is empty (zero size) while the weather is off.
+ */
+export function WeatherOverlay() {
+  useEffect(() => () => setWeatherOverlay(null), []);
+  return <canvas ref={setWeatherOverlay} className="horizon-weather" aria-hidden="true" width={0} height={0} />;
 }
 
 /**

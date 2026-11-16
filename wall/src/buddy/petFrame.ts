@@ -177,6 +177,10 @@ export interface Mind {
    * his idle blinks plan nothing, and he notices no clicks.
    */
   watching: boolean;
+  /** Very windy now (the weather's held answer), how hard it rains (-1 when it does not), and the Tools switch for weather on him. */
+  windy: boolean;
+  rainLevel: number;
+  wetOn: boolean;
 }
 
 export function createMind(): Mind {
@@ -213,6 +217,9 @@ export function createMind(): Mind {
     quiet: false,
     hush: false,
     watching: false,
+    windy: false,
+    rainLevel: -1,
+    wetOn: true,
   };
 }
 
@@ -223,7 +230,7 @@ export function holdsStill(m: Mind): boolean {
 
 /** What Watt draws this frame, beyond the base frame. Reused. */
 export interface PetFrame extends BuddyFrame {
-  /** The prop the day gives her (book, umbrella, headphones, sunglasses, nightcap), or null. */
+  /** The prop the day gives her (book, headphones, sunglasses, nightcap), or null. */
   prop: Prop | null;
   scarf: boolean;
   /** The cosmetic, or null when none is chosen or it does not fit the pose. */
@@ -404,7 +411,6 @@ export function petFrame(walk: Walk, place: WattPlace, hy: number, night: boolea
       }
     }
     if (out.pose === 'read') out.prop = 'book';
-    else if (m.rain) out.prop = 'umbrella';
     else if (place === 'unwind' && playing) out.prop = 'headphones';
     else if (m.sunny) out.prop = 'sunglasses';
     out.scarf = m.cold;

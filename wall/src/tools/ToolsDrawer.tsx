@@ -6,6 +6,7 @@ import { clockText } from '../meet/model';
 import { hover } from './hover';
 import { LOOKS } from '../unwind/watch/looks';
 import { useWatchStore } from '../unwind/watch/store';
+import { useSceneWeather } from '../weather/sceneSetting';
 import { errorText, isAbsent } from '../work/deckModel';
 import { joinKeys, reloadKeys, useKeysFeedStore, type Read } from '../work/keysFeed';
 import type { KeysSummary } from '../work/keysModel';
@@ -102,6 +103,32 @@ function VideoLook() {
         })}
       </div>
       <div className="tools-hint">{perKind ? 'A look per kind is set on Watch. Pick one here to use it for everything.' : 'How video sits in the sky on Watch'}</div>
+    </div>
+  );
+}
+
+/**
+ * The switch for rain and wind from the forecast on the mountains and on Watt (on by default; kept across restarts).
+ * It sits in the drawer's top row, between the title and the close button: the columns below are full in their worst
+ * case (the drawer is 700 px tall at most), so a block among them would push the drawer past the wall.
+ */
+function SceneWeather() {
+  const on = useSceneWeather((s) => s.on);
+  const setOn = useSceneWeather((s) => s.setOn);
+  return (
+    <div className="tools-weather">
+      <span className="tools-k sm" {...hover('Rain and wind from your forecast, on the mountains and on Watt. Off under reduced motion.')}>
+        Weather in the scene
+      </span>
+      <div className="tools-chips">
+        <button type="button" className={on ? 'tools-chip on' : 'tools-chip'} aria-pressed={on} {...hover('Show rain and wind from the forecast on the mountains and on Watt')} onClick={() => setOn(true)}>
+          On
+        </button>
+        <button type="button" className={!on ? 'tools-chip on' : 'tools-chip'} aria-pressed={!on} {...hover('Keep the scene and Watt as on a dry day')} onClick={() => setOn(false)}>
+          Off
+        </button>
+      </div>
+      <span className="tools-hint">Rain and wind from your forecast.</span>
     </div>
   );
 }
@@ -258,6 +285,7 @@ function Drawer() {
     <section ref={ref} className="tools-drawer" aria-label="Tools" onPointerEnter={() => clearTimeout(idle.current)} onPointerLeave={startIdle}>
       <div className="tools-top">
         <span className="tools-k tx">Tools</span>
+        <SceneWeather />
         <button type="button" className="tools-x" aria-label="Close Tools" onClick={close}>
           <IconX size={18} aria-hidden="true" />
         </button>

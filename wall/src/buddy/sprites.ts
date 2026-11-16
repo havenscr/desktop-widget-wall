@@ -253,8 +253,8 @@ export const EAR: Readonly<Record<Pose, readonly [number, number]>> = {
 };
 
 /** Things she wears or holds. `book` to `nightcap` follow the day; `bow`, `star` and `cape` are cosmetics. */
-export type Prop = 'book' | 'headphones' | 'sunglasses' | 'umbrella' | 'scarf' | 'nightcap' | 'bow' | 'star' | 'cape';
-export const PROPS: readonly Prop[] = ['book', 'headphones', 'sunglasses', 'umbrella', 'scarf', 'nightcap', 'bow', 'star', 'cape'];
+export type Prop = 'book' | 'headphones' | 'sunglasses' | 'scarf' | 'nightcap' | 'bow' | 'star' | 'cape';
+export const PROPS: readonly Prop[] = ['book', 'headphones', 'sunglasses', 'scarf', 'nightcap', 'bow', 'star', 'cape'];
 
 /**
  * A prop's map and where it goes, in sprite pixels: from the pose's ear pixel (`ear`) or from the
@@ -274,7 +274,6 @@ export const PROP_SPRITES: Readonly<Record<Prop, PropSprite>> = {
   // One big cup over the ear, the band over the top of the head and down in front of the face.
   headphones: { map: ['..kk.', 'ccc.k', 'cCc..', 'ccc..'], dx: -2, dy: -1, anchor: 'ear' },
   sunglasses: { map: ['ggghg'], dx: -1, dy: 2, anchor: 'ear' },
-  umbrella: { map: ['..UUUUU..', '.uuuuuuu.', 'uuuuuuuuu', '....i....', '....i....', '....i....', '....ii...'], dx: -5, dy: -4, anchor: 'ear' },
   scarf: { map: ['rRrRr', '.r...', '.R...'], dx: -2, dy: 4, anchor: 'ear' },
   nightcap: { map: ['....nN', '..nnn.', '.nnnn.'], dx: -1, dy: -3, anchor: 'ear' },
   bow: { map: ['xx.xx', '.xxx.'], dx: -3, dy: -1, anchor: 'ear' },
@@ -342,6 +341,12 @@ export function propOrigin(prop: Prop, pose: Pose, worn: Prop | null = null): [n
   return [ex + s.dx, ey + s.dy];
 }
 
+/** Sprite pixels an ear-anchored prop moves with the ear's row while rows are shifted (a shake frame, the wind's lean); body props stay. */
+export function earShift(prop: Prop, pose: Pose, rows: RowShift): number {
+  if (rows === 0 || PROP_SPRITES[prop].anchor !== 'ear') return 0;
+  return ROW_DX[rows][EAR[pose][1]] ?? 0;
+}
+
 /** Little things of her own: a heart when petted, a clover on the ground, the amber mark. */
 export const HEART: readonly string[] = ['.v.v.', 'vvvvv', '.vvv.', '..v..'];
 export const CLOVER: readonly string[] = ['.o.o.', 'ooooo', '.ooo.', '..O..', '..O..'];
@@ -359,9 +364,6 @@ export const PROP_COLORS: Readonly<Record<string, string>> = {
   c: '#ff3d9a',
   g: '#05030f',
   h: '#35e6ea',
-  u: '#ff3d9a',
-  U: '#ff7ab8',
-  i: '#8f86c9',
   r: '#ff3d9a',
   R: '#ffc24d',
   n: '#6b5fd0',
@@ -406,6 +408,54 @@ export function pixelColor(map: readonly string[], x: number, y: number): string
   if (ch === 'w') return y < map.length * 0.45 ? '#f6f2ff' : y < map.length * 0.75 ? '#dcd3fb' : '#bfb2f0';
   return SPRITE_COLORS[ch] ?? null;
 }
+
+/**
+ * Damp wool, one step darker than dry at every row zone (`#a79bdc` is the one new colour), and the
+ * strands that stick out of it, one step darker again (`#9388cf` is the second new colour, used by
+ * the lowest zone only).
+ */
+export const WET_WOOL: readonly string[] = ['#dcd3fb', '#bfb2f0', '#a79bdc'];
+export const WET_STRAND: readonly string[] = ['#bfb2f0', '#a79bdc', '#9388cf'];
+
+/** Wet strands, as (column, row) in a pose facing right; a strand is drawn only where the pose has wool at that cell. */
+export const STRANDS: readonly (readonly [number, number])[] = [
+  [3, 2], [3, 3], [8, 1], [8, 2], [11, 3], [11, 4], [2, 6], [2, 7], [6, 7], [6, 8], [10, 6], [10, 7], [12, 8],
+];
+const STRAND_KEYS: ReadonlySet<number> = new Set(STRANDS.map(([x, y]) => y * 64 + x));
+
+/** How the wool looks: dry, damp (rain), or fluffy and light for a while after a shake (the dry colours, no strands). */
+export type Wool = 'dry' | 'wet' | 'fluffy';
+
+/** The row zone of a wool pixel: 0 the top 45 percent of the rows, 1 to 75 percent, 2 below. */
+function zoneOf(map: readonly string[], y: number): 0 | 1 | 2 {
+  return y < map.length * 0.45 ? 0 : y < map.length * 0.75 ? 1 : 2;
+}
+
+/** Colour of a pixel of the damp sheep (wet wool, with its strands), or null for empty. */
+export function pixelColorWet(map: readonly string[], x: number, y: number): string | null {
+  const ch = map[y]?.[x];
+  if (!ch || ch === '.') return null;
+  if (ch === 'w') return (STRAND_KEYS.has(y * 64 + x) ? WET_STRAND : WET_WOOL)[zoneOf(map, y)];
+  return SPRITE_COLORS[ch] ?? null;
+}
+
+/**
+ * Rows moved sideways, in the sprite's own direction (it faces right here; the element flips it).
+ * 0 none; 1 to 4 the four frames of a shake (upper wool and lower wool one pixel apart, legs still,
+ * alternating); 5 the wind's lean when he faces right and 6 when he faces left (the two top rows one
+ * pixel downwind, which is the screen's right).
+ */
+export type RowShift = 0 | 1 | 2 | 3 | 4 | 5 | 6;
+const shake = (s: number): readonly number[] => [s, s, s, s, s, -s, -s, -s, -s, -s, 0, 0];
+export const ROW_DX: Readonly<Record<RowShift, readonly number[]>> = {
+  0: [],
+  1: shake(-1),
+  2: shake(1),
+  3: shake(-1),
+  4: shake(1),
+  5: [1, 1],
+  6: [-1, -1],
+};
 
 /** Pixel size in design pixels on the Unwind tab. */
 export const SPRITE_PX = 6;

@@ -71,12 +71,90 @@ export interface WeatherReading {
   fetchedAt: number;
   /** Which source it came from (absent reads as Open-Meteo). */
   source?: WeatherSource;
+  /** The WMO weather code of now (-1 when unknown). */
+  code: number;
+  /** Wind now in miles per hour; each field is absent when the source did not give a usable value. */
+  wind?: WindReading;
+  /** Very windy, with a hold (`isWindy`); set by the store where a reading is kept. */
+  windy?: boolean;
+}
+
+export interface WindReading {
+  speed?: number;
+  gust?: number;
+}
+
+/** Wind limits for a value to count at all (miles per hour); anything outside is treated as absent. */
+const MAX_WIND_SPEED_MPH = 200;
+const MAX_WIND_GUST_MPH = 250;
+
+/** Very windy turns on at a gust or a steady speed, and stays on down to lower lines so one reading near the line does not flip it. */
+export const WINDY_GUST_ON_MPH = 30;
+export const WINDY_SPEED_ON_MPH = 20;
+export const WINDY_GUST_OFF_MPH = 24;
+export const WINDY_SPEED_OFF_MPH = 16;
+
+/** Whether it is very windy: both values unknown is false; `prev` (the answer for the reading before) applies the lower hold lines. */
+export function isWindy(prev: boolean, wind?: WindReading): boolean {
+  const speed = wind?.speed ?? -1;
+  const gust = wind?.gust ?? -1;
+  if (prev) return gust >= WINDY_GUST_OFF_MPH || speed >= WINDY_SPEED_OFF_MPH;
+  return gust >= WINDY_GUST_ON_MPH || speed >= WINDY_SPEED_ON_MPH;
+}
+
+/** How hard it rains from a WMO code: 0 light, 0.5 steady, 1 heavy, -1 not a rain code. */
+export function rainLevel(code: number): 0 | 0.5 | 1 | -1 {
+  switch (code) {
+    case 51: case 53: case 55: case 56: case 57: case 61: case 80:
+      return 0;
+    case 63: case 66: case 67: case 81:
+      return 0.5;
+    case 65: case 82: case 95: case 96: case 99:
+      return 1;
+    default:
+      return -1;
+  }
+}
+
+/** A wind number kept only when it is a finite number from 0 up to the limit. */
+function windValue(v: unknown, max: number): number | undefined {
+  return typeof v === 'number' && Number.isFinite(v) && v >= 0 && v <= max ? v : undefined;
+}
+
+/** Wind from the first source's `current` block; a reply in a unit other than miles per hour counts as no wind. */
+function openMeteoWind(d: unknown): WindReading | undefined {
+  const root = d as { current?: Record<string, unknown>; current_units?: unknown } | null;
+  const cur = root?.current;
+  if (typeof cur !== 'object' || cur === null) return undefined;
+  const units = root?.current_units;
+  const unitOk = (key: string): boolean => {
+    if (typeof units !== 'object' || units === null) return true;
+    const u = (units as Record<string, unknown>)[key];
+    return typeof u !== 'string' || u === 'mp/h';
+  };
+  const speed = unitOk('wind_speed_10m') ? windValue(cur.wind_speed_10m, MAX_WIND_SPEED_MPH) : undefined;
+  const gust = unitOk('wind_gusts_10m') ? windValue(cur.wind_gusts_10m, MAX_WIND_GUST_MPH) : undefined;
+  if (speed === undefined && gust === undefined) return undefined;
+  const w: WindReading = {};
+  if (speed !== undefined) w.speed = speed;
+  if (gust !== undefined) w.gust = gust;
+  return w;
+}
+
+const NWS_SPEED = /^\s*(\d{1,3})(?:\s*to\s*(\d{1,3}))?\s*mph\s*$/i;
+
+/** One Weather Service wind text such as "15 mph" or "10 to 20 mph" (the larger number); anything else is absent. */
+function nwsWindText(v: unknown, max: number): number | undefined {
+  if (typeof v !== 'string') return undefined;
+  const m = NWS_SPEED.exec(v);
+  if (!m) return undefined;
+  return windValue(Math.max(Number(m[1]), m[2] === undefined ? 0 : Number(m[2])), max);
 }
 
 /* The Open-Meteo address is built natively (`wall2_weather.rs`, `open_meteo_url`). */
 
 interface OpenMeteo {
-  current: { time: string; temperature_2m: number; weather_code: number; is_day: number };
+  current: { time: string; temperature_2m: number; weather_code: number; is_day: number; wind_speed_10m?: unknown; wind_gusts_10m?: unknown };
   hourly: { time: string[]; temperature_2m: number[]; weather_code: number[]; is_day?: number[] };
   daily: { temperature_2m_max: number[]; temperature_2m_min: number[] };
 }
@@ -109,6 +187,7 @@ export function parseWeather(data: unknown, fetchedAt: number): WeatherReading {
       look: describeWeather(d.hourly.weather_code[i], (d.hourly.is_day?.[i] ?? 1) === 1),
     });
   }
+  const wind = openMeteoWind(d);
   return {
     temp: Math.round(cur.temperature_2m),
     look: describeWeather(cur.weather_code, cur.is_day === 1),
@@ -117,6 +196,8 @@ export function parseWeather(data: unknown, fetchedAt: number): WeatherReading {
     hours,
     fetchedAt,
     source: 'open-meteo',
+    code: Number.isInteger(cur.weather_code) ? cur.weather_code : -1,
+    ...(wind ? { wind } : {}),
   };
 }
 
@@ -171,6 +252,8 @@ interface NwsPeriod {
   temperature: number;
   temperatureUnit?: string;
   shortForecast?: string;
+  windSpeed?: unknown;
+  windGust?: unknown;
 }
 
 const nwsPeriods = (data: unknown): NwsPeriod[] | null => {
@@ -226,6 +309,10 @@ export function parseNws(data: unknown, fetchedAt: number, seenHigh: number | nu
     low = Math.min(...ahead);
   }
   const hours: HourPoint[] = periods.slice(1, 7).map((p) => ({ label: hourLabel(p.startTime), temp: Math.round(nwsTemp(p)), look: look(p) }));
+  const speed = nwsWindText(first.windSpeed, MAX_WIND_SPEED_MPH);
+  const gust = nwsWindText(first.windGust, MAX_WIND_GUST_MPH);
+  const wind: WindReading | undefined =
+    speed === undefined && gust === undefined ? undefined : { ...(speed !== undefined ? { speed } : {}), ...(gust !== undefined ? { gust } : {}) };
   return {
     temp: Math.round(now),
     look: look(first),
@@ -234,6 +321,8 @@ export function parseNws(data: unknown, fetchedAt: number, seenHigh: number | nu
     hours,
     fetchedAt,
     source: 'nws',
+    code: nwsCode(first.shortForecast ?? ''),
+    ...(wind ? { wind } : {}),
   };
 }
 

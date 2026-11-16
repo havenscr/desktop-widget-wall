@@ -874,6 +874,59 @@ skyline, the lake in front. It is drawn on one canvas by `HorizonCanvas.tsx`.
   camera with its echo ripple off (the moon is on for `unwind`, which the review
   frame draws) and the same animation time, 0.
 
+### The weather layer
+
+When the forecast says rain, or says it is very windy, the horizon draws weather inside its own frame
+(`weatherLayer.ts` holds the state and the two draw calls, `weatherFx.ts` the drawing, a port of the
+voted recipe, one look only). There is no canvas, timer or React state of its own, so the horizon's
+rules come with it: nothing is drawn while the page is hidden, and Zen and Dream draw none (the horizon
+effect returns before any drawing).
+
+- **Order in a frame.** The sky part, then the back layer, then the ground part, the music lines and the
+  lake reflection, then the mid layer. The mountains and the lake hide the back layer; the mid layer lies
+  over the ground, over the dancing lines (it never reads the audio) and over the place veil (the picked
+  pictures drew the streaks above it), and under Watt and every card, the clock and the text, which are
+  page elements. With one canvas the mid layer is drawn on `WeatherOverlay`, a canvas the page puts right
+  after the veil (`App.tsx`; it is emptied while the weather is off; without it the mid layer falls back
+  to the main canvas, under the veil). With the front canvas (Watch, `?sky=front`) the back layer goes on
+  the main canvas after its sky and the mid layer on the front canvas after its own copy of the place veil. The ground part
+  begins by clearing its canvas (it is made for the front canvas, which starts empty), which with one
+  canvas would wipe the sky and the back layer; so while the layer is on, that one `clearRect` is switched
+  off for the ground draw (and restored after it), and the ground goes over the sky with the very calls
+  the whole picture makes (no scratch canvas or copy of the ground). With the layer off the single whole draw is
+  exactly the horizon's own.
+- **What it draws.** Rain: the sky a little darker (a cached veil), slow mist banks behind the ridge (a
+  cached strip redrawn every 0.25 s and slid with one image between redraws), 80 to 220 long streaks
+  (`level` 0 light to 1 heavy) falling in front of the mountains to the far shore, rings opening on the
+  lake, and mist on the water in steady and heavy rain. Wind: the streaks lean from 12 to 34 degrees and
+  fall a little faster, the mist moves along, five lanes of faint pale lines cross the sky, and wool
+  tufts and clover leaves drift along the shore. The rain strength comes from the weather code
+  (`rainLevel` in `weather/model.ts`); a raining reading with an unknown code counts as steady.
+- **Strength and ramps.** After 9:30 PM and before 6:30 AM (Watt's sleep rule) rain is half strength.
+  Rain and wind each fade in and out over 8 seconds (`RAMP_S`), and so does the Tools switch; nothing
+  pops. The clocks that move the streaks and the mist are integrated, so the speed-up in wind never
+  jumps a position. Every opacity also takes the horizon's idle fade, so the layer is gone within a
+  second of the display going idle and nothing is drawn while idle.
+- **What stops it.** Reduced motion draws none. A reading older than two hours, or none, gives none. With
+  neither rain nor wind (both ramps at 0) no weather call is made and no cache exists.
+- **Where nothing falls.** The layer keeps a flat list of every sky claim's picture boxes and Unwind's
+  keep-clear cards, grown by 8 px; a streak whose end, or a ring or tuft whose centre, lies in one is
+  skipped. So nothing falls over the Watch film or behind Unwind's near-opaque cards. Work and Home
+  cards register no boxes, so the rain shows in their gaps.
+- **Cost.** Nothing is allocated in a frame (`noAlloc.test.ts` guards the bodies; the wind lines make one
+  gradient each, the one allowance). Measured with `?linecost` at 2560 by 720 in headless software
+  Chromium: see the pull request for the numbers; `?weather=ok` costs what the horizon always did.
+- **The wind and the code in the reading.** `WeatherReading` holds `code` (the WMO code of now, -1 when
+  unknown), `wind` (`speed` and `gust` in miles per hour, each absent unless a finite number in range) and
+  `windy`. The first source's wind fields are used only when their unit reads `mp/h`; the second source's
+  `windSpeed` text ("15 mph", "10 to 20 mph" reads 20) is parsed with one anchored pattern. Very windy
+  turns on at a gust of 30 or a speed of 20 and holds down to 24 and 16 (`isWindy`, set once where a
+  reading is stored so the scene and Watt agree). Without the wind fields nothing is windy.
+- **Review knobs (development builds only).** `?weather=rain|heavy|rainwind|wind|heavywind` (the code and
+  the wind, in both sources), `?wxt=<seconds>` freezes the layer's moment in a review still (default 4.7),
+  `?wxnoskip=1` empties the skip boxes (a fit-check break), `?wattwx=drip|shake1..shake4|fluffy|lean`
+  forces one weather frame of Watt in a review still.
+
 ## The frame and the day ribbon
 
 Every place sits on the concept's one grid (`wall/src/styles/frame.css`,
@@ -1326,7 +1379,7 @@ the centre card; the date line takes it through the frame's `ClockSlot` portal.
   meeting and task mocks follow the review's time. Review knobs: `?meet=none` (no
   meetings), `?box=none` (no box numbers), `?net=alarms` (the network feed with only
   its alarm count). The weather command is mocked (`devMocks/weather.ts`); review knobs
-  `?weather=ok|stale|down|cold|dns|refused|second` (see `devMocks/gallery.ts`).
+  `?weather=ok|stale|down|cold|dns|refused|second` and `?weather=rain|heavy|rainwind|wind|heavywind` (see `devMocks/gallery.ts`).
 
 ## Audio, ripple and moon
 
@@ -1901,7 +1954,7 @@ Watt is also a small pet ("he"), calm and silent (no sound at all):
   firefly drifts in a slow loop near him and blinks softly (never brighter than his wool); he
   turns to watch it. Not under reduced motion, never in a call.
 - **A little life**: he reads a tiny book during focus, wears headphones on Unwind while music
-  plays, sunglasses at a clear midday, an umbrella in rain, a scarf when it is cold, a nightcap
+  plays, sunglasses at a clear midday, a scarf when it is cold, a nightcap
   asleep; he looks up at the moon in the evening, yawns and stretches when he wakes at 6:30,
   and naps where he stands while the display is idle. His mood (content, happy, sleepy,
   curious) only changes which lines and idle poses he picks; it never goes below content. Twice
@@ -1932,6 +1985,27 @@ Watt is also a small pet ("he"), calm and silent (no sound at all):
   detector, now playing, `useIdle`); a missing or stale source means he does not mention it.
   `useWeather` and `useNextMeeting` are shared stores (as the agents poll is): one request per
   interval however many components use them.
+
+### Watt in rain and wind
+
+Watt carries no umbrella. While the forecast shows rain (the same fresh reading the scene uses) his wool is
+one step darker than dry with a few darker strands (`pixelColorWet`, `STRANDS` in `sprites.ts`), on every
+pose and also asleep and under reduced motion. The rest is in `wetWatt.ts`, pure functions of the loop clock:
+
+- **A drip.** One drip at a time, a new one every 1.7 s from six places in turn (the fourth under the chin):
+  it hangs half a second, falls a small pixel every 70 ms to the ground row, then two small pixels spread
+  either side for 140 ms. Only the standing poses drip, never while he naps, in a call or a meeting.
+- **A shake.** About once a minute (45 to 75 s from a fixed hash) while he stands in the idle pose with
+  nothing else going on: four frames of 80 ms (the upper and lower wool one pixel apart, legs still), seven
+  droplets fly for 640 ms, then five seconds of fluffy wool (the dry colours, no strands), then damp again.
+  A shake that falls due while he is busy waits for the next calm moment. Props on his head move with it.
+- **Wind.** When it is very windy his top two wool rows lean one pixel downwind (the wind blows to the
+  screen's right), and while he faces left a loose wool strand trails at his tail. His walk is unchanged.
+- **His loop.** In rain it wakes only for the drip steps, the shake frames, the end of the fluffy spell and
+  the next shake due; dry, it sleeps as before. Under reduced motion only the damp colours show.
+- **The switch.** Tools, "Weather in the scene", turns the scene and Watt's damp look off together (his
+  remarks still talk about rain, and "Rain. Rings all over the lake." and "Damp wool. Still cozy." replace
+  the two remarks that read as if he were indoors).
 
 ### Watch (Unwind's second tab)
 
@@ -3033,6 +3107,7 @@ The rail's Tools button (pressed while open) opens a drawer over the right third
 - **Accounts.** Each calendar account from `useMeet(true)` (the same hook Meet uses, reading on any place while the drawer is open) with its state line and Sign in, Sign out or Try again; Spotify from `src/music/spotify.ts` (Not set up, with a hover naming `spotify.json` in the app's config folder, and no button, when it has no `spotify.json`). YouTube (see "YouTube" above) is the row under Spotify, with its Set up form (the form takes the left column while it is open, so Video look and Keys file are hidden until it closes) and a line with its two required links. While a sign-in waits, the row says "Waiting for the browser" and has Cancel. There is no Twitch row: Twitch has no sign-in yet, and a button that does nothing is never drawn. A sign-in or sign-out refreshes Meet and Work's calendar read at once.
 - **Sources.** One row each for Calendar, Tasks, Agents, Home, Sound, Music, Weather and Box: a dot (mint fresh, amber stale or failing, red down or not set up, grey nothing read yet), the last good read as a clock time or "never", the store's own reason on hover, and Retry, which runs that store's existing refresh and stays busy until that read settles (15 seconds at most); a second click while it runs starts nothing. Music's Retry says "Nothing is playing to read" when its poll is not running. The rules are in `src/tools/sources.ts` and use each store's own stale rule: the agents helper's `agentsStale`, Home's alarm age, Sound's two minutes, the weather card's "updated N min ago" age, Music's 2 second poll. Tasks, Sound and Box keep their state inside their hooks, so each hook reports every read to `src/tools/reports.ts` and registers its own refresh while mounted; when no screen has it mounted, Retry (and opening the drawer) reads the same command once. Home here is the home app's security read, which is also what the rail's alarm dot uses.
 - **Video look.** The chips are the Watch looks (`LOOKS` in `src/unwind/watch/looks.ts`) and use the Watch store's `setLooks`: picking one sets one look for everything. When Watch is set to a look per kind no chip is lit and the hint says so. There is no Off, because the Watch store has none.
+- **Weather in the scene.** Two chips, On and Off (on by default), under Video look: rain and wind from the forecast on the mountains and on Watt (see "The weather layer" and "Watt in rain and wind"). Stored as `{"on":true|false}` under `wall2-scene-weather`; a bad or unreadable value reads as on. Turning it off fades the scene's weather out over 8 seconds and puts Watt back to a dry day.
 - **Keys file.** "keys.json, N keys, read 8:02 AM" counts the keys the file names (its own sets and its pinned keys, not the built-in sets). A refused file shows in amber with the whole reason on hover; no file says "No keys.json. Defaults in use". Reload forgets the shared read and asks `wall2_keys_summary` again. Open calls `wall2_open_keys_file`, which takes no argument: Rust opens `keys.json` in the app config folder with the default editor, or the folder when there is no file yet, and only answers `not-configured` or `failed`. Only the `wall2` window may call it.
 - **Key lights.** Under Sources: Left and Right, each Not set up (Set up) or Saved (Test, Change), the address typed once and never shown again. See "Studio lights" under On Air. Open Tools on the On Air block opens the drawer with this section ringed for 2 seconds.
 - **Build stamp.** The footer reads `wall2_build_info` as the clock's tooltip does.
