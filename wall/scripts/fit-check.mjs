@@ -395,8 +395,8 @@ const WATCH_PLAYING = [...WATCH_IDLE, '.w-ctl', '.w-screen', '.w-time', '.w-open
 // Screens off and Watt.
 // Below the horizon, under the whole sky's floor wash: the Tomorrow card, the status line's
 // chips and Screens off (Unwind has no timeline strip).
-const FLOOR_HITS = ['.u-tomorrow', '.u-line .u-act', '.screens-off'];
-const SKY_HITS = ['.rail .rb', '.u-tab', '.w-gear', '.w-ctl .rd:not(:disabled)', '.w-play', '.w-mini', '.w-paste', '.u-line .u-act', '.screens-off', '.w-open', '.watt-hit-part'];
+const FLOOR_HITS = ['.u-tomorrow', '.u-line .u-cap-work', '.screens-off'];
+const SKY_HITS = ['.rail .rb', '.u-tab', '.w-gear', '.w-ctl .rd:not(:disabled)', '.w-play', '.w-mini', '.w-paste', '.u-line .u-cap-work', '.screens-off', '.w-open', '.watt-hit-part'];
 // watch polish: the left block, its control row (the gear is its last button), the position line.
 const WATCH_POLISH = ['.w-now', '.w-ctl', '.w-time', '.w-gear', '.w-card'];
 const WATCH_LOOKS = [['feather', 'feathered'], ['sky', 'whole sky'], ['sun', 'the sun'], ['drivein', 'drive-in'], ['holo', 'hologram']];
@@ -859,6 +859,10 @@ try {
       // type:<selector>=<text> sets a field the way typing does (the framework hears an input event).
       const at = click.indexOf('='); const el = document.querySelector(click.slice(5, at));
       if (el) { Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set?.call(el, click.slice(at + 1)); el.dispatchEvent(new Event('input', { bubbles: true })); }
+    }
+    else if (click.startsWith('tip:')) {
+      // Opens the element's hover card the way keyboard focus does (the shared card shows at once on focus). A focusin event, since headless --dump-dom has no focused page.
+      document.querySelector(click.slice(4))?.dispatchEvent(new FocusEvent('focusin', { bubbles: true }));
     }
     else if (click.startsWith('hover:')) {
       // Headless --dump-dom has no pointer: every top-level :hover rule is copied for a class that stands in for it.

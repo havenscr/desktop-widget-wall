@@ -185,3 +185,36 @@ it('goes when its anchor moves more than a few pixels (Watt walking on), and sta
   await flush(TIP_ANCHOR_CHECK_MS);
   expect(document.querySelector('.hover-tip')).toBeNull();
 });
+
+it('the default placement is centred over the control and clamped 12 px from the edge; align start lines the left edges up', async () => {
+  const width = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'offsetWidth');
+  Object.defineProperty(HTMLElement.prototype, 'offsetWidth', { configurable: true, get: function (this: HTMLElement) { return this.classList.contains('hover-tip') ? 300 : 0; } });
+  try {
+    const box = (left: number) => ({ left, top: 400, width: 70, height: 36, right: left + 70, bottom: 436, x: left, y: 400, toJSON() {} }) as DOMRect;
+    const r = render(
+      <>
+        <span className="centred" {...tip('Centred')}>x</span>
+        <span className="started" {...tip('Started', { align: 'start' })}>x</span>
+        <HoverTipLayer />
+      </>,
+    );
+    const open = async (cls: string, left: number) => {
+      const el = r.container.querySelector(`.${cls}`)!;
+      el.getBoundingClientRect = () => box(left);
+      fireEvent.mouseEnter(el);
+      await flush(TIP_DELAY_MS);
+      const card = document.querySelector<HTMLElement>('.hover-tip')!;
+      const at = Number.parseFloat(card.style.left);
+      fireEvent.mouseLeave(el);
+      return at;
+    };
+    // Default: centred (1000 + 35 - 150), and held 12 px from the left edge for a control at x 124.
+    expect(await open('centred', 1000)).toBe(885);
+    expect(await open('centred', 124)).toBe(12);
+    // Start: the card's left edge is the control's, and the 12 px clamp still holds at the stage's right edge.
+    expect(await open('started', 124)).toBe(124);
+    expect(await open('started', 2500)).toBe(2560 - 12 - 300);
+  } finally {
+    if (width) Object.defineProperty(HTMLElement.prototype, 'offsetWidth', width);
+  }
+});

@@ -4,6 +4,7 @@ import { mocks } from '../bridge/tauri';
 import { useFocusStore } from '../focus/store';
 import { usePacificTime } from '../ribbon/testZone';
 import { StatusLine } from '../unwind/StatusLine';
+import { drawnLine } from '../unwind/statusTestUtil';
 import { Dream } from '../zen/Dream';
 import { lane, summary } from './fixtures';
 import { resetSnooze, snooze, SNOOZE_MS, useSnoozed, useSnoozeStore } from './snooze';
@@ -47,7 +48,8 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
-const line = () => document.querySelector('.u-line')?.textContent ?? '';
+/** The marks as a short word: the pill's words, or `quiet` when no pill is drawn. */
+const line = () => drawnLine()?.pill ?? 'quiet';
 const dream = () => document.querySelector('.dream-status')?.textContent ?? '';
 
 it('Unwind: a snoozed chat raises no chip and no line; it comes back when the snooze ends', async () => {
@@ -56,11 +58,11 @@ it('Unwind: a snoozed chat raises no chip and no line; it comes back when the sn
   snooze(A, s);
   render(<StatusLine />);
   await flush();
-  expect(line()).toBe('Work is put away. No agent needs you.');
-  expect(document.querySelector('.u-act.amber')).toBeNull();
+  expect(line()).toBe('quiet');
+  expect(document.querySelector('.u-need')).toBeNull();
   await flush(SNOOZE_MS + 1000);
-  expect(line()).toBe('Work is put away. One thing needs you.');
-  expect(document.querySelector('.u-act.amber')).not.toBeNull();
+  expect(line()).toBe('One thing needs you');
+  expect(document.querySelector('.u-need')).not.toBeNull();
 });
 
 it('Unwind: a snoozed chat and an unsnoozed one count only the unsnoozed one, and the chip opens that chat', async () => {
@@ -69,10 +71,10 @@ it('Unwind: a snoozed chat and an unsnoozed one count only the unsnoozed one, an
   snooze(A, s);
   render(<StatusLine />);
   await flush();
-  expect(line()).toBe('Work is put away. One thing needs you.');
+  expect(line()).toBe('One thing needs you');
   const opened: unknown[] = [];
   mocks.set('wall2_open_session', (a) => void opened.push(a));
-  await act(async () => (document.querySelector('.u-act.amber') as HTMLButtonElement).click());
+  await act(async () => (document.querySelector('.u-need') as HTMLButtonElement).click());
   expect(opened).toEqual([{ id: B }]);
 });
 
@@ -114,7 +116,7 @@ it('Unwind and Dream reading the same request 45 s later do not end a snooze Wor
   mocks.set('wall2_omni_summary', () => readLater(45_000));
   const r = render(<StatusLine />);
   await flush();
-  expect(line()).toBe('Work is put away. No agent needs you.');
+  expect(line()).toBe('quiet');
   expect(useSnoozeStore.getState().entries[A]).toBeDefined();
   r.unmount();
   resetAgents();
@@ -137,5 +139,5 @@ it('a chat that waits only in the session list keeps its snooze on Unwind (no yo
   render(<StatusLine />);
   await flush();
   expect(useSnoozeStore.getState().entries[A]).toBeDefined();
-  expect(line()).toBe('Work is put away. No agent needs you.');
+  expect(line()).toBe('quiet');
 });
