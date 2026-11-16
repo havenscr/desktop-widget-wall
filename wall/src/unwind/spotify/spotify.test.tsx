@@ -6,7 +6,7 @@ import { PLAY_TINT } from '../../horizon/echo';
 import type { SpotifyItem, SpotifyTrack } from '../../music/spotify';
 import { resetNowPlaying } from '../../music/store';
 import { resetTools, useToolsStore } from '../../tools/store';
-import { NOT_YOURS_LINE, PAGE_OFF_LINE, resetPublicPage, usePublicPage, WHILE_PLAYS, isNowPlaying, kindLine, LISTEN_SOURCE_KEY, resetListenSource, spotifyProblem, tileLine, SEARCH_WAIT_MS, trackLength, UP_NEXT_NONE_LINE, upNextPlan, useListenSource, useSpotifyNow } from './model';
+import { NOT_YOURS_LINE, PAGE_OFF_LINE, resetPublicPage, usePublicPage, WHILE_PLAYS, isNowPlaying, kindLine, LISTEN_SOURCE_KEY, problemLine, resetListenSource, spotifyProblem, spotifyRetryable, tileLine, SEARCH_WAIT_MS, trackLength, UP_NEXT_NONE_LINE, upNextPlan, useListenSource, useSpotifyNow } from './model';
 import { useNowPlayingStore } from '../../music/store';
 import { hideTip } from '../../ui/HoverTip';
 import { HoverTipLayer } from '../../ui/HoverTip';
@@ -58,7 +58,28 @@ it('maps the bridge errors to problems', () => {
   expect(spotifyProblem(new Error('down'))).toBe('down');
   expect(spotifyProblem('server-503')).toBe('server:503');
   expect(spotifyProblem('status-400')).toBe('status:400');
+  expect(spotifyProblem('refused-scope')).toBe('refusedScope');
+  expect(spotifyProblem('refused-not-allowed-user')).toBe('refusedNotAllowedUser');
+  expect(spotifyProblem('refused-premium')).toBe('refusedPremium');
+  expect(spotifyProblem('refused-market')).toBe('refusedMarket');
+  expect(spotifyProblem('refused-bad-request')).toBe('refusedBadRequest');
+  expect(spotifyProblem('refused-other')).toBe('refused');
   expect(spotifyProblem(42)).toBe('failed');
+});
+
+it('explains fixed refusal reasons without exposing service text', () => {
+  const cases = [
+    ['refused-scope', "Spotify says the wall's sign-in lacks a permission for this. Sign out of Spotify in Tools and sign in again."],
+    ['refused-not-allowed-user', "Spotify says this account is not on the app's user list. Add it in Spotify's developer dashboard under User management."],
+    ['refused-premium', 'Spotify says this needs a Premium account.'],
+    ['refused-market', 'Spotify says this is not available in your country.'],
+    ['refused-bad-request', 'Spotify refused this list.'],
+    ['refused-other', 'Spotify refused this list.'],
+    ['refused', 'Spotify refused this list.'],
+  ] as const;
+  for (const [answer, line] of cases) expect(problemLine(spotifyProblem(answer))).toBe(line);
+  for (const problem of ['refusedScope', 'refusedNotAllowedUser', 'refusedPremium', 'refusedMarket', 'notYours'] as const) expect(spotifyRetryable(problem)).toBe(false);
+  for (const problem of ['refused', 'refusedBadRequest', 'busy', 'down'] as const) expect(spotifyRetryable(problem)).toBe(true);
 });
 
 it('shows startup only for Rust starting and clears it on success or failure', async () => {
@@ -494,6 +515,22 @@ it('a failed first search shows the line with Retry, and typing the same words a
   fireEvent.change(box, { target: { value: 'ab' } });
   await flush(450);
   expect(asked).toEqual(['ab', 'ab']);
+});
+
+it.each([
+  ['refused-other', true],
+  ['refused-scope', false],
+] as const)('a search failure %s renders Retry only when another read can help', async (answer, retryable) => {
+  signedIn();
+  mocks.set('wall2_spotify_playlists', () => []);
+  mocks.set('wall2_spotify_search', () => { throw new Error(answer); });
+  render(<SpotifyCard />);
+  await flush();
+  const box = screen.getByRole('searchbox');
+  fireEvent.change(box, { target: { value: 'ab' } });
+  fireEvent.keyDown(box, { key: 'Enter' });
+  await flush();
+  expect(screen.queryByRole('button', { name: 'Retry' }) !== null).toBe(retryable);
 });
 
 describe('a failed search never searches again by itself', () => {
