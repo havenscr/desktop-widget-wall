@@ -405,8 +405,12 @@ fn rfc3339(text: &str) -> Option<u64> {
         else if suffix.len() == 6 && matches!(suffix.as_bytes()[0], b'+' | b'-')
             && &suffix[3..4] == ":"
         {
-            let hours = suffix[1..3].parse::<i64>().ok()?;
-            let minutes = suffix[4..6].parse::<i64>().ok()?;
+            let offset_number = |field: &str| {
+                (field.len() == 2 && field.bytes().all(|v| v.is_ascii_digit()))
+                    .then(|| field.parse::<i64>().ok())?
+            };
+            let hours = offset_number(&suffix[1..3])?;
+            let minutes = offset_number(&suffix[4..6])?;
             if hours > 23 || minutes > 59 { return None }
             let value = hours * 3_600 + minutes * 60;
             if suffix.as_bytes()[0] == b'+' { value } else { -value }
@@ -1246,7 +1250,7 @@ mod tests {
         prime_token();
         with_live(|v| {
             v.candidates = vec![video_id(1)];
-            v.find_attempt = Some(T0);
+            v.find_attempt = Some(T0 - STATUS_FLOOR);
         });
         let details_http = FakeHttp::reads(vec![reply(500, "")], vec![]);
         run(&details_http, &creds, &now, |ctx| {
@@ -1270,7 +1274,11 @@ mod tests {
     fn racing_status_and_chat_calls_each_send_once() {
         let _guard = exclusive();
         prime_token();
-        let status_http = Arc::new(HoldingHttp::new(ok(json!({ "items": [] }))));
+        with_live(|v| {
+            v.candidates = vec![video_id(1)];
+            v.find_attempt = Some(T0);
+        });
+        let status_http = Arc::new(HoldingHttp::new(ok(videos(vec![]))));
         let status_creds = Arc::new(FakeCreds::new(Some("refresh")));
         let first_http = status_http.clone();
         let first_creds = status_creds.clone();
@@ -1281,14 +1289,20 @@ mod tests {
         });
         status_http.wait_entered();
         let status_client = client();
-        let clock = || T0;
+        let clock = || T0 + STATUS_FLOOR;
         let ctx = Ctx {
             http: status_http.as_ref(),
             creds: status_creds.as_ref(),
             client: &status_client,
             now: &clock,
         };
-        let second = status_with(&ctx, Some(saved_channel()), T0, false, true);
+        let second = status_with(
+            &ctx,
+            Some(saved_channel()),
+            T0 + STATUS_FLOOR,
+            false,
+            true,
+        );
         assert_eq!(second.read_at, None);
         assert_eq!(status_http.calls.load(Ordering::SeqCst), 1);
         status_http.release();
@@ -1305,9 +1319,9 @@ mod tests {
             chat_with(&ctx, T0, true)
         });
         chat_http.wait_entered();
-        let client = client(); let clock = || T0;
+        let client = client(); let clock = || T0 + CHAT_FLOOR;
         let ctx = Ctx { http: chat_http.as_ref(), creds: chat_creds.as_ref(), client: &client, now: &clock };
-        assert_eq!(chat_with(&ctx, T0, true).read_at, None);
+        assert_eq!(chat_with(&ctx, T0 + CHAT_FLOOR, true).read_at, None);
         assert_eq!(chat_http.calls.load(Ordering::SeqCst), 1);
         chat_http.release();
         assert_eq!(chat_thread.join().unwrap().state, "ok");
@@ -1338,6 +1352,33 @@ mod tests {
                 else { assert_eq!(v.quota_all_day, Some(pacific_day(T0))); }
             });
         }
+    }
+
+    #[test]
+    fn begin_attempt_refuses_a_crossing_budget_before_get() {
+        let _guard = exclusive();
+        prime_token();
+        with_live(|v| {
+            v.days(T0);
+            v.status_used = STATUS_DAILY_UNITS;
+        });
+        let http = FakeHttp::reads(vec![], vec![]);
+        let creds = FakeCreds::new(Some("refresh"));
+        let now = AtomicU64::new(T0);
+        let generation = GEN.load(Ordering::SeqCst);
+        let result = run(&http, &creds, &now, |ctx| {
+            live_get(
+                ctx,
+                "playlistItems",
+                &[],
+                ReadKind::Find,
+                generation,
+                T0,
+            )
+        });
+        assert_eq!(result.err(), Some("quota"));
+        assert!(http.get_urls().is_empty());
+        with_live(|v| assert_eq!(v.find_attempt, None));
     }
 
     #[test]
@@ -1466,6 +1507,8 @@ mod tests {
             "2024-01-01T00:00:00.éZ", "-024-01-01T00:00:00Z",
             "2024--1-01T00:00:00Z", "2024-01-01T-1:00:00Z",
             "2024-01-01T00:00:00.Z", "2024-01-01T00:00:00+24:00",
+            "2024-01-01T00:00:00+-1:00", "2024-01-01T00:00:00++1:00",
+            "2024-01-01T00:00:00+01:-1", "2024-01-01T00:00:00+00:60",
         ] { assert_eq!(rfc3339(bad), None, "{bad}"); }
     }
 
@@ -1554,6 +1597,19 @@ mod tests {
         assert_eq!(run(&no_more, &creds, &now, |ctx| chat_with(ctx, T0 + 20, true)).state, "ended");
         assert!(no_more.get_urls().is_empty());
         assert!(!with_live(|v| v.status.chat));
+        let none_http = FakeHttp::reads(vec![ok(json!({ "items": [] }))], vec![]);
+        let none = run(&none_http, &creds, &now, |ctx| {
+            status_with(
+                ctx,
+                Some(saved_channel()),
+                T0 + STATUS_FLOOR,
+                false,
+                true,
+            )
+        });
+        assert_eq!(none.state, "none");
+        assert_eq!(with_live(|v| v.chat.state), "ended");
+        assert_eq!(none_http.get_urls().len(), 1);
 
         reset_for_test(); prime_token(); set_live_memory(T0 - 61);
         with_live(|v| {
@@ -1606,6 +1662,17 @@ mod tests {
             status_with(ctx, Some(saved_channel()), T0, false, true)
         });
         assert_eq!(status.viewers, Some(10_000_000));
+
+        reset_for_test();
+        prime_token();
+        let over_http = FakeHttp::reads(vec![
+            ok(candidates(&ids)),
+            ok(videos(vec![live_video(&ids[0], "10000001", None)])),
+        ], vec![]);
+        let over = run(&over_http, &creds, &now, |ctx| {
+            status_with(ctx, Some(saved_channel()), T0, false, true)
+        });
+        assert_eq!(over.viewers, None);
 
         reset_for_test(); prime_token(); set_live_memory(T0);
         let fields_http = FakeHttp::reads(vec![ok(json!({ "items": [{
@@ -1694,6 +1761,23 @@ mod tests {
         let prior_utc = rfc3339("2024-01-01T23:59:00Z").unwrap();
         let next_utc = rfc3339("2024-01-02T00:01:00Z").unwrap();
         assert_eq!(pacific_day(prior_utc), pacific_day(next_utc));
+
+        reset_for_test();
+        with_live(|v| {
+            v.days(same_utc_before);
+            v.status_used = 7;
+            v.chat_used = 10;
+            v.days(same_utc_after);
+            assert_eq!(v.status_used, 0);
+            assert_eq!(v.chat_used, 0);
+
+            v.status_used = 8;
+            v.chat_used = 15;
+            v.days(prior_utc);
+            v.days(next_utc);
+            assert_eq!(v.status_used, 8);
+            assert_eq!(v.chat_used, 15);
+        });
     }
 
     #[test]
@@ -1712,11 +1796,13 @@ mod tests {
         assert!(!std::fs::read_dir(&dir).unwrap().any(|entry| entry.unwrap().path().extension().and_then(|v| v.to_str()) == Some("tmp")));
 
         std::fs::remove_file(&path).unwrap();
+        assert_eq!(std::fs::read_dir(&dir).unwrap().count(), 0);
         prime_token();
         let http = FakeHttp::reads(vec![ok(json!({ "items": [] }))], vec![]);
         let creds = FakeCreds::new(Some("refresh")); let now = AtomicU64::new(T0);
         assert_eq!(run(&http, &creds, &now, |ctx| set_channel_with(ctx, ChannelRef::Id(channel_id()), T0)).err(), Some(NOT_FOUND));
         assert!(!path.exists());
+        assert_eq!(std::fs::read_dir(&dir).unwrap().count(), 0);
 
         reset_for_test();
         prime_token();
@@ -1724,10 +1810,20 @@ mod tests {
             "id": channel_id(),
             "snippet": { "title": "t".repeat(120) }
         }] }))], vec![]);
-        let (channel, _) = run(&title_http, &creds, &now, |ctx| {
+        let (channel, generation) = run(&title_http, &creds, &now, |ctx| {
             set_channel_with(ctx, ChannelRef::Id(channel_id()), T0)
         }).unwrap();
         assert_eq!(channel.title.chars().count(), 100);
+        finish_channel_write(generation, &path, &channel).unwrap();
+        assert!(path.is_file());
+        assert_eq!(read_channel(&path).unwrap().title.chars().count(), 100);
+
+        std::fs::remove_file(&path).unwrap();
+        std::fs::create_dir(&path).unwrap();
+        assert_eq!(write_channel(&path, &first), Err(FAILED));
+        assert!(!std::fs::read_dir(&dir).unwrap().any(|entry| {
+            entry.unwrap().path().extension().and_then(|v| v.to_str()) == Some("tmp")
+        }));
         let _ = std::fs::remove_dir_all(&dir);
     }
 

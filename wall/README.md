@@ -205,9 +205,10 @@ The sign-in and its row in Tools came first; the library came next, and a pick f
   Check again), refresh the uploads candidates at most every five minutes, and use at most 1,200 API
   units per Pacific day. Chat follows Google's polling hint with a 10 to 60 second floor and uses at
   most 4,000 units per Pacific day. A unit is counted only for an outgoing GET attempt, including a
-  retry after a 401. The floors run from the last attempt, and concurrent reads of the same kind share
-  the held answer. Daily counts, the all-day quota stop and the 60 second busy stop survive channel,
-  sign-in, sign-out and client clears; only the Pacific day turning resets the daily state. Chat ids,
+  retry after a 401. The floors run from the last attempt, and a concurrent read of the same kind gets
+  the answer already in memory while the first read is held. Daily counts, the all-day quota stop and
+  the 60 second busy stop survive channel, sign-in, sign-out and client clears; only the Pacific day
+  turning resets the daily state. Chat ids,
   page tokens, author names and message text stay in memory; none is stored or logged. The commands
   never post, reply or delete.
 - **Links.** The row carries the two links YouTube API Services asks for, YouTube Terms and
