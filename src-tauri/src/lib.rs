@@ -4025,6 +4025,7 @@ pub fn run() {
             wall2_youtube::wall2_youtube_items,
             wall2_youtube::wall2_youtube_liked,
             wall2_youtube::wall2_youtube_search,
+            wall2_youtube::wall2_youtube_videos,
             wall2_spotify::wall2_spotify_playlists,
             wall2_spotify::wall2_spotify_albums,
             wall2_spotify::wall2_spotify_liked,

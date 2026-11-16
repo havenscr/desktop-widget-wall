@@ -483,6 +483,8 @@ const REGION: &str = "US";
 const MAX_SECONDS: u64 = 7 * 24 * 3600;
 /// `search.list` calls allowed a day (Google's own bucket), counted from midnight Pacific.
 const SEARCH_DAILY: u32 = 100;
+/// Hourly `videos.list` calls for own playlists, mirroring the search daily budget.
+const DETAILS_HOURLY: u32 = 60;
 const LISTS_TTL: u64 = 3600;
 const LIKED_TTL: u64 = 600;
 const DETAIL_TTL: u64 = 24 * 3600;
@@ -509,6 +511,10 @@ pub struct YtPlaylist { id: String, title: String, count: u64, thumb: Option<Str
 /// One video, as the page sees it. `playable` is one of `yes`, `embed`, `private`, `removed`, `region`.
 #[derive(Debug, Serialize, Clone, PartialEq)]
 pub struct YtVideo { id: String, title: String, channel: String, seconds: u64, thumb: Option<String>, playable: &'static str }
+
+/// What `videos.list` told us about one video an own playlist holds. Each field is absent when Google gave none.
+#[derive(Debug, Serialize, Clone, PartialEq)]
+pub struct YtDetail { id: String, title: Option<String>, channel: Option<String>, seconds: Option<u64> }
 
 /// A page of answers and the token of the next page, if any.
 #[derive(Debug, Serialize, Clone, PartialEq)]
@@ -658,10 +664,13 @@ struct Library {
     category: Option<String>,
     search_day: i64,
     search_count: u32,
+    details_hour: u64,
+    details_count: u32,
+    details_spent_day: i64,
 }
 impl Library {
     fn new() -> Self {
-        Self { playlists: Cache::new(MAX_LISTS), videos: Cache::new(MAX_LISTS), details: Cache::new(MAX_DETAILS), searches: Cache::new(MAX_SEARCHES), found: Cache::new(MAX_SEARCHES), paging: Cache::new(MAX_LISTS), category: None, search_day: i64::MIN, search_count: 0 }
+        Self { playlists: Cache::new(MAX_LISTS), videos: Cache::new(MAX_LISTS), details: Cache::new(MAX_DETAILS), searches: Cache::new(MAX_SEARCHES), found: Cache::new(MAX_SEARCHES), paging: Cache::new(MAX_LISTS), category: None, search_day: i64::MIN, search_count: 0, details_hour: u64::MAX, details_count: 0, details_spent_day: i64::MIN }
     }
     /// Searches made on this Pacific day so far.
     fn used(&mut self, now: u64) -> u32 {
@@ -688,8 +697,16 @@ fn put_lib<R>(gen: u64, f: impl FnOnce(&mut Library) -> R) -> Option<R> {
 fn clear_library(keep_count: bool) {
     let mut guard = lock(&LIB);
     GEN.fetch_add(1, Ordering::SeqCst);
-    let kept = if keep_count { guard.as_ref().map(|l| (l.search_day, l.search_count)) } else { None };
-    *guard = kept.map(|(day, count)| { let mut l = Library::new(); l.search_day = day; l.search_count = count; l });
+    let kept = if keep_count { guard.as_ref().map(|l| (l.search_day, l.search_count, l.details_hour, l.details_count, l.details_spent_day)) } else { None };
+    *guard = kept.map(|(day, count, hour, details, spent_day)| {
+        let mut l = Library::new();
+        l.search_day = day;
+        l.search_count = count;
+        l.details_hour = hour;
+        l.details_count = details;
+        l.details_spent_day = spent_day;
+        l
+    });
 }
 
 /// Searches left today for the status: `Some` only while signed in.
@@ -816,6 +833,59 @@ fn details_for(ctx: &Ctx, gen: u64, ids: &[String], fresh: bool) -> Result<std::
         for (id, d) in got { if chunk.contains(&id.as_str()) { found.insert(id, d); } }
     }
     Ok(found)
+}
+
+fn video_details_with(ctx: &Ctx, ids: &[String]) -> Result<Vec<YtDetail>, &'static str> {
+    if ids.is_empty() || ids.len() > 50 || ids.iter().any(|id| !valid_video_id(id)) { return Err(INVALID) }
+    let mut ordered = Vec::new();
+    for id in ids { if !ordered.contains(id) { ordered.push(id.clone()); } }
+    let now = (ctx.now)();
+    let gen = lib_gen();
+    let mut found = std::collections::HashMap::new();
+    let mut missing = Vec::new();
+    with_lib(|l| for id in &ordered {
+        match l.details.get(id, now, DETAIL_TTL) {
+            Some(detail) => { found.insert(id.clone(), detail); }
+            None => missing.push(id.clone()),
+        }
+    });
+    if !missing.is_empty() {
+        let day = pacific_day(now);
+        let hour = now / 3600;
+        match put_lib(gen, |l| {
+            if l.details_spent_day == day { return Err(QUOTA_ALL) }
+            if l.details_hour != hour { l.details_hour = hour; l.details_count = 0; }
+            if l.details_count >= DETAILS_HOURLY { return Err(BUSY) }
+            l.details_count += 1;
+            Ok(())
+        }) {
+            Some(Ok(())) => {}
+            Some(Err(word)) => return Err(word),
+            None => return Err(DOWN),
+        }
+        let joined = missing.join(",");
+        let sent = std::cell::Cell::new(false);
+        let answer = match api_get_sent(ctx, EP_VIDEOS, &[("part", "snippet,contentDetails,status"), ("id", &joined), ("fields", VIDEO_FIELDS)], false, &sent) {
+            Ok(answer) => answer,
+            Err(word) => {
+                put_lib(gen, |l| {
+                    if word == QUOTA_ALL { l.details_spent_day = day; }
+                    else if !sent.get() { l.details_count = l.details_count.saturating_sub(1); }
+                });
+                return Err(word)
+            }
+        };
+        let got: Vec<(String, Detail)> = answer.get("items").and_then(Value::as_array).map(|items| items.iter().filter_map(detail_of).collect()).unwrap_or_default();
+        put_lib(gen, |l| for (id, detail) in &got { l.details.put(id.clone(), now, detail.clone()); });
+        for (id, detail) in got { if missing.contains(&id) { found.insert(id, detail); } }
+    }
+    Ok(ordered.into_iter().filter_map(|id| {
+        let detail = found.remove(&id)?;
+        if detail.playable == "private" { return None }
+        let seconds = (detail.seconds != 0).then_some(detail.seconds);
+        if detail.title.is_none() && detail.channel.is_none() && seconds.is_none() { return None }
+        Some(YtDetail { id, title: detail.title, channel: detail.channel, seconds })
+    }).collect())
 }
 
 /// The paging rule of the three lists (the playlists, one playlist's videos, the liked videos): a first page
@@ -1703,6 +1773,130 @@ mod tests {
     fn playlist(id: &str, title: &str, count: u64, thumb: &str) -> Value { json!({ "id": id, "snippet": { "title": title, "thumbnails": { "medium": { "url": thumb } } }, "contentDetails": { "itemCount": count } }) }
 
     #[test]
+    fn own_details_refuse_bad_input_without_a_request() {
+        let _t = exclusive();
+        clear_library(false);
+        token_in_memory();
+        let http = FakeHttp::reads(vec![], vec![]);
+        let creds = FakeCreds::new(Some("stored-refresh"));
+        let at = clock(T0);
+        let mut cases = vec![vec![], vec!["A".repeat(10)], vec!["A".repeat(12)], vec!["AAAAA!AAAAA".into()], vec!["AAAAA AAAAA".into()], vec!["AAAAAéAAAA".into()]];
+        cases.push((0..51).map(|i| format!("V{i:010}")).collect());
+        for ids in cases { assert_eq!(run(&http, &creds, &at, |c| video_details_with(c, &ids)).err(), Some(INVALID)); }
+        assert!(http.get_urls().is_empty());
+    }
+
+    #[test]
+    fn own_details_make_one_checked_request_and_shape_the_answer() {
+        let _t = exclusive();
+        clear_library(false);
+        token_in_memory();
+        let long_title = format!("A\u{202e}\n{}", "x".repeat(5000));
+        let mut private = video(VID_C, "Hidden", "PT4M", json!({}));
+        private["status"]["privacyStatus"] = json!("private");
+        let answer = json!({ "items": [
+            video(VID_B, "Second", "PT1H2M40S", json!({})),
+            video(VID_A, &long_title, "PT4M", json!({ "snippet": { "title": long_title, "channelTitle": "c".repeat(150) } })),
+            { "id": VID_D, "snippet": { "title": "Calendar", "channelTitle": "Channel" }, "contentDetails": { "duration": "P0D" }, "status": { "privacyStatus": "public" } },
+            { "id": VID_E, "snippet": { "title": "Live", "channelTitle": "Channel" }, "status": { "privacyStatus": "public" } },
+            video(VID_F, "Malformed", "PT1M2H", json!({})),
+            private,
+            video("bad id here", "Bad", "PT1M", json!({}))
+        ] });
+        let http = FakeHttp::reads(vec![ok(answer)], vec![]);
+        let ids = vec![VID_A.into(), VID_B.into(), VID_C.into(), VID_D.into(), VID_E.into(), VID_F.into(), VID_A.into()];
+        let got = run(&http, &FakeCreds::new(Some("stored-refresh")), &clock(T0), |c| video_details_with(c, &ids)).unwrap();
+        assert_eq!(got.iter().map(|d| d.id.as_str()).collect::<Vec<_>>(), [VID_A, VID_B, VID_D, VID_E, VID_F]);
+        assert_eq!(got[0].title.as_ref().unwrap().chars().count(), 200);
+        assert!(!got[0].title.as_ref().unwrap().contains('\u{202e}') && !got[0].title.as_ref().unwrap().contains('\n'));
+        assert_eq!(got[0].channel.as_ref().unwrap().chars().count(), 100);
+        assert_eq!(got[0].seconds, Some(240));
+        assert_eq!(got[1].seconds, Some(3760));
+        assert_eq!(got[2], YtDetail { id: VID_D.into(), title: Some("Calendar".into()), channel: Some("Channel".into()), seconds: None });
+        assert_eq!(got[3].seconds, None);
+        assert_eq!(got[4].seconds, None);
+        let calls = lock(&http.get_calls).clone();
+        assert_eq!(calls.len(), 1);
+        assert_eq!(calls[0].1, "access-one");
+        let expected = api_url(EP_VIDEOS, &[("part", "snippet,contentDetails,status"), ("id", &ids[..6].join(",")), ("fields", VIDEO_FIELDS)]);
+        assert_eq!(calls[0].0, expected);
+        let before = crate::wall2_youtube_log::test_lines().len();
+        assert!(run(&http, &FakeCreds::new(Some("stored-refresh")), &clock(T0 + 1), |c| video_details_with(c, &[VID_A.into(), VID_B.into()])).is_ok());
+        assert_eq!(http.get_urls().len(), 1, "the second read is entirely cached");
+        let lines = crate::wall2_youtube_log::test_lines();
+        assert!(lines[..before].iter().any(|line| line.starts_with("read-ok none 200 ")));
+        assert!(!lines.iter().any(|line| line.contains(VID_A) || line.contains("Second") || line.contains("Channel")));
+    }
+
+    #[test]
+    fn own_details_cache_only_requests_new_ids() {
+        let _t = exclusive();
+        clear_library(false);
+        token_in_memory();
+        let http = FakeHttp::reads(vec![ok(json!({ "items": [video(VID_A, "One", "PT1M", json!({}))] })), ok(json!({ "items": [video(VID_B, "Two", "PT2M", json!({}))] }))], vec![]);
+        let creds = FakeCreds::new(Some("stored-refresh"));
+        let at = clock(T0);
+        assert!(run(&http, &creds, &at, |c| video_details_with(c, &[VID_A.into()])).is_ok());
+        let got = run(&http, &creds, &at, |c| video_details_with(c, &[VID_A.into(), VID_B.into()])).unwrap();
+        assert_eq!(got.len(), 2);
+        assert!(http.get_urls()[1].contains(&format!("id={VID_B}")));
+        assert!(!http.get_urls()[1].contains(VID_A));
+    }
+
+    #[test]
+    fn own_details_hour_quota_and_clear_rules_hold() {
+        let _t = exclusive();
+        clear_library(false);
+        token_in_memory();
+        with_lib(|l| { l.details_hour = T0 / 3600; l.details_count = DETAILS_HOURLY; });
+        let at = clock(T0);
+        let creds = FakeCreds::new(Some("stored-refresh"));
+        let blocked = FakeHttp::reads(vec![], vec![]);
+        assert_eq!(run(&blocked, &creds, &at, |c| video_details_with(c, &[VID_A.into()])).err(), Some(BUSY));
+        assert!(blocked.get_urls().is_empty());
+        at.store(T0 + 3600, Ordering::SeqCst);
+        let next = FakeHttp::reads(vec![ok(json!({ "items": [video(VID_A, "One", "PT1M", json!({}))] }))], vec![]);
+        assert!(run(&next, &creds, &at, |c| video_details_with(c, &[VID_A.into()])).is_ok());
+
+        clear_library(false);
+        token_in_memory();
+        at.store(T0, Ordering::SeqCst);
+        let quota = FakeHttp::reads(vec![reply(403, r#"{"error":{"errors":[{"reason":"quotaExceeded"}]}}"#)], vec![]);
+        assert_eq!(run(&quota, &creds, &at, |c| video_details_with(c, &[VID_B.into()])).err(), Some(QUOTA_ALL));
+        assert_eq!(run(&quota, &creds, &at, |c| video_details_with(c, &[VID_C.into()])).err(), Some(QUOTA_ALL));
+        assert_eq!(quota.get_urls().len(), 1);
+        at.store(T0 + 86_400, Ordering::SeqCst);
+        let tomorrow = FakeHttp::reads(vec![ok(json!({ "items": [video(VID_C, "Three", "PT3M", json!({}))] }))], vec![]);
+        assert!(run(&tomorrow, &creds, &at, |c| video_details_with(c, &[VID_C.into()])).is_ok());
+
+        with_lib(|l| { l.details_hour = 9; l.details_count = 7; l.details_spent_day = 11; });
+        clear_library(true);
+        assert_eq!(with_lib(|l| (l.details_hour, l.details_count, l.details_spent_day)), (9, 7, 11));
+        clear_library(false);
+        assert_eq!(with_lib(|l| (l.details_hour, l.details_count, l.details_spent_day)), (u64::MAX, 0, i64::MIN));
+    }
+
+    #[test]
+    fn own_details_refund_only_when_no_request_left() {
+        let _t = exclusive();
+        clear_library(false);
+        *lock(&TOKEN) = None;
+        let creds = FakeCreds::new(Some("stored-refresh"));
+        let before_send = FakeHttp::reads(vec![], vec![Err(())]);
+        assert_eq!(run(&before_send, &creds, &clock(T0), |c| video_details_with(c, &[VID_A.into()])).err(), Some(DOWN));
+        assert_eq!(with_lib(|l| l.details_count), 0);
+        token_in_memory();
+        let after_send = FakeHttp::reads(vec![Err(())], vec![]);
+        assert_eq!(run(&after_send, &creds, &clock(T0), |c| video_details_with(c, &[VID_A.into()])).err(), Some(DOWN));
+        assert_eq!(with_lib(|l| l.details_count), 1);
+        clear_library(false);
+        *lock(&TOKEN) = None;
+        let signed_out = FakeHttp::reads(vec![], vec![]);
+        assert_eq!(run(&signed_out, &FakeCreds::new(None), &clock(T0), |c| video_details_with(c, &[VID_A.into()])).err(), Some(SIGN_AGAIN));
+        assert!(signed_out.get_urls().is_empty());
+    }
+
+    #[test]
     fn playlists_come_back_as_shaped_records_with_a_rebuilt_thumbnail() {
         let _t = exclusive(); token_in_memory();
         let thumb = format!("https://i.ytimg.com/vi/{VID_A}/hqdefault.jpg?sqp=secret&rs=x");
@@ -2469,7 +2663,7 @@ mod tests {
         let function = ["pub async fn ", "wall2_youtube_"].concat();
         let attribute = ["#[tauri", "::command]"].concat();
         let commands = source.split(function.as_str()).skip(1).map(|rest| rest.split('(').next().unwrap_or("")).collect::<Vec<_>>();
-        assert_eq!(commands, ["status", "set_client", "forget_client", "sign_in", "cancel_sign_in", "sign_out", "playlists", "items", "liked", "search"]);
+        assert_eq!(commands, ["status", "set_client", "forget_client", "sign_in", "cancel_sign_in", "sign_out", "playlists", "items", "liked", "search", "videos"]);
         for part in source.split(attribute.as_str()).skip(1) {
             let body: String = part.lines().skip(1).take(3).collect::<Vec<_>>().join("\n");
             assert!(body.contains("require(&window)?"), "{body}");
@@ -2582,6 +2776,13 @@ pub async fn wall2_youtube_search(window: WebviewWindow, query: String) -> Resul
     require(&window)?;
     let app = window.app_handle().clone();
     tauri::async_runtime::spawn_blocking(move || read_with_app(&app, |ctx| search_with(ctx, &query))).await.map_err(|_| FAILED.to_string())?
+}
+
+#[tauri::command]
+pub async fn wall2_youtube_videos(window: WebviewWindow, ids: Vec<String>) -> Result<Vec<YtDetail>, String> {
+    require(&window)?;
+    let app = window.app_handle().clone();
+    tauri::async_runtime::spawn_blocking(move || read_with_app(&app, |ctx| video_details_with(ctx, &ids))).await.map_err(|_| FAILED.to_string())?
 }
 
 pub fn start_log(dir: Option<std::path::PathBuf>) { crate::wall2_youtube_log::start(dir); }
