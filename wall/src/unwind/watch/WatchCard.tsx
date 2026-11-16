@@ -240,7 +240,7 @@ function WatchList({ empty, draft, setDraft, host, own }: { empty: boolean; draf
         value={text}
         placeholder="Paste a YouTube or Twitch link"
         aria-label="Paste a YouTube or Twitch link"
-        title="A YouTube video, playlist or live stream, or a Twitch channel"
+        {...tip('A YouTube video, playlist or live stream, or a Twitch channel')}
         spellCheck={false}
         autoComplete="off"
         maxLength={4096}
@@ -452,8 +452,8 @@ export function WatchCard() {
     askDetails(unnamed.split(','), (id, info) => {
       if (!info.title) return;
       const st = useWatchStore.getState();
-      const hit = st.saved.find((i) => (i.kind === 'video' || i.kind === 'live') && i.id === id);
-      if (hit) st.fillLabel(refKey(hit), info.title);
+      // A saved item is kind plus id: the same id may be saved as a video and as a live stream, each filled by its own key.
+      for (const hit of st.saved) if ((hit.kind === 'video' || hit.kind === 'live') && hit.id === id) st.fillLabel(refKey(hit), info.title);
     });
   }, [unnamed]);
   const mode = open ? 'edit' : own?.follow ? 'follow' : 'list';

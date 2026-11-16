@@ -10,6 +10,7 @@ import { resetHome, useHome } from '../../studio/homeStore';
 import { resetLastPlayed } from '../lastPlayed';
 import { LOOKS_KEY } from './looks';
 import { framePoster } from './PlayerFrame';
+import { useWatchRest } from './rest';
 import { SAVED_KEY, type SavedItem } from './saved';
 import { resetWatch, useWatchStore } from './store';
 import { UnwindView } from './testView';
@@ -34,8 +35,8 @@ const line = () => document.querySelector<HTMLElement>('.u-office-line')!;
 const cardRest = () => card().getAttribute('data-rest');
 const lineRest = () => line().getAttribute('data-rest');
 
-async function playing() {
-  localStorage.setItem(SAVED_KEY, JSON.stringify(ITEMS));
+async function playing(items: SavedItem[] = ITEMS) {
+  localStorage.setItem(SAVED_KEY, JSON.stringify(items));
   localStorage.setItem(LOOKS_KEY, JSON.stringify({ mode: 'one', all: 'drivein' }));
   resetWatch();
   useWatchStore.getState().setTab('watch');
@@ -161,6 +162,52 @@ describe('the Watch list card and the Office moods line rest with the controls',
     expect(cardRest()).toBe('false');
   });
 
+  it('the card never rests while its add-to-playlist menu is open', async () => {
+    await playing();
+    await flush(CTL_REST_MS);
+    expect(cardRest()).toBe('true');
+    fireEvent.pointerEnter(card());
+    await act(async () => screen.getByRole('button', { name: `Add Night drive mix to a playlist` }).click());
+    (document.activeElement as HTMLElement | null)?.blur();
+    fireEvent.pointerLeave(card());
+    await flush(CTL_REST_MS * 2);
+    expect(useWatchRest.getState().cardHeld).toBe(true);
+    expect(cardRest()).toBe('false');
+  });
+
+  it('the card never rests while a delete question is open', async () => {
+    await playing([...ITEMS, { kind: 'own', id: 'ownlist00001', label: 'Mine' }]);
+    await flush(CTL_REST_MS);
+    expect(cardRest()).toBe('true');
+    fireEvent.pointerEnter(card());
+    await act(async () => screen.getByRole('button', { name: 'Delete Mine' }).click());
+    (document.activeElement as HTMLElement | null)?.blur();
+    fireEvent.pointerLeave(card());
+    await flush(CTL_REST_MS * 2);
+    // Only the card's own question holds it: the controls have gone to rest.
+    expect(ctl()).toBe('rest');
+    expect(useWatchRest.getState().cardHeld).toBe(true);
+    expect(cardRest()).toBe('false');
+  });
+
+  it('leaving Watch clears the shared rest state and leaves no timer alive', async () => {
+    await playing();
+    await flush(CTL_REST_MS);
+    expect(useWatchRest.getState().rest).toBe(true);
+    act(() => useWatchStore.getState().setTab('listen'));
+    await flush();
+    expect(useWatchRest.getState()).toEqual({ rest: false, cardHeld: false });
+    // Back with a countdown pending, then away again before it ends: nothing fires later.
+    act(() => useWatchStore.getState().setTab('watch'));
+    await flush();
+    act(() => useWatchStore.getState().setTab('listen'));
+    await flush();
+    const timers = vi.getTimerCount();
+    await flush(CTL_REST_MS * 3);
+    expect(useWatchRest.getState().rest).toBe(false);
+    expect(vi.getTimerCount()).toBeLessThanOrEqual(timers);
+  });
+
   it('nothing rests while nothing plays, while the video is paused, or while the player waits for a click', async () => {
     await playing();
     await flush(CTL_REST_MS);
@@ -189,6 +236,8 @@ describe('the Watch list card and the Office moods line rest with the controls',
     act(() => useHome.setState({ moodFail: { id: 'brightDesk', word: 'refused' } }));
     expect(lineRest()).toBe('false');
     expect(cardRest()).toBe('true');
+    // Each part rests unless IT is held: the failure keeps neither the controls nor the card awake.
+    expect(ctl()).toBe('rest');
     act(() => useHome.setState({ moodFail: null }));
     expect(lineRest()).toBe('true');
   });

@@ -21,7 +21,7 @@ export function PresetRow({ trailing, action }: { trailing: ReactNode; action: '
   if (!studio) return null;
   const presets = studio.presets.slice(0, PAGE_PRESETS);
   const refresh = () => void useHome.getState().readStudio();
-  const blockedWhy = studio.writeBlock === 'not-set-up' ? "The home app's desk token is not typed in Tools yet" : studio.writeBlock === 'needs-private-address' ? PRIVATE_TIP : null;
+  const blockedWhy = studio.writeBlock === 'not-set-up' ? "Add the home app's desk token in Tools to switch these from the wall" : studio.writeBlock === 'needs-private-address' ? PRIVATE_TIP : null;
 
   let normal: ReactNode;
   if (action === 'openTools') {

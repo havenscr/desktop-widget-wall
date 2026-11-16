@@ -161,7 +161,8 @@ export function AddMenu({
   const pickAlone = () => {
     const st = useWatchStore.getState();
     if (alone) {
-      st.remove(aloneKey);
+      // Only out of the Watch list: a video playing right now keeps playing.
+      st.unsave(aloneKey);
       return;
     }
     const refused = st.addRef({ kind: 'video', id: video.id }, false);

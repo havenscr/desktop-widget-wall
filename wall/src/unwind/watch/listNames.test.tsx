@@ -60,13 +60,22 @@ afterEach(() => {
 describe('the empty Watch list', () => {
   it('draws no line of link patterns; the field says in plain words which links work', async () => {
     seed([]);
-    render(<UnwindView />);
+    render(
+      <>
+        <UnwindView />
+        <HoverTipLayer />
+      </>,
+    );
     await flush();
     expect(document.querySelector('.w-forms')).toBeNull();
     expect(document.body.textContent).not.toContain('youtu.be/');
     expect(screen.getByText(/Save the videos, playlists, live streams and Twitch channels/)).toBeTruthy();
     const field = screen.getByPlaceholderText('Paste a YouTube or Twitch link');
-    expect(field.getAttribute('title')).toBe('A YouTube video, playlist or live stream, or a Twitch channel');
+    // The app's own hover card (never a native title).
+    expect(field.getAttribute('title')).toBeNull();
+    fireEvent.mouseEnter(field);
+    await flush(400);
+    expect(document.querySelector('.hover-tip')?.textContent).toContain('A YouTube video, playlist or live stream, or a Twitch channel');
   });
 });
 
@@ -120,6 +129,19 @@ describe('a saved item shows its real name as soon as the wall knows it', () => 
     expect(JSON.parse(localStorage.getItem(SAVED_KEY)!).map((i: { label: string }) => i.label)).toContain('Real title Ab3d');
   });
 
+  it('the same id saved as a video and as a live stream: each unnamed row is filled by its own key', async () => {
+    seed([
+      { kind: 'video', id: SINGLE, label: defaultLabel({ kind: 'video', id: SINGLE }) },
+      { kind: 'live', id: SINGLE, label: defaultLabel({ kind: 'live', id: SINGLE }) },
+    ]);
+    mocks.set('wall2_youtube_status', () => ({ setup: true, signedIn: true, reason: null, searchesLeft: 100 }));
+    mocks.set('wall2_youtube_videos', (a) => (a as { ids: string[] }).ids.map((id) => ({ id, title: 'Shared id title', channel: 'Chan', seconds: 60 })));
+    render(<UnwindView />);
+    await flush();
+    await flush();
+    expect(w().saved.map((i) => [i.kind, i.label])).toEqual([['video', 'Shared id title'], ['live', 'Shared id title']]);
+  });
+
   it('with the details unavailable the kind name stays until the player reports the title', async () => {
     seed([{ kind: 'video', id: SINGLE, label: defaultLabel({ kind: 'video', id: SINGLE }) }]);
     render(<UnwindView />);
@@ -149,5 +171,18 @@ describe('a single video can always be saved on its own', () => {
     // A second click takes it out again (it is not the video playing from the list, so playing goes on).
     await act(async () => pick().click());
     expect(w().saved.some((i) => i.kind === 'video' && i.id === SINGLE)).toBe(false);
+  });
+
+  it('unticking "Watch list, on its own" only takes it out of the list: the video playing from the list keeps playing', async () => {
+    seed([{ kind: 'own', id: 'ownlist00001', label: 'Mine' }, { kind: 'video', id: SINGLE, label: 'Kept name' }]);
+    render(<UnwindView />);
+    await flush();
+    act(() => w().play({ kind: 'video', id: SINGLE, label: 'Kept name' }));
+    await flush();
+    expect(w().playing?.id).toBe(SINGLE);
+    await act(async () => screen.getByRole('button', { name: 'Add to a playlist' }).click());
+    await act(async () => within(screen.getByRole('menu')).getByRole('menuitem', { name: 'Watch list, on its own' }).click());
+    expect(w().saved.some((i) => i.kind === 'video')).toBe(false);
+    expect(w().playing?.id).toBe(SINGLE);
   });
 });

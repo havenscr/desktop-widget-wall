@@ -1,5 +1,4 @@
-import { useEffect } from 'react';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { IconArrowLeft, IconArrowsShuffle, IconBrandYoutube, IconPlayerPlayFilled } from '@tabler/icons-react';
 import { tip } from '../../ui/HoverTip';
 import { openInBrowser } from '../watch/openInBrowser';
@@ -29,6 +28,10 @@ export function YtSongs({ tall }: { tall: boolean }) {
   }, []);
   const failed = useYtQueue((s) => s.failed);
   const [openFailed, setOpenFailed] = useState(false);
+  const failTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => {
+    if (failTimer.current !== null) clearTimeout(failTimer.current);
+  }, []);
   if (!opened) return null;
   const list: QueueFrom = { list: 'songs', playlistId: opened.id };
   const readable = songs.items.some((v) => queueable(v, failed));
@@ -87,7 +90,8 @@ export function YtSongs({ tall }: { tall: boolean }) {
                 void openInBrowser({ kind: 'playlist', id: opened.id }).then((ok) => {
                   if (!ok) {
                     setOpenFailed(true);
-                    setTimeout(() => setOpenFailed(false), 5000);
+                    if (failTimer.current !== null) clearTimeout(failTimer.current);
+                    failTimer.current = setTimeout(() => setOpenFailed(false), 5000);
                   }
                 });
               }}

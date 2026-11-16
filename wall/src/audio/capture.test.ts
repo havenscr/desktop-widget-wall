@@ -29,6 +29,7 @@ vi.mock('@tauri-apps/api/event', () => ({
 }));
 
 import { DEVICE_CHECK_MS, RETRY_WAIT, startAudio, WATCHDOG_MS } from './capture';
+import { listen } from '@tauri-apps/api/event';
 import { resetAudio, useAudioStore } from './store';
 
 const names = () => calls.map((c) => c[0]);
@@ -229,5 +230,42 @@ it('stop cancels the device timer', async () => {
   device = 'headphones';
   await vi.advanceTimersByTimeAsync(DEVICE_CHECK_MS * 3);
   expect(starts()).toEqual(['dev-1']);
+  expect(vi.getTimerCount()).toBe(0);
+});
+
+it('two triggers at once (the device check and the silence watchdog) give one start and one listener', async () => {
+  const stop = startAudio();
+  await vi.advanceTimersByTimeAsync(10);
+  const listening = () => vi.mocked(listen).mock.calls.length;
+  const before = listening();
+  device = 'headphones';
+  let release: () => void = () => undefined;
+  holdStart = new Promise<void>((r) => (release = r));
+  // The device check starts a restart that stays in flight while the watchdog's silence limit passes too.
+  await vi.advanceTimersByTimeAsync(WATCHDOG_MS * 2 + 100);
+  expect(starts()).toEqual(['dev-1', 'headphones']);
+  release();
+  holdStart = null;
+  await vi.advanceTimersByTimeAsync(10);
+  expect(listening() - before).toBe(1);
+  stop();
+});
+
+it('the device timer exists only while capture is started and the page is visible', async () => {
+  failStart = 1;
+  const stop = startAudio();
+  await vi.advanceTimersByTimeAsync(10);
+  const asked = () => names().filter((n) => n === 'get_default_loopback_device').length;
+  // Not started (the first start failed): nothing asks for the device before the retry.
+  const first = asked();
+  await vi.advanceTimersByTimeAsync(DEVICE_CHECK_MS * 3);
+  expect(asked()).toBe(first);
+  await vi.advanceTimersByTimeAsync(RETRY_WAIT);
+  const started = vi.getTimerCount();
+  setHidden(true);
+  expect(vi.getTimerCount()).toBe(started - 1);
+  setHidden(false);
+  expect(vi.getTimerCount()).toBe(started);
+  stop();
   expect(vi.getTimerCount()).toBe(0);
 });

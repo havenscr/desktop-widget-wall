@@ -65,7 +65,7 @@ export function tileState(studio: Studio, g: Group, canWrite: boolean): { disabl
   if (needsZone(g)) return { disabled: true, dim: true, tip: ZONE_TIP };
   const where = g.setTo ? `${g.label}: ${g.setTo}.` : `${g.label}.`;
   if (!g.reachable) return { disabled: !canWrite, dim: true, tip: `${where} Not answering: this is the last state the home app knew.` };
-  if (!canWrite) return { disabled: true, dim: false, tip: `${where} To change it, the home app needs its desk token typed in Tools.` };
+  if (!canWrite) return { disabled: true, dim: false, tip: `${where} To switch it from the wall, add the home app's desk token in Tools.` };
   if (wouldBeDark(studio, g)) return { disabled: true, dim: false, tip: `${where} ${DARK_TIP}.` };
   return { disabled: false, dim: false, tip: `${where} Click to turn it ${g.on ? 'off' : 'on'}.` };
 }

@@ -461,6 +461,8 @@ export function WatchPanel() {
   const [openFailed, setOpenFailed] = useState(false);
   // Notices never hide: the click line, the hint line and an open failure keep the block shown.
   // So does the sheet the gear opened: the row (and the lit gear) stays while it is open.
+  // Rule for the three resting parts (controls, Watch list card, moods line): each rests unless IT is in use or held; what holds
+  // one part (text in the Watch field, a moods failure) never keeps another awake.
   const canRest = playing !== null && !paused && !ended && !needsClick && !openFailed && !sheetOpen && !menuOpen;
   const { rest, wake, zone } = useControlsFade(canRest, peek);
   useWatchKeys(playing !== null, playing !== null && playing.kind !== 'twitch', wake);

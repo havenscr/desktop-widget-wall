@@ -79,6 +79,16 @@ export function startAudio(): () => void {
   // The device the running capture was started on, and whether a start (first, watchdog or device change) is in flight.
   let startedOn: string | null = null;
   let beginning = false;
+  // The device check runs only while capture is started and the page is visible.
+  let deviceTimer: ReturnType<typeof setInterval> | undefined;
+  const syncDeviceTimer = () => {
+    const want = started && !stopped && !document.hidden;
+    if (want && deviceTimer === undefined) deviceTimer = setInterval(() => void checkDevice(), DEVICE_CHECK_MS);
+    else if (!want && deviceTimer !== undefined) {
+      clearInterval(deviceTimer);
+      deviceTimer = undefined;
+    }
+  };
 
   const onVisibility = () => {
     if (!document.hidden) {
@@ -88,6 +98,7 @@ export function startAudio(): () => void {
       void checkDevice();
     }
     void syncPush();
+    syncDeviceTimer();
   };
   document.addEventListener('visibilitychange', onVisibility);
   every(() => {
@@ -115,7 +126,9 @@ export function startAudio(): () => void {
     }
   }
 
+  /** Every path into a start (first, retry, watchdog, device change) comes here: one at a time, so never a second listener. */
   async function begin(known?: string): Promise<boolean> {
+    if (beginning) return false;
     beginning = true;
     try {
       const deviceId = known ?? (await invoke<string | null>('get_default_loopback_device'));
@@ -141,6 +154,7 @@ export function startAudio(): () => void {
       startedOn = deviceId;
       lastEventAt = now();
       pushState = null;
+      syncDeviceTimer();
       await syncPush();
       return true;
     } catch {
@@ -180,14 +194,13 @@ export function startAudio(): () => void {
     }
   }, WATCHDOG_MS);
 
-  every(() => void checkDevice(), DEVICE_CHECK_MS);
-
   function stop() {
     if (stopped) return;
     stopped = true;
     document.removeEventListener('visibilitychange', onVisibility);
     timers.forEach((id) => clearInterval(id));
     timers.clear();
+    syncDeviceTimer();
     clearTimeout(retry);
     unlisten?.();
     unlisten = null;

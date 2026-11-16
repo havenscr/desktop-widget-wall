@@ -42,6 +42,9 @@ it('a tile: needs a zone, not answering, no token, dark room, or ready, each wit
   expect(tileState(s, g(s, 'overhead'), true).tip).toContain('Click to turn it off');
   expect(tileState(s, g(s, 'overhead'), false)).toMatchObject({ disabled: true });
   expect(tileState(s, g(s, 'overhead'), false).tip).toContain('desk token');
+  // The tip agrees with the line: the token is added in Tools, no longer "typed".
+  expect(tileState(s, g(s, 'overhead'), false).tip).toContain('add the home app\'s desk token in Tools');
+  expect(tileState(s, g(s, 'overhead'), false).tip).not.toContain('typed');
   const zone = { ...g(s, 'overhead'), canSwitch: false, setTo: 'Needs a Hue zone' };
   expect(tileState(s, zone, true)).toEqual({ disabled: true, dim: true, tip: ZONE_TIP });
   const named = { ...g(s, 'overhead'), setTo: 'Needs a Hue zone' };
