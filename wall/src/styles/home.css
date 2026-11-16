@@ -1156,8 +1156,10 @@
 .house-rooms .house-asof {
   position: absolute;
   right: 0;
-  top: 50%;
-  transform: translateY(-50%);
+  bottom: 0;
+  height: 26px;
+  display: inline-flex;
+  align-items: center;
   margin: 0;
 }
 .house-rooms .house-asof.off {
@@ -1171,9 +1173,11 @@
 }
 .house-rooms {
   display: flex;
-  flex-wrap: nowrap;
-  gap: 0 18px;
-  height: 26px;
+  flex-wrap: wrap;
+  align-content: flex-start;
+  gap: 4px 18px;
+  min-height: 26px;
+  max-height: 56px;
   margin: 4px 0 0 34px;
   width: 424px;
   position: relative;
@@ -1547,6 +1551,8 @@
   font: 600 19px/1 var(--body);
   color: var(--cyan);
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .shield-door-txt span {
   font: 400 16px/1 var(--body);

@@ -44,37 +44,55 @@ export function houseView(house: FeedState<House>, rooms: FeedState<DeskRooms>):
   return { text, rooms: roomList, stale, asOf: stale && asOfMs !== null ? `as of ${timeText(asOfMs)}` : null };
 }
 
-/** The room dots' row: indented to the text, 424 px wide. */
+/** The room dots' lines: indented to the text, 424 px wide. */
 export const ROOMS_ROW_PX = 424;
 const DOT_PX = 17; // the dot and its gap to the name
 const ROOM_GAP_PX = 18;
-const NAME_CHAR_PX = 9.2;
+const NAME_CHAR_PX = 9.8;
 const MORE_PX = 74;
 /** The gap kept between the last dot and "as of 9:41 AM" at the right end of the row. */
 const ASOF_GAP_PX = 18;
 
 type RoomDot = { id: string; name: string; on: boolean };
 
+/** The room dots take up to two lines under the weather row (the third line is kept for the planned Next line). */
+export const ROOM_LINES = 2;
+
 /**
- * The room dots that fit one line. When every room fits they stay in the home app's order.
- * When some would not, the lit rooms come first (those are the ones worth seeing) and the rest
- * are counted as "+N" at the end; their names go in that chip's hover card. Widths are close
- * estimates at 18 px; the fit check measures the real line.
+ * The room dots that fit two lines, packed in order as the row wraps. When every room fits they
+ * stay in the home app's order. When some would not, the lit rooms come first (those are the ones
+ * worth seeing) and the rest are counted as "+N more" at the end of the second line, which is
+ * given up to that chip only when both lines are full; their names go in the chip's hover card.
+ * Widths are close estimates at 18 px; the fit check measures the real lines.
  */
-export function fitRooms(rooms: RoomDot[], maxPx = ROOMS_ROW_PX): { shown: RoomDot[]; hidden: RoomDot[] } {
+export function fitRooms(rooms: RoomDot[], maxPx = ROOMS_ROW_PX, drop = 0): { shown: RoomDot[]; hidden: RoomDot[] } {
   const w = (r: RoomDot) => DOT_PX + r.name.length * NAME_CHAR_PX;
-  const total = rooms.reduce((n, r) => n + w(r), 0) + Math.max(0, rooms.length - 1) * ROOM_GAP_PX;
-  if (total <= maxPx) return { shown: rooms, hidden: [] };
+  /** How many of `list` fit, packed line by line, the last line `reserve` px shorter. */
+  const pack = (list: RoomDot[], reserve: number): number => {
+    let line = 0;
+    let used = 0;
+    let n = 0;
+    for (const r of list) {
+      const cap = line === ROOM_LINES - 1 ? maxPx - reserve : maxPx;
+      let next = used + (used > 0 ? ROOM_GAP_PX : 0) + w(r);
+      if (next > cap && used > 0) {
+        if (line === ROOM_LINES - 1) break;
+        line += 1;
+        used = 0;
+        next = w(r);
+        if (next > (line === ROOM_LINES - 1 ? maxPx - reserve : maxPx)) break;
+      }
+      used = next;
+      n += 1;
+    }
+    return n;
+  };
+  const whole = pack(rooms, 0) === rooms.length;
+  if (whole && drop === 0) return { shown: rooms, hidden: [] };
   const ordered = [...rooms.filter((r) => r.on), ...rooms.filter((r) => !r.on)];
-  const shown: RoomDot[] = [];
-  let used = 0;
-  for (const r of ordered) {
-    const next = used + (shown.length ? ROOM_GAP_PX : 0) + w(r);
-    if (next + ROOM_GAP_PX + MORE_PX > maxPx) break;
-    shown.push(r);
-    used = next;
-  }
-  return { shown, hidden: ordered.slice(shown.length) };
+  // `drop`: dots the real lines would not hold (the estimate ran short), taken off the end and counted.
+  const n = Math.max(0, (whole ? rooms.length : pack(ordered, ROOM_GAP_PX + MORE_PX)) - drop);
+  return { shown: ordered.slice(0, n), hidden: ordered.slice(n) };
 }
 
 /** "68° inside." in bold and the rest plain, as the row draws it. */
@@ -92,7 +110,7 @@ function Lead({ text }: { text: string }) {
 /**
  * Home's house row under the weather row: the temperature and lit rooms, then a dot per room.
  * Hidden while the home app's desk routes are absent; dimmed when not live. Every dot that fits
- * the row's full width shows; "as of 9:41 AM" sits at the row's right end only when the measured
+ * the two lines shows; "as of 9:41 AM" sits at the right end of the last line only when the measured
  * dots leave room for it, otherwise it is in the hover card of the house row (and of each dot).
  */
 export function HouseLine() {
@@ -102,6 +120,9 @@ export function HouseLine() {
   const [asOfFits, setAsOfFits] = useState(true);
   const asOfKey = v?.asOf ?? '';
   const roomKey = v ? v.rooms.map((r) => r.name).join('|') : '';
+  // Dots the real lines could not hold (the width estimates ran short): taken off one at a time until the row is not clipped.
+  const [trim, setTrim] = useState({ key: '', n: 0 });
+  const drop = trim.key === roomKey ? trim.n : 0;
   const measureAsOf = () => {
     const row = rowRef.current;
     const label = row?.querySelector<HTMLElement>('.house-asof');
@@ -111,11 +132,19 @@ export function HouseLine() {
     const end = last ? last.offsetLeft + last.offsetWidth : 0;
     setAsOfFits(end + ASOF_GAP_PX + label.offsetWidth <= row.clientWidth);
   };
-  useLayoutEffect(measureAsOf, [asOfKey, roomKey]);
+  const trimToFit = () => {
+    const row = rowRef.current;
+    if (row && row.scrollHeight > row.clientHeight + 1 && drop < 24) setTrim({ key: roomKey, n: drop + 1 });
+  };
+  useLayoutEffect(trimToFit, [roomKey, drop, asOfKey]);
+  useLayoutEffect(measureAsOf, [asOfKey, roomKey, drop]);
   // Measured again when the row changes width or the display font arrives after the first paint.
-  useRemeasure(rowRef, measureAsOf, v !== null);
+  useRemeasure(rowRef, () => {
+    trimToFit();
+    measureAsOf();
+  }, v !== null);
   if (!v) return null;
-  const { shown, hidden } = fitRooms(v.rooms);
+  const { shown, hidden } = fitRooms(v.rooms, ROOMS_ROW_PX, drop);
   const asOf = v.asOf ? `, ${v.asOf}` : '';
   return (
     <div className={v.stale ? 'lw-house house stale' : 'lw-house house'} aria-label="House">
