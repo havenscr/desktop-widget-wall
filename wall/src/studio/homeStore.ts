@@ -24,7 +24,9 @@ export const TEXT = {
   refused: 'That is not offered right now. This is what the home app reports.',
   /** The home app no longer knows that preset, group, look or mood. */
   unknown: 'The home app no longer lists that one. This is what it reports now.',
-  notSetUp: "To change these, type the home app's desk token in Tools.",
+  notSetUp: "Office moods are view only here. To switch them from the wall, add the home app's desk token in Tools.",
+  /** A write the wall tried anyway with no desk token: the 5 second line, short enough for the lights block's summary line. */
+  writeNotSetUp: "View only here. Add the home app's desk token in Tools.",
   needsPrivate: 'The desk token is not sent over plain http. Use https or the tailnet.',
   nothingToUndo: 'Nothing to go back from. This is what the home app reports now.',
   /** Off refused because the studio is on air (the home app's "Studio on air"). */
@@ -154,7 +156,7 @@ export const useHome = create<HomeState>((set, get) => {
         raise(TEXT.unknown);
         break;
       case 'not-set-up':
-        raise(TEXT.notSetUp);
+        raise(TEXT.writeNotSetUp);
         break;
       case 'needs-private-address':
         raise(TEXT.needsPrivate);

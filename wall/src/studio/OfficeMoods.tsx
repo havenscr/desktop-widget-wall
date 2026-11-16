@@ -1,5 +1,6 @@
 import { IconAlertTriangle, IconBulb, IconLoader2 } from '@tabler/icons-react';
 import { useLayoutEffect, useRef, useState, type CSSProperties } from 'react';
+import { restZone, useWatchRest } from '../unwind/watch/rest';
 import { tip } from '../ui/HoverTip';
 import { useHome } from './homeStore';
 import {
@@ -107,6 +108,7 @@ export function OfficeMoods() {
   const moodFail = useHome((s) => s.moodFail);
   const sticky = useHome((s) => s.sticky);
   useMoodsPolling();
+  const restNow = useWatchRest((s) => s.rest);
   const row = rowModel({ moods, moodsWord, applying, moodFail, sticky });
   const box = useRef<HTMLDivElement>(null);
   const [fit, setFit] = useState<Fit>({ label: true, cap: null });
@@ -139,9 +141,11 @@ export function OfficeMoods() {
     void (chip.id === null ? st.applyOff() : st.applyMood(chip.id));
   };
   const line = row.line;
+  // Rests with the Watch controls (same timing); a failure line (5 seconds) holds it in view. The chips never fade.
+  const resting = restNow && moodFail === null;
   return (
     <>
-      <div className="u-office-slot" data-slot="office-lights" data-moods="shown" data-stale={row.stale ? 'true' : undefined} role="group" aria-label={LABEL_WORD} ref={box}>
+      <div className="u-office-slot" data-slot="office-lights" data-moods="shown" data-stale={row.stale ? 'true' : undefined} role="group" aria-label={LABEL_WORD} ref={box} {...restZone('moods-row')}>
         {fit.label && (
           <span className="u-mood-label" data-part="label">
             <IconBulb size={18} aria-hidden="true" />
@@ -152,7 +156,7 @@ export function OfficeMoods() {
           <Chip key={c.id ?? 'office-off'} chip={c} row={row} cap={fit.cap} onClick={() => click(c)} />
         ))}
       </div>
-      <div className={`u-office-line${line.warn ? ' warn' : ''}`} data-part="line">
+      <div className={`u-office-line${line.warn ? ' warn' : ''}`} data-part="line" data-rest={resting ? 'true' : 'false'} {...restZone('moods-line')}>
         {line.lead && <b>{line.lead}</b>}
         <span>{line.rest}</span>
       </div>
