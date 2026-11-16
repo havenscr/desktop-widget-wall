@@ -152,9 +152,9 @@ fn http_reply_with_limit(result: Result<ureq::Response, ureq::Error>, limit: u64
     let response = match result { Ok(r) | Err(ureq::Error::Status(_, r)) => r, Err(_) => return Err(()) };
     let status = response.status();
     let retry_after = response.header("Retry-After").and_then(|v| v.parse::<u64>().ok());
-    let bytes = if (200..300).contains(&status) || status == 400 { match body(response, limit) { Ok(bytes) => bytes, Err(_) => return Ok(HttpReply { status: 598, retry_after: None, body: Vec::new() }) } }
-        // A 403 keeps a short body so the one wording that means "missing permission" can be told from any other refusal; an oversized one is dropped, not an error.
-        else if status == 403 { body(response, FORBIDDEN_BODY).unwrap_or_default() } else { Vec::new() };
+    let bytes = if (200..300).contains(&status) { match body(response, limit) { Ok(bytes) => bytes, Err(_) => return Ok(HttpReply { status: 598, retry_after: None, body: Vec::new() }) } }
+        // API error text is kept only long enough to choose a fixed reason. Oversized text is dropped.
+        else if (400..500).contains(&status) { body(response, FORBIDDEN_BODY).unwrap_or_default() } else { Vec::new() };
     Ok(HttpReply { status, retry_after, body: bytes })
 }
 
@@ -363,6 +363,29 @@ fn shape_list(v: &Value, kind: &str, current_user: Option<&Profile>) -> Vec<Item
 }
 
 #[derive(Debug, PartialEq)] enum ReadAnswer { Empty, Json(Value) }
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum RefusalReason { Scope, NotAllowedUser, Premium, Market, BadRequest, Other }
+impl RefusalReason {
+    fn word(self) -> &'static str { match self { Self::Scope => "scope", Self::NotAllowedUser => "not-allowed-user", Self::Premium => "premium", Self::Market => "market", Self::BadRequest => "bad-request", Self::Other => "other" } }
+    fn log_reason(self) -> crate::wall2_spotify_log::Reason { match self { Self::Scope => crate::wall2_spotify_log::Reason::Scope, Self::NotAllowedUser => crate::wall2_spotify_log::Reason::NotAllowedUser, Self::Premium => crate::wall2_spotify_log::Reason::Premium, Self::Market => crate::wall2_spotify_log::Reason::Market, Self::BadRequest => crate::wall2_spotify_log::Reason::BadRequest, Self::Other => crate::wall2_spotify_log::Reason::Other } }
+}
+fn refusal_reason(status: u16, body: &[u8]) -> RefusalReason {
+    if body.len() as u64 > FORBIDDEN_BODY { return RefusalReason::Other }
+    let Some(error) = serde_json::from_slice::<Value>(body).ok().and_then(|v| v.get("error").cloned()) else { return RefusalReason::Other };
+    let message = error.get("message").and_then(Value::as_str).unwrap_or("");
+    let reason = error.get("reason").and_then(Value::as_str).unwrap_or("");
+    let text = format!("{message} {reason}").to_lowercase();
+    if text.contains("scope") || text.contains("permission") { RefusalReason::Scope }
+    else if text.contains("developer dashboard") || text.contains("allow-list") || text.contains("allow list") || text.contains("register") || text.contains("user management") { RefusalReason::NotAllowedUser }
+    else if text.contains("premium") { RefusalReason::Premium }
+    else if text.contains("market") || text.contains("country") || text.contains("availability") || text.contains("available in") { RefusalReason::Market }
+    else if status == 400 && (text.contains("parameter") || text.contains("query parameter")) { RefusalReason::BadRequest }
+    else { RefusalReason::Other }
+}
+fn refused_answer(status: u16, body: &[u8]) -> (String, RefusalReason) {
+    let reason = refusal_reason(status, body);
+    (format!("refused-{}", reason.word()), reason)
+}
 fn status_answer(status: u16, playlist_items: bool) -> String {
     match status {
         403 if playlist_items => NOT_YOURS.into(),
@@ -385,7 +408,16 @@ fn read_with(cfg: &Config, path: &str, limit: u64, http: &dyn Http, creds: &dyn 
             Ok(resp) if resp.status == 401 && attempt == 0 => { crate::wall2_spotify_log::write(crate::wall2_spotify_log::Event::ApiFailed, crate::wall2_spotify_log::Reason::SignInAgain, 401, started.elapsed().as_millis()); continue },
             Ok(resp) if resp.status == 401 => return Err(SIGN_AGAIN.into()),
             Ok(resp) if resp.status == 429 => { back_off_for(retry_after(resp.retry_after)); crate::wall2_spotify_log::write(crate::wall2_spotify_log::Event::ApiFailed, crate::wall2_spotify_log::Reason::Busy, 429, started.elapsed().as_millis()); return Err(BUSY.into()) }
-            Ok(resp) => { crate::wall2_spotify_log::write(crate::wall2_spotify_log::Event::ApiFailed, crate::wall2_spotify_log::Reason::Down, resp.status, started.elapsed().as_millis()); return Err(status_answer(resp.status, path.contains("/playlists/") && path.contains("/items?"))) }
+            Ok(resp) => {
+                let playlist_items = path.contains("/playlists/") && path.contains("/items?");
+                if (400..500).contains(&resp.status) {
+                    let (answer, reason) = refused_answer(resp.status, &resp.body);
+                    crate::wall2_spotify_log::write(crate::wall2_spotify_log::Event::ApiFailed, reason.log_reason(), resp.status, started.elapsed().as_millis());
+                    return Err(if resp.status == 403 && playlist_items { NOT_YOURS.into() } else if matches!(resp.status, 404 | 410) { GONE.into() } else { answer })
+                }
+                crate::wall2_spotify_log::write(crate::wall2_spotify_log::Event::ApiFailed, crate::wall2_spotify_log::Reason::Down, resp.status, started.elapsed().as_millis());
+                return Err(status_answer(resp.status, playlist_items))
+            }
             Err(_) => { crate::wall2_spotify_log::write(crate::wall2_spotify_log::Event::ApiFailed, crate::wall2_spotify_log::Reason::Down, 0, started.elapsed().as_millis()); return Err(NO_CONNECTION.into()) },
         }
     }
@@ -511,7 +543,7 @@ pub async fn wall2_spotify_search(window: WebviewWindow, query: String) -> Resul
     let query = valid_query(&query)?;
     tauri::async_runtime::spawn_blocking(move || { let cfg = config(window.app_handle())?; let current_user = profile(&cfg)?; search_with(&cfg, &query, &current_user, &RealHttp, &RealCreds) }).await.map_err(|_| "failed".to_string())?
 }
-fn search_path(query: &str) -> String { format!("/search?market=from_token&type=track,album,playlist&limit=10&q={}", urlencoding::encode(query)) }
+fn search_path(query: &str) -> String { format!("/search?type=track,album,playlist&limit=10&q={}", urlencoding::encode(query)) }
 /// A song's length in milliseconds when Spotify gives one: a whole number, at most a day, else absent.
 fn song_length(v: &Value) -> Option<u32> { v.get("duration_ms").and_then(Value::as_u64).filter(|n| *n <= 86_400_000).and_then(|n| u32::try_from(n).ok()) }
 /// The songs of a search answer, each with its length (the grouped search shows it); no other list is shaped this way.
@@ -1163,6 +1195,36 @@ mod tests {
         assert!(path.starts_with(&format!("/playlists/{ID}/items?")));
         for part in ["limit=50","offset=100","additional_types=track","fields=items(item("] { assert!(path.contains(part),"{part}"); }
         assert!(search_path("two words").contains("limit=10"));
+        assert!(!search_path("two words").contains("market"));
+        for path in [tracks_path("playlist", ID, 0), tracks_path("album", ID, 0), "/me/tracks?market=from_token".into()] { assert!(path.contains("market=from_token"), "{path}"); }
+    }
+
+    #[test]
+    fn refusal_bodies_choose_only_fixed_reasons() {
+        let cases = [
+            (403, r#"{"error":{"message":"Insufficient client scope"}}"#, RefusalReason::Scope),
+            (403, r#"{"error":{"message":"This user is not registered"}}"#, RefusalReason::NotAllowedUser),
+            (403, r#"{"error":{"reason":"PREMIUM required"}}"#, RefusalReason::Premium),
+            (403, r#"{"error":{"message":"Not available in this COUNTRY"}}"#, RefusalReason::Market),
+            (400, r#"{"error":{"message":"Invalid query parameter q"}}"#, RefusalReason::BadRequest),
+            (403, r#"{"error":{"message":"Forbidden"}}"#, RefusalReason::Other),
+        ];
+        for (status, body, want) in cases { assert_eq!(refusal_reason(status, body.as_bytes()), want, "{body}"); }
+        for body in [b"".as_slice(), b"not json", br#"{"error":{"message":7}}"#, br#"{"error":{"message":"Forbid\u202eden\u0000"}}"#] { assert_eq!(refusal_reason(403, body), RefusalReason::Other); }
+        let oversized = format!(r#"{{"error":{{"message":"scope","pad":"{}"}}}}"#, "x".repeat(FORBIDDEN_BODY as usize));
+        assert!(oversized.len() as u64 > FORBIDDEN_BODY);
+        assert_eq!(refusal_reason(403, oversized.as_bytes()), RefusalReason::Other);
+    }
+
+    #[test]
+    fn refusal_text_never_reaches_the_answer_or_log_line() {
+        let marker = "private-marker";
+        let body = format!(r#"{{"error":{{"message":"Premium required {marker}"}}}}"#);
+        let (answer, reason) = refused_answer(403, body.as_bytes());
+        let logged = crate::wall2_spotify_log::line(crate::wall2_spotify_log::Event::ApiFailed, reason.log_reason(), 403, 8);
+        assert_eq!(answer, "refused-premium");
+        assert!(!answer.contains(marker));
+        assert!(!logged.contains(marker));
     }
 
     #[test]
@@ -1418,7 +1480,7 @@ mod tests {
         assert_eq!(ask(200,"[true]"), Ok(true)); assert_eq!(ask(200,"[false]"), Ok(false));
         for bad in ["[]", "[true,false]", "[1]", "{}", "null", "nope", "[\"true\"]"] { assert_eq!(ask(200,bad), Err("down".into()), "{bad}"); }
         assert_eq!(ask(204,""), Err("down".into()));
-        assert_eq!(ask(403,""), Err("refused".into())); assert_eq!(ask(404,""), Err(GONE.into())); assert_eq!(ask(429,""), Err(BUSY.into())); assert_eq!(ask(503,""), Err("server-503".into()));
+        assert_eq!(ask(403,""), Err("refused-other".into())); assert_eq!(ask(404,""), Err(GONE.into())); assert_eq!(ask(429,""), Err(BUSY.into())); assert_eq!(ask(503,""), Err("server-503".into()));
         reset_state(); signed_token(); assert_eq!(saved_with(&cfg(),ID,&FakeHttp::new(vec![],vec![Err(())]),&creds), Err(NO_CONNECTION.into()));
     }
 
