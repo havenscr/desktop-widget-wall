@@ -1,5 +1,9 @@
-import { MAX_SHOW_MS, STORAGE_KEY, type MarkResult, type Part, type Saved, type Show } from '../../onair/model';
+import { localDate as localDateOf, MAX_SHOW_MS, STORAGE_KEY, type MarkResult, type Part, type Saved, type Show } from '../../onair/model';
 import { usePlaceStore } from '../../state/places';
+import { resetTakes } from '../../onair/takes';
+import { STORAGE_KEY as TAKES_KEY } from '../../onair/takeModel';
+import { MODE_STORAGE_KEY } from '../../onair/modes';
+import { reviewNow } from '../../ui/reviewClock';
 import { mocks } from '../tauri';
 import { knob } from './long';
 
@@ -13,6 +17,13 @@ import { knob } from './long';
  *   ?marks=0|2|full                    marks so far today (`full`: marks.txt refuses the next mark)
  *   ?oatimer=run|stopped|idle|limit    the stored timer: running at 42:13, stopped at 42:13, never started, stopped itself at 24 hours
  *   ?openfail=show|marks               Open file (or Open marks.txt) fails
+ *   ?onair=v2                          the new On Air frame (development only)
+ *   ?oamode=live|rec|meet              the new frame starts held on that page
+ *   ?oatake=N                          the new frame's takes: N today, the running one began 4:12 before the review clock, the longest ran 06:40
+ *   ?oapaused=1                        with oatake, the running take is paused
+ *   ?meetnow=1                         the one meeting a call belongs to, 10:00 to 11:00 (devMocks/meet.ts); ?meetlong=1 gives it a 120 character title
+ *   ?callbrowserav=1                   a browser holds the camera and microphone with no call (devMocks/signals.ts)
+ *   ?whylong=1                         the new frame's reason line is 90 characters long
  *
  * Open file turns `missing` into the starter's three parts, as the app does.
  */
@@ -62,7 +73,9 @@ export function registerOnAirMocks(): void {
   let which = knob('show') ?? 'typical';
   const marksKnob = knob('marks') ?? '2';
   const times: string[] = marksKnob === '0' ? [] : marksKnob === 'full' ? ['03:12', '09:40', '21:05'] : ['03:12', '09:40'];
-  const result = (): MarkResult => ({ today: times.length, last: times.slice(-3) });
+  const PARTS = ['Load the data', 'Shape the columns', 'End on the chart'];
+  const parts: string[] = marksKnob === '0' ? [] : marksKnob === 'full' ? [PARTS[0], PARTS[1], PARTS[2]] : [PARTS[0], PARTS[0]];
+  const result = (): MarkResult => ({ today: times.length, last: times.slice(-3), lastParts: parts.slice(-3) });
 
   mocks.set('wall2_onair_show', () => {
     switch (which) {
@@ -92,6 +105,7 @@ export function registerOnAirMocks(): void {
     const ms = Number(args?.showMs ?? 0);
     const s = Math.floor(ms / 1000);
     const pad = (n: number) => String(n).padStart(2, '0');
+    parts.push(String(args?.part ?? ''));
     times.push(s >= 3600 ? `${Math.floor(s / 3600)}:${pad(Math.floor(s / 60) % 60)}:${pad(s % 60)}` : `${pad(Math.floor(s / 60))}:${pad(s % 60)}`);
     return result();
   });
@@ -110,6 +124,27 @@ export function registerOnAirMocks(): void {
     } catch {
       // No storage: the timer starts idle.
     }
+  }
+  // The new frame's hold and takes (development only; nothing is written without the knob).
+  const hold = knob('oamode');
+  if (hold === 'live' || hold === 'rec' || hold === 'meet') {
+    try {
+      window.localStorage.setItem(MODE_STORAGE_KEY, JSON.stringify({ held: hold }));
+    } catch {
+      // No storage: the page is in Auto.
+    }
+  }
+  const took = Number(knob('oatake'));
+  if (knob('oatake') !== null && Number.isInteger(took) && took > 0) {
+    const at = reviewNow ? reviewNow() : Date.now();
+    const paused = knob('oapaused') === '1';
+    const startedAt = at - (paused ? 6 * 60_000 : 4 * 60_000 + 12_000);
+    try {
+      window.localStorage.setItem(TAKES_KEY, JSON.stringify({ day: localDateOf(at), count: took, longestMs: 6 * 60_000 + 40_000, current: { startedAt, pausedAt: paused ? at - (6 * 60_000 - 4 * 60_000 - 12_000) : null, pausedMs: 0, seenAt: at } }));
+    } catch {
+      // No storage: no takes.
+    }
+    resetTakes();
   }
   // After the place `?hz=` names is open (the horizon applies it on mount).
   if (knob('screen') === 'onair') setTimeout(() => usePlaceStore.getState().setActive('onair'), 300);

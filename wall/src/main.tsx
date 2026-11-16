@@ -14,6 +14,7 @@ import './styles/zen.css';
 import './styles/signals.css';
 import './styles/tools.css';
 import './styles/onair.css';
+import './styles/onair2.css';
 import './styles/studio.css';
 import { startIfTop } from './ui/topWindow';
 

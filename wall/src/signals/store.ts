@@ -27,6 +27,7 @@ export function createSignalStore(deps: SignalDeps) {
       if (!isTauri() && next.mockSince !== undefined && callResult.call) callResult.call = { ...callResult.call, since: next.mockSince };
       micFreeSince = callResult.micFreeSince;
       const recording = deriveRecording(next);
+      const browserAv = next.known && next.mic.browser && next.camera.browser && callResult.call?.kind !== 'browser';
       const leave = next.known ? (!isTauri() && next.mockLeave ? next.mockLeave : deriveLeave(meetings, now, deps.zone())) : null;
       if (callResult.call?.kind !== previous?.kind) void report(callResult.call ? `call start ${callResult.call.kind}` : 'call end');
       if (recording !== previousRecording) void report(recording ? 'recording on' : 'recording off');
@@ -34,13 +35,14 @@ export function createSignalStore(deps: SignalDeps) {
       previous = callResult.call;
       previousRecording = recording;
       previousLeave = leave;
-      set({ known: next.known, call: callResult.call, recording, leave });
+      set({ known: next.known, call: callResult.call, recording, leave, browserAv });
     };
     return {
       known: false,
       call: null,
       recording: false,
       leave: null,
+      browserAv: false,
       init: () => {
         let disposed = false;
         let timer: ReturnType<typeof setInterval> | undefined;

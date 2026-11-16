@@ -195,15 +195,32 @@ The sign-in and its row in Tools came first; the library came next, and a pick f
   with `reason` one of `not set up`, `sign in again`, `setup broken` or `failed`;
   `searchesLeft` is the search budget of the day (about 100, see "The library"), a number only while
   signed in and empty otherwise.
+- **Live state and chat (native only).** Five Rust commands provide plumbing that no page uses yet:
+  `wall2_ytlive_channel` reads whether a channel is set and its public title;
+  `wall2_ytlive_set_channel(text)` resolves a checked handle, channel id or channel link;
+  `wall2_ytlive_forget_channel` removes it; `wall2_ytlive_status(fresh?)` answers live, scheduled or
+  neither with start time, viewer count, freshness and remaining budgets; and `wall2_ytlive_chat`
+  answers up to 30 checked messages. The resolved id and public title are the only values written to
+  `onair-channel.json` in the app config folder. Status reads have a 60 second floor (15 seconds for
+  Check again), refresh the uploads candidates at most every five minutes, and use at most 1,200 API
+  units per Pacific day. Chat follows Google's polling hint with a 10 to 60 second floor and uses at
+  most 4,000 units per Pacific day. A unit is counted only for an outgoing GET attempt, including a
+  retry after a 401. The floors run from the last attempt, and a concurrent read of the same kind gets
+  the answer already in memory while the first read is held. Daily counts, the all-day quota stop and
+  the 60 second busy stop survive channel, sign-in, sign-out and client clears; only the Pacific day
+  turning resets the daily state. Chat ids,
+  page tokens, author names and message text stay in memory; none is stored or logged. The commands
+  never post, reply or delete.
 - **Links.** The row carries the two links YouTube API Services asks for, YouTube Terms and
   Google Privacy Policy. The page sends only the kind word (`youtube-terms`, `google-privacy`)
   to `wall2_open_link`; the addresses are fixed in Rust.
 - **The log `wall2-youtube.log`** (app log folder, 64 KB cap) holds lines of four fields:
   an event (`sign-in-start`, `sign-in-ok`, `sign-in-failed`, `sign-out`, `revoke-failed`,
   `refresh-ok`, `refresh-refused`, `refresh-failed`, `client-saved`, `client-forgotten`,
-  `read-ok`, `read-failed`, `search-ok`, `search-failed`), a
+  `read-ok`, `read-failed`, `search-ok`, `search-failed`, `live-ok`, `live-failed`, `chat-ok`,
+  `chat-failed`), a
   reason (`none`, `busy`, `down`, `failed`, `sign-in-again`, `setup-broken`, `denied`,
-  `cancelled`, `timed-out`, `quota`, `quota-all`, `not-found`, `invalid`), an HTTP status and
+  `cancelled`, `timed-out`, `quota`, `quota-all`, `not-found`, `invalid`, `ended`), an HTTP status and
   milliseconds. Never an id, page token, token, client value, title, channel or search words.
 - **The library** (`wall2_youtube.rs`, the YouTube side of the music card). Five commands, each
   opening with the window check and running its read on a blocking thread:
@@ -3066,11 +3083,22 @@ Open file (`wall2_onair_open` with `show`) writes a starter file with three exam
 Commands (only the `wall2` window may call them; the file work runs off the main thread; nothing is logged; errors are `not-configured`, `failed` or `refused`):
 
 - `wall2_onair_show()`: `{ state: "ok" | "missing" | "refused", title, parts: [{ name, minutes, notes }], skipped, reason, readAt }`.
-- `wall2_onair_mark(showMs, part)`: `showMs` at most 24 hours and `part` at most 60 characters, else `refused`; answers `{ today, last }` (the last three show times marked today). A second call within a second writes nothing and answers the same count.
+- `wall2_onair_mark(showMs, part)`: `showMs` at most 24 hours and `part` at most 60 characters, else `refused`; answers `{ today, last, lastParts }` (the last three show times marked today, and the part of each of those marks in the same order, cut to 60 characters, an empty text for a mark with none). A second call within a second writes nothing and answers the same count.
 - `wall2_onair_marks_today()`: the same answer, without writing.
 - `wall2_onair_open(which)`: `show` or `marks` only (anything else is `refused`).
 
 Review knobs (development only): `?screen=onair` opens On Air; `?show=typical|one|long|forty|empty|missing|refused|down`; `?marks=0|2|full`; `?oatimer=run|stopped|idle|limit` (running at 42:13, stopped at 42:13, never started, stopped itself at 24 hours); `?openfail=show|marks` makes Open file fail. The gallery's `onair` screen has the typical, stopped, no file, refused file, forty parts, long notes, marks full, one part, read fails, recording, Watt standing, 24 hour stop, failed Open file and Reset states (they open with `?hz=onair`, so the horizon is on On Air's own camera from the first frame and Watt, who waits for his place's camera, stands in the still). `fit-check` holds each column inside its planned box (x 124 to 764, 800 to 1880 and 1920 to 2540, above the strip), fails on a note cut without "+N more", on a recording key smaller than 40 by 40 px and on Watt's box (or his click box) overlapping a column; its self-test breaks are `onair-box` (the notes card 1400 px wide), `onair-notes` (every note shown at 40 px) `onair-keys` (20 px tiles) and `onair-watt` (Watt lifted onto the notes card).
+
+#### The new On Air (in progress, development only)
+
+A new frame is being built behind the review knob `?onair=v2`. It exists only in a development build (`import.meta.env.DEV`); in the built app, and in development without the knob, On Air is exactly the page above, and `prod-check` fails if the new frame's text reaches a production bundle.
+
+- **Modes row.** At the top left of every page of the new frame: Live, Recording and Presenting, Auto, and the reason in one line. A dot sits on every case the wall sees on now, lit or not. A click on a segment holds that page (kept in local storage `wall2-onair-mode`, a broken value is Auto); Auto lets the wall choose again. `pickMode` (`onair/modes.ts`, pure) picks: a recorder first ("a recorder is running"), then live ("a broadcast is live", "a broadcast starts soon" or, until the YouTube status is wired, "mic or camera in use" from the new `browserAv` signal), then a call ("a Teams call is on" and so on), else "nothing is on air".
+- **Recording page.** Marks today (show time and part, from `lastParts`), the outline, the take timer, the recording keys (Record, Pause or Resume, Stop, Mark a moment, Snip, Hide screen, all through the key deck's press path) and today's studio lights block, unchanged. Pause counts only after Rust took the press without an error.
+- **Presenting page.** The talk timer, the call chip, the calendar meeting the call belongs to (`onair/meetMatch.ts`: the meeting whose window, ten minutes before its start to its end, holds when the call began; none gives plain words and a count-up timer), the speaker notes, the call keys (Teams or Zoom from the key library; four off tiles for a browser call) and the studio lights block.
+- **Takes.** `onair/takes.ts` keeps today's takes (`wall2-onair-takes`): a take starts when the recorder signal comes on, a gap under ten seconds is the same take, and the count starts again after local midnight.
+- **Empty boxes.** Live and the page for nothing on air draw only the modes row (pull requests 3 and 4 fill them). The prompter box on both pages is empty (pull request 7), and the studio status block and studio keys wait for pull request 5.
+- **Knobs.** `?onair=v2`, `?oamode=live|rec|meet` (start held), `?oatake=N` and `?oapaused=1` (today's takes), `?meetnow=1` and `?meetlong=1` (the calendar meeting a call belongs to), `?callbrowserav=1` (a browser holds the camera and microphone), `?whylong=1` (a 90 character reason). With `?meetnow=1` a mock call began at 9:56 unless `callsince` says otherwise.
 
 ### Studio lights
 

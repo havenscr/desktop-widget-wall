@@ -103,3 +103,32 @@ describe('signal store lifecycle', () => {
     vi.useRealTimers();
   });
 });
+
+describe('browserAv', () => {
+  const browserAv = (over: Partial<SignalPayload>): SignalPayload => ({ known: true, mic: { ...EMPTY_USE, browser: true }, camera: { ...EMPTY_USE, browser: true }, ...over });
+  const run = async (payload: SignalPayload, meetings: Partial<ReturnType<typeof useMeetingFeed.getState>>) => {
+    useMeetingFeed.setState(meetings);
+    const store = createSignalStore({ now: () => Date.parse('2026-11-12T18:00:00Z'), zone: () => 'UTC', listen: async () => () => {}, invoke: async <T,>() => payload as T });
+    const dispose = store.getState().init();
+    await vi.waitFor(() => expect(store.getState().known).toBe(payload.known));
+    dispose();
+    return store.getState();
+  };
+  const joinable = { key: 'k', accountId: 'a', title: 'Talk', start: '2026-11-12T17:30:00Z', end: '2026-11-12T19:00:00Z', canJoin: true };
+
+  it('is true for a browser camera and microphone with no meeting to join', async () => {
+    const s = await run(browserAv({}), { meetings: [], feedStale: false, failed: false });
+    expect(s.browserAv).toBe(true);
+    expect(s.call).toBeNull();
+  });
+  it('is false for the same signals with a joinable meeting now, because that is a browser call', async () => {
+    const s = await run(browserAv({}), { meetings: [joinable], feedStale: false, failed: false });
+    expect(s.call?.kind).toBe('browser');
+    expect(s.browserAv).toBe(false);
+  });
+  it('is false with only the microphone, or only the camera, or unknown signals', async () => {
+    expect((await run(browserAv({ camera: { ...EMPTY_USE } }), { meetings: [], feedStale: false, failed: false })).browserAv).toBe(false);
+    expect((await run(browserAv({ mic: { ...EMPTY_USE } }), { meetings: [], feedStale: false, failed: false })).browserAv).toBe(false);
+    expect((await run({ ...browserAv({}), known: false }, { meetings: [], feedStale: false, failed: false })).browserAv).toBe(false);
+  });
+});

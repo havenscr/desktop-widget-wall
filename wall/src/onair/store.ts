@@ -42,8 +42,8 @@ export interface OnAirState {
   /** Read the run of show, unless it was asked for less than five seconds ago. Answers whether a read started. */
   loadShow: () => Promise<boolean>;
   loadMarks: () => Promise<void>;
-  /** One mark (a second within a second counts once). */
-  mark: () => Promise<void>;
+  /** One mark (a second within a second counts once). `showMs` is the time to write; the show timer's time when left out (the new On Air frame passes the take or talk time). */
+  mark: (showMs?: number) => Promise<void>;
   open: (which: 'show' | 'marks') => Promise<void>;
 }
 
@@ -157,7 +157,7 @@ export function createOnAirStore(deps: OnAirDeps) {
           set({ marksNote: m.markErrorText(e) });
         }
       },
-      mark: async () => {
+      mark: async (showMs) => {
         const now = deps.now();
         if (get().marking || now - lastMark < m.MARK_QUIET_MS) return;
         lastMark = now;
@@ -166,7 +166,7 @@ export function createOnAirStore(deps: OnAirDeps) {
         const part = parts[m.clampIndex(st.saved.partIndex, parts.length)]?.name ?? null;
         set({ marking: true });
         try {
-          const r = await deps.invoke<unknown>('wall2_onair_mark', { showMs: Math.floor(m.elapsedMs(st.saved, now)), part });
+          const r = await deps.invoke<unknown>('wall2_onair_mark', { showMs: Math.max(0, Math.min(m.MAX_SHOW_MS, Math.floor(showMs ?? m.elapsedMs(st.saved, now)))), part });
           set(m.isMarkResult(r) ? { marks: r, marksDate: m.localDate(now), marksNote: null } : { marksNote: 'Could not write marks.txt' });
         } catch (e) {
           set({ marksNote: m.markErrorText(e) });
