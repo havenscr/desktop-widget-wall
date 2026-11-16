@@ -733,9 +733,10 @@ mod tests {
     use crate::wall2_youtube::tests::{client, exclusive, reply, FakeCreds, FakeHttp};
     use serde_json::json;
     use std::sync::atomic::AtomicU64;
-    use std::sync::{Arc, Condvar};
+    use std::sync::{mpsc, Arc, Condvar};
 
     const T0: u64 = 1_704_067_200;
+    const TEST_WAIT: std::time::Duration = std::time::Duration::from_secs(5);
 
     fn channel_id() -> String { format!("UC{}", "a".repeat(22)) }
     fn video_id(n: u8) -> String { format!("video{:06}", n) }
@@ -787,6 +788,21 @@ mod tests {
             v.chat.state = "ok";
         });
     }
+    fn spawn_result<T: Send + 'static>(
+        work: impl FnOnce() -> T + Send + 'static,
+    ) -> mpsc::Receiver<T> {
+        let (sender, receiver) = mpsc::sync_channel(1);
+        std::thread::spawn(move || {
+            let result = work();
+            sender.send(result).expect("test result receiver was dropped");
+        });
+        receiver
+    }
+    fn receive_result<T>(receiver: mpsc::Receiver<T>, label: &str) -> T {
+        receiver.recv_timeout(TEST_WAIT).unwrap_or_else(|error| {
+            panic!("{label} did not finish within five seconds: {error}")
+        })
+    }
 
     struct HoldingHttp {
         answer: Mutex<Option<Result<HttpReply, ()>>>,
@@ -806,7 +822,24 @@ mod tests {
         fn wait_entered(&self) {
             let (flag, cv) = &self.entered;
             let mut entered = lock(flag);
-            while !*entered { entered = cv.wait(entered).unwrap_or_else(|e| e.into_inner()); }
+            let deadline = Instant::now() + TEST_WAIT;
+            while !*entered {
+                let remaining = deadline.saturating_duration_since(Instant::now());
+                if remaining.is_zero() {
+                    drop(entered);
+                    self.release();
+                    panic!("fake HTTP was not entered within five seconds");
+                }
+                let (next, timeout) = cv
+                    .wait_timeout(entered, remaining)
+                    .unwrap_or_else(|error| error.into_inner());
+                entered = next;
+                if timeout.timed_out() && !*entered {
+                    drop(entered);
+                    self.release();
+                    panic!("fake HTTP was not entered within five seconds");
+                }
+            }
         }
         fn release(&self) {
             let (flag, cv) = &self.released;
@@ -827,7 +860,22 @@ mod tests {
             entered_cv.notify_all();
             let (released, released_cv) = &self.released;
             let mut ready = lock(released);
-            while !*ready { ready = released_cv.wait(ready).unwrap_or_else(|e| e.into_inner()); }
+            let deadline = Instant::now() + TEST_WAIT;
+            while !*ready {
+                let remaining = deadline.saturating_duration_since(Instant::now());
+                assert!(
+                    !remaining.is_zero(),
+                    "fake HTTP was not released within five seconds"
+                );
+                let (next, timeout) = released_cv
+                    .wait_timeout(ready, remaining)
+                    .unwrap_or_else(|error| error.into_inner());
+                ready = next;
+                assert!(
+                    !timeout.timed_out() || *ready,
+                    "fake HTTP was not released within five seconds"
+                );
+            }
             lock(&self.answer).take().unwrap_or(Err(()))
         }
     }
@@ -1276,13 +1324,13 @@ mod tests {
         prime_token();
         with_live(|v| {
             v.candidates = vec![video_id(1)];
-            v.find_attempt = Some(T0);
+            v.find_attempt = Some(T0 - STATUS_FLOOR);
         });
         let status_http = Arc::new(HoldingHttp::new(ok(videos(vec![]))));
         let status_creds = Arc::new(FakeCreds::new(Some("refresh")));
         let first_http = status_http.clone();
         let first_creds = status_creds.clone();
-        let status_thread = std::thread::spawn(move || {
+        let status_result = spawn_result(move || {
             let client = client(); let clock = || T0;
             let ctx = Ctx { http: first_http.as_ref(), creds: first_creds.as_ref(), client: &client, now: &clock };
             status_with(&ctx, Some(saved_channel()), T0, false, true)
@@ -1306,14 +1354,14 @@ mod tests {
         assert_eq!(second.read_at, None);
         assert_eq!(status_http.calls.load(Ordering::SeqCst), 1);
         status_http.release();
-        assert_eq!(status_thread.join().unwrap().state, "none");
+        assert_eq!(receive_result(status_result, "racing status read").state, "none");
 
         reset_for_test(); prime_token(); set_live_memory(T0);
         let chat_http = Arc::new(HoldingHttp::new(ok(json!({ "items": [] }))));
         let chat_creds = Arc::new(FakeCreds::new(Some("refresh")));
         let first_http = chat_http.clone();
         let first_creds = chat_creds.clone();
-        let chat_thread = std::thread::spawn(move || {
+        let chat_result = spawn_result(move || {
             let client = client(); let clock = || T0;
             let ctx = Ctx { http: first_http.as_ref(), creds: first_creds.as_ref(), client: &client, now: &clock };
             chat_with(&ctx, T0, true)
@@ -1324,7 +1372,7 @@ mod tests {
         assert_eq!(chat_with(&ctx, T0 + CHAT_FLOOR, true).read_at, None);
         assert_eq!(chat_http.calls.load(Ordering::SeqCst), 1);
         chat_http.release();
-        assert_eq!(chat_thread.join().unwrap().state, "ok");
+        assert_eq!(receive_result(chat_result, "racing chat read").state, "ok");
     }
 
     #[test]
@@ -1440,7 +1488,7 @@ mod tests {
             let http = Arc::new(HoldingHttp::new(answer));
             let creds = Arc::new(FakeCreds::new(Some("refresh")));
             let first_http = http.clone(); let first_creds = creds.clone();
-            let worker = std::thread::spawn(move || {
+            let worker = spawn_result(move || {
                 let client = client(); let clock = || T0;
                 let ctx = Ctx { http: first_http.as_ref(), creds: first_creds.as_ref(), client: &client, now: &clock };
                 status_with(&ctx, Some(saved_channel()), T0, false, true)
@@ -1449,7 +1497,7 @@ mod tests {
             clear(true);
             with_live(|v| { v.status.state = "signed-out"; v.status.word = None; });
             http.release();
-            let _ = worker.join().unwrap();
+            let _ = receive_result(worker, "held status read across clear");
             with_live(|v| {
                 assert_eq!(v.status.state, "signed-out");
                 assert_eq!(v.status.word, None);
@@ -1473,7 +1521,7 @@ mod tests {
         let first_http = http.clone();
         let first_creds = creds.clone();
         let worker_path = path.clone();
-        let worker = std::thread::spawn(move || {
+        let worker = spawn_result(move || {
             let client = client();
             let clock = || T0;
             let ctx = Ctx {
@@ -1492,7 +1540,10 @@ mod tests {
         http.wait_entered();
         clear(true);
         http.release();
-        assert_eq!(worker.join().unwrap(), Err(FAILED));
+        assert_eq!(
+            receive_result(worker, "held channel write across clear"),
+            Err(FAILED)
+        );
         assert_eq!(read_channel(&path).unwrap().title, "Original Channel");
         let _ = std::fs::remove_dir_all(&dir);
     }
