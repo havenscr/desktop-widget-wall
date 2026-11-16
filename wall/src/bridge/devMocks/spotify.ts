@@ -13,10 +13,11 @@ const cover = (seed: number) => {
 };
 // `spotify=long`: the longest names the bridge passes (it trims names to 160 and subtitles to 80 characters) and a 240 song list.
 // `spotifypage=` ok | first | odd | private | changed | toobig | busy | down | slow: what a saved playlist's public page gives (with `spotify=notyours`; none means private). `ok` lists 40 songs of 40;
-// `first` lists the first 100 of 520; `odd` has a few songs that cannot be played; `slow` answers after 1.5 s. `spotifypageoff=1` starts with the Tools switch off.
+// `first` lists the first 100 of 520; `big` lists 200 rows of 500; `odd` has a few songs that cannot be played; `slow` answers after 1.5 s. `spotifypageoff=1` starts with the Tools switch off.
+// `spotifyload=heavy` gives the player a 20 song queue and the heard list 50 songs (with long titles under `spotify=long`).
 // `spotifyctx=this` makes the player report the opened playlist as its context (and gives `wall2_spotify_heard` six songs); `spotifyctx=other` reports another playlist.
 const query = (key: string) => new URLSearchParams(window.location.search).get(key);
-const PAGE_TOTAL: Record<string, number> = { ok: 40, slow: 40, odd: 40, first: 520 };
+const PAGE_TOTAL: Record<string, number> = { ok: 40, slow: 40, odd: 40, first: 520, big: 500 };
 const pageTotal = () => PAGE_TOTAL[query('spotifypage') ?? ''] ?? null;
 const isLong = () => new URLSearchParams(window.location.search).get('spotify') === 'long';
 const LONG_ARTIST = 'The Quiet Geometry Orchestra and the Lantern Choir featuring Mira Vale';
@@ -68,7 +69,7 @@ export function registerSpotifyMocks(): void {
   mocks.set('wall2_spotify_recent', () => { available(); return list('track', 'Recently Played'); });
   mocks.set('wall2_spotify_search', () => { available(); return { tracks: few(list('track', 'Track'), 6).map((t, n) => ({ ...t, durationMs: 180_000 + n * 7_000 })), albums: few(list('album', 'Album'), 3), playlists: few(list('playlist', 'Playlist'), 3) }; });
   mocks.set('wall2_spotify_tracks', (args) => { available(); if (args?.kind === 'playlist') openedPlaylist = String(args?.id ?? openedPlaylist); if (mode() === 'notyours') throw new Error('not yours'); const kind = args?.kind; const page = Number(args?.page ?? 0); const total = mode() === 'heavy' ? 2000 : mode() === 'long' ? 240 : kind === 'album' ? 12 : 58; const start = page * 50; const items = Array.from({ length: Math.max(0, Math.min(50, total - start)) }, (_, n) => track(start + n + 1, !(kind === 'playlist' && start + n === 8))); return { items, total, more: start + items.length < total }; });
-  mocks.set('wall2_spotify_queue', () => { available(); return mode() === 'empty' ? { current: null, next: [] } : { current: track(1), next: Array.from({ length: 10 }, (_, n) => track(n + 2)) }; });
+  mocks.set('wall2_spotify_queue', () => { available(); return mode() === 'empty' ? { current: null, next: [] } : { current: track(1), next: Array.from({ length: query('spotifyload') === 'heavy' ? 20 : 10 }, (_, n) => track(n + 2)) }; });
   mocks.set('wall2_spotify_playback', () => { available(); if (playMode() === 'none' || mode() === 'empty') return null; const device = playMode() === 'speaker' ? { name: 'Living room', kind: 'Speaker' } : { name: 'Desk speakers', kind: 'Computer' }; return { playing: !paused, device, track: heartMode() === 'episode' && new URLSearchParams(window.location.search).get('spotifyheartid') !== '1' ? { ...track(1 + shift), id: null } : track(1 + shift), progressMs: seekedMs ?? 65_000, shuffle: false, playlistId: query('spotifyctx') === 'this' ? openedPlaylist : query('spotifyctx') === 'other' ? id(9999) : null }; });
   const knob = () => query('spotifypage') ?? 'private';
   const pageRows = (n: number, dim: number[] = []) => Array.from({ length: n }, (_, i) => track(i + 1, !dim.includes(i)));
@@ -82,9 +83,10 @@ export function registerSpotifyMocks(): void {
     if (k === 'down') throw new Error('no connection');
     if (k === 'slow') await new Promise((resolve) => setTimeout(resolve, 1500));
     if (k === 'first') return { items: pageRows(100), listed: 100 };
+    if (k === 'big') return { items: pageRows(200), listed: 500 };
     return { items: k === 'odd' ? pageRows(40, [2, 6, 11]) : pageRows(40), listed: 40 };
   });
-  mocks.set('wall2_spotify_heard', () => { available(); return Array.from({ length: 6 }, (_, n) => ({ ...track(n + 1), id: id(2000 + n + 1), name: `Heard Song ${n + 1}` })); });
+  mocks.set('wall2_spotify_heard', () => { available(); return Array.from({ length: query('spotifyload') === 'heavy' ? 50 : 6 }, (_, n) => ({ ...track(n + 1), id: id(2000 + n + 1), name: `Heard Song ${n + 1}` })); });
   // Players that are awake: this PC (unless Spotify has to be started), a phone and a speaker. `spotifyplay=speaker` makes the speaker the active one; `spotify=nodevices` lists none.
   mocks.set('wall2_spotify_devices', () => {
     available();

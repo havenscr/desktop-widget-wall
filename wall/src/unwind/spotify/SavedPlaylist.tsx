@@ -5,7 +5,7 @@ import { mediaTarget, useNowPlayingStore } from '../../music/store';
 import { tip } from '../../ui/HoverTip';
 import { useVisible } from '../../ui/useVisible';
 import '../../styles/spotify-saved.css';
-import { NOTHING_HEARD, NOTHING_QUEUED, PAGE_TAG_TIP, PAGE_TURN_OFF, PAGE_TURN_OFF_TIP, PAGE_TURN_ON, PAGE_TURN_ON_TIP, pageProblem, pageTag, WHILE_HEADINGS, WHILE_PLAYS, trackLength, type PageProblem } from './model';
+import { moreInQueue, NOTHING_HEARD, NOTHING_QUEUED, PAGE_RETRY_MS, PAGE_TAG_TIP, PAGE_TERMS, PAGE_TRY_LATER, PAGE_TURN_OFF, PAGE_TURN_OFF_TIP, PAGE_TURN_ON, PAGE_TURN_ON_TIP, pageProblem, pageTag, QUEUE_FAILED, WHILE_HEADINGS, WHILE_NEXT_ROWS, WHILE_PLAYS, trackLength, type PageProblem } from './model';
 import { PlayingBars } from './Tile';
 import { QUEUE_POLL_MS, runSkips, skipPlan } from './UpNext';
 
@@ -22,9 +22,10 @@ export type PublicList = { state: 'idle' } | { state: 'reading' } | { state: 're
  * Reads the public page once per opening while `active` (the native cache answers repeats); `retry` asks again.
  * An answer that lands after the view left, or for an older item, is dropped.
  */
-export function usePublicList(item: SpotifyItem, active: boolean): { list: PublicList; retry: () => void } {
+export function usePublicList(item: SpotifyItem, active: boolean): { list: PublicList; retry: () => void; retryReady: boolean } {
   const [list, setList] = useState<PublicList>({ state: 'idle' });
   const [attempt, setAttempt] = useState(0);
+  const [retryReady, setRetryReady] = useState(false);
   useEffect(() => {
     if (!active) return;
     let live = true;
@@ -41,8 +42,33 @@ export function usePublicList(item: SpotifyItem, active: boolean): { list: Publi
       live = false;
     };
   }, [item.id, active, attempt]);
+  // The wall keeps a failure for a minute (so a broken page is not hammered): Retry comes back after it, not before.
+  useEffect(() => {
+    setRetryReady(false);
+    if (list.state !== 'failed' || (list.problem !== 'connection' && list.problem !== 'failed')) return;
+    const timer = setTimeout(() => setRetryReady(true), PAGE_RETRY_MS);
+    return () => clearTimeout(timer);
+  }, [list, item.id]);
   const retry = useCallback(() => setAttempt((n) => n + 1), []);
-  return { list, retry };
+  return { list, retry, retryReady };
+}
+
+/** "Turn off" for the public page: on every state of a saved playlist's page while the reader is on. */
+export function TurnOffButton({ onTurnOff }: { onTurnOff: () => void }) {
+  return (
+    <button
+      type="button"
+      className="sp-linkbtn"
+      {...tip(() => (
+        <div className="sp-tipline">
+          <span>{PAGE_TURN_OFF_TIP}</span>
+        </div>
+      ))}
+      onClick={onTurnOff}
+    >
+      {PAGE_TURN_OFF}
+    </button>
+  );
 }
 
 /** The source line above the rows: where the list came from, "first N of M" when the page held only part, and the button that turns the page off. */
@@ -57,21 +83,13 @@ export function PageTag({ listed, total, onTurnOff }: { listed: number; total: n
       ))}
     >
       {pageTag(listed, total)}
-      <button
-        type="button"
-        className="sp-linkbtn"
-        {...tip(() => (
-          <div className="sp-tipline">
-            <span>{PAGE_TURN_OFF_TIP}</span>
-          </div>
-        ))}
-        onClick={onTurnOff}
-      >
-        {PAGE_TURN_OFF}
-      </button>
+      <TurnOffButton onTurnOff={onTurnOff} />
     </li>
   );
 }
+
+/** A song's length, or nothing when it is unknown (the page may not give one): never "0:00". */
+const length = (ms: number) => (ms > 0 ? trackLength(ms) : '');
 
 /** One song row, as the playlist page draws every song. `still`: the song playing now, which does nothing when clicked. */
 export function TrackRow({ t, index, on, onPlay, still = false }: { t: SpotifyTrack; index: number; on: boolean; onPlay: (t: SpotifyTrack) => void; still?: boolean }) {
@@ -86,7 +104,7 @@ export function TrackRow({ t, index, on, onPlay, still = false }: { t: SpotifyTr
         {...tip(() => (
           <div className="sp-tipline">
             <b>{t.name}</b>
-            <span>{t.playable && !!t.id ? [t.artists, t.album, trackLength(t.durationMs)].filter(Boolean).join(' · ') : 'This song cannot be played here: it is a local file, or not available in this country.'}</span>
+            <span>{t.playable && !!t.id ? [t.artists, t.album, length(t.durationMs)].filter(Boolean).join(' · ') : 'This song cannot be played here: it is a local file, or not available in this country.'}</span>
           </div>
         ))}
         onClick={() => {
@@ -105,7 +123,7 @@ export function TrackRow({ t, index, on, onPlay, still = false }: { t: SpotifyTr
         </span>
         <span className="sp-tname">{t.name}</span>
         <span className="sp-tart">{t.artists}</span>
-        <span className="sp-tlen">{trackLength(t.durationMs)}</span>
+        <span className="sp-tlen">{length(t.durationMs)}</span>
       </button>
     </li>
   );
@@ -124,19 +142,31 @@ async function skipTo(index: number, queued: number): Promise<string | null> {
 interface PlayingState {
   playback: SpotifyPlayback | null;
   next: SpotifyTrack[];
+  /** The last queue read failed: the old rows are dropped (a click would skip by a stale position) until a read succeeds. */
+  queueFailed: boolean;
   heard: SpotifyTrack[];
 }
 
-const NOTHING: PlayingState = { playback: null, next: [], heard: [] };
+const NOTHING: PlayingState = { playback: null, next: [], queueFailed: false, heard: [] };
+
+/** What the page says about the public page, once, above everything else: why there is no list, and the buttons that act on it. */
+export interface PageStatus {
+  line: string;
+  /** "Try again in a minute." shows until Retry comes back. */
+  tryLater?: boolean;
+  onRetry?: () => void;
+  onTurnOff?: () => void;
+  onTurnOn?: () => void;
+}
 
 /**
- * The page of a playlist whose songs Spotify will not list: only `line` (why there is no list) and what Play does,
- * until this playlist plays. Then "Playing now", "Up next in Spotify" (the queue, up to 20) and "Heard from this
- * playlist" (Spotify's recently played list filtered to it). Playback and the queue are read on open, when the song
- * changes and every 20 seconds while the page shows; the heard list on open and when the song changes. Nothing is read
- * while the page is hidden, and nothing is stored.
+ * The page of a playlist whose songs Spotify will not list: `status` (why there is no list, with Turn off or Read public
+ * page) and what Play does, until this playlist plays. Then "Playing now" (or "Paused"), "Up next in Spotify" (the first
+ * 8 of the queue, and one line for the rest) and "Heard from this playlist" (Spotify's recently played list filtered to
+ * it). Playback and the queue are read on open, when the song changes and every 20 seconds while the page shows; the
+ * heard list on open and when the playing song changes. Nothing is read while the page is hidden, and nothing is stored.
  */
-export function WhilePlays({ item, line, onRetry, onTurnOn, onNote, onPlayFrom }: { item: SpotifyItem; line: string; onRetry?: () => void; onTurnOn?: () => void; onNote: (n: string | null) => void; onPlayFrom: (t: SpotifyTrack) => void }) {
+export function WhilePlays({ item, status, onNote, onPlayFrom, onUpNext }: { item: SpotifyItem; status: PageStatus; onNote: (n: string | null) => void; onPlayFrom: (t: SpotifyTrack) => void; onUpNext?: () => void }) {
   const title = useNowPlayingStore((s) => s.info?.title ?? '');
   const visible = useVisible();
   const [state, setState] = useState<PlayingState>(NOTHING);
@@ -148,6 +178,7 @@ export function WhilePlays({ item, line, onRetry, onTurnOn, onNote, onPlayFrom }
     };
   }, []);
   const fromThis = state.playback?.playlistId === item.id && !!state.playback.track;
+  const nowId = state.playback?.track?.id ?? null;
 
   useEffect(() => {
     if (!visible) return;
@@ -161,7 +192,7 @@ export function WhilePlays({ item, line, onRetry, onTurnOn, onNote, onPlayFrom }
       }
       if (!live) return;
       if (!playback || playback.playlistId !== item.id || !playback.track) {
-        setState((s) => ({ ...s, playback: null, next: [] }));
+        setState((s) => ({ ...s, playback: null, next: [], queueFailed: false }));
         return;
       }
       let next: SpotifyTrack[] | null = null;
@@ -169,9 +200,9 @@ export function WhilePlays({ item, line, onRetry, onTurnOn, onNote, onPlayFrom }
         const q = await spotify.queue();
         next = Array.isArray(q?.next) ? q.next : [];
       } catch {
-        // Keep the last queue that was read.
+        // The rows from the last read are dropped below: a click on one would skip by a stale position.
       }
-      if (live) setState((s) => ({ ...s, playback, next: next ?? s.next }));
+      if (live) setState((s) => ({ ...s, playback, next: next ?? [], queueFailed: next === null }));
     };
     void read();
     const id = setInterval(() => void read(), QUEUE_POLL_MS);
@@ -181,6 +212,7 @@ export function WhilePlays({ item, line, onRetry, onTurnOn, onNote, onPlayFrom }
     };
   }, [visible, title, item.id]);
 
+  // The heard list follows the playing song's id from the playback read (so it also moves when the playlist plays on a phone or a speaker).
   useEffect(() => {
     if (!visible || !fromThis) return;
     let live = true;
@@ -191,37 +223,53 @@ export function WhilePlays({ item, line, onRetry, onTurnOn, onNote, onPlayFrom }
     return () => {
       live = false;
     };
-  }, [visible, fromThis, title, item.id]);
+  }, [visible, fromThis, nowId, item.id]);
+
+  const buttons = (
+    <>
+      {status.onRetry ? (
+        <button type="button" className="sp-btn" onClick={status.onRetry}>
+          Retry
+        </button>
+      ) : null}
+      {status.onTurnOff ? <TurnOffButton onTurnOff={status.onTurnOff} /> : null}
+      {status.onTurnOn ? (
+        <button
+          type="button"
+          className="sp-btn"
+          {...tip(() => (
+            <div className="sp-tipline">
+              <span>{PAGE_TURN_ON_TIP}</span>
+            </div>
+          ))}
+          onClick={status.onTurnOn}
+        >
+          {PAGE_TURN_ON}
+        </button>
+      ) : null}
+    </>
+  );
+  const notes = (
+    <>
+      {status.tryLater && !status.onRetry ? <span className="sp-hintline">{PAGE_TRY_LATER}</span> : null}
+      {status.onTurnOn ? <span className="sp-hintline">{PAGE_TERMS}</span> : null}
+    </>
+  );
 
   if (!fromThis || !state.playback?.track) {
     return (
       <li className="sp-empty">
-        {line}
-        {onRetry ? (
-          <button type="button" className="sp-btn" onClick={onRetry}>
-            Retry
-          </button>
-        ) : null}
-        {onTurnOn ? (
-          <button
-            type="button"
-            className="sp-btn"
-            {...tip(() => (
-              <div className="sp-tipline">
-                <span>{PAGE_TURN_ON_TIP}</span>
-              </div>
-            ))}
-            onClick={onTurnOn}
-          >
-            {PAGE_TURN_ON}
-          </button>
-        ) : null}
+        {status.line}
+        {buttons}
+        {notes}
         <span className="sp-hintline">{WHILE_PLAYS}</span>
       </li>
     );
   }
   const now = state.playback.track;
   const heard = state.heard.filter((t) => !(now.id && t.id === now.id));
+  const shown = state.next.slice(0, WHILE_NEXT_ROWS);
+  const more = state.next.length - shown.length;
   const skip = (i: number) => {
     void skipTo(i, state.next.length).then((l) => {
       if (l && mounted.current) onNote(l);
@@ -229,19 +277,37 @@ export function WhilePlays({ item, line, onRetry, onTurnOn, onNote, onPlayFrom }
   };
   return (
     <>
-      <li className="sp-sec" role="presentation">
-        {WHILE_HEADINGS.now}
+      <li className="sp-hintline sp-source">
+        {status.line}
+        {buttons}
+        {notes}
+      </li>
+      <li className="sp-sec" role="heading" aria-level={3}>
+        {state.playback.playing ? WHILE_HEADINGS.now : WHILE_HEADINGS.paused}
       </li>
       <TrackRow t={now} index={0} on still onPlay={() => undefined} />
-      <li className="sp-sec" role="presentation">
+      <li className="sp-sec" role="heading" aria-level={3}>
         {WHILE_HEADINGS.next}
       </li>
-      {state.next.length === 0 ? (
+      {state.queueFailed ? (
+        <li className="sp-empty">{QUEUE_FAILED}</li>
+      ) : shown.length === 0 ? (
         <li className="sp-empty">{NOTHING_QUEUED}</li>
       ) : (
-        state.next.map((t, i) => <TrackRow key={`next-${t.id ?? 'local'}-${i}`} t={t} index={i} on={false} onPlay={() => skip(i)} />)
+        shown.map((t, i) => <TrackRow key={`next-${t.id ?? 'local'}-${i}`} t={t} index={i} on={false} onPlay={() => skip(i)} />)
       )}
-      <li className="sp-sec" role="presentation">
+      {more > 0 ? (
+        <li className="sp-hintline sp-source">
+          {onUpNext ? (
+            <button type="button" className="sp-linkbtn" onClick={onUpNext}>
+              {moreInQueue(more)}
+            </button>
+          ) : (
+            moreInQueue(more)
+          )}
+        </li>
+      ) : null}
+      <li className="sp-sec" role="heading" aria-level={3}>
         {WHILE_HEADINGS.heard}
       </li>
       {heard.length === 0 ? (

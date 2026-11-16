@@ -122,10 +122,12 @@ export const PAGE_TURN_ON = 'Read public page';
 export const PAGE_TURN_ON_TIP = "List the songs of a playlist you saved before you press Play, from its public web page. This is against Spotify's developer terms and may stop working.";
 
 /** The line for no list: the switch is off (`null`) or the page failed. */
-export function pageLine(p: PageProblem | null): string {
+export function pageLine(p: PageProblem | 'empty' | null): string {
   switch (p) {
     case null:
       return PAGE_OFF_LINE;
+    case 'empty':
+      return 'Spotify\'s public page listed no songs for this playlist.';
     case 'notPublic':
       return "Spotify's public page does not list this playlist. It may be private.";
     case 'changed':
@@ -139,7 +141,16 @@ export function pageLine(p: PageProblem | null): string {
   }
 }
 
-export const WHILE_HEADINGS = { now: 'Playing now', next: 'Up next in Spotify', heard: 'Heard from this playlist' } as const;
+export const WHILE_HEADINGS = { now: 'Playing now', paused: 'Paused', next: 'Up next in Spotify', heard: 'Heard from this playlist' } as const;
+/** The off line says in plain words, without a hover, what reading the page is. */
+export const PAGE_TERMS = "Reading the page is against Spotify's developer terms and may stop working.";
+/** After a failed page read the failure is kept for a minute: Retry comes back after it. */
+export const PAGE_TRY_LATER = 'Try again in a minute.';
+export const PAGE_RETRY_MS = 60_000;
+export const QUEUE_FAILED = 'Could not read the queue just now.';
+/** The most Up next rows the page shows, so Heard stays in sight; the rest is one line away. */
+export const WHILE_NEXT_ROWS = 8;
+export const moreInQueue = (n: number) => `${n} more in Up next`;
 export const NOTHING_QUEUED = 'Nothing queued.';
 export const NOTHING_HEARD = 'Nothing heard yet. Spotify adds a song here after about half a minute of play.';
 

@@ -108,7 +108,8 @@ fn shape_row(entry: &Value) -> Option<Track> {
     let artists = clean(entry.get("subtitle"), 80).unwrap_or_default();
     let duration_ms = entry.get("duration").and_then(Value::as_u64).filter(|n| *n <= 86_400_000).and_then(|n| u32::try_from(n).ok()).unwrap_or(0);
     let id = entry.get("uri").and_then(Value::as_str).and_then(|u| u.strip_prefix("spotify:track:")).filter(|t| valid_id(t)).map(str::to_string);
-    let playable = entry.get("isPlayable").and_then(Value::as_bool) == Some(true) && entry.get("entityType").and_then(Value::as_str) == Some("track") && id.is_some();
+    // The page's own `isPlayable` flag is never read: it describes a reader who is not signed in, not the owner, and Spotify skips a song it cannot play.
+    let playable = entry.get("entityType").and_then(Value::as_str) == Some("track") && id.is_some();
     Some(Track::page_row(id.filter(|_| playable), name, artists, duration_ms, playable))
 }
 
@@ -230,8 +231,8 @@ mod tests {
     fn data(entity: &str) -> String { format!("{{\"props\":{{\"pageProps\":{{\"state\":{{\"data\":{{\"entity\":{entity}}}}}}}}}}}") }
     fn good_entity() -> String {
         format!("{{\"type\":\"playlist\",\"name\":\"Lantern Mix\",\"uri\":\"spotify:playlist:{ID}\",\"coverArt\":\"https://example.invalid/cover\",\"accessToken\":\"FAKE-TOKEN-0000\",\"trackList\":[\
-            {{\"uri\":\"spotify:track:{T1}\",\"uid\":\"u1\",\"title\":\"Lantern Song 1\",\"subtitle\":\"Paper Kites Collective\",\"duration\":200000,\"isPlayable\":true,\"entityType\":\"track\"}},\
-            {{\"uri\":\"spotify:track:{T2}\",\"uid\":\"u2\",\"title\":\"Lantern Song 2\",\"subtitle\":\"Paper Kites Collective, Quiet Harbour\",\"duration\":185500,\"isPlayable\":false,\"entityType\":\"track\",\"accessToken\":\"FAKE-TOKEN-0000\"}},\
+            {{\"uri\":\"spotify:track:{T1}\",\"uid\":\"u1\",\"title\":\"Lantern Song 1\",\"subtitle\":\"Willow Lantern Ensemble\",\"duration\":200000,\"isPlayable\":true,\"entityType\":\"track\"}},\
+            {{\"uri\":\"spotify:track:{T2}\",\"uid\":\"u2\",\"title\":\"Lantern Song 2\",\"subtitle\":\"Willow Lantern Ensemble, Quiet Harbour\",\"duration\":185500,\"isPlayable\":false,\"entityType\":\"track\",\"accessToken\":\"FAKE-TOKEN-0000\"}},\
             {{\"uri\":\"spotify:track:{T3}\",\"uid\":\"u3\",\"title\":\"Lantern Song 3\",\"subtitle\":\"\",\"duration\":90000,\"isPlayable\":true,\"entityType\":\"track\"}}]}}")
     }
     fn good_json() -> String {
@@ -240,7 +241,7 @@ mod tests {
     fn with_list(list: &str) -> String {
         data(&format!("{{\"type\":\"playlist\",\"uri\":\"spotify:playlist:{ID}\",\"trackList\":{list}}}"))
     }
-    fn row(extra: &str) -> String { format!("[{{\"title\":\"Lantern Song\",\"subtitle\":\"Paper Kites Collective\"{extra}}}]") }
+    fn row(extra: &str) -> String { format!("[{{\"title\":\"Lantern Song\",\"subtitle\":\"Willow Lantern Ensemble\"{extra}}}]") }
 
     #[test]
     fn a_good_page_gives_rows_and_never_the_token() {
@@ -251,15 +252,16 @@ mod tests {
         assert_eq!(answer.items.len(), 3);
         let names: Vec<&str> = answer.items.iter().map(|t| t.name.as_str()).collect();
         assert_eq!(names, ["Lantern Song 1", "Lantern Song 2", "Lantern Song 3"]);
-        assert_eq!(answer.items[0].artists, "Paper Kites Collective");
-        assert_eq!(answer.items[1].artists, "Paper Kites Collective, Quiet Harbour");
+        assert_eq!(answer.items[0].artists, "Willow Lantern Ensemble");
+        assert_eq!(answer.items[1].artists, "Willow Lantern Ensemble, Quiet Harbour");
         assert_eq!(answer.items[2].artists, "");
         assert_eq!(answer.items[0].duration_ms, 200000);
         assert_eq!(answer.items[1].duration_ms, 185500);
         assert_eq!(answer.items[0].id, Some(T1.to_string()));
         assert!(answer.items[0].playable);
-        assert_eq!(answer.items[1].id, None);
-        assert!(!answer.items[1].playable);
+        // The page said `isPlayable: false` for this one; the wall does not read that flag, so the row plays.
+        assert_eq!(answer.items[1].id, Some(T2.to_string()));
+        assert!(answer.items[1].playable);
         assert_eq!(answer.items[2].id, Some(T3.to_string()));
         assert!(answer.items[2].playable);
         assert!(answer.items.iter().all(|t| t.album.is_empty() && t.image_url.is_none() && t.thumb_url.is_none()));
@@ -338,7 +340,7 @@ mod tests {
 
     #[test]
     fn a_long_list_is_shaped_only_up_to_the_cap_and_counted() {
-        let entries: Vec<String> = (0..5000).map(|n| format!("{{\"title\":\"Lantern Song {n}\",\"subtitle\":\"Paper Kites Collective\"}}")).collect();
+        let entries: Vec<String> = (0..5000).map(|n| format!("{{\"title\":\"Lantern Song {n}\",\"subtitle\":\"Willow Lantern Ensemble\"}}")).collect();
         let list = format!("[{}]", entries.join(","));
         let answer = shape_page(&with_list(&list), ID).unwrap();
         assert_eq!(answer.items.len(), 200);
@@ -350,7 +352,7 @@ mod tests {
     fn odd_entries_come_out_dim_or_skipped_as_the_rules_say() {
         let one = |extra: &str| shape_page(&with_list(&row(extra)), ID).unwrap();
         // A title that is not text: the entry is skipped, but still counted as listed.
-        let skipped = shape_page(&with_list("[{\"title\":5,\"subtitle\":\"Paper Kites Collective\"},{\"subtitle\":\"x\"},7,\"text\",null]"), ID).unwrap();
+        let skipped = shape_page(&with_list("[{\"title\":5,\"subtitle\":\"Willow Lantern Ensemble\"},{\"subtitle\":\"x\"},7,\"text\",null]"), ID).unwrap();
         assert!(skipped.items.is_empty());
         assert_eq!(skipped.listed, 5);
         // Duration: negative, huge, text and a float are all 0; a day is kept; a day and a millisecond is 0.
@@ -371,14 +373,15 @@ mod tests {
             assert_eq!(got.items[0].id, None, "{uri}");
             assert!(!got.items[0].playable, "{uri}");
         }
-        let unplayable = playable(&format!("spotify:track:{T1}"), "false", "track");
-        assert_eq!((unplayable.items[0].id.clone(), unplayable.items[0].playable), (None, false));
+        // The page's own `isPlayable` flag (false, missing or text) changes nothing: only the uri and the entity kind decide.
+        for flag in ["false", "\"true\"", "null"] {
+            let got = playable(&format!("spotify:track:{T1}"), flag, "track");
+            assert_eq!((got.items[0].id.clone(), got.items[0].playable), (Some(T1.to_string()), true), "{flag}");
+        }
         let wrong_kind = playable(&format!("spotify:track:{T1}"), "true", "episode");
         assert_eq!((wrong_kind.items[0].id.clone(), wrong_kind.items[0].playable), (None, false));
         let missing = one(&format!(",\"uri\":\"spotify:track:{T1}\",\"entityType\":\"track\""));
-        assert_eq!((missing.items[0].id.clone(), missing.items[0].playable), (None, false));
-        let text_flag = one(&format!(",\"uri\":\"spotify:track:{T1}\",\"isPlayable\":\"true\",\"entityType\":\"track\""));
-        assert_eq!((text_flag.items[0].id.clone(), text_flag.items[0].playable), (None, false));
+        assert_eq!((missing.items[0].id.clone(), missing.items[0].playable), (Some(T1.to_string()), true));
     }
 
     #[test]

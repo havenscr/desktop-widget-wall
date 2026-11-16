@@ -132,7 +132,8 @@ describe('the words', () => {
     expect(pageLine('failed')).toBe("Spotify's public page did not answer.");
     expect(PAGE_READING).toBe("Reading Spotify's public page.");
     expect(WHILE_PLAYS).toBe('Press Play or Shuffle: while it plays, this page shows the song playing, what comes next and what you have heard.');
-    expect(Object.values(WHILE_HEADINGS)).toEqual(['Playing now', 'Up next in Spotify', 'Heard from this playlist']);
+    expect(Object.values(WHILE_HEADINGS)).toEqual(['Playing now', 'Paused', 'Up next in Spotify', 'Heard from this playlist']);
+    expect(pageLine('empty')).toBe("Spotify's public page listed no songs for this playlist.");
     expect(NOTHING_QUEUED).toBe('Nothing queued.');
     expect(NOTHING_HEARD).toBe('Nothing heard yet. Spotify adds a song here after about half a minute of play.');
     expect(pageTag(40, 40)).toBe("From Spotify's public page");
@@ -275,23 +276,33 @@ describe('a saved playlist with no list', () => {
     await openList(SAVED);
     expect(screen.getByText("Spotify's public page did not answer.")).toBeTruthy();
     expect(screen.getByText(WHILE_PLAYS)).toBeTruthy();
+    // The failure is kept for a minute: no Retry until it has passed, and the page says so.
+    expect(screen.getByText('Try again in a minute.')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Retry' })).toBeNull();
+    await flush(59_000);
+    expect(screen.queryByRole('button', { name: 'Retry' })).toBeNull();
+    await flush(1_000);
+    expect(screen.queryByText('Try again in a minute.')).toBeNull();
     await act(async () => screen.getByRole('button', { name: 'Retry' }).click());
     await flush();
     expect(asked).toBe(2);
     expect(names()).toEqual(['Song 1', 'Song 2', 'Song 3']);
   });
 
-  it('an unknown failure also offers Retry; an empty page counts as not public', async () => {
+  it('an unknown failure also offers Retry (after a minute); an empty page has its own words', async () => {
     await setup();
     mocks.set('wall2_spotify_public_page', () => {
       throw new Error('weird');
     });
     await openList(SAVED);
+    await flush(60_000);
     expect(screen.getByRole('button', { name: 'Retry' })).toBeTruthy();
     mocks.set('wall2_spotify_public_page', () => ({ items: [], listed: 0 }));
     await act(async () => screen.getByRole('button', { name: 'Retry' }).click());
     await flush();
-    expect(screen.getByText("Spotify's public page does not list this playlist. It may be private.")).toBeTruthy();
+    // A page that answers with no usable rows has its own words (not the private page line).
+    expect(screen.getByText("Spotify's public page listed no songs for this playlist.")).toBeTruthy();
+    expect(screen.queryByText("Spotify's public page does not list this playlist. It may be private.")).toBeNull();
   });
 
   it('Turn off on the tag stops the list at once and stores the choice; Read public page on the off line reads again', async () => {
@@ -357,11 +368,13 @@ describe('while it plays (no list)', () => {
     expect(document.querySelectorAll('.sp-track.on')).toHaveLength(1);
   });
 
-  it('shows up to 20 queued songs and says when nothing is queued or heard', async () => {
+  it('shows the first 8 queued songs with one line for the rest, and says when nothing is heard', async () => {
     await setup({ playlistId: id(SAVED), queue: Array.from({ length: 20 }, (_, n) => track(100 + n)), heard: [] });
     failPage();
     await openList(SAVED);
-    expect(trackRows()).toHaveLength(21);
+    expect(trackRows()).toHaveLength(9);
+    expect(screen.getByText('12 more in Up next')).toBeTruthy();
+    // Heard follows directly, in sight.
     expect(screen.getByText(NOTHING_HEARD)).toBeTruthy();
     expect(screen.queryByText(NOTHING_QUEUED)).toBeNull();
   });
@@ -397,8 +410,12 @@ describe('while it plays (no list)', () => {
     expect(count('wall2_spotify_queue')).toBe(2);
     expect(count('wall2_spotify_heard')).toBe(1);
     expect(count('wall2_spotify_playback')).toBeGreaterThan(p0);
+    // A new title alone moves the queue read; the heard list follows the playing song's id from the playback read.
     await nowTitle('Song 22');
     expect(count('wall2_spotify_queue')).toBe(3);
+    expect(count('wall2_spotify_heard')).toBe(1);
+    record('wall2_spotify_playback', () => ({ playing: true, device: { name: 'Desk speakers', kind: 'Computer' }, track: { ...track(2), id: id(502) }, progressMs: 0, shuffle: false, playlistId: id(SAVED) }));
+    await flush(QUEUE_POLL_MS);
     expect(count('wall2_spotify_heard')).toBe(2);
   });
 
@@ -466,5 +483,160 @@ describe('the public page choice', () => {
     expect(usePublicPage.getState().on).toBe(true);
     expect(() => usePublicPage.getState().setOn(false)).not.toThrow();
     expect(usePublicPage.getState().on).toBe(false);
+  });
+});
+
+// Fix round 1, items 1 to 4: written before the changes, against the code as it was.
+describe('fix round 1: every state of the page carries its switch', () => {
+  const TERMS = "Reading the page is against Spotify's developer terms and may stop working.";
+  const failWith = (word: string): void => {
+    mocks.set('wall2_spotify_public_page', () => {
+      throw new Error(word);
+    });
+  };
+  const hasOff = () => !!screen.queryByRole('button', { name: PAGE_TURN_OFF });
+  const states: [string, () => void | Promise<void>][] = [
+    ['listed', () => undefined],
+    ['did not answer', () => failWith('no connection')],
+    ['private or removed', () => failWith('not public')],
+    ['hourly limit', () => failWith('busy')],
+    ['page changed', () => failWith('page changed')],
+    ['too big', () => failWith('page too big')],
+  ];
+  for (const [name, prepare] of states) {
+    it(`page on, ${name}: Turn off is on the page`, async () => {
+      await setup({ page: { items: rows(3), listed: 3 }, count: 3 });
+      await prepare();
+      await openList(SAVED);
+      expect(hasOff()).toBe(true);
+    });
+  }
+  it('page on, reading: Turn off is on the page', async () => {
+    await setup({ page: new Promise(() => undefined), count: 3 });
+    await openList(SAVED);
+    expect(screen.getByText(PAGE_READING)).toBeTruthy();
+    expect(hasOff()).toBe(true);
+  });
+  it('page on, no songs listed: Turn off is on the page', async () => {
+    await setup({ page: { items: [], listed: 0 } });
+    await openList(SAVED);
+    expect(hasOff()).toBe(true);
+  });
+  it('page on, this playlist playing and the page failed: Turn off is still on the page', async () => {
+    await setup({ playlistId: id(SAVED) });
+    failWith('not public');
+    await openList(SAVED);
+    expect(document.querySelectorAll('.sp-sec').length).toBe(3);
+    expect(hasOff()).toBe(true);
+  });
+  it('page off, nothing playing: Read public page and the terms sentence are on the page', async () => {
+    await setup();
+    usePublicPage.getState().setOn(false);
+    await openList(SAVED);
+    expect(screen.getByRole('button', { name: PAGE_TURN_ON })).toBeTruthy();
+    expect(screen.getByText(TERMS)).toBeTruthy();
+  });
+  it('page off, this playlist playing: Read public page and the terms sentence are on the page', async () => {
+    await setup({ playlistId: id(SAVED) });
+    usePublicPage.getState().setOn(false);
+    await openList(SAVED);
+    expect(document.querySelectorAll('.sp-sec').length).toBe(3);
+    expect(screen.getByRole('button', { name: PAGE_TURN_ON })).toBeTruthy();
+    expect(screen.getByText(TERMS)).toBeTruthy();
+  });
+  it('a page of more than 200 songs is labelled by the rows returned: first 200 of 500', async () => {
+    await setup({ page: { items: rows(200), listed: 500 }, count: 500 });
+    await openList(SAVED);
+    expect(screen.getByText("From Spotify's public page, first 200 of 500")).toBeTruthy();
+    expect(trackRows()).toHaveLength(200);
+  });
+  it('a failed queue refresh leaves no clickable stale rows and says so', async () => {
+    await setup({ playlistId: id(SAVED), heard: [], queue: [track(21), track(22), track(23)] });
+    failWith('not public');
+    await openList(SAVED);
+    expect(names()).toContain('Song 22');
+    mocks.set('wall2_spotify_queue', () => {
+      throw new Error('down');
+    });
+    await flush(QUEUE_POLL_MS);
+    expect(screen.getByText('Could not read the queue just now.')).toBeTruthy();
+    const second = trackRows().find((r) => r.querySelector('.sp-tname')?.textContent === 'Song 22');
+    if (second) await act(async () => second.click());
+    await flush();
+    expect(count('wall2_spotify_next')).toBe(0);
+  });
+});
+
+describe('fix round 1: the rest', () => {
+  const failPage = () =>
+    mocks.set('wall2_spotify_public_page', () => {
+      throw new Error('not public');
+    });
+
+  it('an answer that arrives late for an older page is dropped', async () => {
+    // Two saved playlists whose songs are refused; each page read is held until the test lets it go.
+    signedIn();
+    calls = {};
+    mocks.set('wall2_spotify_playlists', () => [item(SAVED, 3), item(OWNED, 3)]);
+    mocks.set('wall2_spotify_tracks', () => {
+      throw new Error('not yours');
+    });
+    const release: Record<string, (v: unknown) => void> = {};
+    mocks.set('wall2_spotify_public_page', (a) => new Promise((resolve) => (release[(a as { id: string }).id] = resolve)));
+    record('wall2_spotify_playback', null);
+    mocks.set('wall2_spotify_devices', () => []);
+    mocks.set('get_now_playing', () => null);
+    render(<SpotifyCard />);
+    await flush();
+    await openList(SAVED);
+    await act(async () => (document.querySelector('.sp-back') as HTMLButtonElement).click());
+    await flush();
+    await openList(OWNED);
+    await act(async () => release[id(OWNED)]({ items: [{ ...track(7), name: 'Newer Page Song' }], listed: 1 }));
+    await flush();
+    expect(names()).toEqual(['Newer Page Song']);
+    await act(async () => release[id(SAVED)]({ items: [{ ...track(8), name: 'Older Page Song' }], listed: 1 }));
+    await flush();
+    expect(names()).toEqual(['Newer Page Song']);
+  });
+
+  it('a song with no length gets an empty cell, and the total length waits for every length', async () => {
+    const page = { items: [track(1), { ...track(2), durationMs: 0 }, track(3)], listed: 3 };
+    await setup({ page, count: 3 });
+    await openList(SAVED);
+    const cells = [...document.querySelectorAll('.sp-tlen')].map((c) => c.textContent);
+    expect(cells).toEqual(['3:00', '', '3:00']);
+    expect(document.querySelector('.sp-shead .sp-line')?.textContent).not.toMatch(/\bmin\b/);
+  });
+
+  it('the section headings are real headings, and a paused song says Paused', async () => {
+    await setup({ playlistId: id(SAVED), heard: [], queue: [] });
+    failPage();
+    record('wall2_spotify_playback', () => ({ playing: false, device: { name: 'Desk speakers', kind: 'Computer' }, track: track(1), progressMs: 0, shuffle: false, playlistId: id(SAVED) }));
+    await openList(SAVED);
+    expect(screen.getByRole('heading', { name: 'Paused' })).toBeTruthy();
+    expect(screen.getByRole('heading', { name: 'Up next in Spotify' })).toBeTruthy();
+    expect(screen.getByRole('heading', { name: 'Heard from this playlist' })).toBeTruthy();
+    expect(screen.queryByRole('heading', { name: 'Playing now' })).toBeNull();
+  });
+
+  it('a page row the page calls unplayable is not dimmed for that reason: only a row with no track id is', async () => {
+    // The page's own flag describes a signed out reader, so the wall never reads it: rows arrive playable with an id.
+    await setup({ page: { items: [track(1), track(2)], listed: 2 }, count: 2 });
+    await openList(SAVED);
+    expect(document.querySelectorAll('.sp-track.off')).toHaveLength(0);
+  });
+
+  it('the line for the rest of the queue is a button in the tall card and opens the Up next tab', async () => {
+    await setup({ playlistId: id(SAVED), heard: [], queue: Array.from({ length: 20 }, (_, n) => track(100 + n)) });
+    failPage();
+    fireEvent.pointerEnter(document.querySelector('.sp-card') as HTMLElement);
+    await act(async () => (screen.getByRole('button', { name: /the tall music view/ }) as HTMLButtonElement).click());
+    await flush();
+    await openList(SAVED);
+    await act(async () => screen.getByRole('button', { name: '12 more in Up next' }).click());
+    await flush();
+    expect(document.querySelector('.sp-songs')).toBeNull();
+    expect(document.querySelector('.sp-tabs [aria-selected="true"]')?.textContent).toBe('Up next');
   });
 });

@@ -1398,8 +1398,8 @@ describe('a saved playlist that is not his (Spotify shows its songs only to its 
     await openIt();
     expect(screen.getByText(PAGE_OFF_LINE)).toBeTruthy();
     expect(screen.queryByRole('button', { name: 'Retry' })).toBeNull();
-    const line = document.querySelector('.sp-hintline') as HTMLElement;
-    expect(line.textContent).toBe(WHILE_PLAYS);
+    const lines = [...document.querySelectorAll('.sp-hintline')].map((l) => l.textContent);
+    expect(lines).toContain(WHILE_PLAYS);
   });
 
   it('while this playlist plays, the page itself shows Playing now and Up next in Spotify (replacing the old Up next button)', async () => {
@@ -1413,7 +1413,8 @@ describe('a saved playlist that is not his (Spotify shows its songs only to its 
     expect(document.querySelector('.sp-songs')).not.toBeNull();
     expect(screen.getByText(WHILE_HEADINGS.now)).toBeTruthy();
     expect(screen.getByText(WHILE_HEADINGS.next)).toBeTruthy();
-    expect(screen.queryByText(PAGE_OFF_LINE)).toBeNull();
+    // The switch line stays on top of the playing view, with its button.
+    expect(screen.getByText(PAGE_OFF_LINE)).toBeTruthy();
   });
 
   it('every other failure keeps its Retry', async () => {

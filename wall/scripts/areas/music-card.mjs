@@ -114,7 +114,7 @@ export default {
     state('tall music: Spotify not answering', 'hz=unwind&at=2026-11-11T22%3A30%3A00-08%3A00&clock=review&weather=ok&spotify=down', 'Spotify is not answering right now.', '.sp-grow'),
     state('tall music: nothing playing', 'hz=unwind&at=2026-11-11T22%3A30%3A00-08%3A00&clock=review&weather=ok&media=none&spotifyplay=none', ['Nothing playing', 'Road Trip 1'], '.sp-grow'),
     state('tall music: a playlist that is not his, tall', 'hz=unwind&at=2026-11-11T22%3A30%3A00-08%3A00&clock=review&weather=ok&audio=demo&spotify=notyours', ["Spotify's public page does not list this playlist. It may be private.", 'Press Play or Shuffle', 'Shuffle', '!Retry'], '.sp-grow >> .sp-tile'),
-    state('tall music: a playlist that is not his, at rest', 'hz=unwind&at=2026-11-11T22%3A30%3A00-08%3A00&clock=review&weather=ok&audio=demo&spotify=notyours', ["Spotify's public page does not list this playlist. It may be private.", 'Shuffle', '!Retry', '!Heard from this playlist'], '.sp-tile'),
+    state('tall music: a playlist that is not his, at rest', 'hz=unwind&at=2026-11-11T22%3A30%3A00-08%3A00&clock=review&weather=ok&audio=demo&spotify=notyours', ["Spotify's public page does not list this playlist. It may be private.", 'Shuffle', '!Retry', '!While it plays'], '.sp-tile'),
     ],
   },
   fit: {

@@ -26,7 +26,7 @@ import { YtMusicSide } from '../ytmusic/YtMusicSide';
 import { Cover } from './Cover';
 import { PlayOn } from './PlayOn';
 import { PlayerRow } from './PlayerRow';
-import { PageTag, TrackRow, usePublicList, WhilePlays } from './SavedPlaylist';
+import { PageTag, TrackRow, TurnOffButton, usePublicList, WhilePlays } from './SavedPlaylist';
 import { Tile } from './Tile';
 import { QueueView, SearchGroups } from './TallViews';
 import {
@@ -666,7 +666,7 @@ function Browser({ tall }: { tall: boolean }) {
         )}
       </div>
     );
-  const songsView = open ? <SongsView item={open} tall={tall} backLabel={tabs.find((t) => t.id === tab)?.label ?? 'Back'} onBack={() => setOpen(null)} onNote={setNote} /> : null;
+  const songsView = open ? <SongsView item={open} tall={tall} backLabel={tabs.find((t) => t.id === tab)?.label ?? 'Back'} onBack={() => setOpen(null)} onNote={setNote} onUpNext={tall ? () => { setOpen(null); setTab('queue'); } : undefined} /> : null;
   return (
     <div className="sp-body">
       {tall ? (
@@ -760,7 +760,7 @@ interface SongsState {
  * inside the card and never grows it). A click plays from that song on, in its list; the song
  * now playing is marked; a song that cannot be played (a local file) is dimmed and says why.
  */
-function SongsView({ item, tall, backLabel, onBack, onNote }: { item: SpotifyItem; tall: boolean; backLabel: string; onBack: () => void; onNote: (n: string | null) => void }) {
+function SongsView({ item, tall, backLabel, onBack, onNote, onUpNext }: { item: SpotifyItem; tall: boolean; backLabel: string; onBack: () => void; onNote: (n: string | null) => void; onUpNext?: () => void }) {
   const kind = item.kind === 'album' ? 'album' : 'playlist';
   const [st, setSt] = useState<SongsState>({ items: [], total: item.count ?? 0, page: 0, more: false, loading: true, problem: null });
   const isNow = useIsNow();
@@ -832,13 +832,15 @@ function SongsView({ item, tall, backLabel, onBack, onNote }: { item: SpotifyIte
   };
   // A playlist the owner saved but did not make: Spotify lists no songs for it, so the public page (if allowed) or the "while it plays" view takes over.
   const saved = st.problem === 'notYours' && kind === 'playlist' && st.items.length === 0;
-  const { list: pub, retry: retryPage } = usePublicList(item, saved && pageOn);
+  const { list: pub, retry: retryPage, retryReady } = usePublicList(item, saved && pageOn);
   const pageList = saved && pageOn && pub.state === 'ready' && pub.items.length > 0 ? pub : null;
   const rows = pageList ? pageList.items : st.items;
   const total = pageList ? item.count ?? pageList.listed : st.total;
+  const turnOff = () => choosePage(false);
   const owner = kindLine(item).replace(/^(Playlist|Album)( by )?/, '');
   const all = !st.more && rows.length > 0 && rows.length >= total;
-  const length = all ? totalLength(rows.reduce((a, t) => a + (Number.isFinite(t.durationMs) ? t.durationMs : 0), 0)) : null;
+  // The total length shows only when every song is listed and every one has a length.
+  const length = all && rows.every((t) => t.durationMs > 0) ? totalLength(rows.reduce((a, t) => a + (Number.isFinite(t.durationMs) ? t.durationMs : 0), 0)) : null;
   const facts = [total > 0 ? songs(total) : null, length, owner ? `by ${owner}` : null].filter(Boolean).join(' · ');
 
   const playButtons = (
@@ -879,20 +881,27 @@ function SongsView({ item, tall, backLabel, onBack, onNote }: { item: SpotifyIte
         {saved ? (
           pageList ? (
             <>
-              <PageTag listed={pageList.listed} total={item.count} onTurnOff={() => choosePage(false)} />
+              <PageTag listed={pageList.items.length} total={item.count ?? pageList.listed} onTurnOff={turnOff} />
               {rows.map((t, i) => (
                 <TrackRow key={`${t.id ?? 'local'}-${i}`} t={t} index={i} on={isNow(t)} onPlay={playFrom} />
               ))}
             </>
           ) : !pageOn ? (
-            <WhilePlays item={item} line={PAGE_OFF_LINE} onTurnOn={() => choosePage(true)} onNote={onNote} onPlayFrom={playFrom} />
+            <WhilePlays item={item} status={{ line: PAGE_OFF_LINE, onTurnOn: () => choosePage(true) }} onNote={onNote} onPlayFrom={playFrom} onUpNext={onUpNext} />
           ) : pub.state === 'failed' ? (
-            <WhilePlays item={item} line={pageLine(pub.problem)} onRetry={pub.problem === 'connection' || pub.problem === 'failed' ? retryPage : undefined} onNote={onNote} onPlayFrom={playFrom} />
+            <WhilePlays
+              item={item}
+              status={{ line: pageLine(pub.problem), tryLater: pub.problem === 'connection' || pub.problem === 'failed', onRetry: (pub.problem === 'connection' || pub.problem === 'failed') && retryReady ? retryPage : undefined, onTurnOff: turnOff }}
+              onNote={onNote}
+              onPlayFrom={playFrom}
+              onUpNext={onUpNext}
+            />
           ) : pub.state === 'ready' ? (
-            <WhilePlays item={item} line={pageLine('notPublic')} onNote={onNote} onPlayFrom={playFrom} />
+            <WhilePlays item={item} status={{ line: pageLine('empty'), onTurnOff: turnOff }} onNote={onNote} onPlayFrom={playFrom} onUpNext={onUpNext} />
           ) : (
             <li className="sp-empty" aria-busy="true">
               {PAGE_READING}
+              <TurnOffButton onTurnOff={turnOff} />
             </li>
           )
         ) : st.problem && st.items.length === 0 ? (
