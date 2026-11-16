@@ -18,9 +18,9 @@ const WATCH = 'watch=mock&wlist=three&wlook=sky&wplay=0';
 const fit = (when, knobs) => `?hz=unwind&at=${when}&clock=review&meet=none&long=1&agents=3&${knobs}`;
 const toolsFit = (knobs) => `?hz=work&at=${at(10, 24)}&clock=review&agents=3&tools=1&${knobs}`;
 
-// Runs in the page. With a weather knob on Watch: the front canvas holds the layer's streaks (pale blue, 1 px, a
-// few percent opaque on transparency); none of them may lie inside the film's box (shrunk by 12 px, since the
-// layer keeps 8 px clear and a streak may pass a corner). In Tools: the Weather block sits in the drawer's top
+// Runs in the page. With a weather knob on Watch: the front canvas holds the layer's streaks and rings (pale blue, a
+// few percent opaque on transparency): plenty must be drawn outside the film's box (so the rule fails for a missing
+// layer) and none of the streaks may lie inside it (shrunk by 12 px, since the layer keeps 8 px clear and a streak may pass a corner). In Tools: the Weather block sits in the drawer's top
 // row between the title and the close button, overlaps neither, keeps the drawer inside the wall, and no text in it
 // is under 16 px (the 15 px section heading is the drawer's own).
 function measureWeather() {
@@ -32,16 +32,26 @@ function measureWeather() {
     const [x, y, w, h] = stage.getAttribute('data-sky-box').split(',').map(Number);
     const sc = front.width / 2560;
     const m = 12;
-    const inner = { x: Math.round((x + m) * sc), y: Math.round((y + m) * sc), w: Math.round((w - 2 * m) * sc), h: Math.round((h - 2 * m) * sc) };
-    const d = front.getContext('2d').getImageData(inner.x, inner.y, inner.w, inner.h).data;
+    const inner = { x: Math.round((x + m) * sc), y: Math.round((y + m) * sc), x1: Math.round((x + w - m) * sc), y1: Math.round((y + h - m) * sc) };
+    const all = front.getContext('2d').getImageData(0, 0, front.width, front.height);
+    const d = all.data;
     let streak = 0;
-    let drawn = 0;
-    for (let i = 0; i < d.length; i += 4) {
-      if (d[i + 3] === 0) continue;
-      drawn++;
-      if (Math.abs(d[i] - 175) < 30 && Math.abs(d[i + 1] - 215) < 30 && Math.abs(d[i + 2] - 250) < 30 && d[i + 3] < 120 && d[i + 3] >= 24) streak++;
+    let outside = 0;
+    // Weather-coloured pixels (the pale blue streaks and the lake's rings, a few percent opaque): inside the film box (shrunk
+    // by 12 px, since the layer keeps 8 px clear and a streak may pass a corner) and everywhere else on the front canvas.
+    for (let py = 0; py < front.height; py++) {
+      for (let px = 0; px < front.width; px++) {
+        const i = (py * front.width + px) * 4;
+        const a = d[i + 3];
+        if (a < 24 || a >= 120) continue;
+        const r = d[i], g = d[i + 1], b = d[i + 2];
+        if (Math.abs(r - 175) < 30 && Math.abs(g - 215) < 30 && Math.abs(b - 250) < 30) {
+          if (px >= inner.x && px < inner.x1 && py >= inner.y && py < inner.y1) streak++;
+          else outside++;
+        }
+      }
     }
-    out.film = { box: [x, y, w, h].map(Math.round).join(','), streak, drawn };
+    out.film = { box: [x, y, w, h].map(Math.round).join(','), streak, outside };
   }
   const drawer = document.querySelector('.tools-drawer');
   const block = document.querySelector('.tools-weather');
@@ -118,8 +128,9 @@ export default {
         let said = null;
         if (variant.name === FILM_V) {
           if (!m.film) fails.push('scene weather: no film box or front canvas to look at');
+          else if (m.film.outside < 200) fails.push('scene weather: only ' + m.film.outside + ' weather pixels are drawn outside the film box (heavy rain draws over a thousand: the layer is missing)');
           else if (m.film.streak > 0) fails.push('scene weather: ' + m.film.streak + ' streak pixels lie inside the film box (' + m.film.box + ')');
-          else said = 'the film box (' + m.film.box + ') holds no streak';
+          else said = 'the layer draws (' + m.film.outside + ' weather pixels outside the film box) and the film box (' + m.film.box + ') holds no streak';
         }
         if (variant.name === TOOLS_V) {
           const t = m.tools;
@@ -152,6 +163,8 @@ export default {
     breaks: {
       // The layer's skip boxes emptied (the dev knob): streaks fall over the film.
       'scene-film': { query: '&wxnoskip=1', expect: /^ *FAIL scene weather: \d+ streak pixels lie inside the film box/m, appliesTo: (v) => v.name === FILM_V },
+      // The weather switched off (reduced motion draws no layer): the rule must fail for a missing feature, not pass on an empty box.
+      'scene-missing': { query: '&reduced=1', expect: /^ *FAIL scene weather: only \d+ weather pixels are drawn outside the film box/m, appliesTo: (v) => v.name === FILM_V },
       // The block grown to 400 px: it pushes the drawer past the wall.
       'scene-tools': { css: '.tools-weather { min-height: 400px !important; }', expect: /^ *FAIL scene weather: .*(past the wall|px high|overlaps|outside the Tools drawer)/m, appliesTo: (v) => v.name === TOOLS_V },
       // The hint under 16 px.

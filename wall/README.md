@@ -818,15 +818,17 @@ voted recipe, one look only). There is no canvas, timer or React state of its ow
 rules come with it: nothing is drawn while the page is hidden, and Zen and Dream draw none (the horizon
 effect returns before any drawing).
 
-- **Order in a frame.** The sky part, then the back layer, then the ground part, the music lines and
-  the lake reflection, then the mid layer. The mountains and the lake hide the back layer; the mid layer
-  lies over the ground and over the dancing lines (it never reads the audio) and under every card, the
-  clock and the text, which are page elements. With the front canvas (Watch, `?sky=front`) the back layer
-  goes on the main canvas after its sky and the mid layer on the front canvas before the place veil.
-  The ground part clears the canvas it is drawn on (it is made for the front canvas), so with one
-  canvas and the layer on, the ground is drawn on a scratch canvas of the same size and laid over the sky
-  with one copy; the scratch canvas is released when the layer turns off. With the layer off the single
-  whole draw is exactly the horizon's own.
+- **Order in a frame.** One canvas (or two, with the front canvas): the sky part, then the back layer,
+  then the ground part, the music lines and the lake reflection, then the mid layer, then (with the front
+  canvas) the place veil. The mountains and the lake hide the back layer; the mid layer lies over the
+  ground and over the dancing lines (it never reads the audio) and under every card, the clock and the
+  text, which are page elements. With the front canvas (Watch, `?sky=front`) the back layer goes on the
+  main canvas after its sky and the mid layer on the front canvas before the place veil. The ground part
+  begins by clearing its canvas (it is made for the front canvas, which starts empty), which with one
+  canvas would wipe the sky and the back layer; so while the layer is on, that one `clearRect` is switched
+  off for the ground draw (and restored after it), and the ground goes over the sky with the very calls
+  the whole picture makes. No second canvas or copy is made. With the layer off the single whole draw is
+  exactly the horizon's own.
 - **What it draws.** Rain: the sky a little darker (a cached veil), slow mist banks behind the ridge (a
   cached strip redrawn every 0.25 s and slid with one image between redraws), 80 to 220 long streaks
   (`level` 0 light to 1 heavy) falling in front of the mountains to the far shore, rings opening on the
