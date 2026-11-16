@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type Ref } from 'react';
-import { IconCheck, IconChevronDown, IconChevronUp, IconDeviceDesktop, IconDeviceMobile, IconDeviceSpeaker, IconDeviceTv, IconLock } from '@tabler/icons-react';
+import { IconCheck, IconDeviceDesktop, IconDeviceMobile, IconDeviceSpeaker, IconDeviceTv } from '@tabler/icons-react';
 import { spotify, type SpotifyDevice } from '../../music/spotify';
 import { useNowPlayingStore } from '../../music/store';
 import { tip } from '../../ui/HoverTip';
@@ -55,7 +55,7 @@ export function deviceRows(devices: SpotifyDevice[], picked: string | null, stal
 }
 
 /**
- * The "Play on" chip (where the music plays) and its chooser: the owner's Spotify players, a tick on
+ * The "Play on" round button (where the music plays) and its chooser: the owner's Spotify players, a tick on
  * the one in use. Choosing one moves the music there (the transfer command) when something plays, and
  * otherwise only makes it the target of the next Play. A device shows only while its Spotify is awake.
  * The card owns `open` (it closes the chooser on Escape and on its own closing).
@@ -102,6 +102,10 @@ export function PlayOn({ open, onOpen, chipRef }: { open: boolean; onOpen: (open
   const locked = devices?.find((d) => d.active && d.restricted) ?? null;
   // While the wall starts Spotify the chip says where it will play (this PC); it reads the real device after.
   const label = starting ? PC_NAME : target ? target.name : active ? active.name : locked ? locked.name : PC_NAME;
+  // With no target, no active player and nothing starting, the button says so and shows the generic speaker.
+  const chosen = starting || !!target || !!active || !!locked;
+  const name = chosen ? label : 'choose a device';
+  const kind = starting ? 'Computer' : target ? target.kind : active ? active.kind : locked ? locked.kind : 'speaker';
   const lockedNow = !starting && !target && !active && !!locked;
   const rows = devices ? deviceRows(devices, target ? target.id : null, stale) : [];
   const [note, setNote] = useState<string | null>(null);
@@ -149,23 +153,19 @@ export function PlayOn({ open, onOpen, chipRef }: { open: boolean; onOpen: (open
       <button
         ref={chipRef}
         type="button"
-        className={`sp-dev${open ? ' on' : ''}${lockedNow ? ' locked' : ''}`}
+        className={`sp-dev${open ? ' on' : ''}${lockedNow ? ' locked' : ''}${chosen ? ' chosen' : ''}`}
         aria-haspopup="true"
         aria-expanded={open}
-        aria-label={`Play on ${label}${lockedNow ? `, ${LOCKED_CHIP}` : ''}. Choose where the music plays`}
+        aria-label={`Play on: ${name}${lockedNow ? `, ${LOCKED_CHIP}` : ''}`}
         {...tip(() => (
           <div className="sp-tipline">
-            <b>Play on {label}</b>
+            <b>Play on: {name}</b>
             <span>{lockedNow ? `${label} ${LOCKED_CHIP}.` : 'Click to choose which of your Spotify players plays.'}</span>
           </div>
         ))}
         onClick={() => onOpen(!open)}
       >
-        <IconDeviceSpeaker size={20} stroke={1.8} aria-hidden="true" />
-        <small>Play on</small>
-        <span>{label}</span>
-        {lockedNow ? <IconLock className="sp-dev-lock" size={18} stroke={1.8} aria-hidden="true" /> : null}
-        {open ? <IconChevronUp size={18} stroke={1.8} aria-hidden="true" /> : <IconChevronDown size={18} stroke={1.8} aria-hidden="true" />}
+        <DeviceIcon kind={kind} size={20} />
       </button>
       {open ? (
         <div className={`sp-devices${stale ? ' stale' : ''}`} role="group" aria-label="Play on" onKeyDown={key}>

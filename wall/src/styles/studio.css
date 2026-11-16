@@ -395,10 +395,10 @@ button.st-tg:hover {
 .st-d-foot {
   display: flex;
   justify-content: space-between;
-  gap: 20px;
+  flex-wrap: wrap;
+  gap: 4px 20px;
   padding-top: 10px;
   border-top: 1px solid var(--line);
-  white-space: nowrap;
 }
 
 /* ---- the Lights chip on Work: 32 px, after the Recording chip ---- */

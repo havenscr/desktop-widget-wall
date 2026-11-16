@@ -101,11 +101,12 @@ pub fn validate(latitude: f64, longitude: f64) -> Result<(), Failure> {
     }
 }
 
-/// The same address `buildUrl` in `wall/src/weather/model.ts` builds.
+/// The Open-Meteo forecast address. The reply goes to the web view as text and is read by
+/// `parseWeather` in `wall/src/weather/model.ts`.
 pub fn open_meteo_url(latitude: f64, longitude: f64) -> String {
     format!(
         "https://api.open-meteo.com/v1/forecast?latitude={latitude}&longitude={longitude}\
-&current=temperature_2m,weather_code,is_day\
+&current=temperature_2m,weather_code,is_day,wind_speed_10m,wind_gusts_10m\
 &hourly=temperature_2m,weather_code,is_day\
 &daily=temperature_2m_max,temperature_2m_min\
 &temperature_unit=fahrenheit&wind_speed_unit=mph&timezone=auto&forecast_days=2"
@@ -362,8 +363,19 @@ mod tests {
     fn the_open_meteo_address_matches_the_page() {
         assert_eq!(
             open_meteo_url(12.5, -45.25),
-            "https://api.open-meteo.com/v1/forecast?latitude=12.5&longitude=-45.25&current=temperature_2m,weather_code,is_day&hourly=temperature_2m,weather_code,is_day&daily=temperature_2m_max,temperature_2m_min&temperature_unit=fahrenheit&wind_speed_unit=mph&timezone=auto&forecast_days=2"
+            "https://api.open-meteo.com/v1/forecast?latitude=12.5&longitude=-45.25&current=temperature_2m,weather_code,is_day,wind_speed_10m,wind_gusts_10m&hourly=temperature_2m,weather_code,is_day&daily=temperature_2m_max,temperature_2m_min&temperature_unit=fahrenheit&wind_speed_unit=mph&timezone=auto&forecast_days=2"
         );
+    }
+
+    #[test]
+    fn the_open_meteo_address_asks_for_wind_in_mph() {
+        let address = open_meteo_url(12.5, -45.25);
+        let current = address.split('&').find(|item| item.starts_with("current=")).unwrap();
+        let hourly = address.split('&').find(|item| item.starts_with("hourly=")).unwrap();
+
+        assert!(current.contains("wind_speed_10m,wind_gusts_10m"));
+        assert!(address.contains("wind_speed_unit=mph"));
+        assert!(!hourly.contains("wind"));
     }
 
     #[test]
