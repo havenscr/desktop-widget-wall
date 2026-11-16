@@ -9,7 +9,8 @@ const SWITCH = '.sp-switch button:nth-child(2)';
 const TALL = '.sp-grow';
 const TILE = '.yt-tile';
 const LIKED = '.sp-tabs button:nth-child(2)';
-const ROW4 = 'hover:.yt-row:nth-child(4)';
+// The pointer goes to the right end of what it is sent to: on the title, so it is on the play part and not on the add control.
+const ROW4 = 'hover:.yt-row:nth-child(4) .yt-title';
 const steps = (...s) => s.join(' >> ');
 // Windows offers no playing session (`media=none`), so the top player draws the wall's own music; the mock frame stays on Listen.
 const play = (mode, extra = '') => `youtube=in&ytlib=full&media=none&watch=mock&wtab=listen${mode ? `&ytplay=${mode}` : ''}${extra}`;
