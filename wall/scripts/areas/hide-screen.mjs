@@ -3,7 +3,9 @@
 // in-page measurement, its rule and the deliberate breaks. Nothing here clicks a real command: the mocks answer.
 //
 // The measurement runs in the page with `?hidecheck=<mode>`: `rest` (the box, the one button in the tab order, the
-// control winning the pointer inside its own box, the resting and pending brightness, reduced motion, nothing under it),
+// control winning the pointer inside its own box, the declared rest colour and Hiding opacity (the declared tokens, not a
+// rendered contrast: the contrast over each place's real background is measured from stills, see wall/README.md),
+// reduced motion, nothing under it),
 // `grown` (pointer on it: it grows to the left only, inside the stage, the icon and the 36 px box stay put, and it covers
 // no control and no words outside the day strip), `failed` (the same, with the failure words inside the pill) and
 // `drawer` (a drawer is open: the control takes no pointer and no focus, also at the drawer's rounded corner).
@@ -192,8 +194,8 @@ function rule(v, results, emit) {
     if (!m.focused) fails.push('it cannot take keyboard focus');
     else if (m.focusVisible && !(m.focusWidth > 60 && m.outline === '3px')) fails.push(`with focus it is ${Math.round(m.focusWidth)} px wide with a ${m.outline} ring (its name shows and the 3 px ring)`);
     else if (!m.focusVisible) fails.push('keyboard focus did not match focus-visible (the check cannot see its ring)');
-    if (m.opacity < 0.79 || m.color !== m.dim) fails.push(`at rest it is ${m.color} at ${m.opacity} (the dim colour at 0.8 or more)`);
-    if (m.pendingOpacity < 0.59) fails.push(`Hiding is at ${m.pendingOpacity} (0.6 or more)`);
+    if (m.opacity < 0.79 || m.color !== m.dim) fails.push(`the declared rest colour is ${m.color} at ${m.opacity} (the dim colour at 0.8 or more; the declared token, not rendered contrast)`);
+    if (m.pendingOpacity < 0.59) fails.push(`the declared Hiding opacity is ${m.pendingOpacity} (0.6 or more)`);
     if (m.calmRules < 1) fails.push('no reduced motion rule takes the control\'s transitions off');
     // At rest nothing at all sits under it, a strip's last hour included.
     for (const c of m.covers) fails.push(`at rest it sits over ${c.kind} "${c.what}"`);
@@ -227,7 +229,7 @@ function rule(v, results, emit) {
     for (const f of fails) emit(`  FAIL hide screen: ${f}`);
     return true;
   }
-  const what = { rest: `36 by 36 at ${BOX.l}, ${BOX.t}, one button in the tab order, wins its own box, ${m.opacity} bright, nothing under it`, grown: `grows to the left to ${Math.round(r.w)} px, icon and box stay, covers nothing outside the day strip`, failed: `the failure words in a ${Math.round(r.w)} px pill, covering nothing outside the day strip`, drawer: 'inert and out of the tab order with a drawer open, also at its corner' }[m.mode];
+  const what = { rest: `36 by 36 at ${BOX.l}, ${BOX.t}, one button in the tab order, wins its own box, declared rest colour at ${m.opacity}, nothing under it`, grown: `grows to the left to ${Math.round(r.w)} px, icon and box stay, covers nothing outside the day strip`, failed: `the failure words in a ${Math.round(r.w)} px pill, covering nothing outside the day strip`, drawer: 'inert and out of the tab order with a drawer open, also at its corner' }[m.mode];
   emit(`  ok   hide screen: ${what}`);
   if (m.mode === 'rest' && rests.length === 8) {
     const same = new Set(rests.map((x) => x.box)).size === 1;
@@ -279,7 +281,7 @@ export default {
     breaks: {
       'hide-box': { css: ".so-layer { left: 2496px !important; }", expect: FAIL('box 36x36 at 2496'), appliesTo: on(name('at rest', 'home')) },
       'hide-size': { css: '.screens-off-wrap, .so-layer { width: 40px !important; height: 40px !important; }', expect: FAIL('box 40x40'), appliesTo: on(name('at rest', 'work')) },
-      'hide-dim': { css: '.screens-off { opacity: 0.7 !important; }', expect: FAIL('at rest it is'), appliesTo: on(name('at rest', 'meet')) },
+      'hide-rest-colour': { css: '.screens-off { opacity: 0.7 !important; }', expect: FAIL('the declared rest colour is'), appliesTo: on(name('at rest', 'meet')) },
       'hide-zen-layer': { css: ".so-layer[data-place='zen'] { z-index: 44 !important; }", expect: FAIL('(does not win the pointer|on Zen it is at z)'), appliesTo: on(name('at rest', 'zen')) },
       'hide-dream-wins': { css: ".so-layer { z-index: 3 !important; }", expect: FAIL('does not win the pointer'), appliesTo: on(name('at rest', 'dream')) },
       'hide-under': { css: '.so-layer { left: 2400px !important; }', expect: FAIL('(at rest it sits over|box 36x36)'), appliesTo: on(name('at rest', 'onair')) },

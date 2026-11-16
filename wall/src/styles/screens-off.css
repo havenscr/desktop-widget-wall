@@ -17,7 +17,9 @@
 /* At rest the 36 px icon circle; under the pointer or keyboard focus it grows to the left into
    a pill with its name (in place of a tooltip). It is anchored at its right edge, so the icon
    never moves, and the 36 px box it sits in never changes size. At rest it is one step brighter
-   than the wall's faint text (--dim at 0.8: 3.7 to 1 or better on every place). */
+   than the built icon was (--dim at 0.8; the built one was --faint at 0.7). Measured over each place's real
+   background the usual contrast is 6.3 to 6.5 to 1; the lowest is 2.98 (one pixel on a bright grid line, Unwind
+   Listen), 3.30 on Watch and 3.61 on Home, and 3.77 or more elsewhere (see wall/README.md). */
 .screens-off {
   position: absolute;
   right: 0;

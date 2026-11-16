@@ -3170,8 +3170,12 @@ hour.
 - **Pointer and keyboard.** Under the pointer, or with keyboard focus, it grows to the left (its right edge and icon do
   not move, and its 36 px box never changes) into a pill that reads its name, in place of a tooltip; it is a button in
   the tab order with the usual focus ring, and Enter and Space work. Under reduced motion the name just shows. At rest
-  it is one step brighter than the wall's faint text (the dim colour at 0.8, 3.7 to 1 or better on every place); Hiding is
-  at 0.6.
+  it is one step brighter than the built icon was (the dim colour at 0.8 where the built one was the faint colour at 0.7);
+  Hiding is at 0.6. Measured on the real pixels behind it (2x stills of each place's resting icon with the control hidden,
+  the 36 px box, the declared colour at 0.8 over each background pixel), the usual contrast is 6.3 to 6.5 to 1 on every
+  place. The lowest is lower where bright grid lines run under the icon: 2.98 to 1 on one pixel on Unwind Listen, 3.30 on
+  Unwind Watch, 3.61 on Home, 3.77 on Meet and On Air, 4.18 on Zen, 4.68 on Work, 4.87 on Dream (on Listen 7 percent of
+  the box and on Watch 5 percent sits under 3.7 to 1; one pixel in 5184, on Listen, is under 3 to 1).
 - **What it covers.** At rest, nothing. Grown, the pill (154 px; 235 px with the failure words) covers only the last
   hour of the day strip's bottom rows on the four places that have one, and only while you point at it.
 - **Drawers.** It sits above each place's own content and below the drawers: with Tools, the Day drawer or the Agents
