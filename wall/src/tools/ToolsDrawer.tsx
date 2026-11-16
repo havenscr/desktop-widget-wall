@@ -6,6 +6,7 @@ import { clockText } from '../meet/model';
 import { hover } from './hover';
 import { LOOKS } from '../unwind/watch/looks';
 import { useWatchStore } from '../unwind/watch/store';
+import { useSceneWeather } from '../weather/sceneSetting';
 import { errorText, isAbsent } from '../work/deckModel';
 import { joinKeys, reloadKeys, useKeysFeedStore, type Read } from '../work/keysFeed';
 import type { KeysSummary } from '../work/keysModel';
@@ -102,6 +103,26 @@ function VideoLook() {
         })}
       </div>
       <div className="tools-hint">{perKind ? 'A look per kind is set on Watch. Pick one here to use it for everything.' : 'How video sits in the sky on Watch'}</div>
+    </div>
+  );
+}
+
+/** The switch for rain and wind from the forecast on the mountains and on Watt (on by default; kept across restarts). */
+function SceneWeather() {
+  const on = useSceneWeather((s) => s.on);
+  const setOn = useSceneWeather((s) => s.setOn);
+  return (
+    <div className="tools-weather">
+      <div className="tools-k sm">Weather in the scene</div>
+      <div className="tools-chips">
+        <button type="button" className={on ? 'tools-chip on' : 'tools-chip'} aria-pressed={on} {...hover('Show rain and wind from the forecast on the mountains and on Watt')} onClick={() => setOn(true)}>
+          On
+        </button>
+        <button type="button" className={!on ? 'tools-chip on' : 'tools-chip'} aria-pressed={!on} {...hover('Keep the scene and Watt as on a dry day')} onClick={() => setOn(false)}>
+          Off
+        </button>
+      </div>
+      <div className="tools-hint">Rain and wind from your forecast, on the mountains and on Watt. Off under reduced motion.</div>
     </div>
   );
 }
@@ -269,6 +290,7 @@ function Drawer() {
             <Accounts />
           </div>
           <VideoLook />
+          <SceneWeather />
           <KeysFile />
         </div>
         <div className="kl-stack">

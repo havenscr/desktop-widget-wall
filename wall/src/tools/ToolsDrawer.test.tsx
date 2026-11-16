@@ -3,7 +3,8 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { mocks } from '../bridge/tauri';
 import { Rail } from '../rail/Rail';
 import { usePlaceStore } from '../state/places';
-import { resetTip } from '../ui/HoverTip';
+import { HoverTipLayer, resetTip } from '../ui/HoverTip';
+import { SCENE_WEATHER_KEY, useSceneWeather } from '../weather/sceneSetting';
 import { DEFAULT_LOOKS } from '../unwind/watch/looks';
 import { useWatchStore } from '../unwind/watch/store';
 import { resetKeysFeed, useKeysFeedStore } from '../work/keysFeed';
@@ -181,7 +182,8 @@ it('Video look: chips from the Watch looks, the active one lit, a click uses the
   expect(useWatchStore.getState().looks).toMatchObject({ mode: 'one', all: 'feather' });
   expect(feathered.getAttribute('aria-pressed')).toBe('true');
   expect(screen.getByText('How video sits in the sky on Watch')).toBeTruthy();
-  expect(screen.queryByRole('button', { name: 'Off' })).toBeNull();
+  // The video look has no Off chip of its own (the weather switch below it has).
+  expect([...feathered.closest('.tools-chips')!.querySelectorAll('button')].map((b) => b.textContent)).not.toContain('Off');
 });
 
 it('Keys file: count and read time, Open calls the fixed command, Reload reads again', async () => {
@@ -432,4 +434,42 @@ it('unmounting the drawer during a waiting sign-in cancels it (calendar)', async
   view.unmount();
   await flush();
   expect(cancel).toHaveBeenCalled();
+});
+
+it('Weather in the scene: two chips after Video look, on by default, each stores the choice, shows pressed and carries its tip and the hint', async () => {
+  localStorage.removeItem(SCENE_WEATHER_KEY);
+  useSceneWeather.setState({ on: true });
+  render(
+    <>
+      <ToolsDrawer />
+      <HoverTipLayer />
+    </>,
+  );
+  act(() => useToolsStore.getState().openDrawer());
+  await flush();
+  const drawer = screen.getByLabelText('Tools');
+  const block = drawer.querySelector('.tools-weather')!;
+  expect(block.previousElementSibling?.textContent).toContain('Video look');
+  expect(block.nextElementSibling?.textContent).toContain('Keys file');
+  expect(block.querySelector('.tools-k.sm')?.textContent).toBe('Weather in the scene');
+  expect(block.querySelector('.tools-hint')?.textContent).toBe('Rain and wind from your forecast, on the mountains and on Watt. Off under reduced motion.');
+  const on = screen.getByRole('button', { name: 'On' });
+  const off = screen.getByRole('button', { name: 'Off' });
+  expect(on.getAttribute('aria-pressed')).toBe('true');
+  expect(off.getAttribute('aria-pressed')).toBe('false');
+  fireEvent.mouseEnter(off);
+  await flush(300);
+  expect(document.querySelector('.hover-tip')?.textContent).toBe('Keep the scene and Watt as on a dry day');
+  fireEvent.mouseLeave(off);
+  fireEvent.click(off);
+  expect(useSceneWeather.getState().on).toBe(false);
+  expect(localStorage.getItem(SCENE_WEATHER_KEY)).toBe('{"on":false}');
+  expect(off.getAttribute('aria-pressed')).toBe('true');
+  expect(on.getAttribute('aria-pressed')).toBe('false');
+  fireEvent.mouseEnter(on);
+  await flush(300);
+  expect(document.querySelector('.hover-tip')?.textContent).toBe('Show rain and wind from the forecast on the mountains and on Watt');
+  fireEvent.click(on);
+  expect(localStorage.getItem(SCENE_WEATHER_KEY)).toBe('{"on":true}');
+  expect(on.getAttribute('aria-pressed')).toBe('true');
 });
