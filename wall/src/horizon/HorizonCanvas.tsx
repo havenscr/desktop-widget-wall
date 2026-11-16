@@ -121,6 +121,7 @@ export function HorizonCanvas({ now = Date.now }: { now?: () => number }) {
   // The weather layer (`weatherLayer.ts`): rain and wind drawn inside this frame. It keeps its own
   // flat list of the pictures' boxes and the keep-clear cards, so nothing falls over a film or behind a card.
   const wx = useRef(createWeatherLayer());
+  const ground = useRef<HTMLCanvasElement | null>(null);
   // Dev builds only: `?wxt=<seconds>` freezes the layer's moment in a review still; `?wxnoskip=1` empties its skip boxes (a fit-check break).
   const [wxReview] = useState(() => (import.meta.env.DEV ? parseWeatherReview(window.location.search) : null));
   useEffect(() => {
@@ -246,6 +247,27 @@ export function HorizonCanvas({ now = Date.now }: { now?: () => number }) {
     let costFrames = 0;
     let costMs = 0;
 
+    // The scratch canvas the ground part is drawn on while the weather layer is on and there is one canvas (see below).
+    const groundScratch = (width: number, height: number): CanvasRenderingContext2D | null => {
+      let c = ground.current;
+      if (!c) {
+        c = document.createElement('canvas');
+        ground.current = c;
+      }
+      if (c.width !== width || c.height !== height) {
+        c.width = width;
+        c.height = height;
+      }
+      return c.getContext('2d');
+    };
+    const dropGround = () => {
+      const c = ground.current;
+      if (c) {
+        c.width = 0;
+        c.height = 0;
+      }
+      ground.current = null;
+    };
     const paint = () => {
       if (document.hidden) return;
       const costStart = measureCost ? performance.now() : 0;
@@ -379,15 +401,28 @@ export function HorizonCanvas({ now = Date.now }: { now?: () => number }) {
         options.part = 'ground';
         drawHorizon(fctx, options);
       } else if (wxOn) {
-        // Sky, the weather behind the ridge, then the ground: the mountains and the lake hide it.
+        // Sky, the weather behind the ridge, then the ground: the mountains and the lake hide it. The ground part clears
+        // its canvas (it is made for the front canvas), so with one canvas it is drawn on a scratch canvas of the same size
+        // and laid over the sky in one copy. Without a scratch canvas the whole picture is drawn, with no weather behind it.
         options.part = 'sky';
         drawHorizon(ctx, options);
         drawWeatherBack(ctx, w, wxTime, camera.hy, scale, width, height, awake.current);
-        options.part = 'ground';
-        drawHorizon(ctx, options);
+        const gx = groundScratch(width, height);
+        if (gx) {
+          options.part = 'ground';
+          drawHorizon(gx, options);
+          ctx.setTransform(1, 0, 0, 1, 0, 0);
+          ctx.globalAlpha = 1;
+          ctx.globalCompositeOperation = 'source-over';
+          ctx.drawImage(ground.current!, 0, 0);
+        } else {
+          delete options.part;
+          drawHorizon(ctx, options);
+        }
       } else {
         drawHorizon(ctx, options);
       }
+      if (!wxOn && ground.current) dropGround();
       // A new type belongs to the land, across the full width: on the front canvas when there is
       // one (a video behind the mountains, so the lines stand in front of its lower part as the
       // ridgelines do), otherwise on this canvas, where a picture in front of the land (the drive-in
@@ -532,6 +567,7 @@ export function HorizonCanvas({ now = Date.now }: { now?: () => number }) {
     return () => {
       offSwitchNow();
       releaseWeather(wx.current);
+      dropGround();
       window.removeEventListener('resize', paint);
       document.removeEventListener('visibilitychange', paint);
       window.clearInterval(timer);

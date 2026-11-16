@@ -135,14 +135,40 @@ describe('the weather in the horizon frame', () => {
     expect(kinds(log).filter((k) => k === 'back' || k === 'mid' || k === 'sky' || k === 'ground')).toEqual([]);
   });
 
-  it('with rain and one canvas the frame is sky, the weather behind the ridge, ground, then the weather in front, all on one canvas', () => {
+  it('with rain and one canvas the frame is sky, the weather behind the ridge, ground, then the weather in front: the ground on a scratch canvas laid over the sky, the rest on the one canvas', () => {
     useWeatherStore.setState({ reading: rainReading(NOON) });
     render(<HorizonCanvas now={() => NOON} />);
     runFrame(100);
     runFrame(200);
-    expect(kinds(lastFrame())).toEqual(['sky', 'back', 'ground', 'mid']);
+    const f = lastFrame();
+    expect(kinds(f)).toEqual(['sky', 'back', 'ground', 'mid']);
     const ctx = ctxOf.get(main());
-    for (const e of lastFrame()) expect(e.ctx).toBe(ctx);
+    for (const e of f.filter((x) => x.k !== 'ground')) expect(e.ctx).toBe(ctx);
+    // The ground part clears the canvas it is drawn on, so it never goes on the sky's canvas.
+    expect(f[2].ctx).not.toBe(ctx);
+    expect(document.querySelectorAll('canvas')).toHaveLength(1);
+  });
+
+  it('lays the ground over the sky with one copy, and lets the scratch canvas go when the layer is off', () => {
+    useWeatherStore.setState({ reading: rainReading(NOON) });
+    const copies: unknown[] = [];
+    vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockImplementation(function (this: HTMLCanvasElement) {
+      if (!ctxOf.has(this)) {
+        const c = stubContext();
+        (c as unknown as { drawImage: unknown }).drawImage = (img: unknown) => void copies.push(img);
+        ctxOf.set(this, c);
+      }
+      return ctxOf.get(this) as never;
+    } as never);
+    render(<HorizonCanvas now={() => NOON} />);
+    runFrames(2);
+    const scratch = [...ctxOf.keys()].find((c) => c !== main())!;
+    expect(copies.filter((i) => i === scratch)).toHaveLength(3);
+    expect(scratch.width).toBeGreaterThan(0);
+    act(() => useSceneWeather.getState().setOn(false));
+    runFrames(100, 10_000);
+    expect(scratch.width).toBe(0);
+    expect(kinds(log).slice(-1)).toEqual(['whole']);
   });
 
   it('with the front canvas the back goes on the main canvas after the sky and the mid on the front canvas before the veil', () => {
