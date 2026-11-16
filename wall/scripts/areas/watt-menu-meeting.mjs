@@ -13,6 +13,14 @@ export default {
       custom: true,
       actions: 'ctx:.watt-hit',
       expect: 'Come here',
+    }, {
+      // 1:40 PM: an online meeting and, overlapping it, a plain block that runs longer.
+      screen: 'work',
+      name: 'Watt: menu open, a plain block overlapping an online meeting, nothing refused',
+      query: `hz=work&at=${encodeURIComponent('2026-11-11T13:40:00-08:00')}&clock=review&weather=ok&meet=overlap`,
+      custom: true,
+      actions: 'ctx:.watt-hit',
+      expect: 'Come here',
     }],
   },
 };

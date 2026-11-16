@@ -1801,8 +1801,15 @@ Watt is also a small pet ("he"), calm and silent (no sound at all):
     reaction in three may get a line ("Ooh. A click."), at most once every three minutes and only
     through the usual quiet and chattiness rules, never over another bubble. Never while he is
     carried, falling or walking back, in a trick or a nap, reading, with his menu open, asleep,
-    away, in a call or a meeting, while the wall records or while the page is hidden
+    away, in a call the wall knows of, while the wall records or while the page is hidden
     (`noticeBlocked` in `Watt.tsx` holds the list). Under reduced motion he only turns.
+  - **His menu always works.** Tricks, Where and Read with me are refused only when the wall knows of a
+    call (the signals call state) with "Not during a call.", or is on air or recording with "Not while
+    on air."; the amber line shows only then. A calendar entry never refuses a click. A calendar entry
+    with an online join link in progress, a known call and recording only stop what he starts himself:
+    no speech, no wander, no hop or look of his own, no firefly. A plain calendar block changes nothing
+    about him; the first meeting of the feed with a join link that has not ended is the one that counts,
+    even when a plain block overlaps it.
   - **Happy hop and a milestone.** Three clicks within 4 seconds (the second and third add nothing
     to the pet count) give one happy hop, at most once every 20 seconds. The tenth pet of a day
     gives a one-off sparkle and a "milestone" line.
@@ -2610,7 +2617,7 @@ Add one optional key to `feeds.json` (see "Setting it up: `feeds.json`"):
 - `wall2_machines` returns `{ pc: { cpuPct, gpuPct, ramPct }, box: { cpuPct, gpuPct, ramPct, tempC } | null, boxStale }`. The PC numbers come from the same function as the old `get_system_stats` (which is unchanged). The PC numbers are returned at once on every call. The box numbers come from the helper summary's `system` block, refreshed in the background (one read at a time, at most one every 15 seconds, 3 second timeout), so a slow helper never delays the PC numbers and the first call after start shows `box: null`. After a failed read the last good box numbers stay with `boxStale: true` for up to 10 minutes, then `box` is `null`. `box` is also `null` when the helper is not set up. The numbers are kept per `omniHelperUrl`, so a changed address never shows the old host's numbers.
 - All of them refuse any window but `wall2` (`forbidden`).
 
-Nothing here logs, and nothing here takes a wake lock or sets an execution state. Browser dev (`npm run dev`) shows mock answers from `devMocks/omni.ts`; `?agents=3` (default), `2`, `1`, `0`, `7`, `12` (sessions from a helper 1.1.0 answer, with three subscriptions, one near full), `helpers` (an idle own turn with two agents, one command and one child still running), `ask` (one waiting), `ask2` (two waiting, one not on a card), `failed`, `12busy` (twelve open, nine working at once, over the limit of 4 since mid morning, one waiting, one failed, one idle, and a helper's run that is never counted; add `&limit=0` for a helper that sends no limit), `old` (an older helper's answer), `stale`, `off` (not set up) or `down` (not answering) picks the helper's state.
+Nothing here logs, and nothing here takes a wake lock or sets an execution state. Browser dev (`npm run dev`) shows mock answers from `devMocks/omni.ts`; `?agents=3` (default), `2`, `1`, `0`, `6`, `7`, `12`, `30` (sessions; `6` and `30` show the Day drawer's rows at their tallest and at their scrolling minimum, sessions from a helper 1.1.0 answer, with three subscriptions, one near full), `helpers` (an idle own turn with two agents, one command and one child still running), `ask` (one waiting), `ask2` (two waiting, one not on a card), `failed`, `12busy` (twelve open, nine working at once, over the limit of 4 since mid morning, one waiting, one failed, one idle, and a helper's run that is never counted; add `&limit=0` for a helper that sends no limit), `old` (an older helper's answer), `stale`, `off` (not set up) or `down` (not answering) picks the helper's state.
 
 ### Saved records
 

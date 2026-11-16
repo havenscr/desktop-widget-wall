@@ -20,7 +20,11 @@ function measureRows() {
     free: list.clientHeight,
     scrolls: list.scrollHeight > list.clientHeight + 1,
     headInList: list.contains(head),
-    scrollbar: getComputedStyle(list).scrollbarWidth,
+    barGap: (() => {
+      const bar = rows[0]?.querySelector('.dd-bar');
+      const axis = document.querySelector('.day-drawer .dd-axis');
+      return bar && axis ? Math.round((axis.getBoundingClientRect().right - bar.getBoundingClientRect().right) * 10) / 10 : null;
+    })(),
     gap: last && first ? Math.round(lr.right - last.right) : -1,
   };
 }
@@ -59,6 +63,7 @@ export default {
         if (m.headInList) { emit('  FAIL day drawer rows: the header line is inside the scrolling list'); bad = true; }
         if (m.n * 32 > m.free && !m.scrolls) { emit('  FAIL day drawer rows: the rows do not fit and the list does not scroll'); bad = true; }
         if (m.gap < 20) { emit(`  FAIL day drawer rows: the last column is ${m.gap} px from the right edge of the list (at least 20)`); bad = true; }
+        if (m.barGap === null || Math.abs(m.barGap) > 1) { emit(`  FAIL day drawer rows: the hour axis ends ${m.barGap} px from where the row bars end (within 1)`); bad = true; }
         if (!bad) emit(`  ok   day drawer rows: ${m.n} rows at ${m.h.toFixed(1)} px in ${m.free} px, ${m.scrolls ? 'scrolling' : 'fitting'}`);
         return bad;
       },
@@ -68,6 +73,11 @@ export default {
         css: '.day-drawer .dd-row { height: 32px !important; }',
         expect: /^ *FAIL day drawer rows: a row is 32\.0 px, wanted/m,
         appliesTo: (v) => v.name === NAMES[2],
+      },
+      'drawer-rows-axis': {
+        css: '.day-drawer .dd-ag-head { padding-right: 0 !important; }',
+        expect: /^ *FAIL day drawer rows: the hour axis ends .* px from where the row bars end/m,
+        appliesTo: (v) => v.name === NAMES[12],
       },
       'drawer-rows-no-gap': {
         css: '.day-drawer .dd-rows { padding-right: 0 !important; }',

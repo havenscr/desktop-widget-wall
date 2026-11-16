@@ -467,7 +467,7 @@ export function Watt({ now = reviewNow ?? Date.now, inCall = false }: { now?: ()
   const sunset = sunTimes(nowMs).set;
   const dusk = sunset !== null && nowMs >= sunset && !isNight(new Date(nowMs));
   // Only a calendar entry with an online join link is a meeting for him; a plain block changes nothing.
-  const joinable = next.meeting?.canJoin ? next.meeting : undefined;
+  const joinable = next.joinable;
   const meetingStart = joinable && !next.stale ? Date.parse(joinable.start) : NaN;
   const meetingEnd = joinable && !next.stale ? Date.parse(joinable.end) : NaN;
   // A stale or missing feed keeps the last known joinable meeting's quiet time until its end.
@@ -511,6 +511,7 @@ export function Watt({ now = reviewNow ?? Date.now, inCall = false }: { now?: ()
   // owner can still pet him, open his menu and carry him).
   const recordingQuiet = useSignalStore((st) => isQuietForRecording(st));
   m.quiet = recordingQuiet;
+  m.hush = recordingQuiet || callKnown || inMeeting;
   m.firefly = dusk && !reduced && !callKnown && !inMeeting && !recordingQuiet;
   m.cosmetic = pet.cosmetic;
   // Dev review stills only (`window.__watt.set`): kept over the hooks' values on every render.
@@ -542,7 +543,7 @@ export function Watt({ now = reviewNow ?? Date.now, inCall = false }: { now?: ()
   }, [walkOf]);
   useEffect(() => () => window.clearTimeout(bubbleTimer.current), []);
   /**
-   * The one quiet state: any quiet condition (Off, a call or meeting, the first minute of focus,
+   * The one quiet state: any quiet condition (Off, a call the wall knows of or a meeting with a join link in progress, recording, the first minute of focus,
    * the display idle, the page hidden, asleep or away) takes a showing bubble down at once.
    */
   const quietCheck = useCallback(() => {
@@ -606,7 +607,7 @@ export function Watt({ now = reviewNow ?? Date.now, inCall = false }: { now?: ()
     // Only a session seen running that ends now: one that ended while the app was closed says nothing.
     if (focus.status === 'finished' && prev.status === 'running' && t - prev.endAt < 60_000) {
       note('focusDone', t);
-      if (!mind.current.quiet) startReact.current('hop');
+      if (!mind.current.hush) startReact.current('hop');
       update((d) => bump(d, 'focus', t));
       check();
     }
@@ -623,7 +624,7 @@ export function Watt({ now = reviewNow ?? Date.now, inCall = false }: { now?: ()
     const n = finishedBetween(before, summary.lanes, summary.day);
     if (n > 0) {
       note('agentFinished', t);
-      if (!mind.current.quiet) startReact.current('hop');
+      if (!mind.current.hush) startReact.current('hop');
       update((d) => {
         let r = d;
         for (let i = 0; i < n; i++) r = bump(r, 'agents', t);
@@ -637,7 +638,7 @@ export function Watt({ now = reviewNow ?? Date.now, inCall = false }: { now?: ()
     if (waiting && !prevWaiting.current) {
       note('agentWaiting', nowRef.current());
       // The agent cards sit above her, right of her on Work: she turns up toward them.
-      if (!mind.current.quiet) startReact.current('look', 1);
+      if (!mind.current.hush) startReact.current('look', 1);
       check();
     }
     prevWaiting.current = waiting;
@@ -656,7 +657,7 @@ export function Watt({ now = reviewNow ?? Date.now, inCall = false }: { now?: ()
     if (mtg && meetingSoon && lookedAt.current !== mtg.key) {
       lookedAt.current = mtg.key;
       note('meetingSoon', t);
-      if (!mind.current.quiet) startReact.current('look', -1);
+      if (!mind.current.hush) startReact.current('look', -1);
       check();
     }
   }, [joinable, next.stale, meetingSoon, note, check]);
@@ -1136,8 +1137,8 @@ export function Watt({ now = reviewNow ?? Date.now, inCall = false }: { now?: ()
     };
   }, []);
   useEffect(() => {
-    if (inCall || idle) interruptRef.current();
-  }, [inCall, idle]);
+    if (callKnown || inMeeting || idle) interruptRef.current();
+  }, [callKnown, inMeeting, idle]);
 
   /** A line while he is carried, set down or dizzy: outside every quiet time, and calm. */
   const sayCarry = useCallback(
@@ -1523,7 +1524,7 @@ export function Watt({ now = reviewNow ?? Date.now, inCall = false }: { now?: ()
       else if (!holdsStill(mind.current)) wanderT.current += dt;
       // Waking at 6:30: a yawn and a stretch.
       if (p.place && prevNight === true && !p.night && role === 'off') {
-        if (!mind.current.quiet) startReact.current('wake');
+        if (!mind.current.hush) startReact.current('wake');
         talk.current.events.wake = nowRef.current();
       }
       if (p.place) prevNight = p.night;
