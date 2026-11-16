@@ -69,7 +69,7 @@ const WHILE_SMALL = 'Saved playlist, while it plays, small card';
 const WHILE_TALL = 'Saved playlist, while it plays, tall card';
 // The tall "while it plays" page is measured by the rule below and held to the card box only: its rows arrive after the card opens, and the
 // shared box checks read the card mid-growth there (a box that settles in the gallery still).
-const pageVariant = (name, extra, click, tall = false, whole = true) => ({ name, q: fitQuery(extra, tall), checks: whole ? ['.sp-card', '.sp-songs', '.sp-shead'] : ['.sp-card'], click: tall ? `hover:.sp-card >> ${click}` : click });
+const pageVariant = (name, extra, click, tall = false, whole = true) => ({ name, q: fitQuery(extra, tall), checks: whole ? ['.sp-card', '.sp-songs', '.sp-shead'] : ['.sp-card'], click: tall ? `hover:.sp-card then ${click}` : click });
 
 export default {
   name: 'spotify-saved-playlists',
