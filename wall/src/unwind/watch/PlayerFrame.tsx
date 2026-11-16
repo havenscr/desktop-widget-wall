@@ -93,7 +93,7 @@ export function PlayerFrame({ item, title, shown = true }: { item: WatchRef; tit
 
   // Posts go only to the loaded frame's own window and only to the exact embed origin, never `*`.
   const post = (msg: string): boolean => {
-    if (!loadedRef.current) return false;
+    if (!loadedRef.current || !target) return false;
     const win = ref.current?.contentWindow;
     if (!win) return false;
     try {
@@ -178,6 +178,10 @@ export function PlayerFrame({ item, title, shown = true }: { item: WatchRef; tit
           // This item is paused first, then its end is published: publishing can make the queue load the next entry at once.
           followPlayer(true);
           st.setReport({ ended: true });
+          // The end was published and a queue may have restarted this same video at once (`playQueued` sets `paused: false`
+          // for the same id), so the paused state set just above is gone before React renders it and the effect below would
+          // never run to clear this flag: it would swallow the owner's next pause.
+          if (!useWatchStore.getState().paused) fromPlayer.current = false;
         }
       }
       // After a write that can have advanced the queue, a frame that is no longer the playing one writes nothing more.

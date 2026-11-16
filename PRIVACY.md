@@ -32,7 +32,11 @@ nothing else.
 - **An item you add to the wall's own watch list** is kept in the app's local storage on this
   PC until you remove it: its kind, its id and the name shown for it (the video's title unless
   you rename it). That list is built from links you paste. Nothing is copied into it from your
-  YouTube library on its own.
+  YouTube library on its own. A playlist you make on the wall is one more item in that list (its
+  kind, a code made on the wall and its name). Its videos are kept in a second local storage
+  key: for each video its id and, once the player has reported them, its channel and length;
+  its title, once the player has reported it or as the name you gave a saved video that you
+  add; and the playlist's shuffle and repeat switches. Nothing is created on YouTube.
 - **The sign-in** (Google's refresh token) is kept in Windows Credential Manager. Your client
   id and client secret are kept there too when you enter them in the app. If you supply them
   as a `youtube.json` file in the app's config folder instead, they stay in that file, which
