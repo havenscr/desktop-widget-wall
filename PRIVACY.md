@@ -17,7 +17,7 @@ ships no client of its own and receives nothing from yours.
 - Your playlists and the videos in them.
 - Your liked videos.
 - The results of a music search that you type.
-- The title, the channel's name and the length of a video you add to a playlist you made on the wall, and of the videos in such a playlist that still lack them when you open it to edit. Only the video's id is sent.
+- The title, the channel's name and the length of a video you add to a playlist you made on the wall, and of the videos in such a playlist that still lack them when you open it to edit. Only the video's id is sent with your YouTube sign-in.
 
 For each video the app reads the title, the channel's name, the length, and the flags that say
 whether the video can play in an embedded player. It does not read descriptions or comments.

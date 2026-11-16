@@ -10,10 +10,11 @@ import { askDetails } from './ownDetails';
  * The saved list (`wall2-watch-list`) keeps only an entry per playlist: kind `own`, a 12 character id
  * made here, and the name. The videos live in a second key, `wall2-watch-playlists`, so each key is read
  * and checked on its own and a damaged saved list never takes the videos with it. Everything stays on this
- * PC; nothing is sent anywhere and nothing is created on YouTube.
+ * PC except checked video ids sent to YouTube for details while signed in. Nothing is created on YouTube.
  *
  * A list is its videos in order (at most 50), with the owner's switches for shuffle and repeat. A video
- * holds its YouTube id and, once the player has reported them or, while signed in to YouTube, once YouTube has answered for them, a title, a channel and a length in seconds.
+ * holds its YouTube id and, once the player has reported them or, while signed in to YouTube, once YouTube
+ * has answered for them, a title, a channel and a length in seconds.
  * The stored value is read tolerantly (`parseOwn`): a value that is too long, not JSON or not version 1 is
  * an empty store; otherwise each list is read on its own and a bad list is dropped, not the whole value.
  * A record with no `own` entry in the saved list is ignored (never shown) and kept as stored.

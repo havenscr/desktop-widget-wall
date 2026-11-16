@@ -9,6 +9,7 @@ import { resetLastPlayed } from '../lastPlayed';
 import { resetQueue, useYtQueue } from '../ytmusic/queue';
 import { wallVideoView } from '../../home/wallVideo';
 import { ownThumb } from './OwnParts';
+import { resetOwnDetails } from './ownDetails';
 import { OWN_KEY, resetOwnLists, useOwnLists } from './ownLists';
 import { OWN_NOTE_MS, jump, next, ownView, playOwn, resetOwnPlay, setFollow, useOwnPlay } from './ownPlay';
 import { framePoster } from './PlayerFrame';
@@ -66,6 +67,22 @@ const press = async (el: Element, init: KeyboardEventInit) => {
   });
 };
 
+function detailsFor(id: string, title = 'Answered title') {
+  mocks.set('wall2_youtube_status', () => ({ setup: true, signedIn: true, reason: null, searchesLeft: 100 }));
+  const read = vi.fn((args?: { ids?: unknown }) => {
+    expect(args?.ids).toEqual([id]);
+    return [{ id, title, channel: 'Answered channel', seconds: 245 }];
+  });
+  mocks.set('wall2_youtube_videos', read);
+  return read;
+}
+
+async function expectAnswered(read: ReturnType<typeof vi.fn>, title = 'Answered title') {
+  await vi.waitFor(() => expect(read).toHaveBeenCalledTimes(1));
+  const videoRow = screen.getByText(title).closest('.own-v.two') as HTMLElement;
+  expect(videoRow.textContent).toContain('Answered channel · 4:05');
+}
+
 beforeEach(() => {
   vi.useFakeTimers();
   vi.setSystemTime(new Date('2026-11-12T10:00:00Z'));
@@ -74,6 +91,7 @@ beforeEach(() => {
   resetOwnLists();
   resetOwnPlay();
   resetQueue();
+  resetOwnDetails();
   usePlaceStore.setState({ active: 'unwind', from: 'work' });
   useSignalStore.setState({ call: null });
   mocks.set('get_now_playing', () => null);
@@ -314,6 +332,35 @@ describe('Add to a playlist', () => {
     const made = w().saved[0]!;
     expect(made).toMatchObject({ kind: 'own', label: 'Late night' });
     expect(own().lists[made.id]!.items).toEqual([{ id: SINGLE, title: 'Reported title', channel: 'Reported channel', seconds: 321 }]);
+  });
+
+  it('fills details after the play row adds a video to a playlist', async () => {
+    seed();
+    const read = detailsFor(SINGLE);
+    render(<UnwindView />);
+    await flush();
+    act(() => w().play({ kind: 'video', id: SINGLE }));
+    await click(screen.getByRole('button', { name: 'Add to a playlist' }));
+    await click(within(screen.getByRole('menu')).getByRole('menuitem', { name: 'Friday wind down, 12 videos' }));
+    await vi.waitFor(() => expect(read).toHaveBeenCalledTimes(1));
+    act(() => own().setOpen(FRIDAY));
+    await expectAnswered(read);
+  });
+
+  it('fills details after the play row makes a new playlist with the video', async () => {
+    seed();
+    const read = detailsFor(SINGLE);
+    render(<UnwindView />);
+    await flush();
+    act(() => w().play({ kind: 'video', id: SINGLE }));
+    await click(screen.getByRole('button', { name: 'Add to a playlist' }));
+    await click(within(screen.getByRole('menu')).getByRole('menuitem', { name: 'New playlist' }));
+    const field = screen.getByLabelText('Name for the new playlist') as HTMLInputElement;
+    fireEvent.change(field, { target: { value: 'Detail list' } });
+    await act(async () => void fireEvent.submit(field.form!));
+    const made = w().saved.find((item) => item.kind === 'own' && item.label === 'Detail list')!;
+    act(() => own().setOpen(made.id));
+    await expectAnswered(read);
   });
 
   it('disables a full playlist with its reason', async () => {
@@ -567,6 +614,17 @@ describe('the editor', () => {
     expect(chip().getAttribute('aria-disabled')).toBe('true');
   });
 
+  it('fills details after What is playing adds an incomplete video', async () => {
+    seed();
+    const read = detailsFor(SINGLE);
+    render(<UnwindView />);
+    await flush();
+    act(() => own().setOpen(SLOW));
+    act(() => w().play({ kind: 'video', id: SINGLE }));
+    await click(screen.getByRole('button', { name: /What is playing/ }));
+    await expectAnswered(read);
+  });
+
   it('From the Watch list shows the saved single videos, with a plus and then a check; the back arrow returns to the rows', async () => {
     await editor();
     await click(screen.getByRole('button', { name: /From the Watch list/ }));
@@ -577,6 +635,21 @@ describe('the editor', () => {
     expect(screen.getByRole('button', { name: 'Night drive mix is in the playlist' })).toBeTruthy();
     await click(screen.getByRole('button', { name: 'Back to the playlist' }));
     expect(document.querySelectorAll('.own-v.two')).toHaveLength(13);
+  });
+
+  it('fills missing details from the Watch list without replacing its saved name', async () => {
+    seed();
+    const read = detailsFor(SINGLE, 'Remote title');
+    render(<UnwindView />);
+    await flush();
+    act(() => own().setOpen(FRIDAY));
+    await click(screen.getByRole('button', { name: /From the Watch list/ }));
+    await click(screen.getByRole('button', { name: 'Add Night drive mix' }));
+    await click(screen.getByRole('button', { name: 'Back to the playlist' }));
+    await vi.waitFor(() => expect(read).toHaveBeenCalledTimes(1));
+    expect(screen.queryByText('Remote title')).toBeNull();
+    const videoRow = screen.getByText('Night drive mix').closest('.own-v.two') as HTMLElement;
+    expect(videoRow.textContent).toContain('Answered channel · 4:05');
   });
 
   it('adds a pasted video link, ignoring a list beside it, and refuses what a playlist cannot hold', async () => {
@@ -606,6 +679,19 @@ describe('the editor', () => {
     expect(screen.getByRole('alert').textContent).toBe('That is not a YouTube or Twitch link.');
     await flush(6100);
     expect(screen.queryByRole('alert')).toBeNull();
+  });
+
+  it('fills details after the paste field adds a video', async () => {
+    const id = 'Zz9yXxWw8vU';
+    seed();
+    const read = detailsFor(id);
+    render(<UnwindView />);
+    await flush();
+    act(() => own().setOpen(SLOW));
+    const field = screen.getByLabelText('Paste a video link');
+    fireEvent.change(field, { target: { value: `https://www.youtube.com/watch?v=${id}` } });
+    await click(screen.getByRole('button', { name: 'Add' }));
+    await expectAnswered(read);
   });
 
   it('the pencil renames the playlist in place, 60 characters, Enter saves and Escape keeps', async () => {

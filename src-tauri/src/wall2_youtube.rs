@@ -1787,6 +1787,51 @@ mod tests {
     }
 
     #[test]
+    fn own_details_send_exactly_fifty_ids_in_one_request() {
+        let _t = exclusive();
+        clear_library(false);
+        token_in_memory();
+        let ids: Vec<String> = (0..50).map(|i| format!("V{i:010}")).collect();
+        let http = FakeHttp::reads(vec![ok(json!({ "items": [] }))], vec![]);
+        assert!(run(&http, &FakeCreds::new(Some("stored-refresh")), &clock(T0), |c| video_details_with(c, &ids)).is_ok());
+        let urls = http.get_urls();
+        assert_eq!(urls.len(), 1);
+        assert!(urls[0].contains(&format!("id={}", ids.join("%2C"))));
+
+        let too_many: Vec<String> = (0..51).map(|i| format!("W{i:010}")).collect();
+        assert_eq!(run(&http, &FakeCreds::new(Some("stored-refresh")), &clock(T0), |c| video_details_with(c, &too_many)).err(), Some(INVALID));
+        assert_eq!(http.get_urls().len(), 1, "the refused call sends nothing");
+    }
+
+    #[test]
+    fn own_details_omit_a_requested_id_google_did_not_answer() {
+        let _t = exclusive();
+        clear_library(false);
+        token_in_memory();
+        let http = FakeHttp::reads(vec![ok(json!({ "items": [video(VID_A, "One", "PT1M", json!({}))] }))], vec![]);
+        let got = run(&http, &FakeCreds::new(Some("stored-refresh")), &clock(T0), |c| video_details_with(c, &[VID_A.into(), VID_B.into()])).unwrap();
+        assert_eq!(got, vec![YtDetail { id: VID_A.into(), title: Some("One".into()), channel: Some("Mira Vale".into()), seconds: Some(60) }]);
+    }
+
+    #[test]
+    fn own_details_sixty_real_calls_fill_the_hour_and_the_sixty_first_is_busy() {
+        let _t = exclusive();
+        clear_library(false);
+        token_in_memory();
+        let replies = (0..DETAILS_HOURLY).map(|_| ok(json!({ "items": [] }))).collect();
+        let http = FakeHttp::reads(replies, vec![]);
+        let creds = FakeCreds::new(Some("stored-refresh"));
+        let at = clock(T0);
+        for i in 0..DETAILS_HOURLY {
+            let id = format!("H{i:010}");
+            assert!(run(&http, &creds, &at, |c| video_details_with(c, &[id])).is_ok(), "call {i}");
+        }
+        assert_eq!(http.get_urls().len(), DETAILS_HOURLY as usize);
+        assert_eq!(run(&http, &creds, &at, |c| video_details_with(c, &["H9999999999".into()])).err(), Some(BUSY));
+        assert_eq!(http.get_urls().len(), DETAILS_HOURLY as usize, "busy sends nothing");
+    }
+
+    #[test]
     fn own_details_make_one_checked_request_and_shape_the_answer() {
         let _t = exclusive();
         clear_library(false);
