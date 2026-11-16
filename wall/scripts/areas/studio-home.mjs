@@ -131,7 +131,7 @@ export default {
       state('onair', 'sheet, ready, linked', onAirGallery(READY), ['On air', 'Recording', 'Back to normal', 'Linked', 'Panels', 'Glow', 'Calm', 'Behind monitor', 'White 80%. Floor 45%', 'Overhead', 'White 90%. Floor 45%'], FINE),
       state('onair', 'sheet, ready, split', onAirGallery(`${READY.replace('keys2=both', 'keys2=mismatch')}`), ['Split', 'Left', 'Right', '45%', '4700 K', 'Behind monitor'], `${FINE} >> ${LINKED}`),
       state('onair', 'sheet, On air is on', onAirGallery('keys2=both&studio=onair&desktoken=set'), ['On air', 'Glow', 'Back to normal', 'Goes back to how the room was before'], FINE),
-      state('onair', 'sheet, changed since it was set', onAirGallery('keys2=both&studio=changed&desktoken=set'), ['On air, changed', 'Changed since it was set'], FINE),
+      state('onair', 'sheet, changed since it was set', onAirGallery('keys2=both&studio=changed&desktoken=set'), ['On air, changed', 'Back to normal'], FINE),
       state('onair', 'sheet, no desk token', onAirGallery('keys2=both&studio=ready&desktoken=unset'), ["To change these, type the home app's desk token in Tools.", 'Open Tools', 'Behind monitor'], FINE),
       state('onair', 'sheet, Overhead needs a Hue zone', onAirGallery('keys2=both&studio=nozone&desktoken=set'), ['Needs a Hue zone', 'Behind monitor'], FINE),
       state('onair', 'sheet, the home app is away', onAirGallery(READY.replace('studio=ready', 'studio=lost')), ['The home app is not answering.', 'Try again', 'Behind monitor'], `${FINE} >> ${CLOSE} >> ${FINE}`),
