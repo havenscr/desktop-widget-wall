@@ -2,7 +2,7 @@
 // dot per running agent, the network alerts as a shield and a count), the separate amber pill, the grey ring when the
 // helper has no fresh answer, the focus mark, "+N" past six dots, on Listen and on the Watch tab with the drive-in.
 // One area file: gallery states, fit variants, the in-page measurement, its rule and the deliberate breaks. The
-// agents, alerts and focus come from the dev knobs `?agents=runN[askM]`, `?alerts=N`, `?focus=run`, `?net=calm`.
+// agents, alerts and focus come from the dev knobs `?agents=runN[askM]`, `?alarmcount=N`, `?focus=run`, `?net=calm`.
 
 const NIGHT = '2026-11-11T22%3A30%3A00-08%3A00';
 const BASE = `hz=unwind&at=${NIGHT}&clock=review&weather=ok`;
@@ -14,8 +14,8 @@ const STALE = `${BASE}&agents=stale&net=calm`;
 const FOCUS = `${BASE}&agents=run1&net=calm&focus=run`;
 const SEVEN = `${BASE}&agents=run7&net=calm`;
 const WATCH = `${BASE}&agents=run2ask2&${DRIVE_IN}`;
-const WORST = `${BASE}&agents=run12ask12&alerts=88&focus=run&long=1`;
-const WATCH_WORST = `${BASE}&agents=run12ask12&alerts=88&${DRIVE_IN}`;
+const WORST = `${BASE}&agents=run12ask12&alarmcount=88&focus=run&long=1`;
+const WATCH_WORST = `${BASE}&agents=run12ask12&alarmcount=88&${DRIVE_IN}`;
 const DREAM = (agents) => `hz=zen&screen=dream&at=${NIGHT}&clock=review&weather=ok&agents=${agents}&net=calm`;
 
 const gallery = (name, query, expect, actions) => ({

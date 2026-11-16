@@ -21,8 +21,8 @@ export function registerHomeMocks(): void {
       reachable: fw !== 'unreachable',
       stale: false,
       lastScan: bare ? null : new Date(t - 4 * 60_000).toISOString(),
-      // `?alerts=N` sets the open alarm count (default 4; `?net=calm` is 0).
-      alerts: net === 'calm' || bare ? 0 : /^\d{1,3}$/.test(knob('alerts') ?? '') ? Number(knob('alerts')) : 4,
+      // `?alarmcount=N` sets the open alarm count (default 4; `?net=calm` is 0).
+      alerts: net === 'calm' || bare ? 0 : /^\d{1,3}$/.test(knob('alarmcount') ?? '') ? Number(knob('alarmcount')) : 4,
       firewalla: { api: fw === 'unknown' ? 'unknown' : 'up', boxOnline: fw === 'offline' ? false : true, checkedAt: new Date(t).toISOString(), alarms24h: bare ? null : 3 },
       portalUrl: 'https://my.firewalla.net/',
       topAlerts: [
