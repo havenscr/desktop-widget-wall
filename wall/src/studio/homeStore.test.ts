@@ -450,6 +450,10 @@ it('a mood or Off click is ignored while a write of the page is out', async () =
   expect(calls.filter((c) => c.command === 'wall2_office_mood')).toHaveLength(0);
   release?.();
   await first;
+  // Nothing was queued behind it: after the answer no second write runs.
+  await flush(50);
+  expect(offCalls()).toHaveLength(1);
+  expect(calls.filter((c) => c.command === 'wall2_office_mood')).toHaveLength(0);
   expect(useHome.getState().applying).toBeNull();
 });
 

@@ -124,6 +124,19 @@ it('hidden states leave the empty slot: no children, aria-hidden, no line, and n
   expect(slot().getAttribute('aria-hidden')).toBe('true');
 });
 
+it('a later read that fails hides the row again, and one that answers brings it back', async () => {
+  await show();
+  expect(names()).toEqual(['Bright desk', 'Wind down', 'Gaming']);
+  readWord = 'unreachable';
+  await flush(60_000);
+  expect(slot().childElementCount).toBe(0);
+  expect(slot().getAttribute('aria-hidden')).toBe('true');
+  expect(line()).toBeNull();
+  readWord = null;
+  await flush(60_000);
+  expect(names()).toEqual(['Bright desk', 'Wind down', 'Gaming']);
+});
+
 it('shown: a group named Office moods, the label, one chip per mood in the home app order, no Off without off, nothing lit', async () => {
   await show();
   expect(slot().getAttribute('role')).toBe('group');
