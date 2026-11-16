@@ -72,10 +72,10 @@
   margin-top: 6px;
   min-width: 0;
 }
-.st-hl-t {
+.st-line.st-hl-t {
   flex: 1 1 auto;
   min-width: 0;
-  line-height: 1.2;
+  line-height: 19px;
 }
 .st-line {
   font: 16px/1.3 var(--body);
@@ -174,10 +174,10 @@
 }
 
 /* The block is 148 px (the older one was 134): the footnote under it keeps its place in the column by closing up
-   its gap and its line height (two lines of 18 px end at y 509, inside the column). */
+   its gap and its line height (two lines of 19 px end at y 507, inside the column). */
 .oa-right > .oa-foot {
-  margin-top: -5px;
-  line-height: 18px;
+  margin-top: -7px;
+  line-height: 19px;
 }
 /* A key light tile that carries a warning is already dashed and amber: the triangle would crowd the four tiles. */
 .st-switches .st-tg-warn {
@@ -657,6 +657,9 @@ button.st-tg:hover {
 .st-d-body:not(.one) .st-side-hd {
   height: 30px;
 }
+.st-d-body:not(.one) .st-k-hd {
+  gap: 8px;
+}
 .st-d-body:not(.one) .st-d-keys {
   border-top: 0;
   padding-top: 0;
@@ -861,4 +864,33 @@ button.st-tg:hover {
 .kl-note {
   white-space: normal;
   line-height: 1.25;
+}
+
+/* ---- Tools: Home app (the desk token), the last section of the right column ----
+   The drawer had about 18 px of height to spare, so the section is one line (name, state, buttons) under its
+   heading, and the Sources rows above it are 34 px high instead of 44 (their text keeps its size; 34 px is still a mouse size). */
+.dt-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 34px;
+  min-width: 0;
+}
+.dt-state {
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+}
+.dt-name {
+  flex: none;
+}
+.dt-field {
+  flex: 1;
+  min-width: 0;
+}
+.dt-note {
+  padding-top: 2px;
+}
+.kl-stack .tools-src {
+  height: 34px;
 }

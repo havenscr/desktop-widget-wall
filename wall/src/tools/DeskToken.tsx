@@ -94,7 +94,8 @@ export function DeskToken({ ringed = false }: { ringed?: boolean }) {
     close();
   };
 
-  const state = unreadable ? 'The saved token could not be read. Type it again.' : set ? 'Set' : 'Not set';
+  // One line: the name, the state, the buttons. A long sentence (unreadable, an error) goes under it.
+  const state = set ? 'Set' : 'Not set';
   return (
     <div className={ringed ? 'tools-block tools-ringed' : 'tools-block'} data-section="desktoken">
       <div className="tools-head kl-top">
@@ -103,27 +104,25 @@ export function DeskToken({ ringed = false }: { ringed?: boolean }) {
         </span>
         <span className="tools-faint">on this PC only</span>
       </div>
-      <div className="kl-row dt-row" onKeyDown={editing ? escape : undefined}>
-        <div className="kl-head">
-          <span className="kl-name">Desk token</span>
-          {!editing && (
+      <div className="dt-row" onKeyDown={editing ? escape : undefined}>
+        {!editing && (
+          <>
+            <span className="kl-name dt-name">Desk token</span>
+            <span className="tools-line kl-state dt-state" role="status" {...(set ? hover('The desk token is saved on this PC. It is never shown again.') : {})}>
+              {state}
+            </span>
             <button type="button" className={set ? 'tools-btn kl-btn' : 'tools-btn kl-btn cy'} disabled={busy} onClick={() => setEditing(true)} {...hover(set ? 'Type a new desk token' : "Type the home app's desk token once")}>
               {set || unreadable ? 'Change' : 'Set up'}
             </button>
-          )}
-          {(set || unreadable) && (
-            <button type="button" className="tools-btn kl-btn" disabled={busy} onClick={forget} {...hover('Removes the token from this PC; the home app keeps its own')}>
-              Forget
-            </button>
-          )}
-        </div>
-        {!editing && (
-          <div className={unreadable ? 'tools-line bad kl-state' : 'tools-line kl-state'} role="status" {...(set ? hover('The desk token is saved on this PC. It is never shown again.') : {})}>
-            {state}
-          </div>
+            {(set || unreadable) && (
+              <button type="button" className="tools-btn kl-btn" disabled={busy} onClick={forget} {...hover('Removes the token from this PC; the home app keeps its own')}>
+                Forget
+              </button>
+            )}
+          </>
         )}
         {editing && (
-          <div className="kl-form dt-form">
+          <>
             <input
               ref={field}
               className="tools-input kl-field dt-field"
@@ -146,14 +145,19 @@ export function DeskToken({ ringed = false }: { ringed?: boolean }) {
             <button type="button" className="tools-btn kl-btn" disabled={busy} onClick={close} {...hover('Closes the field without saving')}>
               Cancel
             </button>
-          </div>
-        )}
-        {error && (
-          <div className="tools-note bad kl-note" role="alert">
-            {error}
-          </div>
+          </>
         )}
       </div>
+      {unreadable && !editing && (
+        <div className="tools-note bad kl-note dt-note" role="status">
+          The saved token could not be read. Type it again.
+        </div>
+      )}
+      {error && (
+        <div className="tools-note bad kl-note dt-note" role="alert">
+          {error}
+        </div>
+      )}
     </div>
   );
 }
