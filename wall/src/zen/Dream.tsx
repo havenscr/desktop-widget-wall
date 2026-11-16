@@ -1,5 +1,5 @@
 import { IconCalendar } from '@tabler/icons-react';
-import { useEffect, useState, type ReactNode } from 'react';
+import { Fragment, useEffect, useState, type ReactNode } from 'react';
 import { agentsStale, useAgents } from '../agents/useAgents';
 import { needsYouCount } from '../agents/model';
 import { useSnoozed } from '../agents/snooze';
@@ -10,7 +10,7 @@ import { MOODS_CACHE_KEY, moodLabel } from '../home/Moods';
 import { tomorrowTime } from '../unwind/model';
 import { readMark } from '../unwind/RoomCard';
 import { clockTime, useTomorrow } from '../unwind/Tomorrow';
-import { dreamStatusText, dreamWorkingCount, driftOffset, DRIFT_TICK_MS } from './model';
+import { dreamStatusParts, dreamWorkingCount, driftOffset, DRIFT_TICK_MS } from './model';
 
 /** Where Watt sleeps, in stage pixels (left edge and ground line). */
 export const DREAM_SHEEP = { x: 1226, base: 688 } as const;
@@ -63,9 +63,25 @@ function DreamStatus({ now }: { now: () => Date }) {
   // A chat snoozed with "Later" on Work stays quiet here until its snooze ends.
   const snoozed = useSnoozed(st.summary);
   const needs = fresh ? needsYouCount(st.summary!, snoozed.ids) : null;
-  const text = dreamStatusText(working, needs, onMoodLabel(now().getTime()));
-  if (!text) return null;
-  return <div className="dream-status">{text}</div>;
+  const parts = dreamStatusParts(working, needs, onMoodLabel(now().getTime()));
+  if (parts.length === 0) return null;
+  return (
+    <div className="dream-status">
+      {parts.map((p, i) => (
+        <Fragment key={p.text}>
+          {i > 0 ? <span className="dream-sep"> · </span> : null}
+          {p.needs ? (
+            <span className="dream-needs">
+              <i aria-hidden="true" />
+              {p.text}
+            </span>
+          ) : (
+            <span>{p.text}</span>
+          )}
+        </Fragment>
+      ))}
+    </div>
+  );
 }
 
 /** True when the system asks for reduced motion. */

@@ -349,10 +349,31 @@
   position: absolute;
   left: 130px;
   bottom: 46px;
-  font: 400 13px/1.3 var(--body);
-  color: rgba(241, 236, 255, 0.4);
+  font: 400 16px/1.3 var(--body);
+  color: rgba(241, 236, 255, 0.54);
   white-space: nowrap;
   pointer-events: none;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+.dream-status .dream-sep {
+  opacity: 0.6;
+}
+/* An agent needs the owner: that part is amber, with a small amber dot before it. */
+.dream-status .dream-needs {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  color: rgba(255, 194, 77, 0.8);
+}
+.dream-status .dream-needs i {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--amber);
+  opacity: 0.8;
 }
 .dream-hint {
   position: absolute;
