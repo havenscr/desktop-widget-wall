@@ -26,6 +26,7 @@ import {
   WORD_FONT_PX,
   longestWordWidth,
   minRingDiameter,
+  dreamStatusParts,
   dreamStatusText,
   driftOffset,
   DRIFT_PERIOD_MS,
@@ -639,6 +640,42 @@ it('dreamStatusText says only what is known', () => {
   expect(dreamStatusText(0, 1, 'Late Night')).toBe('An agent needs you · Lights: Late Night');
   expect(dreamStatusText(1, 3, null)).toBe('1 agent still working · 3 agents need you');
   expect(dreamStatusText(null, null, 'Evening')).toBe('Lights: Evening');
+});
+
+it('dreamStatusParts marks only the part that says an agent needs the owner', () => {
+  expect(dreamStatusParts(null, null, null)).toEqual([]);
+  expect(dreamStatusParts(2, 0, 'Evening')).toEqual([
+    { text: '2 agents still working', needs: false },
+    { text: 'No agent needs you', needs: false },
+    { text: 'Lights: Evening', needs: false },
+  ]);
+  expect(dreamStatusParts(1, 1, null)).toEqual([
+    { text: '1 agent still working', needs: false },
+    { text: 'An agent needs you', needs: true },
+  ]);
+  expect(dreamStatusParts(0, 3, null)).toEqual([{ text: '3 agents need you', needs: true }]);
+});
+
+it('Dream status: the needs part is an amber span with a dot, the words stay one sentence; calm has no span', async () => {
+  vi.setSystemTime(new Date(2026, 10, 11, 23, 48));
+  mocks.set('wall2_meet_day', () => ({ events: [] }));
+  for (const [waiting, text, span] of [[true, '1 agent still working · An agent needs you', 'An agent needs you'], [false, '1 agent still working · No agent needs you', null]] as const) {
+    resetAgents();
+    localStorage.clear();
+    mocks.set('wall2_omni_summary', () =>
+      summary({ lanes: [lane({ id: 'a', state: 'working' }), ...(waiting ? [lane({ id: 'b', state: 'blocked', waiting: true })] : [])], yourMove: { total: waiting ? 1 : 0, first: waiting ? { sessionId: 'b', title: 'B', kind: 'gate', since: null, question: '' } : null, ...(waiting ? { ids: ['b'] } : {}) } }),
+    );
+    const r = render(<Dream onWake={() => undefined} />);
+    await flushAsync();
+    const status = document.querySelector('.dream-status')!;
+    expect(status.textContent).toBe(text);
+    const needs = status.querySelector('.dream-needs');
+    expect(needs?.textContent ?? null).toBe(span);
+    expect(needs ? needs.querySelector('i') !== null : true).toBe(true);
+    r.unmount();
+  }
+  resetAgents();
+  mocks.clear();
 });
 
 it('Dream status: agents from a fresh store, nothing when the store is off or stale, the mood only when this wall set one', async () => {

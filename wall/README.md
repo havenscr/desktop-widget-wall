@@ -1611,16 +1611,39 @@ frame (no ribbon) in the wide zones `470px 1fr 540px`. The parts are in `wall/sr
   tomorrow by local calendar date (between midnight and 5 AM, the day that has just
   begun, from now), or nothing when there is none or Meet is not set up. After a failed
   refresh it adds "as of 9:40 PM" (the last good read) and hides once that read is more
-  than 30 minutes old. Under it the status line (`StatusLine.tsx`, "Work is put away. 2
-  agents still running. No agent needs you.", from the focus timer once it has loaded and
-  the helper summary `wall2_omni_summary` every minute while visible; the agent and
-  needs-you sentences are left out without the helper or when it reports stale data).
-  The parts that carry an action are chips with a tooltip: "N agents still running" is a
-  quiet chip that switches to Work, and "N things need you" (or "One thing needs you") an
-  amber chip that opens the first waiting chat with `wall2_open_session` (the summary's
-  first your-move session, else the first lane that waits; when links are not available it
-  switches to Work instead). Each chip is 32 px tall. "Work is put away.", "Focus is still
-  on." and "No agent needs you." (the line only knows about agents) stay plain text. When
+  than 30 minutes old. Under it the status marks (`StatusLine.tsx`), which stand in for a sentence and
+  say the same things (the focus timer once it has loaded, and the helper summary
+  `wall2_omni_summary` every minute while visible). One small capsule holds the
+  "work is put away" mark (a briefcase crossed out) and one soft cyan dot for each running
+  agent, six at most and then "+N" (nothing running: the mark alone). A focus session that is
+  on or paused swaps the mark for a cyan target and the card's title for "Focus is still on".
+  Network alerts, only from a current good read, are a shield and a count inside the capsule
+  after a thin divider. The three controls' hover cards start at the control's left edge
+  (`tip(content, { align: 'start' })` in `ui/HoverTip.tsx`; every other card keeps the
+  centred default) so they never cover the rail, and an open card redraws from the latest
+  answer. Resting the pointer on the capsule (or tabbing to it) shows the
+  sentences the old line said: "Work is put away", "2 agents still running. No agent needs
+  you.", "Click to see the agents on Work"; a click goes to Work, and the alerts button goes
+  to Home. When an agent needs the owner, a separate amber pill 10 px to its right says "One
+  thing needs you" or "N things need you"; its card reads "One chat is waiting for you" (or
+  "N chats are waiting for you"), and a click opens the first waiting chat with
+  `wall2_open_session` (the summary's first your-move session, else the first lane that
+  waits; when links are not available it switches to Work instead). A chat quietened with
+  "Later" on Work raises no pill and the card leaves the needs sentence out. A helper that is
+  failing or whose answer is stale (never a helper that is not set up, which shows the mark
+  alone) gets one hollow grey ring in place of the dots and the card says "Agents: no fresh
+  answer": never an all-clear. Everything is a button in the tab order with a 3 px cyan
+  focus ring, 36 px tall. Nothing blinks: a dot, the ring or the pill fades in once over 400
+  ms and holds (under reduced motion it just appears). The capsule grows 18 px per dot, so
+  Tomorrow and the rest of the foot never move; the whole row is 71 px with one dot and at
+  most about 490 px (six dots, "+N", a two-digit alert count and "N things need you" with
+  two digits). With nothing to say and no alarm nothing is drawn. Counting is the same as
+  Work's (top-level sessions only; a waiting session is not running), and the line never
+  lists, counts or opens a child session or a side chat. `statusMarks` in `unwind/model.ts`
+  gives the numbers; the old sentence builder lives on only in `unwind/statusTestUtil.ts`,
+  frozen as the reference the table test holds the marks to (nothing in the app calls it). Dev knobs: `?agents=runN` (N sessions, all running), `run2ask2` (two
+  running, two waiting), `?alarmcount=N` (open alarm count), `?focus=run`. The area file
+  `scripts/areas/status-marks.mjs` holds its gallery states and fit rules. When
   the calendar cannot be read (no account answers, or the cached read is over 30 minutes
   old) the Tomorrow spot says "Calendar not available"; when weather is missing the date
   line ends with "weather unavailable" in dim text. The Room chips mark the mood that is on
@@ -2800,7 +2823,7 @@ Add one optional key to `feeds.json` (see "Setting it up: `feeds.json`"):
 - `wall2_machines` returns `{ pc: { cpuPct, gpuPct, ramPct }, box: { cpuPct, gpuPct, ramPct, tempC } | null, boxStale }`. The PC numbers come from the same function as the old `get_system_stats` (which is unchanged). The PC numbers are returned at once on every call. The box numbers come from the helper summary's `system` block, refreshed in the background (one read at a time, at most one every 15 seconds, 3 second timeout), so a slow helper never delays the PC numbers and the first call after start shows `box: null`. After a failed read the last good box numbers stay with `boxStale: true` for up to 10 minutes, then `box` is `null`. `box` is also `null` when the helper is not set up. The numbers are kept per `omniHelperUrl`, so a changed address never shows the old host's numbers.
 - All of them refuse any window but `wall2` (`forbidden`).
 
-Nothing here logs, and nothing here takes a wake lock or sets an execution state. Browser dev (`npm run dev`) shows mock answers from `devMocks/omni.ts`; `?agents=3` (default), `2`, `1`, `0`, `6`, `7`, `12`, `30` (sessions; `6` and `30` show the Day drawer's rows at their tallest and at their scrolling minimum, sessions from a helper 1.1.0 answer, with three subscriptions, one near full), `helpers` (an idle own turn with two agents, one command and one child still running), `ask` (one waiting), `ask2` (two waiting, one not on a card), `failed`, `12busy` (twelve open, nine working at once, over the limit of 4 since mid morning, one waiting, one failed, one idle, and a helper's run that is never counted; add `&limit=0` for a helper that sends no limit), `old` (an older helper's answer), `stale`, `off` (not set up) or `down` (not answering) picks the helper's state.
+Nothing here logs, and nothing here takes a wake lock or sets an execution state. Browser dev (`npm run dev`) shows mock answers from `devMocks/omni.ts`; `?agents=3` (default), `2`, `1`, `0`, `6`, `7`, `12`, `30` (sessions; `run1`, `run7`, `run12ask2` and so on: that many sessions all running, then that many waiting, for the Unwind status marks, with `?alarmcount=N` for the open network alarm count; `6` and `30` show the Day drawer's rows at their tallest and at their scrolling minimum, sessions from a helper 1.1.0 answer, with three subscriptions, one near full), `helpers` (an idle own turn with two agents, one command and one child still running), `ask` (one waiting), `ask2` (two waiting, one not on a card), `failed`, `12busy` (twelve open, nine working at once, over the limit of 4 since mid morning, one waiting, one failed, one idle, and a helper's run that is never counted; add `&limit=0` for a helper that sends no limit), `old` (an older helper's answer), `stale`, `off` (not set up) or `down` (not answering) picks the helper's state.
 
 ### Saved records
 
@@ -3267,13 +3290,13 @@ the system volume, Do Not Disturb or the focus timer.
   follows the concept: a large thin clock at left centre (about half white) with the date
   under it, a Tomorrow card at right centre (tomorrow's first meeting from the same feed and
   rules as Unwind's Tomorrow: "as of" when cached, hidden when too old, one line when the
-  calendar cannot be read, absent on a clear day), and a quiet 13 px status line at bottom
+  calendar cannot be read, absent on a clear day), and a quiet 16 px status line at bottom
   left (agents still working and whether one needs the owner, only from a fresh helper
-  answer; the lights mood that is on, only when this wall set one in the last three hours).
+  answer, the part that says an agent needs the owner in amber with a small amber dot, since nothing can be hovered there; the lights mood that is on, only when this wall set one in the last three hours).
   The hint reads "Click anywhere to wake"; moving the mouse does not wake it (the strip sits right under the main monitor, so the pointer
   wanders onto it). Nothing is bright. All the text (clock, date, card, status, hint) sits in one layer that drifts by transform alone along a
   closed 30 by 20 px path, one lap in 20 minutes, so no pixel stays lit for hours; under reduced motion it holds one of four points for 7.5 minutes, then
-  jumps to the next. The status line and hint are at 40 percent, the card has no frame. Nothing else moves except Watt. Watt sleeps in the corner (the `SheepSvg` sleep pose from `buddy/Watt.tsx`,
+  jumps to the next. The status line is at 54 percent and the hint at 40 percent, the card has no frame. Nothing else moves except Watt. Watt sleeps in the corner (the `SheepSvg` sleep pose from `buddy/Watt.tsx`,
   at x 1226, ground line 688). The dimmed state starts when a session ends (the guide fades out
   first), or by itself late at night: from 10 PM until 6 AM local time, once the PC has had no
   input for ten minutes. "Input" is the PC's idle age from `wall2_idle_state` (idle seconds),

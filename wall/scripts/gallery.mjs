@@ -179,7 +179,7 @@ add('home', 'shield drawer, plain http address', url('home', TYPICAL_AT, 'desk=t
 
 // The network alarm outside Home: the rail dot and one chip on Work and Unwind, never from a down source.
 state('work', 'network alarm: rail dot and chip', 'net=4');
-state('unwind', 'network alarm: chip in the status line', 'net=4');
+add('unwind', 'network alarm: button in the status marks', url('unwind', TYPICAL_AT, 'net=4'), true, 'hover:.u-cap-net');
 state('work', 'network alarm: home app down, nothing shown', 'home=down');
 // A task tick waits five seconds with Undo (the still is taken just after the click).
 add('work', 'task ticked: Done with Undo', url('work', TYPICAL_AT, 'tasks=few'), true, '.tasks .task-check');
@@ -246,12 +246,14 @@ state('work', 'timeline: one account failing', 'meet=mixed');
 state('work', 'timeline: no agent activity yet', 'agents=0&tasks=none&meet=none&day=empty');
 state('home', 'timeline: nothing scheduled at home', 'tasks=none');
 
-// Unwind: the status chips, now playing, calendar tomorrow, the room card.
-state('unwind', 'status chips, nothing waiting', 'agents=3');
-state('unwind', 'status chips, sessions waiting', 'agents=ask');
-state('unwind', 'status chips, none running', 'agents=0');
-state('unwind', 'status chips, helper not set up', 'agents=off');
-state('unwind', 'status chips, focus on', 'focus=long');
+// Unwind: the status marks, now playing, calendar tomorrow, the room card.
+// The status marks (the capsule's card shows the sentences on hover).
+const marks = (name, extra, click) => add('unwind', `status marks, ${name}`, url('unwind', TYPICAL_AT, extra), true, click);
+marks('nothing waiting', 'agents=3', 'hover:.u-cap-work');
+marks('sessions waiting', 'agents=ask');
+marks('none running', 'agents=0', 'hover:.u-cap-work');
+marks('helper not set up', 'agents=off', 'hover:.u-cap-work');
+marks('focus on', 'focus=long', 'hover:.u-cap-work');
 state('unwind', 'music paused', 'media=paused');
 state('unwind', 'long track and artist', 'media=long');
 state('unwind', 'audio demo (levels moving)', 'audio=demo');
@@ -662,11 +664,11 @@ const EXPECT = [
   // Unwind
   ['unwind', 'sparse', ['Nothing playing', 'Quiet']],
   ['unwind', 'heavy', ['An Extremely Long Song Title', '!Away For The Weekend']],
-  ['unwind', 'status chips, nothing waiting', ['2 agents still running', 'No agent needs you']],
-  ['unwind', 'status chips, sessions waiting', 'One thing needs you.'],
-  ['unwind', 'status chips, none running', ['No agent needs you', '!still running']],
-  ['unwind', 'status chips, helper not set up', ['Work is put away', '!No agent needs you', '!still running']],
-  ['unwind', 'status chips, focus on', 'Focus is still on'],
+  ['unwind', 'status marks, nothing waiting', ['2 agents still running', 'No agent needs you']],
+  ['unwind', 'status marks, sessions waiting', 'One thing needs you'],
+  ['unwind', 'status marks, none running', ['No agent needs you', '!still running']],
+  ['unwind', 'status marks, helper not set up', ['Work is put away', '!No agent needs you', '!still running']],
+  ['unwind', 'status marks, focus on', 'Focus is still on'],
   ['unwind', 'music paused', '1:03'],
   ['unwind', 'long track', 'An Extremely Long Song Title'],
   ['unwind', 'broken: media unavailable', 'Nothing playing'],
@@ -676,7 +678,7 @@ const EXPECT = [
   ['unwind', 'broken: task app down', 'First thing: Planning check-in at 9:30'],
   ['unwind', 'broken: weather down', ['Wednesday morning', '!58°']],
   ['unwind', 'typical', ['Tokyo Burnout', '!Which player the wall follows', '!Lights']],
-  ['unwind', 'network alarm', '4 network alerts.'],
+  ['unwind', 'network alarm', '4 alerts are open on the home network'],
   ['unwind', 'watch: nothing saved', ['Nothing on', 'Paste a YouTube or Twitch link', '!saved']],
   ['unwind', 'watch: three saved, nothing on', ['Nothing on', 'Play Night drive mix', '3 saved']],
   ['unwind', 'watch: feathered', ['Open in YouTube', 'Lofi beats radio']],
