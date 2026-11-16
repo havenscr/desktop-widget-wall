@@ -90,6 +90,8 @@ let noteTimer: ReturnType<typeof setTimeout> | undefined;
 let moodFailTimer: ReturnType<typeof setTimeout> | undefined;
 let offerTimer: ReturnType<typeof setTimeout> | undefined;
 let offReadTimer: ReturnType<typeof setTimeout> | undefined;
+/** Until this time (ms) a poll, a join or a token change reads no moods: the lights' own report still trails an Off. */
+let offHoldUntil = 0;
 let studioGen = 0;
 let moodsGen = 0;
 let moodUsers = 0;
@@ -192,6 +194,7 @@ export const useHome = create<HomeState>((set, get) => {
         set({ sticky: null });
         // The answer is trusted; the lights' own report trails an Off, so the read that follows waits a moment.
         if (delayRead) {
+          offHoldUntil = Date.now() + OFF_READ_DELAY_MS;
           clearTimeout(offReadTimer);
           offReadTimer = setTimeout(() => {
             if (moodUsers > 0) void get().readMoods();
@@ -281,7 +284,7 @@ export const useHome = create<HomeState>((set, get) => {
       set({ sticky: null });
       await get().refreshToken();
       await get().readStudio();
-      if (moodUsers > 0) await get().readMoods();
+      if (moodUsers > 0) await readMoodsPolled();
     },
   };
 });
@@ -321,12 +324,18 @@ export function homePollChange(by: 1 | -1): void {
   }
 }
 
+/** A moods read that waits out the hold after an Off write; the one read scheduled after the Off covers it. */
+async function readMoodsPolled(): Promise<void> {
+  if (Date.now() < offHoldUntil) return;
+  await useHome.getState().readMoods();
+}
+
 /** Unwind joins while it is the shown place and awake: one read, then every 60 s. */
 export function moodsPollChange(by: 1 | -1): void {
   const before = moodUsers;
   moodUsers = Math.max(0, moodUsers + by);
-  if (by === 1) void useHome.getState().readMoods();
-  if (before === 0 && moodUsers > 0) moodTimer = setInterval(() => void useHome.getState().readMoods(), HOME_READ_EVERY_MS);
+  if (by === 1) void readMoodsPolled();
+  if (before === 0 && moodUsers > 0) moodTimer = setInterval(() => void readMoodsPolled(), HOME_READ_EVERY_MS);
   if (moodUsers === 0) {
     clearInterval(moodTimer);
     moodTimer = undefined;
@@ -442,6 +451,7 @@ export function resetHome(): void {
   clearTimeout(moodFailTimer);
   clearTimeout(offerTimer);
   clearTimeout(offReadTimer);
+  offHoldUntil = 0;
   clearInterval(pollTimer);
   clearInterval(moodTimer);
   pollTimer = moodTimer = undefined;

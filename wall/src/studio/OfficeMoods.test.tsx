@@ -155,6 +155,35 @@ it('shown: a group named Office moods, the label, one chip per mood in the home 
   }
 });
 
+it('the fit rule is applied: twelve names of 40 characters drop the label and cut every name; a short row keeps both', async () => {
+  // jsdom has no canvas, so the component measures with its rough guess (9 px a character): 360 px a name, far over 1250 in all.
+  const forty = (i: number) => `Mood ${String(i).padStart(2, '0')} ${'x'.repeat(40 - 8)}`;
+  list = Array.from({ length: 12 }, (_, i) => ({ id: `mood${i}`, label: forty(i), line: null, active: i === 0 }));
+  off = { active: false };
+  const { unmount } = await show();
+  expect(forty(0)).toHaveLength(40);
+  expect(slot().querySelector('.u-mood-label')).toBeNull();
+  expect(slot().getAttribute('aria-label')).toBe('Office moods');
+  const named = [...slot().querySelectorAll<HTMLElement>('.u-mood-name')].filter((n) => n.textContent !== 'Off');
+  expect(named).toHaveLength(12);
+  for (const n of named) expect(n.style.maxWidth).toMatch(/^\d+px$/);
+  // Cut at the largest shared width that fits: more than the minimum text, and the full name still in the tip.
+  expect(parseInt(named[0].style.maxWidth, 10)).toBeGreaterThanOrEqual(31);
+  expect(await tipOf(chip(forty(0)))).toBe(`${forty(0)} is on.`);
+  unmount();
+  resetHome();
+  resetTip();
+  // Three short names fit as they are: the label stays and no name is cut.
+  list = [
+    { id: 'a', label: 'Bright desk', line: null, active: false },
+    { id: 'b', label: 'Reading', line: null, active: false },
+  ];
+  off = null;
+  await show();
+  expect(slot().querySelector('.u-mood-label')).not.toBeNull();
+  for (const n of slot().querySelectorAll<HTMLElement>('.u-mood-name')) expect(n.style.maxWidth).toBe('');
+});
+
 it('Off shows only when the home app offers it, always last; it is lit only with no mood on', async () => {
   off = { active: false };
   await show();
@@ -249,6 +278,22 @@ it('no token: dashed and aria-disabled, focusable with its tip, a click sends no
   expect(line()?.textContent).toBe(TEXT.needsPrivate);
 });
 
+it('no token with a mood on: that chip keeps its lit state (the ring), the others stay unpressed, and a click still sends nothing', async () => {
+  canWrite = false;
+  block = 'not-set-up';
+  list[2].active = true;
+  await show();
+  const lit = chip('Gaming');
+  expect(lit.className).toContain('lit');
+  expect(lit.className).toContain('blocked');
+  expect(lit.getAttribute('aria-pressed')).toBe('true');
+  expect(chip('Bright desk').getAttribute('aria-pressed')).toBe('false');
+  fireEvent.click(lit);
+  await flush();
+  expect(count('wall2_office_mood')).toBe(0);
+  expect(line()?.textContent).toBe(TEXT.notSetUp);
+});
+
 it('stale: dimmed, the line ends (not fresh), a click still works', async () => {
   stale = true;
   list[0].active = true;
@@ -275,11 +320,31 @@ it('a tip carries the full name and the full line, for a long name and a long li
   expect(line()?.textContent).toBe(`${LONG}: ${LINE}`);
 });
 
-it('a focused chip shows its tip at once (keyboard)', async () => {
+it('every chip is a real button in the tab order, and focusing one shows its card at once', async () => {
+  off = { active: false };
   await show();
+  const buttons = within(slot()).getAllByRole('button');
+  expect(buttons.map((b) => b.textContent)).toEqual(['Bright desk', 'Evening lamp', 'Gaming', 'Off']);
+  for (const b of buttons) {
+    expect(b.tagName).toBe('BUTTON');
+    expect(b.tabIndex).toBe(0);
+  }
   act(() => chip('Bright desk').focus());
   await flush();
   expect(document.querySelector('.hover-tip')?.textContent).toBe('Bright desk: Room 70%, neon 20%');
+});
+
+it.each([
+  ['Bright desk', 'wall2_office_mood', { id: 'brightDesk' }],
+  ['Gaming', 'wall2_office_mood', { id: 'gaming' }],
+  ['Off', 'wall2_office_off', undefined],
+])('a click on %s calls the bridge once as %s', async (name, command, args) => {
+  off = { active: false };
+  await show();
+  fireEvent.click(chip(name));
+  await flush();
+  const sent = calls.filter((c) => c.command !== 'wall2_office_moods');
+  expect(sent).toEqual([{ command, ...(args ? { args } : {}) }]);
 });
 
 it('reads only while shown: one read on mount, none after it leaves, and the Off write adds one after about a second and a half', async () => {

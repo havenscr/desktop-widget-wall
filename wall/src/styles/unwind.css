@@ -3832,6 +3832,10 @@ button.sp-qrow:hover {
 .u-mood.off .u-mood-ico {
   width: 14px;
 }
+/* One turn in 1.8 s: slow, never busy (it stays still under reduced motion, as `.u-spin` does). */
+.u-mood-ico.u-spin {
+  animation-duration: 1800ms;
+}
 .u-mood-ico.warn {
   color: var(--amber);
 }

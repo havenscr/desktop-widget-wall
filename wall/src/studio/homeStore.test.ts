@@ -457,6 +457,60 @@ it('a mood or Off click is ignored while a write of the page is out', async () =
   expect(useHome.getState().applying).toBeNull();
 });
 
+it('a poll tick inside the wait after an Off reads nothing; the one delayed read still comes, once', async () => {
+  record('wall2_office_moods', () => offAnswer(false, true));
+  record('wall2_office_off', () => offAnswer(true));
+  const n = () => calls.filter((c) => c.command === 'wall2_office_moods').length;
+  moodsPollChange(1);
+  await flush(HOME_READ_EVERY_MS - 500);
+  expect(n()).toBe(1);
+  await useHome.getState().applyOff();
+  // The 60 second tick lands 500 ms after the Off, inside the wait: no read, and the trusted answer stays.
+  await flush(600);
+  expect(n()).toBe(1);
+  expect(useHome.getState().moods?.off).toEqual({ active: true });
+  expect(useHome.getState().moods?.moods[0].active).toBe(false);
+  await flush(OFF_READ_DELAY_MS);
+  expect(n()).toBe(2);
+  await flush(HOME_READ_EVERY_MS);
+  expect(n()).toBe(3);
+  moodsPollChange(-1);
+});
+
+it('Unwind left and shown again inside the wait after an Off reads nothing at once; the delayed read comes once', async () => {
+  record('wall2_office_moods', () => offAnswer(false, true));
+  record('wall2_office_off', () => offAnswer(true));
+  const n = () => calls.filter((c) => c.command === 'wall2_office_moods').length;
+  moodsPollChange(1);
+  await flush();
+  await useHome.getState().applyOff();
+  moodsPollChange(-1);
+  await flush(300);
+  moodsPollChange(1);
+  await flush(100);
+  expect(n()).toBe(1);
+  expect(useHome.getState().moods?.off).toEqual({ active: true });
+  await flush(OFF_READ_DELAY_MS);
+  expect(n()).toBe(2);
+  moodsPollChange(-1);
+});
+
+it('a join after the wait has passed reads at once', async () => {
+  record('wall2_office_moods', () => offAnswer(false));
+  record('wall2_office_off', () => offAnswer(true));
+  const n = () => calls.filter((c) => c.command === 'wall2_office_moods').length;
+  moodsPollChange(1);
+  await flush();
+  await useHome.getState().applyOff();
+  moodsPollChange(-1);
+  await flush(OFF_READ_DELAY_MS + 100);
+  const before = n();
+  moodsPollChange(1);
+  await flush();
+  expect(n()).toBe(before + 1);
+  moodsPollChange(-1);
+});
+
 it('a token change reads the moods only while the moods poll has users', async () => {
   mocks.set('wall2_desk_token_status', () => ({ set: true, unreadable: false }));
   await useHome.getState().tokenChanged();

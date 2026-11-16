@@ -427,7 +427,8 @@ fn ids_of(s: &Studio) -> StudioIds {
 pub(crate) struct Seen {
     studio: Option<(Instant, StudioIds)>,
     /// The ids of the last good moods read and whether it offered Off.
-    moods: Option<(Instant, Vec<String>, bool)>,
+    /// The base the read came from (as `Env` holds it): an entry from another base counts as none.
+    moods: Option<(Instant, String, Vec<String>, bool)>,
 }
 
 fn global_seen() -> &'static Mutex<Seen> {
@@ -491,7 +492,7 @@ pub(crate) fn read_moods(env: &Env) -> Result<Moods, String> {
 fn finish_moods(env: &Env, body: &Value) -> Result<Moods, String> {
     let (can_write, block) = env.write_state();
     let moods = shape_moods(body, can_write, block).ok_or_else(|| FAILED.to_string())?;
-    lock(env.seen).moods = Some((env.now, moods.moods.iter().map(|m| m.id.clone()).collect(), moods.off.is_some()));
+    lock(env.seen).moods = Some((env.now, env.base.to_string(), moods.moods.iter().map(|m| m.id.clone()).collect(), moods.off.is_some()));
     Ok(moods)
 }
 
@@ -508,8 +509,9 @@ fn studio_ids(env: &Env) -> Result<StudioIds, String> {
 /// The ids of the last good moods read and whether it offered Off, read again first when there
 /// is none or it is old.
 fn moods_seen(env: &Env) -> Result<(Vec<String>, bool), String> {
-    if let Some((at, ids, off)) = lock(env.seen).moods.clone() {
-        if env.fresh(at) {
+    if let Some((at, base, ids, off)) = lock(env.seen).moods.clone() {
+        // A read from another base (`homeBaseUrl` changed) says nothing about this one: read it first.
+        if base == env.base && env.fresh(at) {
             return Ok((ids, off));
         }
     }
@@ -1504,6 +1506,45 @@ mod tests {
         assert_eq!(r.unwrap_err(), "refused");
         let methods: Vec<&str> = f.calls()[n..].iter().map(|c| c.method).collect();
         assert_eq!(methods, vec!["GET"]);
+    }
+
+    #[test]
+    fn a_moods_read_from_another_base_is_not_trusted_for_off_or_a_mood() {
+        const OTHER: &str = "https://other.invalid";
+        let seen = Mutex::new(Seen::default());
+        let t0 = Instant::now();
+        let f = Fake::default();
+        // Base A offers Off and lists a mood.
+        f.push(200, &moods_body_off(json!(true), json!(false)).to_string());
+        read_moods(&env(&f, HTTPS, Some(TOKEN), &seen, t0)).unwrap();
+        // Base B does not offer Off: B is read first, and nothing is posted to it.
+        f.push(200, &moods_body().to_string());
+        let n = f.calls().len();
+        let at_b = env(&f, OTHER, Some(TOKEN), &seen, t0 + Duration::from_secs(5));
+        assert_eq!(office_off(&at_b).unwrap_err(), "refused");
+        let calls = f.calls();
+        assert_eq!(calls.len(), n + 1, "one request only");
+        assert_eq!((calls[n].method, calls[n].url.as_str()), ("GET", "https://other.invalid/api/desk/office/moods"));
+        // The entry now belongs to B; a mood id that only A listed is refused with a read of nothing new.
+        let mut a_only = moods_body();
+        a_only["moods"] = json!([{"id": "onlyA", "label": "Only A", "active": false}]);
+        let seen2 = Mutex::new(Seen::default());
+        let f2 = Fake::default();
+        f2.push(200, &a_only.to_string());
+        read_moods(&env(&f2, HTTPS, Some(TOKEN), &seen2, t0)).unwrap();
+        f2.push(200, &moods_body().to_string());
+        assert_eq!(office_mood(&env(&f2, OTHER, Some(TOKEN), &seen2, t0 + Duration::from_secs(5)), "onlyA").unwrap_err(), "refused");
+        assert!(f2.calls().iter().all(|c| c.method == "GET"), "no POST to B");
+        // B offering Off: B's own read decides, then exactly one POST to B.
+        let seen3 = Mutex::new(Seen::default());
+        let f3 = Fake::default();
+        f3.push(200, &moods_body().to_string());
+        read_moods(&env(&f3, HTTPS, Some(TOKEN), &seen3, t0)).unwrap();
+        f3.push(200, &moods_body_off(json!(true), json!(false)).to_string());
+        f3.push(200, &moods_body_off(json!(true), json!(true)).to_string());
+        office_off(&env(&f3, OTHER, Some(TOKEN), &seen3, t0 + Duration::from_secs(5))).unwrap();
+        let urls: Vec<String> = f3.calls().iter().map(|c| format!("{} {}", c.method, c.url)).collect();
+        assert_eq!(urls[1..], ["GET https://other.invalid/api/desk/office/moods", "POST https://other.invalid/api/desk/office/off"]);
     }
 
     #[test]
