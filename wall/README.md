@@ -80,7 +80,7 @@ other people in search, and must never render those names as markup.
 Library items include bounded subtitles, counts and cover images selected near 300 and
 64 pixels. Covers are accepted from any host under `scdn.co` or `spotifycdn.com` over `https`.
 Track lists use 50 items per page and stop at page 39. Queue reads return at
-most 10 upcoming tracks. Playback reads return no value when Spotify has no active
+most 20 upcoming tracks (Up next still shows 3). Playback reads return no value when Spotify has no active
 session. The seek command (`wall2_spotify_seek`) takes a position in milliseconds, at most 24 hours, and returns the module's fixed words on failure. The YouTube Music action opens the fixed `https://music.youtube.com/` address.
 Track-producing reads send `market=from_token`. A track is unplayable only when
 `is_playable` is present and false, it is restricted or local, or the item is not a
@@ -91,6 +91,70 @@ and the playlists and albums lists are capped at 512 KB. The signed-in profile i
 in memory until sign in or sign out so search and playlist paging reuse it safely.
 When a play request includes a context, that context and its optional offset take
 precedence over the top-level kind and id; the top-level values remain validated.
+
+### Playlists the owner saved but did not make
+
+Since Spotify's February 2026 rules for apps in development mode, the Web API returns a playlist's songs only
+to the person who made the playlist or co-edits it. For any other playlist it answers with the name, cover,
+owner and total only, and the wall maps that refusal to the word `not yours`. The playlist page works in this
+order. Playlists the owner made or co-edits always read through the Web API and never touch anything below. For a
+`not yours` playlist, the page asks the native public page reader for a list (when the switch below is on); if
+that gives songs they show in the same rows under a source tag; if not, the "while it plays" view shows.
+
+**The owner chose this for his personal app knowing that reading Spotify's public web page for a playlist's
+songs is against Spotify's developer terms, and that it can stop working at any time.** The wall does not sign
+in to the page, sends no cookie, no Spotify credential and no referrer, does not use or keep the access token the
+page carries, calls no other Spotify web address, reads public playlists only, and reads each playlist at most
+once a minute and 20 pages an hour in all. The switch on the playlist page turns it off.
+
+- **The public page reader** (`wall2_spotify_page.rs`, command `wall2_spotify_public_page`). One fixed address,
+  `https://open.spotify.com/embed/playlist/` plus a playlist id that passed the 22 character check, with no
+  query and no fragment. It has its own HTTP agent (never the Web API one, so no bearer token can reach it), no
+  cookie store, no redirects (any 3xx is a failure), a 6 second limit, and sends only a plain `Ridgeline/1.0`
+  user agent and `Accept: text/html`. The body is read to at most 512 KB after any decompression; one byte more is
+  `page too big`. The reader finds the one `__NEXT_DATA__` script element (two of them, or none, is
+  `page changed`), parses its JSON, and reads only the playlist at one fixed path: its type and uri must be this
+  playlist, and its row list is shaped for the first 200 entries (the number of entries it held is counted). Each
+  row's title and artists are cleaned and cut like Web API rows, its length is bounded, and its track id must pass
+  the id check. The page's own `isPlayable` flag is never read (it describes a reader who is not signed in, not the
+  owner): a row with a valid track id plays, and a song Spotify cannot play is skipped by Spotify. The access token in the same JSON is never read into
+  anything that leaves the parsing function, and nothing else of the JSON is read. Answers are cached in memory for
+  30 minutes (a failure for 60 seconds, which is the floor of one network read per playlist per minute), at most 20
+  network reads an hour are made in all, a 429 pauses reads for its `Retry-After` (a minute when absent, an hour at
+  most), and two calls for one playlist make one read. Failures leave as fixed words only: `not public`,
+  `page changed`, `page too big`, `busy`, `no connection`, `invalid id`. The log (`wall2-spotify.log`) gets one fixed
+  line per network read (`page-read` or `page-failed` with a fixed reason, the status and the milliseconds), never an
+  id, a title or a count of rows. Nothing is stored on disk. The content policy is unchanged.
+- **The source tag** above the rows says "From Spotify's public page", and "first N of M" when the rows returned are
+  fewer than the playlist's total (so a 500 song page shows "first 200 of 500"; the total length shows only when every
+  song is listed and every one has a length, and a song with no length draws an empty cell). Its hover card says why
+  the list is read this way and that it is against Spotify's developer terms. A click on a row plays the playlist from
+  that song (the same request as for any playlist).
+- **The switch** is on the playlist page, in every state of a saved playlist's page. While the reader is on, a "Turn
+  off" button is on the page when it is reading, listing, failed (private or removed, the hourly limit, the page
+  changed, too big, no answer) or listed no songs. While it is off, the page says so, offers "Read public page" and
+  says in plain words, without a hover, that reading the page is against Spotify's developer terms and may stop
+  working. The choice is kept in local storage under `wall2-spotify-public-page` (only the value `off` turns it off;
+  blocked or unreadable storage means on). It is on by default. With it off the web view never calls the reader. After
+  a failed read the wall keeps the failure for a minute, so the page says "Try again in a minute." and shows Retry
+  only after that minute.
+- **The "while it plays" view** shows when there is no list (the switch is off or the page failed, with a line that
+  says which). While this playlist plays it keeps that line on top and shows "Playing now" (or "Paused"), "Up next in
+  Spotify" (the first 8 of the queue, then one line, "N more in Up next", that opens the card's Up next tab in the tall
+  card) and "Heard from this playlist" (Spotify's recently played list, filtered to plays whose context is this
+  playlist, newest first, each song once, the song playing left out). A failed queue read drops the queue rows and says
+  so until a read succeeds. The headings are real headings. The playback read carries `playlistId` (only from the plain
+  `spotify:playlist:<id>` context form), and the heard list is the command `wall2_spotify_heard`. Playback and the
+  queue are read when the page opens, when the song changes and every 20 seconds while it shows; the heard list when
+  the page opens and when the playing song's id changes; nothing is read while the page is hidden and nothing is
+  stored. A heard row plays the playlist from that song; a queued row skips forward once per row up to it (as Up next
+  does, because a queued song may be one that is not in the playlist); the playing row does nothing. Spotify records
+  a play after about half a minute, so the heard list lags.
+- **Dev mocks.** `?spotify=notyours` refuses every playlist's songs. With it, `spotifypage=` (none means `private`) is
+  `ok` (40 songs), `first` (100 of 520), `big` (200 rows of 500), `odd` (a few songs with no track id), `private`,
+  `changed`, `toobig`, `busy`, `down` or `slow`; `spotifyctx=this` or `other` makes the player report this or another
+  playlist as its context (and gives the heard list six songs); `spotifyload=heavy` gives a 20 song queue and 50 heard
+  songs; `spotifypageoff=1` starts with the switch off.
 
 ## YouTube
 

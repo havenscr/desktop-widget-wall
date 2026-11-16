@@ -63,6 +63,97 @@ export function spotifyProblem(e: unknown): SpotifyProblem {
 
 /** Spotify shows a playlist's songs only to the person who made or co-edits it: what to do instead (Retry never helps here). */
 export const NOT_YOURS_LINE = 'Spotify shows the songs only for playlists you made. To see these, copy it into a playlist of your own in Spotify. Play and Shuffle still work.';
+/** May the wall read a saved playlist's public web page? On by default (the owner's choice); only a stored 'off' turns it off. The buttons on the playlist page change it. */
+export const PUBLIC_PAGE_KEY = 'wall2-spotify-public-page';
+
+function readPublicPage(): boolean {
+  try {
+    return window.localStorage.getItem(PUBLIC_PAGE_KEY) !== 'off';
+  } catch {
+    return true;
+  }
+}
+
+export const usePublicPage = create<{ on: boolean; setOn: (on: boolean) => void }>((set) => ({
+  on: readPublicPage(),
+  setOn: (on) => {
+    try {
+      window.localStorage.setItem(PUBLIC_PAGE_KEY, on ? 'on' : 'off');
+    } catch {
+      // Storage is blocked: the choice holds for this run only.
+    }
+    set({ on });
+  },
+}));
+
+/** Tests only: read the stored choice again. */
+export function resetPublicPage(): void {
+  usePublicPage.setState({ on: readPublicPage() });
+}
+
+/** Why the public page gave no list, from the bridge's fixed words. */
+export type PageProblem = 'notPublic' | 'changed' | 'tooBig' | 'busy' | 'connection' | 'failed';
+
+export function pageProblem(e: unknown): PageProblem {
+  const text = (e instanceof Error ? e.message : typeof e === 'string' ? e : '').toLowerCase();
+  if (text.includes('not public')) return 'notPublic';
+  if (text.includes('page changed')) return 'changed';
+  if (text.includes('page too big')) return 'tooBig';
+  if (text.includes('busy')) return 'busy';
+  if (text.includes('no connection')) return 'connection';
+  return 'failed';
+}
+
+/** The source tag above a list read from the public page: "first N of M" only when the page held fewer songs than the playlist. */
+export function pageTag(listed: number, total: number | null): string {
+  const base = "From Spotify's public page";
+  return total !== null && total > 0 && listed < total ? `${base}, first ${listed} of ${total}` : base;
+}
+export const PAGE_TAG_TIP = "The wall read this list from the playlist's public web page, because Spotify's app rules hide the songs of playlists you did not make. Reading it is against Spotify's developer terms and may stop working. Turn it off with the button beside this line.";
+export const PAGE_READING = "Reading Spotify's public page.";
+export const WHILE_PLAYS = 'Press Play or Shuffle: while it plays, this page shows the song playing, what comes next and what you have heard.';
+/** The line when the public page is turned off (no page is read). */
+export const PAGE_OFF_LINE = 'Spotify lists the songs only for playlists you made.';
+
+/** The buttons on the playlist page that turn the public page off and on (the choice lives on the page it changes, with a stored key). */
+export const PAGE_TURN_OFF = 'Turn off';
+export const PAGE_TURN_OFF_TIP = "Stop reading Spotify's public page. Saved playlists then show their songs only while they play.";
+export const PAGE_TURN_ON = 'Read public page';
+export const PAGE_TURN_ON_TIP = "List the songs of a playlist you saved before you press Play, from its public web page. This is against Spotify's developer terms and may stop working.";
+
+/** The line for no list: the switch is off (`null`) or the page failed. */
+export function pageLine(p: PageProblem | 'empty' | null): string {
+  switch (p) {
+    case null:
+      return PAGE_OFF_LINE;
+    case 'empty':
+      return 'Spotify\'s public page listed no songs for this playlist.';
+    case 'notPublic':
+      return "Spotify's public page does not list this playlist. It may be private.";
+    case 'changed':
+      return "Spotify's public page has changed, so the wall cannot read it.";
+    case 'tooBig':
+      return "Spotify's public page for this playlist is too large to read.";
+    case 'busy':
+      return "The wall reads Spotify's public page at most 20 times an hour. Try again later.";
+    default:
+      return "Spotify's public page did not answer.";
+  }
+}
+
+export const WHILE_HEADINGS = { now: 'Playing now', paused: 'Paused', next: 'Up next in Spotify', heard: 'Heard from this playlist' } as const;
+/** The off line says in plain words, without a hover, what reading the page is. */
+export const PAGE_TERMS = "Reading the page is against Spotify's developer terms and may stop working.";
+/** After a failed page read the failure is kept for a minute: Retry comes back after it. */
+export const PAGE_TRY_LATER = 'Try again in a minute.';
+export const PAGE_RETRY_MS = 60_000;
+export const QUEUE_FAILED = 'Could not read the queue just now.';
+/** The most Up next rows the page shows, so Heard stays in sight; the rest is one line away. */
+export const WHILE_NEXT_ROWS = 8;
+export const moreInQueue = (n: number) => `${n} more in Up next`;
+export const NOTHING_QUEUED = 'Nothing queued.';
+export const NOTHING_HEARD = 'Nothing heard yet. Spotify adds a song here after about half a minute of play.';
+
 /** The dim second line of the tall view, where there is room; "Up next" in it is a button. */
 export const NOT_YOURS_UP_NEXT = ['While it plays, ', 'Up next', ' shows what is coming.'] as const;
 

@@ -5,7 +5,7 @@ import type { SpotifyDevice, SpotifyItem, SpotifyTrack } from '../../music/spoti
 import { resetNowPlaying } from '../../music/store';
 import { resetTools } from '../../tools/store';
 import { hideTip, resetTip } from '../../ui/HoverTip';
-import { deviceKindWord, GONE_LINE, LOCKED_LINE, NOT_YOURS_LINE, playDeviceId, resetSpotifyTarget, resetListenSource, seekPosition, SEARCH_WAIT_MS, TALL_CLOSE_MS, useListenSource, useSpotifyDevices, useSpotifyNow, useSpotifyStart, useSpotifyTarget } from './model';
+import { deviceKindWord, GONE_LINE, LOCKED_LINE, NOT_YOURS_LINE, PAGE_OFF_LINE, resetPublicPage, usePublicPage, WHILE_PLAYS, WHILE_HEADINGS, playDeviceId, resetSpotifyTarget, resetListenSource, seekPosition, SEARCH_WAIT_MS, TALL_CLOSE_MS, useListenSource, useSpotifyDevices, useSpotifyNow, useSpotifyStart, useSpotifyTarget } from './model';
 import { deviceRows, DEVICES_FOOT, STALE_NOTE } from './PlayOn';
 import { PLAYBACK_POLL_MS, SEEK_KEY_GAP_MS, SEEK_STEP_MS } from './PlayerRow';
 import { SpotifyCard } from './SpotifyCard';
@@ -93,6 +93,7 @@ beforeEach(() => {
   resetSpotifyStatus();
   resetTools();
   resetSpotifyTarget();
+  resetPublicPage();
   useSpotifyNow.setState({ id: null });
   useSpotifyStart.setState({ starting: false, rev: 0, name: '' });
   useSpotifyDevices.setState({ devices: null, stale: false, problem: null });
@@ -1373,41 +1374,47 @@ describe('a saved playlist that is not his (Spotify shows its songs only to its 
     await flush();
   };
 
-  it('at rest: the new words, Play and Shuffle, no Retry and no Up next line', async () => {
+  // These pages are about what shows when no list can be read: the public page is turned off here, so the public page is never asked
+  // (the saved-playlist tests cover the page itself). The switch-off line and "Press Play" replace the old copy-it advice.
+  it('at rest: the switch-off line, Play and Shuffle, and no Retry', async () => {
     await setup();
+    usePublicPage.setState({ on: false });
     notYours();
     await openIt();
     expect(NOT_YOURS_LINE).toBe(words);
-    expect(screen.getByText(words)).toBeTruthy();
+    expect(screen.getByText(PAGE_OFF_LINE)).toBeTruthy();
+    expect(screen.getByText(WHILE_PLAYS)).toBeTruthy();
     expect(screen.queryByRole('button', { name: 'Retry' })).toBeNull();
     expect(screen.getByRole('button', { name: 'Play' })).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Shuffle' })).toBeTruthy();
-    expect(screen.queryByText(/While it plays/)).toBeNull();
     expect(screen.queryByRole('button', { name: 'Up next' })).toBeNull();
   });
 
-  it('in the tall view: the same words, no Retry, and a dim second line whose "Up next" is a button', async () => {
+  it('in the tall view: the same line and what Play does, no Retry', async () => {
     await setup();
+    usePublicPage.setState({ on: false });
     notYours();
     await open();
     await openIt();
-    expect(screen.getByText(words)).toBeTruthy();
+    expect(screen.getByText(PAGE_OFF_LINE)).toBeTruthy();
     expect(screen.queryByRole('button', { name: 'Retry' })).toBeNull();
-    const line = document.querySelector('.sp-hintline') as HTMLElement;
-    expect(line.textContent).toBe('While it plays, Up next shows what is coming.');
-    expect(line.querySelector('button')?.textContent).toBe('Up next');
+    const lines = [...document.querySelectorAll('.sp-hintline')].map((l) => l.textContent);
+    expect(lines).toContain(WHILE_PLAYS);
   });
 
-  it('the Up next button switches to that tab and leaves the list', async () => {
+  it('while this playlist plays, the page itself shows Playing now and Up next in Spotify (replacing the old Up next button)', async () => {
     await setup();
+    usePublicPage.setState({ on: false });
     notYours();
+    mocks.set('wall2_spotify_playback', () => ({ playing: true, device: { name: 'Desk speakers', kind: 'Computer' }, track: track(1), progressMs: 65_000, shuffle: false, playlistId: id(1) }));
+    mocks.set('wall2_spotify_heard', () => []);
     await open();
     await openIt();
-    await act(async () => (document.querySelector('.sp-hintline button') as HTMLButtonElement).click());
-    await flush();
-    expect(document.querySelector('.sp-songs')).toBeNull();
-    expect(document.querySelector('.sp-tabs [aria-selected="true"]')?.textContent).toBe('Up next');
-    expect(screen.getByText('Playing now')).toBeTruthy();
+    expect(document.querySelector('.sp-songs')).not.toBeNull();
+    expect(screen.getByText(WHILE_HEADINGS.now)).toBeTruthy();
+    expect(screen.getByText(WHILE_HEADINGS.next)).toBeTruthy();
+    // The switch line stays on top of the playing view, with its button.
+    expect(screen.getByText(PAGE_OFF_LINE)).toBeTruthy();
   });
 
   it('every other failure keeps its Retry', async () => {

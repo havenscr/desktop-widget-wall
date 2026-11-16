@@ -6,7 +6,7 @@ import { PLAY_TINT } from '../../horizon/echo';
 import type { SpotifyItem, SpotifyTrack } from '../../music/spotify';
 import { resetNowPlaying } from '../../music/store';
 import { resetTools, useToolsStore } from '../../tools/store';
-import { NOT_YOURS_LINE, isNowPlaying, kindLine, LISTEN_SOURCE_KEY, resetListenSource, spotifyProblem, tileLine, SEARCH_WAIT_MS, trackLength, UP_NEXT_NONE_LINE, upNextPlan, useListenSource, useSpotifyNow } from './model';
+import { NOT_YOURS_LINE, PAGE_OFF_LINE, resetPublicPage, usePublicPage, WHILE_PLAYS, isNowPlaying, kindLine, LISTEN_SOURCE_KEY, resetListenSource, spotifyProblem, tileLine, SEARCH_WAIT_MS, trackLength, UP_NEXT_NONE_LINE, upNextPlan, useListenSource, useSpotifyNow } from './model';
 import { useNowPlayingStore } from '../../music/store';
 import { hideTip } from '../../ui/HoverTip';
 import { HoverTipLayer } from '../../ui/HoverTip';
@@ -30,6 +30,7 @@ beforeEach(() => {
   resetListenSource();
   resetSpotifyStatus();
   resetTools();
+  resetPublicPage();
   useSpotifyNow.setState({ id: null });
 });
 afterEach(() => {
@@ -143,9 +144,12 @@ it('pages a long playlist as it scrolls, inside the card', async () => {
 });
 
 it('a followed playlist keeps Play when Spotify refuses its song list', async () => {
+  usePublicPage.setState({ on: false }); // the saved-playlist tests cover the public page
   signedIn(); mocks.set('wall2_spotify_playlists',()=>[item(1)]); mocks.set('wall2_spotify_tracks',()=>{throw new Error('not yours')}); mocks.set('wall2_spotify_play',()=> 'played');
   render(<SpotifyCard />); await flush(); await act(async()=> (document.querySelector('.sp-tile') as HTMLButtonElement).click()); await flush();
-  expect(screen.getByText(NOT_YOURS_LINE)).toBeTruthy();
+  expect(screen.queryByText(NOT_YOURS_LINE)).toBeNull();
+  expect(screen.getByText(PAGE_OFF_LINE)).toBeTruthy();
+  expect(screen.getByText(WHILE_PLAYS)).toBeTruthy();
   // Retry never helps for a playlist that is not his, so it is not offered.
   expect(screen.queryByRole('button',{name:'Retry'})).toBeNull();
   expect(screen.getByRole('button',{name:'Play'})).toBeTruthy();

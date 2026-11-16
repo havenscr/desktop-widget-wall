@@ -291,13 +291,13 @@ fn access_with_deadline(cfg: &Config, force: bool, http: &dyn Http, creds: &dyn 
 
 fn access(cfg: &Config, force: bool) -> Result<String, String> { access_with(cfg, force, &RealHttp, &RealCreds) }
 
-fn clean(value: Option<&Value>, max: usize) -> Option<String> {
+pub(crate) fn clean(value: Option<&Value>, max: usize) -> Option<String> {
     let s: String = value?.as_str()?.chars().filter(|c| !c.is_control() && !matches!(*c, '\u{200b}'..='\u{200f}' | '\u{202a}'..='\u{202e}' | '\u{2060}'..='\u{206f}')).collect();
     let s: String = s.trim().chars().take(max).collect();
     (!s.is_empty()).then_some(s)
 }
 
-fn valid_id(s: &str) -> bool { s.len() == 22 && s.bytes().all(|b| b.is_ascii_alphanumeric()) }
+pub(crate) fn valid_id(s: &str) -> bool { s.len() == 22 && s.bytes().all(|b| b.is_ascii_alphanumeric()) }
 fn valid_device_id(s: &str) -> bool { (1..=64).contains(&s.len()) && s.bytes().all(|b| b.is_ascii_alphanumeric() || matches!(b, b'_' | b'-')) }
 fn spotify_image_host(host: &str) -> bool {
     let host = host.to_ascii_lowercase();
@@ -526,7 +526,13 @@ fn search_with(cfg: &Config, query: &str, current_user: &Profile, http: &dyn Htt
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
-pub struct Track { id: Option<String>, name: String, artists: String, album: String, duration_ms: u32, image_url: Option<String>, thumb_url: Option<String>, playable: bool }
+pub struct Track { pub(crate) id: Option<String>, pub(crate) name: String, pub(crate) artists: String, pub(crate) album: String, pub(crate) duration_ms: u32, pub(crate) image_url: Option<String>, pub(crate) thumb_url: Option<String>, pub(crate) playable: bool }
+impl Track {
+    /// A row read from a playlist's public page: no album and no pictures, the same shape as every other row.
+    pub(crate) fn page_row(id: Option<String>, name: String, artists: String, duration_ms: u32, playable: bool) -> Track {
+        Track { id, name, artists, album: String::new(), duration_ms, image_url: None, thumb_url: None, playable }
+    }
+}
 #[derive(Debug, Serialize, PartialEq)]
 pub struct TrackPage { items: Vec<Track>, total: u32, more: bool }
 fn shape_track(v: &Value) -> Option<Track> {
@@ -556,17 +562,40 @@ fn tracks_with(cfg:&Config,kind:&str,id:&str,page:u32,http:&dyn Http,creds:&dyn 
 pub async fn wall2_spotify_tracks(window: WebviewWindow, kind: String, id: String, page: Option<u32>) -> Result<TrackPage, String> { require(&window)?; let page = validate_tracks(&kind, &id, page)?; tauri::async_runtime::spawn_blocking(move || { let cfg = config(window.app_handle())?; if kind=="playlist" { return tracks_with(&cfg,&kind,&id,page,&RealHttp,&RealCreds) } let path = tracks_path(&kind, &id, page); let mut value = get_track_json(&cfg, &path)?; let album = get_track_json(&cfg, &format!("/albums/{id}?market=from_token"))?; log_refused_covers(&album); add_album_to_tracks(&mut value, &album); Ok(shape_track_page(&value, &kind)) }).await.map_err(|_| "failed".to_string())? }
 
 #[derive(Debug, Serialize, PartialEq)] pub struct Queue { current: Option<Track>, next: Vec<Track> }
-fn shape_queue(v: &Value) -> Queue { Queue { current: v.get("currently_playing").and_then(shape_track), next: v.get("queue").and_then(Value::as_array).into_iter().flatten().filter_map(shape_track).take(10).collect() } }
+fn shape_queue(v: &Value) -> Queue { Queue { current: v.get("currently_playing").and_then(shape_track), next: v.get("queue").and_then(Value::as_array).into_iter().flatten().filter_map(shape_track).take(20).collect() } }
 fn get_queue_with(cfg: &Config, http: &dyn Http, creds: &dyn Creds) -> Result<Queue, String> { match read_with(cfg, "/me/player/queue?market=from_token", TRACK_BODY, http, creds)? { ReadAnswer::Empty => Ok(Queue { current: None, next: Vec::new() }), ReadAnswer::Json(value) => { log_refused_covers(&value); Ok(shape_queue(&value)) } } }
 #[tauri::command] pub async fn wall2_spotify_queue(window: WebviewWindow) -> Result<Queue, String> { require(&window)?; tauri::async_runtime::spawn_blocking(move || { let cfg = config(window.app_handle())?; get_queue_with(&cfg, &RealHttp, &RealCreds) }).await.map_err(|_| "failed".to_string())? }
 
 #[derive(Debug, Serialize, PartialEq)] pub struct PlaybackDevice { name: String, kind: String }
-#[derive(Debug, Serialize, PartialEq)] #[serde(rename_all = "camelCase")] pub struct Playback { playing: bool, device: Option<PlaybackDevice>, track: Option<Track>, progress_ms: u32, shuffle: bool }
-fn shape_playback(v: &Value) -> Playback { Playback { playing: v.get("is_playing").and_then(Value::as_bool).unwrap_or(false), device: v.get("device").and_then(|d| Some(PlaybackDevice { name: clean(d.get("name"), 40)?, kind: clean(d.get("type"), 40).unwrap_or_else(|| "unknown".into()) })), track: v.get("item").and_then(shape_track), progress_ms: v.get("progress_ms").and_then(Value::as_u64).and_then(|n| u32::try_from(n).ok()).unwrap_or(0), shuffle: v.get("shuffle_state").and_then(Value::as_bool).unwrap_or(false) } }
+#[derive(Debug, Serialize, PartialEq)] #[serde(rename_all = "camelCase")] pub struct Playback { playing: bool, device: Option<PlaybackDevice>, track: Option<Track>, progress_ms: u32, shuffle: bool, playlist_id: Option<String> }
+fn shape_playback(v: &Value) -> Playback { Playback { playing: v.get("is_playing").and_then(Value::as_bool).unwrap_or(false), device: v.get("device").and_then(|d| Some(PlaybackDevice { name: clean(d.get("name"), 40)?, kind: clean(d.get("type"), 40).unwrap_or_else(|| "unknown".into()) })), track: v.get("item").and_then(shape_track), progress_ms: v.get("progress_ms").and_then(Value::as_u64).and_then(|n| u32::try_from(n).ok()).unwrap_or(0), shuffle: v.get("shuffle_state").and_then(Value::as_bool).unwrap_or(false), playlist_id: context_playlist(v.pointer("/context/uri")) } }
+/// The playlist a context uri names, in the `spotify:playlist:<id>` form only; any other context, form or id gives nothing.
+fn context_playlist(uri: Option<&Value>) -> Option<String> { uri?.as_str()?.strip_prefix("spotify:playlist:").filter(|id| valid_id(id)).map(str::to_string) }
 fn get_playback_with(cfg: &Config, http: &dyn Http, creds: &dyn Creds) -> Result<Option<Playback>, String> {
     match read_with(cfg, "/me/player", ANSWER_BODY, http, creds)? { ReadAnswer::Empty => Ok(None), ReadAnswer::Json(value) => Ok(Some(shape_playback(&value))) }
 }
 #[tauri::command] pub async fn wall2_spotify_playback(window: WebviewWindow) -> Result<Option<Playback>, String> { require(&window)?; tauri::async_runtime::spawn_blocking(move || { let cfg = config(window.app_handle())?; get_playback_with(&cfg, &RealHttp, &RealCreds) }).await.map_err(|_| "failed".to_string())? }
+
+/// The songs of Spotify's recently played list that were played from one playlist, newest first, each song once, at most 50. Nothing is kept: every call reads the list again.
+fn shape_heard(v: &Value, id: &str) -> Vec<Track> {
+    let uri = format!("spotify:playlist:{id}");
+    let mut seen: Vec<String> = Vec::new();
+    let mut out: Vec<Track> = Vec::new();
+    for entry in v.get("items").and_then(Value::as_array).into_iter().flatten() {
+        if entry.pointer("/context/uri").and_then(Value::as_str) != Some(uri.as_str()) { continue }
+        let Some(track) = entry.get("track").and_then(shape_track) else { continue };
+        if let Some(track_id) = &track.id { if seen.contains(track_id) { continue } seen.push(track_id.clone()); }
+        out.push(track);
+        if out.len() >= PAGE_SIZE { break }
+    }
+    out
+}
+fn get_heard_with(cfg: &Config, id: &str, http: &dyn Http, creds: &dyn Creds) -> Result<Vec<Track>, String> {
+    let value = get_json_with_limit(cfg, "/me/player/recently-played?market=from_token&limit=50", TRACK_BODY, http, creds)?;
+    log_refused_covers(&value);
+    Ok(shape_heard(&value, id))
+}
+#[tauri::command] pub async fn wall2_spotify_heard(window: WebviewWindow, id: String) -> Result<Vec<Track>, String> { require(&window)?; if !valid_id(&id) { return Err("invalid id".into()) } tauri::async_runtime::spawn_blocking(move || { let cfg = config(window.app_handle())?; get_heard_with(&cfg, &id, &RealHttp, &RealCreds) }).await.map_err(|_| "failed".to_string())? }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
@@ -966,9 +995,44 @@ mod tests {
     #[test]
     fn queue_caps_next_and_playback_maps_empty_response() {
         let song = json!({"id":ID,"name":"Song","artists":[],"album":{"name":"Album","images":[]}});
-        let q = shape_queue(&json!({"currently_playing":song.clone(),"queue":vec![song; 15]})); assert!(q.current.is_some()); assert_eq!(q.next.len(), 10);
+        let q = shape_queue(&json!({"currently_playing":song.clone(),"queue":vec![song; 25]})); assert!(q.current.is_some()); assert_eq!(q.next.len(), 20);
         let _test_guard = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner()); reset_state(); *token().lock().unwrap()=Some(Token{access:"ok".into(),expires:Instant::now()+Duration::from_secs(3600)}); let creds=FakeCreds::new(Some("old")); let http=FakeHttp::new(vec![],vec![hr(204,"")]); assert_eq!(get_playback_with(&cfg(),&http,&creds),Ok(None));
         let empty = FakeHttp::new(vec![],vec![hr(204,"")]); assert_eq!(get_queue_with(&cfg(),&empty,&creds),Ok(Queue { current:None, next:vec![] }));
+    }
+
+    #[test]
+    fn playback_names_the_playlist_only_in_the_plain_context_form() {
+        let id = "AAAAAAAAAAAAAAAAAAAAA1";
+        let with = |uri: &str| shape_playback(&json!({"is_playing":true,"context":{"type":"playlist","uri":uri}}));
+        assert_eq!(with(&format!("spotify:playlist:{id}")).playlist_id, Some(id.to_string()));
+        assert_eq!(with(&format!("spotify:album:{id}")).playlist_id, None);
+        assert_eq!(with(&format!("spotify:user:someone:playlist:{id}")).playlist_id, None);
+        assert_eq!(with("spotify:playlist:short").playlist_id, None);
+        assert_eq!(with(&format!("spotify:playlist:{id}x")).playlist_id, None);
+        assert_eq!(shape_playback(&json!({"is_playing":true})).playlist_id, None);
+        assert_eq!(shape_playback(&json!({"is_playing":true,"context":null})).playlist_id, None);
+        assert_eq!(shape_playback(&json!({"is_playing":true,"context":{"uri":7}})).playlist_id, None);
+        assert_eq!(serde_json::to_value(with(&format!("spotify:playlist:{id}"))).unwrap()["playlistId"], json!(id));
+    }
+
+    #[test]
+    fn heard_keeps_only_the_playlist_newest_first_without_repeats() {
+        let list = "AAAAAAAAAAAAAAAAAAAAA1";
+        let other = "BBBBBBBBBBBBBBBBBBBBB2";
+        let track = |n: usize| json!({"id":format!("T{n:021}"),"name":format!("Song {n}"),"artists":[],"album":{"name":"Album","images":[]}});
+        let play = |n: usize, id: &str| json!({"track":track(n),"played_at":"2026-01-01T00:00:00Z","context":{"type":"playlist","uri":format!("spotify:playlist:{id}")}});
+        let items = vec![play(1, list), play(2, other), play(3, list), play(1, list), json!({"track":track(4),"context":null}), json!({"track":track(5)})];
+        let got = shape_heard(&json!({"items":items}), list);
+        let names: Vec<_> = got.iter().map(|t| t.name.as_str()).collect();
+        assert_eq!(names, ["Song 1", "Song 3"]);
+        let many: Vec<Value> = (0..60).map(|n| play(n, list)).collect();
+        assert_eq!(shape_heard(&json!({"items":many}), list).len(), 50);
+        let local = json!({"track":{"id":null,"name":"Local file","is_local":true,"artists":[],"album":{"name":"","images":[]}},"context":{"uri":format!("spotify:playlist:{list}")}});
+        let got = shape_heard(&json!({"items":[local]}), list);
+        assert_eq!(got.len(), 1);
+        assert_eq!(got[0].id, None);
+        assert!(!got[0].playable);
+        assert!(shape_heard(&json!({}), list).is_empty());
     }
 
     #[test]

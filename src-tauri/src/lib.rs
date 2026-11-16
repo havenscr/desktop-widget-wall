@@ -65,6 +65,7 @@ mod wall2_meet;
 mod wall2_oauth;
 mod wall2_spotify;
 mod wall2_spotify_log;
+mod wall2_spotify_page;
 mod wall2_youtube;
 mod wall2_youtube_log;
 mod wall2_omni;
@@ -4125,6 +4126,8 @@ pub fn run() {
             wall2_spotify::wall2_spotify_tracks,
             wall2_spotify::wall2_spotify_queue,
             wall2_spotify::wall2_spotify_playback,
+            wall2_spotify::wall2_spotify_heard,
+            wall2_spotify_page::wall2_spotify_public_page,
             wall2_spotify::wall2_spotify_saved,
             wall2_spotify::wall2_spotify_save,
             wall2_desk::wall2_desk_house,
