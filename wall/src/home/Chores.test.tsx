@@ -3,6 +3,7 @@ import { TICK_UNDO_MS } from '../tasks/pendingTick';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { mocks } from '../bridge/tauri';
 import { usePacificTime } from '../ribbon/testZone';
+import { HoverTipLayer, resetTip } from '../ui/HoverTip';
 import { Chores, chorePill } from './Chores';
 
 usePacificTime();
@@ -264,10 +265,12 @@ it('shows each chore\'s tags after the title and keeps the 62 px pill column on 
   const { container } = render(<Chores />);
   await flush();
   const rows = [...container.querySelectorAll('.chore-rows .tk3')];
-  expect(rows[0]!.querySelector('.t-chip')?.textContent).toBe('Errands');
+  expect(rows[0]!.querySelectorAll('.t-dot').length).toBe(1);
+  expect(rows[0]!.querySelector('.t-dot')?.getAttribute('aria-label')).toBe('Errands');
+  expect(rows[0]!.querySelector('.t-dot')?.textContent).toBe('');
   expect(rows[1]!.querySelector('.t-tags')).toBeNull();
-  expect(rows[2]!.querySelector('.t-chip')?.textContent).toBe('Repairs');
-  expect(rows[2]!.querySelectorAll('.t-dot').length).toBe(2);
+  expect(rows[2]!.querySelectorAll('.t-dot').length).toBe(3);
+  expect(rows[2]!.querySelector('.t-dot')?.getAttribute('aria-label')).toBe('Repairs');
   // A row from a read with no tags field at all looks as before.
   expect(rows[3]!.querySelector('.t-tags')).toBeNull();
   // The tags come after the title and before the pill (or the empty column that stands for it).
@@ -295,4 +298,30 @@ it('sets the pill column on the list: never under 62 px, and as wide as the wide
   expect([...container.querySelectorAll('.est')].map((e) => e.textContent)).toEqual(['7:30 PM', '15 m']);
   expect(list.style.getPropertyValue('--pill-w')).toBe('75px');
   spy.mockRestore();
+});
+
+it('the tags card opens when the row\'s title or tick takes keyboard focus, with no extra tab stop', async () => {
+  resetTip();
+  const tags = [{ label: 'Repairs', icon: 'tool', color: 'pink' }, { label: 'Garden', icon: 'plant-2', color: 'green' }];
+  mocks.set('wall2_tasks_summary', () => ({ next: [task('c-1', 'Water the plants', { tags })], remaining: 0 }));
+  const { container } = render(
+    <>
+      <Chores />
+      <HoverTipLayer />
+    </>,
+  );
+  await flush();
+  // Focusable things in the row: the tick and the title only (the tag span is not one).
+  const row = container.querySelector('.tk3') as HTMLElement;
+  expect(row.querySelectorAll('button, [tabindex]')).toHaveLength(2);
+  expect(row.querySelector('.t-tags')?.hasAttribute('tabindex')).toBe(false);
+  for (const name of ['Open Water the plants', 'Done: Water the plants']) {
+    expect(document.querySelector('.t-tip')).toBeNull();
+    act(() => screen.getByRole('button', { name }).focus());
+    await flush(10);
+    expect([...document.querySelectorAll('.t-tip-name')].map((e) => e.textContent)).toEqual(['Repairs', 'Garden']);
+    act(() => screen.getByRole('button', { name }).blur());
+    await flush(10);
+    expect(document.querySelector('.t-tip')).toBeNull();
+  }
 });

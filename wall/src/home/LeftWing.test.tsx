@@ -223,13 +223,37 @@ it('house not live with four rooms: all four dots show and the sentence is dimme
   expect(container.querySelector('.house.stale')).toBeTruthy();
 });
 
-it('fits the room dots on one line: all of them when they fit, else the lit ones first and a count', () => {
+it('fits the room dots on two lines: all of them when they fit, else the lit ones first and "+N more" only when both lines are full', () => {
   const r = (id: string, name: string, on: boolean) => ({ id, name, on });
-  const few = [r('1', 'Office', true), r('2', 'Kitchen', false)];
-  expect(fitRooms(few)).toEqual({ shown: few, hidden: [] });
-  const many = [r('1', 'Office', false), r('2', 'Living room', false), r('3', 'Kitchen', false), r('4', 'Bedroom', true), r('5', 'Guest room', true), r('6', 'Hall', false), r('7', 'Porch', false), r('8', 'Den', true)];
-  const { shown, hidden } = fitRooms(many);
-  expect(shown.length + hidden.length).toBe(8);
+  // One room, no rooms, and seven rooms (the owner's seven lit rooms) all fit in two lines, in the home app's order.
+  expect(fitRooms([])).toEqual({ shown: [], hidden: [] });
+  const one = [r('1', 'Office', true)];
+  expect(fitRooms(one)).toEqual({ shown: one, hidden: [] });
+  const seven = ['Office', 'Living room', 'Kitchen', 'Bedroom', 'Hallway', 'Porch', 'Den'].map((n, i) => r(String(i), n, true));
+  expect(fitRooms(seven)).toEqual({ shown: seven, hidden: [] });
+  // Twelve do not: the lit ones lead, the rest are counted, and what is shown holds in two lines of 424 px.
+  const names = ['Office', 'Living room', 'Kitchen', 'Bedroom', 'Guest room', 'Hallway', 'Porch', 'Garage', 'Den', 'Bathroom', 'Laundry', 'Attic'];
+  const twelve = names.map((n, i) => r(String(i), n, i % 3 === 0));
+  const { shown, hidden } = fitRooms(twelve);
+  expect(shown.length + hidden.length).toBe(12);
   expect(hidden.length).toBeGreaterThan(0);
-  expect(shown.slice(0, 3).every((x) => x.on)).toBe(true);
+  expect(shown.slice(0, 4).every((x) => x.on)).toBe(true);
+  expect(hidden.every((x) => !x.on) || hidden.every((h) => shown.every((x) => x.on || !h.on))).toBe(true);
+  // The sum rule: shown rooms plus N is always the lit rooms and the dark ones, for one, seven, twelve and twenty-four rooms and a forced drop.
+  const many = (n: number) => Array.from({ length: n }, (_, i) => r(String(i), `Room ${i}`, i % 2 === 0));
+  for (const n of [1, 7, 12, 24]) {
+    for (const drop of [0, 1, 3]) {
+      const f = fitRooms(many(n), undefined, drop);
+      expect(f.shown.length + f.hidden.length).toBe(n);
+      expect(new Set([...f.shown, ...f.hidden].map((x) => x.id)).size).toBe(n);
+      // "+N more" names exactly what is not shown, and the lit rooms come before the dark ones among the shown.
+      expect(f.hidden.length).toBe(n - f.shown.length);
+    }
+  }
+  expect(fitRooms(many(24)).hidden.length).toBeGreaterThan(0);
+  expect(fitRooms(many(7)).hidden.length).toBe(0);
+  expect(fitRooms(many(7), undefined, 2).hidden.length).toBe(2);
+  expect(fitRooms(many(12), undefined, 2).hidden.length).toBe(fitRooms(many(12)).hidden.length + 2);
+  // One line fewer would not hold them all, so a second line is used before "+N more" appears.
+  expect(fitRooms(names.slice(0, 7).map((n, i) => r(String(i), n, true))).hidden).toEqual([]);
 });

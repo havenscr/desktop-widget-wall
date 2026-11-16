@@ -37,8 +37,9 @@ export function SunCurve({ curve: c }: { curve: DayCurve }) {
         <path d={c.nightAfter} fill="none" stroke="rgba(154,123,255,.5)" strokeWidth="1.6" strokeLinecap="round" />
         <path d={c.day} fill="none" stroke="url(#lw-day)" strokeWidth="2.4" strokeLinecap="round" opacity=".38" />
         {up && <path d={c.day} fill="none" stroke="url(#lw-day)" strokeWidth="2.6" strokeLinecap="round" clipPath="url(#lw-travelled)" />}
-        <line x1={c.xRise} x2={c.xRise} y1={CURVE_BASE - 5} y2={CURVE_BASE + 5} stroke="rgba(255,255,255,.45)" strokeWidth="1.5" />
-        <line x1={c.xSet} x2={c.xSet} y1={CURVE_BASE - 5} y2={CURVE_BASE + 5} stroke="rgba(255,255,255,.45)" strokeWidth="1.5" />
+        {/* A soft dot where the line crosses the horizon at sunrise and at sunset; the sun is drawn after, so it covers a dot it passes. */}
+        <circle className="lw-cross" cx={c.xRise} cy={CURVE_BASE} r="3.2" fill="rgba(255,255,255,.6)" />
+        <circle className="lw-cross" cx={c.xSet} cy={CURVE_BASE} r="3.2" fill="rgba(255,255,255,.6)" />
         {up ? (
           <>
             <circle cx={c.xSun} cy={c.ySun} r="22" fill="url(#lw-glow)" />

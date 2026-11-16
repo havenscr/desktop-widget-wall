@@ -5,7 +5,7 @@ import { tip } from '../ui/HoverTip';
 import { useRemeasure } from '../ui/useRemeasure';
 import { useLinks, useOpenLink } from './netLinks';
 import { ShieldDrawer, SevShape } from './ShieldDrawer';
-import { MAX_ARCS, alertHint, ringCount, severityCounts, shieldFacts, shieldFrom, shieldSub, type FactKind, type Shield } from './shieldModel';
+import { MAX_ARCS, alertHint, ringCount, severityCounts, PORTAL_REST, securityDoorLine, shieldFacts, shieldFrom, shieldSub, type FactKind, type Shield } from './shieldModel';
 import { useClearedNote, useDeskSecurity } from './useDesk';
 import { useSecurity } from './useSecurity';
 
@@ -200,8 +200,8 @@ export function NetworkTile() {
         </span>
         {!busy && doors && (
           <span className="shield-doors">
-            {avail.security && door('security', <IconShield size={24} stroke={1.7} aria-hidden="true" />, 'Security', 'Home app alarms', SECURITY_TIP)}
-            {avail.portal && door('portal', <IconWorld size={24} stroke={1.7} aria-hidden="true" />, 'Firewalla', 'Its own portal', PORTAL_TIP)}
+            {avail.security && door('security', <IconShield size={24} stroke={1.7} aria-hidden="true" />, 'Home security', securityDoorLine(s), SECURITY_TIP)}
+            {avail.portal && door('portal', <IconWorld size={24} stroke={1.7} aria-hidden="true" />, 'Firewalla', PORTAL_REST, PORTAL_TIP)}
           </span>
         )}
         {factsAside && <span className="shield-aside">{facts.all.map(factRow)}</span>}
@@ -214,7 +214,7 @@ export function NetworkTile() {
             {avail.security && (
               <button type="button" className="shield-btn" onClick={() => openLink('security')} {...tip(SECURITY_TIP)}>
                 <IconShield size={20} stroke={1.8} aria-hidden="true" />
-                Security
+                Home security
               </button>
             )}
             {avail.portal && (

@@ -33,17 +33,56 @@ export interface CurveGeometry {
 }
 
 /**
+ * The curve's height (y inside the box) as a function of the day fraction, for sunrise `rise` and
+ * sunset `set`. One smooth line: four cubic segments (sunrise to noon, noon to sunset, sunset to
+ * the night low, the night low to the next sunrise) that meet with the same slope, so the line
+ * passes through each crossing with no corner. The slope at a crossing is the monotone-cubic
+ * (Fritsch and Carlson) mean of the two secants, so a segment never overshoots its end heights:
+ * the hump stays at 56 px at noon and the dip at 13 px at the middle of the night, whatever the day's length.
+ * The line is at the base line exactly at `rise` and `set`.
+ */
+export function curveY(rise: number, set: number): (f: number) => number {
+  const W = CURVE_W;
+  const hDay = ((set - rise) / 2) * W;
+  const hNight = ((1 - (set - rise)) / 2) * W;
+  const sDay = CURVE_HUMP / hDay;
+  const sNight = CURVE_DIP / hNight;
+  /** The weighted harmonic mean of the secants either side of a crossing (positive, at most 3 times the smaller secant). */
+  const cross = (hBefore: number, sBefore: number, hAfter: number, sAfter: number) => {
+    const w1 = 2 * hAfter + hBefore;
+    const w2 = hAfter + 2 * hBefore;
+    return (w1 + w2) / (w1 / sBefore + w2 / sAfter);
+  };
+  const mRise = cross(hNight, sNight, hDay, sDay);
+  const mSet = cross(hDay, sDay, hNight, sNight);
+  const noon = (rise + set) / 2;
+  const low = (set + rise + 1) / 2;
+  // Each segment: x0, x1 as day fractions (the night runs past 1), y0, y1 and the slopes at its ends (dy/dx in px).
+  const segs = [
+    { x0: rise, x1: noon, y0: CURVE_BASE, y1: CURVE_BASE - CURVE_HUMP, m0: -mRise, m1: 0 },
+    { x0: noon, x1: set, y0: CURVE_BASE - CURVE_HUMP, y1: CURVE_BASE, m0: 0, m1: mSet },
+    { x0: set, x1: low, y0: CURVE_BASE, y1: CURVE_BASE + CURVE_DIP, m0: mSet, m1: 0 },
+    { x0: low, x1: rise + 1, y0: CURVE_BASE + CURVE_DIP, y1: CURVE_BASE, m0: 0, m1: -mRise },
+  ];
+  return (f: number) => {
+    const u = f < rise ? f + 1 : f;
+    const g = segs.find((q) => u <= q.x1) ?? segs[3]!;
+    const h = (g.x1 - g.x0) * W;
+    const t = Math.min(1, Math.max(0, (u - g.x0) / (g.x1 - g.x0)));
+    const t2 = t * t;
+    const t3 = t2 * t;
+    return (2 * t3 - 3 * t2 + 1) * g.y0 + (t3 - 2 * t2 + t) * h * g.m0 + (-2 * t3 + 3 * t2) * g.y1 + (t3 - t2) * h * g.m1;
+  };
+}
+
+/**
  * The day as one curve from midnight to midnight, all arguments fractions of the day (0 to 1).
  * Only the two crossings and the sun's x are data; the hump's height and the dip's depth are a
  * drawing. Above the base line while the sun is up, below it at night.
  */
 export function curveGeometry(rise: number, set: number, now: number, raw: { rise: number; set: number } = { rise, set }): CurveGeometry {
-  const night = 1 - (set - rise);
   const x = (f: number) => CURVE_W * f;
-  const y = (f: number) => {
-    if (f >= rise && f <= set) return CURVE_BASE - CURVE_HUMP * Math.sin((Math.PI * (f - rise)) / (set - rise));
-    return CURVE_BASE + CURVE_DIP * Math.sin((Math.PI * ((f < rise ? f + 1 : f) - set)) / night);
-  };
+  const y = curveY(rise, set);
   const pts = (a: number, b: number) => {
     const out: string[] = [];
     for (let f = a; f < b; f += STEP) out.push(`${x(f).toFixed(1)},${y(f).toFixed(1)}`);
@@ -105,10 +144,11 @@ export function dayCurve(ms: number): DayCurve | null {
   if (rise === null || set === null || set <= rise) return null;
   const r = toMinute(rise);
   const s = toMinute(set);
-  const fr = clockFraction(r);
-  const fs = clockFraction(s);
-  if (fs <= fr) return null;
-  const g = curveGeometry(fr, fs, clockFraction(ms), { rise: clockFraction(rise), set: clockFraction(set) });
+  // The geometry uses the exact instants, so the line, the dots and the phase change together; only the labels are rounded.
+  const fr = clockFraction(rise);
+  const fs = clockFraction(set);
+  if (fs <= fr || s <= r) return null;
+  const g = curveGeometry(fr, fs, clockFraction(ms));
   const riseText = clockText(r);
   const setText = clockText(s);
   const length = span(s - r);

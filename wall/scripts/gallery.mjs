@@ -646,7 +646,7 @@ const EXPECT = [
   ['home', 'morning camera, sparse', ['No moods set up', 'No meetings today']],
   ['home', 'typical', ['Evening', 'Show all 4']],
   // home round two
-  ['home', 'quiet', ['All quiet', 'Security', 'Firewalla', '8 more can wait', '68° inside. Lights on in two rooms.']],
+  ['home', 'quiet', ['All quiet', 'Home security', 'Firewalla', '8 more can wait', '68° inside. Lights on in two rooms.']],
   ['home', 'six alerts', ['6 alerts open, 31 devices at home', 'Show all 6', '!Clear all']],
   ['home', 'shield drawer', ['6 open alerts', 'Clear all', 'Printer asked for an update']],
   ['home', 'twenty alerts', ['12+', '20 alerts open']],

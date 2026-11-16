@@ -3,6 +3,7 @@ import { TICK_UNDO_MS } from './pendingTick';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { mocks } from '../bridge/tauri';
 import { useFocusStore } from '../focus/store';
+import { HoverTipLayer, resetTip } from '../ui/HoverTip';
 import { TaskCard } from './TaskCard';
 import { REFRESH_MS, type TaskItem } from './model';
 
@@ -457,13 +458,13 @@ it('shows each row\'s tags: the first as a named chip, the rest as dots, with th
   const r = render(<TaskCard />);
   await flush();
   const rows = r.container.querySelectorAll('.tk3');
-  expect(rows[0]!.querySelectorAll('.t-chip').length).toBe(1);
-  expect(rows[0]!.querySelector('.t-chip')?.textContent).toBe('Repairs');
-  expect(rows[0]!.querySelectorAll('.t-dot').length).toBe(2);
-  expect(rows[0]!.querySelectorAll('.t-dot')[0]!.getAttribute('aria-label')).toBe('Phone Call');
-  expect((rows[0]!.querySelector('.t-chip') as HTMLElement).style.getPropertyValue('--c')).toBe('240,138,192');
+  expect(rows[0]!.querySelectorAll('.t-chip').length).toBe(0);
+  expect(rows[0]!.querySelectorAll('.t-dot').length).toBe(3);
+  expect(rows[0]!.querySelectorAll('.t-dot')[0]!.getAttribute('aria-label')).toBe('Repairs');
+  expect(rows[0]!.querySelectorAll('.t-dot')[1]!.getAttribute('aria-label')).toBe('Phone Call');
+  expect((rows[0]!.querySelector('.t-dot') as HTMLElement).style.getPropertyValue('--c')).toBe('240,138,192');
   // A tag with no colour carries no colour variable (the dim default draws it).
-  expect((rows[0]!.querySelectorAll('.t-dot')[1] as HTMLElement).style.getPropertyValue('--c')).toBe('');
+  expect((rows[0]!.querySelectorAll('.t-dot')[2] as HTMLElement).style.getPropertyValue('--c')).toBe('');
   // A row with no tags has nothing extra: just the title and its time column.
   expect(rows[1]!.querySelector('.t-tags')).toBeNull();
   expect(rows[1]!.querySelectorAll('.chip-col').length).toBe(1);
@@ -476,7 +477,7 @@ it('a tag text is plain text, never markup', async () => {
   await flush();
   expect(r.container.querySelector('img')).toBeNull();
   expect(r.container.querySelector('script')).toBeNull();
-  expect(r.container.querySelector('.t-chip')?.textContent).toBe('<img src=x onerror=alert(1)>');
+  expect(r.container.querySelector('.t-dot')?.getAttribute('aria-label')).toBe('<img src=x onerror=alert(1)>');
 });
 
 it('shows a completed task again when a later list has it open (reopened or recurring)', async () => {
@@ -641,4 +642,27 @@ it('the page going hidden (a screen lock) does not cut the undo window short; th
   }
   expect(done).toHaveBeenCalledTimes(1);
   expect(done).toHaveBeenCalledWith({ id: 'a' });
+});
+
+it('the tags card opens when the row\'s main button takes keyboard focus, with no extra tab stop', async () => {
+  resetTip();
+  const tags = [{ label: 'Repairs', icon: 'tool', color: 'pink' }, { label: 'Garden', icon: 'plant-2', color: 'green' }];
+  setList(() => [{ ...task('a', 'Water the plants'), tags }]);
+  const { container } = render(
+    <>
+      <TaskCard />
+      <HoverTipLayer />
+    </>,
+  );
+  await flush();
+  const main = container.querySelector('.tk-main') as HTMLElement;
+  expect(container.querySelector('.t-tags')?.hasAttribute('tabindex')).toBe(false);
+  expect(container.querySelectorAll('.tk3 [tabindex]')).toHaveLength(0);
+  expect(document.querySelector('.t-tip')).toBeNull();
+  act(() => main.focus());
+  await flush(10);
+  expect([...document.querySelectorAll('.t-tip-name')].map((e) => e.textContent)).toEqual(['Repairs', 'Garden']);
+  act(() => main.blur());
+  await flush(10);
+  expect(document.querySelector('.t-tip')).toBeNull();
 });

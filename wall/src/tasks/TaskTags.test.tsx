@@ -1,9 +1,10 @@
-import { render } from '@testing-library/react';
+import { fireEvent, render, waitFor } from '@testing-library/react';
 import { afterEach, expect, it } from 'vitest';
 import { encodeIcon, encodeSet } from '../../vite-plugin-tabler-icons.mjs';
+import { HoverTipLayer, resetTip } from '../ui/HoverTip';
 import { TaskTags } from './TaskTags';
 import { decodeIcon, ICON_NAME, setIconDataForTests } from './tagIcons';
-import { chipWidth, CHIP_MAX_PX, MIN_TITLE_PX, TAG_HUES, tagHue, tagLayout } from './tagStyle';
+import { DOT_PX, TAG_GAP_PX, TAG_HUES, tagHue } from './tagStyle';
 
 afterEach(() => setIconDataForTests(null));
 
@@ -47,13 +48,13 @@ const mix = (fg: string, bg: string, a: number) => {
 const BACKGROUNDS = ['#06071d', '#0a0e2b', '#15072e', '#101a3d', '#1a1440'];
 const NO_COLOUR = '#b7afd6'; // the wall's --dim, which a tag with no colour uses
 
-it('every hue and the no-colour grey is 4.5 or more as 16 px text on its own 14 percent wash, on every background a row has', () => {
+it('every hue and the no-colour grey is 4.5 or more as 16 px text on its own 20 percent wash, on every background a row has', () => {
   const hues = [...new Set(Object.values(TAG_HUES)), NO_COLOUR];
   expect(hues.length).toBe(9);
   for (const bg of BACKGROUNDS) {
     for (const hex of hues) {
-      // The wash is the tag's colour at 14 percent over the background, under the text and the glyph.
-      const wash = mix(hex, bg, 0.14);
+      // The tint is the tag's colour at 20 percent over the background, under the text and the glyph.
+      const wash = mix(hex, bg, 0.2);
       const ratio = (lum(hex) + 0.05) / (lum(wash) + 0.05);
       expect(ratio, `${hex} on ${bg}`).toBeGreaterThanOrEqual(4.5);
     }
@@ -61,40 +62,40 @@ it('every hue and the no-colour grey is 4.5 or more as 16 px text on its own 14 
 });
 
 it('the contrast check can fail: a dim colour on a light background is under 4.5', () => {
-  const ratio = (lum('#7f779f') + 0.05) / (lum(mix('#7f779f', '#1a1440', 0.14)) + 0.05);
+  const ratio = (lum('#7f779f') + 0.05) / (lum(mix('#7f779f', '#1a1440', 0.2)) + 0.05);
   expect(ratio).toBeLessThan(4.5);
 });
 
-it('the first tag is a chip with its name, the rest are dots, and each carries its name for the hover card', () => {
-  const r = render(<TaskTags tags={tags} room={430} />);
-  const chip = r.container.querySelectorAll('.t-chip');
-  const dots = r.container.querySelectorAll('.t-dot');
-  expect(chip.length).toBe(1);
-  expect(chip[0]!.textContent).toBe('Repairs');
-  expect([...dots].map((d) => d.getAttribute('aria-label'))).toEqual(['Phone Call', 'Garden']);
+it('each tag is a round pill with only its icon: one, two and three tags, and none', () => {
+  for (const n of [1, 2, 3]) {
+    const r = render(<TaskTags tags={tags.slice(0, n)} />);
+    const pills = r.container.querySelectorAll('.t-dot');
+    expect(pills.length).toBe(n);
+    expect(r.container.querySelectorAll('.t-chip, .t-label').length).toBe(0);
+    for (const p of pills) expect(p.textContent).toBe('');
+    expect([...pills].map((d) => d.getAttribute('aria-label'))).toEqual(tags.slice(0, n).map((t) => t.label));
+  }
+  expect(DOT_PX).toBe(26);
+  expect(TAG_GAP_PX).toBe(4);
+  expect(render(<TaskTags tags={[]} />).container.innerHTML).toBe('');
+  expect(render(<TaskTags />).container.innerHTML).toBe('');
 });
 
-it('with three tags and little room every tag is a dot; with none there is nothing', () => {
-  const long = [{ label: 'An Unusually Long Tag Name Here' }, { label: 'Finance' }, { label: 'Work' }];
-  const r = render(<TaskTags tags={long} room={300} />);
-  expect(r.container.querySelectorAll('.t-chip').length).toBe(0);
-  expect(r.container.querySelectorAll('.t-dot').length).toBe(3);
-  expect(render(<TaskTags tags={[]} room={430} />).container.innerHTML).toBe('');
-  expect(render(<TaskTags room={430} />).container.innerHTML).toBe('');
-});
-
-it('the chip rule leaves the title at least 180 px', () => {
-  expect(chipWidth('Errands')).toBeLessThan(CHIP_MAX_PX);
-  expect(chipWidth('x'.repeat(60))).toBe(CHIP_MAX_PX);
-  // Home: one chip and two dots on a 442 px title column.
-  expect(tagLayout([{ label: 'Repairs' }, { label: 'a' }, { label: 'b' }], 442)).toBe('chip');
-  // Work (442), the widest chip and two dots, leaves 192: more than 180, so the chip stays.
-  expect(442 - (12 + CHIP_MAX_PX + 68)).toBeGreaterThanOrEqual(MIN_TITLE_PX);
-  expect(tagLayout([{ label: 'x'.repeat(40) }, { label: 'a' }, { label: 'b' }], 442)).toBe('chip');
-  // Exactly 180 left is enough; 179 is not.
-  expect(tagLayout([{ label: 'x'.repeat(40) }, { label: 'a' }, { label: 'b' }], 12 + CHIP_MAX_PX + 68 + 180)).toBe('chip');
-  expect(tagLayout([{ label: 'x'.repeat(40) }, { label: 'a' }, { label: 'b' }], 12 + CHIP_MAX_PX + 68 + 179)).toBe('dots');
-  expect(tagLayout([], 430)).toBe('dots');
+it('the hover card lists every tag of the row with its icon and full name', async () => {
+  const r = render(
+    <>
+      <TaskTags tags={tags} />
+      <HoverTipLayer />
+    </>,
+  );
+  fireEvent.mouseEnter(r.container.querySelector('.t-tags') as HTMLElement);
+  const card = await waitFor(() => {
+    const el = document.querySelector('.t-tip');
+    if (!el) throw new Error('no card yet');
+    return el;
+  }, { timeout: 2000 });
+  expect([...card.querySelectorAll('.t-tip-name')].map((e) => e.textContent)).toEqual(['Repairs', 'Phone Call', 'Garden']);
+  expect(card.querySelectorAll('.t-tip-row svg').length).toBe(3);
 });
 
 const nodes: [string, Record<string, string>][] = [
@@ -128,8 +129,8 @@ it('icon names are plain names only', () => {
 
 it('a tag draws its icon from the loaded data as an inline svg of elements, and the plain tag glyph before it loads or for an unknown name', () => {
   setIconDataForTests({ phone: 'M5 4h4l2 5l-2.5 1.5a11 11 0 0 0 5 5l1.5 -2.5l5 2v4a2 2 0 0 1 -2 2a16 16 0 0 1 -15 -15a2 2 0 0 1 2 -2' });
-  const r = render(<TaskTags tags={[{ label: 'Calls', icon: 'phone', color: 'blue' }, { label: 'Odd', icon: 'not-a-real-icon', color: 'blue' }]} room={430} />);
-  const chipSvg = r.container.querySelector('.t-chip svg')!;
+  const r = render(<TaskTags tags={[{ label: 'Calls', icon: 'phone', color: 'blue' }, { label: 'Odd', icon: 'not-a-real-icon', color: 'blue' }]} />);
+  const chipSvg = r.container.querySelector('.t-dot svg')!;
   expect(chipSvg.getAttribute('data-icon')).toBe('phone');
   expect(chipSvg.getAttribute('viewBox')).toBe('0 0 24 24');
   expect(chipSvg.getAttribute('stroke')).toBe('currentColor');
@@ -138,8 +139,8 @@ it('a tag draws its icon from the loaded data as an inline svg of elements, and 
   expect(chipSvg.getAttribute('fill')).toBe('none');
   expect(chipSvg.querySelectorAll('path').length).toBe(1);
   // The unknown name falls back to the plain tag glyph (Tabler's own tag icon).
-  expect(r.container.querySelector('.t-dot svg')?.getAttribute('data-icon')).toBeNull();
-  expect(r.container.querySelector('.t-dot svg')?.getAttribute('class')).toContain('tabler-icon-tag');
+  expect(r.container.querySelectorAll('.t-dot svg')[1]?.getAttribute('data-icon')).toBeNull();
+  expect(r.container.querySelectorAll('.t-dot svg')[1]?.getAttribute('class')).toContain('tabler-icon-tag');
 });
 
 const sources = import.meta.glob('../**/*.{ts,tsx}', { query: '?raw', import: 'default', eager: true }) as Record<string, string>;
@@ -158,4 +159,27 @@ it('the real icon chunk holds the owner\'s kind of names and loads on demand', a
   for (const name of ['tag', 'shopping-cart', 'plant-2', 'phone', 'tool']) expect(mod.default[name], name).toBeTruthy();
   expect(Object.keys(mod.default).length).toBeGreaterThan(5000);
   for (const spec of Object.values(mod.default)) expect(decodeIcon(spec).length).toBeGreaterThan(0);
+});
+
+it('draws at most three pills; the rest are named only in the hover card', async () => {
+  resetTip();
+  const five = [...tags, { label: 'Errands', icon: 'tool', color: 'teal' }, { label: 'Paperwork', icon: 'phone', color: 'red' }];
+  for (const n of [3, 4, 5]) {
+    const r = render(<TaskTags tags={five.slice(0, n)} />);
+    expect(r.container.querySelectorAll('.t-tag')).toHaveLength(3);
+    r.unmount();
+  }
+  const r = render(
+    <>
+      <TaskTags tags={five} />
+      <HoverTipLayer />
+    </>,
+  );
+  fireEvent.mouseEnter(r.container.querySelector('.t-tags') as HTMLElement);
+  const card = await waitFor(() => {
+    const el = document.querySelector('.t-tip');
+    if (!el) throw new Error('no card yet');
+    return el;
+  }, { timeout: 2000 });
+  expect([...card.querySelectorAll('.t-tip-name')].map((e) => e.textContent)).toEqual(['Repairs', 'Phone Call', 'Garden', 'Errands', 'Paperwork']);
 });

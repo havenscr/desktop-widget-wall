@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { alertAgeWords, alertHint, severityCounts, shieldFacts, shieldSub, type Shield, type ShieldAlert } from './shieldModel';
+import { PORTAL_REST, SECURITY_REST, alertAgeWords, alertHint, securityDoorLine, severityCounts, shieldFacts, shieldSub, type Shield, type ShieldAlert } from './shieldModel';
 
 const base: Shield = {
   kind: 'ready',
@@ -111,5 +111,22 @@ describe('the line under the title', () => {
   it('down says when it checks again; not set up and loading say nothing under the title', () => {
     expect(shieldSub(shield({ kind: 'down' }))).toEqual(['Checks again every 5 minutes.']);
     expect(shieldSub(shield({ kind: 'off' }))).toEqual(['']);
+  });
+});
+
+describe('the second line of the Home security tile', () => {
+  it('says the alarms of the last 24 hours when there is one or more and the read is live', () => {
+    expect(securityDoorLine(shield({ alarms: 2 }))).toBe('2 alarms in 24 h');
+    expect(securityDoorLine(shield({ alarms: 1 }))).toBe('1 alarm in 24 h');
+  });
+  it('says the plain resting words when quiet, with no count, or with none sent', () => {
+    expect(SECURITY_REST).toBe('Network alarms');
+    expect(PORTAL_REST).toBe('Devices and rules');
+    expect(securityDoorLine(shield({ alarms: 0 }))).toBe('Network alarms');
+    expect(securityDoorLine(shield({ alarms: null }))).toBe('Network alarms');
+  });
+  it('never shows a count that is not live', () => {
+    expect(securityDoorLine(shield({ alarms: 5, stale: true, asOf: 'as of 9:41 AM' }))).toBe('Network alarms');
+    expect(securityDoorLine(shield({ alarms: 5, kind: 'down' }))).toBe('Network alarms');
   });
 });

@@ -32,29 +32,12 @@ export function rgbOf(hex: string): string {
   return `${(n >> 16) & 255},${(n >> 8) & 255},${n & 255}`;
 }
 
-/** The inline custom property a chip or dot reads (`--c`), or none for a tag with no colour. */
+/** The inline custom property a pill reads (`--c`), or none for a tag with no colour. */
 export function tagVars(tag: Pick<TaskTag, 'color'>): CSSProperties | undefined {
   const hue = tagHue(tag.color);
   return hue ? ({ '--c': rgbOf(hue) } as CSSProperties) : undefined;
 }
 
-export const DOT_PX = 28;
-export const TAG_GAP_PX = 6;
-/** A chip never grows past this; a longer label ends in an ellipsis (its tip has the whole text). */
-export const CHIP_MAX_PX = 170;
-/** Under this much room for the title, every tag of the row becomes a dot. */
-export const MIN_TITLE_PX = 180;
-/** Room before the tags (the row's gap). */
-const LEAD_PX = 12;
-
-/** A chip's width: its 9 px lead, 16 px glyph, 6 px gap, the label (about 9 px a letter at 600 16 px), 11 px tail and 2 px edge. */
-export function chipWidth(label: string): number {
-  return Math.min(CHIP_MAX_PX, 44 + Math.round([...label].length * 9));
-}
-
-/** `chip`: the first tag by name and the rest as dots. `dots`: every tag a dot, when the chip would leave the title under 180 px. */
-export function tagLayout(tags: readonly TaskTag[], room: number): 'chip' | 'dots' {
-  if (tags.length === 0) return 'dots';
-  const width = LEAD_PX + chipWidth(tags[0]!.label) + (tags.length - 1) * (DOT_PX + TAG_GAP_PX);
-  return room - width < MIN_TITLE_PX ? 'dots' : 'chip';
-}
+/** A tag's round pill, in pixels, and the gap between pills (`work.css` `.t-dot` and `.t-tags`). */
+export const DOT_PX = 26;
+export const TAG_GAP_PX = 4;

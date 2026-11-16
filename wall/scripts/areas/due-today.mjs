@@ -157,15 +157,15 @@ function measureTasks() {
     for (const tag of li.querySelectorAll('.t-tag')) {
       tagged++;
       const b = box(tag);
-      const label = tag.querySelector('.t-label')?.textContent || tag.getAttribute('aria-label') || '?';
-      const chip = tag.classList.contains('t-chip');
-      if (Math.abs(b.height - 28) > 0.6 || (!chip && Math.abs(b.width - 28) > 0.6)) fails.push(where + ': tag "' + label + '" is ' + r1(b.width) + ' by ' + r1(b.height) + ' px (' + (chip ? 'a chip is 28 high' : 'a dot is 28 by 28') + ')');
+      const label = tag.getAttribute('aria-label') || '?';
+      if (Math.abs(b.height - 26) > 0.6 || Math.abs(b.width - 26) > 0.6) fails.push(where + ': tag "' + label + '" is ' + r1(b.width) + ' by ' + r1(b.height) + ' px (a pill is 26 by 26)');
       if (!inside(b, rb, 0.5) || (tb && b.left < tb.right - 0.5)) fails.push(where + ': tag "' + label + '" sticks out of its row or lies over the title');
-      const text = chip ? tag.querySelector('.t-label') : null;
-      const size = text ? parseFloat(getComputedStyle(text).fontSize) : 16;
+      if (tag.textContent.trim() !== '') fails.push(where + ': tag "' + label + '" carries words (a pill is its icon alone)');
       const glyph = tag.querySelector('svg');
-      if (size < 16 - 0.01 || (glyph && Math.abs(box(glyph).width - 16) > 0.6)) fails.push(where + ': tag "' + label + '" text is ' + r1(size) + ' px with a ' + (glyph ? r1(box(glyph).width) : 0) + ' px glyph (16 or more)');
+      if (!glyph || Math.abs(box(glyph).width - 16) > 0.6) fails.push(where + ': tag "' + label + '" glyph is ' + (glyph ? r1(box(glyph).width) : 0) + ' px wide (16 px)');
     }
+    const pills = [...li.querySelectorAll('.t-tag')].map(box);
+    for (let i = 1; i < pills.length; i++) if (pills[i].left - pills[i - 1].right < 4 - 0.5) fails.push(where + ': two tags of "' + name + '" overlap or touch (' + r1(pills[i].left - pills[i - 1].right) + ' px apart, at least 4)');
   }
   if (mode === 'work') {
     const tagRights = rows.map((li) => li.querySelector('.t-tags')).filter(Boolean).map((t) => box(t).right);
@@ -178,7 +178,7 @@ function measureTasks() {
 export default {
   name: 'due-today',
   gallery: { states: [
-    workState('due today: typical, six due with one overdue', 'due=typical', ['Due today', '6, 1 overdue', 'Send the signed engagement letter', 'Finance', '!more can wait', '!Next up']),
+    workState('due today: typical, six due with one overdue', 'due=typical', ['Due today', '6, 1 overdue', 'Send the signed engagement letter', '!more can wait', '!Next up']),
     workState('due today: nothing due, Next up', 'due=none', ['Next up', 'Nothing due today', 'Review the dashboard draft', '!Due today']),
     workState('due today: one due', 'due=one', ['Due today1', 'Send the project proposal', '!overdue', '!more can wait']),
     workState('due today: two due, one overdue', 'due=two', ['Due today2, 1 overdue', 'Send the signed engagement letter', '!more can wait']),
@@ -188,9 +188,9 @@ export default {
     workState('due today: twelve due, two overdue', 'due=twelve', ['Due today12, 2 overdue', 'Send the signed engagement letter', '!more can wait']),
     workState('due today: twelve due with the longest titles', 'due=twelve&long=1', ['Due today12, 2 overdue', 'Send the project proposal with the revised budget and the new timeline']),
     workState('due today: row ticked, Done with Undo', 'due=three', ['Done.', 'Undo'], '.tasks .task-check'),
-    homeState('home tags: five rows, first tag named, the rest as dots', 'desk=typical&alerts=0&chores=many', ['Order printer paper', 'Errands', 'Repairs', 'Garden']),
-    homeState('home chores: a timed chore beside estimate pills', 'desk=typical&alerts=0&chores=timed', ['Pick up the dry cleaning', '4:30 PM', '15 m', 'Errands']),
-    homeState('home tags: three rows while alerts are open', 'desk=typical&alerts=6&chores=many', ['Order printer paper', 'Errands']),
+    homeState('home tags: five rows, round tag pills, icon only', 'desk=typical&alerts=0&chores=many', ['Order printer paper', 'Sort the recycling']),
+    homeState('home chores: a timed chore beside estimate pills', 'desk=typical&alerts=0&chores=timed', ['Pick up the dry cleaning', '4:30 PM', '15 m']),
+    homeState('home tags: three rows while alerts are open', 'desk=typical&alerts=6&chores=many', ['Order printer paper']),
   ] },
   fit: {
     variants: [
@@ -216,8 +216,8 @@ export default {
         for (const failure of results.tasks) emit(`  FAIL ${failure}`);
         if (results.tasks.length) return true;
         emit(mode === 'work'
-          ? '  ok   tasks: the block is main\'s box and Always here has not moved, three rows in view from the top, the 6 px bar and fades inside it, no title under 180 px or clipped without an ellipsis, overdue marks 18 px amber in their slot, tags 28 px and 16 px text inside their rows and in line'
-          : '  ok   home tasks: one pill column as wide as the widest pill and in line, the pill text inside it, tags clear of it, tags 28 px and 16 px text inside their rows, no title under 180 px or clipped without an ellipsis');
+          ? '  ok   tasks: the block is main\'s box and Always here has not moved, three rows in view from the top, the 6 px bar and fades inside it, no title under 180 px or clipped without an ellipsis, overdue marks 18 px amber in their slot, tags 26 px round with a 16 px icon inside their rows and in line'
+          : '  ok   home tasks: one pill column as wide as the widest pill and in line, the pill text inside it, tags clear of it, tags 26 px round with a 16 px icon inside their rows, no title under 180 px or clipped without an ellipsis');
         return false;
       },
     },
@@ -240,9 +240,10 @@ export default {
       'tasks-title': { css: '.work .tk3 .n { flex: 0 0 120px !important; }', expect: /^ *FAIL tasks: the title ".*" is [\d.]+ px wide \(at least 180\)/m, appliesTo: (v) => v.name === TYPICAL },
       'tasks-ellipsis': { css: '.work .tk3 .n { text-overflow: clip !important; }', expect: /^ *FAIL tasks: the title ".*" is clipped without an ellipsis/m, appliesTo: (v) => v.name === LONG },
       // Dots too small; a tag pushed out of its row; a chip with small text; one row's tags out of line; the time column not fixed.
-      'tag-size': { css: '.work .t-dot { width: 20px !important; height: 20px !important; }', expect: /^ *FAIL tasks: tag ".*" is [\d.]+ by [\d.]+ px \(a dot is 28 by 28\)/m, appliesTo: (v) => v.name === TYPICAL },
+      'tag-size': { css: '.work .t-dot { width: 20px !important; height: 20px !important; }', expect: /^ *FAIL tasks: tag ".*" is [\d.]+ by [\d.]+ px \(a pill is 26 by 26\)/m, appliesTo: (v) => v.name === TYPICAL },
       'tag-out': { css: '.work .t-tags { position: relative !important; left: 900px !important; }', expect: /^ *FAIL tasks: tag ".*" sticks out of its row or lies over the title/m, appliesTo: (v) => v.name === TYPICAL },
-      'tag-font': { css: '.work .t-chip { font-size: 12px !important; }', expect: /^ *FAIL tasks: tag ".*" text is [\d.]+ px with a [\d.]+ px glyph \(16 or more\)/m, appliesTo: (v) => v.name === TYPICAL },
+      'tag-font': { css: '.work .t-tag svg { width: 12px !important; height: 12px !important; }', expect: /^ *FAIL tasks: tag ".*" glyph is [\d.]+ px wide \(16 px\)/m, appliesTo: (v) => v.name === TYPICAL },
+      'tag-overlap': { css: '.work .t-tag + .t-tag { margin-left: -10px !important; }', expect: /^ *FAIL tasks: two tags of ".*" overlap or touch/m, appliesTo: (v) => v.name === TYPICAL },
       'tag-line': { css: '.work .tk3:nth-child(2) .t-tags { margin-right: 25px !important; }', expect: /^ *FAIL tasks: the tags do not line up down the list/m, appliesTo: (v) => v.name === TYPICAL },
       'tag-column': { css: '.work .chip-col { width: 60px !important; }', expect: /^ *FAIL tasks: the time column is not a fixed 78 px column/m, appliesTo: (v) => v.name === TYPICAL },
       // Home: the pill column narrowed; tags pressed against the pill.
