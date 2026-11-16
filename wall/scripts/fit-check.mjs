@@ -128,8 +128,6 @@ const EXPECT = {
   // keys style
   'fy-height': /^ *FAIL deck: the Now row is \d+ px tall on/m,
   'key-edge': /^ *FAIL deck: key ".*" edge against the sky /m,
-  'hide-pill': /^ *FAIL hide screen: /m,
-  'hide-note': /^ *FAIL hide screen note: /m,
   // leave and recording
   'leave-band': /^ *FAIL leave banner: /m,
   'rec-chip': /^ *FAIL recording chip: /m,
@@ -263,8 +261,6 @@ const OVERFLOWS = {
   // keys style
   'fy-height': '.work .right-wing .fy-plate { height: 80px; }',
   'key-edge': '.work .right-wing .deck-tile.key-tile { border-color: transparent !important; }',
-  'hide-pill': '.screens-off:is(:hover, :focus-visible) { min-width: 900px; }',
-  'hide-note': '.screens-off-note { bottom: 0 !important; }',
   // leave and recording
   'leave-band': '.leave-banner { top: 200px !important; }',
   'rec-chip': '.rec-chip { min-width: 400px !important; }',
@@ -359,7 +355,7 @@ const OVERFLOWS = {
 const AREA_BREAKS = Object.assign({}, ...activeAreas.map((area) => area.fit?.breaks ?? {}));
 try {
   validateRegistrations(areas, {
-    'measurement key': ['res', 'page', 'overlaps', 'cut', 'gaps', 'wattCard', 'header', 'deck', 'deckRoom', 'nowH', 'edges', 'hide', 'hits', 'grid', 'lw', 'sig', 'toolsOut', 'copyOut', 'meetOut', 'strip', 'opened', 'watchPolish', 'skyLayers', 'thCheck', 'tileText', 'listen', 'lines', 'watchBehaviour', 'wattDriveIn'],
+    'measurement key': ['res', 'page', 'overlaps', 'cut', 'gaps', 'wattCard', 'header', 'deck', 'deckRoom', 'nowH', 'edges', 'hits', 'grid', 'lw', 'sig', 'toolsOut', 'copyOut', 'meetOut', 'strip', 'opened', 'watchPolish', 'skyLayers', 'thCheck', 'tileText', 'listen', 'lines', 'watchBehaviour', 'wattDriveIn'],
     'rule key': ['wattDriveIn', 'watchBehaviour', 'skyLayers', 'watchPolish', 'thCheck', 'tileText', 'listen', 'lines', 'toolsOut', 'copyOut', 'meetOut', 'strip', 'deck', 'header', 'res', 'page'],
     'break name': Object.keys(EXPECT),
   });
@@ -663,10 +659,6 @@ const VARIANTS = [
   { name: 'Recording chip on Unwind', q: query({ hz: 'unwind', agents: '3', extra: '&rec=1' }), checks: ['.rec-float'], viewportOnly: true },
   { name: 'Recording page: the Now row, library sets', q: work('3', '&keys=library&rec=1'), checks: DECK, nowH: 'recording' },
   { name: 'Recording page with long titles waiting (For you chip)', q: work('ask', '&keys=typical&rec=1'), checks: DECK, nowH: 'recording' },
-  // The Hide screen button grown under the pointer.
-  { name: 'Unwind, Hide screen grown', q: query({ hz: 'unwind', agents: '3', extra: '' }), checks: ['.u-line', '.screens-off'], click: 'hover:.screens-off', hide: true, viewportOnly: true },
-  // The failure note ("Could not watch input") showing while the pill is grown: the two never meet.
-  { name: 'Unwind, Hide screen grown with the failure note', q: query({ hz: 'unwind', agents: '3', extra: '&hide=fail' }), checks: ['.u-line', '.screens-off', '.screens-off-note'], click: '.screens-off then hover:.screens-off', hide: true, note: true, viewportOnly: true },
   { name: 'Home, Sound at its fullest: many moods, many speakers, long names, sleep timer', q: home('sonos=heavy&moods=many'), checks: [...HOME_CENTRE.filter((c) => !c.endsWith('mood-row')), ...SOUND_FULL] },
   { name: 'Home, typical: five moods, Sound playing', q: home('moods=five'), checks: [...HOME_CENTRE, ...SOUND_FULL] },
   { name: 'Home, one matching routine plus More: no blank cell in the quick-play row', q: home('sonos=few&moods=five'), checks: [...HOME_CENTRE, ...SOUND_FULL] },
@@ -1266,7 +1258,7 @@ try {
       // In every state (a meeting, nothing scheduled, not set up, a failed read, no calendar readable) the Later card takes the freed upper right.
       if (farthest < 2500) meetOut.push('meet: nothing fills the upper right (the last card ends at x ' + Math.round(farthest) + ', the stage is 2560 wide)');
     }
-    // keys style: the Now row's height, each key's box, and the grown Hide screen pill.
+    // keys style: the Now row's height and each key's box.
     const nowEl = document.querySelector('.work .right-wing .keys');
     const nowH = nowEl ? Math.round(nowEl.getBoundingClientRect().height * 10) / 10 : null;
     // Each key's box, for the edge contrast read from a screenshot of the same state (below).
@@ -1274,23 +1266,6 @@ try {
       const r = t.getBoundingClientRect();
       return { label: t.getAttribute('aria-label'), x: r.left, y: r.top, w: r.width, h: r.height };
     });
-    let hide = null;
-    const so = document.querySelector('.screens-off');
-    if (so) {
-      const pr = so.getBoundingClientRect();
-      const box = so.parentElement.getBoundingClientRect();
-      const foot = [...document.querySelectorAll('.u-foot, .u-foot *')].filter((e) => { const q = e.getBoundingClientRect(); return q.width > 0 && q.height > 0 && hit(q, pr); }).length;
-      const room = [...document.querySelectorAll('.u-room')].filter((e) => hit(e.getBoundingClientRect(), pr)).length;
-      const grown = so.matches(':focus-visible, :hover, .fit-hover');
-      // Unwind's lower right corner: under the Room card, from the right column's left edge to the screen's edge.
-      const ur = document.querySelector('.u-right')?.getBoundingClientRect();
-      const rb = Math.max(0, ...[...document.querySelectorAll('.u-room')].map((e) => e.getBoundingClientRect().bottom));
-      const inCorner = !!ur && pr.left >= ur.left - 0.5 && pr.top >= rb - 0.5 && pr.right <= innerWidth + 0.5 && pr.bottom <= innerHeight + 0.5;
-      const ne = document.querySelector('.screens-off-note');
-      const nr = ne ? ne.getBoundingClientRect() : null;
-      const note = nr ? { overlap: hit(nr, pr), inCorner: !!ur && nr.left >= ur.left - 0.5 && nr.top >= rb - 0.5 && nr.right <= innerWidth + 0.5 && nr.bottom <= innerHeight + 0.5 } : null;
-      hide = { note, inCorner, w: Math.round(pr.width), right: Math.round((box.right - pr.right) * 10) / 10, bottom: Math.round((box.bottom - pr.bottom) * 10) / 10, foot, room, grown, label: so.textContent };
-    }
     // left wing: the three music buttons on one line, equal size, inside the wing and clear of the
     // title; the TEMP header centred over both temperature numbers (2 px); every round control, and the
     // focus ring, with a border-radius of at least half its size, so its outline and shadow are round.
@@ -1445,7 +1420,7 @@ try {
           }
           return { left: l, top: t, right: r, bottom: b, width: r - l, height: b - t };
         };
-        const inside = [...document.querySelectorAll('.stage *')].filter((e) => e !== slot && !e.closest('.u-corner') && !e.closest('.horizon-canvas') && e.tagName !== 'CANVAS' && draws(e)).filter((e) => { const q = shown(e); return q.width > 0 && q.height > 0 && hit(q, sr); });
+        const inside = [...document.querySelectorAll('.stage *')].filter((e) => e !== slot && !e.closest('.screens-off-wrap') && !e.closest('.horizon-canvas') && e.tagName !== 'CANVAS' && draws(e)).filter((e) => { const q = shown(e); return q.width > 0 && q.height > 0 && hit(q, sr); });
         for (const e of inside.slice(0, 3)) listen.push('listen: ' + (e.className?.baseVal ?? e.className ?? e.tagName) + ' "' + (e.textContent || '').trim().slice(0, 30) + '" enters the office lights slot');
       }
     }
@@ -1843,7 +1818,7 @@ try {
       return fails;
     })();
     const areaResults = Object.fromEntries(Object.entries(globalThis.__areaMeasurements ?? {}).map(([key, fn]) => [key, fn()]));
-    const pre = document.createElement('pre'); pre.id = 'fit-check'; pre.textContent = JSON.stringify({ res, page, overlaps, cut, gaps, cardEnds, wattCard, header, deck, deckRoom, nowH, edges, hide, hits, grid, lw, sig, toolsOut, copyOut, meetOut, strip, opened, watchPolish, skyLayers, thCheck, tileText, listen, lines, watchBehaviour, wattDriveIn, areaResults });
+    const pre = document.createElement('pre'); pre.id = 'fit-check'; pre.textContent = JSON.stringify({ res, page, overlaps, cut, gaps, cardEnds, wattCard, header, deck, deckRoom, nowH, edges, hits, grid, lw, sig, toolsOut, copyOut, meetOut, strip, opened, watchPolish, skyLayers, thCheck, tileText, listen, lines, watchBehaviour, wattDriveIn, areaResults });
     document.body.appendChild(pre);
   }, new URLSearchParams(location.search).get('card') ? 7000 : 3000);</script>`;
   const areaMeasurements = Object.assign({}, ...activeAreas.map((area) => area.fit?.measurements ?? {}));
@@ -1885,7 +1860,6 @@ try {
     'icon-wide': (v) => v.name === 'Deck, one pin plus Add, one Now key',
     'key-menu': (v) => v.name.startsWith('Deck, key menu open on the leftmost'),
     'key-corner': (v) => v.name === 'Deck, hovered pinned key draws nothing on it',
-    'hide-pill': (v) => v.name === 'Unwind, Hide screen grown',
     // whole sky and sun
     sky: (v) => v.name.startsWith('Watch, whole sky playing'),
     floor: (v) => v.name.startsWith('Watch, whole sky playing'),
@@ -1902,7 +1876,6 @@ try {
     'row-type': (v) => v.name === 'Strip: the Day drawer, twelve busy, long titles',
     drawer: (v) => v.name === 'Strip: the Day drawer open',
     rows: (v) => v.name === 'Strip: Agents today, a heavy past day',
-    'hide-note': (v) => v.name === 'Unwind, Hide screen grown with the failure note',
     // Watt's menu pushed down onto him
     menu: (v) => v.name === 'Watt menu on Work',
     // leave and recording
@@ -1980,7 +1953,7 @@ try {
       process.exit(1);
     }
     const text = m[1].replaceAll('&quot;', '"').replaceAll('&amp;', '&');
-    const { res, page: doc, overlaps, cut, gaps, cardEnds, wattCard, header, deck, deckRoom, nowH, edges, hide, hits, grid, lw, sig, toolsOut, copyOut, meetOut, strip, opened, watchPolish, skyLayers, thCheck, tileText, listen, lines, watchBehaviour, wattDriveIn, areaResults } = JSON.parse(text);
+    const { res, page: doc, overlaps, cut, gaps, cardEnds, wattCard, header, deck, deckRoom, nowH, edges, hits, grid, lw, sig, toolsOut, copyOut, meetOut, strip, opened, watchPolish, skyLayers, thCheck, tileText, listen, lines, watchBehaviour, wattDriveIn, areaResults } = JSON.parse(text);
     // watt drive-in
     if (wattDriveIn) {
       for (const f of wattDriveIn.fails) console.log(`  FAIL ${f}`);
@@ -2134,21 +2107,6 @@ try {
       if (low.length || edges.length === 0) failed = true;
       if (edges.length === 0) console.log('  FAIL deck: no key edge could be measured');
       else if (!low.length) console.log(`  ok   every key edge against the sky at least 3 to 1, top and side (lowest ${lowest}, ${edges.length} keys)`);
-    }
-    if (v.note) {
-      const n = hide?.note ?? null;
-      const okNote = n !== null && !n.overlap && n.inCorner;
-      if (!okNote) failed = true;
-      console.log(n === null ? '  FAIL hide screen note: the failure note is not showing' : `  ${okNote ? 'ok  ' : 'FAIL'} hide screen note: ${n.overlap ? 'overlaps' : 'clear of'} the grown pill, ${n.inCorner ? 'inside' : 'outside'} the corner under the Room card`);
-    }
-    if (v.hide) {
-      const okHide = hide !== null && hide.grown && hide.inCorner && hide.label.includes('Hide screen') && Math.abs(hide.right) <= SLACK && Math.abs(hide.bottom) <= SLACK && hide.foot === 0 && hide.room === 0 && hide.w > 36;
-      if (!okHide) failed = true;
-      console.log(
-        hide === null
-          ? '  FAIL hide screen: the button is not there'
-          : `  ${okHide ? 'ok  ' : 'FAIL'} hide screen: ${hide.grown ? 'grown' : 'not grown'} to ${hide.w} px, right edge ${hide.right} and bottom ${hide.bottom} from its corner box (0), ${hide.inCorner ? 'inside' : 'outside'} the corner under the Room card, overlaps ${hide.foot} parts of the status line and ${hide.room} Room cards`,
-      );
     }
     for (const d of sig) console.log(`  FAIL ${d}`);
     if (sig.length) failed = true;
