@@ -15,6 +15,8 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Mutex, MutexGuard};
 use std::time::{Duration, Instant};
 
+pub mod live;
+
 const NOT_SETUP: &str = "not set up";
 const SIGN_AGAIN: &str = "sign in again";
 const SIGN_OUT_FIRST: &str = "sign out first";
@@ -196,7 +198,7 @@ static CANCEL_SIGN_IN: AtomicBool = AtomicBool::new(false);
 fn set_note(word: Option<&'static str>) { *lock(&NOTE) = word; }
 /// Forget the access token, the note, every cache and the search count: sign-out, a client
 /// change and a forgotten client all come through here.
-fn reset_session() { *lock(&TOKEN) = None; set_note(None); clear_library(false); }
+fn reset_session() { *lock(&TOKEN) = None; set_note(None); clear_library(false); live::clear(false); }
 
 #[derive(PartialEq)]
 enum TokenReply {
@@ -287,6 +289,7 @@ fn access_with(client: &Client, force: bool, http: &dyn Http, creds: &dyn Creds)
             // Whatever the library holds was read under this grant: a later sign-in (maybe another account)
             // must not be served it. The day's search count stays (see `clear_library`).
             clear_library(true);
+            live::clear(true);
             set_note(Some(SIGN_AGAIN));
             write(Event::RefreshRefused, Reason::SignInAgain, 400, started.elapsed().as_millis());
             Err(SIGN_AGAIN)
@@ -389,6 +392,7 @@ fn save_sign_in(creds: &dyn Creds, refresh_value: &str, access_value: String, se
     *lock(&TOKEN) = Some(Token { access: access_value, expires: Instant::now() + Duration::from_secs(seconds) });
     // A new sign-in starts with an empty library, whoever signed in before (the search count stays).
     clear_library(true);
+    live::clear(true);
     set_note(None);
     Ok(())
 }

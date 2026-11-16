@@ -92,6 +92,8 @@ use audio_analysis::{AudioAnalyzer, AudioLevels};
 static USER_HIDDEN: AtomicBool = AtomicBool::new(false);
 /// Last value handed to the WebView2 controller's SetIsVisible.
 static WEBVIEW_SHOWN: AtomicBool = AtomicBool::new(true);
+
+pub(crate) fn webview_shown() -> bool { WEBVIEW_SHOWN.load(Ordering::SeqCst) }
 /// The visualizer wants levels (it is drawing, and not in InfiniDream mode).
 /// Set by the `set_audio_push` command.
 static AUDIO_PUSH_REQUESTED: AtomicBool = AtomicBool::new(true);
@@ -4029,6 +4031,11 @@ pub fn run() {
             wall2_youtube::wall2_youtube_liked,
             wall2_youtube::wall2_youtube_search,
             wall2_youtube::wall2_youtube_videos,
+            wall2_youtube::live::wall2_ytlive_channel,
+            wall2_youtube::live::wall2_ytlive_set_channel,
+            wall2_youtube::live::wall2_ytlive_forget_channel,
+            wall2_youtube::live::wall2_ytlive_status,
+            wall2_youtube::live::wall2_ytlive_chat,
             wall2_spotify::wall2_spotify_playlists,
             wall2_spotify::wall2_spotify_albums,
             wall2_spotify::wall2_spotify_liked,
