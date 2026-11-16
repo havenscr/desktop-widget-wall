@@ -2066,7 +2066,7 @@ export function Watt({ now = reviewNow ?? Date.now, inCall = false }: { now?: ()
   // A call starting or ending, a bubble, a clover or her look changing wakes the loop (or repaints the still pose).
   useEffect(() => {
     wake.current();
-  }, [inCall, bubble, clover, pet.cosmetic, focus.status, ws.rain, ws.cold, minute, watchTab, recordingQuiet, banner, audience, showState]);
+  }, [inCall, bubble, clover, pet.cosmetic, focus.status, ws.rain, ws.cold, ws.windy, wetOn, minute, watchTab, recordingQuiet, banner, audience, showState]);
 
   // The video paused while he watches: he looks round at the viewer once, then back (not under
   // reduced motion, nor while the wall records).
