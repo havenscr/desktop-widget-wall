@@ -1,7 +1,9 @@
 import { expect, it } from 'vitest';
 import type { Moods } from './home';
 import { OFFICE_OFF, TEXT } from './homeStore';
-import { CHIP_FIXED, chipTip, fitMoodRow, LABEL_MARGIN, moodFailText, moodLine, NAME_MIN, ROW_GAP, ROW_MAX, rowModel, swatchFor } from './moodRow';
+// @ts-ignore node's own file calls; this test reads the stylesheet as text.
+import { readFileSync } from 'node:fs';
+import { CHIP_FIXED, chipTip, fitMoodRow, LABEL_MARGIN, MOOD_MAX, moodFailText, moodLine, NAME_MIN, OFF_BUSY_EXTRA, OFF_FIXED, ROW_GAP, ROW_MAX, rowModel, swatchFor } from './moodRow';
 
 const NEUTRAL = ['#b7afd6', '#5b5480'];
 
@@ -39,7 +41,7 @@ it('fitMoodRow: as is when it fits, the label goes first, then long names shrink
   // Fits: as is.
   expect(fitMoodRow([60, 70, 80], label, off)).toEqual({ label: true, cap: null });
   // Six names that overflow only with the label: the label drops, no name is cut.
-  const six = [150, 140, 130, 125, 120, 115];
+  const six = [120, 110, 100, 95, 90, 85];
   expect(chipsWidth(six, off, label)).toBeGreaterThan(ROW_MAX);
   expect(chipsWidth(six, off)).toBeLessThanOrEqual(ROW_MAX);
   expect(fitMoodRow(six, label, off)).toEqual({ label: false, cap: null });
@@ -56,7 +58,7 @@ it('fitMoodRow: as is when it fits, the label goes first, then long names shrink
   expect(cap).toBeGreaterThan(NAME_MIN);
 });
 
-it('fitMoodRow: twelve 40 character names, with Off, stay within 1250 and never under the minimum text', () => {
+it('fitMoodRow: twelve 40 character names, with Off, stay within 1124 and never under the minimum text', () => {
   const names = Array.from({ length: 12 }, () => 330);
   const fit = fitMoodRow(names, 170, 80);
   expect(fit.label).toBe(false);
@@ -66,10 +68,10 @@ it('fitMoodRow: twelve 40 character names, with Off, stay within 1250 and never 
   // Off is counted: with a very wide Off chip the cap is smaller.
   const wide = fitMoodRow(names, 170, 300);
   expect(wide.cap as number).toBeLessThan(fit.cap as number);
-  // The least a chip can be is the 88 px a click needs.
-  expect(CHIP_FIXED + NAME_MIN).toBeGreaterThanOrEqual(88);
-  // Twelve at the minimum with Off and gaps never pass 1250.
-  expect(chipsWidth(Array(12).fill(NAME_MIN), 80)).toBeLessThanOrEqual(ROW_MAX);
+  // The true boundary: at the floor, the most moods the home app lists (12) plus the busiest Off chip fit ROW_MAX; one more chip would not.
+  const busyOff = OFF_FIXED + OFF_BUSY_EXTRA + 27;
+  expect(chipsWidth(Array(MOOD_MAX).fill(NAME_MIN), busyOff)).toBeLessThanOrEqual(ROW_MAX);
+  expect(chipsWidth(Array(MOOD_MAX + 1).fill(NAME_MIN), busyOff)).toBeGreaterThan(ROW_MAX);
   // Too wide even at the minimum is clamped to the minimum.
   expect(fitMoodRow(Array(12).fill(500), 170, 600).cap).toBe(NAME_MIN);
 });
@@ -165,4 +167,19 @@ it('chipTip: name and line, a second line for a block, a failure or a write in f
   expect(chipTip(blocked, blocked.chips[0])).toMatchObject({ second: TEXT.notSetUp, warn: true });
   const failed = rowModel({ ...base, moodFail: { id: 'eveningLamp', word: 'on-air' }, moods: moods() })!;
   expect(chipTip(failed, failed.chips[0]).second).toBe(TEXT.onAir);
+});
+
+it('ROW_MAX, the floor and the row\'s right edge match the stylesheet, so the two cannot drift', () => {
+  const css: string = readFileSync('src/styles/unwind.css', 'utf8');
+  const block = (sel: string): string => {
+    const at = css.indexOf(`\n${sel} {`);
+    expect(at).toBeGreaterThan(-1);
+    return css.slice(at, css.indexOf('}', at));
+  };
+  const slot = block('.u-office-slot');
+  expect(slot).toContain(`max-width: ${ROW_MAX}px;`);
+  // Right edge: the slot's container ends at wall x 2540, so 176 px is wall x 2364, and the left limit is x 1240.
+  expect(2540 - 176 - ROW_MAX).toBe(1240);
+  expect(slot).toContain('right: 176px;');
+  expect(block('.u-mood')).toContain(`min-width: ${CHIP_FIXED + NAME_MIN}px;`);
 });

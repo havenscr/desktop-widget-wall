@@ -6,16 +6,16 @@ import { OFFICE_OFF, TEXT, type HomeState } from './homeStore';
  * model each chip is drawn from). Nothing here reads a store or the page except `rowModel`'s input.
  */
 
-/** The row's right edge is fixed (wall x 2490); it may reach left to wall x 1240, so at most this wide. */
-export const ROW_MAX = 1250;
+/** The row's right edge is fixed (wall x 2364, clear of the Hide screen control); it may reach left to wall x 1240, so at most this wide. */
+export const ROW_MAX = 1124;
 /** The row's least width: the empty slot's own box, so every older rule keeps its meaning. */
 export const ROW_MIN = 420;
 /** Space between the row's parts. */
 export const ROW_GAP = 8;
 /** A chip is 2 px of border, 23 px of padding, the 24 px swatch and its 8 px gap around the name. */
 export const CHIP_FIXED = 57;
-/** A name is never cut under this much text: a chip of 88 px, the least a click needs (the plan said 33 px of text over a 55 px fixed part that left out the 2 px border). */
-export const NAME_MIN = 31;
+/** A name is never cut under this much text: a chip of 76 px, the least a click needs. It was 88 px while the row had 1250 px; at 1124 twelve chips, Off and the gaps only fit with a floor of 76 (the full name stays in the tip). */
+export const NAME_MIN = 19;
 /** The label pill's margin to the first chip (on top of the gap). */
 export const LABEL_MARGIN = 2;
 /** The Off chip: 28 px of padding, 2 px of border, and (while its write is out) a 14 px icon and its 8 px gap. */
@@ -56,7 +56,7 @@ export interface Fit {
 
 /**
  * The row's width limit as a rule on the names. `nameWidths` are the text widths of the mood names, `labelWidth`
- * the whole label pill, `offWidth` the whole Off chip (0 when there is none). 1. As is when it fits 1250.
+ * the whole label pill, `offWidth` the whole Off chip (0 when there is none). 1. As is when it fits 1124.
  * 2. Else the label goes (the group keeps its aria-label). 3. Else every name is cut at the largest shared
  * width that fits (long names shrink first), never under `NAME_MIN` of text.
  */

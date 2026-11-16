@@ -598,6 +598,9 @@ const VARIANTS = [
   { name: 'header: twelve sessions, two waiting, an alarm, stale', q: work('12staleask'), checks: SCROLLED },
   { name: 'two waiting, one off the cards', q: work('ask2'), checks: [...LANES, '.work .centre .lanes-hd', '.work .centre .ask-btn'] },
   { name: 'one failed', q: work('failed'), checks: LANES },
+  // The usage row with a fresh, an idle (old reading) and a reset-week meter, with and without the stale look.
+  { name: 'usage row: fresh, old and reset meters', q: work('3', '&usage=old'), checks: [...LANES, '.work .centre .shelf .shelf-week'] },
+  { name: 'usage row: fresh, old and reset meters, stale helper', q: work('12staleask', '&usage=old'), checks: SCROLLED },
   { name: 'older helper answer', q: work('old'), checks: [...LANES, '.work .centre .lanes-hd'] },
   { name: 'one lane', q: work('1'), checks: LANES },
   { name: 'no lane', q: work('0'), checks: [...LANES, '.work .centre .panel'] },
@@ -1411,8 +1414,8 @@ try {
       if (!slot) listen.push('listen: the office lights slot is not there');
       else {
         const sr = slot.getBoundingClientRect();
-        // Its stage box (7A's foot row): right edge 70 px from the stage's right edge, top 662, 34 tall; 420 wide empty, up to 1250 with the moods row.
-        if (Math.abs(sr.right - 2490) > 1 || Math.abs(sr.top - 662) > 1 || Math.abs(sr.height - 34) > 1 || sr.width < 419.5 || sr.width > 1250.5) listen.push('listen: the office lights slot is at x ' + Math.round(sr.left) + ' to ' + Math.round(sr.right) + ', y ' + Math.round(sr.top) + ' to ' + Math.round(sr.bottom) + ' (right edge 2490, top 662, 34 tall, 420 to 1250 wide)');
+        // Its stage box (7A's foot row): right edge at wall x 2364 (176 px from the stage's right edge), top 662, 34 tall; 420 wide empty, up to 1124 with the moods row.
+        if (Math.abs(sr.right - 2364) > 1 || Math.abs(sr.top - 662) > 1 || Math.abs(sr.height - 34) > 1 || sr.width < 419.5 || sr.width > 1124.5) listen.push('listen: the office lights slot is at x ' + Math.round(sr.left) + ' to ' + Math.round(sr.right) + ', y ' + Math.round(sr.top) + ' to ' + Math.round(sr.bottom) + ' (right edge 2364, top 662, 34 tall, 420 to 1124 wide)');
         const bn = document.querySelector('.leave-banner')?.getBoundingClientRect();
         const ln = document.querySelector('.u-line')?.getBoundingClientRect();
         if (bn && ln && hit(bn, ln)) listen.push('listen: the leave banner covers the status line');
