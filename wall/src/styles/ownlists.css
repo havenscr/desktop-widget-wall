@@ -147,7 +147,12 @@
 .w-pop-rows {
   max-height: 200px;
   overflow-y: auto;
+  overscroll-behavior: contain;
+  /* What scrolls inside the list never counts as overflow of the card the menu hangs from. */
+  contain: paint;
+  /* The app's one scrollbar look (the lists of the YouTube library use it too). */
   scrollbar-width: thin;
+  scrollbar-color: rgba(154, 123, 255, 0.75) rgba(255, 255, 255, 0.05);
 }
 .w-pop-row {
   display: flex;
@@ -188,6 +193,22 @@
 .w-pop-row[aria-disabled='true'] {
   opacity: 0.5;
   cursor: default;
+}
+/* A playlist that is full: its name and the word "Full" stay readable (a fade to 50 percent left the count at 2.67 to 1), only its tile fades;
+   it is not a pick, so the pointer on it paints nothing (the keyboard focus still does). */
+.w-pop-row.full[aria-disabled='true'] {
+  opacity: 1;
+  color: #a39bc6;
+}
+.w-pop-row.full > .own-tile {
+  opacity: 0.5;
+}
+.w-pop-row.full:hover:not(:focus-visible) {
+  background: none;
+  color: #a39bc6;
+}
+.w-pop-row.full:hover:not(:focus-visible) em {
+  color: #a39bc6;
 }
 .w-pop-check {
   flex: none;

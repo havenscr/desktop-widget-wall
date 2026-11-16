@@ -12,11 +12,13 @@ import { useWatchStore } from './store';
  * "Add to a playlist": the round button of the play row and the menu both it and a saved video's list row open.
  * The menu is a `role="menu"` of the playlists made on the wall (a check marks one that holds the video, and a click
  * on it takes the video out again) and a last row that makes a new playlist with this video in it. It takes any
- * `{ id, title?, channel?, seconds? }`, so the YouTube library can use it later. Escape or a click outside closes it
- * and the focus returns to the button.
+ * `{ id, title?, channel?, seconds? }`, so the YouTube library uses it too (a row of the library, `limit` and `maxRows`).
+ * Escape or a click outside closes it and the focus returns to the button. A playlist that is full reads "Full".
  */
 
 export const MENU_WIDTH = 300;
+/** The height of one row of the menu, in design pixels. */
+export const MENU_ROW = 40;
 const STAGE_H = 720;
 /** True while a menu is open: the play row's controls do not fade away under it. */
 export const useAddMenuOpen = create<{ open: boolean }>(() => ({ open: false }));
@@ -29,17 +31,22 @@ interface Place {
 /**
  * Where the menu goes inside `host` (in the host's own pixels): under the anchor, with its right edge on the host's
  * (`edge: 'host'`) or the anchor's. In a card (`edge: 'anchor'`) it opens upward from the anchor when there is no room below
- * inside the host's lower edge plus 8 px, and it never leaves the 2560 by 720 stage.
+ * inside the host's lower edge plus 8 px, and it never leaves the 2560 by 720 stage. With `limit` (a box inside the
+ * host, such as a list that ends above a player) the lower edge is that box's foot plus 8 px instead.
  */
-export function place(host: HTMLElement, anchor: HTMLElement, edge: 'host' | 'anchor', height: number): Place {
+export function place(host: HTMLElement, anchor: HTMLElement, edge: 'host' | 'anchor', height: number, limit?: HTMLElement | null): Place {
   const h = host.getBoundingClientRect();
   const a = anchor.getBoundingClientRect();
   const scale = host.offsetWidth > 0 && h.width > 0 ? h.width / host.offsetWidth : 1;
-  const right = edge === 'host' ? host.offsetWidth : (a.right - h.left) / scale;
+  // A positioned child is placed from the host's padding edge, so a host with a border (the music card) starts that far in. Only a
+  // menu with a `limit` (the library's rows) allows for it, so the menus of Watch keep the places they have always had.
+  const [bx, by] = limit ? [host.clientLeft || 0, host.clientTop || 0] : [0, 0];
+  const right = edge === 'host' ? host.offsetWidth : (a.right - h.left) / scale - bx;
   const left = Math.max(8, Math.min(right - MENU_WIDTH, host.offsetWidth - MENU_WIDTH - 8));
-  let top = (a.bottom - h.top) / scale + 6;
+  let top = (a.bottom - h.top) / scale - by + 6;
   if (edge === 'anchor' && height > 0) {
-    if (top + height > host.offsetHeight + 8) top = (a.top - h.top) / scale - 6 - height;
+    const foot = limit ? (limit.getBoundingClientRect().bottom - h.top) / scale - by + 8 : host.offsetHeight + 8;
+    if (top + height > foot) top = (a.top - h.top) / scale - by - 6 - height;
     // Whatever the choice, the menu stays inside the stage.
     const stage = host.closest('.stage')?.getBoundingClientRect();
     const hostY = (h.top - (stage?.top ?? 0)) / scale;
@@ -48,7 +55,25 @@ export function place(host: HTMLElement, anchor: HTMLElement, edge: 'host' | 'an
   return { left: edge === 'host' ? host.offsetWidth - MENU_WIDTH : left, top };
 }
 
-export function AddMenu({ video, anchor, host, edge = 'anchor', onClose }: { video: OwnVideo; anchor: HTMLElement; host: HTMLElement; edge?: 'host' | 'anchor'; onClose: () => void }) {
+export function AddMenu({
+  video,
+  anchor,
+  host,
+  edge = 'anchor',
+  limit,
+  maxRows,
+  onClose,
+}: {
+  video: OwnVideo;
+  anchor: HTMLElement;
+  host: HTMLElement;
+  edge?: 'host' | 'anchor';
+  /** A box inside the host whose foot the menu must stay above (it opens upward instead). */
+  limit?: HTMLElement | null;
+  /** At most this many playlist rows show; more scroll inside the list (the menu then always fits above or below a row). */
+  maxRows?: number;
+  onClose: () => void;
+}) {
   const saved = useWatchStore((s) => s.saved);
   const lists = useOwnLists((s) => s.lists);
   const entries = ownEntries(saved);
@@ -60,7 +85,8 @@ export function AddMenu({ video, anchor, host, edge = 'anchor', onClose }: { vid
   const menu = useRef<HTMLDivElement>(null);
   const field = useRef<HTMLInputElement>(null);
 
-  useLayoutEffect(() => setAt(place(host, anchor, edge, menu.current?.offsetHeight ?? 0)), [host, anchor, edge, entries.length, adding]);
+  // An error line adds about 30 px: a menu with a `limit` is placed again when it shows or goes.
+  useLayoutEffect(() => setAt(place(host, anchor, edge, menu.current?.offsetHeight ?? 0, limit)), [host, anchor, edge, limit, entries.length, adding, limit ? error : null]);
   useEffect(() => {
     useAddMenuOpen.setState({ open: true });
     return () => useAddMenuOpen.setState({ open: false });
@@ -141,7 +167,7 @@ export function AddMenu({ video, anchor, host, edge = 'anchor', onClose }: { vid
   return createPortal(
     <div ref={menu} className="w-pop" role="menu" aria-label="Add this video to a playlist" style={style} onKeyDown={onKey}>
       <div className="w-pop-k">Add this video to</div>
-      <div className="w-pop-rows">
+      <div className="w-pop-rows" style={maxRows ? { maxHeight: maxRows * MENU_ROW } : undefined}>
         {entries.map((e) => {
           const list = lists[e.id];
           const count = list?.items.length ?? 0;
@@ -152,7 +178,7 @@ export function AddMenu({ video, anchor, host, edge = 'anchor', onClose }: { vid
               key={e.id}
               type="button"
               role="menuitem"
-              className={`w-pop-row${has ? ' has' : ''}`}
+              className={`w-pop-row${has ? ' has' : ''}${isFull ? ' full' : ''}`}
               aria-disabled={isFull || undefined}
               {...tip(isFull ? `This playlist is full (${MAX_OWN_VIDEOS})` : has ? `Take this video out of ${e.label}` : `Add this video to ${e.label}`)}
               onClick={() => (isFull ? undefined : pick(e.id, e.label))}
@@ -160,7 +186,7 @@ export function AddMenu({ video, anchor, host, edge = 'anchor', onClose }: { vid
               <OwnTile size={26} />
               <span className="u-ell">{e.label}</span>
               {has ? <IconCheck size={18} aria-hidden="true" className="w-pop-check" /> : null}
-              <em aria-hidden="true">{count}</em>
+              <em aria-hidden="true">{isFull ? 'Full' : count}</em>
               <span className="w-vh">, {countText(count).toLowerCase()}</span>
             </button>
           );
