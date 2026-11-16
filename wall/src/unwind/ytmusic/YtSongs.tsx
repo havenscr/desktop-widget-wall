@@ -1,6 +1,8 @@
 import { useEffect } from 'react';
-import { IconArrowLeft, IconArrowsShuffle, IconPlayerPlayFilled } from '@tabler/icons-react';
+import { useState } from 'react';
+import { IconArrowLeft, IconArrowsShuffle, IconBrandYoutube, IconPlayerPlayFilled } from '@tabler/icons-react';
 import { tip } from '../../ui/HoverTip';
+import { openInBrowser } from '../watch/openInBrowser';
 import { MAX_PAGES, PAGE_SIZE, nearEnd, readTime, videosLine } from './model';
 import { playAll, playFrom, queueable, useYtQueue, type QueueFrom } from './queue';
 import { closePlaylist, loadList, refreshSongs, retryList, useYtLibrary } from './store';
@@ -26,6 +28,7 @@ export function YtSongs({ tall }: { tall: boolean }) {
     return () => document.removeEventListener('keydown', key);
   }, []);
   const failed = useYtQueue((s) => s.failed);
+  const [openFailed, setOpenFailed] = useState(false);
   if (!opened) return null;
   const list: QueueFrom = { list: 'songs', playlistId: opened.id };
   const readable = songs.items.some((v) => queueable(v, failed));
@@ -39,7 +42,11 @@ export function YtSongs({ tall }: { tall: boolean }) {
           <button type="button" className="sp-back" aria-label="Back to Playlists" title="Back to Playlists (Escape)" onClick={closePlaylist}>
             <IconArrowLeft size={20} stroke={2} aria-hidden="true" />
           </button>
-          {tall ? <span className="sp-backlabel">Playlists</span> : null}
+          {tall ? (
+            <button type="button" className="sp-backlabel" title="Back to Playlists" onClick={closePlaylist}>
+              Playlists
+            </button>
+          ) : null}
         </span>
         <YtThumb src={opened.thumb} className="yt-songthumb" />
         <span className="sp-text">
@@ -69,6 +76,24 @@ export function YtSongs({ tall }: { tall: boolean }) {
               Refresh
             </button>
             {tall && songs.readAt ? <span className="yt-readat">Read at {readTime(songs.readAt)}</span> : null}
+            <button
+              type="button"
+              className="u-rd sm yt-openyt"
+              aria-label="Open in YouTube"
+              {...tip(openFailed ? 'Could not open the browser' : 'Open in YouTube')}
+              onClick={() => {
+                setOpenFailed(false);
+                // The id passes the same check as everywhere (`validRef`) before the wall asks for the link; the default browser opens it.
+                void openInBrowser({ kind: 'playlist', id: opened.id }).then((ok) => {
+                  if (!ok) {
+                    setOpenFailed(true);
+                    setTimeout(() => setOpenFailed(false), 5000);
+                  }
+                });
+              }}
+            >
+              <IconBrandYoutube size={22} stroke={1.8} aria-hidden="true" />
+            </button>
           </span>
         </span>
       </div>

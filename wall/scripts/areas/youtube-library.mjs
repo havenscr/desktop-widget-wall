@@ -130,6 +130,8 @@ export default {
       state('rest, search results', lib('full', '&ytsearch=night'), ['Results for', 'Back to Playlists', 'Glass Harbor', 'Mira Vale'], SWITCH),
       state('tall, Playlists', lib('full'), NAMES.concat(['Static Bloom Sessions']), steps(SWITCH, TALL)),
       state('tall, a playlist opened', lib('full'), ['Refresh', 'Read at', 'Playlist', 'Night Drive', '41 videos', 'Glass Harbor', 'Mira Vale', 'Liked'], steps(SWITCH, TALL, TILE)),
+      state('rest, a playlist opened, hover the heading (way home)', lib('full'), ['Back to YouTube Music home', 'Refresh'], steps(SWITCH, TILE, 'hover:.sp-switch button.on')),
+      state('rest, a playlist opened, hover Open in YouTube', lib('full'), ['Open in YouTube', 'Refresh'], steps(SWITCH, TILE, 'hover:.yt-openyt')),
       state('tall, Liked', lib('full'), ['Cassette Rain', 'Only on YouTube', 'Liked'], steps(SWITCH, TALL, LIKED)),
       state('tall, search results', lib('full', '&ytsearch=night'), ['Results for', 'Back to Playlists', 'Glass Harbor'], steps(SWITCH, TALL)),
       state('12 searches left', lib('low'), ['12 searches left today', 'Night Drive'], SWITCH),

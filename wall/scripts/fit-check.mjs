@@ -294,8 +294,8 @@ const OVERFLOWS = {
   // the row; the block moved onto the video.
   'watch-block': '.top:has(.w-sun) .w-now { top: 106px !important; }',
   'watch-gear': '.w-gear { margin-left: 0 !important; }',
-  // the Open label may not give way: with 16 px more text the row overflows its block
-  'watch-slack': '.w-open { flex: none !important; min-width: 0 !important; }',
+  // the row has no room for the round Open button's slack: with 16 px more after it the row overflows its block
+  'watch-slack': '.w-ctl .w-open { margin-right: 400px !important; }',
   // the position fill's colour from a token nothing defines (the owner's bug); the marker left at the bar's start
   'watch-fill': '.w-bar b { background: linear-gradient(90deg, var(--pink), var(--cyan)) !important; }',
   'watch-marker': '.w-bar .w-mark { left: 0 !important; }',
@@ -1474,13 +1474,12 @@ try {
           for (const rd of ctl.querySelectorAll('.rd')) { const r = box(rd); if (r.w !== 40 || r.h !== 40) fails.push('watch polish: a round button is ' + r.w + ' by ' + r.h + ', not 40 by 40'); }
         }
         if (cb.l + cb.w > nb.l + nb.w + 0.5) fails.push('watch polish: the control row runs past the left block');
-        // Slack: on another machine the text may be wider. With the Open label 16 px wider than today's, nothing leaves
-        // the row, nothing wraps, the gear is still the last, whole button, and the label alone gives way (never below
-        // the icon and four letters, 88 px for the button).
-        const lab = ctl.querySelector('.w-open-t');
+        // Slack: the row has room to spare. With 16 px more after the round Open button, nothing leaves the row,
+        // nothing wraps and the gear is still the last, whole button.
+        const lab = ctl.querySelector('.w-open');
         if (lab) {
           const st = document.createElement('style');
-          st.textContent = '.w-open-t { display: inline-block; padding-right: 16px; }';
+          st.textContent = '.w-open { margin-right: 16px; }';
           document.head.appendChild(st);
           void document.body.offsetWidth;
           const r = ctl.getBoundingClientRect();
@@ -1491,7 +1490,7 @@ try {
           if (ctl.lastElementChild !== g) fails.push('watch polish: with 16 px more text the gear is not the last button');
           if (kb.some((k) => k.left < r.left - 0.5 || k.right > r.right + 0.5)) fails.push('watch polish: with 16 px more text a control leaves the row (' + kb.map((k) => Math.round(k.left) + '-' + Math.round(k.right)).join(' ') + ' in ' + Math.round(r.left) + '-' + Math.round(r.right) + ')');
           if (kb.some((k) => Math.abs(mid2(k) - mid2(kb[0])) > 2)) fails.push('watch polish: with 16 px more text the control row wraps');
-          if (o && o.getBoundingClientRect().width < 88 - 0.5) fails.push('watch polish: with 16 px more text the Open button is ' + Math.round(o.getBoundingClientRect().width) + ' px, under 88');
+          if (o && Math.abs(o.getBoundingClientRect().width - 40) > 0.5) fails.push('watch polish: with 16 px more text the Open button is ' + Math.round(o.getBoundingClientRect().width) + ' px, not 40');
           if (g && !(g.getBoundingClientRect().width >= 39.5)) fails.push('watch polish: with 16 px more text the gear is squeezed to ' + Math.round(g.getBoundingClientRect().width) + ' px');
           st.remove();
           void document.body.offsetWidth;

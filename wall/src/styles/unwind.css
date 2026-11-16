@@ -981,35 +981,7 @@
   mask-image: linear-gradient(180deg, #000, transparent 80%);
   pointer-events: none;
 }
-/* Open in YouTube (or on Twitch): a plain button before the gear in the control row, always there.
-   It is the one that gives way when the row is short of room (a wider font on another machine): its
-   label truncates with an ellipsis, never below the icon and four letters, and the gear stays whole. */
-.w-open {
-  flex: 0 1 auto;
-  min-width: 88px;
-  height: 40px;
-  margin-left: 4px;
-  padding: 0 10px;
-  border-radius: 20px;
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 16px;
-  white-space: nowrap;
-  color: var(--dim);
-  background: rgba(8, 6, 26, 0.7);
-  border: 1px solid var(--line);
-}
-.w-open-t {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.w-open:hover {
-  color: var(--tx);
-  background: rgba(8, 6, 26, 0.9);
-}
+/* Open in YouTube (or on Twitch): a round icon button like its neighbours (`.w-ctl .rd`), before the gear, always there. */
 .w-open:focus-visible {
   outline: 3px solid var(--cyan);
   outline-offset: 2px;
@@ -1214,12 +1186,6 @@
   font-size: 21px;
   line-height: 1.35;
   color: var(--dim);
-}
-.w-card.empty .w-forms {
-  margin: 10px 0 0;
-  font-size: 16px;
-  line-height: 1.4;
-  color: var(--faint);
 }
 .w-card.empty .w-field {
   margin-top: auto;
@@ -2180,9 +2146,28 @@
   opacity: 0.5;
   text-shadow: none;
 }
+/* The Watch list card and the Office moods line rest with the controls: the same 250 ms ease, and the same
+   triggers bring them back. At rest the card's contents take no pointer; the card itself (and the line) keep
+   it only to notice the pointer entering their box, which brings everything back. The chips never fade. */
+.w-card,
+.u-office-line {
+  transition: opacity 250ms ease;
+}
+.w-card[data-rest='true'],
+.u-office-line[data-rest='true'] {
+  opacity: 0;
+}
+.w-card[data-rest='true'] > * {
+  pointer-events: none;
+}
+.u-office-line[data-rest='true'] {
+  pointer-events: auto;
+}
 @media (prefers-reduced-motion: reduce) {
   .w-now > :is(.u-src, .w-sub, .w-by, .w-ctl, .w-time),
-  .w-now > .w-title {
+  .w-now > .w-title,
+  .w-card,
+  .u-office-line {
     transition: none;
   }
 }
@@ -3290,12 +3275,24 @@
   margin-bottom: 10px;
 }
 .sp-backlabel {
+  min-height: 32px;
+  padding: 0 4px;
+  border: 0;
+  background: none;
+  cursor: pointer;
   min-width: 0;
   font: 400 17px/1 var(--body);
   color: var(--dim);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+.sp-backlabel:hover {
+  color: var(--tx);
+}
+.sp-backlabel:focus-visible {
+  outline: 3px solid var(--cyan);
+  outline-offset: 2px;
 }
 .sp-songs.tall .sp-shead .sp-cover {
   border-radius: 14px;

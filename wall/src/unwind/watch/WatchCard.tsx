@@ -3,7 +3,7 @@ import { IconBrandTwitch, IconBrandYoutube, IconBroadcast, IconCheck, IconPencil
 import { useSkyKeepClear } from '../../horizon/sky';
 import { tip } from '../../ui/HoverTip';
 import { useSignalStore } from '../../signals/store';
-import { kindName, parseLink, refKey, type WatchKind, type WatchRef } from './links';
+import { defaultLabel, kindName, parseLink, refKey, type WatchKind, type WatchRef } from './links';
 import { ADD_ERRORS, MAX_LABEL, MAX_SAVED, type SavedItem } from './saved';
 import { useWatchStore } from './store';
 import { AddMenu } from './AddToPlaylist';
@@ -11,7 +11,9 @@ import { OwnEditor } from './OwnEditor';
 import { OwnFollow } from './OwnFollow';
 import { PASTE_ERROR_MS } from './ownShared';
 import { countText, DeleteAsk, OwnTile, savedVideo } from './OwnParts';
+import { askDetails } from './ownDetails';
 import { useOwnLists } from './ownLists';
+import { restBridge, restZone, useWatchRest } from './rest';
 import { playOwn, setFollow, useOwnView, type OwnView } from './ownPlay';
 
 export { PASTE_ERROR_MS };
@@ -161,6 +163,15 @@ function WatchList({ empty, draft, setDraft, host, own }: { empty: boolean; draf
   // The playlist a pasted video link also names, offered once (`known`: the video was in the list already); kept here, never saved.
   const [offer, setOffer] = useState<{ ref: WatchRef; known: boolean } | null>(null);
   const fieldRef = useRef<HTMLInputElement>(null);
+  // The card is in use while its field has text, a name is being typed, the new playlist form or a question or a menu is open: it never rests then.
+  const held = text.trim() !== '' || editing !== null || draft || asking !== null || menu !== null;
+  useEffect(() => {
+    useWatchRest.setState({ cardHeld: held });
+    // A field that went away with the focus in it sends no blur: the card's focus hold is let go when it was the last thing holding it.
+    if (!held && !(host && document.activeElement && host.contains(document.activeElement))) restBridge.current?.focus('card', false);
+    return () => useWatchRest.setState({ cardHeld: false });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [held]);
   const errTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
   const offerTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
   useEffect(
@@ -229,6 +240,7 @@ function WatchList({ empty, draft, setDraft, host, own }: { empty: boolean; draf
         value={text}
         placeholder="Paste a YouTube or Twitch link"
         aria-label="Paste a YouTube or Twitch link"
+        title="A YouTube video, playlist or live stream, or a Twitch channel"
         spellCheck={false}
         autoComplete="off"
         maxLength={4096}
@@ -282,7 +294,6 @@ function WatchList({ empty, draft, setDraft, host, own }: { empty: boolean; draf
           {newButton}
         </div>
         <p className="w-explain">Save the videos, playlists, live streams and Twitch channels you watch here. They stay on this wall; one click plays them in the sky.</p>
-        <p className="w-forms">youtu.be/… · youtube.com/watch?v=… · /live/… · /playlist?list=… · twitch.tv/…</p>
         {field}
         {errLine}
         {offerLine}
@@ -341,7 +352,7 @@ function WatchList({ empty, draft, setDraft, host, own }: { empty: boolean; draf
                       else playOwn(item.id);
                     }}
                   >
-                    <span className="w-kind">
+                    <span className="w-kind" {...tip(kindName('own'))}>
                       <KindIcon kind="own" />
                     </span>
                     <span className="w-label u-ell">{item.label}</span>
@@ -375,7 +386,7 @@ function WatchList({ empty, draft, setDraft, host, own }: { empty: boolean; draf
                   aria-pressed={on}
                   onClick={() => (other(), on ? undefined : st.play(item))}
                 >
-                  <span className="w-kind">
+                  <span className="w-kind" {...tip(kindName(item.kind))}>
                     <KindIcon kind={item.kind} />
                   </span>
                   <span className="w-label u-ell">{item.label}</span>
@@ -430,10 +441,28 @@ export function WatchCard() {
   // sky layers: the moon keeps clear of this card (its real box, which grows while the editor is open).
   const [card, setCard] = useState<HTMLElement | null>(null);
   useSkyKeepClear('watch-card', card);
+  // A saved video or live stream nobody named shows its real title as soon as YouTube's details say it (signed in only);
+  // the player fills it the same way when it plays (`fillLabel` never touches a name that was typed).
+  const unnamed = saved
+    .filter((i) => (i.kind === 'video' || i.kind === 'live') && i.label === defaultLabel(i))
+    .map((i) => i.id)
+    .join(',');
+  useEffect(() => {
+    if (!unnamed) return;
+    askDetails(unnamed.split(','), (id, info) => {
+      if (!info.title) return;
+      const st = useWatchStore.getState();
+      const hit = st.saved.find((i) => (i.kind === 'video' || i.kind === 'live') && i.id === id);
+      if (hit) st.fillLabel(refKey(hit), info.title);
+    });
+  }, [unnamed]);
   const mode = open ? 'edit' : own?.follow ? 'follow' : 'list';
   const empty = mode === 'list' && saved.length === 0 && !draft;
+  // While a video plays and the controls rest, the card rests with them (same timing); it never rests in use (see `cardHeld`)
+  // or while its playlist editor or follow view is open. At rest it keeps the pointer only to notice it entering its box.
+  const resting = useWatchRest((s) => s.rest && !s.cardHeld) && mode === 'list';
   return (
-    <section ref={setCard} className={`u-card w-card${empty ? ' empty' : ''}${mode === 'edit' ? ' own-tall' : ''}`} aria-label="Watch list">
+    <section ref={setCard} className={`u-card w-card${empty ? ' empty' : ''}${mode === 'edit' ? ' own-tall' : ''}`} aria-label="Watch list" data-rest={resting ? 'true' : 'false'} {...restZone('card')}>
       {mode === 'edit' ? <OwnEditor id={open!} /> : mode === 'follow' ? <OwnFollow view={own!} /> : <WatchList empty={empty} draft={draft} setDraft={setDraft} host={card} own={own} />}
     </section>
   );

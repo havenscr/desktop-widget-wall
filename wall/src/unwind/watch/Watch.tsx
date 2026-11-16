@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type FocusEvent, type KeyboardEvent, type MouseEvent, type PointerEvent } from 'react';
 import {
+  IconBrandTwitch,
+  IconBrandYoutube,
   IconExternalLink,
   IconInfoCircle,
   IconMovie,
@@ -14,13 +16,12 @@ import {
   IconVolume,
   IconVolumeOff,
 } from '@tabler/icons-react';
-import { invoke } from '../../bridge/tauri';
 import { useSkyKeepClear } from '../../horizon/sky';
 import { useSignalStore } from '../../signals/store';
 import { useToolsStore } from '../../tools/store';
 import { tip } from '../../ui/HoverTip';
 import { DriveInFrame } from './DriveInFrame';
-import { kindName, validRef, type WatchKind, type WatchRef } from './links';
+import { kindName, type WatchKind, type WatchRef } from './links';
 import { lookFor } from './looks';
 import { playerLink } from './PlayerFrame';
 import { useWatchSky } from './StageLayer';
@@ -28,6 +29,8 @@ import { useWatchStore } from './store';
 import { next as queueNext, previous as queuePrevious, useMusicView } from '../ytmusic/queue';
 import { AddToPlaylistButton, useAddMenuOpen } from './AddToPlaylist';
 import { useOwnLists } from './ownLists';
+import { openInBrowser } from './openInBrowser';
+import { keyboardFocus, restBridge, useWatchRest } from './rest';
 import { next as ownNext, NO_PLAY_LINE, playAgain as ownPlayAgain, previous as ownPrevious, useOwnFinished, useOwnView, type OwnView } from './ownPlay';
 import { clock, countText } from './ownShared';
 
@@ -44,21 +47,7 @@ export function openLabel(kind: WatchKind): string {
   return kind === 'twitch' ? 'Open on Twitch' : 'Open in YouTube';
 }
 
-/**
- * Ask the wall to open this item on its own site; the kind and id are checked here and again
- * in Rust, which builds the normal watch address. A video may also pass the whole seconds the
- * player last reported (`at`), which Rust checks and formats. Nothing else is ever sent.
- */
-export async function openInBrowser(ref: WatchRef, at?: number | null): Promise<boolean> {
-  if (!validRef({ kind: ref.kind, id: ref.id })) return false;
-  const t = ref.kind === 'video' && typeof at === 'number' && Number.isFinite(at) ? Math.floor(at) : 0;
-  try {
-    await invoke('wall2_watch_open', t > 0 ? { kind: ref.kind, id: ref.id, at: t } : { kind: ref.kind, id: ref.id });
-    return true;
-  } catch {
-    return false;
-  }
-}
+export { openInBrowser };
 
 /**
  * The gear: the last button of the left block's row. It opens the settings sheet on its Looks
@@ -212,9 +201,8 @@ function Controls({ item, openFailed, setOpenFailed }: { item: WatchRef & { labe
       failTimer.current = setTimeout(() => setOpenFailed(false), OPEN_ERROR_MS);
     }
   };
-  // Only a single YouTube video can go in a playlist: its button joins the row and "Open in YouTube" shortens to make room.
+  // Only a single YouTube video can go in a playlist: its round button joins the row.
   const canAdd = item.kind === 'video';
-  const label = canAdd ? 'YouTube' : openLabel(item.kind);
   const listTip = list ? `Item ${index + 1} of ${count}` : 'Only for a playlist';
   let line = null;
   if (openFailed)
@@ -272,11 +260,8 @@ function Controls({ item, openFailed, setOpenFailed }: { item: WatchRef & { labe
         <button type="button" className={`rd${youtube ? '' : ' big'}`} aria-label="Stop" {...tip('Stop and remove the video')} onClick={() => st.stop()}>
           <IconPlayerStopFilled size={20} aria-hidden="true" />
         </button>
-        <button type="button" className="w-open" aria-label={canAdd ? openLabel(item.kind) : undefined} {...tip(`Opens this ${kindName(item.kind).toLowerCase()} on its own site in your web browser`)} onClick={() => void open()}>
-          <IconExternalLink size={18} aria-hidden="true" />
-          <span className="w-open-t">{label}</span>
-          {/* The shown word is shorter to make room for the add button; the page text keeps the button's whole name. */}
-          {canAdd ? <span className="w-vh">{openLabel(item.kind)}</span> : null}
+        <button type="button" className="rd w-open" aria-label={openLabel(item.kind)} {...tip(openLabel(item.kind))} onClick={() => void open()}>
+          {item.kind === 'twitch' ? <IconBrandTwitch size={20} aria-hidden="true" /> : <IconBrandYoutube size={20} aria-hidden="true" />}
         </button>
         {canAdd ? <AddToPlaylistButton video={{ id: item.id, ...(reportTitle ? { title: reportTitle } : {}), ...(reportChannel ? { channel: reportChannel } : {}), ...(duration !== null && duration > 0 ? { seconds: duration } : {}) }} /> : null}
         <WatchGear />
@@ -309,15 +294,6 @@ function typing(el: Element | null): boolean {
   return el.matches('input, textarea, select');
 }
 
-/** True when the focus on `el` is a keyboard one (`:focus-visible`); a browser without the selector counts every focus as keyboard. */
-function keyboardFocus(el: Element): boolean {
-  try {
-    return el.matches(':focus-visible');
-  } catch {
-    return true;
-  }
-}
-
 /** True while something that takes Escape first is open: the Watch sheet, the tools drawer, a dialog, a menu or Watt's menu. */
 function somethingOpen(): boolean {
   if (useWatchStore.getState().sheet || useToolsStore.getState().open || useOwnLists.getState().open !== null) return true;
@@ -334,7 +310,8 @@ function somethingOpen(): boolean {
 function useControlsFade(canRest: boolean, peek: boolean) {
   const [rest, setRest] = useState(false);
   const timer = useRef<ReturnType<typeof setTimeout>>(undefined);
-  const hold = useRef({ now: false, focus: false, peek: false, can: false });
+  // Which zones hold the controls shown: the left block ('now') and the zones beside it that report through `restZone`.
+  const hold = useRef({ zones: new Set<string>(), focused: new Set<string>(), peek: false, can: false });
   hold.current.peek = peek;
   hold.current.can = canRest;
   const wake = useCallback(() => {
@@ -342,7 +319,7 @@ function useControlsFade(canRest: boolean, peek: boolean) {
     timer.current = undefined;
     setRest(false);
     const h = hold.current;
-    if (!h.can || h.now || h.focus || h.peek) return;
+    if (!h.can || h.zones.size > 0 || h.focused.size > 0 || h.peek) return;
     timer.current = setTimeout(() => {
       timer.current = undefined;
       setRest(true);
@@ -350,13 +327,41 @@ function useControlsFade(canRest: boolean, peek: boolean) {
   }, []);
   useEffect(() => wake(), [canRest, peek, wake]);
   useEffect(() => () => clearTimeout(timer.current), []);
+  // The card and the moods row report their pointer and focus here, and read `rest` from the store.
+  useEffect(() => {
+    const h = hold.current;
+    restBridge.current = {
+      enter: (id) => {
+        h.zones.add(id);
+        wake();
+      },
+      leave: (id) => {
+        if (h.zones.delete(id)) wake();
+      },
+      focus: (id, on) => {
+        if (on) h.focused.add(id);
+        else if (!h.focused.delete(id)) return;
+        wake();
+      },
+    };
+    return () => {
+      restBridge.current = null;
+      h.zones.clear();
+      h.focused.clear();
+    };
+  }, [wake]);
+  const resting = canRest && rest;
+  useEffect(() => {
+    useWatchRest.setState({ rest: resting });
+    return () => useWatchRest.setState({ rest: false });
+  }, [resting]);
   const zone = () => ({
     onPointerEnter: () => {
-      hold.current.now = true;
+      hold.current.zones.add('now');
       wake();
     },
     onPointerLeave: (e: PointerEvent<HTMLElement>) => {
-      hold.current.now = false;
+      hold.current.zones.delete('now');
       // A button the mouse clicked keeps focus after the pointer leaves; let it go so it does not hide a live control.
       const el = document.activeElement;
       if (el instanceof HTMLElement && e.currentTarget.contains(el) && !keyboardFocus(el)) el.blur();
@@ -365,13 +370,13 @@ function useControlsFade(canRest: boolean, peek: boolean) {
     // Only focus that came from the keyboard holds the controls shown; a mouse click does not.
     onFocus: (e: FocusEvent<HTMLElement>) => {
       if (!keyboardFocus(e.target)) return;
-      hold.current.focus = true;
+      hold.current.focused.add('now');
       wake();
     },
     onBlur: (e: FocusEvent<HTMLElement>) => {
       const to = e.relatedTarget as Element | null;
       if (to && to.closest('.w-now')) return;
-      hold.current.focus = false;
+      hold.current.focused.delete('now');
       wake();
     },
   });

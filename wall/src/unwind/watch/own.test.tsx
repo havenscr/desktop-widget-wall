@@ -240,17 +240,19 @@ describe('Add to a playlist', () => {
     await flush();
   }
 
-  it('shows the round button only for a single video, with the open button reading "YouTube"', async () => {
+  it('shows the round add button only for a single video, beside a round icon open button with no word', async () => {
     seed();
     await playSingle();
     const add = screen.getByRole('button', { name: 'Add to a playlist' });
     expect(add).toBeTruthy();
     const open = screen.getByRole('button', { name: 'Open in YouTube' });
-    expect(open.querySelector('.w-open-t')!.textContent).toBe('YouTube');
+    expect(open.className).toContain('rd');
+    expect(open.textContent).toBe('');
+    expect(open.querySelector('svg')).not.toBeNull();
     expect(add.previousElementSibling).toBe(open);
   });
 
-  it('is absent for a live stream, a connected playlist and Twitch, whose open button keeps its words', async () => {
+  it('is absent for a live stream, a connected playlist and Twitch, whose round open button is named for its site', async () => {
     seed({ extra: [{ kind: 'live', id: 'Lofi_Live01', label: 'Lofi radio' }, { kind: 'twitch', id: 'pixel_harbor', label: 'pixel_harbor' }] });
     render(<UnwindView />);
     await flush();
@@ -258,7 +260,7 @@ describe('Add to a playlist', () => {
       act(() => w().play({ kind, id }));
       await flush();
       expect(screen.queryByRole('button', { name: 'Add to a playlist' })).toBeNull();
-      expect(screen.getByRole('button', { name: words }).querySelector('.w-open-t')!.textContent).toBe(words);
+      expect(screen.getByRole('button', { name: words }).textContent).toBe('');
     }
   });
 
@@ -269,10 +271,11 @@ describe('Add to a playlist', () => {
     const menu = screen.getByRole('menu');
     expect(within(menu).getByText('Add this video to')).toBeTruthy();
     const rows = within(menu).getAllByRole('menuitem');
-    expect(rows.map((r) => r.getAttribute('title') ?? '')).toEqual(['', '', '']);
+    expect(rows.map((r) => r.getAttribute('title') ?? '')).toEqual(['', '', '', '']);
     expect(within(menu).getByRole('menuitem', { name: 'Friday wind down, 12 videos' })).toBe(rows[0]);
     expect(within(menu).getByRole('menuitem', { name: 'Slow mornings, 5 videos' })).toBe(rows[1]);
-    expect(rows[2]!.textContent).toBe('New playlist');
+    expect(rows[2]!.textContent).toBe('Watch list, on its own');
+    expect(rows[3]!.textContent).toBe('New playlist');
     // The first row has the focus; the Enter key picks it.
     expect(document.activeElement).toBe(rows[0]);
     await press(rows[0]!, { key: 'Enter' });
@@ -295,10 +298,12 @@ describe('Add to a playlist', () => {
     await press(rows[1]!, { key: 'ArrowDown' });
     expect(document.activeElement).toBe(rows[2]);
     await press(rows[2]!, { key: 'ArrowDown' });
+    expect(document.activeElement).toBe(rows[3]);
+    await press(rows[3]!, { key: 'ArrowDown' });
     expect(document.activeElement).toBe(rows[0]);
     await press(rows[0]!, { key: 'ArrowUp' });
-    expect(document.activeElement).toBe(rows[2]);
-    await press(rows[2]!, { key: 'Escape' });
+    expect(document.activeElement).toBe(rows[3]);
+    await press(rows[3]!, { key: 'Escape' });
     expect(screen.queryByRole('menu')).toBeNull();
     expect(document.activeElement).toBe(add);
     // The video went on playing: Escape in the menu is the menu's.

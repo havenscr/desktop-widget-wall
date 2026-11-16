@@ -1,8 +1,9 @@
 import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent } from 'react';
 import { createPortal } from 'react-dom';
-import { IconCheck, IconPlaylistAdd, IconPlus } from '@tabler/icons-react';
+import { IconBrandYoutube, IconCheck, IconPlaylistAdd, IconPlus } from '@tabler/icons-react';
 import { create } from 'zustand';
 import { quietFocus, tip } from '../../ui/HoverTip';
+import { refKey } from './links';
 import { ADD_ERRORS, MAX_LABEL, MAX_SAVED } from './saved';
 import { MAX_OWN_VIDEOS, ownEntries, useOwnLists, type OwnVideo } from './ownLists';
 import { countText, OwnTile } from './OwnParts';
@@ -154,6 +155,19 @@ export function AddMenu({
       if (refused) setError(`${label}: ${refused}`);
     }
   };
+  // The plain choice: the video by itself in the Watch list, with its real title when this menu knows it.
+  const aloneKey = refKey({ kind: 'video', id: video.id });
+  const alone = saved.some((i) => refKey(i) === aloneKey);
+  const pickAlone = () => {
+    const st = useWatchStore.getState();
+    if (alone) {
+      st.remove(aloneKey);
+      return;
+    }
+    const refused = st.addRef({ kind: 'video', id: video.id }, false);
+    if (refused) setError(`Watch list: ${refused}`);
+    else if (video.title) st.fillLabel(aloneKey, video.title);
+  };
   const make = () => {
     const made = useOwnLists.getState().create(name, video);
     if (!made.ok) {
@@ -191,6 +205,18 @@ export function AddMenu({
             </button>
           );
         })}
+        <button
+          type="button"
+          role="menuitem"
+          className={`w-pop-row${alone ? ' has' : ''}${!alone && full ? ' full' : ''}`}
+          aria-disabled={(!alone && full) || undefined}
+          {...tip(alone ? 'Take this video out of the Watch list' : full ? ADD_ERRORS.full : 'Save this video in the Watch list on its own, not in a playlist')}
+          onClick={() => (!alone && full ? undefined : pickAlone())}
+        >
+          <IconBrandYoutube size={26} aria-hidden="true" />
+          <span className="u-ell">Watch list, on its own</span>
+          {alone ? <IconCheck size={18} aria-hidden="true" className="w-pop-check" /> : null}
+        </button>
       </div>
       {adding ? (
         <form
