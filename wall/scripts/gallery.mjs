@@ -837,7 +837,7 @@ const EXPECT = [
   ['unwind', 'listen: choose this computer', 'More than one computer is signed in to Spotify'],
   ['unwind', 'listen: search with ten results', ['Track 10', 'Playlist 10']],
   ['unwind', 'listen: Spotify did not show up', 'Spotify opened but did not show up as a player'],
-  ['unwind', 'listen: followed playlist songs unavailable', ['Spotify shows the songs only for playlists you made. To see these, copy it into a playlist of your own in Spotify. Play and Shuffle still work.', 'Play', '!Retry']],
+  ['unwind', 'listen: followed playlist songs unavailable', ["Spotify's public page does not list this playlist. It may be private.", 'Play', '!Retry']],
   ['unwind', 'listen: Playing in Watch', ['Playing in Watch', 'Back to Watch']],
   ['unwind', 'listen: Last played in Watch', ['Last played in Watch', 'Back to Watch']],
   ['unwind', 'listen: another WebView app', ['Last played on an app on this PC', '!msedgewebview2']],

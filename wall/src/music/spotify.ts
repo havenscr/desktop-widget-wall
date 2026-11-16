@@ -10,7 +10,9 @@ export interface SpotifySearch { tracks: SpotifyItem[]; albums: SpotifyItem[]; p
 export interface SpotifyTrack { id: string | null; name: string; artists: string; album: string; durationMs: number; imageUrl: string | null; thumbUrl: string | null; playable: boolean }
 export interface SpotifyTrackPage { items: SpotifyTrack[]; total: number; more: boolean }
 export interface SpotifyQueue { current: SpotifyTrack | null; next: SpotifyTrack[] }
-export interface SpotifyPlayback { playing: boolean; device: { name: string; kind: string } | null; track: SpotifyTrack | null; progressMs: number; shuffle: boolean }
+export interface SpotifyPlayback { playing: boolean; device: { name: string; kind: string } | null; track: SpotifyTrack | null; progressMs: number; shuffle: boolean; /** The playlist the song plays from, when Spotify names one in the plain `spotify:playlist:<id>` form. */ playlistId?: string | null }
+/** A saved playlist's songs read from its public web page; `listed` is how many entries the page held (rows are cut at 200). */
+export interface SpotifyPublicPage { items: SpotifyTrack[]; listed: number }
 export interface SpotifyPlayOptions { deviceId?: string; context?: { kind: 'playlist' | 'album'; id: string }; offsetId?: string; shuffle?: boolean }
 export interface SpotifyStartStatus { starting: boolean; result: string | null }
 
@@ -25,6 +27,10 @@ export const spotify = {
   recent: () => invoke<SpotifyItem[]>('wall2_spotify_recent'),
   search: (query: string) => invoke<SpotifySearch>('wall2_spotify_search', { query }),
   tracks: (kind: 'playlist' | 'album', id: string, page = 0) => invoke<SpotifyTrackPage>('wall2_spotify_tracks', { kind, id, page }),
+  /** The songs of a playlist the owner saved but did not make, from its public web page (Tools can turn this off; the caller then never asks). */
+  publicPage: (id: string) => invoke<SpotifyPublicPage>('wall2_spotify_public_page', { id }),
+  /** The songs of Spotify's recently played list that were played from this playlist, newest first. */
+  heard: (id: string) => invoke<SpotifyTrack[]>('wall2_spotify_heard', { id }),
   queue: () => invoke<SpotifyQueue>('wall2_spotify_queue'),
   playback: () => invoke<SpotifyPlayback | null>('wall2_spotify_playback'),
   devices: () => invoke<SpotifyDevice[]>('wall2_spotify_devices'),

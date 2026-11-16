@@ -1,0 +1,19 @@
+/* The page of a playlist saved from someone else: section headings and the source line. */
+.sp-sec {
+  list-style: none;
+  padding: 14px 8px 6px;
+  font: 600 16px/1 var(--disp);
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--dim);
+}
+.sp-sec:first-child {
+  padding-top: 4px;
+}
+.sp-source {
+  list-style: none;
+  padding: 0 8px 8px;
+}
+.sp-source .sp-linkbtn {
+  margin-left: 10px;
+}
