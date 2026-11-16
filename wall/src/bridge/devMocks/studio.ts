@@ -136,11 +136,11 @@ const MOODS = [
 const TWELVE = [
   ['brightDesk', 'Bright desk for the long afternoon sessions', 'Room 70%, neon 20%, desk lamp on, panels off, the window side kept low so the screen has no glare on it at all'],
   ['readLamp', 'Late evening reading with the lamp low', 'Room 35%, desk lamp on, neon off, panels warm and dim, the key lights stay off for the whole evening session'],
-  ['windDown', 'Wind down before bed, slow and warm', 'Room 20%, neon 10%, panels amber, everything else off, and the room stays this way until it is switched'],
+  ['eveningLamp', 'Quiet evening for the last hour of the day', 'Room 20%, neon 10%, panels amber, everything else off, and the room stays this way until it is switched'],
   ['gaming', 'Gaming with the panels turned up high', 'Room 25%, panels 60%, neon 40%, the desk lamp off so the glare stays off the monitor during long matches'],
   ['meeting', 'Camera ready for a long video call', 'Room 80%, desk lamp on, key lights on and matched, panels soft white so faces look even on the camera'],
   ['nightRun', 'Night run with only the neon showing', 'Room 5%, neon 30%, nothing else on, a quiet low glow that never lights the walls or the ceiling at all'],
-  ['partyMusic', 'Music on, colours moving with the beat', 'Room 40%, panels cycle through the colour looks slowly, neon 50%, desk lamp off, no key lights at all'],
+  ['partyMusic', 'Party colours moving with the beat', 'Room 40%, panels cycle through the colour looks slowly, neon 50%, desk lamp off, no key lights at all'],
   ['softScreen', 'Easy on the eyes for a long screen day', 'Room 55%, panels pale and warm, desk lamp on low, the neon off, a steady light that never changes'],
   ['workDay', 'Plain bright working light, nothing fancy', 'Room 90%, desk lamp on, neon off, panels white, the whole office evenly lit for a normal working day'],
   ['calmMorning', 'Calm morning with the blinds still shut', 'Room 45%, panels warm, neon 15%, desk lamp on low, a soft start that never feels sharp or too bright'],

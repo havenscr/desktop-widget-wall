@@ -14,7 +14,7 @@ it('swatchFor matches plain words inside the lower-cased id, first row wins', ()
   expect(swatchFor('softScreen')).toEqual(['#e9e4da', '#bcd0f0']);
   expect(swatchFor('brightDesk')).toEqual(['#f3f5ff', '#cfe0ff']);
   expect(swatchFor('readLamp')).toEqual(['#f3f5ff', '#cfe0ff']);
-  expect(swatchFor('windDown')).toEqual(['#ffb975', '#ff8a4d']);
+  expect(swatchFor('eveningLamp')).toEqual(['#ffb975', '#ff8a4d']);
   expect(swatchFor('calmMorning')).toEqual(['#ffb975', '#ff8a4d']);
   expect(swatchFor('workDay')).toEqual(['#ffd7a3', '#ff4fa3']);
   expect(swatchFor('gaming')).toEqual(['#8b5cf6', '#35e6ea']);
@@ -23,7 +23,7 @@ it('swatchFor matches plain words inside the lower-cased id, first row wins', ()
   // Rows in table order: music beats video, screen beats focus-like words.
   expect(swatchFor('musicVideo')).toEqual(['#35e6ea', '#8b5cf6', '#ff4fa3']);
   expect(swatchFor('screenBright')).toEqual(['#e9e4da', '#bcd0f0']);
-  // "work" comes after "wind down" words but before the neutral row; "day" alone is work.
+  // "work" comes after "evening" words but before the neutral row; "day" alone is work.
   expect(swatchFor('dayShift')).toEqual(['#ffd7a3', '#ff4fa3']);
 });
 
@@ -78,7 +78,7 @@ const moods = (over: Partial<Moods> = {}): Moods => ({
   stale: false,
   moods: [
     { id: 'brightDesk', label: 'Bright desk', line: 'Room 70%, neon 20%', active: false },
-    { id: 'windDown', label: 'Wind down', line: null, active: false },
+    { id: 'eveningLamp', label: 'Evening lamp', line: null, active: false },
   ],
   off: null,
   canWrite: true,
@@ -88,23 +88,23 @@ const moods = (over: Partial<Moods> = {}): Moods => ({
 const s0 = { applying: null, moodFail: null, sticky: null } as const;
 
 it('the line follows its priority: sticky, 5 s failure, write block, in flight, mood, Off, nothing', () => {
-  const lit = moods({ moods: [{ id: 'brightDesk', label: 'Bright desk', line: 'Room 70%', active: true }, { id: 'windDown', label: 'Wind down', line: null, active: false }], off: { active: false } });
+  const lit = moods({ moods: [{ id: 'brightDesk', label: 'Bright desk', line: 'Room 70%', active: true }, { id: 'eveningLamp', label: 'Evening lamp', line: null, active: false }], off: { active: false } });
   const text = (l: ReturnType<typeof moodLine>) => `${l.lead ?? ''}${l.rest}`;
   expect(moodLine(moods(), s0)).toEqual({ lead: null, rest: 'No mood on.', warn: false });
   expect(moodLine(moods({ off: { active: true } }), s0)).toEqual({ lead: null, rest: 'Office lights are off.', warn: false });
   expect(moodLine(moods({ off: { active: false } }), s0).rest).toBe('No mood on.');
   expect(text(moodLine(lit, s0))).toBe('Bright desk: Room 70%');
-  const noLine = moods({ moods: [{ id: 'windDown', label: 'Wind down', line: null, active: true }] });
-  expect(text(moodLine(noLine, s0))).toBe('Wind down is on.');
+  const noLine = moods({ moods: [{ id: 'eveningLamp', label: 'Evening lamp', line: null, active: true }] });
+  expect(text(moodLine(noLine, s0))).toBe('Evening lamp is on.');
   // In flight beats the mood that is on; the clicked name leads.
-  expect(text(moodLine(lit, { ...s0, applying: 'windDown' }))).toBe('Wind down: asking the home app');
+  expect(text(moodLine(lit, { ...s0, applying: 'eveningLamp' }))).toBe('Evening lamp: asking the home app');
   expect(text(moodLine(lit, { ...s0, applying: OFFICE_OFF }))).toBe('Off: asking the home app');
   // The write block beats in flight, a failure beats the block, sticky beats the failure.
   const blocked = { ...lit, canWrite: false, writeBlock: 'not-set-up' as const };
-  expect(moodLine(blocked, { ...s0, applying: 'windDown' })).toEqual({ lead: null, rest: TEXT.notSetUp, warn: true });
+  expect(moodLine(blocked, { ...s0, applying: 'eveningLamp' })).toEqual({ lead: null, rest: TEXT.notSetUp, warn: true });
   expect(moodLine({ ...blocked, writeBlock: 'needs-private-address' }, s0).rest).toBe(TEXT.needsPrivate);
-  expect(moodLine(blocked, { ...s0, moodFail: { id: 'windDown', word: 'busy' } })).toEqual({ lead: null, rest: TEXT.busy, warn: true });
-  expect(moodLine(blocked, { ...s0, moodFail: { id: 'windDown', word: 'busy' }, sticky: 'forbidden' })).toEqual({ lead: null, rest: TEXT.forbidden, warn: true });
+  expect(moodLine(blocked, { ...s0, moodFail: { id: 'eveningLamp', word: 'busy' } })).toEqual({ lead: null, rest: TEXT.busy, warn: true });
+  expect(moodLine(blocked, { ...s0, moodFail: { id: 'eveningLamp', word: 'busy' }, sticky: 'forbidden' })).toEqual({ lead: null, rest: TEXT.forbidden, warn: true });
   expect(moodLine(lit, { ...s0, sticky: 'home-not-set-up' })).toEqual({ lead: null, rest: TEXT.homeNotSetUp, warn: true });
 });
 
@@ -112,7 +112,7 @@ it('a stale read ends its calm lines with (not fresh), never the amber ones', ()
   const stale = (m: Partial<Moods> = {}) => moods({ stale: true, ...m });
   const lit = stale({ moods: [{ id: 'brightDesk', label: 'Bright desk', line: 'Room 70%', active: true }] });
   expect(moodLine(lit, s0).rest).toBe(' Room 70% (not fresh)');
-  expect(moodLine(stale({ moods: [{ id: 'windDown', label: 'Wind down', line: null, active: true }] }), s0).rest).toBe(' is on. (not fresh)');
+  expect(moodLine(stale({ moods: [{ id: 'eveningLamp', label: 'Evening lamp', line: null, active: true }] }), s0).rest).toBe(' is on. (not fresh)');
   expect(moodLine(stale(), s0).rest).toBe('No mood on. (not fresh)');
   expect(moodLine(stale({ off: { active: true } }), s0).rest).toBe('Office lights are off. (not fresh)');
   expect(moodLine(stale(), { ...s0, moodFail: { id: 'x', word: 'failed' } }).rest).toBe(TEXT.failed);
@@ -136,33 +136,33 @@ it('rowModel: hidden unless a good read lists a mood; Off only with off; Off lit
   expect(rowModel({ ...base, moods: moods(), moodsWord: 'unreachable' })).toBeNull();
   expect(rowModel({ ...base, moods: moods({ moods: [] }), moodsWord: null })).toBeNull();
   const plain = rowModel({ ...base, moods: moods(), moodsWord: null })!;
-  expect(plain.chips.map((c) => c.id)).toEqual(['brightDesk', 'windDown']);
+  expect(plain.chips.map((c) => c.id)).toEqual(['brightDesk', 'eveningLamp']);
   const withOff = rowModel({ ...base, moods: moods({ off: { active: true } }), moodsWord: null })!;
-  expect(withOff.chips.map((c) => c.id)).toEqual(['brightDesk', 'windDown', null]);
+  expect(withOff.chips.map((c) => c.id)).toEqual(['brightDesk', 'eveningLamp', null]);
   expect(withOff.chips[2]).toMatchObject({ label: 'Off', lit: true, swatch: null });
-  const both = rowModel({ ...base, moods: moods({ off: { active: true }, moods: [{ id: 'windDown', label: 'Wind down', line: null, active: true }] }), moodsWord: null })!;
+  const both = rowModel({ ...base, moods: moods({ off: { active: true }, moods: [{ id: 'eveningLamp', label: 'Evening lamp', line: null, active: true }] }), moodsWord: null })!;
   expect(both.chips[1].lit).toBe(false);
   expect(both.chips[0].lit).toBe(true);
   const busy = rowModel({ ...base, applying: OFFICE_OFF, moods: moods({ off: { active: false } }), moodsWord: null })!;
   expect(busy.waiting).toBe(true);
   expect(busy.chips[2].busy).toBe(true);
-  const failed = rowModel({ ...base, moodFail: { id: 'windDown', word: 'busy' }, moods: moods(), moodsWord: null })!;
+  const failed = rowModel({ ...base, moodFail: { id: 'eveningLamp', word: 'busy' }, moods: moods(), moodsWord: null })!;
   expect(failed.chips[1].failed).toBe(true);
   expect(failed.warnText).toBe(TEXT.busy);
 });
 
 it('chipTip: name and line, a second line for a block, a failure or a write in flight, Off its own words', () => {
   const base = { applying: null, moodFail: null, sticky: null, moodsWord: null };
-  const lit = rowModel({ ...base, moods: moods({ off: { active: false }, moods: [{ id: 'brightDesk', label: 'Bright desk', line: 'Room 70%, neon 20%', active: true }, { id: 'windDown', label: 'Wind down', line: null, active: false }] }) })!;
+  const lit = rowModel({ ...base, moods: moods({ off: { active: false }, moods: [{ id: 'brightDesk', label: 'Bright desk', line: 'Room 70%, neon 20%', active: true }, { id: 'eveningLamp', label: 'Evening lamp', line: null, active: false }] }) })!;
   expect(chipTip(lit, lit.chips[0])).toEqual({ first: 'Bright desk: Room 70%, neon 20%', second: null, warn: false });
-  expect(chipTip(lit, lit.chips[1]).first).toBe('Wind down');
+  expect(chipTip(lit, lit.chips[1]).first).toBe('Evening lamp');
   expect(chipTip(lit, lit.chips[2]).first).toBe('Turns the office lights off. No other room changes.');
   const off = rowModel({ ...base, moods: moods({ off: { active: true } }) })!;
   expect(chipTip(off, off.chips[2]).first).toBe('Office lights are off.');
-  const waiting = rowModel({ ...base, applying: 'windDown', moods: moods() })!;
+  const waiting = rowModel({ ...base, applying: 'eveningLamp', moods: moods() })!;
   expect(chipTip(waiting, waiting.chips[0])).toMatchObject({ second: 'Asking the home app', warn: false });
   const blocked = rowModel({ ...base, moods: moods({ canWrite: false, writeBlock: 'not-set-up' }) })!;
   expect(chipTip(blocked, blocked.chips[0])).toMatchObject({ second: TEXT.notSetUp, warn: true });
-  const failed = rowModel({ ...base, moodFail: { id: 'windDown', word: 'on-air' }, moods: moods() })!;
+  const failed = rowModel({ ...base, moodFail: { id: 'eveningLamp', word: 'on-air' }, moods: moods() })!;
   expect(chipTip(failed, failed.chips[0]).second).toBe(TEXT.onAir);
 });

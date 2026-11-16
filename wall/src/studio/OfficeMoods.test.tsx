@@ -41,7 +41,7 @@ beforeEach(() => {
   resetTip();
   list = [
     { id: 'brightDesk', label: 'Bright desk', line: 'Room 70%, neon 20%', active: false },
-    { id: 'windDown', label: 'Wind down', line: null, active: false },
+    { id: 'eveningLamp', label: 'Evening lamp', line: null, active: false },
     { id: 'gaming', label: 'Gaming', line: 'Room 25%', active: false },
   ];
   off = null;
@@ -126,7 +126,7 @@ it('hidden states leave the empty slot: no children, aria-hidden, no line, and n
 
 it('a later read that fails hides the row again, and one that answers brings it back', async () => {
   await show();
-  expect(names()).toEqual(['Bright desk', 'Wind down', 'Gaming']);
+  expect(names()).toEqual(['Bright desk', 'Evening lamp', 'Gaming']);
   readWord = 'unreachable';
   await flush(60_000);
   expect(slot().childElementCount).toBe(0);
@@ -134,7 +134,7 @@ it('a later read that fails hides the row again, and one that answers brings it 
   expect(line()).toBeNull();
   readWord = null;
   await flush(60_000);
-  expect(names()).toEqual(['Bright desk', 'Wind down', 'Gaming']);
+  expect(names()).toEqual(['Bright desk', 'Evening lamp', 'Gaming']);
 });
 
 it('shown: a group named Office moods, the label, one chip per mood in the home app order, no Off without off, nothing lit', async () => {
@@ -144,7 +144,7 @@ it('shown: a group named Office moods, the label, one chip per mood in the home 
   expect(slot().getAttribute('aria-hidden')).toBeNull();
   expect(slot().getAttribute('data-moods')).toBe('shown');
   expect(screen.getByText('Office moods')).toBeTruthy();
-  expect(names()).toEqual(['Bright desk', 'Wind down', 'Gaming']);
+  expect(names()).toEqual(['Bright desk', 'Evening lamp', 'Gaming']);
   expect(within(slot()).getAllByRole('button').every((b) => b.getAttribute('aria-pressed') === 'false')).toBe(true);
   expect(line()?.textContent).toBe('No mood on.');
   // Every chip is a native button reached by Tab in this order.
@@ -158,7 +158,7 @@ it('shown: a group named Office moods, the label, one chip per mood in the home 
 it('Off shows only when the home app offers it, always last; it is lit only with no mood on', async () => {
   off = { active: false };
   await show();
-  expect(names()).toEqual(['Bright desk', 'Wind down', 'Gaming', 'Off']);
+  expect(names()).toEqual(['Bright desk', 'Evening lamp', 'Gaming', 'Off']);
   expect(chip('Off').getAttribute('aria-pressed')).toBe('false');
   expect(chip('Off').querySelector('.u-mood-sw')).toBeNull();
   expect(line()?.textContent).toBe('No mood on.');
@@ -178,22 +178,22 @@ it('a click applies the mood and the chip shows what the home app read back; the
   expect(chip('Bright desk').getAttribute('aria-pressed')).toBe('true');
   expect(line()?.textContent).toBe('Bright desk: Room 70%, neon 20%');
   expect(line()?.querySelector('b')?.textContent).toBe('Bright desk:');
-  fireEvent.click(chip('Wind down'));
+  fireEvent.click(chip('Evening lamp'));
   await flush();
-  expect(line()?.textContent).toBe('Wind down is on.');
+  expect(line()?.textContent).toBe('Evening lamp is on.');
 });
 
 it('in flight: the swatch turns into a spinner, the line says asking, every chip ignores clicks until the answer', async () => {
   hold = true;
   await show();
-  fireEvent.click(chip('Wind down'));
+  fireEvent.click(chip('Evening lamp'));
   await flush();
-  expect(chip('Wind down').querySelector('.u-spin')).not.toBeNull();
-  expect(chip('Wind down').querySelector('.u-mood-sw')).toBeNull();
+  expect(chip('Evening lamp').querySelector('.u-spin')).not.toBeNull();
+  expect(chip('Evening lamp').querySelector('.u-mood-sw')).toBeNull();
   expect(chip('Gaming').querySelector('.u-mood-sw')).not.toBeNull();
-  expect(line()?.textContent).toBe('Wind down: asking the home app');
+  expect(line()?.textContent).toBe('Evening lamp: asking the home app');
   fireEvent.click(chip('Gaming'));
-  fireEvent.click(chip('Wind down'));
+  fireEvent.click(chip('Evening lamp'));
   await flush();
   expect(count('wall2_office_mood')).toBe(1);
   expect(await tipOf(chip('Gaming'))).toContain('Asking the home app');
@@ -267,8 +267,8 @@ it('a tip carries the full name and the full line, for a long name and a long li
   expect(await tipOf(chip(LONG))).toBe(`${LONG}: ${LINE}`);
   fireEvent.mouseLeave(chip(LONG));
   await flush();
-  expect(await tipOf(chip('Wind down'))).toBe('Wind down');
-  fireEvent.mouseLeave(chip('Wind down'));
+  expect(await tipOf(chip('Evening lamp'))).toBe('Evening lamp');
+  fireEvent.mouseLeave(chip('Evening lamp'));
   await flush();
   expect(await tipOf(chip('Off'))).toBe('Turns the office lights off. No other room changes.');
   // The line above the row holds the same text, cut by the box and not by the text.
