@@ -96,7 +96,11 @@ impl Live {
     fn new() -> Self {
         Self {
             channel: None, candidates: Vec::new(), candidates_at: None,
-            status: LiveStatus { state: "not-set-up", started_at: None, scheduled_at: None, viewers: None, chat: false, read_at: None, stale: false, word: None, status_left: STATUS_DAILY_UNITS, chat_left: CHAT_DAILY_UNITS },
+            status: LiveStatus {
+                state: "not-set-up", started_at: None, scheduled_at: None,
+                viewers: None, chat: false, read_at: None, stale: false,
+                word: None, status_left: STATUS_DAILY_UNITS, chat_left: CHAT_DAILY_UNITS,
+            },
             status_day: i64::MIN, status_used: 0, quota_all_day: None, busy_until: 0,
             chat_id: None, last_live_at: None, refresh_candidates: false,
             chat: LiveChat { state: "off", messages: Vec::new(), read_at: None, stale: false, stopped_at: None, word: None },
@@ -282,12 +286,27 @@ fn status_with(ctx: &Ctx, channel: Option<Channel>, now: u64, fresh: bool, shown
     let Some((find, mut ids)) = plan else { return with_live(|v| v.status_answer(now)) };
     if find {
         let uploads = format!("UU{}", &channel.channel_id[2..]);
-        let answer = match live_get(ctx, "playlistItems", &[("part", "contentDetails"), ("playlistId", &uploads), ("maxResults", "5"), ("fields", "items/contentDetails/videoId")], false) { Ok(v) => v, Err(w) => return status_error(now, w) };
-        ids = answer.get("items").and_then(Value::as_array).into_iter().flatten().filter_map(|v| v.pointer("/contentDetails/videoId").and_then(Value::as_str)).filter(|v| id_chars(v, 11..=11)).map(str::to_string).collect();
+        let params = [
+            ("part", "contentDetails"), ("playlistId", uploads.as_str()),
+            ("maxResults", "5"), ("fields", "items/contentDetails/videoId"),
+        ];
+        let answer = match live_get(ctx, "playlistItems", &params, false) {
+            Ok(v) => v,
+            Err(w) => return status_error(now, w),
+        };
+        ids = answer.get("items").and_then(Value::as_array).into_iter().flatten()
+            .filter_map(|v| v.pointer("/contentDetails/videoId").and_then(Value::as_str))
+            .filter(|v| id_chars(v, 11..=11)).map(str::to_string).collect();
         let _ = put_live(generation, |v| { v.candidates = ids.clone(); v.candidates_at = Some(now); v.refresh_candidates = false; });
     }
     let joined = ids.join(",");
-    let answer = match live_get(ctx, "videos", &[("part", "snippet,liveStreamingDetails"), ("id", &joined), ("fields", "items(id,snippet/liveBroadcastContent,liveStreamingDetails(actualStartTime,actualEndTime,scheduledStartTime,concurrentViewers,activeLiveChatId))")], false) { Ok(v) => v, Err(w) => return status_error(now, w) };
+    let fields = "items(id,snippet/liveBroadcastContent,liveStreamingDetails(\
+        actualStartTime,actualEndTime,scheduledStartTime,concurrentViewers,activeLiveChatId))";
+    let params = [("part", "snippet,liveStreamingDetails"), ("id", joined.as_str()), ("fields", fields)];
+    let answer = match live_get(ctx, "videos", &params, false) {
+        Ok(v) => v,
+        Err(w) => return status_error(now, w),
+    };
     let mut live = None; let mut scheduled: Option<u64> = None;
     for item in answer.get("items").and_then(Value::as_array).into_iter().flatten() {
         let kind = item.pointer("/snippet/liveBroadcastContent").and_then(Value::as_str);
@@ -295,22 +314,44 @@ fn status_with(ctx: &Ctx, channel: Option<Channel>, now: u64, fresh: bool, shown
             if let Some(at) = item.pointer("/liveStreamingDetails/actualStartTime").and_then(Value::as_str).and_then(rfc3339) { live = Some((item, at)); break }
         }
         if kind == Some("upcoming") {
-            if let Some(at) = item.pointer("/liveStreamingDetails/scheduledStartTime").and_then(Value::as_str).and_then(rfc3339).filter(|at| *at >= now && *at <= now + 7 * 86_400) { scheduled = Some(scheduled.map_or(at, |old| old.min(at))); }
+            if let Some(at) = item.pointer("/liveStreamingDetails/scheduledStartTime")
+                .and_then(Value::as_str).and_then(rfc3339)
+                .filter(|at| *at >= now && *at <= now + 7 * 86_400)
+            {
+                scheduled = Some(scheduled.map_or(at, |old| old.min(at)));
+            }
         }
     }
     put_live(generation, |v| {
         let was_live = v.status.state == "live";
         v.status = if let Some((item, at)) = live {
-            let viewers = item.pointer("/liveStreamingDetails/concurrentViewers").and_then(Value::as_str).and_then(|s| s.parse::<u32>().ok()).filter(|n| *n <= 10_000_000);
-            v.chat_id = item.pointer("/liveStreamingDetails/activeLiveChatId").and_then(Value::as_str).filter(|s| id_chars(s, 1..=128)).map(str::to_string);
-            v.last_live_at = Some(now); v.chat.state = if v.chat_id.is_some() { "ok" } else { "off" };
-            LiveStatus { state: "live", started_at: Some(at * 1000), scheduled_at: None, viewers, chat: v.chat_id.is_some(), read_at: Some(now), stale: false, word: None, status_left: 0, chat_left: 0 }
+            let viewers = item.pointer("/liveStreamingDetails/concurrentViewers")
+                .and_then(Value::as_str).and_then(|s| s.parse::<u32>().ok())
+                .filter(|n| *n <= 10_000_000);
+            v.chat_id = item.pointer("/liveStreamingDetails/activeLiveChatId")
+                .and_then(Value::as_str).filter(|s| id_chars(s, 1..=128))
+                .map(str::to_string);
+            v.last_live_at = Some(now);
+            v.chat.state = if v.chat_id.is_some() { "ok" } else { "off" };
+            LiveStatus {
+                state: "live", started_at: Some(at * 1000), scheduled_at: None,
+                viewers, chat: v.chat_id.is_some(), read_at: Some(now), stale: false,
+                word: None, status_left: 0, chat_left: 0,
+            }
         } else if let Some(at) = scheduled {
             if was_live { v.drop_chat(true, now); }
-            LiveStatus { state: "scheduled", started_at: None, scheduled_at: Some(at * 1000), viewers: None, chat: false, read_at: Some(now), stale: false, word: None, status_left: 0, chat_left: 0 }
+            LiveStatus {
+                state: "scheduled", started_at: None, scheduled_at: Some(at * 1000),
+                viewers: None, chat: false, read_at: Some(now), stale: false,
+                word: None, status_left: 0, chat_left: 0,
+            }
         } else {
             if was_live { v.drop_chat(true, now); }
-            LiveStatus { state: "none", started_at: None, scheduled_at: None, viewers: None, chat: false, read_at: Some(now), stale: false, word: None, status_left: 0, chat_left: 0 }
+            LiveStatus {
+                state: "none", started_at: None, scheduled_at: None, viewers: None,
+                chat: false, read_at: Some(now), stale: false, word: None,
+                status_left: 0, chat_left: 0,
+            }
         };
     });
     with_live(|v| v.status_answer(now))
@@ -321,13 +362,25 @@ fn chat_with(ctx: &Ctx, now: u64, shown: bool) -> LiveChat {
     let plan = with_live(|v| {
         v.days(now);
         if v.last_live_at.is_some_and(|at| now.saturating_sub(at) >= CHAT_FORGET) { v.drop_chat(false, now); }
-        if v.status.state != "live" || v.status.read_at.is_none_or(|at| now.saturating_sub(at) > 120) || v.chat_id.is_none() { v.chat.state = "off"; return None }
+        if v.status.state != "live"
+            || v.status.read_at.is_none_or(|at| now.saturating_sub(at) > 120)
+            || v.chat_id.is_none()
+        {
+            v.chat.state = "off";
+            return None
+        }
         if !shown || v.chat.read_at.is_some_and(|at| now.saturating_sub(at) < v.poll_secs.max(CHAT_FLOOR)) { return None }
         if v.chat_used + 5 > CHAT_DAILY_UNITS { v.chat.state = "quota"; v.chat.stopped_at.get_or_insert(now); return None }
         v.chat_used += 5; Some((v.chat_id.clone().unwrap(), v.page_token.clone()))
     });
     let Some((chat_id, token)) = plan else { return with_live(|v| v.chat_answer(now)) };
-    let mut params = vec![("liveChatId", chat_id.as_str()), ("part", "snippet,authorDetails"), ("maxResults", "200"), ("fields", "nextPageToken,pollingIntervalMillis,offlineAt,items(id,snippet(type,publishedAt,displayMessage,superChatDetails(amountDisplayString,userComment),messageDeletedDetails/deletedMessageId),authorDetails/displayName)")];
+    let fields = "nextPageToken,pollingIntervalMillis,offlineAt,items(id,snippet(\
+        type,publishedAt,displayMessage,superChatDetails(amountDisplayString,userComment),\
+        messageDeletedDetails/deletedMessageId),authorDetails/displayName)";
+    let mut params = vec![
+        ("liveChatId", chat_id.as_str()), ("part", "snippet,authorDetails"),
+        ("maxResults", "200"), ("fields", fields),
+    ];
     if let Some(ref page) = token { params.push(("pageToken", page)); }
     let answer = match live_get(ctx, "liveChat/messages", &params, true) {
         Ok(v) => v,
@@ -340,15 +393,25 @@ fn chat_with(ctx: &Ctx, now: u64, shown: bool) -> LiveChat {
         for item in answer.get("items").and_then(Value::as_array).into_iter().flatten() {
             let kind = item.pointer("/snippet/type").and_then(Value::as_str);
             if kind == Some("messageDeletedEvent") {
-                if let Some(id) = item.pointer("/snippet/messageDeletedDetails/deletedMessageId").and_then(Value::as_str).filter(|s| id_chars(s, 1..=128)) { messages.retain(|m| m.id != id); }
+                if let Some(id) = item.pointer("/snippet/messageDeletedDetails/deletedMessageId")
+                    .and_then(Value::as_str).filter(|s| id_chars(s, 1..=128))
+                {
+                    messages.retain(|m| m.id != id);
+                }
                 continue
             }
             if !matches!(kind, Some("textMessageEvent" | "superChatEvent")) { continue }
             let Some(id) = item.get("id").and_then(Value::as_str).filter(|s| id_chars(s, 1..=128)) else { continue };
             let Some(name) = clean_text(item.pointer("/authorDetails/displayName"), 40) else { continue };
             let Some(at) = item.pointer("/snippet/publishedAt").and_then(Value::as_str).and_then(rfc3339) else { continue };
-            let text = if kind == Some("superChatEvent") { clean_text(item.pointer("/snippet/superChatDetails/userComment"), 200).unwrap_or_default() } else { clean_text(item.pointer("/snippet/displayMessage"), 200).unwrap_or_default() };
-            let super_chat = (kind == Some("superChatEvent")).then(|| clean_text(item.pointer("/snippet/superChatDetails/amountDisplayString"), 16)).flatten();
+            let text = if kind == Some("superChatEvent") {
+                clean_text(item.pointer("/snippet/superChatDetails/userComment"), 200).unwrap_or_default()
+            } else {
+                clean_text(item.pointer("/snippet/displayMessage"), 200).unwrap_or_default()
+            };
+            let super_chat = (kind == Some("superChatEvent"))
+                .then(|| clean_text(item.pointer("/snippet/superChatDetails/amountDisplayString"), 16))
+                .flatten();
             messages.retain(|m| m.id != id); messages.push_back(ChatMessage { id: id.to_string(), name, text, at: at * 1000, super_chat });
             while messages.len() > CHAT_KEEP { messages.pop_front(); }
         }
@@ -412,25 +475,489 @@ pub async fn wall2_ytlive_chat(window: tauri::WebviewWindow) -> Result<LiveChat,
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::wall2_youtube::tests::{client, exclusive, reply, FakeCreds, FakeHttp};
+    use serde_json::json;
+    use std::sync::atomic::AtomicU64;
+
+    const T0: u64 = 1_704_067_200;
+
+    fn channel_id() -> String { format!("UC{}", "a".repeat(22)) }
+    fn video_id(n: u8) -> String { format!("video{:06}", n) }
+    fn chat_id() -> String { "chat-room".to_string() }
+    fn ok(value: Value) -> Result<HttpReply, ()> { reply(200, &value.to_string()) }
+    fn prime_token() {
+        *super::super::lock(&super::super::TOKEN) = Some(super::super::Token {
+            access: "access-one".into(),
+            expires: std::time::Instant::now() + std::time::Duration::from_secs(3_600),
+        });
+    }
+    fn run<R>(http: &FakeHttp, creds: &FakeCreds, now: &AtomicU64, f: impl FnOnce(&Ctx) -> R) -> R {
+        let clock = || now.load(Ordering::SeqCst);
+        f(&Ctx { http, creds, client: &client(), now: &clock })
+    }
+    fn saved_channel() -> Channel {
+        Channel { channel_id: channel_id(), title: "Example Channel".into() }
+    }
+    fn candidates(ids: &[String]) -> Value {
+        json!({ "items": ids.iter().map(|id| json!({ "contentDetails": { "videoId": id } })).collect::<Vec<_>>() })
+    }
+    fn videos(items: Vec<Value>) -> Value { json!({ "items": items }) }
+    fn live_video(id: &str, viewers: &str, chat: Option<&str>) -> Value {
+        let mut details = json!({
+            "actualStartTime": "2024-01-01T00:00:00Z",
+            "concurrentViewers": viewers,
+        });
+        if let Some(value) = chat { details["activeLiveChatId"] = json!(value); }
+        json!({
+            "id": id,
+            "snippet": { "liveBroadcastContent": "live" },
+            "liveStreamingDetails": details,
+        })
+    }
+    fn upcoming_video(id: &str, time: &str) -> Value {
+        json!({
+            "id": id,
+            "snippet": { "liveBroadcastContent": "upcoming" },
+            "liveStreamingDetails": { "scheduledStartTime": time },
+        })
+    }
+    fn set_live_memory(now: u64) {
+        with_live(|v| {
+            v.channel = Some(saved_channel());
+            v.status.state = "live";
+            v.status.read_at = Some(now);
+            v.chat_id = Some(chat_id());
+            v.last_live_at = Some(now);
+            v.chat.state = "ok";
+        });
+    }
 
     #[test]
-    fn channel_parser_accepts_only_named_shapes() {
+    fn channel_parser_accepts_every_named_shape_and_refuses_every_other_shape() {
+        let _guard = exclusive();
         let id = format!("UC{}", "a".repeat(22));
-        for text in ["@example-channel".to_string(), id.clone(), "youtube.com/@example-channel/".into(), format!("https://www.youtube.com/channel/{id}")] { assert!(parse_channel(&text).is_some(), "{text}"); }
-        for text in ["", "@ab", "@abcdefghijklmnopqrstuvwxyzabcde", "youtube.com/watch?v=abcdefghijk", "https://other.example/@good", "youtube.com/@good?x=1", "youtube.com/@good#x", "@bad name", "@bad\u{202e}"] { assert!(parse_channel(text).is_none(), "{text}"); }
+        let accepted = [
+            "@example-channel".to_string(),
+            id.clone(),
+            "https://www.youtube.com/@example-channel".into(),
+            "https://youtube.com/@example-channel/".into(),
+            "youtube.com/@example-channel".into(),
+            "www.youtube.com/@example-channel/".into(),
+            format!("https://www.youtube.com/channel/{id}"),
+            format!("https://youtube.com/channel/{id}/"),
+            format!("youtube.com/channel/{id}"),
+            format!("www.youtube.com/channel/{id}/"),
+        ];
+        for text in accepted { assert!(parse_channel(&text).is_some(), "{text}"); }
+        let refused = [
+            "", "@ab", "@abcdefghijklmnopqrstuvwxyzabcde", "youtube.com/@good?x=1",
+            "youtube.com/@good#x", "http://other.example/@good", "youtube.com/watch?v=abcdefghijk",
+            "youtube.com/c/name", "@bad name", "@bad\u{7}", "@bad\u{202e}",
+        ];
+        for text in refused { assert!(parse_channel(text).is_none(), "{text}"); }
+        assert!(parse_channel(&format!("UC{}", "a".repeat(21))).is_none());
+        assert!(parse_channel(&format!("UC{}", "a".repeat(23))).is_none());
+    }
+
+    #[test]
+    fn set_channel_uses_one_checked_get_and_saves_only_two_keys() {
+        let _guard = exclusive();
+        prime_token();
+        let answer = json!({ "items": [{ "id": channel_id(), "snippet": { "title": "Example Channel" } }] });
+        let http = FakeHttp::reads(vec![ok(answer)], vec![]);
+        let creds = FakeCreds::new(Some("refresh"));
+        let now = AtomicU64::new(T0);
+        let channel = run(&http, &creds, &now, |ctx| {
+            set_channel_with(ctx, ChannelRef::Handle("example-channel".into()), T0).unwrap()
+        });
+        assert_eq!(channel.title, "Example Channel");
+        let urls = http.get_urls();
+        assert_eq!(urls.len(), 1);
+        assert!(urls[0].contains("channels?part=id%2Csnippet"));
+        assert!(urls[0].contains("fields=items%28id%2Csnippet%2Ftitle%29"));
+        assert!(urls[0].contains("forHandle=example-channel"));
+        let dir = std::env::temp_dir().join(format!("wall-ytlive-{}", std::process::id()));
+        let path = dir.join("onair-channel.json");
+        let _ = std::fs::remove_dir_all(&dir);
+        write_channel(&path, &channel).unwrap();
+        let value: Value = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+        assert_eq!(value.as_object().unwrap().len(), 2);
+        assert_eq!(value["channelId"], channel_id());
+        assert_eq!(value["title"], "Example Channel");
+        assert_eq!(read_channel(&path).unwrap().title, "Example Channel");
+        std::fs::write(&path, vec![b'x'; 1_025]).unwrap();
+        assert!(read_channel(&path).is_none());
+        std::fs::write(&path, br#"{"channelId":"bad","title":"Example"}"#).unwrap();
+        assert!(read_channel(&path).is_none());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn set_channel_refuses_missing_and_bad_answers_without_saving() {
+        let _guard = exclusive();
+        prime_token();
+        let http = FakeHttp::reads(vec![ok(json!({ "items": [] }))], vec![]);
+        let creds = FakeCreds::new(Some("refresh"));
+        let now = AtomicU64::new(T0);
+        let missing = run(&http, &creds, &now, |ctx| {
+            set_channel_with(ctx, ChannelRef::Id(channel_id()), T0)
+        });
+        assert_eq!(missing.err(), Some(NOT_FOUND));
+        prime_token();
+        let bad = FakeHttp::reads(vec![ok(json!({
+            "items": [{ "id": format!("UC{}", "a".repeat(23)), "snippet": { "title": "Example" } }]
+        }))], vec![]);
+        let invalid = run(&bad, &creds, &now, |ctx| {
+            set_channel_with(ctx, ChannelRef::Id(channel_id()), T0)
+        });
+        assert_eq!(invalid.err(), Some(FAILED));
+    }
+
+    #[test]
+    fn status_sends_nothing_when_unconfigured_signed_out_hidden_or_inside_floor() {
+        let _guard = exclusive();
+        prime_token();
+        let empty = FakeHttp::reads(vec![], vec![]);
+        let signed = FakeCreds::new(Some("refresh"));
+        let out = FakeCreds::new(None);
+        let now = AtomicU64::new(T0);
+        let none = run(&empty, &signed, &now, |ctx| status_with(ctx, None, T0, false, true));
+        assert_eq!(none.state, "not-set-up");
+        let signed_out = run(&empty, &out, &now, |ctx| {
+            status_with(ctx, Some(saved_channel()), T0, false, true)
+        });
+        assert_eq!(signed_out.state, "signed-out");
+        let hidden = run(&empty, &signed, &now, |ctx| {
+            status_with(ctx, Some(saved_channel()), T0, false, false)
+        });
+        assert_eq!(hidden.read_at, None);
+        with_live(|v| v.status.read_at = Some(T0));
+        let floored = run(&empty, &signed, &now, |ctx| {
+            status_with(ctx, Some(saved_channel()), T0 + 59, false, true)
+        });
+        assert_eq!(floored.read_at, Some(T0));
+        assert!(empty.get_urls().is_empty());
+    }
+
+    #[test]
+    fn status_finds_candidates_on_first_and_301_second_reads_but_not_at_61() {
+        let _guard = exclusive();
+        prime_token();
+        let ids = vec![video_id(1)];
+        let http = FakeHttp::reads(vec![
+            ok(candidates(&ids)), ok(videos(vec![])), ok(videos(vec![])),
+            ok(candidates(&ids)), ok(videos(vec![])),
+        ], vec![]);
+        let creds = FakeCreds::new(Some("refresh"));
+        let now = AtomicU64::new(T0);
+        run(&http, &creds, &now, |ctx| status_with(ctx, Some(saved_channel()), T0, false, true));
+        run(&http, &creds, &now, |ctx| status_with(ctx, Some(saved_channel()), T0 + 61, false, true));
+        run(&http, &creds, &now, |ctx| status_with(ctx, Some(saved_channel()), T0 + 301, false, true));
+        let urls = http.get_urls();
+        assert_eq!(urls.len(), 5);
+        assert!(urls[0].contains("playlistItems?"));
+        assert!(urls[1].contains("videos?"));
+        assert!(urls[2].contains("videos?"));
+        assert!(urls[3].contains("playlistItems?"));
+        assert!(urls[4].contains("videos?"));
+        assert!(urls[0].contains("maxResults=5"));
+        assert!(urls[1].contains("liveStreamingDetails"));
+    }
+
+    #[test]
+    fn fresh_status_uses_15_second_floor() {
+        let _guard = exclusive();
+        prime_token();
+        with_live(|v| {
+            v.channel = Some(saved_channel());
+            v.status.state = "none";
+            v.status.read_at = Some(T0);
+            v.candidates_at = Some(T0);
+        });
+        let http = FakeHttp::reads(vec![ok(videos(vec![]))], vec![]);
+        let creds = FakeCreds::new(Some("refresh"));
+        let now = AtomicU64::new(T0);
+        run(&http, &creds, &now, |ctx| {
+            status_with(ctx, Some(saved_channel()), T0 + 14, true, true)
+        });
+        assert!(http.get_urls().is_empty());
+        run(&http, &creds, &now, |ctx| {
+            status_with(ctx, Some(saved_channel()), T0 + 15, true, true)
+        });
+        assert_eq!(http.get_urls().len(), 1);
+    }
+
+    #[test]
+    fn status_selects_live_scheduled_and_none_and_checks_fields() {
+        let _guard = exclusive();
+        let id = video_id(1);
+        let cases = [
+            (live_video(&id, "37", Some("private-chat-id")), "live", Some(37), true),
+            (live_video(&id, "abc", None), "live", None, false),
+            (live_video(&id, "99999999999", None), "live", None, false),
+            (upcoming_video(&id, "2024-01-08T00:00:00Z"), "scheduled", None, false),
+            (upcoming_video(&id, "2024-01-08T00:00:01Z"), "none", None, false),
+            (upcoming_video(&id, "bad-time"), "none", None, false),
+        ];
+        for (item, state, viewers, has_chat) in cases {
+            clear(false); prime_token();
+            let ids = vec![id.clone()];
+            let http = FakeHttp::reads(vec![ok(candidates(&ids)), ok(videos(vec![item]))], vec![]);
+            let creds = FakeCreds::new(Some("refresh"));
+            let now = AtomicU64::new(T0);
+            let answer = run(&http, &creds, &now, |ctx| {
+                status_with(ctx, Some(saved_channel()), T0, false, true)
+            });
+            assert_eq!(answer.state, state);
+            assert_eq!(answer.viewers, viewers);
+            assert_eq!(answer.chat, has_chat);
+            assert!(!serde_json::to_string(&answer).unwrap().contains("private-chat-id"));
+        }
+    }
+
+    #[test]
+    fn status_budget_quota_all_day_and_stale_edges_are_fixed() {
+        let _guard = exclusive();
+        prime_token();
+        with_live(|v| { v.days(T0); v.status_used = 1_199; });
+        let empty = FakeHttp::reads(vec![], vec![]);
+        let creds = FakeCreds::new(Some("refresh"));
+        let now = AtomicU64::new(T0);
+        let quota = run(&empty, &creds, &now, |ctx| {
+            status_with(ctx, Some(saved_channel()), T0, false, true)
+        });
+        assert_eq!(quota.word, Some("quota"));
+        assert!(empty.get_urls().is_empty());
+        with_live(|v| { v.status.read_at = Some(T0); v.status.word = None; });
+        assert!(!with_live(|v| v.status_answer(T0 + 179)).stale);
+        assert!(with_live(|v| v.status_answer(T0 + 180)).stale);
+        with_live(|v| { v.quota_all_day = Some(pacific_day(T0)); v.status_day = pacific_day(T0); });
+        let blocked = run(&empty, &creds, &now, |ctx| {
+            status_with(ctx, Some(saved_channel()), T0 + 301, false, true)
+        });
+        assert_eq!(blocked.read_at, Some(T0));
+        with_live(|v| v.days(T0 + 86_400));
+        assert_eq!(with_live(|v| v.quota_all_day), None);
+    }
+
+    #[test]
+    fn quota_all_response_blocks_reads_until_pacific_day_changes() {
+        let _guard = exclusive();
+        prime_token();
+        with_live(|v| {
+            v.channel = Some(saved_channel());
+            v.candidates = vec![video_id(1)];
+            v.candidates_at = Some(T0);
+        });
+        let error = r#"{"error":{"errors":[{"reason":"quotaExceeded"}]}}"#;
+        let ids = vec![video_id(1)];
+        let http = FakeHttp::reads(vec![
+            reply(403, error), ok(candidates(&ids)), ok(videos(vec![])),
+        ], vec![]);
+        let creds = FakeCreds::new(Some("refresh"));
+        let now = AtomicU64::new(T0);
+        let first = run(&http, &creds, &now, |ctx| {
+            status_with(ctx, Some(saved_channel()), T0, false, true)
+        });
+        assert_eq!(first.word, Some(QUOTA_ALL));
+        run(&http, &creds, &now, |ctx| {
+            status_with(ctx, Some(saved_channel()), T0 + 301, false, true)
+        });
+        assert_eq!(http.get_urls().len(), 1);
+        let tomorrow = run(&http, &creds, &now, |ctx| {
+            status_with(ctx, Some(saved_channel()), T0 + 86_400, false, true)
+        });
+        assert_eq!(tomorrow.word, None);
+        assert_eq!(http.get_urls().len(), 3);
+        let spring = rfc3339("2024-03-10T09:59:59Z").unwrap();
+        let after_spring = rfc3339("2024-03-10T10:00:01Z").unwrap();
+        assert_eq!(pacific_day(spring), pacific_day(after_spring));
+        let fall = rfc3339("2024-11-03T08:59:59Z").unwrap();
+        let after_fall = rfc3339("2024-11-03T09:00:01Z").unwrap();
+        assert_eq!(pacific_day(fall), pacific_day(after_fall));
+    }
+
+    #[test]
+    fn chat_floor_poll_hint_and_page_token_are_enforced() {
+        let _guard = exclusive();
+        prime_token(); set_live_memory(T0);
+        let first = ok(json!({ "nextPageToken": "next-page", "pollingIntervalMillis": 15_000, "items": [] }));
+        let second = ok(json!({ "items": [] }));
+        let http = FakeHttp::reads(vec![first, second], vec![]);
+        let creds = FakeCreds::new(Some("refresh"));
+        let now = AtomicU64::new(T0);
+        run(&http, &creds, &now, |ctx| chat_with(ctx, T0, true));
+        run(&http, &creds, &now, |ctx| chat_with(ctx, T0 + 9, true));
+        run(&http, &creds, &now, |ctx| chat_with(ctx, T0 + 14, true));
+        run(&http, &creds, &now, |ctx| chat_with(ctx, T0 + 15, true));
+        let urls = http.get_urls();
+        assert_eq!(urls.len(), 2);
+        assert!(!urls[0].contains("pageToken"));
+        assert!(urls[1].contains("pageToken=next-page"));
+
+        clear(false); prime_token(); set_live_memory(T0);
+        let bad = FakeHttp::reads(vec![
+            ok(json!({ "nextPageToken": "bad token", "items": [] })),
+            ok(json!({ "items": [] })),
+        ], vec![]);
+        run(&bad, &creds, &now, |ctx| chat_with(ctx, T0, true));
+        run(&bad, &creds, &now, |ctx| chat_with(ctx, T0 + 10, true));
+        assert_eq!(bad.get_urls().len(), 2);
+        assert!(!bad.get_urls()[1].contains("pageToken"));
+    }
+
+    #[test]
+    fn chat_keeps_supported_messages_replaces_deletes_and_caps_at_30() {
+        let _guard = exclusive();
+        prime_token(); set_live_memory(T0);
+        let mut items = Vec::new();
+        for n in 0..31 {
+            items.push(json!({
+                "id": format!("message-{n}"),
+                "snippet": { "type": "textMessageEvent", "publishedAt": "2024-01-01T00:00:00Z", "displayMessage": format!("Text {n}") },
+                "authorDetails": { "displayName": "Viewer One" },
+            }));
+        }
+        let changes = vec![json!({
+            "id": "message-30",
+            "snippet": { "type": "superChatEvent", "publishedAt": "2024-01-01T00:00:00Z", "superChatDetails": { "amountDisplayString": "$5", "userComment": "Replacement" } },
+            "authorDetails": { "displayName": "Viewer Two" },
+        }),
+        json!({ "id": "delete", "snippet": { "type": "messageDeletedEvent", "messageDeletedDetails": { "deletedMessageId": "message-1" } } }),
+        json!({ "id": "skip-one", "snippet": { "type": "unknown", "publishedAt": "2024-01-01T00:00:00Z", "displayMessage": "Ignored" }, "authorDetails": { "displayName": "Viewer" } }),
+        json!({ "id": "skip-two", "snippet": { "type": "textMessageEvent", "publishedAt": "2024-01-01T00:00:00Z", "displayMessage": "Ignored" }, "authorDetails": {} }),
+        ];
+        let http = FakeHttp::reads(vec![
+            ok(json!({ "items": items })), ok(json!({ "items": changes })),
+        ], vec![]);
+        let creds = FakeCreds::new(Some("refresh"));
+        let now = AtomicU64::new(T0);
+        let capped = run(&http, &creds, &now, |ctx| chat_with(ctx, T0, true));
+        assert_eq!(capped.messages.len(), 30);
+        assert_eq!(capped.messages.first().unwrap().id, "message-1");
+        let answer = run(&http, &creds, &now, |ctx| chat_with(ctx, T0 + 10, true));
+        assert_eq!(answer.messages.len(), 29);
+        assert_eq!(answer.messages.last().unwrap().text, "Replacement");
+        assert_eq!(answer.messages.last().unwrap().super_chat.as_deref(), Some("$5"));
+        assert_eq!(answer.messages.iter().filter(|m| m.id == "message-30").count(), 1);
+        assert!(!answer.messages.iter().any(|m| m.id == "message-1"));
+    }
+
+    #[test]
+    fn chat_ended_quota_stale_and_hidden_cases_send_only_when_allowed() {
+        let _guard = exclusive();
+        let creds = FakeCreds::new(Some("refresh"));
+        let now = AtomicU64::new(T0);
+        let empty = FakeHttp::reads(vec![], vec![]);
+        let off = run(&empty, &creds, &now, |ctx| chat_with(ctx, T0, true));
+        assert_eq!(off.state, "off");
+        assert!(empty.get_urls().is_empty());
+
+        prime_token(); set_live_memory(T0);
+        let ended = FakeHttp::reads(vec![reply(403, r#"{"error":{"errors":[{"reason":"liveChatEnded"}]}}"#)], vec![]);
+        let answer = run(&ended, &creds, &now, |ctx| chat_with(ctx, T0, true));
+        assert_eq!(answer.state, "ended");
+        assert!(with_live(|v| v.chat_id.is_none()));
+
+        clear(false); prime_token(); set_live_memory(T0);
+        let offline = FakeHttp::reads(vec![ok(json!({
+            "offlineAt": "2024-01-01T00:00:00Z", "items": [],
+        }))], vec![]);
+        assert_eq!(run(&offline, &creds, &now, |ctx| chat_with(ctx, T0, true)).state, "ended");
+
+        clear(false); prime_token(); set_live_memory(T0);
+        let missing = FakeHttp::reads(vec![reply(404, r#"{"error":{}}"#)], vec![]);
+        assert_eq!(run(&missing, &creds, &now, |ctx| chat_with(ctx, T0, true)).state, "ended");
+
+        clear(false); prime_token(); set_live_memory(T0);
+        with_live(|v| { v.days(T0); v.chat_used = 3_996; });
+        let quota = run(&empty, &creds, &now, |ctx| chat_with(ctx, T0, true));
+        assert_eq!(quota.state, "quota");
+        assert_eq!(quota.stopped_at, Some(T0));
+        let again = run(&empty, &creds, &now, |ctx| chat_with(ctx, T0 + 20, true));
+        assert_eq!(again.stopped_at, Some(T0));
+        with_live(|v| { v.chat.read_at = Some(T0); v.chat.state = "ok"; });
+        assert!(!with_live(|v| v.chat_answer(T0 + 59)).stale);
+        assert!(with_live(|v| v.chat_answer(T0 + 60)).stale);
+        let hidden = run(&empty, &creds, &now, |ctx| chat_with(ctx, T0 + 70, false));
+        assert!(hidden.stale);
+        assert!(empty.get_urls().is_empty());
+    }
+
+    #[test]
+    fn clear_drops_memory_rejects_inflight_write_and_can_keep_counts() {
+        let _guard = exclusive();
+        set_live_memory(T0);
+        with_live(|v| { v.days(T0); v.status_used = 17; v.chat_used = 25; v.page_token = Some("page".into()); });
+        let old = GEN.load(Ordering::SeqCst);
+        clear(true);
+        assert!(put_live(old, |v| v.status.state = "live").is_none());
+        with_live(|v| {
+            assert!(v.channel.is_none());
+            assert!(v.chat_id.is_none());
+            assert!(v.page_token.is_none());
+            assert!(v.chat.messages.is_empty());
+            assert_eq!(v.status_used, 17);
+            assert_eq!(v.chat_used, 25);
+        });
+        clear(false);
+        with_live(|v| { assert_eq!(v.status_used, 0); assert_eq!(v.chat_used, 0); });
+    }
+
+    #[test]
+    fn sign_out_clear_keeps_channel_file_but_drops_all_live_memory() {
+        let _guard = exclusive();
+        let dir = std::env::temp_dir().join(format!("wall-ytlive-clear-{}", std::process::id()));
+        let path = dir.join("onair-channel.json");
+        let _ = std::fs::remove_dir_all(&dir);
+        write_channel(&path, &saved_channel()).unwrap();
+        set_live_memory(T0);
+        with_live(|v| v.chat.messages.push(ChatMessage {
+            id: "message-one".into(), name: "Viewer One".into(), text: "Hello".into(),
+            at: T0 * 1_000, super_chat: None,
+        }));
+        clear(false);
+        assert!(read_channel(&path).is_some());
+        with_live(|v| {
+            assert!(v.chat_id.is_none());
+            assert!(v.chat.messages.is_empty());
+            assert!(v.status.read_at.is_none());
+        });
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
     fn utc_parser_has_strict_edges() {
+        let _guard = exclusive();
         assert_eq!(rfc3339("1970-01-01T00:00:00Z"), Some(0));
         assert_eq!(rfc3339("2024-02-29T12:34:56Z"), Some(1_709_210_096));
-        for bad in ["2023-02-29T00:00:00Z", "2024-01-01T24:00:00Z", "2024-01-01T00:00:00+00:00", "2024-1-01T00:00:00Z"] { assert_eq!(rfc3339(bad), None); }
+        for bad in [
+            "2023-02-29T00:00:00Z", "2024-01-01T24:00:00Z",
+            "2024-01-01T00:00:00+00:00", "2024-1-01T00:00:00Z",
+        ] { assert_eq!(rfc3339(bad), None); }
     }
 
     #[test]
-    fn serialized_status_never_has_chat_identifier() {
-        let status = LiveStatus { state: "live", started_at: Some(1), scheduled_at: None, viewers: Some(2), chat: true, read_at: Some(3), stale: false, word: None, status_left: 4, chat_left: 5 };
-        let text = serde_json::to_string(&status).unwrap();
-        assert!(!text.contains("chat-id")); assert!(text.contains("\"chat\":true"));
+    fn logs_never_contain_chat_names_text_ids_or_tokens() {
+        let _guard = exclusive();
+        let before = crate::wall2_youtube_log::test_lines().len();
+        prime_token(); set_live_memory(T0);
+        let http = FakeHttp::reads(vec![ok(json!({
+            "nextPageToken": "private-page-token",
+            "items": [{
+                "id": "private-message-id",
+                "snippet": { "type": "textMessageEvent", "publishedAt": "2024-01-01T00:00:00Z", "displayMessage": "Private message text" },
+                "authorDetails": { "displayName": "Private Viewer" },
+            }],
+        }))], vec![]);
+        let creds = FakeCreds::new(Some("refresh"));
+        let now = AtomicU64::new(T0);
+        run(&http, &creds, &now, |ctx| chat_with(ctx, T0, true));
+        let lines = crate::wall2_youtube_log::test_lines();
+        let added = lines[before..].join("");
+        assert!(added.contains("chat-ok none 200"));
+        for private in ["Private", "message", "private-message-id", "private-page-token"] {
+            assert!(!added.contains(private), "{private}");
+        }
     }
 }
