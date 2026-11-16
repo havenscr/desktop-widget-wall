@@ -1,5 +1,5 @@
 import { mocks } from '../tauri';
-import type { YtPage, YtPlayable, YtPlaylist, YtVideo } from '../../music/youtube';
+import type { YtDetail, YtPage, YtPlayable, YtPlaylist, YtVideo } from '../../music/youtube';
 import { FIVE_LINE, playFrom, setNote } from '../../unwind/ytmusic/queue';
 import { useWatchStore } from '../../unwind/watch/store';
 
@@ -17,6 +17,7 @@ import { useWatchStore } from '../../unwind/watch/store';
  * `slow` (never answers), `down`, `busy`, `again` (sign in again), `gone` (the playlist read answers
  * not found), `low` (12 searches left), `spent` (none left), `long` (very long names, a list of 2000).
  * Names are invented; pictures are drawn motifs, never an address.
+ * `ytdetails=` picks own-playlist details: `ok` (default), `none`, `down` or `slow`.
  *
  * `ytplay=` (with `youtube=in` and the mock frame, `watch=mock`: it never loads a real player, and without it nothing
  * is played) starts a pick on the wall about 700 ms after the page is up, as a click on a row would, and sets what the
@@ -114,6 +115,19 @@ export function registerYoutubeMocks(): void {
     const words = String(args?.query ?? '').trim().toLowerCase();
     if (words === 'nothing') return { items: [], next: null };
     return { items: Array.from({ length: 12 }, (_, i) => video(200 + i, 'yes', SONGS[i % SONGS.length])), next: null };
+  });
+  mocks.set('wall2_youtube_videos', (args) => {
+    if (!signedIn) throw new Error('sign in again');
+    const detailMode = new URLSearchParams(window.location.search).get('ytdetails') ?? 'ok';
+    if (detailMode === 'slow') return never<YtDetail[]>();
+    if (detailMode === 'down') throw new Error('down');
+    if (detailMode === 'none') return [];
+    const ids = Array.isArray(args?.ids) ? args.ids.filter((id): id is string => typeof id === 'string') : [];
+    return ids.map((id) => {
+      const hash = Array.from(id).reduce((sum, char) => (sum * 33 + char.charCodeAt(0)) >>> 0, 0);
+      const song = SONGS[hash % SONGS.length];
+      return { id, title: song[0], channel: song[1], seconds: 150 + (hash % 240) } satisfies YtDetail;
+    });
   });
   mocks.set('wall2_youtube_status', () => {
     if (mode() === 'down') throw new Error('failed');
