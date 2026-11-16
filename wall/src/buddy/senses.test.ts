@@ -3,8 +3,8 @@ import type { Lane } from '../agents/model';
 import type { WeatherReading } from '../weather/model';
 import { cloverDue, cloverTimes, dayTopic, finishedBetween, senseWeather, weatherTopics, workingIds, WEATHER_FRESH_MS } from './senses';
 
-const reading = (icon: string, temp: number, fetchedAt: number): WeatherReading =>
-  ({ temp, look: { label: icon, icon }, high: temp, low: temp, hours: [], fetchedAt }) as unknown as WeatherReading;
+const reading = (icon: string, temp: number, fetchedAt: number, extra: Partial<WeatherReading> = {}): WeatherReading =>
+  ({ temp, look: { label: icon, icon }, high: temp, low: temp, hours: [], fetchedAt, code: -1, ...extra }) as unknown as WeatherReading;
 const lane = (id: string, over: Partial<Lane> = {}): Lane => ({ id, title: id, stage: 'build', state: 'working', line: '', elapsedS: 0, waiting: false, pr: null, ...over });
 
 describe('what she senses', () => {
@@ -15,6 +15,20 @@ describe('what she senses', () => {
     expect(senseWeather(reading('moon', 70, now), now).clear).toBe(false);
     expect(weatherTopics(senseWeather(reading('rain', 38, now - WEATHER_FRESH_MS - 1), now))).toEqual([]);
     expect(weatherTopics(senseWeather(null, now))).toEqual([]);
+  });
+
+  it('gives the rain strength and the windy flag while fresh, and neither when stale or dry', () => {
+    const now = 1_000_000_000;
+    expect(senseWeather(reading('rain', 50, now, { code: 65, windy: true }), now)).toMatchObject({ rain: true, rainLevel: 1, windy: true });
+    expect(senseWeather(reading('drizzle', 50, now, { code: 51 }), now)).toMatchObject({ rainLevel: 0, windy: false });
+    expect(senseWeather(reading('rain', 50, now, { code: 63 }), now).rainLevel).toBe(0.5);
+    // a raining reading with an unknown code is steady
+    expect(senseWeather(reading('rain', 50, now, { code: -1 }), now).rainLevel).toBe(0.5);
+    // dry but windy
+    expect(senseWeather(reading('sun', 50, now, { code: 0, windy: true }), now)).toMatchObject({ rain: false, rainLevel: -1, windy: true });
+    const old = now - WEATHER_FRESH_MS - 1;
+    expect(senseWeather(reading('rain', 50, old, { code: 65, windy: true }), now)).toMatchObject({ rain: false, rainLevel: -1, windy: false });
+    expect(senseWeather(null, now)).toMatchObject({ rainLevel: -1, windy: false });
   });
   it('names the part of the day', () => {
     expect([7, 12, 15, 19, 21].map(dayTopic)).toEqual(['morning', 'midday', 'afternoon', 'evening', 'evening']);

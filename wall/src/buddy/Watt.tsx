@@ -116,14 +116,55 @@ import {
   type ReactKind,
 } from './petFrame';
 import { PixelSvg, PropSvg, SheepSvg } from './Pixels';
+import { useSceneWeather } from '../weather/sceneSetting';
+import {
+  DRIP_POSES,
+  LEAN_POSES,
+  STRAND_POSES,
+  WATER_PIX,
+  createShakeClock,
+  createWater,
+  dripAt,
+  fluffyAt,
+  parseWattWx,
+  shakeFrame,
+  shakeRows,
+  stepShake,
+  thrownAt,
+  wetRestFor,
+  type WaterPix,
+} from './wetWatt';
 import { bump, dayKey, loadPet, spotKey, moodOf, rollDay, savePet, type Cosmetic, type PetData, type StayPlace } from './pet';
 import { sunTimes } from '../ribbon/sun';
 import { CLOVER_WAIT_MS, cloverDue, dayTopic, finishedBetween, midday, moonUp, senseWeather, weatherTopics, workingIds } from './senses';
-import { CLOVER, DUST, FIREFLY, HEART, MARK, SHADOW, SMALL_PX, SPARKLE, SPRITE_PX, TUFT, TUFT_AT, type Pose, type Prop } from './sprites';
+import { CLOVER, DUST, FIREFLY, HEART, MARK, SHADOW, SMALL_PX, SPARKLE, SPRITES, SPRITE_PX, TUFT, TUFT_AT, type Pose, type Prop, type RowShift, type Wool } from './sprites';
 import './watt.css';
 import { overlayOwnsPointer } from '../ribbon/DrawerScrim';
 
 export { SheepSvg } from './Pixels';
+
+/** Dev builds only: `?wattwx=` forces one weather frame of him in a review still (see `wetWatt.ts`). */
+const WATT_WX = import.meta.env.DEV && typeof window !== 'undefined' ? parseWattWx(window.location.search) : null;
+
+/** Show or hide one water span from its record, writing the style only when something about it changed. */
+function showWater(el: HTMLElement | null, now: WaterPix, was: WaterPix, small: number, forced: boolean): void {
+  if (!el) return;
+  if (!forced && now.on === was.on && (!now.on || (now.x === was.x && now.y === was.y && now.a === was.a))) return;
+  if (now.on) {
+    if (!was.on || forced) {
+      el.style.display = 'block';
+      el.style.width = `${small}px`;
+      el.style.height = `${small}px`;
+    }
+    el.style.left = `${now.x * small}px`;
+    el.style.top = `${now.y * small}px`;
+    el.style.opacity = String(now.a);
+  } else el.style.display = 'none';
+  was.on = now.on;
+  was.x = now.x;
+  was.y = now.y;
+  was.a = now.a;
+}
 
 /** Shortest time between two beat bobs, milliseconds: well under the calm limit of three moves a second. */
 export const BOB_GAP_MS = 1200;
@@ -160,6 +201,9 @@ interface Look {
   pose: Pose;
   px: number;
   blink: boolean;
+  /** The wool (dry, damp in rain, fluffy after a shake) and the rows moved sideways (a shake frame, the wind's lean). */
+  wool: Wool;
+  rows: RowShift;
   prop: Prop | null;
   scarf: boolean;
   cosmetic: Prop | null;
@@ -313,7 +357,7 @@ export function Watt({ now = reviewNow ?? Date.now, inCall = false }: { now?: ()
   nowRef.current = now;
   const inCallRef = useRef(inCall);
   inCallRef.current = inCall;
-  const [look, setLook] = useState<Look>({ pose: 'idle', px: SPRITE_PX, blink: false, prop: null, scarf: false, cosmetic: null, hearts: false, mark: false });
+  const [look, setLook] = useState<Look>({ pose: 'idle', px: SPRITE_PX, blink: false, wool: 'dry', rows: 0, prop: null, scarf: false, cosmetic: null, hearts: false, mark: false });
   const lookRef = useRef(look);
 
   // Kept across a reduced motion toggle, so Watt does not start over.
@@ -340,6 +384,12 @@ export function Watt({ now = reviewNow ?? Date.now, inCall = false }: { now?: ()
   const hearts = [useRef<HTMLSpanElement>(null), useRef<HTMLSpanElement>(null)];
   const ffEl = useRef<HTMLSpanElement>(null);
   const tuftEl = useRef<HTMLSpanElement>(null);
+  // Rain and wind on him: the shake's clock, the water pixels (the list and what is shown), their spans and the loose strand's span.
+  const shakeClock = useRef(createShakeClock());
+  const water = useRef(createWater());
+  const waterShown = useRef(createWater());
+  const waterEls = useRef<(HTMLSpanElement | null)[]>([]);
+  const strandEl = useRef<HTMLSpanElement>(null);
   const shadowEl = useRef<HTMLSpanElement>(null);
   const dustEls = [useRef<HTMLSpanElement>(null), useRef<HTMLSpanElement>(null)];
   const sparks = [useRef<HTMLSpanElement>(null), useRef<HTMLSpanElement>(null)];
@@ -452,6 +502,8 @@ export function Watt({ now = reviewNow ?? Date.now, inCall = false }: { now?: ()
   const summary = useAgentsStore((s) => s.summary);
   const agentsOld = useAgentsStore(agentsStale);
   const weather = useWeather();
+  // The Tools switch "Weather in the scene": off, he looks as on a dry day (his remarks still talk about rain).
+  const wetOn = useSceneWeather((st) => st.on);
   const stableNow = useCallback(() => nowRef.current(), []);
   const next = useNextMeeting(stableNow);
   const focus = useFocusStore((s) => s.state);
@@ -500,6 +552,9 @@ export function Watt({ now = reviewNow ?? Date.now, inCall = false }: { now?: ()
   const m = mind.current;
   m.focus = focus.status === 'running';
   m.rain = ws.rain;
+  m.rainLevel = ws.rainLevel;
+  m.windy = ws.windy;
+  m.wetOn = wetOn;
   m.cold = ws.cold || ws.snow;
   m.sunny = ws.clear && midday(hour);
   m.evening = moonUp(hour);
@@ -1350,6 +1405,11 @@ export function Watt({ now = reviewNow ?? Date.now, inCall = false }: { now?: ()
     const wc = createWander();
     let originAir = false;
     let wasLive = false;
+    // What the weather spans last showed (see `showWater` and the strand block in `paint`).
+    let waterSmall = 0;
+    let strandOn = false;
+    let strandShade = '';
+    let strandPx = 0;
     let groundSeen = `${watchRef.current}/${bannerRef.current}`;
     let wasLying = false;
     /** One-shot: set when she reaches the clover, cleared when a new clover grows. */
@@ -1617,10 +1677,58 @@ export function Watt({ now = reviewNow ?? Date.now, inCall = false }: { now?: ()
       petFrame(walk, p.place, p.camera.hy, p.night, wanderT.current, music, reduced, mi, f);
       mi.bob = Math.max(0, mi.bob - 0.12);
       if (cr.mode !== NONE) carryFrame(cr, tNow(), p.camera.hy, walk.px, reduced, mi, f);
+      // Rain and wind on him (`wetWatt.ts`): damp wool and strands, a drip, the shake and the fluffy spell after it, the lean and
+      // the loose strand. Reduced motion keeps the damp colours only; the Tools switch off gives the dry look. The knob `?wattwx=` forces a frame.
+      const force = WATT_WX;
+      if (force && force.kind === 'lean') f.dir = -1;
+      const tw = force && force.kind === 'drip' ? 0.7 : tNow();
+      const still = reduced && force === null;
+      const damp = mi.wetOn && mi.rain;
+      // Quiet times (recording, a known call, a meeting in progress: all of them his `hush`) and his nap hold the drip and his own shake back; his menu open is `held`.
+      const calm = !mi.nap && !mi.quiet && !quiet.current.inCall;
+      const sk = shakeClock.current;
+      const reacting = mi.react !== null && mi.reactT < reactLength(mi);
+      stepShake(sk, tw, f.pose === 'idle' && !mi.carry && !mi.held && !mi.lie && !p.night && !reacting && calm, damp && !still);
+      const kf = force ? (force.kind === 'shake' ? force.k : -1) : damp && !still ? shakeFrame(tw, sk) : -1;
+      const fluffy = (force !== null && force.kind === 'fluffy') || (damp && !still && fluffyAt(tw, sk));
+      const wool: Wool = fluffy ? 'fluffy' : damp ? 'wet' : 'dry';
+      const windy = !still && mi.wetOn && (mi.windy || (force !== null && force.kind === 'lean'));
+      let rows: RowShift = !still && f.pose === 'idle' ? shakeRows(kf) : 0;
+      if (rows === 0 && windy && LEAN_POSES.has(f.pose) && kf < 0) rows = f.dir > 0 ? 5 : 6;
+      // The water pixels: a drip (poses that stand, not during the shake) and the droplets a shake throws.
+      const wp = water.current;
+      const small = walk.px / 2;
+      const dripOn = !still && damp && calm && DRIP_POSES.has(f.pose) && (kf < 0 || kf >= 4);
+      if (dripOn) dripAt(tw, SPRITES[f.pose], wp);
+      else {
+        wp[0].on = false;
+        wp[1].on = false;
+      }
+      thrownAt(!still && damp && f.pose === 'idle' ? kf : -1, wp);
+      const forced = small !== waterSmall;
+      waterSmall = small;
+      for (let i = 0; i < WATER_PIX; i++) showWater(waterEls.current[i], wp[i], waterShown.current[i], small, forced);
+      // The loose strand at the tail while he faces the wind: one wool pixel, still.
+      const se = strandEl.current;
+      if (se) {
+        const on = windy && f.dir < 0 && STRAND_POSES.has(f.pose);
+        const shade = fluffy || !damp ? '#f6f2ff' : '#dcd3fb';
+        if (on !== strandOn || shade !== strandShade || walk.px !== strandPx) {
+          strandOn = on;
+          strandShade = shade;
+          strandPx = walk.px;
+          se.style.display = on ? 'block' : 'none';
+          se.style.width = `${walk.px}px`;
+          se.style.height = `${walk.px}px`;
+          se.style.left = `${-walk.px}px`;
+          se.style.top = `${3 * walk.px}px`;
+          se.style.background = shade;
+        }
+      }
       // A new look object only when something visible changed (not every frame).
       const cur = lookRef.current;
-      if (cur.pose !== f.pose || cur.blink !== f.blink || cur.px !== walk.px || cur.prop !== f.prop || cur.scarf !== f.scarf || cur.cosmetic !== f.cosmetic || cur.hearts !== f.hearts || cur.mark !== f.mark) {
-        lookRef.current = { pose: f.pose, px: walk.px, blink: f.blink, prop: f.prop, scarf: f.scarf, cosmetic: f.cosmetic, hearts: f.hearts, mark: f.mark };
+      if (cur.pose !== f.pose || cur.blink !== f.blink || cur.wool !== wool || cur.rows !== rows || cur.px !== walk.px || cur.prop !== f.prop || cur.scarf !== f.scarf || cur.cosmetic !== f.cosmetic || cur.hearts !== f.hearts || cur.mark !== f.mark) {
+        lookRef.current = { pose: f.pose, px: walk.px, blink: f.blink, wool, rows, prop: f.prop, scarf: f.scarf, cosmetic: f.cosmetic, hearts: f.hearts, mark: f.mark };
         setLook(lookRef.current);
       }
       const width = spriteWidth(f.pose, walk.px);
@@ -1834,6 +1942,11 @@ export function Watt({ now = reviewNow ?? Date.now, inCall = false }: { now?: ()
       const c = carry.current;
       let r = Math.min(restFor(walkOf(p.place), wanderT.current, tNow(), p.night, useAudioStore.getState().playing, mi), carryRestFor(c, tNow(), mi.quiet));
       if (mi.pointerOn && !mi.watching) r = Math.min(r, Math.max(0.05, ptrRaw.current.t + NOTICE_S - tNow()));
+      // In rain he wakes for the drip steps, the shake frames and the fluffy spell, and for nothing else (never every frame).
+      if (mi.wetOn && mi.rain && !reduced) {
+        const pose = lookRef.current.pose;
+        r = Math.min(r, wetRestFor(tNow(), shakeClock.current, true, DRIP_POSES.has(pose) && !mi.nap && !mi.quiet && !quiet.current.inCall, SPRITES[pose].length));
+      }
       return r;
     };
     /**
@@ -1964,7 +2077,7 @@ export function Watt({ now = reviewNow ?? Date.now, inCall = false }: { now?: ()
   // A call starting or ending, a bubble, a clover or her look changing wakes the loop (or repaints the still pose).
   useEffect(() => {
     wake.current();
-  }, [inCall, bubble, clover, pet.cosmetic, focus.status, ws.rain, ws.cold, minute, watchTab, recordingQuiet, banner, audience, showState]);
+  }, [inCall, bubble, clover, pet.cosmetic, focus.status, ws.rain, ws.cold, ws.windy, wetOn, minute, watchTab, recordingQuiet, banner, audience, showState]);
 
   // The video paused while he watches: he looks round at the viewer once, then back (not under
   // reduced motion, nor while the wall records).
@@ -2028,15 +2141,19 @@ export function Watt({ now = reviewNow ?? Date.now, inCall = false }: { now?: ()
         <PixelSvg map={DUST} px={look.px} />
       </span>
       <div className="watt-sheep" ref={sheep} aria-hidden="true">
-        <SheepSvg pose={look.pose} px={look.px} blink={look.blink} />
+        <SheepSvg pose={look.pose} px={look.px} blink={look.blink} wool={look.wool} rows={look.rows} />
+        {Array.from({ length: WATER_PIX }, (_, i) => (
+          <span key={i} className="watt-wx" ref={(el) => void (waterEls.current[i] = el)} />
+        ))}
+        <span className="watt-wx watt-wx-strand" ref={strandEl} />
         <span className="watt-tuft" ref={tuftEl}>
           <PixelSvg map={TUFT} px={look.px} />
         </span>
         {look.cosmetic === 'cape' && <PropSvg prop="cape" pose={look.pose} px={look.px} />}
-        {look.scarf && <PropSvg prop="scarf" pose={look.pose} px={look.px} />}
-        {look.prop && look.prop !== 'headphones' && <PropSvg prop={look.prop} pose={look.pose} px={look.px} />}
-        {look.cosmetic && look.cosmetic !== 'cape' && <PropSvg prop={look.cosmetic} pose={look.pose} px={look.px} worn={look.prop} />}
-        {look.prop === 'headphones' && <PropSvg prop="headphones" pose={look.pose} px={look.px} />}
+        {look.scarf && <PropSvg prop="scarf" pose={look.pose} px={look.px} rows={look.rows} />}
+        {look.prop && look.prop !== 'headphones' && <PropSvg prop={look.prop} pose={look.pose} px={look.px} rows={look.rows} />}
+        {look.cosmetic && look.cosmetic !== 'cape' && <PropSvg prop={look.cosmetic} pose={look.pose} px={look.px} worn={look.prop} rows={look.rows} />}
+        {look.prop === 'headphones' && <PropSvg prop="headphones" pose={look.pose} px={look.px} rows={look.rows} />}
       </div>
       <button
         type="button"

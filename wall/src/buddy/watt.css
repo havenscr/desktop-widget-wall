@@ -376,3 +376,15 @@
     animation: none;
   }
 }
+
+/* Rain and wind on him: water pixels on the small grid (a drip, droplets a shake throws) and one loose wool
+   strand at the tail. Placed and sized by Watt.tsx; they sit inside his box, so they flip and tilt with him. */
+.watt-wx {
+  position: absolute;
+  display: none;
+  background: #35e6ea;
+  pointer-events: none;
+}
+.watt-wx-strand {
+  background: #dcd3fb;
+}

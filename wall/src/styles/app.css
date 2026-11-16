@@ -56,6 +56,15 @@ button,
   display: block;
 }
 
+.horizon-weather {
+  position: absolute;
+  inset: 0;
+  width: 2560px;
+  height: 720px;
+  display: block;
+  pointer-events: none;
+}
+
 .rail {
   display: flex;
   flex-direction: column;

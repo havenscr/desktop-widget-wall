@@ -20,17 +20,42 @@ const localSeconds = (ms: number) => {
 const isDayAt = (ms: number) => (new Date(ms).getHours() >= 7 && new Date(ms).getHours() < 18 ? 1 : 0);
 
 /**
+ * Weather the review knob `?weather=` can ask for (development builds only, invented): the weather code, the wind in miles
+ * per hour (absent for none) and the Weather Service's words for it.
+ */
+export interface WxKind {
+  code: number;
+  speed?: number;
+  gust?: number;
+  words: string;
+}
+export const WX_KINDS: Readonly<Record<string, WxKind>> = {
+  rain: { code: 61, words: 'Light Rain' },
+  heavy: { code: 65, words: 'Heavy Rain' },
+  rainwind: { code: 63, speed: 22, gust: 34, words: 'Rain' },
+  wind: { code: 2, speed: 24, gust: 35, words: 'Partly Cloudy' },
+  heavywind: { code: 65, speed: 24, gust: 38, words: 'Heavy Rain' },
+};
+
+/**
  * An invented Open-Meteo style reply: 30 hourly points around now. `?wday=0|1` (dev only) forces the current
  * reading to night or day whatever the hour is, so a review break can show the wrong glyph on purpose.
  */
-export function openMeteoBody(cold = false): string {
+export function openMeteoBody(cold = false, wx?: WxKind): string {
   const t = now();
   const hours = Array.from({ length: 30 }, (_, i) => t + (i - 3) * 3_600_000);
   const temp = cold ? 24 : 58;
   const wday = knob('wday');
   const forcedDay = wday === '0' ? 0 : wday === '1' ? 1 : null;
   return JSON.stringify({
-    current: { time: local(t), temperature_2m: temp, weather_code: cold ? 73 : 2, is_day: forcedDay ?? isDayAt(t) },
+    current: {
+      time: local(t),
+      temperature_2m: temp,
+      weather_code: wx ? wx.code : cold ? 73 : 2,
+      is_day: forcedDay ?? isDayAt(t),
+      ...(wx?.speed !== undefined ? { wind_speed_10m: wx.speed, wind_gusts_10m: wx.gust } : {}),
+    },
+    ...(wx?.speed !== undefined ? { current_units: { wind_speed_10m: 'mp/h', wind_gusts_10m: 'mp/h' } } : {}),
     hourly: {
       time: hours.map(local),
       temperature_2m: hours.map((_, i) => temp + Math.round(6 * Math.sin(i / 4))),
@@ -42,7 +67,7 @@ export function openMeteoBody(cold = false): string {
 }
 
 /** An invented Weather Service style reply: the hourly forecast from the current hour and the 12 hour forecast. */
-export function nwsBody(): string {
+export function nwsBody(wx?: WxKind): string {
   const t = Math.floor(now() / 3_600_000) * 3_600_000;
   const words = ['Mostly Cloudy', 'Chance Rain Showers', 'Partly Cloudy', 'Sunny', 'Light Rain', 'Clear'];
   const hourly = {
@@ -55,7 +80,8 @@ export function nwsBody(): string {
           isDaytime: h >= 7 && h < 18,
           temperature: 52 + Math.round(5 * Math.sin(i / 3)),
           temperatureUnit: 'F',
-          shortForecast: words[i % words.length],
+          shortForecast: i === 0 && wx ? wx.words : words[i % words.length],
+          ...(i === 0 && wx?.speed !== undefined ? { windSpeed: `${wx.speed} mph`, windGust: `${wx.gust} mph` } : {}),
         };
       }),
     },

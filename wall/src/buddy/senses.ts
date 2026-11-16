@@ -1,5 +1,5 @@
 import { laneWorks, type DaySpan, type Lane } from '../agents/model';
-import type { WeatherReading } from '../weather/model';
+import { rainLevel, type WeatherReading } from '../weather/model';
 import type { Topic } from './lines';
 
 /**
@@ -21,16 +21,24 @@ export interface WeatherSense {
   fog: boolean;
   cold: boolean;
   hot: boolean;
+  /** How hard it rains: 0 light, 0.5 steady, 1 heavy, -1 while it is not raining (a raining reading with an unknown code is 0.5). */
+  rainLevel: number;
+  /** Very windy (the reading's held answer). */
+  windy: boolean;
 }
 
-const NONE: WeatherSense = { rain: false, snow: false, clear: false, cloudy: false, fog: false, cold: false, hot: false };
+const NONE: WeatherSense = { rain: false, snow: false, clear: false, cloudy: false, fog: false, cold: false, hot: false, rainLevel: -1, windy: false };
 
 /** What the weather means for her, or all false when there is no fresh reading. */
 export function senseWeather(r: WeatherReading | null, now: number): WeatherSense {
   if (!r || now - r.fetchedAt > WEATHER_FRESH_MS || !Number.isFinite(r.temp)) return NONE;
   const icon = r.look.icon;
+  const rain = icon === 'rain' || icon === 'drizzle' || icon === 'storm';
+  const level = rainLevel(r.code);
   return {
-    rain: icon === 'rain' || icon === 'drizzle' || icon === 'storm',
+    rain,
+    rainLevel: rain ? (level < 0 ? 0.5 : level) : -1,
+    windy: r.windy === true,
     snow: icon === 'snow',
     clear: icon === 'sun',
     cloudy: icon === 'cloud' || icon === 'cloud-sun' || icon === 'cloud-moon',
