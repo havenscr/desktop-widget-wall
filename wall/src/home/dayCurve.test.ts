@@ -1,7 +1,7 @@
 import { expect, it, vi } from 'vitest';
 import { usePacificTime } from '../ribbon/testZone';
 import { sunTimes } from '../ribbon/sun';
-import { CURVE_BASE, CURVE_DIP, CURVE_H, CURVE_HUMP, CURVE_W, curveGeometry, dayCurve, labelSpots, labelText } from './dayCurve';
+import { CURVE_BASE, CURVE_DIP, CURVE_H, CURVE_HUMP, CURVE_W, curveGeometry, curveY, dayCurve, labelSpots, labelText } from './dayCurve';
 
 usePacificTime();
 
@@ -145,4 +145,75 @@ it('the sun changes sides at the exact sunset, not at the rounded minute', () =>
   expect(dayCurve(set!)!.phase).toBe('after');
   expect(dayCurve(rise! - 1)!.phase).toBe('before');
   expect(dayCurve(rise!)!.phase).toBe('day');
+});
+
+// The smooth line: day lengths from the shortest to the longest the wall sees, and a 12 hour equinox day.
+const DAYS: [string, number, number][] = [
+  ['midwinter', 7.6 / 24, 16.1 / 24],
+  ['november', RISE, SET],
+  ['equinox', 6 / 24, 18 / 24],
+  ['midsummer', 5.2 / 24, 21.2 / 24],
+];
+const slopeAt = (y: (f: number) => number, f: number, side: -1 | 1) => {
+  const d = 1e-6;
+  return (side === 1 ? y(f + d) - y(f) : y(f) - y(f - d)) / (CURVE_W * d);
+};
+
+it('the line is on the base line at the real sunrise and sunset, and rises into the day', () => {
+  for (const [name, rise, set] of DAYS) {
+    const y = curveY(rise, set);
+    expect(y(rise), name).toBeCloseTo(CURVE_BASE, 6);
+    expect(y(set), name).toBeCloseTo(CURVE_BASE, 6);
+    expect(y((rise + set) / 2), name).toBeCloseTo(CURVE_BASE - CURVE_HUMP, 6);
+    expect(y(((set + rise + 1) / 2) % 1), name).toBeGreaterThan(CURVE_BASE);
+    expect(y(rise + 0.001), name).toBeLessThan(CURVE_BASE);
+    expect(y(rise - 0.001), name).toBeGreaterThan(CURVE_BASE);
+    expect(y(set + 0.001), name).toBeGreaterThan(CURVE_BASE);
+  }
+});
+
+it('has no corner: the slope is the same just before and just after each crossing, and it is a real slant', () => {
+  for (const [name, rise, set] of DAYS) {
+    const y = curveY(rise, set);
+    for (const f of [rise, set]) {
+      const before = slopeAt(y, f, -1);
+      const after = slopeAt(y, f, 1);
+      expect(Math.abs(before - after), `${name} ${f}`).toBeLessThan(0.002);
+      expect(Math.abs(after), `${name} ${f}`).toBeGreaterThan(0.05);
+    }
+  }
+});
+
+it('stays inside the drawing box at every day length, with no wiggle: only noon and the night low are extremes', () => {
+  for (const [name, rise, set] of DAYS) {
+    const y = curveY(rise, set);
+    let min = Infinity;
+    let max = -Infinity;
+    let prev = y(0);
+    let turns = 0;
+    let dir = 0;
+    for (let f = 0.0005; f <= 1; f += 0.0005) {
+      const v = y(f);
+      min = Math.min(min, v);
+      max = Math.max(max, v);
+      const d = Math.sign(v - prev);
+      if (d !== 0 && dir !== 0 && d !== dir) turns++;
+      if (d !== 0) dir = d;
+      prev = v;
+    }
+    expect(min, name).toBeGreaterThanOrEqual(CURVE_BASE - CURVE_HUMP - 1e-6);
+    expect(max, name).toBeLessThanOrEqual(CURVE_BASE + CURVE_DIP + 1e-6);
+    expect(max, name).toBeLessThanOrEqual(CURVE_H);
+    // Up to noon, down to the low: at most the two turns at noon and at the night low, plus the one at midnight's wrap.
+    expect(turns, name).toBeLessThanOrEqual(2);
+  }
+});
+
+it('the sun sits on the curve at the current time, and the drawn day path passes through it', () => {
+  for (const [name, rise, set] of DAYS) {
+    for (const h of [0.5, 5, 9, 12, 15, 20, 23.5]) {
+      const geo = curveGeometry(rise, set, h / 24);
+      expect(geo.ySun, `${name} ${h}`).toBeCloseTo(curveY(rise, set)(h / 24), 9);
+    }
+  }
 });
