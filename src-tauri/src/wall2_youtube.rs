@@ -1800,13 +1800,14 @@ mod tests {
             { "id": VID_D, "snippet": { "title": "Calendar", "channelTitle": "Channel" }, "contentDetails": { "duration": "P0D" }, "status": { "privacyStatus": "public" } },
             { "id": VID_E, "snippet": { "title": "Live", "channelTitle": "Channel" }, "status": { "privacyStatus": "public" } },
             video(VID_F, "Malformed", "PT1M2H", json!({})),
+            { "id": "GGGGGGGGGGG", "contentDetails": { "duration": "PT2M" }, "status": { "privacyStatus": "public" } },
             private,
             video("bad id here", "Bad", "PT1M", json!({}))
         ] });
         let http = FakeHttp::reads(vec![ok(answer)], vec![]);
-        let ids = vec![VID_A.into(), VID_B.into(), VID_C.into(), VID_D.into(), VID_E.into(), VID_F.into(), VID_A.into()];
+        let ids = vec![VID_A.into(), VID_B.into(), VID_C.into(), VID_D.into(), VID_E.into(), VID_F.into(), "GGGGGGGGGGG".into(), VID_A.into()];
         let got = run(&http, &FakeCreds::new(Some("stored-refresh")), &clock(T0), |c| video_details_with(c, &ids)).unwrap();
-        assert_eq!(got.iter().map(|d| d.id.as_str()).collect::<Vec<_>>(), [VID_A, VID_B, VID_D, VID_E, VID_F]);
+        assert_eq!(got.iter().map(|d| d.id.as_str()).collect::<Vec<_>>(), [VID_A, VID_B, VID_D, VID_E, VID_F, "GGGGGGGGGGG"]);
         assert_eq!(got[0].title.as_ref().unwrap().chars().count(), 200);
         assert!(!got[0].title.as_ref().unwrap().contains('\u{202e}') && !got[0].title.as_ref().unwrap().contains('\n'));
         assert_eq!(got[0].channel.as_ref().unwrap().chars().count(), 100);
@@ -1815,10 +1816,11 @@ mod tests {
         assert_eq!(got[2], YtDetail { id: VID_D.into(), title: Some("Calendar".into()), channel: Some("Channel".into()), seconds: None });
         assert_eq!(got[3].seconds, None);
         assert_eq!(got[4].seconds, None);
+        assert_eq!(got[5], YtDetail { id: "GGGGGGGGGGG".into(), title: None, channel: None, seconds: Some(120) });
         let calls = lock(&http.get_calls).clone();
         assert_eq!(calls.len(), 1);
         assert_eq!(calls[0].1, "access-one");
-        let expected = api_url(EP_VIDEOS, &[("part", "snippet,contentDetails,status"), ("id", &ids[..6].join(",")), ("fields", VIDEO_FIELDS)]);
+        let expected = api_url(EP_VIDEOS, &[("part", "snippet,contentDetails,status"), ("id", &ids[..7].join(",")), ("fields", VIDEO_FIELDS)]);
         assert_eq!(calls[0].0, expected);
         let before = crate::wall2_youtube_log::test_lines().len();
         assert!(run(&http, &FakeCreds::new(Some("stored-refresh")), &clock(T0 + 1), |c| video_details_with(c, &[VID_A.into(), VID_B.into()])).is_ok());
