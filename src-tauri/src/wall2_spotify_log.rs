@@ -69,6 +69,9 @@ mod tests {
         for reason in [Reason::Missing, Reason::Changed, Reason::TooBig, Reason::Busy, Reason::Down, Reason::Scope, Reason::NotAllowedUser, Reason::Premium, Reason::Market, Reason::BadRequest, Reason::Other] {
             assert!(line(Event::PageFailed, reason, 0, 1).bytes().all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || matches!(b, b'-' | b' ' | b'\n')));
         }
+        for (reason, word) in [(Reason::Scope, "scope"), (Reason::NotAllowedUser, "not-allowed-user"), (Reason::Premium, "premium"), (Reason::Market, "market"), (Reason::BadRequest, "bad-request"), (Reason::Other, "other")] {
+            assert_eq!(line(Event::ApiFailed, reason, 403, 1), format!("api-failed {word} 403 1\n"));
+        }
         assert_eq!(device_line(4, 1, 2, 1), "no-device 4 1 2 1\n");
     }
 }

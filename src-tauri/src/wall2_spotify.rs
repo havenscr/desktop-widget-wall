@@ -146,7 +146,11 @@ impl Http for RealHttp {
 }
 
 fn http_reply(result: Result<ureq::Response, ureq::Error>) -> Result<HttpReply, ()> {
-    http_reply_with_limit(result, MAX_BODY)
+    let response = match result { Ok(r) | Err(ureq::Error::Status(_, r)) => r, Err(_) => return Err(()) };
+    let status = response.status();
+    let retry_after = response.header("Retry-After").and_then(|v| v.parse::<u64>().ok());
+    let body = if (200..300).contains(&status) || status == 400 { match body(response, MAX_BODY) { Ok(bytes) => bytes, Err(_) => return Ok(HttpReply { status: 598, retry_after: None, body: Vec::new() }) } } else { Vec::new() };
+    Ok(HttpReply { status, retry_after, body })
 }
 fn http_reply_with_limit(result: Result<ureq::Response, ureq::Error>, limit: u64) -> Result<HttpReply, ()> {
     let response = match result { Ok(r) | Err(ureq::Error::Status(_, r)) => r, Err(_) => return Err(()) };
@@ -375,11 +379,11 @@ fn refusal_reason(status: u16, body: &[u8]) -> RefusalReason {
     let message = error.get("message").and_then(Value::as_str).unwrap_or("");
     let reason = error.get("reason").and_then(Value::as_str).unwrap_or("");
     let text = format!("{message} {reason}").to_lowercase();
-    if text.contains("scope") || text.contains("permission") { RefusalReason::Scope }
-    else if text.contains("developer dashboard") || text.contains("allow-list") || text.contains("allow list") || text.contains("register") || text.contains("user management") { RefusalReason::NotAllowedUser }
+    if text.contains("developer dashboard") || text.contains("allow-list") || text.contains("allow list") || text.contains("register") || text.contains("user management") { RefusalReason::NotAllowedUser }
     else if text.contains("premium") { RefusalReason::Premium }
-    else if text.contains("market") || text.contains("country") || text.contains("availability") || text.contains("available in") { RefusalReason::Market }
+    else if text.contains("scope") || text.contains("permission") { RefusalReason::Scope }
     else if status == 400 && (text.contains("parameter") || text.contains("query parameter")) { RefusalReason::BadRequest }
+    else if text.contains("market") || text.contains("country") || text.contains("availability") || text.contains("available in") { RefusalReason::Market }
     else { RefusalReason::Other }
 }
 fn refused_answer(status: u16, body: &[u8]) -> (String, RefusalReason) {
@@ -413,7 +417,7 @@ fn read_with(cfg: &Config, path: &str, limit: u64, http: &dyn Http, creds: &dyn 
                 if (400..500).contains(&resp.status) {
                     let (answer, reason) = refused_answer(resp.status, &resp.body);
                     crate::wall2_spotify_log::write(crate::wall2_spotify_log::Event::ApiFailed, reason.log_reason(), resp.status, started.elapsed().as_millis());
-                    return Err(if resp.status == 403 && playlist_items { NOT_YOURS.into() } else if matches!(resp.status, 404 | 410) { GONE.into() } else { answer })
+                    return Err(if resp.status == 403 && playlist_items { NOT_YOURS.into() } else if resp.status == 403 { answer } else { status_answer(resp.status, playlist_items) })
                 }
                 crate::wall2_spotify_log::write(crate::wall2_spotify_log::Event::ApiFailed, crate::wall2_spotify_log::Reason::Down, resp.status, started.elapsed().as_millis());
                 return Err(status_answer(resp.status, playlist_items))
@@ -1208,6 +1212,8 @@ mod tests {
             (403, r#"{"error":{"message":"Not available in this COUNTRY"}}"#, RefusalReason::Market),
             (400, r#"{"error":{"message":"Invalid query parameter q"}}"#, RefusalReason::BadRequest),
             (403, r#"{"error":{"message":"Forbidden"}}"#, RefusalReason::Other),
+            (403, r#"{"error":{"message":"User permission missing; add the account in User management"}}"#, RefusalReason::NotAllowedUser),
+            (400, r#"{"error":{"message":"Invalid market parameter"}}"#, RefusalReason::BadRequest),
         ];
         for (status, body, want) in cases { assert_eq!(refusal_reason(status, body.as_bytes()), want, "{body}"); }
         for body in [b"".as_slice(), b"not json", br#"{"error":{"message":7}}"#, br#"{"error":{"message":"Forbid\u202eden\u0000"}}"#] { assert_eq!(refusal_reason(403, body), RefusalReason::Other); }
@@ -1225,6 +1231,48 @@ mod tests {
         assert_eq!(answer, "refused-premium");
         assert!(!answer.contains(marker));
         assert!(!logged.contains(marker));
+    }
+
+    #[test]
+    fn token_errors_keep_only_the_old_400_body_rule_while_api_4xx_bodies_are_bounded() {
+        let marker = r#"{"error":{"message":"Premium marker"}}"#;
+        let token_403 = http_reply(Ok(ureq::Response::new(403, "Forbidden", marker).unwrap())).unwrap();
+        let token_400 = http_reply(Ok(ureq::Response::new(400, "Bad Request", marker).unwrap())).unwrap();
+        let api_403 = http_reply_with_limit(Ok(ureq::Response::new(403, "Forbidden", marker).unwrap()), TRACK_BODY).unwrap();
+        assert!(token_403.body.is_empty());
+        assert_eq!(token_400.body, marker.as_bytes());
+        assert_eq!(api_403.body, marker.as_bytes());
+
+        let long_invalid_grant = format!(r#"{{"error":"invalid_grant","error_description":"{}"}}"#, "x".repeat(FORBIDDEN_BODY as usize));
+        assert!(long_invalid_grant.len() as u64 > FORBIDDEN_BODY);
+        let reply = http_reply(Ok(ureq::Response::new(400, "Bad Request", &long_invalid_grant).unwrap())).unwrap();
+        assert_eq!(token_reply(Ok(reply)), TokenReply::Refused);
+    }
+
+    #[test]
+    fn read_path_maps_403_reasons_and_preserves_every_other_status_answer() {
+        let _test_guard = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let creds = FakeCreds::new(Some("old"));
+        let run = |path: &str, status: u16, body: &str| {
+            reset_state(); signed_token();
+            read_with(&cfg(), path, TRACK_BODY, &FakeHttp::new(vec![], vec![hr(status, body)]), &creds)
+        };
+        for (body, answer) in [
+            (r#"{"error":{"message":"permission missing"}}"#, "refused-scope"),
+            (r#"{"error":{"message":"user not registered"}}"#, "refused-not-allowed-user"),
+            (r#"{"error":{"message":"Premium required"}}"#, "refused-premium"),
+            (r#"{"error":{"message":"not available in this country"}}"#, "refused-market"),
+            (r#"{"error":{"message":"Forbidden"}}"#, "refused-other"),
+        ] { assert_eq!(run("/search?type=track", 403, body), Err(answer.into()), "{body}"); }
+        let body = r#"{"error":{"message":"market parameter unavailable"}}"#;
+        for (path, status, answer) in [
+            ("/search?type=track", 400, "status-400"),
+            ("/search?type=track", 404, GONE),
+            ("/search?type=track", 410, GONE),
+            ("/search?type=track", 429, BUSY),
+            ("/search?type=track", 503, "server-503"),
+            ("/playlists/id/items?limit=50", 403, NOT_YOURS),
+        ] { assert_eq!(run(path, status, body), Err(answer.into()), "{status}"); }
     }
 
     #[test]

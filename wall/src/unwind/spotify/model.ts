@@ -39,6 +39,11 @@ export function resetListenSource(): void {
 /** What went wrong with a Spotify call, from the bridge's error text. */
 export type SpotifyProblem = 'notsetup' | 'needsSignIn' | 'busy' | 'starting' | 'choose' | 'restricted' | 'devicegone' | 'nodevice' | 'notYours' | 'gone' | 'connection' | 'refused' | 'refusedScope' | 'refusedNotAllowedUser' | 'refusedPremium' | 'refusedMarket' | 'refusedBadRequest' | 'down' | `server:${number}` | `status:${number}` | 'failed';
 
+/** Retry only calls whose answer can change without a separate account or availability change. */
+export function spotifyRetryable(problem: SpotifyProblem): boolean {
+  return !['refusedScope', 'refusedNotAllowedUser', 'refusedPremium', 'refusedMarket', 'notYours'].includes(problem);
+}
+
 export function spotifyProblem(e: unknown): SpotifyProblem {
   const text = (e instanceof Error ? e.message : typeof e === 'string' ? e : '').toLowerCase();
   if (text.includes('not set up')) return 'notsetup';
