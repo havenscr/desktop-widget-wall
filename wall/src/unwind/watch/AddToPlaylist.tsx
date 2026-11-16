@@ -167,7 +167,7 @@ export function AddMenu({
   return createPortal(
     <div ref={menu} className="w-pop" role="menu" aria-label="Add this video to a playlist" style={style} onKeyDown={onKey}>
       <div className="w-pop-k">Add this video to</div>
-      <div className="w-pop-rows" style={maxRows ? { maxHeight: maxRows * MENU_ROW } : undefined}>
+      <div className={`w-pop-rows${limit ? ' limited' : ''}`} style={maxRows ? { maxHeight: maxRows * MENU_ROW } : undefined}>
         {entries.map((e) => {
           const list = lists[e.id];
           const count = list?.items.length ?? 0;

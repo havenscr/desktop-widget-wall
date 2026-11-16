@@ -248,16 +248,38 @@ describe('adding', () => {
     expect(menu()).toBeNull();
   });
 
-  it('shows the refusal line when a playlist fills up under the menu', async () => {
-    seed([['Evening', 49]]);
+  it('shows the line a refused pick gets, and places the limited menu again when the line makes it taller', async () => {
+    seed([['Evening', 2]]);
     await opened();
-    fireEvent.click(addOf('Clip 1')!);
-    fireEvent.click(picks()[0]!);
-    expect(useOwnLists.getState().lists[ownId(0)]!.items).toHaveLength(50);
-    // A second video does not fit: the list now reads Full and the pick is refused.
-    fireEvent.keyDown(picks()[0]!, { key: 'Escape' });
-    fireEvent.click(addOf('Clip 3')!);
-    expect(picks()[0]!.querySelector('em')!.textContent).toBe('Full');
+    const add = addOf('Clip 1')!;
+    const card = document.querySelector('.sp-card') as HTMLElement;
+    const scroller = document.querySelector('.yt-rowscroll') as HTMLElement;
+    const box = (left: number, top: number, width: number, height: number) => ({ left, top, width, height, right: left + width, bottom: top + height, x: left, y: top, toJSON: () => ({}) });
+    // The music card at rest, its rows ending at wall y 471, the control at y 225: a 210 high menu fits under it, a 240 high one does not.
+    vi.spyOn(card, 'getBoundingClientRect').mockReturnValue(box(1740, 24, 800, 462));
+    vi.spyOn(scroller, 'getBoundingClientRect').mockReturnValue(box(1756, 156, 778, 315));
+    vi.spyOn(add, 'getBoundingClientRect').mockReturnValue(box(2481, 225, 30, 30));
+    Object.defineProperty(card, 'offsetWidth', { configurable: true, value: 800 });
+    Object.defineProperty(card, 'offsetHeight', { configurable: true, value: 462 });
+    // The menu is 210 high, and 30 more while its refusal line shows.
+    const height = vi.spyOn(HTMLElement.prototype, 'offsetHeight', 'get').mockImplementation(function (this: HTMLElement) {
+      return this.classList.contains('w-pop') ? (this.querySelector('.w-err') ? 240 : 210) : 0;
+    });
+    try {
+      fireEvent.click(add);
+      const top = () => (screen.getByRole('menu') as HTMLElement).style.top;
+      expect(top()).toBe('237px');
+      // A pick that is refused (the playlist filled up under the menu).
+      const refusal = 'This playlist is full (50). Remove one first.';
+      useOwnLists.setState({ addVideo: () => refusal });
+      fireEvent.click(picks()[0]!);
+      expect(screen.getByRole('alert').textContent).toBe(`Evening: ${refusal}`);
+      // The line made the menu 240 high: it no longer fits under the control inside the rows' foot, so it was placed again (above it, held inside the card).
+      expect(top()).toBe('0px');
+      expect(useOwnLists.getState().lists[ownId(0)]!.items).toHaveLength(2);
+    } finally {
+      height.mockRestore();
+    }
   });
 });
 
@@ -310,12 +332,19 @@ describe('closing', () => {
     expect(document.activeElement).toBe(add);
   });
 
-  it('does not close when its own list scrolls', async () => {
+  it('its own list scrolling never reaches the rows\' scroll listener: the menu is outside the rows scroller', async () => {
     seed([['A', 1], ['B', 1], ['C', 1], ['D', 1], ['E', 1]]);
     await opened();
     fireEvent.click(addOf('Clip 1')!);
-    fireEvent.scroll(document.querySelector('.w-pop-rows')!);
+    const scroller = document.querySelector('.yt-rowscroll') as HTMLElement;
+    // The close-on-scroll listener is on the rows scroller: a menu inside it would be reached by a scroll that bubbles.
+    expect(scroller.contains(screen.getByRole('menu'))).toBe(false);
+    const list = document.querySelector('.w-pop-rows') as HTMLElement;
+    list.dispatchEvent(new Event('scroll', { bubbles: true }));
     expect(menu()).not.toBeNull();
+    // ... while the rows' own scroll does close it.
+    fireEvent.scroll(scroller);
+    expect(menu()).toBeNull();
   });
 
   it('closes when the tab changes and when the playlist is left', async () => {

@@ -148,11 +148,13 @@
   max-height: 200px;
   overflow-y: auto;
   overscroll-behavior: contain;
-  /* What scrolls inside the list never counts as overflow of the card the menu hangs from. */
-  contain: paint;
   /* The app's one scrollbar look (the lists of the YouTube library use it too). */
   scrollbar-width: thin;
   scrollbar-color: rgba(154, 123, 255, 0.75) rgba(255, 255, 255, 0.05);
+}
+.w-pop-rows.limited {
+  /* The library's menu (placed with a `limit`): what scrolls inside the list never counts as overflow of the music card. */
+  contain: paint;
 }
 .w-pop-row {
   display: flex;
