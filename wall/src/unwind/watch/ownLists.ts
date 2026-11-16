@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { MAX_SAVED, cleanText, ADD_ERRORS } from './saved';
 import { refKey, validId } from './links';
 import { useWatchStore } from './store';
+import { askDetails } from './ownDetails';
 
 /**
  * The videos of the playlists made on the wall (what the Watch list's `own` entries hold).
@@ -9,10 +10,11 @@ import { useWatchStore } from './store';
  * The saved list (`wall2-watch-list`) keeps only an entry per playlist: kind `own`, a 12 character id
  * made here, and the name. The videos live in a second key, `wall2-watch-playlists`, so each key is read
  * and checked on its own and a damaged saved list never takes the videos with it. Everything stays on this
- * PC; nothing is sent anywhere and nothing is created on YouTube.
+ * PC except checked video ids sent to YouTube for details while signed in. Nothing is created on YouTube.
  *
  * A list is its videos in order (at most 50), with the owner's switches for shuffle and repeat. A video
- * holds its YouTube id and, once the player has reported them, a title, a channel and a length in seconds.
+ * holds its YouTube id and, once the player has reported them or, while signed in to YouTube, once YouTube
+ * has answered for them, a title, a channel and a length in seconds.
  * The stored value is read tolerantly (`parseOwn`): a value that is too long, not JSON or not version 1 is
  * an empty store; otherwise each list is read on its own and a bad list is dropped, not the whole value.
  * A record with no `own` entry in the saved list is ignored (never shown) and kept as stored.
@@ -28,6 +30,7 @@ const MAX_TITLE = 200;
 const MAX_CHANNEL = 100;
 const MAX_SECONDS = 86_400;
 const OWN_ID = /^[a-z0-9]{12}$/;
+const missing = (v: OwnVideo) => !v.title || !v.channel || v.seconds === undefined;
 
 export interface OwnVideo {
   id: string;
@@ -203,6 +206,7 @@ export const useOwnLists = create<OwnState>((set, get) => {
       watch.rename(`own:${id}`, name);
       const video = first ? readVideo(first) : null;
       commit(patch(get().lists, id, { items: video ? [video] : [], shuffle: false, repeat: false }));
+      if (video && missing(video)) askDetails([video.id], (videoId, info) => get().learn(videoId, info));
       return { ok: true, id };
     },
     addVideo: (listId, video) => {
@@ -212,6 +216,7 @@ export const useOwnLists = create<OwnState>((set, get) => {
       if (list.items.some((i) => i.id === v.id)) return OWN_ERRORS.dup;
       if (list.items.length >= MAX_OWN_VIDEOS) return OWN_ERRORS.full;
       commit(patch(get().lists, listId, { ...list, items: [...list.items, v] }));
+      if (missing(v)) askDetails([v.id], (videoId, info) => get().learn(videoId, info));
       return null;
     },
     removeVideo: (listId, videoId) => {
@@ -282,6 +287,10 @@ export const useOwnLists = create<OwnState>((set, get) => {
         commit(patch(get().lists, open, { items: [], shuffle: false, repeat: false }));
       }
       set({ open });
+      if (open !== null) {
+        const ids = get().lists[open]?.items.filter(missing).map((video) => video.id) ?? [];
+        askDetails(ids, (videoId, info) => get().learn(videoId, info));
+      }
     },
   };
 });

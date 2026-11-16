@@ -13,12 +13,15 @@ export interface YtPlaylist { id: string; title: string; count: number; thumb: s
 export type YtPlayable = 'yes' | 'embed' | 'private' | 'removed' | 'region';
 /** One video. `seconds` is 0 when YouTube gives no length. */
 export interface YtVideo { id: string; title: string; channel: string; seconds: number; thumb: string | null; playable: YtPlayable }
+/** What YouTube says about one video of an own playlist. `seconds` is null for a live video or when no length came back. */
+export interface YtDetail { id: string; title: string | null; channel: string | null; seconds: number | null }
 /** A page of answers and the token of the next page (null at the end). */
 export interface YtPage<T> { items: T[]; next: string | null }
 
 /** The same patterns Rust checks, so a bad id or token is refused before any call (attack rule 11). */
 export const PLAYLIST_ID = /^[A-Za-z0-9_-]{2,64}$/;
 export const PAGE_TOKEN = /^[A-Za-z0-9_-]{1,128}$/;
+export const VIDEO_ID = /^[A-Za-z0-9_-]{11}$/;
 const refuse = <T,>(): Promise<T> => Promise.reject(new Error('invalid'));
 const tokenOk = (t?: string | null) => t == null || PAGE_TOKEN.test(t);
 
@@ -45,5 +48,8 @@ export const youtube = {
     tokenOk(pageToken) ? invoke<YtPage<YtVideo>>('wall2_youtube_liked', { pageToken: pageToken ?? null, fresh: fresh === true }) : refuse(),
   /** A music search (Rust counts it against the day's budget; the same words again are free). */
   search: (query: string): Promise<YtPage<YtVideo>> => invoke<YtPage<YtVideo>>('wall2_youtube_search', { query }),
+  /** Title, channel and length for 1 to 50 video ids from an own playlist. */
+  videos: (ids: readonly string[]): Promise<YtDetail[]> =>
+    ids.length >= 1 && ids.length <= 50 && ids.every((id) => VIDEO_ID.test(id)) ? invoke<YtDetail[]>('wall2_youtube_videos', { ids: [...ids] }) : refuse(),
   openLink: (kind: YoutubeLink) => invoke<void>('wall2_open_link', { kind }),
 };
