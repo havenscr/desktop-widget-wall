@@ -161,7 +161,8 @@
   font-weight: 400;
 }
 .st-switches .st-tg {
-  padding: 0 10px;
+  gap: 8px;
+  padding: 0 8px;
 }
 .st-tg.dim {
   opacity: 0.65;
@@ -170,6 +171,17 @@
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+/* The block is 148 px (the older one was 134): the footnote under it keeps its place in the column by closing up
+   its gap and its line height (two lines of 18 px end at y 509, inside the column). */
+.oa-right > .oa-foot {
+  margin-top: -5px;
+  line-height: 18px;
+}
+/* A key light tile that carries a warning is already dashed and amber: the triangle would crowd the four tiles. */
+.st-switches .st-tg-warn {
+  display: none;
 }
 
 /* The offer bar: 68 px, in place of the preset row and the summary. */
@@ -610,14 +622,13 @@ button.st-tg:hover {
   overflow: hidden;
   overflow-wrap: anywhere;
 }
-.st-why {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
+.st-lk.st-why {
+  margin-left: auto;
+  border-color: rgba(255, 194, 77, 0.85);
+  color: var(--amber);
 }
-.st-changed {
-  color: var(--dim);
+.st-lk.st-why + .st-x {
+  margin-left: 0;
 }
 .st-d-body {
   display: grid;
@@ -629,6 +640,23 @@ button.st-tg:hover {
 .st-d-body.one {
   display: contents;
 }
+/* However much the home app lists, the sheet stays above y 510: the body scrolls with the wheel past that. */
+.st-drawer {
+  max-height: 490px;
+}
+.st-d-body:not(.one) {
+  min-height: 0;
+  overflow-y: auto;
+  padding-inline: 4px;
+  margin-inline: -4px;
+}
+/* Split, two lights in one 280 px column: the warmth ends are written once, under the last pair. */
+.st-d-body:not(.one) .st-sides .st-side:first-child .st-scale {
+  display: none;
+}
+.st-d-body:not(.one) .st-side-hd {
+  height: 30px;
+}
 .st-d-body:not(.one) .st-d-keys {
   border-top: 0;
   padding-top: 0;
@@ -639,7 +667,9 @@ button.st-tg:hover {
   gap: 0;
 }
 .st-d-body:not(.one) .st-scale {
-  padding: 0 70px 0 30px;
+  padding: 0 44px 0 30px;
+  white-space: nowrap;
+  gap: 8px;
 }
 .st-d-rooms {
   display: flex;
@@ -735,7 +765,7 @@ button.st-tg:hover {
   background: var(--amber);
 }
 .st-d-body .st-srow {
-  grid-template-columns: 20px minmax(0, 1fr) 56px;
+  grid-template-columns: 20px minmax(0, 1fr) 66px;
 }
 .st-drawer button:focus-visible,
 .st-block button:focus-visible {

@@ -9,7 +9,7 @@ import { anyOn, downWord, kelvinColour, mismatched, savedDown, shown as shownLig
 import { drawerBox, openerColumn } from './drawerBox';
 import { Slider } from './Slider';
 import { ABSENT_LINE, DOWN_LINE } from './homeModel';
-import { SheetPresets, SheetRooms, useSheetHome } from './SheetHome';
+import { SheetPresets, SheetRooms, SheetWhy, useSheetHome } from './SheetHome';
 import { useHomePolling } from './useHomePolling';
 import { useKeyLights } from './store';
 
@@ -205,11 +205,12 @@ export function StudioDrawer() {
         <IconBulb size={22} className="st-bulb" aria-hidden="true" />
         <span className="k st-title">Studio lights</span>
         <span className="st-office">Office only</span>
+        {home.studio && <SheetWhy studio={home.studio} away={home.away} />}
         <button type="button" className="st-x" aria-label="Close Studio lights" onClick={close}>
           <IconX size={18} aria-hidden="true" />
         </button>
       </div>
-      {home.studio && <SheetPresets studio={home.studio} may={home.may} away={home.away} />}
+      {home.studio && <SheetPresets studio={home.studio} may={home.may} />}
       <div className={home.studio ? 'st-d-body' : 'st-d-body one'}>
       <div className="st-d-keys" data-split={split ? '' : undefined}>
         <div className="st-k-hd">
@@ -295,7 +296,7 @@ export function StudioDrawer() {
       {!home.studio && home.view !== 'checking' && <div className="st-line st-quiet">{home.view === 'down' ? `${DOWN_LINE}.` : ABSENT_LINE}</div>}
       <div className="st-d-foot st-line">
         <span>Range {KELVIN_MIN} K to {KELVIN_MAX} K, the maker&apos;s figure</span>
-        <span>Esc or a click outside closes it</span>
+        <span>{home.studio ? 'Esc closes it' : 'Esc or a click outside closes it'}</span>
       </div>
     </section>,
     host,

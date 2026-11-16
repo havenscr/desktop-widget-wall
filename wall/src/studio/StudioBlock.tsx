@@ -3,7 +3,7 @@ import type { ReactNode } from 'react';
 import { tip } from '../ui/HoverTip';
 import { useToolsStore } from '../tools/store';
 import { StudioDrawer } from './StudioDrawer';
-import { ABSENT_LINE, CHANGED_TIP, DOWN_LINE, homeLine, NOT_SET_UP_LINE, PRIVATE_LINE, STALE_TIP, summaryParts } from './homeModel';
+import { ABSENT_LINE, CHANGED_TIP, DOWN_LINE, homeLine, NOT_SET_UP_LINE, presetChipLabel, PRIVATE_LINE, STALE_TIP, summaryParts } from './homeModel';
 import { canChange, homeView, useHome } from './homeStore';
 import { PAGE_PRESETS, PresetRow } from './PresetRow';
 import { RoomTiles } from './RoomTiles';
@@ -200,7 +200,9 @@ export function StudioBlock() {
   }
 
   // Full layout. Fine tune goes to the right end of the preset row (icon only when three presets show).
-  const threePresets = studio.presets.length >= PAGE_PRESETS;
+  // Icon only when three presets show, or when the chips' words are long enough to crowd the row (as "On air, changed" does).
+  const pageChips = studio.presets.slice(0, PAGE_PRESETS);
+  const threePresets = pageChips.length >= PAGE_PRESETS || pageChips.reduce((n, p) => n + presetChipLabel(p, studio.changed).length, 0) > 20;
   const trailing =
     v === 'live' || v === 'one' ? (
       <button

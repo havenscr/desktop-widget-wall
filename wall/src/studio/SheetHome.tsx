@@ -1,7 +1,7 @@
 import { IconAlertTriangle, IconBrightnessUp, IconCheck, IconRefresh, IconSettings } from '@tabler/icons-react';
 import { tip } from '../ui/HoverTip';
 import { useToolsStore } from '../tools/store';
-import { CHANGED_TIP, DOWN_LINE, needsZone, NOT_SET_UP_LINE, presetChipLabel, PRIVATE_LINE, PRIVATE_TIP, tileState, ZONE_TIP } from './homeModel';
+import { DOWN_LINE, needsZone, NOT_SET_UP_LINE, presetChipLabel, PRIVATE_LINE, PRIVATE_TIP, tileState, ZONE_TIP } from './homeModel';
 import { canChange, homeView, useHome } from './homeStore';
 import type { Group, Studio } from './home';
 import { Slider } from './Slider';
@@ -24,29 +24,30 @@ function whyOff(studio: Studio, away: boolean): { text: string; tip: string; act
   return null;
 }
 
-function Why({ studio, away }: { studio: Studio; away: boolean }) {
+/**
+ * Why the sheet's controls are off, as one amber button in the sheet's header (the sheet has no spare line):
+ * type the desk token in Tools, check the address again, or try the home app again. Its tip says it in full.
+ */
+export function SheetWhy({ studio, away }: { studio: Studio; away: boolean }) {
   const why = whyOff(studio, away);
   if (!why) return null;
+  const label = why.action === 'tools' ? 'Desk token' : away ? 'Try again' : 'Check again';
   return (
-    <div className="st-line st-why amber">
-      <span>{why.text}</span>
-      {why.action === 'tools' ? (
-        <button type="button" className="st-lk" onClick={() => useToolsStore.getState().openDrawer('desktoken')} {...tip(why.tip)}>
-          <IconSettings size={18} aria-hidden="true" />
-          Open Tools
-        </button>
-      ) : (
-        <button type="button" className="st-lk" onClick={() => void useHome.getState().readStudio()} {...tip(why.tip)}>
-          <IconRefresh size={18} aria-hidden="true" />
-          {away ? 'Try again' : 'Check again'}
-        </button>
-      )}
-    </div>
+    <button
+      type="button"
+      className="st-lk st-why"
+      aria-label={`${why.text} ${label}`}
+      onClick={() => (why.action === 'tools' ? useToolsStore.getState().openDrawer('desktoken') : void useHome.getState().readStudio())}
+      {...tip(`${why.text} ${why.tip}`)}
+    >
+      {why.action === 'tools' ? <IconSettings size={18} aria-hidden="true" /> : <IconRefresh size={18} aria-hidden="true" />}
+      {label}
+    </button>
   );
 }
 
 /** The preset tiles at the top of the sheet: each preset's name and its line, then Back to normal. */
-export function SheetPresets({ studio, may, away }: { studio: Studio; may: boolean; away: boolean }) {
+export function SheetPresets({ studio, may }: { studio: Studio; may: boolean }) {
   const applying = useHome((s) => s.applying);
   const dis = !may;
   return (
@@ -84,12 +85,6 @@ export function SheetPresets({ studio, may, away }: { studio: Studio; may: boole
           <span className="st-pt-l">{studio.canNormal ? (studio.normalLine ?? '') : 'Nothing to go back from'}</span>
         </button>
       </div>
-      {studio.changed && (
-        <div className="st-line st-changed" {...tip(CHANGED_TIP)}>
-          Changed since it was set. The Hue app, voice assistants and HomeKit are not seen.
-        </div>
-      )}
-      <Why studio={studio} away={away} />
     </>
   );
 }

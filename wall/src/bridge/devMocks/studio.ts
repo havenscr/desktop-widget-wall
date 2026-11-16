@@ -22,7 +22,7 @@ import { knob } from './long';
  *
  * The home half (the home app's studio answer, its writes, the desk token, office moods):
  *
- *   ?studio=absent|notsetup|ready|onair|recording|changed|stale|nozone|down|slow
+ *   ?studio=absent|notsetup|ready|onair|recording|changed|stale|nozone|down|lost|slow
  *   ?studiowrite=ok|forbidden|homeunset|dark|busy|lights|unknown|unreachable
  *   ?desktoken=unset|set|unreadable|insecure
  *   ?office=absent|empty|two|six|down
@@ -36,6 +36,7 @@ import { knob } from './long';
  *   stale         ready, but the home app could not read every light (Overhead not answering)
  *   nozone        ready, but Overhead needs a Hue zone
  *   down          the home app does not answer
+ *   lost          reads are good until the sheet is opened (Fine tune); then the home app is gone
  *   slow          ready, but a preset answers after 3 seconds
  *   studiowrite   the answer of every write: ok (default), or the home app's refusal
  *   desktoken     unset (default): no token on this PC; set; unreadable; insecure: set, but the base may not carry it
@@ -261,6 +262,8 @@ function registerHomeHalf(keys: LightMock): void {
     for (const c of [keys.left, keys.right]) if (c.set && !c.word && c.light) c.light.on = on;
   };
   const read = (): Record<string, unknown> => {
+    // `lost`: the home app is there until the sheet is opened, then it is not (the sheet's read finds it gone).
+    if (home.kind === 'lost' && typeof document !== 'undefined' && document.querySelector('.st-drawer')) throw 'unreachable';
     if (home.kind === 'absent') throw 'absent';
     if (home.kind === 'notsetup') throw 'studio-not-set-up';
     if (home.kind === 'down') throw 'unreachable';

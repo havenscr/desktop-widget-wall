@@ -1,4 +1,3 @@
-import { IconAlertTriangle } from '@tabler/icons-react';
 import { tip } from '../ui/HoverTip';
 import { tileState } from './homeModel';
 import { canChange, useHome } from './homeStore';
@@ -8,7 +7,6 @@ import type { Group, Studio } from './home';
 export function RoomTile({ studio, g, canWrite }: { studio: Studio; g: Group; canWrite: boolean }) {
   const st = tileState(studio, g, canWrite);
   const on = g.on;
-  const warn = !g.reachable;
   const cls = `st-tg st-room${on ? ' on' : ''}${st.disabled ? ' dis' : ''}${st.dim ? ' dim' : ''}`;
   const inner = (
     <>
@@ -16,7 +14,6 @@ export function RoomTile({ studio, g, canWrite }: { studio: Studio; g: Group; ca
         <i />
       </i>
       <span>{g.label}</span>
-      {warn && <IconAlertTriangle size={18} aria-hidden="true" className="st-tg-warn" />}
     </>
   );
   if (st.disabled) {
