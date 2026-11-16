@@ -4,6 +4,7 @@ import { mocks } from '../bridge/tauri';
 import { HoverTipLayer, resetTip } from '../ui/HoverTip';
 import { OFF_READ_DELAY_MS, resetHome, TEXT, useHome } from './homeStore';
 import { OfficeMoods } from './OfficeMoods';
+import { NAME_MIN, fitMoodRow } from './moodRow';
 import { NOTE_MS } from './store';
 
 vi.setConfig({ testTimeout: 20_000 });
@@ -156,7 +157,7 @@ it('shown: a group named Office moods, the label, one chip per mood in the home 
 });
 
 it('the fit rule is applied: twelve names of 40 characters drop the label and cut every name; a short row keeps both', async () => {
-  // jsdom has no canvas, so the component measures with its rough guess (9 px a character): 360 px a name, far over 1250 in all.
+  // jsdom has no canvas, so the component measures with its rough guess (9 px a character): 360 px a name, far over 1124 in all.
   const forty = (i: number) => `Mood ${String(i).padStart(2, '0')} ${'x'.repeat(40 - 8)}`;
   list = Array.from({ length: 12 }, (_, i) => ({ id: `mood${i}`, label: forty(i), line: null, active: i === 0 }));
   off = { active: false };
@@ -167,8 +168,10 @@ it('the fit rule is applied: twelve names of 40 characters drop the label and cu
   const named = [...slot().querySelectorAll<HTMLElement>('.u-mood-name')].filter((n) => n.textContent !== 'Off');
   expect(named).toHaveLength(12);
   for (const n of named) expect(n.style.maxWidth).toMatch(/^\d+px$/);
-  // Cut at the largest shared width that fits: more than the minimum text, and the full name still in the tip.
-  expect(parseInt(named[0].style.maxWidth, 10)).toBeGreaterThanOrEqual(31);
+  // Cut at the largest shared width that fits: exactly what the fit rule gives for 12 names of 360 px (9 px a character) and an Off chip measured by the same guess (30 + 22 + 27 px), above the floor.
+  const expected = fitMoodRow(Array(12).fill(360), 0, 79).cap as number;
+  expect(expected).toBeGreaterThan(NAME_MIN);
+  for (const n of named) expect(n.style.maxWidth).toBe(`${expected}px`);
   expect(await tipOf(chip(forty(0)))).toBe(`${forty(0)} is on.`);
   unmount();
   resetHome();
