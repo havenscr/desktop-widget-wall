@@ -162,7 +162,7 @@ function measureTasks() {
       if (!inside(b, rb, 0.5) || (tb && b.left < tb.right - 0.5)) fails.push(where + ': tag "' + label + '" sticks out of its row or lies over the title');
       if (tag.textContent.trim() !== '') fails.push(where + ': tag "' + label + '" carries words (a pill is its icon alone)');
       const glyph = tag.querySelector('svg');
-      if (!glyph || Math.abs(box(glyph).width - 16) > 0.6) fails.push(where + ': tag "' + label + '" text is 0 px with a ' + (glyph ? r1(box(glyph).width) : 0) + ' px glyph (16 or more)');
+      if (!glyph || Math.abs(box(glyph).width - 16) > 0.6) fails.push(where + ': tag "' + label + '" glyph is ' + (glyph ? r1(box(glyph).width) : 0) + ' px wide (16 px)');
     }
     const pills = [...li.querySelectorAll('.t-tag')].map(box);
     for (let i = 1; i < pills.length; i++) if (pills[i].left - pills[i - 1].right < 4 - 0.5) fails.push(where + ': two tags of "' + name + '" overlap or touch (' + r1(pills[i].left - pills[i - 1].right) + ' px apart, at least 4)');
@@ -242,7 +242,7 @@ export default {
       // Dots too small; a tag pushed out of its row; a chip with small text; one row's tags out of line; the time column not fixed.
       'tag-size': { css: '.work .t-dot { width: 20px !important; height: 20px !important; }', expect: /^ *FAIL tasks: tag ".*" is [\d.]+ by [\d.]+ px \(a pill is 26 by 26\)/m, appliesTo: (v) => v.name === TYPICAL },
       'tag-out': { css: '.work .t-tags { position: relative !important; left: 900px !important; }', expect: /^ *FAIL tasks: tag ".*" sticks out of its row or lies over the title/m, appliesTo: (v) => v.name === TYPICAL },
-      'tag-font': { css: '.work .t-tag svg { width: 12px !important; height: 12px !important; }', expect: /^ *FAIL tasks: tag ".*" text is [\d.]+ px with a [\d.]+ px glyph \(16 or more\)/m, appliesTo: (v) => v.name === TYPICAL },
+      'tag-font': { css: '.work .t-tag svg { width: 12px !important; height: 12px !important; }', expect: /^ *FAIL tasks: tag ".*" glyph is [\d.]+ px wide \(16 px\)/m, appliesTo: (v) => v.name === TYPICAL },
       'tag-overlap': { css: '.work .t-tag + .t-tag { margin-left: -10px !important; }', expect: /^ *FAIL tasks: two tags of ".*" overlap or touch/m, appliesTo: (v) => v.name === TYPICAL },
       'tag-line': { css: '.work .tk3:nth-child(2) .t-tags { margin-right: 25px !important; }', expect: /^ *FAIL tasks: the tags do not line up down the list/m, appliesTo: (v) => v.name === TYPICAL },
       'tag-column': { css: '.work .chip-col { width: 60px !important; }', expect: /^ *FAIL tasks: the time column is not a fixed 78 px column/m, appliesTo: (v) => v.name === TYPICAL },

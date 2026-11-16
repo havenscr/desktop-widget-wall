@@ -4,7 +4,7 @@ import { useFocusStore } from '../focus/store';
 import { dueLine, estText, estTipText, HOLD_SLOP_PX, LONG_PRESS_MS, openTask, overdueText, updatedText, visibleRows, type TaskItem } from './model';
 import { tip } from '../ui/HoverTip';
 import { usePendingTicks } from './pendingTick';
-import { TaskTags } from './TaskTags';
+import { TaskTags, tagsFocus } from './TaskTags';
 import { useTasks, type TasksQuery } from './useTasks';
 
 /** Work's list: the tasks without the home tag that are due today or overdue (the next three when none is). */
@@ -91,6 +91,7 @@ function TaskRow({
             className="tk-main"
             aria-label={focusable ? `Open ${task.title}; hold to focus on it` : `Open ${task.title}`}
             title={task.title}
+            {...tagsFocus(task.tags)}
             onPointerDown={(e) => {
               swallow.current = false;
               if (!focusable) return;

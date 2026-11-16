@@ -1,11 +1,11 @@
 import { IconCheck } from '@tabler/icons-react';
-import { useLayoutEffect, useRef, useState } from 'react';
+import { useLayoutEffect, useRef } from 'react';
 import { tip } from '../ui/HoverTip';
 import { reviewNow } from '../ui/reviewClock';
 import { useRemeasure } from '../ui/useRemeasure';
 import { openTask, type TaskItem } from '../tasks/model';
 import { usePendingTicks } from '../tasks/pendingTick';
-import { TaskTags } from '../tasks/TaskTags';
+import { TaskTags, tagsFocus } from '../tasks/TaskTags';
 import { TickWait } from '../tasks/TaskCard';
 import { clockText } from './sunLine';
 import { useShield } from './NetworkTile';
@@ -57,7 +57,6 @@ export function Chores() {
   // The pill column: as wide as the widest pill (never under 62 px), measured with every pill at its natural
   // width, then set on the list as `--pill-w` for every pill and every empty column.
   const listRef = useRef<HTMLDivElement>(null);
-  const [, setPillW] = useState(PILL_COLUMN_PX);
   const pillKey = rows.map((t) => chorePill(t, now) ?? '').join('|');
   const measurePills = () => {
     const el = listRef.current;
@@ -66,7 +65,6 @@ export function Chores() {
     let w = PILL_COLUMN_PX;
     for (const pill of Array.from(el.querySelectorAll<HTMLElement>('.est'))) w = Math.max(w, Math.ceil(pill.getBoundingClientRect().width));
     el.style.setProperty('--pill-w', `${w}px`);
-    setPillW(w);
   };
   useLayoutEffect(measurePills, [pillKey]);
   // Measured again when the list changes width or the display font arrives after the first paint.
@@ -108,6 +106,7 @@ export function Chores() {
                 className="ck"
                 aria-label={`Done: ${t.title}`}
                 disabled={ticked}
+                {...tagsFocus(t.tags)}
                 onClick={() => (mark === 'failed' ? complete(t.id) : ticks.tick(t.id))}
               >
                 <span className="ck-ring" aria-hidden="true">
@@ -118,7 +117,7 @@ export function Chores() {
                 <TickWait title={t.title} onUndo={() => ticks.undo(t.id)} />
               ) : (
                 <>
-                  <button type="button" className="n chore-open" title={t.title} aria-label={`Open ${t.title}`} onClick={() => openTask(t.id)}>
+                  <button type="button" className="n chore-open" title={t.title} aria-label={`Open ${t.title}`} {...tagsFocus(t.tags)} onClick={() => openTask(t.id)}>
                     {t.title}
                   </button>
                   {mark === 'failed' ? (

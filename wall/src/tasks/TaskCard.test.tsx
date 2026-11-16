@@ -3,6 +3,7 @@ import { TICK_UNDO_MS } from './pendingTick';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { mocks } from '../bridge/tauri';
 import { useFocusStore } from '../focus/store';
+import { HoverTipLayer, resetTip } from '../ui/HoverTip';
 import { TaskCard } from './TaskCard';
 import { REFRESH_MS, type TaskItem } from './model';
 
@@ -641,4 +642,27 @@ it('the page going hidden (a screen lock) does not cut the undo window short; th
   }
   expect(done).toHaveBeenCalledTimes(1);
   expect(done).toHaveBeenCalledWith({ id: 'a' });
+});
+
+it('the tags card opens when the row\'s main button takes keyboard focus, with no extra tab stop', async () => {
+  resetTip();
+  const tags = [{ label: 'Repairs', icon: 'tool', color: 'pink' }, { label: 'Garden', icon: 'plant-2', color: 'green' }];
+  setList(() => [{ ...task('a', 'Water the plants'), tags }]);
+  const { container } = render(
+    <>
+      <TaskCard />
+      <HoverTipLayer />
+    </>,
+  );
+  await flush();
+  const main = container.querySelector('.tk-main') as HTMLElement;
+  expect(container.querySelector('.t-tags')?.hasAttribute('tabindex')).toBe(false);
+  expect(container.querySelectorAll('.tk3 [tabindex]')).toHaveLength(0);
+  expect(document.querySelector('.t-tip')).toBeNull();
+  act(() => main.focus());
+  await flush(10);
+  expect([...document.querySelectorAll('.t-tip-name')].map((e) => e.textContent)).toEqual(['Repairs', 'Garden']);
+  act(() => main.blur());
+  await flush(10);
+  expect(document.querySelector('.t-tip')).toBeNull();
 });

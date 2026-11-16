@@ -144,10 +144,11 @@ export function dayCurve(ms: number): DayCurve | null {
   if (rise === null || set === null || set <= rise) return null;
   const r = toMinute(rise);
   const s = toMinute(set);
-  const fr = clockFraction(r);
-  const fs = clockFraction(s);
-  if (fs <= fr) return null;
-  const g = curveGeometry(fr, fs, clockFraction(ms), { rise: clockFraction(rise), set: clockFraction(set) });
+  // The geometry uses the exact instants, so the line, the dots and the phase change together; only the labels are rounded.
+  const fr = clockFraction(rise);
+  const fs = clockFraction(set);
+  if (fs <= fr || s <= r) return null;
+  const g = curveGeometry(fr, fs, clockFraction(ms));
   const riseText = clockText(r);
   const setText = clockText(s);
   const length = span(s - r);

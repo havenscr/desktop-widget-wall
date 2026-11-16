@@ -239,6 +239,21 @@ it('fits the room dots on two lines: all of them when they fit, else the lit one
   expect(hidden.length).toBeGreaterThan(0);
   expect(shown.slice(0, 4).every((x) => x.on)).toBe(true);
   expect(hidden.every((x) => !x.on) || hidden.every((h) => shown.every((x) => x.on || !h.on))).toBe(true);
+  // The sum rule: shown rooms plus N is always the lit rooms and the dark ones, for one, seven, twelve and twenty-four rooms and a forced drop.
+  const many = (n: number) => Array.from({ length: n }, (_, i) => r(String(i), `Room ${i}`, i % 2 === 0));
+  for (const n of [1, 7, 12, 24]) {
+    for (const drop of [0, 1, 3]) {
+      const f = fitRooms(many(n), undefined, drop);
+      expect(f.shown.length + f.hidden.length).toBe(n);
+      expect(new Set([...f.shown, ...f.hidden].map((x) => x.id)).size).toBe(n);
+      // "+N more" names exactly what is not shown, and the lit rooms come before the dark ones among the shown.
+      expect(f.hidden.length).toBe(n - f.shown.length);
+    }
+  }
+  expect(fitRooms(many(24)).hidden.length).toBeGreaterThan(0);
+  expect(fitRooms(many(7)).hidden.length).toBe(0);
+  expect(fitRooms(many(7), undefined, 2).hidden.length).toBe(2);
+  expect(fitRooms(many(12), undefined, 2).hidden.length).toBe(fitRooms(many(12)).hidden.length + 2);
   // One line fewer would not hold them all, so a second line is used before "+N more" appears.
   expect(fitRooms(names.slice(0, 7).map((n, i) => r(String(i), n, true))).hidden).toEqual([]);
 });

@@ -1,7 +1,7 @@
 import { fireEvent, render, waitFor } from '@testing-library/react';
 import { afterEach, expect, it } from 'vitest';
 import { encodeIcon, encodeSet } from '../../vite-plugin-tabler-icons.mjs';
-import { HoverTipLayer } from '../ui/HoverTip';
+import { HoverTipLayer, resetTip } from '../ui/HoverTip';
 import { TaskTags } from './TaskTags';
 import { decodeIcon, ICON_NAME, setIconDataForTests } from './tagIcons';
 import { DOT_PX, TAG_GAP_PX, TAG_HUES, tagHue } from './tagStyle';
@@ -159,4 +159,27 @@ it('the real icon chunk holds the owner\'s kind of names and loads on demand', a
   for (const name of ['tag', 'shopping-cart', 'plant-2', 'phone', 'tool']) expect(mod.default[name], name).toBeTruthy();
   expect(Object.keys(mod.default).length).toBeGreaterThan(5000);
   for (const spec of Object.values(mod.default)) expect(decodeIcon(spec).length).toBeGreaterThan(0);
+});
+
+it('draws at most three pills; the rest are named only in the hover card', async () => {
+  resetTip();
+  const five = [...tags, { label: 'Errands', icon: 'tool', color: 'teal' }, { label: 'Paperwork', icon: 'phone', color: 'red' }];
+  for (const n of [3, 4, 5]) {
+    const r = render(<TaskTags tags={five.slice(0, n)} />);
+    expect(r.container.querySelectorAll('.t-tag')).toHaveLength(3);
+    r.unmount();
+  }
+  const r = render(
+    <>
+      <TaskTags tags={five} />
+      <HoverTipLayer />
+    </>,
+  );
+  fireEvent.mouseEnter(r.container.querySelector('.t-tags') as HTMLElement);
+  const card = await waitFor(() => {
+    const el = document.querySelector('.t-tip');
+    if (!el) throw new Error('no card yet');
+    return el;
+  }, { timeout: 2000 });
+  expect([...card.querySelectorAll('.t-tip-name')].map((e) => e.textContent)).toEqual(['Repairs', 'Phone Call', 'Garden', 'Errands', 'Paperwork']);
 });

@@ -118,9 +118,9 @@ it('a 23 hour day (clocks forward) and a 25 hour day (clocks back) use the 24 ho
     expect(c.phase, label).toBe('day');
     // Local noon is the middle of the face, to the pixel.
     expect(c.xSun, label).toBeCloseTo(CURVE_W / 2, 6);
-    // Each crossing sits at the time it is labelled with.
-    expect(c.xRise, label).toBeCloseTo(CURVE_W * faceFraction(c.riseText), 4);
-    expect(c.xSet, label).toBeCloseTo(CURVE_W * faceFraction(c.setText), 4);
+    // Each crossing sits at its exact instant, within half a minute (0.16 px) of the minute it is labelled with.
+    expect(Math.abs(c.xRise - CURVE_W * faceFraction(c.riseText)), label).toBeLessThan(0.16);
+    expect(Math.abs(c.xSet - CURVE_W * faceFraction(c.setText)), label).toBeLessThan(0.16);
   }
   // The same noon on an ordinary day is at the same place.
   expect(dayCurve(Date.parse('2026-11-11T12:00:00-08:00'))!.xSun).toBeCloseTo(CURVE_W / 2, 6);
@@ -215,5 +215,31 @@ it('the sun sits on the curve at the current time, and the drawn day path passes
       const geo = curveGeometry(rise, set, h / 24);
       expect(geo.ySun, `${name} ${h}`).toBeCloseTo(curveY(rise, set)(h / 24), 9);
     }
+  }
+});
+
+it('the crossings are the exact sunrise and sunset instants (labels stay rounded to the minute), so line, dot and phase change together', () => {
+  const rise = at(NOV, '07:13:29');
+  const set = at(NOV, '16:33:41');
+  force.times = { rise, set };
+  try {
+    const frac = (ms: number) => (new Date(ms).getHours() * 3600 + new Date(ms).getMinutes() * 60 + new Date(ms).getSeconds()) / 86_400;
+    const before = dayCurve(rise - 1000)!;
+    const after = dayCurve(rise + 1000)!;
+    expect(before.xRise).toBeCloseTo(CURVE_W * frac(rise), 9);
+    expect(before.xSet).toBeCloseTo(CURVE_W * frac(set), 9);
+    expect(before.phase).toBe('before');
+    expect(after.phase).toBe('day');
+    expect(before.riseText).toBe('7:13 AM');
+    expect(after.setText).toBe('4:34 PM');
+    // The sun dot is on the line at the crossing, one second either side.
+    const y = curveY(frac(rise), frac(set));
+    for (const c of [before, after]) {
+      expect(c.ySun).toBeCloseTo(y(c.xSun / CURVE_W), 9);
+      expect(Math.abs(c.ySun - CURVE_BASE)).toBeLessThan(0.05);
+      expect(Math.abs(c.xSun - c.xRise)).toBeLessThan(0.01);
+    }
+  } finally {
+    force.times = null;
   }
 });

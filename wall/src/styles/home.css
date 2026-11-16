@@ -1193,8 +1193,16 @@
   color: var(--dim);
   white-space: nowrap;
   cursor: default;
+  max-width: 100%;
+}
+/* One over-long name ends in an ellipsis inside its own item (its card carries the full name). */
+.house-room-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .house-room i {
+  flex: none;
   width: 9px;
   height: 9px;
   border-radius: 50%;

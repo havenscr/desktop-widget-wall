@@ -67,6 +67,9 @@ function measureLeftThird() {
     glyphTone: (document.querySelector('.home .outside .lw-glyph')?.className ?? '').replace('lw-glyph', '').trim(),
     glyphIcon: (document.querySelector('.home .outside .lw-glyph svg')?.getAttribute('class') ?? '').replace('tabler-icon ', ''),
     more: !!document.querySelector('.home .house-room.more'),
+    moreN: Number(/^\+(\d+) more$/.exec((document.querySelector('.home .house-room.more')?.textContent ?? '').trim())?.[1] ?? 0),
+    // Room names cut by an ellipsis (a name wider than its own item): none is expected with these room names.
+    cutNames: [...document.querySelectorAll('.home .house-room-name')].filter((e) => e.scrollWidth > e.clientWidth + 1).map((e) => e.textContent),
     dotCount: [...document.querySelectorAll('.home .house-room:not(.more)')].filter((e) => getComputedStyle(e).display !== 'none').length,
     asOfShown: (() => { const a = document.querySelector('.home .house-asof'); return !!a && getComputedStyle(a).visibility !== 'hidden'; })(),
     // Inside each row (and the dots row) the children, left to right: none may overlap the next.
@@ -126,6 +129,11 @@ function ruleLeftThird(variantEntry, results, emit) {
     }
     // "+N more" only when both lines are full: another dot would not have fitted after the last one on the second line.
     if (m.more && tops.length < 2) fails.push('left third: "+N more" shows with the second line empty');
+    // The count is the true remainder: dots shown plus N is every room of the page's list (the variant's `rooms=` knob), and no dot is clipped.
+    const total = /[?&]rooms=(\d+)/.exec(variantEntry.q ?? '')?.[1];
+    if (total !== undefined && m.dotCount + m.moreN !== Number(total)) fails.push(`left third: ${m.dotCount} room dots plus "+${m.moreN} more" is not the ${total} rooms of the list`);
+    if (m.more && m.moreN < 1) fails.push('left third: the "+N more" chip does not give a count');
+    if (m.cutNames.length) fails.push(`left third: room name(s) clipped by an ellipsis (${m.cutNames.join(', ')})`);
   }
   // Nothing overlaps the clock, the date, or the card to its right.
   const centre = m.centre;
@@ -234,6 +242,8 @@ export default {
       'left-run': { css: '.lw-text { font-size: 34px !important; }', expect: /^ *FAIL left third: lw-side leaves its row/m, appliesTo: only(VARIANT_HOUSE) },
       // Dots lost to make room for "as of": two of the four rooms vanish.
       'left-dots': { css: '.house-rooms .house-room:nth-child(n+3):not(.more) { display: none !important; }', expect: /^ *FAIL left third: not live with four rooms shows/m, appliesTo: only(VARIANT_STALE) },
+      // The count off by one (a dot hidden with no count): the sum of dots and "+N more" no longer equals the rooms.
+      'left-more-sum': { css: '.house-rooms .house-room:nth-child(2):not(.more) { display: none !important; }', expect: /^ *FAIL left third: \d+ room dots plus "\+\d+ more" is not the 12 rooms/m, appliesTo: only(VARIANT_TWELVE) },
       // A room dot pushed out of its box: the row narrowed so twelve rooms need a third line, with the box no longer clipping it.
       'left-room-box': { css: '.house-rooms { width: 200px !important; max-height: none !important; overflow: visible !important; }', expect: /^ *FAIL left third: the room dots take \d+ lines|^ *FAIL left third: \d+ room dot\(s\) leave their box/m, appliesTo: only(VARIANT_TWELVE) },
       'left-text': { css: '.lw-label, .lw-side { font-size: 12px !important; }', expect: /^ *FAIL left third: text under 16 px in /m, appliesTo: only(VARIANT_HOUSE) },

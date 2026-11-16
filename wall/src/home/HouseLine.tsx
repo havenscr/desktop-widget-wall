@@ -1,5 +1,5 @@
 import { IconHome } from '@tabler/icons-react';
-import { useLayoutEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { tip } from '../ui/HoverTip';
 import { useRemeasure } from '../ui/useRemeasure';
 import { HOUSE_REFRESH_MS, maxAge, useDeskHouse, type DeskRooms, type FeedState, type House } from './useDesk';
@@ -121,8 +121,10 @@ export function HouseLine() {
   const asOfKey = v?.asOf ?? '';
   const roomKey = v ? v.rooms.map((r) => r.name).join('|') : '';
   // Dots the real lines could not hold (the width estimates ran short): taken off one at a time until the row is not clipped.
-  const [trim, setTrim] = useState({ key: '', n: 0 });
+  // `epoch` counts the times the measure starts again from zero (late font, new width, new names).
+  const [trim, setTrim] = useState({ key: '', n: 0, epoch: 0 });
   const drop = trim.key === roomKey ? trim.n : 0;
+  const roomCount = v ? v.rooms.length : 0;
   const measureAsOf = () => {
     const row = rowRef.current;
     const label = row?.querySelector<HTMLElement>('.house-asof');
@@ -132,17 +134,29 @@ export function HouseLine() {
     const end = last ? last.offsetLeft + last.offsetWidth : 0;
     setAsOfFits(end + ASOF_GAP_PX + label.offsetWidth <= row.clientWidth);
   };
+  /** The row does not hold what it draws: a third line, or something wider than the row. */
+  const clipped = (row: HTMLElement) => row.scrollHeight > row.clientHeight + 1 || row.scrollWidth > row.clientWidth + 1;
   const trimToFit = () => {
     const row = rowRef.current;
-    if (row && row.scrollHeight > row.clientHeight + 1 && drop < 24) setTrim({ key: roomKey, n: drop + 1 });
+    // One more dot off per pass, never more than there are rooms, so the loop ends and cannot swing between two states.
+    if (row && clipped(row) && drop < roomCount) setTrim({ key: roomKey, n: drop + 1, epoch: trim.epoch });
   };
-  useLayoutEffect(trimToFit, [roomKey, drop, asOfKey]);
-  useLayoutEffect(measureAsOf, [asOfKey, roomKey, drop]);
-  // Measured again when the row changes width or the display font arrives after the first paint.
+  // Measured from zero again: nothing learned under an old font, width or list is kept.
+  const restart = () => setTrim((t) => ({ key: roomKey, n: 0, epoch: t.epoch + 1 }));
+  useLayoutEffect(trimToFit, [roomKey, drop, asOfKey, trim.epoch]);
+  useLayoutEffect(measureAsOf, [asOfKey, roomKey, drop, trim.epoch]);
+  // The display font arrives after the first paint, or the row changes width: start over.
   useRemeasure(rowRef, () => {
-    trimToFit();
+    restart();
     measureAsOf();
   }, v !== null);
+  useEffect(() => {
+    const fonts = typeof document !== 'undefined' ? document.fonts : undefined;
+    if (!fonts?.addEventListener) return;
+    const again = () => restart();
+    fonts.addEventListener('loadingdone', again);
+    return () => fonts.removeEventListener('loadingdone', again);
+  });
   if (!v) return null;
   const { shown, hidden } = fitRooms(v.rooms, ROOMS_ROW_PX, drop);
   const asOf = v.asOf ? `, ${v.asOf}` : '';
@@ -161,7 +175,7 @@ export function HouseLine() {
           {shown.map((r) => (
             <span key={r.id} className={r.on ? 'house-room on' : 'house-room'} {...tip(`${r.name}: ${r.on ? 'lights on' : 'lights off'}${asOf}`)}>
               <i aria-hidden="true" />
-              {r.name}
+              <span className="house-room-name">{r.name}</span>
             </span>
           ))}
           {hidden.length > 0 && (
