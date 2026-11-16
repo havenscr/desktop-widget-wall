@@ -595,6 +595,13 @@
 .shelf-week.acct .bar {
   width: 96px;
 }
+/* An old reading (no chat has run on the account lately): the bar and number in the label colour. */
+.shelf-week.old .bar > i {
+  background: var(--dim);
+}
+.shelf-week.old b {
+  color: var(--dim);
+}
 .shelf-week.t-amber .bar > i {
   background: var(--amber);
 }

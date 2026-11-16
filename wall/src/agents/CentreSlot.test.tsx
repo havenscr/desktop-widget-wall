@@ -432,6 +432,58 @@ it('shows one usage meter per subscription, the fullest above 90 in amber', asyn
   expect(meters.map((m) => m.className.includes('t-amber'))).toEqual([false, true, false]);
 });
 
+it('draws an old and a reset reading dimmer with a tip that says so, and n/a only without a reading', async () => {
+  const asOf = new Date(Date.now() - 20 * 3_600_000).toISOString();
+  answer = () =>
+    summary({
+      usage: {
+        claudeWeekPct: null,
+        claude5hPct: null,
+        weekResetsAt: null,
+        accounts: [
+          { provider: 'claude', label: 'Claude 1', weekPct: 90, fiveHourPct: null, weekResetsAt: null, weekAsOf: asOf, weekOld: true },
+          { provider: 'claude', label: 'Claude 2', weekPct: 0, fiveHourPct: null, weekResetsAt: null, weekAsOf: asOf, weekOld: true, weekReset: true },
+          { provider: 'codex', label: 'Codex', weekPct: null, fiveHourPct: null, weekResetsAt: null },
+        ],
+      },
+    });
+  const r = render(<CentreSlot weather={weather} />);
+  await flush();
+  const meters = [...r.container.querySelectorAll('.shelf-week')];
+  expect(meters.map((m) => m.textContent)).toEqual(['Claude 190%', 'Claude 20%', 'Codexn/a']);
+  expect(meters.map((m) => m.className.includes('old'))).toEqual([true, true, false]);
+  expect(meters[0].getAttribute('aria-label')).toContain('90% of the week used, as of ');
+  expect(meters[0].getAttribute('aria-label')).toContain('No chat has run on this account since.');
+  expect(meters[1].getAttribute('aria-label')).toContain('0% used since the week reset on ');
+  expect(meters[2].getAttribute('aria-label')).toBe('Codex: No reading yet.');
+});
+
+it('an old real 0%, an unknown age and an old reading over the warn line are worded and drawn right', async () => {
+  const asOf = new Date(Date.now() - 20 * 3_600_000).toISOString();
+  answer = () =>
+    summary({
+      usage: {
+        claudeWeekPct: null,
+        claude5hPct: null,
+        weekResetsAt: null,
+        accounts: [
+          { provider: 'claude', label: 'Claude 1', weekPct: 0, fiveHourPct: null, weekResetsAt: null, weekAsOf: asOf, weekOld: true, weekReset: false },
+          { provider: 'claude', label: 'Claude 2', weekPct: 75, fiveHourPct: null, weekResetsAt: null, weekAsOf: null, weekOld: true },
+          { provider: 'codex', label: 'Codex', weekPct: 96, fiveHourPct: null, weekResetsAt: null, weekAsOf: asOf, weekOld: true },
+        ],
+      },
+    });
+  const r = render(<CentreSlot weather={weather} />);
+  await flush();
+  const meters = [...r.container.querySelectorAll('.shelf-week')];
+  expect(meters.map((m) => m.className.includes('old'))).toEqual([true, true, true]);
+  expect(meters[0].getAttribute('aria-label')).toContain('0% of the week used, as of ');
+  expect(meters[0].getAttribute('aria-label')).not.toContain('since the week reset');
+  expect(meters[1].getAttribute('aria-label')).toBe('Claude 2: 75% of the week used. When it was read is not known.');
+  // The warn rule is unchanged: the fullest figure above 90 is amber even though its reading is old.
+  expect(meters.map((m) => m.className.includes('t-amber'))).toEqual([false, false, true]);
+});
+
 it('a failed session says so in red', async () => {
   answer = () => summary({ sessionsList: [lane({ failed: true, line: 'Two tests failed' })] });
   const r = render(<CentreSlot weather={weather} />);

@@ -6,7 +6,8 @@ import { focusSession } from './open';
  * Under the cards (concept `.shelf`): how many sessions are parked (hover says what that
  * means, a click brings OmniGent forward), and usage: one small meter per subscription from a newer helper (the week's
  * percent, the five hour figure inline when there is room, the reset time on hover; the
- * fullest turns amber above 90), or Claude's week as one bar from an older one, with the
+ * fullest turns amber above 90; a reading from an account no chat has run on lately is drawn dimmer and
+ * its hover says when it was read), or Claude's week as one bar from an older one, with the
  * five hour figure when the helper has one. The mail count waits for the mail scope (D7).
  */
 export function Shelf({ summary, stale = false }: { summary: OmniSummary; stale?: boolean }) {
@@ -41,7 +42,7 @@ export function Shelf({ summary, stale = false }: { summary: OmniSummary; stale?
         </span>
       )}
       {meters.map((m) => (
-        <span key={m.label} className={`shelf-week${m.warn ? ' t-amber' : ''}${perAccount ? ' acct' : ''}`} {...tip(stale ? `${usageTip(m)} (may be out of date)` : usageTip(m))} aria-label={usageTip(m)}>
+        <span key={m.label} className={`shelf-week${m.warn ? ' t-amber' : ''}${m.old ? ' old' : ''}${perAccount ? ' acct' : ''}`} {...tip(stale ? `${usageTip(m)} (may be out of date)` : usageTip(m))} aria-label={usageTip(m)}>
           <span>{m.label}</span>
           <i className="bar" aria-hidden="true">
             <i style={{ width: `${Math.round(m.pct ?? 0)}%` }} />
