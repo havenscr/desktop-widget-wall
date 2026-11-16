@@ -19,6 +19,8 @@ const MARKERS = [
   /["'`](lheight|lcol|lrest|lrefl|ltab|linecost|wday)["'`]/,
   // The weather review knobs (the scene layer's frozen moment and skip boxes, Watt's forced weather frame) are development only.
   /["'`](wxt|wxnoskip|wattwx)["'`]/,
+  // The new On Air frame (development only, behind ?onair=v2): its reason lines are strings only its JS holds. A later pull request removes this marker when the frame ships.
+  /a recorder is running|Held by hand/,
   /signedout|get\(["']agents["']\)|has\(["']long["']\)|get\(["']clock["']\)|get\(["']screen["']\)|get\(["']audio["']\)|get\(["']hz["']\)/,
 ];
 const files = (dir) => readdirSync(dir).flatMap((f) => (statSync(join(dir, f)).isDirectory() ? files(join(dir, f)) : [join(dir, f)]));

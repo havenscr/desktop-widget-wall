@@ -1,11 +1,13 @@
-import { useEffect, useState } from 'react';
 import { NotesCard } from './NotesCard';
 import { RightColumn } from './RightColumn';
 import { RunOfShow } from './RunOfShow';
-import { useOnAirStore } from './store';
 import { TimerBlock } from './TimerBlock';
-import { localDate, untilMidnight } from './model';
-import { useAwake, useNow } from './useNow';
+import { OnAir2 } from './v2/OnAir2';
+import { useOnAirLoad } from './useOnAirLoad';
+import { useNow } from './useNow';
+
+/** The new frame is reachable only in development, with `?onair=v2`. Vite turns `import.meta.env.DEV` into false in a production build, so the new frame and everything only it imports drop out of the bundle. */
+const V2 = import.meta.env.DEV && new URLSearchParams(window.location.search).get('onair') === 'v2';
 
 /**
  * On Air, first version: a show timer started and stopped by hand, the run of show from
@@ -14,30 +16,9 @@ import { useAwake, useNow } from './useNow';
  * the place opens and on Reload, never more often than every five seconds.
  */
 export function OnAir() {
+  if (V2) return <OnAir2 />;
   const now = useNow();
-  const awake = useAwake();
-  const [day, setDay] = useState(() => localDate(Date.now()));
-  useEffect(() => {
-    const s = useOnAirStore.getState();
-    s.hydrate();
-    void s.loadShow();
-    // Closing the place drops a read of the run of show that Open file was waiting to make.
-    return () => useOnAirStore.getState().cancelPending();
-  }, []);
-  // The timer stops itself at 24 hours.
-  useEffect(() => {
-    useOnAirStore.getState().settle();
-  }, [now]);
-  // Today's marks: read when the place opens, and again after local midnight (one timer to the next
-  // midnight; nothing while the page is hidden, and a read on coming back if the date moved on).
-  useEffect(() => {
-    if (!awake) return;
-    const s = useOnAirStore.getState();
-    if (s.marksDate !== localDate(Date.now())) void s.loadMarks();
-    // The timer only moves the day on: this effect runs again for the new day and reads once, as it does on opening.
-    const id = setTimeout(() => setDay(localDate(Date.now())), untilMidnight(Date.now()) + 50);
-    return () => clearTimeout(id);
-  }, [awake, day]);
+  useOnAirLoad(now);
   return (
     <section className="onair" data-place="onair" aria-label="On air">
       <div className="oa-left">

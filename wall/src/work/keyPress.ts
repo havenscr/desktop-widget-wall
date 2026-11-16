@@ -24,13 +24,15 @@ export type Call = { command: 'wall2_keys_send'; args: { setId: string; index: n
  * through the control that already does it. One press is one action (double click, key repeat
  * and a second click while one runs are ignored). Every result is one short line.
  */
-export function useKeyPress(show: (text: string) => void, refresh: () => void) {
+export function useKeyPress(show: (text: string) => void, refresh: () => void, sent?: (id: string) => void) {
   const guard = useGuard();
   const press = useCallback(
     (id: string, detail: number, call: Call, label: string, action: string | null, where: Where, hold: boolean) =>
       guard.run(id, detail, async () => {
         try {
           const answer = await invoke<string | null>(call.command, call.args);
+          // Rust took the press without an error: the new On Air frame's Pause key learns of it here.
+          sent?.(id);
           if (typeof answer === 'string') show(await runWallAction(answer));
           else if (action && RUST_DONE[action]) {
             show(RUST_DONE[action]);
@@ -44,7 +46,7 @@ export function useKeyPress(show: (text: string) => void, refresh: () => void) {
           refresh();
         }
       }),
-    [guard, show, refresh],
+    [guard, show, refresh, sent],
   );
   /** Key handler for a tile: held keys never repeat, and a mouse-only key ignores Space and Enter. */
   const onKeyDown = (action: string | null) => (e: KeyboardEvent) => {

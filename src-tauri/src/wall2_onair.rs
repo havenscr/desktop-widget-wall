@@ -199,11 +199,14 @@ pub(crate) fn show_from(bytes: Option<&[u8]>, len: u64, read_at: u64) -> Show {
 // Section: marks (pure)
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct MarkResult {
     /// Marks dated today (local time) in the end of the file that was read.
     pub today: u32,
     /// The show times of today's last marks, oldest first, at most three.
     pub last: Vec<String>,
+    /// The part of each of those same marks, in the same order, cut to 60 characters; empty when the mark had none.
+    pub last_parts: Vec<String>,
 }
 
 /// Refuses a show time past a day and a part name past 60 characters.
@@ -269,19 +272,33 @@ pub(crate) fn too_soon(last_ms: Option<u64>, now_ms: u64) -> bool {
 /// Today's marks in the end of the file. `partial_first` drops the first line (the read began
 /// inside it). `today` is the local date `YYYY-MM-DD`.
 pub(crate) fn marks_today(tail: &str, partial_first: bool, today: &str) -> MarkResult {
-    let mut times: Vec<&str> = Vec::new();
+    let mut times: Vec<(&str, &str)> = Vec::new();
     for (i, line) in tail.split('\n').enumerate() {
         if i == 0 && partial_first {
             continue;
         }
         let mut fields = line.trim_end_matches('\r').split('\t');
         let (Some(when), Some(show)) = (fields.next(), fields.next()) else { continue };
+        let part = fields.next().unwrap_or("");
         if when.len() >= 10 && when.get(..10) == Some(today) && when.as_bytes().get(10) == Some(&b'T') {
-            times.push(show);
+            times.push((show, part));
         }
     }
     let from = times.len().saturating_sub(LAST_SHOWN);
-    MarkResult { today: times.len() as u32, last: times[from..].iter().map(|s| short_show_time(s)).collect() }
+    MarkResult {
+        today: times.len() as u32,
+        last: times[from..].iter().map(|(s, _)| short_show_time(s)).collect(),
+        last_parts: times[from..].iter().map(|(_, p)| part_text(p)).collect(),
+    }
+}
+
+/// A mark's part as the page shows it: cut to `MARK_PART_MAX` characters, and the `-` that stands for no part is empty.
+pub(crate) fn part_text(part: &str) -> String {
+    let part = part.trim();
+    if part == "-" {
+        return String::new();
+    }
+    cut(part, MARK_PART_MAX)
 }
 
 /// A show time as the tile shows it: `mm:ss` under an hour, `h:mm:ss` from an hour.
@@ -642,7 +659,41 @@ garbage line\n\
         assert_eq!(r.last, vec!["09:40".to_string(), "1:02:03".to_string(), "1:03:00".to_string()]);
         let r = marks_today("2026-11-13T09:45:00-08:00\t00:03:12\tA\n", false, "2026-11-13");
         assert_eq!((r.today, r.last), (1, vec!["03:12".to_string()]));
-        assert_eq!(marks_today("", false, "2026-11-13"), MarkResult { today: 0, last: vec![] });
+        assert_eq!(marks_today("", false, "2026-11-13"), MarkResult { today: 0, last: vec![], last_parts: vec![] });
+    }
+
+    #[test]
+    fn the_parts_of_the_last_marks_come_in_order() {
+        let tail = "2026-11-13T09:45:00-08:00\t00:03:12\tLoad the data\n\
+2026-11-13T09:52:00-08:00\t00:09:40\tShape the columns\n\
+2026-11-13T10:30:00-08:00\t01:02:03\tEnd on the chart\n";
+        let r = marks_today(tail, false, "2026-11-13");
+        assert_eq!(r.last.len(), 3);
+        assert_eq!(r.last_parts, vec!["Load the data".to_string(), "Shape the columns".to_string(), "End on the chart".to_string()]);
+    }
+
+    #[test]
+    fn a_dash_part_is_empty_and_a_missing_part_is_empty() {
+        let tail = "2026-11-13T09:45:00-08:00\t00:03:12\t-\n2026-11-13T09:52:00-08:00\t00:09:40\n";
+        let r = marks_today(tail, false, "2026-11-13");
+        assert_eq!(r.today, 2);
+        assert_eq!(r.last_parts, vec![String::new(), String::new()]);
+    }
+
+    #[test]
+    fn a_long_part_is_cut_to_sixty_characters() {
+        let long = "p".repeat(70);
+        let tail = format!("2026-11-13T09:45:00-08:00\t00:03:12\t{long}\n");
+        let r = marks_today(&tail, false, "2026-11-13");
+        assert_eq!(r.last_parts[0].chars().count(), MARK_PART_MAX);
+        assert!(r.last_parts[0].ends_with('\u{2026}'));
+    }
+
+    #[test]
+    fn the_answer_names_the_parts_in_camel_case() {
+        let r = MarkResult { today: 1, last: vec!["00:05".to_string()], last_parts: vec!["A".to_string()] };
+        let json = serde_json::to_string(&r).unwrap();
+        assert!(json.contains("\"lastParts\":[\"A\"]"), "{json}");
     }
 
     #[test]
