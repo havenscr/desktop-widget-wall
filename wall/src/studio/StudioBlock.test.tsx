@@ -4,6 +4,7 @@ import { mocks } from '../bridge/tauri';
 import { resetTools, useToolsStore } from '../tools/store';
 import { HoverTipLayer, resetTip } from '../ui/HoverTip';
 import { StudioBlock } from './StudioBlock';
+import { resetHome } from './homeStore';
 import { resetKeyLights, useKeyLights } from './store';
 
 vi.setConfig({ testTimeout: 20_000 });
@@ -28,6 +29,10 @@ beforeEach(() => {
   vi.useFakeTimers();
   vi.setSystemTime(Date.parse('2026-11-14T10:00:00-08:00'));
   resetKeyLights();
+  resetHome();
+  mocks.set('wall2_studio', () => {
+    throw 'absent';
+  });
   resetTools();
   resetTip();
   sent = [];
@@ -65,7 +70,7 @@ const show = async () => {
   await flush();
   return view;
 };
-const QUIET = 'Presets and room lights come with a later home app change.';
+const QUIET = 'Presets and room lights: the home app does not offer them here yet.';
 
 it('day one: no address saved says where to type them, opens Tools there, and draws no Fine tune', async () => {
   left = unset();
@@ -139,7 +144,7 @@ it('neither answers: a dashed tile that is not a switch, Check again reads again
   expect(container.querySelector('[class*="spin"], [class*="pulse"]')).toBeNull();
   left = good();
   right = good();
-  fireEvent.click(screen.getByText('Check again'));
+  fireEvent.click(screen.getAllByText('Check again')[0]);
   await flush();
   expect(screen.getByText('Key lights 60%, 4400 K')).toBeTruthy();
 });
@@ -216,7 +221,7 @@ it('only one light set up and it does not answer: the block names that light', a
   // The tile says it too, once, and Check again is there.
   expect(screen.getAllByText('The left key light is not answering')).toHaveLength(1);
   expect(screen.queryByText('Neither light answered', { exact: false })).toBeNull();
-  expect(screen.getByText('Check again')).toBeTruthy();
+  expect(screen.getAllByText('Check again')[0]).toBeTruthy();
 });
 
 it('a write the lights answered with "busy" shows no line on the block', async () => {

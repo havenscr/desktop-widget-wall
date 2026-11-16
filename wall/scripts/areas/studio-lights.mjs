@@ -103,8 +103,8 @@ export default {
   name: 'studio-lights',
   gallery: {
     states: [
-      state('onair', 'studio lights: not set up (day one)', onAirGallery('keys2=none'), ['Studio lights', 'Office only', 'Key lights: type their addresses in Tools', 'Open Tools', 'Presets and room lights come with a later home app change.', '!Fine tune']),
-      state('onair', 'studio lights: key lights on, matched', onAirGallery('keys2=both'), ['Key lights 60%, 4400 K', 'Fine tune', 'Presets and room lights come with a later home app change.']),
+      state('onair', 'studio lights: not set up (day one)', onAirGallery('keys2=none'), ['Studio lights', 'Office only', 'Key lights: type their addresses in Tools', 'Open Tools', 'Presets and room lights: the home app does not offer them here yet.', '!Fine tune']),
+      state('onair', 'studio lights: key lights on, matched', onAirGallery('keys2=both'), ['Key lights 60%, 4400 K', 'Fine tune', 'Presets and room lights: the home app does not offer them here yet.']),
       state('onair', 'studio lights: key lights off', onAirGallery('keys2=off'), ['Key lights are off', 'Fine tune']),
       state('onair', 'studio lights: lights differ', onAirGallery('keys2=mismatch'), ['Left 60%, 4400 K. Right 45%, 4700 K', 'Fine tune']),
       state('onair', 'studio lights: left light silent', onAirGallery('keys2=left-silent'), ['The left key light is not answering. The other one works.', 'Fine tune']),
