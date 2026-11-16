@@ -247,7 +247,7 @@ describe('Add to a playlist', () => {
     expect(add).toBeTruthy();
     const open = screen.getByRole('button', { name: 'Open in YouTube' });
     expect(open.className).toContain('rd');
-    expect(open.textContent).toBe('');
+    expect(open.querySelector('.w-vh')!.textContent).toBe('Open in YouTube');
     expect(open.querySelector('svg')).not.toBeNull();
     expect(add.previousElementSibling).toBe(open);
   });
@@ -260,7 +260,7 @@ describe('Add to a playlist', () => {
       act(() => w().play({ kind, id }));
       await flush();
       expect(screen.queryByRole('button', { name: 'Add to a playlist' })).toBeNull();
-      expect(screen.getByRole('button', { name: words }).textContent).toBe('');
+      expect(screen.getByRole('button', { name: words }).querySelector('svg')).not.toBeNull();
     }
   });
 

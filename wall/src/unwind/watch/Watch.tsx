@@ -262,6 +262,8 @@ function Controls({ item, openFailed, setOpenFailed }: { item: WatchRef & { labe
         </button>
         <button type="button" className="rd w-open" aria-label={openLabel(item.kind)} {...tip(openLabel(item.kind))} onClick={() => void open()}>
           {item.kind === 'twitch' ? <IconBrandTwitch size={20} aria-hidden="true" /> : <IconBrandYoutube size={20} aria-hidden="true" />}
+          {/* No word on screen: the page text keeps the button's name (as the checks and a text read expect). */}
+          <span className="w-vh">{openLabel(item.kind)}</span>
         </button>
         {canAdd ? <AddToPlaylistButton video={{ id: item.id, ...(reportTitle ? { title: reportTitle } : {}), ...(reportChannel ? { channel: reportChannel } : {}), ...(duration !== null && duration > 0 ? { seconds: duration } : {}) }} /> : null}
         <WatchGear />

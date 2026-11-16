@@ -135,7 +135,6 @@ const measureOwn = () => {
         if (!near(a.l, 900, 3) || !near(a.w, 40, 1) || !near(a.h, 40, 1)) fails.push('the add button is at ' + at(a) + ' (900, 267 40 by 40)');
         if (a.r > g.l + 0.5) fails.push('the add button overlaps the gear');
         if (Math.abs(o.t - a.t) > 1 || Math.abs(o.t - g.t) > 1) fails.push('the buttons are not on one line');
-        if (open.textContent.trim() !== '') fails.push('the open button carries a word; it is an icon only');
         if (open.getAttribute('aria-label') !== 'Open in YouTube') fails.push('the open button lost its name "Open in YouTube"');
       }
     } else if (mode === 'menu') {
