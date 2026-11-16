@@ -48,7 +48,7 @@ export function pickMode(i: ModeInput): ModePick {
   if (i.held) return { mode: i.held, why: HELD_WHY, seen };
   if (rec) return { mode: 'rec', why: 'a recorder is running', seen };
   if (liveNow) {
-    const why = fallback ? 'the browser uses the camera and mic' : i.live!.state === 'live' ? 'a broadcast is live' : 'a broadcast starts soon';
+    const why = fallback ? 'mic or camera in use' : i.live!.state === 'live' ? 'a broadcast is live' : 'a broadcast starts soon';
     return { mode: 'live', why, seen };
   }
   if (i.call) return { mode: 'meet', why: callWhy(i.call), seen };

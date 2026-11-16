@@ -18,7 +18,7 @@ describe('pickMode: one case on', () => {
     ['a Teams call', { call: teams }, 'meet', 'a Teams call is on', ['meet']],
     ['a Zoom call', { call: zoom }, 'meet', 'a Zoom call is on', ['meet']],
     ['a browser call', { call: browser }, 'meet', 'a browser call is on', ['meet']],
-    ['the browser camera and mic', { browserAv: true }, 'live', 'the browser uses the camera and mic', ['live']],
+    ['the browser camera and mic', { browserAv: true }, 'live', 'mic or camera in use', ['live']],
     ['a live broadcast', { live: live('live') }, 'live', 'a broadcast is live', ['live']],
     ['a broadcast 10 minutes off', { live: live('scheduled', NOW + 10 * MIN) }, 'live', 'a broadcast starts soon', ['live']],
   ] as [string, Partial<ModeInput>, string, string, string[]][])('%s', (_n, o, mode, why, seen) => {

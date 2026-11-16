@@ -21,6 +21,8 @@ const MARKERS = [
   /["'`](wxt|wxnoskip|wattwx)["'`]/,
   // The new On Air frame (development only, behind ?onair=v2): its reason lines are strings only its JS holds. A later pull request removes this marker when the frame ships.
   /a recorder is running|Held by hand/,
+  // The new frame's stores: the take store's storage key and the held mode's key must never be in a production bundle (nothing may read or write them there).
+  /wall2-onair-takes|wall2-onair-mode/,
   /signedout|get\(["']agents["']\)|has\(["']long["']\)|get\(["']clock["']\)|get\(["']screen["']\)|get\(["']audio["']\)|get\(["']hz["']\)/,
 ];
 const files = (dir) => readdirSync(dir).flatMap((f) => (statSync(join(dir, f)).isDirectory() ? files(join(dir, f)) : [join(dir, f)]));

@@ -292,9 +292,10 @@ pub(crate) fn marks_today(tail: &str, partial_first: bool, today: &str) -> MarkR
     }
 }
 
-/// A mark's part as the page shows it: cut to `MARK_PART_MAX` characters, and the `-` that stands for no part is empty.
+/// A mark's part as the page shows it: cleaned like a name read from the show file (control and direction-override characters out), cut to `MARK_PART_MAX` characters, and the `-` that stands for no part is empty.
 pub(crate) fn part_text(part: &str) -> String {
-    let part = part.trim();
+    let part = clean(part);
+    let part = part.as_str();
     if part == "-" {
         return String::new();
     }
@@ -687,6 +688,21 @@ garbage line\n\
         let r = marks_today(&tail, false, "2026-11-13");
         assert_eq!(r.last_parts[0].chars().count(), MARK_PART_MAX);
         assert!(r.last_parts[0].ends_with('\u{2026}'));
+    }
+
+    #[test]
+    fn an_older_row_part_is_cleaned_before_it_is_shown() {
+        // A control character, a separator, a tab and a direction override in a hand-edited row.
+        let tail = "2026-11-13T09:45:00-08:00\t00:03:12\tLoad\u{7}the data\n\
+2026-11-13T09:46:00-08:00\t00:04:12\tShape\u{2028}columns\n\
+2026-11-13T09:47:00-08:00\t00:05:12\t\u{202E}End chart\n";
+        let r = marks_today(tail, false, "2026-11-13");
+        assert_eq!(r.last_parts, vec!["Loadthe data".to_string(), "Shapecolumns".to_string(), "End chart".to_string()]);
+        let r = marks_today("2026-11-13T09:48:00-08:00\t00:06:12\t\u{7}-\n", false, "2026-11-13");
+        assert_eq!(r.last_parts, vec![String::new()]);
+        // A tab inside a part cannot come from a split row, but the part rule itself turns it into a space.
+        assert_eq!(part_text("Load\tthe data"), "Load the data");
+        assert_eq!(part_text("\u{202E}-"), "");
     }
 
     #[test]

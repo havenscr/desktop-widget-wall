@@ -19,6 +19,11 @@ const SPEAKER_SIZES = [36, 30, 26, 22] as const;
 
 const KIND_WORD: Record<CallKind, string> = { teams: 'Teams', zoom: 'Zoom', browser: 'Browser' };
 
+/** True until the shared calendar feed has answered once (an answer, a failure or "no calendar" all count). Nothing is said about a match before that. */
+function useFeedPending(): boolean {
+  return useMeetingFeed((s) => s.reads === 0 && s.asOf === null && !s.failed);
+}
+
 /** The meeting this call belongs to, from the shared calendar feed (empty while it is stale or failed). */
 function useCallMeeting(call: CallSignal | null): Meeting | null {
   const meetings = useMeetingFeed((s) => s.meetings);
@@ -27,7 +32,7 @@ function useCallMeeting(call: CallSignal | null): Meeting | null {
   return call ? matchMeeting(meetings, call.since, !stale && !failed) : null;
 }
 
-function TalkTimer({ now, call, meeting }: { now: number; call: CallSignal | null; meeting: Meeting | null }) {
+function TalkTimer({ now, call, meeting, pending }: { now: number; call: CallSignal | null; meeting: Meeting | null; pending: boolean }) {
   const start = call ? talkStart(meeting, call.since) : null;
   const ms = start === null ? 0 : Math.max(0, now - start);
   const time = takeClock(ms);
@@ -35,14 +40,16 @@ function TalkTimer({ now, call, meeting }: { now: number; call: CallSignal | nul
   let sub: ReactNode;
   let text: string;
   if (!call || start === null) sub = text = 'No call is on. The timer starts with the call.';
-  else if (!meeting) sub = text = `Started ${clockText(start)}, when the call began. No end time known.`;
+  else if (!meeting) sub = text = pending ? `Started ${clockText(start)}, when the call began.` : `Started ${clockText(start)}, when the call began. No end time known.`;
   else if (left === 0) sub = text = `Your calendar said it ended at ${clockText(Date.parse(meeting.end))}.`;
   else {
     const how = start === Date.parse(meeting.start) ? ' with the meeting' : ', when you joined';
-    text = `Started ${clockText(start)}${how}. ${left} min left by your calendar.`;
+    // Joined early: before the meeting's start the timer waits at 0:00 and the line says when it starts.
+    const word = now < start ? 'Starts' : 'Started';
+    text = `${word} ${clockText(start)}${how}. ${left} min left by your calendar.`;
     sub = (
       <>
-        Started {clockText(start)}
+        {word} {clockText(start)}
         {how}. <b>{left} min left</b> by your calendar.
       </>
     );
@@ -84,7 +91,7 @@ function CallChips({ call }: { call: CallSignal | null }) {
   );
 }
 
-function MeetingBlock({ now, call, meeting }: { now: number; call: CallSignal | null; meeting: Meeting | null }) {
+function MeetingBlock({ now, call, meeting, pending }: { now: number; call: CallSignal | null; meeting: Meeting | null; pending: boolean }) {
   if (!call) {
     return (
       <div className="oa2-b oa2-meeting" role="group" aria-label="Presenting">
@@ -94,6 +101,23 @@ function MeetingBlock({ now, call, meeting }: { now: number; call: CallSignal | 
           <div className="oa2-row">
             <IconCalendarEvent size={20} aria-hidden="true" />
             <span className="oa2-row-t">This page was held by hand</span>
+          </div>
+        </div>
+      </div>
+    );
+  }
+  if (!meeting && pending) {
+    // The calendar has not answered yet: only what the call itself says.
+    return (
+      <div className="oa2-b oa2-meeting" role="group" aria-label="Presenting">
+        <Head label="Presenting" />
+        <div className="oa2-title" {...tip(`A ${KIND_WORD[call.kind]} call is on`)}>
+          A {KIND_WORD[call.kind]} call is on
+        </div>
+        <div className="oa2-rows">
+          <div className="oa2-row ok">
+            <IconCircleCheck size={20} aria-hidden="true" />
+            <span className="oa2-row-t">On since {clockText(call.since)}</span>
           </div>
         </div>
       </div>
@@ -180,7 +204,7 @@ function CallKeys({ now, call, start }: { now: number; call: CallSignal | null; 
       </TileRow>
       {keys.groups !== null && (
         <TileRow keys={keys} cols={3}>
-          <MarkTile mark={mark} showMs={talkMs} marking={marking} />
+          <MarkTile mark={mark} showMs={start === null ? undefined : talkMs} marking={marking} />
           <LibTile keys={keys} spec={{ id: 'snip' }} />
           <LibTile keys={keys} spec={{ id: 'strip-dark' }} />
         </TileRow>
@@ -201,12 +225,13 @@ export function PresentingPage({ now }: { now: number }) {
   nowRef.current = now;
   useNextMeeting(useCallback(() => nowRef.current, []));
   const meeting = useCallMeeting(call);
+  const pending = useFeedPending();
   const start = call ? talkStart(meeting, call.since) : null;
   return (
     <>
-      <TalkTimer now={now} call={call} meeting={meeting} />
+      <TalkTimer now={now} call={call} meeting={meeting} pending={pending} />
       <CallChips call={call} />
-      <MeetingBlock now={now} call={call} meeting={meeting} />
+      <MeetingBlock now={now} call={call} meeting={meeting} pending={pending} />
       <NotesCard title="Speaker notes" right="the call's chat cannot be read by the wall" sizes={SPEAKER_SIZES} icon={<IconNotes size={20} aria-hidden="true" />} className="oa2-speaker" />
       <CallKeys now={now} call={call} start={start} />
       {/* The prompter's box (wall 1920, 230, 620 by 104) is kept empty until the prompter's own pull request. */}

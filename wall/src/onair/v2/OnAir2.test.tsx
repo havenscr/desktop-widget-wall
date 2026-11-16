@@ -160,7 +160,7 @@ it('shows Live for the browser camera and mic with an empty body', async () => {
   signals({ browserAv: true });
   await open();
   expect(lit()).toEqual(['Live']);
-  expect(document.querySelector('.oa2-why')?.textContent).toBe('the browser uses the camera and mic');
+  expect(document.querySelector('.oa2-why')?.textContent).toBe('mic or camera in use');
   expect(document.querySelectorAll('.oa2 > .oa2-b').length).toBe(1);
 });
 
@@ -456,4 +456,73 @@ it('the empty prompter boxes hold their place and nothing else, on both pages', 
   box = document.querySelector('.oa2-empty-prompter') as HTMLElement;
   expect(box.children.length).toBe(0);
   expect(box.textContent).toBe('');
+});
+
+it('Presenting before the calendar has answered: the plain call words only, nothing about a match', async () => {
+  useMeetingFeed.setState({ meetings: [], feedStale: false, failed: false, asOf: null, reads: 0 });
+  // The first read never answers.
+  mocks.set('wall2_meet_next', () => new Promise(() => {}));
+  signals({ call: call('zoom', -12) });
+  await open();
+  expect(await screen.findByText('A Zoom call is on')).toBeTruthy();
+  expect(screen.getByText(/^On since /)).toBeTruthy();
+  expect(screen.queryByText('No meeting on your calendar matches it')).toBeNull();
+  expect(screen.queryByText('no calendar match')).toBeNull();
+  expect(screen.queryByText(/Time left: not known/)).toBeNull();
+  expect(document.querySelector('.oa2-sub')?.textContent).toMatch(/^Started \d+:\d+ [AP]M, when the call began\.$/);
+});
+
+it('Presenting, joined before the meeting starts: "Starts", with the timer waiting at 0:00', async () => {
+  meetings = [meeting({ start: at(3), end: at(33) })];
+  useMeetingFeed.setState({ meetings });
+  signals({ call: call('teams', 0) });
+  await open();
+  await screen.findByText('Community talk: November');
+  expect(document.querySelector('.oa2-sub')?.textContent).toMatch(/^Starts \d+:\d+ [AP]M with the meeting\. 33 min left by your calendar\.$/);
+  expect(screen.getByRole('timer').textContent).toBe('00:00');
+});
+
+it('Takes today after midnight: the page shows today, not the count the store still holds for yesterday', async () => {
+  localStorage.setItem(MODE_STORAGE_KEY, JSON.stringify({ held: 'rec' }));
+  await open();
+  await screen.findByText('Load the data');
+  act(() => useTakes.setState({ takes: { day: '2000-01-01', count: 3, longestMs: 400_000, current: null } }));
+  expect(screen.getByText('No takes yet today.')).toBeTruthy();
+  expect(screen.queryByText(/Takes today: 3/)).toBeNull();
+});
+
+it('Mark a moment with no take running writes what today\'s On Air writes for an idle timer, never a made up time', async () => {
+  localStorage.setItem(MODE_STORAGE_KEY, JSON.stringify({ held: 'rec' }));
+  await open();
+  await screen.findByRole('button', { name: 'Mark a moment' });
+  // The show timer is stopped at 5 seconds: the old page's Mark would write that.
+  act(() => useOnAirStore.setState({ saved: { ...IDLE, accumulatedMs: 5_000 } }));
+  fireEvent.click(tile('Mark a moment'), { detail: 1 });
+  await flush();
+  const marked = sent.filter((s) => (s as { mark?: unknown }).mark) as { mark: { showMs: number } }[];
+  expect(marked.map((m) => m.mark.showMs)).toEqual([5_000]);
+});
+
+it('Mark a moment on Presenting with no call writes the same, not a talk time of 0', async () => {
+  localStorage.setItem(MODE_STORAGE_KEY, JSON.stringify({ held: 'meet' }));
+  await open();
+  await screen.findByRole('button', { name: 'Mark a moment' });
+  act(() => useOnAirStore.setState({ saved: { ...IDLE, accumulatedMs: 7_000 } }));
+  fireEvent.click(tile('Mark a moment'), { detail: 1 });
+  await flush();
+  const marked = sent.filter((s) => (s as { mark?: unknown }).mark) as { mark: { showMs: number } }[];
+  expect(marked.map((m) => m.mark.showMs)).toEqual([7_000]);
+});
+
+it('the frame starts the take store when it mounts and stops it on unmount', async () => {
+  signals({ recording: true });
+  const { unmount } = await open();
+  await screen.findByRole('button', { name: 'Pause' });
+  expect(useTakes.getState().takes.count).toBe(1);
+  expect(document.querySelector('.oa2-sub')?.textContent).toMatch(/^Take 1\./);
+  unmount();
+  act(() => useSignalStore.setState({ recording: false }));
+  act(() => useSignalStore.setState({ recording: true }));
+  // Stopped: the second start is not followed.
+  expect(useTakes.getState().takes.count).toBe(1);
 });

@@ -3,15 +3,19 @@
  * count and longest. Pure rules; the store (`takes.ts`) feeds them events and keeps the result. No clock
  * is read here: every event carries `now`.
  */
+import { RECORDING_GAP_MS } from '../signals/RecordingChip';
 import { localDate } from './model';
 
-/** A recorder that comes back within this long of going off is the same take (one missed poll). Same number as the recording chip's gap. */
-export const TAKE_GAP_MS = 10_000;
-
-/** The takes as they were before the recorder went off, when it comes back within the gap: the same take goes on. */
+/**
+ * The takes as they were before the recorder went off, when it comes back within the recording chip's gap
+ * (one missed poll): the same take goes on. Recording off clears a pause, so a pause that was open counts
+ * up to the moment the recorder went off.
+ */
 export function backAfterGap(before: Takes, offAt: number, now: number): Takes | null {
-  if (!before.current || now - offAt > TAKE_GAP_MS || now < offAt) return null;
-  return { ...before, current: { ...before.current, seenAt: now } };
+  const c = before.current;
+  if (!c || now - offAt > RECORDING_GAP_MS || now < offAt) return null;
+  const pausedMs = c.pausedAt !== null ? c.pausedMs + Math.max(0, offAt - c.pausedAt) : c.pausedMs;
+  return { ...before, current: { ...c, pausedAt: null, pausedMs, seenAt: now } };
 }
 /** A take found in storage on start-up goes on only when the wall saw the recorder this recently. */
 export const TAKE_RESUME_MS = 60_000;
@@ -61,7 +65,7 @@ export function parseTakes(raw: string | null, now: number): Takes {
     if (v.current !== null && v.current !== undefined) {
       const c = v.current as Record<string, unknown>;
       if (typeof c !== 'object' || !num(c.startedAt) || !num(c.pausedMs) || !num(c.seenAt) || (c.pausedAt !== null && !num(c.pausedAt))) return emptyDay(now);
-      if (c.startedAt > now + 60_000 || c.seenAt < c.startedAt || c.seenAt > now + 60_000 || (c.pausedAt !== null && ((c.pausedAt as number) < c.startedAt || (c.pausedAt as number) > c.seenAt + 1))) return emptyDay(now);
+      if (c.startedAt > now + 60_000 || c.seenAt < c.startedAt || c.seenAt > now + 60_000 || (c.pausedAt !== null && ((c.pausedAt as number) < c.startedAt || (c.pausedAt as number) > now + 60_000))) return emptyDay(now);
       current = { startedAt: c.startedAt, pausedAt: c.pausedAt as number | null, pausedMs: c.pausedMs, seenAt: c.seenAt };
     }
     return rollDay({ day: v.day, count: v.count, longestMs: v.longestMs, current }, now);
@@ -108,9 +112,9 @@ export function reduceTakes(prev: Takes, e: TakeEvent): Takes {
     case 'seen':
       return t.current ? { ...t, current: { ...t.current, seenAt: e.now } } : t;
     case 'pause':
-      return t.current && t.current.pausedAt === null ? { ...t, current: { ...t.current, pausedAt: e.now } } : t;
+      return t.current && t.current.pausedAt === null ? { ...t, current: { ...t.current, pausedAt: e.now, seenAt: Math.max(t.current.seenAt, e.now) } } : t;
     case 'resume':
-      return t.current && t.current.pausedAt !== null ? { ...t, current: { ...t.current, pausedAt: null, pausedMs: t.current.pausedMs + Math.max(0, e.now - t.current.pausedAt) } } : t;
+      return t.current && t.current.pausedAt !== null ? { ...t, current: { ...t.current, pausedAt: null, pausedMs: t.current.pausedMs + Math.max(0, e.now - t.current.pausedAt), seenAt: Math.max(t.current.seenAt, e.now) } } : t;
   }
 }
 

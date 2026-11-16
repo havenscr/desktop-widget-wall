@@ -48,3 +48,23 @@ describe('talk timer arithmetic', () => {
     expect(minutesLeft(null, T10)).toBeNull();
   });
 });
+
+describe('matchMeeting: only a meeting a call can belong to', () => {
+  it('skips an item that cannot be joined', () => {
+    expect(matchMeeting([{ ...talk, canJoin: false }], T10 + 12 * MIN)).toBeNull();
+    // The joinable one wins even when the other one starts later.
+    const later = { ...meeting('Reminder', T10 + 5 * MIN, T10 + 45 * MIN), canJoin: false };
+    expect(matchMeeting([talk, later], T10 + 10 * MIN)?.title).toBe('Talk');
+  });
+  it('skips an entry of 24 hours or more, and keeps one just under', () => {
+    const allDay = meeting('Offsite', T10 - 2 * 60 * MIN, T10 - 2 * 60 * MIN + 24 * 60 * MIN);
+    expect(matchMeeting([allDay], T10)).toBeNull();
+    const nearly = meeting('Long day', T10 - 2 * 60 * MIN, T10 - 2 * 60 * MIN + 24 * 60 * MIN - 1);
+    expect(matchMeeting([nearly], T10)?.title).toBe('Long day');
+  });
+  it('with several left, the later start still wins', () => {
+    const allDay = meeting('Offsite', T10 - 60 * MIN, T10 + 23 * 60 * MIN);
+    const later = meeting('Later', T10 + 5 * MIN, T10 + 45 * MIN);
+    expect(matchMeeting([allDay, talk, later], T10 + 10 * MIN)?.title).toBe('Later');
+  });
+});

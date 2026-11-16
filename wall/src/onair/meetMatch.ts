@@ -1,7 +1,8 @@
 /**
  * The calendar meeting a call belongs to, for the Presenting page. Pure. The page does not guess from
  * the title: a call belongs to the meeting whose window (ten minutes before its start, to its end)
- * holds the moment the call began.
+ * holds the moment the call began. Only an item that can be joined counts, and an entry of 24 hours or
+ * more (an all-day block) never does.
  */
 import type { Meeting } from '../meet/model';
 
@@ -9,6 +10,9 @@ const MIN = 60_000;
 
 /** A call that began up to this long before a meeting starts still belongs to it. */
 export const MATCH_EARLY_MS = 10 * MIN;
+
+/** An entry this long or longer is an all-day or multi-day block, never a meeting a call belongs to. */
+export const MATCH_MAX_MS = 24 * 60 * MIN;
 
 /**
  * `meetings` is the shared feed's list, or an empty one when the feed is stale or failed (a stale list
@@ -22,6 +26,7 @@ export function matchMeeting(meetings: readonly Meeting[], since: number, feedUs
     const start = Date.parse(m.start);
     const end = Date.parse(m.end);
     if (!Number.isFinite(start) || !Number.isFinite(end)) continue;
+    if (!m.canJoin || end - start >= MATCH_MAX_MS) continue;
     if (start - MATCH_EARLY_MS <= since && since <= end) {
       if (best === null || start > Date.parse(best.start)) best = m;
     }

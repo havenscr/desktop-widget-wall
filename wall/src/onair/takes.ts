@@ -23,7 +23,8 @@ function read(): Takes {
 }
 
 /** Today's takes, kept in local storage (`wall2-onair-takes`). */
-export const useTakes = create<{ takes: Takes }>(() => ({ takes: read() }));
+// Nothing here reads or writes storage until the new frame mounts (`startTakes`), so the module does nothing when it is merely imported.
+export const useTakes = create<{ takes: Takes }>(() => ({ takes: emptyDay(clock()) }));
 
 let lastSave = -Infinity;
 
@@ -45,7 +46,7 @@ function apply(e: TakeEvent, force = true): void {
   save(next);
 }
 
-/** Tests: start again from an empty day (or from what storage holds) with no signal history. */
+/** Tests: start again from an empty day (or from what storage holds) with no signal history. Storage is read here and in `startTakes` only. */
 export function resetTakes(): void {
   undo = null;
   lastSave = -Infinity;
@@ -86,6 +87,27 @@ function follow(recording: boolean, was: boolean): void {
     apply({ type: 'off', now });
   }
 }
-useSignalStore.subscribe((s, prev) => follow(s.recording, prev.recording));
-// The signal may already be on when this module loads (the store was set before the page opened).
-if (useSignalStore.getState().recording) follow(true, false);
+
+/** How often the page tells the store that a recorder is still running (the store writes it to storage at most every 15 seconds). */
+export const TAKE_HEARTBEAT_MS = 5_000;
+
+/**
+ * Starts following the recording signal: reads today's takes from storage, begins or goes on with a take when a
+ * recorder is already on, and feeds a steady "still running" observation into the take. Called when the new frame
+ * mounts; the returned function stops it (safe to call from an effect cleanup, and to start again after, as React
+ * strict mode does).
+ */
+export function startTakes(): () => void {
+  undo = null;
+  lastSave = -Infinity;
+  useTakes.setState({ takes: read() });
+  const unsubscribe = useSignalStore.subscribe((s, prev) => follow(s.recording, prev.recording));
+  // The signal may already be on when the frame mounts (the store was set before the page opened).
+  if (useSignalStore.getState().recording) follow(true, false);
+  const timer = setInterval(noteRecordingSeen, TAKE_HEARTBEAT_MS);
+  return () => {
+    unsubscribe();
+    clearInterval(timer);
+    undo = null;
+  };
+}

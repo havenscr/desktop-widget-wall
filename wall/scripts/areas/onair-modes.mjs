@@ -38,6 +38,13 @@ function measureOnAir2() {
   const expected = Object.keys(boxes).length;
   const found = Object.keys(boxes).filter((s) => document.querySelector('.oa2 ' + s)).length;
   if (found !== expected) fails.push('on air v2: ' + found + ' of ' + expected + ' blocks are on the ' + mode + ' page');
+  // Live and the page for nothing on air are empty below the row: no other child of the frame, nothing drawn after it or before it, no text but the row's.
+  if (mode !== 'rec' && mode !== 'meet') {
+    const others = [...root.children].filter((c) => c !== document.querySelector('.oa2 .oa2-modes'));
+    if (others.length > 0) fails.push('on air v2: the ' + (mode === 'live' ? 'Live' : 'nothing on air') + ' page has ' + others.length + ' block(s) below the modes row (it must be empty)');
+    const drawn = [getComputedStyle(root, '::after').content, getComputedStyle(root, '::before').content].filter((c) => c !== 'none' && c !== 'normal');
+    if (drawn.length > 0) fails.push('on air v2: the ' + (mode === 'live' ? 'Live' : 'nothing on air') + ' page draws ' + drawn[0] + ' below the modes row (it must be empty)');
+  }
   // Every block inside its table box (1 px of slack), and everything in it too.
   for (const [sel, [x, y, w, h]] of Object.entries(boxes)) {
     const el = document.querySelector('.oa2 ' + sel);
@@ -155,7 +162,7 @@ export default {
       state('Presenting, browser call', 'call=browser&meetnow=1', ['a browser call is on', 'Browser call on', 'no keys for a browser call', 'Mute', 'Share screen']),
       state('Auto picks Recording over a call', `${REC}&call=teams&meetnow=1`, ['a recorder is running', 'Take timer', '!Held by hand']),
       state('held on Presenting while recording', `${REC}&call=teams&meetnow=1&oamode=meet`, ['Held by hand', 'Talk timer', 'Community talk: November']),
-      state('Live picked from the browser camera and mic', 'callbrowserav=1&meet=none', ['the browser uses the camera and mic', '!Take timer', '!Talk timer']),
+      state('Live picked from the browser camera and mic', 'callbrowserav=1&meet=none', ['mic or camera in use', '!Take timer', '!Talk timer']),
       state('nothing on air', '', ['nothing is on air', '!Take timer', '!Talk timer']),
     ],
   },
@@ -164,6 +171,8 @@ export default {
       variant('Recording running', REC),
       variant('Recording paused', `${REC}&oapaused=1`),
       variant('Recording held with nothing on', 'oamode=rec'),
+      variant('Live, browser camera and mic (empty below the row)', 'callbrowserav=1&meet=none'),
+      variant('nothing on air (empty below the row)', ''),
       variant('Presenting matched', MEET),
       variant('Presenting matched with a 120 character meeting title', `${MEET}&meetlong=1`),
       variant('Presenting unmatched', 'call=zoom&callsince=-12&meet=none'),
@@ -187,6 +196,8 @@ export default {
       'onair2-keys': { css: '.oa2 .key-tile { height: 30px !important; min-height: 0 !important; }', expect: /^ *FAIL on air v2: key tile ".*" is \d+ x \d+ px/m, appliesTo: isNamed('Recording running') },
       'onair2-box': { css: '.oa2-outline { width: 1100px !important; }', expect: /^ *FAIL on air v2: \.oa2-outline is at/m, appliesTo: isNamed('Recording running') },
       'onair2-empty': { css: '.oa2-empty-prompter::after { content: "x"; }', expect: /^ *FAIL on air v2: the empty prompter box draws/m, appliesTo: isNamed('Recording running') },
+      'onair2-empty-live': { css: '.oa2::after { content: "x"; display: block; }', expect: /^ *FAIL on air v2: the Live page draws/m, appliesTo: isNamed('Live, browser camera and mic (empty below the row)') },
+      'onair2-empty-none': { css: '.oa2::after { content: "x"; display: block; }', expect: /^ *FAIL on air v2: the nothing on air page draws/m, appliesTo: isNamed('nothing on air (empty below the row)') },
       'onair2-watt': { css: '.watt-sheep, .watt-hit { margin-top: -300px !important; }', expect: /^ *FAIL on air v2: Watt .* overlaps /m, appliesTo: isNamed('Recording, Watt standing at x 1000') },
     },
   },

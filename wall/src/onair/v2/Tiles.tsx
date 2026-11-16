@@ -74,8 +74,8 @@ export function LibTile({ keys, spec }: { keys: DeckKeys; spec: TileSpec }) {
   );
 }
 
-/** Mark a moment as a tile: one line in marks.txt with the given time and the current part. A second click within a second counts once. */
-export function MarkTile({ mark, showMs, marking }: { mark: (showMs: number) => Promise<void>; showMs: number; marking: boolean }) {
+/** Mark a moment as a tile: one line in marks.txt with the given time (none given: what today's On Air writes, the show timer's time) and the current part. A second click within a second counts once. */
+export function MarkTile({ mark, showMs, marking }: { mark: (showMs?: number) => Promise<void>; showMs: number | undefined; marking: boolean }) {
   return (
     <button
       type="button"

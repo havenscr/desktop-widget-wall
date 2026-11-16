@@ -5,7 +5,7 @@ import { tip } from '../../ui/HoverTip';
 import { NotesCard } from '../NotesCard';
 import { useOnAirStore } from '../store';
 import { useTakes } from '../takes';
-import { takeClock, takeMs, takesLine } from '../takeModel';
+import { rollDay, takeClock, takeMs, takesLine } from '../takeModel';
 import { Head, LibTile, MarkTile, TileRow } from './Tiles';
 import { clockText } from './time';
 import { useDeckKeys, PAUSE_PRESS_ID } from './useDeckKeys';
@@ -14,11 +14,12 @@ import { useDeckKeys, PAUSE_PRESS_ID } from './useDeckKeys';
 const OUTLINE_SIZES = [32, 28, 24, 22] as const;
 
 /** Today's last marks: the show time and the part, three at most, then the takes line and Open marks.txt. */
-function MarksBlock() {
+function MarksBlock({ now }: { now: number }) {
   const marks = useOnAirStore((s) => s.marks);
   const note = useOnAirStore((s) => s.marksNote);
   const open = useOnAirStore((s) => s.open);
-  const takes = useTakes((s) => s.takes);
+  // The day rolls here too: after midnight the count starts again before the next recording event.
+  const takes = rollDay(useTakes((s) => s.takes), now);
   const rows = marks ? marks.last.map((t, i) => ({ t, part: marks.lastParts?.[i] ?? '' })) : [];
   return (
     <div className="oa2-b oa2-marks" role="group" aria-label="Marks today">
@@ -53,7 +54,7 @@ function MarksBlock() {
 /** The take timer: the time of this take, a chip saying Recording or Paused, and one honest line under it. */
 function TakeTimer({ now }: { now: number }) {
   const recording = useSignalStore((s) => s.recording);
-  const takes = useTakes((s) => s.takes);
+  const takes = rollDay(useTakes((s) => s.takes), now);
   const cur = recording ? takes.current : null;
   const ms = cur ? takeMs(cur, now) : 0;
   const paused = cur !== null && cur.pausedAt !== null;
@@ -96,7 +97,7 @@ function RecordingKeys({ now }: { now: number }) {
   const keys = useDeckKeys();
   const recording = useSignalStore((s) => s.recording);
   const known = useSignalStore((s) => s.known);
-  const takes = useTakes((s) => s.takes);
+  const takes = rollDay(useTakes((s) => s.takes), now);
   const mark = useOnAirStore((s) => s.mark);
   const marking = useOnAirStore((s) => s.marking);
   const cur = recording ? takes.current : null;
@@ -110,7 +111,7 @@ function RecordingKeys({ now }: { now: number }) {
         <LibTile keys={keys} spec={{ id: 'rec-toggle', pressId: 'onair:rec-record', label: 'Record', icon: IconPlayerRecordFilled, off: recording ? 'A recording is running' : undefined }} />
         <LibTile keys={keys} spec={{ id: 'rec-toggle', pressId: PAUSE_PRESS_ID, label: paused ? 'Resume' : 'Pause', icon: paused ? IconPlayerPlayFilled : IconPlayerPauseFilled, off: recording ? undefined : noRecording }} />
         <LibTile keys={keys} spec={{ id: 'rec-stop', label: 'Stop', icon: IconPlayerStopFilled, stop: recording, off: idle ? 'No recording is running; Stop is sent to the recorder only while one runs' : undefined }} />
-        <MarkTile mark={mark} showMs={cur ? takeMs(cur, now) : 0} marking={marking} />
+        <MarkTile mark={mark} showMs={cur ? takeMs(cur, now) : undefined} marking={marking} />
         <LibTile keys={keys} spec={{ id: 'snip' }} />
         <LibTile keys={keys} spec={{ id: 'strip-dark' }} />
       </TileRow>
@@ -125,7 +126,7 @@ function RecordingKeys({ now }: { now: number }) {
 export function RecordingPage({ now }: { now: number }) {
   return (
     <>
-      <MarksBlock />
+      <MarksBlock now={now} />
       {/* The prompter's box (wall 124, 336, 640 by 104) is kept empty: nothing is drawn in it until the prompter's own pull request. */}
       <div className="oa2-b oa2-empty oa2-empty-prompter oa2-empty-rec" aria-hidden="true" />
       <NotesCard title="Outline" right="the script is on the prompter" sizes={OUTLINE_SIZES} icon={<IconNotes size={20} aria-hidden="true" />} className="oa2-outline" />

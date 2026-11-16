@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { backAfterGap, emptyDay, parseTakes, reduceTakes, STORAGE_KEY, takeClock, takeMs, takesLine, TAKE_GAP_MS, TAKE_RESUME_MS, type Takes } from './takeModel';
+import { backAfterGap, emptyDay, parseTakes, reduceTakes, STORAGE_KEY, takeClock, takeMs, takesLine, TAKE_RESUME_MS, type Takes } from './takeModel';
+import { RECORDING_GAP_MS as TAKE_GAP_MS } from '../signals/RecordingChip';
 
 const MIN = 60_000;
 // Local times, so the day rules hold in any zone.
@@ -34,6 +35,16 @@ describe('takes', () => {
     expect(reduceTakes(afterOff, { type: 'on', now: T + 5 * MIN + TAKE_GAP_MS + 1 }).count).toBe(2);
     // Nothing to go back to when no take was running.
     expect(backAfterGap(emptyDay(T), T, T + 1)).toBeNull();
+  });
+  it('back after a short gap while paused: the pause is cleared and the time up to the off moment is banked', () => {
+    const paused = run([{ type: 'on', now: T }, { type: 'pause', now: T + 2 * MIN }]);
+    // Off for five seconds, then on again.
+    const back = backAfterGap(paused, T + 2 * MIN + 3_000, T + 2 * MIN + 8_000);
+    expect(back?.current?.pausedAt).toBeNull();
+    expect(back?.current?.pausedMs).toBe(3_000);
+    expect(back?.current?.startedAt).toBe(T);
+    // The time stops counting at the pause and starts again after: 2 min before the pause, then the take runs on from the off moment's bank.
+    expect(takeMs(back!.current!, T + 2 * MIN + 8_000 + MIN)).toBe(2 * MIN + 5_000 + MIN);
   });
   it('a take found in storage goes on when it was seen a moment ago, else it ends where it was last seen', () => {
     const stored = run([{ type: 'on', now: T }]);
@@ -102,11 +113,21 @@ describe('takes in storage', () => {
     ['a start in the future', JSON.stringify({ ...good, current: { ...good.current, startedAt: T + 10 * MIN, seenAt: T + 10 * MIN } })],
     ['a last seen before the start', JSON.stringify({ ...good, current: { ...good.current, seenAt: T - 9 * MIN } })],
     ['a pause before the start', JSON.stringify({ ...good, current: { ...good.current, pausedAt: T - 10 * MIN } })],
-    ['a pause after the last seen', JSON.stringify({ ...good, current: { ...good.current, pausedAt: T + MIN } })],
+    ['a pause in the future', JSON.stringify({ ...good, current: { ...good.current, pausedAt: T + 2 * MIN } })],
     ['a text pause', JSON.stringify({ ...good, current: { ...good.current, pausedAt: 'x' } })],
     ['a missing banked time', JSON.stringify({ ...good, current: { startedAt: T - MIN, pausedAt: null, seenAt: T } })],
   ])('%s is an empty day', (_n, raw) => {
     expect(parseTakes(raw as string | null, T)).toEqual(emptyDay(T));
+  });
+  it('a paused take survives a reload (the pause is written with a last-seen time that is not older)', () => {
+    const paused = run([{ type: 'on', now: T }, { type: 'pause', now: T + 2 * MIN }]);
+    expect(paused.current?.seenAt).toBe(T + 2 * MIN);
+    const back = parseTakes(JSON.stringify(paused), T + 3 * MIN);
+    expect(back.count).toBe(1);
+    expect(back.current?.pausedAt).toBe(T + 2 * MIN);
+    // Even a pause newer than the last-seen time a build before this one wrote.
+    const older = { ...paused, current: { ...paused.current!, seenAt: T } };
+    expect(parseTakes(JSON.stringify(older), T + 3 * MIN).count).toBe(1);
   });
   it('another day is an empty day, and a take still running goes on as the first of the new one', () => {
     expect(parseTakes(JSON.stringify({ ...good, current: null, day: '2026-11-10' }), T)).toEqual(emptyDay(T));

@@ -1,7 +1,8 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { reviewNow } from '../../ui/reviewClock';
 import { useSignalStore } from '../../signals/store';
 import { MODE_STORAGE_KEY, parseHeld, pickMode, type PageMode } from '../modes';
+import { startTakes } from '../takes';
 import { useOnAirLoad } from '../useOnAirLoad';
 import { useNow } from '../useNow';
 import { ModesRow } from './ModesRow';
@@ -37,6 +38,8 @@ export function OnAir2() {
   // A review still freezes the wall's moment; everything else uses the clock.
   const now = reviewNow ? reviewNow() : real;
   useOnAirLoad(real);
+  // The take store follows the recorder only while this frame is open (strict mode starts, stops and starts it again).
+  useEffect(() => startTakes(), []);
   const known = useSignalStore((s) => s.known);
   const recording = useSignalStore((s) => s.recording);
   const call = useSignalStore((s) => s.call);
