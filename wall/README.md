@@ -374,7 +374,7 @@ row (`home/Rooms.tsx`) and the House line render nothing until the home app read
 
 - **Left third** (`home/LeftWing.tsx`, `sunLine.ts`, `dayCurve.ts`, `SunCurve.tsx`, `OutsideRow.tsx`,
   `HouseLine.tsx`; rules under "Home left third" in `styles/home.css`): everything starts 23 px under the
-  date (wall y 200, 458 px wide from x 136) and ends above y 440. In order: the headline, the day as a
+  date (wall y 200, 458 px wide from x 136) and ends above y 470 (the room dots take up to two lines; the strip below, to about y 510, is kept for the planned Next line). In order: the headline, the day as a
   low curve, one row for the weather outside, and the house row with its room dots. All of it redraws once
   a minute; nothing animates.
   - **Headline** (`sunHeadline`): from the horizon's own sun (`ribbon/sun.ts`), to the nearest minute. By day
@@ -384,6 +384,10 @@ row (`home/Rooms.tsx`) and the House line render nothing until the home app read
   - **Curve** (`dayCurve.ts` for the maths, `SunCurve.tsx` for the drawing): x is the time of day, midnight
     to midnight (458 px for 24 h); above the base line from sunrise to sunset, a dip below it at night. Only
     the two crossings and the sun's x are data; the hump's height (56 px) and the dip (13 px) are a drawing.
+    The line is one smooth curve (`curveY`): four cubic segments (sunrise to noon, noon to sunset, sunset to
+    the night low, the low to the next sunrise) that share their slope where they meet, so it passes through
+    the horizon line exactly at the real sunrise and sunset with no corner, and never overshoots the 56 and 13
+    px limits. A small soft dot marks each crossing on the line.
     The part of the day already travelled is at full strength, the rest at 38 percent; a disc on the hump
     by day, a ring on the dip at night. The two time labels sit 12 px outside their crossings; on a long day
     a label drops its glyph, then its AM or PM, so it always fits between its crossing and the box's edge.
@@ -396,8 +400,11 @@ row (`home/Rooms.tsx`) and the House line render nothing until the home app read
     line uses ("weather unavailable", its hover card says why); while the first read is out the row is left out.
   - **House row** (`HouseLine.tsx`): "68° inside. Lights on in two rooms." and a dot per room, as before. It
     stays hidden while the home app's desk routes are absent; not live, it is dimmed and says "as of" at the
-    right end of the dots row. The dots stay on one line: when the rooms do not all fit, the lit ones come
-    first and the rest are counted as "+N more" (the hover card names them).
+    right end of the dots row. The dots take up to two lines of 424 px: when the rooms do not all fit in two,
+    the lit ones come first and the rest are counted as "+N more" at the end of the second line, only when both
+    lines are full (the hover card names them). Each dot's hover card says only the room and "lights on" or
+    "lights off": the rooms read carries no light names, so a card listing the lights waits on the home app
+    and a native change.
   - Review script rules, gallery states and deliberate breaks live in `scripts/areas/left-third.mjs`.
 - **Columns** are fixed (`.home-wing` 1, `.home-centre` 2, `.home-right` 3), so a zone
   that renders nothing never shifts the others.
@@ -2519,15 +2526,16 @@ that slot. Refreshes every 2 minutes while visible and after each completion.
 
 ### Tags on task rows (Work and Home)
 
-Every task row on Work's Due today and Home's Around the house shows its tags the way the
-owner's task app draws them: the first tag as a named chip (28 px high, a 16 px glyph and a
-600 16 px name), each further tag as a 28 px round dot with its glyph, 6 px apart, text and
-glyph in the tag's colour on a 14 percent wash of it with a 38 percent edge. Each chip and dot
-has a hover card with the tag's name; tags are not buttons. When the chip would leave the title
-under 180 px, every tag of the row is a dot. A row with no tags looks as it did. On Home the
-tags sit after the title against the pill column, which is as wide as the widest pill in the list (never under 62 px;
-a timed chore's "4:30 PM" needs about 88 px), the same on every row so the tags still line up, and a row with no pill keeps
-the room. The list measures its pills and sets `--pill-w`; the pill text never wraps or clips.
+Every task row on Work's Due today and Home's Around the house shows each tag as its icon alone
+in a round pill: 26 px across, a 16 px glyph in the tag's colour on a 20 percent tint of it, no
+outline and no words, 4 px apart. Pointing at the tags opens one hover card that lists every tag
+of the row (its glyph and full name in the tag's colour); tags are not buttons, and a click goes
+through to the row. A tag with no colour is the wall's dim grey, and one whose icon is missing
+draws the plain tag glyph. The title takes the room the words used to have. A row with no tags
+looks as it did. On Home the tags sit after the title against the pill column, which is as wide
+as the widest pill in the list (never under 62 px; a timed chore's "4:30 PM" needs about 88 px),
+the same on every row so the tags still line up, and a row with no pill keeps the room. The list
+measures its pills and sets `--pill-w`; the pill text never wraps or clips.
 
 Where it comes from: `open_tasks` in `wall2_feeds.rs` keeps up to three tags per row, from the
 task's own `tags` strings: trimmed, empty ones dropped, duplicates dropped after lower-casing,
@@ -2646,7 +2654,7 @@ column, the drawer, the house area and the mood card widths (`--self-test` break
 
 `home/NetworkTile.tsx`, `home/shieldModel.ts` (`shieldFacts`, `severityCounts`, `alertHint`), the card's rules in `styles/home.css`. The card keeps its sizes: 596 by 166 when quiet, not live or not set up, 596 by 250 with alerts open (so Around the house keeps five rows, and three with alerts).
 
-- **Quiet.** The ring (112), the title, "Nothing is open." and two fact lines (16 px, a glyph each) at the left; at the right two doors, 206 wide and 61 high with 12 between: Security ("Home app alarms", opens the home app's alarms page) and Firewalla ("Its own portal"). Each door shows only when the wall has its address (`wall2_links`), the same rule and the same click as before; one door takes the full height. With no door and at least one fact, the facts move to a quiet box at the right, one row each (scan, devices, blocked, alarms); with no door and no fact the text takes the whole width.
+- **Quiet.** The ring (112), the title, "Nothing is open." and two fact lines (16 px, a glyph each) at the left; at the right two doors, 206 wide and 61 high with 12 between: Home security (opens the home app's alarms page; its second line is "N alarms in 24 h" when the live read has one or more, else "Network alarms") and Firewalla (opens its portal; "Devices and rules"). A count that is not live is never shown: the plain words stand then. The busy card's buttons say Home security and Firewalla. Each door shows only when the wall has its address (`wall2_links`), the same rule and the same click as before; one door takes the full height. With no door and at least one fact, the facts move to a quiet box at the right, one row each (scan, devices, blocked, alarms); with no door and no fact the text takes the whole width.
 - **The fact lines** are drawn only from numbers the home app sent: line one is "Scan 10:24 AM"; line two is "31 devices, 412 blocked" (or whichever of the two exists), or, when it sent neither, "3 alarms in 24 h"; with none of them there is no second line. A fact with no number is never drawn. Hovering a fact says what it is, and "Not live, as of ..." while stale.
 - **Alerts open.** The ring (140) with one arc per alert and the count, the title, "3 alerts open, 31 devices at home", the newest alert on one line (its line opens the drawer; long text ends in an ellipsis, the full text and "Show all N open alerts" on hover), the age and the counts by severity ("12 min ago. 1 high, 2 medium."; the age reads "just now", "12 min ago", "3 h ago" or "2 days ago", while the drawer keeps its short "12m"; the counts show only when every open alert is listed and has a severity, so no count is ever short), and a row of equal 50 px buttons: Show all N (filled), Security, Firewalla (the last two only with an address; with neither, Show all stands alone).
 - **The title** is one line at 27 px; when it does not fit its column ("Firewall box offline", "Firewall status unknown", "Home app not reachable") it takes two lines at 22 px, the card's box unchanged, and the full title is on hover. The ring's arcs take the alert's severity colour (amber high, violet medium, grey low); an alert whose severity the wall was never told, and every alert past the three the read lists, is a neutral grey, never amber.

@@ -828,13 +828,13 @@
   justify-content: center;
 }
 
-/* A row's tags (Work's Due today and Home's Around the house): the first as a chip, the rest as dots.
-   --c is the tag's colour as r,g,b; a tag with no colour uses the wall's dim text. */
+/* A row's tags (Work's Due today and Home's Around the house): each tag is its glyph alone in a round
+   26 px pill, 4 px apart. --c is the tag's colour as r,g,b; a tag with no colour uses the wall's dim text. */
 .t-tags {
   flex: none;
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 4px;
 }
 .t-tag {
   --c: 183, 175, 214;
@@ -842,30 +842,35 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  height: 28px;
+  height: 26px;
   color: rgb(var(--c));
-  background: rgba(var(--c), 0.14);
-  border: 1px solid rgba(var(--c), 0.38);
+  background: rgba(var(--c), 0.2);
+  border: 0;
 }
 .t-tag svg {
   flex: none;
 }
 .t-dot {
-  width: 28px;
+  width: 26px;
   border-radius: 50%;
 }
-.t-chip {
-  gap: 6px;
-  max-width: 170px;
-  padding: 0 11px 0 9px;
-  border-radius: 14px;
-  font: 600 16px/1 var(--body);
+/* The hover card of a row's tags: a line per tag. */
+.t-tip {
+  display: flex;
+  flex-direction: column;
+}
+.t-tip-row {
+  --c: 183, 175, 214;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 26px;
+  color: rgb(var(--c));
+  font: 600 18px/1 var(--disp);
   white-space: nowrap;
 }
-.t-chip .t-label {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
+.t-tip-row svg {
+  flex: none;
 }
 .tk3 {
   display: flex;

@@ -231,6 +231,20 @@ export function shieldFacts(s: Shield): { lines: Fact[]; all: Fact[] } {
   };
 }
 
+/** The words under the two tiles' names when nothing is open (the tiles only exist then). */
+export const SECURITY_REST = 'Network alarms';
+export const PORTAL_REST = 'Devices and rules';
+
+/**
+ * The second line of the "Home security" tile: the alarms in the last 24 hours when there are
+ * one or more and the read is live (a count that is not live is never shown as current), else
+ * the plain words for what the tile opens. The Firewalla tile always says `PORTAL_REST`.
+ */
+export function securityDoorLine(s: Shield): string {
+  if (s.kind === 'ready' && !s.stale && s.alarms !== null && s.alarms >= 1) return `${plural(s.alarms, 'alarm', 'alarms')} in 24 h`;
+  return SECURITY_REST;
+}
+
 /** "1 high, 2 medium": the open alerts by severity, only when every open alert is listed and rated. */
 export function severityCounts(s: Shield): string | null {
   if (s.alerts.length === 0 || s.alerts.length !== s.open) return null;

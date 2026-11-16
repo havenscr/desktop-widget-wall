@@ -68,7 +68,7 @@ it('with the desk route absent, shows today\'s read: the ring, the count and the
   expect(container.querySelector('.shield-new b')?.textContent).toBe('New device on the guest network');
   expect(screen.getByText('12 min ago. 1 high, 1 low.')).toBeTruthy();
   // The Security door is the only address the wall has: its button shows, Firewalla's does not.
-  expect(screen.getByRole('button', { name: 'Security' })).toBeTruthy();
+  expect(screen.getByRole('button', { name: 'Home security' })).toBeTruthy();
   expect(screen.queryByRole('button', { name: 'Firewalla' })).toBeNull();
   showAll();
   await flush();
@@ -91,12 +91,12 @@ it('quiet: a whole mint ring, All quiet, the device and blocked numbers, and the
   expect(screen.getByText('31 devices, 412 blocked')).toBeTruthy();
   expect(screen.getByText(/^Scan \d{1,2}:\d{2} (AM|PM)$/)).toBeTruthy();
   // The names of the doors and what each opens.
-  expect(screen.getByText('Home app alarms')).toBeTruthy();
-  expect(screen.getByText('Its own portal')).toBeTruthy();
+  expect(screen.getByText('Network alarms')).toBeTruthy();
+  expect(screen.getByText('Devices and rules')).toBeTruthy();
   expect(arcs(container)).toBe(0);
   expect(container.querySelector('.shield-ring path[stroke="var(--mint)"]')).toBeTruthy();
   fireEvent.click(screen.getByText('Firewalla'));
-  fireEvent.click(screen.getByText('Security'));
+  fireEvent.click(screen.getByText('Home security'));
   await flush();
   expect(opened).toEqual([{ kind: 'portal' }, { kind: 'security' }]);
   // A quiet card has two doors and nothing else to click.
@@ -110,7 +110,7 @@ it('a failed open says Could not open for 3 seconds', async () => {
   mocks.set('wall2_open_link', () => Promise.reject(new Error('no')));
   render(<NetworkTile />);
   await flush();
-  expect(screen.queryByText('Security')).toBeNull();
+  expect(screen.queryByText('Home security')).toBeNull();
   fireEvent.click(screen.getByText('Firewalla'));
   await flush();
   expect(screen.getByText('Could not open')).toBeTruthy();
@@ -317,7 +317,8 @@ it('quiet with the numbers the owner\'s home app sends today: the scan and the a
   mocks.set('wall2_links', () => ({ security: true, portal: true }));
   render(<NetworkTile />);
   await flush();
-  expect(screen.getByText('3 alarms in 24 h')).toBeTruthy();
+  // The scan fact line and the Home security tile both say it.
+  expect(screen.getAllByText('3 alarms in 24 h')).toHaveLength(2);
   expect(screen.getByText(/^Scan /)).toBeTruthy();
   expect(screen.queryByText(/devices/)).toBeNull();
   expect(screen.queryByText(/blocked/)).toBeNull();
@@ -344,8 +345,8 @@ it('one door: only that button, and it opens its own address', async () => {
   const { container } = render(<NetworkTile />);
   await flush();
   expect(container.querySelectorAll('.shield-door')).toHaveLength(1);
-  expect(screen.queryByText('Home app alarms')).toBeNull();
-  fireEvent.click(screen.getByText('Its own portal'));
+  expect(screen.queryByText('Network alarms')).toBeNull();
+  fireEvent.click(screen.getByText('Devices and rules'));
   await flush();
   expect(opened).toEqual([{ kind: 'portal' }]);
 });
@@ -381,13 +382,13 @@ it('alerts open: Show all (filled), Security and Firewalla in a row; the doors o
   mocks.set('wall2_open_link', (a) => void opened.push(a));
   const { container } = render(<NetworkTile />);
   await flush();
-  expect([...container.querySelectorAll('.shield-btns .shield-btn')].map((b) => b.textContent)).toEqual(['Show all 3', 'Security', 'Firewalla']);
+  expect([...container.querySelectorAll('.shield-btns .shield-btn')].map((b) => b.textContent)).toEqual(['Show all 3', 'Home security', 'Firewalla']);
   expect(container.querySelector('.shield-btn.fill')?.textContent).toBe('Show all 3');
   expect(screen.getByText('3 alerts open, 27 devices at home')).toBeTruthy();
   // The newest alert on one line, its age and the counts by severity.
   expect(screen.getByText('10 min ago. 1 high, 2 medium.')).toBeTruthy();
   fireEvent.click(screen.getByRole('button', { name: 'Firewalla' }));
-  fireEvent.click(screen.getByRole('button', { name: 'Security' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Home security' }));
   await flush();
   expect(opened).toEqual([{ kind: 'portal' }, { kind: 'security' }]);
   // The newest alert's line opens the same drawer as Show all.
@@ -444,7 +445,7 @@ it('with alerts open a click on the card\'s face opens the drawer, and a click o
   mocks.set('wall2_open_link', (a) => void opened.push(a));
   const { container } = render(<NetworkTile />);
   await flush();
-  fireEvent.click(screen.getByRole('button', { name: 'Security' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Home security' }));
   await flush();
   expect(screen.queryByRole('dialog')).toBeNull();
   fireEvent.click(container.querySelector('.panel.network') as HTMLElement);
@@ -466,7 +467,7 @@ it('not live with alerts open: grey arcs, dimmed text, the buttons still there, 
   expect(container.querySelector('.panel.network.busy.stale')).toBeTruthy();
   expect([...container.querySelectorAll('.shield-ring .arc')].map((a) => a.getAttribute('stroke'))).toEqual(['var(--faint)', 'var(--faint)', 'var(--faint)']);
   expect(container.querySelector('.net-head .xs')?.textContent).toMatch(/^3 open as of /);
-  expect([...container.querySelectorAll('.shield-btns .shield-btn')].map((b) => b.textContent)).toEqual(['Show all 3', 'Security', 'Firewalla']);
+  expect([...container.querySelectorAll('.shield-btns .shield-btn')].map((b) => b.textContent)).toEqual(['Show all 3', 'Home security', 'Firewalla']);
 });
 
 it('an alert whose severity the wall was never told is neutral on the ring, never the colour of high', async () => {
@@ -535,4 +536,27 @@ it('the newest alert line is a real button (its 40 px hit area is measured by th
   const { container } = render(<NetworkTile />);
   await flush();
   expect(container.querySelector('button.shield-new')).toBeTruthy();
+});
+
+it('the tiles: quiet words, a live alarm count, and plain words again when the read is not live', async () => {
+  mocks.set('wall2_desk_security', () => Promise.reject(new Error('absent')));
+  mocks.set('wall2_links', () => ({ security: true, portal: true }));
+  const quiet = (alarms24h: number, over: Record<string, unknown> = {}) => ({ ...summary, alerts: 0, topAlerts: [], firewalla: { ...summary.firewalla, alarms24h }, ...over });
+  const lines = (c: HTMLElement) => [...c.querySelectorAll('.shield-door')].map((d) => [...d.querySelectorAll('.shield-door-txt > *')].map((e) => e.textContent));
+  mocks.set('wall2_home_security', () => quiet(0));
+  const a = render(<NetworkTile />);
+  await flush();
+  expect(lines(a.container)).toEqual([['Home security', 'Network alarms'], ['Firewalla', 'Devices and rules']]);
+  a.unmount();
+  mocks.set('wall2_home_security', () => quiet(2));
+  const b = render(<NetworkTile />);
+  await flush();
+  expect(lines(b.container)).toEqual([['Home security', '2 alarms in 24 h'], ['Firewalla', 'Devices and rules']]);
+  b.unmount();
+  mocks.set('wall2_home_security', () => quiet(2, { reachable: false }));
+  const c = render(<NetworkTile />);
+  await flush();
+  expect(lines(c.container)).toEqual([['Home security', 'Network alarms'], ['Firewalla', 'Devices and rules']]);
+  // The title cannot run into the tile's padding: it ends in an ellipsis when too long.
+  expect(c.container.querySelector('.shield-door-txt b')?.textContent).toBe('Home security');
 });

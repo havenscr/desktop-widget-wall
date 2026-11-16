@@ -42,7 +42,8 @@ function measureLeftThird() {
   const curve = document.querySelector('.home .lw-curve');
   const rise = document.querySelector('.home .lw-label.rise');
   const set = document.querySelector('.home .lw-label.set');
-  const ticks = curve ? [...curve.querySelectorAll('svg > line')].slice(-2).map((l) => box(l)) : [];
+  // The two soft dots where the line crosses the horizon (a dot's box is its crossing).
+  const ticks = curve ? [...curve.querySelectorAll('svg > circle.lw-cross')].map((l) => box(l)) : [];
   const rects = (sel) => [...document.querySelectorAll(sel)].map((e) => box(e));
   return {
     wing: box(wing),
@@ -58,6 +59,7 @@ function measureLeftThird() {
     right: box(document.querySelector('.home .home-right')),
     cards: rects('.home .home-centre > *'),
     dots: rects('.home .house-room'),
+    roomsBox: box(document.querySelector('.home .house-rooms')),
     house: box(document.querySelector('.home .house')),
     outside: box(document.querySelector('.home .outside')),
     weatherText: document.querySelector('.home .outside')?.textContent ?? null,
@@ -65,6 +67,9 @@ function measureLeftThird() {
     glyphTone: (document.querySelector('.home .outside .lw-glyph')?.className ?? '').replace('lw-glyph', '').trim(),
     glyphIcon: (document.querySelector('.home .outside .lw-glyph svg')?.getAttribute('class') ?? '').replace('tabler-icon ', ''),
     more: !!document.querySelector('.home .house-room.more'),
+    moreN: Number(/^\+(\d+) more$/.exec((document.querySelector('.home .house-room.more')?.textContent ?? '').trim())?.[1] ?? 0),
+    // Room names cut by an ellipsis (a name wider than its own item): none is expected with these room names.
+    cutNames: [...document.querySelectorAll('.home .house-room-name')].filter((e) => e.scrollWidth > e.clientWidth + 1).map((e) => e.textContent),
     dotCount: [...document.querySelectorAll('.home .house-room:not(.more)')].filter((e) => getComputedStyle(e).display !== 'none').length,
     asOfShown: (() => { const a = document.querySelector('.home .house-asof'); return !!a && getComputedStyle(a).visibility !== 'hidden'; })(),
     // Inside each row (and the dots row) the children, left to right: none may overlap the next.
@@ -80,15 +85,19 @@ const VARIANT_STALE = 'Home, left third: morning, house not live';
 const VARIANT_STALE2 = 'Home, left third: morning, house not live, two rooms';
 const VARIANT_NOWX = 'Home, left third: morning, no weather reading';
 const VARIANT_ROOMS = 'Home, left third: morning, eight rooms';
+const VARIANT_ONE = 'Home, left third: morning, one room';
+const VARIANT_SEVEN = 'Home, left third: morning, seven lit rooms';
+const VARIANT_TWELVE = 'Home, left third: morning, twelve rooms';
+const VARIANT_NONE = 'Home, left third: morning, no rooms';
 const VARIANT_WINTER = 'Home, left third: short winter day, house live';
 const VARIANT_SUMMER = 'Home, left third: long summer day, house live';
 const CHECKS = ['.home .home-wing', '.home .lw-head', '.home .lw-curve', '.home .outside', '.home .house'];
 const NO_HOUSE = CHECKS.filter((c) => c !== '.home .house');
 const variant = (name, when, knobs) => ({ name, q: fitQuery(when, knobs), checks: knobs.includes('desk=') ? CHECKS : NO_HOUSE });
-const NAMES = new Set([VARIANT_HOUSE, VARIANT_LATE, VARIANT_NIGHT, VARIANT_ABSENT, VARIANT_STALE, VARIANT_STALE2, VARIANT_NOWX, VARIANT_ROOMS, VARIANT_WINTER, VARIANT_SUMMER]);
-const WITH_HOUSE = new Set([VARIANT_HOUSE, VARIANT_LATE, VARIANT_NIGHT, VARIANT_STALE, VARIANT_STALE2, VARIANT_ROOMS, VARIANT_WINTER, VARIANT_SUMMER]);
+const NAMES = new Set([VARIANT_HOUSE, VARIANT_LATE, VARIANT_NIGHT, VARIANT_ABSENT, VARIANT_STALE, VARIANT_STALE2, VARIANT_NOWX, VARIANT_ROOMS, VARIANT_ONE, VARIANT_SEVEN, VARIANT_TWELVE, VARIANT_NONE, VARIANT_WINTER, VARIANT_SUMMER]);
+const WITH_HOUSE = new Set([VARIANT_HOUSE, VARIANT_LATE, VARIANT_NIGHT, VARIANT_STALE, VARIANT_STALE2, VARIANT_ROOMS, VARIANT_ONE, VARIANT_SEVEN, VARIANT_TWELVE, VARIANT_NONE, VARIANT_WINTER, VARIANT_SUMMER]);
 const START_Y = 200;
-const END_Y = 440;
+const END_Y = 470;
 
 function ruleLeftThird(variantEntry, results, emit) {
   if (!NAMES.has(variantEntry.name)) return false;
@@ -101,12 +110,31 @@ function ruleLeftThird(variantEntry, results, emit) {
   const near = (a, b, tol) => Math.abs(a - b) <= tol;
   const hit = (a, b) => a.x < b.r - 0.5 && b.x < a.r - 0.5 && a.y < b.b - 0.5 && b.y < a.b - 0.5;
   const kids = m.parts.filter((p) => p.r - p.x > 0 && p.b - p.y > 0);
-  // The block starts 23 px under the date (y 200) and ends above y 440.
+  // The block starts 23 px under the date (y 200) and ends above y 470 (the room dots take up to two lines; the strip under them is kept for the Next line).
   const first = Math.min(...kids.map((p) => p.y));
   const last = Math.max(...kids.map((p) => p.b));
   if (!near(first, START_Y, 1.5)) fails.push(`left third: starts at y ${first.toFixed(1)}, not ${START_Y}`);
   if (last > END_Y + 0.5) fails.push(`left third: ends at y ${last.toFixed(1)}, below ${END_Y}`);
   if (m.date && first < m.date.b + 20) fails.push(`left third: starts ${(first - m.date.b).toFixed(1)} px under the date (20 or more)`);
+  // The room dots stay in their box, in at most two lines, each dot clear of the next.
+  const dotBoxes = m.dots.filter((d) => d.r - d.x > 0 && d.b - d.y > 0);
+  if (m.roomsBox) {
+    const out = dotBoxes.filter((d) => d.x < m.roomsBox.x - 0.5 || d.r > m.roomsBox.r + 0.5 || d.b > m.roomsBox.b + 0.5 || d.y < m.roomsBox.y - 0.5);
+    if (out.length) fails.push(`left third: ${out.length} room dot(s) leave their box (the box is x ${m.roomsBox.x.toFixed(1)} to ${m.roomsBox.r.toFixed(1)}, y ${m.roomsBox.y.toFixed(1)} to ${m.roomsBox.b.toFixed(1)})`);
+    const tops = [...new Set(dotBoxes.map((d) => Math.round(d.y)))];
+    if (tops.length > 2) fails.push(`left third: the room dots take ${tops.length} lines (two at most)`);
+    for (let i = 0; i < dotBoxes.length; i++) for (let j = i + 1; j < dotBoxes.length; j++) {
+      const a = dotBoxes[i], b = dotBoxes[j];
+      if (a.x < b.r - 0.5 && b.x < a.r - 0.5 && a.y < b.b - 0.5 && b.y < a.b - 0.5) fails.push('left third: two room dots overlap');
+    }
+    // "+N more" only when both lines are full: another dot would not have fitted after the last one on the second line.
+    if (m.more && tops.length < 2) fails.push('left third: "+N more" shows with the second line empty');
+    // The count is the true remainder: dots shown plus N is every room of the page's list (the variant's `rooms=` knob), and no dot is clipped.
+    const total = /[?&]rooms=(\d+)/.exec(variantEntry.q ?? '')?.[1];
+    if (total !== undefined && m.dotCount + m.moreN !== Number(total)) fails.push(`left third: ${m.dotCount} room dots plus "+${m.moreN} more" is not the ${total} rooms of the list`);
+    if (m.more && m.moreN < 1) fails.push('left third: the "+N more" chip does not give a count');
+    if (m.cutNames.length) fails.push(`left third: room name(s) clipped by an ellipsis (${m.cutNames.join(', ')})`);
+  }
   // Nothing overlaps the clock, the date, or the card to its right.
   const centre = m.centre;
   const inside = (b) => b.r - b.x > 0 && b.b - b.y > 0;
@@ -137,7 +165,7 @@ function ruleLeftThird(variantEntry, results, emit) {
   // Inside a row, one part never runs into the next (the line into "as of", the sentence into the high and low).
   for (const { row, kids: line } of m.lines ?? []) {
     for (let i = 1; i < line.length; i++) {
-      if (line[i].x < line[i - 1].r - 0.5) fails.push(`left third: ${line[i - 1].name} runs into ${line[i].name} (ends at x ${line[i - 1].r.toFixed(1)}, the next starts at ${line[i].x.toFixed(1)})`);
+      if (Math.abs(line[i].y - line[i - 1].y) < 2 && line[i].x < line[i - 1].r - 0.5) fails.push(`left third: ${line[i - 1].name} runs into ${line[i].name} (ends at x ${line[i - 1].r.toFixed(1)}, the next starts at ${line[i].x.toFixed(1)})`);
     }
     for (const c of line) if (c.r > row.r + 0.5) fails.push(`left third: ${c.name} leaves its row (ends at x ${c.r.toFixed(1)}, the row at ${row.r.toFixed(1)})`);
   }
@@ -155,7 +183,7 @@ function ruleLeftThird(variantEntry, results, emit) {
   if (variantEntry.name === VARIANT_NOWX && !/weather unavailable/.test(m.weatherText ?? '')) fails.push('left third: with no weather reading the row does not say so');
   for (const f of fails) emit(`  FAIL ${f}`);
   if (fails.length) return true;
-  emit(`  ok   left third: starts at y 200, ends at y ${last.toFixed(0)} (above 440), clear of the clock, the date and the card to its right, text 16 px or more, the labels apart and inside the curve`);
+  emit(`  ok   left third: starts at y 200, ends at y ${last.toFixed(0)} (above 470), clear of the clock, the date and the card to its right, text 16 px or more, the labels apart and inside the curve`);
   return false;
 }
 
@@ -177,6 +205,10 @@ export default {
       state('night, house not live', NIGHT, 'desk=stale', ['tomorrow', '68° inside.', 'Bedroom']),
       state('morning, no weather reading', MORNING, 'desk=typical&weather=down', ['of daylight left', 'weather unavailable', '68° inside.']),
       state('morning, eight rooms', MORNING, 'desk=typical&rooms=8', ['68° inside.', 'Office']),
+      state('morning, one room', MORNING, 'desk=typical&rooms=1', ['68° inside.', 'Office', '!Living room']),
+      state('morning, seven lit rooms, two lines', MORNING, 'desk=typical&rooms=7', ['68° inside.', 'Office', 'Den']),
+      state('morning, twelve rooms, two lines and a count', MORNING, 'desk=typical&rooms=12', ['68° inside.', 'Office', 'more']),
+      state('morning, no rooms', MORNING, 'desk=typical&rooms=0', ['68° inside.', '!Guest room']),
     ].map((s) => (s.query.includes('weather=down') ? { ...s, query: s.query.replace('weather=ok&', '') } : s)),
   },
   fit: {
@@ -189,15 +221,19 @@ export default {
       variant(VARIANT_STALE2, MORNING, 'desk=stale&rooms=2'),
       { ...variant(VARIANT_NOWX, MORNING, 'desk=typical&weather=down'), q: fitQuery(MORNING, 'desk=typical').replace('weather=ok&', '') + '&weather=down' },
       variant(VARIANT_ROOMS, MORNING, 'desk=typical&rooms=8'),
+      variant(VARIANT_ONE, MORNING, 'desk=typical&rooms=1'),
+      variant(VARIANT_SEVEN, MORNING, 'desk=typical&rooms=7'),
+      variant(VARIANT_TWELVE, MORNING, 'desk=typical&rooms=12'),
+      variant(VARIANT_NONE, MORNING, 'desk=typical&rooms=0'),
       variant(VARIANT_WINTER, WINTER, 'desk=typical'),
       variant(VARIANT_SUMMER, SUMMER, 'desk=typical'),
     ],
     measurements: { leftThird: measureLeftThird },
     rules: { leftThird: ruleLeftThird },
     breaks: {
-      // The block pushed down: starts below y 200, and with the house row ends below y 440.
+      // The block pushed down: starts below y 200, and with the house row ends below y 470.
       'left-start': { css: '.home-wing { padding-top: 240px !important; }', expect: /^ *FAIL left third: starts at y [\d.]+, not 200/m, appliesTo: only(VARIANT_HOUSE) },
-      'left-end': { css: '.lw-row { margin-bottom: 40px !important; }', expect: /^ *FAIL left third: ends at y [\d.]+, below 440/m, appliesTo: only(VARIANT_HOUSE) },
+      'left-end': { css: '.lw-row { margin-bottom: 40px !important; }', expect: /^ *FAIL left third: ends at y [\d.]+, below 470/m, appliesTo: only(VARIANT_HOUSE) },
       // The headline lifted into the date.
       'left-date': { css: '.home-wing .lw-head { position: relative !important; top: -60px !important; }', expect: /^ *FAIL left third: .* overlaps the date/m, appliesTo: only(VARIANT_HOUSE) },
       // A row stretched across the gap into the card to its right.
@@ -206,6 +242,10 @@ export default {
       'left-run': { css: '.lw-text { font-size: 34px !important; }', expect: /^ *FAIL left third: lw-side leaves its row/m, appliesTo: only(VARIANT_HOUSE) },
       // Dots lost to make room for "as of": two of the four rooms vanish.
       'left-dots': { css: '.house-rooms .house-room:nth-child(n+3):not(.more) { display: none !important; }', expect: /^ *FAIL left third: not live with four rooms shows/m, appliesTo: only(VARIANT_STALE) },
+      // The count off by one (a dot hidden with no count): the sum of dots and "+N more" no longer equals the rooms.
+      'left-more-sum': { css: '.house-rooms .house-room:nth-child(2):not(.more) { display: none !important; }', expect: /^ *FAIL left third: \d+ room dots plus "\+\d+ more" is not the 12 rooms/m, appliesTo: only(VARIANT_TWELVE) },
+      // A room dot pushed out of its box: the row narrowed so twelve rooms need a third line, with the box no longer clipping it.
+      'left-room-box': { css: '.house-rooms { width: 200px !important; max-height: none !important; overflow: visible !important; }', expect: /^ *FAIL left third: the room dots take \d+ lines|^ *FAIL left third: \d+ room dot\(s\) leave their box/m, appliesTo: only(VARIANT_TWELVE) },
       'left-text': { css: '.lw-label, .lw-side { font-size: 12px !important; }', expect: /^ *FAIL left third: text under 16 px in /m, appliesTo: only(VARIANT_HOUSE) },
       // Both labels dragged to the middle of a long day, then the sunset label to the box's left edge.
       'left-labels': { css: '.lw-label.set { right: auto !important; left: 0 !important; }', expect: /^ *FAIL left third: the sunrise and sunset labels collide|^ *FAIL left third: the sunset label covers its own crossing/m, appliesTo: only(VARIANT_SUMMER) },

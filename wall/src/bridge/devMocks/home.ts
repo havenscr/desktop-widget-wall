@@ -84,8 +84,8 @@ const ALERTS = [
 /**
  * The home app's desk routes. `?desk=absent` (the default: the home app's change is not
  * live, every route answers `absent`), `typical`, `stale` (old data, flagged stale) or
- * `down` (the routes fail). `?alerts=0|1|6|20` open alerts, `?rooms=0|2|4|8` rooms (two lit
- * in four), `?desktoken=none` no desk token on this PC (Clear all says not set up),
+ * `down` (the routes fail). `?alerts=0|1|6|20` open alerts, `?rooms=0|1|2|4|7|8|12` rooms (two lit
+ * in four, all lit in seven, every third lit in twelve), `?desktoken=none` no desk token on this PC (Clear all says not set up),
  * `?desktoken=lan` a token but a plain http home address on the network (Clear all says why).
  */
 function registerDeskMocks(): void {
@@ -121,9 +121,9 @@ function registerDeskMocks(): void {
     cleared = true;
     return n;
   });
-  const ROOMS = ['Office', 'Living room', 'Kitchen', 'Bedroom', 'Den', 'Hall', 'Guest room', 'Porch'];
+  const ROOMS = ['Office', 'Living room', 'Kitchen', 'Bedroom', 'Den', 'Hall', 'Guest room', 'Porch', 'Garage', 'Bathroom', 'Laundry', 'Attic'];
   const roomCount = () => Number(knob('rooms') ?? 4);
-  const lit = (i: number, count: number) => (count >= 4 ? i < 2 : i < 1) || (count === 8 && i === 5);
+  const lit = (i: number, count: number) => count === 7 || (count === 12 ? i % 3 === 0 : count >= 4 ? i < 2 : i < 1) || (count === 8 && i === 5);
   mocks.set('wall2_desk_rooms', () => {
     const g = gate();
     if (g) return g;
