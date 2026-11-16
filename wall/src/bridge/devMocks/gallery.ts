@@ -25,7 +25,8 @@ import { MOCK_DETAILS } from './meet';
  *   ?reduced=1               (the page reads prefers-reduced-motion as set; the gallery otherwise always emulates no preference)
  *   ?weather=rain|heavy|rainwind|wind|heavywind   (rain, heavy rain, rain with wind, dry wind, heavy rain with wind: weather code and wind in both sources)
  *   ?clock=review           (Date.now starts at the `?at=` moment and then runs, so screens that read it agree)
- *   ?focus=long               (a focus session running under a long title)
+ *   ?focus=long               (a focus session running under a long title); `?focus=run` a session on, `?focus=done` finished
+ *   ?alerts=N                 (the home app's open alarm count, 0 to 999; the default is 4, `?net=calm` is 0)
  *   ?wattspot=<x>             (Watt was set down at that x on every place, On Air included: his stored spot, before he loads)
  *   ?wattwear=star|bow|cape   (Watt has been a friend for 7 days and wears that, before he loads)
  */

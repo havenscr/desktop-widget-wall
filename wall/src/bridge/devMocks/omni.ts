@@ -4,7 +4,7 @@ import { mocks } from '../tauri';
 
 /**
  * Dev only: `?agents=` picks a helper state for review stills and the fit check:
- * `3` (default), `2`, `1`, `0`, `6`, `7`, `12` or `30` sessions from a helper 1.1.0 answer, `helpers`
+ * `run1`, `run6`, `run12`... (`runN`: that many sessions, every one working, none waiting; `run2ask2` adds two waiting after the two running), `3` (default), `2`, `1`, `0`, `6`, `7`, `12` or `30` sessions from a helper 1.1.0 answer, `helpers`
  * (one idle own turn with agents, a command and a child still running), `ask` (one
  * waiting, with a question), `ask2` (two waiting, one of them not on a card), `7ask` (seven sessions, the fifth waiting), `12busy` (twelve open, nine working at once, over the limit of 4 since mid morning, one waiting, one failed, one idle, and a helper's run that never counts), `12ask` (twelve sessions, two waiting) and `12staleask` (the same, stale), `staleask` (one waiting, then the answer goes stale), `failed` (one failed), `old`
  * (three lanes as the older helper sends them), `stale`, `off` (not set up) and `down` (set
@@ -45,11 +45,14 @@ export function registerOmniMocks(): void {
     const id = (i: number) => `a1b2c3d4-${String(i + 1).padStart(4, '0')}`;
     const old = AGENTS === 'old';
     const noLimit = knob('limit') === '0';
-    const count = { '0': 0, '1': 1, '2': 2, '6': 6, '7': 7, '7ask': 7, '12': 12, '30': 30, '12ask': 12, '12staleask': 12, '12busy': 12, helpers: 3 }[AGENTS] ?? 3;
+    // `runN`: N sessions, every one running (the capsule's dots on Unwind), then `askM` for M more that wait.
+    const runN = /^run(\d{1,2})(?:ask(\d{1,2}))?$/.exec(AGENTS);
+    const runWait = runN ? Number(runN[2] ?? 0) : 0;
+    const count = runN ? Math.max(1, Number(runN[1])) + runWait : { '0': 0, '1': 1, '2': 2, '6': 6, '7': 7, '7ask': 7, '12': 12, '30': 30, '12ask': 12, '12staleask': 12, '12busy': 12, helpers: 3 }[AGENTS] ?? 3;
     const busy12 = AGENTS === '12busy';
     const helperWork = AGENTS === 'helpers';
     const stale = AGENTS === 'stale' || AGENTS === 'staleask' || AGENTS === '12staleask';
-    const waitOn = busy12 ? [4] : AGENTS === 'ask' || AGENTS === 'ask2' || AGENTS === 'staleask' || old ? [1] : AGENTS === '7ask' ? [4] : AGENTS === '12ask' || AGENTS === '12staleask' ? [1, 4] : [];
+    const waitOn = runN ? Array.from({ length: runWait }, (_, k) => Number(runN[1]) + k) : busy12 ? [4] : AGENTS === 'ask' || AGENTS === 'ask2' || AGENTS === 'staleask' || old ? [1] : AGENTS === '7ask' ? [4] : AGENTS === '12ask' || AGENTS === '12staleask' ? [1, 4] : [];
     // `6` and `30` sessions: past the twelve the pool starts again, with a number on the title.
     const pool = Array.from({ length: Math.max(POOL.length, count) }, (_, i): (typeof POOL)[number] => {
       const [t, long, ...rest] = POOL[i % POOL.length];
@@ -66,14 +69,14 @@ export function registerOmniMocks(): void {
         // Rust caps titles and lines at 80 characters.
         title: longOr(title, long).slice(0, 80),
         stage,
-        state: waiting ? 'blocked' : busy12 ? (i === 11 ? 'review' : 'working') : state,
+        state: waiting ? 'blocked' : runN ? 'working' : busy12 ? (i === 11 ? 'review' : 'working') : state,
         line: (waiting ? 'Waiting on a thumbnail choice' : failed ? 'Two web tests failed' : busy12 && line === 'idle' && !busyIdle ? 'running' : line).slice(0, 80),
         elapsedS: mins * 60,
         waiting,
         pr: i === 0 ? { number: 553, ci: failed ? 'failing' : 'pending', ready: false } : i === 2 ? { number: 561, ci: 'passing', ready: true } : i === 8 ? { number: 570, ci: 'pending', ready: true } : null,
       };
       if (old) return base;
-      const idle = helperWork && i === 0 ? true : busy12 ? busyIdle || waiting : line === 'idle' || waiting;
+      const idle = runN ? false : helperWork && i === 0 ? true : busy12 ? busyIdle || waiting : line === 'idle' || waiting;
       return {
         ...base,
         line: helperWork && i === 0 ? 'idle' : base.line,
@@ -87,7 +90,7 @@ export function registerOmniMocks(): void {
         failed,
       };
     });
-    const list = count === 1 ? [all[2]] : all.slice(0, count);
+    const list = count === 1 && !runN ? [all[2]] : all.slice(0, count);
     const shown = old ? all.slice(0, 3) : list;
     // An earlier session that ended today, and (for `ask2`) a waiting one with no card.
     const ended = 'a1b2c3d4-0e0d';

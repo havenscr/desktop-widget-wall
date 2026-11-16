@@ -90,7 +90,7 @@ export interface StatusSummary {
   now?: string;
   lanes: ReadonlyArray<{ state: string; id?: string; waiting?: boolean }>;
   sessionsList?: ReadonlyArray<Lane> | null;
-  yourMove: { total: number; first?: { sessionId?: string } | null };
+  yourMove: { total: number; first?: { sessionId?: string } | null; ids?: readonly string[] };
   /** The helper can open a chat (`wall2_open_session`). */
   linksAvailable?: boolean;
 }
@@ -168,6 +168,82 @@ export function statusParts(focus: FocusSeen, summary: StatusSummary | null, sno
     }
   }
   return parts;
+}
+
+/** How the helper last answered, as the status marks see it: no answer yet or not set up, failing, stale, or current. */
+export type AgentsRead = 'current' | 'stale' | 'failed' | 'unset';
+
+/**
+ * The numbers behind the status marks (the capsule, its dots, the amber pill), counted by the same rules
+ * as `statusParts` (top-level sessions only; a waiting session is not running). `agents` says how far the
+ * helper can be trusted: only `current` carries counts, `stale` and `failed` draw the grey ring ("no fresh
+ * answer") and `unset` (not set up, or no read yet) draws neither. `needs` is null when the count is not a
+ * number; `snoozedWaiting` counts waiting chats quietened with "Later", which are not counted in `needs`.
+ */
+export interface StatusMarks {
+  focus: FocusSeen;
+  agents: AgentsRead;
+  running: number;
+  needs: number | null;
+  snoozedWaiting: number;
+  open: string | null;
+}
+
+/** The most dots the capsule draws; more running agents end in "+N". */
+export const STATUS_MAX_DOTS = 6;
+
+/**
+ * The status line as numbers instead of sentences. `failed` says whether a missing summary is a read that
+ * failed (a ring) rather than a helper that is not set up (nothing). Counting is the same as `statusParts`;
+ * a table test holds the two to the same answers.
+ */
+export function statusMarks(focus: FocusSeen, summary: StatusSummary | null, snoozed: ReadonlySet<string> = new Set(), failed = false): StatusMarks {
+  const marks: StatusMarks = { focus, agents: 'unset', running: 0, needs: null, snoozedWaiting: 0, open: null };
+  if (!summary) {
+    marks.agents = failed ? 'failed' : 'unset';
+    return marks;
+  }
+  if (summary.stale === true) {
+    marks.agents = 'stale';
+    return marks;
+  }
+  marks.agents = 'current';
+  const lanes = cards({ lanes: summary.lanes as Lane[], sessionsList: (summary.sessionsList as Lane[] | null | undefined) ?? null });
+  marks.running = lanes.filter(laneWorks).length;
+  const total = summary.yourMove.total;
+  if (typeof total === 'number' && Number.isFinite(total) && total >= 0) {
+    const partial = { yourMove: summary.yourMove, lanes } as unknown as OmniSummary;
+    marks.needs = Math.floor(needsYouCount(partial, snoozed));
+    marks.snoozedWaiting = waitingIds(partial).filter((w) => snoozed.has(w)).length;
+    if (marks.needs > 0) {
+      const first = summary.yourMove.first?.sessionId;
+      const id =
+        (first && !snoozed.has(first) ? first : null) ||
+        waitingIds(partial).find((w) => !snoozed.has(w)) ||
+        summary.lanes.find((l) => (l.waiting || l.state === 'blocked') && !(l.id && snoozed.has(l.id)))?.id ||
+        null;
+      marks.open = summary.linksAvailable === true && id ? id : null;
+    }
+  }
+  return marks;
+}
+
+/** What the capsule's hover card says: a title, today's sentences for the state (or none), and what a click does. */
+export function statusCard(m: StatusMarks): { title: string; detail: string; hint: string } {
+  const title = m.focus === 'on' ? 'Focus is still on' : m.focus === 'off' ? 'Work is put away' : 'Work';
+  const words: string[] = [];
+  if (m.agents === 'current') {
+    if (m.running > 0) words.push(`${m.running} ${m.running === 1 ? 'agent' : 'agents'} still running.`);
+    if (m.needs === 0 && m.snoozedWaiting === 0) words.push('No agent needs you.');
+    else if (m.needs === 1) words.push('One thing needs you.');
+    else if (m.needs !== null && m.needs > 1) words.push(`${m.needs} things need you.`);
+  } else if (m.agents === 'stale' || m.agents === 'failed') words.push('Agents: no fresh answer');
+  return { title, detail: words.join(' '), hint: 'Click to see the agents on Work' };
+}
+
+/** The first line of the amber pill's card, and what a click does. */
+export function needsCard(needs: number, canOpen: boolean): { title: string; hint: string } {
+  return { title: needs === 1 ? 'One chat is waiting for you' : `${needs} chats are waiting for you`, hint: canOpen ? (needs === 1 ? 'Click to open it' : 'Click to open the first one') : 'Click to see them on Work' };
 }
 
 /** The status line as one string (the parts' words, in order). */
