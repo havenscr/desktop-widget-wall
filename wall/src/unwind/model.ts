@@ -1,4 +1,4 @@
-import { cards, laneWorks, needsYouCount, type Lane, type OmniSummary } from '../agents/model';
+import { cards, laneWorks, needsYouCount, waitingIds, type Lane, type OmniSummary } from '../agents/model';
 import { playerProcesses, procName } from '../music/players';
 import type { DayEvent } from '../ribbon/model';
 import type { WeatherReading } from '../weather/model';
@@ -86,6 +86,8 @@ export function firstTomorrow(events: readonly DayEvent[], now: number): DayEven
 /** The part of `wall2_omni_summary` the status line reads. */
 export interface StatusSummary {
   stale?: boolean;
+  /** The helper's clock; with the lanes and your-move it lets a "Later" snooze tell a new request from the old one. */
+  now?: string;
   lanes: ReadonlyArray<{ state: string; id?: string; waiting?: boolean }>;
   sessionsList?: ReadonlyArray<Lane> | null;
   yourMove: { total: number; first?: { sessionId?: string } | null };
@@ -138,7 +140,7 @@ export function visibleMoods<T extends { id: string }>(moods: readonly T[], on: 
  * you." is plain text; "N things need you" opens the first waiting chat when links are
  * available (the summary's first your-move session, else the first lane that waits).
  */
-export function statusParts(focus: FocusSeen, summary: StatusSummary | null): StatusPart[] {
+export function statusParts(focus: FocusSeen, summary: StatusSummary | null, snoozed: ReadonlySet<string> = new Set()): StatusPart[] {
   const parts: StatusPart[] = [];
   if (focus === 'on') parts.push({ kind: 'text', text: 'Focus is still on.' });
   else if (focus === 'off') parts.push({ kind: 'text', text: 'Work is put away.' });
@@ -150,10 +152,17 @@ export function statusParts(focus: FocusSeen, summary: StatusSummary | null): St
     if (running > 0) parts.push({ kind: 'running', text: `${running} ${running === 1 ? 'agent' : 'agents'} still running.` });
     const total = summary.yourMove.total;
     if (typeof total === 'number' && Number.isFinite(total) && total >= 0) {
-      const asks = Math.floor(needsYouCount({ yourMove: summary.yourMove, lanes } as unknown as OmniSummary));
+      // A session quietened with "Later" on Work stays quiet here until its snooze ends.
+      const partial = { yourMove: summary.yourMove, lanes } as unknown as OmniSummary;
+      const asks = Math.floor(needsYouCount(partial, snoozed));
       if (asks === 0) parts.push({ kind: 'text', text: 'No agent needs you.' });
       else {
-        const id = summary.yourMove.first?.sessionId || summary.lanes.find((l) => l.waiting || l.state === 'blocked')?.id || null;
+        const first = summary.yourMove.first?.sessionId;
+        const id =
+          (first && !snoozed.has(first) ? first : null) ||
+          waitingIds(partial).find((w) => !snoozed.has(w)) ||
+          summary.lanes.find((l) => (l.waiting || l.state === 'blocked') && !(l.id && snoozed.has(l.id)))?.id ||
+          null;
         parts.push({ kind: 'needs', text: asks === 1 ? 'One thing needs you.' : `${asks} things need you.`, open: summary.linksAvailable === true && id ? id : null });
       }
     }
@@ -162,8 +171,8 @@ export function statusParts(focus: FocusSeen, summary: StatusSummary | null): St
 }
 
 /** The status line as one string (the parts' words, in order). */
-export function statusLine(focus: FocusSeen, summary: StatusSummary | null): string {
-  return statusParts(focus, summary)
+export function statusLine(focus: FocusSeen, summary: StatusSummary | null, snoozed: ReadonlySet<string> = new Set()): string {
+  return statusParts(focus, summary, snoozed)
     .map((p) => p.text)
     .join(' ');
 }

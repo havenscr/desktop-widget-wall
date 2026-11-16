@@ -759,7 +759,7 @@ describe('the player row and seek', () => {
 describe('Play on', () => {
   it('shows the chip with where the music plays, and the owner\'s players with a tick on the active one', async () => {
     await setup();
-    expect(chip().textContent).toContain('Desk speakers');
+    expect(chip().getAttribute('aria-label')).toContain('Desk speakers');
     await act(async () => chip().click());
     await flush();
     const rows = [...document.querySelectorAll('.sp-device')];
@@ -794,7 +794,7 @@ describe('Play on', () => {
     await act(async () => (document.querySelectorAll('.sp-device')[2] as HTMLButtonElement).click());
     await flush();
     expect(sent.filter((s) => s[0] === 'wall2_spotify_transfer')).toEqual([['wall2_spotify_transfer', { deviceId: dev(3) }]]);
-    expect(chip().textContent).toContain('Kitchen speaker');
+    expect(chip().getAttribute('aria-label')).toContain('Kitchen speaker');
     expect(playDeviceId()).toBe(dev(3));
   });
 
@@ -814,7 +814,7 @@ describe('Play on', () => {
     await act(async () => (document.querySelectorAll('.sp-device')[1] as HTMLButtonElement).click());
     await flush();
     expect(sent.some((s) => s[0] === 'wall2_spotify_transfer')).toBe(false);
-    expect(chip().textContent).toContain('Phone');
+    expect(chip().getAttribute('aria-label')).toContain('Phone');
     await act(async () => (document.querySelector('.sp-tile') as HTMLButtonElement).click());
     await flush();
     await act(async () => (document.querySelector('.sp-shead .sp-btn.fill') as HTMLButtonElement).click());
@@ -824,7 +824,7 @@ describe('Play on', () => {
 
   it('without a pick, Play follows the active device the chip names', async () => {
     await setup({ devices: [device(1, 'Desk speakers', 'Computer'), device(3, 'Kitchen speaker', 'Speaker', true)] });
-    expect(chip().textContent).toContain('Kitchen speaker');
+    expect(chip().getAttribute('aria-label')).toContain('Kitchen speaker');
     await act(async () => (document.querySelector('.sp-tile') as HTMLButtonElement).click());
     await flush();
     await act(async () => (document.querySelector('.sp-shead .sp-btn.fill') as HTMLButtonElement).click());
@@ -834,7 +834,7 @@ describe('Play on', () => {
 
   it('with no computer awake lists "This PC" first, and picking it lets Play start Spotify there', async () => {
     await setup({ devices: [device(2, 'Phone', 'Smartphone', true)] });
-    expect(chip().textContent).toContain('Phone');
+    expect(chip().getAttribute('aria-label')).toContain('Phone');
     await act(async () => chip().click());
     await flush();
     const rows = [...document.querySelectorAll('.sp-device')];
@@ -842,7 +842,7 @@ describe('Play on', () => {
     expect(rows[0].textContent).toContain('Spotify is closed. The wall starts it.');
     await act(async () => (rows[0] as HTMLButtonElement).click());
     await flush();
-    expect(chip().textContent).toContain('This PC');
+    expect(chip().getAttribute('aria-label')).toContain('This PC');
     expect(playDeviceId()).toBeUndefined();
     expect(sent.some((s) => s[0] === 'wall2_spotify_transfer')).toBe(false);
   });
@@ -856,12 +856,12 @@ describe('Play on', () => {
     expect(locked.disabled).toBe(true);
     await act(async () => (document.querySelectorAll('.sp-device')[2] as HTMLButtonElement).click());
     await flush();
-    expect(chip().textContent).toContain('Kitchen speaker');
+    expect(chip().getAttribute('aria-label')).toContain('Kitchen speaker');
     list = DEVICES.slice(0, 2);
     mocks.set('wall2_spotify_devices', () => list);
     await act(async () => chip().click());
     await flush();
-    expect(chip().textContent).toContain('Desk speakers');
+    expect(chip().getAttribute('aria-label')).toContain('Desk speakers');
     expect(playDeviceId()).toBe(dev(1));
   });
 
@@ -876,7 +876,7 @@ describe('Play on', () => {
     await flush();
     expect(screen.getByText('Could not move the music. Spotify is busy, try in a minute.')).toBeTruthy();
     expect(document.querySelector('.sp-devices')).not.toBeNull();
-    expect(chip().textContent).toContain('Desk speakers');
+    expect(chip().getAttribute('aria-label')).toContain('Desk speakers');
   });
 
   it('the arrow keys move between players, and the chooser reads its own failure and empty states', async () => {
@@ -897,15 +897,37 @@ describe('Play on', () => {
     expect(screen.getByText(DEVICES_FOOT)).toBeTruthy();
   });
 
+  it('the round button is named for the device the music follows, and says so with none', async () => {
+    await setup();
+    expect(chip().getAttribute('aria-label')).toBe('Play on: Desk speakers');
+    expect(chip().textContent).toBe('');
+    expect(chip().className).toContain('chosen');
+    expect(chip().getAttribute('aria-haspopup')).toBe('true');
+    expect(chip().getAttribute('aria-expanded')).toBe('false');
+  });
+
+  it('the icon on the round button follows the kind of the target, and is the generic speaker with none', async () => {
+    await setup({ devices: [device(2, 'Phone', 'Smartphone')] });
+    expect(chip().className).not.toContain('chosen');
+    expect(chip().querySelector('svg.tabler-icon-device-speaker')).not.toBeNull();
+    await act(async () => chip().click());
+    await flush();
+    await act(async () => (document.querySelectorAll('.sp-device')[1] as HTMLButtonElement).click());
+    await flush();
+    expect(chip().getAttribute('aria-label')).toBe('Play on: Phone');
+    expect(chip().className).toContain('chosen');
+    expect(chip().querySelector('svg.tabler-icon-device-mobile')).not.toBeNull();
+  });
+
   it('the chip follows the start flow: this PC while Spotify starts, the real player after', async () => {
     await setup({ devices: [device(2, 'Phone', 'Smartphone')] });
-    expect(chip().textContent).toContain('This PC');
+    expect(chip().getAttribute('aria-label')).toBe('Play on: choose a device');
     await act(async () => useSpotifyStart.setState({ starting: true, name: 'Night Drive' }));
-    expect(chip().textContent).toContain('This PC');
+    expect(chip().getAttribute('aria-label')).toContain('This PC');
     mocks.set('wall2_spotify_devices', () => DEVICES);
     await act(async () => useSpotifyStart.setState((s) => ({ starting: false, rev: s.rev + 1 })));
     await flush();
-    expect(chip().textContent).toContain('Desk speakers');
+    expect(chip().getAttribute('aria-label')).toContain('Desk speakers');
   });
 
   it('shows a calm starting line with what plays once ready', async () => {
@@ -947,7 +969,7 @@ describe('a chosen player that is gone, locked or unreachable', () => {
   it('awake: the chip names it and Play goes there', async () => {
     await setup({ playing: false });
     await pickPhone();
-    expect(chip().textContent).toContain('Phone');
+    expect(chip().getAttribute('aria-label')).toContain('Phone');
     await playOpened();
     expect(plays()).toHaveLength(1);
     expect(plays()[0][1]).toMatchObject({ request: { deviceId: dev(2) } });
@@ -965,7 +987,7 @@ describe('a chosen player that is gone, locked or unreachable', () => {
     expect(plays()).toHaveLength(0);
     expect(screen.getByText(GONE_LINE)).toBeTruthy();
     expect(useSpotifyTarget.getState().target).toBeNull();
-    expect(chip().textContent).toContain('Desk speakers');
+    expect(chip().getAttribute('aria-label')).toContain('Desk speakers');
     // Choosing again afterwards plays on the player the chip names.
     await act(async () => (document.querySelector('.sp-shead .sp-btn.fill') as HTMLButtonElement).click());
     await flush();
@@ -995,7 +1017,7 @@ describe('a chosen player that is gone, locked or unreachable', () => {
     await playOpened();
     expect(screen.getByText(GONE_LINE)).toBeTruthy();
     expect(useSpotifyTarget.getState().target).toBeNull();
-    expect(chip().textContent).not.toContain('Phone');
+    expect(chip().getAttribute('aria-label')).not.toContain('Phone');
   });
 
   it('a chosen computer that is gone is refused like any other player, even with a phone active', async () => {
@@ -1004,7 +1026,7 @@ describe('a chosen player that is gone, locked or unreachable', () => {
     await flush();
     await act(async () => (document.querySelectorAll('.sp-device')[0] as HTMLButtonElement).click());
     await flush();
-    expect(chip().textContent).toContain('Desk speakers');
+    expect(chip().getAttribute('aria-label')).toContain('Desk speakers');
     mocks.set('wall2_spotify_devices', () => [device(2, 'Phone', 'Smartphone', true)]);
     await playOpened();
     expect(plays()).toHaveLength(0);
@@ -1076,10 +1098,10 @@ describe('a chosen player that is gone, locked or unreachable', () => {
 
   it('music on a player that does not allow control: the chip names it and says so', async () => {
     await setup({ devices: [{ ...device(5, 'Living room TV', 'TV', true, true) }, device(1, 'Desk speakers', 'Computer')] });
-    expect(chip().textContent).toContain('Living room TV');
+    expect(chip().getAttribute('aria-label')).toContain('Living room TV');
     expect(chip().getAttribute('aria-label')).toContain('cannot be controlled from here');
     expect(chip().classList.contains('locked')).toBe(true);
-    expect(chip().textContent).not.toContain('This PC');
+    expect(chip().getAttribute('aria-label')).not.toContain('This PC');
   });
 });
 

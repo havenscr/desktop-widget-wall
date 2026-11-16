@@ -13,7 +13,6 @@ import { useSkyKeepClear } from '../horizon/sky';
 import { useNowPlaying } from '../music/useNowPlaying';
 import { useVisible } from '../ui/useVisible';
 import { useLastPlayed } from './lastPlayed';
-import { Volume } from './Volume';
 import { useWatchStore } from './watch/store';
 import { AUTOPLAY_LINE, musicControls, next as queueNext, playAgain, previous as queuePrevious, useMusicView, type MusicView } from './ytmusic/queue';
 import { StartOnWatch } from './ytmusic/YtFoot';
@@ -167,7 +166,6 @@ export function Player() {
       </button>
       {progressBar}
       {again}
-      {!quiet && <Volume source={source} label={sourceLabel} />}
     </div>
   );
 

@@ -309,61 +309,6 @@
   cursor: default;
 }
 
-/* Volume: the playing app's session only; the row closes up without it. */
-.u-vol {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  margin-left: 18px;
-  height: 64px;
-  color: var(--dim);
-}
-/* The speaker icon sits on the ridgelines: full brightness, with a dark halo hugging its strokes. */
-.u-vol svg {
-  color: var(--tx);
-  filter: drop-shadow(0 0 2px #06041a) drop-shadow(0 0 4px #06041a);
-}
-.u-vol input {
-  --pct: 70%;
-  width: 240px;
-  height: 52px;
-  margin: 0;
-  background: transparent;
-  appearance: none;
-  -webkit-appearance: none;
-  cursor: pointer;
-}
-.u-vol input::-webkit-slider-runnable-track {
-  height: 8px;
-  border-radius: 8px;
-  background: linear-gradient(90deg, var(--cyan) var(--pct), rgba(255, 255, 255, 0.13) var(--pct));
-}
-.u-vol input::-moz-range-track {
-  height: 8px;
-  border-radius: 8px;
-  background: linear-gradient(90deg, var(--cyan) var(--pct), rgba(255, 255, 255, 0.13) var(--pct));
-}
-.u-vol input::-webkit-slider-thumb {
-  -webkit-appearance: none;
-  width: 26px;
-  height: 26px;
-  margin-top: -9px;
-  border-radius: 50%;
-  background: #e9fbff;
-  box-shadow: 0 0 14px -2px var(--cyan);
-}
-.u-vol input::-moz-range-thumb {
-  width: 26px;
-  height: 26px;
-  border: 0;
-  border-radius: 50%;
-  background: #e9fbff;
-}
-.u-vol input:focus-visible {
-  outline: 3px solid var(--cyan);
-  outline-offset: 2px;
-}
-
 /* Right wing: the Room card at the concept's place (f_unwind), its top and height from
    UNWIND_ROOM_TOP and UNWIND_ROOM_HEIGHT in screens/frameLayout.ts (set on .u-right by
    Unwind.tsx), its foot level with the player's transport. Live now stacks above it later
@@ -565,20 +510,6 @@
   border-radius: 50%;
   background: var(--cyan);
 }
-/* The volume number shows on hover and while dragging. */
-.u-vol-n {
-  min-width: 3ch;
-  font-size: 20px;
-  color: var(--tx);
-  opacity: 0;
-  transition: opacity 120ms;
-}
-.u-vol:hover .u-vol-n,
-.u-vol.drag .u-vol-n,
-.u-vol:focus-within .u-vol-n {
-  opacity: 1;
-}
-
 /* ---- Watch (the Watch tab, `unwind/watch/`) ----
    Positions are in .unwind's own pixels (stage x minus 124, y minus 20). The horizon line
    on Unwind is at stage y 505, so 485 here. The tabs row stays above any video. */
@@ -2430,14 +2361,6 @@
   color: var(--faint);
   font-variant-numeric: tabular-nums;
 }
-.u-listen .u-vol {
-  margin-left: 14px;
-  gap: 10px;
-  height: 52px;
-}
-.u-listen .u-vol input {
-  width: 120px;
-}
 .u-listen .u-again {
   margin: 0 0 0 10px;
   height: 52px;
@@ -3123,37 +3046,29 @@
   background: rgba(53, 230, 234, 0.12);
 }
 .sp-dev {
-  max-width: 300px;
+  width: 40px;
   height: 40px;
-  padding: 0 12px 0 14px;
-  border-radius: 20px;
-  display: flex;
-  align-items: center;
-  gap: 8px;
+  flex: none;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  color: var(--dim);
+  background: rgba(255, 255, 255, 0.06);
   border: 1px solid var(--line);
-  background: rgba(255, 255, 255, 0.05);
-  color: var(--dim);
-  font: 500 17px/1 var(--body);
 }
-.sp-dev small {
-  font: 400 16px/1 var(--body);
-  color: var(--dim);
-  white-space: nowrap;
-}
-.sp-dev > span {
-  min-width: 0;
-  color: var(--tx);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+/* A chosen target draws its icon in the accent colour; with none the icon stays muted. */
+.sp-dev.chosen svg {
+  color: var(--cyan);
 }
 .sp-dev svg {
   flex: none;
 }
 .sp-dev:hover,
+.sp-dev:focus-visible,
 .sp-dev.on {
+  color: var(--cyan);
   border-color: rgba(53, 230, 234, 0.55);
-  background: rgba(53, 230, 234, 0.1);
+  background: rgba(53, 230, 234, 0.12);
 }
 /* The chooser hangs under the chip, inside the card (right 70 px, top 70 px of the card). */
 .sp-devices {
@@ -3179,7 +3094,7 @@
 .sp-dev.locked {
   border-color: rgba(255, 194, 77, 0.45);
 }
-.sp-dev-lock {
+.sp-dev.locked svg {
   color: var(--amber);
 }
 .sp-devices.stale .sp-device {

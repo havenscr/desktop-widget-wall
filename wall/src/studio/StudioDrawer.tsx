@@ -1,11 +1,12 @@
 import { IconAlertTriangle, IconBrightnessUp, IconBulb, IconLink, IconLinkOff, IconRefresh, IconSettings, IconTemperature, IconX } from '@tabler/icons-react';
-import { useEffect, useRef } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { overlayOwnsPointer } from '../ribbon/DrawerScrim';
 import { tip } from '../ui/HoverTip';
 import { BRI_MAX, BRI_MIN, KELVIN_MAX, KELVIN_MIN, KELVIN_STEP, isLight, type Light, type Side } from './keyLights';
 import { useToolsStore } from '../tools/store';
 import { anyOn, downWord, kelvinColour, mismatched, savedDown, shown as shownLight, sideName, sideReading, singleLight, wordLine, working, withOn, type Snapshot } from './model';
+import { drawerBox, openerColumn } from './drawerBox';
 import { Slider } from './Slider';
 import { useKeyLights } from './store';
 
@@ -107,6 +108,25 @@ export function StudioDrawer() {
   const idle = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const close = () => useKeyLights.getState().setDrawer(false);
 
+  // The sheet overlays the column that holds its opener and nothing beside it: read when it opens and
+  // again when the column or the canvas changes size.
+  const [box, setBox] = useState(() => drawerBox());
+  useLayoutEffect(() => {
+    const read = () => setBox((old) => {
+      const next = drawerBox();
+      return old.left === next.left && old.width === next.width ? old : next;
+    });
+    read();
+    window.addEventListener('resize', read);
+    const col = openerColumn();
+    const watch = col && typeof ResizeObserver !== 'undefined' ? new ResizeObserver(read) : null;
+    if (col) watch?.observe(col);
+    return () => {
+      window.removeEventListener('resize', read);
+      watch?.disconnect();
+    };
+  }, []);
+
   // Focus goes into the drawer when it opens and back to the control that opened it when it closes.
   useEffect(() => {
     const node = ref.current;
@@ -175,7 +195,7 @@ export function StudioDrawer() {
 
   const host = document.querySelector('.stage') ?? document.body;
   return createPortal(
-    <section ref={ref} className="st-drawer" aria-label="Studio lights" onKeyDown={trap} onPointerEnter={() => clearTimeout(idle.current)} onPointerLeave={startIdle}>
+    <section ref={ref} className="st-drawer" style={{ left: box.left, width: box.width }} aria-label="Studio lights" onKeyDown={trap} onPointerEnter={() => clearTimeout(idle.current)} onPointerLeave={startIdle}>
       <div className="st-d-top">
         <IconBulb size={22} className="st-bulb" aria-hidden="true" />
         <span className="k st-title">Studio lights</span>

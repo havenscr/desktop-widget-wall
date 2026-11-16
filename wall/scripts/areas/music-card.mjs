@@ -72,6 +72,11 @@ function measureTallMusic() {
     const a = chipEl.getBoundingClientRect(), b = growEl.getBoundingClientRect();
     if (Math.abs(a.top + a.height / 2 - (b.top + b.height / 2)) > 2 || a.right > b.left - 4) fails.push('listen: the Play on chip and the round button are not on one line, apart');
   }
+  if (chipEl && growEl) {
+    const a = chipEl.getBoundingClientRect(), b = growEl.getBoundingClientRect();
+    if (Math.abs(a.width - b.width) > 1 || Math.abs(a.height - b.height) > 1) fails.push('listen: the Play on button is ' + Math.round(a.width) + ' by ' + Math.round(a.height) + ', not the size of the round expand button (' + Math.round(b.width) + ' by ' + Math.round(b.height) + ')');
+    if (b.left - a.right > 12) fails.push('listen: the Play on button is ' + Math.round(b.left - a.right) + ' px from the round expand button (12 or less)');
+  }
   const pop = cardEl?.querySelector('.sp-devices')?.getBoundingClientRect();
   if (pop && card && (pop.left < 0 || pop.top < 0 || pop.right > 2560 || pop.bottom > 720 || pop.left < card.left - 0.5 || pop.right > card.right + 0.5 || pop.bottom > card.bottom + 0.5 || pop.top < card.top - 0.5)) fails.push('listen: the Play on list is at x ' + Math.round(pop.left) + ' to ' + Math.round(pop.right) + ', y ' + Math.round(pop.top) + ' to ' + Math.round(pop.bottom) + ', outside the wall or the card');
   return { card: true, tall, fails };
@@ -88,8 +93,8 @@ export default {
   name: 'music-card',
   gallery: {
     states: [
-    state('tall music: button under the pointer', 'hz=unwind&at=2026-11-11T22%3A30%3A00-08%3A00&clock=review&weather=ok&audio=demo', ['Play on', 'Road Trip 1'], 'hover:.sp-grow'),
-    state('tall music: open on Playlists', 'hz=unwind&at=2026-11-11T22%3A30%3A00-08%3A00&clock=review&weather=ok&audio=demo', ['Play on', 'Up next', 'Road Trip 8'], '.sp-grow'),
+    state('tall music: button under the pointer', 'hz=unwind&at=2026-11-11T22%3A30%3A00-08%3A00&clock=review&weather=ok&audio=demo', ['!Which player the wall follows', 'Road Trip 1'], 'hover:.sp-grow'),
+    state('tall music: open on Playlists', 'hz=unwind&at=2026-11-11T22%3A30%3A00-08%3A00&clock=review&weather=ok&audio=demo', ['!Which player the wall follows', 'Up next', 'Road Trip 8'], '.sp-grow'),
     state('tall music: a playlist opened', 'hz=unwind&at=2026-11-11T22%3A30%3A00-08%3A00&clock=review&weather=ok&audio=demo', ['Lantern Song 9', 'Shuffle', '58 songs', 'Playlists'], '.sp-grow >> .sp-tile'),
     state('tall music: search in groups', 'hz=unwind&at=2026-11-11T22%3A30%3A00-08%3A00&clock=review&weather=ok&audio=demo', ['Songs', 'Albums', 'Playlists', 'Track 1', 'Album 1', 'Playlist 1'], '.sp-grow >> type:.sp-search input=road'),
     state('tall music: Up next', 'hz=unwind&at=2026-11-11T22%3A30%3A00-08%3A00&clock=review&weather=ok&audio=demo', ['Playing now', 'Spotify sets the order. A click skips ahead to that song.', 'Lantern Song 2'], '.sp-grow >> .sp-tabs button:nth-child(5)'),
@@ -101,7 +106,7 @@ export default {
     state('tall music: YouTube Music', 'hz=unwind&at=2026-11-11T22%3A30%3A00-08%3A00&clock=review&weather=ok&audio=demo', ['Open YouTube Music', '!Search Spotify'], '.sp-switch button:nth-child(2) >> .sp-grow'),
     state('tall music: long names', 'hz=unwind&at=2026-11-11T10%3A24%3A00-08%3A00&clock=review&weather=ok&long=1&media=long&spotify=long', ['Road Trip 1, an extremely long name', 'Up next'], '.sp-grow'),
     state('tall music: long names, a playlist opened', 'hz=unwind&at=2026-11-11T10%3A24%3A00-08%3A00&clock=review&weather=ok&long=1&media=long&spotify=long', ['240 songs', 'Lantern Song 9, an extremely long name'], '.sp-grow >> .sp-tile'),
-    state('tall music pictures: open on Playlists', 'hz=unwind&at=2026-11-11T22%3A30%3A00-08%3A00&clock=review&weather=ok&audio=demo&spotify=picture', ['Road Trip 10', 'Play on'], '.sp-grow'),
+    state('tall music pictures: open on Playlists', 'hz=unwind&at=2026-11-11T22%3A30%3A00-08%3A00&clock=review&weather=ok&audio=demo&spotify=picture', ['Road Trip 10', '!Which player the wall follows'], '.sp-grow'),
     state('tall music pictures: a playlist opened', 'hz=unwind&at=2026-11-11T22%3A30%3A00-08%3A00&clock=review&weather=ok&audio=demo&spotify=picture', ['Lantern Song 9', 'Shuffle', 'Playlists'], '.sp-grow >> .sp-tile'),
     state('tall music pictures: search in groups', 'hz=unwind&at=2026-11-11T22%3A30%3A00-08%3A00&clock=review&weather=ok&audio=demo&spotify=picture', ['Track 6', 'Album 3', 'Playlist 3', '3:00'], '.sp-grow >> type:.sp-search input=night'),
     state('tall music pictures: Up next', 'hz=unwind&at=2026-11-11T22%3A30%3A00-08%3A00&clock=review&weather=ok&audio=demo&spotify=picture', ['Playing now', 'Lantern Song 2'], '.sp-grow >> .sp-tabs button:nth-child(5)'),
@@ -155,6 +160,7 @@ export default {
       'tall-clip': { css: '.sp-card.tall .sp-pl-title { flex: 0 0 60px !important; } .sp-card.tall .sp-pl-title b { text-overflow: clip !important; }', expect: /^ *FAIL listen tall: text clipped in /m, appliesTo: (v) => v.name === TALL_OPEN },
       'tall-out': { css: '.sp-card.tall .sp-hx { margin-right: -60px !important; }', expect: /^ *FAIL listen tall: .* sticks out of the card/m, appliesTo: (v) => v.name === TALL_OPEN },
       'tall-rest': { css: '.sp-card { width: 760px !important; }', expect: /^ *FAIL listen: the resting card is \d+ by \d+ \(800 by 462\)/m, appliesTo: (v) => v.name === REST },
+      'listen-chip-wide': { css: '.sp-dev { width: 120px !important; }', expect: /^ *FAIL listen: the Play on button is \d+ by \d+, not the size/m, appliesTo: (v) => v.name === REST },
       'tall-pop': { css: '.sp-devices { right: -700px !important; }', expect: /^ *FAIL listen: the Play on list is at /m, appliesTo: (v) => v.name === 'Listen, the tall view, Play on open' },
       'tall-btns': { css: '.sp-shbtns .sp-btn { flex: none !important; padding: 0 34px !important; }', expect: /^ *FAIL listen tall: .* runs past its column by \d+ px/m, appliesTo: (v) => v.name === 'Listen, the tall view, a playlist opened' },
       // A moon forced into the open view is not drawn at all (the card claims its box), so the night check finds none.

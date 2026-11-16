@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { DRIVE_IN_GROUND, DRIVE_IN_SCREEN } from './looks';
-import { FOOTINGS, FRAME_CX, GROUND_Y, MARQUEE, MEMBERS, SURROUND, type Member } from './towerFrame';
+import { FASCIA, FASCIA_PATH, FOOTINGS, FRAME_CX, GROUND_Y, MARQUEE, MEMBERS, SURROUND, TOWER_SVG, type Member } from './towerFrame';
 
 // The Screen tower is one structure: every bar's end must sit on another bar, on the surround,
 // on a footing or on the ground line, so nothing hangs loose. Left and right are mirror images
@@ -20,10 +20,19 @@ function distToSegment(p: P, a: P, b: P): number {
 }
 const distToBox = (p: P, x0: number, y0: number, x1: number, y1: number) => Math.hypot(Math.max(x0 - p[0], 0, p[0] - x1), Math.max(y0 - p[1], 0, p[1] - y1));
 
+/** Distance from p to the outline of a box (zero on it, whether p is inside or outside). */
+function distToOutline(p: P, x0: number, y0: number, x1: number, y1: number): number {
+  if (p[0] < x0 || p[0] > x1 || p[1] < y0 || p[1] > y1) return distToBox(p, x0, y0, x1, y1);
+  return Math.min(p[0] - x0, x1 - p[0], p[1] - y0, y1 - p[1]);
+}
+
 /** What a bar's end rests on: the name of the first thing within tolerance, or null when it hangs. */
 function support(m: Member, p: P): string | null {
-  if (Math.abs(p[1] - GROUND_Y) <= TOL) return 'ground';
-  if (distToBox(p, SURROUND.x0, SURROUND.y0, SURROUND.x1, SURROUND.y1) <= TOL) return 'surround';
+  // The ground holds a bar only where a footing stands on it.
+  if (Math.abs(p[1] - GROUND_Y) <= TOL && FOOTINGS.some((f) => p[0] >= f.x0 - TOL && p[0] <= f.x1 + TOL)) return 'ground';
+  // The surround holds a bar on its steel ring: on the outline, or inside it down to the black masking
+  // 4 px off the picture; not anywhere in the box, and not on the picture.
+  if (distToBox(p, SURROUND.x0, SURROUND.y0, SURROUND.x1, SURROUND.y1) <= TOL && (distToOutline(p, SURROUND.x0, SURROUND.y0, SURROUND.x1, SURROUND.y1) <= TOL || (distToBox(p, V.x, V.y, V.x + V.w, V.y + V.h) >= 4 - TOL && distToBox(p, V.x, V.y, V.x + V.w, V.y + V.h) <= FASCIA + TOL))) return 'surround';
   for (const f of FOOTINGS) if (distToBox(p, f.x0, f.y0, f.x1, f.y1) <= TOL) return f.name;
   for (const o of MEMBERS) if (o.group !== m.group && distToSegment(p, o.a, o.b) <= TOL) return o.name;
   return null;
@@ -44,6 +53,24 @@ describe('tower frame geometry', () => {
       }
     }
     expect(loose).toEqual([]);
+  });
+
+  it('consecutive members of one group meet end to end', () => {
+    const apart: string[] = [];
+    MEMBERS.forEach((m, i) => {
+      const next = MEMBERS[i + 1];
+      // A tie is a branch off the lacing, not a link in its chain.
+      if (!next || next.group !== m.group || /tie/.test(m.name) || /tie/.test(next.name)) return;
+      const gap = Math.min(...[m.a, m.b].flatMap((p) => [next.a, next.b].map((q) => Math.hypot(p[0] - q[0], p[1] - q[1]))));
+      if (gap > TOL) apart.push(`${m.name} and ${next.name} (${gap.toFixed(2)})`);
+    });
+    expect(apart).toEqual([]);
+  });
+
+  it('one fascia width: the surround box and the drawn fascia both stand FASCIA out from the picture', () => {
+    expect(FASCIA).toBe(14);
+    expect(SURROUND).toEqual({ x0: V.x - FASCIA, y0: V.y - FASCIA, x1: V.x + V.w + FASCIA, y1: V.y + V.h + FASCIA });
+    expect(TOWER_SVG).toContain(`<path d="${FASCIA_PATH}`);
   });
 
   it('the bars that reach the ground end on a footing', () => {
