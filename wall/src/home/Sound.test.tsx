@@ -212,6 +212,17 @@ it('the Play anyway offer goes after a minute', async () => {
   expect(screen.queryByText('Play anyway')).toBeNull();
 });
 
+it('More writes a routine\'s volume as "Vol. 10", never "volume 10"', async () => {
+  wire();
+  render(<Sound />);
+  await flush();
+  fireEvent.click(screen.getByText('3 more').closest('button')!);
+  const pop = screen.getByRole('dialog', { name: 'More routines' });
+  const row = within(pop).getByText('Book Club').closest('button')!;
+  expect(row.querySelector('.xs')!.textContent).toMatch(/, Vol\. \d+$/);
+  expect(pop.textContent).not.toMatch(/volume \d/);
+});
+
 it('More lists the other routines and the speaker controls; a loud one asks first', async () => {
   wire();
   render(<Sound />);

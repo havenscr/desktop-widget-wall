@@ -543,7 +543,7 @@ function Live({
               </u>
             ) : null;
             const cls = ['sound-chip', isStarted ? 'on' : '', isSug ? 'sug' : '', tag ? 'has-tag' : '', busy === `play:${r.key}` ? 'working' : ''].filter(Boolean).join(' ');
-            const tip = [`Play ${r.name}`, r.favorite ? `(${r.favorite})` : '', typeof r.volume === 'number' ? `at volume ${r.volume}` : 'at a volume the service sets', isSug ? '. Suggested for this hour' : '']
+            const tip = [`Play ${r.name}`, r.favorite ? `(${r.favorite})` : '', typeof r.volume === 'number' ? `at Vol. ${r.volume}` : 'at a volume the service sets', isSug ? '. Suggested for this hour' : '']
               .filter(Boolean)
               .join(' ');
             return (
@@ -588,7 +588,7 @@ function Live({
                         {...once(() => play(r))}
                       >
                         <b>{r.name}</b>
-                        <span className="xs">{[r.favorite, typeof r.volume === 'number' ? `volume ${r.volume}` : null].filter(Boolean).join(', ')}</span>
+                        <span className="xs">{[r.favorite, typeof r.volume === 'number' ? `Vol. ${r.volume}` : null].filter(Boolean).join(', ')}</span>
                       </button>
                     ))}
                   </div>
