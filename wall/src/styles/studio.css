@@ -709,8 +709,11 @@ button.st-tg:hover {
 .st-rm-hd {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   height: 34px;
+}
+.st-d-rooms .st-swbtn {
+  padding: 0 2px;
 }
 .st-rm-n {
   font-size: 18px;
