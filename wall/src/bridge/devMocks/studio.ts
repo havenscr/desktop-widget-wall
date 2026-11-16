@@ -23,7 +23,7 @@ import { knob } from './long';
  * The home half (the home app's studio answer, its writes, the desk token, office moods):
  *
  *   ?studio=absent|notsetup|ready|onair|recording|changed|stale|nozone|threelooks|sixlooks|down|lost|slow
- *   ?studiowrite=ok|forbidden|homeunset|dark|busy|lights|unknown|unreachable
+ *   ?studiowrite=ok|forbidden|homeunset|dark|busy|lights|unknown|unreachable|refused|private|notset|failed
  *   ?desktoken=unset|set|unreadable|insecure
  *   ?office=absent|empty|two|six|down
  *
@@ -103,7 +103,7 @@ type MockGroup = { id: string; label: string; on: boolean; setTo: string; colour
 
 const PRESETS = [
   { id: 'onAir', label: 'On air', line: 'Key lights on, panels glow, monitor and overhead white', setsKeyLights: true },
-  { id: 'recording', label: 'Recording', line: 'Room 80%, panels calm 50%, key lights on, overhead white', setsKeyLights: true },
+  { id: 'recording', label: 'Recording', line: 'Room 80%, panels calm, key lights on, overhead white', setsKeyLights: true },
 ];
 const LOOKS = [
   { id: 'glow', label: 'Glow' },
@@ -262,7 +262,7 @@ function registerHomeHalf(keys: LightMock): void {
     canWrite: block() === null,
     writeBlock: block(),
   });
-  const wordsFor: Record<string, string> = { forbidden: 'forbidden', homeunset: 'home-not-set-up', dark: 'room-dark', busy: 'busy', lights: 'not-answering', unknown: 'unknown', unreachable: 'unreachable' };
+  const wordsFor: Record<string, string> = { forbidden: 'forbidden', homeunset: 'home-not-set-up', dark: 'room-dark', busy: 'busy', lights: 'not-answering', unknown: 'unknown', unreachable: 'unreachable', refused: 'refused', private: 'needs-private-address', notset: 'not-set-up', failed: 'failed' };
   /** A write: refused without a token or on an unsafe base (nothing sent), else the review knob's answer. */
   const gate = (): void => {
     const b = block();

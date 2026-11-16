@@ -638,7 +638,7 @@ it('a refused action says why in fixed words, then reads again', async () => {
     expect(useHome.getState().note, word).toBe(text);
     await flush(NOTE_MS + 10);
   }
-  expect(TEXT.needsPrivate).toBe('The home app must be reached over https or the tailnet to take changes.');
+  expect(TEXT.needsPrivate).toBe('The desk token is not sent over plain http. Use https or the tailnet.');
   expect(JSON.stringify(TEXT)).not.toMatch(/https?:\/\//);
 });
 
@@ -659,4 +659,32 @@ it('key light writes through the home app wait their turn behind a preset', asyn
   await preset;
   await keys;
   expect(calls.filter((c) => c.command === 'wall2_studio_keys')).toHaveLength(1);
+});
+
+it('a replaced slider write goes to the end of the queue: slider 1, preset, slider 2 sends the preset, then slider 2, and never slider 1', async () => {
+  await useHome.getState().readStudio();
+  const releases: (() => void)[] = [];
+  const sent: string[] = [];
+  const hold = (command: string, label: (a?: Record<string, unknown>) => string) =>
+    mocks.set(command, (args) => {
+      sent.push(label(args));
+      return new Promise((r) => releases.push(() => r(answer)));
+    });
+  hold('wall2_studio_look', (a) => `look ${a?.id}`);
+  hold('wall2_studio_preset', (a) => `preset ${a?.id}`);
+  hold('wall2_studio_group', (a) => `slider ${(a as { level: number }).level}`);
+  const running = useHome.getState().applyLook('calm'); // runs now and holds the queue
+  const one = useHome.getState().setGroup('overhead', true, 50);
+  const preset = useHome.getState().applyPreset('onAir');
+  const two = useHome.getState().setGroup('overhead', true, 70);
+  await flush();
+  expect(sent).toEqual(['look calm']);
+  expect(useHome.getState().writes).toBe(3);
+  for (let i = 0; i < 6; i++) {
+    releases.splice(0).forEach((r) => r());
+    await flush();
+  }
+  await Promise.all([running, one, preset, two]);
+  expect(sent).toEqual(['look calm', 'preset onAir', 'slider 70']);
+  expect(useHome.getState().writes).toBe(0);
 });

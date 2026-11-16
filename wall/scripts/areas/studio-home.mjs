@@ -83,6 +83,7 @@ function measureHome() {
     block: box(block),
     blockKids: kids('.st-block').map((k) => ({ n: k.n, l: k.b.l, r: k.b.r, t: k.b.t, b: k.b.b })),
     foot: box(q('.oa-foot')),
+    sumCut: (() => { const e = q('.st-sum'); return e ? { sw: e.scrollWidth, cw: e.clientWidth, text: (e.textContent || '').trim().slice(0, 30) } : null; })(),
     column: box(q('.oa-right')),
     presets: row('.st-presets > *:not(.st-spacer)'),
     presetsBox: box(q('.st-presets')),
@@ -132,7 +133,7 @@ export default {
     states: [
       state('onair', 'block, ready, nothing on', onAirGallery(READY), ['Studio lights', 'No preset on.', 'Key lights 60%, 4400 K', 'On air', 'Recording', 'Back to normal', 'Panels', 'Behind monitor', 'Overhead', 'Fine tune']),
       state('onair', 'block, On air is on', onAirGallery('keys2=both&studio=onair&desktoken=set'), ['On air:', 'Key lights on, panels glow, monitor and overhead white', 'Fine tune']),
-      state('onair', 'block, Recording is on', onAirGallery('keys2=both&studio=recording&desktoken=set'), ['Recording:', 'Room 80%, panels calm 50%, key lights on, overhead white']),
+      state('onair', 'block, Recording is on', onAirGallery('keys2=both&studio=recording&desktoken=set'), ['Recording:', 'Room 80%, panels calm, key lights on, overhead white']),
       state('onair', 'block, changed since it was set', onAirGallery('keys2=both&studio=changed&desktoken=set'), ['On air, changed', 'since it was set']),
       state('onair', 'block, the home app could not read every light', onAirGallery('keys2=both&studio=stale&desktoken=set'), ['(not fresh)', 'Overhead']),
       state('onair', 'block, the home app went away', onAirGallery(READY.replace('studio=ready', 'studio=lost')), ['The home app is not answering.', 'Try again', 'On air', 'Overhead'], `${FINE} >> ${CLOSE}`),
@@ -148,10 +149,11 @@ export default {
       state('onair', 'block, a click on On air applies it', onAirGallery(READY), ['On air:', 'Key lights on, panels glow, monitor and overhead white', 'Back to normal'], '[data-preset="onAir"]'),
       state('onair', 'block, offer after the timer starts', onAirGallery(`${READY}`).replace('oatimer=run', 'oatimer=idle'), ['Studio lights are not set.', 'The timer started just now.', 'Set for the stream', 'Not now', 'Panels'], START),
       state('onair', 'block, offer after the timer stops', onAirGallery('keys2=both&studio=onair&desktoken=set'), ['The show timer stopped.', 'The room is still on On air.', 'Back to normal', 'Keep'], STOP),
+      state('onair', 'block, a click the token cannot be sent for', onAirGallery(`${READY}&studiowrite=private`), ['The desk token is not sent over plain http. Use https or the tailnet.'], '[data-preset="onAir"]'),
       state('onair', 'block, a refused click says why', onAirGallery(`${READY}&studiowrite=unknown`), ['The home app no longer lists that one. This is what it reports now.'], '[data-preset="onAir"]'),
       state('onair', 'sheet, six panel looks, the body scrolls', onAirGallery('keys2=both&studio=sixlooks&desktoken=set'), ['Ocean waves', 'Aurora', 'Behind monitor'], FINE),
       state('onair', 'block, a hover tip on a preset', onAirGallery(READY), ['Key lights on, panels glow, monitor and overhead white'], 'hover:[data-preset="onAir"]'),
-      state('onair', 'sheet, ready, linked', onAirGallery(READY), ['On air', 'Recording', 'Back to normal', 'Linked', 'Panels', 'Glow', 'Calm', 'Behind monitor', 'White 80%. Floor 45%', 'Overhead', 'White 90%. Floor 45%'], FINE),
+      state('onair', 'sheet, ready, linked', onAirGallery(READY), ['On air', 'Recording', 'Back to normal', 'Linked', 'Panels', 'Glow', 'Calm', 'Behind monitor', 'Floor 45%', 'Overhead'], FINE),
       state('onair', 'sheet, ready, split', onAirGallery(`${READY.replace('keys2=both', 'keys2=mismatch')}`), ['Split', 'Left', 'Right', '45%', '4700 K', 'Behind monitor'], `${FINE} >> ${LINKED}`),
       state('onair', 'sheet, On air is on', onAirGallery('keys2=both&studio=onair&desktoken=set'), ['On air', 'Glow', 'Back to normal', 'Goes back to how the room was before'], FINE),
       state('onair', 'sheet, changed since it was set', onAirGallery('keys2=both&studio=changed&desktoken=set'), ['On air, changed', 'Back to normal'], FINE),
@@ -177,6 +179,7 @@ export default {
       variant('Studio home, block, On air is on', onAirFit('keys2=both&studio=onair&desktoken=set')),
       variant('Studio home, block, changed', onAirFit('keys2=both&studio=changed&desktoken=set')),
       variant('Studio home, block, the home app went away', onAirFit(READY.replace('studio=ready', 'studio=lost')), { click: `${FINE} >> ${CLOSE}` }),
+      ...['unknown', 'refused', 'private', 'notset', 'failed', 'busy', 'lights', 'dark', 'unreachable'].map((w) => variant('Studio home, block, refused line, ' + w, onAirFit(READY + '&studiowrite=' + w), { click: '[data-preset="onAir"]' })),
       variant('Studio home, block, no desk token', onAirFit('keys2=both&studio=ready&desktoken=unset')),
       variant('Studio home, block, a base the token may not go to', onAirFit('keys2=both&studio=ready&desktoken=insecure')),
       variant('Studio home, block, one key light silent', onAirFit(`${READY.replace('keys2=both', 'keys2=left-silent')}`)),
@@ -255,6 +258,7 @@ export default {
             for (const k of s.drawerKids) if (k.l < d.l - 1 || k.r > d.r + 1 || k.b > d.b + 1) fails.push('studiohome: sheet part "' + k.n.trim() + '" leaves the sheet');
           }
         }
+        if (isBlock && v.name.includes('refused line') && s.sumCut && s.sumCut.sw > s.sumCut.cw + 1) fails.push('studiohome: the refused line is cut: "' + s.sumCut.text + '"');
         if (isSheet) {
           for (const t of s.tiles) if (t.lineCut || t.nameCut) fails.push('studiohome: preset tile text is cut: "' + t.n + '"');
           // In the normal states (up to three looks on one row) nothing scrolls and the last room's slider lies whole inside the body.

@@ -58,8 +58,11 @@ export function queueHomeWrite<T>(key: string, run: () => Promise<T>, whenReplac
     };
     const waiting = queue.findIndex((q) => q.key === key);
     if (waiting >= 0) {
+      // The newer write goes to the END of the queue: it was made after everything already waiting, and must not
+      // run before a write that came between (a preset would otherwise override it). The count stays as it was.
       queue[waiting].replaced();
-      queue[waiting] = job;
+      queue.splice(waiting, 1);
+      queue.push(job);
       return;
     }
     queue.push(job);

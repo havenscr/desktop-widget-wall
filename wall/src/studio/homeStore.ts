@@ -21,12 +21,12 @@ export const TEXT = {
   homeNotSetUp: 'The home app has no desk token yet. Set the same token there.',
   forbidden: 'The home app refused the desk token. Type it again in Tools.',
   /** The wall's own check refused the click: nothing was sent. */
-  refused: 'That change is not one the home app offers right now. This is what it reports now.',
+  refused: 'That is not offered right now. This is what the home app reports.',
   /** The home app no longer knows that preset, group, look or mood. */
   unknown: 'The home app no longer lists that one. This is what it reports now.',
   notSetUp: "To change these, type the home app's desk token in Tools.",
-  needsPrivate: 'The home app must be reached over https or the tailnet to take changes.',
-  nothingToUndo: 'There is nothing to go back from. This is what the home app reports now.',
+  needsPrivate: 'The desk token is not sent over plain http. Use https or the tailnet.',
+  nothingToUndo: 'Nothing to go back from. This is what the home app reports now.',
 } as const;
 
 /** What the page can show of the home half: not read yet, not offered here, not answering, or ready. */
