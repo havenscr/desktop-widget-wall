@@ -3875,8 +3875,10 @@ button.sp-qrow:hover {
   opacity: 0.45;
 }
 .u-mood.blocked.lit {
+  /* The mood that is on keeps a solid ring, as the voted picture draws it; the other chips stay dashed. */
   background: rgba(10, 7, 28, 0.72);
-  border-color: rgba(83, 230, 235, 0.5);
+  border-style: solid;
+  border-color: rgba(83, 230, 235, 0.6);
 }
 .u-mood[data-busy='true'] {
   cursor: progress;
