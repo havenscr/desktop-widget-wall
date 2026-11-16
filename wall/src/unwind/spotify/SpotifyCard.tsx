@@ -48,6 +48,7 @@ import {
   SEARCH_WAIT_MS,
   songs,
   spotifyProblem,
+  spotifyRetryable,
   STARTING_NOTE,
   TALL_CLOSE_MS,
   useListenSource,
@@ -632,9 +633,7 @@ function Browser({ tall }: { tall: boolean }) {
       {tab === 'search' && cur.problem ? (
         <div className="sp-empty sp-stale">
           {problemLine(cur.problem)}
-          <button type="button" className="sp-btn" onClick={() => runSearch(query, true)}>
-            Retry
-          </button>
+          {spotifyRetryable(cur.problem) ? <button type="button" className="sp-btn" onClick={() => runSearch(query, true)}>Retry</button> : null}
         </div>
       ) : null}
       {songsIn.length > 0 ? (
@@ -663,9 +662,7 @@ function Browser({ tall }: { tall: boolean }) {
         {cur.problem ? (
           <div className="sp-empty sp-stale">
             {problemLine(cur.problem)}
-            <button type="button" className="sp-btn" onClick={() => runSearch(query, true)}>
-              Retry
-            </button>
+            {spotifyRetryable(cur.problem) ? <button type="button" className="sp-btn" onClick={() => runSearch(query, true)}>Retry</button> : null}
           </div>
         ) : null}
         <SearchGroups items={cur.items} isNow={isNow} onPlay={playItem} onOpen={setOpen} onShuffle={shuffleItem} />
@@ -681,11 +678,11 @@ function Browser({ tall }: { tall: boolean }) {
               <button type="button" className="sp-btn" onClick={() => useToolsStore.getState().openDrawer('accounts')}>
                 Open Tools
               </button>
-            ) : (
+            ) : spotifyRetryable(cur.problem) ? (
               <button type="button" className="sp-btn" onClick={() => (tab === 'search' ? runSearch(query, true) : load(tab as Exclude<BrowseTab, 'search' | 'queue'>, 0))}>
                 Retry
               </button>
-            )}
+            ) : null}
           </div>
         ) : cur.items.length === 0 && (cur.loading || !cur.loaded) ? (
           <div className="sp-empty" aria-busy="true">
@@ -952,11 +949,11 @@ function SongsView({ item, tall, backLabel, onBack, onNote, onUpNext }: { item: 
           <li className="sp-empty">
             {problemLine(st.problem)}
             {/* An album Spotify will not list: Retry cannot help and is not offered. */}
-            {st.problem === 'notYours' ? null : (
+            {spotifyRetryable(st.problem) ? (
               <button type="button" className="sp-btn" onClick={() => load(0)}>
                 Retry
               </button>
-            )}
+            ) : null}
           </li>
         ) : st.loading && st.items.length === 0 ? (
           <li className="sp-empty" aria-busy="true">
