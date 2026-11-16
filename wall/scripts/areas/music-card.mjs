@@ -33,8 +33,9 @@ function measureTallMusic() {
     // No text under 16 px (the small "not set up" tag of today's switch aside).
     const small = [...cardEl.querySelectorAll('*')].filter((e) => !e.closest('.sp-off') && [...e.childNodes].some((c) => c.nodeType === 3 && c.textContent.trim()) && parseFloat(getComputedStyle(e).fontSize) < 15.99);
     for (const e of small.slice(0, 3)) fails.push('listen tall: text under 16 px in ' + name(e) + ' "' + (e.textContent || '').trim().slice(0, 24) + '" (' + getComputedStyle(e).fontSize + ')');
-    // Controls at least 32 px each way (the time bar's track is thin: its grab area, the ::before, is what counts).
-    for (const e of cardEl.querySelectorAll('button, input, [role="slider"]')) {
+    // Controls at least 32 px each way (the time bar's track is thin: its grab area, the ::before, is what counts). The 30 by 30 add
+    // control of a library row is held to its own size by the library-add area.
+    for (const e of cardEl.querySelectorAll('button:not(.yt-add), input, [role="slider"]')) {
       const r = e.getBoundingClientRect();
       if (r.width === 0 || r.height === 0) continue;
       if (e.getAttribute('role') === 'slider') {

@@ -118,8 +118,8 @@ function measureYoutubePlayback() {
     }
   }
   if (cardEl) {
-    // Every button and field in the card 32 px or more each way.
-    for (const e of cardEl.querySelectorAll('button, input')) {
+    // Every button and field in the card 32 px or more each way (a library row's 30 by 30 add control is held to its size by the library-add area).
+    for (const e of cardEl.querySelectorAll('button:not(.yt-add), input')) {
       const r = e.getBoundingClientRect();
       if (r.width === 0 || r.height === 0) continue;
       const b = e.tagName === 'INPUT' ? (e.closest('.sp-search') ? e.closest('.sp-search').getBoundingClientRect() : r) : r;

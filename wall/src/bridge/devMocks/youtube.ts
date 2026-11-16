@@ -160,6 +160,8 @@ export function registerYoutubeMocks(): void {
       for (const el of document.querySelectorAll('.yt-rowscroll')) {
         if (seen.has(el) || !el.querySelector('.yt-row') || el.scrollHeight - el.clientHeight < scrolled) continue;
         seen.add(el);
+        // The scroll event of this one move reaches no listener (a menu opened on a row at once would close on it).
+        el.addEventListener('scroll', (e) => e.stopImmediatePropagation(), { once: true, capture: true });
         el.scrollTop = scrolled;
       }
     }).observe(document.documentElement, { childList: true, subtree: true });
