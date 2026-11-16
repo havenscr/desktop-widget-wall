@@ -83,7 +83,7 @@ const HEAVY = 'Saved playlist, while it plays, 20 queued and 50 heard';
 const HEAVY_LONG = 'Saved playlist, while it plays, 20 queued and 50 heard, long titles';
 // The tall "while it plays" and "turned off" pages are measured by the rule below and held to the card box only: its rows arrive after the card opens, and the
 // shared box checks read the card mid-growth there (a box that settles in the gallery still).
-const pageVariant = (name, extra, click, tall = false, whole = true) => ({ name, q: fitQuery(extra, tall), checks: whole ? ['.sp-card', '.sp-songs', '.sp-shead'] : ['.sp-card'], click: tall ? `hover:.sp-card then ${click}` : click });
+const pageVariant = (name, extra, click, tall = false, whole = true) => ({ name, q: fitQuery(extra, tall), checks: whole ? ['.sp-card', '.sp-songs', '.sp-shead'] : ['.sp-card'], click: tall ? `hover:.sp-card then settle:html then ${click}` : click });
 
 export default {
   name: 'spotify-saved-playlists',

@@ -1,6 +1,6 @@
 import { afterEach, expect, it } from 'vitest';
 import { mocks } from '../bridge/tauri';
-import { applyMood, applyPreset, forgetToken, goNormal, HOME_WORDS, homeWordOf, moodsOf, readMoods, readTokenStatus, saveToken, setGroup, setHomeKeys, studioOf } from './home';
+import { applyMood, applyOff, applyPreset, forgetToken, goNormal, HOME_WORDS, homeWordOf, moodsOf, readMoods, readTokenStatus, saveToken, setGroup, setHomeKeys, studioOf } from './home';
 import { studioAnswer } from './homeKit';
 
 afterEach(() => mocks.clear());
@@ -86,7 +86,7 @@ it('each call sends the command and arguments it should, and a shape that is not
   mocks.set('wall2_office_moods', () => ({ nothing: 1 }));
   await expect(readMoods()).rejects.toBe('failed');
   mocks.set('wall2_office_mood', (a) => ({ moods: [{ id: String(a?.id), label: 'M', active: true }] }));
-  expect((await applyMood('focus')).moods[0].id).toBe('focus');
+  expect((await applyMood('brightDesk')).moods[0].id).toBe('brightDesk');
 });
 
 it('the token calls pass the value only to the set command and read back only two flags', async () => {
@@ -100,4 +100,29 @@ it('the token calls pass the value only to the set command and read back only tw
   expect(await readTokenStatus()).toEqual({ set: true, unreadable: false });
   mocks.set('wall2_desk_token_forget', () => undefined);
   await forgetToken();
+});
+
+it('the moods answer carries off only as an object; applyOff calls its one command with no arguments', async () => {
+  const mood = { id: 'brightDesk', label: 'Bright desk', active: false };
+  expect(moodsOf({ moods: [mood] })!.off).toBeNull();
+  expect(moodsOf({ moods: [mood], off: null })!.off).toBeNull();
+  expect(moodsOf({ moods: [mood], off: true })!.off).toBeNull();
+  expect(moodsOf({ moods: [mood], off: [1] })!.off).toBeNull();
+  expect(moodsOf({ moods: [mood], off: 'yes' })!.off).toBeNull();
+  expect(moodsOf({ moods: [mood], off: { active: false } })!.off).toEqual({ active: false });
+  expect(moodsOf({ moods: [mood], off: { active: true } })!.off).toEqual({ active: true });
+  expect(moodsOf({ moods: [mood], off: { active: 'true' } })!.off).toEqual({ active: false });
+  let seen: unknown[] | null = null;
+  mocks.set('wall2_office_off', (args) => {
+    seen = [args];
+    return { stale: false, moods: [mood], off: { active: true }, canWrite: true, writeBlock: null };
+  });
+  expect((await applyOff()).off).toEqual({ active: true });
+  expect(seen).toEqual([undefined]);
+  mocks.set('wall2_office_off', () => ({ nothing: 1 }));
+  await expect(applyOff()).rejects.toBe('failed');
+  mocks.set('wall2_office_off', () => {
+    throw 'on-air';
+  });
+  await expect(applyOff()).rejects.toBe('on-air');
 });
