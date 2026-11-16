@@ -426,7 +426,7 @@ it('draws no timers of its own: exactly the helper poll on top of the shared sec
 
 const ALL_CSS = readFileSync('src/styles/unwind.css', 'utf8');
 /** Only the status line's rules (the rest of the file animates other things). */
-const CSS = ALL_CSS.slice(ALL_CSS.indexOf('/* The status line along the bottom'), ALL_CSS.indexOf('/* Screens off'));
+const CSS = ALL_CSS.slice(ALL_CSS.indexOf('/* The status line along the bottom'), ALL_CSS.indexOf('/* Centre: tabs, then now playing. */'));
 const rule = (selector: string) => CSS.match(new RegExp(`(^|\\n)${selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')} \\{([^}]*)\\}`))?.[2] ?? '';
 it('nothing blinks: the dots, ring and pill fade in once over 400 ms (opacity only), and just appear under reduced motion', () => {
   for (const sel of ['.u-dot', '.u-ring', '.u-need']) expect(rule(sel), sel).toMatch(/animation: u-mark-in 400ms ease-out;/);
