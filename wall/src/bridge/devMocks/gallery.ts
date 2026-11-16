@@ -1,7 +1,7 @@
 import { useFocusStore } from '../../focus/store';
 import { usePlaceStore } from '../../state/places';
 import { reviewNow } from '../../ui/reviewClock';
-import { nwsBody, openMeteoBody } from './weather';
+import { WX_KINDS, nwsBody, openMeteoBody } from './weather';
 import { mocks, type CommandArgs, type MockHandler } from '../tauri';
 import { knob } from './long';
 import { MOCK_DETAILS } from './meet';
@@ -22,6 +22,7 @@ import { MOCK_DETAILS } from './meet';
  *   ?box=max|stale|none|down   (machine numbers; `?pc=down` for the PC side)
  *   ?usage=high|none          (the two usage meters)
  *   ?weather=ok|stale|down|cold|dns|refused|second   (stands in for the native weather read)
+ *   ?weather=rain|heavy|rainwind|wind|heavywind   (rain, heavy rain, rain with wind, dry wind, heavy rain with wind: weather code and wind in both sources)
  *   ?clock=review           (Date.now starts at the `?at=` moment and then runs, so screens that read it agree)
  *   ?focus=long               (a focus session running under a long title)
  *   ?wattspot=<x>             (Watt was set down at that x on every place, On Air included: his stored spot, before he loads)
@@ -265,6 +266,7 @@ function usage(mode: string): void {
  * the Weather Service answers with a reading. `dns`: nothing can be looked up.
  */
 function weather(mode: string): void {
+  const wx = WX_KINDS[mode];
   let answered = false;
   let skew = 0;
   if (mode === 'stale') {
@@ -293,10 +295,10 @@ function weather(mode: string): void {
       if (!nws) throw 'http 429';
       return nwsBody();
     }
-    if (nws) return nwsBody();
+    if (nws) return nwsBody(wx);
     if (mode === 'stale' && !answered) setTimeout(goStale, 800);
     answered = true;
-    return openMeteoBody(mode === 'cold');
+    return openMeteoBody(mode === 'cold', wx);
   });
 }
 
