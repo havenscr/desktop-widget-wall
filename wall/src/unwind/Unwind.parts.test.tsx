@@ -11,7 +11,7 @@ import { resetLastPlayed, useLastPlayed } from './lastPlayed';
 import { LAST_MOOD_AT_KEY, ROOM_RETRY_MS, RoomCard } from './RoomCard';
 import { Tabs } from './Tabs';
 import { Tomorrow } from './Tomorrow';
-import { Volume, VOLUME_DEBOUNCE_MS } from './Volume';
+import { useAppVolume, VOLUME_DEBOUNCE_MS } from './Volume';
 import { resetWatch, useWatchStore } from './watch/store';
 
 usePacificTime();
@@ -112,6 +112,13 @@ it('shows a first event after noon tomorrow', async () => {
   await flush();
   expect(screen.getByText('First thing: Quarterly review at 1:00 PM')).toBeTruthy();
 });
+
+/** A bare slider on the shared hook, which is what the slider under the clock uses. */
+function Volume({ source, label }: { source: string | null | undefined; label?: string | null }) {
+  const { session, value, set } = useAppVolume(source);
+  if (!session) return null;
+  return <input type="range" min={0} max={1} step={0.01} value={value} aria-label={`${label ?? 'Player'} volume`} onChange={(e) => set(Number(e.currentTarget.value))} />;
+}
 
 const spotify = (volume = 70) => ({ master: { volume: 50, muted: false }, sessions: [{ id: '1:Spotify.exe', name: 'Spotify.exe', volume, muted: false }] });
 
@@ -612,16 +619,14 @@ it('marks nothing when the home feed has no mood that is on now', async () => {
   expect(document.querySelector('.u-more')).toBeNull();
 });
 
-it('the volume slider shows its number on hover and while dragging', async () => {
-  mocks.set('get_audio_sessions', () => spotify(42));
-  render(<Volume source="Spotify" label="Spotify" />);
-  await flush();
-  const wrap = document.querySelector('.u-vol') as HTMLElement;
-  expect(wrap.title).toBe('Volume 42%');
-  expect(document.querySelector('.u-vol-n')!.textContent).toBe('42');
-  expect(wrap.className).not.toContain('drag');
-  fireEvent.pointerDown(screen.getByLabelText('Spotify volume'));
-  expect(wrap.className).toContain('drag');
-  fireEvent.pointerUp(window);
-  expect(wrap.className).not.toContain('drag');
+it('Listen renders exactly one Spotify volume slider', async () => {
+  resetWatch();
+  useWatchStore.setState({ tab: 'listen', playing: null });
+  mocks.set('get_now_playing', () => ({ title: 'Tokyo Burnout', artist: 'Tokyo Rose', source_app: 'Spotify', playback_status: 'playing' }));
+  mocks.set('get_audio_sessions', () => spotify());
+  const r = render(<Unwind />);
+  await flush(3100);
+  expect(screen.getAllByRole('slider').length).toBe(1);
+  expect(screen.getAllByLabelText(/volume/i, { selector: 'input' }).length).toBe(1);
+  r.unmount();
 });

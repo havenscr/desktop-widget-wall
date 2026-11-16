@@ -1,4 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
+import { useSnoozed } from '../agents/snooze';
+import type { OmniSummary } from '../agents/model';
 import { invoke } from '../bridge/tauri';
 import { useFocusStore } from '../focus/store';
 import { AlarmChip } from '../home/AlarmChip';
@@ -42,7 +44,7 @@ export function StatusLine() {
         const s = await invoke<StatusSummary>('wall2_omni_summary');
         if (!mounted.current) return;
         const ok = s && Array.isArray(s.lanes) && s.yourMove && typeof s.yourMove === 'object';
-        setSummary(ok ? { stale: s.stale === true, lanes: s.lanes, yourMove: s.yourMove, linksAvailable: s.linksAvailable === true } : null);
+        setSummary(ok ? { stale: s.stale === true, now: s.now, lanes: s.lanes, sessionsList: Array.isArray(s.sessionsList) ? s.sessionsList : null, yourMove: s.yourMove, linksAvailable: s.linksAvailable === true } : null);
       } catch {
         if (mounted.current) setSummary(null);
       }
@@ -51,7 +53,9 @@ export function StatusLine() {
     const id = setInterval(() => void read(), STATUS_POLL_MS);
     return () => clearInterval(id);
   }, [visible]);
-  const parts = statusParts(focus, summary);
+  // "Later" on Work: the same snooze store, so a snoozed chat raises no chip here either.
+  const snoozed = useSnoozed(summary as unknown as OmniSummary | null);
+  const parts = statusParts(focus, summary, snoozed.ids);
   const alarms = useOpenAlarms();
   if (parts.length === 0 && alarms <= 0) return null;
   // The network alarm chip goes after the agents running chip, else after the first sentence.
