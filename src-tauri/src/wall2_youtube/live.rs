@@ -13,6 +13,7 @@ use tauri::Manager;
 
 // Mirrors the study's videos.list read each 60 seconds.
 const STATUS_FLOOR: u64 = 60;
+// Mirrors the brief's 15 second Check again floor.
 const STATUS_FRESH_FLOOR: u64 = 15;
 // Mirrors half the parent's ten minute liked-list lifetime.
 const FIND_FLOOR: u64 = 300;
@@ -30,7 +31,13 @@ const STATUS_STALE: u64 = 180;
 const CHAT_STALE: u64 = 60;
 // Mirrors memory retained only for one show.
 const CHAT_FORGET: u64 = 2 * 60 * 60;
+// Mirrors the brief's 1 KB channel file cap.
 const CHANNEL_MAX: u64 = 1_024;
+static CHANNEL_TMP_SEQ: AtomicU64 = AtomicU64::new(0);
+static STATE_WRITE: Mutex<()> = Mutex::new(());
+
+#[derive(Clone, Copy, PartialEq)]
+enum ReadKind { Channel, Find, Details, Chat }
 
 #[derive(Clone, PartialEq)]
 enum ChannelRef { Handle(String), Id(String) }
@@ -77,6 +84,12 @@ struct Live {
     channel: Option<Channel>,
     candidates: Vec<String>,
     candidates_at: Option<u64>,
+    find_attempt: Option<u64>,
+    details_attempt: Option<u64>,
+    chat_attempt: Option<u64>,
+    find_inflight: Option<u64>,
+    details_inflight: Option<u64>,
+    chat_inflight: Option<u64>,
     status: LiveStatus,
     status_day: i64,
     status_used: u32,
@@ -96,6 +109,8 @@ impl Live {
     fn new() -> Self {
         Self {
             channel: None, candidates: Vec::new(), candidates_at: None,
+            find_attempt: None, details_attempt: None, chat_attempt: None,
+            find_inflight: None, details_inflight: None, chat_inflight: None,
             status: LiveStatus {
                 state: "not-set-up", started_at: None, scheduled_at: None,
                 viewers: None, chat: false, read_at: None, stale: false,
@@ -126,6 +141,7 @@ impl Live {
     }
     fn drop_chat(&mut self, ended: bool, now: u64) {
         self.chat_id = None; self.page_token = None; self.poll_secs = CHAT_FLOOR;
+        self.status.chat = false;
         if ended { self.chat.state = "ended"; self.refresh_candidates = true; }
         if ended || self.last_live_at.is_some_and(|at| now.saturating_sub(at) >= CHAT_FORGET) { self.chat.messages.clear(); }
     }
@@ -141,11 +157,45 @@ fn put_live<R>(generation: u64, f: impl FnOnce(&mut Live) -> R) -> Option<R> {
     Some(f(state.get_or_insert_with(Live::new)))
 }
 
-pub(super) fn clear(keep_counts: bool) {
+/// Clears account and show memory. Quota counts and Google stop gates belong to the client and
+/// survive every clear, including sign-out and client changes.
+pub(super) fn clear(_keep_counts: bool) {
+    let _write = lock(&STATE_WRITE);
+    clear_locked();
+}
+
+fn clear_locked() {
     let mut state = lock(&LIVE);
     GEN.fetch_add(1, Ordering::SeqCst);
-    let kept = keep_counts.then(|| state.as_ref().map(|v| (v.status_day, v.status_used, v.chat_day, v.chat_used))).flatten();
-    *state = kept.map(|(sd, su, cd, cu)| { let mut v = Live::new(); v.status_day = sd; v.status_used = su; v.chat_day = cd; v.chat_used = cu; v });
+    let kept = state.as_ref().map(|v| (
+        v.status_day, v.status_used, v.chat_day, v.chat_used,
+        v.quota_all_day, v.busy_until,
+    ));
+    *state = kept.map(|(sd, su, cd, cu, quota, busy)| {
+        let mut v = Live::new();
+        v.status_day = sd; v.status_used = su;
+        v.chat_day = cd; v.chat_used = cu;
+        v.quota_all_day = quota; v.busy_until = busy;
+        v
+    });
+}
+
+#[cfg(test)]
+pub(super) fn reset_for_test() {
+    let _write = lock(&STATE_WRITE);
+    GEN.fetch_add(1, Ordering::SeqCst);
+    *lock(&LIVE) = None;
+}
+
+struct Lease { generation: u64, find: bool, details: bool, chat: bool }
+impl Drop for Lease {
+    fn drop(&mut self) {
+        let mut state = lock(&LIVE);
+        let Some(v) = state.as_mut() else { return };
+        if self.find && v.find_inflight == Some(self.generation) { v.find_inflight = None; }
+        if self.details && v.details_inflight == Some(self.generation) { v.details_inflight = None; }
+        if self.chat && v.chat_inflight == Some(self.generation) { v.chat_inflight = None; }
+    }
 }
 
 fn safe_chars(s: &str) -> bool { !s.chars().any(super::unsafe_char) }
@@ -180,32 +230,110 @@ fn write_channel(path: &Path, channel: &Channel) -> Result<(), &'static str> {
     if bytes.len() as u64 > CHANNEL_MAX { return Err(FAILED) }
     let parent = path.parent().ok_or(FAILED)?;
     std::fs::create_dir_all(parent).map_err(|_| FAILED)?;
-    let temp = parent.join("onair-channel.tmp");
-    std::fs::write(&temp, bytes).map_err(|_| FAILED)?;
-    std::fs::rename(&temp, path).map_err(|_| FAILED)
+    let sequence = CHANNEL_TMP_SEQ.fetch_add(1, Ordering::SeqCst);
+    let temp = parent.join(format!("onair-channel-{}-{sequence}.tmp", std::process::id()));
+    if std::fs::write(&temp, bytes).is_err() { return Err(FAILED) }
+    let result = std::fs::rename(&temp, path).map_err(|_| FAILED);
+    if result.is_err() { let _ = std::fs::remove_file(&temp); }
+    result
+}
+
+fn finish_channel_write(generation: u64, path: &Path, channel: &Channel) -> Result<(), &'static str> {
+    let _write = lock(&STATE_WRITE);
+    if GEN.load(Ordering::SeqCst) != generation { return Err(FAILED) }
+    write_channel(path, channel)?;
+    clear_locked();
+    Ok(())
 }
 
 fn channel_state(channel: Option<Channel>) -> ChannelState { ChannelState { set: channel.is_some(), title: channel.map(|v| v.title) } }
 
-fn live_get(ctx: &Ctx, endpoint: &str, params: &[(&str, &str)], chat: bool) -> Result<Value, &'static str> {
+fn gate_word(now: u64) -> Option<&'static str> {
+    with_live(|v| {
+        v.days(now);
+        if v.quota_all_day == Some(v.status_day) { Some(QUOTA_ALL) }
+        else if now < v.busy_until { Some(BUSY) }
+        else { None }
+    })
+}
+
+fn record_gate(now: u64, word: &'static str) {
+    with_live(|v| {
+        v.days(now);
+        if word == QUOTA_ALL { v.quota_all_day = Some(v.status_day); }
+        if word == BUSY { v.busy_until = v.busy_until.max(now + 60); }
+    });
+}
+
+fn begin_attempt(generation: u64, kind: ReadKind, now: u64) -> Result<(), &'static str> {
+    let mut state = lock(&LIVE);
+    if GEN.load(Ordering::SeqCst) != generation { return Err(FAILED) }
+    let v = state.get_or_insert_with(Live::new);
+    v.days(now);
+    if v.quota_all_day == Some(v.status_day) { return Err(QUOTA_ALL) }
+    if now < v.busy_until { return Err(BUSY) }
+    let (used, limit, cost) = if kind == ReadKind::Chat {
+        (&mut v.chat_used, CHAT_DAILY_UNITS, 5)
+    } else {
+        (&mut v.status_used, STATUS_DAILY_UNITS, 1)
+    };
+    if used.saturating_add(cost) > limit { return Err("quota") }
+    *used += cost;
+    match kind {
+        ReadKind::Find => v.find_attempt = Some(now),
+        ReadKind::Details => v.details_attempt = Some(now),
+        ReadKind::Chat => v.chat_attempt = Some(now),
+        ReadKind::Channel => {}
+    }
+    Ok(())
+}
+
+fn refund_transport(kind: ReadKind) {
+    with_live(|v| {
+        if kind == ReadKind::Chat { v.chat_used = v.chat_used.saturating_sub(5); }
+        else { v.status_used = v.status_used.saturating_sub(1); }
+    });
+}
+
+fn live_get(
+    ctx: &Ctx, endpoint: &str, params: &[(&str, &str)], kind: ReadKind,
+    generation: u64, now: u64,
+) -> Result<Value, &'static str> {
     use crate::wall2_youtube_log::{write, Event, Reason};
-    let (ok, failed) = if chat { (Event::ChatOk, Event::ChatFailed) } else { (Event::LiveOk, Event::LiveFailed) };
+    let chat = kind == ReadKind::Chat;
+    let (ok, failed) = if chat {
+        (Event::ChatOk, Event::ChatFailed)
+    } else {
+        (Event::LiveOk, Event::LiveFailed)
+    };
     let url = api_url(endpoint, params);
     let started = Instant::now();
     let mut forced = false;
     loop {
         let token = access_with(ctx.client, forced, ctx.http, ctx.creds)?;
+        begin_attempt(generation, kind, now)?;
         let reply = match ctx.http.get(&url, &token, READ_BODY, READ_TIMEOUT) {
             Ok(v) => v,
-            Err(()) => { write(failed, Reason::Down, 0, started.elapsed().as_millis()); return Err(DOWN) }
+            Err(()) => {
+                refund_transport(kind);
+                write(failed, Reason::Down, 0, started.elapsed().as_millis());
+                return Err(DOWN)
+            }
         };
         if reply.status == 401 && !forced { forced = true; continue }
         let ended = chat && chat_ended(&reply);
-        let result = if ended { Err("ended") } else if (200..300).contains(&reply.status) { serde_json::from_slice(&reply.body).map_err(|_| DOWN) } else { Err(read_error(&reply, false)) };
+        let result = if ended { Err("ended") }
+            else if (200..300).contains(&reply.status) {
+                serde_json::from_slice(&reply.body).map_err(|_| DOWN)
+            } else { Err(read_error(&reply, false)) };
         match result {
             Ok(value) => { write(ok, Reason::None, reply.status, started.elapsed().as_millis()); return Ok(value) }
             Err("ended") => { write(failed, Reason::Ended, reply.status, started.elapsed().as_millis()); return Err("ended") }
-            Err(word) => { write(failed, reason_of(word), reply.status, started.elapsed().as_millis()); return Err(word) }
+            Err(word) => {
+                record_gate(now, word);
+                write(failed, reason_of(word), reply.status, started.elapsed().as_millis());
+                return Err(word)
+            }
         }
     }
 }
@@ -217,34 +345,34 @@ fn chat_ended(reply: &HttpReply) -> bool {
     matches!(body.pointer("/error/errors/0/reason").and_then(Value::as_str), Some("liveChatEnded" | "liveChatNotFound" | "liveChatDisabled"))
 }
 
-fn resolve_channel(ctx: &Ctx, value: ChannelRef) -> Result<Channel, &'static str> {
+fn resolve_channel(
+    ctx: &Ctx, value: ChannelRef, generation: u64, now: u64,
+) -> Result<Channel, &'static str> {
     let (key, text) = match &value { ChannelRef::Handle(v) => ("forHandle", v.as_str()), ChannelRef::Id(v) => ("id", v.as_str()) };
-    let answer = live_get(ctx, "channels", &[("part", "id,snippet"), ("fields", "items(id,snippet/title)"), (key, text)], false)?;
+    let params = [("part", "id,snippet"), ("fields", "items(id,snippet/title)"), (key, text)];
+    let answer = live_get(ctx, "channels", &params, ReadKind::Channel, generation, now)?;
     let item = answer.get("items").and_then(Value::as_array).and_then(|v| v.first()).ok_or(NOT_FOUND)?;
     let id = item.get("id").and_then(Value::as_str).filter(|v| valid_channel_id(v)).ok_or(FAILED)?;
     let title = clean_text(item.pointer("/snippet/title"), 100).ok_or(FAILED)?;
     Ok(Channel { channel_id: id.to_string(), title })
 }
 
-fn set_channel_with(ctx: &Ctx, value: ChannelRef, now: u64) -> Result<Channel, &'static str> {
+fn set_channel_with(ctx: &Ctx, value: ChannelRef, now: u64) -> Result<(Channel, u64), &'static str> {
     if ctx.creds.load().ok().flatten().is_none() { return Err(SIGN_AGAIN) }
-    with_live(|v| {
-        v.days(now);
-        if v.quota_all_day == Some(v.status_day) { return Err(QUOTA_ALL) }
-        if now < v.busy_until { return Err(BUSY) }
-        if v.status_used >= STATUS_DAILY_UNITS { return Err("quota") }
-        v.status_used += 1;
-        Ok(())
-    })?;
-    match resolve_channel(ctx, value) {
-        Ok(channel) => Ok(channel),
-        Err(word) => {
-            with_live(|v| {
-                if word == QUOTA_ALL { v.quota_all_day = Some(v.status_day); }
-                if word == BUSY { v.busy_until = now + 60; }
-            });
-            Err(word)
-        }
+    if let Some(word) = gate_word(now) { return Err(word) }
+    let generation = GEN.load(Ordering::SeqCst);
+    resolve_channel(ctx, value, generation, now).map(|channel| (channel, generation))
+}
+
+fn set_channel_word(word: &str) -> &'static str {
+    match word {
+        SIGN_AGAIN => "signed-out",
+        NOT_FOUND => "not found",
+        QUOTA_ALL | "quota" => QUOTA_ALL,
+        BUSY => BUSY,
+        DOWN => DOWN,
+        super::SETUP_BROKEN => super::SETUP_BROKEN,
+        _ => FAILED,
     }
 }
 
@@ -255,57 +383,129 @@ fn days_from_civil(y: i64, m: i64, d: i64) -> i64 {
 }
 fn leap(y: i64) -> bool { y % 4 == 0 && (y % 100 != 0 || y % 400 == 0) }
 fn rfc3339(text: &str) -> Option<u64> {
-    if text.len() != 20 || &text[4..5] != "-" || &text[7..8] != "-" || &text[10..11] != "T" || &text[13..14] != ":" || &text[16..17] != ":" || &text[19..] != "Z" { return None }
+    if !text.is_ascii() || text.len() < 20 { return None }
+    if &text[4..5] != "-" || &text[7..8] != "-" || &text[10..11] != "T"
+        || &text[13..14] != ":" || &text[16..17] != ":"
+    { return None }
     let n = |a, b| text.get(a..b)?.parse::<i64>().ok();
     let (y, m, d, h, min, sec) = (n(0,4)?, n(5,7)?, n(8,10)?, n(11,13)?, n(14,16)?, n(17,19)?);
     let md = [31, if leap(y) {29} else {28}, 31,30,31,30,31,31,30,31,30,31];
     if !(1970..=9999).contains(&y) || !(1..=12).contains(&m) || !(1..=md[(m-1) as usize]).contains(&d) || h > 23 || min > 59 || sec > 59 { return None }
-    u64::try_from(days_from_civil(y,m,d) * 86_400 + h * 3600 + min * 60 + sec).ok()
+    let mut suffix = &text[19..];
+    if let Some(fraction) = suffix.strip_prefix('.') {
+        let digits = fraction.bytes().take_while(u8::is_ascii_digit).count();
+        if digits == 0 { return None }
+        suffix = &fraction[digits..];
+    }
+    let offset = if suffix == "Z" { 0 }
+        else if suffix.len() == 6 && matches!(suffix.as_bytes()[0], b'+' | b'-')
+            && &suffix[3..4] == ":"
+        {
+            let hours = suffix[1..3].parse::<i64>().ok()?;
+            let minutes = suffix[4..6].parse::<i64>().ok()?;
+            if hours > 23 || minutes > 59 { return None }
+            let value = hours * 3_600 + minutes * 60;
+            if suffix.as_bytes()[0] == b'+' { value } else { -value }
+        } else { return None };
+    let local = days_from_civil(y,m,d) * 86_400 + h * 3_600 + min * 60 + sec;
+    u64::try_from(local - offset).ok()
 }
 
-fn status_error(now: u64, word: &'static str) -> LiveStatus {
-    with_live(|v| { v.days(now); if word == QUOTA_ALL { v.quota_all_day = Some(v.status_day); } if word == BUSY { v.busy_until = now + 60; } v.status.word = Some(word); v.status_answer(now) })
+fn status_error(generation: u64, now: u64, word: &'static str) -> LiveStatus {
+    let _ = put_live(generation, |v| v.status.word = Some(word));
+    with_live(|v| v.status_answer(now))
+}
+
+fn acquire_status(
+    channel: &Channel, now: u64, fresh: bool, shown: bool,
+) -> Option<(Lease, bool, Vec<String>, u64)> {
+    with_live(|v| {
+        v.days(now);
+        v.channel = Some(channel.clone());
+        if v.last_live_at.is_some_and(|at| now.saturating_sub(at) >= CHAT_FORGET) {
+            v.drop_chat(false, now);
+        }
+        if !shown || v.quota_all_day == Some(v.status_day) || now < v.busy_until {
+            return None
+        }
+        let floor = if fresh { STATUS_FRESH_FLOOR } else { STATUS_FLOOR };
+        let last_status_attempt = v.find_attempt.into_iter().chain(v.details_attempt).max();
+        if last_status_attempt.is_some_and(|at| now.saturating_sub(at) < floor) {
+            return None
+        }
+        let find = v.refresh_candidates
+            || v.find_attempt.is_none_or(|at| now.saturating_sub(at) >= FIND_FLOOR);
+        if v.details_inflight.is_some() || (find && v.find_inflight.is_some()) {
+            return None
+        }
+        let needed = if find { 2 } else { 1 };
+        if v.status_used.saturating_add(needed) > STATUS_DAILY_UNITS {
+            v.status.word = Some("quota");
+            return None
+        }
+        let generation = GEN.load(Ordering::SeqCst);
+        v.details_inflight = Some(generation);
+        if find { v.find_inflight = Some(generation); }
+        let lease = Lease { generation, find, details: true, chat: false };
+        Some((lease, find, v.candidates.clone(), generation))
+    })
+}
+
+fn put_none(generation: u64, now: u64) {
+    let _ = put_live(generation, |v| {
+        if v.status.state == "live" { v.drop_chat(true, now); }
+        v.status = LiveStatus {
+            state: "none", started_at: None, scheduled_at: None, viewers: None,
+            chat: false, read_at: Some(now), stale: false, word: None,
+            status_left: 0, chat_left: 0,
+        };
+    });
 }
 
 fn status_with(ctx: &Ctx, channel: Option<Channel>, now: u64, fresh: bool, shown: bool) -> LiveStatus {
-    if channel.is_none() { return with_live(|v| { v.channel = None; v.status.state = "not-set-up"; v.status.word = None; v.status.stale = false; v.status_answer(now) }) }
-    if ctx.creds.load().ok().flatten().is_none() { return with_live(|v| { v.status.state = "signed-out"; v.status.word = None; v.status_answer(now) }) }
-    let channel = channel.unwrap();
-    let generation = GEN.load(Ordering::SeqCst);
-    let plan = with_live(|v| {
-        v.days(now); v.channel = Some(channel.clone());
-        if !shown { return None }
-        if v.quota_all_day == Some(v.status_day) || now < v.busy_until { return None }
-        let floor = if fresh { STATUS_FRESH_FLOOR } else { STATUS_FLOOR };
-        if v.status.read_at.is_some_and(|at| now.saturating_sub(at) < floor) { return None }
-        let find = v.refresh_candidates || v.candidates_at.is_none_or(|at| now.saturating_sub(at) >= FIND_FLOOR);
-        let cost = if find { 2 } else { 1 };
-        if v.status_used + cost > STATUS_DAILY_UNITS { v.status.word = Some("quota"); return None }
-        v.status_used += cost; Some((find, v.candidates.clone()))
-    });
-    let Some((find, mut ids)) = plan else { return with_live(|v| v.status_answer(now)) };
+    let Some(channel) = channel else {
+        return with_live(|v| {
+            v.days(now); v.channel = None; v.status.state = "not-set-up";
+            v.status.word = None; v.status.stale = false; v.status_answer(now)
+        })
+    };
+    if ctx.creds.load().ok().flatten().is_none() {
+        return with_live(|v| {
+            v.status.state = "signed-out"; v.status.word = None; v.status_answer(now)
+        })
+    }
+    let Some((_lease, find, mut ids, generation)) = acquire_status(&channel, now, fresh, shown)
+        else { return with_live(|v| v.status_answer(now)) };
     if find {
         let uploads = format!("UU{}", &channel.channel_id[2..]);
         let params = [
             ("part", "contentDetails"), ("playlistId", uploads.as_str()),
             ("maxResults", "5"), ("fields", "items/contentDetails/videoId"),
         ];
-        let answer = match live_get(ctx, "playlistItems", &params, false) {
+        let answer = match live_get(ctx, "playlistItems", &params, ReadKind::Find, generation, now) {
             Ok(v) => v,
-            Err(w) => return status_error(now, w),
+            Err(NOT_FOUND) => Value::Object(serde_json::Map::new()),
+            Err(w) => return status_error(generation, now, w),
         };
         ids = answer.get("items").and_then(Value::as_array).into_iter().flatten()
             .filter_map(|v| v.pointer("/contentDetails/videoId").and_then(Value::as_str))
-            .filter(|v| id_chars(v, 11..=11)).map(str::to_string).collect();
-        let _ = put_live(generation, |v| { v.candidates = ids.clone(); v.candidates_at = Some(now); v.refresh_candidates = false; });
+            .filter(|v| id_chars(v, 11..=11)).take(5).map(str::to_string).collect();
+        let _ = put_live(generation, |v| {
+            v.candidates = ids.clone(); v.candidates_at = Some(now);
+            v.refresh_candidates = false;
+        });
+    }
+    if ids.is_empty() {
+        put_none(generation, now);
+        return with_live(|v| v.status_answer(now))
     }
     let joined = ids.join(",");
     let fields = "items(id,snippet/liveBroadcastContent,liveStreamingDetails(\
         actualStartTime,actualEndTime,scheduledStartTime,concurrentViewers,activeLiveChatId))";
     let params = [("part", "snippet,liveStreamingDetails"), ("id", joined.as_str()), ("fields", fields)];
-    let answer = match live_get(ctx, "videos", &params, false) {
+    let answer = match live_get(ctx, "videos", &params, ReadKind::Details, generation, now) {
         Ok(v) => v,
-        Err(w) => return status_error(now, w),
+        Err(w) => return status_error(generation, now, w),
     };
     let mut live = None; let mut scheduled: Option<u64> = None;
     for item in answer.get("items").and_then(Value::as_array).into_iter().flatten() {
@@ -328,9 +528,15 @@ fn status_with(ctx: &Ctx, channel: Option<Channel>, now: u64, fresh: bool, shown
             let viewers = item.pointer("/liveStreamingDetails/concurrentViewers")
                 .and_then(Value::as_str).and_then(|s| s.parse::<u32>().ok())
                 .filter(|n| *n <= 10_000_000);
-            v.chat_id = item.pointer("/liveStreamingDetails/activeLiveChatId")
+            let next_chat = item.pointer("/liveStreamingDetails/activeLiveChatId")
                 .and_then(Value::as_str).filter(|s| id_chars(s, 1..=128))
                 .map(str::to_string);
+            if v.chat_id != next_chat {
+                v.page_token = None;
+                v.chat.messages.clear();
+                v.chat.read_at = None;
+            }
+            v.chat_id = next_chat;
             v.last_live_at = Some(now);
             v.chat.state = if v.chat_id.is_some() { "ok" } else { "off" };
             LiveStatus {
@@ -357,23 +563,40 @@ fn status_with(ctx: &Ctx, channel: Option<Channel>, now: u64, fresh: bool, shown
     with_live(|v| v.status_answer(now))
 }
 
-fn chat_with(ctx: &Ctx, now: u64, shown: bool) -> LiveChat {
-    let generation = GEN.load(Ordering::SeqCst);
-    let plan = with_live(|v| {
+fn valid_message_id(id: &str) -> bool {
+    (1..=200).contains(&id.len())
+        && id.bytes().all(|b| b.is_ascii_alphanumeric() || matches!(b, b'_' | b'-' | b'.'))
+}
+
+fn acquire_chat(now: u64, shown: bool) -> Option<(Lease, String, Option<String>, u64)> {
+    with_live(|v| {
         v.days(now);
         if v.last_live_at.is_some_and(|at| now.saturating_sub(at) >= CHAT_FORGET) { v.drop_chat(false, now); }
         if v.status.state != "live"
             || v.status.read_at.is_none_or(|at| now.saturating_sub(at) > 120)
             || v.chat_id.is_none()
         {
-            v.chat.state = "off";
+            if v.chat.state != "ended" { v.chat.state = "off"; }
             return None
         }
-        if !shown || v.chat.read_at.is_some_and(|at| now.saturating_sub(at) < v.poll_secs.max(CHAT_FLOOR)) { return None }
+        if !shown || v.quota_all_day == Some(v.chat_day) || now < v.busy_until {
+            return None
+        }
+        if v.chat_attempt.is_some_and(|at| now.saturating_sub(at) < v.poll_secs.max(CHAT_FLOOR)) {
+            return None
+        }
+        if v.chat_inflight.is_some() { return None }
         if v.chat_used + 5 > CHAT_DAILY_UNITS { v.chat.state = "quota"; v.chat.stopped_at.get_or_insert(now); return None }
-        v.chat_used += 5; Some((v.chat_id.clone().unwrap(), v.page_token.clone()))
-    });
-    let Some((chat_id, token)) = plan else { return with_live(|v| v.chat_answer(now)) };
+        let generation = GEN.load(Ordering::SeqCst);
+        v.chat_inflight = Some(generation);
+        let lease = Lease { generation, find: false, details: false, chat: true };
+        Some((lease, v.chat_id.clone().unwrap(), v.page_token.clone(), generation))
+    })
+}
+
+fn chat_with(ctx: &Ctx, now: u64, shown: bool) -> LiveChat {
+    let Some((_lease, chat_id, token, generation)) = acquire_chat(now, shown)
+        else { return with_live(|v| v.chat_answer(now)) };
     let fields = "nextPageToken,pollingIntervalMillis,offlineAt,items(id,snippet(\
         type,publishedAt,displayMessage,superChatDetails(amountDisplayString,userComment),\
         messageDeletedDetails/deletedMessageId),authorDetails/displayName)";
@@ -382,10 +605,20 @@ fn chat_with(ctx: &Ctx, now: u64, shown: bool) -> LiveChat {
         ("maxResults", "200"), ("fields", fields),
     ];
     if let Some(ref page) = token { params.push(("pageToken", page)); }
-    let answer = match live_get(ctx, "liveChat/messages", &params, true) {
+    let answer = match live_get(ctx, "liveChat/messages", &params, ReadKind::Chat, generation, now) {
         Ok(v) => v,
         Err("ended") => { let _ = put_live(generation, |v| v.drop_chat(true, now)); return with_live(|v| v.chat_answer(now)) }
-        Err(word) => { let _ = put_live(generation, |v| v.chat.word = Some(word)); return with_live(|v| v.chat_answer(now)) }
+        Err(word) => {
+            let _ = put_live(generation, |v| {
+                if word == super::INVALID && token.is_some() { v.page_token = None; }
+                if word == QUOTA_ALL || word == "quota" {
+                    v.chat.state = "quota";
+                    v.chat.stopped_at.get_or_insert(now);
+                }
+                v.chat.word = Some(word);
+            });
+            return with_live(|v| v.chat_answer(now))
+        }
     };
     put_live(generation, |v| {
         if answer.get("offlineAt").is_some() { v.drop_chat(true, now); return }
@@ -394,20 +627,21 @@ fn chat_with(ctx: &Ctx, now: u64, shown: bool) -> LiveChat {
             let kind = item.pointer("/snippet/type").and_then(Value::as_str);
             if kind == Some("messageDeletedEvent") {
                 if let Some(id) = item.pointer("/snippet/messageDeletedDetails/deletedMessageId")
-                    .and_then(Value::as_str).filter(|s| id_chars(s, 1..=128))
+                    .and_then(Value::as_str).filter(|s| valid_message_id(s))
                 {
                     messages.retain(|m| m.id != id);
                 }
                 continue
             }
             if !matches!(kind, Some("textMessageEvent" | "superChatEvent")) { continue }
-            let Some(id) = item.get("id").and_then(Value::as_str).filter(|s| id_chars(s, 1..=128)) else { continue };
+            let Some(id) = item.get("id").and_then(Value::as_str).filter(|s| valid_message_id(s)) else { continue };
             let Some(name) = clean_text(item.pointer("/authorDetails/displayName"), 40) else { continue };
             let Some(at) = item.pointer("/snippet/publishedAt").and_then(Value::as_str).and_then(rfc3339) else { continue };
             let text = if kind == Some("superChatEvent") {
                 clean_text(item.pointer("/snippet/superChatDetails/userComment"), 200).unwrap_or_default()
             } else {
-                clean_text(item.pointer("/snippet/displayMessage"), 200).unwrap_or_default()
+                let Some(text) = clean_text(item.pointer("/snippet/displayMessage"), 200) else { continue };
+                text
             };
             let super_chat = (kind == Some("superChatEvent"))
                 .then(|| clean_text(item.pointer("/snippet/superChatDetails/amountDisplayString"), 16))
@@ -437,15 +671,23 @@ pub async fn wall2_ytlive_channel(window: tauri::WebviewWindow) -> Result<Channe
 pub async fn wall2_ytlive_set_channel(window: tauri::WebviewWindow, text: String) -> Result<ChannelState, String> {
     super::require(&window)?; let value = parse_channel(&text).ok_or_else(|| "invalid".to_string())?; let app = window.app_handle().clone(); let file = path(&app)?;
     tauri::async_runtime::spawn_blocking(move || {
-        let channel = super::read_with_app(&app, |ctx| set_channel_with(ctx, value, (ctx.now)())).map_err(|v| v.to_string())?;
-        write_channel(&file, &channel).map_err(str::to_string)?; clear(true); Ok(channel_state(Some(channel)))
+        let (channel, generation) = super::read_with_app(&app, |ctx| {
+            set_channel_with(ctx, value, (ctx.now)())
+        }).map_err(|word| set_channel_word(&word).to_string())?;
+        finish_channel_write(generation, &file, &channel).map_err(str::to_string)?;
+        Ok(channel_state(Some(channel)))
     }).await.map_err(|_| FAILED.to_string())?
 }
 
 #[tauri::command]
 pub async fn wall2_ytlive_forget_channel(window: tauri::WebviewWindow) -> Result<(), String> {
     super::require(&window)?; let file = path(window.app_handle())?;
-    tauri::async_runtime::spawn_blocking(move || { if file.exists() { std::fs::remove_file(file).map_err(|_| FAILED.to_string())?; } clear(true); Ok(()) }).await.map_err(|_| FAILED.to_string())?
+    tauri::async_runtime::spawn_blocking(move || {
+        let _write = lock(&STATE_WRITE);
+        if file.exists() { std::fs::remove_file(file).map_err(|_| FAILED.to_string())?; }
+        clear_locked();
+        Ok(())
+    }).await.map_err(|_| FAILED.to_string())?
 }
 
 #[tauri::command]
@@ -467,7 +709,12 @@ pub async fn wall2_ytlive_chat(window: tauri::WebviewWindow) -> Result<LiveChat,
     tauri::async_runtime::spawn_blocking(move || {
         let now = super::unix_now();
         let off = with_live(|v| v.status.state != "live" || v.chat_id.is_none());
-        if off { return Ok(with_live(|v| { v.chat.state = "off"; v.chat_answer(now) })) }
+        if off {
+            return Ok(with_live(|v| {
+                if v.chat.state != "ended" { v.chat.state = "off"; }
+                v.chat_answer(now)
+            }))
+        }
         super::read_with_app(&app, |ctx| Ok(chat_with(ctx, (ctx.now)(), crate::webview_shown())))
     }).await.map_err(|_| FAILED.to_string())?
 }
@@ -478,6 +725,7 @@ mod tests {
     use crate::wall2_youtube::tests::{client, exclusive, reply, FakeCreds, FakeHttp};
     use serde_json::json;
     use std::sync::atomic::AtomicU64;
+    use std::sync::{Arc, Condvar};
 
     const T0: u64 = 1_704_067_200;
 
@@ -532,6 +780,50 @@ mod tests {
         });
     }
 
+    struct HoldingHttp {
+        answer: Mutex<Option<Result<HttpReply, ()>>>,
+        entered: (Mutex<bool>, Condvar),
+        released: (Mutex<bool>, Condvar),
+        calls: AtomicU64,
+    }
+    impl HoldingHttp {
+        fn new(answer: Result<HttpReply, ()>) -> Self {
+            Self {
+                answer: Mutex::new(Some(answer)),
+                entered: (Mutex::new(false), Condvar::new()),
+                released: (Mutex::new(false), Condvar::new()),
+                calls: AtomicU64::new(0),
+            }
+        }
+        fn wait_entered(&self) {
+            let (flag, cv) = &self.entered;
+            let mut entered = lock(flag);
+            while !*entered { entered = cv.wait(entered).unwrap_or_else(|e| e.into_inner()); }
+        }
+        fn release(&self) {
+            let (flag, cv) = &self.released;
+            *lock(flag) = true;
+            cv.notify_all();
+        }
+    }
+    impl super::super::Http for HoldingHttp {
+        fn post_form(
+            &self, _url: &str, _form: &[(&str, &str)], _timeout: std::time::Duration,
+        ) -> Result<HttpReply, ()> { Err(()) }
+        fn get(
+            &self, _url: &str, _bearer: &str, _limit: u64, _timeout: std::time::Duration,
+        ) -> Result<HttpReply, ()> {
+            self.calls.fetch_add(1, Ordering::SeqCst);
+            let (entered, entered_cv) = &self.entered;
+            *lock(entered) = true;
+            entered_cv.notify_all();
+            let (released, released_cv) = &self.released;
+            let mut ready = lock(released);
+            while !*ready { ready = released_cv.wait(ready).unwrap_or_else(|e| e.into_inner()); }
+            lock(&self.answer).take().unwrap_or(Err(()))
+        }
+    }
+
     #[test]
     fn channel_parser_accepts_every_named_shape_and_refuses_every_other_shape() {
         let _guard = exclusive();
@@ -567,7 +859,7 @@ mod tests {
         let http = FakeHttp::reads(vec![ok(answer)], vec![]);
         let creds = FakeCreds::new(Some("refresh"));
         let now = AtomicU64::new(T0);
-        let channel = run(&http, &creds, &now, |ctx| {
+        let (channel, _) = run(&http, &creds, &now, |ctx| {
             set_channel_with(ctx, ChannelRef::Handle("example-channel".into()), T0).unwrap()
         });
         assert_eq!(channel.title, "Example Channel");
@@ -901,7 +1193,7 @@ mod tests {
             assert_eq!(v.chat_used, 25);
         });
         clear(false);
-        with_live(|v| { assert_eq!(v.status_used, 0); assert_eq!(v.chat_used, 0); });
+        with_live(|v| { assert_eq!(v.status_used, 17); assert_eq!(v.chat_used, 25); });
     }
 
     #[test]
@@ -924,6 +1216,551 @@ mod tests {
             assert!(v.status.read_at.is_none());
         });
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn failed_status_and_chat_attempts_hold_their_floors() {
+        let _guard = exclusive();
+        prime_token();
+        let status_http = FakeHttp::reads(vec![reply(500, "")], vec![]);
+        let creds = FakeCreds::new(Some("refresh"));
+        let now = AtomicU64::new(T0);
+        let first = run(&status_http, &creds, &now, |ctx| {
+            status_with(ctx, Some(saved_channel()), T0, false, true)
+        });
+        assert_eq!(first.word, Some(DOWN));
+        run(&status_http, &creds, &now, |ctx| {
+            status_with(ctx, Some(saved_channel()), T0 + 1, false, true)
+        });
+        assert_eq!(status_http.get_urls().len(), 1);
+
+        reset_for_test();
+        prime_token();
+        with_live(|v| {
+            v.candidates = vec![video_id(1)];
+            v.find_attempt = Some(T0);
+        });
+        let details_http = FakeHttp::reads(vec![reply(500, "")], vec![]);
+        run(&details_http, &creds, &now, |ctx| {
+            status_with(ctx, Some(saved_channel()), T0 + 61, false, true)
+        });
+        run(&details_http, &creds, &now, |ctx| {
+            status_with(ctx, Some(saved_channel()), T0 + 62, false, true)
+        });
+        assert_eq!(details_http.get_urls().len(), 1);
+        with_live(|v| assert_eq!(v.details_attempt, Some(T0 + 61)));
+
+        reset_for_test(); prime_token(); set_live_memory(T0);
+        let chat_http = FakeHttp::reads(vec![reply(500, "")], vec![]);
+        let chat_first = run(&chat_http, &creds, &now, |ctx| chat_with(ctx, T0, true));
+        assert_eq!(chat_first.word, Some(DOWN));
+        run(&chat_http, &creds, &now, |ctx| chat_with(ctx, T0 + 1, true));
+        assert_eq!(chat_http.get_urls().len(), 1);
+    }
+
+    #[test]
+    fn racing_status_and_chat_calls_each_send_once() {
+        let _guard = exclusive();
+        prime_token();
+        let status_http = Arc::new(HoldingHttp::new(ok(json!({ "items": [] }))));
+        let status_creds = Arc::new(FakeCreds::new(Some("refresh")));
+        let first_http = status_http.clone();
+        let first_creds = status_creds.clone();
+        let status_thread = std::thread::spawn(move || {
+            let client = client(); let clock = || T0;
+            let ctx = Ctx { http: first_http.as_ref(), creds: first_creds.as_ref(), client: &client, now: &clock };
+            status_with(&ctx, Some(saved_channel()), T0, false, true)
+        });
+        status_http.wait_entered();
+        let status_client = client();
+        let clock = || T0;
+        let ctx = Ctx {
+            http: status_http.as_ref(),
+            creds: status_creds.as_ref(),
+            client: &status_client,
+            now: &clock,
+        };
+        let second = status_with(&ctx, Some(saved_channel()), T0, false, true);
+        assert_eq!(second.read_at, None);
+        assert_eq!(status_http.calls.load(Ordering::SeqCst), 1);
+        status_http.release();
+        assert_eq!(status_thread.join().unwrap().state, "none");
+
+        reset_for_test(); prime_token(); set_live_memory(T0);
+        let chat_http = Arc::new(HoldingHttp::new(ok(json!({ "items": [] }))));
+        let chat_creds = Arc::new(FakeCreds::new(Some("refresh")));
+        let first_http = chat_http.clone();
+        let first_creds = chat_creds.clone();
+        let chat_thread = std::thread::spawn(move || {
+            let client = client(); let clock = || T0;
+            let ctx = Ctx { http: first_http.as_ref(), creds: first_creds.as_ref(), client: &client, now: &clock };
+            chat_with(&ctx, T0, true)
+        });
+        chat_http.wait_entered();
+        let client = client(); let clock = || T0;
+        let ctx = Ctx { http: chat_http.as_ref(), creds: chat_creds.as_ref(), client: &client, now: &clock };
+        assert_eq!(chat_with(&ctx, T0, true).read_at, None);
+        assert_eq!(chat_http.calls.load(Ordering::SeqCst), 1);
+        chat_http.release();
+        assert_eq!(chat_thread.join().unwrap().state, "ok");
+    }
+
+    #[test]
+    fn busy_and_quota_all_from_chat_stop_status_and_survive_clear() {
+        let _guard = exclusive();
+        let creds = FakeCreds::new(Some("refresh"));
+        let now = AtomicU64::new(T0);
+        for (status, body, expected) in [
+            (429, "{}", BUSY),
+            (403, r#"{"error":{"errors":[{"reason":"rateLimitExceeded"}]}}"#, BUSY),
+            (403, r#"{"error":{"errors":[{"reason":"quotaExceeded"}]}}"#, QUOTA_ALL),
+        ] {
+            reset_for_test(); prime_token(); set_live_memory(T0);
+            let chat_http = FakeHttp::reads(vec![reply(status, body)], vec![]);
+            let answer = run(&chat_http, &creds, &now, |ctx| chat_with(ctx, T0, true));
+            assert_eq!(answer.word, Some(expected));
+            clear(false);
+            let status_http = FakeHttp::reads(vec![], vec![]);
+            run(&status_http, &creds, &now, |ctx| {
+                status_with(ctx, Some(saved_channel()), T0 + 1, false, true)
+            });
+            assert!(status_http.get_urls().is_empty());
+            with_live(|v| {
+                if expected == BUSY { assert!(v.busy_until >= T0 + 60); }
+                else { assert_eq!(v.quota_all_day, Some(pacific_day(T0))); }
+            });
+        }
+    }
+
+    #[test]
+    fn budgets_count_get_attempts_but_not_refresh_or_transport_failures() {
+        let _guard = exclusive();
+        let creds = FakeCreds::new(Some("refresh"));
+        let now = AtomicU64::new(T0);
+
+        let refresh_fail = FakeHttp::reads(vec![], vec![Err(())]);
+        run(&refresh_fail, &creds, &now, |ctx| {
+            status_with(ctx, Some(saved_channel()), T0, false, true)
+        });
+        with_live(|v| { assert_eq!(v.status_used, 0); assert_eq!(v.find_attempt, None); });
+
+        reset_for_test(); prime_token();
+        let transport = FakeHttp::reads(vec![Err(())], vec![]);
+        run(&transport, &creds, &now, |ctx| {
+            status_with(ctx, Some(saved_channel()), T0, false, true)
+        });
+        with_live(|v| { assert_eq!(v.status_used, 0); assert_eq!(v.find_attempt, Some(T0)); });
+
+        reset_for_test(); prime_token();
+        let unauthorized = FakeHttp::reads(vec![
+            reply(401, "{}"), ok(json!({ "items": [] })),
+        ], vec![super::super::tests::tokens(None, None)]);
+        let answer = run(&unauthorized, &creds, &now, |ctx| {
+            status_with(ctx, Some(saved_channel()), T0, false, true)
+        });
+        assert_eq!(answer.state, "none");
+        assert_eq!(unauthorized.get_urls().len(), 2);
+        with_live(|v| assert_eq!(v.status_used, 2));
+
+        reset_for_test();
+        prime_token();
+        set_live_memory(T0);
+        let chat_unauthorized = FakeHttp::reads(
+            vec![reply(401, "{}"), ok(json!({ "items": [] }))],
+            vec![super::super::tests::tokens(None, None)],
+        );
+        run(&chat_unauthorized, &creds, &now, |ctx| {
+            chat_with(ctx, T0, true)
+        });
+        assert_eq!(chat_unauthorized.get_urls().len(), 2);
+        with_live(|v| assert_eq!(v.chat_used, 10));
+    }
+
+    #[test]
+    fn generation_clear_drops_held_success_and_error_results_but_keeps_channel_file() {
+        let _guard = exclusive();
+        let dir = std::env::temp_dir().join(format!("wall-ytlive-generation-{}", std::process::id()));
+        let path = dir.join("onair-channel.json");
+        let _ = std::fs::remove_dir_all(&dir);
+        write_channel(&path, &saved_channel()).unwrap();
+        for (answer, expect_busy) in [
+            (ok(json!({ "items": [] })), false),
+            (reply(429, ""), true),
+        ] {
+            reset_for_test(); prime_token();
+            let http = Arc::new(HoldingHttp::new(answer));
+            let creds = Arc::new(FakeCreds::new(Some("refresh")));
+            let first_http = http.clone(); let first_creds = creds.clone();
+            let worker = std::thread::spawn(move || {
+                let client = client(); let clock = || T0;
+                let ctx = Ctx { http: first_http.as_ref(), creds: first_creds.as_ref(), client: &client, now: &clock };
+                status_with(&ctx, Some(saved_channel()), T0, false, true)
+            });
+            http.wait_entered();
+            clear(true);
+            with_live(|v| { v.status.state = "signed-out"; v.status.word = None; });
+            http.release();
+            let _ = worker.join().unwrap();
+            with_live(|v| {
+                assert_eq!(v.status.state, "signed-out");
+                assert_eq!(v.status.word, None);
+                assert_eq!(v.status.read_at, None);
+                assert_eq!(v.busy_until >= T0 + 60, expect_busy);
+            });
+            assert!(read_channel(&path).is_some());
+        }
+
+        reset_for_test();
+        prime_token();
+        write_channel(&path, &Channel {
+            channel_id: channel_id(),
+            title: "Original Channel".into(),
+        }).unwrap();
+        let http = Arc::new(HoldingHttp::new(ok(json!({ "items": [{
+            "id": format!("UC{}", "b".repeat(22)),
+            "snippet": { "title": "Replacement Channel" }
+        }] }))));
+        let creds = Arc::new(FakeCreds::new(Some("refresh")));
+        let first_http = http.clone();
+        let first_creds = creds.clone();
+        let worker_path = path.clone();
+        let worker = std::thread::spawn(move || {
+            let client = client();
+            let clock = || T0;
+            let ctx = Ctx {
+                http: first_http.as_ref(),
+                creds: first_creds.as_ref(),
+                client: &client,
+                now: &clock,
+            };
+            let (channel, generation) = set_channel_with(
+                &ctx,
+                ChannelRef::Id(channel_id()),
+                T0,
+            )?;
+            finish_channel_write(generation, &worker_path, &channel)
+        });
+        http.wait_entered();
+        clear(true);
+        http.release();
+        assert_eq!(worker.join().unwrap(), Err(FAILED));
+        assert_eq!(read_channel(&path).unwrap().title, "Original Channel");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn parser_accepts_fraction_offsets_and_refuses_multibyte_or_signed_fields() {
+        let _guard = exclusive();
+        assert_eq!(rfc3339("2024-01-01T00:00:00.123Z"), Some(T0));
+        assert_eq!(rfc3339("2024-01-01T02:30:00+02:30"), Some(T0));
+        assert_eq!(rfc3339("2023-12-31T16:00:00-08:00"), Some(T0));
+        for bad in [
+            "2024-01-01T00:00:00.éZ", "-024-01-01T00:00:00Z",
+            "2024--1-01T00:00:00Z", "2024-01-01T-1:00:00Z",
+            "2024-01-01T00:00:00.Z", "2024-01-01T00:00:00+24:00",
+        ] { assert_eq!(rfc3339(bad), None, "{bad}"); }
+    }
+
+    #[test]
+    fn message_ids_allow_dots_only_in_memory_and_empty_text_is_skipped() {
+        let _guard = exclusive();
+        assert!(valid_message_id("message.part_1-2"));
+        assert!(valid_message_id(&"a".repeat(200)));
+        assert!(!valid_message_id(&"a".repeat(201)));
+        assert!(!valid_message_id("message/part"));
+        assert!(!id_chars("message.part", 1..=128));
+        prime_token(); set_live_memory(T0);
+        let http = FakeHttp::reads(vec![ok(json!({ "items": [
+            { "id": "message.part", "snippet": { "type": "textMessageEvent", "publishedAt": "2024-01-01T00:00:00.100Z", "displayMessage": "Hello" }, "authorDetails": { "displayName": "Viewer One" } },
+            { "id": "empty.part", "snippet": { "type": "textMessageEvent", "publishedAt": "2024-01-01T00:00:00+00:00", "displayMessage": "" }, "authorDetails": { "displayName": "Viewer Two" } }
+        ] }))], vec![]);
+        let creds = FakeCreds::new(Some("refresh")); let now = AtomicU64::new(T0);
+        let answer = run(&http, &creds, &now, |ctx| chat_with(ctx, T0, true));
+        assert_eq!(answer.messages.len(), 1);
+        assert_eq!(answer.messages[0].id, "message.part");
+    }
+
+    #[test]
+    fn chat_bad_page_token_is_dropped_and_nonended_403_stays_an_error() {
+        let _guard = exclusive();
+        prime_token(); set_live_memory(T0);
+        with_live(|v| v.page_token = Some("page-one".into()));
+        let http = FakeHttp::reads(vec![
+            reply(400, "{}"), ok(json!({ "items": [] })),
+        ], vec![]);
+        let creds = FakeCreds::new(Some("refresh")); let now = AtomicU64::new(T0);
+        let first = run(&http, &creds, &now, |ctx| chat_with(ctx, T0, true));
+        assert_eq!(first.word, Some(super::super::INVALID));
+        assert_eq!(with_live(|v| v.page_token.clone()), None);
+        run(&http, &creds, &now, |ctx| chat_with(ctx, T0 + 10, true));
+        assert!(!http.get_urls()[1].contains("pageToken"));
+
+        reset_for_test(); prime_token(); set_live_memory(T0);
+        let denied = FakeHttp::reads(vec![reply(403, r#"{"error":{"errors":[{"reason":"forbidden"}]}}"#)], vec![]);
+        let answer = run(&denied, &creds, &now, |ctx| chat_with(ctx, T0, true));
+        assert_eq!(answer.state, "ok");
+        assert_eq!(answer.word, Some(DOWN));
+
+        reset_for_test(); prime_token(); set_live_memory(T0);
+        let disabled = FakeHttp::reads(vec![reply(403, r#"{"error":{"errors":[{"reason":"liveChatDisabled"}]}}"#)], vec![]);
+        let answer = run(&disabled, &creds, &now, |ctx| chat_with(ctx, T0, true));
+        assert_eq!(answer.state, "ended");
+        assert!(!with_live(|v| v.status.chat));
+    }
+
+    #[test]
+    fn empty_missing_and_long_candidate_lists_are_bounded_without_empty_video_read() {
+        let _guard = exclusive();
+        let creds = FakeCreds::new(Some("refresh")); let now = AtomicU64::new(T0);
+        for first in [ok(json!({ "items": [] })), reply(404, "{}") ] {
+            reset_for_test(); prime_token();
+            let http = FakeHttp::reads(vec![first], vec![]);
+            let answer = run(&http, &creds, &now, |ctx| {
+                status_with(ctx, Some(saved_channel()), T0, false, true)
+            });
+            assert_eq!(answer.state, "none");
+            assert_eq!(answer.word, None);
+            assert_eq!(http.get_urls().len(), 1);
+            assert!(!http.get_urls()[0].contains("videos?"));
+        }
+
+        reset_for_test(); prime_token();
+        let ids: Vec<String> = (0..7).map(video_id).collect();
+        let http = FakeHttp::reads(vec![ok(candidates(&ids)), ok(videos(vec![]))], vec![]);
+        run(&http, &creds, &now, |ctx| {
+            status_with(ctx, Some(saved_channel()), T0, false, true)
+        });
+        let videos_url = &http.get_urls()[1];
+        for id in ids.iter().take(5) { assert!(videos_url.contains(id)); }
+        for id in ids.iter().skip(5) { assert!(!videos_url.contains(id)); }
+    }
+
+    #[test]
+    fn ended_persists_new_chat_clears_old_data_and_two_hour_forget_runs_in_status() {
+        let _guard = exclusive();
+        prime_token(); set_live_memory(T0);
+        let creds = FakeCreds::new(Some("refresh")); let now = AtomicU64::new(T0);
+        let ended_http = FakeHttp::reads(vec![reply(404, "{}")], vec![]);
+        assert_eq!(run(&ended_http, &creds, &now, |ctx| chat_with(ctx, T0, true)).state, "ended");
+        let no_more = FakeHttp::reads(vec![], vec![]);
+        assert_eq!(run(&no_more, &creds, &now, |ctx| chat_with(ctx, T0 + 20, true)).state, "ended");
+        assert!(no_more.get_urls().is_empty());
+        assert!(!with_live(|v| v.status.chat));
+
+        reset_for_test(); prime_token(); set_live_memory(T0 - 61);
+        with_live(|v| {
+            v.candidates = vec![video_id(1)]; v.find_attempt = Some(T0);
+            v.page_token = Some("old-page".into());
+            v.chat.messages.push(ChatMessage { id: "old.message".into(), name: "Viewer".into(), text: "Old".into(), at: T0, super_chat: None });
+        });
+        let details = FakeHttp::reads(vec![ok(videos(vec![live_video(&video_id(1), "1", Some("new-chat"))]))], vec![]);
+        let answer = run(&details, &creds, &now, |ctx| {
+            status_with(ctx, Some(saved_channel()), T0, false, true)
+        });
+        assert!(answer.chat);
+        with_live(|v| { assert!(v.page_token.is_none()); assert!(v.chat.messages.is_empty()); });
+
+        reset_for_test(); prime_token(); set_live_memory(T0);
+        with_live(|v| v.chat.messages.push(ChatMessage { id: "old.message".into(), name: "Viewer".into(), text: "Old".into(), at: T0, super_chat: None }));
+        let hidden = FakeHttp::reads(vec![], vec![]);
+        run(&hidden, &creds, &now, |ctx| {
+            status_with(ctx, Some(saved_channel()), T0 + CHAT_FORGET, false, false)
+        });
+        with_live(|v| { assert!(v.chat_id.is_none()); assert!(v.chat.messages.is_empty()); assert!(!v.status.chat); });
+    }
+
+    #[test]
+    fn chat_default_floor_hint_cap_viewer_bound_and_field_caps_hold() {
+        let _guard = exclusive();
+        let creds = FakeCreds::new(Some("refresh")); let now = AtomicU64::new(T0);
+        prime_token(); set_live_memory(T0);
+        let default_http = FakeHttp::reads(vec![ok(json!({ "items": [] })), ok(json!({ "items": [] }))], vec![]);
+        run(&default_http, &creds, &now, |ctx| chat_with(ctx, T0, true));
+        run(&default_http, &creds, &now, |ctx| chat_with(ctx, T0 + 9, true));
+        run(&default_http, &creds, &now, |ctx| chat_with(ctx, T0 + 10, true));
+        assert_eq!(default_http.get_urls().len(), 2);
+
+        reset_for_test(); prime_token(); set_live_memory(T0);
+        let capped_http = FakeHttp::reads(vec![
+            ok(json!({ "pollingIntervalMillis": 120_000, "items": [] })), ok(json!({ "items": [] })),
+        ], vec![]);
+        run(&capped_http, &creds, &now, |ctx| chat_with(ctx, T0, true));
+        run(&capped_http, &creds, &now, |ctx| chat_with(ctx, T0 + 59, true));
+        run(&capped_http, &creds, &now, |ctx| chat_with(ctx, T0 + 60, true));
+        assert_eq!(capped_http.get_urls().len(), 2);
+
+        reset_for_test(); prime_token();
+        let ids = vec![video_id(1)];
+        let status_http = FakeHttp::reads(vec![
+            ok(candidates(&ids)), ok(videos(vec![live_video(&ids[0], "10000000", None)])),
+        ], vec![]);
+        let status = run(&status_http, &creds, &now, |ctx| {
+            status_with(ctx, Some(saved_channel()), T0, false, true)
+        });
+        assert_eq!(status.viewers, Some(10_000_000));
+
+        reset_for_test(); prime_token(); set_live_memory(T0);
+        let fields_http = FakeHttp::reads(vec![ok(json!({ "items": [{
+            "id": "field.message",
+            "snippet": {
+                "type": "superChatEvent",
+                "publishedAt": "2024-01-01T00:00:00Z",
+                "superChatDetails": {
+                    "amountDisplayString": "12345678901234567890",
+                    "userComment": "x".repeat(250)
+                }
+            },
+            "authorDetails": { "displayName": "n".repeat(50) }
+        }] }))], vec![]);
+        let chat = run(&fields_http, &creds, &now, |ctx| chat_with(ctx, T0, true));
+        assert_eq!(chat.messages[0].name.chars().count(), 40);
+        assert_eq!(chat.messages[0].text.chars().count(), 200);
+        assert_eq!(chat.messages[0].super_chat.as_ref().unwrap().chars().count(), 16);
+    }
+
+    #[test]
+    fn malformed_oversized_timeout_and_server_answers_are_fixed_down_words() {
+        let _guard = exclusive();
+        let creds = FakeCreds::new(Some("refresh")); let now = AtomicU64::new(T0);
+        for answer in [reply(200, "not-json"), reply(598, ""), Err(()), reply(500, "")] {
+            reset_for_test(); prime_token();
+            let http = FakeHttp::reads(vec![answer], vec![]);
+            let result = run(&http, &creds, &now, |ctx| {
+                status_with(ctx, Some(saved_channel()), T0, false, true)
+            });
+            assert_eq!(result.word, Some(DOWN));
+        }
+    }
+
+    #[test]
+    fn exact_masks_and_bearer_are_used_for_status_and_chat() {
+        let _guard = exclusive();
+        prime_token();
+        let ids = vec![video_id(1)];
+        let status_http = FakeHttp::reads(vec![ok(candidates(&ids)), ok(videos(vec![]))], vec![]);
+        let creds = FakeCreds::new(Some("refresh")); let now = AtomicU64::new(T0);
+        run(&status_http, &creds, &now, |ctx| {
+            status_with(ctx, Some(saved_channel()), T0, false, true)
+        });
+        let uploads = format!("UU{}", &channel_id()[2..]);
+        let expected_find = api_url("playlistItems", &[
+            ("part", "contentDetails"), ("playlistId", uploads.as_str()),
+            ("maxResults", "5"), ("fields", "items/contentDetails/videoId"),
+        ]);
+        let expected_details = api_url("videos", &[
+            ("part", "snippet,liveStreamingDetails"), ("id", ids[0].as_str()),
+            (
+                "fields",
+                "items(id,snippet/liveBroadcastContent,liveStreamingDetails(actualStartTime,actualEndTime,scheduledStartTime,concurrentViewers,activeLiveChatId))",
+            ),
+        ]);
+        assert_eq!(status_http.get_urls(), vec![expected_find, expected_details]);
+        assert_eq!(status_http.get_bearers(), vec!["access-one", "access-one"]);
+
+        reset_for_test(); prime_token(); set_live_memory(T0);
+        let chat_http = FakeHttp::reads(vec![ok(json!({ "items": [] }))], vec![]);
+        run(&chat_http, &creds, &now, |ctx| chat_with(ctx, T0, true));
+        let expected_chat = api_url("liveChat/messages", &[
+            ("liveChatId", "chat-room"), ("part", "snippet,authorDetails"),
+            ("maxResults", "200"),
+            (
+                "fields",
+                concat!(
+                    "nextPageToken,pollingIntervalMillis,offlineAt,items(id,snippet(",
+                    "type,publishedAt,displayMessage,superChatDetails(amountDisplayString,",
+                    "userComment),messageDeletedDetails/deletedMessageId),",
+                    "authorDetails/displayName)"
+                ),
+            ),
+        ]);
+        assert_eq!(chat_http.get_urls(), vec![expected_chat]);
+        assert_eq!(chat_http.get_bearers(), vec!["access-one"]);
+    }
+
+    #[test]
+    fn pacific_day_handles_utc_and_local_midnight_crossings() {
+        let _guard = exclusive();
+        let same_utc_before = rfc3339("2024-01-01T07:59:00Z").unwrap();
+        let same_utc_after = rfc3339("2024-01-01T08:01:00Z").unwrap();
+        assert_ne!(pacific_day(same_utc_before), pacific_day(same_utc_after));
+        let prior_utc = rfc3339("2024-01-01T23:59:00Z").unwrap();
+        let next_utc = rfc3339("2024-01-02T00:01:00Z").unwrap();
+        assert_eq!(pacific_day(prior_utc), pacific_day(next_utc));
+    }
+
+    #[test]
+    fn channel_write_replaces_atomically_and_zero_items_leave_no_file() {
+        let _guard = exclusive();
+        let dir = std::env::temp_dir().join(format!("wall-ytlive-replace-{}", std::process::id()));
+        let path = dir.join("onair-channel.json");
+        let _ = std::fs::remove_dir_all(&dir);
+        let first = Channel { channel_id: channel_id(), title: "First Channel".into() };
+        let second = Channel { channel_id: format!("UC{}", "b".repeat(22)), title: "Second Channel".into() };
+        let first_gen = GEN.load(Ordering::SeqCst);
+        finish_channel_write(first_gen, &path, &first).unwrap();
+        let second_gen = GEN.load(Ordering::SeqCst);
+        finish_channel_write(second_gen, &path, &second).unwrap();
+        assert_eq!(read_channel(&path).unwrap().title, "Second Channel");
+        assert!(!std::fs::read_dir(&dir).unwrap().any(|entry| entry.unwrap().path().extension().and_then(|v| v.to_str()) == Some("tmp")));
+
+        std::fs::remove_file(&path).unwrap();
+        prime_token();
+        let http = FakeHttp::reads(vec![ok(json!({ "items": [] }))], vec![]);
+        let creds = FakeCreds::new(Some("refresh")); let now = AtomicU64::new(T0);
+        assert_eq!(run(&http, &creds, &now, |ctx| set_channel_with(ctx, ChannelRef::Id(channel_id()), T0)).err(), Some(NOT_FOUND));
+        assert!(!path.exists());
+
+        reset_for_test();
+        prime_token();
+        let title_http = FakeHttp::reads(vec![ok(json!({ "items": [{
+            "id": channel_id(),
+            "snippet": { "title": "t".repeat(120) }
+        }] }))], vec![]);
+        let (channel, _) = run(&title_http, &creds, &now, |ctx| {
+            set_channel_with(ctx, ChannelRef::Id(channel_id()), T0)
+        }).unwrap();
+        assert_eq!(channel.title.chars().count(), 100);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn session_clears_use_live_hook_and_preserve_client_wide_accounting() {
+        let _guard = exclusive();
+        let seed = || with_live(|v| {
+            v.days(T0); v.status_used = 11; v.chat_used = 15;
+            v.quota_all_day = Some(v.status_day); v.busy_until = T0 + 60;
+            v.channel = Some(saved_channel()); v.status.read_at = Some(T0);
+        });
+        let check = || with_live(|v| {
+            assert!(v.channel.is_none()); assert!(v.status.read_at.is_none());
+            assert_eq!(v.status_used, 11); assert_eq!(v.chat_used, 15);
+            assert_eq!(v.quota_all_day, Some(pacific_day(T0))); assert_eq!(v.busy_until, T0 + 60);
+        });
+
+        seed(); super::super::reset_session(); check();
+        reset_for_test(); seed();
+        let creds = FakeCreds::new(Some("dead-refresh"));
+        let invalid = FakeHttp::reads(vec![], vec![reply(400, r#"{"error":"invalid_grant"}"#)]);
+        assert_eq!(super::super::access_with(&client(), false, &invalid, &creds).err(), Some(SIGN_AGAIN));
+        check();
+        reset_for_test(); seed();
+        let creds = FakeCreds::new(None);
+        super::super::save_sign_in(&creds, "new-refresh", "access-two".into(), 3_600).unwrap();
+        check();
+    }
+
+    #[test]
+    fn set_channel_words_are_exactly_the_public_contract() {
+        let _guard = exclusive();
+        assert_eq!(set_channel_word(SIGN_AGAIN), "signed-out");
+        assert_eq!(set_channel_word(NOT_FOUND), "not found");
+        assert_eq!(set_channel_word("quota"), QUOTA_ALL);
+        assert_eq!(set_channel_word(QUOTA_ALL), QUOTA_ALL);
+        assert_eq!(set_channel_word(BUSY), BUSY);
+        assert_eq!(set_channel_word(DOWN), DOWN);
+        assert_eq!(set_channel_word(super::super::SETUP_BROKEN), super::super::SETUP_BROKEN);
+        assert_eq!(set_channel_word(super::super::NOT_SETUP), FAILED);
+        assert_eq!(set_channel_word(super::super::UNREADABLE), FAILED);
     }
 
     #[test]

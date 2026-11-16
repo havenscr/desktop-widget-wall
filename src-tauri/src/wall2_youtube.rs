@@ -1105,6 +1105,7 @@ mod tests {
     pub(super) fn exclusive() -> MutexGuard<'static, ()> {
         let guard = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         reset_session();
+        live::reset_for_test();
         SIGNING_IN.store(false, Ordering::SeqCst);
         CANCEL_SIGN_IN.store(false, Ordering::SeqCst);
         guard
@@ -1142,6 +1143,7 @@ mod tests {
         /// Answers for the reads (GET); `posts` answer the token calls.
         pub(super) fn reads(gets: Vec<Result<HttpReply, ()>>, posts: Vec<Result<HttpReply, ()>>) -> Self { let h = Self::new(posts); *lock(&h.gets) = gets.into(); h }
         pub(super) fn get_urls(&self) -> Vec<String> { lock(&self.get_calls).iter().map(|c| c.0.clone()).collect() }
+        pub(super) fn get_bearers(&self) -> Vec<String> { lock(&self.get_calls).iter().map(|c| c.1.clone()).collect() }
         fn calls(&self) -> Vec<Call> { lock(&self.calls).clone() }
         fn urls(&self) -> Vec<String> { self.calls().into_iter().map(|c| c.0).collect() }
     }
