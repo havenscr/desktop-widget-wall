@@ -45,7 +45,8 @@ export function lookName(id: LookId): string {
 }
 
 export function groupOf(kind: WatchKind): LookGroup {
-  return kind === 'playlist' ? 'video' : kind;
+  // An own playlist never plays as itself (its videos do), so its group is never used; video is the safe answer.
+  return kind === 'playlist' || kind === 'own' ? 'video' : kind;
 }
 
 /** Stored settings, each field checked; anything unknown falls back to the default. */

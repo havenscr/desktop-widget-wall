@@ -8,6 +8,7 @@ import './styles/ribbon.css';
 import './styles/agents.css';
 import './styles/unwind.css';
 import './styles/ytmusic.css';
+import './styles/ownlists.css';
 import './styles/zen.css';
 import './styles/signals.css';
 import './styles/tools.css';

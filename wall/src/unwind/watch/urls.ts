@@ -32,6 +32,8 @@ export function pageWhere(loc: Pick<Location, 'origin' | 'hostname' | 'protocol'
 export function embedUrl(ref: unknown, where: PageWhere | null): string | null {
   if (!validRef(ref) || !where) return null;
   const r: WatchRef = ref;
+  // A playlist made on the wall is never a frame: its videos are played one at a time.
+  if (r.kind === 'own') return null;
   const id = encodeURIComponent(r.id);
   if (r.kind === 'twitch') {
     return `${TWITCH_EMBED_ORIGIN}/?channel=${id}&parent=${encodeURIComponent(where.hostname)}`;
@@ -45,7 +47,8 @@ export function embedUrl(ref: unknown, where: PageWhere | null): string | null {
 }
 
 /** The origin a frame for this item may talk from, and the target for messages to it. */
-export function playerOrigin(ref: WatchRef): string {
+export function playerOrigin(ref: WatchRef): string | null {
+  if (ref.kind === 'own') return null;
   return ref.kind === 'twitch' ? TWITCH_EMBED_ORIGIN : YOUTUBE_EMBED_ORIGIN;
 }
 

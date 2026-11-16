@@ -1,0 +1,733 @@
+/* Playlists the owner makes on the wall: the list head button, own rows, the add menu, the editor, the follow view, the
+   left block's Next line, skip note and end block. Colours are the wall's own; small text is #a39bc6 (--faint measures
+   under 4.5 on the card and stays for glyphs). Nothing here animates. Kept apart from unwind.css on purpose. */
+
+.w-card {
+  position: relative;
+}
+/* The editor: the card grows down to just above the ground (wall 20 to 650), the office slot stays clear. */
+.w-card.own-tall {
+  height: 630px;
+}
+
+/* ---- list: head button, tile, counts, pill ---- */
+/* The head holds the 32 px button and still takes 25 px of the card (its margins give the 7 px back), so the list stays at
+   wall (2015, 68) and the head has nothing hanging out of it. */
+.w-card .u-card-head {
+  min-height: 32px;
+  margin: -3.5px 0;
+}
+.w-card .u-card-head .u-xs {
+  margin-left: auto;
+  color: #a39bc6;
+}
+.w-new {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0 12px;
+  margin: 0;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.06);
+  font: 600 16px/1 var(--body);
+  color: var(--tx);
+  white-space: nowrap;
+  flex: none;
+}
+.w-new:hover:not(:disabled) {
+  border-color: rgba(83, 230, 235, 0.65);
+  color: var(--cyan);
+}
+.w-new:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.w-card .u-card-head:has(.w-new):not(:has(.u-xs)) .w-new {
+  margin-left: auto;
+}
+.own-tile {
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  background: linear-gradient(140deg, rgba(154, 123, 255, 0.5), rgba(255, 61, 154, 0.34));
+  color: #fff;
+  box-shadow: inset 0 0 0 1px rgba(200, 180, 255, 0.45);
+}
+.w-row .w-count {
+  flex: none;
+  font: 16px/1 var(--body);
+  color: #a39bc6;
+  white-space: nowrap;
+}
+.w-row.on .w-count {
+  color: var(--cyan);
+}
+.own-pill {
+  flex: none;
+  display: grid;
+  place-items: center;
+  min-width: 74px;
+  height: 26px;
+  padding: 0 8px;
+  box-sizing: border-box;
+  border-radius: 8px;
+  background: rgba(53, 230, 234, 0.16);
+  font: 600 16px/1 var(--disp);
+  letter-spacing: 0.06em;
+  white-space: nowrap;
+}
+.w-mini.cy {
+  color: var(--cyan);
+  background: rgba(53, 230, 234, 0.12);
+}
+/* A saved video's row: the add button shows on hover or focus within, and while its menu is open. */
+.w-row .w-addrow {
+  display: none;
+  color: #a39bc6;
+}
+.w-row:hover .w-addrow,
+.w-row:focus-within .w-addrow,
+.w-row .w-addrow[aria-expanded='true'] {
+  display: grid;
+}
+.w-row .w-addrow[aria-expanded='true'] {
+  color: var(--cyan);
+  background: rgba(53, 230, 234, 0.12);
+}
+.w-vh {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* ---- the round add button of the play row, and its menu ---- */
+.w-ctl .rd.w-addpl {
+  /* The row stays nearly full with this button in it: its 12 px keep most of the room a wider "YouTube" label needs on another machine, so
+     the label gives way (never the gear) and the row never grows. The gear is flush right either way. */
+  margin-right: 12px;
+}
+.w-ctl .rd.w-addpl.lit,
+.w-ctl .rd.w-addpl:focus-visible {
+  color: var(--cyan);
+  border-color: rgba(83, 230, 235, 0.6);
+  box-shadow: 0 0 0 1px rgba(83, 230, 235, 0.35);
+}
+.w-pop {
+  position: absolute;
+  z-index: 7;
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  padding: 10px;
+  border-radius: 16px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.055), rgba(255, 255, 255, 0.016)), rgb(13, 10, 34);
+  border: 1px solid var(--line);
+  box-shadow: 0 18px 50px -10px rgba(2, 1, 10, 0.9);
+}
+.w-pop * {
+  box-sizing: border-box;
+}
+.w-pop-k {
+  height: 28px;
+  padding: 0 8px;
+  display: flex;
+  align-items: center;
+  font: 600 16px/1 var(--disp);
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--dim);
+  white-space: nowrap;
+}
+.w-pop-rows {
+  max-height: 200px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+}
+.w-pop-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  height: 40px;
+  padding: 0 8px;
+  border-radius: 10px;
+  font: 19px/1 var(--body);
+  color: var(--tx);
+  min-width: 0;
+  text-align: left;
+}
+.w-pop-row > span:not(.w-vh) {
+  flex: 1;
+  min-width: 0;
+}
+.w-pop-row em {
+  flex: none;
+  font: 16px/1 var(--body);
+  font-style: normal;
+  color: #a39bc6;
+}
+.w-pop-row.dim {
+  color: var(--dim);
+}
+.w-pop-row:hover,
+.w-pop-row:focus-visible {
+  background: rgba(53, 230, 234, 0.12);
+  color: var(--cyan);
+  outline: none;
+}
+.w-pop-row:hover em,
+.w-pop-row:focus-visible em {
+  color: var(--cyan);
+}
+.w-pop-row[aria-disabled='true'] {
+  opacity: 0.5;
+  cursor: default;
+}
+.w-pop-check {
+  flex: none;
+  color: var(--cyan);
+}
+.w-pop-plus {
+  flex: none;
+  width: 26px;
+  height: 26px;
+  border-radius: 8px;
+  display: grid;
+  place-items: center;
+  border: 1px dashed rgba(170, 150, 255, 0.5);
+  color: var(--dim);
+}
+.w-pop-new {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 40px;
+  padding: 0 0 0 2px;
+}
+.w-pop .w-err {
+  margin: 6px 8px 2px;
+}
+
+/* ---- shared pieces of the editor and the follow view ---- */
+.own-wrap {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+}
+.own-wrap *,
+.own-wrap *::before {
+  box-sizing: border-box;
+}
+.own-wrap svg {
+  flex: none;
+  display: block;
+}
+.own-wrap .w-mini {
+  color: #a39bc6;
+}
+.own-wrap .w-mini:hover {
+  color: var(--tx);
+}
+.own-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 32px;
+  min-width: 0;
+  flex: none;
+}
+.own-back {
+  flex: none;
+  width: 32px;
+  height: 32px;
+  border-radius: 10px;
+  display: grid;
+  place-items: center;
+  color: var(--dim);
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.04);
+}
+.own-back:hover {
+  color: var(--tx);
+  background: rgba(255, 255, 255, 0.09);
+}
+.own-name {
+  font: 600 20px/26px var(--body);
+  color: var(--tx);
+  min-width: 0;
+}
+.own-name-in {
+  flex: 1;
+  height: 32px;
+  font-size: 20px;
+}
+.own-sub {
+  flex: none;
+  font: 16px/1 var(--body);
+  color: #a39bc6;
+  white-space: nowrap;
+}
+.own-right {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: none;
+}
+.own-done {
+  margin-left: auto;
+}
+.own-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0 12px;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.06);
+  font: 600 16px/1 var(--body);
+  color: var(--tx);
+  white-space: nowrap;
+  flex: none;
+}
+.own-btn:hover:not(:disabled) {
+  border-color: rgba(83, 230, 235, 0.65);
+}
+.own-btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+.own-btn.cy {
+  border-color: rgba(53, 230, 234, 0.45);
+  background: rgba(53, 230, 234, 0.12);
+  color: var(--cyan);
+}
+.own-btn.quiet {
+  border-color: transparent;
+  background: transparent;
+  color: #a39bc6;
+  font-weight: 500;
+  padding: 0 8px;
+}
+.own-btn.quiet:hover:not(:disabled) {
+  color: var(--tx);
+  background: rgba(255, 255, 255, 0.07);
+  border-color: transparent;
+}
+.own-btn.danger {
+  color: var(--amber);
+  border-color: rgba(255, 194, 77, 0.4);
+}
+.own-btn:focus-visible,
+.own-back:focus-visible,
+.own-chip:focus-visible,
+.w-own-switch:focus-visible,
+.own-grip:focus-visible,
+.own-pillbtn:focus-visible,
+.w-new:focus-visible,
+.w-pop-row:focus-visible {
+  outline: 3px solid var(--cyan);
+  outline-offset: 2px;
+}
+.w-pop-row:focus-visible {
+  /* The menu's focus is the cyan fill and cyan words, as the owner's picture has it. */
+  outline: none;
+}
+.own-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 32px;
+  margin-top: 6px;
+  flex: none;
+  font: 16px/1 var(--body);
+  color: #a39bc6;
+  white-space: nowrap;
+  min-width: 0;
+}
+.own-totals {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.own-ask {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+  height: 40px;
+}
+.own-ask-t {
+  flex: 1;
+  min-width: 0;
+  padding-left: 10px;
+  font: 19px/1 var(--body);
+  color: var(--tx);
+}
+.own-line .own-ask {
+  height: 32px;
+}
+.own-line .own-ask-t {
+  padding-left: 0;
+  font-size: 18px;
+}
+
+/* the videos */
+.own-vwrap {
+  position: relative;
+  flex: 1 1 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  margin-top: 6px;
+}
+.own-vlist {
+  flex: 1 1 0;
+  min-height: 0;
+  overflow-y: auto;
+  /* The rows are 506 wide whatever the scrollbar does: it sits in the card's own padding, on the right. */
+  margin: 0 -16px 0 -6px;
+  padding: 0;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.42) rgba(255, 255, 255, 0.07);
+}
+.own-vlist.fade.more {
+  -webkit-mask-image: linear-gradient(180deg, #000 calc(100% - 34px), rgba(0, 0, 0, 0.12));
+  mask-image: linear-gradient(180deg, #000 calc(100% - 34px), rgba(0, 0, 0, 0.12));
+}
+.own-vlist.own-five {
+  flex: 0 1 200px;
+  margin-top: 8px;
+}
+.own-none {
+  margin: 14px 8px;
+  font: 18px/1.35 var(--body);
+  color: #a39bc6;
+}
+.own-v {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  max-width: 506px;
+  height: 40px;
+  padding: 0 6px;
+  border-radius: 10px;
+  min-width: 0;
+  flex: none;
+  color: var(--tx);
+  text-align: left;
+}
+.own-v.two {
+  height: 56px;
+}
+.own-v:hover,
+.own-v:focus-within {
+  background: rgba(255, 255, 255, 0.07);
+}
+.own-v:focus-visible {
+  outline: 3px solid var(--cyan);
+  outline-offset: -2px;
+}
+.own-v.on {
+  background: rgba(53, 230, 234, 0.12);
+  color: var(--cyan);
+}
+.own-v.ghosted {
+  opacity: 0.3;
+}
+.own-v.bad {
+  opacity: 0.6;
+}
+button.own-v.bad {
+  cursor: default;
+}
+.own-i {
+  flex: none;
+  width: 22px;
+  display: grid;
+  place-items: center;
+  font: 500 16px/1 var(--disp);
+  color: #a39bc6;
+  font-variant-numeric: tabular-nums;
+}
+.own-v.on .own-i {
+  color: var(--cyan);
+}
+.own-pk {
+  flex: none;
+  color: var(--dim);
+}
+.own-t {
+  flex: 1;
+  min-width: 0;
+  font: 19px/26px var(--body);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.own-t em {
+  font: 16px/26px var(--body);
+  font-style: normal;
+  color: #a39bc6;
+  margin-left: 10px;
+}
+.own-len {
+  flex: none;
+  font: 16px/1 var(--body);
+  color: #a39bc6;
+  font-variant-numeric: tabular-nums;
+  padding-right: 6px;
+}
+.own-v.on .own-len,
+.own-v.on .own-t em {
+  color: var(--cyan);
+}
+.own-tt {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.own-v.two .own-t,
+.own-ghost .own-t {
+  flex: none;
+  font: 500 18px/23px var(--body);
+}
+.own-s {
+  font: 16px/20px var(--body);
+  color: #a39bc6;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.own-thumb {
+  display: block;
+  flex: none;
+  border-radius: 6px;
+  object-fit: cover;
+  background: rgba(255, 255, 255, 0.08);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.12);
+}
+/* 32 px to grab, 20 px in the row: the margins give the room back. */
+.own-grip {
+  flex: none;
+  width: 32px;
+  height: 100%;
+  margin: 0 -6px;
+  display: grid;
+  place-items: center;
+  color: #8f87b4;
+  cursor: grab;
+  touch-action: none;
+}
+.own-v:hover .own-grip,
+.own-grip:hover,
+.own-grip.hot {
+  color: var(--tx);
+}
+.own-grip:active {
+  cursor: grabbing;
+}
+.own-ghost {
+  position: absolute;
+  left: 23px;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 474px;
+  height: 56px;
+  padding: 0 8px;
+  border-radius: 12px;
+  background: rgb(30, 24, 66);
+  border: 1px solid rgba(83, 230, 235, 0.55);
+  box-shadow: 0 14px 34px -6px rgba(2, 1, 10, 0.9);
+  pointer-events: none;
+}
+.own-ghost .own-grip {
+  margin: 0;
+  width: 20px;
+  height: auto;
+}
+.own-line-drop {
+  position: absolute;
+  left: -2px;
+  /* Above the dragged row's ghost, so the whole landing line shows. */
+  z-index: 4;
+  width: 498px;
+  height: 3px;
+  margin-top: -1px;
+  border-radius: 2px;
+  background: var(--cyan);
+  box-shadow: 0 0 10px rgba(53, 230, 234, 0.8);
+  pointer-events: none;
+}
+.own-chips {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+  flex: none;
+}
+.own-chip {
+  flex: 1 1 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 36px;
+  border-radius: 12px;
+  border: 1px dashed rgba(170, 150, 255, 0.42);
+  background: rgba(255, 255, 255, 0.03);
+  font: 500 16px/1 var(--body);
+  color: var(--tx);
+  white-space: nowrap;
+}
+.own-chip:hover:not([aria-disabled='true']) {
+  border-style: solid;
+  border-color: rgba(83, 230, 235, 0.65);
+  background: rgba(53, 230, 234, 0.12);
+  color: var(--cyan);
+}
+.own-chip[aria-disabled='true'] {
+  opacity: 0.5;
+  cursor: default;
+}
+.w-card:not(.empty) .own-wrap .w-field {
+  margin-top: 8px;
+  flex: none;
+}
+.own-err {
+  margin-top: 6px;
+}
+
+/* the follow view */
+.own-foot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 32px;
+  margin-top: 8px;
+  flex: none;
+  font: 16px/1 var(--body);
+  color: #a39bc6;
+  white-space: nowrap;
+}
+.own-foot-t {
+  flex: 1;
+  min-width: 0;
+}
+.w-own-switch {
+  flex: none;
+  width: 32px;
+  height: 32px;
+  border-radius: 10px;
+  display: grid;
+  place-items: center;
+  color: #a39bc6;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.04);
+}
+.w-own-switch:hover {
+  color: var(--tx);
+}
+.w-own-switch.on {
+  color: var(--cyan);
+  border-color: rgba(83, 230, 235, 0.6);
+  background: rgba(53, 230, 234, 0.14);
+}
+
+/* ---- the left block: Next line, skip note, the playlist's name, the end block ---- */
+.w-next {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 380px;
+  max-width: 100%;
+  height: 28px;
+  margin-top: 2px;
+  font: 500 18px/1 var(--body);
+  color: var(--tx);
+  white-space: nowrap;
+  transition: opacity 250ms ease;
+}
+.w-next b {
+  flex: 1;
+  min-width: 0;
+  font-weight: 500;
+}
+.w-next-k {
+  flex: none;
+  font: 600 16px/1 var(--disp);
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: #a39bc6;
+}
+.w-now[data-ctl='rest'] > .w-next {
+  opacity: 0;
+  pointer-events: none;
+}
+.own-skip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 100%;
+  font-size: 22px;
+  line-height: 31px;
+  color: #f0d49a;
+  white-space: nowrap;
+}
+.own-skip > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.own-playing {
+  display: block;
+  max-width: 460px;
+}
+.own-ended {
+  gap: 8px;
+}
+.own-pillbtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 42px;
+  padding: 0 16px;
+  border-radius: 21px;
+  border: 1px solid rgba(170, 150, 255, 0.3);
+  background: rgba(8, 6, 26, 0.7);
+  font: 500 17px/1 var(--body);
+  color: var(--tx);
+  white-space: nowrap;
+}
+.own-pillbtn:hover:not(:disabled) {
+  background: rgba(8, 6, 26, 0.9);
+}
+.own-pillbtn.cy {
+  border-color: rgba(83, 230, 235, 0.6);
+  background: rgba(53, 230, 234, 0.12);
+  color: var(--cyan);
+}
+.own-pillbtn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+@media (prefers-reduced-motion: reduce) {
+  .w-next {
+    transition: none;
+  }
+}

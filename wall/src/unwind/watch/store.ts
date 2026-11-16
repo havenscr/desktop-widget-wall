@@ -86,7 +86,7 @@ export interface PlayerReport {
 export const NO_REPORT: PlayerReport = { started: false, time: null, duration: null, count: 0, index: 0, ended: false, title: null, channel: null, error: null };
 
 /** What put the item in the frame: the Watch tab (a saved item, a pin) or a pick from the YouTube library on Listen (`playMusic`). */
-export type PlaySource = 'watch' | 'music';
+export type PlaySource = 'watch' | 'music' | 'own';
 
 export interface WatchState {
   /** Which view Unwind shows. The one value any switch (today the tabs) sets; nothing in Watch reads where that switch is. */
@@ -97,7 +97,7 @@ export interface WatchState {
   tune: LookTune;
   /** The item in the frame, or null: no frame at all. */
   playing: SavedItem | null;
-  /** What put `playing` there (see `PlaySource`); `play` sets 'watch', `playMusic` sets 'music'. */
+  /** What put `playing` there (see `PlaySource`); `play` sets 'watch', `playMusic` sets 'music', `playOwnVideo` sets 'own'. */
   source: PlaySource;
   /** The item most recently stopped in Watch, used only to identify its stopped media session. */
   lastStopped: SavedItem | null;
@@ -136,6 +136,8 @@ export interface WatchState {
    * The same video already in the frame is not reloaded: it starts again from 0. False for an id that does not pass.
    */
   playMusic: (id: string, label: string) => boolean;
+  /** The same as `playMusic` for a video of a playlist made on the wall: source 'own'. */
+  playOwnVideo: (id: string, label: string) => boolean;
   stop: (why?: StopReason) => void;
   setPaused: (p: boolean) => void;
   setMuted: (m: boolean) => void;
@@ -222,26 +224,14 @@ export const useWatchStore = create<WatchState>((set, get) => ({
   },
   setEditing: (editing) => set({ editing }),
   play: (ref) => {
+    // A playlist made on the wall is never in the frame itself: its videos are played one at a time (`ownPlay`).
+    if (ref.kind === 'own') return;
     const item = get().saved.find((i) => refKey(i) === refKey(ref));
     if (!item) return;
     set({ playing: item, source: 'watch', lastStopped: null, paused: false, muted: false, report: NO_REPORT, needsClick: false, clickHint: false, stopped: null, tab: 'watch' });
   },
-  playMusic: (id, label) => {
-    if (!validId('video', id)) return false;
-    const st = get();
-    const cur = st.playing;
-    if (cur && cur.kind === 'video' && cur.id === id) {
-      // The same video: the frame is keyed by it, so it is not reloaded; it starts again from the top.
-      playerLink.send('seekTo', [0, true]);
-      // An error code that was acted on is cleared, so a replay of an id that errored before is not skipped at once.
-      set({ source: 'music', paused: false, report: st.report.ended || st.report.error !== null ? { ...st.report, ended: false, error: null } : st.report, needsClick: false, clickHint: false, stopped: null });
-      return true;
-    }
-    const item: SavedItem = { kind: 'video', id, label: cleanText(label, MAX_LABEL) || 'YouTube video' };
-    // The saved list, the tab and the owner's mute are left alone; the item it replaces is remembered for the top player's match.
-    set({ playing: item, source: 'music', lastStopped: cur ?? st.lastStopped, paused: false, report: NO_REPORT, needsClick: false, clickHint: false, stopped: null });
-    return true;
-  },
+  playMusic: (id, label) => playQueued(id, label, 'music'),
+  playOwnVideo: (id, label) => playQueued(id, label, 'own'),
   stop: (why) => {
     const playing = get().playing;
     if (!playing) return;
@@ -289,6 +279,24 @@ export const useWatchStore = create<WatchState>((set, get) => ({
     if (peek !== get().peek) set({ peek });
   },
 }));
+
+/** Put one YouTube video in the frame for a queue (the library's or a wall-made playlist): never saved, never changes the tab. */
+function playQueued(id: string, label: string, source: 'music' | 'own'): boolean {
+  if (!validId('video', id)) return false;
+  const st = useWatchStore.getState();
+  const cur = st.playing;
+  if (cur && cur.kind === 'video' && cur.id === id) {
+    // The same video: the frame is keyed by it, so it is not reloaded; it starts again from the top.
+    playerLink.send('seekTo', [0, true]);
+    // An error code that was acted on is cleared, so a replay of an id that errored before is not skipped at once.
+    useWatchStore.setState({ source, paused: false, report: st.report.ended || st.report.error !== null ? { ...st.report, ended: false, error: null } : st.report, needsClick: false, clickHint: false, stopped: null });
+    return true;
+  }
+  const item: SavedItem = { kind: 'video', id, label: cleanText(label, MAX_LABEL) || 'YouTube video' };
+  // The saved list, the tab and the owner's mute are left alone; the item it replaces is remembered for the top player's match.
+  useWatchStore.setState({ playing: item, source, lastStopped: cur ?? st.lastStopped, paused: false, report: NO_REPORT, needsClick: false, clickHint: false, stopped: null });
+  return true;
+}
 
 /**
  * For the buddy: while something is on in the drive-in look, the screen's rectangle in wall
