@@ -196,10 +196,13 @@ The sign-in and its row in Tools came first; the library came next, and a pick f
   reason (`none`, `busy`, `down`, `failed`, `sign-in-again`, `setup-broken`, `denied`,
   `cancelled`, `timed-out`, `quota`, `quota-all`, `not-found`, `invalid`), an HTTP status and
   milliseconds. Never an id, page token, token, client value, title, channel or search words.
-- **The library** (`wall2_youtube.rs`, the YouTube side of the music card). Four commands, each
+- **The library** (`wall2_youtube.rs`, the YouTube side of the music card). Five commands, each
   opening with the window check and running its read on a blocking thread:
   `wall2_youtube_playlists(page_token?, fresh?)`, `wall2_youtube_items(playlist_id, page_token?,
-  fresh?)`, `wall2_youtube_liked(page_token?, fresh?)` and `wall2_youtube_search(query)`. They read
+  fresh?)`, `wall2_youtube_liked(page_token?, fresh?)`, `wall2_youtube_search(query)` and
+  `wall2_youtube_videos(ids)`. The last takes 1 to 50 checked ids for the own playlists, makes one
+  `videos.list` call with the same fields mask, and answers `{ id, title, channel, seconds }` per
+  answered id with absent fields as null. Private and unanswered ids are left out. They read
   YouTube's Data API v3 with the bearer token (`playlists.list mine=true`; `playlistItems.list`
   then `videos.list` for the page's ids; `videos.list myRating=like`; `search.list type=video
   videoCategoryId=<Music> videoEmbeddable=true maxResults=25` then `videos.list`; the Music category
@@ -242,7 +245,9 @@ The sign-in and its row in Tools came first; the library came next, and a pick f
   bidirectional character, and never logged. The day's budget is reserved before the call, atomically (two calls
   starting at 99 spend one), and given back only when no request left the machine; the same words already in
   flight share one call; a search whose details read failed keeps its answer for ten minutes, so a retry reads
-  the details only and spends no second search.
+  the details only and spends no second search. `wall2_youtube_videos` shares the 24 hour details
+  cache, makes at most 60 requests an hour (`busy` past that) and none after a `quota-all` until
+  midnight Pacific; each request costs 1 unit of the daily quota.
 - **In the card** (`wall/src/unwind/ytmusic/`). Set up and signed in, the YouTube side is the library:
   one row with the tabs Playlists and Liked and the search field, and under it the playlists as 16:9
   tiles (four columns at rest, five tall) or the liked videos or a search answer as rows. A tile opens
@@ -257,6 +262,7 @@ The sign-in and its row in Tools came first; the library came next, and a pick f
   pointer cursor) with a hover card that says why. Not set up, signed out, a dead sign-in or a refused setup
   keep today's remote with one line and one button under it. `?youtube=in&ytlib=full|few|empty|slow|down|busy|again|gone|low|spent|long`
   picks the library's state (development mock only), and `?ytsearch=<words>` runs a search on open.
+  `?ytdetails=ok|none|down|slow` picks the own-playlist details answer.
 - **Playing a pick** (`queue.ts`, `YtFoot.tsx`, `YtUpNext.tsx` and the rows in `YtParts.tsx`). A video that
   plays outside YouTube is a button: a click plays the list from that row, and an opened playlist has Play (from
   the first playable row) and Shuffle (every playable row once, in a random order). The pick plays on the wall
@@ -2154,6 +2160,44 @@ there, still playing, when the owner comes back (see "The stage layer" below).
   mouse while watching), Screens off mode (`monitors-off-mode`), and a call (the signals
   store's `call`), wherever the owner is. The frame is removed, never hidden, and nothing restarts
   it; the left block says why it stopped. Play is off during a call. No wake lock is held.
+- **Your own playlists** (`ownLists.ts`, `ownPlay.ts`, `OwnEditor.tsx`, `OwnFollow.tsx`, `AddToPlaylist.tsx`, `OwnParts.tsx`,
+  `styles/ownlists.css`). A playlist is made on this wall and lives on this PC only: the Google sign-in is read only and nothing is
+  created on YouTube. It holds YouTube videos only (no Twitch, no live stream, no connected playlist), at most 50, and it counts as
+  one of the 24 list entries. In the saved list (`wall2-watch-list`) it is an ordinary entry of kind `own`: an id of 12 characters
+  `[a-z0-9]` made on the wall (`OWN_ID`, random, never a YouTube shape) and its name. Its videos are in a second local storage key,
+  `wall2-watch-playlists`: `{ v: 1, lists: { <id>: { items: [{ id, title?, channel?, seconds? }], shuffle, repeat } } }`. It is read
+  tolerantly (`parseOwn`: a value over 600,000 characters, bad JSON or another `v` is an empty store; each list is read on its own and
+  a bad list is dropped, not the whole value; every field is cleaned and bounded; the lists are made without a prototype). A record
+  with no entry in the saved list is ignored and kept as stored, so a damaged saved list never takes the videos with it; at most 48
+  records are written, those with an entry first. Titles, channels and lengths are learned when a video plays on the wall, and, while
+  the YouTube sign-in is in place, read at once from YouTube for a video that is added (and, when a playlist opens in the editor, for
+  its rows still missing them; once a session per video). Until then a row reads "YouTube video". A field already stored, such as a
+  name the owner gave, is never replaced. Pictures come from `ownThumb.url(id)`, only for a checked id, with no referrer.
+  - **New playlist** (the button in the list's head) opens a name row holding "My playlist"; Enter makes it and opens the editor,
+    Escape or a click on another row drops it. The pencil on a playlist's row opens the editor; the cross asks once ("Delete <name> and
+    its 12 videos?"). Rows show a tile and a count ("12 videos"), a connected YouTube playlist shows the word "YouTube", and the
+    playing playlist's row shows a pill ("3 of 12").
+  - **The editor** grows the card to 540 by 630 while it is open. Videos are put in order by dragging the grip (pointer events with
+    pointer capture, never HTML drag and drop) or with Alt and the arrow keys; Delete removes the focused row. They are added with
+    "What is playing", with "From the Watch list" (the saved single videos) or by pasting a link to one video. Everything is written at
+    once, so Done, the back arrow, Escape and leaving the Watch tab close it with nothing to save.
+  - **Add to a playlist** is the round button in the play row (only for a single video in the frame; the open button then reads
+    "YouTube") and a button on a saved video's row. Both open the same `role="menu"` (`AddMenu`, reusable for any
+    `{ id, title?, channel?, seconds? }`).
+  - **Playing through** (`ownPlay.ts`) is one video embed at a time, in memory only. A kind `own` never reaches `embedUrl` or the frame:
+    each video is checked again right before `playOwnVideo`, a source `own` in the Watch store. Loads are at least one second apart
+    (the last request wins). A video that ends advances once; an error skips it (100, 101 and 150 also grey it for the session through
+    the library queue's `markFailed`) with a note in the left block for 6 seconds ("Skipped one: it plays only on YouTube", "Skipped 3:
+    they play only on YouTube", and the other lines). After the last video, repeat on starts a new round (a fresh mix with shuffle),
+    repeat off stops the player and shows the end block ("Play again", "Edit the playlist"); a round in which no video played ends
+    the playlist with "None of these can play here". Shuffle is the wall's own mixed order for that run and never changes the saved
+    order; shuffle and repeat are kept per playlist. The card follows the playing playlist (back arrow to the list; the playback goes on),
+    the left block shows "Your playlist · 3 of 12" with a Next line, and Home reads "Your playlist, 3 of 12". Edits made while it
+    plays are read at once; deleting the playlist stops it.
+  - **The `fromPlayer` fix** (`PlayerFrame.tsx`): when a queue restarts the same video the moment it ends, the paused state the frame
+    had set is gone before it renders, so the frame clears its own flag instead of swallowing the owner's next pause.
+  - **Dev**: `?watch=mock&wown=lists|draft|edit|drag|menu|playing|pill|repeat|skip|end|none` (see `devMocks/watch.ts`; invented names,
+    drawn pictures). Review states, fit rules and their deliberate breaks are in `scripts/areas/own-playlists.mjs`.
 - **Listen**: when something is saved, the album art has a small "Video" corner that
   switches to Watch. Nothing else on Listen changes.
 - **Dev**: `?watch=mock` draws a poster where the frame goes (headless Chromium shows an empty

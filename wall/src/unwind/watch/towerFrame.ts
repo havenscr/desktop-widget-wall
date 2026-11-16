@@ -102,15 +102,19 @@ const STAY_TOP = B - 96;
 const STAY_RUN = 26;
 const BAYS = 28;
 
-/** The surround's outer box (the fascia): 14 px out from the picture. */
-export const SURROUND = Object.freeze({ x0: L - 14, y0: T - 14, x1: R + 14, y1: B + 14 });
+/** How far the steel fascia stands out from the picture: the one number the surround box, the bars' edge and the drawn fascia share. */
+export const FASCIA = 14;
+/** The surround's outer box (the fascia): `FASCIA` px out from the picture. */
+export const SURROUND = Object.freeze({ x0: L - FASCIA, y0: T - FASCIA, x1: R + FASCIA, y1: B + FASCIA });
+/** The fascia's outer outline as drawn. */
+export const FASCIA_PATH: string = grow(FASCIA, 4);
 /** The ground line's y. */
 export const GROUND_Y = G;
 
 /** Side s is -1 for the left, 1 for the right. A point on the stay of side s at height y. */
 const stayAt = (s: number, y: number): [number, number] => [(s < 0 ? L - 12 : R + 12) + (s * STAY_RUN * (y - STAY_TOP)) / (G - STAY_TOP), y];
 /** A point on the surround's outer side edge, side s, at height y. */
-const edgeAt = (s: number, y: number): [number, number] => [s < 0 ? L - 14 : R + 14, y];
+const edgeAt = (s: number, y: number): [number, number] => [s < 0 ? L - FASCIA : R + FASCIA, y];
 
 function buildMembers(): Member[] {
   const out: Member[] = [];
@@ -212,7 +216,7 @@ function build(): string {
   const board = `<g class="w-sign"><rect x="${m.x}" y="${m.y}" width="${m.w}" height="${m.h}" rx="4" fill="#100a24" stroke="${LACE}" stroke-width="1.5"/>
     <rect x="${m.x + 4}" y="${m.y + 4}" width="${m.w - 8}" height="${m.h - 8}" rx="2" fill="none" stroke="rgba(255,176,84,.42)" stroke-width="1"/></g>`;
   // The screen's surround: a steel fascia, a coping on top, black masking next to the picture, one neon edge line.
-  const fascia = `${ring(grow(14, 4), `url(#${ID}steel)`)}
+  const fascia = `${ring(FASCIA_PATH, `url(#${ID}steel)`)}
     ${ring(grow(4), '#06040f')}
     <path d="${grow(4.5)}" fill="none" stroke="${RIM2}" stroke-width="1"/>
     <rect x="${L - 20}" y="${T - 20}" width="${V.w + 40}" height="7" rx="2" fill="#2d2352"/><path d="M${L - 19} ${T - 19.5}H${R + 19}" stroke="${RIM}" stroke-width="1"/>

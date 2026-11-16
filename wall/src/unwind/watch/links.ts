@@ -7,7 +7,7 @@
  * pasted value can never carry a host, a path or a script into a frame address.
  */
 
-export const KINDS = ['video', 'live', 'playlist', 'twitch'] as const;
+export const KINDS = ['video', 'live', 'playlist', 'twitch', 'own'] as const;
 export type WatchKind = (typeof KINDS)[number];
 
 export interface WatchRef {
@@ -21,6 +21,8 @@ const VIDEO_ID = /^[A-Za-z0-9_-]{11}$/;
 const PLAYLIST_ID = /^[A-Za-z0-9_-]{13,64}$/;
 /** Twitch logins: 3 to 25 of `[a-z0-9_]`, lower case. */
 const LOGIN = /^[a-z0-9_]{3,25}$/;
+/** A playlist made on the wall: 12 of `[a-z0-9]`. Never a YouTube shape, so it never reaches a frame address. */
+export const OWN_ID = /^[a-z0-9]{12}$/;
 
 /** A pasted link longer than this is refused before it is read. */
 export const MAX_LINK_LENGTH = 2048;
@@ -40,6 +42,8 @@ export function validId(kind: WatchKind, id: unknown): id is string {
       return PLAYLIST_ID.test(id);
     case 'twitch':
       return LOGIN.test(id);
+    case 'own':
+      return OWN_ID.test(id);
   }
 }
 
@@ -210,11 +214,14 @@ export function kindName(kind: WatchKind): string {
       return 'YouTube playlist';
     case 'twitch':
       return 'Twitch channel';
+    case 'own':
+      return 'Your playlist';
   }
 }
 
 /** The label a new item starts with, until the owner names it. */
 export function defaultLabel(ref: WatchRef): string {
+  if (ref.kind === 'own') return 'My playlist';
   return ref.kind === 'twitch' ? `${ref.id} on Twitch` : kindName(ref.kind);
 }
 
