@@ -17,8 +17,6 @@ const LINKED = '.st-k-hd .st-lk';
 const CLOSE = '.st-x';
 const START = '[aria-label="Start timer"]';
 const STOP = '[aria-label="Stop timer"]';
-// The end of a show: Stop pauses, so the show ends with Reset (a second click confirms).
-const END = `${STOP} >> .oa-reset >> .oa-reset`;
 
 const state = (screen, name, query, expect, actions) => ({ screen, name: `studio home: ${name}`, query, custom: true, expect, actions });
 
@@ -75,6 +73,7 @@ function measureHome() {
   const body = q('.st-d-body:not(.one)');
   const bodyScroll = body ? { sh: body.scrollHeight, ch: body.clientHeight, ov: getComputedStyle(body).overflowY } : null;
   const scrolls = !!body && body.scrollHeight > body.clientHeight + 1;
+  const lastRoom = qa('.st-d-rooms .st-srow').pop();
   const inScroll = (e) => scrolls && body.contains(e);
   const ask = q('.lanes-hd .ask-btn');
   const rec = q('.meet-hero-last .rec-chip');
@@ -97,6 +96,8 @@ function measureHome() {
       .map((k) => ({ n: k.n, l: k.b.l, r: k.b.r, t: k.b.t, b: k.b.b })),
     tiles,
     bodyScroll,
+    bodyBox: box(body),
+    overheadSlider: box(lastRoom),
     tools: box(q('.tools-drawer')),
     section: box(section),
     sectionKids: kids('[data-section="desktoken"]').map((k) => ({ n: k.n, l: k.b.l, r: k.b.r, t: k.b.t, b: k.b.b })),
@@ -146,8 +147,7 @@ export default {
       state('onair', 'block, the home app did not answer in time', onAirGallery(`${READY}&studiowrite=unreachable`), ['The home app did not answer in time. This is what it reports now.'], '[data-preset="onAir"]'),
       state('onair', 'block, a click on On air applies it', onAirGallery(READY), ['On air:', 'Key lights on, panels glow, monitor and overhead white', 'Back to normal'], '[data-preset="onAir"]'),
       state('onair', 'block, offer after the timer starts', onAirGallery(`${READY}`).replace('oatimer=run', 'oatimer=idle'), ['Studio lights are not set.', 'The timer started just now.', 'Set for the stream', 'Not now', 'Panels'], START),
-      state('onair', 'block, offer after the show ends (timer reset)', onAirGallery('keys2=both&studio=onair&desktoken=set'), ['The show timer stopped.', 'The room is still on On air.', 'Back to normal', 'Keep'], END),
-      state('onair', 'block, a pause of the timer offers nothing', onAirGallery('keys2=both&studio=onair&desktoken=set'), ['On air:', 'Fine tune', '!The show timer stopped.'], STOP),
+      state('onair', 'block, offer after the timer stops', onAirGallery('keys2=both&studio=onair&desktoken=set'), ['The show timer stopped.', 'The room is still on On air.', 'Back to normal', 'Keep'], STOP),
       state('onair', 'block, a refused click says why', onAirGallery(`${READY}&studiowrite=unknown`), ['The home app no longer lists that one. This is what it reports now.'], '[data-preset="onAir"]'),
       state('onair', 'sheet, six panel looks, the body scrolls', onAirGallery('keys2=both&studio=sixlooks&desktoken=set'), ['Ocean waves', 'Aurora', 'Behind monitor'], FINE),
       state('onair', 'block, a hover tip on a preset', onAirGallery(READY), ['Key lights on, panels glow, monitor and overhead white'], 'hover:[data-preset="onAir"]'),
@@ -183,8 +183,10 @@ export default {
       variant('Studio home, block, no key lights set up', onAirFit(`${READY.replace('keys2=both', 'keys2=none')}`)),
       variant('Studio home, block, the home app does not offer presets', onAirFit('keys2=both&studio=absent'), { checks: COMPAT_CHECKS }),
       variant(OFFER_V, onAirFit(READY).replace('oatimer=run', 'oatimer=idle'), { click: START, checks: OFFER_CHECKS }),
-      variant('Studio home, block, offer after the show ends', onAirFit('keys2=both&studio=onair&desktoken=set'), { click: END, checks: OFFER_CHECKS }),
+      variant('Studio home, block, offer after the timer stops', onAirFit('keys2=both&studio=onair&desktoken=set'), { click: STOP, checks: OFFER_CHECKS }),
       sheetVariant(SHEET_V, onAirFit(READY), FINE),
+      sheetVariant('Studio home, sheet, linked, three looks', onAirFit('keys2=both&studio=threelooks&desktoken=set'), FINE),
+      sheetVariant('Studio home, sheet, split, three looks', onAirFit('keys2=mismatch&studio=threelooks&desktoken=set'), `${FINE} >> ${LINKED}`),
       sheetVariant('Studio home, sheet, split', onAirFit(READY.replace('keys2=both', 'keys2=mismatch')), `${FINE} >> ${LINKED}`),
       sheetVariant('Studio home, sheet, On air is on and changed', onAirFit('keys2=both&studio=changed&desktoken=set'), FINE),
       sheetVariant('Studio home, sheet, no desk token', onAirFit('keys2=both&studio=ready&desktoken=unset'), FINE),
@@ -255,6 +257,11 @@ export default {
         }
         if (isSheet) {
           for (const t of s.tiles) if (t.lineCut || t.nameCut) fails.push('studiohome: preset tile text is cut: "' + t.n + '"');
+          // In the normal states (up to three looks on one row) nothing scrolls and the last room's slider lies whole inside the body.
+          if (v.name !== SIX_V && s.bodyScroll && s.bodyBox) {
+            if (s.bodyScroll.sh > s.bodyScroll.ch + 1) fails.push('studiohome: the sheet body scrolls (' + s.bodyScroll.sh + ' of ' + s.bodyScroll.ch + ' px) in a state that must show every row whole');
+            if (s.overheadSlider && s.overheadSlider.b > s.bodyBox.b + 0.5) fails.push('studiohome: the last room slider ends at y ' + r1(s.overheadSlider.b) + ', below the sheet body (' + r1(s.bodyBox.b) + ')');
+          }
           if (v.name === SIX_V && !(s.bodyScroll && s.bodyScroll.sh > s.bodyScroll.ch + 1 && s.bodyScroll.ov === 'auto')) fails.push('studiohome: the sheet with six looks does not scroll its body, so a control is out of reach');
         }
         if (isTools) {
@@ -301,6 +308,7 @@ export default {
       'studiohome-block': { css: '.st-block { height: 260px !important; }', expect: /^ *FAIL studiohome: .*(block|footnote)/m, appliesTo: (v) => v.name === BLOCK_V },
       'studiohome-presets': { css: '.st-preset { min-width: 400px !important; }', expect: /^ *FAIL studiohome: preset row part/m, appliesTo: (v) => v.name === BLOCK_V },
       'studiohome-switches': { css: '.st-room { min-width: 300px !important; }', expect: /^ *FAIL studiohome: switch row tile/m, appliesTo: (v) => v.name === BLOCK_V },
+      'studiohome-noscroll': { css: '.st-d-rooms { padding-top: 60px !important; }', expect: /^ *FAIL studiohome: (the sheet body scrolls|the last room slider)/m, appliesTo: (v) => v.name === SHEET_V },
       'studiohome-tiles': { css: '.st-pt-l { max-height: 19px !important; min-height: 0 !important; }', expect: /^ *FAIL studiohome: preset tile text is cut/m, appliesTo: (v) => v.name === SHEET_V },
       'studiohome-sheet': { css: '.st-drawer { max-height: none !important; } .st-d-rooms { height: 600px !important; }', expect: /^ *FAIL studiohome: (the sheet is at|sheet part)/m, appliesTo: (v) => v.name === SHEET_V },
       'studiohome-offer': { css: '.st-offer { height: 120px !important; }', expect: /^ *FAIL studiohome: the offer bar/m, appliesTo: (v) => v.name === OFFER_V },

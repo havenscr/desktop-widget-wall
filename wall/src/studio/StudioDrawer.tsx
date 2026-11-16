@@ -295,7 +295,7 @@ export function StudioDrawer() {
       )}
       {!home.studio && home.view !== 'checking' && <div className="st-line st-quiet">{home.view === 'down' ? `${DOWN_LINE}.` : ABSENT_LINE}</div>}
       <div className="st-d-foot st-line">
-        <span>Range {KELVIN_MIN} K to {KELVIN_MAX} K, the maker&apos;s figure</span>
+        <span>{home.studio ? `Range ${KELVIN_MIN} K to ${KELVIN_MAX} K, maker's figure` : `Range ${KELVIN_MIN} K to ${KELVIN_MAX} K, the maker's figure`}</span>
         <span>Esc or a click outside closes it</span>
       </div>
     </section>,

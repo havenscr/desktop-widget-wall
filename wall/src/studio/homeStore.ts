@@ -1,5 +1,4 @@
 import { create } from 'zustand';
-import { MAX_SHOW_MS } from '../onair/model';
 import { useOnAirStore } from '../onair/store';
 import { useSignalStore } from '../signals/store';
 import * as api from './home';
@@ -394,10 +393,10 @@ export function watchOffers(): void {
     const p = prevSaved;
     const n = s.saved;
     prevSaved = n;
-    // A fresh start (not carrying on after a pause) that is only just now, not a timer restored at launch.
-    if (!p.running && n.running && p.firstStartAt === null && n.startedAt !== null && Date.now() - n.startedAt <= JUST_NOW_MS) void onEdge('start', 'timer');
-    // The show ending: the timer stopped itself at 24 hours, or was reset. A pause (the Stop button) and carrying on raise nothing.
-    else if ((p.running && !n.running && n.accumulatedMs >= MAX_SHOW_MS) || (!n.running && p.firstStartAt !== null && n.firstStartAt === null)) void onEdge('stop', 'timer');
+    // Start, also carrying on after a Stop, that is only just now (not a timer restored from storage at launch).
+    if (!p.running && n.running && n.startedAt !== null && Date.now() - n.startedAt <= JUST_NOW_MS) void onEdge('start', 'timer');
+    // Stop (the button, or the timer stopping itself at 24 hours). Reset afterwards raises nothing: the stop was offered once.
+    else if (p.running && !n.running) void onEdge('stop', 'timer');
   });
   useSignalStore.subscribe((s, prev) => {
     const r = s.recording;

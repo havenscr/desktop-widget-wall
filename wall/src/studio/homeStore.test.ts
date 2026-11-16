@@ -378,10 +378,10 @@ const joinSurface = async () => {
   await flush();
 };
 const startTimer = () => useOnAirStore.setState((s) => ({ saved: { ...s.saved, running: true, startedAt: Date.now(), firstStartAt: s.saved.firstStartAt ?? Date.now(), stoppedAt: null } }));
-/** The Stop button: a pause (the time is kept). */
-const pauseTimer = () => useOnAirStore.setState((s) => ({ saved: { ...s.saved, running: false, startedAt: null, accumulatedMs: 5000, stoppedAt: Date.now() } }));
-/** The end of a show: the timer reset to 00:00 after it was stopped. */
-const stopTimer = () => useOnAirStore.setState((s) => ({ saved: { ...s.saved, running: false, startedAt: null, accumulatedMs: 0, firstStartAt: null, stoppedAt: null } }));
+/** The Stop button: the time is kept, the timer is no longer running. */
+const stopTimer = () => useOnAirStore.setState((s) => ({ saved: { ...s.saved, running: false, startedAt: null, accumulatedMs: 5000, stoppedAt: Date.now() } }));
+/** Reset: back to 00:00, only after a stop. */
+const resetTimer = () => useOnAirStore.setState((s) => ({ saved: { ...s.saved, running: false, startedAt: null, accumulatedMs: 0, firstStartAt: null, stoppedAt: null } }));
 
 it('the timer starting with nothing set raises the start offer after a fresh read, and it goes away by itself after 60 seconds', async () => {
   await joinSurface();
@@ -530,36 +530,75 @@ it('an offer the opposite edge made obsolete is cleared', async () => {
   expect(useHome.getState().offer).toBeNull();
 });
 
-it('a pause of the show timer raises nothing, and neither does carrying on', async () => {
+it('Stop with a preset on raises the stop offer; Start after it with the preset still on raises nothing', async () => {
   answer = studioWith('onAir');
   homePollChange(1);
   startTimer();
   await flush();
-  useHome.getState().dismissOffer();
-  pauseTimer();
-  await flush();
   expect(useHome.getState().offer).toBeNull();
-  answer = studioAnswer();
+  stopTimer();
+  await flush();
+  expect(useHome.getState().offer).toMatchObject({ kind: 'stop', what: 'timer', label: 'On air' });
+  useHome.getState().dismissOffer();
   startTimer();
   await flush();
   expect(useHome.getState().offer).toBeNull();
 });
 
-it('a reset of the show timer with a preset on, and a timer that stopped itself at 24 hours, raise the stop offer', async () => {
+it('Start after a Stop with no preset on raises the start offer: carrying on counts as a start', async () => {
+  homePollChange(1);
+  startTimer();
+  await flush();
+  useHome.getState().dismissOffer();
+  stopTimer();
+  await flush();
+  expect(useHome.getState().offer).toBeNull();
+  startTimer();
+  await flush();
+  expect(useHome.getState().offer).toMatchObject({ kind: 'start', what: 'timer' });
+});
+
+it('Reset raises nothing more, not a stop offer and never a start offer', async () => {
   answer = studioWith('onAir');
   homePollChange(1);
   startTimer();
   await flush();
-  pauseTimer();
   stopTimer();
   await flush();
-  expect(useHome.getState().offer).toMatchObject({ kind: 'stop', what: 'timer' });
   useHome.getState().dismissOffer();
+  resetTimer();
+  await flush();
+  expect(useHome.getState().offer).toBeNull();
+  answer = studioAnswer();
+  resetTimer();
+  await flush();
+  expect(useHome.getState().offer).toBeNull();
+});
+
+it('a timer that stopped itself at 24 hours is a stop', async () => {
+  answer = studioWith('onAir');
+  homePollChange(1);
   startTimer();
   await flush();
   useOnAirStore.setState((s) => ({ saved: { ...s.saved, running: false, startedAt: null, accumulatedMs: 24 * 3600_000 } }));
   await flush();
   expect(useHome.getState().offer).toMatchObject({ kind: 'stop', what: 'timer' });
+});
+
+it('a quick Stop then Start before the read returns leaves no stop offer standing', async () => {
+  answer = studioWith('onAir');
+  homePollChange(1);
+  startTimer();
+  await flush();
+  useHome.getState().dismissOffer();
+  const pending = deferred();
+  stopTimer();
+  await flush();
+  startTimer();
+  await flush();
+  for (const p of pending) p.resolve(studioWith('onAir'));
+  await flush();
+  expect(useHome.getState().offer).toBeNull();
 });
 
 it('no read and no offer on an edge while no studio surface is shown; a surface that shows within seconds gets the offer', async () => {

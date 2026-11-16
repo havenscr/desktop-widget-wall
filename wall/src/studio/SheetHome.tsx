@@ -115,10 +115,22 @@ function RoomSlider({ g, studio, may }: { g: Group; studio: Studio; may: boolean
   );
 }
 
+/** The full words for a room's tip: the home app's own state words and the floor. */
 function stateWords(g: Group): string {
   if (needsZone(g)) return g.setTo ?? 'Needs a Hue zone';
   const base = g.setTo ?? (g.on ? 'On' : 'Off');
   return g.floor ? `${base}. Floor ${g.floor}%` : base;
+}
+
+/**
+ * The short form on the room's name line (the level already shows at the slider's right): the floor, or
+ * the home app's words without their number. The full sentence is the hover tip.
+ */
+export function shortWords(g: Group): string {
+  if (needsZone(g)) return g.setTo ?? 'Needs a Hue zone';
+  if (g.floor) return `Floor ${g.floor}%`;
+  const bare = (g.setTo ?? '').replace(/\s*\d+%/g, '').trim();
+  return bare || (g.on ? 'On' : 'Off');
 }
 
 /** One room light group: its switch and name, the home app's words, and a slider with the floor marked. */
@@ -142,9 +154,9 @@ function RoomRow({ g, studio, may }: { g: Group; studio: Studio; may: boolean })
         </button>
         <span className="st-h st-rm-n">{g.label}</span>
         {!g.reachable && <IconAlertTriangle size={18} aria-hidden="true" className="st-tg-warn" />}
-      </div>
-      <div className={`st-line st-rm-s${needsZone(g) ? ' amber' : ''}`} {...(needsZone(g) ? tip(ZONE_TIP) : {})}>
-        {stateWords(g)}
+        <span className={`st-line st-rm-r${needsZone(g) ? ' amber' : ''}`} {...tip(needsZone(g) ? ZONE_TIP : stateWords(g))}>
+          {shortWords(g)}
+        </span>
       </div>
       {!needsZone(g) && g.canDim && <RoomSlider g={g} studio={studio} may={may} />}
     </div>

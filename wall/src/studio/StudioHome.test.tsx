@@ -9,6 +9,8 @@ import { HoverTipLayer, resetTip } from '../ui/HoverTip';
 import { group, studioAnswer, studioWith } from './homeKit';
 import { OFFER_MS, resetHome, useHome } from './homeStore';
 import { LightsChip } from './LightsChip';
+import { shortWords } from './SheetHome';
+import { studioOf } from './home';
 import { StudioBlock } from './StudioBlock';
 import { resetKeyLights, useKeyLights } from './store';
 
@@ -298,7 +300,7 @@ it('the key lights tile still works with the home part present', async () => {
 // Section: the offer
 
 const startTimer = () => useOnAirStore.setState((s) => ({ saved: { ...s.saved, running: true, startedAt: Date.now(), firstStartAt: s.saved.firstStartAt ?? Date.now() } }));
-const resetTimer = () => useOnAirStore.setState((s) => ({ saved: { ...s.saved, running: false, startedAt: null, accumulatedMs: 0, firstStartAt: null } }));
+const stopTimer = () => useOnAirStore.setState((s) => ({ saved: { ...s.saved, running: false, startedAt: null, accumulatedMs: 5000, stoppedAt: Date.now() } }));
 
 it('the offer bar takes the place of the preset row and the summary; Set for the stream applies On air', async () => {
   await showBlock();
@@ -326,7 +328,7 @@ it('Not now leaves the lights alone and the bar goes; the bar also goes by itsel
   await flush();
   expect(writes).toHaveLength(0);
   expect(screen.queryByText('Studio lights are not set.')).toBeNull();
-  resetTimer();
+  stopTimer();
   await flush();
   useHome.getState().dismissOffer();
   await act(async () => useSignalStore.setState({ recording: true }));
@@ -341,7 +343,7 @@ it('the stop offer names the preset the room is on, with Back to normal and Keep
   await showBlock();
   await act(async () => startTimer());
   await flush();
-  await act(async () => resetTimer());
+  await act(async () => stopTimer());
   await flush();
   expect(screen.getByText('The show timer stopped.')).toBeTruthy();
   expect(screen.getByText('The room is still on On air.')).toBeTruthy();
@@ -433,8 +435,10 @@ it('the sheet: preset tiles with each line, Back to normal, then the key lights 
   expect(sheet().getByText('Linked')).toBeTruthy();
   expect(sheet().getByText('Glow')).toBeTruthy();
   expect(sheet().getByText('Calm')).toBeTruthy();
-  expect(sheet().getByText('White 80%. Floor 45%')).toBeTruthy();
-  expect(sheet().getByText('White 90%. Floor 45%')).toBeTruthy();
+  // The short words sit on the name's line; the full sentence is the tip.
+  const floors = sheet().getAllByText('Floor 45%');
+  expect(floors).toHaveLength(2);
+  expect(await tipOf(floors[0])).toContain('White 80%. Floor 45%');
   const sliders = sheet().getAllByRole('slider', { name: /Behind monitor brightness|Overhead brightness/ });
   expect(sliders).toHaveLength(2);
   expect(document.querySelectorAll('.st-floor')).toHaveLength(2);
@@ -540,4 +544,12 @@ it('a click outside closes the sheet, as the footer says', async () => {
   fireEvent.pointerDown(document.body);
   await flush();
   expect(document.querySelector('.st-drawer')).toBeNull();
+});
+
+it('a room\'s short words: the floor, else the home app\'s words without their number, else On or Off', () => {
+  const g = (over: Record<string, unknown>) => studioOf(studioAnswer({ groups: [{ ...group('overhead', 'Overhead', true, 90), ...over }] }))!.groups[0];
+  expect(shortWords(g({}))).toBe('Floor 45%');
+  expect(shortWords(g({ floor: null, setTo: 'Glow 70%' }))).toBe('Glow');
+  expect(shortWords(g({ floor: null, setTo: null, on: false }))).toBe('Off');
+  expect(shortWords(g({ canSwitch: false, setTo: 'Needs a Hue zone' }))).toBe('Needs a Hue zone');
 });

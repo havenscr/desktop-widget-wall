@@ -22,7 +22,7 @@ import { knob } from './long';
  *
  * The home half (the home app's studio answer, its writes, the desk token, office moods):
  *
- *   ?studio=absent|notsetup|ready|onair|recording|changed|stale|nozone|sixlooks|down|lost|slow
+ *   ?studio=absent|notsetup|ready|onair|recording|changed|stale|nozone|threelooks|sixlooks|down|lost|slow
  *   ?studiowrite=ok|forbidden|homeunset|dark|busy|lights|unknown|unreachable
  *   ?desktoken=unset|set|unreadable|insecure
  *   ?office=absent|empty|two|six|down
@@ -35,6 +35,7 @@ import { knob } from './long';
  *   changed       On air is on and something was changed by hand
  *   stale         ready, but the home app could not read every light (Overhead not answering)
  *   nozone        ready, but Overhead needs a Hue zone
+ *   threelooks    ready, with three panel looks (they fill one row of chips)
  *   sixlooks      ready, with six panel looks (the most the home app lists)
  *   down          the home app does not answer
  *   lost          reads are good until the sheet is opened (Fine tune); then the home app is gone
@@ -233,7 +234,7 @@ type LightMock = { left: Cell; right: Cell };
 
 function registerHomeHalf(keys: LightMock): void {
   const home = homeStart(knob('studio'));
-  const looks = knob('studio') === 'sixlooks' ? SIX_LOOKS : LOOKS;
+  const looks = knob('studio') === 'sixlooks' ? SIX_LOOKS : knob('studio') === 'threelooks' ? SIX_LOOKS.slice(0, 3) : LOOKS;
   const writeKind = knob('studiowrite') ?? 'ok';
   const tokenKind = knob('desktoken') ?? 'unset';
   const token = { set: tokenKind === 'set' || tokenKind === 'insecure', unreadable: tokenKind === 'unreadable', insecure: tokenKind === 'insecure' };
