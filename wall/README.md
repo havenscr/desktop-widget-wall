@@ -272,6 +272,26 @@ The sign-in and its row in Tools came first; the library came next, and a pick f
   keep today's remote with one line and one button under it. `?youtube=in&ytlib=full|few|empty|slow|down|busy|again|gone|low|spent|long`
   picks the library's state (development mock only), and `?ytsearch=<words>` runs a search on open.
   `?ytdetails=ok|none|down|slow` picks the own-playlist details answer.
+- **Add to a playlist on a row** (`YtRows` in `YtParts.tsx`, styles in `ytmusic.css`). Every row that plays (Liked, an opened
+  playlist, search results) has a 30 by 30 control at its right end, 8 px from the row's end and 6 px from its top and foot, in the
+  length's place. It is a second button inside the row, never inside the play button, so a click on it never plays and a click
+  anywhere else on the row still does. It shows while the pointer is on the row, on keyboard focus within the row (Tab reaches it
+  after the play button) and while its menu is open, fading in over 200 ms (it just appears under reduced motion); the length of
+  that one row fades out meanwhile, so no title, channel or number moves or changes width. Greyed rows and playlist tiles have none,
+  and the row playing now has it like any other. The row stays lit while the pointer is on the control or its menu is open; its
+  hover card stays away then, and the control has its own ("Add to a playlist"). It opens the Watch menu (`AddMenu`, reused, not
+  copied): the owner's own playlists with their counts, then New playlist, with the same behaviour as on Watch (a check on a
+  playlist that already holds the video, a click takes it out again, naming a new playlist, the refusal lines). The video is stored
+  with the title, channel and length the row already carries (a length of 0, a live video, is left out), so adding asks YouTube for
+  nothing when the row has them; it then shows in that playlist on Watch. The menu is 300 wide, its right edge on the control's,
+  under the control or, when it would pass the foot of the rows plus 8 px, above it (`place()` takes the rows' box as an optional
+  `limit`), so it never covers the foot player or the row it belongs to. It shows three playlist rows at rest and four in the tall
+  view; more scroll inside the list with the app's one scrollbar look. It closes when the list scrolls, when the tab or the playlist
+  changes, when its row leaves the list (Refresh, a new page), on a click outside and on Escape; Escape closes only the menu (the
+  playlist stays open) and the focus returns to the control. Dev: `?watch=mock&wtab=listen&ytown=none|two|three|five|nine|in|full`
+  makes the owner's playlists the menu offers (none, or two to nine invented ones; `in` holds some library videos already; `full`
+  makes the first a full one) and `?ytscroll=<px>` scrolls the rows (`devMocks/watch.ts`, `devMocks/youtube.ts`). States, fit rules
+  and their deliberate breaks are in `scripts/areas/library-add.mjs`.
 - **Playing a pick** (`queue.ts`, `YtFoot.tsx`, `YtUpNext.tsx` and the rows in `YtParts.tsx`). A video that
   plays outside YouTube is a button: a click plays the list from that row, and an opened playlist has Play (from
   the first playable row) and Shuffle (every playable row once, in a random order). The pick plays on the wall
@@ -2273,7 +2293,8 @@ there, still playing, when the owner comes back (see "The stage layer" below).
     once, so Done, the back arrow, Escape and leaving the Watch tab close it with nothing to save.
   - **Add to a playlist** is the round button in the play row (only for a single video in the frame; the open button then reads
     "YouTube") and a button on a saved video's row. Both open the same `role="menu"` (`AddMenu`, reusable for any
-    `{ id, title?, channel?, seconds? }`).
+    `{ id, title?, channel?, seconds? }`; the rows of the YouTube library use it too, see "YouTube"). A playlist that is full (50)
+    reads "Full" in plain text instead of a faded count, is not a pick, and fades only its tile.
   - **Playing through** (`ownPlay.ts`) is one video embed at a time, in memory only. A kind `own` never reaches `embedUrl` or the frame:
     each video is checked again right before `playOwnVideo`, a source `own` in the Watch store. Loads are at least one second apart
     (the last request wins). A video that ends advances once; an error skips it (100, 101 and 150 also grey it for the session through
