@@ -1804,8 +1804,8 @@ frame (no ribbon) in the wide zones `470px 1fr 540px`. The parts are in `wall/sr
   are shown as text only. While Spotify
   starts the card shows a calm status line (the Spotify mark, "Starting Spotify on this PC", what plays
   once ready, a thin line that fills once).
-- **The office lights slot.** Where 7A drew the quiet row at the foot (right edge 70 px
-  from the stage's right edge, top 662, 34 px tall) Unwind keeps one box,
+- **The office lights slot.** Where 7A drew the quiet row at the foot (right edge at wall x 2364,
+  176 px from the stage's right edge, top 662, 34 px tall) Unwind keeps one box,
   `data-slot="office-lights"`. It is empty (420 px wide, no content, border or pointer)
   until the home app lists office moods; then it is the Office moods row, up to 1124 px
   wide (see "Office moods" under Studio lights). The fit check fails when anything else

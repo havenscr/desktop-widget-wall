@@ -1411,7 +1411,7 @@ try {
       if (!slot) listen.push('listen: the office lights slot is not there');
       else {
         const sr = slot.getBoundingClientRect();
-        // Its stage box (7A's foot row): right edge 70 px from the stage's right edge, top 662, 34 tall; 420 wide empty, up to 1124 with the moods row.
+        // Its stage box (7A's foot row): right edge at wall x 2364 (176 px from the stage's right edge), top 662, 34 tall; 420 wide empty, up to 1124 with the moods row.
         if (Math.abs(sr.right - 2364) > 1 || Math.abs(sr.top - 662) > 1 || Math.abs(sr.height - 34) > 1 || sr.width < 419.5 || sr.width > 1124.5) listen.push('listen: the office lights slot is at x ' + Math.round(sr.left) + ' to ' + Math.round(sr.right) + ', y ' + Math.round(sr.top) + ' to ' + Math.round(sr.bottom) + ' (right edge 2364, top 662, 34 tall, 420 to 1124 wide)');
         const bn = document.querySelector('.leave-banner')?.getBoundingClientRect();
         const ln = document.querySelector('.u-line')?.getBoundingClientRect();

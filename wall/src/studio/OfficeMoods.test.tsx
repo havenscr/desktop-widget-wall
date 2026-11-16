@@ -4,6 +4,7 @@ import { mocks } from '../bridge/tauri';
 import { HoverTipLayer, resetTip } from '../ui/HoverTip';
 import { OFF_READ_DELAY_MS, resetHome, TEXT, useHome } from './homeStore';
 import { OfficeMoods } from './OfficeMoods';
+import { NAME_MIN, fitMoodRow } from './moodRow';
 import { NOTE_MS } from './store';
 
 vi.setConfig({ testTimeout: 20_000 });
@@ -167,8 +168,10 @@ it('the fit rule is applied: twelve names of 40 characters drop the label and cu
   const named = [...slot().querySelectorAll<HTMLElement>('.u-mood-name')].filter((n) => n.textContent !== 'Off');
   expect(named).toHaveLength(12);
   for (const n of named) expect(n.style.maxWidth).toMatch(/^\d+px$/);
-  // Cut at the largest shared width that fits: more than the minimum text, and the full name still in the tip.
-  expect(parseInt(named[0].style.maxWidth, 10)).toBeGreaterThanOrEqual(19);
+  // Cut at the largest shared width that fits: exactly what the fit rule gives for 12 names of 360 px (9 px a character) and an Off chip measured by the same guess (30 + 22 + 27 px), above the floor.
+  const expected = fitMoodRow(Array(12).fill(360), 0, 79).cap as number;
+  expect(expected).toBeGreaterThan(NAME_MIN);
+  for (const n of named) expect(n.style.maxWidth).toBe(`${expected}px`);
   expect(await tipOf(chip(forty(0)))).toBe(`${forty(0)} is on.`);
   unmount();
   resetHome();
