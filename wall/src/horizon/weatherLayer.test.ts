@@ -315,6 +315,40 @@ describe('the cached soft layers', () => {
     expect(hasWeatherCache(layer)).toBe(false);
   });
 
+  it('lets the caches go once on the on-to-off edge, not on every step of the off state', () => {
+    const { layer } = fakeLayer();
+    setWeatherTarget(layer, RAIN, false, true);
+    snapWeather(layer, 3);
+    const { ctx } = recordingContext();
+    back(ctx, layer, 3);
+    expect(hasWeatherCache(layer)).toBe(true);
+    setWeatherTarget(layer, DRY, false, true);
+    let steps = 0;
+    while (weatherOn(layer) && steps < 1000) {
+      stepWeather(layer, 1 / 30);
+      steps++;
+    }
+    expect(weatherOn(layer)).toBe(false);
+    expect(hasWeatherCache(layer)).toBe(false);
+    // The release resets the caches' keys. Plant markers the release would overwrite, then step on for many frames of the off state.
+    layer.veil.k = 42;
+    layer.mistCache.key = 42;
+    layer.mistCache.at = 42;
+    for (let i = 0; i < 600; i++) stepWeather(layer, 1 / 30);
+    expect(layer.veil.k).toBe(42);
+    expect(layer.mistCache.key).toBe(42);
+    expect(layer.mistCache.at).toBe(42);
+    // A later on-to-off edge releases again.
+    setWeatherTarget(layer, RAIN, false, true);
+    snapWeather(layer, 3);
+    back(ctx, layer, 3);
+    expect(hasWeatherCache(layer)).toBe(true);
+    setWeatherTarget(layer, DRY, false, true);
+    while (weatherOn(layer)) stepWeather(layer, 1 / 30);
+    expect(layer.veil.k).toBe(-1);
+    expect(layer.mistCache.at).toBe(-1e9);
+  });
+
   it('makes no cache for wind alone', () => {
     const { layer, made } = fakeLayer();
     setWeatherTarget(layer, WINDY, false, true);

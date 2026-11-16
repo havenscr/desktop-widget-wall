@@ -3,7 +3,7 @@ import { startAudio } from './audio/capture';
 import { Watt } from './buddy/Watt';
 import { useFocusStore } from './focus/store';
 import { acquireNowPlaying } from './music/store';
-import { HorizonCanvas } from './horizon/HorizonCanvas';
+import { HorizonCanvas, WeatherOverlay } from './horizon/HorizonCanvas';
 import { Rail } from './rail/Rail';
 import { usePlaceStore } from './state/places';
 import { Screens } from './screens/Screens';
@@ -35,6 +35,7 @@ export function App() {
     <Stage>
       <HorizonCanvas />
       <div className="veil" data-place={active} aria-hidden="true" />
+      <WeatherOverlay />
       <Watt />
       <div className="shell">
         <Rail />

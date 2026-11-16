@@ -1684,10 +1684,11 @@ export function Watt({ now = reviewNow ?? Date.now, inCall = false }: { now?: ()
       const tw = force && force.kind === 'drip' ? 0.7 : tNow();
       const still = reduced && force === null;
       const damp = mi.wetOn && mi.rain;
+      // Quiet times (recording, a known call, a meeting in progress: all of them his `hush`) and his nap hold the drip and his own shake back; his menu open is `held`.
       const calm = !mi.nap && !mi.quiet && !quiet.current.inCall;
       const sk = shakeClock.current;
       const reacting = mi.react !== null && mi.reactT < reactLength(mi);
-      stepShake(sk, tw, f.pose === 'idle' && !mi.carry && !mi.held && !mi.lie && !p.night && !reacting && !mi.hush && cardRef.current === null && calm, damp && !still);
+      stepShake(sk, tw, f.pose === 'idle' && !mi.carry && !mi.held && !mi.lie && !p.night && !reacting && calm, damp && !still);
       const kf = force ? (force.kind === 'shake' ? force.k : -1) : damp && !still ? shakeFrame(tw, sk) : -1;
       const fluffy = (force !== null && force.kind === 'fluffy') || (damp && !still && fluffyAt(tw, sk));
       const wool: Wool = fluffy ? 'fluffy' : damp ? 'wet' : 'dry';

@@ -1,7 +1,7 @@
 import { act, cleanup, render } from '@testing-library/react';
 import { useState } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { HorizonCanvas } from './HorizonCanvas';
+import { HorizonCanvas, WeatherOverlay } from './HorizonCanvas';
 import type { HorizonOptions } from './index';
 import { stubContext } from './canvasStub';
 import { useSkyClaim, useSkyStore } from './sky';
@@ -152,7 +152,7 @@ describe('the weather in the horizon frame', () => {
     expect(log.filter((e) => e.k === 'sky' || e.k === 'whole').every((e) => e.clearOff === false)).toBe(true);
   });
 
-  it('with the front canvas the back goes on the main canvas after the sky and the mid on the front canvas before the veil', () => {
+  it('with the front canvas the back goes on the main canvas after the sky and the mid on the front canvas after the veil (above it)', () => {
     useWeatherStore.setState({ reading: rainReading(NOON) });
     render(
       <>
@@ -164,12 +164,40 @@ describe('the weather in the horizon frame', () => {
     runFrame(200);
     expect(front()).not.toBeNull();
     const f = lastFrame();
-    expect(kinds(f)).toEqual(['sky', 'back', 'ground', 'mid', 'veil']);
+    expect(kinds(f)).toEqual(['sky', 'back', 'ground', 'veil', 'mid']);
     expect(f[0].ctx).toBe(ctxOf.get(main()));
     expect(f[1].ctx).toBe(ctxOf.get(main()));
     expect(f[2].ctx).toBe(ctxOf.get(front()!));
     expect(f[3].ctx).toBe(ctxOf.get(front()!));
     expect(f[4].ctx).toBe(ctxOf.get(front()!));
+    // The page's overlay stays empty while the front canvas carries the layer.
+  });
+
+  it('with one canvas and the page\'s overlay canvas (after the veil) the mid layer is drawn on the overlay, cleared and sized each frame, and the overlay is emptied when the layer is off', () => {
+    useWeatherStore.setState({ reading: rainReading(NOON) });
+    render(
+      <>
+        <HorizonCanvas now={() => NOON} />
+        <div className="veil" />
+        <WeatherOverlay />
+      </>,
+    );
+    runFrame(100);
+    runFrame(200);
+    const overlay = document.querySelector('canvas.horizon-weather') as HTMLCanvasElement;
+    expect(overlay).not.toBeNull();
+    // The veil comes before it in the page, so it lies above the veil.
+    expect(document.querySelector('.veil')!.compareDocumentPosition(overlay) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    const f = lastFrame();
+    expect(kinds(f)).toEqual(['sky', 'back', 'ground', 'mid']);
+    expect(f[3].ctx).toBe(ctxOf.get(overlay));
+    expect(f[3].ctx).not.toBe(ctxOf.get(main()));
+    expect(overlay.width).toBe(main().width);
+    expect(overlay.height).toBe(main().height);
+    act(() => useSceneWeather.getState().setOn(false));
+    runFrames(100, 10_000);
+    expect(overlay.width).toBe(0);
+    expect(overlay.height).toBe(0);
   });
 
   it('hands the layer the skip boxes of the sky claims', () => {

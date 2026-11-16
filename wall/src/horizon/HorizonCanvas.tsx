@@ -55,6 +55,7 @@ import {
   stepWeather,
   weatherOn,
 } from './weatherLayer';
+import { setWeatherOverlay, weatherOverlay } from './weatherOverlay';
 import {
   FLAT_REST_OPACITY,
   ampScale,
@@ -248,6 +249,28 @@ export function HorizonCanvas({ now = Date.now }: { now?: () => number }) {
     let costFrames = 0;
     let costMs = 0;
 
+    /** The overlay canvas above the place veil, sized to this frame and cleared, or null when the page has none. */
+    const overlayContext = (width: number, height: number): CanvasRenderingContext2D | null => {
+      const o = weatherOverlay();
+      if (!o || !o.isConnected) return null;
+      if (o.width !== width || o.height !== height) {
+        o.width = width;
+        o.height = height;
+      }
+      const x = o.getContext('2d');
+      if (!x) return null;
+      x.setTransform(1, 0, 0, 1, 0, 0);
+      x.clearRect(0, 0, width, height);
+      return x;
+    };
+    /** The weather layer is off: the overlay canvas lets its pixels go (a zero size empties it). */
+    const dropOverlay = () => {
+      const o = weatherOverlay();
+      if (o && (o.width !== 0 || o.height !== 0)) {
+        o.width = 0;
+        o.height = 0;
+      }
+    };
     const paint = () => {
       if (document.hidden) return;
       const costStart = measureCost ? performance.now() : 0;
@@ -420,7 +443,10 @@ export function HorizonCanvas({ now = Date.now }: { now?: () => number }) {
         else drawReflection(reflection.current, ctx, width, height, camera.hy, scale, alpha);
       }
       // The weather in front of the ground and the lines, on the canvas the ground is on, before the veil pass.
-      if (wxOn) drawWeatherMid(fctx ?? ctx, w, wxTime, camera.hy, scale, width, height, awake.current);
+      // The mid layer goes ABOVE the place veil, as the picked pictures drew it: with the front canvas, after its veil (below); with one
+      // canvas, on the overlay canvas the page puts after the veil (`WeatherOverlay`), or on this canvas when there is none.
+      if (wxOn && !fctx) drawWeatherMid(overlayContext(width, height) ?? ctx, w, wxTime, camera.hy, scale, width, height, awake.current);
+      else dropOverlay();
       if (fc && fctx) {
         // Left of the main area (the rail's column) the front canvas is cut away: the main canvas
         // takes the ground there over its sky, so the rail's glass shows the whole picture.
@@ -450,6 +476,7 @@ export function HorizonCanvas({ now = Date.now }: { now?: () => number }) {
           }
         }
         drawVeil(fctx, width, height, v.a);
+        if (wxOn) drawWeatherMid(fctx, w, wxTime, camera.hy, scale, width, height, awake.current);
       }
       if (measureCost) {
         costMs += performance.now() - costStart;
@@ -624,6 +651,15 @@ export function HorizonCanvas({ now = Date.now }: { now?: () => number }) {
       {skyReview?.front === 'empty' && !zen ? <EmptyLayer place={active} /> : null}
     </>
   );
+}
+
+/**
+ * The canvas the weather's mid layer is drawn on with one canvas: the page puts it right after the place veil (`App.tsx`), so the
+ * rain lies above the veil, as the picked pictures drew it, and under Watt and every card. It is empty (zero size) while the weather is off.
+ */
+export function WeatherOverlay() {
+  useEffect(() => () => setWeatherOverlay(null), []);
+  return <canvas ref={setWeatherOverlay} className="horizon-weather" aria-hidden="true" width={0} height={0} />;
 }
 
 /**

@@ -10,7 +10,7 @@ import { resetWeatherStore, useWeatherStore } from '../weather/useWeather';
 import { useSceneWeather } from '../weather/sceneSetting';
 import type { WeatherReading } from '../weather/model';
 import { resetAgents } from '../agents/useAgents';
-import { useSignalStore } from '../signals/store';
+import { resetMeetingFeed } from '../work/useNextMeeting';
 
 vi.setConfig({ testTimeout: 20_000 });
 
@@ -19,9 +19,10 @@ vi.mock('../ribbon/sun', async (original) => ({
   sunTimes: () => ({ rise: null, set: null }),
 }));
 vi.mock('../ui/useIdle', () => ({ useIdle: () => false }));
+const invokeMock = vi.hoisted(() => vi.fn((..._args: unknown[]) => new Promise(() => {})));
 vi.mock('../bridge/tauri', async (original) => ({
   ...(await original<typeof import('../bridge/tauri')>()),
-  invoke: vi.fn(() => new Promise(() => {})),
+  invoke: invokeMock,
 }));
 vi.mock('../horizon/index', async (original) => ({
   ...(await original<typeof import('../horizon/index')>()),
@@ -97,8 +98,10 @@ beforeEach(() => {
   localStorage.clear();
 });
 afterEach(() => {
+  invokeMock.mockImplementation(() => new Promise(() => {}));
   Object.assign(restClock, realRest);
   resetWeatherStore();
+  resetMeetingFeed();
   useSceneWeather.setState({ on: true });
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
@@ -258,16 +261,29 @@ describe('the shake he starts on his own', () => {
     return seen;
   }
 
-  it('does not start while the quiet input is true (a call the wall knows of); the damp look stays (drips are held back in a call anyway)', () => {
+  it('does not start during a meeting with a join link in progress (no call), the damp look stays, and one starts after the meeting ends', async () => {
+    let ms = day();
+    invokeMock.mockImplementation(((cmd: string) =>
+      cmd === 'wall2_meet_next'
+        ? Promise.resolve({
+            accounts: [],
+            meetings: [{ key: 'k', accountId: 'a', title: 'Planning', start: new Date(ms - 10 * 60_000).toISOString(), end: new Date(ms + 30 * 60_000).toISOString(), canJoin: true }],
+          })
+        : new Promise(() => {})) as never);
     setReading(reading());
-    const { container } = render(<Watt now={day} />);
+    const { container, rerender } = render(<Watt now={() => ms} />);
+    await act(async () => void (await Promise.resolve()));
     runFor(FADE_IN_S + 0.5);
-    act(() => useSignalStore.setState({ call: { kind: 'teams', since: day(), camera: false } }));
-    const seen = watch(container);
-    act(() => useSignalStore.setState({ known: false, recording: false, call: null }));
-    expect(seen.droplets).toBe(0);
-    expect(seen.fluffy).toBe(0);
+    const during = watch(container);
+    expect(during.droplets).toBe(0);
+    expect(during.fluffy).toBe(0);
     expect(fills(container).has('#a79bdc')).toBe(true);
+    // The meeting ends: the shake that fell due while it ran starts at the next calm stand.
+    ms += 31 * 60_000;
+    setReading(reading({ fetchedAt: ms }));
+    rerender(<Watt now={() => ms} />);
+    const after = watch(container);
+    expect(after.droplets + after.fluffy).toBeGreaterThan(0);
   });
 
   it('does not start while his menu is open; the damp look stays', () => {
