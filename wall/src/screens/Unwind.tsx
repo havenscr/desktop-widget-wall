@@ -76,7 +76,7 @@ export function Unwind() {
         </>
       )}
       {/* The Office moods row: the office-lights slot itself, empty (and aria-hidden) until the home app lists moods.
-          Unwind never controls any other room than the office. Hide screen is the app's one corner control (ScreensOffLayer). */}
+          Unwind never controls any other room than the office. Hide screen is the app's one corner control, not Unwind's. */}
       <OfficeMoods />
       <div className="u-right" style={{ ['--room-top' as string]: `${UNWIND_ROOM_TOP}px`, ['--room-height' as string]: `${UNWIND_ROOM_HEIGHT}px` }}>
         {watch ? <WatchCard /> : null}
