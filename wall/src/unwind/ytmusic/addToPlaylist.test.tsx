@@ -340,7 +340,7 @@ describe('closing', () => {
     // The close-on-scroll listener is on the rows scroller: a menu inside it would be reached by a scroll that bubbles.
     expect(scroller.contains(screen.getByRole('menu'))).toBe(false);
     const list = document.querySelector('.w-pop-rows') as HTMLElement;
-    list.dispatchEvent(new Event('scroll', { bubbles: true }));
+    fireEvent(list, new Event('scroll', { bubbles: true }));
     expect(menu()).not.toBeNull();
     // ... while the rows' own scroll does close it.
     fireEvent.scroll(scroller);
