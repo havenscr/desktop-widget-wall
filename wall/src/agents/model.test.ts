@@ -20,6 +20,8 @@ import {
   countText,
   usageMeters,
   usageTip,
+  asOfText,
+  dayTime,
   normalizeSummary,
   agentLayout,
   AGENT_ROWS,
@@ -275,7 +277,7 @@ describe('cards from a newer helper', () => {
     });
     expect(s.sessions).toEqual({ 'a1b2c3d4-0022': { title: 'Named', stage: null, state: 'blocked' } });
     expect(s.yourMove.ids).toEqual(['a1b2c3d4-0022']);
-    expect(s.usage!.accounts).toEqual([{ provider: 'claude', label: 'Claude 1', weekPct: 100, fiveHourPct: null, weekResetsAt: null }]);
+    expect(s.usage!.accounts).toEqual([{ provider: 'claude', label: 'Claude 1', weekPct: 100, fiveHourPct: null, weekResetsAt: null, weekAsOf: null, weekOld: false }]);
     const old = normalizeSummary(summary())!;
     expect(old.sessionsList).toBeNull();
     expect(old.sessions).toEqual({});
@@ -311,9 +313,9 @@ describe('cards from a newer helper', () => {
       ['Claude 2', 94, true],
       ['Codex', null, false],
     ]);
-    expect(usageTip(m[2])).toBe('Codex: no recent weekly reading');
+    expect(usageTip(m[2])).toBe('Codex: No reading yet.');
     expect(usageTip(m[0])).toBe('Claude 1: 41% of this week used, 12% of the five hour window');
-    expect(usageMeters({ claudeWeekPct: 62, claude5hPct: 18, weekResetsAt: null })).toEqual([{ label: 'Claude this week', pct: 62, fiveHour: 18, resets: null, warn: false, hotHidden: false }]);
+    expect(usageMeters({ claudeWeekPct: 62, claude5hPct: 18, weekResetsAt: null })).toEqual([{ label: 'Claude this week', pct: 62, fiveHour: 18, resets: null, asOf: null, old: false, reset: false, warn: false, hotHidden: false }]);
     // Three meters hide the five hour figure: a hot one there is a small mark, never amber on a calm week figure.
     const hot = usageMeters({
       claudeWeekPct: 30,
@@ -439,4 +441,53 @@ it('sums the day for the agent row icon', () => {
     'Today: 2 h 30 m of agent work across 3 sessions, 20 min waiting on you',
   );
   expect(dayTotals([g('a', 'done', at(8), at(9))])).toBe('Today: no time of agent work across 1 session, no waiting on you');
+});
+
+describe('an idle subscription keeps its last reading', () => {
+  const NOW = new Date(2026, 10, 16, 9, 0, 0).getTime();
+  const at = (days: number, h: number, m: number) => new Date(2026, 10, 16 + days, h, m, 0).toISOString();
+  const usage = (accounts: object[]) => ({ claudeWeekPct: null, claude5hPct: null, weekResetsAt: null, accounts }) as never;
+
+  it('parses weekAsOf and weekOld, and an older helper without them gives false and null', () => {
+    const mk = (extra: object) =>
+      normalizeSummary({ ...summary(), usage: usage([{ provider: 'claude', label: 'Claude 1', weekPct: 90, fiveHourPct: null, weekResetsAt: null, ...extra }]) });
+    const a = mk({ weekAsOf: at(-1, 13, 45), weekOld: true })!.usage!.accounts![0];
+    expect([a.weekAsOf, a.weekOld]).toEqual([at(-1, 13, 45), true]);
+    const none = mk({})!.usage!.accounts![0];
+    expect([none.weekAsOf, none.weekOld]).toEqual([null, false]);
+    const bad = mk({ weekAsOf: 'soon', weekOld: 'yes' })!.usage!.accounts![0];
+    expect([bad.weekAsOf, bad.weekOld]).toEqual([null, false]);
+  });
+
+  it('draws an old reading with its number, says so in the tip, and keeps the amber rule', () => {
+    const m = usageMeters(
+      usage([
+        { provider: 'claude', label: 'Claude 1', weekPct: 90, fiveHourPct: null, weekResetsAt: at(4, 1, 0), weekAsOf: at(-1, 13, 45), weekOld: true },
+        { provider: 'claude', label: 'Claude 2', weekPct: 95, fiveHourPct: null, weekResetsAt: at(4, 1, 0), weekAsOf: at(-1, 13, 45), weekOld: true },
+        { provider: 'codex', label: 'Codex', weekPct: 30, fiveHourPct: null, weekResetsAt: null, weekAsOf: null, weekOld: false },
+      ]),
+    );
+    expect(m.map((x) => [x.old, x.warn])).toEqual([[true, false], [true, true], [false, false]]);
+    const tip = usageTip(m[0], NOW);
+    expect(tip).toBe(`Claude 1: 90% of the week used, as of yesterday 1:45 PM. No chat has run on this account since. Resets ${dayTime(at(4, 1, 0))}.`);
+  });
+
+  it('says a reset week reads 0% since the reset', () => {
+    const m = usageMeters(usage([{ provider: 'claude', label: 'Claude 1', weekPct: 0, fiveHourPct: null, weekResetsAt: null, weekAsOf: at(-2, 18, 0), weekOld: true }]))[0];
+    expect([m.pct, m.old, m.reset]).toEqual([0, true, true]);
+    expect(usageTip(m, NOW)).toBe(`Claude 1: 0% used since the week reset on ${dayTime(at(-2, 18, 0))}. No chat has run on this account since.`);
+  });
+
+  it('keeps "n/a" for an account that never had a reading, with a tip that says so', () => {
+    const m = usageMeters(usage([{ provider: 'codex', label: 'Codex', weekPct: null, fiveHourPct: null, weekResetsAt: null }]))[0];
+    expect([m.pct, m.old]).toEqual([null, false]);
+    expect(usageTip(m, NOW)).toBe('Codex: No reading yet.');
+  });
+
+  it('words the reading time as today, yesterday or a day name', () => {
+    expect(asOfText(at(0, 7, 5), NOW)).toBe('today 7:05 AM');
+    expect(asOfText(at(-1, 23, 59), NOW)).toBe('yesterday 11:59 PM');
+    expect(asOfText(at(-3, 18, 0), NOW)).toBe(dayTime(at(-3, 18, 0)));
+    expect(asOfText(null, NOW)).toBeNull();
+  });
 });

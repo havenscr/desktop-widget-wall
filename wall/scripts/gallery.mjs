@@ -106,6 +106,7 @@ state('unwind', 'nine moods, long labels', HEAVY.replace('moods=six', 'moods=nin
 state('work', 'tasks few', 'tasks=few');
 state('work', 'tasks heavy (115 more)', 'tasks=heavy');
 state('work', 'usage meters near full', 'usage=high');
+state('work', 'usage meters fresh, old and reset', 'usage=old');
 state('work', 'machine numbers at the limit', 'box=max');
 state('work', 'box numbers stale', 'box=stale');
 state('work', 'box offline', 'box=none');
@@ -571,6 +572,7 @@ const EXPECT = [
   ['work', 'tasks few', ['Review the dashboard draft', '!Order printer paper']],
   ['work', 'tasks heavy', 'Due today'],
   ['work', 'usage meters near full', ['Claude 5 h 97%', '94%']],
+  ['work', 'usage meters fresh, old and reset', ['Claude 141%', 'Claude 290%', 'Codex0%']],
   ['work', 'left wing: playing with temps', ['TEMP', '61°', '52°']],
   ['work', 'left wing: no pc temp', ['TEMP', '\u2013']],
   ['work', 'left wing: long title', 'An Extremely Long Song Title'],

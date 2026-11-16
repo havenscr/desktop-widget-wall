@@ -20,7 +20,7 @@ import { MOCK_DETAILS } from './meet';
  *   ?moods=six|nine|none|down
  *   ?media=none|paused|long|off
  *   ?box=max|stale|none|down   (machine numbers; `?pc=down` for the PC side)
- *   ?usage=high|none          (the two usage meters)
+ *   ?usage=high|none|old      (the usage meters; old: fresh, idle and reset-week meters)
  *   ?weather=ok|stale|down|cold|dns|refused|second   (stands in for the native weather read)
  *   ?reduced=1               (the page reads prefers-reduced-motion as set; the gallery otherwise always emulates no preference)
  *   ?weather=rain|heavy|rainwind|wind|heavywind   (rain, heavy rain, rain with wind, dry wind, heavy rain with wind: weather code and wind in both sources)
@@ -254,6 +254,23 @@ function usage(mode: string): void {
     const base = (await prev?.()) as Record<string, unknown>;
     if (mode === 'high') return { ...base, usage: { claudeWeekPct: 94, claude5hPct: 97, weekResetsAt: iso(now() + 3_000 * 60_000) } };
     if (mode === 'none') return { ...base, usage: { claudeWeekPct: null, claude5hPct: null, weekResetsAt: null } };
+    if (mode === 'old') {
+      // One fresh account, one idle account (old reading, week not yet reset), one whose week reset since its last reading.
+      const h = 3_600_000;
+      return {
+        ...base,
+        usage: {
+          claudeWeekPct: 41,
+          claude5hPct: null,
+          weekResetsAt: iso(now() + 3_000 * 60_000),
+          accounts: [
+            { provider: 'claude', label: 'Claude 1', weekPct: 41, fiveHourPct: 12, weekResetsAt: iso(now() + 3_000 * 60_000), weekAsOf: iso(now()), weekOld: false },
+            { provider: 'claude', label: 'Claude 2', weekPct: 90, fiveHourPct: null, weekResetsAt: iso(now() + 4_000 * 60_000), weekAsOf: iso(now() - 20 * h), weekOld: true },
+            { provider: 'codex', label: 'Codex', weekPct: 0, fiveHourPct: null, weekResetsAt: null, weekAsOf: iso(now() - 30 * h), weekOld: true },
+          ],
+        },
+      };
+    }
     return undefined;
   });
 }

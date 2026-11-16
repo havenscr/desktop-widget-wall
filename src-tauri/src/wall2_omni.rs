@@ -155,6 +155,10 @@ pub struct UsageAccount {
     pub week_pct: Option<f64>,
     pub five_hour_pct: Option<f64>,
     pub week_resets_at: Option<String>,
+    /// When the weekly number was read (or, for a reset week, when it reset). None from an older helper.
+    pub week_as_of: Option<String>,
+    /// True when that reading is older than the helper's freshness limit. False when absent.
+    pub week_old: bool,
 }
 
 /// A session's name and where it stands, for any id the wall may show.
@@ -510,6 +514,8 @@ fn shape_accounts(v: Option<&Value>) -> Vec<UsageAccount> {
                 week_pct: percent(a.get("weekPct")),
                 five_hour_pct: percent(a.get("fiveHourPct")),
                 week_resets_at: stamp(a.get("weekResetsAt")),
+                week_as_of: stamp(a.get("weekAsOf")),
+                week_old: a.get("weekOld").and_then(Value::as_bool).unwrap_or(false),
             })
         })
         .take(MAX_ACCOUNTS)
@@ -2179,13 +2185,24 @@ mod tests {
                 week_pct: Some(44.0),
                 five_hour_pct: None,
                 week_resets_at: Some("2026-11-18T02:00:00Z".into()),
+                week_as_of: None,
+                week_old: false,
             }
         );
+        // The two new fields are checked: a bad time is dropped, a non-boolean is false.
+        body["usage"]["accounts"] = json!([
+            { "provider": "claude", "label": "Claude 1", "weekPct": 90, "fiveHourPct": null,
+              "weekResetsAt": "2026-11-20T01:00:00Z", "weekAsOf": "2026-11-15T13:45:00Z", "weekOld": true },
+            { "provider": "claude", "label": "Claude 2", "weekPct": 0, "weekAsOf": "yesterday", "weekOld": "yes" },
+        ]);
+        let u = shape_summary(&body).unwrap().usage.unwrap();
+        assert_eq!((u.accounts[0].week_as_of.as_deref(), u.accounts[0].week_old), (Some("2026-11-15T13:45:00Z"), true));
+        assert_eq!((u.accounts[1].week_as_of.as_deref(), u.accounts[1].week_old), (None, false));
         assert_eq!((u.accounts[1].week_pct, u.accounts[1].five_hour_pct, u.accounts[1].week_resets_at.as_deref()), (Some(100.0), Some(12.5), None));
         assert_eq!(u.accounts[2].provider, "other");
         let v = serde_json::to_value(shape_summary(&body).unwrap()).unwrap();
         let a = &v["usage"]["accounts"][0];
-        for key in ["provider", "label", "weekPct", "fiveHourPct", "weekResetsAt"] {
+        for key in ["provider", "label", "weekPct", "fiveHourPct", "weekResetsAt", "weekAsOf", "weekOld"] {
             assert!(a.get(key).is_some(), "account {key}");
         }
     }

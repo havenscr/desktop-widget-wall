@@ -598,6 +598,9 @@ const VARIANTS = [
   { name: 'header: twelve sessions, two waiting, an alarm, stale', q: work('12staleask'), checks: SCROLLED },
   { name: 'two waiting, one off the cards', q: work('ask2'), checks: [...LANES, '.work .centre .lanes-hd', '.work .centre .ask-btn'] },
   { name: 'one failed', q: work('failed'), checks: LANES },
+  // The usage row with a fresh, an idle (old reading) and a reset-week meter, with and without the stale look.
+  { name: 'usage row: fresh, old and reset meters', q: work('3', '&usage=old'), checks: [...LANES, '.work .centre .shelf .shelf-week'] },
+  { name: 'usage row: fresh, old and reset meters, stale helper', q: work('12staleask', '&usage=old'), checks: SCROLLED },
   { name: 'older helper answer', q: work('old'), checks: [...LANES, '.work .centre .lanes-hd'] },
   { name: 'one lane', q: work('1'), checks: LANES },
   { name: 'no lane', q: work('0'), checks: [...LANES, '.work .centre .panel'] },
