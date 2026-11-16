@@ -28,11 +28,20 @@ const LABEL = { work: 'Work', home: 'Home', meet: 'Meet', onair: 'On Air', liste
 const name = (what, place) => `Hide screen, ${what}: ${LABEL[place]}`;
 const checks = ['.so-layer', '.screens-off'];
 
+// Unwind's Office moods row at its widest (twelve long names and the Off chip): its right edge is wall x 2490, 14 px short of this control.
+const MOODS12 = '&desktoken=set&office=twelve&officeoff=offered&officemood=brightDesk';
+const OFFICE = [
+  ['at rest', '', null, 'rest'],
+  ['pointer on it', '', 'hover:.screens-off', 'grown'],
+  ['Cancel hide', '&hide=on', '.screens-off >> hover:.screens-off', 'grown'],
+  ['failure words', '&hide=fail', '.screens-off', 'failed'],
+];
 const variants = [
   ...Object.entries(PLACES).map(([id, p]) => ({ name: name('at rest', id), q: `${p.fit}&hidecheck=rest`, checks, viewportOnly: true })),
   ...Object.entries(PLACES).map(([id, p]) => ({ name: name('pointer on it', id), q: `${p.fit}&hidecheck=grown`, click: 'hover:.screens-off', checks, viewportOnly: true })),
   ...['work', 'zen', 'dream', 'listen'].map((id) => ({ name: name('failure words', id), q: `${PLACES[id].fit}&hide=fail&hidecheck=failed`, click: '.screens-off', checks, viewportOnly: true })),
   { name: 'Hide screen, pointer on it: Unwind, Listen with the tall card', q: `${PLACES.listen.fit}&hidecheck=grown`, click: '.sp-grow >> hover:.screens-off', checks, viewportOnly: true },
+  ...OFFICE.map(([what, extra, click, mode]) => ({ name: `Hide screen, ${what}: Unwind with twelve Office moods and Off`, q: `${PLACES.listen.fit}${MOODS12}${extra}&hidecheck=${mode}`, ...(click ? { click } : {}), checks, viewportOnly: true })),
   { name: name('Tools open', 'work'), q: `${PLACES.work.fit}&tools=1&hidecheck=drawer`, checks: [...checks, '.tools-drawer'], viewportOnly: true },
   { name: name('Tools open', 'listen'), q: `${PLACES.listen.fit}&tools=1&hidecheck=drawer`, checks: [...checks, '.tools-drawer'], viewportOnly: true },
   { name: name('Day drawer open', 'work'), q: `${PLACES.work.fit}&hidecheck=drawer`, click: '.rib-handle:not(.in-drawer)', checks: [...checks, '.day-drawer'], viewportOnly: true },
@@ -126,9 +135,9 @@ const measureHide = () => {
     const pill = out.btn;
     const contains = (r) => r.l <= pill.l + 0.5 && r.r >= pill.r - 0.5 && r.t <= pill.t + 0.5 && r.b >= pill.b - 0.5;
     // A part clipped by a scrolling or clipping ancestor only counts where it is still seen.
-    const seen = (e, r) => {
+    const seen = (e, r, self = false) => {
       let l = r.l, t = r.t, rr = r.r, b = r.b;
-      for (let a = e.parentElement; a && a !== document.body; a = a.parentElement) {
+      for (let a = self ? e : e.parentElement; a && a !== document.body; a = a.parentElement) {
         const cs = getComputedStyle(a);
         if (cs.overflowX === 'visible' && cs.overflowY === 'visible') continue;
         const c = a.getBoundingClientRect();
@@ -142,7 +151,7 @@ const measureHide = () => {
       if (layer.contains(e) || !vis(e) || getComputedStyle(e).pointerEvents === 'none') continue;
       const r = seen(e, R(e));
       if (r.w <= 0 || r.h <= 0 || contains(r) || !hit(r, pill)) continue;
-      covers.push({ kind: 'control', what: cls(e), rib: !!e.closest('.rib') });
+      covers.push({ kind: 'control', what: cls(e), rib: !!e.closest('.rib'), mood: !!e.closest('.u-office-slot') });
     }
     const walk = document.createTreeWalker(document.querySelector('.stage'), NodeFilter.SHOW_TEXT);
     for (let n = walk.nextNode(); n; n = walk.nextNode()) {
@@ -152,11 +161,20 @@ const measureHide = () => {
       g.selectNodeContents(n);
       for (const q of g.getClientRects()) {
         if (q.width === 0 || q.height === 0) continue;
-        const vr = seen(p, { l: q.left, t: q.top, r: q.right, b: q.bottom });
-        if (vr.w > 0 && vr.h > 0 && hit(vr, pill)) { covers.push({ kind: 'words', what: n.textContent.trim().slice(0, 28), rib: !!p.closest('.rib'), hint: !!p.closest('.dream-hint') }); break; }
+        const vr = seen(p, { l: q.left, t: q.top, r: q.right, b: q.bottom }, true);
+        if (vr.w > 0 && vr.h > 0 && hit(vr, pill)) { covers.push({ kind: 'words', what: n.textContent.trim().slice(0, 28), rib: !!p.closest('.rib'), hint: !!p.closest('.dream-hint'), mood: !!p.closest('.u-office-slot') }); break; }
       }
     }
     out.covers = covers;
+    // The Office moods row (Unwind): the row's last chip and its Off chip against this control's box in this state.
+    const slot = document.querySelector('.u-office-slot[data-moods="shown"]');
+    if (slot) {
+      const chips = [...slot.querySelectorAll('.u-mood')].map((e) => ({ what: (e.textContent || '').trim().slice(0, 18), off: e.classList.contains('off'), r: R(e) }));
+      const last = chips.reduce((a, c) => (c.r.r > a.r.r ? c : a), chips[0]);
+      const ov = (c) => { const w = Math.min(c.r.r, pill.r) - Math.max(c.r.l, pill.l); const h = Math.min(c.r.b, pill.b) - Math.max(c.r.t, pill.t); return w > 0.5 && h > 0.5 ? { what: c.what, off: c.off, w: Math.round(w), h: Math.round(h) } : null; };
+      out.moods = { chips: chips.length, lastRight: Math.round(last.r.r), overlaps: chips.map(ov).filter(Boolean), offChip: !!chips.find((c) => c.off), row: R(slot) };
+      out.moods.restGap = Math.round(out.wrap.l - last.r.r);
+    }
     out.stage = { w: innerWidth, h: innerHeight };
     return out;
   }
@@ -202,7 +220,7 @@ function rule(v, results, emit) {
     if (m.place && !['work', 'home', 'meet', 'onair', 'unwind', 'zen'].includes(m.place)) fails.push(`unknown place ${m.place}`);
     if (!m.hitCentre) fails.push('the pointer at its centre does not reach it (something is above it)');
     if (m.mode === 'rest' && m.place === 'zen' && !(m.z > 50)) fails.push(`on Zen it is at z ${m.z}, under Zen's own layer (50)`);
-    rests.push({ where, box: [wrap.l, wrap.t, wrap.w, wrap.h].map((n) => Math.round(n * 10) / 10).join(',') });
+    if (!m.moods) rests.push({ where, box: [wrap.l, wrap.t, wrap.w, wrap.h].map((n) => Math.round(n * 10) / 10).join(',') });
   }
   if (m.mode === 'grown' || m.mode === 'failed') {
     const want = m.mode === 'failed' ? 'Could not watch input' : null;
@@ -210,10 +228,13 @@ function rule(v, results, emit) {
     if (r.w <= 60) fails.push(`it did not grow (${Math.round(r.w)} px)`);
     if (r.w > widest) fails.push(`the pill is ${Math.round(r.w)} px wide (${widest} at most)`);
     if (want && m.label !== want) fails.push(`the pill reads "${m.label}" (the failure words go inside it)`);
-    if (!want && m.label !== 'Hide screen') fails.push(`the pill reads "${m.label}"`);
+    const name = /hide=on/.test(v.q) ? 'Cancel hide' : 'Hide screen';
+    if (!want && m.label !== name) fails.push(`the pill reads "${m.label}" (${name} wanted)`);
     // It covers no control and no words, except what sits in the day strip's last hour while it is pointed at.
     for (const c of m.covers) {
       if (c.rib && m.hasRib) continue;
+      // The Office moods row sits under the grown pill: measured and reported (the owner's call), not a failure of this rule.
+      if (c.mood && m.moods) continue;
       // The failure words (five seconds, rare) are wider than the name and may sit over Dream's hint, which is not a control.
       if (m.mode === 'failed' && c.hint) continue;
       fails.push(`the grown pill covers ${c.kind} "${c.what}"`);
@@ -224,6 +245,12 @@ function rule(v, results, emit) {
     if (!m.inert) fails.push('the control is not inert while a drawer is open');
     if (m.hitCentre || m.hitSliver || m.hitCorner) fails.push('the control still takes the pointer while a drawer is open' + (m.hitSliver ? ' (at the drawer\'s rounded corner)' : ''));
     if (m.focused) fails.push('the control still takes keyboard focus while a drawer is open');
+  }
+  if (m.moods) {
+    const mo = m.moods;
+    if (m.mode === 'rest' && !(mo.restGap >= 8)) fails.push(`the control's box starts ${mo.restGap} px from the row's last chip (8 at least; ${mo.chips} chips)`);
+    if (m.mode === 'rest' && mo.overlaps.length) fails.push('at rest the row overlaps the control: ' + mo.overlaps.map((o) => `${o.what} ${o.w}x${o.h}`).join(', '));
+    if (m.mode !== 'rest') emit(`  note hide screen: with ${mo.chips} Office moods${mo.offChip ? ' and Off' : ''} the grown ${Math.round(r.w)} px pill covers ${mo.overlaps.length ? mo.overlaps.map((o) => `${o.off ? 'the Off chip' : 'chip "' + o.what + '"'} by ${o.w} x ${o.h} px`).join(', ') : 'no chip'} (the row's last chip ends at x ${mo.lastRight}; reported, not a failure)`);
   }
   if (fails.length) {
     for (const f of fails) emit(`  FAIL hide screen: ${f}`);
@@ -291,6 +318,7 @@ export default {
       'hide-dream-hint': { css: '.dream-hint { right: 124px !important; }', expect: FAIL('the grown pill covers words "Click anywhere to wake"'), appliesTo: on(name('pointer on it', 'dream')) },
       'hide-failure-width': { css: ".screens-off[data-failed='true'] { padding-left: 120px !important; }", expect: FAIL('the pill is \\d+ px wide'), appliesTo: on(name('failure words', 'work')) },
       'hide-failure-words': { css: ".screens-off[data-failed='true'] .screens-off-lbl { max-width: 0 !important; margin-right: 0 !important; }", expect: FAIL('it did not grow'), appliesTo: on(name('failure words', 'zen')) },
+      'hide-moods-rest': { css: '.u-office-slot { right: 10px !important; }', expect: FAIL('(at rest the row overlaps the control|at rest it sits over|the control.s box starts)'), appliesTo: on('Hide screen, at rest: Unwind with twelve Office moods and Off') },
       'hide-no-tab': { query: '&hidebreak=notab', expect: FAIL('not a button in the tab order'), appliesTo: on(name('at rest', 'listen')) },
       'hide-not-inert': { query: '&hidebreak=uninert', expect: FAIL('the control is not inert while a drawer is open'), appliesTo: on(name('Tools open', 'work')) },
       'hide-not-inert-day': { query: '&hidebreak=uninert', expect: FAIL('the control is not inert while a drawer is open'), appliesTo: on(name('Day drawer open', 'work')) },

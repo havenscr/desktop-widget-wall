@@ -16,6 +16,7 @@ import { WatchPanel } from '../unwind/watch/Watch';
 import { LinesGear } from '../unwind/watch/LinesPanel';
 import { WatchCard } from '../unwind/watch/WatchCard';
 import { UNWIND_ROOM_HEIGHT, UNWIND_ROOM_TOP } from './frameLayout';
+import { OfficeMoods } from '../studio/OfficeMoods';
 import { reviewDate, reviewNow } from '../ui/reviewClock';
 
 /** Spotify's status is read only while Listen shows (the card and Up next need it). */
@@ -31,8 +32,8 @@ function SpotifyStatusPoll() {
  * the cover and title at the top with the controls in one row under the title, the dancing
  * lines clear below (tinted by the cover). Upper right on Listen (6A): the Spotify card, or
  * YouTube Music with its switch. On Watch: video in the sky with its gear in the left block, and the Watch list
- * in the right wing. The lower right holds an empty slot (`data-slot="office-lights"`) kept
- * for an office-only lights control: Unwind never controls any other room.
+ * in the right wing. The foot of the right side holds the Office moods row (`data-slot="office-lights"`,
+ * office only: Unwind never controls any other room).
  * The moon, the ridgelines and Watt are drawn by the horizon and buddy layers.
  */
 export function Unwind() {
@@ -74,9 +75,9 @@ export function Unwind() {
           <SpotifyCard />
         </>
       )}
-      {/* Kept empty for an office-only lights control (the owner is still choosing it). It takes no
-          space and no pointer while empty. Unwind never controls any other room than the office. */}
-      <div className="u-office-slot" data-slot="office-lights" aria-hidden="true" />
+      {/* The Office moods row: the office-lights slot itself, empty (and aria-hidden) until the home app lists moods.
+          Unwind never controls any other room than the office. Hide screen is the app's one corner control (ScreensOffLayer). */}
+      <OfficeMoods />
       <div className="u-right" style={{ ['--room-top' as string]: `${UNWIND_ROOM_TOP}px`, ['--room-height' as string]: `${UNWIND_ROOM_HEIGHT}px` }}>
         {watch ? <WatchCard /> : null}
       </div>
