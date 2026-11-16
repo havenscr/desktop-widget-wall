@@ -104,10 +104,11 @@ export function pageProblem(e: unknown): PageProblem {
   return 'failed';
 }
 
-/** The quiet note beside a playlist read from the public page: "first N of M" only when the page held fewer songs than the playlist. */
-export function pageNote(listed: number, total: number | null): string {
-  const base = 'public page';
-  return total !== null && total > 0 && listed < total ? `${base}, first ${listed} of ${total}` : base;
+/** The quiet note beside a playlist read from the public page (short, so the facts line keeps its room). */
+export const PAGE_NOTE = 'public page';
+/** What the note's hover card adds when the page held fewer songs than the playlist: "Only the first N of M songs are listed." */
+export function pageNoteMore(listed: number, total: number | null): string {
+  return total !== null && total > 0 && listed < total ? ` Only the first ${listed} of ${total} songs are listed.` : '';
 }
 export const PAGE_NOTE_TIP = "Read from Spotify's public playlist page, not through the sign-in. Spotify's app rules hide the songs of playlists you did not make. Reading the page is against Spotify's developer terms and may stop working. Turn it off in Tools, Accounts, Spotify.";
 export const PAGE_READING = "Reading Spotify's public page.";

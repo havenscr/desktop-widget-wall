@@ -126,8 +126,8 @@ once a minute and 20 pages an hour in all. The switch in Tools, Accounts, Spotif
   line per network read (`page-read` or `page-failed` with a fixed reason, the status and the milliseconds), never an
   id, a title or a count of rows. Nothing is stored on disk. The content policy is unchanged.
 - **The public page note** sits beside the playlist's facts in its header (the same quiet meta text, `.sp-pnote`) and
-  says "public page", and "public page, first N of M" when the rows returned are fewer than the playlist's total (so a
-  500 song page shows "first 200 of 500"; the total length shows only when every song is listed and every one has a
+  says "public page" (short, so the facts line keeps its room; when the rows returned are fewer than the playlist's total, the
+  hover card adds "Only the first N of M songs are listed", so a 500 song page says 200 of 500; the total length shows only when every song is listed and every one has a
   length, and a song with no length draws an empty cell). Its hover card says the list was read from Spotify's public
   playlist page, not through the sign-in, that this is against Spotify's developer terms, and where the switch is. The
   page has no row of its own for it. A click on a row plays the playlist from that song (the same request as for any playlist).

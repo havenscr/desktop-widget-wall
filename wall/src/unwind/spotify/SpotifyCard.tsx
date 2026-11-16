@@ -35,11 +35,12 @@ import {
   isNowPlaying,
   kindLine,
   confirmPlayer,
+  PAGE_NOTE,
   PAGE_NOTE_TIP,
   PAGE_OFF_LINE,
   PAGE_READING,
   pageLine,
-  pageNote,
+  pageNoteMore,
   playDeviceId,
   playFailureLine,
   problemLine,
@@ -870,7 +871,8 @@ function SongsView({ item, tall, backLabel, onBack, onNote, onUpNext }: { item: 
   const lead = [total > 0 ? songs(total) : null, length].filter(Boolean).join(' · ');
   const by = owner ? `by ${owner}` : '';
   // A playlist read from the public page says so, quietly, beside its facts.
-  const note = pageList ? pageNote(pageList.items.length, item.count ?? pageList.listed) : null;
+  const note = pageList ? PAGE_NOTE : null;
+  const noteMore = pageList ? pageNoteMore(pageList.items.length, item.count ?? pageList.listed) : '';
 
   const playButtons = (
     <>
@@ -906,7 +908,7 @@ function SongsView({ item, tall, backLabel, onBack, onNote, onUpNext }: { item: 
             {note ? (
               <>
                 {lead ? ' · ' : ''}
-                <span className="sp-pnote" {...tip(PAGE_NOTE_TIP)}>
+                <span className="sp-pnote" {...tip(PAGE_NOTE_TIP + noteMore)}>
                   {note}
                 </span>
               </>

@@ -15,7 +15,8 @@ import {
   PUBLIC_PAGE_KEY,
   pageLine,
   pageProblem,
-  pageNote,
+  pageNoteMore,
+  PAGE_NOTE,
   resetListenSource,
   resetPublicPage,
   usePublicPage,
@@ -133,10 +134,11 @@ describe('the words', () => {
     expect(pageLine('empty')).toBe("Spotify's public page listed no songs for this playlist.");
     expect(NOTHING_QUEUED).toBe('Nothing queued.');
     expect(NOTHING_HEARD).toBe('Nothing heard yet. Spotify adds a song here after about half a minute of play.');
-    expect(pageNote(40, 40)).toBe('public page');
-    expect(pageNote(50, 40)).toBe('public page');
-    expect(pageNote(40, null)).toBe('public page');
-    expect(pageNote(100, 520)).toBe('public page, first 100 of 520');
+    expect(PAGE_NOTE).toBe('public page');
+    expect(pageNoteMore(40, 40)).toBe('');
+    expect(pageNoteMore(50, 40)).toBe('');
+    expect(pageNoteMore(40, null)).toBe('');
+    expect(pageNoteMore(100, 520)).toBe(' Only the first 100 of 520 songs are listed.');
   });
 });
 
@@ -170,7 +172,7 @@ describe('a saved playlist with the public page on', () => {
   it('says "first N of M" only when the page held fewer songs than the playlist, and sums the length only when every song is listed', async () => {
     await setup({ page: { items: rows(100), listed: 100 }, count: 520 });
     await openList(SAVED);
-    expect(screen.getByText('public page, first 100 of 520')).toBeTruthy();
+    expect(screen.getByText('public page')).toBeTruthy();
     const facts = document.querySelector('.sp-shead .sp-line')?.textContent ?? '';
     expect(facts).toContain('520 songs');
     expect(facts).not.toMatch(/\bmin\b/);
@@ -550,7 +552,10 @@ describe('fix round 1: no state of the page carries a switch of its own', () => 
   it('a page of more than 200 songs is labelled by the rows returned: first 200 of 500', async () => {
     await setup({ page: { items: rows(200), listed: 500 }, count: 500 });
     await openList(SAVED);
-    expect(screen.getByText('public page, first 200 of 500')).toBeTruthy();
+    expect(screen.getByText('public page')).toBeTruthy();
+    await act(async () => void fireEvent.mouseEnter(screen.getByText('public page')));
+    await flush(1000);
+    expect(document.body.textContent).toContain('Only the first 200 of 500 songs are listed.');
     expect(trackRows()).toHaveLength(200);
   });
   it('a failed queue refresh leaves no clickable stale rows and says so', async () => {
