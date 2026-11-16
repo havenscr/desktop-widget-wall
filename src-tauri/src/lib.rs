@@ -4145,6 +4145,7 @@ pub fn run() {
             wall2_studio::wall2_studio_keys,
             wall2_studio::wall2_office_moods,
             wall2_studio::wall2_office_mood,
+            wall2_studio::wall2_office_off,
             wall2_onair::wall2_onair_show,
             wall2_onair::wall2_onair_mark,
             wall2_onair::wall2_onair_marks_today,

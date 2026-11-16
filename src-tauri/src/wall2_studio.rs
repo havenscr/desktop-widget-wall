@@ -1,7 +1,8 @@
 //! Wall 2 studio lights and office moods: the home app's studio and office routes.
 //!
 //! Reads are `GET {homeBaseUrl}/api/desk/studio` and `/api/desk/office/moods`; writes are
-//! POSTs under `/api/desk/studio/...` and `/api/desk/office/moods/:id/apply`, each answering the
+//! POSTs under `/api/desk/studio/...`, `/api/desk/office/moods/:id/apply` and
+//! `/api/desk/office/off` (a constant path, no input from the page), each answering the
 //! fresh read shape of its family. The base is `feeds.json` key `homeBaseUrl`; the desk token
 //! is the one typed in Tools and kept by `wall2_desk_token`. The token goes only to the
 //! configured base, only as the `X-Desk-Token` header, only on a POST to a path built here from
@@ -15,7 +16,7 @@
 //! page cannot name a preset, group, look or mood the home app did not offer. Numbers are range
 //! checked; bodies are built with `serde_json`. Words, all fixed: `not-configured`, `absent`,
 //! `not-set-up`, `needs-private-address`, `forbidden`, `studio-not-set-up`, `home-not-set-up`,
-//! `not-answering`, `room-dark`, `nothing-to-undo`, `busy`, `unknown`, `refused`,
+//! `not-answering`, `room-dark`, `nothing-to-undo`, `on-air`, `busy`, `unknown`, `refused`,
 //! `unreachable`, `failed`. Nothing here logs.
 
 use crate::wall2_desk::{base, clean_text, is_stale, off_thread, token_may_go_to, ABSENT, FAILED, FORBIDDEN, INSECURE, NO_TOKEN};
@@ -54,6 +55,7 @@ pub(crate) const HOME_NOT_SET_UP: &str = "home-not-set-up";
 pub(crate) const NOT_ANSWERING: &str = "not-answering";
 pub(crate) const ROOM_DARK: &str = "room-dark";
 pub(crate) const NOTHING_TO_UNDO: &str = "nothing-to-undo";
+pub(crate) const ON_AIR: &str = "on-air";
 
 // Section: shapes
 
@@ -129,11 +131,19 @@ pub struct Mood {
     pub active: bool,
 }
 
+/// The office lights being off now. Present only when the home app offers Off.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct OfficeOff {
+    pub active: bool,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Moods {
     pub stale: bool,
     pub moods: Vec<Mood>,
+    /// `Some` only when the answer's `off` is an object whose `offered` is JSON `true`.
+    pub off: Option<OfficeOff>,
     pub can_write: bool,
     pub write_block: Option<String>,
 }
@@ -266,7 +276,17 @@ pub(crate) fn shape_moods(body: &Value, can_write: bool, write_block: Option<&st
             break;
         }
     }
-    Some(Moods { stale: is_stale(body), moods, can_write, write_block: write_block.map(str::to_string) })
+    Some(Moods { stale: is_stale(body), moods, off: shape_off(body.get("off")), can_write, write_block: write_block.map(str::to_string) })
+}
+
+/// Off is offered only by `{"offered": true}` (the JSON boolean; the string "true", a number or
+/// an array offers nothing). `active` is true only for the JSON boolean `true`.
+fn shape_off(v: Option<&Value>) -> Option<OfficeOff> {
+    let o = v?.as_object()?;
+    if o.get("offered") != Some(&Value::Bool(true)) {
+        return None;
+    }
+    Some(OfficeOff { active: o.get("active") == Some(&Value::Bool(true)) })
 }
 
 // Section: transport seam (tests use a fake; nothing in tests reaches a real service)
@@ -349,6 +369,7 @@ pub(crate) fn word_for(get: bool, code: u16, body: &[u8]) -> String {
         (409, Some("Room would be dark")) => ROOM_DARK,
         (409, Some("Nothing to go back from")) => NOTHING_TO_UNDO,
         (409, Some("Studio busy")) => BUSY,
+        (409, Some("Studio on air")) => ON_AIR,
         (403, Some("Invalid desk token")) => FORBIDDEN,
         (503, Some("desk writes are not configured")) => HOME_NOT_SET_UP,
         (503, Some("Light not answering")) => NOT_ANSWERING,
@@ -405,7 +426,8 @@ fn ids_of(s: &Studio) -> StudioIds {
 #[derive(Default)]
 pub(crate) struct Seen {
     studio: Option<(Instant, StudioIds)>,
-    moods: Option<(Instant, Vec<String>)>,
+    /// The ids of the last good moods read and whether it offered Off.
+    moods: Option<(Instant, Vec<String>, bool)>,
 }
 
 fn global_seen() -> &'static Mutex<Seen> {
@@ -469,7 +491,7 @@ pub(crate) fn read_moods(env: &Env) -> Result<Moods, String> {
 fn finish_moods(env: &Env, body: &Value) -> Result<Moods, String> {
     let (can_write, block) = env.write_state();
     let moods = shape_moods(body, can_write, block).ok_or_else(|| FAILED.to_string())?;
-    lock(env.seen).moods = Some((env.now, moods.moods.iter().map(|m| m.id.clone()).collect()));
+    lock(env.seen).moods = Some((env.now, moods.moods.iter().map(|m| m.id.clone()).collect(), moods.off.is_some()));
     Ok(moods)
 }
 
@@ -483,13 +505,20 @@ fn studio_ids(env: &Env) -> Result<StudioIds, String> {
     Ok(ids_of(&read_studio(env)?))
 }
 
-fn mood_ids(env: &Env) -> Result<Vec<String>, String> {
-    if let Some((at, ids)) = lock(env.seen).moods.clone() {
+/// The ids of the last good moods read and whether it offered Off, read again first when there
+/// is none or it is old.
+fn moods_seen(env: &Env) -> Result<(Vec<String>, bool), String> {
+    if let Some((at, ids, off)) = lock(env.seen).moods.clone() {
         if env.fresh(at) {
-            return Ok(ids);
+            return Ok((ids, off));
         }
     }
-    Ok(read_moods(env)?.moods.into_iter().map(|m| m.id).collect())
+    let m = read_moods(env)?;
+    Ok((m.moods.into_iter().map(|m| m.id).collect(), m.off.is_some()))
+}
+
+fn mood_ids(env: &Env) -> Result<Vec<String>, String> {
+    Ok(moods_seen(env)?.0)
 }
 
 /// One POST: the token only as a header value, the body as given. The answer is the fresh read shape.
@@ -583,6 +612,17 @@ pub(crate) fn office_mood(env: &Env, id: &str) -> Result<Moods, String> {
         return Err(REFUSED.to_string());
     }
     let body = post(env, token, &format!("/api/desk/office/moods/{id}/apply"), EMPTY_BODY)?;
+    finish_moods(env, &body)
+}
+
+/// Off for the office lights. The path is a constant (no page input), the body is `{}`, and
+/// nothing is sent unless the last good moods read, two minutes at most, offered Off.
+pub(crate) fn office_off(env: &Env) -> Result<Moods, String> {
+    let token = env.gate()?;
+    if !moods_seen(env)?.1 {
+        return Err(REFUSED.to_string());
+    }
+    let body = post(env, token, "/api/desk/office/off", EMPTY_BODY)?;
     finish_moods(env, &body)
 }
 
@@ -688,6 +728,12 @@ pub async fn wall2_office_moods(window: tauri::WebviewWindow, app: tauri::AppHan
 pub async fn wall2_office_mood(window: tauri::WebviewWindow, app: tauri::AppHandle, id: String) -> Result<Moods, String> {
     crate::wall2_meet::require_wall2(window.label())?;
     run_write(app, move |env| office_mood(env, &id)).await
+}
+
+#[tauri::command]
+pub async fn wall2_office_off(window: tauri::WebviewWindow, app: tauri::AppHandle) -> Result<Moods, String> {
+    crate::wall2_meet::require_wall2(window.label())?;
+    run_write(app, |env| office_off(env)).await
 }
 
 #[cfg(test)]
@@ -965,6 +1011,9 @@ mod tests {
             (false, 409, body("Room would be dark"), "room-dark"),
             (false, 409, body("Nothing to go back from"), "nothing-to-undo"),
             (false, 409, body("Studio busy"), "busy"),
+            (false, 409, body("Studio on air"), "on-air"),
+            (false, 404, body("Studio on air"), "absent"),
+            (false, 503, body("Studio on air"), "failed"),
             (false, 404, body("Unknown preset"), "unknown"),
             (false, 404, body("Unknown group"), "unknown"),
             (false, 404, body("Unknown look"), "unknown"),
@@ -1073,6 +1122,7 @@ mod tests {
         assert_eq!(studio_look(&no_token, "glow").unwrap_err(), "not-set-up");
         assert_eq!(studio_keys(&no_token, "both", Some(true), None, None).unwrap_err(), "not-set-up");
         assert_eq!(office_mood(&no_token, "gaming").unwrap_err(), "not-set-up");
+        assert_eq!(office_off(&no_token).unwrap_err(), "not-set-up");
         let lan = env(&f, "http://203.0.113.50:5599", Some(TOKEN), &seen, t0);
         assert_eq!(studio_preset(&lan, "onAir").unwrap_err(), "needs-private-address");
         assert_eq!(studio_normal(&lan).unwrap_err(), "needs-private-address");
@@ -1080,6 +1130,7 @@ mod tests {
         assert_eq!(studio_look(&lan, "glow").unwrap_err(), "needs-private-address");
         assert_eq!(studio_keys(&lan, "both", Some(true), None, None).unwrap_err(), "needs-private-address");
         assert_eq!(office_mood(&lan, "gaming").unwrap_err(), "needs-private-address");
+        assert_eq!(office_off(&lan).unwrap_err(), "needs-private-address");
         assert!(f.calls().is_empty(), "nothing may be sent");
     }
 
@@ -1331,6 +1382,148 @@ mod tests {
         assert!(WriteGuard::try_take(&flag).is_none(), "a second write while one is out is refused");
         drop(first);
         assert!(WriteGuard::try_take(&flag).is_some(), "the guard is released on drop");
+    }
+
+    fn moods_body_off(offered: Value, active: Value) -> Value {
+        let mut b = moods_body();
+        b["off"] = json!({"offered": offered, "active": active});
+        b
+    }
+
+    #[test]
+    fn the_off_shape_needs_a_json_true_offered() {
+        let off = |b: &Value| shape_moods(b, true, None).unwrap().off;
+        assert_eq!(off(&moods_body()), None, "no off key");
+        assert_eq!(off(&moods_body_off(json!(true), json!(false))), Some(OfficeOff { active: false }));
+        assert_eq!(off(&moods_body_off(json!(true), json!(true))), Some(OfficeOff { active: true }));
+        assert_eq!(off(&moods_body_off(json!(true), json!("true"))), Some(OfficeOff { active: false }), "active is a JSON true only");
+        assert_eq!(off(&moods_body_off(json!(true), json!(null))), Some(OfficeOff { active: false }));
+        assert_eq!(off(&moods_body_off(json!(false), json!(true))), None, "offered false");
+        assert_eq!(off(&moods_body_off(json!("true"), json!(true))), None, "the string true");
+        assert_eq!(off(&moods_body_off(json!(1), json!(true))), None, "a number");
+        assert_eq!(off(&moods_body_off(json!(null), json!(true))), None);
+        let mut b = moods_body();
+        b["off"] = json!({"active": true});
+        assert_eq!(off(&b), None, "no offered key");
+        b["off"] = json!([true]);
+        assert_eq!(off(&b), None, "an array");
+        b["off"] = json!(true);
+        assert_eq!(off(&b), None, "a bare true");
+        b["off"] = json!("offered");
+        assert_eq!(off(&b), None);
+        // The serialized form: null when not offered, an object with active when offered.
+        let none = serde_json::to_value(shape_moods(&moods_body(), true, None).unwrap()).unwrap();
+        assert_eq!(none["off"], json!(null));
+        let some = serde_json::to_value(shape_moods(&moods_body_off(json!(true), json!(true)), true, None).unwrap()).unwrap();
+        assert_eq!(some["off"], json!({"active": true}));
+    }
+
+    #[test]
+    fn off_is_refused_with_nothing_sent_unless_the_last_read_offered_it() {
+        let seen = Mutex::new(Seen::default());
+        let t0 = Instant::now();
+        let f = Fake::default();
+        // The seeded read has no `off`: refused, no POST.
+        let e = seeded(&f, &seen, t0);
+        let n = f.calls().len();
+        assert_eq!(office_off(&e).unwrap_err(), "refused");
+        assert_eq!(f.calls().len(), n, "nothing may be sent");
+        // `offered: false` is refused too.
+        f.push(200, &moods_body_off(json!(false), json!(false)).to_string());
+        read_moods(&e).unwrap();
+        let n = f.calls().len();
+        assert_eq!(office_off(&e).unwrap_err(), "refused");
+        assert_eq!(f.calls().len(), n);
+        // No read at all, and the first read does not offer Off: one GET, no POST.
+        let empty = Mutex::new(Seen::default());
+        let f2 = Fake::default();
+        f2.push(200, &moods_body().to_string());
+        assert_eq!(office_off(&env(&f2, HTTPS, Some(TOKEN), &empty, t0)).unwrap_err(), "refused");
+        let methods: Vec<&str> = f2.calls().iter().map(|c| c.method).collect();
+        assert_eq!(methods, vec!["GET"]);
+    }
+
+    #[test]
+    fn off_sends_one_empty_post_to_the_constant_path_with_the_token_header() {
+        let seen = Mutex::new(Seen::default());
+        let t0 = Instant::now();
+        let f = Fake::default();
+        let e = seeded(&f, &seen, t0);
+        f.push(200, &moods_body_off(json!(true), json!(false)).to_string());
+        read_moods(&e).unwrap();
+        let n = f.calls().len();
+        let mut after = moods_body_off(json!(true), json!(true));
+        after["moods"] = json!([
+            {"id": "gaming", "label": "Gaming", "line": "Room 25%", "active": false},
+            {"id": "reading", "label": "Reading", "line": "Room 60%", "active": false}
+        ]);
+        f.push(200, &after.to_string());
+        let m = office_off(&e).unwrap();
+        assert_eq!(m.off, Some(OfficeOff { active: true }));
+        assert!(m.moods.iter().all(|x| !x.active));
+        let calls = f.calls();
+        assert_eq!(calls.len(), n + 1, "one request, no read first");
+        let c = &calls[n];
+        assert_eq!((c.method, c.url.as_str(), c.body.as_str()), ("POST", "https://home.invalid/api/desk/office/off", "{}"));
+        assert!(c.headers.contains(&("X-Desk-Token".to_string(), TOKEN.to_string())));
+        assert!(c.headers.contains(&("Content-Type".to_string(), "application/json".to_string())));
+        assert!(!c.url.contains(TOKEN) && !c.body.contains(TOKEN));
+        assert!(!format!("{m:?}").contains(TOKEN));
+        // The answer is now the last good read: a mood can be applied without a read first.
+        let n = f.calls().len();
+        f.push(200, &moods_body().to_string());
+        office_mood(&e, "gaming").unwrap();
+        assert_eq!(f.calls().len(), n + 1);
+    }
+
+    #[test]
+    fn an_off_read_over_two_minutes_old_is_read_again_first() {
+        let seen = Mutex::new(Seen::default());
+        let t0 = Instant::now();
+        let f = Fake::default();
+        let e = env(&f, HTTPS, Some(TOKEN), &seen, t0);
+        f.push(200, &moods_body_off(json!(true), json!(false)).to_string());
+        read_moods(&e).unwrap();
+        // Exactly two minutes: still fresh, one POST.
+        let n = f.calls().len();
+        f.push(200, &moods_body_off(json!(true), json!(true)).to_string());
+        office_off(&env(&f, HTTPS, Some(TOKEN), &seen, t0 + Duration::from_secs(120))).unwrap();
+        let methods: Vec<&str> = f.calls()[n..].iter().map(|c| c.method).collect();
+        assert_eq!(methods, vec!["POST"]);
+        // Over two minutes after that answer: a read first, then the POST.
+        let n = f.calls().len();
+        f.push(200, &moods_body_off(json!(true), json!(true)).to_string());
+        f.push(200, &moods_body_off(json!(true), json!(true)).to_string());
+        office_off(&env(&f, HTTPS, Some(TOKEN), &seen, t0 + Duration::from_secs(120 + 121))).unwrap();
+        let methods: Vec<&str> = f.calls()[n..].iter().map(|c| c.method).collect();
+        assert_eq!(methods, vec!["GET", "POST"]);
+        // The fresh read decides: when it no longer offers Off, nothing is sent.
+        let n = f.calls().len();
+        f.push(200, &moods_body().to_string());
+        let r = office_off(&env(&f, HTTPS, Some(TOKEN), &seen, t0 + Duration::from_secs(1000)));
+        assert_eq!(r.unwrap_err(), "refused");
+        let methods: Vec<&str> = f.calls()[n..].iter().map(|c| c.method).collect();
+        assert_eq!(methods, vec!["GET"]);
+    }
+
+    #[test]
+    fn off_keeps_the_words_of_a_failed_write() {
+        let seen = Mutex::new(Seen::default());
+        let t0 = Instant::now();
+        let f = Fake::default();
+        let e = env(&f, HTTPS, Some(TOKEN), &seen, t0);
+        f.push(200, &moods_body_off(json!(true), json!(false)).to_string());
+        read_moods(&e).unwrap();
+        f.push(409, r#"{"ok":false,"error":"Studio on air"}"#);
+        assert_eq!(office_off(&e).unwrap_err(), "on-air");
+        f.push(409, r#"{"ok":false,"error":"Studio busy"}"#);
+        assert_eq!(office_off(&e).unwrap_err(), "busy");
+        f.push(503, r#"{"ok":false,"error":"Light not answering"}"#);
+        assert_eq!(office_off(&e).unwrap_err(), "not-answering");
+        f.push(200, r#"{"ok":true}"#);
+        assert_eq!(office_off(&e).unwrap_err(), "failed");
+        f.push_err(NetErr::Down);
+        assert_eq!(office_off(&e).unwrap_err(), "unreachable");
     }
 
     #[test]
