@@ -1687,7 +1687,7 @@ export function Watt({ now = reviewNow ?? Date.now, inCall = false }: { now?: ()
       // The water pixels: a drip (poses that stand, not during the shake) and the droplets a shake throws.
       const wp = water.current;
       const small = walk.px / 2;
-      const dripOn = !still && damp && calm && DRIP_POSES.has(f.pose) && (kf < 0 || kf >= 4 || force !== null);
+      const dripOn = !still && damp && calm && DRIP_POSES.has(f.pose) && (kf < 0 || kf >= 4);
       if (dripOn) dripAt(tw, SPRITES[f.pose], wp);
       else {
         wp[0].on = false;
