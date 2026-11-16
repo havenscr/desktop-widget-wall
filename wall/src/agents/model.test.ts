@@ -21,6 +21,7 @@ import {
   usageMeters,
   usageTip,
   asOfText,
+  dayOrDate,
   dayTime,
   normalizeSummary,
   agentLayout,
@@ -277,7 +278,7 @@ describe('cards from a newer helper', () => {
     });
     expect(s.sessions).toEqual({ 'a1b2c3d4-0022': { title: 'Named', stage: null, state: 'blocked' } });
     expect(s.yourMove.ids).toEqual(['a1b2c3d4-0022']);
-    expect(s.usage!.accounts).toEqual([{ provider: 'claude', label: 'Claude 1', weekPct: 100, fiveHourPct: null, weekResetsAt: null, weekAsOf: null, weekOld: false }]);
+    expect(s.usage!.accounts).toEqual([{ provider: 'claude', label: 'Claude 1', weekPct: 100, fiveHourPct: null, weekResetsAt: null, weekAsOf: null, weekOld: false, weekReset: false }]);
     const old = normalizeSummary(summary())!;
     expect(old.sessionsList).toBeNull();
     expect(old.sessions).toEqual({});
@@ -473,7 +474,7 @@ describe('an idle subscription keeps its last reading', () => {
   });
 
   it('says a reset week reads 0% since the reset', () => {
-    const m = usageMeters(usage([{ provider: 'claude', label: 'Claude 1', weekPct: 0, fiveHourPct: null, weekResetsAt: null, weekAsOf: at(-2, 18, 0), weekOld: true }]))[0];
+    const m = usageMeters(usage([{ provider: 'claude', label: 'Claude 1', weekPct: 0, fiveHourPct: null, weekResetsAt: null, weekAsOf: at(-2, 18, 0), weekOld: true, weekReset: true }]))[0];
     expect([m.pct, m.old, m.reset]).toEqual([0, true, true]);
     expect(usageTip(m, NOW)).toBe(`Claude 1: 0% used since the week reset on ${dayTime(at(-2, 18, 0))}. No chat has run on this account since.`);
   });
@@ -489,5 +490,35 @@ describe('an idle subscription keeps its last reading', () => {
     expect(asOfText(at(-1, 23, 59), NOW)).toBe('yesterday 11:59 PM');
     expect(asOfText(at(-3, 18, 0), NOW)).toBe(dayTime(at(-3, 18, 0)));
     expect(asOfText(null, NOW)).toBeNull();
+  });
+  it('a real old 0% reading is an ordinary old reading, not a reset week', () => {
+    const m = usageMeters(usage([{ provider: 'claude', label: 'Claude 1', weekPct: 0, fiveHourPct: null, weekResetsAt: at(2, 1, 0), weekAsOf: at(-1, 13, 45), weekOld: true, weekReset: false }]))[0];
+    expect([m.pct, m.old, m.reset]).toEqual([0, true, false]);
+    expect(usageTip(m, NOW)).toBe(`Claude 1: 0% of the week used, as of yesterday 1:45 PM. No chat has run on this account since. Resets ${dayTime(at(2, 1, 0))}.`);
+    const noReset = usageMeters(usage([{ provider: 'claude', label: 'Claude 1', weekPct: 0, fiveHourPct: null, weekResetsAt: null, weekAsOf: at(-1, 13, 45), weekOld: true }]))[0];
+    expect(noReset.reset).toBe(false);
+    expect(usageTip(noReset, NOW)).toBe('Claude 1: 0% of the week used, as of yesterday 1:45 PM. No chat has run on this account since.');
+  });
+
+  it('a reading of unknown age says so and is drawn in the old look', () => {
+    const m = usageMeters(usage([{ provider: 'claude', label: 'Claude 1', weekPct: 75, fiveHourPct: null, weekResetsAt: at(2, 1, 0), weekAsOf: null, weekOld: true }]))[0];
+    expect([m.pct, m.old, m.reset, m.asOf]).toEqual([75, true, false, null]);
+    expect(usageTip(m, NOW)).toBe('Claude 1: 75% of the week used. When it was read is not known.');
+  });
+
+  it('shows a date, not only a weekday, for a reading or reset more than 6 days away', () => {
+    expect(asOfText(at(-6, 13, 45), NOW)).toBe(dayTime(at(-6, 13, 45)));
+    expect(asOfText(at(-7, 13, 45), NOW)).toBe('Nov 9, 1:45 PM');
+    expect(dayOrDate(at(-9, 18, 0), NOW)).toBe('Nov 7, 6:00 PM');
+    expect(dayOrDate(at(3, 1, 0), NOW)).toBe(dayTime(at(3, 1, 0)));
+    const old = usageMeters(usage([{ provider: 'claude', label: 'Claude 1', weekPct: 90, fiveHourPct: null, weekResetsAt: at(1, 1, 0), weekAsOf: at(-7, 13, 45), weekOld: true }]))[0];
+    expect(usageTip(old, NOW)).toContain('as of Nov 9, 1:45 PM. No chat');
+    const reset = usageMeters(usage([{ provider: 'claude', label: 'Claude 1', weekPct: 0, fiveHourPct: null, weekResetsAt: null, weekAsOf: at(-8, 18, 0), weekOld: true, weekReset: true }]))[0];
+    expect(usageTip(reset, NOW)).toBe('Claude 1: 0% used since the week reset on Nov 8, 6:00 PM. No chat has run on this account since.');
+  });
+
+  it('parses weekReset as a strict boolean', () => {
+    const mk = (extra: object) => normalizeSummary({ ...summary(), usage: usage([{ provider: 'claude', label: 'Claude 1', weekPct: 0, fiveHourPct: null, weekResetsAt: null, ...extra }]) })!.usage!.accounts![0].weekReset;
+    expect([mk({ weekReset: true }), mk({}), mk({ weekReset: 'yes' }), mk({ weekReset: 1 })]).toEqual([true, false, false, false]);
   });
 });

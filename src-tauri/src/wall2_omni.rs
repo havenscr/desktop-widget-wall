@@ -159,6 +159,8 @@ pub struct UsageAccount {
     pub week_as_of: Option<String>,
     /// True when that reading is older than the helper's freshness limit. False when absent.
     pub week_old: bool,
+    /// True only for the helper's generated zero of a week that reset after the last reading. False when absent.
+    pub week_reset: bool,
 }
 
 /// A session's name and where it stands, for any id the wall may show.
@@ -516,6 +518,7 @@ fn shape_accounts(v: Option<&Value>) -> Vec<UsageAccount> {
                 week_resets_at: stamp(a.get("weekResetsAt")),
                 week_as_of: stamp(a.get("weekAsOf")),
                 week_old: a.get("weekOld").and_then(Value::as_bool).unwrap_or(false),
+                week_reset: a.get("weekReset").and_then(Value::as_bool).unwrap_or(false),
             })
         })
         .take(MAX_ACCOUNTS)
@@ -2187,22 +2190,28 @@ mod tests {
                 week_resets_at: Some("2026-11-18T02:00:00Z".into()),
                 week_as_of: None,
                 week_old: false,
+                week_reset: false,
             }
         );
         // The two new fields are checked: a bad time is dropped, a non-boolean is false.
         body["usage"]["accounts"] = json!([
             { "provider": "claude", "label": "Claude 1", "weekPct": 90, "fiveHourPct": null,
-              "weekResetsAt": "2026-11-20T01:00:00Z", "weekAsOf": "2026-11-15T13:45:00Z", "weekOld": true },
-            { "provider": "claude", "label": "Claude 2", "weekPct": 0, "weekAsOf": "yesterday", "weekOld": "yes" },
+              "weekResetsAt": "2026-11-20T01:00:00Z", "weekAsOf": "2026-11-15T13:45:00Z", "weekOld": true, "weekReset": true },
+            { "provider": "claude", "label": "Claude 2", "weekPct": 0, "weekAsOf": "yesterday", "weekOld": "yes", "weekReset": "yes" },
+            { "provider": "claude", "label": "Claude 3", "weekPct": 0, "weekOld": true, "weekReset": 1 },
+            { "provider": "claude", "label": "Claude 4", "weekPct": 0, "weekOld": true, "weekReset": false },
         ]);
         let n = shape_summary(&body).unwrap().usage.unwrap();
         assert_eq!((n.accounts[0].week_as_of.as_deref(), n.accounts[0].week_old), (Some("2026-11-15T13:45:00Z"), true));
         assert_eq!((n.accounts[1].week_as_of.as_deref(), n.accounts[1].week_old), (None, false));
+        // weekReset is a strict boolean: true only for JSON true; a string, a number, false or absent is false.
+        assert_eq!(n.accounts.iter().map(|a| a.week_reset).collect::<Vec<_>>(), vec![true, false, false, false]);
+        assert_eq!(n.accounts[2].week_old, true);
         assert_eq!((u.accounts[1].week_pct, u.accounts[1].five_hour_pct, u.accounts[1].week_resets_at.as_deref()), (Some(100.0), Some(12.5), None));
         assert_eq!(u.accounts[2].provider, "other");
         let v = serde_json::to_value(shape_summary(&body).unwrap()).unwrap();
         let a = &v["usage"]["accounts"][0];
-        for key in ["provider", "label", "weekPct", "fiveHourPct", "weekResetsAt", "weekAsOf", "weekOld"] {
+        for key in ["provider", "label", "weekPct", "fiveHourPct", "weekResetsAt", "weekAsOf", "weekOld", "weekReset"] {
             assert!(a.get(key).is_some(), "account {key}");
         }
     }

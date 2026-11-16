@@ -266,7 +266,7 @@ function usage(mode: string): void {
           accounts: [
             { provider: 'claude', label: 'Claude 1', weekPct: 41, fiveHourPct: 12, weekResetsAt: iso(now() + 3_000 * 60_000), weekAsOf: iso(now()), weekOld: false },
             { provider: 'claude', label: 'Claude 2', weekPct: 90, fiveHourPct: null, weekResetsAt: iso(now() + 4_000 * 60_000), weekAsOf: iso(now() - 20 * h), weekOld: true },
-            { provider: 'codex', label: 'Codex', weekPct: 0, fiveHourPct: null, weekResetsAt: null, weekAsOf: iso(now() - 30 * h), weekOld: true },
+            { provider: 'codex', label: 'Codex', weekPct: 0, fiveHourPct: null, weekResetsAt: null, weekAsOf: iso(now() - 30 * h), weekOld: true, weekReset: true },
           ],
         },
       };

@@ -61,6 +61,8 @@ export interface UsageAccount {
   weekAsOf?: string | null;
   /** The weekly reading is older than the helper's freshness limit. Absent means false. */
   weekOld?: boolean;
+  /** True only for the helper's generated zero: the week reset after the last reading. Absent means false. */
+  weekReset?: boolean;
 }
 
 export interface Usage {
@@ -199,6 +201,7 @@ function cleanUsage(u: unknown): Usage | null {
       weekResetsAt: typeof a.weekResetsAt === 'string' ? a.weekResetsAt : null,
       weekAsOf: typeof a.weekAsOf === 'string' && Number.isFinite(Date.parse(a.weekAsOf)) ? a.weekAsOf : null,
       weekOld: a.weekOld === true,
+      weekReset: a.weekReset === true,
     }));
   const week = pct(v.claudeWeekPct);
   if (week === null && accounts.length === 0) return null;
@@ -461,7 +464,7 @@ export interface UsageMeter {
   asOf: string | null;
   /** The weekly reading is old: no chat has run on the account lately. Drawn dimmer, said in the tip. */
   old: boolean;
-  /** The week reset after the last reading and nothing has been read since: shown as 0%. */
+  /** The week reset after the last reading and nothing has been read since: shown as 0% (the helper's `weekReset`). */
   reset: boolean;
   /** The figure the meter shows is the fullest and above 90 percent: amber. */
   warn: boolean;
@@ -493,7 +496,7 @@ export function usageMeters(u: Usage | null, showFiveHour?: boolean): UsageMeter
         resets: a.weekResetsAt,
         asOf: old ? (a.weekAsOf ?? null) : null,
         old,
-        reset: old && a.weekPct === 0 && a.weekResetsAt === null,
+        reset: old && a.weekReset === true,
         warn,
         hotHidden: !inline && (a.fiveHourPct ?? 0) > 90,
       };
@@ -514,18 +517,31 @@ export function dayTime(iso: string | null): string | null {
   return `${day} ${h % 12 || 12}:${String(d.getMinutes()).padStart(2, '0')} ${h < 12 ? 'AM' : 'PM'}`;
 }
 
-/** When a reading was taken, in plain words: "today 1:45 PM", "yesterday 1:45 PM", else "Sun 6:00 PM". */
-export function asOfText(iso: string | null, now: number = Date.now()): string | null {
+/** A week of readings: a day name is clear for 6 days; past that the date is needed. */
+const DAY_NAME_MAX_DAYS = 6;
+
+const midnight = (x: Date) => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
+
+/** "Nov 9, 1:45 PM" for a time more than 6 days away, else the short "Sun 6:00 PM". */
+export function dayOrDate(iso: string | null, now: number = Date.now()): string | null {
   const t = dayTime(iso);
   if (!t || !iso) return null;
   const d = new Date(Date.parse(iso));
-  const today = new Date(now);
-  const midnight = (x: Date) => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
-  const days = Math.round((midnight(today) - midnight(d)) / 86_400_000);
+  const days = Math.abs(Math.round((midnight(new Date(now)) - midnight(d)) / 86_400_000));
+  if (days <= DAY_NAME_MAX_DAYS) return t;
+  const clock = t.slice(t.indexOf(' ') + 1);
+  return `${d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}, ${clock}`;
+}
+
+/** When a reading was taken, in plain words: "today 1:45 PM", "yesterday 1:45 PM", else "Sun 6:00 PM" or "Nov 9, 1:45 PM". */
+export function asOfText(iso: string | null, now: number = Date.now()): string | null {
+  const t = dayTime(iso);
+  if (!t || !iso) return null;
+  const days = Math.round((midnight(new Date(now)) - midnight(new Date(Date.parse(iso)))) / 86_400_000);
   const clock = t.slice(t.indexOf(' ') + 1);
   if (days === 0) return `today ${clock}`;
   if (days === 1) return `yesterday ${clock}`;
-  return t;
+  return dayOrDate(iso, now);
 }
 
 /** The tooltip for one usage meter. */
@@ -533,13 +549,14 @@ export function usageTip(m: UsageMeter, now: number = Date.now()): string {
   if (m.pct === null) return `${m.label}: No reading yet.`;
   if (m.old) {
     const none = 'No chat has run on this account since.';
+    if (m.asOf === null && !m.reset) return `${m.label}: ${Math.round(m.pct)}% of the week used. When it was read is not known.`;
     if (m.reset) {
-      const when = dayTime(m.asOf);
+      const when = dayOrDate(m.asOf, now);
       return `${m.label}: 0% used since the week reset${when ? ` on ${when}` : ''}. ${none}`;
     }
     const when = asOfText(m.asOf, now);
     const parts = [`${m.label}: ${Math.round(m.pct)}% of the week used${when ? `, as of ${when}` : ''}. ${none}`];
-    const r = dayTime(m.resets);
+    const r = dayOrDate(m.resets, now);
     if (r) parts.push(`Resets ${r}.`);
     return parts.join(' ');
   }
