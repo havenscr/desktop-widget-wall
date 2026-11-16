@@ -1,13 +1,15 @@
 import { useEffect, useRef, useState } from 'react';
 import { create } from 'zustand';
 import { invoke } from '../bridge/tauri';
-import { calendarNotAvailable, nextMeeting, REFRESH_MS, TICK_MS, type MeetAccount, type Meeting, type MeetData } from '../meet/model';
+import { calendarNotAvailable, nextJoinable, nextMeeting, REFRESH_MS, TICK_MS, type MeetAccount, type Meeting, type MeetData } from '../meet/model';
 import { useVisible } from '../ui/useVisible';
 
 const systemNow = () => Date.now();
 
 export interface NextMeetingState {
   meeting: Meeting | undefined;
+  /** The first unfinished meeting with an online join link, which may come after `meeting`. */
+  joinable: Meeting | undefined;
   now: number;
   /** The list may be out of date: the feed said `stale`, or the last refresh failed. */
   stale: boolean;
@@ -173,7 +175,7 @@ export function useNextMeeting(now: () => number = systemNow): NextMeetingState 
   }, [feed.reads, now]);
 
   const { meetings, feedStale, failed, asOf, noCalendar } = feed;
-  return { meeting: nextMeeting(meetings, t), now: t, stale: feedStale || failed, asOf, unavailable: noCalendar || (failed && asOf === null) };
+  return { meeting: nextMeeting(meetings, t), joinable: nextJoinable(meetings, t), now: t, stale: feedStale || failed, asOf, unavailable: noCalendar || (failed && asOf === null) };
 }
 
 /** How long `refreshMeetingFeed` waits for a read to land before it lets go. */

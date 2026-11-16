@@ -168,6 +168,25 @@ it('the drawer lists the agenda with overlaps side by side and Join, and one row
   expect(r.container.querySelector('.agents-today')).not.toBeNull();
 });
 
+it('the rows share the list through the row count; the header line sits outside the scrolling list', async () => {
+  // The heights themselves (2 rows at 56 px, 12 in between, 30 at 32 px and scrolling) are measured in the
+  // real browser by the day-drawer-rows fit variants; here the count reaches the stylesheet.
+  for (const n of [2, 6, 30]) {
+    mocks.set('wall2_omni_summary', () => summary({ sessionsList: Array.from({ length: n }, (_, i) => lane({ id: `a1b2c3d4-${String(i + 1).padStart(4, '0')}`, title: `Session ${i + 1}` })), day: [] }));
+    const r = render(<Ribbon kind="work" />);
+    await flush();
+    fireEvent.click(r.container.querySelector('.rib-handle') as HTMLElement);
+    await flush();
+    const list = r.container.querySelector('.day-drawer .dd-rows') as HTMLElement;
+    expect(list.querySelectorAll('.dd-row')).toHaveLength(n);
+    expect(list.style.getPropertyValue('--dd-n')).toBe(String(n));
+    const head = r.container.querySelector('.day-drawer .dd-ag-head') as HTMLElement;
+    expect(list.contains(head)).toBe(false);
+    r.unmount();
+    resetAgents();
+  }
+});
+
 it('the agenda covers 8 AM to 6 PM, wider for a meeting outside it', () => {
   const now = t('10:24');
   const c = chips(overlapDay.events, now);

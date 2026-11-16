@@ -169,6 +169,8 @@ export interface Mind {
   idleLife: boolean;
   /** The wall is recording: he sits quietly (no wander, no idle life, nothing he starts himself). */
   quiet: boolean;
+  /** Nothing he starts himself (a known call, a meeting with a join link, or recording): no wander, no hop or look of his own. Only the menu rule reads `quiet` alone. */
+  hush: boolean;
   /**
    * He is at the drive-in for a show (`audience.ts`): seated or on his way to his seat. His sit
    * plans its own changes (`carryRestFor`), so music, the beat, the firefly, the display idle and
@@ -209,13 +211,14 @@ export function createMind(): Mind {
     clickUp: false,
     idleLife: true,
     quiet: false,
+    hush: false,
     watching: false,
   };
 }
 
 /** True while `m.react` is one that holds her still (the wander clock stops). */
 export function holdsStill(m: Mind): boolean {
-  return m.held || m.carry || m.lie || m.quiet || (m.react !== null && m.reactT < reactSpan(m));
+  return m.held || m.carry || m.lie || m.quiet || m.hush || (m.react !== null && m.reactT < reactSpan(m));
 }
 
 /** What Watt draws this frame, beyond the base frame. Reused. */
@@ -365,8 +368,8 @@ export function petFrame(walk: Walk, place: WattPlace, hy: number, night: boolea
     } else if (react && k < 1 && react === 'click') {
       out.dir = m.reactDir;
       if (!still) noticeClick(m.clickKind, m.clickUp, m.reactT, out);
-    } else if (m.quiet && !react) {
-      // Recording: he sits quietly where he is.
+    } else if ((m.quiet || m.hush) && !react) {
+      // Recording, a call or a meeting: he sits quietly where he is.
       out.pose = 'sit';
       out.notes = false;
     } else if (moving) {

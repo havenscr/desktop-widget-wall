@@ -829,6 +829,8 @@ button.dd-k.link:hover {
   gap: 16px;
   height: 34px;
   flex: none;
+  /* The same right room as the rows, with the list's 6 px scrollbar gutter as plain padding, so the hour labels stay over the bars. */
+  padding-right: 26px;
 }
 .dd-counts {
   font: 400 17px/1 var(--body);
@@ -862,7 +864,25 @@ button.dd-k.link:hover {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  scrollbar-width: thin;
+  /* The bar looks like the Work lists' (6 px, soft thumb); its 6 px gutter is always reserved. */
+  scrollbar-gutter: stable;
+  padding-right: 20px;
+  /* The rows share the list's height: it divided by the row count (--dd-n), never under 32 px and
+     never over 56 px; more rows than fit scroll. */
+  container-type: size;
+}
+.dd-rows::-webkit-scrollbar {
+  width: 6px;
+}
+.dd-rows::-webkit-scrollbar-track {
+  background: transparent;
+}
+.dd-rows::-webkit-scrollbar-thumb {
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.28);
+}
+.dd-rows::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.42);
 }
 .dd-row {
   display: flex;
@@ -870,7 +890,8 @@ button.dd-k.link:hover {
   gap: 14px;
   width: 100%;
   min-height: 32px;
-  height: 32px;
+  height: clamp(32px, calc(100cqh / var(--dd-n, 1)), 56px);
+  flex: none;
   padding: 0;
   border: 0;
   border-top: 1px solid var(--line);
@@ -900,7 +921,7 @@ button.dd-k.link:hover {
 /* Agents today rows: number 24, title 372, the state once as a pill 160, one quiet line, the day
    track 420, the time 104; 14 px gaps. */
 .dd-name {
-  width: 372px;
+  width: 364px;
   flex: none;
   font: 600 17px/1.15 var(--body);
   white-space: nowrap;

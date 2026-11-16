@@ -23,7 +23,7 @@ export type Trick = 'hop' | 'spin' | 'nap' | 'come';
 
 /** What the menu needs to know about his tricks, and how it answers. */
 export interface TrickPanel {
-  /** Why tricks are off right now ("Not during a call or meeting", ...), or null. Refused quietly: the items stay, marked off, with this as their tooltip. */
+  /** Why tricks are off right now ("Not during a call", "Not while on air", ...), or null. Refused quietly: the items stay, marked off, with this as their tooltip. */
   refused: string | null;
   napping: boolean;
   stay: boolean;
