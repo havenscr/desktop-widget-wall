@@ -5,14 +5,14 @@ import { mediaTarget, useNowPlayingStore } from '../../music/store';
 import { tip } from '../../ui/HoverTip';
 import { useVisible } from '../../ui/useVisible';
 import '../../styles/spotify-saved.css';
-import { moreInQueue, NOTHING_HEARD, NOTHING_QUEUED, PAGE_RETRY_MS, PAGE_TAG_TIP, PAGE_TERMS, PAGE_TRY_LATER, PAGE_TURN_OFF, PAGE_TURN_OFF_TIP, PAGE_TURN_ON, PAGE_TURN_ON_TIP, pageProblem, pageTag, QUEUE_FAILED, WHILE_HEADINGS, WHILE_NEXT_ROWS, WHILE_PLAYS, trackLength, type PageProblem } from './model';
+import { moreInQueue, NOTHING_HEARD, NOTHING_QUEUED, PAGE_OFF_HINT, PAGE_RETRY_MS, PAGE_TERMS, PAGE_TRY_LATER, pageProblem, QUEUE_FAILED, WHILE_HEADINGS, WHILE_NEXT_ROWS, WHILE_PLAYS, trackLength, type PageProblem } from './model';
 import { PlayingBars } from './Tile';
 import { QUEUE_POLL_MS, runSkips, skipPlan } from './UpNext';
 
 /**
  * Playlists the owner saved but did not make (Spotify's app rules hide their songs from the Web API).
- * Two fallbacks live here: the songs read from the playlist's public web page (`usePublicList`, the
- * source tag `PageTag`), and the "while it plays" view (`WhilePlays`) that shows the song playing, the
+ * Two fallbacks live here: the songs read from the playlist's public web page (`usePublicList`; the note
+ * beside the playlist says so, and the switch lives in Tools), and the "while it plays" view (`WhilePlays`) that shows the song playing, the
  * queue and what was heard from the playlist, all inside Spotify's rules.
  */
 
@@ -51,41 +51,6 @@ export function usePublicList(item: SpotifyItem, active: boolean): { list: Publi
   }, [list, item.id]);
   const retry = useCallback(() => setAttempt((n) => n + 1), []);
   return { list, retry, retryReady };
-}
-
-/** "Turn off" for the public page: on every state of a saved playlist's page while the reader is on. */
-export function TurnOffButton({ onTurnOff }: { onTurnOff: () => void }) {
-  return (
-    <button
-      type="button"
-      className="sp-linkbtn"
-      {...tip(() => (
-        <div className="sp-tipline">
-          <span>{PAGE_TURN_OFF_TIP}</span>
-        </div>
-      ))}
-      onClick={onTurnOff}
-    >
-      {PAGE_TURN_OFF}
-    </button>
-  );
-}
-
-/** The source line above the rows: where the list came from, "first N of M" when the page held only part, and the button that turns the page off. */
-export function PageTag({ listed, total, onTurnOff }: { listed: number; total: number | null; onTurnOff: () => void }) {
-  return (
-    <li
-      className="sp-hintline sp-source"
-      {...tip(() => (
-        <div className="sp-tipline">
-          <span>{PAGE_TAG_TIP}</span>
-        </div>
-      ))}
-    >
-      {pageTag(listed, total)}
-      <TurnOffButton onTurnOff={onTurnOff} />
-    </li>
-  );
 }
 
 /** A song's length, or nothing when it is unknown (the page may not give one): never "0:00". */
@@ -149,19 +114,18 @@ interface PlayingState {
 
 const NOTHING: PlayingState = { playback: null, next: [], queueFailed: false, heard: [] };
 
-/** What the page says about the public page, once, above everything else: why there is no list, and the buttons that act on it. */
+/** What the page says about the public page, once, above everything else: why there is no list, and Retry. */
 export interface PageStatus {
   line: string;
   /** "Try again in a minute." shows until Retry comes back. */
   tryLater?: boolean;
   onRetry?: () => void;
-  onTurnOff?: () => void;
-  onTurnOn?: () => void;
+  /** The switch is off: the terms and where the switch is. */
+  off?: boolean;
 }
 
 /**
- * The page of a playlist whose songs Spotify will not list: `status` (why there is no list, with Turn off or Read public
- * page) and what Play does, until this playlist plays. Then "Playing now" (or "Paused"), "Up next in Spotify" (the first
+ * The page of a playlist whose songs Spotify will not list: `status` (why there is no list, with Retry) and what Play does, until this playlist plays. Then "Playing now" (or "Paused"), "Up next in Spotify" (the first
  * 8 of the queue, and one line for the rest) and "Heard from this playlist" (Spotify's recently played list filtered to
  * it). Playback and the queue are read on open, when the song changes and every 20 seconds while the page shows; the
  * heard list on open and when the playing song changes. Nothing is read while the page is hidden, and nothing is stored.
@@ -232,27 +196,13 @@ export function WhilePlays({ item, status, onNote, onPlayFrom, onUpNext }: { ite
           Retry
         </button>
       ) : null}
-      {status.onTurnOff ? <TurnOffButton onTurnOff={status.onTurnOff} /> : null}
-      {status.onTurnOn ? (
-        <button
-          type="button"
-          className="sp-btn"
-          {...tip(() => (
-            <div className="sp-tipline">
-              <span>{PAGE_TURN_ON_TIP}</span>
-            </div>
-          ))}
-          onClick={status.onTurnOn}
-        >
-          {PAGE_TURN_ON}
-        </button>
-      ) : null}
     </>
   );
   const notes = (
     <>
       {status.tryLater && !status.onRetry ? <span className="sp-hintline">{PAGE_TRY_LATER}</span> : null}
-      {status.onTurnOn ? <span className="sp-hintline">{PAGE_TERMS}</span> : null}
+      {status.off ? <span className="sp-hintline">{PAGE_TERMS}</span> : null}
+      {status.off ? <span className="sp-hintline">{PAGE_OFF_HINT}</span> : null}
     </>
   );
 

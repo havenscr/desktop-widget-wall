@@ -10,15 +10,12 @@ import {
   NOTHING_QUEUED,
   PAGE_OFF_LINE,
   PAGE_READING,
-  PAGE_TAG_TIP,
-  PAGE_TURN_OFF,
-  PAGE_TURN_OFF_TIP,
-  PAGE_TURN_ON,
-  PAGE_TURN_ON_TIP,
+  PAGE_NOTE_TIP,
+  PAGE_OFF_HINT,
   PUBLIC_PAGE_KEY,
   pageLine,
   pageProblem,
-  pageTag,
+  pageNote,
   resetListenSource,
   resetPublicPage,
   usePublicPage,
@@ -136,10 +133,10 @@ describe('the words', () => {
     expect(pageLine('empty')).toBe("Spotify's public page listed no songs for this playlist.");
     expect(NOTHING_QUEUED).toBe('Nothing queued.');
     expect(NOTHING_HEARD).toBe('Nothing heard yet. Spotify adds a song here after about half a minute of play.');
-    expect(pageTag(40, 40)).toBe("From Spotify's public page");
-    expect(pageTag(50, 40)).toBe("From Spotify's public page");
-    expect(pageTag(40, null)).toBe("From Spotify's public page");
-    expect(pageTag(100, 520)).toBe("From Spotify's public page, first 100 of 520");
+    expect(pageNote(40, 40)).toBe('public page');
+    expect(pageNote(50, 40)).toBe('public page');
+    expect(pageNote(40, null)).toBe('public page');
+    expect(pageNote(100, 520)).toBe('public page, first 100 of 520');
   });
 });
 
@@ -163,7 +160,7 @@ describe('a saved playlist with the public page on', () => {
     await act(async () => release({ items: rows(5), listed: 5 }));
     await flush();
     expect(screen.queryByText(PAGE_READING)).toBeNull();
-    expect(screen.getByText("From Spotify's public page")).toBeTruthy();
+    expect(screen.getByText('public page')).toBeTruthy();
     expect(names()).toEqual(['Song 1', 'Song 2', 'Song 3', 'Song 4', 'Song 5']);
     expect([...document.querySelectorAll('.sp-num')].map((n) => n.textContent)).toEqual(['1', '2', '3', '4', '5']);
     expect(count('wall2_spotify_public_page')).toBe(1);
@@ -173,7 +170,7 @@ describe('a saved playlist with the public page on', () => {
   it('says "first N of M" only when the page held fewer songs than the playlist, and sums the length only when every song is listed', async () => {
     await setup({ page: { items: rows(100), listed: 100 }, count: 520 });
     await openList(SAVED);
-    expect(screen.getByText("From Spotify's public page, first 100 of 520")).toBeTruthy();
+    expect(screen.getByText('public page, first 100 of 520')).toBeTruthy();
     const facts = document.querySelector('.sp-shead .sp-line')?.textContent ?? '';
     expect(facts).toContain('520 songs');
     expect(facts).not.toMatch(/\bmin\b/);
@@ -182,7 +179,7 @@ describe('a saved playlist with the public page on', () => {
   it('shows the whole length and the plain tag when every song is listed', async () => {
     await setup({ page: { items: rows(40), listed: 40 }, count: 40 });
     await openList(SAVED);
-    expect(screen.getByText("From Spotify's public page")).toBeTruthy();
+    expect(screen.getByText('public page')).toBeTruthy();
     const facts = document.querySelector('.sp-shead .sp-line')?.textContent ?? '';
     expect(facts).toContain('40 songs');
     expect(facts).toContain('2 h 0 min');
@@ -191,19 +188,43 @@ describe('a saved playlist with the public page on', () => {
   it('uses the page count when the playlist count is unknown', async () => {
     await setup({ page: { items: rows(7), listed: 7 }, count: null });
     await openList(SAVED);
-    expect(screen.getByText("From Spotify's public page")).toBeTruthy();
+    expect(screen.getByText('public page')).toBeTruthy();
     expect(document.querySelector('.sp-shead .sp-line')?.textContent).toContain('7 songs');
   });
 
-  it('has a hover tip on the tag that says why and how to turn it off', async () => {
+  it('has no row of its own for the public page: the note is beside the playlist facts, with a tip that says what it means', async () => {
     await setup();
     await openList(SAVED);
-    const tag = document.querySelector('.sp-source') as HTMLElement;
-    await act(async () => void fireEvent.mouseEnter(tag));
+    expect(document.querySelector('.sp-source')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Turn off' })).toBeNull();
+    const note = document.querySelector('.sp-shead .sp-line .sp-pnote') as HTMLElement;
+    expect(note.textContent).toBe('public page');
+    await act(async () => void fireEvent.mouseEnter(note));
     await flush(1000);
-    expect(document.body.textContent).toContain(PAGE_TAG_TIP);
-    expect(PAGE_TAG_TIP).toContain('against Spotify');
-    expect(PAGE_TAG_TIP).toContain('Turn it off with the button beside this line');
+    expect(document.body.textContent).toContain(PAGE_NOTE_TIP);
+    expect(PAGE_NOTE_TIP).toContain('not through the sign-in');
+    expect(PAGE_NOTE_TIP).toContain('against Spotify');
+  });
+
+  it('the card heading is a way home: inside a playlist it closes it with a tip, on the first page it does nothing new', async () => {
+    await setup();
+    const heading = screen.getByRole('radio', { name: /Spotify/ });
+    const tipOf = async () => {
+      hideTip(true);
+      await act(async () => void fireEvent.mouseEnter(heading));
+      await flush(1000);
+      return document.body.textContent ?? '';
+    };
+    expect(await tipOf()).not.toContain('Back to Spotify home');
+    await act(async () => heading.click());
+    expect(document.querySelector('.sp-songs')).toBeNull();
+    await openList(SAVED);
+    expect(document.querySelector('.sp-songs')).not.toBeNull();
+    expect(await tipOf()).toContain('Back to Spotify home');
+    await act(async () => heading.click());
+    await flush();
+    expect(document.querySelector('.sp-songs')).toBeNull();
+    expect(await tipOf()).not.toContain('Back to Spotify home');
   });
 
   it('plays the playlist from a clicked row, and does nothing for a row that cannot play', async () => {
@@ -305,46 +326,28 @@ describe('a saved playlist with no list', () => {
     expect(screen.queryByText("Spotify's public page does not list this playlist. It may be private.")).toBeNull();
   });
 
-  it('Turn off on the tag stops the list at once and stores the choice; Read public page on the off line reads again', async () => {
+  it('the switch in the store stops the list at once and the off line points at Tools; turning it on reads again', async () => {
     await setup({ page: { items: rows(3), listed: 3 }, count: 3 });
     await openList(SAVED);
     expect(trackRows()).toHaveLength(3);
-    await act(async () => screen.getByRole('button', { name: PAGE_TURN_OFF }).click());
+    await act(async () => usePublicPage.getState().setOn(false));
     await flush();
     expect(trackRows()).toHaveLength(0);
     expect(screen.getByText(PAGE_OFF_LINE)).toBeTruthy();
+    expect(screen.getByText(PAGE_OFF_HINT)).toBeTruthy();
     expect(screen.getByText(WHILE_PLAYS)).toBeTruthy();
-    expect(usePublicPage.getState().on).toBe(false);
-    expect(localStorage.getItem(PUBLIC_PAGE_KEY)).toBe('off');
     expect(count('wall2_spotify_public_page')).toBe(1);
-    await act(async () => screen.getByRole('button', { name: PAGE_TURN_ON }).click());
+    await act(async () => usePublicPage.getState().setOn(true));
     await flush();
     expect(trackRows()).toHaveLength(3);
-    expect(usePublicPage.getState().on).toBe(true);
-    expect(localStorage.getItem(PUBLIC_PAGE_KEY)).toBe('on');
     expect(count('wall2_spotify_public_page')).toBe(2);
   });
 
-  it('the tag and off line buttons say what they do on hover', async () => {
-    await setup({ page: { items: rows(3), listed: 3 }, count: 3 });
-    await openList(SAVED);
-    await act(async () => void fireEvent.mouseEnter(screen.getByRole('button', { name: PAGE_TURN_OFF })));
-    await flush(1000);
-    expect(document.body.textContent).toContain(PAGE_TURN_OFF_TIP);
-    await act(async () => screen.getByRole('button', { name: PAGE_TURN_OFF }).click());
-    await flush();
-    hideTip(true);
-    await act(async () => void fireEvent.mouseEnter(screen.getByRole('button', { name: PAGE_TURN_ON })));
-    await flush(1000);
-    expect(document.body.textContent).toContain(PAGE_TURN_ON_TIP);
-    expect(PAGE_TURN_ON_TIP).toContain('against Spotify');
-  });
-
-  it('the off line from the start also offers Read public page', async () => {
+  it('the off line from the start points at the switch in Tools', async () => {
     await setup();
     usePublicPage.getState().setOn(false);
     await openList(SAVED);
-    expect(screen.getByRole('button', { name: PAGE_TURN_ON })).toBeTruthy();
+    expect(screen.getByText(PAGE_OFF_HINT)).toBeTruthy();
     expect(count('wall2_spotify_public_page')).toBe(0);
   });
 });
@@ -487,14 +490,14 @@ describe('the public page choice', () => {
 });
 
 // Fix round 1, items 1 to 4: written before the changes, against the code as it was.
-describe('fix round 1: every state of the page carries its switch', () => {
+describe('fix round 1: no state of the page carries a switch of its own', () => {
   const TERMS = "Reading the page is against Spotify's developer terms and may stop working.";
   const failWith = (word: string): void => {
     mocks.set('wall2_spotify_public_page', () => {
       throw new Error(word);
     });
   };
-  const hasOff = () => !!screen.queryByRole('button', { name: PAGE_TURN_OFF });
+  const hasOff = () => !!screen.queryByRole('button', { name: /^(Turn off|Read public page)$/ });
   const states: [string, () => void | Promise<void>][] = [
     ['listed', () => undefined],
     ['did not answer', () => failWith('no connection')],
@@ -504,50 +507,50 @@ describe('fix round 1: every state of the page carries its switch', () => {
     ['too big', () => failWith('page too big')],
   ];
   for (const [name, prepare] of states) {
-    it(`page on, ${name}: Turn off is on the page`, async () => {
+    it(`page on, ${name}: no Turn off on the page`, async () => {
       await setup({ page: { items: rows(3), listed: 3 }, count: 3 });
       await prepare();
       await openList(SAVED);
-      expect(hasOff()).toBe(true);
+      expect(hasOff()).toBe(false);
     });
   }
-  it('page on, reading: Turn off is on the page', async () => {
+  it('page on, reading: no Turn off on the page', async () => {
     await setup({ page: new Promise(() => undefined), count: 3 });
     await openList(SAVED);
     expect(screen.getByText(PAGE_READING)).toBeTruthy();
-    expect(hasOff()).toBe(true);
+    expect(hasOff()).toBe(false);
   });
-  it('page on, no songs listed: Turn off is on the page', async () => {
+  it('page on, no songs listed: no Turn off on the page', async () => {
     await setup({ page: { items: [], listed: 0 } });
     await openList(SAVED);
-    expect(hasOff()).toBe(true);
+    expect(hasOff()).toBe(false);
   });
-  it('page on, this playlist playing and the page failed: Turn off is still on the page', async () => {
+  it('page on, this playlist playing and the page failed: no Turn off on the page', async () => {
     await setup({ playlistId: id(SAVED) });
     failWith('not public');
     await openList(SAVED);
     expect(document.querySelectorAll('.sp-sec').length).toBe(3);
-    expect(hasOff()).toBe(true);
+    expect(hasOff()).toBe(false);
   });
-  it('page off, nothing playing: Read public page and the terms sentence are on the page', async () => {
+  it('page off, nothing playing: the terms sentence and the Tools hint are on the page', async () => {
     await setup();
     usePublicPage.getState().setOn(false);
     await openList(SAVED);
-    expect(screen.getByRole('button', { name: PAGE_TURN_ON })).toBeTruthy();
+    expect(screen.getByText(PAGE_OFF_HINT)).toBeTruthy();
     expect(screen.getByText(TERMS)).toBeTruthy();
   });
-  it('page off, this playlist playing: Read public page and the terms sentence are on the page', async () => {
+  it('page off, this playlist playing: the terms sentence and the Tools hint are on the page', async () => {
     await setup({ playlistId: id(SAVED) });
     usePublicPage.getState().setOn(false);
     await openList(SAVED);
     expect(document.querySelectorAll('.sp-sec').length).toBe(3);
-    expect(screen.getByRole('button', { name: PAGE_TURN_ON })).toBeTruthy();
+    expect(screen.getByText(PAGE_OFF_HINT)).toBeTruthy();
     expect(screen.getByText(TERMS)).toBeTruthy();
   });
   it('a page of more than 200 songs is labelled by the rows returned: first 200 of 500', async () => {
     await setup({ page: { items: rows(200), listed: 500 }, count: 500 });
     await openList(SAVED);
-    expect(screen.getByText("From Spotify's public page, first 200 of 500")).toBeTruthy();
+    expect(screen.getByText('public page, first 200 of 500')).toBeTruthy();
     expect(trackRows()).toHaveLength(200);
   });
   it('a failed queue refresh leaves no clickable stale rows and says so', async () => {

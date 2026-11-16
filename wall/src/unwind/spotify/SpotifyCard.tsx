@@ -22,20 +22,24 @@ import { refreshNowPlaying, useNowPlayingStore } from '../../music/store';
 import { useNowPlaying } from '../../music/useNowPlaying';
 import { useToolsStore } from '../../tools/store';
 import { quietFocus, tip } from '../../ui/HoverTip';
+import { goSpotifyHome, setSpotifyInside, useSpotifyHome } from '../libraryHome';
+import { closePlaylist, useYtLibrary } from '../ytmusic/store';
 import { YtMusicSide } from '../ytmusic/YtMusicSide';
 import { Cover } from './Cover';
 import { PlayOn } from './PlayOn';
 import { PlayerRow } from './PlayerRow';
-import { PageTag, TrackRow, TurnOffButton, usePublicList, WhilePlays } from './SavedPlaylist';
+import { TrackRow, usePublicList, WhilePlays } from './SavedPlaylist';
 import { Tile } from './Tile';
 import { QueueView, SearchGroups } from './TallViews';
 import {
   isNowPlaying,
   kindLine,
   confirmPlayer,
+  PAGE_NOTE_TIP,
   PAGE_OFF_LINE,
   PAGE_READING,
   pageLine,
+  pageNote,
   playDeviceId,
   playFailureLine,
   problemLine,
@@ -331,14 +335,27 @@ export function SpotifyCard() {
 function SourceSwitch({ source, onPick }: { source: ListenSource; onPick: (s: ListenSource) => void }) {
   const status = useSpotifyStatus((s) => s.status);
   const off = !!status && !status.setup;
+  // On an inner page (a playlist or album) the chosen service's name goes back to that panel's first page,
+  // as its Back control does; on the first page it is only the choice it was.
+  const spotifyInside = useSpotifyHome((s) => s.inside);
+  const ytInside = useYtLibrary((s) => s.opened !== null);
+  const home = (which: ListenSource) => (which === 'spotify' ? spotifyInside : ytInside) && source === which;
+  const pick = (which: ListenSource) => {
+    if (home(which)) {
+      if (which === 'spotify') goSpotifyHome();
+      else closePlaylist();
+      return;
+    }
+    onPick(which);
+  };
   return (
     <div className="sp-switch" role="radiogroup" aria-label="Which player the wall follows">
-      <button type="button" role="radio" aria-checked={source === 'spotify'} className={source === 'spotify' ? 'on' : ''} title={off ? 'Spotify is not set up on this wall' : 'Browse and play Spotify here'} onClick={() => onPick('spotify')}>
+      <button type="button" role="radio" aria-checked={source === 'spotify'} className={source === 'spotify' ? 'on' : ''} {...tip(home('spotify') ? 'Back to Spotify home' : off ? 'Spotify is not set up on this wall' : 'Browse and play Spotify here')} onClick={() => pick('spotify')}>
         <IconBrandSpotify size={22} stroke={1.8} aria-hidden="true" />
         Spotify
         {off ? <span className="sp-off">not set up</span> : null}
       </button>
-      <button type="button" role="radio" aria-checked={source === 'youtube'} className={source === 'youtube' ? 'on' : ''} title="Follow YouTube Music through Windows" onClick={() => onPick('youtube')}>
+      <button type="button" role="radio" aria-checked={source === 'youtube'} className={source === 'youtube' ? 'on' : ''} {...tip(home('youtube') ? 'Back to YouTube Music home' : 'Follow YouTube Music through Windows')} onClick={() => pick('youtube')}>
         <IconBrandYoutube size={22} stroke={1.8} aria-hidden="true" />
         YouTube Music
       </button>
@@ -439,6 +456,20 @@ function Browser({ tall }: { tall: boolean }) {
   const [asked, setAsked] = useState('');
   const askedRef = useRef('');
   const [open, setOpen] = useState<SpotifyItem | null>(null);
+  // The card's top heading tells the panel to go home (see `SourceSwitch`); the panel tells it when it is inside.
+  const homeRev = useSpotifyHome((s) => s.rev);
+  const lastRev = useRef(homeRev);
+  useEffect(() => {
+    if (lastRev.current !== homeRev) {
+      lastRev.current = homeRev;
+      setOpen(null);
+    }
+  }, [homeRev]);
+  const isOpen = open !== null;
+  useEffect(() => {
+    setSpotifyInside(isOpen);
+    return () => setSpotifyInside(false);
+  }, [isOpen]);
   const [note, setNote] = useState<string | null>(null);
   const nowTitle = useNowPlayingStore((s) => s.info?.title ?? '');
   useSpotifyNowRead(nowTitle);
@@ -766,12 +797,8 @@ function SongsView({ item, tall, backLabel, onBack, onNote, onUpNext }: { item: 
   const isNow = useIsNow();
   const mounted = useRef(true);
   const loading = useRef(false);
-  // The public page switch is read when the page opens; the buttons on this page (turn off, read) change it and take effect at once.
-  const [pageOn, setPageOn] = useState(() => usePublicPage.getState().on);
-  const choosePage = (on: boolean) => {
-    usePublicPage.getState().setOn(on);
-    setPageOn(on);
-  };
+  // The public page switch lives in Tools, Accounts, Spotify; a change there takes effect on this page at once.
+  const pageOn = usePublicPage((s) => s.on);
   useEffect(() => {
     mounted.current = true;
     return () => {
@@ -836,12 +863,14 @@ function SongsView({ item, tall, backLabel, onBack, onNote, onUpNext }: { item: 
   const pageList = saved && pageOn && pub.state === 'ready' && pub.items.length > 0 ? pub : null;
   const rows = pageList ? pageList.items : st.items;
   const total = pageList ? item.count ?? pageList.listed : st.total;
-  const turnOff = () => choosePage(false);
   const owner = kindLine(item).replace(/^(Playlist|Album)( by )?/, '');
   const all = !st.more && rows.length > 0 && rows.length >= total;
   // The total length shows only when every song is listed and every one has a length.
   const length = all && rows.every((t) => t.durationMs > 0) ? totalLength(rows.reduce((a, t) => a + (Number.isFinite(t.durationMs) ? t.durationMs : 0), 0)) : null;
-  const facts = [total > 0 ? songs(total) : null, length, owner ? `by ${owner}` : null].filter(Boolean).join(' · ');
+  const lead = [total > 0 ? songs(total) : null, length].filter(Boolean).join(' · ');
+  const by = owner ? `by ${owner}` : '';
+  // A playlist read from the public page says so, quietly, beside its facts.
+  const note = pageList ? pageNote(pageList.items.length, item.count ?? pageList.listed) : null;
 
   const playButtons = (
     <>
@@ -862,13 +891,28 @@ function SongsView({ item, tall, backLabel, onBack, onNote, onUpNext }: { item: 
           <button type="button" className="sp-back" aria-label="Back to the list" title="Back to the list (Escape)" onClick={onBack}>
             <IconArrowLeft size={20} stroke={2} aria-hidden="true" />
           </button>
-          {tall ? <span className="sp-backlabel">{backLabel}</span> : null}
+          {tall ? (
+            <button type="button" className="sp-backlabel" title="Back to the list" onClick={onBack}>
+              {backLabel}
+            </button>
+          ) : null}
         </span>
         <Cover src={item.imageUrl ?? item.thumbUrl} size={tall ? 200 : 64} />
         <span className="sp-text">
           <span className="sp-kick">{kind === 'album' ? 'Album' : 'Playlist'}</span>
           <span className="sp-name">{item.name}</span>
-          <span className="sp-line">{facts}</span>
+          <span className="sp-line">
+            {lead}
+            {note ? (
+              <>
+                {lead ? ' · ' : ''}
+                <span className="sp-pnote" {...tip(PAGE_NOTE_TIP)}>
+                  {note}
+                </span>
+              </>
+            ) : null}
+            {by ? `${lead || note ? ' · ' : ''}${by}` : ''}
+          </span>
         </span>
         {tall ? <span className="sp-shbtns">{playButtons}</span> : playButtons}
       </div>
@@ -881,27 +925,25 @@ function SongsView({ item, tall, backLabel, onBack, onNote, onUpNext }: { item: 
         {saved ? (
           pageList ? (
             <>
-              <PageTag listed={pageList.items.length} total={item.count ?? pageList.listed} onTurnOff={turnOff} />
               {rows.map((t, i) => (
                 <TrackRow key={`${t.id ?? 'local'}-${i}`} t={t} index={i} on={isNow(t)} onPlay={playFrom} />
               ))}
             </>
           ) : !pageOn ? (
-            <WhilePlays item={item} status={{ line: PAGE_OFF_LINE, onTurnOn: () => choosePage(true) }} onNote={onNote} onPlayFrom={playFrom} onUpNext={onUpNext} />
+            <WhilePlays item={item} status={{ line: PAGE_OFF_LINE, off: true }} onNote={onNote} onPlayFrom={playFrom} onUpNext={onUpNext} />
           ) : pub.state === 'failed' ? (
             <WhilePlays
               item={item}
-              status={{ line: pageLine(pub.problem), tryLater: pub.problem === 'connection' || pub.problem === 'failed', onRetry: (pub.problem === 'connection' || pub.problem === 'failed') && retryReady ? retryPage : undefined, onTurnOff: turnOff }}
+              status={{ line: pageLine(pub.problem), tryLater: pub.problem === 'connection' || pub.problem === 'failed', onRetry: (pub.problem === 'connection' || pub.problem === 'failed') && retryReady ? retryPage : undefined }}
               onNote={onNote}
               onPlayFrom={playFrom}
               onUpNext={onUpNext}
             />
           ) : pub.state === 'ready' ? (
-            <WhilePlays item={item} status={{ line: pageLine('empty'), onTurnOff: turnOff }} onNote={onNote} onPlayFrom={playFrom} onUpNext={onUpNext} />
+            <WhilePlays item={item} status={{ line: pageLine('empty') }} onNote={onNote} onPlayFrom={playFrom} onUpNext={onUpNext} />
           ) : (
             <li className="sp-empty" aria-busy="true">
               {PAGE_READING}
-              <TurnOffButton onTurnOff={turnOff} />
             </li>
           )
         ) : st.problem && st.items.length === 0 ? (
