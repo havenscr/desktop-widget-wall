@@ -88,11 +88,16 @@ export function streaks(ctx: CanvasRenderingContext2D, t: number, o: StreakSet):
     ctx.moveTo(xh, yh);
     ctx.lineTo(xt, yt);
   }
+  const cap = ctx.lineCap;
+  const width = ctx.lineWidth;
   ctx.globalAlpha = o.fade;
   ctx.strokeStyle = o.color;
   ctx.lineWidth = o.lw;
   ctx.lineCap = 'round';
   ctx.stroke();
+  // The context is shared: what was set before is put back.
+  ctx.lineCap = cap;
+  ctx.lineWidth = width;
 }
 
 export interface RingSet {
@@ -111,6 +116,7 @@ export const RING_COLOR = 'rgb(160,236,246)';
 
 /** Rings where drops meet the lake: flat ellipses that widen and fade. `n` is how many are alive at once on the whole wall. */
 export function rings(ctx: CanvasRenderingContext2D, t: number, o: RingSet): void {
+  const width = ctx.lineWidth;
   ctx.lineWidth = 1.2;
   ctx.strokeStyle = RING_COLOR;
   const vx0 = o.view.x - 40;
@@ -133,6 +139,7 @@ export function rings(ctx: CanvasRenderingContext2D, t: number, o: RingSet): voi
     ctx.ellipse(x, y, rx, ry, 0, 0, 6.2832);
     ctx.stroke();
   }
+  ctx.lineWidth = width;
 }
 
 const BLOB_W = 256;
@@ -223,6 +230,8 @@ export interface GustSet {
  * most five a frame): the one allocation the weather allows. The opacity goes through `globalAlpha`.
  */
 export function gusts(ctx: CanvasRenderingContext2D, t: number, o: GustSet): void {
+  const cap = ctx.lineCap;
+  const width = ctx.lineWidth;
   ctx.lineWidth = 1.25;
   ctx.lineCap = 'round';
   for (let i = 0; i < o.n; i++) {
@@ -252,6 +261,8 @@ export function gusts(ctx: CanvasRenderingContext2D, t: number, o: GustSet): voi
     }
     ctx.stroke();
   }
+  ctx.lineCap = cap;
+  ctx.lineWidth = width;
 }
 
 /** The small pixel grid of the drifting specks, in design pixels (the wall's little pixel is 3). */

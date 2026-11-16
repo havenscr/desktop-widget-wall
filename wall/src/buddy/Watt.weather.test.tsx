@@ -1,4 +1,4 @@
-import { act, render } from '@testing-library/react';
+import { act, fireEvent, render } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { resetAudio, useAudioStore } from '../audio/store';
 import { CAMERAS } from '../horizon/cameras';
@@ -10,6 +10,7 @@ import { resetWeatherStore, useWeatherStore } from '../weather/useWeather';
 import { useSceneWeather } from '../weather/sceneSetting';
 import type { WeatherReading } from '../weather/model';
 import { resetAgents } from '../agents/useAgents';
+import { useSignalStore } from '../signals/store';
 
 vi.setConfig({ testTimeout: 20_000 });
 
@@ -244,6 +245,46 @@ describe('Watt in the wind', () => {
   });
 });
 
+describe('the shake he starts on his own', () => {
+  /** Run 200 s in the rain (the first shake is due by 75 s) and report what was seen. */
+  function watch(container: HTMLElement) {
+    const seen = { droplets: 0, fluffy: 0, drips: 0 };
+    runFor(200, () => {
+      const w = water(container);
+      if (w.length >= 3) seen.droplets++;
+      if (w.length > 0) seen.drips++;
+      if (fills(container).has('#f6f2ff') && !fills(container).has('#a79bdc')) seen.fluffy++;
+    });
+    return seen;
+  }
+
+  it('does not start while the quiet input is true (a call the wall knows of); the damp look stays (drips are held back in a call anyway)', () => {
+    setReading(reading());
+    const { container } = render(<Watt now={day} />);
+    runFor(FADE_IN_S + 0.5);
+    act(() => useSignalStore.setState({ call: { kind: 'teams', since: day(), camera: false } }));
+    const seen = watch(container);
+    act(() => useSignalStore.setState({ known: false, recording: false, call: null }));
+    expect(seen.droplets).toBe(0);
+    expect(seen.fluffy).toBe(0);
+    expect(fills(container).has('#a79bdc')).toBe(true);
+  });
+
+  it('does not start while his menu is open; the damp look stays', () => {
+    setReading(reading());
+    const { container } = render(<Watt now={day} />);
+    runFor(FADE_IN_S + 0.5);
+    fireEvent.contextMenu(container.querySelector('.watt-hit')!);
+    runFor(0.2);
+    expect(container.querySelector('.watt-menu')).not.toBeNull();
+    const seen = watch(container);
+    expect(container.querySelector('.watt-menu')).not.toBeNull();
+    expect(seen.droplets).toBe(0);
+    expect(seen.fluffy).toBe(0);
+    expect(fills(container).has('#a79bdc')).toBe(true);
+  });
+});
+
 describe('the shake', () => {
   it('happens once a minute or so while he stands in the rain: the wool moves four frames, droplets fly, then fluffy wool for five seconds, then damp again', () => {
     setReading(reading());
@@ -271,6 +312,31 @@ describe('the shake', () => {
 });
 
 describe('his loop in the rain', () => {
+  /** How many rests the loop plans while 200 s pass in a call, which holds his own shake back (the first shake is due by 75 s). */
+  async function restsInCall(r: WeatherReading): Promise<number> {
+    setReading(r);
+    const count = { n: 0 };
+    const set = restClock.set;
+    restClock.set = (fn, ms) => {
+      count.n++;
+      return set(fn, ms);
+    };
+    const { unmount } = render(<Watt now={day} inCall />);
+    runFor(FADE_IN_S + 0.5);
+    count.n = 0;
+    runFor(200);
+    unmount();
+    return count.n;
+  }
+
+  it('a shake that is due while he is held back by a call wakes the loop for nothing: no more rests than on a dry day', async () => {
+    const dry = await restsInCall(reading({ look: { label: 'Sunny', icon: 'sun' }, code: 0 } as Partial<WeatherReading>));
+    resetWeatherStore();
+    const rain = await restsInCall(reading());
+    // Drips are not shown in a call, so the rain adds no wake of its own: before this fix it added about one a second.
+    expect(rain).toBeLessThanOrEqual(dry + 5);
+  });
+
   it('while he stands it wakes for the drip steps and not for every frame', () => {
     setReading(reading());
     const { container } = render(<Watt now={day} />);

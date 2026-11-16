@@ -90,7 +90,9 @@ export function shaking(T: number, c: ShakeClock): boolean {
  */
 export function stepShake(c: ShakeClock, T: number, eligible: boolean, active = true): void {
   if (!active) {
+    // A shake or fluffy spell in progress ends with the effect: fresh rain starts afresh, not where the old one stopped.
     c.armed = false;
+    c.shakeFrom = -1;
     return;
   }
   if (!c.armed) {
@@ -186,8 +188,6 @@ export function thrownAt(k: number, out: WaterPix[]): void {
   }
 }
 
-/** The rest the loop may take for the weather: the soonest of these, or Infinity. A shake due and waiting for a calm moment is looked at again each second. */
-export const WAIT_POLL_S = 1;
 /** The least rest worth planning (a step already due is looked at at once). */
 const LEAST_S = 0.005;
 
@@ -210,8 +210,9 @@ export function wetRestFor(T: number, c: ShakeClock, active: boolean, drips: boo
     if (k < THROW_FRAMES) at((k + 1) * SHAKE_FRAME_S - u);
     at(SPELL_S - u);
   } else if (c.armed) {
+    // A shake that is due but waiting (he is busy) wakes nothing: whatever ends the wait already wakes the loop.
     const due = c.nextShake - T;
-    at(due > 0 ? due : WAIT_POLL_S);
+    if (due > 0) at(due);
   }
   if (drips) {
     const n = Math.floor(T / DRIP_EVERY_S);

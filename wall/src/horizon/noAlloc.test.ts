@@ -38,7 +38,7 @@ export function allocations(body: string, allowGradient: boolean | RegExp = fals
     ['new', /\bnew\s+\w/],
     ['arrow function', /=>/],
     ['function expression', /\bfunction\b/],
-    ['array literal', /(^|[=(,:?&|]|return)\s*\[/m],
+    ['array literal', /(^|[=(,:?&|]|return|\bof|\bin)\s*\[/m],
     ['object literal', /(^|[=(,:?&|]|return)\s*\{/m],
     ['spread', /\.\.\./],
     // `ctx.fill()` paints a path and makes nothing.
@@ -74,6 +74,9 @@ describe('the frame path allocates nothing', () => {
     ['gusts', weatherFxSrc, 'gusts', GUST_GRADIENT],
     ['drawWeatherBack', weatherLayerSrc, 'drawWeatherBack', false],
     ['drawWeatherMid', weatherLayerSrc, 'drawWeatherMid', false],
+    // Run on every horizon step, also while the weather is off: the steady state must make nothing.
+    ['stepWeather', weatherLayerSrc, 'stepWeather', false],
+    ['releaseWeather', weatherLayerSrc, 'releaseWeather', false],
   ];
   for (const [label, src, name, grad] of paths) {
     it(`${label} has no array, object, closure or typed array in its body`, () => {

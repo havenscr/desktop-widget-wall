@@ -159,7 +159,8 @@ export function stepWeather(layer: WeatherLayer, dt: number): void {
   layer.dim = toward(layer.dim, layer.dimTarget, step);
   layer.rt += dt * lerp(1, WIND_FALL_RATE, layer.wind);
   layer.mt += dt * lerp(1, WIND_MIST_RATE, layer.wind);
-  if (!weatherOn(layer)) releaseWeather(layer);
+  // Let the caches go once, when the layer turns off; the steady off state does nothing here (it runs every horizon step).
+  if (!weatherOn(layer) && (layer.veil.canvas !== null || layer.mistCache.canvas !== null)) releaseWeather(layer);
 }
 
 /** A frozen review still: every ramp at its target and both clocks at `t`. */
@@ -174,17 +175,21 @@ export function snapWeather(layer: WeatherLayer, t: number): void {
 
 /** Let the two cached soft layers go (their canvases are emptied so the memory is returned at once). */
 export function releaseWeather(layer: WeatherLayer): void {
-  for (const c of [layer.veil, layer.mistCache]) {
-    if (c.canvas) {
-      c.canvas.width = 0;
-      c.canvas.height = 0;
-    }
-    c.canvas = null;
-    c.ctx = null;
-  }
+  dropCache(layer.veil);
+  dropCache(layer.mistCache);
   layer.veil.k = -1;
   layer.mistCache.key = -1;
   layer.mistCache.at = -1e9;
+}
+
+/** Empty a cached canvas so its memory is returned at once, and forget it. */
+function dropCache(c: SoftCache): void {
+  if (c.canvas) {
+    c.canvas.width = 0;
+    c.canvas.height = 0;
+  }
+  c.canvas = null;
+  c.ctx = null;
 }
 
 /** True when a cache holds a canvas (tests). */

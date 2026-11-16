@@ -11,7 +11,6 @@ import {
   STRAND_POSES,
   THROWN,
   WATER_PIX,
-  WAIT_POLL_S,
   createShakeClock,
   createWater,
   dripAt,
@@ -126,6 +125,30 @@ describe('the shake clock', () => {
     expect(c.shakeFrom).toBeCloseTo(due + 30.2, 6);
   });
 
+  it('rain that stops during a shake or its fluffy spell and comes back within the spell starts afresh: damp wool, no shake frame, a new gap', () => {
+    const c = createShakeClock();
+    stepShake(c, 0, true, true);
+    const t0 = c.nextShake;
+    stepShake(c, t0, true, true);
+    expect(shaking(t0 + 1, c)).toBe(true);
+    expect(fluffyAt(t0 + 1, c)).toBe(true);
+    // The effect stops two seconds in (rain over, reduced motion, or the switch off), then returns within the five seconds.
+    stepShake(c, t0 + 2, true, false);
+    stepShake(c, t0 + 3, true, true);
+    expect(fluffyAt(t0 + 3, c)).toBe(false);
+    expect(shakeFrame(t0 + 3, c)).toBe(-1);
+    expect(shaking(t0 + 3, c)).toBe(false);
+    expect(c.nextShake).toBeCloseTo(t0 + 3 + shakeGap(c.n), 6);
+    // Also when it comes back in the first frames of a shake.
+    const d = createShakeClock();
+    stepShake(d, 0, true, true);
+    stepShake(d, d.nextShake, true, true);
+    const s0 = d.shakeFrom;
+    stepShake(d, s0 + 0.05, true, false);
+    stepShake(d, s0 + 0.1, true, true);
+    expect(shakeFrame(s0 + 0.1, d)).toBe(-1);
+  });
+
   it('rain that stops disarms it: the next rain starts a fresh gap', () => {
     const c = createShakeClock();
     stepShake(c, 0, true, true);
@@ -207,11 +230,12 @@ describe('how long the loop may rest in rain', () => {
     // A pose that cannot drip has nothing to wake for.
     expect(wetRestFor(0.1, c, true, false, 12)).toBe(Infinity);
   });
-  it('wakes for the next shake due, polls when one is due but waiting, and follows a shake frame by frame', () => {
+  it('wakes for the next shake due, wakes for none that is due but waiting, and follows a shake frame by frame', () => {
     const c = createShakeClock();
     stepShake(c, 0, true, true);
     expect(wetRestFor(1, c, true, false, 12)).toBeCloseTo(c.nextShake - 1, 6);
-    expect(wetRestFor(c.nextShake + 3, c, true, false, 12)).toBe(WAIT_POLL_S);
+    // Due but waiting (he is busy): no wake for it. What ends the wait already wakes the loop, so nothing polls.
+    expect(wetRestFor(c.nextShake + 3, c, true, false, 12)).toBe(Infinity);
     stepShake(c, c.nextShake, true, true);
     const t0 = c.shakeFrom;
     expect(wetRestFor(t0 + 0.01, c, true, false, 12)).toBeCloseTo(0.07, 6);
