@@ -13,6 +13,8 @@ import { useSkyKeepClear } from '../horizon/sky';
 import { useNowPlaying } from '../music/useNowPlaying';
 import { useVisible } from '../ui/useVisible';
 import { useLastPlayed } from './lastPlayed';
+import { canPlayLastOwn, playLastOwn } from './lastOwn';
+import { isWallPlayer, ON_THE_WALL, PICK_IN_WATCH, shownSource } from './ownSource';
 import { useWatchStore } from './watch/store';
 import { AUTOPLAY_LINE, musicControls, next as queueNext, playAgain, previous as queuePrevious, useMusicView, type MusicView } from './ytmusic/queue';
 import { StartOnWatch } from './ytmusic/YtFoot';
@@ -83,14 +85,15 @@ export function Player() {
   const rawSourceLabel = playerName(source);
   const watchPlaying = useWatchStore((s) => s.playing);
   const watchStopped = useWatchStore((s) => s.lastStopped);
-  const webView = rawSourceLabel?.toLowerCase() === 'msedgewebview2';
+  const webView = isWallPlayer(rawSourceLabel);
+  const savedItems = useWatchStore((s) => s.saved);
   const watchTitle = (value: string | null | undefined) => value?.trim().replace(/ - YouTube$/i, '').trim();
   const sessionTitle = watchTitle(info?.title);
   // The wall's own video is the web view by name, or any session whose title is what Watch plays
   // (or last stopped) under an id that is not a known player: the web view's id changes by build.
   const ownVideo = webView || (source !== null && !isKnownPlayer(source));
   const watchMatch = !!sessionTitle && ownVideo && [watchPlaying, watchStopped].some((item) => watchTitle(item?.label) === sessionTitle);
-  const sourceLabel = watchMatch ? 'Watch' : webView ? 'an app on this PC' : rawSourceLabel;
+  const sourceLabel = watchMatch ? 'Watch' : shownSource(rawSourceLabel);
   // The horizon's moon keeps 40 px clear of the player (it moves to another of its places).
   const [box, setBox] = useState<HTMLDivElement | null>(null);
   useSkyKeepClear('listen-player', box);
@@ -103,12 +106,16 @@ export function Player() {
         ? { ...lastPlayed.last, art: lastPlayed.art }
         : null
     : null;
+  // What the record says, not a live session: the last thing played was the wall's own player (any case of its process name).
+  // Whether the wall still knows the item decides if Play starts it (`playLastOwn`) or the line says to pick it in Watch.
+  const fromWall = !!idle && !watchMatch && !info?.title && !!lastPlayed.last && isWallPlayer(lastPlayed.last.source);
+  const ownKnown = fromWall && canPlayLastOwn(lastPlayed.own, savedItems);
 
   // The wall's own music (a pick from the YouTube library) is drawn from the stores, not from Windows: while it plays when
   // Windows names it (or offers no playing session), and, stopped or ended, when nothing else was played since. Spotify or
   // another app playing at the same time keeps today's rule (the Windows session shows).
   const music = useMusicView();
-  const lastOwn = !lastPlayed.last || lastPlayed.last.source.toLowerCase() === 'msedgewebview2' || [music?.entry.title, music?.title].some((t) => !!t && watchTitle(lastPlayed.last?.title) === watchTitle(t));
+  const lastOwn = !lastPlayed.last || isWallPlayer(lastPlayed.last.source) || [music?.entry.title, music?.title].some((t) => !!t && watchTitle(lastPlayed.last?.title) === watchTitle(t));
   const ownMusic = music !== null && (music.state === 'playing' || music.state === 'paused' ? quiet || watchMatch : quiet && lastOwn);
   if (ownMusic && music) return <MusicPlayer music={music} setBox={setBox} />;
 
@@ -130,7 +137,16 @@ export function Player() {
   ) : null;
 
   // The idle row's own words beside the buttons: Play again, or why play cannot start here.
-  const again = watchMatch ? (
+  const again = fromWall ? (
+    ownKnown ? (
+      <button type="button" className="u-again" onClick={() => playLastOwn(lastPlayed.own)}>
+        <IconPlayerPlayFilled size={22} aria-hidden="true" />
+        Play again
+      </button>
+    ) : (
+      <div className="u-again-off">{PICK_IN_WATCH}</div>
+    )
+  ) : watchMatch ? (
     <button type="button" className="u-again" onClick={() => useWatchStore.getState().setTab('watch')}>
       Back to Watch
     </button>
@@ -141,7 +157,7 @@ export function Player() {
         Play again
       </button>
     ) : (
-      <div className="u-again-off">{idle.source ? `Open ${idle.source} to play again` : 'Open the player to play again'}</div>
+      <div className="u-again-off">{idle.source ? `Open ${shownSource(idle.source)} to play again` : 'Open the player to play again'}</div>
     )
   ) : quiet ? (
     <div className="u-again-off">Play picks up where you stopped</div>
@@ -156,8 +172,8 @@ export function Player() {
         type="button"
         className="u-rd big"
         aria-label={playing ? 'Pause' : 'Play'}
-        disabled={quiet && !(idle && hasSession)}
-        onClick={() => command('media_play_pause')}
+        disabled={fromWall ? !ownKnown : quiet && !(idle && hasSession)}
+        onClick={() => (fromWall ? playLastOwn(lastPlayed.own) : command('media_play_pause'))}
       >
         {playing ? <IconPlayerPauseFilled size={40} aria-hidden="true" /> : <IconPlayerPlayFilled size={40} aria-hidden="true" />}
       </button>
@@ -191,7 +207,7 @@ export function Player() {
             <VideoCorner />
           </div>
           <div className="u-meta">
-            <span className="u-k">{watchMatch ? 'Last played in Watch' : idle.source ? `Last played on ${idle.source}` : 'Last played'}</span>
+            <span className="u-k">{watchMatch ? 'Last played in Watch' : fromWall ? ON_THE_WALL : idle.source ? `Last played on ${shownSource(idle.source)}` : 'Last played'}</span>
             <div className="u-np u-was u-ell">{idle.title}</div>
             <div className="u-artist u-ell">{idle.artist}</div>
             {transport}

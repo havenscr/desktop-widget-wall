@@ -12,6 +12,7 @@ import { markFailed } from '../../unwind/ytmusic/queue';
 import { SAVED_KEY } from '../../unwind/watch/saved';
 import { endSleepNow, startSleepAt } from '../../unwind/watch/sleep';
 import { useWatchStore, VOLUME_KEY } from '../../unwind/watch/store';
+import { resetLastPlayed } from '../../unwind/lastPlayed';
 import { underClock } from '../../unwind/UnderClock';
 import { ctlTiming } from '../../unwind/watch/Watch';
 import { usePlaceStore } from '../../state/places';
@@ -31,6 +32,9 @@ import { knob } from './long';
  *                             title and a long channel; nothing; or a report for another video id,
  *                             which must be ignored (default: nothing)
  *   ?wlook=feather|sky|sun|drivein|holo   one look for everything
+ *   ?wlastown=known|unknown   after a restart: the last thing played was the wall's own player (its process name
+ *                             is the stored source); `known` also remembers the first saved item, `unknown` does not.
+ *                             Use with `media=none`, `wtab=listen`.
  *   ?wplay=<n>                play saved item n (0 is the first)
  *   ?wsheet=one|kind          open the settings sheet (`kind`: a look per kind)
  *   ?wtune=sky.size=80,sky.soft=0,sun.up=-100   settings of a look (look.key=value, a switch as 0 or 1)
@@ -351,6 +355,11 @@ export function registerWatchMocks(): void {
   // After the review place is applied (the horizon mounts first), so leaving Work does not stop it.
   setTimeout(() => {
     if (knob('wlast') === 'one') useWatchStore.setState({ lastStopped: useWatchStore.getState().saved[0] ?? null, playing: null });
+    const lastOwn = knob('wlastown');
+    if (lastOwn === 'known' || lastOwn === 'unknown') {
+      const first = useWatchStore.getState().saved[0];
+      resetLastPlayed({ title: first?.label ?? 'Night drive mix', artist: '', source: 'msedgewebview2' }, lastOwn === 'known' && first ? { kind: first.kind, id: first.id, label: first.label, from: 'watch' } : null);
+    }
     if (knob('wtab') !== 'listen') useWatchStore.getState().setTab('watch');
     if (ownState) runOwn(ownState);
     const n = Number(knob('wplay'));
