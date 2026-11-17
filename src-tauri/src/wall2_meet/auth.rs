@@ -8,7 +8,6 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 use tauri_plugin_opener::OpenerExt;
 
-pub const SCOPE: &str = "offline_access https://graph.microsoft.com/Calendars.Read";
 const CALLBACK_PATH: &str = "/auth-callback.html";
 const WAIT: Duration = Duration::from_secs(300);
 
@@ -33,13 +32,13 @@ fn random_bytes(n: usize) -> Option<Vec<u8>> {
     if unsafe { BCryptGenRandom(BCRYPT_ALG_HANDLE::default(), &mut bytes, BCRYPT_USE_SYSTEM_PREFERRED_RNG) }.is_ok() { Some(bytes) } else { None }
 }
 
-pub fn authorize_url(tenant: &str, client_id: &str, redirect_uri: &str, challenge: &str, state: &str) -> String {
+pub fn authorize_url(tenant: &str, client_id: &str, redirect_uri: &str, challenge: &str, state: &str, scope: &str) -> String {
     use urlencoding::encode;
     format!(
         "https://login.microsoftonline.com/{tenant}/oauth2/v2.0/authorize?client_id={}&response_type=code&redirect_uri={}&response_mode=query&scope={}&code_challenge={}&code_challenge_method=S256&state={}&prompt=select_account",
         encode(client_id),
         encode(redirect_uri),
-        encode(SCOPE),
+        encode(scope),
         encode(challenge),
         encode(state),
     )
@@ -81,10 +80,12 @@ pub struct Granted {
     pub code: String,
     pub verifier: String,
     pub redirect_uri: String,
+    /// The scope this sign-in asked for; the code is redeemed with the same one.
+    pub scope: &'static str,
 }
 
 /// Open the system browser and wait for the one callback. Blocks up to five minutes.
-pub fn authorize(app: &tauri::AppHandle, account: &Account) -> Result<Granted, &'static str> {
+pub fn authorize(app: &tauri::AppHandle, account: &Account, scope: &'static str) -> Result<Granted, &'static str> {
     if SIGNING_IN.swap(true, Ordering::SeqCst) {
         return Err("busy");
     }
@@ -98,11 +99,11 @@ pub fn authorize(app: &tauri::AppHandle, account: &Account) -> Result<Granted, &
     let server = tiny_http::Server::http("127.0.0.1:0").map_err(|_| "failed")?;
     let port = server.server_addr().to_ip().ok_or("failed")?.port();
     let redirect_uri = format!("http://localhost:{port}{CALLBACK_PATH}");
-    let url = authorize_url(&account.tenant, &account.client_id, &redirect_uri, &challenge, &state);
+    let url = authorize_url(&account.tenant, &account.client_id, &redirect_uri, &challenge, &state, scope);
     app.opener().open_url(url, None::<&str>).map_err(|_| "failed")?;
 
     let code = wait_for_callback(&server, &state, WAIT)?;
-    Ok(Granted { code, verifier, redirect_uri })
+    Ok(Granted { code, verifier, redirect_uri, scope })
 }
 
 /// Serve the listener until the one valid callback arrives. Other paths get 404 and a callback
@@ -150,7 +151,8 @@ fn wait_for_callback(server: &tiny_http::Server, state: &str, wait: Duration) ->
 
 #[derive(Debug, PartialEq)]
 pub enum TokenReply {
-    Ok { access: String, expires_in: u64, refresh: Option<String> },
+    /// `scope` is what the reply says was granted (the identity platform's `scope` field), capped.
+    Ok { access: String, expires_in: u64, refresh: Option<String>, scope: Option<String> },
     /// The grant is dead: the user has to sign in again.
     Rejected(String),
     /// Network trouble, throttling or a server error: try again later, keep the token.
@@ -187,6 +189,7 @@ pub fn classify_token(status: u16, body: &[u8]) -> TokenReply {
             access: access.to_string(),
             expires_in: j.get("expires_in").and_then(Value::as_u64).unwrap_or(3600),
             refresh: j.get("refresh_token").and_then(Value::as_str).filter(|s| !s.is_empty()).map(str::to_string),
+            scope: j.get("scope").and_then(Value::as_str).filter(|s| !s.is_empty()).map(|s| s.chars().take(1024).collect()),
         };
     }
     if status == 429 || status >= 500 {
@@ -277,7 +280,7 @@ mod tests {
     fn authorize_url_has_every_parameter() {
         let id = "00000000-0000-0000-0000-000000000000";
         let redirect = "http://localhost:50123/auth-callback.html";
-        let raw = authorize_url("common", id, redirect, "chal", "st");
+        let raw = authorize_url("common", id, redirect, "chal", "st", super::super::colours::SCOPE_COLOURS);
         assert!(raw.starts_with("https://login.microsoftonline.com/common/oauth2/v2.0/authorize?"));
         let url = tauri::Url::parse(&raw).unwrap();
         let get = |k: &str| url.query_pairs().find(|(n, _)| n == k).map(|(_, v)| v.into_owned());
@@ -285,7 +288,9 @@ mod tests {
         assert_eq!(get("response_type").as_deref(), Some("code"));
         assert_eq!(get("redirect_uri").as_deref(), Some(redirect));
         assert_eq!(get("response_mode").as_deref(), Some("query"));
-        assert_eq!(get("scope").as_deref(), Some("offline_access https://graph.microsoft.com/Calendars.Read"));
+        assert_eq!(get("scope").as_deref(), Some("offline_access https://graph.microsoft.com/Calendars.Read https://graph.microsoft.com/MailboxSettings.Read"));
+        let old = authorize_url("common", id, redirect, "chal", "st", super::super::colours::SCOPE_CALENDAR);
+        assert!(old.contains("scope=offline_access%20https%3A%2F%2Fgraph.microsoft.com%2FCalendars.Read&code_challenge="));
         assert_eq!(get("code_challenge").as_deref(), Some("chal"));
         assert_eq!(get("code_challenge_method").as_deref(), Some("S256"));
         assert_eq!(get("state").as_deref(), Some("st"));
@@ -340,7 +345,12 @@ mod tests {
         let ok = br#"{"access_token":"a","expires_in":3599,"refresh_token":"r"}"#;
         assert_eq!(
             classify_token(200, ok),
-            TokenReply::Ok { access: "a".into(), expires_in: 3599, refresh: Some("r".into()) }
+            TokenReply::Ok { access: "a".into(), expires_in: 3599, refresh: Some("r".into()), scope: None }
+        );
+        let scoped = br#"{"access_token":"a","expires_in":10,"scope":"Calendars.Read MailboxSettings.Read"}"#;
+        assert_eq!(
+            classify_token(200, scoped),
+            TokenReply::Ok { access: "a".into(), expires_in: 10, refresh: None, scope: Some("Calendars.Read MailboxSettings.Read".into()) }
         );
         assert_eq!(classify_token(200, b"{}"), TokenReply::Failed("token-200".into()));
         assert_eq!(classify_token(400, br#"{"error":"invalid_grant"}"#), TokenReply::Rejected("token-400".into()));

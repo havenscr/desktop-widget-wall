@@ -1,0 +1,251 @@
+//! Outlook category colours: which permission an account has, the master category list, and
+//! the colour an event takes. Pure functions only (no network, no store), so they can be
+//! tested on their own. Everything from Graph here is untrusted input: names are cleaned and
+//! capped, colours are only ever one of 25 fixed tokens, and a name is never logged.
+
+use super::graph::normalize_title;
+use serde_json::Value;
+
+/// Sign-in without the colours permission: what every account signed in before the colours
+/// existed was granted, and what a tenant that refuses the extra permission falls back to.
+pub const SCOPE_CALENDAR: &str = "offline_access https://graph.microsoft.com/Calendars.Read";
+/// Sign-in with `MailboxSettings.Read`, the least privileged permission for listing the
+/// master categories (Graph v1.0 "List masterCategories", Permissions table). Both scopes
+/// belong to the Graph resource, so one access token serves both reads.
+pub const SCOPE_COLOURS: &str = "offline_access https://graph.microsoft.com/Calendars.Read https://graph.microsoft.com/MailboxSettings.Read";
+
+/// The most categories kept from one reply. Outlook maps at most 25 colours; names can repeat
+/// a colour, so this leaves room without letting a reply grow the cache.
+pub const MAX_CATEGORIES: usize = 100;
+/// Longest name kept, in characters, for matching and for the hover card.
+pub const MAX_NAME_CHARS: usize = 64;
+/// Most category names read from one event.
+pub const MAX_EVENT_CATEGORIES: usize = 10;
+/// A good list is read again after this long (and after every sign-in).
+pub const REFRESH_SECS: u64 = 30 * 60;
+/// After a failed read the next try waits this long; the last good list is kept meanwhile.
+pub const RETRY_SECS: u64 = 5 * 60;
+
+// Section: the permission
+
+/// True when a granted-scope string names `MailboxSettings.Read`. Names come bare
+/// (`MailboxSettings.Read`) or as the full resource URL, in any case, sometimes percent
+/// encoded, so each word is compared by its last path segment.
+pub fn grants_colours(scope: &str) -> bool {
+    scope.split_whitespace().any(|word| {
+        let lower = word.to_ascii_lowercase().replace("%2f", "/");
+        lower.rsplit('/').next() == Some("mailboxsettings.read")
+    })
+}
+
+/// The scope a refresh asks for, from the scope recorded at the account's last sign-in.
+///
+/// Rule: a refresh must ask for no more than was granted at sign-in. The identity platform
+/// documents that the `scope` of a refresh request "must be equivalent to or a subset of the
+/// scopes requested in the original authorization_code request leg" and answers a scope the
+/// client was never consented to with `consent_required` or `invalid_grant`
+/// (learn.microsoft.com, "Microsoft identity platform and OAuth 2.0 authorization code flow",
+/// Refresh the access token and Error codes for token endpoint errors). An account signed in
+/// before this change, or with no record, therefore keeps refreshing with the calendar scope.
+pub fn refresh_scope(record: Option<&str>) -> &'static str {
+    if record.is_some_and(grants_colours) {
+        SCOPE_COLOURS
+    } else {
+        SCOPE_CALENDAR
+    }
+}
+
+/// What to record after a sign-in: the colours scope only when it was asked for and the token
+/// reply did not say otherwise. A reply without a `scope` field is for the scopes requested
+/// (token endpoint reference, "scope ... if omitted, the token is for the scopes requested on
+/// the initial leg").
+pub fn recorded_scope(requested: &str, reply: Option<&str>) -> &'static str {
+    let granted = match reply {
+        Some(r) => grants_colours(r),
+        None => grants_colours(requested),
+    };
+    if granted && grants_colours(requested) {
+        SCOPE_COLOURS
+    } else {
+        SCOPE_CALENDAR
+    }
+}
+
+// Section: colours
+
+/// Outlook's 25 preset constants, sent to the web view as these fixed tokens only.
+/// Source for the preset to colour names: Microsoft Graph v1.0 "outlookCategory resource type",
+/// table "Pre-set constant / Color mapped to in Outlook" (Preset0 Red, Preset1 Orange,
+/// Preset2 Brown, Preset3 Yellow, Preset4 Green, Preset5 Teal, Preset6 Olive, Preset7 Blue,
+/// Preset8 Purple, Preset9 Cranberry, Preset10 Steel, Preset11 DarkSteel, Preset12 Gray,
+/// Preset13 DarkGray, Preset14 Black, Preset15 DarkRed, Preset16 DarkOrange,
+/// Preset17 DarkBrown, Preset18 DarkYellow, Preset19 DarkGreen, Preset20 DarkTeal,
+/// Preset21 DarkOlive, Preset22 DarkBlue, Preset23 DarkPurple, Preset24 DarkCranberry).
+/// The wall holds the shade for each token.
+pub const TOKENS: [&str; 25] = [
+    "preset0", "preset1", "preset2", "preset3", "preset4", "preset5", "preset6", "preset7", "preset8", "preset9", "preset10", "preset11", "preset12",
+    "preset13", "preset14", "preset15", "preset16", "preset17", "preset18", "preset19", "preset20", "preset21", "preset22", "preset23", "preset24",
+];
+
+/// The token for a Graph `color` value; `none`, an unknown value or a wrong type give nothing.
+pub fn token_for(color: &str) -> Option<&'static str> {
+    let lower = color.to_ascii_lowercase();
+    TOKENS.iter().copied().find(|t| *t == lower)
+}
+
+/// A name as kept for matching and display: invisible and direction characters removed,
+/// whitespace collapsed, capped in length.
+pub fn clean_name(raw: &str) -> String {
+    let t: String = normalize_title(raw).chars().take(MAX_NAME_CHARS).collect();
+    t.trim().to_string()
+}
+
+fn match_key(name: &str) -> String {
+    name.to_lowercase()
+}
+
+/// One account's colours: the match key of a category name with its token, first win on repeats.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct Palette {
+    pub entries: Vec<(String, &'static str)>,
+    /// Epoch seconds before which no new read is made.
+    pub next_try: u64,
+}
+
+impl Palette {
+    pub fn token_of(&self, name: &str) -> Option<&'static str> {
+        let key = match_key(&clean_name(name));
+        self.entries.iter().find(|(k, _)| *k == key).map(|(_, t)| *t)
+    }
+}
+
+/// The entries of a master category reply. None when the reply is not the expected shape.
+/// Categories with no colour (`none`) or an unknown one are left out; there are at most
+/// `MAX_CATEGORIES`, and a duplicate name keeps its first colour.
+pub fn parse_master(body: &Value) -> Option<Vec<(String, &'static str)>> {
+    let rows = body.get("value")?.as_array()?;
+    let mut out: Vec<(String, &'static str)> = Vec::new();
+    for row in rows.iter().take(MAX_CATEGORIES) {
+        let Some(name) = row.get("displayName").and_then(Value::as_str) else { continue };
+        let key = match_key(&clean_name(name));
+        if key.is_empty() || out.iter().any(|(k, _)| *k == key) {
+            continue;
+        }
+        let Some(token) = row.get("color").and_then(Value::as_str).and_then(token_for) else { continue };
+        out.push((key, token));
+    }
+    Some(out)
+}
+
+/// The category names on one event, cleaned, empty ones dropped, at most `MAX_EVENT_CATEGORIES`.
+pub fn event_categories(event: &Value) -> Vec<String> {
+    event
+        .get("categories")
+        .and_then(Value::as_array)
+        .map(|rows| rows.iter().filter_map(Value::as_str).map(clean_name).filter(|n| !n.is_empty()).take(MAX_EVENT_CATEGORIES).collect())
+        .unwrap_or_default()
+}
+
+/// The colour an event takes and the category it came from.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Pick {
+    pub name: String,
+    pub tone: &'static str,
+}
+
+/// The first category on the event that has a known colour.
+pub fn pick(categories: &[String], palette: &Palette) -> Option<Pick> {
+    categories.iter().find_map(|name| palette.token_of(name).map(|tone| Pick { name: name.clone(), tone }))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn the_permission_is_read_from_the_granted_scope() {
+        assert!(grants_colours("Calendars.Read MailboxSettings.Read openid profile"));
+        assert!(grants_colours("https://graph.microsoft.com/Calendars.Read https://graph.microsoft.com/MailboxSettings.Read"));
+        assert!(grants_colours("https%3A%2F%2Fgraph.microsoft.com%2Fmailboxsettings.read"));
+        assert!(!grants_colours("offline_access https://graph.microsoft.com/Calendars.Read"));
+        assert!(!grants_colours("MailboxSettings.ReadWrite"));
+        assert!(!grants_colours(""));
+        assert!(!grants_colours("https://example.com/not-MailboxSettings.Read.Extra"));
+    }
+
+    #[test]
+    fn an_account_with_no_record_refreshes_with_the_old_scope() {
+        assert_eq!(refresh_scope(None), SCOPE_CALENDAR);
+        assert_eq!(refresh_scope(Some("")), SCOPE_CALENDAR);
+        assert_eq!(refresh_scope(Some(SCOPE_CALENDAR)), SCOPE_CALENDAR);
+        assert_eq!(refresh_scope(Some(SCOPE_COLOURS)), SCOPE_COLOURS);
+        assert!(!SCOPE_CALENDAR.contains("MailboxSettings"));
+        assert!(SCOPE_COLOURS.starts_with(SCOPE_CALENDAR));
+    }
+
+    #[test]
+    fn a_sign_in_records_only_what_was_granted() {
+        assert_eq!(recorded_scope(SCOPE_COLOURS, None), SCOPE_COLOURS);
+        assert_eq!(recorded_scope(SCOPE_COLOURS, Some("Calendars.Read MailboxSettings.Read")), SCOPE_COLOURS);
+        assert_eq!(recorded_scope(SCOPE_COLOURS, Some("Calendars.Read")), SCOPE_CALENDAR);
+        assert_eq!(recorded_scope(SCOPE_CALENDAR, None), SCOPE_CALENDAR);
+        // A reply naming the permission does not widen a request that never asked for it.
+        assert_eq!(recorded_scope(SCOPE_CALENDAR, Some("Calendars.Read MailboxSettings.Read")), SCOPE_CALENDAR);
+    }
+
+    #[test]
+    fn every_preset_has_a_token_and_nothing_else_does() {
+        for n in 0..25 {
+            assert_eq!(token_for(&format!("preset{n}")), Some(TOKENS[n]));
+            assert_eq!(token_for(&format!("Preset{n}")), Some(TOKENS[n]));
+        }
+        for bad in ["none", "None", "", "preset25", "preset-1", "preset01", "red", "#ff0000", "preset7 ", "rgb(1,2,3)"] {
+            assert_eq!(token_for(bad), None, "{bad}");
+        }
+    }
+
+    #[test]
+    fn the_master_list_is_cleaned_capped_and_keeps_known_colours_only() {
+        let body = json!({"value": [
+            {"displayName": "Alpha", "color": "preset7"},
+            {"displayName": "Beta\u{202E}x", "color": "preset0"},
+            {"displayName": "Plain", "color": "none"},
+            {"displayName": "Odd", "color": "chartreuse"},
+            {"displayName": "alpha", "color": "preset1"},
+            {"displayName": 7, "color": "preset2"},
+            {"color": "preset3"},
+            {"displayName": "   ", "color": "preset4"}
+        ]});
+        let list = parse_master(&body).unwrap();
+        assert_eq!(list, vec![("alpha".to_string(), "preset7"), ("betax".to_string(), "preset0")]);
+        assert_eq!(parse_master(&json!({"nope": 1})), None);
+        assert_eq!(parse_master(&json!({"value": "x"})), None);
+        let many: Vec<Value> = (0..300).map(|n| json!({"displayName": format!("c{n}"), "color": "preset5"})).collect();
+        assert_eq!(parse_master(&json!({"value": many})).unwrap().len(), MAX_CATEGORIES);
+        let long = "n".repeat(500);
+        let name = clean_name(&long);
+        assert_eq!(name.chars().count(), MAX_NAME_CHARS);
+        let p = Palette { entries: parse_master(&json!({"value": [{"displayName": long, "color": "preset9"}]})).unwrap(), next_try: 0 };
+        assert_eq!(p.token_of(&long), Some("preset9"));
+    }
+
+    #[test]
+    fn an_event_takes_its_first_category_that_has_a_colour() {
+        let palette = Palette { entries: parse_master(&json!({"value": [
+            {"displayName": "Blue team", "color": "preset7"},
+            {"displayName": "Reds", "color": "preset0"},
+            {"displayName": "Blank", "color": "none"}
+        ]})).unwrap(), next_try: 0 };
+        let ev = json!({"categories": ["Blank", "unknown", "reds", "Blue team"]});
+        let cats = event_categories(&ev);
+        assert_eq!(cats, ["Blank", "unknown", "reds", "Blue team"]);
+        assert_eq!(pick(&cats, &palette), Some(Pick { name: "reds".into(), tone: "preset0" }));
+        assert_eq!(pick(&event_categories(&json!({"categories": ["Blank", "unknown"]})), &palette), None);
+        assert_eq!(pick(&event_categories(&json!({})), &palette), None);
+        assert_eq!(pick(&event_categories(&json!({"categories": "x"})), &palette), None);
+        let long: Vec<Value> = (0..40).map(|n| json!(format!("c{n}"))).collect();
+        assert_eq!(event_categories(&json!({"categories": long})).len(), MAX_EVENT_CATEGORIES);
+        assert_eq!(event_categories(&json!({"categories": ["\u{200B}", 5, "  A\u{7} b "]})), ["A b"]);
+    }
+}

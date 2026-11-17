@@ -7,6 +7,7 @@
 //! failure maps to a fixed string or a reason code built from numbers and a checked name.
 
 mod auth;
+mod colours;
 pub(crate) mod checklist;
 mod desktop;
 mod graph;
@@ -169,6 +170,10 @@ fn raw_of(resp: ureq::Response, success_body: bool) -> graph::Raw {
 }
 
 impl graph::GraphClient for HttpGraph {
+    fn master_categories(&self, access: &str, ctx: &graph::Ctx) -> (graph::GraphReply, Option<graph::Diag>) {
+        self.calendar_request(access, graph::MASTER_CATEGORIES_URL.to_string(), ctx)
+    }
+
     fn calendar_view(&self, access: &str, start: &str, end: &str) -> graph::GraphReply {
         let ctx = graph::Ctx::new(graph::Kind::Next, std::sync::Arc::new(graph::RealClock), graph::BUDGET);
         self.calendar_view_diag(access, start, end, &ctx).0
@@ -364,7 +369,14 @@ pub async fn wall2_meet_sign_in(window: tauri::WebviewWindow, id: String) -> Res
         .ok_or_else(|| NOT_CONFIGURED.to_string())?;
     let app = window.app_handle().clone();
     tauri::async_runtime::spawn_blocking(move || -> Result<(), String> {
-        let granted = auth::authorize(&app, &account).map_err(str::to_string)?;
+        // Ask for the colours permission too. A tenant that refuses it answers the sign-in with an
+        // error (not a plain cancel); then the same sign-in is offered once more for the
+        // calendar alone, so a blocked extra permission never costs the calendar.
+        let granted = match auth::authorize(&app, &account, colours::SCOPE_COLOURS) {
+            Err("failed") => auth::authorize(&app, &account, colours::SCOPE_CALENDAR),
+            other => other,
+        }
+        .map_err(str::to_string)?;
         let result = service::complete_sign_in(&account, &granted, &secrets(), &auth::HttpTokens, core(), now_secs());
         let lines = std::mem::take(&mut lock_core().log_lines);
         meetlog::write_all(lines);

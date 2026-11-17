@@ -27,6 +27,10 @@ pub struct Candidate {
     pub entry: Option<String>,
     /// Names and a cleaned invite text, only from the next-meetings read (see `shape_details`).
     pub details: Option<Details>,
+    /// Category names on the event, cleaned and capped. Never logged.
+    pub categories: Vec<String>,
+    /// The colour the event takes, set by the read once the account's colours are known.
+    pub category: Option<super::colours::Pick>,
 }
 
 impl std::fmt::Debug for Candidate {
@@ -41,6 +45,7 @@ impl std::fmt::Debug for Candidate {
             .field("web", &self.web)
             .field("entry", &self.entry.as_ref().map(|_| "<redacted>"))
             .field("details", &self.details.as_ref().map(|_| "<redacted>"))
+            .field("category", &self.category.as_ref().map(|_| "<redacted>"))
             .finish()
     }
 }
@@ -346,10 +351,10 @@ pub fn run_attempts(ctx: &Ctx, send: &mut dyn FnMut(u32, Duration) -> Raw) -> (G
     }
 }
 
-pub const SELECT: &str = "id,subject,start,end,isAllDay,isCancelled,responseStatus,onlineMeeting,onlineMeetingUrl,iCalUId,webLink";
+pub const SELECT: &str = "id,subject,start,end,isAllDay,isCancelled,responseStatus,onlineMeeting,onlineMeetingUrl,iCalUId,webLink,categories";
 /// The next-meetings read also asks for who is in the meeting and the first words of the invite
 /// (`shape_details` keeps names and cleaned text only). The day read keeps the plain `SELECT`.
-pub const SELECT_DETAILS: &str = "id,subject,start,end,isAllDay,isCancelled,responseStatus,onlineMeeting,onlineMeetingUrl,iCalUId,webLink,organizer,attendees,bodyPreview";
+pub const SELECT_DETAILS: &str = "id,subject,start,end,isAllDay,isCancelled,responseStatus,onlineMeeting,onlineMeetingUrl,iCalUId,webLink,categories,organizer,attendees,bodyPreview";
 pub const TOP: u32 = 50;
 pub const CALENDAR_VIEW_PATH: &str = "https://graph.microsoft.com/v1.0/me/calendarView";
 pub const PREFER: &str = "outlook.timezone=\"UTC\"";
@@ -383,7 +388,16 @@ fn calendar_view_url_inner(start: &str, end: &str, expand: bool, select: &str) -
     )
 }
 
+/// The master category list (names and preset colours), read-only. Needs `MailboxSettings.Read`.
+pub const MASTER_CATEGORIES_URL: &str = "https://graph.microsoft.com/v1.0/me/outlook/masterCategories";
+
 pub trait GraphClient {
+    /// The account's master category list. The default has none, so a client that does not
+    /// offer it (a test fake) simply gives no colours.
+    fn master_categories(&self, _access: &str, _ctx: &Ctx) -> (GraphReply, Option<Diag>) {
+        (GraphReply::Failed("graph-400".to_string()), None)
+    }
+
     fn calendar_view(&self, access: &str, start: &str, end: &str) -> GraphReply;
 
     /// The same read with the budget and the failure details. The default ignores both;
@@ -519,7 +533,7 @@ pub fn event_link(id: &str, web_link: Option<&str>) -> Option<String> {
 // Section: shaping
 
 /// Titles retain joiners used by composed glyphs while removing other hidden format characters.
-fn normalize_title(raw: &str) -> String {
+pub(super) fn normalize_title(raw: &str) -> String {
     let spaced: String = raw.chars().filter_map(|c| if c.is_control() { Some(' ') } else if c == '\u{200D}' || !is_invisible(c) { Some(c) } else { None }).collect();
     spaced.split_whitespace().collect::<Vec<_>>().join(" ")
 }
@@ -1072,6 +1086,8 @@ pub fn shape_events(body: &Value, account_id: &str) -> Vec<Candidate> {
                     .and_then(|row| str_at(row, &["value"]))
                     .and_then(entry_hex),
                 details: shape_details(e),
+                categories: super::colours::event_categories(e),
+                category: None,
             })
         })
         .collect()
@@ -1215,6 +1231,8 @@ mod tests {
             web: None,
             entry: None,
             details: None,
+            categories: Vec::new(),
+            category: None,
         };
         let a: Vec<_> = (0..12).map(|n| one(n, "a")).collect();
         let b: Vec<_> = (0..12).map(|n| one(n, "b")).collect();
@@ -1438,7 +1456,7 @@ mod tests {
         let url = calendar_view_url("2026-11-12T17:00:00Z", "2026-11-13T17:00:00Z");
         assert_eq!(
             url,
-            "https://graph.microsoft.com/v1.0/me/calendarView?startDateTime=2026-11-12T17%3A00%3A00Z&endDateTime=2026-11-13T17%3A00%3A00Z&$select=id,subject,start,end,isAllDay,isCancelled,responseStatus,onlineMeeting,onlineMeetingUrl,iCalUId,webLink,organizer,attendees,bodyPreview&$orderby=start/dateTime&$top=50&$expand=singleValueExtendedProperties%28%24filter%3Did%20eq%20%27Binary%200x0FFF%27%29"
+            "https://graph.microsoft.com/v1.0/me/calendarView?startDateTime=2026-11-12T17%3A00%3A00Z&endDateTime=2026-11-13T17%3A00%3A00Z&$select=id,subject,start,end,isAllDay,isCancelled,responseStatus,onlineMeeting,onlineMeetingUrl,iCalUId,webLink,categories,organizer,attendees,bodyPreview&$orderby=start/dateTime&$top=50&$expand=singleValueExtendedProperties%28%24filter%3Did%20eq%20%27Binary%200x0FFF%27%29"
         );
         let names: Vec<&str> = url.split_once('?').unwrap().1.split('&').map(|p| p.split('=').next().unwrap()).collect();
         assert_eq!(names, ["startDateTime", "endDateTime", "$select", "$orderby", "$top", "$expand"]);
@@ -1449,6 +1467,23 @@ mod tests {
         assert!(!day.contains("attendees") && !day.contains("bodyPreview") && !day.contains("organizer"));
         assert_eq!(calendar_view_url_day_without_expand("2026-11-12T17:00:00Z", "2026-11-13T17:00:00Z"), day.split("&$expand=").next().unwrap());
         assert_eq!(PREFER, "outlook.timezone=\"UTC\"");
+    }
+
+    #[test]
+    fn the_request_asks_for_categories_and_the_master_list_is_one_fixed_url() {
+        for select in [SELECT, SELECT_DETAILS] {
+            assert!(select.split(',').any(|f| f == "categories"));
+        }
+        assert_eq!(MASTER_CATEGORIES_URL, "https://graph.microsoft.com/v1.0/me/outlook/masterCategories");
+        let body = json!({"value": [{
+            "id": "x", "subject": "S", "isAllDay": false, "isCancelled": false,
+            "start": {"dateTime": "2026-11-12T17:00:00.0000000"}, "end": {"dateTime": "2026-11-12T18:00:00.0000000"},
+            "categories": ["Blue team", "\u{202E}Other"]
+        }]});
+        let out = shape_events(&body, "work");
+        assert_eq!(out[0].categories, ["Blue team", "Other"]);
+        assert_eq!(out[0].category, None);
+        assert!(!format!("{:?}", out[0]).contains("Blue team"));
     }
 
     #[test]
@@ -1526,6 +1561,8 @@ mod tests {
             web: None,
             entry: None,
             details: None,
+            categories: Vec::new(),
+            category: None,
         }
     }
 
