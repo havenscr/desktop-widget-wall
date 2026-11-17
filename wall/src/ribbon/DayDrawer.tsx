@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, type ReactNode } from 'react';
+import { useEffect, useLayoutEffect, useRef, type CSSProperties, type ReactNode } from 'react';
 import { IconChevronDown } from '@tabler/icons-react';
 import { invoke } from '../bridge/tauri';
 import { cards, elapsedText, helpersWork, helpersWorkText, laneWaits, prText, type Lane, type OmniSummary } from '../agents/model';
@@ -8,6 +8,7 @@ import { tip } from '../ui/HoverTip';
 import { daySegments, laneStateWord } from './AgentRow';
 import { isoDay, useDaysStore } from './days';
 import { useBehindDrawer } from './DrawerScrim';
+import { categoryLine, toneVars } from './tones';
 import { allDayBarText, hm, hourText, shortTime, spanText, wallHour, type Chip } from './model';
 
 /** Pixels per hour in the agenda. */
@@ -197,14 +198,16 @@ export function DayDrawer({
                 const height = Math.max(22, (Math.min(hi, wallHour(c.end, now)) - Math.max(lo, wallHour(c.start, now))) * P - 3);
                 const account = c.accountId ? (labels[c.accountId] ?? null) : null;
                 const short = height < 32;
+                const toned = c.category && !c.live ? c.category : null;
                 return (
                   <div
                     key={c.key}
                     className={`dd-ev ${c.state}${c.live ? ' live' : ''}${c.canOpen ? ' open' : ''}${short ? ' short' : ''}`}
-                    style={{ top, height, left: `calc(${(lane / n) * 100}% + 2px)`, width: `calc(${100 / n}% - 6px)` }}
+                    data-tone={toned?.tone}
+                    style={{ top, height, left: `calc(${(lane / n) * 100}% + 2px)`, width: `calc(${100 / n}% - 6px)`, ...(toned ? toneVars(toned.tone, c.state, 'drawer') : {}) } as CSSProperties}
                     role={c.canOpen ? 'button' : undefined}
                     tabIndex={c.canOpen ? 0 : undefined}
-                    aria-label={`${c.title}, ${spanText(c.start, c.end)}${c.canOpen ? '. Opens it in Outlook' : ''}`}
+                    aria-label={`${c.title}, ${spanText(c.start, c.end)}${c.category ? `. ${categoryLine(c.category.name)}` : ''}${c.canOpen ? '. Opens it in Outlook' : ''}`}
                     onClick={c.canOpen ? () => invoke('wall2_open_event', { key: c.key }).catch(() => undefined) : undefined}
                     onKeyDown={
                       c.canOpen
@@ -224,6 +227,7 @@ export function DayDrawer({
                           {spanText(c.start, c.end)}
                           {account ? `, ${account}` : ''}
                         </span>
+                        {c.category && <span className="tip-s">{categoryLine(c.category.name)}</span>}
                         {c.canOpen && <span className="tip-k">Click to open it in Outlook</span>}
                       </>
                     ))}

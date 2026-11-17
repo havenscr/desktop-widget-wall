@@ -154,6 +154,18 @@
   border-color: rgba(255, 61, 154, 0.6);
   color: #ffd3e8;
 }
+/* An event with an Outlook category takes its colour: fill, edge and text come from the tone
+   (ribbon/tones.ts sets --tone-* per state, so the text clears 4.5 to 1 on its own fill). A past
+   chip is quieter by its own colours, not faded, which would drop the text under the floor. A
+   livestream carries no data-tone and keeps its pink. */
+.rib .ev[data-tone] {
+  background: var(--tone-fill);
+  border-color: var(--tone-edge);
+  color: var(--tone-text);
+}
+.rib .ev.past[data-tone] {
+  opacity: 1;
+}
 /* Task due marks, row 2: a cyan diamond on the due time, then a short title and the time
    (the concept's publish marker, `.pub`). */
 .rib .due {
@@ -766,6 +778,21 @@ button.dd-k.link:hover {
 }
 .dd-ev.past {
   opacity: 0.55;
+}
+.dd-ev[data-tone] {
+  background: var(--tone-fill);
+  border-color: var(--tone-edge);
+  color: var(--tone-text);
+}
+.dd-ev.past[data-tone] {
+  opacity: 1;
+}
+.dd-ev[data-tone] .dd-t {
+  opacity: 1;
+}
+/* The Join button keeps its cyan text on a dark wash, so it clears the floor on any tone. */
+.dd-ev[data-tone] .dd-join {
+  background: rgba(8, 6, 24, 0.7);
 }
 .dd-ev.live {
   background: rgba(255, 61, 154, 0.2);

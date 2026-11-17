@@ -1,6 +1,6 @@
 import { IconBrandSpotify, IconBrandYoutube, IconCalendar, IconSettings, IconWorld, IconWorldOff } from '@tabler/icons-react';
 import { useCallback, useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
-import { accountWords, clockText, needsSignIn, reasonLine, type MeetAccount } from '../meet/model';
+import { accountWords, clockText, COLOURS_HINT, needsSignIn, reasonLine, type MeetAccount } from '../meet/model';
 import { useMeet, type MeetState } from '../meet/useMeet';
 import { spotify, type SpotifyStatus } from '../music/spotify';
 import { PAGE_SWITCH_NAME, PAGE_SWITCH_TIP, usePublicPage } from '../unwind/spotify/model';
@@ -69,9 +69,11 @@ function CalendarRow({ a, m }: { a: MeetAccount; m: MeetState }) {
     );
   }
   const tried = a.state === 'unavailable' ? m.tried[a.id] : undefined;
-  const hover = [reasonLine(a.reason) ?? (a.state === 'unavailable' ? a.reason : null), tried !== undefined ? `Last try ${clockText(tried)}` : null].filter(Boolean).join('\n');
+  // A connected account whose sign-in lacks the colour permission says so quietly; its events stay purple.
+  const noColours = a.state === 'ok' && a.colours === false;
+  const hover = [reasonLine(a.reason) ?? (a.state === 'unavailable' ? a.reason : null), tried !== undefined ? `Last try ${clockText(tried)}` : null, noColours ? COLOURS_HINT : null].filter(Boolean).join('\n');
   const bad = a.state === 'unavailable' || needsSignIn(a.state);
-  const line = accountWords(a.state, a.reason);
+  const line = noColours ? `${accountWords(a.state, a.reason)}, Outlook colours off` : accountWords(a.state, a.reason);
   return (
     <Row icon={icon} name={name} line={line} tone={bad ? 'bad' : 'plain'} hover={hover || undefined}>
       {a.state === 'ok' && <Btn label="Sign out" disabled={busy} onClick={() => m.signOut(a.id)} />}

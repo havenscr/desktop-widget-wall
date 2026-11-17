@@ -309,3 +309,31 @@ it('a failed session that also waits on the owner keeps its place among those ne
   expect(rows[0].querySelector('.dd-pill')!.className).toBe('dd-pill failed');
   expect(rows[0].querySelector('.dd-line')!.textContent).toBe('Waiting 5 min');
 });
+
+it('a Day drawer tile with an Outlook category takes its tone and names it on hover and in its label', async () => {
+  mocks.set('wall2_meet_day', () => ({
+    accounts: [{ id: 'work', label: 'Work', state: 'ok' }],
+    events: [
+      ev('c1', 'Planning', '13:00', '14:00', { category: { name: 'Sample green', tone: 'preset4' } }),
+      ev('c2', 'Lunch', '14:30', '15:30'),
+    ],
+  }));
+  const r = render(
+    <>
+      <Ribbon kind="work" />
+      <HoverTipLayer />
+    </>,
+  );
+  await flush();
+  fireEvent.click(r.container.querySelector('.rib-handle') as HTMLElement);
+  await flush();
+  const tiles = [...r.container.querySelectorAll('.dd-ev')] as HTMLElement[];
+  expect(tiles).toHaveLength(2);
+  expect(tiles[0].getAttribute('data-tone')).toBe('preset4');
+  expect(tiles[0].style.getPropertyValue('--tone-fill')).toMatch(/^rgba\(/);
+  expect(tiles[0].getAttribute('aria-label')).toContain('Category: Sample green');
+  expect(tiles[1].getAttribute('data-tone')).toBeNull();
+  fireEvent.mouseEnter(tiles[0]);
+  await flush(TIP_DELAY_MS);
+  expect(document.querySelector('.hover-tip')!.textContent).toContain('Category: Sample green');
+});

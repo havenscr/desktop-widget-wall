@@ -1,4 +1,4 @@
-import { Fragment, useCallback, useEffect, useState } from 'react';
+import { Fragment, useCallback, useEffect, useState, type CSSProperties } from 'react';
 import { IconBolt, IconCalendar, IconHome } from '@tabler/icons-react';
 import { invoke } from '../bridge/tauri';
 import { useFocusStore } from '../focus/store';
@@ -13,6 +13,7 @@ import { DayDrawer } from './DayDrawer';
 import { DayLip } from './DayLip';
 import { sunTimes } from './sun';
 import { useDayFeed } from './useDayEvents';
+import { categoryLine, toneVars } from './tones';
 import { useDueTaskFeed } from './useDueTasks';
 
 export type RibbonKind = 'work' | 'home';
@@ -74,6 +75,7 @@ function ChipTip({ c, account }: { c: Chip; account: string | null }) {
         {spanText(c.start, c.end)}
         {account ? `, ${account}` : ''}
       </span>
+      {c.category && <span className="tip-s">{categoryLine(c.category.name)}</span>}
       {c.hidden && c.hidden.length > 0 && <span className="tip-t">{c.hidden.length} more at this time, no room to draw them</span>}
       {c.hidden?.slice(0, HIDDEN_NAMED).map((h) => (
         <span key={h.key} className="tip-s">
@@ -309,6 +311,8 @@ export function Ribbon({ kind, now = Date.now }: { kind: RibbonKind; now?: () =>
           const account = c.accountId ? (day.labels[c.accountId] ?? null) : null;
           const box = laneBox(c.lane, c.lanes);
           const cls = `${c.state}${c.live ? ' live' : ''}${c.lanes > 1 ? ` s${Math.min(3, c.lanes)}` : ''}`;
+          // A livestream keeps its pink; every other event with a known category takes its colour.
+          const toned = c.category && !c.live ? c.category : null;
           return (
             <Fragment key={c.key}>
               {c.narrow && c.beside !== null && (
@@ -318,10 +322,11 @@ export function Ribbon({ kind, now = Date.now }: { kind: RibbonKind; now?: () =>
               )}
               <div
                 className={`ev ${cls}${c.canOpen ? ' open' : ''}`}
-                style={{ left: c.x, width: c.width, ...(box ?? {}) }}
+                data-tone={toned?.tone}
+                style={{ left: c.x, width: c.width, ...(toned ? toneVars(toned.tone, c.state, 'ribbon') : {}), ...(box ?? {}) } as CSSProperties}
                 role={c.canOpen ? 'button' : undefined}
                 tabIndex={c.canOpen ? 0 : undefined}
-                aria-label={`${c.title}, ${spanText(c.start, c.end)}${account ? `, ${account}` : ''}${c.canOpen ? '. Opens it in Outlook' : ''}${c.hidden?.length ? `. ${c.hidden.length} more at this time: ${hiddenNames(c.hidden).titles.join(', ')}${hiddenNames(c.hidden).more ? `, and ${hiddenNames(c.hidden).more} more` : ''}` : ''}`}
+                aria-label={`${c.title}, ${spanText(c.start, c.end)}${account ? `, ${account}` : ''}${c.category ? `. ${categoryLine(c.category.name)}` : ''}${c.canOpen ? '. Opens it in Outlook' : ''}${c.hidden?.length ? `. ${c.hidden.length} more at this time: ${hiddenNames(c.hidden).titles.join(', ')}${hiddenNames(c.hidden).more ? `, and ${hiddenNames(c.hidden).more} more` : ''}` : ''}`}
                 onClick={c.canOpen ? () => openEvent(c.key) : undefined}
                 onKeyDown={
                   c.canOpen
