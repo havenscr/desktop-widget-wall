@@ -968,3 +968,78 @@ describe('paging rules of the store', () => {
     expect(document.querySelectorAll('.yt-row').length).toBe(2);
   });
 });
+
+describe('the card heading is a way home, and Open in YouTube', () => {
+  const LONG = 'PLmockPlaylist0001';
+  const longList = (): YtPage<YtPlaylist> => page([{ id: LONG, title: 'Long id mix', count: 3, thumb: THUMB(1) }, playlist(2)]);
+  const heading = () => screen.getByRole('radio', { name: /YouTube Music/ });
+  const card = async (tall = false, opts: Parameters<typeof setup>[0] = {}) => {
+    setup({ playlists: longList, ...opts });
+    mocks.set('get_now_playing', () => null);
+    useListenSource.getState().setSource('youtube');
+    render(tall ? <SpotifyCard /> : <SpotifyCard />);
+    await screen.findByText('Long id mix');
+  };
+
+  it('on the first page the heading does nothing new; inside a playlist it goes back to the first page, with its tip', async () => {
+    await card();
+    render(<HoverTipLayer />);
+    const tipOf = async () => {
+      hideTip(true);
+      await act(async () => void fireEvent.mouseEnter(heading()));
+      await new Promise((r) => setTimeout(r, 400));
+      return document.querySelector('.hover-tip')?.textContent ?? '';
+    };
+    expect(await tipOf()).toBe('Follow YouTube Music through Windows');
+    fireEvent.click(heading());
+    expect(useListenSource.getState().source).toBe('youtube');
+    expect(useYtLibrary.getState().opened).toBeNull();
+    fireEvent.click(tile('Long id mix'));
+    await screen.findByText('Clip 1');
+    expect(await tipOf()).toBe('Back to YouTube Music home');
+    fireEvent.click(heading());
+    await screen.findByText('Mix 2');
+    expect(useYtLibrary.getState().opened).toBeNull();
+    expect(useListenSource.getState().source).toBe('youtube');
+  });
+
+  it('the parent crumb of a tall playlist goes to the first page too', async () => {
+    await card();
+    fireEvent.click(heading().closest('.sp-card')!.querySelector('.sp-grow')!);
+    fireEvent.click(tile('Long id mix'));
+    await screen.findByText('Clip 1');
+    fireEvent.click(screen.getByRole('button', { name: 'Playlists' }));
+    await screen.findByText('Mix 2');
+    expect(useYtLibrary.getState().opened).toBeNull();
+  });
+
+  it('Open in YouTube is a round icon button in the header that opens the playlist link through the existing command', async () => {
+    const opened: unknown[] = [];
+    mocks.set('wall2_watch_open', (a) => {
+      opened.push(a);
+      return undefined;
+    });
+    await card();
+    fireEvent.click(tile('Long id mix'));
+    await screen.findByText('Clip 1');
+    const btn = screen.getByRole('button', { name: 'Open in YouTube' });
+    expect(btn.className).toContain('u-rd');
+    expect(btn.textContent).toBe('');
+    await act(async () => void fireEvent.click(btn));
+    expect(opened).toEqual([{ kind: 'playlist', id: LONG }]);
+  });
+
+  it('an id that fails the check is never sent', async () => {
+    const opened: unknown[] = [];
+    mocks.set('wall2_watch_open', (a) => {
+      opened.push(a);
+      return undefined;
+    });
+    await card();
+    fireEvent.click(tile('Mix 2'));
+    await screen.findByText('Clip 1');
+    expect(useYtLibrary.getState().opened?.id).toBe('PLtest2');
+    await act(async () => void fireEvent.click(screen.getByRole('button', { name: 'Open in YouTube' })));
+    expect(opened).toEqual([]);
+  });
+});

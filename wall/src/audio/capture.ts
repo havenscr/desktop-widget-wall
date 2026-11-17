@@ -6,6 +6,8 @@ import { createSourceClock } from './sourceTime';
 
 export const RETRY_WAIT = 30_000;
 export const WATCHDOG_MS = 5_000;
+/** How often the page asks which device Windows plays through, while it is visible and capture runs. */
+export const DEVICE_CHECK_MS = 3_000;
 export const TICK_MS = 33;
 
 const now = () => performance.now();
@@ -57,6 +59,8 @@ export function wantsDemo(search: string): boolean {
  * Starts audio for the whole app and returns a stop function. Inside Tauri: default
  * loopback device, push on while the page is visible, off while hidden, a 5 second
  * watchdog that restarts capture once, and one retry after 30 seconds if the start fails.
+ * The capture follows the Windows default output: every 3 seconds while visible it asks which device that is and,
+ * when it is not the one capture runs on, starts capture again on the new one (the same path as a first start).
  * In a browser: silent, or gentle fake levels with `?audio=demo`.
  */
 export function startAudio(): () => void {
@@ -72,14 +76,29 @@ export function startAudio(): () => void {
   let started = false;
   let pushState: boolean | null = null;
   let restartedForSilence = false;
+  // The device the running capture was started on, and whether a start (first, watchdog or device change) is in flight.
+  let startedOn: string | null = null;
+  let beginning = false;
+  // The device check runs only while capture is started and the page is visible.
+  let deviceTimer: ReturnType<typeof setInterval> | undefined;
+  const syncDeviceTimer = () => {
+    const want = started && !stopped && !document.hidden;
+    if (want && deviceTimer === undefined) deviceTimer = setInterval(() => void checkDevice(), DEVICE_CHECK_MS);
+    else if (!want && deviceTimer !== undefined) {
+      clearInterval(deviceTimer);
+      deviceTimer = undefined;
+    }
+  };
 
   const onVisibility = () => {
     if (!document.hidden) {
       // The push was off while hidden; give the watchdog a fresh 5 seconds before it judges silence.
       lastEventAt = now();
       tickAudio(now());
+      void checkDevice();
     }
     void syncPush();
+    syncDeviceTimer();
   };
   document.addEventListener('visibilitychange', onVisibility);
   every(() => {
@@ -107,9 +126,12 @@ export function startAudio(): () => void {
     }
   }
 
-  async function begin(): Promise<boolean> {
+  /** Every path into a start (first, retry, watchdog, device change) comes here: one at a time, so never a second listener. */
+  async function begin(known?: string): Promise<boolean> {
+    if (beginning) return false;
+    beginning = true;
     try {
-      const deviceId = await invoke<string | null>('get_default_loopback_device');
+      const deviceId = known ?? (await invoke<string | null>('get_default_loopback_device'));
       if (!deviceId || stopped) return false;
       await invoke('start_audio_capture', { deviceId });
       if (stopped) return false;
@@ -129,13 +151,31 @@ export function startAudio(): () => void {
         return false;
       }
       started = true;
+      startedOn = deviceId;
       lastEventAt = now();
       pushState = null;
+      syncDeviceTimer();
       await syncPush();
       return true;
     } catch {
       return false;
+    } finally {
+      beginning = false;
     }
+  }
+
+  /** Windows switched its output (headphones, a speaker): capture on the old device would hear silence for good. */
+  async function checkDevice(): Promise<void> {
+    if (!started || stopped || document.hidden || beginning) return;
+    let current: string | null;
+    try {
+      current = await invoke<string | null>('get_default_loopback_device');
+    } catch {
+      return;
+    }
+    // Asked again after the wait: a start may have begun, or the page may have gone, meanwhile. A failed restart is tried again on the next tick.
+    if (!current || current === startedOn || stopped || document.hidden || beginning) return;
+    await begin(current);
   }
 
   void begin().then((ok) => {
@@ -160,6 +200,7 @@ export function startAudio(): () => void {
     document.removeEventListener('visibilitychange', onVisibility);
     timers.forEach((id) => clearInterval(id));
     timers.clear();
+    syncDeviceTimer();
     clearTimeout(retry);
     unlisten?.();
     unlisten = null;

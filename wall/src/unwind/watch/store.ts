@@ -7,6 +7,9 @@ import { driveInMode } from './DriveInFrame';
 import { DRIVE_IN_SCREEN, lookFor, loadLooks, saveLooks, type LookId, type LookSettings, type WallRect } from './looks';
 import { lookBox, loadTune, resetLook, saveTune, withPatch, type LookTune } from './lookSettings';
 
+/** Real titles that arrived while that item's name field was open, by item key; applied when the field closes (a typed name still wins). */
+const waitingTitles = new Map<string, string>();
+
 /** A slider's steps update the stage at once but are written to storage at most this often (and on release, blur, settle and hide). */
 export const TUNE_WRITE_MS = 300;
 let tuneTimer: ReturnType<typeof setTimeout> | null = null;
@@ -128,6 +131,8 @@ export interface WatchState {
   /** Give a saved video or live stream that still has its default label the player's title for it, once; false when nothing changed. */
   fillLabel: (key: string, title: string) => boolean;
   remove: (key: string) => void;
+  /** Take an item out of the Watch list only: what plays keeps playing. */
+  unsave: (key: string) => void;
   rename: (key: string, label: string) => void;
   setEditing: (key: string | null) => void;
   play: (ref: WatchRef) => void;
@@ -197,10 +202,14 @@ export const useWatchStore = create<WatchState>((set, get) => ({
   },
   fillLabel: (key, title) => {
     const st = get();
-    if (st.editing === key) return false;
     const item = st.saved.find((i) => refKey(i) === key);
     if (!item || (item.kind !== 'video' && item.kind !== 'live')) return false;
     if (item.label !== defaultLabel(item)) return false;
+    if (st.editing === key) {
+      // The name field is open: keep the answer and apply it when the field closes without a typed name.
+      waitingTitles.set(key, title);
+      return false;
+    }
     const label = cleanLabel(title, item);
     if (label === item.label) return false;
     const items = st.saved.map((i) => (refKey(i) === key ? { ...i, label } : i));
@@ -210,10 +219,17 @@ export const useWatchStore = create<WatchState>((set, get) => ({
     return true;
   },
   remove: (key) => {
+    waitingTitles.delete(key);
     const items = removeSaved(get().saved, key);
     saveSaved(items);
     const playing = get().playing;
     if (playing && refKey(playing) === key) get().stop();
+    set({ saved: items, editing: get().editing === key ? null : get().editing });
+  },
+  unsave: (key) => {
+    waitingTitles.delete(key);
+    const items = removeSaved(get().saved, key);
+    saveSaved(items);
     set({ saved: items, editing: get().editing === key ? null : get().editing });
   },
   rename: (key, label) => {
@@ -360,8 +376,18 @@ usePlaceStore.subscribe((s) => {
   }
 });
 
+// When a name field closes, a title that arrived meanwhile fills the name if none was typed (`fillLabel` refuses a typed one).
+useWatchStore.subscribe((s, prev) => {
+  const key = prev.editing;
+  if (key === null || key === s.editing) return;
+  const title = waitingTitles.get(key);
+  waitingTitles.delete(key);
+  if (title !== undefined) s.fillLabel(key, title);
+});
+
 /** Tests only: back to a fresh store over whatever local storage holds now. */
 export function resetWatch(): void {
   cancelTuneWrite();
+  waitingTitles.clear();
   useWatchStore.setState({ tab: 'listen', saved: loadSaved(), looks: loadLooks(), tune: loadTune(), volume: loadVolume(), playing: null, source: 'watch', lastStopped: null, paused: false, muted: false, report: NO_REPORT, needsClick: false, clickHint: false, sheet: false, stopped: null, editing: null, peek: false });
 }

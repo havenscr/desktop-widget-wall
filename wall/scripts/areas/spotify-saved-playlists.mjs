@@ -30,9 +30,10 @@ function measureSaved() {
   };
   const small = [];
   const songs = q('.sp-songs');
-  const tag = q('.sp-source');
+  const tag = q('.sp-shead .sp-pnote');
+  const line = q('.sp-shead .sp-line');
   const secs = [...document.querySelectorAll('.sp-sec')];
-  fonts(tag, 'tag', small);
+  fonts(tag, 'note', small);
   fonts(q('.sp-songs .sp-empty .sp-hintline'), 'line', small);
   for (const s of secs) fonts(s, 'heading', small);
     return {
@@ -40,10 +41,13 @@ function measureSaved() {
     head: box(q('.sp-songs .sp-shead')),
     tracks: box(q('.sp-songs .sp-tracks')),
     tag: box(tag),
-    tagCut: !!tag && tag.scrollWidth > tag.clientWidth + 1,
+    // The note sits inside the header's facts line, which ends in an ellipsis: cut when the note's right edge is past the line's.
+    tagCut: !!tag && !!line && tag.getBoundingClientRect().right > line.getBoundingClientRect().right + 1,
+    headLine: box(line),
+    sourceRow: !!q('.sp-songs .sp-tracks > .sp-source') && !q('.sp-songs .sp-sec'),
     secs: secs.map(box),
     rows: [...document.querySelectorAll('.sp-songs .sp-track')].map(box),
-    turnOff: box(q('.sp-songs .sp-linkbtn')),
+    turnOff: box(q('.sp-songs .sp-linkbtn:not(.sp-backlabel)')),
     turnOn: box(q('.sp-songs .sp-empty .sp-btn')),
     // The off line's sentence about the terms, and whether it is cut.
     terms: (() => {
@@ -89,33 +93,32 @@ export default {
   name: 'spotify-saved-playlists',
   gallery: {
     states: [
-      state('the public page list, small card', '&spotifypage=ok', ["From Spotify's public page", 'Lantern Song 1', 'Lantern Song 8'], SMALL_CLICK),
-      state('the public page list, tall card', '&spotifypage=ok', ["From Spotify's public page", 'Lantern Song 1', 'Lantern Song 8'], TALL_CLICK),
-      state('a long playlist, small card', '&spotifypage=first', ["From Spotify's public page, first 100 of 520", 'Lantern Song 1'], SMALL_CLICK),
-      state('a long playlist, tall card', '&spotifypage=first', ["From Spotify's public page, first 100 of 520", 'Lantern Song 1'], TALL_CLICK),
+      state('the public page list, small card', '&spotifypage=ok', ['public page', 'Lantern Song 1', 'Lantern Song 8'], SMALL_CLICK),
+      state('the public page list, tall card', '&spotifypage=ok', ['public page', 'Lantern Song 1', 'Lantern Song 8'], TALL_CLICK),
+      state('a long playlist, small card', '&spotifypage=first', ['public page', 'Lantern Song 1'], SMALL_CLICK),
+      state('a long playlist, tall card', '&spotifypage=first', ['public page', 'Lantern Song 1'], TALL_CLICK),
+      state('hover the card heading inside a playlist (way home)', '&spotifypage=ok', ['Back to Spotify home'], `${SMALL_CLICK} >> hover:.sp-switch button.on`),
       state('rows that cannot play, hover a dim row', '&spotifypage=odd', ['This song cannot be played here: it is a local file, or not available in this country.'], `${SMALL_CLICK} >> hover:.sp-track.off`),
-      state('hover on the source tag', '&spotifypage=ok', ["The wall read this list from the playlist's public web page", 'Turn it off with the button beside this line.'], `${SMALL_CLICK} >> hover:.sp-source`),
+      state('hover on the public page note', '&spotifypage=ok', ["Read from Spotify's public playlist page, not through the sign-in", 'Turn it off in Tools, Accounts, Spotify.'], `${SMALL_CLICK} >> hover:.sp-pnote`),
       state('still reading the page', '&spotifypage=slow', ["Reading Spotify's public page."], SMALL_CLICK),
       state('not public, nothing playing, small card', '&spotifypage=private&spotifyplay=none&media=none', [PRIVATE, WHILE_PLAYS], SMALL_CLICK),
       state('not public, nothing playing, tall card', '&spotifypage=private&spotifyplay=none&media=none', [PRIVATE, WHILE_PLAYS], TALL_CLICK),
       state('the page has changed', '&spotifypage=changed&spotifyplay=none&media=none', ["Spotify's public page has changed, so the wall cannot read it.", WHILE_PLAYS], SMALL_CLICK),
       state('the hourly limit', '&spotifypage=busy&spotifyplay=none&media=none', ["The wall reads Spotify's public page at most 20 times an hour. Try again later.", WHILE_PLAYS], SMALL_CLICK),
       state('the page did not answer', '&spotifypage=down&spotifyplay=none&media=none', ["Spotify's public page did not answer.", 'Try again in a minute.', WHILE_PLAYS], SMALL_CLICK),
-      state('the public page is turned off', '&spotifypageoff=1&spotifyplay=none&media=none', ['Spotify lists the songs only for playlists you made.', WHILE_PLAYS], SMALL_CLICK),
+      state('the public page is turned off', '&spotifypageoff=1&spotifyplay=none&media=none', ['Spotify lists the songs only for playlists you made.', 'Turn on public page reads in Tools, Accounts, Spotify, to list them.', WHILE_PLAYS], SMALL_CLICK),
       state('while it plays, this playlist, small card', '&spotifypage=private&spotifyctx=this', ['Playing now', 'Up next in Spotify', 'Heard from this playlist', 'Heard Song 1'], SMALL_CLICK),
       state('while it plays, this playlist, tall card', '&spotifypage=private&spotifyctx=this', ['Playing now', 'Up next in Spotify', 'Heard from this playlist', 'Heard Song 1'], TALL_CLICK),
       state('while it plays, another playlist is playing', '&spotifypage=private&spotifyctx=other', [PRIVATE, WHILE_PLAYS, '!Heard from this playlist'], SMALL_CLICK),
-      state('the page is turned off, small card', '&spotifypageoff=1&spotifyplay=none&media=none', ['Read public page', "Reading the page is against Spotify's developer terms and may stop working."], SMALL_CLICK),
-      state('the page is turned off, tall card', '&spotifypageoff=1&spotifyplay=none&media=none', ['Read public page', "Reading the page is against Spotify's developer terms and may stop working."], TALL_CLICK),
-      state('not public, with its Turn off, small card', '&spotifypage=private&spotifyplay=none&media=none', [PRIVATE, 'Turn off'], SMALL_CLICK),
-      state('did not answer, try again in a minute', '&spotifypage=down&spotifyplay=none&media=none', ['Try again in a minute.', 'Turn off', '!Retry'], SMALL_CLICK),
-      state('a page of 200 rows from 500, small card', '&spotifypage=big', ["From Spotify's public page, first 200 of 500"], SMALL_CLICK),
+      state('the page is turned off, small card', '&spotifypageoff=1&spotifyplay=none&media=none', ['Turn on public page reads in Tools', "Reading the page is against Spotify's developer terms and may stop working."], SMALL_CLICK),
+      state('the page is turned off, tall card', '&spotifypageoff=1&spotifyplay=none&media=none', ['Turn on public page reads in Tools', "Reading the page is against Spotify's developer terms and may stop working."], TALL_CLICK),
+      state('not public, no switch on the page, small card', '&spotifypage=private&spotifyplay=none&media=none', [PRIVATE, '!Turn off'], SMALL_CLICK),
+      state('did not answer, try again in a minute', '&spotifypage=down&spotifyplay=none&media=none', ['Try again in a minute.', '!Turn off', '!Retry'], SMALL_CLICK),
+      state('a long playlist, hover the note for the first N of M', '&spotifypage=first', ['Only the first 100 of 520 songs are listed.'], `${SMALL_CLICK} >> hover:.sp-pnote`),
+      state('a page of 200 rows from 500, small card', '&spotifypage=big', ['public page'], SMALL_CLICK),
       state('while it plays, 20 queued and 50 heard, small card', '&spotifypage=private&spotifyctx=this&spotifyload=heavy', ['Up next in Spotify', '12 more in Up next', 'Heard from this playlist'], SMALL_CLICK),
       state('while it plays, 20 queued and 50 heard, tall card', '&spotifypage=private&spotifyctx=this&spotifyload=heavy', ['12 more in Up next'], TALL_CLICK),
       state('while it plays, 20 queued and 50 heard, long titles', '&spotifypage=private&spotifyctx=this&spotifyload=heavy&spotify=long&media=long', ['12 more in Up next'], SMALL_CLICK),
-      state('hover on Turn off', '&spotifypage=ok', ['Turn off', "Stop reading Spotify's public page. Saved playlists then show their songs only while they play."], `${SMALL_CLICK} >> hover:.sp-source .sp-linkbtn`),
-      state('Turn off pressed', '&spotifypage=ok&spotifyplay=none&media=none', ['Spotify lists the songs only for playlists you made.', 'Read public page', WHILE_PLAYS, "developer terms"], `${SMALL_CLICK} >> .sp-source .sp-linkbtn`),
-      state('the switch is off, hover Read public page', '&spotifypageoff=1&spotifyplay=none&media=none', ['This is against Spotify\'s developer terms and may stop working.'], `${SMALL_CLICK} >> hover:.sp-songs .sp-empty .sp-btn`),
     ],
   },
   fit: {
@@ -147,15 +150,14 @@ export default {
         if (!m.songs || !m.tracks || !m.head) {
           fails.push('saved: the playlist page is not open');
         } else if (isPage) {
-          if (!m.tag) fails.push('saved: the source tag is not above the rows');
+          if (!m.tag) fails.push('saved: the public page note is not beside the playlist facts');
           else {
-            if (m.tag.r > m.tracks.r + 1 || m.tag.l < m.tracks.l - 1) fails.push(`saved: the source tag leaves the list (its right edge is ${Math.round(m.tag.r - m.tracks.r)} px past the list's)`);
-            if (m.tag.h > 44) fails.push(`saved: the source tag takes ${Math.round(m.tag.h)} px, more than one line`);
-            if (m.tagCut) fails.push('saved: the source tag is cut off');
-            if (m.tag.t < m.tracks.t - 1) fails.push('saved: the source tag is above the list');
-            if (!m.turnOff) fails.push('saved: the Turn off button is not on the source tag');
-            else if (m.turnOff.h < 31.5 || m.turnOff.r > m.tracks.r + 1) fails.push('saved: the Turn off button is under 32 px tall or leaves the list');
+            if (m.tag.r > m.head.r + 1 || m.tag.l < m.head.l - 1) fails.push(`saved: the public page note leaves the header (its right edge is ${Math.round(m.tag.r - m.head.r)} px past the header's)`);
+            if (m.tag.h > 44) fails.push(`saved: the public page note takes ${Math.round(m.tag.h)} px, more than one line`);
+            if (m.tagCut) fails.push('saved: the public page note is cut off');
           }
+          if (m.sourceRow) fails.push('saved: the public page still has a row of its own over the songs');
+          if (m.turnOff) fails.push('saved: a Turn off button is still on the playlist page');
           if (m.rows.length < 3) fails.push('saved: the page rows are not shown');
         } else if (isOff) {
           if (!m.terms) fails.push('saved: the terms sentence is not on the off line');
@@ -164,9 +166,9 @@ export default {
             if (m.terms.cut) fails.push('saved: the terms sentence is cut off');
             if (m.terms.font < 15.99) fails.push('saved: the terms sentence is under 16 px');
           }
-          if (!m.turnOn || m.turnOn.h < 31.5 || m.turnOn.r > m.tracks.r + 1) fails.push('saved: the Read public page button is missing, under 32 px or outside the list');
+          if (m.turnOn) fails.push('saved: a Read public page button is still on the off line');
         } else if (variant.name === FAIL_SMALL) {
-          if (!m.turnOff || m.turnOff.h < 31.5 || m.turnOff.r > m.tracks.r + 1) fails.push('saved: the Turn off button is missing, under 32 px or outside the list on a failed read');
+          if (m.turnOff) fails.push('saved: a Turn off button is still on the failed read line');
         } else if (isWhile) {
           if (isHeavy) {
             if (m.nextRows > 8) fails.push(`saved: ${m.nextRows} Up next rows (8 at most)`);
@@ -186,17 +188,17 @@ export default {
         for (const f of [...new Set(fails)]) emit(`  FAIL ${f}`);
         if (fails.length) return true;
         emit(isOff
-          ? '  ok   saved: the terms sentence and Read public page are inside the list, 16 px or more'
+          ? '  ok   saved: the terms sentence is inside the list, 16 px or more, and no switch is on the page'
           : variant.name === FAIL_SMALL
-            ? '  ok   saved: Turn off is inside the list on a failed read'
+            ? '  ok   saved: no Turn off on a failed read'
             : isPage
-              ? '  ok   saved: the source tag and its Turn off button are one line inside the list, no text under 16 px'
+              ? '  ok   saved: the public page note is one line inside the header, no row of its own, no text under 16 px'
               : '  ok   saved: three section headings and the rows inside the list box, clear of the header, no text under 16 px');
         return false;
       },
     },
     breaks: {
-      'saved-tag-wide': { css: '.sp-source { white-space: nowrap; min-width: 900px !important; }', expect: /^ *FAIL saved: the source tag leaves the list/m, appliesTo: (v) => v.name === PAGE_SMALL },
+      'saved-tag-wide': { css: '.sp-pnote { display: inline-block; white-space: nowrap; min-width: 900px !important; }', expect: /^ *FAIL saved: the public page note (leaves the header|is cut off)/m, appliesTo: (v) => v.name === PAGE_SMALL },
       'saved-heading-up': { css: '.sp-sec { margin-top: -60px !important; }', expect: /^ *FAIL saved: a section heading (overlaps the header|sits above the list box)/m, appliesTo: (v) => v.name === WHILE_SMALL || v.name === WHILE_TALL },
       'saved-terms-wide': { css: '.sp-songs .sp-empty .sp-hintline { white-space: nowrap !important; min-width: 1200px !important; }', expect: /^ *FAIL saved: the terms sentence leaves the list/m, appliesTo: (v) => v.name === OFF_SMALL },
       'saved-more-gone': { css: '.sp-source { display: none !important; }', expect: /^ *FAIL saved: no line for the rest of the queue/m, appliesTo: (v) => v.name === HEAVY },

@@ -3,12 +3,15 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 const calls: Array<[string, unknown]> = [];
 let handler: ((e: { payload: unknown }) => void) | null = null;
 let failStart = 0;
+let device: string | null = 'dev-1';
+let holdStart: Promise<void> | null = null;
 
 vi.mock('../bridge/tauri', () => ({
   isTauri: () => true,
   invoke: vi.fn(async (cmd: string, args?: unknown) => {
     calls.push([cmd, args]);
-    if (cmd === 'get_default_loopback_device') return 'dev-1';
+    if (cmd === 'get_default_loopback_device') return device;
+    if (cmd === 'start_audio_capture' && holdStart) await holdStart;
     if (cmd === 'start_audio_capture' && failStart > 0) {
       failStart--;
       throw new Error('no device');
@@ -25,7 +28,8 @@ vi.mock('@tauri-apps/api/event', () => ({
   }),
 }));
 
-import { RETRY_WAIT, startAudio, WATCHDOG_MS } from './capture';
+import { DEVICE_CHECK_MS, RETRY_WAIT, startAudio, WATCHDOG_MS } from './capture';
+import { listen } from '@tauri-apps/api/event';
 import { resetAudio, useAudioStore } from './store';
 
 const names = () => calls.map((c) => c[0]);
@@ -40,6 +44,8 @@ beforeEach(() => {
   calls.length = 0;
   handler = null;
   failStart = 0;
+  device = 'dev-1';
+  holdStart = null;
   resetAudio();
 });
 afterEach(() => {
@@ -136,4 +142,130 @@ it('?audio=demo is honoured in a development build and ignored in a production b
   vi.stubEnv('DEV', false);
   expect(wantsDemo('?audio=demo')).toBe(false);
   vi.unstubAllEnvs();
+});
+
+const starts = () => calls.filter((c) => c[0] === 'start_audio_capture').map((c) => (c[1] as { deviceId: string }).deviceId);
+const touch = () => handler?.({ payload: { bass: 0.5, mid: 0.2, high: 0.1, bands: [1], waveform: [0.1] } });
+
+it('follows the Windows default output: the same device never restarts capture', async () => {
+  const stop = startAudio();
+  await vi.advanceTimersByTimeAsync(10);
+  for (let i = 0; i < 4; i++) {
+    touch();
+    await vi.advanceTimersByTimeAsync(DEVICE_CHECK_MS);
+  }
+  expect(starts()).toEqual(['dev-1']);
+  stop();
+});
+
+it('a changed default output restarts capture once on the new device and listens again', async () => {
+  const stop = startAudio();
+  await vi.advanceTimersByTimeAsync(10);
+  device = 'headphones';
+  touch();
+  await vi.advanceTimersByTimeAsync(DEVICE_CHECK_MS + 10);
+  expect(starts()).toEqual(['dev-1', 'headphones']);
+  expect(handler).not.toBeNull();
+  touch();
+  await vi.advanceTimersByTimeAsync(100);
+  expect(useAudioStore.getState().playing).toBe(true);
+  // The new device is the running one now: no further restarts.
+  for (let i = 0; i < 9; i++) {
+    await vi.advanceTimersByTimeAsync(1000);
+    touch();
+  }
+  expect(starts()).toEqual(['dev-1', 'headphones']);
+  stop();
+});
+
+it('does not ask while the page is hidden, and asks at once when it is visible again', async () => {
+  const stop = startAudio();
+  await vi.advanceTimersByTimeAsync(10);
+  setHidden(true);
+  const asked = () => names().filter((n) => n === 'get_default_loopback_device').length;
+  const before = asked();
+  device = 'headphones';
+  await vi.advanceTimersByTimeAsync(DEVICE_CHECK_MS * 3);
+  expect(asked()).toBe(before);
+  expect(starts()).toEqual(['dev-1']);
+  setHidden(false);
+  await vi.advanceTimersByTimeAsync(10);
+  expect(starts()).toEqual(['dev-1', 'headphones']);
+  stop();
+});
+
+it('a null answer restarts nothing', async () => {
+  const stop = startAudio();
+  await vi.advanceTimersByTimeAsync(10);
+  device = null;
+  await vi.advanceTimersByTimeAsync(DEVICE_CHECK_MS * 3);
+  expect(starts()).toEqual(['dev-1']);
+  stop();
+});
+
+it('a restart in flight is not doubled, and a failed restart is tried again on the next tick', async () => {
+  const stop = startAudio();
+  await vi.advanceTimersByTimeAsync(10);
+  device = 'headphones';
+  let release: () => void = () => undefined;
+  holdStart = new Promise<void>((r) => (release = r));
+  touch();
+  await vi.advanceTimersByTimeAsync(DEVICE_CHECK_MS * 3 + 10);
+  expect(starts()).toEqual(['dev-1', 'headphones']);
+  failStart = 1;
+  release();
+  holdStart = null;
+  await vi.advanceTimersByTimeAsync(10);
+  // The held start failed: the next tick tries again, and that one works.
+  touch();
+  await vi.advanceTimersByTimeAsync(DEVICE_CHECK_MS + 10);
+  expect(starts()).toEqual(['dev-1', 'headphones', 'headphones']);
+  stop();
+});
+
+it('stop cancels the device timer', async () => {
+  const stop = startAudio();
+  await vi.advanceTimersByTimeAsync(10);
+  stop();
+  device = 'headphones';
+  await vi.advanceTimersByTimeAsync(DEVICE_CHECK_MS * 3);
+  expect(starts()).toEqual(['dev-1']);
+  expect(vi.getTimerCount()).toBe(0);
+});
+
+it('two triggers at once (the device check and the silence watchdog) give one start and one listener', async () => {
+  const stop = startAudio();
+  await vi.advanceTimersByTimeAsync(10);
+  const listening = () => vi.mocked(listen).mock.calls.length;
+  const before = listening();
+  device = 'headphones';
+  let release: () => void = () => undefined;
+  holdStart = new Promise<void>((r) => (release = r));
+  // The device check starts a restart that stays in flight while the watchdog's silence limit passes too.
+  await vi.advanceTimersByTimeAsync(WATCHDOG_MS * 2 + 100);
+  expect(starts()).toEqual(['dev-1', 'headphones']);
+  release();
+  holdStart = null;
+  await vi.advanceTimersByTimeAsync(10);
+  expect(listening() - before).toBe(1);
+  stop();
+});
+
+it('the device timer exists only while capture is started and the page is visible', async () => {
+  failStart = 1;
+  const stop = startAudio();
+  await vi.advanceTimersByTimeAsync(10);
+  const asked = () => names().filter((n) => n === 'get_default_loopback_device').length;
+  // Not started (the first start failed): nothing asks for the device before the retry.
+  const first = asked();
+  await vi.advanceTimersByTimeAsync(DEVICE_CHECK_MS * 3);
+  expect(asked()).toBe(first);
+  await vi.advanceTimersByTimeAsync(RETRY_WAIT);
+  const started = vi.getTimerCount();
+  setHidden(true);
+  expect(vi.getTimerCount()).toBe(started - 1);
+  setHidden(false);
+  expect(vi.getTimerCount()).toBe(started);
+  stop();
+  expect(vi.getTimerCount()).toBe(0);
 });

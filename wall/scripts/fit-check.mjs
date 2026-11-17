@@ -118,6 +118,7 @@ const EXPECT = {
   sun: /^ *FAIL pointer at .*reaches w-stage w-sun/m,
   tools: /^ *FAIL tools drawer: .*outside x 1700 to 2560/m,
   toolsnames: /^ *FAIL tools: .* is cut with no tooltip/m,
+  toolsedge: /^ *FAIL tools drawer: bottom edge /m,
   'yt-clip': /^ *FAIL youtube row: .* past the Accounts column/m,
   'yt-text': /^ *FAIL youtube row: text under 16 px/m,
   'yt-control': /^ *FAIL youtube row: control .* px/m,
@@ -243,6 +244,8 @@ const OVERFLOWS = {
   // The Tools drawer 1400 px wide runs past the right edge of the stage.
   tools: '.tools-drawer { width: 1400px !important; }',
   // A 20 px name column cuts the account and source names (they carry no tooltip of their own).
+  // The Tools drawer 12 px lower (as if 12 px taller) ends past its old bottom edge (y 697) with the public page switch shown.
+  toolsedge: '.tools-drawer { translate: 0 12px; }',
   toolsnames: '.tools-name, .tools-srcname { width: 20px !important; max-width: 20px !important; flex: none !important; overflow: hidden; }',
   // YouTube row: the Set up form's inputs 700 px wide run past the Accounts column.
   'yt-clip': '.tools-yt-form .tools-input { flex: none !important; width: 700px !important; }',
@@ -294,8 +297,8 @@ const OVERFLOWS = {
   // the row; the block moved onto the video.
   'watch-block': '.top:has(.w-sun) .w-now { top: 106px !important; }',
   'watch-gear': '.w-gear { margin-left: 0 !important; }',
-  // the Open label may not give way: with 16 px more text the row overflows its block
-  'watch-slack': '.w-open { flex: none !important; min-width: 0 !important; }',
+  // the row has no room for the round Open button's slack: with 16 px more after it the row overflows its block
+  'watch-slack': '.w-ctl .w-open { margin-right: 400px !important; }',
   // the position fill's colour from a token nothing defines (the owner's bug); the marker left at the bar's start
   'watch-fill': '.w-bar b { background: linear-gradient(90deg, var(--pink), var(--cyan)) !important; }',
   'watch-marker': '.w-bar .w-mark { left: 0 !important; }',
@@ -1220,6 +1223,8 @@ try {
       const rail = document.querySelector('.rail');
       if (dr.left < 1700 - 0.5 || dr.right > 2560 + 0.5 || dr.top < -0.5 || dr.bottom > 720 + 0.5) toolsOut.push('tools drawer: x ' + Math.round(dr.left) + ' to ' + Math.round(dr.right) + ', y ' + Math.round(dr.top) + ' to ' + Math.round(dr.bottom) + ' is outside x 1700 to 2560, y 0 to 720');
       if (rail && hit(dr, rail.getBoundingClientRect())) toolsOut.push('tools drawer: covers the rail');
+      // The Spotify public page switch lives in the Accounts row: with Spotify connected and the switch shown the drawer must not end lower than it did before the switch (y 697). A state with a text field open (a form that grows the drawer on purpose) is not held to it.
+      if (dr.bottom > 697 + 0.5 && drawer.querySelector('button[aria-label^="Public page reads"]') && !drawer.querySelector('input, textarea')) toolsOut.push('tools drawer: bottom edge y ' + (Math.round(dr.bottom * 10) / 10) + ' passes its old limit y 697 with Spotify connected and the public page switch shown');
       for (const e of drawer.querySelectorAll('.tools-name, .tools-srcname, .tools-line, .tools-hint, .tools-note, .tools-chip, .tools-btn, .tools-faint')) {
         if (e.scrollWidth > e.clientWidth + 1 && !e.closest('[data-tip]')) toolsOut.push('tools: "' + (e.textContent || '').trim().slice(0, 40) + '" is cut with no tooltip');
         // The row's hover card does not excuse a cut name or a cut read time: those cells must show whole.
@@ -1477,13 +1482,12 @@ try {
           for (const rd of ctl.querySelectorAll('.rd')) { const r = box(rd); if (r.w !== 40 || r.h !== 40) fails.push('watch polish: a round button is ' + r.w + ' by ' + r.h + ', not 40 by 40'); }
         }
         if (cb.l + cb.w > nb.l + nb.w + 0.5) fails.push('watch polish: the control row runs past the left block');
-        // Slack: on another machine the text may be wider. With the Open label 16 px wider than today's, nothing leaves
-        // the row, nothing wraps, the gear is still the last, whole button, and the label alone gives way (never below
-        // the icon and four letters, 88 px for the button).
-        const lab = ctl.querySelector('.w-open-t');
+        // Slack: the row has room to spare. With 16 px more after the round Open button, nothing leaves the row,
+        // nothing wraps and the gear is still the last, whole button.
+        const lab = ctl.querySelector('.w-open');
         if (lab) {
           const st = document.createElement('style');
-          st.textContent = '.w-open-t { display: inline-block; padding-right: 16px; }';
+          st.textContent = '.w-open { margin-right: 16px; }';
           document.head.appendChild(st);
           void document.body.offsetWidth;
           const r = ctl.getBoundingClientRect();
@@ -1494,7 +1498,7 @@ try {
           if (ctl.lastElementChild !== g) fails.push('watch polish: with 16 px more text the gear is not the last button');
           if (kb.some((k) => k.left < r.left - 0.5 || k.right > r.right + 0.5)) fails.push('watch polish: with 16 px more text a control leaves the row (' + kb.map((k) => Math.round(k.left) + '-' + Math.round(k.right)).join(' ') + ' in ' + Math.round(r.left) + '-' + Math.round(r.right) + ')');
           if (kb.some((k) => Math.abs(mid2(k) - mid2(kb[0])) > 2)) fails.push('watch polish: with 16 px more text the control row wraps');
-          if (o && o.getBoundingClientRect().width < 88 - 0.5) fails.push('watch polish: with 16 px more text the Open button is ' + Math.round(o.getBoundingClientRect().width) + ' px, under 88');
+          if (o && Math.abs(o.getBoundingClientRect().width - 40) > 0.5) fails.push('watch polish: with 16 px more text the Open button is ' + Math.round(o.getBoundingClientRect().width) + ' px, not 40');
           if (g && !(g.getBoundingClientRect().width >= 39.5)) fails.push('watch polish: with 16 px more text the gear is squeezed to ' + Math.round(g.getBoundingClientRect().width) + ' px');
           st.remove();
           void document.body.offsetWidth;
@@ -1850,6 +1854,7 @@ try {
     picker: (v) => v.name.startsWith('Deck, the key picker open over'),
     tools: (v) => v.name === 'Tools, over Work, typical',
     toolsnames: (v) => v.name === 'Tools, over Work, typical',
+    toolsedge: (v) => v.name === 'Tools, over Work, typical',
     'yt-clip': (v) => v.name === 'Tools, YouTube setup form open',
     'yt-text': (v) => v.name === 'Tools, YouTube setup form open',
     'yt-control': (v) => v.name === 'Tools, YouTube setup form open',

@@ -9,7 +9,7 @@ export const DARK_TIP = 'One room light stays on so the room is never dark aroun
 
 export const ABSENT_LINE = 'Presets and room lights: the home app does not offer them here yet.';
 export const DOWN_LINE = 'The home app is not answering';
-export const NOT_SET_UP_LINE = "To change these, type the home app's desk token in Tools.";
+export const NOT_SET_UP_LINE = "These lights are view only here. To switch them from the wall, add the home app's desk token in Tools.";
 export const PRIVATE_LINE = 'The home app must be reached over https or the tailnet to take changes.';
 export const PRIVATE_TIP = 'The home app is reached by a plain http address on the local network, and the wall will not send its desk token that way. Use an https or tailnet address for homeBaseUrl in feeds.json, then Check again.';
 export const CHANGED_TIP =
@@ -65,7 +65,7 @@ export function tileState(studio: Studio, g: Group, canWrite: boolean): { disabl
   if (needsZone(g)) return { disabled: true, dim: true, tip: ZONE_TIP };
   const where = g.setTo ? `${g.label}: ${g.setTo}.` : `${g.label}.`;
   if (!g.reachable) return { disabled: !canWrite, dim: true, tip: `${where} Not answering: this is the last state the home app knew.` };
-  if (!canWrite) return { disabled: true, dim: false, tip: `${where} To change it, the home app needs its desk token typed in Tools.` };
+  if (!canWrite) return { disabled: true, dim: false, tip: `${where} To switch it from the wall, add the home app's desk token in Tools.` };
   if (wouldBeDark(studio, g)) return { disabled: true, dim: false, tip: `${where} ${DARK_TIP}.` };
   return { disabled: false, dim: false, tip: `${where} Click to turn it ${g.on ? 'off' : 'on'}.` };
 }

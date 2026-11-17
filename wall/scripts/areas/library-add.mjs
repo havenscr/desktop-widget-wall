@@ -140,7 +140,7 @@ function measureLibraryAdd() {
         if (want === 'cap' && n <= cap) fails.push('only ' + n + ' playlists: nothing to cap');
         const check = menu.querySelector('.w-pop-row.has .w-pop-check');
         if (want === 'has' && (!check || getComputedStyle(check).display === 'none')) fails.push('no playlist shows the check for a video it holds');
-        if (want === 'none' && menu.querySelectorAll('[role="menuitem"]').length !== 1) fails.push('the menu holds more than New playlist with no playlist made');
+        if (want === 'none' && menu.querySelectorAll('[role="menuitem"]').length !== 2) fails.push('the menu holds more than the Watch list row and New playlist with no playlist made');
         if (want === 'full') {
           const full = menu.querySelector('.w-pop-row.full');
           if (!full) fails.push('no playlist reads Full');

@@ -35,6 +35,8 @@ const states = [
   state('a playlist, unchanged', 'wlist=many&wlook=sky&wplay=3&wmeta=title', ['Saved for the weekend, a very long playlist name', `!${CHANNEL}`, `!${TITLE}`]),
   state('a Twitch item, unchanged', 'wlist=three&wlook=sky&wplay=2&wmeta=title', ['Live on the wall', `!${CHANNEL}`, `!${TITLE}`]),
   state('at rest with a title', 'wlist=three&wlook=sky&wplay=0&wmeta=title&wctl=rest', [TITLE]),
+  state('Watch at rest: the list card and the moods line are gone', 'wlist=three&wlook=sky&wplay=0&wmeta=title&wctl=rest&office=six&desktoken=unset', [TITLE, 'Office moods are view only here']),
+  state('Watch at rest, pointer on the card: both are back', 'wlist=three&wlook=sky&wplay=0&wmeta=title&wctl=rest&office=six&desktoken=unset', ['Watch list', 'Office moods are view only here'], 'hover:.w-card'),
   state('paused with a title', 'wlist=three&wlook=sky&wplay=0&wmeta=title&wstate=paused', ['Paused', TITLE, CHANNEL]),
   state('the list with a default label filled from the title', 'wlist=default&wlook=sky&wplay=0&wmeta=title', [TITLE, 'YouTube live stream']),
   state('the paste offer, a new video and a new playlist', `wlist=three&wlook=sky&wplay=0&wpaste=${PASTE_NEW}`, ['Saved the video. The link also names a playlist.', 'Save the playlist too', '4 saved']),

@@ -1,8 +1,9 @@
-import { IconBrandSpotify, IconBrandYoutube, IconCalendar, IconSettings } from '@tabler/icons-react';
+import { IconBrandSpotify, IconBrandYoutube, IconCalendar, IconSettings, IconWorld, IconWorldOff } from '@tabler/icons-react';
 import { useCallback, useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 import { accountWords, clockText, needsSignIn, reasonLine, type MeetAccount } from '../meet/model';
 import { useMeet, type MeetState } from '../meet/useMeet';
 import { spotify, type SpotifyStatus } from '../music/spotify';
+import { PAGE_SWITCH_NAME, PAGE_SWITCH_TIP, usePublicPage } from '../unwind/spotify/model';
 import { youtube, type YoutubeLink, type YoutubeStatus } from '../music/youtube';
 import { invoke } from '../bridge/tauri';
 import { hover as hoverCard } from './hover';
@@ -134,6 +135,14 @@ function useSpotifyAccount(opened: number) {
   return { status, failed, waiting, notice, read, signIn, cancel, signOut };
 }
 
+/** The public page switch (it used to sit on a playlist's page): a button in Spotify's own row, so the drawer stays as tall as it was. */
+function PublicPageSwitch() {
+  const on = usePublicPage((s) => s.on);
+  // An icon button (the row has no room for a worded one in the 410 px drawer): lit while on; its name and helper text say the state.
+  const state = `${PAGE_SWITCH_NAME}: ${on ? 'On' : 'Off'}`;
+  return <Btn label={state} icon={on ? <IconWorld size={18} aria-hidden="true" /> : <IconWorldOff size={18} aria-hidden="true" />} hover={`${state}. ${PAGE_SWITCH_TIP}`} onClick={() => usePublicPage.getState().setOn(!on)} />;
+}
+
 function SpotifyRow({ sp, blocked }: { sp: ReturnType<typeof useSpotifyAccount>; blocked: boolean }) {
   const icon = <IconBrandSpotify size={22} aria-hidden="true" />;
   if (sp.waiting) {
@@ -157,6 +166,7 @@ function SpotifyRow({ sp, blocked }: { sp: ReturnType<typeof useSpotifyAccount>;
   if (sp.status.signedIn) {
     return (
       <Row icon={icon} name="Spotify" line="Connected">
+        <PublicPageSwitch />
         <Btn label="Sign out" disabled={blocked} onClick={sp.signOut} />
       </Row>
     );

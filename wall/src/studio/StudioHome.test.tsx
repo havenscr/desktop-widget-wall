@@ -178,7 +178,7 @@ it('absent, not set up at the home app: the quiet line with Check again, key lig
 it('no token on this PC: every home control disabled, the line says where to type it, Open Tools opens Tools at Home app', async () => {
   answer = studioAnswer({ canWrite: false, writeBlock: 'not-set-up' });
   await showBlock();
-  expect(screen.getByText("To change these, type the home app's desk token in Tools.")).toBeTruthy();
+  expect(screen.getByText("These lights are view only here. To switch them from the wall, add the home app's desk token in Tools.")).toBeTruthy();
   expect(chipOf('On air').getAttribute('aria-disabled')).toBe('true');
   fireEvent.click(chipOf('On air'));
   fireEvent.click(screen.getByText('Panels'));

@@ -463,3 +463,29 @@ it('Spotify status is read again when Tools opens and when the window focuses', 
   await flush();
   expect(status).toHaveBeenCalledTimes(3);
 });
+
+it('Spotify\'s row holds the public page switch, with helper text, and it changes the stored choice', async () => {
+  const { usePublicPage, PUBLIC_PAGE_KEY, resetPublicPage, PAGE_SWITCH_TIP } = await import('../unwind/spotify/model');
+  localStorage.clear();
+  resetPublicPage();
+  mocks.set('wall2_meet_next', (args) => (args?.peek ? peekOnly(data)(args) : data));
+  mocks.set('wall2_spotify_status', () => ({ setup: true, signedIn: true, reason: null }));
+  render(
+    <>
+      <Accounts />
+      <HoverTipLayer />
+    </>,
+  );
+  await flush();
+  const row = screen.getByText('Spotify').closest('li') as HTMLElement;
+  const sw = row.querySelector('button[aria-label="Public page reads: On"]') as HTMLButtonElement;
+  expect(sw).toBeTruthy();
+  expect(await hoverText(sw)).toContain(PAGE_SWITCH_TIP);
+  // It sits in the existing row (same 46 px row pattern), so the drawer is not made taller by it.
+  expect(row.className).toContain('tools-acct');
+  fireEvent.click(sw);
+  expect(usePublicPage.getState().on).toBe(false);
+  expect(localStorage.getItem(PUBLIC_PAGE_KEY)).toBe('off');
+  fireEvent.click(row.querySelector('button[aria-label="Public page reads: Off"]')!);
+  expect(usePublicPage.getState().on).toBe(true);
+});

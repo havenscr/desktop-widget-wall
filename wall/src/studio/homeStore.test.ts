@@ -794,7 +794,7 @@ it('a refused action says why in fixed words, then reads again', async () => {
   const cases: [string, string][] = [
     ['refused', TEXT.refused],
     ['unknown', TEXT.unknown],
-    ['not-set-up', TEXT.notSetUp],
+    ['not-set-up', TEXT.writeNotSetUp],
     ['needs-private-address', TEXT.needsPrivate],
     ['nothing-to-undo', TEXT.nothingToUndo],
   ];

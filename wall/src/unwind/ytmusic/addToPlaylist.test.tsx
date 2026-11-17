@@ -162,7 +162,7 @@ describe('the control on a library row', () => {
     await opened();
     fireEvent.click(addOf('Clip 1')!);
     const rows = picks();
-    expect(rows.map((r) => r.textContent)).toEqual(['Evening2, 2 videos', 'Morning5, 5 videos', 'New playlist']);
+    expect(rows.map((r) => r.textContent)).toEqual(['Evening2, 2 videos', 'Morning5, 5 videos', 'Watch list, on its own', 'New playlist']);
     expect(document.activeElement).toBe(rows[0]);
   });
 });
@@ -238,8 +238,8 @@ describe('adding', () => {
     seed([]);
     await opened();
     fireEvent.click(addOf('Clip 6')!);
-    expect(picks().map((r) => r.textContent)).toEqual(['New playlist']);
-    fireEvent.click(picks()[0]!);
+    expect(picks().map((r) => r.textContent)).toEqual(['Watch list, on its own', 'New playlist']);
+    fireEvent.click(picks()[1]!);
     const field = screen.getByLabelText('Name for the new playlist') as HTMLInputElement;
     fireEvent.change(field, { target: { value: 'Late set' } });
     await act(async () => void fireEvent.submit(field.form!));
@@ -400,7 +400,7 @@ describe('the menu\'s list is capped', () => {
       seed(Array.from({ length: n }, (_, i) => [`List ${i}`, 1] as [string, number]));
       const r = await opened(false);
       fireEvent.click(addOf('Clip 1')!);
-      expect(picks()).toHaveLength(n + 1);
+      expect(picks()).toHaveLength(n + 2);
       expect(rowsBox().style.maxHeight).toBe(`${3 * MENU_ROW}px`);
       r.unmount();
       cleanup();

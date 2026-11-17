@@ -131,12 +131,10 @@ const measureOwn = () => {
         if (!near(c.w, 460, 2)) fails.push('the play row is ' + num(c.w) + ' px wide (460)');
         if (ctl.scrollWidth > ctl.clientWidth + 1) fails.push('the play row is cut: ' + ctl.scrollWidth + ' px of content in ' + ctl.clientWidth);
         for (const [n, r] of [['open', o], ['add', a], ['gear', g]]) if (r.r > c.r + 0.5 || r.l < c.l - 0.5) fails.push('the ' + n + ' button is outside the row (' + at(r) + ')');
-        if (!near(o.l, 858, 3) || !near(o.w, 114, 3)) fails.push('the open button is at ' + at(o) + ' (858, 267 114 by 40)');
-        if (!near(a.l, 978, 3) || !near(a.w, 40, 1) || !near(a.h, 40, 1)) fails.push('the add button is at ' + at(a) + ' (978, 267 40 by 40)');
+        if (!near(o.l, 854, 3) || !near(o.w, 40, 1)) fails.push('the open button is at ' + at(o) + ' (854, 267 40 by 40)');
+        if (!near(a.l, 900, 3) || !near(a.w, 40, 1) || !near(a.h, 40, 1)) fails.push('the add button is at ' + at(a) + ' (900, 267 40 by 40)');
         if (a.r > g.l + 0.5) fails.push('the add button overlaps the gear');
         if (Math.abs(o.t - a.t) > 1 || Math.abs(o.t - g.t) > 1) fails.push('the buttons are not on one line');
-        const text = open.querySelector('.w-open-t');
-        if (text && text.scrollWidth > text.clientWidth + 1) fails.push('the open label is cut');
         if (open.getAttribute('aria-label') !== 'Open in YouTube') fails.push('the open button lost its name "Open in YouTube"');
       }
     } else if (mode === 'menu') {
@@ -264,7 +262,7 @@ export default {
       'own-list-head': { css: '.w-card .u-card-head { margin: 0 !important; }', expect: /^ *FAIL own playlists: the list is at/m, appliesTo: on('Own playlists, the list') },
       'own-row-count': { css: '.w-count { min-width: 300px !important; }', expect: /^ *FAIL own playlists: the (count (ends at x|is at)|name (is only|overlaps))/m, appliesTo: on('Own playlists, rows with counts') },
       'own-pill': { css: '.own-pill { min-width: 300px !important; }', expect: /^ *FAIL own playlists: the (count (ends at x|is at)|name (is only|overlaps))/m, appliesTo: on('Own playlists, the pill on the playing row') },
-      'own-play-row': { css: '.w-open-t { min-width: 200px !important; }', expect: /^ *FAIL own playlists: the (play row|open|add|gear)/m, appliesTo: on('Own playlists, the play row') },
+      'own-play-row': { css: '.w-open { min-width: 200px !important; }', expect: /^ *FAIL own playlists: the (play row|open|add|gear)/m, appliesTo: on('Own playlists, the play row') },
       'own-menu-place': { css: '.w-pop { left: -200px !important; }', expect: /^ *FAIL own playlists: the menu spans x/m, appliesTo: on('Own playlists, the add menu') },
       'own-row-menu': { css: '.w-pop { top: 600px !important; }', expect: /^ *FAIL own playlists: the menu (leaves the stage|hangs below the card)/m, appliesTo: on("Own playlists, the list row's add menu") },
       'own-drag-line': { css: '.own-line-drop { z-index: 1 !important; }', expect: /^ *FAIL own playlists: the landing line is covered/m, appliesTo: on('Own playlists, a row held in the editor') },

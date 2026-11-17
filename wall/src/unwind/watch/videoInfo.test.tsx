@@ -189,7 +189,34 @@ describe('the store keeps what the player reports', () => {
       expect(st.fillLabel(`video:${V}`, 'Real title')).toBe(false);
       expect(labels()[0]).toBe('YouTube video');
       st.setEditing(null);
-      expect(st.fillLabel(`video:${V}`, 'Real title')).toBe(true);
+      expect(labels()[0]).toBe('Real title');
+    });
+
+    it('an answer that arrives while the name field is open is applied when it closes without a typed name', () => {
+      const st = useWatchStore.getState();
+      st.setEditing(`video:${V}`);
+      st.fillLabel(`video:${V}`, 'Late title');
+      expect(labels()[0]).toBe('YouTube video');
+      st.setEditing(null);
+      expect(labels()[0]).toBe('Late title');
+      expect(stored()[0]).toBe('Late title');
+    });
+
+    it('a name typed meanwhile always wins over the waiting answer', () => {
+      const st = useWatchStore.getState();
+      st.setEditing(`video:${V}`);
+      st.fillLabel(`video:${V}`, 'Late title');
+      st.rename(`video:${V}`, 'Typed name');
+      expect(labels()[0]).toBe('Typed name');
+    });
+
+    it('a waiting answer is dropped when the item is removed', () => {
+      const st = useWatchStore.getState();
+      st.setEditing(`video:${V}`);
+      st.fillLabel(`video:${V}`, 'Late title');
+      st.remove(`video:${V}`);
+      st.addRef({ kind: 'video', id: V }, false);
+      expect(useWatchStore.getState().saved.find((i) => i.id === V)?.label).toBe('YouTube video');
     });
 
     it('keeps the playing item in step with its new label', () => {
