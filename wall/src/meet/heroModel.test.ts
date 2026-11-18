@@ -212,7 +212,21 @@ it('reply words and marks: accepted and organizer tick, maybe asks, none and dec
 });
 
 it('the later keys: six after Join and Open invite, four after the call keys, the last named for the call', () => {
-  expect(BEFORE_LATER.map((k) => k.label)).toEqual(['Copy join info', 'Open chat', 'Running late', 'Do Not Disturb', 'Lights', 'Open in Teams']);
+  expect(BEFORE_LATER.map((k) => k.label)).toEqual(['Copy join info', 'Open chat', 'Running late', 'Do Not Disturb', 'Camera check', 'Open in Teams']);
+  expect(BEFORE_LATER).toHaveLength(6);
+  expect(BEFORE_LATER.filter((k) => k.soon).map((k) => k.label)).toEqual(['Camera check']);
   expect(callLater('teams').map((k) => k.label)).toEqual(['Raise hand', 'Reactions', 'Chat panel', 'Open in Teams']);
   expect(callLater('zoom').at(-1)?.label).toBe('Open in Zoom');
+});
+
+it('the small keys are tinted by what they touch: invite violet, people mint, you amber, Teams cyan', () => {
+  const tints = Object.fromEntries(BEFORE_LATER.map((k) => [k.label, k.tint]));
+  expect(tints).toEqual({
+    'Copy join info': 'invite',
+    'Open chat': 'people',
+    'Running late': 'people',
+    'Do Not Disturb': 'you',
+    'Camera check': 'you',
+    'Open in Teams': 'teams',
+  });
 });

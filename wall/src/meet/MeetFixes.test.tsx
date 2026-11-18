@@ -578,19 +578,19 @@ it('a meeting that starts at the same minute as the hero is the Next card and re
   expect(card.getByText('Starts before this one ends')).toBeTruthy();
 });
 
-it('the recording chip stays in the hero while a key press line shows, and the line sits under it', async () => {
+it('the recording chip stays in the hero while a key press line shows, and the line sits under the lights', async () => {
   serve({ meetings: () => [m('a', 'Design review', -10, 50)] });
   mocks.set('wall2_keys_send_library', () => Promise.reject(new Error('no-target')));
   act(() => useSignalStore.setState({ recording: true }));
   await setCall(call());
   const { container } = await renderMeet();
-  expect(hero(container).querySelector('.meet-hero-last .rec-chip')).not.toBeNull();
+  expect(hero(container).querySelector('.meet-hero-st .rec-chip')).not.toBeNull();
   fireEvent.click(within(hero(container)).getByRole('button', { name: 'Mute' }));
   await flush(10);
   expect(hero(container).querySelector('.meet-hero-line .meet-brief')).not.toBeNull();
-  expect(hero(container).querySelector('.meet-hero-last .rec-chip')).not.toBeNull();
+  expect(hero(container).querySelector('.meet-hero-st .rec-chip')).not.toBeNull();
   // The line goes after a few seconds; the chip never did.
   await flush(10_000);
   expect(hero(container).querySelector('.meet-hero-line .meet-brief')).toBeNull();
-  expect(hero(container).querySelector('.meet-hero-last .rec-chip')).not.toBeNull();
+  expect(hero(container).querySelector('.meet-hero-st .rec-chip')).not.toBeNull();
 });

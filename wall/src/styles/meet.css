@@ -1038,9 +1038,6 @@
   cursor: default;
   transform: none;
 }
-.meet-key-gap {
-  display: block;
-}
 .meet-hero.deck .meet-ppl {
   left: 326px;
   top: 324px;
@@ -1096,30 +1093,14 @@
   gap: 4px;
   min-width: 0;
 }
-.meet-hero.deck .meet-hero-last {
-  left: 326px;
-  top: 400px;
-  width: 494px;
-  gap: 10px;
-}
-.meet-chip-later {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  height: 32px;
-  padding: 0 14px;
-  border-radius: 16px;
-  border: 1px dashed rgba(183, 175, 214, 0.6);
-  color: var(--dim);
-  font: 600 16px/1 var(--body);
-  white-space: nowrap;
-}
 .meet-hero-line {
   position: absolute;
   left: 326px;
-  top: 442px;
+  top: 470px;
   width: 494px;
-  min-height: 32px;
+  height: 16px;
+  min-height: 16px;
+  overflow: hidden;
   display: flex;
   align-items: center;
 }
@@ -1241,4 +1222,97 @@
 }
 .meet-pdet-addr[data-kind='address'] {
   color: var(--tx);
+}
+
+/* The studio lights under the people: two rows of 40 px controls in the right column (x 326, y 384). */
+.meet-hero.deck .meet-lights {
+  position: absolute;
+  left: 326px;
+  top: 384px;
+  width: 494px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.meet-lights-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 40px;
+  min-width: 0;
+}
+.meet-lights-row .st-presets {
+  flex: 1 1 auto;
+  margin-top: 0;
+}
+.meet-lights-row.st-switches {
+  margin-top: 0;
+  gap: 8px;
+}
+.meet-lights .st-switches .st-tg {
+  flex: none;
+  --tg-px: 12px;
+  --tg-gap: 8px;
+}
+.meet-office {
+  flex: none;
+}
+/* Opens upward over the people, inside the 494 px column, and scrolls past 200 px (up to 12 moods). */
+.meet-office-list {
+  position: absolute;
+  left: 0;
+  bottom: calc(100% + 6px);
+  z-index: 6;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  box-sizing: border-box;
+  width: 494px;
+  max-height: 200px;
+  overflow-y: auto;
+  padding: 10px;
+  border-radius: 14px;
+  background: rgba(11, 8, 34, 0.97);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+}
+
+/* Colour on the small keys by what each touches: the invite (violet), people (mint), you (amber), the Teams app (cyan). */
+.meet-hero.deck .meet-keys .meet-key[data-tint] {
+  --tint: 154, 123, 255;
+  background: rgba(var(--tint), 0.11);
+  border-color: rgba(var(--tint), 0.55);
+}
+.meet-hero.deck .meet-keys .meet-key[data-tint] svg {
+  color: rgb(var(--tint));
+}
+.meet-hero.deck .meet-keys .meet-key[data-tint='people'] {
+  --tint: 93, 242, 182;
+}
+.meet-hero.deck .meet-keys .meet-key[data-tint='you'] {
+  --tint: 255, 194, 77;
+}
+.meet-hero.deck .meet-keys .meet-key[data-tint='teams'] {
+  --tint: 53, 230, 234;
+}
+/* A dashed later key keeps its dashes and dim label; only the fill and the icon take the tint. */
+.meet-hero.deck .meet-keys .meet-key.later[data-tint] {
+  border-style: dashed;
+}
+
+/* The key press line and the notice take the 16 px under the lights section. */
+.meet-hero.deck .meet-hero-line .meet-brief,
+.meet-hero.deck .meet-hero-line .meet-notice {
+  font-size: 16px;
+  line-height: 16px;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.meet-hero.deck .meet-hero-line .meet-notice.amber {
+  color: var(--amber);
+}
+.meet-office-list .st-preset.failed {
+  border-color: var(--amber);
+  color: var(--amber);
 }

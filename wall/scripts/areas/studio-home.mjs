@@ -76,7 +76,7 @@ function measureHome() {
   const lastRoom = qa('.st-d-rooms .st-srow').pop();
   const inScroll = (e) => scrolls && body.contains(e);
   const ask = q('.lanes-hd .ask-btn');
-  const rec = q('.meet-hero-last .rec-chip');
+  const rec = q('.meet-hero-st .rec-chip');
   const recCut = rec ? [rec, ...rec.querySelectorAll('*')].some((e) => e.scrollWidth > e.clientWidth + 1) : false;
   return {
     floor,

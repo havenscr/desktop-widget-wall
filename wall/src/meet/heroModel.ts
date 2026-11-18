@@ -216,23 +216,34 @@ export function replyMark(reply: Reply): { text: string; tone: 'yes' | 'maybe' |
   return reply === 'yes' || reply === 'organizer' ? { text: '\u2713', tone: 'yes' } : reply === 'maybe' ? { text: '?', tone: 'maybe' } : { text: '\u2013', tone: 'none' };
 }
 
+/** What a small key touches, for its colour: the invite (violet), people (mint), you (amber), the Teams app (cyan). */
+export type KeyTint = 'invite' | 'people' | 'you' | 'teams';
+
 /** A key of the deck that does nothing yet: drawn dashed and dim, a tooltip says so. */
 export interface LaterKeySpec {
   label: string;
   /** A key icon name (`KEY_ICONS`), or `smile`. */
   icon: string;
+  tint?: KeyTint;
+  /** Marked soon: the key is drawn as voted and has no action yet. */
+  soon?: boolean;
 }
+
+/** The tint of the Open invite key and of the "No join link" tile, which share the invite's colour. */
+export const INVITE_TINT: KeyTint = 'invite';
+export const NO_JOIN_LINK_LABEL = 'No join link';
+export const CAMERA_CHECK_TIP = 'Soon: opens the Camera app so you can check framing and light before the call. Not available yet.';
 
 export const LATER_TIP = 'Not available yet';
 
 /** Positions 3 to 8 of the deck before a call; Join and Open invite hold positions 1 and 2. */
 export const BEFORE_LATER: readonly LaterKeySpec[] = [
-  { label: 'Copy join info', icon: 'copy' },
-  { label: 'Open chat', icon: 'chat' },
-  { label: 'Running late', icon: 'timer' },
-  { label: 'Do Not Disturb', icon: 'moon' },
-  { label: 'Lights', icon: 'bulb' },
-  { label: 'Open in Teams', icon: 'window' },
+  { label: 'Copy join info', icon: 'copy', tint: 'invite' },
+  { label: 'Open chat', icon: 'chat', tint: 'people' },
+  { label: 'Running late', icon: 'timer', tint: 'people' },
+  { label: 'Do Not Disturb', icon: 'moon', tint: 'you' },
+  { label: 'Camera check', icon: 'camera', tint: 'you', soon: true },
+  { label: 'Open in Teams', icon: 'window', tint: 'teams' },
 ];
 
 /** Positions 5 to 8 of the deck in a call; Mute, Camera, Share and Leave hold positions 1 to 4. */

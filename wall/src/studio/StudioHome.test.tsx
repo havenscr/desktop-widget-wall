@@ -12,7 +12,8 @@ import { LightsChip } from './LightsChip';
 import { shortWords } from './SheetHome';
 import { studioOf } from './home';
 import { StudioBlock } from './StudioBlock';
-import { resetKeyLights, useKeyLights } from './store';
+import { resetKeyLights } from './store';
+
 
 vi.setConfig({ testTimeout: 20_000 });
 
@@ -405,16 +406,6 @@ it('the chip is unchanged when the home part is absent, and says nothing about a
   });
   await act(async () => useHome.getState().readStudio());
   expect(screen.queryByText('Lights: On air')).toBeNull();
-});
-
-it('on Meet the chip shows while a call shows, with no recording needed, and opens the sheet', async () => {
-  useSignalStore.setState({ recording: false });
-  answer = studioWith('onAir');
-  render(<LightsChip where="meet" />);
-  await flush();
-  fireEvent.click(screen.getByText('Lights: On air'));
-  expect(useKeyLights.getState().drawer).toBe(true);
-  expect(document.querySelector('.st-drawer')).toBeTruthy();
 });
 
 // Section: the sheet
