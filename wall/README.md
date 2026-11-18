@@ -2378,8 +2378,22 @@ clock's date line to the last row).
   an item that left the list leaves an empty place. A word too long for a pin ends in an ellipsis on its line (the full label is in the hover tip). Right-click (or the menu key, or Shift+F10) opens a small menu:
   Replace and Remove on a pin, and the list ("Pin from the Watch list") on an empty place; with an empty Watch list it
   says to add a video first and has an Open Watch button. The pins are kept as three keys under `wall2-watch-pins`
-  and read strictly on every load (`watch/pins.ts`). The art square is a drawn gradient from the item's key: no
-  thumbnail is fetched.
+  and read strictly on every load (`watch/pins.ts`).
+  A place can also hold an item pinned from a library panel: a Spotify playlist or album, a YouTube playlist, video or
+  live stream, stored as an object `{ kind, id, name, art? }` in the same array (old string places read unchanged; an
+  older build reads the object places as empty, so the change is one way). Ids are checked by kind (Spotify: 22 letters
+  or digits; YouTube: the Watch list rules). `art` is kept only for Spotify kinds (a `https` address on `.scdn.co` or
+  `.spotifycdn.com`, no port, no credentials, at most 200 characters, the rules `wall2_spotify.rs` applies) and
+  YouTube playlists (the exact `i.ytimg.com/vi/<id>/mqdefault.jpg` shape); videos and live streams build their
+  picture from the id. A bad cover drops only the cover. The art square shows the real cover with a 20 px service
+  badge (Spotify or YouTube); with no cover (Twitch, a Watch list playlist, a failed load) it is the gradient and the
+  kind's glyph, no badge. A click plays a YouTube pin on Watch (`playPinned`) and a Spotify pin on Listen with the
+  card's own play path and notes; a Spotify pin is never lit. Right-click (or the menu key, or Shift+F10) on a Spotify
+  playlist or album tile, a YouTube playlist tile or a playing YouTube row opens the item's actions, then "Pin to the
+  left", which opens a chooser of the three places (art and name, or Empty); one click writes it. An opened Spotify
+  playlist or album, and an opened YouTube playlist, also have a Pin button (an icon in the YouTube tall view) that
+  opens the same chooser. A pinned item's Pin row and button are off and name its place. The small "Add a pin" places
+  work as before.
 - **Volume.** On Watch the slider and sound button drive the wall's own video through the YouTube player's own
   `setVolume` (the level is kept in the Watch store under `wall2-watch-volume`, default 100, so nothing changes until
   it is moved; the sound button is the same mute as the play row's). The Windows session is not used for the wall's
@@ -2405,7 +2419,7 @@ clock's date line to the last row).
   pointer anywhere on the column from the date line to the last row, an open pin menu, or keyboard focus inside brings
   them to full strength, and they go quiet `CTL_REST_MS` after the last of those leaves.
 - **Up next** on Listen moves under the rows and keeps one song (`UpNext` takes a `rows` prop).
-- **Dev**: `?wpins=none|one|three|long|gone`, `?wvol=<0..100>`, `?wsleep=<minutes left>|end` and `?wrows=shown`
+- **Dev**: `?wpins=none|one|three|long|gone|mixed|mixedfull|mixedbroken|lib1|liblong` (the last five are library pins with drawn covers), `?wvol=<0..100>`, `?wsleep=<minutes left>|end` and `?wrows=shown`
   (all with `?watch=mock`). The gallery and the fit check have states in `scripts/areas/under-clock.mjs`.
 
 ## Home feeds (task card and network tile)
