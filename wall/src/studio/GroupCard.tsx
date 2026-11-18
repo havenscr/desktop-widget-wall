@@ -6,7 +6,7 @@ import { useToolsStore } from '../tools/store';
 import { EffectRow } from './EffectPick';
 import { KeyPanel } from './KeyControls';
 import { closeCard, useCard, type CardId } from './cardStore';
-import { DARK_TIP, needsZone, tileState, wouldBeDark } from './homeModel';
+import { needsZone, wouldBeDark } from './homeModel';
 import { canChange, useHome } from './homeStore';
 import type { Group, Studio } from './home';
 import { RoomSliderRow } from './SheetHome';
@@ -14,6 +14,7 @@ import { noneTitle, viewOf, type Snapshot } from './model';
 import { useKeyLights } from './store';
 
 const STAGE_W = 2560;
+const STAGE_H = 720;
 const EDGE = 12;
 /** The card is this wide; a card that gives a reason is wider, so the words show whole. */
 export const CARD_W = 340;
@@ -21,15 +22,21 @@ export const CARD_REASON_W = 380;
 const ABOVE_TILE = 12;
 const CARD_INSET = 32;
 
-/** The reason a group cannot be switched, in full. Null when it can. */
+/**
+ * The reason a group's controls cannot be used, in full. Null when they can. Not this: "it cannot go off now" is about
+ * switching off, not dimming, so it is no blocker (see `darkLine`).
+ */
 export function whyNot(studio: Studio, g: Group, may: boolean): { head: string; text: string } | null {
   if (needsZone(g)) return { head: 'Needs a Hue zone before the wall can switch it.', text: 'The home app makes the zone. Its README says how.' };
-  const st = tileState(studio, g, may);
-  if (!st.disabled) return null;
   if (!g.reachable) return { head: 'Not answering.', text: 'The wall can switch it only after the home app reads it again.' };
   if (!may) return { head: 'View only here.', text: "To switch it from the wall, add the home app's desk token in Tools." };
-  if (wouldBeDark(studio, g)) return { head: 'It cannot go off now.', text: `${DARK_TIP}.` };
-  return { head: st.tip, text: '' };
+  void studio;
+  return null;
+}
+
+/** The one short line beside a slider when the group cannot be switched off now (it can still be dimmed), else null. */
+export function darkLine(studio: Studio, g: Group): string | null {
+  return wouldBeDark(studio, g) ? 'It cannot go off now: one room light stays on.' : null;
 }
 
 /**
@@ -57,7 +64,7 @@ export function GroupCard() {
 
   // Nothing to show for this id any more (the home app's group went, the sheet opened): the card goes.
   const gone = open === null || drawer || (open !== 'keys' && !group);
-  const reason = open === 'keys' ? v === 'none' || v === 'unset' || v === 'checking' : group ? (away ? true : whyNot(studio as Studio, group, may) !== null) : false;
+  const reason = open === 'keys' ? v === 'none' || v === 'unset' || v === 'checking' : group ? (away ? true : whyNot(studio as Studio, group, may) !== null || darkLine(studio as Studio, group) !== null) : false;
   const width = reason ? CARD_REASON_W : CARD_W;
 
   useEffect(() => {
@@ -93,7 +100,16 @@ export function GroupCard() {
     read();
     window.addEventListener('resize', read);
     return () => window.removeEventListener('resize', read);
-  }, [open, gone, width, hasHome]);
+  }, [open, gone, width, hasHome, studio]);
+
+  // Inside the 720 px stage: the card's top and bottom stay EDGE px from its edges, whatever its height.
+  useLayoutEffect(() => {
+    if (!place || !ref.current) return;
+    const b = stageBox(ref.current);
+    if (!b) return;
+    const bottom = Math.max(EDGE, Math.min(place.bottom, STAGE_H - EDGE - b[3]));
+    if (bottom !== place.bottom) setPlace({ ...place, bottom });
+  }, [place]);
 
   useEffect(() => {
     if (!open || gone) return;
@@ -131,7 +147,8 @@ export function GroupCard() {
     const first = items[0];
     const last = items[items.length - 1];
     const now = document.activeElement;
-    if ((e.shiftKey && (now === first || now === ref.current)) || (!e.shiftKey && now === last)) {
+    // A card with nothing to focus (a reason only) closes on any Tab.
+    if (items.length === 0 || (e.shiftKey && (now === first || now === ref.current)) || (!e.shiftKey && now === last)) {
       e.preventDefault();
       closeCard();
       focusName();
@@ -210,12 +227,15 @@ function CardHead({ title }: { title: string }) {
 /** A home group's card: Panels has its brightness and its effect; a room group its brightness; a group that cannot be switched, why. */
 function RoomCard({ studio, g, may, away }: { studio: Studio; g: Group; may: boolean; away: boolean }) {
   const why = away ? { head: 'The home app is not answering.', text: 'Nothing here can be changed until it does.' } : whyNot(studio, g, may);
+  const dark = darkLine(studio, g);
   return (
     <>
       <CardHead title={g.label} />
       {why ? (
         <>
           <ReasonLines head={why.head} text={why.text} tone={needsZone(g) || away ? 'amber' : 'plain'} />
+          {/* A group that does not answer keeps its slider, disabled, under the reason. */}
+          {!away && !needsZone(g) && !g.reachable && g.canDim && <RoomSliderRow g={g} studio={studio} may={may} />}
           {why.head === 'View only here.' && (
             <button type="button" className="st-lk st-gcard-act" onClick={() => { closeCard(); useToolsStore.getState().openDrawer('desktoken'); }}>
               <IconSettings size={18} aria-hidden="true" />
@@ -226,6 +246,7 @@ function RoomCard({ studio, g, may, away }: { studio: Studio; g: Group; may: boo
       ) : (
         <>
           {g.canDim && <RoomSliderRow g={g} studio={studio} may={may} />}
+          {dark && <div className="st-line st-gcard-line">{dark}</div>}
           {g.id === 'panels' && <EffectRow studio={studio} panels={g} may={may} where="beside" />}
           {g.id !== 'panels' && g.floor ? <div className="st-line st-gcard-line">The {g.floor} percent floor keeps the room comfortable on camera.</div> : null}
         </>

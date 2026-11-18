@@ -90,6 +90,9 @@ export function SheetPresets({ studio, may }: { studio: Studio; may: boolean }) 
   );
 }
 
+/** A room slider sends at most one write this often while it is dragged, and the exact value on release. */
+export const ROOM_WRITE_MS = 250;
+
 /** One room group's brightness slider (Panels stops at 1 percent: the home app takes nothing lower). Used by the sheet and the card. */
 export function RoomSliderRow({ g, studio, may }: { g: Group; studio: Studio; may: boolean }) {
   const writes = useHome((s) => s.writes);
@@ -98,7 +101,8 @@ export function RoomSliderRow({ g, studio, may }: { g: Group; studio: Studio; ma
   const level = g.level ?? 0;
   // Moving the slider turns an off group on, at that level (as the key lights do), unless that would be refused.
   const send = (v: number) => void useHome.getState().setGroup(g.id, true, v);
-  const down = !may || needsZone(g);
+  // A group that does not answer is dimmed like one without a desk token: nothing to drag.
+  const down = !may || needsZone(g) || !g.reachable;
   return (
     <Slider
       label={`${g.label} brightness`}
@@ -111,6 +115,7 @@ export function RoomSliderRow({ g, studio, may }: { g: Group; studio: Studio; ma
       format={(v) => (g.on ? `${Math.round(v)}%` : 'Off')}
       down={down}
       busyCount={writes}
+      throttleMs={ROOM_WRITE_MS}
       onInput={send}
       tipText={`${g.label}: brightness from ${floor} to 100 percent${floor > 0 ? `. The ${floor} percent floor keeps the room comfortable on camera` : ''}. Moving it turns the lights on. ${st.tip}`}
     />

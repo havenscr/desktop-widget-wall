@@ -138,7 +138,7 @@ export default {
           if (!c) fails.push('studiocards: the card is not on the page');
           else {
             if (s.cardCount !== 1) fails.push('studiocards: ' + s.cardCount + ' cards are open (one at a time)');
-            if (c.l < 0 || c.r > 2560 || c.t < 0) fails.push('studiocards: the card is at x ' + r1(c.l) + ' to ' + r1(c.r) + ', y from ' + r1(c.t) + ' (inside the wall)');
+            if (c.l < 0 || c.r > 2560 || c.t < 11 || c.b > 709) fails.push('studiocards: the card is at x ' + r1(c.l) + ' to ' + r1(c.r) + ', y ' + r1(c.t) + ' to ' + r1(c.b) + ' (inside the wall, 12 px from its top and bottom)');
             if (s.tile && Math.abs(s.tile.t - c.b - 12) > 2) fails.push('studiocards: the card ends at y ' + r1(c.b) + ', ' + r1(s.tile.t - c.b) + ' px above its tile (12)');
             if (s.tile && (c.r < s.tile.l || c.l > s.tile.r)) fails.push('studiocards: the card does not sit over its own tile');
             for (const k of s.cardKids) if (!k.n.includes('st-gcard-tail') && (k.l < c.l - 1 || k.r > c.r + 1 || k.t < c.t - 1 || k.b > c.b + 1)) fails.push('studiocards: card part "' + k.n.trim() + '" leaves the card');

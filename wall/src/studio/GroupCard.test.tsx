@@ -257,3 +257,87 @@ it('the Panels slider is in the sheet too, and "Needs a Hue zone" shows whole on
   expect(zones).toHaveLength(2);
   expect([...zones].every((z) => z.textContent === 'Needs a Hue zone')).toBe(true);
 });
+
+it('a 2 s drag with 60 moves sends at most 9 writes, and the last carries the release value', async () => {
+  await show();
+  fireEvent.click(name('Overhead'));
+  await flush();
+  const track = within(card()!).getByRole('slider', { name: 'Overhead brightness' });
+  vi.spyOn(track, 'getBoundingClientRect').mockReturnValue({ left: 0, top: 0, right: 200, bottom: 26, width: 200, height: 26, x: 0, y: 0, toJSON: () => ({}) });
+  track.setPointerCapture = () => {};
+  writes.length = 0;
+  fireEvent.pointerDown(track, { clientX: 100, button: 0, pointerId: 1 });
+  for (let i = 1; i <= 60; i++) {
+    await flush(2000 / 60);
+    fireEvent.pointerMove(track, { clientX: 100 + i, pointerId: 1 });
+  }
+  fireEvent.pointerUp(track, { pointerId: 1 });
+  await flush();
+  const sent = writes.filter((w) => w.command === 'wall2_studio_group');
+  expect(sent.length).toBeGreaterThan(1);
+  expect(sent.length).toBeLessThanOrEqual(9);
+  expect(sent.at(-1)?.args).toEqual({ id: 'overhead', on: true, level: 80 });
+});
+
+it('Overhead on and Behind monitor off: the Overhead card still has its slider, with the reason in one line', async () => {
+  answer = studioAnswer({ groups: [group('panels', 'Panels', true, 70), group('behindMonitor', 'Behind monitor', false, 0), group('overhead', 'Overhead', true, 90)] });
+  await show();
+  fireEvent.click(name('Overhead'));
+  await flush();
+  const c = card()!;
+  expect(within(c).getByRole('slider', { name: 'Overhead brightness' })).toBeTruthy();
+  expect(c.textContent).toContain('It cannot go off now: one room light stays on.');
+  fireEvent.click(name('Overhead'));
+  await flush();
+  fireEvent.click(screen.getByRole('button', { name: 'Fine tune' }));
+  await flush();
+  expect(within(document.querySelector('.st-drawer') as HTMLElement).getByRole('slider', { name: 'Overhead brightness' }).getAttribute('aria-disabled')).toBeNull();
+});
+
+it('a card with no focusable control closes when Tab or Shift+Tab leaves it', async () => {
+  for (const shiftKey of [false, true]) {
+    answer = studioAnswer({ groups: [group('panels', 'Panels', true, 70), group('behindMonitor', 'Behind monitor', false, 0, { canSwitch: false, canDim: false, setTo: 'Needs a Hue zone', floor: null }), group('overhead', 'Overhead', true, 90)] });
+    resetHome();
+    resetCard();
+    document.body.innerHTML = '';
+    await show();
+    fireEvent.click(name('Behind monitor'));
+    await flush();
+    expect(card()!.querySelector('[role="slider"], button')).toBeNull();
+    fireEvent.keyDown(card()!, { key: 'Tab', shiftKey });
+    expect(card()).toBeNull();
+  }
+});
+
+it('an unreachable group shows its slider disabled with the reason, in the card and the sheet', async () => {
+  answer = studioAnswer({ groups: [group('panels', 'Panels', true, 70), group('behindMonitor', 'Behind monitor', true, 80, { reachable: false }), group('overhead', 'Overhead', true, 90)] });
+  await show();
+  fireEvent.click(name('Behind monitor'));
+  await flush();
+  const c = card()!;
+  expect(c.textContent).toContain('Not answering.');
+  expect(within(c).getByRole('slider', { name: 'Behind monitor brightness' }).getAttribute('aria-disabled')).toBe('true');
+  fireEvent.click(name('Behind monitor'));
+  await flush();
+  fireEvent.click(screen.getByRole('button', { name: 'Fine tune' }));
+  await flush();
+  expect(within(document.querySelector('.st-drawer') as HTMLElement).getByRole('slider', { name: 'Behind monitor brightness' }).getAttribute('aria-disabled')).toBe('true');
+});
+
+it('the tallest card stays inside the 720 px stage when its tile is near the top', async () => {
+  await show();
+  const stage = document.querySelector('.stage') as HTMLElement | null;
+  const rect = (l: number, t: number, w: number, h: number) => ({ left: l, top: t, right: l + w, bottom: t + h, width: w, height: h, x: l, y: t, toJSON: () => ({}) });
+  const spy = vi.spyOn(Element.prototype, 'getBoundingClientRect').mockImplementation(function (this: Element) {
+    if (this === stage) return rect(0, 0, 2560, 720);
+    if (this.classList.contains('st-gcard')) return rect(100, 0, 340, 400);
+    if (this.classList.contains('st-tg')) return rect(100, 60, 200, 40);
+    if (this.hasAttribute('data-card-for')) return rect(110, 66, 80, 28);
+    return rect(0, 0, 0, 0);
+  });
+  fireEvent.click(name('Panels'));
+  await flush();
+  // The tile is at y 60 and the card is 400 high: it would start above the stage; it is held 12 px inside.
+  expect(parseFloat(card()!.style.bottom)).toBe(720 - 12 - 400);
+  spy.mockRestore();
+});
