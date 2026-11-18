@@ -26,8 +26,8 @@ const MIN_RUN_MS = ((MIN_TILE + 3) / P) * 3_600_000;
 /** How far down a tile its title and time line reach, in pixels: the now line stops short of that part. */
 const TITLE_ZONE = 30;
 
-/** A tile lower than this cannot show the time on a second line (5 px padding twice, two 19 px lines, the 2 px gap, the border). */
-export const ONE_LINE_BELOW = 54;
+/** A tile lower than this cannot show the time on a second line (5 px padding twice, a 19 px title line, a 24 px Join row, the 2 px gap, the border). */
+export const ONE_LINE_BELOW = 58;
 
 /** The agenda's hours: 8 AM to 6 PM, widened to the first and last meeting. */
 export function agendaRange(items: readonly Chip[], now: number): { lo: number; hi: number } {

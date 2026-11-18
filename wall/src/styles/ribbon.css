@@ -899,7 +899,7 @@ button.dd-k.link:hover {
   color: #ffd9ea;
 }
 .dd-ev b {
-  min-width: 0;
+  min-width: 3em;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;

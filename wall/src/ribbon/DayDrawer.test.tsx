@@ -386,5 +386,26 @@ it('a one hour tile keeps its time on the same line, so a long title gives way a
   expect(tiles[0].querySelector('.dd-t')!.textContent).toBe('1:00 to 2:00');
   // Two hours is room for a second line, so it wraps as before.
   expect(tiles[1].classList.contains('one')).toBe(false);
-  expect(ONE_LINE_BELOW).toBeGreaterThan(40 - 3);
+});
+
+it('a 59 and a 61 minute tile are both one line, and the threshold sits between 91 and 93 minutes', async () => {
+  const run = async (mins: number) => {
+    const end = `${13 + Math.floor(mins / 60)}:${String(mins % 60).padStart(2, '0')}`;
+    mocks.set('wall2_meet_day', () => ({
+      accounts: [{ id: 'work', label: 'Work', state: 'ok' }],
+      events: [ev('t1', 'Planning', '13:00', end)],
+    }));
+    const r = render(<Ribbon kind="work" />);
+    await flush();
+    fireEvent.click(r.container.querySelector('.rib-handle') as HTMLElement);
+    await flush();
+    const one = (r.container.querySelector('.dd-ev') as HTMLElement).classList.contains('one');
+    r.unmount();
+    return one;
+  };
+  expect(await run(59)).toBe(true);
+  expect(await run(61)).toBe(true);
+  expect(await run(91)).toBe(true);
+  expect(await run(93)).toBe(false);
+  expect(ONE_LINE_BELOW).toBe(58);
 });
