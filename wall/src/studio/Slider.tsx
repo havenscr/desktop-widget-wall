@@ -27,6 +27,7 @@ export function Slider({
   tipText,
   floor,
   busyCount,
+  throttleMs,
 }: {
   label: string;
   icon: ReactNode;
@@ -46,6 +47,11 @@ export function Slider({
   floor?: number;
   /** Writes in flight for this slider when it is not a key light slider (a room light). */
   busyCount?: number;
+  /**
+   * Sends at most one `onInput` per this many ms while the pointer or a key moves it (the first at once, then the
+   * newest value each period), and on release sends the exact final value if it has not gone yet.
+   */
+  throttleMs?: number;
 }) {
   const keyBusy = useKeyLights((s) => (sides ? sides.reduce((n, side) => n + s.busySides[side], 0) : s.busy));
   const busy = busyCount ?? keyBusy;
@@ -62,11 +68,48 @@ export function Slider({
   const floorFrac = floor !== undefined && floor > min ? (floor - min) / (max - min) : 0;
   const reported = Math.min(max, Math.max(min, value));
 
+  // The throttle: when the last value went, the newest value waiting, and its timer.
+  const sentAt = useRef(0);
+  const waiting = useRef<number | null>(null);
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const out = useRef(onInput);
+  out.current = onInput;
+  const emit = (v: number) => {
+    if (timer.current !== null) clearTimeout(timer.current);
+    timer.current = null;
+    waiting.current = null;
+    sentAt.current = Date.now();
+    out.current(v);
+  };
+  const send = (v: number) => {
+    if (!throttleMs) return out.current(v);
+    const wait = sentAt.current + throttleMs - Date.now();
+    if (wait <= 0) return emit(v);
+    waiting.current = v;
+    if (timer.current === null) {
+      timer.current = setTimeout(() => {
+        timer.current = null;
+        if (waiting.current !== null) emit(waiting.current);
+      }, wait);
+    }
+  };
+  // Letting go (pointer up, key up, focus leaving): the exact value goes now if it is still waiting.
+  const release = () => {
+    setActive(false);
+    if (waiting.current !== null) emit(waiting.current);
+  };
+  useEffect(
+    () => () => {
+      if (timer.current !== null) clearTimeout(timer.current);
+    },
+    [],
+  );
+
   const request = (v: number) => {
     const next = Math.min(max, Math.max(floor ?? min, min, Math.round(v / step) * step));
     if (next === asked && following) return;
     setAsked(next);
-    onInput(next);
+    send(next);
   };
   const at = (e: PointerEvent) => {
     const r = track.current?.getBoundingClientRect();
@@ -117,15 +160,15 @@ export function Slider({
           at(e);
         }}
         onPointerMove={(e) => active && at(e)}
-        onPointerUp={() => setActive(false)}
-        onPointerCancel={() => setActive(false)}
-        onLostPointerCapture={() => setActive(false)}
+        onPointerUp={release}
+        onPointerCancel={release}
+        onLostPointerCapture={release}
         onKeyDown={down ? undefined : key}
         // A key held down repeats: the thumb follows until it comes up, or focus leaves.
-        onKeyUp={() => setActive(false)}
+        onKeyUp={release}
         {...hoverTip}
         onBlur={() => {
-          setActive(false);
+          release();
           hoverTip.onBlur();
         }}
       >

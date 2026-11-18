@@ -247,6 +247,30 @@ button,
   display: block;
   margin-top: 4px;
 }
+/* The agents line's card: a fixed width so a long title is cut with an ellipsis, not widening it. */
+.hover-tip .ag-card {
+  display: block;
+  width: 346px;
+}
+.hover-tip .ag-card .tip-h {
+  display: block;
+  margin-top: 8px;
+  font: 600 16px/1.35 var(--disp);
+  letter-spacing: 0.06em;
+  color: var(--dim);
+}
+.hover-tip .ag-card .tip-h.need {
+  color: var(--amber);
+}
+.hover-tip .ag-card .x-overtx {
+  color: #ffb3c0;
+}
+.hover-tip .ag-card .x-t {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 @keyframes tip-in {
   from {
     opacity: 0;

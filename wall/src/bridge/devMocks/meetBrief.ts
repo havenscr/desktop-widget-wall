@@ -7,6 +7,18 @@ import { mocks } from '../tauri';
  * invite. Nothing in them is a URL, an id or an address.
  */
 
+/** The one invented person key with a saved contact. Every other key has none. */
+const CONTACT_KEY = 'p1-0';
+
+/** The dev preview says On Air is live when the page is opened with `?onairlive=1`. */
+const onAirLive = (): boolean => {
+  try {
+    return new URLSearchParams(globalThis.location?.search ?? '').get('onairlive') === '1';
+  } catch {
+    return false;
+  }
+};
+
 const sources = (s: Partial<BriefOut['sources']>): BriefOut['sources'] => ({ crm: 'empty', mail: 'empty', chats: 'empty', notes: 'empty', files: 'empty', ...s });
 
 export const BRIEF_CLIENT: BriefOut = {
@@ -115,6 +127,17 @@ export function registerMeetBriefMocks(): void {
   mocks.set('wall2_meet_brief_open', () => undefined);
   mocks.set('wall2_meet_person_action', (args) => {
     if (typeof args?.key !== 'string' || !/^p\d+-\d+$/.test(args.key)) throw 'gone';
-    if (!['copy', 'email', 'teams'].includes(String(args.action))) throw 'failed';
+    if (!['copy', 'email', 'teams', 'contact'].includes(String(args.action))) throw 'failed';
+    if (args.action === 'contact' && args.key !== CONTACT_KEY) throw 'unavailable';
+  });
+  mocks.set('wall2_meet_person_address', (args) => {
+    if (onAirLive()) throw 'on-air';
+    if (typeof args?.key !== 'string' || !/^p\d+-\d+$/.test(args.key)) throw 'gone';
+    return { address: 'priya.calder@contoso.example' };
+  });
+  mocks.set('wall2_meet_set_on_air', () => undefined);
+  mocks.set('wall2_meet_person_contact', (args) => {
+    if (typeof args?.key !== 'string' || !/^p\d+-\d+$/.test(args.key)) throw 'gone';
+    return { available: args.key === CONTACT_KEY };
   });
 }

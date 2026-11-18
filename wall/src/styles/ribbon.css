@@ -398,6 +398,36 @@
   white-space: nowrap;
   text-shadow: 0 0 4px rgba(6, 4, 22, 0.95);
   cursor: pointer;
+  /* The row is click-through (so the sky behind it is not covered); the line itself takes the pointer. */
+  pointer-events: auto;
+}
+/* Over the session limit: a red marker "7 of 4 open" opens the line, and a thin red line runs along
+   the strip from when the limit was passed (or from each stretch that passed it) to now or to when
+   the count dropped back. The cells keep their meaning (how many worked at once). */
+.rib .ag-line .x-over {
+  display: inline-block;
+  box-sizing: border-box;
+  height: 22px;
+  margin-right: 8px;
+  padding: 0 9px;
+  border: 1px solid #ff6b81;
+  border-radius: 11px;
+  background: rgba(255, 77, 109, 0.2);
+  font: 600 16px/20px var(--disp);
+  color: #ffd0d8;
+  vertical-align: top;
+  text-shadow: none;
+}
+.rib .agent-row .x-rail {
+  position: absolute;
+  top: 73px;
+  height: 3px;
+  border-radius: 2px;
+  background: #ff4d6d;
+  pointer-events: none;
+}
+.rib .agent-row.stale .x-rail {
+  opacity: 0.6;
 }
 /* Late in the day the line sits before the needle, over the bar: on a dark backing. */
 .rib .ag-line.before {
