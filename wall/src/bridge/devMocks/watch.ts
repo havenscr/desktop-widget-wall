@@ -75,6 +75,8 @@ import { knob } from './long';
  *                             `watch=mock`, `youtube=in` and `wtab=listen`): none, two (12 and 5 videos), three, five or nine invented ones, two with
  *                             some library videos already in the first (`in`: the second row of an opened playlist, the fourth of Liked and the
  *                             fourth search result), or two with the first one full (50). Without `ytown` the stores are empty, as with no playlist yet.
+ *   ?wjump=playlist|video|none   (with `watch=mock`) what the wall's own player played last: a saved playlist, "Night Drive" (Work's
+ *                             "Jump back in" offer), a saved video (no offer), or nothing known (no offer)
  *   ?wplace=work|home|meet    watch behaviour: after it starts, go to that place, so the video
  *                             plays out of sight and the rail marks Unwind
  */
@@ -390,6 +392,13 @@ export function registerWatchMocks(): void {
       const record = lastOwn === 'session' ? null : { title: lastOwn === 'alert' ? 'Alert chime' : (first?.label ?? 'Night drive mix'), artist: '', source: 'msedgewebview2' };
       resetLastPlayed(record, ownItem);
     }
+    // `?wjump=playlist|video|none`: the last thing the wall's own player played was a saved playlist (the Work "Jump back in" offer), a video, or nothing is known.
+    const jump = knob('wjump');
+    if (jump === 'playlist' || jump === 'video') {
+      const item = jump === 'playlist' ? { kind: 'playlist' as const, id: 'PLnightDrive0001', label: 'Night Drive' } : useWatchStore.getState().saved[0];
+      if (jump === 'playlist') useWatchStore.setState({ saved: [item, ...useWatchStore.getState().saved] });
+      if (item) resetLastPlayed(null, { kind: item.kind, id: item.id, label: item.label, from: 'watch' });
+    } else if (jump === 'none') resetLastPlayed(null, null);
     if (knob('wtab') !== 'listen') useWatchStore.getState().setTab('watch');
     if (ownState) runOwn(ownState);
     const n = Number(knob('wplay'));
