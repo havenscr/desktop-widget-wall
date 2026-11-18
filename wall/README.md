@@ -2402,8 +2402,9 @@ clock's date line to the last row).
   card's own play path and notes; a Spotify pin is never lit. Right-click (or the menu key, or Shift+F10) on a Spotify
   playlist or album tile, a YouTube playlist tile or a playing YouTube row opens the item's actions, then "Pin to the
   left", which opens a chooser of the three places (art and name, or Empty); one click writes it. An opened Spotify
-  playlist or album, and an opened YouTube playlist, also have a Pin button (an icon in the YouTube tall view) that
-  opens the same chooser. A pinned item's Pin row and button are off and name its place. The small "Add a pin" places
+  playlist or album, and an opened YouTube playlist, also have a Pin button that
+  opens the same chooser: a word after Shuffle at rest; in the tall YouTube view an icon in the header, and in the tall
+  Spotify view a 40 px round icon at the end of the back row (Back, the tab name, Pin). A pinned item's Pin row and button are off and name its place. The small "Add a pin" places
   work as before.
 - **Volume.** On Watch the slider and sound button drive the wall's own video through the YouTube player's own
   `setVolume` (the level is kept in the Watch store under `wall2-watch-volume`, default 100, so nothing changes until
