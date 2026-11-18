@@ -3832,7 +3832,7 @@ button.sp-qrow:hover {
   gap: 8px;
   height: 34px;
   min-width: 76px;
-  padding: 0 13px 0 10px;
+  padding: 0 14px 0 12px;
   border-radius: 17px;
   border: 1px solid var(--line);
   background: rgba(10, 7, 28, 0.72);
@@ -3852,17 +3852,36 @@ button.sp-qrow:hover {
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.u-mood-sw {
-  display: inline-flex;
-  width: 24px;
-  height: 14px;
-  border-radius: 5px;
-  overflow: hidden;
+.u-mood-dot {
   flex: none;
-  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.25);
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  opacity: 0.7;
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.2);
 }
-.u-mood-sw i {
-  flex: 1;
+.u-mood.lit .u-mood-dot {
+  opacity: 1;
+  box-shadow: 0 0 0 1.5px rgba(255, 255, 255, 0.55), 0 0 10px 3px var(--glow);
+}
+/* Back to normal: the last chip, beside Off. Dashed and dim while no mood is on, as the Studio sheet's. */
+.u-mood-back {
+  padding: 0 14px 0 11px;
+  color: var(--tx);
+}
+.u-mood-back svg {
+  flex: none;
+  color: var(--cyan);
+}
+.u-mood-back.dis {
+  border-style: dashed;
+  border-color: rgba(183, 175, 214, 0.5);
+  background: rgba(14, 10, 36, 0.5);
+  color: var(--faint);
+  cursor: default;
+}
+.u-mood-back.dis svg {
+  color: var(--faint);
 }
 .u-mood-ico {
   flex: none;
@@ -3912,7 +3931,7 @@ button.sp-qrow:hover {
   border-color: rgba(183, 175, 214, 0.4);
   cursor: default;
 }
-.u-mood.blocked .u-mood-sw {
+.u-mood.blocked .u-mood-dot {
   opacity: 0.45;
 }
 .u-mood.blocked.lit {

@@ -12,15 +12,18 @@ export const ROW_MAX = 1124;
 export const ROW_MIN = 420;
 /** Space between the row's parts. */
 export const ROW_GAP = 8;
-/** A chip is 2 px of border, 23 px of padding, the 24 px swatch and its 8 px gap around the name. */
-export const CHIP_FIXED = 57;
+/** A chip is 2 px of border, 26 px of padding, the 12 px dot and its 8 px gap around the name. */
+export const CHIP_FIXED = 48;
 /** A name is never cut under this much text: a chip of 76 px, the least a click needs. It was 88 px while the row had 1250 px; at 1124 twelve chips, Off and the gaps only fit with a floor of 76 (the full name stays in the tip). */
-export const NAME_MIN = 19;
+export const NAME_MIN = 28;
 /** The label pill's margin to the first chip (on top of the gap). */
 export const LABEL_MARGIN = 2;
 /** The Off chip: 28 px of padding, 2 px of border, and (while its write is out) a 14 px icon and its 8 px gap. */
 export const OFF_FIXED = 30;
 export const OFF_BUSY_EXTRA = 22;
+/** The Back to normal chip: 2 px of border, 25 px of padding, the 18 px arrow and its 8 px gap (the words are measured). */
+export const BACK_FIXED = 53;
+export const BACK_WORD = 'Back to normal';
 /** The home app's own caps, mirrored by the native side (`wall2_studio.rs`). */
 export const MOOD_MAX = 12;
 
@@ -38,7 +41,7 @@ const SWATCH_ROWS: readonly (readonly [readonly string[], readonly string[]])[] 
 ];
 const NEUTRAL = ['#b7afd6', '#5b5480'] as const;
 
-/** The colours of a mood's swatch: three stripes or two halves. */
+/** The colours of a mood's dot: one, or a blend of the first two. */
 export function swatchFor(id: string): readonly string[] {
   const lower = id.toLowerCase();
   for (const [words, colours] of SWATCH_ROWS) if (words.some((w) => lower.includes(w))) return colours;
@@ -56,14 +59,14 @@ export interface Fit {
 
 /**
  * The row's width limit as a rule on the names. `nameWidths` are the text widths of the mood names, `labelWidth`
- * the whole label pill, `offWidth` the whole Off chip (0 when there is none). 1. As is when it fits 1124.
+ * the whole label pill, `offWidth` the whole Off chip (0 when there is none), `backWidth` the whole Back to normal chip (0 when not drawn). 1. As is when it fits 1124.
  * 2. Else the label goes (the group keeps its aria-label). 3. Else every name is cut at the largest shared
  * width that fits (long names shrink first), never under `NAME_MIN` of text.
  */
-export function fitMoodRow(nameWidths: readonly number[], labelWidth: number, offWidth: number): Fit {
+export function fitMoodRow(nameWidths: readonly number[], labelWidth: number, offWidth: number, backWidth = 0): Fit {
   const parts = (cap: number, label: boolean): number => {
     const chips = nameWidths.map((w) => CHIP_FIXED + Math.ceil(Math.min(w, cap)));
-    const items = [...chips, ...(offWidth > 0 ? [offWidth] : [])];
+    const items = [...chips, ...(offWidth > 0 ? [offWidth] : []), ...(backWidth > 0 ? [backWidth] : [])];
     const body = items.reduce((a, b) => a + b, 0) + Math.max(0, items.length - 1 + (label ? 1 : 0)) * ROW_GAP;
     return body + (label ? labelWidth + LABEL_MARGIN : 0);
   };
@@ -100,6 +103,8 @@ export interface LineModel {
 export interface RowModel {
   chips: ChipModel[];
   stale: boolean;
+  /** A mood is on: the Back to normal chip is live. */
+  canBack: boolean;
   /** This PC may not change the home app: dashed look, clicks send nothing. */
   blocked: boolean;
   /** Some write of the page is out: clicks send nothing until its answer. */
@@ -208,6 +213,7 @@ export function rowModel(s: RowInput): RowModel | null {
   return {
     chips,
     stale: m.stale,
+    canBack: anyLit,
     blocked: block !== null,
     waiting: s.applying !== null,
     line,
@@ -216,6 +222,15 @@ export function rowModel(s: RowInput): RowModel | null {
 }
 
 /** A chip's tip: "<label>: <line>" (the label alone when it has no line), Off its own two sentences, and a second line for a block, a failure or a write in flight. */
+/** The Back to normal chip's tip: the home app's own words for the call, or why it does nothing. */
+export function backTip(row: RowModel): { first: string; second: string | null; warn: boolean } {
+  if (!row.canBack) return { first: 'Nothing to go back from', second: row.warnText, warn: row.warnText !== null };
+  const first = 'Room back to the daytime light, key lights off; panels stay as they are';
+  if (row.warnText) return { first, second: row.warnText, warn: true };
+  if (row.waiting) return { first, second: 'Asking the home app', warn: false };
+  return { first, second: null, warn: false };
+}
+
 export function chipTip(row: RowModel, chip: ChipModel): { first: string; second: string | null; warn: boolean } {
   const first = chip.id === null ? (chip.lit ? 'Office lights are off.' : 'Turns the office lights off. No other room changes.') : chip.line ? `${chip.label}: ${chip.line}` : chip.lit ? `${chip.label} is on.` : chip.label;
   if (row.warnText) return { first, second: row.warnText, warn: true };

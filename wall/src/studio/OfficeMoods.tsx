@@ -1,10 +1,13 @@
-import { IconAlertTriangle, IconBulb, IconLoader2 } from '@tabler/icons-react';
+import { IconAlertTriangle, IconArrowBackUp, IconBulb, IconLoader2 } from '@tabler/icons-react';
 import { useLayoutEffect, useRef, useState, type CSSProperties } from 'react';
 import { restZone, useWatchRest } from '../unwind/watch/rest';
 import { tip } from '../ui/HoverTip';
 import { useHome } from './homeStore';
 import {
+  BACK_FIXED,
+  BACK_WORD,
   OFF_BUSY_EXTRA,
+  backTip,
   OFF_FIXED,
   chipTip,
   fitMoodRow,
@@ -43,7 +46,8 @@ function measure(row: RowModel, body: string, disp: string) {
   const names = row.chips.filter((c) => c.id !== null).map((c) => textWidth(c.label, chipFont));
   const label = LABEL_PAD + textWidth(LABEL_WORD.toUpperCase(), `600 16px ${disp}`) + LABEL_TRACK * LABEL_WORD.length;
   const off = row.chips.some((c) => c.id === null) ? OFF_FIXED + OFF_BUSY_EXTRA + textWidth('Off', chipFont) : 0;
-  return { names, label, off };
+  const back = BACK_FIXED + textWidth(BACK_WORD, chipFont);
+  return { names, label, off, back };
 }
 
 function Tip({ chip }: { chip: ChipModel }) {
@@ -60,16 +64,28 @@ function Tip({ chip }: { chip: ChipModel }) {
   );
 }
 
+function BackTip() {
+  const row = rowModel(useHome.getState());
+  if (!row) return null;
+  const t = backTip(row);
+  return (
+    <span className="u-mood-tip">
+      <span>{t.first}</span>
+      {t.second && <span className={t.warn ? 'u-mood-warn' : undefined}>{t.second}</span>}
+    </span>
+  );
+}
+
 function Swatch({ chip }: { chip: ChipModel }) {
   if (chip.failed) return <IconAlertTriangle className="u-mood-ico warn" size={14} stroke={2} aria-hidden="true" />;
   if (chip.busy) return <IconLoader2 className="u-mood-ico u-spin" size={14} stroke={2} aria-hidden="true" />;
   if (!chip.swatch) return null;
   return (
-    <span className="u-mood-sw" aria-hidden="true">
-      {chip.swatch.map((c) => (
-        <i key={c} style={{ background: c }} />
-      ))}
-    </span>
+    <span
+      className="u-mood-dot"
+      aria-hidden="true"
+      style={{ background: chip.swatch.length === 1 ? chip.swatch[0] : `linear-gradient(135deg, ${chip.swatch[0]} 20%, ${chip.swatch[1]} 85%)`, '--glow': chip.swatch[chip.swatch.length - 1] } as CSSProperties}
+    />
   );
 }
 
@@ -127,7 +143,7 @@ export function OfficeMoods() {
     const body = cs.getPropertyValue('--body').trim() || 'sans-serif';
     const disp = cs.getPropertyValue('--disp').trim() || 'sans-serif';
     const m = measure(row, body, disp);
-    const next = fitMoodRow(m.names, m.label, m.off);
+    const next = fitMoodRow(m.names, m.label, m.off, m.back);
     setFit((f) => (f.label === next.label && f.cap === next.cap ? f : next));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [key, fontsAt]);
@@ -139,6 +155,10 @@ export function OfficeMoods() {
     if (row.blocked || row.waiting) return;
     const st = useHome.getState();
     void (chip.id === null ? st.applyOff() : st.applyMood(chip.id));
+  };
+  const goBack = () => {
+    if (row.blocked || row.waiting || !row.canBack) return;
+    void useHome.getState().goBackFromMood();
   };
   const line = row.line;
   // Rests with the Watch controls (same timing); a failure line (5 seconds) holds it in view. The chips never fade.
@@ -155,6 +175,17 @@ export function OfficeMoods() {
         {row.chips.map((c) => (
           <Chip key={c.id ?? 'office-off'} chip={c} row={row} cap={fit.cap} onClick={() => click(c)} />
         ))}
+        <button
+          type="button"
+          className={`u-mood u-mood-back${row.canBack ? '' : ' dis'}${row.blocked ? ' blocked' : ''}`}
+          data-mood="back"
+          aria-disabled={row.canBack && !row.blocked ? undefined : 'true'}
+          onClick={goBack}
+          {...tip(() => <BackTip />)}
+        >
+          <IconArrowBackUp size={18} stroke={2} aria-hidden="true" />
+          <span className="u-mood-name">{BACK_WORD}</span>
+        </button>
       </div>
       <div className={`u-office-line${line.warn ? ' warn' : ''}`} data-part="line" data-rest={resting ? 'true' : 'false'} {...restZone('moods-line')}>
         {line.lead && <b>{line.lead}</b>}
