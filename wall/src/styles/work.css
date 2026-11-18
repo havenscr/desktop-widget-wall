@@ -1233,7 +1233,7 @@
 .key-menu-title {
   padding: 8px 10px;
   color: var(--dim);
-  font: 500 15px/1.2 var(--body);
+  font: 500 16px/1.2 var(--body);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1263,8 +1263,19 @@
 }
 .key-menu > button em {
   color: var(--dim);
-  font: 400 15px/1 var(--body);
+  font: 400 16px/1 var(--body);
   font-style: normal;
+}
+.key-menu > .key-menu-sub {
+  padding: 6px 10px 2px;
+  color: var(--dim);
+  font: 500 16px/1.2 var(--body);
+}
+.key-menu > button > span {
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .bs-tile.sel {
   border-color: var(--cyan);

@@ -518,15 +518,15 @@ export function Keys() {
           const pinRefs = rawPins ?? sum.defaultPins;
           const alreadyPinned = pinRef !== null && pinRefs.includes(pinRef);
           const full = pinRefs.length >= MAX_PINS;
-          const runKey = () => void press(`${set.id}:${i}`, 1, { command: 'wall2_keys_send', args: { setId: set.id, index: i } }, k.label, k.action, set, hold);
+          const runKey = (detail: number) => void press(`${set.id}:${i}`, detail, { command: 'wall2_keys_send', args: { setId: set.id, index: i } }, k.label, k.action, set, hold);
           const pinActions: KeyMenuAction[] = alreadyPinned
             ? [{ id: 'pin', label: 'Already in Always here', disabled: true }]
             : pinRef === null
               ? [{ id: 'pin', label: 'This key lives in keys.json', disabled: true }]
               : full
-                ? pinRefs.map((ref, slot) => ({ id: 'swap' as const, slot, label: `Put in Always here in place of ${(library && resolvePin(ref, library, sum.filePins)?.label) || 'an empty place'}` }))
+                ? pinRefs.map((ref, slot) => ({ id: 'swap' as const, slot, heading: slot === 0 ? 'Put in Always here, in place of' : undefined, label: (library && resolvePin(ref, library, sum.filePins)?.label) ?? ref }))
                 : [{ id: 'pin', label: 'Pin to Always here', note: `${pinRefs.length} of ${MAX_PINS}` }];
-          const actions: KeyMenuAction[] = [{ id: 'run', label: 'Run it now', disabled: layoutOff }, ...pinActions];
+          const actions: KeyMenuAction[] = [{ id: 'run', label: 'Run it now', disabled: layoutOff || wrongApp }, ...pinActions];
           const openMenu = (byKey: boolean) => {
             if (!overlayOwnsPointer() && shown !== null) setMenu({ at: i, shown, byKey });
           };
@@ -574,9 +574,10 @@ export function Keys() {
                 actions={actions}
                 byKeyboard={menu.byKey}
                 onClose={() => setMenu(null)}
-                onChoose={(id, action) => {
+                onChoose={(id, action, detail) => {
                   if (id === 'run') {
-                    if (!layoutOff) runKey();
+                    // The same guards as a click: a mouse-only key never runs from the keyboard.
+                    if (!layoutOff && !wrongApp && !keyboardOnMouseKey(k.action, detail)) runKey(detail);
                     return;
                   }
                   if ((id !== 'pin' && id !== 'swap') || !pinRef || alreadyPinned || !library) return;
