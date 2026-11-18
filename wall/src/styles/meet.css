@@ -1230,3 +1230,15 @@
   outline: 2px solid var(--cyan);
   outline-offset: 2px;
 }
+
+/* Person card details: the address line (selectable) under the name. */
+.meet-pdet-addr {
+  margin-top: 10px;
+  font: 17px/1.3 var(--body);
+  color: var(--dim);
+  user-select: text;
+  overflow-wrap: anywhere;
+}
+.meet-pdet-addr[data-kind='address'] {
+  color: var(--tx);
+}

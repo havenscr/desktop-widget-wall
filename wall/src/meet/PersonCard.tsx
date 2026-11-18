@@ -2,7 +2,9 @@ import { useEffect, useRef, useState } from 'react';
 import { IconAddressBook, IconBrandTeams, IconCopy, IconMail } from '@tabler/icons-react';
 import { personAction, type PersonAction } from '../bridge/meetBrief';
 import { tip } from '../ui/HoverTip';
+import { useOnAirLive } from '../onair/useOnAirLiveReport';
 import { initials, replyMark, replyWord, type PeopleBlock } from './heroModel';
+import { PersonDetails } from './PersonDetails';
 
 const POP_W = 440;
 const ROW_W = 494;
@@ -19,8 +21,9 @@ const ICON: Record<PersonAction, typeof IconCopy> = { copy: IconCopy, email: Ico
 /**
  * The people under the key grid: up to five round initials with a reply mark, and "N invited" with the replies.
  * A click on one opens the person card (a popover anchored at it): the name, how they replied and, for a person
- * the invite gave an address, Copy email, Email and Message on Teams. The address is never drawn, and nothing is
- * sent: the actions only copy, or open a draft or a chat for the person to finish. It closes on Escape, on a click
+ * the invite gave an address, Copy email, Email and Message on Teams. The invite's address is never drawn: the card
+ * asks Rust for it once when it opens (`PersonDetails`, hidden while On Air is live), and adds Open contact card for a
+ * saved contact. Nothing is sent: the actions only copy, or open a draft, a chat or a contact for the person to finish. It closes on Escape, on a click
  * outside, when the meeting changes and when that person is no longer in the list.
  */
 export function People({ people, meetingId }: { people: PeopleBlock; meetingId: string }) {
@@ -28,6 +31,7 @@ export function People({ people, meetingId }: { people: PeopleBlock; meetingId: 
   const [left, setLeft] = useState(0);
   const [anchor, setAnchor] = useState(24);
   const [line, setLine] = useState<string | null>(null);
+  const onAirLive = useOnAirLive();
   const rootRef = useRef<HTMLDivElement>(null);
   const openerRef = useRef<HTMLElement | null>(null);
   // Bumped on every open and close, so an answer that arrives after the card closed sets no line.
@@ -128,6 +132,7 @@ export function People({ people, meetingId }: { people: PeopleBlock; meetingId: 
               {replyWord(person.reply)}
             </span>
           </div>
+          {person.key && <PersonDetails key={`${open}:${person.key}`} personKey={person.key} onAirLive={onAirLive} />}
           {person.key ? (
             <div className="meet-pcard-acts">
               {ACTIONS.map((a) => {
