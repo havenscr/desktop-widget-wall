@@ -123,7 +123,7 @@ const toolsVariant = (name, q, extra = {}) => ({ name, q, checks: TOOLS_CHECKS, 
 const BLOCK_V = 'Studio home, block, ready';
 const OFFER_V = 'Studio home, block, offer after the timer starts';
 const SHEET_V = 'Studio home, sheet, linked';
-const SIX_V = 'Studio home, sheet, six panel looks, the body scrolls';
+const SIX_V = 'Studio home, sheet, six panel effects, the list open';
 const MEET_V = 'Studio home, Meet chip, in a call';
 const TOOLS_V = 'Studio home, Tools, typing a token';
 
@@ -151,9 +151,9 @@ export default {
       state('onair', 'block, offer after the timer stops', onAirGallery('keys2=both&studio=onair&desktoken=set'), ['The show timer stopped.', 'The room is still on On air.', 'Back to normal', 'Keep'], STOP),
       state('onair', 'block, a click the token cannot be sent for', onAirGallery(`${READY}&studiowrite=private`), ['The desk token is not sent over plain http. Use https or the tailnet.'], '[data-preset="onAir"]'),
       state('onair', 'block, a refused click says why', onAirGallery(`${READY}&studiowrite=unknown`), ['The home app no longer lists that one. This is what it reports now.'], '[data-preset="onAir"]'),
-      state('onair', 'sheet, six panel looks, the body scrolls', onAirGallery('keys2=both&studio=sixlooks&desktoken=set'), ['Ocean waves', 'Aurora', 'Behind monitor'], FINE),
+      state('onair', 'sheet, six panel effects, the list open', onAirGallery('keys2=both&studio=sixlooks&desktoken=set'), ['Ocean waves', 'Aurora', 'Behind monitor'], `${FINE} >> .st-drawer .st-effect`),
       state('onair', 'block, a hover tip on a preset', onAirGallery(READY), ['Key lights on, panels glow, monitor and overhead white'], 'hover:[data-preset="onAir"]'),
-      state('onair', 'sheet, ready, linked', onAirGallery(READY), ['On air', 'Recording', 'Back to normal', 'Linked', 'Panels', 'Glow', 'Calm', 'Behind monitor', 'Floor 45%', 'Overhead'], FINE),
+      state('onair', 'sheet, ready, linked', onAirGallery(READY), ['On air', 'Recording', 'Back to normal', 'Linked', 'Panels', 'Effect', 'Behind monitor', 'Floor 45%', 'Overhead'], FINE),
       state('onair', 'sheet, ready, split', onAirGallery(`${READY.replace('keys2=both', 'keys2=mismatch')}`), ['Split', 'Left', 'Right', '45%', '4700 K', 'Behind monitor'], `${FINE} >> ${LINKED}`),
       state('onair', 'sheet, On air is on', onAirGallery('keys2=both&studio=onair&desktoken=set'), ['On air', 'Glow', 'Back to normal', 'Goes back to how the room was before'], FINE),
       state('onair', 'sheet, changed since it was set', onAirGallery('keys2=both&studio=changed&desktoken=set'), ['On air, changed', 'Back to normal'], FINE),
@@ -193,7 +193,7 @@ export default {
       sheetVariant('Studio home, sheet, split', onAirFit(READY.replace('keys2=both', 'keys2=mismatch')), `${FINE} >> ${LINKED}`),
       sheetVariant('Studio home, sheet, On air is on and changed', onAirFit('keys2=both&studio=changed&desktoken=set'), FINE),
       sheetVariant('Studio home, sheet, no desk token', onAirFit('keys2=both&studio=ready&desktoken=unset'), FINE),
-      { ...sheetVariant(SIX_V, onAirFit('keys2=both&studio=sixlooks&desktoken=set'), FINE), checks: ['.st-drawer'] },
+      sheetVariant(SIX_V, onAirFit('keys2=both&studio=sixlooks&desktoken=set'), `${FINE} >> .st-drawer .st-effect`),
       sheetVariant('Studio home, sheet, one key light silent', onAirFit(READY.replace('keys2=both', 'keys2=left-silent')), FINE),
       { name: 'Studio home, Work chip, a preset, tight header', q: workFit('agents=ask&long=1&rec=1&keys2=both&studio=onair&desktoken=set'), checks: ['.lanes-hd', '.lanes-hd-l'] },
       { name: MEET_V, q: meetFit('meet=known&call=teams&camera=1&rec=1&checklist=four&keys2=both&studio=onair&desktoken=set'), checks: ['.meet .meet-hero'] },
@@ -262,11 +262,10 @@ export default {
         if (isSheet) {
           for (const t of s.tiles) if (t.lineCut || t.nameCut) fails.push('studiohome: preset tile text is cut: "' + t.n + '"');
           // In the normal states (up to three looks on one row) nothing scrolls and the last room's slider lies whole inside the body.
-          if (v.name !== SIX_V && s.bodyScroll && s.bodyBox) {
+          if (s.bodyScroll && s.bodyBox) {
             if (s.bodyScroll.sh > s.bodyScroll.ch + 1) fails.push('studiohome: the sheet body scrolls (' + s.bodyScroll.sh + ' of ' + s.bodyScroll.ch + ' px) in a state that must show every row whole');
             if (s.overheadSlider && s.overheadSlider.b > s.bodyBox.b + 0.5) fails.push('studiohome: the last room slider ends at y ' + r1(s.overheadSlider.b) + ', below the sheet body (' + r1(s.bodyBox.b) + ')');
           }
-          if (v.name === SIX_V && !(s.bodyScroll && s.bodyScroll.sh > s.bodyScroll.ch + 1 && s.bodyScroll.ov === 'auto')) fails.push('studiohome: the sheet with six looks does not scroll its body, so a control is out of reach');
         }
         if (isTools) {
           const t = s.tools;

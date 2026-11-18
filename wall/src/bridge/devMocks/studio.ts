@@ -22,7 +22,7 @@ import { knob } from './long';
  *
  * The home half (the home app's studio answer, its writes, the desk token, office moods):
  *
- *   ?studio=absent|notsetup|ready|onair|recording|changed|stale|nozone|threelooks|sixlooks|down|lost|slow
+ *   ?studio=absent|notsetup|ready|onair|recording|changed|stale|nozone|threelooks|fourlooks|eightlooks|sixlooks|down|lost|slow
  *   ?studiowrite=ok|forbidden|homeunset|dark|busy|lights|unknown|unreachable|refused|private|notset|failed
  *   ?desktoken=unset|set|unreadable|insecure
  *   ?office=absent|empty|two|five|six|twelve|down
@@ -36,7 +36,9 @@ import { knob } from './long';
  *   changed       On air is on and something was changed by hand
  *   stale         ready, but the home app could not read every light (Overhead not answering)
  *   nozone        ready, but Overhead needs a Hue zone
- *   threelooks    ready, with three panel looks (they fill one row of chips)
+ *   threelooks    ready, with three panel looks (the Effect row's list holds them)
+ *   fourlooks     On air on, with four effects (Studio Blue is on)
+ *   eightlooks    On air on, with eight effects (the most one list is drawn for)
  *   sixlooks      ready, with six panel looks (the most the home app lists)
  *   down          the home app does not answer
  *   lost          reads are good until the sheet is opened (Fine tune); then the home app is gone
@@ -123,6 +125,17 @@ const SIX_LOOKS = [
   { id: 'ember', label: 'Ember' },
   { id: 'aurora', label: 'Aurora' },
 ];
+/** Four and eight effects with invented names (the first is on): the Panels effect row and its list at both ends of what the home app lists. */
+const EIGHT_LOOKS = [
+  { id: 'glow', label: 'Studio Blue' },
+  { id: 'calm', label: 'Slow Ember Drift' },
+  { id: 'dawn', label: 'Soft Daylight' },
+  { id: 'mist', label: 'Harbour Mist' },
+  { id: 'aurora', label: 'Aurora' },
+  { id: 'firstlight', label: 'First Light' },
+  { id: 'deepwater', label: 'Deep Water' },
+  { id: 'candle', label: 'Candle' },
+];
 const MOODS = [
   { id: 'brightDesk', label: 'Bright desk', line: 'Room 70%, neon 20%' },
   { id: 'reading', label: 'Reading', line: 'Room 60%, desk lamp on' },
@@ -171,7 +184,7 @@ function homeStart(kind: string | null) {
     groups: [group('panels', 'Panels', false, 70), group('behindMonitor', 'Behind monitor', true, 80), group('overhead', 'Overhead', true, 90)] as MockGroup[],
     stale: false,
   };
-  if (kind === 'onair' || kind === 'changed') {
+  if (kind === 'onair' || kind === 'changed' || kind === 'fourlooks' || kind === 'eightlooks') {
     home.active = 'onAir';
     home.groups[0] = group('panels', 'Panels', true, 70);
     if (kind === 'changed') {
@@ -256,7 +269,7 @@ type LightMock = { left: Cell; right: Cell };
 
 function registerHomeHalf(keys: LightMock): void {
   const home = homeStart(knob('studio'));
-  const looks = knob('studio') === 'sixlooks' ? SIX_LOOKS : knob('studio') === 'threelooks' ? SIX_LOOKS.slice(0, 3) : LOOKS;
+  const looks = knob('studio') === 'sixlooks' ? SIX_LOOKS : knob('studio') === 'threelooks' ? SIX_LOOKS.slice(0, 3) : knob('studio') === 'fourlooks' ? EIGHT_LOOKS.slice(0, 4) : knob('studio') === 'eightlooks' ? EIGHT_LOOKS : LOOKS;
   const writeKind = knob('studiowrite') ?? 'ok';
   const tokenKind = knob('desktoken') ?? 'unset';
   const token = { set: tokenKind === 'set' || tokenKind === 'insecure', unreadable: tokenKind === 'unreadable', insecure: tokenKind === 'insecure' };
