@@ -443,3 +443,65 @@ it('a chip with an Outlook category takes its tone, names the category on hover 
   await flush(TIP_DELAY_MS);
   expect(document.querySelector('.hover-tip')!.textContent).toBe('Planning1:00 to 2:00 PM, WorkCategory: Sample blue');
 });
+
+it('fades the end of a title that does not fit, and leaves a title that fits alone', async () => {
+  mocks.set('wall2_meet_day', () => day);
+  const sw = vi.spyOn(HTMLElement.prototype, 'scrollWidth', 'get').mockImplementation(function (this: HTMLElement) {
+    return this.textContent === 'Design review' ? 200 : 50;
+  });
+  const cw = vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(100);
+  try {
+    const r = render(<Ribbon kind="work" />);
+    await flush();
+    const titles = [...r.container.querySelectorAll('.ev .ev-t')];
+    expect(titles.map((t) => [t.textContent, t.hasAttribute('data-cut')])).toEqual([
+      ['AE sync', false],
+      ['Design review', true],
+      ['Livestream: Fabric Apps', false],
+    ]);
+  } finally {
+    sw.mockRestore();
+    cw.mockRestore();
+  }
+});
+
+it('measures a title again when its width changes', async () => {
+  mocks.set('wall2_meet_day', () => day);
+  const callbacks: ResizeObserverCallback[] = [];
+  const realRO = globalThis.ResizeObserver;
+  vi.stubGlobal(
+    'ResizeObserver',
+    class {
+      constructor(cb: ResizeObserverCallback) {
+        callbacks.push(cb);
+      }
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    },
+  );
+  let box = 100;
+  const sw = vi.spyOn(HTMLElement.prototype, 'scrollWidth', 'get').mockReturnValue(150);
+  const cw = vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockImplementation(() => box);
+  const rects = vi.spyOn(HTMLElement.prototype, 'getClientRects').mockReturnValue([{}] as unknown as DOMRectList);
+  const fire = (width: number) => {
+    act(() => callbacks.forEach((cb) => cb([{ contentRect: { width } }] as unknown as ResizeObserverEntry[], {} as ResizeObserver)));
+  };
+  try {
+    const r = render(<Ribbon kind="work" />);
+    await flush();
+    const title = () => r.container.querySelector('.ev .ev-t')!;
+    expect(title().hasAttribute('data-cut')).toBe(true);
+    box = 200;
+    fire(200);
+    expect(title().hasAttribute('data-cut')).toBe(false);
+    box = 100;
+    fire(100);
+    expect(title().hasAttribute('data-cut')).toBe(true);
+  } finally {
+    sw.mockRestore();
+    cw.mockRestore();
+    rects.mockRestore();
+    vi.stubGlobal('ResizeObserver', realRO);
+  }
+});
