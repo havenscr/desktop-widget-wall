@@ -1,9 +1,10 @@
 import { IconAlertTriangle, IconBrightnessUp, IconCheck, IconRefresh, IconSettings } from '@tabler/icons-react';
 import { tip } from '../ui/HoverTip';
 import { useToolsStore } from '../tools/store';
-import { DOWN_LINE, needsZone, NOT_SET_UP_LINE, presetChipLabel, PRIVATE_LINE, PRIVATE_TIP, tileState, ZONE_TIP } from './homeModel';
+import { DOWN_LINE, NEEDS_ZONE, needsZone, NOT_SET_UP_LINE, presetChipLabel, PRIVATE_LINE, PRIVATE_TIP, tileState, ZONE_TIP } from './homeModel';
 import { canChange, homeView, useHome } from './homeStore';
 import type { Group, Studio } from './home';
+import { EffectRow } from './EffectPick';
 import { Slider } from './Slider';
 
 /** The home part is shown (read, or read before and now away). */
@@ -89,26 +90,32 @@ export function SheetPresets({ studio, may }: { studio: Studio; may: boolean }) 
   );
 }
 
-function RoomSlider({ g, studio, may }: { g: Group; studio: Studio; may: boolean }) {
+/** A room slider sends at most one write this often while it is dragged, and the exact value on release. */
+export const ROOM_WRITE_MS = 250;
+
+/** One room group's brightness slider (Panels stops at 1 percent: the home app takes nothing lower). Used by the sheet and the card. */
+export function RoomSliderRow({ g, studio, may }: { g: Group; studio: Studio; may: boolean }) {
   const writes = useHome((s) => s.writes);
   const floor = g.floor ?? 0;
   const st = tileState(studio, g, may);
   const level = g.level ?? 0;
   // Moving the slider turns an off group on, at that level (as the key lights do), unless that would be refused.
   const send = (v: number) => void useHome.getState().setGroup(g.id, true, v);
-  const down = !may || needsZone(g);
+  // A group that does not answer is dimmed like one without a desk token: nothing to drag.
+  const down = !may || needsZone(g) || !g.reachable;
   return (
     <Slider
       label={`${g.label} brightness`}
       icon={<IconBrightnessUp size={20} />}
       value={g.on ? level : floor}
-      min={0}
+      min={g.id === 'panels' ? 1 : 0}
       max={100}
       floor={floor > 0 ? floor : undefined}
       step={1}
       format={(v) => (g.on ? `${Math.round(v)}%` : 'Off')}
       down={down}
       busyCount={writes}
+      throttleMs={ROOM_WRITE_MS}
       onInput={send}
       tipText={`${g.label}: brightness from ${floor} to 100 percent${floor > 0 ? `. The ${floor} percent floor keeps the room comfortable on camera` : ''}. Moving it turns the lights on. ${st.tip}`}
     />
@@ -154,18 +161,29 @@ function RoomRow({ g, studio, may }: { g: Group; studio: Studio; may: boolean })
         </button>
         <span className="st-h st-rm-n">{g.label}</span>
         {!g.reachable && <IconAlertTriangle size={18} aria-hidden="true" className="st-tg-warn" />}
-        <span className={`st-line st-rm-r${needsZone(g) ? ' amber' : ''}`} {...tip(needsZone(g) ? ZONE_TIP : stateWords(g))}>
-          {shortWords(g)}
-        </span>
+        {!needsZone(g) && (
+          <span className="st-line st-rm-r" {...tip(stateWords(g))}>
+            {shortWords(g)}
+          </span>
+        )}
       </div>
-      {!needsZone(g) && g.canDim && <RoomSlider g={g} studio={studio} may={may} />}
+      {needsZone(g) && <ZoneLine g={g} />}
+      {!needsZone(g) && g.canDim && <RoomSliderRow g={g} studio={studio} may={may} />}
     </div>
   );
 }
 
-/** The rooms column: Panels with its look chips, then Behind monitor and Overhead. */
+/** The full words a group that needs a Hue zone shows, on a line of its own so they are never cut. */
+function ZoneLine({ g }: { g: Group }) {
+  return (
+    <div className="st-line st-zone amber" {...tip(ZONE_TIP)}>
+      {g.setTo ?? NEEDS_ZONE}
+    </div>
+  );
+}
+
+/** The rooms column: Panels with its brightness and its effect, then Behind monitor and Overhead. */
 export function SheetRooms({ studio, may }: { studio: Studio; may: boolean }) {
-  const writes = useHome((s) => s.writes);
   const panels = studio.groups.find((g) => g.id === 'panels');
   const rooms = studio.groups.filter((g) => g.id !== 'panels');
   const pst = panels ? tileState(studio, panels, may) : null;
@@ -188,27 +206,10 @@ export function SheetRooms({ studio, may }: { studio: Studio; may: boolean }) {
               </i>
             </button>
             <span className="st-h st-rm-n">{panels.label}</span>
-            <span className={`st-line st-rm-r${needsZone(panels) ? ' amber' : ''}`}>{panels.setTo ?? (panels.on ? 'On' : 'Off')}</span>
           </div>
-          {studio.looks.length > 0 && (
-            <div className="st-looks" role="group" aria-label="Panel looks">
-              {studio.looks.map((l) => (
-                <button
-                  key={l.id}
-                  type="button"
-                  className={`st-look${l.active ? ' on' : ''}${!may || needsZone(panels) ? ' dis' : ''}`}
-                  aria-pressed={l.active}
-                  aria-disabled={!may || needsZone(panels) ? true : undefined}
-                  aria-busy={writes > 0 || undefined}
-                  onClick={!may || needsZone(panels) ? undefined : () => void useHome.getState().applyLook(l.id)}
-                  {...tip(may ? `Sets the panels to ${l.label}` : 'The home app is not taking changes right now')}
-                >
-                  {l.active && <IconCheck size={16} aria-hidden="true" />}
-                  {l.label}
-                </button>
-              ))}
-            </div>
-          )}
+          {needsZone(panels) && <ZoneLine g={panels} />}
+          {!needsZone(panels) && panels.canDim && <RoomSliderRow g={panels} studio={studio} may={may} />}
+          {!needsZone(panels) && <EffectRow studio={studio} panels={panels} may={may} where="below" />}
         </div>
       )}
       {rooms.map((g) => (
