@@ -169,3 +169,90 @@ it('shows a known player by its name and anything else by the neutral words', ()
   expect(shownSource('')).toBe('');
   expect(shownSource(null)).toBeNull();
 });
+
+const WEBVIEW_STOPPED = () => ({ title: 'Night drive mix - YouTube', artist: 'Some Channel', source_app_id: 'msedgewebview2', playback_status: 'stopped' });
+
+it('after a restart a stopped web view session with a title and empty stores is the wall item: Play starts the saved item', async () => {
+  useWatchStore.setState({ saved: [ITEM] });
+  resetLastPlayed(null, own('watch'));
+  mocks.set('get_now_playing', WEBVIEW_STOPPED);
+  const key = vi.fn(() => null);
+  mocks.set('media_play_pause', key);
+  const play = vi.fn();
+  useWatchStore.setState({ play });
+  render(<Unwind />);
+  await flush();
+  expect(screen.getByText('Last played on the wall')).toBeTruthy();
+  expect(document.body.textContent?.toLowerCase()).not.toContain('webview');
+  await act(async () => screen.getByLabelText('Play').click());
+  expect(play).toHaveBeenCalledWith({ kind: 'video', id: 'abcdefghijk' });
+  expect(key).not.toHaveBeenCalled();
+});
+
+it('the same session with a title that is not the saved item is not the wall item', async () => {
+  useWatchStore.setState({ saved: [ITEM] });
+  resetLastPlayed(null, own('watch'));
+  mocks.set('get_now_playing', () => ({ ...WEBVIEW_STOPPED(), title: 'Some other sound' }));
+  const play = vi.fn();
+  useWatchStore.setState({ play });
+  render(<Unwind />);
+  await flush();
+  expect(screen.queryByText('Last played on the wall')).toBeNull();
+  expect(document.body.textContent?.toLowerCase()).not.toContain('webview');
+  expect(play).not.toHaveBeenCalled();
+});
+
+it('a sound the web view made that is not the item: the card shows the saved item, and Play starts that one', async () => {
+  useWatchStore.setState({ saved: [ITEM] });
+  resetLastPlayed({ title: 'Alert chime', artist: '', source: 'msedgewebview2' }, own('watch'));
+  const play = vi.fn();
+  useWatchStore.setState({ play });
+  render(<Unwind />);
+  await flush();
+  expect(screen.getByText('Night drive mix')).toBeTruthy();
+  expect(screen.queryByText('Alert chime')).toBeNull();
+  await act(async () => screen.getByLabelText('Play').click());
+  expect(play).toHaveBeenCalledWith({ kind: 'video', id: 'abcdefghijk' });
+});
+
+it('closed after a newer item began: the card shows the saved newer item, never one title with another id', async () => {
+  useWatchStore.setState({ saved: [ITEM] });
+  resetLastPlayed({ title: 'Earlier video', artist: 'Old Channel', source: 'msedgewebview2' }, own('watch'));
+  const play = vi.fn();
+  useWatchStore.setState({ play });
+  render(<Unwind />);
+  await flush();
+  expect(screen.getByText('Night drive mix')).toBeTruthy();
+  expect(screen.queryByText('Earlier video')).toBeNull();
+  expect(screen.queryByText('Old Channel')).toBeNull();
+  await act(async () => screen.getByLabelText('Play').click());
+  expect(play).toHaveBeenCalledWith({ kind: 'video', id: 'abcdefghijk' });
+});
+
+it('a play path that refuses falls to the unknown state', async () => {
+  resetLastPlayed(record('msedgewebview2'), own('music'));
+  const playMusic = vi.fn(() => false);
+  useWatchStore.setState({ playMusic });
+  render(<Unwind />);
+  await flush();
+  await act(async () => screen.getByLabelText('Play').click());
+  expect(playMusic).toHaveBeenCalledTimes(1);
+  expect(screen.getByText('Pick it in Watch to play again')).toBeTruthy();
+  expect(screen.queryByRole('button', { name: 'Play again' })).toBeNull();
+  expect((screen.getByLabelText('Play') as HTMLButtonElement).disabled).toBe(true);
+});
+
+it('previous and next stay off in the wall own state, known or not', async () => {
+  useWatchStore.setState({ saved: [ITEM] });
+  resetLastPlayed(record('msedgewebview2'), own('watch'));
+  const { unmount } = render(<Unwind />);
+  await flush();
+  expect((screen.getByLabelText('Previous') as HTMLButtonElement).disabled).toBe(true);
+  expect((screen.getByLabelText('Next') as HTMLButtonElement).disabled).toBe(true);
+  unmount();
+  resetLastPlayed(record('msedgewebview2'), null);
+  render(<Unwind />);
+  await flush();
+  expect((screen.getByLabelText('Previous') as HTMLButtonElement).disabled).toBe(true);
+  expect((screen.getByLabelText('Next') as HTMLButtonElement).disabled).toBe(true);
+});

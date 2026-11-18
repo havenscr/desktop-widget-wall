@@ -32,7 +32,7 @@ import { knob } from './long';
  *                             title and a long channel; nothing; or a report for another video id,
  *                             which must be ignored (default: nothing)
  *   ?wlook=feather|sky|sun|drivein|holo   one look for everything
- *   ?wlastown=known|unknown   after a restart: the last thing played was the wall's own player (its process name
+ *   ?wlastown=known|unknown|session|alert   after a restart: the last thing played was the wall's own player (its process name
  *                             is the stored source); `known` also remembers the first saved item, `unknown` does not.
  *                             Use with `media=none`, `wtab=listen`.
  *   ?wplay=<n>                play saved item n (0 is the first)
@@ -356,9 +356,12 @@ export function registerWatchMocks(): void {
   setTimeout(() => {
     if (knob('wlast') === 'one') useWatchStore.setState({ lastStopped: useWatchStore.getState().saved[0] ?? null, playing: null });
     const lastOwn = knob('wlastown');
-    if (lastOwn === 'known' || lastOwn === 'unknown') {
+    if (lastOwn === 'known' || lastOwn === 'unknown' || lastOwn === 'session' || lastOwn === 'alert') {
       const first = useWatchStore.getState().saved[0];
-      resetLastPlayed({ title: first?.label ?? 'Night drive mix', artist: '', source: 'msedgewebview2' }, lastOwn === 'known' && first ? { kind: first.kind, id: first.id, label: first.label, from: 'watch' } : null);
+      const ownItem = lastOwn !== 'unknown' && first ? { kind: first.kind, id: first.id, label: first.label, from: 'watch' as const } : null;
+      // session: the record is empty and only the stopped session says what played; alert: the web view's last sound was not the item.
+      const record = lastOwn === 'session' ? null : { title: lastOwn === 'alert' ? 'Alert chime' : (first?.label ?? 'Night drive mix'), artist: '', source: 'msedgewebview2' };
+      resetLastPlayed(record, ownItem);
     }
     if (knob('wtab') !== 'listen') useWatchStore.getState().setTab('watch');
     if (ownState) runOwn(ownState);

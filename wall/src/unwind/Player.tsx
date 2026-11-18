@@ -96,20 +96,39 @@ export function Player() {
   const sourceLabel = watchMatch ? 'Watch' : shownSource(rawSourceLabel);
   // The horizon's moon keeps 40 px clear of the player (it moves to another of its places).
   const [box, setBox] = useState<HTMLDivElement | null>(null);
+  // The item the wall's own player refused to start (Play falls to the unknown state for it).
+  const [refused, setRefused] = useState<string | null>(null);
   useSkyKeepClear('listen-player', box);
 
   // The idle view: the session's own stopped track first, then the last one seen here.
-  const idle = quiet
+  const idleSeen = quiet
     ? info?.title
       ? { title: info.title, artist: info.artist || info.album || '', source: sourceLabel ?? '', art }
       : lastPlayed.last
         ? { ...lastPlayed.last, art: lastPlayed.art }
         : null
     : null;
-  // What the record says, not a live session: the last thing played was the wall's own player (any case of its process name).
-  // Whether the wall still knows the item decides if Play starts it (`playLastOwn`) or the line says to pick it in Watch.
-  const fromWall = !!idle && !watchMatch && !info?.title && !!lastPlayed.last && isWallPlayer(lastPlayed.last.source);
-  const ownKnown = fromWall && canPlayLastOwn(lastPlayed.own, savedItems);
+  // Whether the card is about the wall's own item. Two ways in: the record says the last thing played was the wall's own
+  // player (any case of its process name, no live session title), or a quiet session of the web view (or of an id that is
+  // not a known player) carries the title of the saved item: after a restart Windows keeps that stopped session with its
+  // title while the stores are empty.
+  const own = lastPlayed.own;
+  const ownLabel = own ? watchTitle(own.label) : undefined;
+  const sessionIsOwn = quiet && !!info?.title && ownVideo && !!ownLabel && sessionTitle === ownLabel;
+  const recordIsWall = quiet && !info?.title && !!lastPlayed.last && isWallPlayer(lastPlayed.last.source);
+  const fromWall = !!idleSeen && !watchMatch && (sessionIsOwn || recordIsWall);
+  // One rule for Play: it starts the saved item, so the card offers it only when the title it shows is that item's own
+  // label. When the record's title is another one (a sound the web view made, or an item that began just before a close),
+  // the card shows the saved item's label instead; with no playable saved item it shows the record and no Play.
+  const ownKey = own ? `${own.kind}:${own.id}` : null;
+  const ownKnown = fromWall && canPlayLastOwn(own, savedItems) && refused !== ownKey;
+  const idle =
+    ownKnown && own && idleSeen && watchTitle(idleSeen.title) !== ownLabel
+      ? { title: own.label, artist: '', source: idleSeen.source, art: null }
+      : idleSeen;
+  const startOwn = () => {
+    if (!playLastOwn(own)) setRefused(ownKey);
+  };
 
   // The wall's own music (a pick from the YouTube library) is drawn from the stores, not from Windows: while it plays when
   // Windows names it (or offers no playing session), and, stopped or ended, when nothing else was played since. Spotify or
@@ -139,7 +158,7 @@ export function Player() {
   // The idle row's own words beside the buttons: Play again, or why play cannot start here.
   const again = fromWall ? (
     ownKnown ? (
-      <button type="button" className="u-again" onClick={() => playLastOwn(lastPlayed.own)}>
+      <button type="button" className="u-again" onClick={startOwn}>
         <IconPlayerPlayFilled size={22} aria-hidden="true" />
         Play again
       </button>
@@ -165,7 +184,7 @@ export function Player() {
 
   const transport = (
     <div className="u-transport">
-      <button type="button" className="u-rd" aria-label="Previous" disabled={quiet} onClick={() => command('media_previous')}>
+      <button type="button" className="u-rd" aria-label="Previous" disabled={quiet || fromWall} onClick={() => command('media_previous')}>
         <IconPlayerSkipBackFilled size={30} aria-hidden="true" />
       </button>
       <button
@@ -173,11 +192,11 @@ export function Player() {
         className="u-rd big"
         aria-label={playing ? 'Pause' : 'Play'}
         disabled={fromWall ? !ownKnown : quiet && !(idle && hasSession)}
-        onClick={() => (fromWall ? playLastOwn(lastPlayed.own) : command('media_play_pause'))}
+        onClick={() => (fromWall ? startOwn() : command('media_play_pause'))}
       >
         {playing ? <IconPlayerPauseFilled size={40} aria-hidden="true" /> : <IconPlayerPlayFilled size={40} aria-hidden="true" />}
       </button>
-      <button type="button" className="u-rd" aria-label="Next" disabled={quiet} onClick={() => command('media_next')}>
+      <button type="button" className="u-rd" aria-label="Next" disabled={quiet || fromWall} onClick={() => command('media_next')}>
         <IconPlayerSkipForwardFilled size={30} aria-hidden="true" />
       </button>
       {progressBar}

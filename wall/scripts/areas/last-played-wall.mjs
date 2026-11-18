@@ -7,6 +7,8 @@ const NAME = 'msedgewebview2';
 const STATES = [
   ['restart, item known', 'media=none&wlastown=known', ['Last played on the wall', 'Night drive mix', 'Play again', '!msedgewebview2']],
   ['restart, item unknown', 'media=none&wlastown=unknown', ['Last played on the wall', 'Pick it in Watch to play again', '!Play again', '!msedgewebview2']],
+  ['restart, session kept, stores empty', 'media=restartsession&wlastown=session', ['Last played on the wall', 'Night drive mix', 'Play again', '!msedgewebview2']],
+  ['restart, other sound, item known', 'media=none&wlastown=alert', ['Last played on the wall', 'Night drive mix', 'Play again', '!Alert chime', '!msedgewebview2']],
   ['playing in Watch', 'wplay=0&media=watchown', ['Playing in Watch', '!msedgewebview2']],
   ['web app playing', 'media=webapp', ['an app on this PC', 'Harbor Radio', '!com-example']],
   ['web app at rest', 'media=webappstopped', ['Last played on an app on this PC', 'Harbor Radio', '!com-example']],
