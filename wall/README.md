@@ -683,6 +683,16 @@ button itself, 52 by 44, inside its own row; titles stay on one line with an ell
 Clicking a chore's title (not its tick) opens it in the task app with
 `wall2_open_task` (see "Task card").
 
+**Today only.** A small chip beside the heading (the Sound card's place-chip look, cyan when
+on) filters the card. It is on by default and the choice is kept per viewer in local storage
+(`wall2-chores-today-only`, `home/useChores.ts`). On, the read adds the task app's `due:
+"today"` filter (see `wall2_tasks_summary`): tasks due today or overdue, overdue first, and a
+task with no due date is left out, so the card only holds what needs doing now. Off, it reads
+every `home` task as before. With the filter leaving nothing it says "Nothing for today".
+Dev mocks: a `?chores=` state turns the chip off unless `?todayonly=on` is added, so the
+older chore states keep their undated rows. Fit check: `--area=due-today` adds the Today only
+state and a rule that the chip sits beside the heading inside the card (16 px text).
+
 **Fit check** (not run by CI, it needs a Chromium binary):
 `node scripts/home-fit-check.mjs /path/to/chrome [shot.png]` (or `CHROME=... npm run
 fit:home`) builds a development bundle, opens Home at 16:36 in headless Chromium, gives
@@ -1874,7 +1884,10 @@ horizon canvas and the veil and under the panels; its styles are `buddy/watt.css
   with every control and line of text of the place. Work and Meet 140 to 2420, Home 140 to
   2400 (the whole band between the top row and the ribbon); Unwind on Listen 140 to 494 (left
   of the transport row) and 1416 to 1870 (between the row and the Room card); Unwind on Watch
-  140 to 1020 (the video takes the rest). While the leave banner shows in the band above the
+  140 to 1870, the whole floor between the wings (`WATCH_OPEN_GROUND`), so he walks under a
+  video that sits behind the mountains (Whole sky, The sun), and 140 to 1020 while the video is
+  Feathered, on the drive-in screen or the Hologram, so he never walks over a picture
+  (`videoInFront` in the Watch store; the empty drive-in screen counts, nothing else does). While the leave banner shows in the band above the
   ribbon (Home and Meet, x 624 to 1914), his ground there goes round it: Home 140 to 516 and 1932
   to 2400, Meet 140 to 536 and 1930 to 2420; he fades over to the nearest free spot and his stored
   spot is kept for when it goes. His spot on each place is kept in his stored record

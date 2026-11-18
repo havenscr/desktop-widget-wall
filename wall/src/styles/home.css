@@ -263,7 +263,7 @@
 }
 .chores-head {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   justify-content: space-between;
   gap: 16px;
   margin-bottom: 4px;
@@ -273,6 +273,31 @@
   align-items: baseline;
   gap: 14px;
   white-space: nowrap;
+}
+/* Today only: the Sound card's place chip look (.seg, .seg.on), a little shorter so the heading row keeps its height. */
+.chores-today {
+  flex: none;
+  height: 30px;
+  margin: -4px 0;
+  padding: 0 12px;
+  border-radius: 12px;
+  font: 500 16px/1 var(--body);
+  color: var(--dim);
+  white-space: nowrap;
+  cursor: pointer;
+}
+.chores-today:hover {
+  color: var(--tx);
+  background: rgba(255, 255, 255, 0.06);
+}
+.chores-today.on {
+  color: var(--cyan);
+  background: rgba(53, 230, 234, 0.16);
+  box-shadow: inset 0 0 0 1px rgba(53, 230, 234, 0.45);
+}
+.chores-today:focus-visible {
+  outline: 3px solid var(--cyan);
+  outline-offset: 2px;
 }
 .home .tk3 {
   display: flex;
