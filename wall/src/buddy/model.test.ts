@@ -61,7 +61,7 @@ import {
   type ReactKind,
 } from './petFrame';
 import { POSES, SPRITES, pixelColor, type Pose } from './sprites';
-import { BANNER, BANNER_GROUND, GROUNDS, WATCH_GROUND, groundOf, walkAround, type Span } from './ground';
+import { BANNER, BANNER_GROUND, GROUNDS, WATCH_GROUND, WATCH_OPEN_GROUND, groundOf, walkAround, type Span } from './ground';
 import type { Walk } from './model';
 
 const at = (h: number, m = 0) => new Date(2026, 10, 11, h, m);
@@ -158,7 +158,7 @@ const ON_AIR_COLUMNS: readonly (readonly [number, number])[] = [
 ];
 
 /** The panel rectangles on a place, in stage pixels: the frame's layout constants, plus Unwind's transport row. */
-function panels(place: WattPlace, watch = false): Rect[] {
+function panels(place: WattPlace, watch = false, keepOut = true): Rect[] {
   const out: Rect[] = [{ left: SHELL_INSET, right: SHELL_INSET + RAIL_WIDTH, top: MAIN_TOP, bottom: MAIN_TOP + MAIN_HEIGHT }];
   const [band, , ribbon] = rowEdges();
   if (ribbonKind(place)) {
@@ -175,7 +175,7 @@ function panels(place: WattPlace, watch = false): Rect[] {
     out.push({ ...wing, top: CAMERAS.unwind.hy, bottom: MAIN_TOP + MAIN_HEIGHT });
     out.push({ left: MAIN_LEFT + MAIN_WIDTH - ZONES_WIDE[1], right: MAIN_LEFT + MAIN_WIDTH, top: MAIN_TOP, bottom: MAIN_TOP + MAIN_HEIGHT });
     // Listen: the transport row and the art. Watch: the video, its chip, and its title and buttons.
-    if (watch) out.push(...WATCH_MEASURED, { left: 624, right: 1084, top: 150, bottom: 416 }, ...UNWIND_MEASURED.slice(1));
+    if (watch) out.push(...(keepOut ? WATCH_MEASURED : WATCH_MEASURED.slice(1)), { left: 624, right: 1084, top: 150, bottom: 416 }, ...UNWIND_MEASURED.slice(1));
     else out.push({ ...UNWIND_ROW }, ...UNWIND_MEASURED);
   }
   return out;
@@ -392,6 +392,24 @@ describe('the ground he can be set down on', () => {
       }
     }, 60_000);
   }
+  it('Watch with the video behind the mountains (no keep-out): the whole floor, left wing to right wing, clear of every panel but the picture', () => {
+    expect(groundOf('unwind', true, false, false)).toBe(WATCH_OPEN_GROUND);
+    expect(WATCH_OPEN_GROUND[0].min).toBe(WATCH_GROUND[0].min);
+    expect(WATCH_OPEN_GROUND[0].max).toBeGreaterThan(1700);
+    for (const span of WATCH_OPEN_GROUND) {
+      const walk = spanWalk('unwind', span);
+      const box = reach('unwind', CAMERAS.unwind, walk);
+      expect(box.right).toBeLessThanOrEqual(span.right);
+      expect(box.left).toBeGreaterThanOrEqual(span.left);
+      for (const panel of panels('unwind', true, false)) expect(overlaps(box, panel), `open Watch span over ${JSON.stringify(panel)}`).toBe(false);
+    }
+  }, 60_000);
+  it('Watch with the video on the hologram or the movie screen (keep-out): the narrow ground stays', () => {
+    expect(groundOf('unwind', true, false, true)).toBe(WATCH_GROUND);
+    expect(groundOf('unwind', true)).toBe(WATCH_GROUND);
+    expect(WATCH_GROUND[0].max).toBe(1020);
+    expect(groundOf('unwind', false, false, false)).toBe(GROUNDS.unwind);
+  });
   it('is far wider than the old walk: most of the band on Work, Home and Meet, both sides of the row on Unwind', () => {
     for (const place of ['work', 'home', 'meet'] as const) expect(GROUNDS[place][0].max - GROUNDS[place][0].min).toBeGreaterThan(2000);
     expect(GROUNDS.unwind.length).toBe(2);

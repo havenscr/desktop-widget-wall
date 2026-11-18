@@ -340,6 +340,20 @@ export function driveInAudience(s: Pick<WatchState, 'playing' | 'looks'> & Parti
 }
 
 /**
+ * For the buddy: whether he keeps out of the video's area: only for the drive-in screen
+ * (the movie screen) or the Hologram while a video plays, or the empty drive-in screen with nothing
+ * on (the only look drawn then). The feathered, whole-sky and sun looks are sky pictures that end
+ * above the ground line: he walks the whole floor in front of them, which reads as under the video. Use it as a store selector.
+ */
+export function videoInFront(s: Pick<WatchState, 'playing' | 'looks' | 'saved'>): boolean {
+  if (s.playing) {
+    const look = lookFor(s.looks, s.playing.kind);
+    return look === 'drivein' || look === 'holo';
+  }
+  return lookFor(s.looks, s.saved[0]?.kind ?? 'video') === 'drivein';
+}
+
+/**
  * True while the video stage is in sight: Unwind is the place and its Watch tab is showing. One
  * decision for the stage layer (`StageLayer.tsx`: a video that keeps playing out of sight is parked,
  * not shown) and for the show selector below, so the two never disagree.
