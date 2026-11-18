@@ -415,6 +415,17 @@ describe('the volume on Watch (the wall video)', () => {
 });
 
 describe('the volume on Listen (the player app)', () => {
+  it('never names the web view in the row, its tips or its labels', async () => {
+    seed();
+    mocks.set('get_audio_sessions', () => ({ master: { volume: 50, muted: false }, sessions: [{ id: '1:msedgewebview2.exe', name: 'msedgewebview2.exe', volume: 70, muted: false }] }));
+    mocks.set('get_now_playing', () => ({ title: 'Mail alert', playback_status: 'playing', source_app_id: 'msedgewebview2.exe' }));
+    await show('listen');
+    await flush(3500);
+    await hover(sound());
+    const words = [document.body.textContent ?? '', ...[...document.querySelectorAll('[aria-label], [title]')].map((e) => `${e.getAttribute('aria-label')} ${e.getAttribute('title')}`)].join(' ');
+    expect(words.toLowerCase()).not.toContain('webview');
+  });
+
   const session = (name: string, volume = 70) => ({ master: { volume: 50, muted: false }, sessions: [{ id: `1:${name}`, name, volume, muted: false }] });
   const spotifyPlaying = () => mocks.set('get_now_playing', () => ({ title: 'Song 1', artist: 'Some Artist', playback_status: 'playing', source_app: 'Spotify' }));
 

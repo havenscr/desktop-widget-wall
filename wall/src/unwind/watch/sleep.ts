@@ -5,6 +5,7 @@ import { isKnownPlayer, playerName, sourceKey } from '../../music/players';
 import { spotify, type SpotifyPlayback } from '../../music/spotify';
 import { mediaTarget } from '../../music/store';
 import { spotifyReady, useSpotifyStatus } from '../spotify/status';
+import { isWallPlayer } from '../ownSource';
 import { useWatchStore } from './store';
 
 /** The steps one click moves through, in minutes: Off, 30, 60, 90, then Off again. */
@@ -90,7 +91,7 @@ export function startSleepAt(endsAt: number, step = 30): void {
 
 /** True for a source the wall can name as an outside app: a known player, and not the web view the wall's own video plays in. */
 function outsideApp(source: string | null): boolean {
-  return source !== null && isKnownPlayer(source) && playerName(source)?.toLowerCase() !== 'msedgewebview2';
+  return source !== null && isKnownPlayer(source) && !isWallPlayer(playerName(source));
 }
 
 type Read<T> = { ok: true; value: T } | { ok: false };

@@ -5,6 +5,7 @@ import { useNowPlaying } from '../music/useNowPlaying';
 import { quietFocus, tip } from '../ui/HoverTip';
 import { useVisible } from '../ui/useVisible';
 import { clampVolume, volumePercent } from './model';
+import { shownSource } from './ownSource';
 import { useAppVolume } from './Volume';
 import { kindName, refKey } from './watch/links';
 import { PinGlyph } from './watch/PinGlyph';
@@ -226,7 +227,7 @@ function useSound() {
   const lastLevel = useRef(0);
   const appLevel = volumePercent(app.value);
   if (!video && app.session && !SHARED_PROCESSES.has(procName(app.session.name)) && appLevel > 0) lastLevel.current = appLevel;
-  const name = playerName(source) ?? 'the player';
+  const name = shownSource(playerName(source)) ?? 'the player';
 
   if (video) {
     const twitch = playing?.kind === 'twitch';

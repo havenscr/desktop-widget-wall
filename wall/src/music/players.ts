@@ -152,6 +152,12 @@ export function isKnownPlayer(source: string | null | undefined): boolean {
   return !!source && !!source.trim() && known(source) !== null;
 }
 
+/** True when `name` is exactly a known player's friendly name ("Spotify", "Edge"), in any case. */
+export function isKnownPlayerName(name: string | null | undefined): boolean {
+  const n = name?.trim().toLowerCase();
+  return !!n && KNOWN.some((k) => k.name.toLowerCase() === n);
+}
+
 /** The source as the wall shows it: the id when the session gave one, else the older label. */
 export function sourceKey(info: { source_app_id?: string | null; source_app?: string | null } | null): string | null {
   const id = info?.source_app_id?.trim();
