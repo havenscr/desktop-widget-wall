@@ -41,12 +41,14 @@ interface LibraryState {
   liked: Loaded<YtVideo>;
   opened: YtPlaylist | null;
   songs: Loaded<YtVideo>;
+  /** A start asked from a tile's menu: the opened playlist plays (or shuffles) when its first page has arrived; `queue.ts` runs it. */
+  pendingStart: { id: string; shuffled: boolean } | null;
   query: string;
   found: Loaded<YtVideo> | null;
   searchQuota: boolean;
 }
 
-const initial = (): LibraryState => ({ tab: 'playlists', playlists: blank(), liked: blank(), opened: null, songs: blank(), query: '', found: null, searchQuota: false });
+const initial = (): LibraryState => ({ tab: 'playlists', playlists: blank(), liked: blank(), opened: null, songs: blank(), pendingStart: null, query: '', found: null, searchQuota: false });
 
 export const useYtLibrary = create<LibraryState>(() => initial());
 
@@ -74,6 +76,8 @@ export function libraryMounted(): () => void {
   view.mounted = true;
   return () => {
     view.mounted = false;
+    // A start asked from a tile's menu does not outlive the screen; the loaded lists stay as they are.
+    if (useYtLibrary.getState().pendingStart) useYtLibrary.setState({ pendingStart: null });
   };
 }
 export function libraryVisible(visible: boolean): void {
@@ -171,13 +175,14 @@ export function setTab(tab: YtTab): void {
   if (!useYtLibrary.getState()[tab].loaded) void loadList(tab);
 }
 
-export function openPlaylist(p: YtPlaylist): void {
-  useYtLibrary.setState({ opened: p, songs: blank() });
+/** Open a playlist; `start` also asks for it to play, or shuffle, as soon as its first page has arrived (any other open or a close cancels it). */
+export function openPlaylist(p: YtPlaylist, start?: 'play' | 'shuffle'): void {
+  useYtLibrary.setState({ opened: p, songs: blank(), pendingStart: start ? { id: p.id, shuffled: start === 'shuffle' } : null });
   void loadList('songs');
 }
 
 export function closePlaylist(): void {
-  useYtLibrary.setState({ opened: null, songs: blank() });
+  useYtLibrary.setState({ opened: null, songs: blank(), pendingStart: null });
 }
 
 /** Read the opened playlist again from YouTube (page one; the rest as the list scrolls). */

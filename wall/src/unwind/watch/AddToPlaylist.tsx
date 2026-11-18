@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { IconBrandYoutube, IconCheck, IconPlaylistAdd, IconPlus } from '@tabler/icons-react';
 import { create } from 'zustand';
 import { quietFocus, tip } from '../../ui/HoverTip';
+import { LIBRARY_MENU_OPENED } from './libraryMenuModel';
 import { refKey } from './links';
 import { ADD_ERRORS, MAX_LABEL, MAX_SAVED } from './saved';
 import { MAX_OWN_VIDEOS, ownEntries, useOwnLists, type OwnVideo } from './ownLists';
@@ -116,7 +117,12 @@ export function AddMenu({
       anchor.focus();
     };
     document.addEventListener('pointerdown', down, true);
-    return () => document.removeEventListener('pointerdown', down, true);
+    // A library menu opening (by the keyboard, which has no press) closes this one; focus goes to that menu, not back here.
+    document.addEventListener(LIBRARY_MENU_OPENED, onClose);
+    return () => {
+      document.removeEventListener('pointerdown', down, true);
+      document.removeEventListener(LIBRARY_MENU_OPENED, onClose);
+    };
   }, [anchor, onClose]);
 
   const close = (back: boolean) => {

@@ -137,6 +137,11 @@ export interface WatchState {
   setEditing: (key: string | null) => void;
   play: (ref: WatchRef) => void;
   /**
+   * Play a YouTube item pinned from a library panel: the same as `play` without the Watch list check, with the pin's name as label
+   * (source 'watch', the Watch tab shown). Twitch, own and invalid refs do nothing; true when it started.
+   */
+  playPinned: (ref: WatchRef, label: string) => boolean;
+  /**
    * Play a video picked in the YouTube library: needs only a valid video id (it is never saved, never changes the tab).
    * The same video already in the frame is not reloaded: it starts again from 0. False for an id that does not pass.
    */
@@ -245,6 +250,13 @@ export const useWatchStore = create<WatchState>((set, get) => ({
     const item = get().saved.find((i) => refKey(i) === refKey(ref));
     if (!item) return;
     set({ playing: item, source: 'watch', lastStopped: null, paused: false, muted: false, report: NO_REPORT, needsClick: false, clickHint: false, stopped: null, tab: 'watch' });
+  },
+  playPinned: (ref, label) => {
+    if (ref.kind !== 'video' && ref.kind !== 'live' && ref.kind !== 'playlist') return false;
+    if (!validId(ref.kind, ref.id)) return false;
+    const item: SavedItem = { kind: ref.kind, id: ref.id, label: cleanText(label, MAX_LABEL) || defaultLabel(ref) };
+    set({ playing: item, source: 'watch', lastStopped: null, paused: false, muted: false, report: NO_REPORT, needsClick: false, clickHint: false, stopped: null, tab: 'watch' });
+    return true;
   },
   playMusic: (id, label) => playQueued(id, label, 'music'),
   playOwnVideo: (id, label) => playQueued(id, label, 'own'),

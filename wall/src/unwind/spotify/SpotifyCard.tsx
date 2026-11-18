@@ -18,7 +18,7 @@ import { useSkyKeepClear } from '../../horizon/sky';
 import { isPlaying, isQuiet } from '../../music/model';
 import { playerName, sourceKey } from '../../music/players';
 import { spotify, type SpotifyItem, type SpotifyTrack } from '../../music/spotify';
-import { refreshNowPlaying, useNowPlayingStore } from '../../music/store';
+import { useNowPlayingStore } from '../../music/store';
 import { useNowPlaying } from '../../music/useNowPlaying';
 import { useToolsStore } from '../../tools/store';
 import { quietFocus, tip } from '../../ui/HoverTip';
@@ -58,6 +58,9 @@ import {
   type ListenSource,
   type SpotifyProblem,
 } from './model';
+import { PinButton } from '../watch/PinButton';
+import { usePins } from '../watch/pins';
+import { finishPlay, playWhole, useSpotifyPinNote } from './playItem';
 import { readSpotifyStatus, spotifyReady, useSpotifyStatus } from './status';
 
 export type BrowseTab = 'search' | 'playlists' | 'albums' | 'liked' | 'recent' | 'queue';
@@ -211,6 +214,8 @@ export function SpotifyCard() {
     if (!tall && !chooser) return;
     const key = (e: KeyboardEvent) => {
       if (e.key !== 'Escape' || e.defaultPrevented) return;
+      // An open library menu (drawn at the app root) has its own Escape.
+      if (document.querySelector('.u-lib-menu')) return;
       const at = document.activeElement;
       // A details card has its own Escape.
       if (document.querySelector('.hover-tip .sp-details') && at && (at.closest('.hover-tip') || at.closest('.sp-tile'))) return;
@@ -231,12 +236,12 @@ export function SpotifyCard() {
   }, [tall, chooser, card, close]);
 
   // A press anywhere outside closes it, and that press does nothing else: its follow-up mouse events
-  // are swallowed once. The details card of a tile (drawn elsewhere in the page) counts as inside.
+  // are swallowed once. The details card of a tile and a library menu (both drawn elsewhere in the page) count as inside.
   useEffect(() => {
     if (!tall) return;
     const away = (e: PointerEvent) => {
       const t = e.target as Element | null;
-      if (!t || (card && card.contains(t)) || t.closest?.('.hover-tip')) return;
+      if (!t || (card && card.contains(t)) || t.closest?.('.hover-tip') || t.closest?.('.u-lib-menu')) return;
       e.preventDefault();
       e.stopPropagation();
       swallowOff.current?.();
@@ -418,35 +423,7 @@ function useIsNow(): (t: { id: string | null; name: string; artists?: string | n
   return (t) => isNowPlaying(t, nowId, title, artist);
 }
 
-const waitSecond = () => new Promise<void>((resolve) => setTimeout(resolve, 1_000));
-export async function finishPlay(answer: 'played' | 'starting', onStarting: () => void): Promise<void> {
-  if (answer === 'starting') {
-    onStarting();
-    // The "Play on" chip says "Starting Spotify" while the start flow runs, and reads the players again after it.
-    useSpotifyStart.setState({ starting: true });
-    try {
-      for (;;) {
-        const state = await spotify.startStatus();
-        if (!state.starting) {
-          if (state.result !== 'played') throw new Error(state.result ?? 'failed');
-          break;
-        }
-        await waitSecond();
-      }
-    } finally {
-      useSpotifyStart.setState((s) => ({ starting: false, rev: s.rev + 1 }));
-    }
-  }
-  await refreshNowPlaying();
-}
-
-/** Play an item whole, or shuffled, and report startup only when Rust opened Spotify. */
-async function playWhole(item: SpotifyItem, shuffled: boolean, onStarting: () => void): Promise<void> {
-  useSpotifyStart.setState({ name: item.name });
-  // The player is confirmed against a fresh list first (see `confirmPlayer`): nothing plays on another player than the one named.
-  const player = await confirmPlayer();
-  await finishPlay(await spotify.play(item.kind, item.id, { shuffle: shuffled, ...player }), onStarting);
-}
+export { finishPlay };
 
 function Browser({ tall }: { tall: boolean }) {
   const [tab, setTab] = useState<BrowseTab>('playlists');
@@ -472,7 +449,9 @@ function Browser({ tall }: { tall: boolean }) {
     setSpotifyInside(isOpen);
     return () => setSpotifyInside(false);
   }, [isOpen]);
-  const [note, setNote] = useState<string | null>(null);
+  const [ownNote, setNote] = useState<string | null>(null);
+  const pinNote = useSpotifyPinNote((s) => s.note);
+  const note = ownNote ?? pinNote;
   const nowTitle = useNowPlayingStore((s) => s.info?.title ?? '');
   useSpotifyNowRead(nowTitle);
   const isNow = useIsNow();
@@ -505,6 +484,10 @@ function Browser({ tall }: { tall: boolean }) {
         (got) => {
           if (!mounted.current) return;
           const items = Array.isArray(got) ? got : [];
+          // A pin of a listed playlist or album takes the list's name and cover again (one write, only when they differ).
+          if (t === 'playlists' || t === 'albums') {
+            usePins.getState().refresh(items.filter((i) => i.kind === 'playlist' || i.kind === 'album').map((i) => ({ kind: i.kind === 'album' ? ('spotify-album' as const) : ('spotify-playlist' as const), id: i.id, name: i.name, art: i.imageUrl ?? i.thumbUrl })));
+          }
           setLists((all) => ({ ...all, [t]: { items: page === 0 ? items : [...all[t].items, ...items], page, more: t !== 'recent' && items.length >= PAGE, loading: false, problem: null, loaded: true } }));
         },
         (e) => {
@@ -829,7 +812,8 @@ function SongsView({ item, tall, backLabel, onBack, onNote, onUpNext }: { item: 
   useEffect(() => load(0), [load]);
   useEffect(() => {
     const key = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onBack();
+      // An open library menu or chooser takes this Escape; the playlist closes on the next one.
+      if (e.key === 'Escape' && !e.defaultPrevented && !document.querySelector('.u-lib-menu')) onBack();
     };
     document.addEventListener('keydown', key);
     return () => document.removeEventListener('keydown', key);
@@ -871,6 +855,16 @@ function SongsView({ item, tall, backLabel, onBack, onNote, onUpNext }: { item: 
   const note = pageList ? PAGE_NOTE : null;
   const noteMore = pageList ? pageNoteMore(pageList.items.length, item.count ?? pageList.listed) : '';
 
+  // At rest Pin follows Shuffle as a word; in the tall column it is a round icon in the back row (Back, the tab name, Pin).
+  const pinButton = (className: string, icon: boolean) => (
+    <PinButton
+      entry={{ kind: item.kind === 'album' ? 'spotify-album' : 'spotify-playlist', id: item.id, name: item.name, art: item.imageUrl ?? item.thumbUrl ?? undefined }}
+      name={item.name}
+      className={className}
+      icon={icon}
+      cannotLine="This item's address is not one the wall can keep."
+    />
+  );
   const playButtons = (
     <>
       <button type="button" className="sp-btn fill big" onClick={() => playAll(false)}>
@@ -881,6 +875,7 @@ function SongsView({ item, tall, backLabel, onBack, onNote, onUpNext }: { item: 
         <IconArrowsShuffle size={18} aria-hidden="true" />
         Shuffle
       </button>
+      {tall ? null : pinButton('sp-btn plain big sp-pin', false)}
     </>
   );
   return (
@@ -895,6 +890,7 @@ function SongsView({ item, tall, backLabel, onBack, onNote, onUpNext }: { item: 
               {backLabel}
             </button>
           ) : null}
+          {tall ? pinButton('sp-btn plain sp-pin sp-tallpin', true) : null}
         </span>
         <Cover src={item.imageUrl ?? item.thumbUrl} size={tall ? 200 : 64} />
         <span className="sp-text">

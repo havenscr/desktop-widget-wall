@@ -51,6 +51,14 @@ pub(crate) fn recording_of(s: &Signals) -> bool { s.known && (s.mic.recorder || 
 /// keys in `wall2_keys`); the page's own idea of it is never trusted for a key press.
 pub(crate) fn recording_now() -> bool { recording_of(&CURRENT.lock().unwrap_or_else(|e| e.into_inner())) }
 
+/// Whether a recorder is running now, or None when the native reading is not known (before the
+/// first poll, or after a failed poll). For a gate that must fail closed: `recording_now` reads
+/// an unknown reading as "not recording".
+pub(crate) fn recording_reading_now() -> Option<bool> {
+    let s = CURRENT.lock().unwrap_or_else(|e| e.into_inner());
+    s.known.then(|| recording_of(&s))
+}
+
 #[tauri::command]
 pub fn wall2_signals(window: tauri::WebviewWindow) -> Result<Signals, String> {
     if window.label() != WALL2_LABEL { return Err("forbidden".into()); }

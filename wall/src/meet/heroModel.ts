@@ -1,9 +1,9 @@
 import type { CallKind, CallSignal, LeaveSignal } from '../signals/model';
-import { clockText, timeRange, type Meeting, type MeetingDetails, type Person } from './model';
+import { clockText, timeRange, type Meeting, type MeetingDetails, type Person, type Reply } from './model';
 
 const MIN = 60_000;
 
-/** A title over this many characters drops to a smaller size on three lines. */
+/** A title over this many characters drops to a smaller size on four lines. */
 export const LONG_TITLE = 50;
 
 /** The word for a call kind in the status row. */
@@ -204,4 +204,43 @@ export function leaveWords(leaveAt: number, hero: Pick<Meeting, 'end'> | undefin
 /** True when the leave signal is for this meeting: the real start it names is this meeting's start. */
 export function leaveIsFor(leave: LeaveSignal | null, m: Pick<Meeting, 'start'>): boolean {
   return leave !== null && Math.abs(leave.startsAt - Date.parse(m.start)) <= MIN;
+}
+
+/** The word on a person's card for how they replied. */
+export function replyWord(reply: Reply): string {
+  return { yes: 'Accepted', organizer: 'Organizer', maybe: 'Maybe', none: 'No reply', no: 'Declined' }[reply];
+}
+
+/** The mark on a person's initials: a tick, a question mark or a dash. */
+export function replyMark(reply: Reply): { text: string; tone: 'yes' | 'maybe' | 'none' } {
+  return reply === 'yes' || reply === 'organizer' ? { text: '\u2713', tone: 'yes' } : reply === 'maybe' ? { text: '?', tone: 'maybe' } : { text: '\u2013', tone: 'none' };
+}
+
+/** A key of the deck that does nothing yet: drawn dashed and dim, a tooltip says so. */
+export interface LaterKeySpec {
+  label: string;
+  /** A key icon name (`KEY_ICONS`), or `smile`. */
+  icon: string;
+}
+
+export const LATER_TIP = 'Not available yet';
+
+/** Positions 3 to 8 of the deck before a call; Join and Open invite hold positions 1 and 2. */
+export const BEFORE_LATER: readonly LaterKeySpec[] = [
+  { label: 'Copy join info', icon: 'copy' },
+  { label: 'Open chat', icon: 'chat' },
+  { label: 'Running late', icon: 'timer' },
+  { label: 'Do Not Disturb', icon: 'moon' },
+  { label: 'Lights', icon: 'bulb' },
+  { label: 'Open in Teams', icon: 'window' },
+];
+
+/** Positions 5 to 8 of the deck in a call; Mute, Camera, Share and Leave hold positions 1 to 4. */
+export function callLater(kind: CallKind): LaterKeySpec[] {
+  return [
+    { label: 'Raise hand', icon: 'hand' },
+    { label: 'Reactions', icon: 'smile' },
+    { label: 'Chat panel', icon: 'chat' },
+    { label: `Open in ${callWord(kind)}`, icon: 'window' },
+  ];
 }

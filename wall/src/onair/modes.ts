@@ -3,6 +3,7 @@
  * (`now` comes in), so every rule is a table row in `modes.test.ts`.
  */
 import type { CallSignal } from '../signals/model';
+import { LIVE_SOON_MS, seenModes } from './seen';
 
 export type Mode = 'live' | 'rec' | 'meet' | 'none';
 export type PageMode = Exclude<Mode, 'none'>;
@@ -28,7 +29,7 @@ export interface ModePick {
 }
 
 /** A scheduled broadcast counts as on air from this long before it starts. */
-export const LIVE_SOON_MS = 15 * 60_000;
+export { LIVE_SOON_MS };
 
 export const HELD_WHY = 'Held by hand';
 
@@ -38,13 +39,9 @@ function callWhy(call: CallSignal): string {
 
 export function pickMode(i: ModeInput): ModePick {
   const fallback = i.live === null || i.live.state === 'not-set-up' || i.live.state === 'signed-out';
-  const liveNow = fallback ? i.browserAv : i.live!.state === 'live' || (i.live!.state === 'scheduled' && i.live!.scheduledAt !== null && i.live!.scheduledAt - i.now <= LIVE_SOON_MS);
-  const rec = i.known && i.recording;
-  const meet = i.call !== null;
-  const seen: PageMode[] = [];
-  if (liveNow) seen.push('live');
-  if (rec) seen.push('rec');
-  if (meet) seen.push('meet');
+  const seen = seenModes(i);
+  const liveNow = seen.includes('live');
+  const rec = seen.includes('rec');
   if (i.held) return { mode: i.held, why: HELD_WHY, seen };
   if (rec) return { mode: 'rec', why: 'a recorder is running', seen };
   if (liveNow) {

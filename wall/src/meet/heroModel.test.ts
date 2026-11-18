@@ -1,10 +1,12 @@
 import { expect, it } from 'vitest';
 import {
   BACK_TO_BACK_MS,
+  BEFORE_LATER,
   BROWSER_KEYS,
   MAX_CIRCLES,
   MUTE_TIP,
   calledByLine,
+  callLater,
   callKeys,
   drawnPeople,
   initials,
@@ -15,6 +17,8 @@ import {
   nextHeading,
   peopleBlock,
   relationLine,
+  replyMark,
+  replyWord,
   ringOf,
   statusLine,
 } from './heroModel';
@@ -194,4 +198,21 @@ it('the leave signal belongs to the meeting whose start it names', () => {
   expect(leaveIsFor(leave, { start: at(61) })).toBe(true);
   expect(leaveIsFor(leave, { start: at(90) })).toBe(false);
   expect(leaveIsFor(null, { start: at(60) })).toBe(false);
+});
+
+it('reply words and marks: accepted and organizer tick, maybe asks, none and declined dash', () => {
+  expect(replyWord('yes')).toBe('Accepted');
+  expect(replyWord('organizer')).toBe('Organizer');
+  expect(replyWord('maybe')).toBe('Maybe');
+  expect(replyWord('none')).toBe('No reply');
+  expect(replyMark('yes').tone).toBe('yes');
+  expect(replyMark('organizer').tone).toBe('yes');
+  expect(replyMark('maybe')).toEqual({ text: '?', tone: 'maybe' });
+  expect(replyMark('none').tone).toBe('none');
+});
+
+it('the later keys: six after Join and Open invite, four after the call keys, the last named for the call', () => {
+  expect(BEFORE_LATER.map((k) => k.label)).toEqual(['Copy join info', 'Open chat', 'Running late', 'Do Not Disturb', 'Lights', 'Open in Teams']);
+  expect(callLater('teams').map((k) => k.label)).toEqual(['Raise hand', 'Reactions', 'Chat panel', 'Open in Teams']);
+  expect(callLater('zoom').at(-1)?.label).toBe('Open in Zoom');
 });

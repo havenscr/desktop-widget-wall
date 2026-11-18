@@ -9,6 +9,7 @@ import { usePlaceStore } from './state/places';
 import { Screens } from './screens/Screens';
 import { Stage } from './stage/Stage';
 import { HoverTipLayer } from './ui/HoverTip';
+import { LibraryMenuLayer } from './unwind/watch/LibraryMenu';
 import { ScreensOffLayer } from './ui/ScreensOffLayer';
 import { ToolsDrawer } from './tools/ToolsDrawer';
 import { useSignalStore } from './signals/store';
@@ -16,6 +17,7 @@ import { startAutoSwitch } from './meet/autoSwitch';
 import { LeaveBanner } from './signals/LeaveBanner';
 import { FloatingRecordingChip } from './signals/RecordingChip';
 import { DrawerScrim } from './ribbon/DrawerScrim';
+import { useOnAirLiveReport } from './onair/useOnAirLiveReport';
 
 export function App() {
   const active = usePlaceStore((s) => s.active);
@@ -31,6 +33,8 @@ export function App() {
   useEffect(() => useSignalStore.getState().init(), []);
   // Meet opens by itself when a Teams or Zoom call starts.
   useEffect(() => startAutoSwitch(), []);
+  // Tell Rust (and the person card) whether On Air is live, so no address is shown while it is.
+  useOnAirLiveReport();
 
   return (
     <Stage>
@@ -48,6 +52,7 @@ export function App() {
       <ScreensOffLayer />
       <ToolsDrawer />
       <HoverTipLayer />
+      <LibraryMenuLayer />
     </Stage>
   );
 }

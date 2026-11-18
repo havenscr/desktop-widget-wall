@@ -7,10 +7,11 @@ import { useVisible } from '../ui/useVisible';
 import { clampVolume, volumePercent } from './model';
 import { shownSource } from './ownSource';
 import { useAppVolume } from './Volume';
-import { kindName, refKey } from './watch/links';
-import { PinGlyph } from './watch/PinGlyph';
+import type { WatchKind } from './watch/links';
+import { PinArtSquare } from './watch/PinArt';
+import { playPinnedSpotify } from './spotify/playItem';
 import { PinMenu } from './watch/PinMenu';
-import { artBackground, pinnable, resolvePins, usePins } from './watch/pins';
+import { displayPins, pinKindName, pinnable, usePins, type PinPlace, type PinShown } from './watch/pins';
 import type { SavedItem } from './watch/saved';
 import { nextStep, sleepWords, stepSleep, useSleep } from './watch/sleep';
 import { useWatchStore } from './watch/store';
@@ -100,11 +101,22 @@ function words(label: string) {
   return label.split(' ').flatMap((w, i) => (i === 0 ? [<span className="u-pin-word" key={i}>{w}</span>] : [' ', <span className="u-pin-word" key={i}>{w}</span>]));
 }
 
+/** What a click on a pin starts, by what the pin is. */
+function playPin(shown: PinShown): void {
+  if (shown.kind === 'spotify-playlist' || shown.kind === 'spotify-album') {
+    playPinnedSpotify(shown.kind === 'spotify-album' ? 'album' : 'playlist', shown.id, shown.name);
+    return;
+  }
+  const kind = shown.kind as WatchKind;
+  if (shown.from === 'watch') useWatchStore.getState().play({ kind, id: shown.id });
+  else useWatchStore.getState().playPinned({ kind, id: shown.id }, shown.name);
+}
+
 function Pins({ onMenu }: { onMenu: (open: boolean) => void }) {
   const places = usePins((s) => s.places);
   const saved = useWatchStore((s) => s.saved);
   const playing = useWatchStore((s) => s.playing);
-  const items = resolvePins(places, saved);
+  const items = displayPins(places, saved);
   const [menu, setMenu] = useState<MenuAt | null>(null);
   const buttons = useRef<(HTMLButtonElement | null)[]>([]);
   const wasOpen = useRef<number | null>(null);
@@ -125,7 +137,8 @@ function Pins({ onMenu }: { onMenu: (open: boolean) => void }) {
   return (
     <div className="u-pins" role="group" aria-label="Pins">
       {items.map((item, i) => {
-        const lit = !!item && !!playing && refKey(playing) === refKey(item);
+        // Only a YouTube item is ever lit: the wall keeps no shared Spotify context.
+        const lit = !!item && !!playing && item.kind === playing.kind && item.id === playing.id;
         const press = () => {
           wasOpen.current = menu?.index ?? null;
           viaKey.current = false;
@@ -144,9 +157,9 @@ function Pins({ onMenu }: { onMenu: (open: boolean) => void }) {
               {...(item
                 ? tip(() => (
                     <div className="sp-tipline">
-                      <b>{item.label}</b>
+                      <b>{item.name}</b>
                       <span>
-                        {kindName(item.kind)} · {lit ? 'Playing now' : 'Click to play'} · Right-click for Replace and Remove
+                        {pinKindName(item.kind)} · {lit ? 'Playing now' : 'Click to play'} · Right-click for Replace and Remove
                       </span>
                     </div>
                   ))
@@ -159,7 +172,7 @@ function Pins({ onMenu }: { onMenu: (open: boolean) => void }) {
                   return;
                 }
                 // The pin that plays does nothing new: it never restarts.
-                if (!lit) useWatchStore.getState().play(item);
+                if (!lit) playPin(item);
               }}
               onContextMenu={(e) => {
                 e.preventDefault();
@@ -175,10 +188,8 @@ function Pins({ onMenu }: { onMenu: (open: boolean) => void }) {
             >
               {item ? (
                 <>
-                  <i className="u-pin-art" style={{ background: artBackground(refKey(item)) }}>
-                    <PinGlyph kind={item.kind} />
-                  </i>
-                  <span className="u-pin-name">{words(item.label)}</span>
+                  <PinArtSquare shown={item} />
+                  <span className="u-pin-name">{words(item.name)}</span>
                 </>
               ) : (
                 <>
@@ -195,13 +206,13 @@ function Pins({ onMenu }: { onMenu: (open: boolean) => void }) {
   );
 }
 
-function PlacedMenu({ index, item, places, saved, byKeyboard, onClose }: { index: number; item: SavedItem | null; places: readonly (string | null)[]; saved: readonly SavedItem[]; byKeyboard: boolean; onClose: (restore: boolean) => void }) {
+function PlacedMenu({ index, item, places, saved, byKeyboard, onClose }: { index: number; item: PinShown | null; places: readonly PinPlace[]; saved: readonly SavedItem[]; byKeyboard: boolean; onClose: (restore: boolean) => void }) {
   return (
     <PinMenu
       items={pinnable(places, saved)}
       listHasItems={saved.some((i) => i.kind !== 'own')}
       pinned={!!item}
-      name={item?.label ?? 'Add a pin'}
+      name={item?.name ?? 'Add a pin'}
       byKeyboard={byKeyboard}
       onPick={(key) => usePins.getState().pin(index, key)}
       onRemove={() => usePins.getState().unpin(index)}

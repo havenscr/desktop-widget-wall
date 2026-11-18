@@ -7,11 +7,15 @@
 //! failure maps to a fixed string or a reason code built from numbers and a checked name.
 
 mod auth;
+pub(crate) mod brief;
+pub(crate) mod brief_token;
 pub(crate) mod checklist;
+mod contacts;
 mod desktop;
 mod graph;
 mod meetlog;
 mod netprobe;
+pub(crate) mod people;
 mod reason;
 mod service;
 pub(crate) mod store;
