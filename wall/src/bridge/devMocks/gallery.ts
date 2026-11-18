@@ -220,6 +220,11 @@ function media(mode: string): void {
     }
     if (mode === 'watchown') return { ...base, title: 'Night drive mix', artist: '', source_app: 'msedgewebview2', source_app_id: 'msedgewebview2.exe', playback_status: 'playing' };
     if (mode === 'watchstopped') return { ...base, title: 'Night drive mix', artist: '', source_app: 'msedgewebview2', source_app_id: 'msedgewebview2.exe', playback_status: 'stopped' };
+    // A browser-installed web app: its session id is a raw id, never a name to show (invented id).
+    if (mode === 'webapp') return { ...base, title: 'Harbor Radio', artist: 'Example Host', source_app: 'com-example-radio7f3a2', source_app_id: 'com-example-radio7f3a2', playback_status: 'playing' };
+    if (mode === 'webappstopped') return { ...base, title: 'Harbor Radio', artist: 'Example Host', source_app: 'com-example-radio7f3a2', source_app_id: 'com-example-radio7f3a2', playback_status: 'stopped' };
+    // After a restart Windows still lists the web view's stopped session with the item's title (the saved item's label).
+    if (mode === 'restartsession') return { ...base, title: 'Night drive mix - YouTube', artist: 'Some Channel', source_app: 'msedgewebview2', source_app_id: 'msedgewebview2.exe', playback_status: 'stopped' };
     if (mode === 'webview') return { ...base, title: 'Mail alert', artist: '', source_app: 'msedgewebview2', source_app_id: 'msedgewebview2.exe', playback_status: 'stopped' };
     if (mode === 'long') {
       return {
