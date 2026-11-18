@@ -641,12 +641,34 @@ pub const MAX_NAME_CHARS: usize = 60;
 /// The cleaned invite text is cut at this many characters.
 pub const MAX_INVITE_CHARS: usize = 400;
 
-/// One invited person as the web view gets them: a name and how they replied. Never an address.
-#[derive(Clone, Debug, PartialEq, Serialize)]
+/// One invited person as the web view gets them: a name, how they replied and an opaque key.
+/// Never an address: `address` stays in Rust, is never serialized, and is moved into the person
+/// map (see `service::Links`) when the next-meetings read mints the key.
+#[derive(Clone, PartialEq, Serialize)]
 pub struct Person {
     pub name: String,
     /// `yes`, `maybe`, `no`, `none` or `organizer`.
     pub reply: &'static str,
+    /// `p<read>-<n>` once the read has minted it; None for a person with no address.
+    pub key: Option<String>,
+    #[serde(skip)]
+    pub address: Option<String>,
+}
+
+impl std::fmt::Debug for Person {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Person")
+            .field("name", &self.name)
+            .field("reply", &self.reply)
+            .field("key", &self.key)
+            .field("address", &self.address.as_ref().map(|_| "<redacted>"))
+            .finish()
+    }
+}
+
+/// The address of an invitee as Rust keeps it: trimmed, None when empty.
+fn kept_address(raw: Option<&str>) -> Option<String> {
+    raw.map(str::trim).filter(|a| !a.is_empty()).map(str::to_string)
 }
 
 /// What the next-meetings read passes about who is in a meeting and what the invite says.
@@ -672,7 +694,7 @@ fn is_invisible(c: char) -> bool {
 
 /// A line with every control character turned to a space, every invisible format character removed
 /// and the whitespace collapsed to single spaces. The rules below always look at this form.
-fn normalize(raw: &str) -> String {
+pub(super) fn normalize(raw: &str) -> String {
     let spaced: String = raw.chars().filter_map(|c| if c.is_control() { Some(' ') } else if is_invisible(c) { None } else { Some(c) }).collect();
     spaced.split_whitespace().collect::<Vec<_>>().join(" ")
 }
@@ -1014,7 +1036,7 @@ pub fn shape_details(e: &Value) -> Option<Details> {
     let mut more: u32 = 0;
     let mut organizer_seen = false;
     if let Some(name) = &called_by {
-        people.push(Person { name: name.clone(), reply: "organizer" });
+        people.push(Person { name: name.clone(), reply: "organizer", key: None, address: kept_address(str_at(e, &["organizer", "emailAddress", "address"])) });
         organizer_seen = true;
     }
     let mut organizer_matched = false;
@@ -1024,7 +1046,9 @@ pub fn shape_details(e: &Value) -> Option<Details> {
             continue;
         }
         match str_at(a, &["emailAddress", "name"]).and_then(clean_name) {
-            Some(name) if people.len() < MAX_PEOPLE => people.push(Person { name, reply: reply_word(str_at(a, &["status", "response"])) }),
+            Some(name) if people.len() < MAX_PEOPLE => {
+                people.push(Person { name, reply: reply_word(str_at(a, &["status", "response"])), key: None, address: kept_address(str_at(a, &["emailAddress", "address"])) })
+            }
             _ => more = more.saturating_add(1),
         }
     }
@@ -1819,6 +1843,21 @@ mod tests {
     }
 
     #[test]
+    fn a_person_serializes_with_a_key_slot_and_never_the_address() {
+        let d = details_of(json!({
+            "organizer": { "emailAddress": { "name": "Avery Example", "address": "avery@example.test" } },
+            "attendees": [attendee("Blake Sample", "blake@sample.test", "accepted"), attendee("Lee Demo", "  ", "accepted")]
+        }))
+        .unwrap();
+        // The read keeps each address in Rust, trimmed; a blank one is None.
+        assert_eq!(d.people[1].address.as_deref(), Some("blake@sample.test"));
+        assert_eq!(d.people[2].address, None);
+        let wire = serde_json::to_value(&d.people[1]).unwrap();
+        assert_eq!(wire, json!({ "name": "Blake Sample", "reply": "yes", "key": null }));
+        assert!(!format!("{:?}", d.people[1]).contains("blake@sample.test"));
+    }
+
+    #[test]
     fn the_organizer_is_listed_once_even_when_the_attendees_leave_them_out() {
         let d = details_of(json!({
             "organizer": { "emailAddress": { "name": "Avery Example", "address": "avery@example.test" } },
@@ -1826,7 +1865,7 @@ mod tests {
         }))
         .unwrap();
         assert_eq!(d.people.len(), 2);
-        assert_eq!(d.people[0], Person { name: "Avery Example".into(), reply: "organizer" });
+        assert_eq!(d.people[0], Person { name: "Avery Example".into(), reply: "organizer", key: None, address: Some("avery@example.test".into()) });
     }
 
     #[test]
@@ -2023,7 +2062,7 @@ mod tests {
         rows.insert(20, attendee("Avery Example", "AVERY@example.test", "accepted"));
         let d = details_of(json!({ "organizer": { "emailAddress": { "name": "Avery Example", "address": "avery@example.test" } }, "attendees": rows })).unwrap();
         assert_eq!(d.people.len(), MAX_PEOPLE);
-        assert_eq!(d.people[0], Person { name: "Avery Example".into(), reply: "organizer" });
+        assert_eq!(d.people[0], Person { name: "Avery Example".into(), reply: "organizer", key: None, address: Some("avery@example.test".into()) });
         // 25 attendees including the organizer: 20 listed, 5 counted, 25 in all.
         assert_eq!(d.people_more, 5);
         assert_eq!(d.people.len() as u32 + d.people_more, 25);

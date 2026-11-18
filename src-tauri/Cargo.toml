@@ -78,6 +78,10 @@ windows = { version = "0.58", features = [
 ] }
 base64 = "0.22"
 
+# Meeting brief key: sha256 of the brief token and HMAC-SHA256 of the iCalUId (wall2_meet/brief.rs).
+sha2 = "0.10"
+hmac = "0.12"
+
 # Visualizer frequency bands: one 1024-point real FFT per audio-levels event.
 realfft = "3.5"
 

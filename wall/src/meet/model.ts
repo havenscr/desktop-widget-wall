@@ -14,6 +14,11 @@ export type Reply = 'yes' | 'maybe' | 'no' | 'none' | 'organizer';
 export interface Person {
   name: string;
   reply: Reply;
+  /**
+   * Opaque person key (`p3-2`) for `wall2_meet_person_action`; Rust holds the address behind it and renews every key on
+   * each next-meetings read. Null when the invite gave no address. Absent in older mocks and fixtures.
+   */
+  key?: string | null;
 }
 
 /**

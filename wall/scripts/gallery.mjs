@@ -286,7 +286,7 @@ for (const [name, extra] of [
 }
 
 // Unwind, Watch tab (`?watch=mock` draws a poster where the player frame goes): the list
-// empty, three and 24 saved; each look playing; the settings sheet both ways; Listen's Video corner.
+// empty, three and 24 saved; each look playing; the settings sheet both ways; Listen with plain audio (no video icon).
 const WM = 'watch=mock';
 state('unwind', 'watch: nothing saved', `${WM}&wlist=none`, TIMES.night);
 state('unwind', 'watch: three saved, nothing on', `${WM}&wlist=three`, TIMES.night);
@@ -296,7 +296,7 @@ state('unwind', 'watch: 24 saved, drive-in, long label', `${WM}&wlist=many&wlook
 state('unwind', 'watch: feathered at noon', `${WM}&wlist=three&wlook=feather&wplay=1`, TIMES.noon);
 state('unwind', 'watch: settings, one look', `${WM}&wlist=three&wlook=drivein&wplay=0&wsheet=one`, TIMES.night);
 state('unwind', 'watch: settings, a look per kind', `${WM}&wlist=many&wplay=2&wsheet=kind`, TIMES.night);
-state('unwind', 'watch: listen with the Video corner', `${WM}&wlist=three&wtab=listen`, TIMES.night);
+state('unwind', 'watch: listen, plain audio with videos saved', `${WM}&wlist=three&wtab=listen`, TIMES.night);
 state('unwind', 'watch: sparse data, three saved', `${SPARSE}&${WM}&wlist=three&wlook=feather&wplay=0`, TIMES.night);
 // Part 2a: the whole sky and the sun, at night and at noon, with 24 saved, and in the sheet.
 state('unwind', 'watch: whole sky, video playing', `${WM}&wlist=three&wlook=sky&wplay=0`, TIMES.night);
@@ -688,7 +688,7 @@ const EXPECT = [
   ['unwind', 'watch: 24 saved', ['24 saved', 'Saved for the weekend, a very long playlist name', 'YouTube playlist']],
   ['unwind', 'watch: settings, one look', ['How video is shown', 'One look for everything', 'Feathered']],
   ['unwind', 'watch: settings, a look per kind', ['Videos and playlists', 'Live streams', 'Saved here: 19 YouTube, 5 Twitch']],
-  ['unwind', 'watch: listen with the Video corner', ['Video', 'Tokyo Burnout', '!Nothing on']],
+  ['unwind', 'watch: listen, plain audio with videos saved', ['Tokyo Burnout', '!Video', '!Nothing on']],
   ['unwind', 'watch: sparse data', ['Night drive mix', 'Open in YouTube']],
   ['unwind', 'watch: whole sky, 24', ['24 saved', 'Saved for the weekend', '12:34']],
   ['unwind', 'watch: whole sky', ['Open in YouTube']],
