@@ -71,6 +71,49 @@ pub fn recorded_scope(requested: &str, reply: Option<&str>) -> &'static str {
     }
 }
 
+/// True when a refresh that asked for `asked` and was answered with a dead or refused grant
+/// should be tried once more with the calendar scope alone: only a colours-scope refresh has a
+/// narrower scope to fall back to, so a calendar-only refresh is never repeated.
+pub fn retry_calendar_only(asked: &str) -> bool {
+    grants_colours(asked)
+}
+
+/// True when the master category read says the permission is gone (an admin withdrew it after
+/// sign-in): a 401 (`unauthorized`) or a 403 status. The account then drops to calendar-only
+/// and the reads stop until the next sign-in.
+pub fn read_says_withdrawn(unauthorized: bool, status: Option<u16>) -> bool {
+    unauthorized || matches!(status, Some(401 | 403))
+}
+
+/// Whether an error redirect from the authorization endpoint identifies a refusal of the
+/// permission (as opposed to a cancel or an unrelated failure). Source: Microsoft identity
+/// platform authorization code flow, "Error codes for authorization endpoint errors":
+/// `access_denied` means "Resource owner denied consent", but the same code with the
+/// description "the user canceled the authentication" is what a cancel sends, so
+/// `access_denied` counts only when its description names consent (AADSTS65004 "user declined
+/// to consent", AADSTS65001 consent missing, AADSTS90094 admin consent required) and not a
+/// cancel. `consent_required` and `invalid_scope` identify the permission themselves.
+pub fn consent_refused(error: &str, description: &str) -> bool {
+    let error = error.to_ascii_lowercase();
+    let desc = description.to_ascii_lowercase();
+    match error.as_str() {
+        "consent_required" | "invalid_scope" => true,
+        "access_denied" => {
+            !desc.contains("cancel")
+                && (desc.contains("consent") || desc.contains("declined") || desc.contains("aadsts65004") || desc.contains("aadsts65001") || desc.contains("aadsts90094"))
+        }
+        _ => false,
+    }
+}
+
+/// What a sign-in does after its first attempt ended in `outcome` (the error word `authorize`
+/// returns). The calendar-only sign-in is offered once, only when the first attempt asked for
+/// colours and ended in a consent refusal; a cancel, a time-out or any other failure opens
+/// nothing, and the second attempt never leads to a third.
+pub fn offer_calendar_only(asked: &str, outcome: &str) -> bool {
+    grants_colours(asked) && outcome == "consent"
+}
+
 // Section: colours
 
 /// Outlook's 25 preset constants, sent to the web view as these fixed tokens only.
@@ -162,6 +205,52 @@ pub fn pick(categories: &[String], palette: &Palette) -> Option<Pick> {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn a_colours_refresh_that_is_refused_falls_back_once() {
+        assert!(retry_calendar_only(SCOPE_COLOURS));
+        assert!(!retry_calendar_only(SCOPE_CALENDAR));
+        assert!(!retry_calendar_only(""));
+    }
+
+    #[test]
+    fn a_401_or_403_on_the_category_read_means_withdrawn() {
+        assert!(read_says_withdrawn(true, None));
+        assert!(read_says_withdrawn(false, Some(403)));
+        assert!(read_says_withdrawn(false, Some(401)));
+        assert!(!read_says_withdrawn(false, Some(500)));
+        assert!(!read_says_withdrawn(false, Some(404)));
+        assert!(!read_says_withdrawn(false, None));
+    }
+
+    #[test]
+    fn the_calendar_only_sign_in_decision_table() {
+        // (asked, outcome of the first attempt) -> offer
+        for (asked, outcome, offer) in [
+            (SCOPE_COLOURS, "consent", true),
+            (SCOPE_COLOURS, "denied", false),
+            (SCOPE_COLOURS, "failed", false),
+            (SCOPE_COLOURS, "cancelled", false),
+            (SCOPE_COLOURS, "timed-out", false),
+            (SCOPE_COLOURS, "busy", false),
+            (SCOPE_CALENDAR, "consent", false),
+            (SCOPE_CALENDAR, "denied", false),
+        ] {
+            assert_eq!(offer_calendar_only(asked, outcome), offer, "{asked} {outcome}");
+        }
+    }
+
+    #[test]
+    fn only_a_consent_refusal_is_told_from_a_cancel() {
+        assert!(consent_refused("access_denied", "AADSTS65004: The user declined to consent to access the app."));
+        assert!(consent_refused("access_denied", "AADSTS90094: admin consent required"));
+        assert!(consent_refused("consent_required", ""));
+        assert!(consent_refused("invalid_scope", "x"));
+        assert!(!consent_refused("access_denied", "the user canceled the authentication"));
+        assert!(!consent_refused("access_denied", "AADSTS65004 user declined to consent, canceled"));
+        assert!(!consent_refused("access_denied", ""));
+        assert!(!consent_refused("server_error", "consent"));
+    }
 
     #[test]
     fn the_permission_is_read_from_the_granted_scope() {

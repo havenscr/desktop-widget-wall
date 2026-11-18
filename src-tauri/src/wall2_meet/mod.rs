@@ -369,14 +369,17 @@ pub async fn wall2_meet_sign_in(window: tauri::WebviewWindow, id: String) -> Res
         .ok_or_else(|| NOT_CONFIGURED.to_string())?;
     let app = window.app_handle().clone();
     tauri::async_runtime::spawn_blocking(move || -> Result<(), String> {
-        // Ask for the colours permission too. A tenant that refuses it answers the sign-in with an
-        // error (not a plain cancel); then the same sign-in is offered once more for the
-        // calendar alone, so a blocked extra permission never costs the calendar.
+        // Ask for the colours permission too. A refusal of that permission (the consent page
+        // declined, or a tenant that says so in its error) is answered once with the same
+        // sign-in for the calendar alone, so a blocked extra permission never costs the
+        // calendar. A cancel, a time-out and any other failure open nothing more, and the
+        // second attempt is never followed by a third.
         let granted = match auth::authorize(&app, &account, colours::SCOPE_COLOURS) {
-            Err("failed") => auth::authorize(&app, &account, colours::SCOPE_CALENDAR),
+            Err(outcome) if colours::offer_calendar_only(colours::SCOPE_COLOURS, outcome) => auth::authorize(&app, &account, colours::SCOPE_CALENDAR),
             other => other,
         }
-        .map_err(str::to_string)?;
+        // The caller sees the one word it always saw for a refused sign-in.
+        .map_err(|e| if e == "consent" { "denied".to_string() } else { e.to_string() })?;
         let result = service::complete_sign_in(&account, &granted, &secrets(), &auth::HttpTokens, core(), now_secs());
         let lines = std::mem::take(&mut lock_core().log_lines);
         meetlog::write_all(lines);

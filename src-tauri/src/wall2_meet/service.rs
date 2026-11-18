@@ -343,24 +343,29 @@ fn recorded_scope_of(store: &dyn SecretStore, id: &str) -> Option<String> {
     }
 }
 
-/// Whether the account was granted the colours permission, remembered per run.
-fn account_has_colours(store: &dyn SecretStore, core: &mut Core, id: &str) -> bool {
+/// Whether the account was granted the colours permission, remembered per run. None when the
+/// answer is not known and the record cannot be read right now (it is asked again next time).
+fn colours_known(store: &dyn SecretStore, core: &mut Core, id: &str) -> Option<bool> {
     if let Some(known) = core.has_colours.get(id) {
-        return *known;
+        return Some(*known);
     }
     match store.fetch(&scope_record_id(id)) {
         Fetch::Found(v) => {
             let yes = colours::grants_colours(&v);
             core.has_colours.insert(id.to_string(), yes);
-            yes
+            Some(yes)
         }
         Fetch::Missing => {
             core.has_colours.insert(id.to_string(), false);
-            false
+            Some(false)
         }
-        // Not readable now: say no for this answer, ask again next time.
-        Fetch::Failed => false,
+        Fetch::Failed => None,
     }
+}
+
+/// `colours_known` for reading the palette: an unknown answer reads nothing this time.
+fn account_has_colours(store: &dyn SecretStore, core: &mut Core, id: &str) -> bool {
+    colours_known(store, core, id).unwrap_or(false)
 }
 
 /// One short critical section: retry a pending rotated token, read the stored token, and use
@@ -429,13 +434,27 @@ fn obtain(
         // No token request starts after the deadline.
         return Err(Stop::Fail((AccountState::Unavailable, Some(GRAPH_TIMEOUT.to_string()))));
     }
-    let form = [
-        ("client_id", acct.client_id.as_str()),
-        ("grant_type", "refresh_token"),
-        ("refresh_token", refresh.as_str()),
-        ("scope", scope),
-    ];
-    let (reply, net) = tokens.post_diag(&acct.tenant, &form, left.min(READ_TIMEOUT), ctx);
+    let post = |scope: &str, limit: Duration| {
+        let form = [
+            ("client_id", acct.client_id.as_str()),
+            ("grant_type", "refresh_token"),
+            ("refresh_token", refresh.as_str()),
+            ("scope", scope),
+        ];
+        tokens.post_diag(&acct.tenant, &form, limit, ctx)
+    };
+    let (mut reply, mut net) = post(scope, left.min(READ_TIMEOUT));
+    // A colours-scope refresh that is rejected or refused may only mean the permission was
+    // withdrawn after sign-in: ask once more for the calendar alone before treating it as a
+    // sign-out. A calendar-only refresh is never repeated.
+    let mut dropped = false;
+    if matches!(reply, TokenReply::Rejected(_) | TokenReply::Refused(_)) && colours::retry_calendar_only(scope) {
+        let left = ctx.remaining();
+        if !left.is_zero() {
+            (reply, net) = post(colours::SCOPE_CALENDAR, left.min(READ_TIMEOUT));
+            dropped = true;
+        }
+    }
     *failure = net;
     // Apply the reply in one short step, and only if the account is unchanged. The credential
     // store calls below run under the core lock on purpose: they are local and brief, and
@@ -448,10 +467,11 @@ fn obtain(
     match reply {
         TokenReply::Ok { access, expires_in, refresh: rotated, scope: granted } => {
             core.cache.insert(acct.id.clone(), Cached { access: access.clone(), expires_at: now + expires_in });
-            // The reply says the colours permission is gone (an admin withdrew it): record the
+            // The reply says the colours permission is gone (an admin withdrew it), or only the
+            // calendar-only retry worked: record the
             // calendar scope so the next refresh stops asking for it. A failed write only means
             // the next reply says it again.
-            if scope == colours::SCOPE_COLOURS && granted.as_deref().is_some_and(|g| !colours::grants_colours(g)) {
+            if scope == colours::SCOPE_COLOURS && (dropped || granted.as_deref().is_some_and(|g| !colours::grants_colours(g))) {
                 store.set(&scope_record_id(&acct.id), colours::SCOPE_CALENDAR);
                 core.has_colours.insert(acct.id.clone(), false);
                 core.palettes.remove(&acct.id);
@@ -613,7 +633,20 @@ fn category_palette(
         }
         held
     };
-    let (reply, _) = graph.master_categories(access, ctx);
+    let (reply, diag) = graph.master_categories(access, ctx);
+    if colours::read_says_withdrawn(matches!(reply, GraphReply::Unauthorized), diag.as_ref().map(|d| d.status)) {
+        // The permission is gone (an admin withdrew it): drop the account to calendar-only so
+        // the palette is cleared, Tools says so and the reads stop until the next sign-in. A
+        // failed write only means the next refresh reply says it again.
+        let mut c = lock(core);
+        if generation_of(&c, &acct.id) != generation {
+            return None;
+        }
+        store.set(&scope_record_id(&acct.id), colours::SCOPE_CALENDAR);
+        c.has_colours.insert(acct.id.clone(), false);
+        c.palettes.remove(&acct.id);
+        return None;
+    }
     let parsed = match reply {
         GraphReply::Ok(body) => colours::parse_master(&body),
         _ => None,
@@ -654,7 +687,9 @@ fn settle(
     let mut lists = Vec::new();
     let mut stale = false;
     for (acct, read) in accounts.iter().zip(reads) {
-        let colours_granted = account_has_colours(store, core, &acct.id);
+        // A record that cannot be read now keeps the last known answer; with none, the Tools
+        // line stays quiet instead of claiming the colours are off.
+        let colours_granted = colours_known(store, core, &acct.id).unwrap_or(true);
         let out = |state: AccountState, reason| AccountOut { id: acct.id.clone(), label: acct.label.clone(), state: state.as_str(), reason, colours: colours_granted };
         if read.discarded || generation_of(core, &acct.id) != read.generation {
             // The credential store read here is local and deliberate, like the other store
@@ -1921,6 +1956,69 @@ mod tests {
         let p = read(NOW + colours::REFRESH_SECS + 5 + colours::RETRY_SECS + 1);
         assert_eq!(graph.master_calls.get(), 3);
         assert_eq!(p.events[0].category.as_ref().map(|c| c.tone), Some("preset7"));
+    }
+
+    #[test]
+    fn a_refused_colours_refresh_falls_back_to_calendar_only_and_keeps_the_account() {
+        for dead in [TokenReply::Rejected("token-invalid_grant".into()), TokenReply::Refused("token-consent_required".into())] {
+            let (store, core) = setup();
+            store.set(&scope_record_id("work"), colours::SCOPE_COLOURS);
+            let links = Mutex::new(Links::default());
+            let tokens = FakeTokens::new(vec![dead, ok_token("a1", Some("refresh-2"))]);
+            let graph = ColourGraph::new(vec![master_ok()]);
+            let p = read_day(&[acct("work")], &store, &tokens, &graph, &core, &links, NOW, NOW, NOW + 3600);
+            assert_eq!(tokens.calls.get(), 2);
+            assert_eq!(form_scope(&tokens, 0), colours::SCOPE_COLOURS);
+            assert_eq!(form_scope(&tokens, 1), colours::SCOPE_CALENDAR);
+            assert_eq!(p.accounts[0].state, "ok");
+            assert!(!p.accounts[0].colours);
+            assert_eq!(store.get(&scope_record_id("work")).as_deref(), Some(colours::SCOPE_CALENDAR));
+            assert!(store.get("work").is_some());
+            assert_eq!(graph.master_calls.get(), 0);
+        }
+    }
+
+    #[test]
+    fn a_calendar_refresh_that_is_rejected_still_signs_out_after_one_attempt() {
+        let (store, core) = setup();
+        let links = Mutex::new(Links::default());
+        let tokens = FakeTokens::new(vec![TokenReply::Rejected("token-invalid_grant".into())]);
+        let graph = ColourGraph::new(vec![]);
+        let p = read_day(&[acct("work")], &store, &tokens, &graph, &core, &links, NOW, NOW, NOW + 3600);
+        assert_eq!(tokens.calls.get(), 1);
+        assert_eq!(p.accounts[0].state, "needs-sign-in");
+    }
+
+    #[test]
+    fn a_401_on_the_category_read_clears_the_colours_and_stops_the_reads() {
+        let (store, core) = setup();
+        store.set(&scope_record_id("work"), colours::SCOPE_COLOURS);
+        let links = Mutex::new(Links::default());
+        let tokens = FakeTokens::new(vec![ok_token("a1", Some("refresh-2"))]);
+        let graph = ColourGraph::new(vec![master_ok(), GraphReply::Unauthorized]);
+        let read = |at: u64| read_day(&[acct("work")], &store, &tokens, &graph, &core, &links, at, at, at + 3600);
+        assert!(read(NOW).accounts[0].colours);
+        let p = read(NOW + colours::REFRESH_SECS + 5);
+        assert_eq!(graph.master_calls.get(), 2);
+        assert!(!p.accounts[0].colours);
+        assert!(p.events.iter().all(|e| e.category.is_none()));
+        assert_eq!(store.get(&scope_record_id("work")).as_deref(), Some(colours::SCOPE_CALENDAR));
+        assert!(core.lock().unwrap().palettes.is_empty());
+        read(NOW + 2 * colours::REFRESH_SECS);
+        assert_eq!(graph.master_calls.get(), 2);
+    }
+
+    #[test]
+    fn an_unreadable_permission_record_keeps_the_last_answer_or_stays_quiet() {
+        let (store, core) = setup();
+        let mut c = core.lock().unwrap();
+        c.has_colours.insert("work".into(), true);
+        assert_eq!(colours_known(&store, &mut c, "work"), Some(true));
+        drop(c);
+        let flaky = FlakySecrets { inner: Chunked(MemoryBlobs::default()), fail_set: Cell::new(false), fail_get: Cell::new(true) };
+        let mut c = Core::default();
+        assert_eq!(colours_known(&flaky, &mut c, "other"), None);
+        assert!(!account_has_colours(&flaky, &mut c, "other"));
     }
 
     #[test]

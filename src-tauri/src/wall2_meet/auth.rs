@@ -106,9 +106,18 @@ pub fn authorize(app: &tauri::AppHandle, account: &Account, scope: &'static str)
     Ok(Granted { code, verifier, redirect_uri, scope })
 }
 
+/// True when an error redirect names a refusal of the permission (not a cancel). Only the
+/// error code and its description are read, never logged.
+fn refused_permission(request_target: &str) -> bool {
+    let Ok(url) = tauri::Url::parse(&format!("http://127.0.0.1{request_target}")) else { return false };
+    let get = |name: &str| url.query_pairs().find(|(k, _)| k == name).map(|(_, v)| v.into_owned()).unwrap_or_default();
+    super::colours::consent_refused(&get("error"), &get("error_description"))
+}
+
 /// Serve the listener until the one valid callback arrives. Other paths get 404 and a callback
 /// with a wrong or missing `state` gets 400; both keep waiting. Ends on the first valid
-/// callback, an error answer, cancel, or the time limit.
+/// callback, an error answer, cancel, or the time limit. An error answer that names a refusal of
+/// the permission ends as `consent`; a plain cancel is `denied`.
 fn wait_for_callback(server: &tiny_http::Server, state: &str, wait: Duration) -> Result<String, &'static str> {
     let started = Instant::now();
     loop {
@@ -137,11 +146,11 @@ fn wait_for_callback(server: &tiny_http::Server, state: &str, wait: Duration) ->
             }
             Callback::Denied => {
                 crate::wall2_oauth::respond(request, 200, crate::wall2_oauth::page("Sign-in did not finish. You can close this tab."));
-                return Err("denied");
+                return Err(if refused_permission(&target) { "consent" } else { "denied" });
             }
             Callback::Failed => {
                 crate::wall2_oauth::respond(request, 200, crate::wall2_oauth::page("Sign-in did not finish. You can close this tab."));
-                return Err("failed");
+                return Err(if refused_permission(&target) { "consent" } else { "failed" });
             }
         }
     }
