@@ -2090,7 +2090,7 @@ mod tests {
         let granted = super::super::auth::Granted { code: "c".into(), verifier: "v".into(), redirect_uri: "http://localhost:1/auth-callback.html".into(), scope: SIGN_IN_SCOPE };
         let tokens = FakeTokens::new(vec![ok_token("a0", Some("refresh-1")), ok_token("a1", Some("refresh-2"))]);
         assert!(complete_sign_in(&acct("work"), &granted, &store, &tokens, &core, NOW).is_ok());
-        assert_eq!(form_scope(&tokens, 0), colours::SCOPE_COLOURS);
+        assert_eq!(form_scope(&tokens, 0), SIGN_IN_SCOPE);
         assert_eq!(store.get(&scope_record_id("work")).as_deref(), Some(colours::SCOPE_COLOURS));
         // Drop the cached access token so the next read refreshes.
         core.lock().unwrap().cache.clear();
