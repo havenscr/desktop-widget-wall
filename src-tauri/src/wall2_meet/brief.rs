@@ -432,10 +432,54 @@ pub(crate) fn file_url(id: &str, hosts: &[String]) -> Option<String> {
     if !(path.starts_with("/sites/") || path.starts_with("/personal/") || path.starts_with("/:")) {
         return None;
     }
-    if path.split('/').any(|seg| seg == "..") {
+    // Decode each segment strictly, then judge the decoded form: no dot segments, no encoded
+    // separators, no double encoding, no redirector pages.
+    let mut decoded: Vec<String> = Vec::new();
+    for seg in path.split('/') {
+        let seg = pct_decode_strict(seg)?;
+        if seg == "." || seg == ".." || seg.contains(['/', '\\', '%']) {
+            return None;
+        }
+        decoded.push(seg.to_ascii_lowercase());
+    }
+    if decoded.iter().any(|s| s == "redir.aspx" || s == "redirect.aspx") {
         return None;
     }
-    Some(format!("https://{host}{tail}"))
+    if let Some(at) = decoded.iter().position(|s| s == "_layouts") {
+        if decoded[at + 1..].iter().any(|s| s.ends_with("redirect.aspx")) {
+            return None;
+        }
+    }
+    let built = format!("https://{host}{tail}");
+    let built_rest = &built[8..];
+    let built_host = &built_rest[..built_rest.find(['/', '?', '#']).unwrap_or(built_rest.len())];
+    let built_host = built_host.rsplit_once(':').map_or(built_host, |(h, _)| h);
+    if !hosts.iter().any(|h| h == built_host) {
+        return None;
+    }
+    Some(built)
+}
+
+/// Percent-decode one path segment. A `%` must be followed by two hex digits, else None. The
+/// result must be valid UTF-8 with no control characters.
+fn pct_decode_strict(seg: &str) -> Option<String> {
+    let b = seg.as_bytes();
+    let mut out: Vec<u8> = Vec::with_capacity(b.len());
+    let mut i = 0;
+    while i < b.len() {
+        if b[i] == b'%' {
+            let hex = b.get(i + 1..i + 3)?;
+            let hi = (hex[0] as char).to_digit(16)?;
+            let lo = (hex[1] as char).to_digit(16)?;
+            out.push((hi * 16 + lo) as u8);
+            i += 3;
+        } else {
+            out.push(b[i]);
+            i += 1;
+        }
+    }
+    let s = String::from_utf8(out).ok()?;
+    (!s.chars().any(char::is_control)).then_some(s)
 }
 
 /// The URL for one item's `open` object, or None.
@@ -508,16 +552,32 @@ fn shape_item(raw: &Value, n: usize, cfg: &BriefConfig, read: u64, next_link: &m
     })
 }
 
+/// The answer for a read whose body was not for the requested key: nothing but state `none`.
+fn none_answer() -> BriefOut {
+    BriefOut {
+        state: "none",
+        built_at: None,
+        start: None,
+        stale: false,
+        matched: MatchOut { kind: "none", label: None },
+        sources: SourcesOut { crm: "failed", mail: "failed", chats: "failed", notes: "failed", files: "failed" },
+        company: None,
+        people: Vec::new(),
+        deals: Vec::new(),
+        items: Vec::new(),
+    }
+}
+
 /// Shape one helper answer into what the page gets, plus the links Rust keeps (key to URL).
 /// Strict about types: an entry that is malformed is dropped, a bad time becomes null, a source
 /// state it does not know becomes `failed`, and an unknown `state` or `match.kind` becomes
-/// `none`. The answer's own `k`, when present, must be the one that was asked for.
+/// `none`. The answer's own `k` is required and must be the one that was asked for, else the
+/// result is a plain `none` answer with nothing else.
 pub(crate) fn shape_answer(body: &Value, expected_k: &str, cfg: &BriefConfig, read: u64) -> Result<(BriefOut, HashMap<String, String>), &'static str> {
     let obj = body.as_object().ok_or(FAILED)?;
-    if let Some(k) = obj.get("k") {
-        if k.as_str() != Some(expected_k) {
-            return Err(FAILED);
-        }
+    // `k` is required and must be the one asked for; anything else is a normal "none" answer.
+    if obj.get("k").and_then(Value::as_str) != Some(expected_k) {
+        return Ok((none_answer(), HashMap::new()));
     }
     let state = word_of(obj.get("state"), &["ready", "building", "none"]).unwrap_or("none");
     let m = obj.get("match").filter(|m| m.is_object());
@@ -585,7 +645,7 @@ pub(crate) fn shape_answer(body: &Value, expected_k: &str, cfg: &BriefConfig, re
     Ok((out, links))
 }
 
-// Section: the link map (replaced on each read, never on disk)
+// Section: the link map (replaced by each successful read, never on disk)
 
 #[derive(Default)]
 pub(crate) struct BriefLinks {
@@ -601,19 +661,17 @@ fn links() -> &'static Mutex<BriefLinks> {
 
 static READS: AtomicU64 = AtomicU64::new(0);
 
-/// A read starts: its number, and the old links are gone at once.
-fn begin_read(l: &Mutex<BriefLinks>, counter: &AtomicU64) -> u64 {
-    let read = counter.fetch_add(1, Ordering::SeqCst) + 1;
-    let mut g = l.lock().unwrap_or_else(|e| e.into_inner());
-    g.read = read;
-    g.map.clear();
-    read
+/// A read starts: its number. The links already stored stay until a newer answer replaces them.
+fn begin_read(counter: &AtomicU64) -> u64 {
+    counter.fetch_add(1, Ordering::SeqCst) + 1
 }
 
-/// A read ends: its links are kept only when no newer read has started since.
+/// A read ends with a shaped answer: its links replace the stored ones, unless a newer read has
+/// already stored its own. A read that fails never gets here, so the old links keep working.
 fn finish_read(l: &Mutex<BriefLinks>, read: u64, map: HashMap<String, String>) {
     let mut g = l.lock().unwrap_or_else(|e| e.into_inner());
-    if g.read == read {
+    if read > g.read {
+        g.read = read;
         g.map = map;
     }
 }
@@ -692,7 +750,7 @@ pub(crate) fn brief_with(
     let token = token.ok_or(NOT_SET_UP)?;
     let ical = ical.ok_or(GONE)?;
     let k = brief_key(token, ical);
-    let read = begin_read(link_map, counter);
+    let read = begin_read(counter);
     let bytes = helper.get(&format!("{}/wall/v1/brief?k={k}", cfg.base), token)?;
     let value: Value = serde_json::from_slice(&bytes).map_err(|_| FAILED)?;
     let (out, links) = shape_answer(&value, &k, cfg, read)?;
@@ -709,8 +767,8 @@ pub async fn wall2_meet_brief(window: tauri::WebviewWindow, key: String) -> Resu
     if !valid_meeting_key(&key) {
         return Err(GONE.to_string());
     }
-    let cfg = load_config(&window).map_err(str::to_string)?;
     tauri::async_runtime::spawn_blocking(move || {
+        let cfg = load_config(&window).map_err(str::to_string)?;
         let token = super::brief_token::read_token();
         let ical = super::service::lookup_ical(super::links(), &key);
         brief_with(&cfg, token.as_deref(), ical.as_deref(), &HttpHelper, links(), &READS).map_err(str::to_string)
@@ -727,8 +785,15 @@ pub async fn wall2_meet_brief_open(window: tauri::WebviewWindow, open_key: Strin
         return Err(GONE.to_string());
     }
     let url = lookup_open(links(), &open_key).ok_or_else(|| GONE.to_string())?;
-    let cfg = load_config(&window).map_err(|_| GONE.to_string())?;
-    if !url_still_allowed(&url, &cfg) {
+    let allowed = tauri::async_runtime::spawn_blocking({
+        let window = window.clone();
+        let url = url.clone();
+        move || load_config(&window).map(|cfg| url_still_allowed(&url, &cfg))
+    })
+    .await
+    .map_err(|_| FAILED.to_string())?
+    .map_err(|_| GONE.to_string())?;
+    if !allowed {
         return Err(GONE.to_string());
     }
     window.opener().open_url(url, None::<&str>).map_err(|_| FAILED.to_string())
@@ -900,6 +965,32 @@ mod tests {
     }
 
     #[test]
+    fn k_is_required_and_must_match() {
+        let busy = |k: Value| {
+            let mut b = full_answer();
+            match k {
+                Value::Null => {
+                    b.as_object_mut().unwrap().remove("k");
+                }
+                k => {
+                    b["k"] = k;
+                }
+            }
+            b
+        };
+        for bad in [Value::Null, json!("other"), json!(5)] {
+            let (out, links) = shape_answer(&busy(bad), "k", &cfg(), 1).unwrap();
+            assert_eq!(out, none_answer());
+            assert_eq!(out.state, "none");
+            assert!(out.items.is_empty() && out.people.is_empty() && out.deals.is_empty() && out.company.is_none());
+            assert!(links.is_empty());
+        }
+        let (out, links) = shape_answer(&busy(json!("k")), "k", &cfg(), 1).unwrap();
+        assert_eq!(out.state, "ready");
+        assert!(!links.is_empty());
+    }
+
+    #[test]
     fn a_full_answer_is_shaped_for_the_page() {
         let out = shape(full_answer());
         assert_eq!((out.state, out.matched.kind, out.matched.label.as_deref()), ("ready", "client", Some("Northwind Outfitters")));
@@ -943,8 +1034,6 @@ mod tests {
         for kind in ["client", "internal", "unknown", "mixed", "none"] {
             assert_eq!(shape(json!({ "match": { "kind": kind } })).matched.kind, kind);
         }
-        assert_eq!(shape_answer(&json!({ "k": "other" }), "k", &cfg(), 1).unwrap_err(), "failed");
-        assert_eq!(shape_answer(&json!({ "k": 5 }), "k", &cfg(), 1).unwrap_err(), "failed");
         assert_eq!(shape_answer(&json!([1, 2]), "k", &cfg(), 1).unwrap_err(), "failed");
         assert_eq!(shape_answer(&json!("text"), "k", &cfg(), 1).unwrap_err(), "failed");
     }
@@ -1090,6 +1179,27 @@ mod tests {
         let safe = vec!["nam01.safelinks.protection.outlook.com".to_string()];
         assert_eq!(file_url("https://nam01.safelinks.protection.outlook.com/sites/x", &safe), None);
         assert_eq!(file_url(good, &[]), None);
+        let enc_ok = "https://contoso.sharepoint.com/sites/team/Shared%20Documents/file.docx";
+        assert_eq!(file_url(enc_ok, &hosts).as_deref(), Some(enc_ok));
+        for bad in [
+            "https://contoso.sharepoint.com/sites/x/%2e%2e/%2e%2e/secret",
+            "https://contoso.sharepoint.com/sites/x/%2E%2e/y",
+            "https://contoso.sharepoint.com/sites/x/%2e/y",
+            "https://contoso.sharepoint.com/sites/x/%252e%252e/y",
+            "https://contoso.sharepoint.com/sites/x/a%2fb",
+            "https://contoso.sharepoint.com/sites/x/a%5Cb",
+            "https://contoso.sharepoint.com/sites/x/a%zzb",
+            "https://contoso.sharepoint.com/sites/x/a%2",
+            "https://contoso.sharepoint.com/sites/x/a%",
+            "https://contoso.sharepoint.com/sites/x/_layouts/15/redirect.aspx?url=https%3A%2F%2Fexample.com",
+            "https://contoso.sharepoint.com/sites/x/_LAYOUTS/15/Redirect.ASPX?u=1",
+            "https://contoso.sharepoint.com/sites/x/_layouts/15/xredirect.aspx",
+            "https://contoso.sharepoint.com/sites/x/redir.aspx?u=1",
+            "https://contoso.sharepoint.com/sites/x/Redirect.aspx",
+        ] {
+            assert_eq!(file_url(bad, &hosts), None, "{bad:?}");
+        }
+        assert!(file_url("https://contoso.sharepoint.com/sites/x/_layouts/15/download.aspx?SourceUrl=a", &hosts).is_some());
     }
 
     #[test]
@@ -1155,20 +1265,29 @@ mod tests {
         for bad in ["", "d3-1", "p1-0", "3", "3-", "-1", "3-1000", "3-1x", long_meeting.as_str()] {
             assert!(!valid_meeting_key(bad), "{bad:?}");
         }
+    }
+
+    #[test]
+    fn links_change_only_when_a_newer_read_succeeds() {
         let l = Mutex::new(BriefLinks::default());
         let counter = AtomicU64::new(0);
-        let r1 = begin_read(&l, &counter);
-        finish_read(&l, r1, HashMap::from([("b1-0".to_string(), "https://outlook.office.com/mail/deeplink/read/a".to_string())]));
+        let good = |k: &str| HashMap::from([(k.to_string(), "https://outlook.office.com/mail/deeplink/read/a".to_string())]);
+        let r1 = begin_read(&counter);
+        finish_read(&l, r1, good("b1-0"));
         assert!(lookup_open(&l, "b1-0").is_some());
-        // A new read clears the map at once, and an older read finishing late cannot put its links back.
-        let r2 = begin_read(&l, &counter);
+        // A read that starts and fails never calls finish_read: the old key still works.
+        let _failed = begin_read(&counter);
+        assert!(lookup_open(&l, "b1-0").is_some());
+        // A successful read replaces the old links.
+        let r3 = begin_read(&counter);
+        let r4 = begin_read(&counter);
+        finish_read(&l, r4, good("b4-0"));
         assert!(lookup_open(&l, "b1-0").is_none());
-        let r3 = begin_read(&l, &counter);
-        finish_read(&l, r2, HashMap::from([("b2-0".to_string(), "x".to_string())]));
-        assert!(lookup_open(&l, "b2-0").is_none());
-        finish_read(&l, r3, HashMap::from([("b3-0".to_string(), "y".to_string())]));
-        assert_eq!(lookup_open(&l, "b3-0").as_deref(), Some("y"));
-        assert!(lookup_open(&l, "b1-0").is_none());
+        assert!(lookup_open(&l, "b4-0").is_some());
+        // An older read finishing after a newer one is ignored.
+        finish_read(&l, r3, good("b3-0"));
+        assert!(lookup_open(&l, "b3-0").is_none());
+        assert!(lookup_open(&l, "b4-0").is_some());
     }
 
     // Section: the whole read, with a fake helper
@@ -1219,9 +1338,9 @@ mod tests {
         assert_eq!(run(Some(TOKEN), Some(ICAL), &FakeHelper::new(Err("forbidden"))).unwrap_err(), "forbidden");
         assert_eq!(run(Some(TOKEN), Some(ICAL), &FakeHelper::new(Err("failed"))).unwrap_err(), "failed");
         assert_eq!(run(Some(TOKEN), Some(ICAL), &FakeHelper::new(Ok(b"not json".to_vec()))).unwrap_err(), "failed");
-        // An answer for another key is refused.
-        let other = serde_json::to_vec(&json!({ "k": "00000000000000000000000000000000" })).unwrap();
-        assert_eq!(run(Some(TOKEN), Some(ICAL), &FakeHelper::new(Ok(other))).unwrap_err(), "failed");
+        // An answer for another key is a plain "none".
+        let other = serde_json::to_vec(&json!({ "k": "00000000000000000000000000000000", "state": "ready" })).unwrap();
+        assert_eq!(run(Some(TOKEN), Some(ICAL), &FakeHelper::new(Ok(other))).unwrap().state, "none");
     }
 
     #[test]

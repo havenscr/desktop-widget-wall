@@ -108,55 +108,67 @@ pub(crate) fn valid_person_key(key: &str) -> bool {
     key.len() <= 26 && digits(read, 19) && digits(n, 4)
 }
 
-/// The address as CF_UNICODETEXT. Other targets have no clipboard here, so they fail.
+/// UTF-16 with a trailing NUL, as CF_UNICODETEXT wants it.
+#[cfg(any(windows, test))]
+fn utf16_nul(text: &str) -> Vec<u16> {
+    text.encode_utf16().chain(std::iter::once(0)).collect()
+}
+
+/// The address as CF_UNICODETEXT, with the wall2 window as clipboard owner (`owner` is its
+/// HWND value; without an owner `SetClipboardData` can fail after `EmptyClipboard`). Other
+/// targets have no clipboard here, so they fail.
 #[cfg(windows)]
-fn write_clipboard(text: &str) -> bool {
+fn write_clipboard(text: &str, owner: isize) -> bool {
     use std::time::Duration;
-    use windows::Win32::Foundation::{GlobalFree, HANDLE};
+    use windows::Win32::Foundation::{GlobalFree, HANDLE, HWND};
     use windows::Win32::System::DataExchange::{CloseClipboard, EmptyClipboard, OpenClipboard, SetClipboardData};
     use windows::Win32::System::Memory::{GlobalAlloc, GlobalLock, GlobalUnlock, GMEM_MOVEABLE};
     use windows::Win32::System::Ole::CF_UNICODETEXT;
 
-    let wide: Vec<u16> = text.encode_utf16().chain(std::iter::once(0)).collect();
+    let wide = utf16_nul(text);
     let bytes = wide.len() * 2;
+    let hwnd = HWND(owner as *mut core::ffi::c_void);
     unsafe {
-        let Ok(hglobal) = GlobalAlloc(GMEM_MOVEABLE, bytes) else {
-            return false;
-        };
-        let ptr = GlobalLock(hglobal) as *mut u16;
-        if ptr.is_null() {
-            let _ = GlobalFree(hglobal);
-            return false;
-        }
-        std::ptr::copy_nonoverlapping(wide.as_ptr(), ptr, wide.len());
-        let _ = GlobalUnlock(hglobal);
         // Another program may hold the clipboard for a moment.
         let mut opened = false;
         for _ in 0..5 {
-            if OpenClipboard(None).is_ok() {
+            if OpenClipboard(hwnd).is_ok() {
                 opened = true;
                 break;
             }
             std::thread::sleep(Duration::from_millis(20));
         }
         if !opened {
-            let _ = GlobalFree(hglobal);
             return false;
         }
-        let _ = EmptyClipboard();
-        let set = SetClipboardData(CF_UNICODETEXT.0 as u32, HANDLE(hglobal.0));
+        let ok = (|| {
+            if EmptyClipboard().is_err() {
+                return false;
+            }
+            let Ok(hglobal) = GlobalAlloc(GMEM_MOVEABLE, bytes) else {
+                return false;
+            };
+            let ptr = GlobalLock(hglobal) as *mut u16;
+            if ptr.is_null() {
+                let _ = GlobalFree(hglobal);
+                return false;
+            }
+            std::ptr::copy_nonoverlapping(wide.as_ptr(), ptr, wide.len());
+            let _ = GlobalUnlock(hglobal);
+            if SetClipboardData(CF_UNICODETEXT.0 as u32, HANDLE(hglobal.0)).is_err() {
+                // The clipboard did not take ownership of the memory.
+                let _ = GlobalFree(hglobal);
+                return false;
+            }
+            true
+        })();
         let _ = CloseClipboard();
-        if set.is_err() {
-            // The clipboard did not take ownership of the memory.
-            let _ = GlobalFree(hglobal);
-            return false;
-        }
-        true
+        ok
     }
 }
 
 #[cfg(not(windows))]
-fn write_clipboard(_text: &str) -> bool {
+fn write_clipboard(_text: &str, _owner: isize) -> bool {
     false
 }
 
@@ -172,7 +184,11 @@ pub async fn wall2_meet_person_action(window: tauri::WebviewWindow, key: String,
     let address = super::service::lookup_person(super::links(), &key).ok_or_else(|| GONE.to_string())?;
     match plan(action, &address).map_err(str::to_string)? {
         Plan::Copy(text) => {
-            let done = tauri::async_runtime::spawn_blocking(move || write_clipboard(&text)).await.map_err(|_| FAILED.to_string())?;
+            #[cfg(windows)]
+            let owner = window.hwnd().map(|h| h.0 as isize).map_err(|_| FAILED.to_string())?;
+            #[cfg(not(windows))]
+            let owner = 0isize;
+            let done = tauri::async_runtime::spawn_blocking(move || write_clipboard(&text, owner)).await.map_err(|_| FAILED.to_string())?;
             if done {
                 Ok(())
             } else {
@@ -186,6 +202,13 @@ pub async fn wall2_meet_person_action(window: tauri::WebviewWindow, key: String,
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn clipboard_text_is_utf16_with_one_trailing_nul() {
+        assert_eq!(utf16_nul(""), vec![0]);
+        assert_eq!(utf16_nul("a@b.co"), vec![97, 64, 98, 46, 99, 111, 0]);
+        assert_eq!(utf16_nul("\u{e9}\u{1F600}"), vec![0xe9, 0xD83D, 0xDE00, 0]);
+    }
 
     #[test]
     fn good_addresses_pass() {
