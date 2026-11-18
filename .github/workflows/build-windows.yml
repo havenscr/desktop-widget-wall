@@ -28,19 +28,22 @@ jobs:
           # foo.ts and Foo.tsx (or foo.ts and Foo/index.ts, or folders Src and src)
           # passes on Linux and fails the Windows build. Fail early here instead.
           git ls-files -z | awk 'BEGIN { RS = "\0"; bad = 0 }
-            function note(key, name) {
-              if (key in seen && seen[key] != name) {
+            # key: the path as Windows sees it; stem: the same span in its real case.
+            # Two paths clash only when their keys match and their stems differ.
+            function note(key, stem, name) {
+              if (!(key in seen)) { seen[key] = name; stems[key] = stem }
+              else if (stems[key] != stem) {
                 printf "Paths clash on Windows: %s and %s\n", seen[key], name
                 bad = 1
-              } else if (!(key in seen)) seen[key] = name
+              }
             }
             {
               n = split($0, part, "/"); dir = ""
-              for (i = 1; i < n; i++) { dir = dir part[i] "/"; note("d:" tolower(dir), dir) }
+              for (i = 1; i < n; i++) { dir = dir part[i] "/"; note("d:" tolower(dir), dir, dir) }
               mod = tolower($0)
               sub(/(\.d)?\.(tsx?|jsx?|mjs|cjs)$/, "", mod)
               sub(/\/index$/, "", mod)
-              note("m:" mod, $0)
+              note("m:" mod, substr($0, 1, length(mod)), $0)
             }
             END { exit bad }'
 
