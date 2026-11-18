@@ -49,7 +49,7 @@ const serve = (meetings: Meeting[], day: unknown[] = []) => {
   mocks.set('wall2_meet_day', () => ({ accounts, events: day }));
   mocks.set('wall2_meet_checklist', () => ({ state: 'missing', items: [], reason: null }));
   mocks.set('wall2_keys_library', () => LIBRARY_DATA);
-  for (const c of ['wall2_keys_send_library', 'wall2_meet_join', 'wall2_open_event', 'wall2_onair_mark', 'wall2_onair_open', 'wall2_meet_checklist_open', 'wall2_meet_person_action']) {
+  for (const c of ['wall2_keys_send_library', 'wall2_meet_join', 'wall2_open_event', 'wall2_meet_checklist_open', 'wall2_meet_person_action']) {
     mocks.set(c, (args) => (sent.push({ command: c, args }), null));
   }
 };

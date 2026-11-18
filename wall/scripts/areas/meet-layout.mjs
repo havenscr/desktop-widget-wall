@@ -1,5 +1,5 @@
 // The Meet tab as layout A: the hero at the left (the call key deck: a left column, a 2 by 4 grid of keys, the people and
-// the chips), the island in the centre, the Next card at the upper right and Capture under it. Gallery states for every state the layout has, and the fit rules with a deliberate break each.
+// the chips), the island in the centre, the Next card at the right. Gallery states for every state the layout has, and the fit rules with a deliberate break each.
 const at = encodeURIComponent('2026-11-11T10:24:00-08:00');
 const atLate = encodeURIComponent('2026-11-11T10:52:00-08:00');
 const base = (when, knobs) => `hz=work&at=${when}&clock=review&weather=ok&screen=meet&${knobs}`;
@@ -37,7 +37,6 @@ function measureMeet() {
     hero: box('.meet .meet-hero'),
     island: box('.meet .meet-island'),
     next: box('.meet .meet-later'),
-    capture: box('.meet .meet-capture'),
   };
   // Text under 16 px anywhere in the tab.
   const small = [];
@@ -51,7 +50,7 @@ function measureMeet() {
   }
   // Controls: 40 to 48 px tall (the hero keys 112), as far as the control is drawn.
   const controls = [];
-  for (const [sel, lo, hi] of [['.meet .meet-key', 112, 112], ['.meet .meet-cap-open', 40, 48], ['.meet .meet-arrow', 40, 48], ['.meet .meet-dot', 40, 48], ['.meet .meet-next-act .meet-btn', 40, 48], ['.meet .meet-isl-howrow .meet-btn', 40, 48], ['.meet .meet-isl-item', 40, 48], ['.meet .meet-retry', 40, 48], ['.meet .meet-trouble-link', 40, 48], ['.meet .meet-cap', 94, 96], ['.meet .meet-isl-row', 48, 70]]) {
+  for (const [sel, lo, hi] of [['.meet .meet-key', 112, 112], ['.meet .meet-arrow', 40, 48], ['.meet .meet-dot', 40, 48], ['.meet .meet-next-act .meet-btn', 40, 48], ['.meet .meet-isl-howrow .meet-btn', 40, 48], ['.meet .meet-isl-item', 40, 48], ['.meet .meet-retry', 40, 48], ['.meet .meet-trouble-link', 40, 48], ['.meet .meet-isl-row', 48, 70]]) {
     for (const e of document.querySelectorAll(sel)) {
       const b = e.getBoundingClientRect();
       if (b.width === 0 && b.height === 0) continue;
@@ -126,7 +125,7 @@ export default {
   gallery: {
     states: [
       state('next meeting in 20 minutes', 'meet=before&leave=100&checklist=four', ['Next, in 20 min', 'Design review with the platform team', 'Join', 'Open invite', 'After this', 'Lunch with Sam', 'Leave by', 'The wall switches to the call by itself when it starts.', 'The invite', 'Also on file']),
-      state('in a Teams call, known client', 'meet=known&call=teams&camera=1&rec=1&leave=60&checklist=four', ['In call, Teams', 'Mute', 'Camera on', 'Share', 'Leave', 'Casey Rowe', '6 invited', '4 said yes, 1 maybe', 'Recording', 'Next', 'Lunch with Sam', 'Mark a moment', 'min left', 'Open file']),
+      state('in a Teams call, known client', 'meet=known&call=teams&camera=1&rec=1&leave=60&checklist=four', ['In call, Teams', 'Mute', 'Camera on', 'Share', 'Leave', 'Casey Rowe', '6 invited', '4 said yes, 1 maybe', 'Recording', 'Next', 'Lunch with Sam', 'min left']),
       state('in a call, new client', 'meet=new&call=teams&checklist=four', ['In call, Teams', 'Intro call with a new client', 'Called by Jordan Vale', '3 invited', 'Thanks for making time', 'Who is coming', 'First-meeting list']),
       state('heavy day: long title, 14 people, back to back', 'meet=heavy&call=teams&long=1&checklist=long', ['In call, Teams', 'Customer escalation review', '14 invited', 'Next, back to back', 'Starts as this one ends', 'more today, the last ends'], undefined, atLate),
       state('bare meeting: the island explains the list', 'meet=bare&call=teams&checklist=none', ['In call, Teams', 'Catch-up call', 'Your first-meeting list', 'meet-checklist.txt', 'Open file', 'one item a line', '!Who is coming', '!Also on file']),
@@ -152,7 +151,7 @@ export default {
     ],
   },
   fit: {
-    variants: VARIANTS.map(([name, when, knobs]) => ({ name, q: fitBase(when, knobs), checks: ['.meet .meet-hero', '.meet .meet-island', '.meet .meet-later', '.meet .meet-capture'] })),
+    variants: VARIANTS.map(([name, when, knobs]) => ({ name, q: fitBase(when, knobs), checks: ['.meet .meet-hero', '.meet .meet-island', '.meet .meet-later'] })),
     measurements: { meetLayout: measureMeet },
     rules: {
       meetLayout: (variant, results, emit) => {
@@ -161,15 +160,13 @@ export default {
         let bad = false;
         const fail = (text) => { emit(`  FAIL meet layout: ${text}`); bad = true; };
         if (!m || !m.present) { fail('the Meet tab did not open'); return true; }
-        // The four boxes at their planned places (plus or minus 2).
-        const want = { hero: [124, 24, 944, 510], island: [984, 24, 1914, 510], next: [1944, 24, 2540, null], capture: [1944, 384, 2540, 510] };
+        // The three boxes at their planned places (plus or minus 2).
+        const want = { hero: [124, 24, 944, 510], island: [984, 24, 1914, 510], next: [1944, 24, 2540, 510] };
         for (const [name, [l, t, r, b]] of Object.entries(want)) {
           const got = m.boxes[name];
           if (!got) { fail(`${name} is missing`); continue; }
           const off = [['left', got.l, l], ['top', got.t, t], ['right', got.r, r], ['bottom', got.b, b]].filter(([, g, w]) => w !== null && Math.abs(g - w) > 2);
-          // The hero's own box is its planned size; the Next card is as tall as its words, down to y 380 at most.
           if (name === 'hero' && off.length) { fail(`${name} is at x ${got.l} to ${got.r}, y ${got.t} to ${got.b}, planned x ${l} to ${r}, y ${t} to ${b}`); continue; }
-          if (name === 'next') { if (got.b > 380.5) fail(`next card ends at y ${got.b}, past y 380 where Capture begins`); if (off.length) fail(`next card at x ${got.l} to ${got.r}, y from ${got.t}, planned x ${l} to ${r}, y from ${t}`); continue; }
           if (off.length) fail(`${name} is at x ${got.l} to ${got.r}, y ${got.t} to ${got.b}, planned x ${l} to ${r}, y ${t} to ${b}`);
         }
         for (const o of m.overlaps) fail(`overlap: ${o}`);
@@ -191,7 +188,7 @@ export default {
           if (!t.long && t.lines > 3) fail(`the title takes ${t.lines} lines (three at most)`);
           if (t.by !== null && t.bottom > t.by + 0.5) fail(`the title ends at y ${t.bottom}, below where the lines under it begin (y ${t.by})`);
         }
-        if (!bad) emit('  ok   meet layout: hero, island, Next card and Capture at their places, no overlap, text 16 px or more, controls 40 to 48 px (keys 112 tall, 96 wide or more), the 120 px ring, the key grid inside the hero and clear of everything else, title inside the hero, no frame clock, island never empty');
+        if (!bad) emit('  ok   meet layout: hero, island and Next card at their places, no overlap, text 16 px or more, controls 40 to 48 px (keys 112 tall, 96 wide or more), the 120 px ring, the key grid inside the hero and clear of everything else, title inside the hero, no frame clock, island never empty');
         return bad;
       },
     },
@@ -200,9 +197,9 @@ export default {
       'meet-ring-size': { css: '.meet .meet-hero .meet-ring-dial { width: 164px !important; height: 164px !important; }', expect: /^ *FAIL meet layout: the ring is /m, appliesTo: (v) => v.name === VARIANTS[1][0] },
       'meet-hero-overlap': { css: '.meet .meet-hero .meet-ppl { top: 200px !important; }', expect: /^ *FAIL meet layout: hero overlap: /m, appliesTo: (v) => v.name === VARIANTS[1][0] },
       'meet-island-box': { css: '.meet .meet-island { left: 600px !important; }', expect: /^ *FAIL meet layout: island is at /m, appliesTo: (v) => v.name === VARIANTS[0][0] },
-      'meet-overlap': { css: '.meet .meet-capture { top: 200px !important; }', expect: /^ *FAIL meet layout: overlap: /m, appliesTo: (v) => v.name === VARIANTS[1][0] },
+      'meet-overlap': { css: '.meet .meet-later { left: 1600px !important; }', expect: /^ *FAIL meet layout: overlap: /m, appliesTo: (v) => v.name === VARIANTS[1][0] },
       'meet-text-size': { css: '.meet .meet-ppl-n { font-size: 13px !important; }', expect: /^ *FAIL meet layout: text under 16 px: /m, appliesTo: (v) => v.name === VARIANTS[1][0] },
-      'meet-control-size': { css: '.meet .meet-cap-open { height: 24px !important; }', expect: /^ *FAIL meet layout: control size: /m, appliesTo: (v) => v.name === VARIANTS[1][0] },
+      'meet-control-size': { css: '.meet .meet-next-act .meet-btn { height: 24px !important; }', expect: /^ *FAIL meet layout: control size: /m, appliesTo: (v) => v.name === VARIANTS[1][0] },
       'meet-long-title': { css: '.meet .meet-hero-title { -webkit-line-clamp: unset !important; display: block !important; }', expect: /^ *FAIL meet layout: (the long title takes|the title takes|the title ends)/m, appliesTo: (v) => v.name === VARIANTS[6][0] },
       'meet-clock': { css: ".main[data-place='meet'] > .top > div:has(> .clk) { display: block !important; }", expect: /^ *FAIL meet layout: the frame clock is drawn/m, appliesTo: (v) => v.name === VARIANTS[1][0] },
       'meet-checklist-clipped': { css: '.meet .meet-isl-check { gap: 12px !important; }', expect: /^ *FAIL meet layout: checklist row \d+ at y /m, appliesTo: (v) => v.name.endsWith('eight checklist items') },

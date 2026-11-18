@@ -6,7 +6,6 @@ import { useSignalStore } from '../signals/store';
 import { troubleLine } from '../tools/trouble';
 import { tip } from '../ui/HoverTip';
 import { useVisible } from '../ui/useVisible';
-import { Capture } from './Capture';
 import { Hero } from './Hero';
 import { Island } from './Island';
 import { NextCard, type NextCardProps } from './NextCard';
@@ -118,14 +117,13 @@ function StaleHero({ m, meeting, label, at }: { m: MeetState; meeting: Meeting; 
   );
 }
 
-function Layout({ hero, next, island, title }: { hero: React.ReactNode; next: NextCardProps; island: React.ReactNode; title?: string }) {
+function Layout({ hero, next, island }: { hero: React.ReactNode; next: NextCardProps; island: React.ReactNode }) {
   return (
     <section className="work meet" data-place="meet" aria-label="Meet">
       <div className="meet-body">
         {hero}
         {island}
         <NextCard {...next} />
-        <Capture title={title} />
       </div>
     </section>
   );
@@ -135,7 +133,7 @@ function Layout({ hero, next, island, title }: { hero: React.ReactNode; next: Ne
 interface Parts {
   hero: React.ReactNode;
   next: NextCardProps;
-  /** The meeting the island and Capture are about, if any. */
+  /** The meeting the island is about, if any. */
   meeting?: Meeting;
   /** Details the island may show (none for a dimmed, last known meeting). */
   details?: Meeting['details'];
@@ -145,7 +143,7 @@ interface Parts {
 
 /**
  * The Meet tab: the next or running meeting as the hero at the left, an island of what the wall knows about it in the
- * centre, the meeting after it at the upper right and Capture under it. The frame clock is hidden here; the hero
+ * centre, the meeting after it at the right. The frame clock is hidden here; the hero
  * draws the time. Every state keeps its words and fills its place. While a call is sensed the hero is the call: the
  * meeting that was current when it started, kept until it ends (or a plain call when there is none), whatever the
  * calendar says.
@@ -154,7 +152,6 @@ export function Meet() {
   const m = useMeet();
   const call = useSignalStore((s) => s.call);
   const leave = useSignalStore((s) => s.leave);
-  const marks = useMeetStore((s) => s.marks);
   const callId = useMeetStore((s) => s.callId);
   const stored = useMeetStore((s) => s.anchor);
   const setAnchor = useMeetStore((s) => s.setAnchor);
@@ -248,13 +245,11 @@ export function Meet() {
     };
   }
 
-  const title = call ? (callMeeting?.title ?? 'Call') : parts.meeting?.title;
   return (
     <Layout
       hero={parts.hero}
-      island={<Island key={parts.meeting ? occurrenceId(parts.meeting) : 'none'} details={parts.details} checklist={read} reloadSoon={reloadSoon} meetingId={parts.meeting ? occurrenceId(parts.meeting) : 'none'} marks={marks} />}
+      island={<Island key={parts.meeting ? occurrenceId(parts.meeting) : 'none'} details={parts.details} checklist={read} reloadSoon={reloadSoon} meetingId={parts.meeting ? occurrenceId(parts.meeting) : 'none'} />}
       next={parts.next}
-      title={title}
     />
   );
 }

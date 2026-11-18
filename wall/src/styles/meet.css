@@ -1,6 +1,6 @@
 /* Meet tab. Design pixels, inside the top band (.top, stage x 124 to 2540, y 20 to 510). Layout A of the Meet vote:
-   the hero at the left (stage x 124 to 944), the island in the centre (984 to 1914), the Next card at the upper right
-   and Capture under it (both 1944 to 2540). The frame clock is hidden here; the hero draws the time. Stage x minus 124
+   the hero at the left (stage x 124 to 944), the island in the centre (984 to 1914), the Next card at the right
+   (1944 to 2540). The frame clock is hidden here; the hero draws the time. Stage x minus 124
    and stage y minus 20 give the numbers below. Calm by design: no motion, red only for a call and Leave. */
 .meet-body {
   position: absolute;
@@ -73,8 +73,6 @@
 }
 .meet-btn:focus-visible,
 .meet-key:focus-visible,
-.meet-cap:focus-visible,
-.meet-cap-open:focus-visible,
 .meet-arrow:focus-visible,
 .meet-dot:focus-visible,
 .meet-isl-row:focus-visible,
@@ -535,8 +533,7 @@
   -webkit-line-clamp: 8;
 }
 .meet-isl-people,
-.meet-isl-check,
-.meet-isl-notes {
+.meet-isl-check {
   display: flex;
   flex-direction: column;
   gap: 6px;
@@ -603,19 +600,6 @@
 .meet-isl-itext {
   min-width: 0;
   flex: 1;
-}
-.meet-isl-note {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  height: 40px;
-}
-.meet-isl-note .meet-isl-box {
-  color: var(--mag);
-}
-.meet-isl-ntime {
-  font: 600 22px/1 var(--disp);
-  font-variant-numeric: tabular-nums;
 }
 .meet-isl-index {
   display: flex;
@@ -736,13 +720,12 @@
   margin-top: 6px;
 }
 
-/* ---------- The Next card: stage x 1944 to 2540 from y 24, as tall as its words ---------- */
+/* ---------- The Next card: stage x 1944 to 2540, y 24 to 510, as tall as the hero and the island ---------- */
 .panel.meet-later {
   left: 1820px;
   top: 4px;
   width: 596px;
-  height: auto;
-  max-height: 340px;
+  height: 486px;
   padding: 18px 24px 14px;
   gap: 0;
   overflow: hidden;
@@ -826,106 +809,6 @@
 }
 .meet-next-nothing {
   font: 500 24px/1.3 var(--body);
-}
-
-/* ---------- Capture: stage x 1944 to 2540, y 384 ---------- */
-.meet-capture {
-  position: absolute;
-  left: 1820px;
-  top: 364px;
-  width: 596px;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-.meet-cap-hd {
-  height: 20px;
-}
-.meet-cap-row {
-  box-sizing: border-box;
-  height: 96px;
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  border-radius: 14px;
-  --g: 255, 61, 154;
-  background: linear-gradient(180deg, rgba(var(--g), 0.24), rgba(var(--g), 0.1)), rgba(11, 8, 32, 0.86);
-  border: 1px solid rgba(var(--g), 0.92);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.18), 0 2px 0 rgba(3, 2, 14, 0.65);
-  color: var(--tx);
-  transition: background 200ms ease, border-color 200ms ease;
-}
-.meet-cap-row.off {
-  background: rgba(11, 8, 32, 0.62);
-  border: 1px dashed rgba(183, 175, 214, 0.78);
-  box-shadow: none;
-  color: var(--dim);
-}
-.meet-cap {
-  flex: 1;
-  min-width: 0;
-  height: 100%;
-  display: flex;
-  align-items: center;
-  gap: 18px;
-  padding: 0 0 0 20px;
-  text-align: left;
-  border-radius: 14px;
-  color: inherit;
-}
-.meet-cap-row:not(.off) .meet-cap:hover {
-  background: rgba(var(--g), 0.1);
-}
-.meet-cap-row.off .meet-cap {
-  cursor: default;
-}
-.meet-cap-ico {
-  width: 48px;
-  height: 48px;
-  border-radius: 14px;
-  background: rgba(255, 255, 255, 0.07);
-  display: grid;
-  place-items: center;
-  flex: none;
-  color: rgb(var(--g));
-}
-.meet-cap-row.off .meet-cap-ico {
-  color: var(--dim);
-}
-.meet-cap-tx {
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-}
-.meet-cap-t {
-  font: 600 25px/30px var(--body);
-}
-.meet-cap-s {
-  font: 19px/1.3 var(--body);
-  color: var(--dim);
-}
-.meet-cap-s.amber {
-  color: var(--amber);
-}
-.meet-cap-open {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  height: 40px;
-  padding: 0 14px;
-  margin-right: 16px;
-  border-radius: 12px;
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  background: rgba(255, 255, 255, 0.06);
-  font: 600 17px/1 var(--body);
-  color: var(--tx);
-  white-space: nowrap;
-  flex: none;
-  box-sizing: border-box;
-}
-.meet-cap-open:hover {
-  background: rgba(255, 255, 255, 0.12);
-  border-color: var(--dim);
 }
 
 /* A hero that only says one thing keeps the recording chip at its foot while a recorder runs. */
