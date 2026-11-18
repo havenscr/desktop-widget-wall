@@ -92,7 +92,12 @@ export function Player() {
   // The video icon's own, stricter test: only the wall's own web view counts (never an unknown player, whose title can
   // equal a Watch item's), and a playing wall playlist is matched on its current video's title, not the playlist label.
   const ownPlaylist = useOwnView();
-  const iconWatch = !!sessionTitle && webView && [watchPlaying?.label, watchStopped?.label, ownPlaylist?.title].some((t) => watchTitle(t) === sessionTitle);
+  // The web view's id changes by build, so an unknown id counts too, but only for what Watch plays right now (never lastStopped).
+  const unknownId = source !== null && !isKnownPlayer(source);
+  const isTitle = (t: string | null | undefined) => watchTitle(t) === sessionTitle;
+  const iconWatch =
+    !!sessionTitle &&
+    ((webView && [watchPlaying?.label, watchStopped?.label, ownPlaylist?.title].some(isTitle)) || (unknownId && [watchPlaying?.label, ownPlaylist?.title].some(isTitle)));
   const sourceLabel = watchMatch ? 'Watch' : shownSource(rawSourceLabel);
   // The horizon's moon keeps 40 px clear of the player (it moves to another of its places).
   const [box, setBox] = useState<HTMLDivElement | null>(null);

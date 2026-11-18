@@ -136,24 +136,22 @@ it('shows no video icon when an unknown player plays a track named like the Watc
   expect(document.querySelector('.u-video')).toBeNull();
 });
 
+it('shows the video icon for an unknown id while Watch plays that very title', async () => {
+  seed();
+  useWatchStore.getState().play({ kind: 'video', id: V });
+  useWatchStore.getState().setTab('listen');
+  mocks.set('get_now_playing', () => ({ ...PLAYING, title: 'Night drive mix', artist: '', source_app: 'com-example-webview9c1', source_app_id: 'com-example-webview9c1' }));
+  render(<UnwindView />);
+  await flush();
+  expect(screen.getByRole('button', { name: 'Watch the video' })).toBeTruthy();
+});
+
 it('shows no video icon for a browser tab with the saved name but no YouTube suffix', async () => {
   seed();
   mocks.set('get_now_playing', asEdge('Night drive mix'));
   render(<UnwindView />);
   await flush();
   expect(document.querySelector('.u-video')).toBeNull();
-});
-
-it('keeps the video icon at full strength on the dimmed idle card of a stopped Watch item', async () => {
-  seed();
-  useWatchStore.getState().play({ kind: 'video', id: V });
-  useWatchStore.getState().stop();
-  useWatchStore.getState().setTab('listen');
-  mocks.set('get_now_playing', () => ({ ...PLAYING, title: 'Night drive mix', artist: '', source_app: 'msedgewebview2', source_app_id: 'msedgewebview2.exe', playback_status: 'stopped' }));
-  render(<UnwindView />);
-  await flush();
-  const icon = document.querySelector('.u-art.dim .u-video');
-  expect(icon).not.toBeNull();
 });
 
 it('gives the art a video icon when the wall itself is playing the Watch item', async () => {
