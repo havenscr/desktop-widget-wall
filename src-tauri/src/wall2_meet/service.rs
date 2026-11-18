@@ -1,6 +1,6 @@
 //! The silent refresh and the calendar read, behind traits so tests can fake the network.
 
-use super::auth::{TokenClient, TokenReply, SCOPE};
+use super::auth::{TokenClient, TokenReply, SCOPE, SIGN_IN_SCOPE};
 use super::graph::{merge, merge_capped, shape_events, Details, Clock, Ctx, Diag, Kind, RealClock, BUDGET, MAX_DAY_EVENTS, READ_TIMEOUT, utc_iso, Candidate, GraphClient, GraphReply};
 use super::meetlog::{format_line, format_line_detail};
 use super::reason::{is_valid_reason, GRAPH_TIMEOUT, STORE_READ, STORE_WRITE};
@@ -13,7 +13,7 @@ use std::sync::{Arc, Condvar, Mutex, MutexGuard};
 use std::time::Duration;
 
 /// Refresh an access token that has less than this left.
-const SKEW_SECS: u64 = 120;
+pub(super) const SKEW_SECS: u64 = 120;
 const WINDOW_SECS: u64 = 24 * 3600;
 
 /// Numbers every payload in the order its state was settled, so the web view can drop an
@@ -68,6 +68,14 @@ pub struct Core {
     pub clock: Option<Arc<dyn Clock + Send + Sync>>,
     /// Mailboxes that refused the optional EntryID expansion, with the next probe time.
     pub expand_refused: HashMap<String, ExpandRefusal>,
+    /// The saved-contact lookup's own access token (scope Contacts.Read), per account. Memory
+    /// only; dropped at sign-out and at a new sign-in. See `contacts.rs`.
+    pub contact_cache: HashMap<String, Cached>,
+    /// Accounts whose contact token request was refused, to the epoch second it may be asked
+    /// again. A refusal never touches the account's calendar state.
+    pub contact_denied: HashMap<String, u64>,
+    /// One contact lookup at a time per account (its own turn-taker, apart from `flights`).
+    pub contact_flights: HashMap<String, Arc<Slot>>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -145,7 +153,7 @@ impl Slot {
     }
 }
 
-fn clock_of(core: &Mutex<Core>) -> Arc<dyn Clock + Send + Sync> {
+pub(super) fn clock_of(core: &Mutex<Core>) -> Arc<dyn Clock + Send + Sync> {
     lock(core).clock.clone().unwrap_or_else(|| Arc::new(RealClock))
 }
 
@@ -192,8 +200,25 @@ pub struct Links {
     /// iCalUId never leaves Rust. Swapped with `map` on each next read.
     pub ical_map: HashMap<String, (String, String)>,
     /// Person keys (`p<read>-<n>`) to (account id, address), swapped on each next read. The
-    /// address never leaves Rust; see `people.rs`.
+    /// address reaches the page only through `wall2_meet_person_address`; see `people.rs`.
     pub person_map: HashMap<String, (String, String)>,
+    /// Person key to (account id, the saved-contact answer), filled by `wall2_meet_person_contact`
+    /// and swapped with `person_map`: cleared on each next read and at sign-out.
+    pub contact_map: HashMap<String, (String, ContactAnswer)>,
+}
+
+/// What the contact lookup found for one person, kept for the life of one next-meetings read.
+/// `entry` is classic Outlook's EntryID as uppercase hex and never leaves Rust.
+#[derive(Clone, PartialEq)]
+pub struct ContactAnswer {
+    pub available: bool,
+    pub entry: Option<String>,
+}
+
+impl std::fmt::Debug for ContactAnswer {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ContactAnswer").field("available", &self.available).field("entry", &self.entry.as_ref().map(|_| "<redacted>")).finish()
+    }
 }
 
 #[derive(Clone, PartialEq)]
@@ -229,6 +254,28 @@ pub fn lookup_ical(links: &Mutex<Links>, key: &str) -> Option<String> {
 pub fn lookup_person(links: &Mutex<Links>, key: &str) -> Option<String> {
     let guard = links.lock().unwrap_or_else(|e| e.into_inner());
     guard.person_map.get(key).map(|(_, address)| address.clone())
+}
+
+/// The account and address behind a person key. None for a key from an older read.
+pub fn lookup_person_entry(links: &Mutex<Links>, key: &str) -> Option<(String, String)> {
+    let guard = links.lock().unwrap_or_else(|e| e.into_inner());
+    guard.person_map.get(key).cloned()
+}
+
+/// The held contact answer for a person key, if any.
+pub fn lookup_contact_answer(links: &Mutex<Links>, key: &str) -> Option<ContactAnswer> {
+    let guard = links.lock().unwrap_or_else(|e| e.into_inner());
+    guard.contact_map.get(key).map(|(_, answer)| answer.clone())
+}
+
+/// Hold a contact answer, only while the person key is still live (a key from an older read
+/// must not leave a stray entry in the new read's map).
+pub fn store_contact_answer(links: &Mutex<Links>, key: &str, answer: ContactAnswer) {
+    let mut guard = links.lock().unwrap_or_else(|e| e.into_inner());
+    if let Some((account, _)) = guard.person_map.get(key) {
+        let account = account.clone();
+        guard.contact_map.insert(key.to_string(), (account, answer));
+    }
 }
 
 /// The Outlook web link behind a day key. Reads only `web_map`, so a join key never opens here.
@@ -324,11 +371,11 @@ struct Read {
     skipped: bool,
 }
 
-fn lock(core: &Mutex<Core>) -> MutexGuard<'_, Core> {
+pub(super) fn lock(core: &Mutex<Core>) -> MutexGuard<'_, Core> {
     core.lock().unwrap_or_else(|e| e.into_inner())
 }
 
-fn generation_of(core: &Core, id: &str) -> u64 {
+pub(super) fn generation_of(core: &Core, id: &str) -> u64 {
     core.generations.get(id).copied().unwrap_or(0)
 }
 
@@ -689,6 +736,7 @@ pub fn read_next_only(
     guard.map.clear();
     guard.ical_map.clear();
     guard.person_map.clear();
+    guard.contact_map.clear();
     let generation = guard.generation;
     // One counter over all the meetings' people, so a person key is unique within a read.
     let mut person_n: usize = 0;
@@ -884,7 +932,7 @@ pub fn complete_sign_in(
         ("code", granted.code.as_str()),
         ("redirect_uri", granted.redirect_uri.as_str()),
         ("code_verifier", granted.verifier.as_str()),
-        ("scope", SCOPE),
+        ("scope", SIGN_IN_SCOPE),
     ];
     let ctx = Ctx::new(Kind::Next, clock_of(core), BUDGET);
     let (mut reply, mut detail) = tokens.post_diag(&acct.tenant, &form, ctx.remaining().min(READ_TIMEOUT), &ctx);
@@ -904,6 +952,8 @@ pub fn complete_sign_in(
             let core = &mut *guard;
             *core.generations.entry(acct.id.clone()).or_insert(0) += 1;
             core.pending.remove(&acct.id);
+            core.contact_cache.remove(&acct.id);
+            core.contact_denied.remove(&acct.id);
             core.cache.insert(acct.id.clone(), Cached { access, expires_at: now + expires_in });
             record_detail_at(core, &acct.id, acct.position, "signed-in", None, now, None);
             Ok(())
@@ -955,6 +1005,8 @@ pub fn sign_out(id: &str, store: &dyn SecretStore, core: &Mutex<Core>, links: &M
     core.last_day.remove(id);
     core.pending.remove(id);
     core.expand_refused.remove(id);
+    core.contact_cache.remove(id);
+    core.contact_denied.remove(id);
     // Held state says signed out in the same lock hold, so no later read or peek of another
     // account can copy out a stale "ok" for this one.
     core.states.insert(id.to_string(), ("signed-out".to_string(), None));
@@ -963,6 +1015,7 @@ pub fn sign_out(id: &str, store: &dyn SecretStore, core: &Mutex<Core>, links: &M
     l.day_map.retain(|_, (account, _)| account != id);
     l.ical_map.retain(|_, (account, _)| account != id);
     l.person_map.retain(|_, (account, _)| account != id);
+    l.contact_map.retain(|_, (account, _)| account != id);
     l.web_map.retain(|_, target| target.account_id != id);
 }
 
@@ -1383,8 +1436,22 @@ mod tests {
         assert!(lookup_person(&links, "p1-1").is_none());
         assert!(lookup_ical(&links, "1-0").is_none());
         assert_eq!(lookup_ical(&links, "2-0").as_deref(), Some("cal-2"));
+        // A held contact answer follows the person keys: kept only for a live key, cleared on the next read.
+        store_contact_answer(&links, "p2-0", ContactAnswer { available: true, entry: Some("AB".repeat(24)) });
+        store_contact_answer(&links, "p1-0", ContactAnswer { available: true, entry: None });
+        assert!(lookup_contact_answer(&links, "p2-0").is_some_and(|a| a.available));
+        assert!(lookup_contact_answer(&links, "p1-0").is_none(), "an old key left a stray answer");
+        assert!(!format!("{:?}", lookup_contact_answer(&links, "p2-0")).contains("ABAB"));
+        let t = FakeTokens::new(vec![]);
+        let g = FakeGraph::new(vec![GraphReply::Ok(body_with_people("cal-3"))]);
+        read_next(&[acct("work")], &store, &t, &g, &core, &links, NOW + 20);
+        assert!(links.lock().unwrap().contact_map.is_empty());
+        store_contact_answer(&links, "p3-0", ContactAnswer { available: true, entry: None });
+        core.lock().unwrap().contact_cache.insert("work".into(), Cached { access: "c".into(), expires_at: NOW + 9999 });
         // Sign-out drops the account's keys at once.
         sign_out("work", &store, &core, &links);
+        assert!(links.lock().unwrap().contact_map.is_empty());
+        assert!(core.lock().unwrap().contact_cache.is_empty());
         assert!(lookup_person(&links, "p2-0").is_none());
         assert!(lookup_ical(&links, "2-0").is_none());
     }

@@ -8,7 +8,14 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 use tauri_plugin_opener::OpenerExt;
 
+/// The scope every silent calendar refresh asks for. It must not change: a sign-in that never
+/// consented to Contacts.Read keeps its calendar working.
 pub const SCOPE: &str = "offline_access https://graph.microsoft.com/Calendars.Read";
+/// What the interactive sign-in asks for: the calendar plus one read permission for the
+/// saved-contact lookup (a new sign-in consents to both).
+pub const SIGN_IN_SCOPE: &str = "offline_access https://graph.microsoft.com/Calendars.Read https://graph.microsoft.com/Contacts.Read";
+/// What the separate contact-lookup token request asks for (see `contacts.rs`).
+pub const CONTACTS_SCOPE: &str = "offline_access https://graph.microsoft.com/Contacts.Read";
 const CALLBACK_PATH: &str = "/auth-callback.html";
 const WAIT: Duration = Duration::from_secs(300);
 
@@ -39,7 +46,7 @@ pub fn authorize_url(tenant: &str, client_id: &str, redirect_uri: &str, challeng
         "https://login.microsoftonline.com/{tenant}/oauth2/v2.0/authorize?client_id={}&response_type=code&redirect_uri={}&response_mode=query&scope={}&code_challenge={}&code_challenge_method=S256&state={}&prompt=select_account",
         encode(client_id),
         encode(redirect_uri),
-        encode(SCOPE),
+        encode(SIGN_IN_SCOPE),
         encode(challenge),
         encode(state),
     )
@@ -285,13 +292,24 @@ mod tests {
         assert_eq!(get("response_type").as_deref(), Some("code"));
         assert_eq!(get("redirect_uri").as_deref(), Some(redirect));
         assert_eq!(get("response_mode").as_deref(), Some("query"));
-        assert_eq!(get("scope").as_deref(), Some("offline_access https://graph.microsoft.com/Calendars.Read"));
+        assert_eq!(get("scope").as_deref(), Some("offline_access https://graph.microsoft.com/Calendars.Read https://graph.microsoft.com/Contacts.Read"));
         assert_eq!(get("code_challenge").as_deref(), Some("chal"));
         assert_eq!(get("code_challenge_method").as_deref(), Some("S256"));
         assert_eq!(get("state").as_deref(), Some("st"));
         assert_eq!(get("prompt").as_deref(), Some("select_account"));
         assert_eq!(url.query_pairs().count(), 9);
         assert!(get("redirect_uri").unwrap().contains("localhost:50123"));
+    }
+
+    #[test]
+    fn scopes_are_pinned() {
+        // The silent calendar refresh keeps asking for the calendar alone.
+        assert_eq!(SCOPE, "offline_access https://graph.microsoft.com/Calendars.Read");
+        assert!(!SCOPE.contains("Contacts"));
+        assert_eq!(CONTACTS_SCOPE, "offline_access https://graph.microsoft.com/Contacts.Read");
+        assert!(!CONTACTS_SCOPE.contains("Calendars"));
+        // Only the interactive sign-in asks for both.
+        assert_eq!(SIGN_IN_SCOPE, format!("{SCOPE} https://graph.microsoft.com/Contacts.Read"));
     }
 
     #[test]

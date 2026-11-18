@@ -1,6 +1,6 @@
 //! Person actions: copy an address, start an email, start a Teams chat.
 //!
-//! Rust reads each invitee's address from Graph (to match the organizer) and never sends it. The
+//! Rust reads each invitee's address from Graph (to match the organizer) and never sends it in a read. The
 //! next-meetings read keeps each listed person's address in `service::Links::person_map` behind
 //! a key `p<read>-<n>` (see `service::read_next_only`), swapped on every next read, so a key
 //! from an older read finds nothing. The page passes only that key and an action word; the
@@ -8,16 +8,27 @@
 //! sent. The address is never logged, returned or put in an error. Error words are fixed:
 //! `gone` (no such key), `invalid` (the address failed the check), `failed`.
 //!
-//! "Open contact card" is not built: no documented way opens Outlook's contact card for an
-//! address from outside Outlook (pending an owner decision).
+//! The address reaches the page only through `wall2_meet_person_address`, for one person key at
+//! a time, on a click, never while On Air is live (see `address_answer`). Nothing else carries it.
+//!
+//! "Open contact card" (`contact`) is for people saved in the owner's contacts and uses classic
+//! Outlook only; the lookup and its rules are in `contacts.rs`.
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+use std::sync::atomic::{AtomicBool, Ordering};
 use tauri_plugin_opener::OpenerExt;
 
 const GONE: &str = "gone";
 const INVALID: &str = "invalid";
 const FAILED: &str = "failed";
+const ON_AIR: &str = "on-air";
+const UNAVAILABLE: &str = "unavailable";
 const MAX_ADDRESS: usize = 254;
+
+/// Whether the page has reported On Air live (`wall2_meet_set_on_air`). Process-wide, false at
+/// start, no expiry: a stuck true only refuses an address, which is the safe side.
+static PAGE_ON_AIR: AtomicBool = AtomicBool::new(false);
 
 /// What the address check lets through, or not. Exactly one `@`; a local part and a domain, both
 /// non-empty; the domain has a dot that is neither first nor last; at most 254 characters; no
@@ -69,6 +80,7 @@ pub(crate) enum Action {
     Copy,
     Email,
     Teams,
+    Contact,
 }
 
 fn action_of(word: &str) -> Option<Action> {
@@ -76,6 +88,7 @@ fn action_of(word: &str) -> Option<Action> {
         "copy" => Some(Action::Copy),
         "email" => Some(Action::Email),
         "teams" => Some(Action::Teams),
+        "contact" => Some(Action::Contact),
         _ => None,
     }
 }
@@ -86,6 +99,8 @@ fn action_of(word: &str) -> Option<Action> {
 pub(crate) enum Plan {
     Copy(String),
     Open(String),
+    /// Open the saved contact in classic Outlook; whether that is possible is the held answer's call.
+    Contact,
 }
 
 pub(crate) fn plan(action: Action, address: &str) -> Result<Plan, &'static str> {
@@ -96,7 +111,99 @@ pub(crate) fn plan(action: Action, address: &str) -> Result<Plan, &'static str> 
         Action::Copy => Ok(Plan::Copy(address.to_string())),
         Action::Email => mailto_url(address).map(Plan::Open).ok_or(INVALID),
         Action::Teams => teams_url(address).map(Plan::Open).ok_or(INVALID),
+        Action::Contact => Ok(Plan::Contact),
     }
+}
+
+/// Whether On Air is live for the address rule: the native recorder signal is on, or the page
+/// has said so.
+pub(crate) fn on_air_live(recorder: bool, page_flag: bool) -> bool {
+    recorder || page_flag
+}
+
+/// The answer to an address request, from injected state so it is testable without Tauri.
+/// `on-air` first (nothing about the key is looked at while On Air is live), then `gone` for a
+/// key that is malformed or not in the latest next-meetings read, then `invalid` when the stored
+/// address fails the strict check.
+pub(crate) fn address_answer(person_map: &HashMap<String, (String, String)>, key: &str, recorder: bool, page_flag: bool) -> Result<String, &'static str> {
+    if on_air_live(recorder, page_flag) {
+        return Err(ON_AIR);
+    }
+    if !valid_person_key(key) {
+        return Err(GONE);
+    }
+    let (_, address) = person_map.get(key).ok_or(GONE)?;
+    if valid_address(address) {
+        Ok(address.clone())
+    } else {
+        Err(INVALID)
+    }
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AddressOut {
+    address: String,
+}
+
+/// The page reports whether On Air is live. Refused for any window but wall2.
+#[tauri::command]
+pub fn wall2_meet_set_on_air(window: tauri::WebviewWindow, live: bool) -> Result<(), String> {
+    super::require_wall2(window.label())?;
+    PAGE_ON_AIR.store(live, Ordering::SeqCst);
+    Ok(())
+}
+
+/// One listed person's address, for the one card the owner opened, fetched on that click.
+/// Errors are fixed words: `on-air`, `gone`, `invalid`. The address is never logged and no
+/// copy is kept beyond `Links::person_map`.
+#[tauri::command]
+pub async fn wall2_meet_person_address(window: tauri::WebviewWindow, key: String) -> Result<AddressOut, String> {
+    super::require_wall2(window.label())?;
+    let recorder = crate::wall2_signals::recording_now();
+    let page = PAGE_ON_AIR.load(Ordering::SeqCst);
+    let guard = super::links().lock().unwrap_or_else(|e| e.into_inner());
+    address_answer(&guard.person_map, &key, recorder, page).map(|address| AddressOut { address }).map_err(str::to_string)
+}
+
+#[derive(Serialize)]
+pub struct ContactOut {
+    available: bool,
+}
+
+/// Whether "Open contact card" is offered for this person: exactly one saved contact for the
+/// address in the person's meeting account, and classic Outlook usable and selected. Cached per
+/// key for the life of the read. Any trouble is `available: false`; only a stale key is `gone`.
+#[tauri::command]
+pub async fn wall2_meet_person_contact(window: tauri::WebviewWindow, key: String) -> Result<ContactOut, String> {
+    super::require_wall2(window.label())?;
+    if !valid_person_key(&key) {
+        return Err(GONE.to_string());
+    }
+    let (account_id, address) = super::service::lookup_person_entry(super::links(), &key).ok_or_else(|| GONE.to_string())?;
+    if let Some(held) = super::service::lookup_contact_answer(super::links(), &key) {
+        return Ok(ContactOut { available: held.available });
+    }
+    let account = super::load_config(&window).ok().and_then(|list| list.into_iter().find(|a| a.id == account_id));
+    let desktop_enabled = matches!(super::load_open_preference(&window), Ok(super::OpenPreference::Desktop | super::OpenPreference::Typo));
+    let available = tauri::async_runtime::spawn_blocking(move || {
+        let classic_found = super::desktop::classic_outlook_exe().is_some();
+        let new_selected = super::desktop::use_new_outlook();
+        // No classic Outlook to open it in: Graph is not asked at all.
+        let entry = match account {
+            Some(acct) if super::contacts::contact_available(true, desktop_enabled, classic_found, new_selected) => {
+                super::contacts::lookup_entry(&acct, &address, &super::secrets(), &super::auth::HttpTokens, &super::contacts::HttpContacts, super::core(), super::now_secs())
+            }
+            _ => None,
+        };
+        let answer = super::service::ContactAnswer { available: super::contacts::contact_available(entry.is_some(), desktop_enabled, classic_found, new_selected), entry };
+        let available = answer.available;
+        super::service::store_contact_answer(super::links(), &key, answer);
+        available
+    })
+    .await
+    .map_err(|_| FAILED.to_string())?;
+    Ok(ContactOut { available })
 }
 
 /// True for exactly the shape `service::read_next_only` makes: `p`, the read (1 to 19 digits),
@@ -172,8 +279,9 @@ fn write_clipboard(_text: &str, _owner: isize) -> bool {
     false
 }
 
-/// Copy, email or message one listed person. `key` is a person key from the last next-meetings
-/// read; `action` is `copy`, `email` or `teams`.
+/// Copy, email, message or open the contact card of one listed person. `key` is a person key
+/// from the last next-meetings read; `action` is `copy`, `email`, `teams` or `contact`. The
+/// extra error word `unavailable` is for `contact` when the held answer does not allow it.
 #[tauri::command]
 pub async fn wall2_meet_person_action(window: tauri::WebviewWindow, key: String, action: String) -> Result<(), String> {
     super::require_wall2(window.label())?;
@@ -196,6 +304,18 @@ pub async fn wall2_meet_person_action(window: tauri::WebviewWindow, key: String,
             }
         }
         Plan::Open(url) => window.opener().open_url(url, None::<&str>).map_err(|_| FAILED.to_string()),
+        Plan::Contact => {
+            // Only what the held answer allows; no lookup here and no web fallback.
+            let held = super::service::lookup_contact_answer(super::links(), &key);
+            let arg = super::contacts::launch_arg(held.as_ref()).map_err(str::to_string)?;
+            let started = tauri::async_runtime::spawn_blocking(move || {
+                let Some(exe) = super::desktop::classic_outlook_exe() else { return Err(UNAVAILABLE) };
+                std::process::Command::new(exe).args(["/select", arg.as_str()]).spawn().map(|_| ()).map_err(|_| FAILED)
+            })
+            .await
+            .map_err(|_| FAILED.to_string())?;
+            started.map_err(str::to_string)
+        }
     }
 }
 
@@ -295,7 +415,8 @@ mod tests {
         assert_eq!(plan(Action::Copy, "priya@contoso.example"), Ok(Plan::Copy("priya@contoso.example".into())));
         assert_eq!(plan(Action::Email, "priya@contoso.example"), Ok(Plan::Open("mailto:priya@contoso.example".into())));
         assert!(matches!(plan(Action::Teams, "priya@contoso.example"), Ok(Plan::Open(u)) if u.starts_with("https://teams.microsoft.com/l/chat/0/0?users=")));
-        for action in [Action::Copy, Action::Email, Action::Teams] {
+        assert_eq!(plan(Action::Contact, "priya@contoso.example"), Ok(Plan::Contact));
+        for action in [Action::Copy, Action::Email, Action::Teams, Action::Contact] {
             for bad in ["a@b.example?cc=x", "a@b.example,c@d.example", "a@b.example%0a", "a@b.example\"x", "a@b.example'x", "nope"] {
                 assert_eq!(plan(action, bad), Err("invalid"), "{action:?} {bad}");
             }
@@ -309,7 +430,8 @@ mod tests {
         assert_eq!(action_of("copy"), Some(Action::Copy));
         assert_eq!(action_of("email"), Some(Action::Email));
         assert_eq!(action_of("teams"), Some(Action::Teams));
-        for bad in ["", "Copy", "contact", "card", "open", "email ", "mailto"] {
+        assert_eq!(action_of("contact"), Some(Action::Contact));
+        for bad in ["", "Copy", "Contact", "card", "open", "email ", "mailto"] {
             assert_eq!(action_of(bad), None, "{bad}");
         }
     }
@@ -323,6 +445,49 @@ mod tests {
         for bad in ["", "p", "p1", "p-1", "p1-", "P1-0", "p1-0x", "p1-12345", "1-0", "d1-0", "b1-0", " p1-0", "p1--0", "p\u{661}-0", long.as_str()] {
             assert!(!valid_person_key(bad), "{bad:?}");
         }
+    }
+
+    fn people_map() -> HashMap<String, (String, String)> {
+        HashMap::from([
+            ("p2-0".to_string(), ("work".to_string(), "priya@contoso.example".to_string())),
+            ("p2-1".to_string(), ("work".to_string(), "bad?x@contoso.example".to_string())),
+        ])
+    }
+
+    #[test]
+    fn the_address_is_answered_for_a_live_key_only() {
+        let map = people_map();
+        assert_eq!(address_answer(&map, "p2-0", false, false), Ok("priya@contoso.example".to_string()));
+        // An unknown or older key, and a malformed one.
+        assert_eq!(address_answer(&map, "p1-0", false, false), Err("gone"));
+        assert_eq!(address_answer(&map, "p2-9", false, false), Err("gone"));
+        assert_eq!(address_answer(&map, "nope", false, false), Err("gone"));
+        assert_eq!(address_answer(&HashMap::new(), "p2-0", false, false), Err("gone"));
+        // A bad stored address is refused.
+        assert_eq!(address_answer(&map, "p2-1", false, false), Err("invalid"));
+    }
+
+    #[test]
+    fn no_address_while_on_air_is_live() {
+        let map = people_map();
+        assert_eq!(address_answer(&map, "p2-0", true, false), Err("on-air"));
+        assert_eq!(address_answer(&map, "p2-0", false, true), Err("on-air"));
+        assert_eq!(address_answer(&map, "p2-0", true, true), Err("on-air"));
+        // On Air outranks every other answer, so nothing about the key is learned.
+        assert_eq!(address_answer(&map, "p9-9", true, false), Err("on-air"));
+        assert_eq!(address_answer(&map, "p2-1", false, true), Err("on-air"));
+        assert!(on_air_live(true, false) && on_air_live(false, true) && !on_air_live(false, false));
+    }
+
+    #[test]
+    fn the_page_flag_set_then_cleared_allows_it_again() {
+        let map = people_map();
+        // Process-wide flag; this is the only test that touches it.
+        assert!(!PAGE_ON_AIR.load(Ordering::SeqCst), "the flag starts false");
+        PAGE_ON_AIR.store(true, Ordering::SeqCst);
+        assert_eq!(address_answer(&map, "p2-0", false, PAGE_ON_AIR.load(Ordering::SeqCst)), Err("on-air"));
+        PAGE_ON_AIR.store(false, Ordering::SeqCst);
+        assert_eq!(address_answer(&map, "p2-0", false, PAGE_ON_AIR.load(Ordering::SeqCst)), Ok("priya@contoso.example".to_string()));
     }
 
     #[test]
@@ -345,6 +510,6 @@ mod tests {
     #[cfg(not(windows))]
     #[test]
     fn copy_fails_where_there_is_no_clipboard() {
-        assert!(!write_clipboard("priya@contoso.example"));
+        assert!(!write_clipboard("priya@contoso.example", 0));
     }
 }
