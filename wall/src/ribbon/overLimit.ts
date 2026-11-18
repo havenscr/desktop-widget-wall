@@ -137,8 +137,8 @@ export interface OpenList {
 }
 
 /**
- * The open sessions named by where they stand, as the agents line counts them (waiting on the
- * you, working, else idle). `idleSince` gives a moment a session was last seen working when the
+ * The open sessions named by where they stand, as the agents line counts them (waiting on you,
+ * working, else idle). `idleSince` gives a moment a session was last seen working when the
  * helper sent no idle time.
  */
 export function openList(

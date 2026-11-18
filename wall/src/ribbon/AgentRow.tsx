@@ -284,8 +284,6 @@ export function AgentRow({ now, dueCount = null, onOpenPanel }: { now: number; d
       {rails.map((r) => {
         // A stretch that ended before the ribbon's first hour has nothing to draw (no tick at its left edge).
         if (wallHour(r.to, now) <= START_HOUR) return null;
-        // A stretch that ended before the ribbon's first hour has nothing to draw (no tick at its left edge).
-        
         const x0 = ribbonX(r.from, now) ?? RX(START_HOUR);
         const x1 = ribbonX(r.to, now) ?? RX(START_HOUR);
         return <i key={r.from} className="x-rail" data-over-rail="" style={{ left: x0, width: Math.max(3, x1 - x0) }} aria-hidden="true" />;
