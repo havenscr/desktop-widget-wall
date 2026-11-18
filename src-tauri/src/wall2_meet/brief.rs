@@ -573,10 +573,15 @@ fn none_answer() -> BriefOut {
 /// state it does not know becomes `failed`, and an unknown `state` or `match.kind` becomes
 /// `none`. The answer's own `k` is required and must be the one that was asked for, else the
 /// result is a plain `none` answer with nothing else.
+/// True when the answer is an object whose `k` is exactly the key that was asked for.
+fn k_matches(body: &Value, expected_k: &str) -> bool {
+    body.get("k").and_then(Value::as_str) == Some(expected_k)
+}
+
 pub(crate) fn shape_answer(body: &Value, expected_k: &str, cfg: &BriefConfig, read: u64) -> Result<(BriefOut, HashMap<String, String>), &'static str> {
     let obj = body.as_object().ok_or(FAILED)?;
     // `k` is required and must be the one asked for; anything else is a normal "none" answer.
-    if obj.get("k").and_then(Value::as_str) != Some(expected_k) {
+    if !k_matches(body, expected_k) {
         return Ok((none_answer(), HashMap::new()));
     }
     let state = word_of(obj.get("state"), &["ready", "building", "none"]).unwrap_or("none");
@@ -754,7 +759,11 @@ pub(crate) fn brief_with(
     let bytes = helper.get(&format!("{}/wall/v1/brief?k={k}", cfg.base), token)?;
     let value: Value = serde_json::from_slice(&bytes).map_err(|_| FAILED)?;
     let (out, links) = shape_answer(&value, &k, cfg, read)?;
-    finish_read(link_map, read, links);
+    // Only an answer for this key replaces the stored links. An answer for another key (or with
+    // none) reads as "none" for the page but keeps the last good keys, the same as a failed read.
+    if k_matches(&value, &k) {
+        finish_read(link_map, read, links);
+    }
     Ok(out)
 }
 
@@ -811,7 +820,12 @@ mod tests {
         BriefConfig { base: "https://brief-box.example.ts.net:8791".into(), portal: Some("1234567".into()), file_hosts: vec!["contoso.sharepoint.com".into()] }
     }
 
-    fn shape(body: Value) -> BriefOut {
+    /// Shapes a test body asked for with the key "k". A body with no `k` of its own gets that one,
+    /// so these tests look at the shaping; the `k` rule has its own test.
+    fn shape(mut body: Value) -> BriefOut {
+        if let Some(obj) = body.as_object_mut() {
+            obj.entry("k").or_insert_with(|| json!("k"));
+        }
         shape_answer(&body, "k", &cfg(), 1).unwrap().0
     }
 
@@ -1022,7 +1036,7 @@ mod tests {
     }
 
     #[test]
-    fn unknown_words_fall_back_and_a_wrong_k_fails() {
+    fn unknown_words_fall_back_and_a_non_object_fails() {
         let out = shape(json!({ "state": "weird", "match": { "kind": "enemy" }, "sources": { "crm": 5 } }));
         assert_eq!((out.state, out.matched.kind), ("none", "none"));
         assert_eq!(out.sources.crm, "failed");
@@ -1341,6 +1355,34 @@ mod tests {
         // An answer for another key is a plain "none".
         let other = serde_json::to_vec(&json!({ "k": "00000000000000000000000000000000", "state": "ready" })).unwrap();
         assert_eq!(run(Some(TOKEN), Some(ICAL), &FakeHelper::new(Ok(other))).unwrap().state, "none");
+    }
+
+    #[test]
+    fn only_a_good_answer_for_this_key_replaces_the_link_keys() {
+        let l = Mutex::new(BriefLinks::default());
+        let counter = AtomicU64::new(0);
+        let k = brief_key(TOKEN, ICAL);
+        let mut good = full_answer();
+        good["k"] = json!(k);
+        let good = serde_json::to_vec(&good).unwrap();
+        let read = |answer: Result<Vec<u8>, &'static str>| brief_with(&cfg(), Some(TOKEN), Some(ICAL), &FakeHelper::new(answer), &l, &counter);
+
+        // Read 1 is good: its link key works.
+        assert_eq!(read(Ok(good.clone())).unwrap().items[0].open_key.as_deref(), Some("b1-0"));
+        assert!(lookup_open(&l, "b1-0").is_some());
+        // Read 2 fails at the helper, read 3 is not JSON: the key from read 1 still works.
+        assert_eq!(read(Err("failed")).unwrap_err(), "failed");
+        assert!(lookup_open(&l, "b1-0").is_some());
+        assert_eq!(read(Ok(b"not json".to_vec())).unwrap_err(), "failed");
+        assert!(lookup_open(&l, "b1-0").is_some());
+        // Read 4 answers for another key: the page gets "none", and the key from read 1 still works.
+        let other = serde_json::to_vec(&json!({ "k": "00000000000000000000000000000000", "state": "ready" })).unwrap();
+        assert_eq!(read(Ok(other)).unwrap().state, "none");
+        assert!(lookup_open(&l, "b1-0").is_some());
+        // Read 5 is good again: its key replaces the old one.
+        assert_eq!(read(Ok(good)).unwrap().items[0].open_key.as_deref(), Some("b5-0"));
+        assert!(lookup_open(&l, "b1-0").is_none());
+        assert!(lookup_open(&l, "b5-0").is_some());
     }
 
     #[test]
