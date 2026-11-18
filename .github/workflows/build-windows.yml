@@ -24,14 +24,25 @@ jobs:
       - name: No file names that differ only by case
         working-directory: .
         run: |
-          # Windows treats Foo.tsx and foo.ts as one module, so a pair like that
+          # Windows resolves module paths without regard to case, so a pair such as
+          # foo.ts and Foo.tsx (or foo.ts and Foo/index.ts, or folders Src and src)
           # passes on Linux and fails the Windows build. Fail early here instead.
-          clashes=$(git ls-files | sed -E 's/\.(tsx?|jsx?|mjs|cjs)$//' | tr '[:upper:]' '[:lower:]' | sort | uniq -d)
-          if [ -n "$clashes" ]; then
-            echo "These paths differ only by case or by a script extension:"
-            for c in $clashes; do git ls-files | grep -iE "^${c}(\.(tsx?|jsx?|mjs|cjs))?$"; done
-            exit 1
-          fi
+          git ls-files -z | awk 'BEGIN { RS = "\0"; bad = 0 }
+            function note(key, name) {
+              if (key in seen && seen[key] != name) {
+                printf "Paths clash on Windows: %s and %s\n", seen[key], name
+                bad = 1
+              } else if (!(key in seen)) seen[key] = name
+            }
+            {
+              n = split($0, part, "/"); dir = ""
+              for (i = 1; i < n; i++) { dir = dir part[i] "/"; note("d:" tolower(dir), dir) }
+              mod = tolower($0)
+              sub(/(\.d)?\.(tsx?|jsx?|mjs|cjs)$/, "", mod)
+              sub(/\/index$/, "", mod)
+              note("m:" mod, $0)
+            }
+            END { exit bad }'
 
       - name: Setup Node
         uses: actions/setup-node@v7
