@@ -92,6 +92,8 @@ const hero = (c: HTMLElement) => c.querySelector('.meet-hero') as HTMLElement;
 const nextCard = (c: HTMLElement) => c.querySelector('.meet-later') as HTMLElement;
 const island = (c: HTMLElement) => c.querySelector('.meet-island') as HTMLElement;
 const heading = (c: HTMLElement) => island(c).querySelector('.meet-isl-hd .k')?.textContent;
+/** The eight keys of the deck in a Teams call, in their places. */
+const CALL_DECK = ['Mute', 'Camera off', 'Share', 'Leave', 'Raise hand', 'Reactions', 'Chat panel', 'Open in Teams'];
 const callKeyLabels = (c: HTMLElement) => [...(hero(c).querySelector('.meet-keys')?.querySelectorAll('button') ?? [])].map((b) => b.getAttribute('aria-label'));
 
 beforeEach(() => {
@@ -157,11 +159,11 @@ it('a call that outlasts its meeting keeps the meeting, the keys and the marks, 
   await setCall(call({ since: NOW - 50 * 60_000 }));
   const { container } = await renderMeet();
   expect(hero(container).querySelector('.meet-hero-title')?.textContent).toBe('Design review');
-  expect(callKeyLabels(container)).toEqual(['Mute', 'Camera off', 'Share', 'Leave']);
+  expect(callKeyLabels(container)).toEqual(CALL_DECK);
   // Twelve minutes past the end, the list has dropped the ended meeting.
   await flush(17 * 60_000);
   expect(hero(container).querySelector('.meet-hero-title')?.textContent).toBe('Design review');
-  expect(callKeyLabels(container)).toEqual(['Mute', 'Camera off', 'Share', 'Leave']);
+  expect(callKeyLabels(container)).toEqual(CALL_DECK);
   expect(hero(container).textContent).not.toContain('Nothing scheduled');
   expect(hero(container).querySelector('.meet-ring-n')?.textContent).toBe('12');
   expect(hero(container).querySelector('.meet-ring-u')?.textContent).toBe('min over');
@@ -185,7 +187,7 @@ it('a call with no meeting is a plain call: status, time, the four keys, no ring
   expect(h.querySelector('.meet-hero-title')?.textContent).toBe('Call in progress');
   expect(h.querySelector('.meet-time')).not.toBeNull();
   expect(h.querySelector('.meet-ring')).toBeNull();
-  expect(callKeyLabels(container)).toEqual(['Mute', 'Camera off', 'Share', 'Leave']);
+  expect(callKeyLabels(container)).toEqual(CALL_DECK);
   expect(h.textContent).not.toContain('Nothing scheduled');
   fireEvent.click(within(container.querySelector('.meet-capture') as HTMLElement).getByRole('button', { name: /Mark a moment/ }), { detail: 1 });
   await flush(10);
@@ -236,14 +238,14 @@ it('a calendar error during a call keeps the call\'s meeting; with nothing known
   failing = true;
   await flush(5 * 60_000 + 10);
   expect(hero(first.container).querySelector('.meet-hero-title')?.textContent).toBe('Design review');
-  expect(callKeyLabels(first.container)).toEqual(['Mute', 'Camera off', 'Share', 'Leave']);
+  expect(callKeyLabels(first.container)).toEqual(CALL_DECK);
   first.unmount();
   await setCall(null);
   mocks.set('wall2_meet_next', () => Promise.reject(new Error('failed')));
   await setCall(call());
   const second = await renderMeet();
   expect(hero(second.container).querySelector('.meet-hero-title')?.textContent).toBe('Call in progress');
-  expect(callKeyLabels(second.container)).toEqual(['Mute', 'Camera off', 'Share', 'Leave']);
+  expect(callKeyLabels(second.container)).toEqual(CALL_DECK);
 });
 
 it('the recording chip shows in every kind of hero while a recorder runs', async () => {
@@ -576,7 +578,7 @@ it('a meeting that starts at the same minute as the hero is the Next card and re
   expect(card.getByText('Starts before this one ends')).toBeTruthy();
 });
 
-it('the recording chip stays in the hero while a key press line shows, and the line sits beside it', async () => {
+it('the recording chip stays in the hero while a key press line shows, and the line sits under it', async () => {
   serve({ meetings: () => [m('a', 'Design review', -10, 50)] });
   mocks.set('wall2_keys_send_library', () => Promise.reject(new Error('no-target')));
   act(() => useSignalStore.setState({ recording: true }));
@@ -585,10 +587,10 @@ it('the recording chip stays in the hero while a key press line shows, and the l
   expect(hero(container).querySelector('.meet-hero-last .rec-chip')).not.toBeNull();
   fireEvent.click(within(hero(container)).getByRole('button', { name: 'Mute' }));
   await flush(10);
-  expect(hero(container).querySelector('.meet-hero-last .meet-brief')).not.toBeNull();
+  expect(hero(container).querySelector('.meet-hero-line .meet-brief')).not.toBeNull();
   expect(hero(container).querySelector('.meet-hero-last .rec-chip')).not.toBeNull();
   // The line goes after a few seconds; the chip never did.
   await flush(10_000);
-  expect(hero(container).querySelector('.meet-hero-last .meet-brief')).toBeNull();
+  expect(hero(container).querySelector('.meet-hero-line .meet-brief')).toBeNull();
   expect(hero(container).querySelector('.meet-hero-last .rec-chip')).not.toBeNull();
 });

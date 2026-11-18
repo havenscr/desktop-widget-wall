@@ -1,32 +1,18 @@
-import { tip } from '../ui/HoverTip';
+import { NameButton, TileSwitch } from './GroupTile';
 import { tileState } from './homeModel';
 import { canChange, useHome } from './homeStore';
 import type { Group, Studio } from './home';
 
-/** One room switch tile: the switch, its name. Its knob takes the home app's colour, else the default. */
+/** One room switch tile: the switch, and the name that opens the group's card. Its knob takes the home app's colour, else the default. */
 export function RoomTile({ studio, g, canWrite }: { studio: Studio; g: Group; canWrite: boolean }) {
   const st = tileState(studio, g, canWrite);
   const on = g.on;
-  const cls = `st-tg st-room${on ? ' on' : ''}${st.disabled ? ' dis' : ''}${st.dim ? ' dim' : ''}`;
-  const inner = (
-    <>
-      <i className={`st-sw${on ? ' on' : ''}${st.disabled && !on ? ' dis' : ''}`} style={g.colour ? { ['--c' as string]: g.colour } : undefined} aria-hidden="true">
-        <i />
-      </i>
-      <span>{g.label}</span>
-    </>
-  );
-  if (st.disabled) {
-    return (
-      <span className={cls} data-group={g.id} role="switch" aria-checked={on} aria-disabled="true" {...tip(st.tip)}>
-        {inner}
-      </span>
-    );
-  }
+  const cls = `st-tg st-room${on ? ' on' : ''}${st.disabled ? ' dis' : ''}`;
   return (
-    <button type="button" role="switch" aria-checked={on} className={cls} data-group={g.id} onClick={() => void useHome.getState().setGroup(g.id, !on)} {...tip(st.tip)}>
-      {inner}
-    </button>
+    <div className={cls} data-group={g.id}>
+      <TileSwitch label={g.label} on={on} dim={st.dim} disabled={st.disabled} knob={g.colour ?? undefined} tipText={st.tip} onClick={() => void useHome.getState().setGroup(g.id, !on)} />
+      <NameButton id={g.id} label={g.label} />
+    </div>
   );
 }
 
@@ -42,12 +28,10 @@ export function RoomTiles() {
     <>
       {studio.groups.map((g) =>
         away ? (
-          <span key={g.id} className="st-tg st-room dis" data-group={g.id} role="switch" aria-checked={g.on} aria-disabled="true" {...tip(`${g.label}: the home app is not answering`)}>
-            <i className="st-sw dis" aria-hidden="true">
-              <i />
-            </i>
-            <span>{g.label}</span>
-          </span>
+          <div key={g.id} className="st-tg st-room dis" data-group={g.id}>
+            <TileSwitch label={g.label} on={g.on} disabled tipText={`${g.label}: the home app is not answering`} />
+            <NameButton id={g.id} label={g.label} />
+          </div>
         ) : (
           <RoomTile key={g.id} studio={studio} g={g} canWrite={may} />
         ),

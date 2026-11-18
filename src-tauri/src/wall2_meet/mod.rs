@@ -11,6 +11,7 @@ mod colours;
 pub(crate) mod brief;
 pub(crate) mod brief_token;
 pub(crate) mod checklist;
+mod contacts;
 mod desktop;
 mod graph;
 mod meetlog;
@@ -377,8 +378,8 @@ pub async fn wall2_meet_sign_in(window: tauri::WebviewWindow, id: String) -> Res
         // sign-in for the calendar alone, so a blocked extra permission never costs the
         // calendar. A cancel, a time-out and any other failure open nothing more, and the
         // second attempt is never followed by a third.
-        let granted = match auth::authorize(&app, &account, colours::SCOPE_COLOURS) {
-            Err(outcome) if colours::offer_calendar_only(colours::SCOPE_COLOURS, outcome) => auth::authorize(&app, &account, colours::SCOPE_CALENDAR),
+        let granted = match auth::authorize(&app, &account, auth::SIGN_IN_SCOPE) {
+            Err(outcome) if colours::offer_calendar_only(auth::SIGN_IN_SCOPE, outcome) => auth::authorize(&app, &account, auth::SIGN_IN_SCOPE_NO_COLOURS),
             other => other,
         }
         // The caller sees the one word it always saw for a refused sign-in.

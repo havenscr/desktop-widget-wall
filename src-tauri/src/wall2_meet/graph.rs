@@ -358,7 +358,7 @@ pub const SELECT_DETAILS: &str = "id,subject,start,end,isAllDay,isCancelled,resp
 pub const TOP: u32 = 50;
 pub const CALENDAR_VIEW_PATH: &str = "https://graph.microsoft.com/v1.0/me/calendarView";
 pub const PREFER: &str = "outlook.timezone=\"UTC\"";
-const ENTRY_EXPAND_ENCODED: &str = "singleValueExtendedProperties%28%24filter%3Did%20eq%20%27Binary%200x0FFF%27%29";
+pub(super) const ENTRY_EXPAND_ENCODED: &str = "singleValueExtendedProperties%28%24filter%3Did%20eq%20%27Binary%200x0FFF%27%29";
 
 /// The next-meetings calendarView request: the documented options only (`startDateTime`,
 /// `endDateTime`, `$select`, `$orderby` on the start time, `$top`), both date-times in UTC with a `Z`.

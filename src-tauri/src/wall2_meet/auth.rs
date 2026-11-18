@@ -8,6 +8,17 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 use tauri_plugin_opener::OpenerExt;
 
+/// The scope every silent calendar refresh asks for. It must not change: a sign-in that never
+/// consented to Contacts.Read keeps its calendar working.
+pub const SCOPE: &str = "offline_access https://graph.microsoft.com/Calendars.Read";
+/// What the interactive sign-in asks for: the calendar, one read permission for the
+/// saved-contact lookup and one for the Outlook category colours (a new sign-in consents to all).
+pub const SIGN_IN_SCOPE: &str = "offline_access https://graph.microsoft.com/Calendars.Read https://graph.microsoft.com/Contacts.Read https://graph.microsoft.com/MailboxSettings.Read";
+/// The sign-in offered once when the colours permission is refused: everything but
+/// `MailboxSettings.Read`, so a blocked colours permission never costs the calendar or contacts.
+pub const SIGN_IN_SCOPE_NO_COLOURS: &str = "offline_access https://graph.microsoft.com/Calendars.Read https://graph.microsoft.com/Contacts.Read";
+/// What the separate contact-lookup token request asks for (see `contacts.rs`).
+pub const CONTACTS_SCOPE: &str = "offline_access https://graph.microsoft.com/Contacts.Read";
 const CALLBACK_PATH: &str = "/auth-callback.html";
 const WAIT: Duration = Duration::from_secs(300);
 
@@ -289,7 +300,7 @@ mod tests {
     fn authorize_url_has_every_parameter() {
         let id = "00000000-0000-0000-0000-000000000000";
         let redirect = "http://localhost:50123/auth-callback.html";
-        let raw = authorize_url("common", id, redirect, "chal", "st", super::super::colours::SCOPE_COLOURS);
+        let raw = authorize_url("common", id, redirect, "chal", "st", SIGN_IN_SCOPE);
         assert!(raw.starts_with("https://login.microsoftonline.com/common/oauth2/v2.0/authorize?"));
         let url = tauri::Url::parse(&raw).unwrap();
         let get = |k: &str| url.query_pairs().find(|(n, _)| n == k).map(|(_, v)| v.into_owned());
@@ -297,15 +308,29 @@ mod tests {
         assert_eq!(get("response_type").as_deref(), Some("code"));
         assert_eq!(get("redirect_uri").as_deref(), Some(redirect));
         assert_eq!(get("response_mode").as_deref(), Some("query"));
-        assert_eq!(get("scope").as_deref(), Some("offline_access https://graph.microsoft.com/Calendars.Read https://graph.microsoft.com/MailboxSettings.Read"));
-        let old = authorize_url("common", id, redirect, "chal", "st", super::super::colours::SCOPE_CALENDAR);
-        assert!(old.contains("scope=offline_access%20https%3A%2F%2Fgraph.microsoft.com%2FCalendars.Read&code_challenge="));
+        assert_eq!(get("scope").as_deref(), Some("offline_access https://graph.microsoft.com/Calendars.Read https://graph.microsoft.com/Contacts.Read https://graph.microsoft.com/MailboxSettings.Read"));
+        let fallback = authorize_url("common", id, redirect, "chal", "st", SIGN_IN_SCOPE_NO_COLOURS);
+        assert!(fallback.contains("scope=offline_access%20https%3A%2F%2Fgraph.microsoft.com%2FCalendars.Read%20https%3A%2F%2Fgraph.microsoft.com%2FContacts.Read&code_challenge="));
         assert_eq!(get("code_challenge").as_deref(), Some("chal"));
         assert_eq!(get("code_challenge_method").as_deref(), Some("S256"));
         assert_eq!(get("state").as_deref(), Some("st"));
         assert_eq!(get("prompt").as_deref(), Some("select_account"));
         assert_eq!(url.query_pairs().count(), 9);
         assert!(get("redirect_uri").unwrap().contains("localhost:50123"));
+    }
+
+    #[test]
+    fn scopes_are_pinned() {
+        // The silent calendar refresh keeps asking for the calendar alone.
+        assert_eq!(SCOPE, "offline_access https://graph.microsoft.com/Calendars.Read");
+        assert!(!SCOPE.contains("Contacts"));
+        assert_eq!(CONTACTS_SCOPE, "offline_access https://graph.microsoft.com/Contacts.Read");
+        assert!(!CONTACTS_SCOPE.contains("Calendars"));
+        // Only the interactive sign-in asks for all three permissions.
+        assert_eq!(SIGN_IN_SCOPE, format!("{SCOPE} https://graph.microsoft.com/Contacts.Read https://graph.microsoft.com/MailboxSettings.Read"));
+        // The fallback after a refused colours permission keeps the calendar and the contacts.
+        assert_eq!(SIGN_IN_SCOPE_NO_COLOURS, format!("{SCOPE} https://graph.microsoft.com/Contacts.Read"));
+        assert!(!SIGN_IN_SCOPE_NO_COLOURS.contains("MailboxSettings"));
     }
 
     #[test]

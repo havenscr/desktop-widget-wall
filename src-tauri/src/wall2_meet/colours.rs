@@ -3,13 +3,11 @@
 //! tested on their own. Everything from Graph here is untrusted input: names are cleaned and
 //! capped, colours are only ever one of 25 fixed tokens, and a name is never logged.
 
+use super::auth::SCOPE;
 use super::graph::normalize_title;
 use serde_json::Value;
 
-/// Sign-in without the colours permission: what every account signed in before the colours
-/// existed was granted, and what a tenant that refuses the extra permission falls back to.
-pub const SCOPE_CALENDAR: &str = "offline_access https://graph.microsoft.com/Calendars.Read";
-/// Sign-in with `MailboxSettings.Read`, the least privileged permission for listing the
+/// Refresh scope for an account whose sign-in granted `MailboxSettings.Read`, the least privileged permission for listing the
 /// master categories (Graph v1.0 "List masterCategories", Permissions table). Both scopes
 /// belong to the Graph resource, so one access token serves both reads.
 pub const SCOPE_COLOURS: &str = "offline_access https://graph.microsoft.com/Calendars.Read https://graph.microsoft.com/MailboxSettings.Read";
@@ -51,7 +49,7 @@ pub fn refresh_scope(record: Option<&str>) -> &'static str {
     if record.is_some_and(grants_colours) {
         SCOPE_COLOURS
     } else {
-        SCOPE_CALENDAR
+        SCOPE
     }
 }
 
@@ -67,7 +65,7 @@ pub fn recorded_scope(requested: &str, reply: Option<&str>) -> &'static str {
     if granted && grants_colours(requested) {
         SCOPE_COLOURS
     } else {
-        SCOPE_CALENDAR
+        SCOPE
     }
 }
 
@@ -203,13 +201,14 @@ pub fn pick(categories: &[String], palette: &Palette) -> Option<Pick> {
 
 #[cfg(test)]
 mod tests {
+    use super::super::auth::{SIGN_IN_SCOPE, SIGN_IN_SCOPE_NO_COLOURS};
     use super::*;
     use serde_json::json;
 
     #[test]
     fn a_colours_refresh_that_is_refused_falls_back_once() {
         assert!(retry_calendar_only(SCOPE_COLOURS));
-        assert!(!retry_calendar_only(SCOPE_CALENDAR));
+        assert!(!retry_calendar_only(SCOPE));
         assert!(!retry_calendar_only(""));
     }
 
@@ -233,8 +232,8 @@ mod tests {
             (SCOPE_COLOURS, "cancelled", false),
             (SCOPE_COLOURS, "timed-out", false),
             (SCOPE_COLOURS, "busy", false),
-            (SCOPE_CALENDAR, "consent", false),
-            (SCOPE_CALENDAR, "denied", false),
+            (SCOPE, "consent", false),
+            (SCOPE, "denied", false),
         ] {
             assert_eq!(offer_calendar_only(asked, outcome), offer, "{asked} {outcome}");
         }
@@ -265,22 +264,27 @@ mod tests {
 
     #[test]
     fn an_account_with_no_record_refreshes_with_the_old_scope() {
-        assert_eq!(refresh_scope(None), SCOPE_CALENDAR);
-        assert_eq!(refresh_scope(Some("")), SCOPE_CALENDAR);
-        assert_eq!(refresh_scope(Some(SCOPE_CALENDAR)), SCOPE_CALENDAR);
+        assert_eq!(refresh_scope(None), SCOPE);
+        assert_eq!(refresh_scope(Some("")), SCOPE);
+        assert_eq!(refresh_scope(Some(SCOPE)), SCOPE);
         assert_eq!(refresh_scope(Some(SCOPE_COLOURS)), SCOPE_COLOURS);
-        assert!(!SCOPE_CALENDAR.contains("MailboxSettings"));
-        assert!(SCOPE_COLOURS.starts_with(SCOPE_CALENDAR));
+        assert!(!SCOPE.contains("MailboxSettings"));
+        assert!(SCOPE_COLOURS.starts_with(SCOPE));
     }
 
     #[test]
     fn a_sign_in_records_only_what_was_granted() {
         assert_eq!(recorded_scope(SCOPE_COLOURS, None), SCOPE_COLOURS);
         assert_eq!(recorded_scope(SCOPE_COLOURS, Some("Calendars.Read MailboxSettings.Read")), SCOPE_COLOURS);
-        assert_eq!(recorded_scope(SCOPE_COLOURS, Some("Calendars.Read")), SCOPE_CALENDAR);
-        assert_eq!(recorded_scope(SCOPE_CALENDAR, None), SCOPE_CALENDAR);
+        assert_eq!(recorded_scope(SCOPE_COLOURS, Some("Calendars.Read")), SCOPE);
+        assert_eq!(recorded_scope(SCOPE, None), SCOPE);
+        // The combined sign-in records the colours refresh scope; its fallback records the calendar scope.
+        assert_eq!(recorded_scope(SIGN_IN_SCOPE, None), SCOPE_COLOURS);
+        assert_eq!(recorded_scope(SIGN_IN_SCOPE_NO_COLOURS, None), SCOPE);
+        assert!(offer_calendar_only(SIGN_IN_SCOPE, "consent"));
+        assert!(!offer_calendar_only(SIGN_IN_SCOPE_NO_COLOURS, "consent"));
         // A reply naming the permission does not widen a request that never asked for it.
-        assert_eq!(recorded_scope(SCOPE_CALENDAR, Some("Calendars.Read MailboxSettings.Read")), SCOPE_CALENDAR);
+        assert_eq!(recorded_scope(SCOPE, Some("Calendars.Read MailboxSettings.Read")), SCOPE);
     }
 
     #[test]

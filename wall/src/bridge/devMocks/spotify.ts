@@ -4,7 +4,7 @@ import { PUBLIC_PAGE_KEY, usePublicPage } from '../../unwind/spotify/model';
 
 const id = (n: number) => n.toString().padStart(22, '0');
 const deviceId = (n: number) => n.toString(16).padStart(40, '0');
-const cover = (seed: number) => {
+export const cover = (seed: number) => {
   const colours = ['#7dd3c7', '#f2b8c6', '#f5cf77', '#92a8d1'];
   const a = colours[seed % colours.length];
   const b = colours[(seed + 2) % colours.length];
