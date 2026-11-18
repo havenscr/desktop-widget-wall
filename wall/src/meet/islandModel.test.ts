@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest';
-import { HOW_TO, indexName, inviteSize, islandKinds, marksLine, namesPreview, orderLine, stepKind, type CallMark } from './islandModel';
+import { HOW_TO, indexName, inviteSize, islandKinds, marksLine, namesPreview, stepKind, type CallMark } from './islandModel';
 import type { MeetingDetails } from './model';
 
 const details = (over: Partial<MeetingDetails> = {}): MeetingDetails => ({
@@ -61,12 +61,6 @@ it('marks line: the count and the last three times', () => {
   expect(marksLine([mark(192)])).toBe('1 marked: 03:12');
   expect(marksLine([mark(1), mark(2), mark(3), mark(4)])).toBe('4 marked: 00:02, 00:03, 00:04');
   expect(marksLine([{ at: 1, showMs: 3_725_000 }])).toBe('1 marked: 1:02:05');
-});
-
-it('the order line names the kinds that exist', () => {
-  const kinds = islandKinds({ details: details(), checklist: ['x'], marks: [] });
-  expect(orderLine(kinds)).toBe('Order: the invite, who is coming, your first-meeting list');
-  expect(orderLine([])).toBe('Order: ');
 });
 
 it('stepping wraps, and one kind has nowhere to go', () => {
