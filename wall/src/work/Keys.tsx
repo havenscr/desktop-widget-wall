@@ -46,7 +46,7 @@ import {
   type Page,
   type SetInfo,
 } from './keysModel';
-import { MAX_PINS, parsePins, PINS_CHANGED_EVENT, PINS_KEY, readPinsRaw, serializePins, type LibGroup } from './libraryModel';
+import { MAX_PINS, parsePins, PINS_CHANGED_EVENT, PINS_KEY, readPinsRaw, resolvePin, serializePins, swapPin, type LibGroup } from './libraryModel';
 import { keyboardOnMouseKey, useKeyPress } from './keyPress';
 import { useBrief } from './useBrief';
 import { RecordingKeyRow } from '../signals/RecordingKeyRow';
@@ -518,16 +518,15 @@ export function Keys() {
           const pinRefs = rawPins ?? sum.defaultPins;
           const alreadyPinned = pinRef !== null && pinRefs.includes(pinRef);
           const full = pinRefs.length >= MAX_PINS;
-          const actions: KeyMenuAction[] = [
-            alreadyPinned
-              ? { id: 'pin', label: 'Already in Always here', disabled: true }
-              : pinRef === null
-                ? { id: 'pin', label: 'This key lives in keys.json', disabled: true }
-                : full
-                  ? { id: 'pin', label: 'Always here is full', note: `${MAX_PINS} of ${MAX_PINS}`, disabled: true }
-                  : { id: 'pin', label: 'Pin to Always here', note: `${pinRefs.length} of ${MAX_PINS}` },
-            { id: 'file', label: 'Edit keys file', note: 'keys.json' },
-          ];
+          const runKey = () => void press(`${set.id}:${i}`, 1, { command: 'wall2_keys_send', args: { setId: set.id, index: i } }, k.label, k.action, set, hold);
+          const pinActions: KeyMenuAction[] = alreadyPinned
+            ? [{ id: 'pin', label: 'Already in Always here', disabled: true }]
+            : pinRef === null
+              ? [{ id: 'pin', label: 'This key lives in keys.json', disabled: true }]
+              : full
+                ? pinRefs.map((ref, slot) => ({ id: 'swap' as const, slot, label: `Put in Always here in place of ${(library && resolvePin(ref, library, sum.filePins)?.label) || 'an empty place'}` }))
+                : [{ id: 'pin', label: 'Pin to Always here', note: `${pinRefs.length} of ${MAX_PINS}` }];
+          const actions: KeyMenuAction[] = [{ id: 'run', label: 'Run it now', disabled: layoutOff }, ...pinActions];
           const openMenu = (byKey: boolean) => {
             if (!overlayOwnsPointer() && shown !== null) setMenu({ at: i, shown, byKey });
           };
@@ -575,9 +574,14 @@ export function Keys() {
                 actions={actions}
                 byKeyboard={menu.byKey}
                 onClose={() => setMenu(null)}
-                onChoose={(id) => {
-                  if (id !== 'pin' || !pinRef || full || alreadyPinned || !library) return;
-                  const next = [...pinRefs, pinRef];
+                onChoose={(id, action) => {
+                  if (id === 'run') {
+                    if (!layoutOff) runKey();
+                    return;
+                  }
+                  if ((id !== 'pin' && id !== 'swap') || !pinRef || alreadyPinned || !library) return;
+                  if (id === 'pin' && full) return;
+                  const next = id === 'swap' && action.slot !== undefined ? swapPin(pinRefs, action.slot, pinRef) : [...pinRefs, pinRef];
                   try {
                     localStorage.setItem(PINS_KEY, serializePins(next, sum.filePins));
                   } catch {

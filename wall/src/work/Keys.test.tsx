@@ -783,7 +783,7 @@ it('closes the menu when the feed brings another set under it', async () => {
   expect(menuUp()).toBeNull();
 });
 
-it('disables Pin with its reason when Always here is full, and when the key is already there', async () => {
+it('offers which of the five gives way when Always here is full, and disables Pin when the key is already there', async () => {
   libraryMocks();
   localStorage.setItem(PINS_KEY, JSON.stringify(['lib:thirds', 'lib:focus', 'lib:mute', 'lib:mixer', 'lib:zen']));
   answer = front('general', 'notepad.exe');
@@ -791,11 +791,17 @@ it('disables Pin with its reason when Always here is full, and when the key is a
   await flush();
   fireEvent.contextMenu(screen.getByRole('button', { name: 'Snip' }));
   await flush();
-  const full = screen.getByRole('menuitem', { name: /Always here is full/ }) as HTMLButtonElement;
-  expect(full.disabled).toBe(true);
-  expect(full.textContent).toContain('5 of 5');
-  fireEvent.click(full);
-  expect(JSON.parse(localStorage.getItem(PINS_KEY) ?? '')).toHaveLength(5);
+  expect(screen.getAllByRole('menuitem').map((m) => m.querySelector('span')?.textContent)).toEqual([
+    'Run it now',
+    'Put in Always here in place of Thirds',
+    'Put in Always here in place of Focus',
+    'Put in Always here in place of Mute sound',
+    'Put in Always here in place of Volume mixer',
+    'Put in Always here in place of Zen',
+  ]);
+  expect(screen.queryByRole('menuitem', { name: /Edit keys file/ })).toBeNull();
+  fireEvent.click(screen.getByRole('menuitem', { name: /in place of Mute sound/ }));
+  expect(JSON.parse(localStorage.getItem(PINS_KEY) ?? '')).toEqual(['lib:thirds', 'lib:focus', 'lib:snip', 'lib:mixer', 'lib:zen']);
   fireEvent.pointerDown(document.body);
   localStorage.setItem(PINS_KEY, JSON.stringify(['lib:snip']));
   act(() => window.dispatchEvent(new Event(PINS_CHANGED_EVENT)));

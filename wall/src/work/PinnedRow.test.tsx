@@ -687,7 +687,7 @@ it('a pinned key menu lists Replace, Add a key and Remove in that order', async 
   await flush();
   fireEvent.contextMenu(screen.getByRole('button', { name: 'Snip' }));
   await flush();
-  expect(screen.getAllByRole('menuitem').map((m) => m.querySelector('span')?.textContent)).toEqual(['Replace with another key', 'Add a key', 'Remove from Always here', 'Edit keys file']);
+  expect(screen.getAllByRole('menuitem').map((m) => m.querySelector('span')?.textContent)).toEqual(['Replace with another key', 'Add a key', 'Remove from Always here']);
   fireEvent.click(screen.getByRole('menuitem', { name: /Add a key/ }));
   await flush();
   const dialog = screen.getByRole('dialog', { name: 'Add a key to Always here' });

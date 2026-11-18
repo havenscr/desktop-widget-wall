@@ -6,7 +6,7 @@ import { KeyMenu, MENU_CLOSE_MS, type KeyMenuAction } from './KeyMenu';
 
 const actions: KeyMenuAction[] = [
   { id: 'pin', label: 'Pin to Always here' },
-  { id: 'file', label: 'Edit keys file' },
+  { id: 'run', label: 'Run it now' },
 ];
 
 let closed: number;
