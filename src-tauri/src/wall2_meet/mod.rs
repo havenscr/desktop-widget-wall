@@ -8,11 +8,14 @@
 
 mod auth;
 mod colours;
+pub(crate) mod brief;
+pub(crate) mod brief_token;
 pub(crate) mod checklist;
 mod desktop;
 mod graph;
 mod meetlog;
 mod netprobe;
+pub(crate) mod people;
 mod reason;
 mod service;
 pub(crate) mod store;

@@ -85,6 +85,17 @@ describe('an own playlist through the real player frame', () => {
     expect(document.querySelectorAll('iframe')).toHaveLength(1);
   });
 
+  it('draws the video icon on Listen for the current video, matched on its title and not the playlist name', async () => {
+    seed(2);
+    mocks.set('get_now_playing', () => ({ title: 'Rooftop synth session', artist: 'Channel', playback_status: 'playing', source_app: 'msedgewebview2', source_app_id: 'msedgewebview2.exe', position_seconds: 5, duration_seconds: 200 }));
+    render(<UnwindView />);
+    act(() => void playOwn(FRIDAY));
+    act(() => w().setReport({ ...w().report, title: 'Rooftop synth session' }));
+    act(() => w().setTab('listen'));
+    await flush(2000);
+    expect(screen.getByRole('button', { name: 'Watch the video' }).closest('.u-art')).not.toBeNull();
+  });
+
   it('the real end message advances to the next video, playing, with nothing of the old frame in its report', async () => {
     seed(3);
     render(<UnwindView />);

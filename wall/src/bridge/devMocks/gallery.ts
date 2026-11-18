@@ -219,6 +219,9 @@ function media(mode: string): void {
       };
     }
     if (mode === 'watchown') return { ...base, title: 'Night drive mix', artist: '', source_app: 'msedgewebview2', source_app_id: 'msedgewebview2.exe', playback_status: 'playing' };
+    // A browser playing the saved video by its exact name, and Spotify playing a song that only shares a saved video's name.
+    if (mode === 'ytvideo') return { ...base, title: 'Night drive mix - YouTube', artist: 'Some Channel', source_app: 'Edge', source_app_id: 'msedge.exe', playback_status: 'playing' };
+    if (mode === 'spotifysame') return { ...base, title: 'Night drive mix', artist: 'Example Artist', source_app: 'Spotify', source_app_id: 'Spotify.exe', playback_status: 'playing' };
     if (mode === 'watchstopped') return { ...base, title: 'Night drive mix', artist: '', source_app: 'msedgewebview2', source_app_id: 'msedgewebview2.exe', playback_status: 'stopped' };
     // A browser-installed web app: its session id is a raw id, never a name to show (invented id).
     if (mode === 'webapp') return { ...base, title: 'Harbor Radio', artist: 'Example Host', source_app: 'com-example-radio7f3a2', source_app_id: 'com-example-radio7f3a2', playback_status: 'playing' };

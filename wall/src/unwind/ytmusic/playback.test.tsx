@@ -472,6 +472,25 @@ describe('the top player on Listen', () => {
     expect(keys).toEqual([]);
   });
 
+  it('draws the video icon only while the pick is in Watch\'s frame, and the click shows that video in Watch', async () => {
+    serve();
+    playAll([video(1), video(3)], false, LIST);
+    act(() => w().setReport({ started: true, time: 5, duration: 214, title: 'Clip 1', channel: 'Channel 1' }));
+    act(() => w().setTab('listen'));
+    render(<Player />);
+    await flush(10);
+    const icon = screen.getByRole('button', { name: 'Watch the video' });
+    expect(icon.closest('.u-art')).not.toBeNull();
+    fireEvent.click(icon);
+    expect(w().tab).toBe('watch');
+    expect(w().playing?.id).toBe(id(1));
+    // Stopped, the frame is gone: Watch would be empty, so there is no icon.
+    act(() => w().stop());
+    await flush(10);
+    expect(screen.getByText('Last played on the wall')).toBeTruthy();
+    expect(document.querySelector('.u-video')).toBeNull();
+  });
+
   it('says it was the last played, with Play again, when it has stopped and the queue is kept', async () => {
     serve();
     playAll([video(1), video(3)], false, LIST);

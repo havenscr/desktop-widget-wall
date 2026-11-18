@@ -194,6 +194,12 @@ pub struct Links {
     pub web_map: HashMap<String, OpenTarget>,
     /// Whether classic Outlook can currently be used for entries without a web link.
     pub desktop_usable: bool,
+    /// The next-meetings read's join keys again, to (account id, iCalUId), for the brief. The
+    /// iCalUId never leaves Rust. Swapped with `map` on each next read.
+    pub ical_map: HashMap<String, (String, String)>,
+    /// Person keys (`p<read>-<n>`) to (account id, address), swapped on each next read. The
+    /// address never leaves Rust; see `people.rs`.
+    pub person_map: HashMap<String, (String, String)>,
 }
 
 #[derive(Clone, PartialEq)]
@@ -216,6 +222,19 @@ impl std::fmt::Debug for OpenTarget {
 pub fn lookup_link(links: &Mutex<Links>, key: &str) -> Option<String> {
     let guard = links.lock().unwrap_or_else(|e| e.into_inner());
     guard.map.get(key).or_else(|| guard.day_map.get(key)).map(|(_, url)| url.clone())
+}
+
+/// The iCalUId behind a next-meetings key (the brief's lookup). None for a key from an older
+/// read, a day key, or a meeting with no iCalUId.
+pub fn lookup_ical(links: &Mutex<Links>, key: &str) -> Option<String> {
+    let guard = links.lock().unwrap_or_else(|e| e.into_inner());
+    guard.ical_map.get(key).map(|(_, ical)| ical.clone())
+}
+
+/// The address behind a person key. None for a key from an older read.
+pub fn lookup_person(links: &Mutex<Links>, key: &str) -> Option<String> {
+    let guard = links.lock().unwrap_or_else(|e| e.into_inner());
+    guard.person_map.get(key).map(|(_, address)| address.clone())
 }
 
 /// The Outlook web link behind a day key. Reads only `web_map`, so a join key never opens here.
@@ -811,7 +830,11 @@ pub fn read_next_only(
     let mut guard = links.lock().unwrap_or_else(|e| e.into_inner());
     guard.generation += 1;
     guard.map.clear();
+    guard.ical_map.clear();
+    guard.person_map.clear();
     let generation = guard.generation;
+    // One counter over all the meetings' people, so a person key is unique within a read.
+    let mut person_n: usize = 0;
     let meetings = merged
         .into_iter()
         .enumerate()
@@ -821,7 +844,21 @@ pub fn read_next_only(
             if let Some(url) = cand.join {
                 guard.map.insert(key.clone(), (cand.account_id.clone(), url));
             }
-            MeetingOut { key, account_id: cand.account_id, title: cand.title, start: cand.start, end: cand.end, can_join, details: cand.details }
+            if let Some(ical) = cand.ical {
+                guard.ical_map.insert(key.clone(), (cand.account_id.clone(), ical));
+            }
+            let mut details = cand.details;
+            if let Some(d) = details.as_mut() {
+                for person in d.people.iter_mut() {
+                    if let Some(address) = person.address.take() {
+                        let person_key = format!("p{generation}-{person_n}");
+                        person_n += 1;
+                        guard.person_map.insert(person_key.clone(), (cand.account_id.clone(), address));
+                        person.key = Some(person_key);
+                    }
+                }
+            }
+            MeetingOut { key, account_id: cand.account_id, title: cand.title, start: cand.start, end: cand.end, can_join, details }
         })
         .collect();
     drop(guard);
@@ -1096,6 +1133,8 @@ pub fn sign_out(id: &str, store: &dyn SecretStore, core: &Mutex<Core>, links: &M
     let mut l = links.lock().unwrap_or_else(|e| e.into_inner());
     l.map.retain(|_, (account, _)| account != id);
     l.day_map.retain(|_, (account, _)| account != id);
+    l.ical_map.retain(|_, (account, _)| account != id);
+    l.person_map.retain(|_, (account, _)| account != id);
     l.web_map.retain(|_, target| target.account_id != id);
 }
 
@@ -1477,6 +1516,49 @@ mod tests {
         let p = read_next(&[acct("work"), acct("second")], &store, &t, &g, &core, &links, NOW + 10);
         assert_eq!(p.meetings[0].key, "2-0");
         assert!(lookup_link(&links, "1-0").is_none());
+    }
+
+    fn body_with_people(ical: &str) -> Value {
+        let mut b = body("Planning", ical);
+        b["value"][0]["organizer"] = json!({ "emailAddress": { "name": "Priya Calder", "address": "priya@contoso.example" } });
+        b["value"][0]["attendees"] = json!([
+            { "emailAddress": { "name": "Priya Calder", "address": "priya@contoso.example" }, "status": { "response": "organizer" } },
+            { "emailAddress": { "name": "Marcus Veld", "address": "marcus@northwind.example" }, "status": { "response": "accepted" } },
+        ]);
+        b
+    }
+
+    #[test]
+    fn person_and_ical_keys_are_minted_per_read_and_cleared_on_the_next() {
+        let (store, core) = setup();
+        let links = Mutex::new(Links::default());
+        let t = FakeTokens::new(vec![ok_token("a", None)]);
+        let g = FakeGraph::new(vec![GraphReply::Ok(body_with_people("cal-1"))]);
+        let p = read_next(&[acct("work")], &store, &t, &g, &core, &links, NOW);
+        let people = &p.meetings[0].details.as_ref().unwrap().people;
+        assert_eq!(people.len(), 2);
+        assert_eq!(people[0].key.as_deref(), Some("p1-0"));
+        assert_eq!(people[1].key.as_deref(), Some("p1-1"));
+        // The address moved into the map; the payload carries none of it.
+        assert!(people.iter().all(|x| x.address.is_none()));
+        assert_eq!(lookup_person(&links, "p1-1").as_deref(), Some("marcus@northwind.example"));
+        assert_eq!(lookup_ical(&links, "1-0").as_deref(), Some("cal-1"));
+        let text = serde_json::to_string(&p).unwrap();
+        for bad in ["contoso.example", "northwind.example", "cal-1", "@"] {
+            assert!(!text.contains(bad), "payload leaks {bad}: {text}");
+        }
+        // The next read refuses every older key.
+        let t = FakeTokens::new(vec![]);
+        let g = FakeGraph::new(vec![GraphReply::Ok(body_with_people("cal-2"))]);
+        let p = read_next(&[acct("work")], &store, &t, &g, &core, &links, NOW + 10);
+        assert_eq!(p.meetings[0].details.as_ref().unwrap().people[0].key.as_deref(), Some("p2-0"));
+        assert!(lookup_person(&links, "p1-1").is_none());
+        assert!(lookup_ical(&links, "1-0").is_none());
+        assert_eq!(lookup_ical(&links, "2-0").as_deref(), Some("cal-2"));
+        // Sign-out drops the account's keys at once.
+        sign_out("work", &store, &core, &links);
+        assert!(lookup_person(&links, "p2-0").is_none());
+        assert!(lookup_ical(&links, "2-0").is_none());
     }
 
     fn event_at(subject: &str, ical: &str, start: &str, end: &str) -> Value {

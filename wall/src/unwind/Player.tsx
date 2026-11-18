@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import {
   IconMusic,
+  IconVideo,
   IconPlayerPauseFilled,
   IconPlayerPlayFilled,
   IconPlayerSkipBackFilled,
@@ -15,10 +16,12 @@ import { useVisible } from '../ui/useVisible';
 import { useLastPlayed } from './lastPlayed';
 import { canPlayLastOwn, playLastOwn } from './lastOwn';
 import { isWallPlayer, ON_THE_WALL, PICK_IN_WATCH, shownSource } from './ownSource';
+import { useOwnView } from './watch/ownPlay';
 import { useWatchStore } from './watch/store';
 import { AUTOPLAY_LINE, musicControls, next as queueNext, playAgain, previous as queuePrevious, useMusicView, type MusicView } from './ytmusic/queue';
 import { StartOnWatch } from './ytmusic/YtFoot';
 import { safeThumb } from './ytmusic/model';
+import { savedVideoMatch, watchTitle } from './videoMatch';
 
 /** Position and duration, advanced locally between polls while playing. Re-renders twice a second, only while visible. */
 function useProgress(info: NowPlayingInfo | null, anchor: ProgressAnchor | null) {
@@ -45,20 +48,14 @@ function dropIdleArt(src: string | null): void {
 }
 
 /**
- * The album art's small "Video" corner button: shown only when something is saved to watch,
- * it switches Unwind to the Watch tab. Nothing else on Listen changes.
+ * The album art's video icon: a 36 px dark round chip with a white video camera in the bottom right of the art, drawn
+ * only when the caller knows the shown track has a video (`show`). It switches Unwind to the Watch tab.
  */
-function VideoCorner() {
-  const count = useWatchStore((s) => s.saved.length);
-  if (count === 0) return null;
+function VideoCorner({ show }: { show: boolean }) {
+  if (!show) return null;
   return (
-    <button
-      type="button"
-      className="u-video"
-      title={`Watch instead: ${count} saved to watch`}
-      onClick={() => useWatchStore.getState().setTab('watch')}
-    >
-      Video
+    <button type="button" className="u-video" title="Watch the video" aria-label="Watch the video" onClick={() => useWatchStore.getState().setTab('watch')}>
+      <IconVideo size={22} aria-hidden="true" />
     </button>
   );
 }
@@ -87,12 +84,20 @@ export function Player() {
   const watchStopped = useWatchStore((s) => s.lastStopped);
   const webView = isWallPlayer(rawSourceLabel);
   const savedItems = useWatchStore((s) => s.saved);
-  const watchTitle = (value: string | null | undefined) => value?.trim().replace(/ - YouTube$/i, '').trim();
   const sessionTitle = watchTitle(info?.title);
   // The wall's own video is the web view by name, or any session whose title is what Watch plays
   // (or last stopped) under an id that is not a known player: the web view's id changes by build.
   const ownVideo = webView || (source !== null && !isKnownPlayer(source));
   const watchMatch = !!sessionTitle && ownVideo && [watchPlaying, watchStopped].some((item) => watchTitle(item?.label) === sessionTitle);
+  // The video icon's own, stricter test: only the wall's own web view counts (never an unknown player, whose title can
+  // equal a Watch item's), and a playing wall playlist is matched on its current video's title, not the playlist label.
+  const ownPlaylist = useOwnView();
+  // The web view's id changes by build, so an unknown id counts too, but only for what Watch plays right now (never lastStopped).
+  const unknownId = source !== null && !isKnownPlayer(source);
+  const isTitle = (t: string | null | undefined) => watchTitle(t) === sessionTitle;
+  const iconWatch =
+    !!sessionTitle &&
+    ((webView && [watchPlaying?.label, watchStopped?.label, ownPlaylist?.title].some(isTitle)) || (unknownId && [watchPlaying?.label, ownPlaylist?.title].some(isTitle)));
   const sourceLabel = watchMatch ? 'Watch' : shownSource(rawSourceLabel);
   // The horizon's moon keeps 40 px clear of the player (it moves to another of its places).
   const [box, setBox] = useState<HTMLDivElement | null>(null);
@@ -126,6 +131,12 @@ export function Player() {
     ownKnown && own && idleSeen && watchTitle(idleSeen.title) !== ownLabel
       ? { title: own.label, artist: '', source: idleSeen.source, art: null }
       : idleSeen;
+  // Whether the shown track is known to have a video (never a guess): the wall's own Watch item (playing, or the idle
+  // card's playable own item), or a saved Watch video whose name is this track's exact title in a YouTube player.
+  const idleOwnVideo = fromWall && ownKnown && !!own && own.from === 'watch';
+  const hasVideo = quiet
+    ? iconWatch || idleOwnVideo || (!!idle && !fromWall && savedVideoMatch(idle.title, idle.source, savedItems))
+    : iconWatch || savedVideoMatch(info?.title, rawSourceLabel, savedItems);
   const startOwn = () => {
     if (!playLastOwn(own)) setRefused(ownKey);
   };
@@ -223,7 +234,7 @@ export function Player() {
         <div className="u-now">
           <div className="u-art dim">
             {idle.art ? <img src={idle.art} alt="" onError={() => dropIdleArt(idle.art)} /> : <IconMusic size={72} stroke={1.25} aria-hidden="true" />}
-            <VideoCorner />
+            <VideoCorner show={hasVideo} />
           </div>
           <div className="u-meta">
             <span className="u-k">{watchMatch ? 'Last played in Watch' : fromWall ? ON_THE_WALL : idle.source ? `Last played on ${shownSource(idle.source)}` : 'Last played'}</span>
@@ -241,7 +252,7 @@ export function Player() {
       <div className="u-now">
         <div className="u-art">
           {art ? <img src={art} alt="" onError={rejectArt} /> : <IconMusic size={72} stroke={1.25} aria-hidden="true" />}
-          <VideoCorner />
+          <VideoCorner show={hasVideo} />
         </div>
         <div className="u-meta">
           {sourceLabel ? <span className="u-k u-src">{watchMatch ? 'Playing in Watch' : sourceLabel}</span> : null}
@@ -309,7 +320,8 @@ function MusicPlayer({ music, setBox }: { music: MusicView; setBox: (el: HTMLDiv
       <div className="u-now">
         <div className={`u-art${live ? '' : ' dim'}`}>
           {showArt ? <img src={art} alt="" referrerPolicy="no-referrer" onError={() => setFailed(art)} /> : <IconMusic size={72} stroke={1.25} aria-hidden="true" />}
-          <VideoCorner />
+          {/* The wall's own YouTube pick: shown only while its video is in Watch's frame (playing or paused), where the click lands. */}
+          <VideoCorner show={live} />
         </div>
         <div className="u-meta">
           <span className="u-k u-src">{live ? 'YouTube, on the wall' : 'Last played on the wall'}</span>
