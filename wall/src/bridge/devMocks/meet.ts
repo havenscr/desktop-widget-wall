@@ -8,13 +8,15 @@ const STALE_ACCOUNTS = [
   { id: 'second', label: 'Second', state: 'unavailable', reason: 'graph-503-UnknownError' },
 ];
 
-const p = (name: string, reply: Reply): Person => ({ name, reply });
+let personSeq = 0;
+/** An invented person; the key is opaque, as Rust gives it. A person with no address has none. */
+const p = (name: string, reply: Reply, key: string | null = `p1-${personSeq++}`): Person => ({ name, reply, key });
 
 /** Invented people and invite words for the Meet layout's mock meetings. Nothing here is real. */
 export const MOCK_DETAILS: Record<'known' | 'new' | 'heavy', MeetingDetails> = {
   known: {
     calledBy: 'Casey Rowe',
-    people: [p('Casey Rowe', 'organizer'), p('Dana Whitfield', 'yes'), p('Eli Navarro', 'yes'), p('Robin Okafor', 'yes'), p('Tariq Lindgren', 'maybe'), p('Noor Haddad', 'none')],
+    people: [p('Casey Rowe', 'organizer'), p('Dana Whitfield', 'yes'), p('Eli Navarro', 'yes'), p('Robin Okafor', 'yes', null), p('Tariq Lindgren', 'maybe'), p('Noor Haddad', 'none')],
     peopleMore: 0,
     invite: 'Walk through the three sizing options, then agree who owns each next step. Please read the one-page summary before we start.',
   },
