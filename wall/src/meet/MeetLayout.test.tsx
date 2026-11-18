@@ -361,7 +361,8 @@ it('the island opens on the invite; an arrow, an Also on file row and the dots c
   fireEvent.click(isl.getByRole('tab', { name: 'Who is coming' }));
   expect(heading(container)).toBe('Who is coming');
   expect(isl.getByRole('tab', { name: 'Who is coming' }).getAttribute('aria-selected')).toBe('true');
-  expect(isl.getByText('Order: the invite, who is coming, your first-meeting list')).toBeTruthy();
+  // The footer carries only the arrows and dots; no line repeats the kinds.
+  expect(isl.queryByText(/^Order:/)).toBeNull();
 });
 
 it('with one kind there is no index, no arrows and no dots', async () => {
