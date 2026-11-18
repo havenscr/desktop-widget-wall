@@ -40,7 +40,7 @@ export interface Shield {
   /** A token is set, but the read is not live: Clear all waits for a fresh read (it would
    * clear alerts the wall cannot show as current). */
   clearWaits: boolean;
-  /** A token is set, but the home app's address is plain http on the local network. */
+  /** A token is set, but the home app's address is not loopback or tailnet. */
   clearInsecure: boolean;
   /** The extra numbers for the hover on the summary line. */
   detail: string[];

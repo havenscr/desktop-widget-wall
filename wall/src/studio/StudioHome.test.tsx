@@ -192,7 +192,7 @@ it('no token on this PC: every home control disabled, the line says where to typ
 it('a base the token may not go to: disabled, the https or tailnet line, Check again, a tip that names homeBaseUrl and never the base', async () => {
   answer = studioAnswer({ canWrite: false, writeBlock: 'needs-private-address' });
   await showBlock();
-  expect(screen.getByText('The home app must be reached over https or the tailnet to take changes.')).toBeTruthy();
+  expect(screen.getByText('The home app must be reached on this PC or the tailnet to take changes.')).toBeTruthy();
   const check = screen.getByText('Check again').closest('button') as HTMLElement;
   expect(await tipOf(check)).toContain('homeBaseUrl');
   const reads = vi.fn(() => answer);

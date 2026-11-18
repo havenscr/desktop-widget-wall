@@ -598,11 +598,11 @@ mod tests {
             assert!(!err.contains(TOKEN));
         }
         let down = Fake { transport_down: true, ..Fake::default() };
-        let err = clear_with(&down, "https://home.test", Some(TOKEN)).unwrap_err();
+        let err = clear_with(&down, "https://box.tail1234.ts.net", Some(TOKEN)).unwrap_err();
         assert_eq!(err, FAILED);
         assert!(!err.contains(TOKEN));
         // A 200 that is not the success shape is a failure, not a count.
-        assert_eq!(clear_with(&fake(200, TOKEN), "https://h", Some(TOKEN)).unwrap_err(), FAILED);
+        assert_eq!(clear_with(&fake(200, TOKEN), "https://box.tail1234.ts.net", Some(TOKEN)).unwrap_err(), FAILED);
     }
 
     #[test]
@@ -616,10 +616,10 @@ mod tests {
             "{\"ok\":true,\"cleared\":100001}",
             "{\"ok\":false,\"cleared\":3}",
         ] {
-            assert_eq!(clear_with(&fake(200, body), "https://h", Some(TOKEN)).unwrap_err(), FAILED, "{body}");
+            assert_eq!(clear_with(&fake(200, body), "https://box.tail1234.ts.net", Some(TOKEN)).unwrap_err(), FAILED, "{body}");
         }
-        assert_eq!(clear_with(&fake(200, "{\"ok\":true,\"cleared\":0}"), "https://h", Some(TOKEN)), Ok(0));
-        assert_eq!(clear_with(&fake(200, "{\"ok\":true,\"cleared\":100000}"), "https://h", Some(TOKEN)), Ok(100_000));
+        assert_eq!(clear_with(&fake(200, "{\"ok\":true,\"cleared\":0}"), "https://box.tail1234.ts.net", Some(TOKEN)), Ok(0));
+        assert_eq!(clear_with(&fake(200, "{\"ok\":true,\"cleared\":100000}"), "https://box.tail1234.ts.net", Some(TOKEN)), Ok(100_000));
     }
 
     #[test]
