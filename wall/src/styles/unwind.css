@@ -3274,6 +3274,16 @@
   height: 40px;
   margin-bottom: 10px;
 }
+.sp-songs.tall .sp-backrow .sp-tallpin {
+  /* Tall: Pin is a 40 px round icon at the end of the back row; Play and Shuffle keep their words. */
+  flex: 0 0 40px;
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  margin-left: auto;
+  justify-content: center;
+  border-radius: 50%;
+}
 .sp-backlabel {
   min-height: 32px;
   padding: 0 4px;

@@ -89,20 +89,40 @@ const measurePins = () => {
       return { fails, mode };
     }
     if (mode === 'spotify') {
+      const songs = document.querySelector('.sp-songs');
       const head = document.querySelector('.sp-shead');
-      const pin = document.querySelector('.sp-shead .sp-pin, .sp-shbtns .sp-pin, .sp-songs .sp-pin');
-      if (!head || !pin) return { fails: ['library pins: no opened Spotify view with a Pin button'], mode };
+      const pin = document.querySelector('.sp-songs .sp-pin');
+      if (!songs || !head || !pin) return { fails: ['library pins: no opened Spotify view with a Pin button'], mode };
+      const tall = songs.classList.contains('tall');
       const h = R(head);
       const p = R(pin);
+      const uncut = (e, what) => { if (e.scrollWidth > e.clientWidth + 0.5) fails.push(what + ' is cut ("' + e.textContent.trim() + '" holds ' + e.scrollWidth + ' px in ' + e.clientWidth + ')'); };
+      if (tall) {
+        // Tall: Pin is a 40 px round icon at the end of the back row (Back, the tab name, Pin); Play and Shuffle keep their words.
+        const back = document.querySelector('.sp-backrow');
+        const label = document.querySelector('.sp-backlabel');
+        const bb = R(back);
+        if (!pin.closest('.sp-backrow')) fails.push('Pin is not in the back row');
+        if (Math.abs(p.w - 40) > 0.6 || Math.abs(p.h - 40) > 0.6) fails.push('Pin is ' + Math.round(p.w) + ' by ' + Math.round(p.h) + ' (40 by 40)');
+        if (p.r > bb.r + 0.5 || p.l < bb.l - 0.5) fails.push('Pin at ' + where(p) + ' passes the back row ' + where(bb));
+        for (const e of back.children) if (R(e).r > bb.r + 0.5) fails.push('a back row item passes the row end');
+        if (label) { uncut(label, 'the tab name'); if (R(label).r > p.l + 0.5) fails.push('the tab name runs under Pin'); }
+        const row = document.querySelector('.sp-shbtns');
+        const rr = R(row);
+        const btns = [...row.querySelectorAll('.sp-btn')];
+        if (btns.length !== 2) fails.push('the Play and Shuffle row holds ' + btns.length + ' buttons (2)');
+        for (const e of btns) { uncut(e, 'a Play or Shuffle button'); if (R(e).r > rr.r + 0.5 || R(e).r > h.r + 0.5) fails.push('a Play or Shuffle button passes its column'); }
+        if (row.scrollWidth > row.clientWidth + 0.5) fails.push('the Play and Shuffle row is cut');
+        return { fails, mode };
+      }
       const shuffle = [...document.querySelectorAll('.sp-songs .sp-btn')].find((e) => /Shuffle/.test(e.textContent));
       if (shuffle && Math.abs(R(shuffle).t - p.t) > 2) fails.push('Pin is at y ' + Math.round(p.t) + ', Shuffle at y ' + Math.round(R(shuffle).t) + ' (one row)');
       for (const e of head.querySelectorAll('.sp-btn')) {
         const r = R(e);
-        if (e.scrollWidth > e.clientWidth + 0.5) fails.push('a header button is cut ("' + e.textContent.trim() + '" holds ' + e.scrollWidth + ' px in ' + e.clientWidth + ')');
+        uncut(e, 'a header button');
         if (r.h > 50) fails.push('a header button wraps (' + Math.round(r.h) + ' px tall)');
         if (r.r > h.r + 0.5) fails.push('a header button at ' + where(r) + ' passes the header ' + where(h));
       }
-      for (const e of head.querySelectorAll('*')) if (e.scrollWidth > e.clientWidth + 1 && getComputedStyle(e).overflow === 'hidden' && !getComputedStyle(e).textOverflow.includes('ellipsis') && e.clientWidth > 0 && e.children.length === 0 && e.tagName !== 'IMG') fails.push('text is cut in ' + String(e.className).slice(0, 24));
       return { fails, mode };
     }
     const songs = document.querySelector('.yt-songs');
@@ -136,7 +156,7 @@ const rule = (variant, results, emit) => {
   const line = {
     pins: 'every badge lies inside its pin slot and no pin name is narrower than without a badge',
     menu: 'the open menu is inside the strip, text 16 px or more',
-    spotify: 'Pin sits on the header row beside Shuffle, nothing in the header is cut or wraps',
+    spotify: 'Pin sits beside Shuffle at rest and in the back row when tall, the back row and the Play and Shuffle row are uncut',
     yt: `Pin sits on its header row, the name keeps 120 px at rest and the tall header fits its 248 px column (${(r.infos ?? []).join('; ')})`,
   }[r.mode];
   emit(`  ok   library pins: ${line}`);

@@ -436,7 +436,15 @@ describe('inside the tall view', () => {
     await act(async () => (document.querySelector('.sp-tile') as HTMLButtonElement).click());
     await flush();
     expect(document.querySelector('.sp-backlabel')?.textContent).toBe('Playlists');
-    expect(document.querySelectorAll('.sp-shbtns .sp-btn')).toHaveLength(3);
+    expect(document.querySelectorAll('.sp-shbtns .sp-btn')).toHaveLength(2);
+    // Pin is a round icon in the back row, after the tab name.
+    const pinBtn = document.querySelector('.sp-backrow .sp-tallpin') as HTMLButtonElement;
+    expect(pinBtn).not.toBeNull();
+    expect(pinBtn.getAttribute('aria-label')).toBe('Pin to the left');
+    expect(document.querySelector('.sp-shbtns .sp-pin')).toBeNull();
+    await act(async () => pinBtn.click());
+    expect(useLibraryMenu.getState().open?.view).toBe('chooser');
+    closeLibraryMenu();
     expect(document.querySelectorAll('.sp-track')).toHaveLength(3);
     await act(async () => (document.querySelectorAll('.sp-track')[1] as HTMLButtonElement).click());
     await flush();

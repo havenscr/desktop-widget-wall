@@ -849,6 +849,16 @@ function SongsView({ item, tall, backLabel, onBack, onNote, onUpNext }: { item: 
   const note = pageList ? PAGE_NOTE : null;
   const noteMore = pageList ? pageNoteMore(pageList.items.length, item.count ?? pageList.listed) : '';
 
+  // At rest Pin follows Shuffle as a word; in the tall column it is a round icon in the back row (Back, the tab name, Pin).
+  const pinButton = (className: string, icon: boolean) => (
+    <PinButton
+      entry={{ kind: item.kind === 'album' ? 'spotify-album' : 'spotify-playlist', id: item.id, name: item.name, art: item.imageUrl ?? item.thumbUrl ?? undefined }}
+      name={item.name}
+      className={className}
+      icon={icon}
+      cannotLine="This item's address is not one the wall can keep."
+    />
+  );
   const playButtons = (
     <>
       <button type="button" className="sp-btn fill big" onClick={() => playAll(false)}>
@@ -859,12 +869,7 @@ function SongsView({ item, tall, backLabel, onBack, onNote, onUpNext }: { item: 
         <IconArrowsShuffle size={18} aria-hidden="true" />
         Shuffle
       </button>
-      <PinButton
-        entry={{ kind: item.kind === 'album' ? 'spotify-album' : 'spotify-playlist', id: item.id, name: item.name, art: item.imageUrl ?? item.thumbUrl ?? undefined }}
-        name={item.name}
-        className="sp-btn plain big sp-pin"
-        cannotLine="This item's address is not one the wall can keep."
-      />
+      {tall ? null : pinButton('sp-btn plain big sp-pin', false)}
     </>
   );
   return (
@@ -879,6 +884,7 @@ function SongsView({ item, tall, backLabel, onBack, onNote, onUpNext }: { item: 
               {backLabel}
             </button>
           ) : null}
+          {tall ? pinButton('sp-btn plain sp-pin sp-tallpin', true) : null}
         </span>
         <Cover src={item.imageUrl ?? item.thumbUrl} size={tall ? 200 : 64} />
         <span className="sp-text">
