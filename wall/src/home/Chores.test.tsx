@@ -18,6 +18,7 @@ beforeEach(() => {
   vi.setSystemTime(new Date('2026-11-11T16:36:00-08:00'));
 });
 afterEach(() => {
+  localStorage.clear();
   vi.useRealTimers();
   mocks.clear();
 });
@@ -32,7 +33,7 @@ const task = (id: string, title: string, over: Record<string, unknown> = {}) => 
   ...over,
 });
 
-it('asks for the home tag with room for twenty and shows "N more can wait" under the rows', async () => {
+it('asks for the home tag, due today, with room for twenty and shows "N more can wait" under the rows', async () => {
   const args: unknown[] = [];
   mocks.set('wall2_tasks_summary', (a) => {
     args.push(a);
@@ -43,7 +44,7 @@ it('asks for the home tag with room for twenty and shows "N more can wait" under
   });
   const { container } = render(<Chores />);
   await flush();
-  expect(args).toEqual([{ tag: 'home', limit: 20 }]);
+  expect(args).toEqual([{ tag: 'home', due: 'today', limit: 20 }]);
   expect([...container.querySelectorAll('.tk3 .n')].map((n) => n.textContent)).toEqual(['Bins out tonight', 'Order the furnace filter', 'Call the sweep']);
   expect([...container.querySelectorAll('.est')].map((n) => n.textContent)).toEqual(['7 PM', '15 m']);
   expect(screen.getByText('5 more can wait')).toBeTruthy();
@@ -115,6 +116,7 @@ it('says Not set up, task app not reachable, or nothing waiting', async () => {
   expect(screen.getByText('Task app not reachable')).toBeTruthy();
   b.unmount();
   mocks.set('wall2_tasks_summary', () => ({ next: [], remaining: 0 }));
+  localStorage.setItem('wall2-chores-today-only', 'off');
   render(<Chores />);
   await flush();
   expect(screen.getByText('Nothing waiting around the house')).toBeTruthy();
@@ -324,4 +326,34 @@ it('the tags card opens when the row\'s title or tick takes keyboard focus, with
     await flush(10);
     expect(document.querySelector('.t-tip')).toBeNull();
   }
+});
+
+it('Today only is on by default, shows "Nothing for today" when empty, and off reads everything', async () => {
+  const args: unknown[] = [];
+  mocks.set('wall2_tasks_summary', (a) => {
+    args.push(a);
+    return (a as { due?: string }).due ? { next: [], remaining: 0 } : { next: [task('1', 'Sort the recycling')], remaining: 0 };
+  });
+  render(<Chores />);
+  await flush();
+  const toggle = screen.getByRole('button', { name: 'Today only' });
+  expect(toggle.getAttribute('aria-pressed')).toBe('true');
+  expect(screen.getByText('Nothing for today')).toBeTruthy();
+  fireEvent.click(toggle);
+  await flush();
+  expect(toggle.getAttribute('aria-pressed')).toBe('false');
+  expect(args[args.length - 1]).toEqual({ tag: 'home', limit: 20 });
+  expect(screen.getByText('Sort the recycling')).toBeTruthy();
+});
+
+it('remembers the Today only choice per viewer', async () => {
+  mocks.set('wall2_tasks_summary', () => ({ next: [], remaining: 0 }));
+  const first = render(<Chores />);
+  await flush();
+  fireEvent.click(screen.getByRole('button', { name: 'Today only' }));
+  first.unmount();
+  render(<Chores />);
+  await flush();
+  expect(screen.getByRole('button', { name: 'Today only' }).getAttribute('aria-pressed')).toBe('false');
+  expect(screen.getByText('Nothing waiting around the house')).toBeTruthy();
 });
