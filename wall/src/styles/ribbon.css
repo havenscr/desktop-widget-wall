@@ -830,6 +830,9 @@ button.dd-k.link:hover {
   align-items: center;
   padding: 0 10px;
 }
+.dd-ev.one {
+  flex-wrap: nowrap;
+}
 .dd-ev.open {
   cursor: pointer;
 }

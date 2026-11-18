@@ -5,7 +5,7 @@ import { resetAgents } from '../agents/useAgents';
 import { mocks } from '../bridge/tauri';
 import { useFocusStore } from '../focus/store';
 import { HoverTipLayer, resetTip, TIP_DELAY_MS } from '../ui/HoverTip';
-import { agendaLanes, agendaRange, nowSegments, quietLine } from './DayDrawer';
+import { ONE_LINE_BELOW, agendaLanes, agendaRange, nowSegments, quietLine } from './DayDrawer';
 import { laneStateWord } from './AgentRow';
 import { DrawerScrim } from './DrawerScrim';
 import { chips, RX } from './model';
@@ -366,4 +366,25 @@ it('the now line stops short of the tile whose title it would cross, and runs wh
   expect(mid).toHaveLength(2);
   // Neighbouring lanes are one gap, not a sliver between them.
   expect(nowSegments([{ lane: 0, lanes: 2 }, { lane: 1, lanes: 2 }])).toHaveLength(2);
+});
+
+it('a one hour tile keeps its time on the same line, so a long title gives way and the time is never cut off', async () => {
+  mocks.set('wall2_meet_day', () => ({
+    accounts: [{ id: 'work', label: 'Work', state: 'ok' }],
+    events: [
+      ev('h1', 'A very long meeting title that cannot fit beside its time in half the width', '13:00', '14:00'),
+      ev('h2', 'Workshop', '14:00', '16:00'),
+    ],
+  }));
+  const r = render(<Ribbon kind="work" />);
+  await flush();
+  fireEvent.click(r.container.querySelector('.rib-handle') as HTMLElement);
+  await flush();
+  const tiles = [...r.container.querySelectorAll('.dd-ev')] as HTMLElement[];
+  expect(tiles).toHaveLength(2);
+  expect(tiles[0].classList.contains('one')).toBe(true);
+  expect(tiles[0].querySelector('.dd-t')!.textContent).toBe('1:00 to 2:00');
+  // Two hours is room for a second line, so it wraps as before.
+  expect(tiles[1].classList.contains('one')).toBe(false);
+  expect(ONE_LINE_BELOW).toBeGreaterThan(40 - 3);
 });
