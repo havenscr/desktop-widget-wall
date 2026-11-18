@@ -357,3 +357,60 @@ it('remembers the Today only choice per viewer', async () => {
   expect(screen.getByRole('button', { name: 'Today only' }).getAttribute('aria-pressed')).toBe('false');
   expect(screen.getByText('Nothing waiting around the house')).toBeTruthy();
 });
+
+it('flipping Today only clears the old rows while the new read is out', async () => {
+  let release: (v: unknown) => void = () => {};
+  mocks.set('wall2_tasks_summary', (a) =>
+    (a as { due?: string }).due
+      ? { next: [task('1', 'Due today chore')], remaining: 2 }
+      : new Promise((res) => {
+          release = res;
+        }),
+  );
+  render(<Chores />);
+  await flush();
+  expect(screen.getByText('Due today chore')).toBeTruthy();
+  fireEvent.click(screen.getByRole('button', { name: 'Today only' }));
+  await flush();
+  expect(screen.queryByText('Due today chore')).toBeNull();
+  expect(screen.queryByText('2 more can wait')).toBeNull();
+  expect(screen.getByText('Loading')).toBeTruthy();
+  await act(async () => {
+    release({ next: [task('2', 'Any day chore')], remaining: 0 });
+  });
+  await flush();
+  expect(screen.getByText('Any day chore')).toBeTruthy();
+});
+
+it('a read for the old mode that lands late is ignored', async () => {
+  let releaseOld: (v: unknown) => void = () => {};
+  mocks.set('wall2_tasks_summary', (a) =>
+    (a as { due?: string }).due
+      ? new Promise((res) => {
+          releaseOld = res;
+        })
+      : { next: [task('2', 'Any day chore')], remaining: 0 },
+  );
+  render(<Chores />);
+  await flush();
+  fireEvent.click(screen.getByRole('button', { name: 'Today only' }));
+  await flush();
+  expect(screen.getByText('Any day chore')).toBeTruthy();
+  await act(async () => {
+    releaseOld({ next: [task('1', 'Due today chore')], remaining: 0 });
+  });
+  await flush();
+  expect(screen.queryByText('Due today chore')).toBeNull();
+  expect(screen.getByText('Any day chore')).toBeTruthy();
+});
+
+it('a failed read in the new mode shows the error state, never the old rows', async () => {
+  mocks.set('wall2_tasks_summary', (a) => ((a as { due?: string }).due ? { next: [task('1', 'Due today chore')], remaining: 0 } : Promise.reject(new Error('x'))));
+  render(<Chores />);
+  await flush();
+  expect(screen.getByText('Due today chore')).toBeTruthy();
+  fireEvent.click(screen.getByRole('button', { name: 'Today only' }));
+  await flush();
+  expect(screen.queryByText('Due today chore')).toBeNull();
+  expect(screen.queryByText('Loading')).toBeNull();
+});

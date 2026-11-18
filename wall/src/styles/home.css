@@ -230,7 +230,7 @@
 }
 .chores-head {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   justify-content: space-between;
   gap: 16px;
   margin-bottom: 4px;
@@ -240,9 +240,6 @@
   align-items: baseline;
   gap: 14px;
   white-space: nowrap;
-}
-.chores-head {
-  align-items: center;
 }
 /* Today only: the Sound card's place chip look (.seg, .seg.on), a little shorter so the heading row keeps its height. */
 .chores-today {

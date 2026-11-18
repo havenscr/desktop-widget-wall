@@ -82,9 +82,11 @@ export function useChores(todayOnly = false): ChoresState {
 
   const read = useCallback(async () => {
     const mine = ++started.current;
+    const mode = todayRef.current;
     try {
-      const r = await invoke<Summary>('wall2_tasks_summary', { ...(todayRef.current ? CHORES_TODAY_ARGS : CHORES_ARGS) });
-      if (!mounted.current) return;
+      const r = await invoke<Summary>('wall2_tasks_summary', { ...(mode ? CHORES_TODAY_ARGS : CHORES_ARGS) });
+      // A read for the other mode (the toggle flipped while it ran) is dropped.
+      if (!mounted.current || mode !== todayRef.current) return;
       const fresh = Array.isArray(r?.next) ? r.next.slice(0, CHORES_LIMIT) : [];
       const settled: string[] = [];
       for (const [id, c] of completed.current) {
@@ -103,7 +105,7 @@ export function useChores(todayOnly = false): ChoresState {
       setMarks((m) => Object.fromEntries(Object.entries(m).filter(([id]) => ids.has(id) && !settled.includes(id))));
       setStatus('ready');
     } catch (e) {
-      if (!mounted.current) return;
+      if (!mounted.current || mode !== todayRef.current) return;
       const text = e instanceof Error ? e.message : String(e);
       setStatus(text === NOT_CONFIGURED ? 'unconfigured' : 'error');
     }
@@ -125,6 +127,19 @@ export function useChores(todayOnly = false): ChoresState {
       inFlight.current = false;
     }
   }, [read]);
+
+  // A flipped toggle clears the other mode's rows at once: the card shows its loading state until the new read lands.
+  const shownMode = useRef(todayOnly);
+  useEffect(() => {
+    if (shownMode.current === todayOnly) return;
+    shownMode.current = todayOnly;
+    // The new mode's read must not wait behind an older read of the other mode.
+    inFlight.current = false;
+    queued.current = false;
+    setTasks([]);
+    setRemaining(0);
+    setStatus('loading');
+  }, [todayOnly]);
 
   useEffect(() => {
     if (!visible) return;
