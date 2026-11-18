@@ -6,6 +6,7 @@ import { registerGalleryMocks } from './gallery';
 import { registerHomeMocks } from './home';
 import { registerLinesMocks } from './lines';
 import { registerMeetMocks } from './meet';
+import { registerMeetBriefMocks } from './meetBrief';
 import { registerMediaMocks } from './media';
 import { registerOmniMocks } from './omni';
 import { registerOnAirMocks } from './onair';
@@ -33,6 +34,7 @@ export function registerDevMocks(): void {
   registerHomeMocks();
   registerSonosMocks();
   registerMeetMocks();
+  registerMeetBriefMocks();
   registerOmniMocks();
   registerPowerMocks();
   registerDeckMocks();
