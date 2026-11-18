@@ -42,6 +42,8 @@ export function registerHomeMocks(): void {
     return { security: k !== 'portal' && k !== 'none', portal: k !== 'security' && k !== 'none' };
   });
   mocks.set('wall2_open_link', () => undefined);
+  // `?camcheck=missing` makes the Camera check key answer `failed`.
+  mocks.set('wall2_open_camera', () => (knob('camcheck') === 'missing' ? Promise.reject(new Error('failed')) : undefined));
   // `?moods=five` gives the concept's five, `?moods=many` nine (the row scrolls), `?moods=none`
   // an empty list, `?moods=off` not set up, `?moods=down` not reachable; with a review time, Evening is "In 4 min" in five.
   mocks.set('wall2_moods', () => {
