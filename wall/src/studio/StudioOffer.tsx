@@ -26,7 +26,7 @@ export function StudioOffer() {
         <span className="st-offer-s">{sub}</span>
       </div>
       <button type="button" className="st-chip st-go" onClick={doIt} {...tip(offer.kind === 'start' ? (onAir?.line ? `${onAir.label}: ${onAir.line}` : `Applies ${onAir?.label ?? 'the preset'}`) : 'Puts the room back the way it was before')}>
-        {offer.kind === 'start' ? 'Set for the stream' : 'Back to normal'}
+        {offer.kind === 'start' ? 'Set for the stream' : 'As before'}
       </button>
       <button type="button" className="st-chip" onClick={dismiss} {...tip(offer.kind === 'start' ? 'Leaves the lights as they are. This offer goes away by itself after a minute.' : 'Keeps the room as it is. This offer goes away by itself after a minute.')}>
         {offer.kind === 'start' ? 'Not now' : 'Keep'}

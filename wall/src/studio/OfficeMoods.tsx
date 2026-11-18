@@ -64,7 +64,7 @@ function Tip({ chip }: { chip: ChipModel }) {
   );
 }
 
-function BackTip({ iconOnly }: { iconOnly: boolean }) {
+export function BackTip({ iconOnly }: { iconOnly: boolean }) {
   const row = rowModel(useHome.getState());
   if (!row) return null;
   const t = backTip(row, iconOnly);
@@ -89,7 +89,7 @@ function Swatch({ chip }: { chip: ChipModel }) {
   );
 }
 
-function Chip({ chip, row, cap, iconOnly, onClick }: { chip: ChipModel; row: RowModel; cap: number | null; iconOnly: boolean; onClick: () => void }) {
+export function Chip({ chip, row, cap, iconOnly, onClick }: { chip: ChipModel; row: RowModel; cap: number | null; iconOnly: boolean; onClick: () => void }) {
   const off = chip.id === null;
   const hasIcon = chip.failed || chip.busy;
   return (

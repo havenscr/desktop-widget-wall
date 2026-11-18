@@ -24,6 +24,8 @@ function measureNow() {
   if (!block) return { fails: ['now playing: the block is not on the page'], info: '' };
   const R = (e) => e.getBoundingClientRect();
   const n = (v) => Math.round(v * 10) / 10;
+  // Home's short form (the 64 px line with the studio lights under it) has its own box and no foot, bar or halves.
+  const compact = block.classList.contains('compact');
   const layers = [...block.querySelectorAll(':scope > .np-layer')];
   const layer = layers.find((l) => !l.classList.contains('out')) || layers[0];
   if (layers.length !== 1) fails.push('now playing: ' + layers.length + ' layers on screen (one is expected once the cross-fade is over)');
@@ -39,9 +41,10 @@ function measureNow() {
   // first row starts, ends where the last row of the right column ends, and the layers never grow or shrink it.
   const rows = panel ? [...panel.children].filter((c) => c !== block && R(c).height > 0 && !c.classList.contains('sound-confirm')) : [];
   const rowsBottom = rows.length ? Math.max(...rows.map((c) => R(c).bottom)) : null;
-  if (Math.abs(bb.width - 390) > 1.5) fails.push('now playing: the block is ' + box.w + ' px wide, main\'s is 390');
+  if (Math.abs(bb.width - (compact ? 398 : 390)) > 1.5) fails.push('now playing: the block is ' + box.w + ' px wide, ' + (compact ? 'the short form\'s is 398' : 'main\'s is 390'));
+  if (compact && Math.abs(bb.height - 64) > 1) fails.push('now playing: the short form is ' + box.h + ' px high (64)');
   if (first && Math.abs(bb.top - first.top) > 2) fails.push('now playing: the block starts ' + n(bb.top - first.top) + ' px from the top of the card\'s first row');
-  if (rowsBottom !== null && Math.abs(rowsBottom - bb.bottom) > 2) fails.push('now playing: the block is ' + box.h + ' px high but the card\'s rows give it ' + n(rowsBottom - bb.top) + ' (' + box.w + ' by ' + box.h + ' against ' + n(bb.width) + ' by ' + n(rowsBottom - bb.top) + ')');
+  if (!compact && rowsBottom !== null && Math.abs(rowsBottom - bb.bottom) > 2) fails.push('now playing: the block is ' + box.h + ' px high but the card\'s rows give it ' + n(rowsBottom - bb.top) + ' (' + box.w + ' by ' + box.h + ' against ' + n(bb.width) + ' by ' + n(rowsBottom - bb.top) + ')');
   // Leaves: the parts that must not overlap or leave the layer.
   const lr = R(layer);
   const sel = 'button, img, .np-cover, .np-slot, .np-k, .np-title, .np-artist, .np-l1, .np-l2, .np-prog, .np-where, .np-mid, .np-hair';
@@ -63,7 +66,12 @@ function measureNow() {
   }
   // The foot: the control row (the music half in the split view) ends within 12 px of the block's bottom.
   const foot = kind === 'both' ? layer.querySelector('.np-half[data-half="music"]') : layer.querySelector('.np-foot');
-  if (!foot) fails.push('now playing: no control row');
+  if (compact) {
+    // The short form's controls sit at the line's right end.
+    const btns = layer.querySelector('.np-btns');
+    if (!btns) fails.push('now playing: no control row');
+    else if (R(btns).right > bb.right + 0.5 || R(btns).bottom > bb.bottom + 0.5 || R(btns).top < bb.top - 0.5) fails.push('now playing: the control row leaves the line');
+  } else if (!foot) fails.push('now playing: no control row');
   else {
     const gap = bb.bottom - R(foot).bottom;
     if (gap < -0.5 || gap > 12) fails.push('now playing: the control row ends ' + n(gap) + ' px from the block\'s bottom (0 to 12 allowed)');
@@ -81,7 +89,8 @@ function measureNow() {
   const buttons = [...layer.querySelectorAll('button')].filter((e) => R(e).width > 0);
   for (const e of buttons) {
     const r = R(e);
-    if (r.width < 39.5 || r.height < 39.5) fails.push('now playing: the ' + name(e) + ' button is ' + n(r.width) + ' by ' + n(r.height) + ' px (40 by 40 at least)');
+    const least = compact ? 37.5 : 39.5;
+    if (r.width < least || r.height < least) fails.push('now playing: the ' + name(e) + ' button is ' + n(r.width) + ' by ' + n(r.height) + ' px (' + (compact ? '38 by 38' : '40 by 40') + ' at least)');
   }
   for (let i = 0; i < buttons.length; i++) {
     for (let j = i + 1; j < buttons.length; j++) {
@@ -98,7 +107,7 @@ function measureNow() {
     if (fs < 15.9) fails.push('now playing: "' + t.nodeValue.trim().slice(0, 24) + '" is set at ' + fs + ' px (16 at least)');
   }
   // The split view: the hairline between the halves, 6 px clear of text on each side.
-  if (kind === 'both') {
+  if (kind === 'both' && !compact) {
     const halves = [...layer.querySelectorAll('.np-half')];
     const hair = layer.querySelector('.np-hair');
     if (halves.length !== 2 || !hair) fails.push('now playing: the split view has ' + halves.length + ' halves and ' + (hair ? 'a' : 'no') + ' hairline');

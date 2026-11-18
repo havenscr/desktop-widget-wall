@@ -95,7 +95,7 @@ const rule = (variant, results, emit) => {
     if (m.pointer !== 'none') fails.push('officemoods: the row box takes the pointer');
     for (const c of m.chips) {
       if (c.h < 33 || c.h > 35) fails.push('officemoods: chip "' + c.text + '" is ' + r1(c.h) + ' px tall (34)');
-      // Back to normal and Off drop to a 40 px icon with a name only when twelve moods need the room.
+      // As before and Off drop to a 40 px icon with a name only when twelve moods need the room.
       if (c.icon) { if (c.w < 39.5 || !c.label) fails.push('officemoods: icon chip "' + c.label + '" is ' + r1(c.w) + ' px wide or has no name (40 and a name)'); }
       else if (c.w < 75.5 && c.text !== 'Off') fails.push('officemoods: chip "' + c.text + '" is ' + r1(c.w) + ' px wide (76 at least)');
       if (c.pointer !== 'auto') fails.push('officemoods: chip "' + c.text + '" does not take the pointer');
@@ -199,7 +199,7 @@ export default {
       gstate('a base the token may not go to', 'office=six&officeoff=offered&desktoken=insecure', ['The desk token goes only to this PC or a tailnet address.']),
       gstate('a write that never answers', 'office=six&officeoff=offered&officeslow=1', ['Gaming: asking the home app'], '[data-mood="gaming"]'),
       gstate('Off that never answers', 'office=six&officeoff=offered&officeslow=1', ['Off: asking the home app'], '[data-mood="off"]'),
-      gstate('a refused write, the studio is on air', 'office=six&officeoff=offered&studiowrite=onair', ['The studio is on air. End it with Back to normal on On Air first.'], '[data-mood="off"]'),
+      gstate('a refused write, the studio is on air', 'office=six&officeoff=offered&studiowrite=onair', ['The studio is on air. End it with As before on On Air first.'], '[data-mood="off"]'),
       gstate('a refused write, a light did not answer', 'office=six&officeoff=offered&studiowrite=lights', ['A light did not answer the home app. This shows what it reports now.'], '[data-mood="gaming"]'),
       gstate('the home app refused the token', 'office=six&officeoff=offered&studiowrite=forbidden', ['The home app refused the desk token. Type it again in Tools.'], '[data-mood="gaming"]'),
       gstate('the home app has no desk token yet', 'office=six&officeoff=offered&studiowrite=homeunset', ['The home app has no desk token yet. Set the same token there.'], '[data-mood="gaming"]'),

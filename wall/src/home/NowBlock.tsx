@@ -52,6 +52,9 @@ export interface NowBlockProps {
   suggestedSlot: Slot | null;
   /** The play art tile (Sound.tsx draws it) at an icon size. */
   playArt: (slot: Slot, size: number) => ReactNode;
+  /** The Home tab's short form: one 64 px line (cover, title and where it plays, the controls) with `below` under it. */
+  compact?: boolean;
+  below?: ReactNode;
 }
 
 const reducedMotion = (): boolean => typeof window !== 'undefined' && typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -183,19 +186,20 @@ function Where({ text, tipText }: { text: string; tipText: string }) {
 
 /** The glyph tile (no cover): the speaker, or the play this wall started. */
 function MusicTile({ m, size, playArt }: { m: MusicView; size: number; playArt: NowBlockProps['playArt'] }) {
+  const icon = size === 136 ? 57 : size === 92 ? 38 : 28;
   if (m.cover) return <img className="np-cover" style={size === 92 ? { width: 92, height: 92, borderRadius: 18 } : undefined} src={m.cover} alt="" />;
-  if (m.slot) return <span className={`np-slot${size === 92 ? ' sm' : ''}`}>{playArt(m.slot, size === 92 ? 38 : 57)}</span>;
+  if (m.slot) return <span className={`np-slot${size === 136 ? '' : ' sm'}`}>{playArt(m.slot, icon)}</span>;
   return (
-    <span className={`np-cover blank${size === 92 ? ' sm' : ''}`} aria-hidden="true">
-      <IconDeviceSpeaker size={size === 92 ? 38 : 57} stroke={1.5} />
+    <span className={`np-cover blank${size === 136 ? '' : ' sm'}`} aria-hidden="true">
+      <IconDeviceSpeaker size={icon} stroke={1.5} />
     </span>
   );
 }
 
 function VideoTile({ size, tipText }: { size: number; tipText: string }) {
   return (
-    <button type="button" className={`np-tile${size === 92 ? ' sm' : ''}`} aria-label="Open Watch" {...tip(tipText)} onClick={wallVideoControls.openWatch} onKeyDown={noRepeat}>
-      <IconDeviceTv size={size === 92 ? 38 : 57} stroke={1.5} aria-hidden="true" />
+    <button type="button" className={`np-tile${size === 136 ? '' : ' sm'}`} aria-label="Open Watch" {...tip(tipText)} onClick={wallVideoControls.openWatch} onKeyDown={noRepeat}>
+      <IconDeviceTv size={size === 136 ? 57 : size === 92 ? 38 : 28} stroke={1.5} aria-hidden="true" />
     </button>
   );
 }
@@ -388,6 +392,98 @@ function Quiet({ p }: { p: NowBlockProps }) {
   );
 }
 
+/** The short form of the music layout: a 64 px cover, the title with where it plays under it, and the controls at 38 px. */
+function MusicLine({ m, p, video }: { m: MusicView; p: NowBlockProps; video: WallVideoView | null }) {
+  return (
+    <div className="np-line">
+      <MusicTile m={m} size={64} playArt={p.playArt} />
+      <div className="np-meta">
+        <b className="np-title" {...tip(m.artist ? `${m.title}, ${m.artist}` : m.title)}>
+          {m.title}
+        </b>
+        {video ? (
+          <span className="np-where" {...tip(`${video.title} is on the wall. Open Watch to see it.`)}>
+            <IconDeviceTv size={18} stroke={1.8} aria-hidden="true" />
+            <span>{video.title}</span>
+          </span>
+        ) : (
+          <Where text={m.where} tipText={m.clock ? `${m.whereTip}. ${clockMs(m.clock.posMs)} of ${clockMs(m.clock.durMs)}` : m.whereTip} />
+        )}
+      </div>
+      <div className="np-btns">
+        {!video && m.canSkip && (
+          <Rd label="Previous track" tipText="Previous track" disabled={p.locked} busy={p.skipBusy} onClick={() => p.skip('previous')}>
+            <IconPlayerSkipBackFilled size={18} aria-hidden="true" />
+          </Rd>
+        )}
+        <Rd label="Pause" tipText="Pause every Sonos speaker" big disabled={p.locked} onClick={p.pauseAll}>
+          <IconPlayerPauseFilled size={20} aria-hidden="true" />
+        </Rd>
+        {!video && m.canSkip && (
+          <Rd label="Next track" tipText="Next track" disabled={p.locked} busy={p.skipBusy} onClick={() => p.skip('next')}>
+            <IconPlayerSkipForwardFilled size={18} aria-hidden="true" />
+          </Rd>
+        )}
+        {video && (
+          <Rd label="Stop the video" tipText="Stop and remove the video on the wall" onClick={wallVideoControls.stop}>
+            <IconPlayerStopFilled size={18} aria-hidden="true" />
+          </Rd>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/** The short form of the wall's own video: the tile, "On the wall" and the title, pause or play, and stop. */
+function VideoLine({ v }: { v: WallVideoView }) {
+  const noPause = v.needsClick || !v.youtube;
+  return (
+    <div className="np-line">
+      <VideoTile size={64} tipText="Open Watch" />
+      <div className="np-meta">
+        <b className="np-title" {...tip(v.title)}>
+          {v.title}
+        </b>
+        <span className="np-where" {...tip(v.sub)}>
+          <span>{v.needsClick ? CLICK_LINE : `On the wall. ${v.sub}`}</span>
+        </span>
+      </div>
+      <div className="np-btns">
+        {!noPause && (
+          <Rd label={v.paused ? 'Play' : 'Pause'} tipText={v.paused ? 'Play the video' : 'Pause the video'} big onClick={wallVideoControls.togglePause}>
+            {v.paused ? <IconPlayerPlayFilled size={20} aria-hidden="true" /> : <IconPlayerPauseFilled size={20} aria-hidden="true" />}
+          </Rd>
+        )}
+        <Rd label="Stop" tipText="Stop and remove the video" onClick={wallVideoControls.stop}>
+          <IconPlayerStopFilled size={18} aria-hidden="true" />
+        </Rd>
+      </div>
+    </div>
+  );
+}
+
+/** The short form of the quiet block: the suggestion's art, "Nothing playing", and the play button. */
+function QuietLine({ p }: { p: NowBlockProps }) {
+  return (
+    <div className="np-line">
+      {p.suggestedSlot ? (
+        <span className="np-slot sm">{p.playArt(p.suggestedSlot, 28)}</span>
+      ) : (
+        <span className="np-cover blank sm" aria-hidden="true">
+          <IconDeviceSpeaker size={28} stroke={1.5} />
+        </span>
+      )}
+      <div className="np-meta">
+        <b className="np-title">Nothing playing</b>
+        <span className="np-where">
+          <span>{p.suggestedSlot ? 'Suggested for this hour' : 'Pick a play beside this'}</span>
+        </span>
+      </div>
+      <div className="np-btns">{p.playSuggested}</div>
+    </div>
+  );
+}
+
 /**
  * Now playing at the left of the Sound card: one block with three layouts that cross-fade. Music alone (a Spotify
  * track on a house speaker, or what the Sonos read knows): cover, title, artist, a time bar when a length is
@@ -434,14 +530,18 @@ export function NowBlock(p: NowBlockProps) {
 
   const kind: Layout = video && music ? 'both' : video ? 'video' : music ? 'music' : 'quiet';
   let node: ReactNode;
-  if (video && music) node = <Split v={video} m={music} p={p} />;
+  if (p.compact) {
+    if (music) node = <MusicLine m={music} p={p} video={video} />;
+    else if (video) node = <VideoLine v={video} />;
+    else node = <QuietLine p={p} />;
+  } else if (video && music) node = <Split v={video} m={music} p={p} />;
   else if (video) node = <VideoFull v={video} hint={hintNow} cut={cutNow} setCut={markCut} />;
   else if (music) node = <MusicFull m={music} p={p} />;
   else node = <Quiet p={p} />;
 
   const { leaving } = useCrossfade(kind, node);
-  return (
-    <div className={`sound-np ${kind}`} aria-label="Now playing" data-layout={kind}>
+  const stage = (
+    <div className={`sound-np ${kind}${p.compact ? ' compact' : ''}`} aria-label="Now playing" data-layout={kind}>
       {leaving && (
         <div key={`out-${leaving.kind}`} className={`np-layer out np-${leaving.kind}`} aria-hidden="true" inert>
           {leaving.node}
@@ -450,6 +550,13 @@ export function NowBlock(p: NowBlockProps) {
       <div key={kind} className={`np-layer np-${kind}${leaving ? ' in' : ''}`}>
         {node}
       </div>
+    </div>
+  );
+  if (!p.compact) return stage;
+  return (
+    <div className="np-col">
+      {stage}
+      {p.below}
     </div>
   );
 }

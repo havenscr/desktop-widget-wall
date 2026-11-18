@@ -11,7 +11,7 @@ export const PAGE_PRESETS = 3;
 /** Opens Tools at the new Home app section, ringed for 2 seconds as Key lights is. */
 export const openHomeTools = () => useToolsStore.getState().openDrawer('desktoken');
 
-/** The 40 px line of preset chips, Back to normal (or the action that replaces it), and what the page puts at the right end. */
+/** The 40 px line of preset chips, As before (or the action that replaces it), and what the page puts at the right end. */
 export function PresetRow({ trailing, action }: { trailing: ReactNode; action: 'checkAgain' | 'tryAgain' | 'openTools' | null }) {
   const studio = useHome((s) => s.studio);
   const readWord = useHome((s) => s.readWord);
@@ -49,7 +49,7 @@ export function PresetRow({ trailing, action }: { trailing: ReactNode; action: '
         onClick={can ? () => void useHome.getState().goNormal() : undefined}
         {...tip(!studio.canNormal ? 'Nothing to go back from' : !may ? blockedWhy ?? 'The home app is not answering' : studio.normalLine ?? 'Goes back to how the room was before')}
       >
-        Back to normal
+        As before
       </button>
     );
   }
