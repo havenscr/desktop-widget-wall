@@ -389,7 +389,7 @@ it('shows an ended session as last played with the play button, never a full bar
   mocks.set('media_play_pause', toggle);
   render(<Unwind />);
   await flush();
-  expect(screen.getByText('Last played on Video App')).toBeTruthy();
+  expect(screen.getByText('Last played on an app on this PC')).toBeTruthy();
   expect(screen.getByText('Evening Radio Mix')).toBeTruthy();
   expect(screen.queryByRole('progressbar')).toBeNull();
   expect(screen.queryByLabelText('Pause')).toBeNull();
