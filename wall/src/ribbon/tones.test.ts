@@ -1,6 +1,5 @@
-import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import ribbonCss from '../styles/ribbon.css?raw';
 import { composite, FLOOR, HOVER_BRIGHTNESS, GROUNDS, isToneToken, ratio, readCategory, TONE_NAMES, TONE_TOKENS, toneStyle, type Rgb, type ToneState } from './tones';
 
 /** The numbers inside a `rgba(r, g, b, a)` string, as the browser will read them. */
@@ -38,8 +37,7 @@ const lift = (c: Rgb, k: number): Rgb => [Math.min(255, c[0] * k), Math.min(255,
 
 describe('hover keeps the contrast floor', () => {
   it('ribbon.css lifts a hovered event by the same factor the test uses', () => {
-    const css = readFileSync(resolve(__dirname, '../styles/ribbon.css'), 'utf8');
-    const lifts = css.match(/\.(?:rib \.ev|dd-ev)\.open:hover \{[^}]*\}/g) ?? [];
+    const lifts = ribbonCss.match(/\.(?:rib \.ev|dd-ev)\.open:hover \{[^}]*\}/g) ?? [];
     expect(lifts).toHaveLength(2);
     for (const rule of lifts) expect(rule).toContain(`brightness(${HOVER_BRIGHTNESS})`);
   });

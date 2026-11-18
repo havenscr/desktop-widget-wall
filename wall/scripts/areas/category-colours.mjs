@@ -66,6 +66,9 @@ export default {
       { screen: 'work', name: 'Category colours: the Day drawer', query: q(TYPICAL, 'cats'), custom: true, actions: '.rib-handle', expect: 'Customer call' },
       { screen: 'work', name: 'Category colours: a category on hover', query: q(TYPICAL, 'cats'), custom: true, actions: 'hover:.rib .ev[data-tone="preset0"]', expect: 'Category: Sample projects' },
       { screen: 'work', name: 'Category colours: an account without the permission', query: q(TYPICAL, 'nocolours', '&tools=1'), custom: true, expect: 'Outlook colours off' },
+      { screen: 'work', name: 'Category colours: plain and coloured side by side, past, Join and a livestream (Day drawer)', query: q(TYPICAL, 'catsplain'), custom: true, actions: '.rib-handle', expect: 'Vendor call' },
+      { screen: 'work', name: 'Category colours: plain and coloured side by side (ribbon)', query: q(TYPICAL, 'catsplain'), custom: true, expect: 'Vendor call' },
+      { screen: 'work', name: 'Category colours: the Tools row hovered', query: q(TYPICAL, 'nocolours', '&tools=1'), custom: true, actions: 'hover:.tools-acct', expect: 'Sign in again to show Outlook colours' },
       { screen: 'work', name: 'Category colours: all 25 presets, upcoming', query: q(MORNING, 'tones'), custom: true, expect: '24 DarkCranberry' },
       { screen: 'work', name: 'Category colours: all 25 presets, one under the needle', query: q(TYPICAL, 'tones'), custom: true, expect: '24 DarkCranberry' },
       { screen: 'work', name: 'Category colours: all 25 presets, all past', query: q(NIGHT, 'tones'), custom: true, expect: '24 DarkCranberry' },
@@ -75,6 +78,7 @@ export default {
   fit: {
     variants: [
       { name: 'Category colours, ribbon and drawer', q: '?' + q(TYPICAL, 'tones'), click: '.rib-handle', checks: ['.day-drawer'], strip: true, viewportOnly: true },
+      { name: 'Category colours, plain beside coloured', q: '?' + q(TYPICAL, 'catsplain'), click: '.rib-handle', checks: ['.day-drawer'], strip: true, viewportOnly: true },
       { name: 'Category colours, five categories', q: '?' + q(TYPICAL, 'cats'), click: '.rib-handle', checks: ['.day-drawer'], strip: true, viewportOnly: true },
     ],
     measurements: { categoryTones: measureTones },
