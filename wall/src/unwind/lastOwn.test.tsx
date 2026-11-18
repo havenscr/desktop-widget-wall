@@ -129,3 +129,43 @@ it('keeps only kind, id, label and path, and refuses bad stored records', () => 
   expect(readLastOwn('not json')).toBeNull();
   expect(readLastOwn(null)).toBeNull();
 });
+
+const RAW = 'com-example-radio7f3a2';
+const noRaw = () => {
+  const words = [document.body.textContent ?? '', ...[...document.querySelectorAll('[aria-label], [title]')].map((e) => `${e.getAttribute('aria-label')} ${e.getAttribute('title')}`)].join(' ');
+  expect(words.toLowerCase()).not.toContain('com-example');
+};
+
+it('a raw app id never shows as the eyebrow while it plays', async () => {
+  mocks.set('get_now_playing', () => ({ title: 'Harbor Radio', artist: 'Example Host', source_app: RAW.toUpperCase(), source_app_id: RAW.toUpperCase(), playback_status: 'playing' }));
+  render(<Unwind />);
+  await flush();
+  expect(screen.getByText('an app on this PC')).toBeTruthy();
+  noRaw();
+});
+
+it('a raw app id never shows in the at-rest eyebrow or line', async () => {
+  resetLastPlayed({ title: 'Harbor Radio', artist: 'Example Host', source: RAW }, null);
+  render(<Unwind />);
+  await flush();
+  expect(screen.getByText('Last played on an app on this PC')).toBeTruthy();
+  expect(screen.getByText('Open an app on this PC to play again')).toBeTruthy();
+  noRaw();
+});
+
+it('a stopped session under a raw id shows the neutral words too', async () => {
+  mocks.set('get_now_playing', () => ({ title: 'Harbor Radio', artist: 'Example Host', source_app_id: RAW, playback_status: 'stopped' }));
+  render(<Unwind />);
+  await flush();
+  expect(screen.getByText('Last played on an app on this PC')).toBeTruthy();
+  noRaw();
+});
+
+it('shows a known player by its name and anything else by the neutral words', () => {
+  expect(shownSource('Spotify')).toBe('Spotify');
+  expect(shownSource('spotify')).toBe('spotify');
+  expect(shownSource(RAW)).toBe('an app on this PC');
+  expect(shownSource('Some Unknown Thing')).toBe('an app on this PC');
+  expect(shownSource('')).toBe('');
+  expect(shownSource(null)).toBeNull();
+});
