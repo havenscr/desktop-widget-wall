@@ -57,7 +57,7 @@ afterEach(() => {
   framePoster.render = null;
 });
 
-it('renders the Listen tab with the same text as before when nothing is saved, and no Video corner', async () => {
+it('renders the Listen tab with the same text as before when nothing is saved, and no video icon', async () => {
   render(<UnwindView />);
   await flush();
   const panel = document.getElementById('u-panel-listen')!;
