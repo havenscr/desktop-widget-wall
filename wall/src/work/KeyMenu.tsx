@@ -1,16 +1,19 @@
-import { IconArrowsExchange, IconFileCode, IconPin, IconPinnedOff, IconPlus } from '@tabler/icons-react';
-import { useEffect, useRef, type KeyboardEvent } from 'react';
-import { invoke } from '../bridge/tauri';
+import { IconArrowsExchange, IconPin, IconPinnedOff, IconPlayerPlay, IconPlus } from '@tabler/icons-react';
+import { Fragment, useEffect, useRef, type KeyboardEvent } from 'react';
 import { overlayOwnsPointer } from '../ribbon/DrawerScrim';
 
 export interface KeyMenuAction {
-  id: 'pin' | 'replace' | 'add' | 'remove' | 'file';
+  id: 'pin' | 'replace' | 'add' | 'remove' | 'run' | 'swap';
+  /** For `swap`: the place in Always here that gives way. */
+  slot?: number;
+  /** A line drawn above this row. */
+  heading?: string;
   label: string;
   note?: string;
   disabled?: boolean;
 }
 
-const icons = { pin: IconPin, replace: IconArrowsExchange, add: IconPlus, remove: IconPinnedOff, file: IconFileCode };
+const icons = { pin: IconPin, replace: IconArrowsExchange, add: IconPlus, remove: IconPinnedOff, run: IconPlayerPlay, swap: IconArrowsExchange };
 
 /** How long a menu stays once the pointer rests elsewhere (and focus is not being used by keyboard). */
 export const MENU_CLOSE_MS = 5_000;
@@ -22,7 +25,7 @@ export const MENU_CLOSE_MS = 5_000;
  * from the keyboard). When it
  * closes by Escape or after a choice, focus goes back to the key.
  */
-export function KeyMenu({ title, actions, onChoose, onClose, byKeyboard = false }: { title: string; actions: KeyMenuAction[]; onChoose: (id: KeyMenuAction['id']) => void; onClose: () => void; byKeyboard?: boolean }) {
+export function KeyMenu({ title, actions, onChoose, onClose, byKeyboard = false }: { title: string; actions: KeyMenuAction[]; onChoose: (id: KeyMenuAction['id'], action: KeyMenuAction, detail: number) => void; onClose: () => void; byKeyboard?: boolean }) {
   const menu = useRef<HTMLDivElement | null>(null);
   // The latest callback, so a parent that re-renders (the keys feed polls) does not restart the effect below.
   const closeRef = useRef(onClose);
@@ -115,14 +118,14 @@ export function KeyMenu({ title, actions, onChoose, onClose, byKeyboard = false 
       {actions.map((action) => {
         const Icon = icons[action.id];
         return (
+          <Fragment key={`${action.id}${action.slot ?? ''}`}>
+          {action.heading && <div className="key-menu-sub">{action.heading}</div>}
           <button
-            key={action.id}
             type="button"
             role="menuitem"
             disabled={action.disabled}
-            onClick={() => {
-              if (action.id === 'file') void invoke('wall2_open_keys_file');
-              onChoose(action.id);
+            onClick={(e) => {
+              onChoose(action.id, action, e.detail);
               menu.current?.closest('.key-tile-wrap')?.querySelector<HTMLElement>('.key-tile')?.focus();
               onClose();
             }}
@@ -131,6 +134,7 @@ export function KeyMenu({ title, actions, onChoose, onClose, byKeyboard = false 
             <span>{action.label}</span>
             {action.note && <em>{action.note}</em>}
           </button>
+          </Fragment>
         );
       })}
     </div>
