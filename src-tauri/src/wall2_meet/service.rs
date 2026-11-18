@@ -269,13 +269,14 @@ pub fn lookup_contact_answer(links: &Mutex<Links>, key: &str) -> Option<ContactA
 }
 
 /// Hold a contact answer, only while the person key is still live (a key from an older read
-/// must not leave a stray entry in the new read's map).
-pub fn store_contact_answer(links: &Mutex<Links>, key: &str, answer: ContactAnswer) {
+/// must not leave a stray entry in the new read's map). True when it was held; false when the key
+/// is gone, so the caller must not report the answer to the page.
+pub fn store_contact_answer(links: &Mutex<Links>, key: &str, answer: ContactAnswer) -> bool {
     let mut guard = links.lock().unwrap_or_else(|e| e.into_inner());
-    if let Some((account, _)) = guard.person_map.get(key) {
-        let account = account.clone();
-        guard.contact_map.insert(key.to_string(), (account, answer));
-    }
+    let Some((account, _)) = guard.person_map.get(key) else { return false };
+    let account = account.clone();
+    guard.contact_map.insert(key.to_string(), (account, answer));
+    true
 }
 
 /// The Outlook web link behind a day key. Reads only `web_map`, so a join key never opens here.
@@ -1307,6 +1308,33 @@ mod tests {
     }
 
     #[test]
+    fn the_silent_refresh_asks_for_the_calendar_scope_and_the_code_exchange_for_the_sign_in_scope() {
+        let scope_of = |t: &FakeTokens| -> String {
+            let forms = t.forms.borrow();
+            assert_eq!(forms.len(), 1, "exactly one token request");
+            forms[0].iter().find(|(k, _)| k == "scope").map(|(_, v)| v.clone()).expect("the form carries a scope")
+        };
+        // The silent refresh behind a calendar read: the stored token, no cached access token.
+        let (store, core) = setup();
+        let links = Mutex::new(Links::default());
+        let t = FakeTokens::new(vec![ok_token("new", None)]);
+        let g = FakeGraph::new(vec![GraphReply::Ok(body("A", "1"))]);
+        read_next(&[acct("work")], &store, &t, &g, &core, &links, NOW);
+        assert_eq!(t.forms.borrow()[0].iter().find(|(k, _)| k == "grant_type").map(|(_, v)| v.as_str()), Some("refresh_token"));
+        assert_eq!(scope_of(&t), SCOPE);
+        assert!(!scope_of(&t).contains("Contacts"));
+        // The code exchange at sign-in.
+        let store = Chunked(MemoryBlobs::default());
+        let core = Mutex::new(Core::default());
+        let t = FakeTokens::new(vec![ok_token("acc", Some("ref"))]);
+        let granted = super::super::auth::Granted { code: "c".into(), verifier: "v".into(), redirect_uri: "http://localhost:1/auth-callback.html".into() };
+        assert!(complete_sign_in(&acct("work"), &granted, &store, &t, &core, NOW).is_ok());
+        assert_eq!(t.forms.borrow()[0].iter().find(|(k, _)| k == "grant_type").map(|(_, v)| v.as_str()), Some("authorization_code"));
+        assert_eq!(scope_of(&t), SIGN_IN_SCOPE);
+        assert!(scope_of(&t).contains("Contacts.Read") && scope_of(&t).contains("Calendars.Read"));
+    }
+
+    #[test]
     fn fresh_cache_is_used_without_a_refresh() {
         let (store, core) = setup();
         let links = Mutex::new(Links::default());
@@ -1437,8 +1465,8 @@ mod tests {
         assert!(lookup_ical(&links, "1-0").is_none());
         assert_eq!(lookup_ical(&links, "2-0").as_deref(), Some("cal-2"));
         // A held contact answer follows the person keys: kept only for a live key, cleared on the next read.
-        store_contact_answer(&links, "p2-0", ContactAnswer { available: true, entry: Some("AB".repeat(24)) });
-        store_contact_answer(&links, "p1-0", ContactAnswer { available: true, entry: None });
+        assert!(store_contact_answer(&links, "p2-0", ContactAnswer { available: true, entry: Some("AB".repeat(24)) }), "a live key is held");
+        assert!(!store_contact_answer(&links, "p1-0", ContactAnswer { available: true, entry: None }), "an old key reports that it was not held");
         assert!(lookup_contact_answer(&links, "p2-0").is_some_and(|a| a.available));
         assert!(lookup_contact_answer(&links, "p1-0").is_none(), "an old key left a stray answer");
         assert!(!format!("{:?}", lookup_contact_answer(&links, "p2-0")).contains("ABAB"));
@@ -1446,7 +1474,10 @@ mod tests {
         let g = FakeGraph::new(vec![GraphReply::Ok(body_with_people("cal-3"))]);
         read_next(&[acct("work")], &store, &t, &g, &core, &links, NOW + 20);
         assert!(links.lock().unwrap().contact_map.is_empty());
-        store_contact_answer(&links, "p3-0", ContactAnswer { available: true, entry: None });
+        // A key rotated by a new read while a lookup ran: the answer is not held and the caller is told.
+        assert!(!store_contact_answer(&links, "p2-0", ContactAnswer { available: true, entry: None }), "p2-0 belongs to the read before");
+        assert!(links.lock().unwrap().contact_map.is_empty());
+        assert!(store_contact_answer(&links, "p3-0", ContactAnswer { available: true, entry: None }));
         core.lock().unwrap().contact_cache.insert("work".into(), Cached { access: "c".into(), expires_at: NOW + 9999 });
         // Sign-out drops the account's keys at once.
         sign_out("work", &store, &core, &links);

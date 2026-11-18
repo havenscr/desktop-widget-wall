@@ -39,7 +39,9 @@ const CONNECT: Duration = Duration::from_secs(2);
 const TURN_WAIT: Duration = Duration::from_secs(3);
 /// The refresh-token request alone.
 const TOKEN_LIMIT: Duration = Duration::from_secs(4);
-/// After a refused contact token request, ask again no sooner than this.
+/// After a definitive refused contact token request (a 4xx from the token endpoint: `invalid_grant`,
+/// `consent_required` and the like), ask again no sooner than this. A 429, a 5xx, a network failure
+/// or an unreadable reply is never remembered.
 const DENIED_SECS: u64 = 30 * 60;
 const UNAVAILABLE: &str = "unavailable";
 
@@ -75,6 +77,33 @@ pub(crate) fn single_entry(body: &Value) -> Option<String> {
 /// Outlook, classic Outlook is installed and usable, and the new Outlook is not selected.
 pub(crate) fn contact_available(found: bool, desktop_enabled: bool, classic_found: bool, new_outlook_selected: bool) -> bool {
     found && desktop_enabled && classic_found && !new_outlook_selected
+}
+
+/// The check made again when the `contact` action runs, whatever the held answer said: classic
+/// Outlook is still allowed by `openIn`, still installed and usable, and the new Outlook is still
+/// not selected.
+pub(crate) fn launch_allowed(desktop_enabled: bool, classic_found: bool, new_outlook_selected: bool) -> bool {
+    contact_available(true, desktop_enabled, classic_found, new_outlook_selected)
+}
+
+/// The answer to a card open once the lookup has finished, from injected state so it is testable
+/// without Tauri. `store` holds a definitive answer and says whether the person key was still live;
+/// a key that is gone gives `gone`, never `available`. An unknown lookup holds nothing, so the next
+/// open asks again, and answers not available for now.
+pub(crate) fn contact_outcome(
+    lookup: Lookup,
+    desktop_enabled: bool,
+    classic_found: bool,
+    new_outlook_selected: bool,
+    store: impl FnOnce(ContactAnswer) -> bool,
+) -> Result<bool, &'static str> {
+    let entry = match lookup {
+        Lookup::Entry(entry) => Some(entry),
+        Lookup::NoEntry => None,
+        Lookup::Unknown => return Ok(false),
+    };
+    let available = contact_available(entry.is_some(), desktop_enabled, classic_found, new_outlook_selected);
+    if store(ContactAnswer { available, entry }) { Ok(available) } else { Err("gone") }
 }
 
 /// The `/select` argument for the `contact` action, from the held answer only. No answer, or an
@@ -191,8 +220,24 @@ fn contact_access(acct: &Account, store: &dyn SecretStore, tokens: &dyn TokenCli
     }
 }
 
-/// The entry hex of the one saved contact with this address, or None (no match, several
-/// matches, a refusal, a timeout, an address that fails the check, a signed-out account).
+/// What one lookup learned. `Entry` (exactly one saved contact with an entry) and `NoEntry` (zero
+/// matches, two or more, or one without a usable entry) are what Graph said, so they may be held
+/// for the read. `Unknown` is everything else (a refusal that is being waited out, a busy calendar
+/// turn, a timeout, a transient token reply, a Graph error, a signed-out account): nothing is held,
+/// so the next card open asks again.
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) enum Lookup {
+    Entry(String),
+    NoEntry,
+    Unknown,
+}
+
+fn denied(core: &Mutex<Core>, account_id: &str, now: u64) -> bool {
+    lock(core).contact_denied.get(account_id).is_some_and(|until| now < *until)
+}
+
+/// The saved contact for this address, as a `Lookup`. An address that fails the check is
+/// `NoEntry` and asks nobody.
 pub(crate) fn lookup_entry(
     acct: &Account,
     address: &str,
@@ -201,33 +246,34 @@ pub(crate) fn lookup_entry(
     graph: &dyn ContactGraph,
     core: &Mutex<Core>,
     now: u64,
-) -> Option<String> {
-    let url = contacts_url(address)?;
+) -> Lookup {
+    let Some(url) = contacts_url(address) else { return Lookup::NoEntry };
     let ctx = Ctx::new(Kind::Next, clock_of(core), TOTAL);
-    let generation = {
-        let c = lock(core);
-        if c.contact_denied.get(&acct.id).is_some_and(|until| now < *until) {
-            return None;
-        }
-        generation_of(&c, &acct.id)
-    };
+    if denied(core, &acct.id, now) {
+        return Lookup::Unknown;
+    }
+    let generation = generation_of(&lock(core), &acct.id);
     let slot = lock(core).contact_flights.entry(acct.id.clone()).or_default().clone();
-    let _turn = Slot::acquire(slot, &ctx)?;
-    let access = contact_access(acct, store, tokens, core, now, &ctx, generation)?;
+    let Some(_turn) = Slot::acquire(slot, &ctx) else { return Lookup::Unknown };
+    // A refusal may have been recorded while this request waited for the slot.
+    if denied(core, &acct.id, now) {
+        return Lookup::Unknown;
+    }
+    let Some(access) = contact_access(acct, store, tokens, core, now, &ctx, generation) else { return Lookup::Unknown };
     let reply = graph.get(&access, &url, &ctx);
     let mut c = lock(core);
     if generation_of(&c, &acct.id) != generation {
-        return None;
+        return Lookup::Unknown;
     }
     match reply {
-        ContactReply::Ok(body) => single_entry(&body),
+        ContactReply::Ok(body) => single_entry(&body).map_or(Lookup::NoEntry, Lookup::Entry),
         ContactReply::Unauthorized => {
             if c.contact_cache.get(&acct.id).is_some_and(|cached| cached.access == access) {
                 c.contact_cache.remove(&acct.id);
             }
-            None
+            Lookup::Unknown
         }
-        ContactReply::Failed => None,
+        ContactReply::Failed => Lookup::Unknown,
     }
 }
 
@@ -359,6 +405,54 @@ mod tests {
     }
 
     #[test]
+    fn the_action_checks_classic_outlook_again() {
+        assert!(launch_allowed(true, true, false));
+        assert!(!launch_allowed(false, true, false), "openIn no longer allows classic Outlook");
+        assert!(!launch_allowed(true, false, false), "classic Outlook is gone");
+        assert!(!launch_allowed(true, true, true), "the new Outlook is now selected");
+    }
+
+    #[test]
+    fn an_outcome_is_gone_when_the_key_was_not_held_and_unknown_holds_nothing() {
+        let held = Cell::new(0);
+        let live = |_: ContactAnswer| {
+            held.set(held.get() + 1);
+            true
+        };
+        assert_eq!(contact_outcome(Lookup::Entry(hex()), true, true, false, live), Ok(true));
+        assert_eq!(contact_outcome(Lookup::Entry(hex()), true, false, false, |_| true), Ok(false));
+        assert_eq!(contact_outcome(Lookup::NoEntry, true, true, false, |_| true), Ok(false));
+        // The key was rotated by a new read during the lookup: never `available`.
+        assert_eq!(contact_outcome(Lookup::Entry(hex()), true, true, false, |_| false), Err("gone"));
+        assert_eq!(contact_outcome(Lookup::NoEntry, true, true, false, |_| false), Err("gone"));
+        // Unknown asks the store for nothing.
+        let asked = Cell::new(false);
+        assert_eq!(contact_outcome(Lookup::Unknown, true, true, false, |_| { asked.set(true); true }), Ok(false));
+        assert!(!asked.get());
+        assert_eq!(held.get(), 1);
+    }
+
+    #[test]
+    fn a_key_rotated_during_the_lookup_is_gone_end_to_end() {
+        use super::super::service::{lookup_contact_answer, store_contact_answer, Links};
+        use std::collections::HashMap;
+        let mut links = Links { generation: 2, ..Default::default() };
+        links.person_map = HashMap::from([("p2-0".to_string(), ("work".to_string(), "priya@contoso.example".to_string()))]);
+        let links = Mutex::new(links);
+        // The lookup starts for p2-0; a new read then swaps the keys.
+        {
+            let mut l = links.lock().unwrap();
+            l.generation = 3;
+            l.person_map = HashMap::from([("p3-0".to_string(), ("work".to_string(), "priya@contoso.example".to_string()))]);
+        }
+        assert_eq!(contact_outcome(Lookup::Entry(hex()), true, true, false, |a| store_contact_answer(&links, "p2-0", a)), Err("gone"));
+        assert!(lookup_contact_answer(&links, "p2-0").is_none(), "no stray answer");
+        // A live key is held and answered.
+        assert_eq!(contact_outcome(Lookup::Entry(hex()), true, true, false, |a| store_contact_answer(&links, "p3-0", a)), Ok(true));
+        assert!(lookup_contact_answer(&links, "p3-0").is_some_and(|a| a.available));
+    }
+
+    #[test]
     fn the_contact_action_is_refused_unless_the_answer_says_available() {
         assert_eq!(launch_arg(None), Err("unavailable"));
         assert_eq!(launch_arg(Some(&ContactAnswer { available: false, entry: Some(hex()) })), Err("unavailable"));
@@ -372,7 +466,7 @@ mod tests {
         let (store, core) = setup();
         let t = FakeTokens::new(vec![ok_token("contacts-access", None)]);
         let g = FakeContacts::new(vec![ContactReply::Ok(one_contact()), ContactReply::Ok(one_contact())]);
-        assert_eq!(lookup_entry(&acct(), "priya@contoso.example", &store, &t, &g, &core, NOW), Some(hex()));
+        assert_eq!(lookup_entry(&acct(), "priya@contoso.example", &store, &t, &g, &core, NOW), Lookup::Entry(hex()));
         let form = t.forms.borrow()[0].clone();
         assert!(form.contains(&("scope".to_string(), "offline_access https://graph.microsoft.com/Contacts.Read".to_string())));
         assert!(form.contains(&("grant_type".to_string(), "refresh_token".to_string())));
@@ -380,19 +474,28 @@ mod tests {
         assert_eq!(g.seen.borrow()[0].0, "contacts-access");
         assert!(g.seen.borrow()[0].1.starts_with("https://graph.microsoft.com/v1.0/me/contacts?$filter="));
         // The cached token serves the next lookup; the calendar token cache is untouched.
-        assert_eq!(lookup_entry(&acct(), "priya@contoso.example", &store, &t, &g, &core, NOW + 5), Some(hex()));
+        assert_eq!(lookup_entry(&acct(), "priya@contoso.example", &store, &t, &g, &core, NOW + 5), Lookup::Entry(hex()));
         assert_eq!(t.calls(), 1);
         assert!(core.lock().unwrap().cache.is_empty());
     }
 
     #[test]
-    fn two_matches_or_none_or_a_failure_are_not_available() {
+    fn only_what_graph_said_is_definitive() {
         let two = json!({ "value": [one_contact()["value"][0].clone(), one_contact()["value"][0].clone()] });
-        for reply in [ContactReply::Ok(two), ContactReply::Ok(json!({ "value": [] })), ContactReply::Failed, ContactReply::Unauthorized] {
+        let no_entry = json!({ "value": [{ "id": "c1" }] });
+        let cases = [
+            (ContactReply::Ok(two), Lookup::NoEntry),
+            (ContactReply::Ok(json!({ "value": [] })), Lookup::NoEntry),
+            (ContactReply::Ok(no_entry), Lookup::NoEntry),
+            (ContactReply::Ok(one_contact()), Lookup::Entry(hex())),
+            (ContactReply::Failed, Lookup::Unknown),
+            (ContactReply::Unauthorized, Lookup::Unknown),
+        ];
+        for (reply, want) in cases {
             let (store, core) = setup();
             let t = FakeTokens::new(vec![ok_token("a", None)]);
             let g = FakeContacts::new(vec![reply]);
-            assert_eq!(lookup_entry(&acct(), "priya@contoso.example", &store, &t, &g, &core, NOW), None);
+            assert_eq!(lookup_entry(&acct(), "priya@contoso.example", &store, &t, &g, &core, NOW), want);
         }
         // A 401 drops the cached contact token so the next lookup refreshes.
         let (store, core) = setup();
@@ -403,11 +506,59 @@ mod tests {
     }
 
     #[test]
+    fn a_token_trouble_that_is_not_a_refusal_is_unknown_and_not_remembered() {
+        for reply in [TokenReply::Transient("token-429".into()), TokenReply::Failed("token-200".into())] {
+            let (store, core) = setup();
+            let t = FakeTokens::new(vec![reply]);
+            let g = FakeContacts::new(vec![]);
+            assert_eq!(lookup_entry(&acct(), "priya@contoso.example", &store, &t, &g, &core, NOW), Lookup::Unknown);
+            assert!(core.lock().unwrap().contact_denied.is_empty(), "a transient reply must not be remembered");
+            assert_eq!(g.calls.get(), 0);
+        }
+    }
+
+    #[test]
+    fn a_busy_calendar_turn_is_unknown() {
+        let (store, core) = setup();
+        let calendar_slot = lock(&core).flights.entry("work".into()).or_default().clone();
+        let _held = Slot::acquire(calendar_slot, &Ctx::new(Kind::Next, clock_of(&core), Duration::from_secs(30))).expect("free slot");
+        let t = FakeTokens::new(vec![ok_token("a", None)]);
+        let g = FakeContacts::new(vec![ContactReply::Ok(one_contact())]);
+        // Waits TURN_WAIT for the calendar turn, then gives up.
+        assert_eq!(lookup_entry(&acct(), "priya@contoso.example", &store, &t, &g, &core, NOW), Lookup::Unknown);
+        assert_eq!((t.calls(), g.calls.get()), (0, 0));
+    }
+
+    #[test]
+    fn a_refusal_recorded_while_waiting_for_the_slot_stops_the_second_request() {
+        let core = Mutex::new(Core::default());
+        let slot = lock(&core).contact_flights.entry("work".into()).or_default().clone();
+        let held = Slot::acquire(slot, &Ctx::new(Kind::Next, clock_of(&core), Duration::from_secs(30))).expect("free slot");
+        let (answer, token_calls, graph_calls) = std::thread::scope(|s| {
+            let waiting = s.spawn(|| {
+                let store = Chunked(MemoryBlobs::default());
+                store.set("work", "refresh-1");
+                let t = FakeTokens::new(vec![ok_token("a", None)]);
+                let g = FakeContacts::new(vec![ContactReply::Ok(one_contact())]);
+                let answer = lookup_entry(&acct(), "priya@contoso.example", &store, &t, &g, &core, NOW);
+                (answer, t.calls(), g.calls.get())
+            });
+            // Let the second request pass its first check and wait for the slot, then record the refusal and free it.
+            std::thread::sleep(Duration::from_millis(300));
+            lock(&core).contact_denied.insert("work".into(), NOW + DENIED_SECS);
+            drop(held);
+            waiting.join().expect("lookup thread")
+        });
+        assert_eq!(answer, Lookup::Unknown);
+        assert_eq!((token_calls, graph_calls), (0, 0));
+    }
+
+    #[test]
     fn a_bad_address_asks_nobody() {
         let (store, core) = setup();
         let t = FakeTokens::new(vec![]);
         let g = FakeContacts::new(vec![]);
-        assert_eq!(lookup_entry(&acct(), "a@b.example?x=1", &store, &t, &g, &core, NOW), None);
+        assert_eq!(lookup_entry(&acct(), "a@b.example?x=1", &store, &t, &g, &core, NOW), Lookup::NoEntry);
         assert_eq!((t.calls(), g.calls.get()), (0, 0));
     }
 
@@ -418,7 +569,7 @@ mod tests {
             core.lock().unwrap().cache.insert("work".into(), Cached { access: "cal".into(), expires_at: NOW + 3000 });
             let t = FakeTokens::new(vec![refusal]);
             let g = FakeContacts::new(vec![]);
-            assert_eq!(lookup_entry(&acct(), "priya@contoso.example", &store, &t, &g, &core, NOW), None);
+            assert_eq!(lookup_entry(&acct(), "priya@contoso.example", &store, &t, &g, &core, NOW), Lookup::Unknown);
             assert_eq!(store.get("work").as_deref(), Some("refresh-1"), "the stored token must stay");
             {
                 let c = core.lock().unwrap();
@@ -427,11 +578,11 @@ mod tests {
             }
             assert_eq!(g.calls.get(), 0);
             // Put off for a while: no second token request, then asked again after the wait.
-            assert_eq!(lookup_entry(&acct(), "priya@contoso.example", &store, &t, &g, &core, NOW + 60), None);
+            assert_eq!(lookup_entry(&acct(), "priya@contoso.example", &store, &t, &g, &core, NOW + 60), Lookup::Unknown);
             assert_eq!(t.calls(), 1);
             let t2 = FakeTokens::new(vec![ok_token("later", None)]);
             let g2 = FakeContacts::new(vec![ContactReply::Ok(one_contact())]);
-            assert_eq!(lookup_entry(&acct(), "priya@contoso.example", &store, &t2, &g2, &core, NOW + DENIED_SECS + 1), Some(hex()));
+            assert_eq!(lookup_entry(&acct(), "priya@contoso.example", &store, &t2, &g2, &core, NOW + DENIED_SECS + 1), Lookup::Entry(hex()));
         }
     }
 
@@ -440,8 +591,8 @@ mod tests {
         let (store, core) = setup();
         let t = FakeTokens::new(vec![TokenReply::Transient("token-503".into()), ok_token("a", None)]);
         let g = FakeContacts::new(vec![ContactReply::Ok(one_contact())]);
-        assert_eq!(lookup_entry(&acct(), "priya@contoso.example", &store, &t, &g, &core, NOW), None);
-        assert_eq!(lookup_entry(&acct(), "priya@contoso.example", &store, &t, &g, &core, NOW + 1), Some(hex()));
+        assert_eq!(lookup_entry(&acct(), "priya@contoso.example", &store, &t, &g, &core, NOW), Lookup::Unknown);
+        assert_eq!(lookup_entry(&acct(), "priya@contoso.example", &store, &t, &g, &core, NOW + 1), Lookup::Entry(hex()));
     }
 
     #[test]
@@ -449,7 +600,7 @@ mod tests {
         let (store, core) = setup();
         let t = FakeTokens::new(vec![ok_token("a", Some("refresh-2"))]);
         let g = FakeContacts::new(vec![ContactReply::Ok(one_contact())]);
-        assert_eq!(lookup_entry(&acct(), "priya@contoso.example", &store, &t, &g, &core, NOW), Some(hex()));
+        assert_eq!(lookup_entry(&acct(), "priya@contoso.example", &store, &t, &g, &core, NOW), Lookup::Entry(hex()));
         assert_eq!(store.get("work").as_deref(), Some("refresh-2"));
         assert!(core.lock().unwrap().pending.is_empty());
     }
@@ -470,7 +621,7 @@ mod tests {
         let core = Mutex::new(Core::default());
         let t = FakeTokens::new(vec![ok_token("a", Some("refresh-2"))]);
         let g = FakeContacts::new(vec![]);
-        assert_eq!(lookup_entry(&acct(), "priya@contoso.example", &store, &t, &g, &core, NOW), None);
+        assert_eq!(lookup_entry(&acct(), "priya@contoso.example", &store, &t, &g, &core, NOW), Lookup::Unknown);
         assert_eq!(core.lock().unwrap().pending.get("work").map(String::as_str), Some("refresh-2"));
         // No account state change from this path.
         assert!(core.lock().unwrap().states.is_empty());
@@ -482,7 +633,7 @@ mod tests {
         let core = Mutex::new(Core::default());
         let t = FakeTokens::new(vec![]);
         let g = FakeContacts::new(vec![]);
-        assert_eq!(lookup_entry(&acct(), "priya@contoso.example", &store, &t, &g, &core, NOW), None);
+        assert_eq!(lookup_entry(&acct(), "priya@contoso.example", &store, &t, &g, &core, NOW), Lookup::Unknown);
         assert_eq!((t.calls(), g.calls.get()), (0, 0));
     }
 
@@ -497,6 +648,6 @@ mod tests {
         }
         let (store, core) = setup();
         let t = FakeTokens::new(vec![ok_token("a", None)]);
-        assert_eq!(lookup_entry(&acct(), "priya@contoso.example", &store, &t, &SignOutDuring(&core), &core, NOW), None);
+        assert_eq!(lookup_entry(&acct(), "priya@contoso.example", &store, &t, &SignOutDuring(&core), &core, NOW), Lookup::Unknown);
     }
 }

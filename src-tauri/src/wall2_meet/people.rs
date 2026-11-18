@@ -115,17 +115,20 @@ pub(crate) fn plan(action: Action, address: &str) -> Result<Plan, &'static str> 
     }
 }
 
-/// Whether On Air is live for the address rule: the native recorder signal is on, or the page
-/// has said so.
-pub(crate) fn on_air_live(recorder: bool, page_flag: bool) -> bool {
-    recorder || page_flag
+/// Whether On Air counts as live for the address rule. `recorder` is the native reading:
+/// `Some(true)` a recorder is running, `Some(false)` none is, `None` the reading is not known
+/// (before the first poll or after a failed poll). Fails closed: only a known "not recording"
+/// with the page flag off lets an address through.
+pub(crate) fn on_air_live(recorder: Option<bool>, page_flag: bool) -> bool {
+    recorder != Some(false) || page_flag
 }
 
 /// The answer to an address request, from injected state so it is testable without Tauri.
-/// `on-air` first (nothing about the key is looked at while On Air is live), then `gone` for a
+/// `on-air` first (nothing about the key is looked at while On Air is live or its state is
+/// unknown), then `gone` for a
 /// key that is malformed or not in the latest next-meetings read, then `invalid` when the stored
 /// address fails the strict check.
-pub(crate) fn address_answer(person_map: &HashMap<String, (String, String)>, key: &str, recorder: bool, page_flag: bool) -> Result<String, &'static str> {
+pub(crate) fn address_answer(person_map: &HashMap<String, (String, String)>, key: &str, recorder: Option<bool>, page_flag: bool) -> Result<String, &'static str> {
     if on_air_live(recorder, page_flag) {
         return Err(ON_AIR);
     }
@@ -160,7 +163,7 @@ pub fn wall2_meet_set_on_air(window: tauri::WebviewWindow, live: bool) -> Result
 #[tauri::command]
 pub async fn wall2_meet_person_address(window: tauri::WebviewWindow, key: String) -> Result<AddressOut, String> {
     super::require_wall2(window.label())?;
-    let recorder = crate::wall2_signals::recording_now();
+    let recorder = crate::wall2_signals::recording_reading_now();
     let page = PAGE_ON_AIR.load(Ordering::SeqCst);
     let guard = super::links().lock().unwrap_or_else(|e| e.into_inner());
     address_answer(&guard.person_map, &key, recorder, page).map(|address| AddressOut { address }).map_err(str::to_string)
@@ -172,8 +175,10 @@ pub struct ContactOut {
 }
 
 /// Whether "Open contact card" is offered for this person: exactly one saved contact for the
-/// address in the person's meeting account, and classic Outlook usable and selected. Cached per
-/// key for the life of the read. Any trouble is `available: false`; only a stale key is `gone`.
+/// address in the person's meeting account, and classic Outlook usable and selected. A definitive
+/// answer (one contact, none, or several) is cached per key for the life of the read; a timeout, a
+/// busy calendar turn or any other trouble is `available: false` and caches nothing. A key that a
+/// new read replaced during the lookup is `gone`.
 #[tauri::command]
 pub async fn wall2_meet_person_contact(window: tauri::WebviewWindow, key: String) -> Result<ContactOut, String> {
     super::require_wall2(window.label())?;
@@ -186,24 +191,23 @@ pub async fn wall2_meet_person_contact(window: tauri::WebviewWindow, key: String
     }
     let account = super::load_config(&window).ok().and_then(|list| list.into_iter().find(|a| a.id == account_id));
     let desktop_enabled = matches!(super::load_open_preference(&window), Ok(super::OpenPreference::Desktop | super::OpenPreference::Typo));
-    let available = tauri::async_runtime::spawn_blocking(move || {
+    tauri::async_runtime::spawn_blocking(move || {
         let classic_found = super::desktop::classic_outlook_exe().is_some();
         let new_selected = super::desktop::use_new_outlook();
-        // No classic Outlook to open it in: Graph is not asked at all.
-        let entry = match account {
+        // No classic Outlook to open it in, or no account: Graph is not asked at all, and nothing
+        // is held, so a later open looks again.
+        let lookup = match account {
             Some(acct) if super::contacts::contact_available(true, desktop_enabled, classic_found, new_selected) => {
                 super::contacts::lookup_entry(&acct, &address, &super::secrets(), &super::auth::HttpTokens, &super::contacts::HttpContacts, super::core(), super::now_secs())
             }
-            _ => None,
+            _ => super::contacts::Lookup::Unknown,
         };
-        let answer = super::service::ContactAnswer { available: super::contacts::contact_available(entry.is_some(), desktop_enabled, classic_found, new_selected), entry };
-        let available = answer.available;
-        super::service::store_contact_answer(super::links(), &key, answer);
-        available
+        super::contacts::contact_outcome(lookup, desktop_enabled, classic_found, new_selected, |answer| super::service::store_contact_answer(super::links(), &key, answer))
     })
     .await
-    .map_err(|_| FAILED.to_string())?;
-    Ok(ContactOut { available })
+    .map_err(|_| FAILED.to_string())?
+    .map(|available| ContactOut { available })
+    .map_err(str::to_string)
 }
 
 /// True for exactly the shape `service::read_next_only` makes: `p`, the read (1 to 19 digits),
@@ -305,11 +309,17 @@ pub async fn wall2_meet_person_action(window: tauri::WebviewWindow, key: String,
         }
         Plan::Open(url) => window.opener().open_url(url, None::<&str>).map_err(|_| FAILED.to_string()),
         Plan::Contact => {
-            // Only what the held answer allows; no lookup here and no web fallback.
+            // Only what the held answer allows; no lookup here and no web fallback. The open
+            // preference and classic Outlook are checked again now, whatever the answer said.
             let held = super::service::lookup_contact_answer(super::links(), &key);
             let arg = super::contacts::launch_arg(held.as_ref()).map_err(str::to_string)?;
+            let desktop_enabled = matches!(super::load_open_preference(&window), Ok(super::OpenPreference::Desktop | super::OpenPreference::Typo));
             let started = tauri::async_runtime::spawn_blocking(move || {
-                let Some(exe) = super::desktop::classic_outlook_exe() else { return Err(UNAVAILABLE) };
+                let exe = super::desktop::classic_outlook_exe();
+                if !super::contacts::launch_allowed(desktop_enabled, exe.is_some(), super::desktop::use_new_outlook()) {
+                    return Err(UNAVAILABLE);
+                }
+                let Some(exe) = exe else { return Err(UNAVAILABLE) };
                 std::process::Command::new(exe).args(["/select", arg.as_str()]).spawn().map(|_| ()).map_err(|_| FAILED)
             })
             .await
@@ -457,26 +467,42 @@ mod tests {
     #[test]
     fn the_address_is_answered_for_a_live_key_only() {
         let map = people_map();
-        assert_eq!(address_answer(&map, "p2-0", false, false), Ok("priya@contoso.example".to_string()));
+        assert_eq!(address_answer(&map, "p2-0", Some(false), false), Ok("priya@contoso.example".to_string()));
         // An unknown or older key, and a malformed one.
-        assert_eq!(address_answer(&map, "p1-0", false, false), Err("gone"));
-        assert_eq!(address_answer(&map, "p2-9", false, false), Err("gone"));
-        assert_eq!(address_answer(&map, "nope", false, false), Err("gone"));
-        assert_eq!(address_answer(&HashMap::new(), "p2-0", false, false), Err("gone"));
+        assert_eq!(address_answer(&map, "p1-0", Some(false), false), Err("gone"));
+        assert_eq!(address_answer(&map, "p2-9", Some(false), false), Err("gone"));
+        assert_eq!(address_answer(&map, "nope", Some(false), false), Err("gone"));
+        assert_eq!(address_answer(&HashMap::new(), "p2-0", Some(false), false), Err("gone"));
         // A bad stored address is refused.
-        assert_eq!(address_answer(&map, "p2-1", false, false), Err("invalid"));
+        assert_eq!(address_answer(&map, "p2-1", Some(false), false), Err("invalid"));
     }
 
     #[test]
     fn no_address_while_on_air_is_live() {
         let map = people_map();
-        assert_eq!(address_answer(&map, "p2-0", true, false), Err("on-air"));
-        assert_eq!(address_answer(&map, "p2-0", false, true), Err("on-air"));
-        assert_eq!(address_answer(&map, "p2-0", true, true), Err("on-air"));
+        assert_eq!(address_answer(&map, "p2-0", Some(true), false), Err("on-air"));
+        assert_eq!(address_answer(&map, "p2-0", Some(false), true), Err("on-air"));
+        assert_eq!(address_answer(&map, "p2-0", Some(true), true), Err("on-air"));
         // On Air outranks every other answer, so nothing about the key is learned.
-        assert_eq!(address_answer(&map, "p9-9", true, false), Err("on-air"));
-        assert_eq!(address_answer(&map, "p2-1", false, true), Err("on-air"));
-        assert!(on_air_live(true, false) && on_air_live(false, true) && !on_air_live(false, false));
+        assert_eq!(address_answer(&map, "p9-9", Some(true), false), Err("on-air"));
+        assert_eq!(address_answer(&map, "p2-1", Some(false), true), Err("on-air"));
+        assert!(on_air_live(Some(true), false) && on_air_live(Some(false), true) && !on_air_live(Some(false), false));
+    }
+
+    #[test]
+    fn an_unknown_reading_refuses_and_a_known_one_decides() {
+        let map = people_map();
+        // Unknown (before the first poll, or after a failed poll): never the address, with the page flag either way.
+        assert_eq!(address_answer(&map, "p2-0", None, false), Err("on-air"));
+        assert_eq!(address_answer(&map, "p2-0", None, true), Err("on-air"));
+        // Nothing about the key is learned while the state is unknown.
+        assert_eq!(address_answer(&map, "p9-9", None, false), Err("on-air"));
+        // Known, not recording, page flag off: the address.
+        assert_eq!(address_answer(&map, "p2-0", Some(false), false), Ok("priya@contoso.example".to_string()));
+        // Known and recording: refused. Known, not recording, page flag on: refused.
+        assert_eq!(address_answer(&map, "p2-0", Some(true), false), Err("on-air"));
+        assert_eq!(address_answer(&map, "p2-0", Some(false), true), Err("on-air"));
+        assert!(on_air_live(None, false) && on_air_live(None, true));
     }
 
     #[test]
@@ -485,9 +511,9 @@ mod tests {
         // Process-wide flag; this is the only test that touches it.
         assert!(!PAGE_ON_AIR.load(Ordering::SeqCst), "the flag starts false");
         PAGE_ON_AIR.store(true, Ordering::SeqCst);
-        assert_eq!(address_answer(&map, "p2-0", false, PAGE_ON_AIR.load(Ordering::SeqCst)), Err("on-air"));
+        assert_eq!(address_answer(&map, "p2-0", Some(false), PAGE_ON_AIR.load(Ordering::SeqCst)), Err("on-air"));
         PAGE_ON_AIR.store(false, Ordering::SeqCst);
-        assert_eq!(address_answer(&map, "p2-0", false, PAGE_ON_AIR.load(Ordering::SeqCst)), Ok("priya@contoso.example".to_string()));
+        assert_eq!(address_answer(&map, "p2-0", Some(false), PAGE_ON_AIR.load(Ordering::SeqCst)), Ok("priya@contoso.example".to_string()));
     }
 
     #[test]
