@@ -2357,8 +2357,15 @@ there, still playing, when the owner comes back (see "The stage layer" below).
     had set is gone before it renders, so the frame clears its own flag instead of swallowing the owner's next pause.
   - **Dev**: `?watch=mock&wown=lists|draft|edit|drag|menu|playing|pill|repeat|skip|end|none` (see `devMocks/watch.ts`; invented names,
     drawn pictures). Review states, fit rules and their deliberate breaks are in `scripts/areas/own-playlists.mjs`.
-- **Listen**: when something is saved, the album art has a small "Video" corner that
-  switches to Watch. Nothing else on Listen changes.
+- **Listen**: when the shown track is known to have a video, the album art has a 36 px dark round chip with a white
+  video camera icon (named "Watch the video") in its bottom right that switches to Watch; plain audio has none. Known means
+  the wall's own Watch item (playing, or the idle card's playable own item; matched by title only when the session is the wall's
+  own web view, never an unknown player, and for a wall playlist on the current video's title, not the playlist's name), the wall's
+  own YouTube pick while its video is in Watch's frame (stopped, there is no icon, since Watch would be empty), or a saved Watch
+  video or live stream with a name of the owner's whose text equals the track's title while YouTube Music has it, or a browser tab
+  whose title ends with " - YouTube" (`unwind/videoMatch.ts`). Never by a Spotify or other audio-app title. The chip stays at full
+  strength on the dimmed idle card. Dev: `media=ytvideo|spotifysame|watchstopped`; review states and
+  rules in `scripts/areas/video-icon.mjs`. Nothing else on Listen changes.
 - **Dev**: `?watch=mock` draws a poster where the frame goes (headless Chromium shows an empty
   frame) and opens Watch; `?wlist=none|three|many`, `?wlook=feather|sky|sun|drivein|holo`, `?wposter=bright` (a pale test picture, the worst case for
   text over video), `?wplay=<n>`,
