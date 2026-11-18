@@ -2,31 +2,66 @@ import { useEffect, useRef } from 'react';
 import { setOnAirLive } from '../bridge/meetBrief';
 import { useSignalStore } from '../signals/store';
 import { usePlaceStore } from '../state/places';
-import { isOnAirLive, useOnAirLiveStore } from './liveState';
+import { isOnAirLive } from './liveState';
+
+/** First wait before a failed report is sent again; it doubles up to `RETRY_MAX_MS`. */
+export const RETRY_MS = 2_000;
+export const RETRY_MAX_MS = 30_000;
 
 /**
- * Mount once, near where the active place is known (App.tsx). Keeps `useOnAirLiveStore` current and tells Rust through
- * `setOnAirLive` once at start and then only when the value changes. A missing or failing command is ignored.
+ * Whether On Air is live, read at render straight from the place and signal stores, so the person card never draws a
+ * frame from a value copied in an effect: `<PersonDetails personKey={p.key} onAirLive={useOnAirLive()} />`.
  */
-export function useOnAirLiveReport(): void {
+export function useOnAirLive(): boolean {
   const active = usePlaceStore((s) => s.active);
   const known = useSignalStore((s) => s.known);
   const recording = useSignalStore((s) => s.recording);
   const call = useSignalStore((s) => s.call);
   const browserAv = useSignalStore((s) => s.browserAv);
-  const sent = useRef<boolean | null>(null);
-  const live = isOnAirLive({ active, known, recording, call, browserAv, now: 0 });
-  useEffect(() => {
-    useOnAirLiveStore.getState().set(live);
-    if (sent.current === live) return;
-    sent.current = live;
-    try {
-      void setOnAirLive(live).catch(() => undefined);
-    } catch {
-      // Not running with the command (a browser without the mock); nothing to tell.
-    }
-  }, [live]);
+  return isOnAirLive({ active, known, recording, call, browserAv, now: 0 });
 }
 
-/** The shared answer, for the person card: `<PersonDetails personKey={p.key} onAirLive={useOnAirLive()} />`. */
-export const useOnAirLive = (): boolean => useOnAirLiveStore((s) => s.live);
+/**
+ * Mount once (App.tsx). Tells Rust through `setOnAirLive` at start and then whenever the value changes. A value counts as
+ * sent only once the command succeeds: a failure is sent again after a short wait that doubles up to 30 s, always with the
+ * value current at that moment. A browser without the command keeps trying quietly.
+ */
+export function useOnAirLiveReport(): void {
+  const live = useOnAirLive();
+  const liveRef = useRef(live);
+  liveRef.current = live;
+  const sent = useRef<boolean | null>(null);
+  useEffect(() => {
+    if (sent.current === live) return;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let stopped = false;
+    let wait = RETRY_MS;
+    const attempt = () => {
+      const value = liveRef.current;
+      const retry = () => {
+        if (stopped) return;
+        timer = setTimeout(attempt, wait);
+        wait = Math.min(wait * 2, RETRY_MAX_MS);
+      };
+      let p: Promise<void>;
+      try {
+        p = setOnAirLive(value);
+      } catch {
+        retry();
+        return;
+      }
+      p.then(
+        () => {
+          if (!stopped) sent.current = value;
+        },
+        retry,
+      );
+    };
+    sent.current = null;
+    attempt();
+    return () => {
+      stopped = true;
+      if (timer !== undefined) clearTimeout(timer);
+    };
+  }, [live]);
+}

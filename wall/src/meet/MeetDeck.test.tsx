@@ -2,7 +2,6 @@ import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { LIBRARY_DATA } from '../bridge/devMocks/libraryData';
 import { mocks } from '../bridge/tauri';
-import { useOnAirLiveStore } from '../onair/liveState';
 import { usePlaceStore } from '../state/places';
 import { useSignalStore } from '../signals/store';
 import type { CallSignal } from '../signals/model';
@@ -89,7 +88,6 @@ afterEach(() => {
   mocks.clear();
   usePlaceStore.setState({ active: 'work' });
   useSignalStore.setState({ known: false, call: null, recording: false, leave: null });
-  useOnAirLiveStore.setState({ live: false });
 });
 
 const before = (): [Meeting, unknown[]] => {
@@ -344,7 +342,7 @@ it('the card shows the address from Rust after the click, and drops it when On A
   const card = screen.getByRole('dialog');
   expect(asked).toHaveLength(1);
   expect(card.textContent).toContain(FROM_RUST);
-  await act(async () => useOnAirLiveStore.setState({ live: true }));
+  await act(async () => useSignalStore.setState({ recording: true }));
   expect(screen.getByRole('dialog').textContent).toContain('Address hidden while on air');
   expect(container.textContent).not.toContain(FROM_RUST);
   expect(container.innerHTML).not.toContain(FROM_RUST);

@@ -1,3 +1,4 @@
+import { useLayoutEffect } from 'react';
 import { act, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { mocks } from '../bridge/tauri';
@@ -61,6 +62,45 @@ describe('address line', () => {
     rerender(<PersonDetails personKey="p1-0" onAirLive={true} />);
     expect(container.textContent).not.toContain(ADDR);
     expect(screen.getByText('Address hidden while on air')).toBeTruthy();
+  });
+
+  it('no committed frame shows the address once on air is live (checked before passive effects run)', async () => {
+    mocks.set('wall2_meet_person_address', () => ({ address: ADDR }));
+    // Layout effects run in the same commit as the DOM change, before any passive effect, so a value hidden only by an
+    // effect would still be in the frame this probe records.
+    const frames: { live: boolean; text: string }[] = [];
+    function Probe({ live }: { live: boolean }) {
+      useLayoutEffect(() => {
+        frames.push({ live, text: document.body.textContent ?? '' });
+      });
+      return null;
+    }
+    const tree = (live: boolean) => (
+      <>
+        <PersonDetails personKey="p1-0" onAirLive={live} />
+        <Probe live={live} />
+      </>
+    );
+    const { rerender } = render(tree(false));
+    await flush();
+    expect(document.body.textContent).toContain(ADDR);
+    rerender(tree(true));
+    const live = frames.filter((f) => f.live);
+    expect(live.length).toBeGreaterThan(0);
+    for (const f of live) expect(f.text).not.toContain(ADDR);
+    expect(live[0].text).toContain('Address hidden while on air');
+  });
+
+  it('drops a late answer when on air was live during the request, even if it ended', async () => {
+    const a = defer('wall2_meet_person_address');
+    const { container, rerender } = render(<PersonDetails personKey="p1-0" onAirLive={false} />);
+    await flush();
+    rerender(<PersonDetails personKey="p1-0" onAirLive={true} />);
+    rerender(<PersonDetails personKey="p1-0" onAirLive={false} />);
+    await act(async () => a.d().resolve({ address: ADDR }));
+    expect(container.textContent).not.toContain(ADDR);
+    expect(container.innerHTML).not.toContain(ADDR);
+    expect(a.calls()).toBe(1);
   });
 
   it('drops an answer that arrives after on air went live', async () => {
