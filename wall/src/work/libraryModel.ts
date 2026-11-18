@@ -57,7 +57,7 @@ export function resolvePin(ref: string, lib: readonly LibGroup[], filePins: read
   if (!REF_RE.test(ref)) return null;
   if (ref.startsWith('file:')) {
     const k = filePins[Number(ref.slice(5))];
-    return k ? { ref, label: k.label, icon: k.icon, action: k.action, kind: 'file', how: 'From keys.json', group: null, runnable: true } : null;
+    return k ? { ref, label: k.label, icon: k.icon, action: k.action, kind: 'file', how: '', group: null, runnable: true } : null;
   }
   const hit = allKeys(lib).get(ref.slice(4));
   if (!hit || !hit.key.runnable || hit.key.kind === 'soon') return null;

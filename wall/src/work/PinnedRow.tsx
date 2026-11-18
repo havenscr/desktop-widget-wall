@@ -289,7 +289,6 @@ export function PinnedRow() {
                 ? { id: 'add', label: 'Always here is full', note: `${MAX_PINS} of ${MAX_PINS}`, disabled: true }
                 : { id: 'add', label: 'Add a key', note: `${pins.length} of ${MAX_PINS}` },
               { id: 'remove', label: 'Remove from Always here' },
-              { id: 'file', label: 'Edit keys file', note: 'keys.json' },
             ];
             return (
               <div className="key-tile-wrap" key={p.ref}>
@@ -302,7 +301,7 @@ export function PinnedRow() {
                 {...tip(
                   layoutOff
                     ? layoutOffReason(arrange)
-                    : `${p.label}${p.group ? ` (${p.group})` : ''}${p.kind === 'check' ? ', a shortcut to check on your PC' : ''}. ${p.how}. Right-click for more.`,
+                    : `${p.label}${p.group ? ` (${p.group})` : ''}${p.kind === 'check' ? ', a shortcut to check on your PC' : ''}.${p.how ? ` ${p.how}.` : ''} Right-click for more.`,
                 )}
                 onContextMenu={onContext(i)}
                 onKeyDown={onKey(i, p.action)}
