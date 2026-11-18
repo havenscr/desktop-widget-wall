@@ -14,7 +14,7 @@ import { overlayOwnsPointer } from '../ribbon/DrawerScrim';
 import { tip } from '../ui/HoverTip';
 import { useVisible } from '../ui/useVisible';
 import { useArrangeStatus, layoutOffReason, isLayoutAction } from './arrangeStatus';
-import { runForYou, useForYou, type ForYouItem, type ForYouKind } from './forYou';
+import { runForYou, useForYou, useResumeOffer, type ForYouItem, type ForYouKind } from './forYou';
 import { useGuard } from './useGuard';
 import { ActionError } from './wallActions';
 import { KeyIcon } from './keyIcons';
@@ -110,25 +110,32 @@ function useKeysRead() {
  * one height on every page. A long title is cut; the full title and reason show on hover. One
  * item leaves the second half empty (the plate never stretches past half the row).
  */
-function ForYouList({ items, onRun }: { items: ForYouItem[]; onRun: (item: ForYouItem, detail: number) => void }) {
+function ForYouList({ items, resume, onRun }: { items: ForYouItem[]; resume: ForYouItem | null; onRun: (item: ForYouItem, detail: number) => void }) {
+  const shown = items.slice(0, FOR_YOU_SHOWN);
+  // The offer takes the free half when there is one; beside two items it is a narrow third plate (icon and Play), so it is never behind "+N more".
+  const narrow = resume !== null && shown.length >= FOR_YOU_SHOWN;
+  const plate = (it: ForYouItem, compact = false) => {
+    const I = KIND_ICON[it.kind];
+    const tone = KIND_TONE[it.kind];
+    return (
+      <div key={it.key} className={`fy-li fy-plate ${tone}${compact ? ' fy-compact' : ''}`} data-kind={TONE_KIND[tone]} data-fy={it.kind} {...tip(`${it.title}: ${it.reason}`)}>
+        <I size={20} stroke={1.8} aria-hidden="true" />
+        {compact ? null : (
+          <span className="fy-tx">
+            <b>{it.title}</b>
+            <em>{it.reason}</em>
+          </span>
+        )}
+        <button type="button" className="deck-mini" aria-label={`${it.action}: ${it.title}`} {...tip(it.actionTip)} onClick={(e) => onRun(it, e.detail)}>
+          {it.action}
+        </button>
+      </div>
+    );
+  };
   return (
-    <div className="fy-list">
-      {items.slice(0, FOR_YOU_SHOWN).map((it) => {
-        const I = KIND_ICON[it.kind];
-        const tone = KIND_TONE[it.kind];
-        return (
-          <div key={it.key} className={`fy-li fy-plate ${tone}`} data-kind={TONE_KIND[tone]} {...tip(`${it.title}: ${it.reason}`)}>
-            <I size={20} stroke={1.8} aria-hidden="true" />
-            <span className="fy-tx">
-              <b>{it.title}</b>
-              <em>{it.reason}</em>
-            </span>
-            <button type="button" className="deck-mini" aria-label={`${it.action}: ${it.title}`} {...tip(it.actionTip)} onClick={(e) => onRun(it, e.detail)}>
-              {it.action}
-            </button>
-          </div>
-        );
-      })}
+    <div className={`fy-list${narrow ? ' fy-three' : ''}`}>
+      {shown.map((it) => plate(it))}
+      {resume ? plate(resume, narrow) : null}
     </div>
   );
 }
@@ -143,6 +150,8 @@ function ForYouList({ items, onRun }: { items: ForYouItem[]; onRun: (item: ForYo
 export function Keys() {
   const { read, refresh } = useKeysRead();
   const items = useForYou();
+  // The "Jump back in" offer rides on the For you page only: it is not counted, not in the chip, never a take-over.
+  const resume = useResumeOffer();
   const recording = useSignalStore((s) => s.recording);
   const libIdx = useLibIndex();
   const [mode, setModeState] = useState<Mode>(readMode);
@@ -200,8 +209,7 @@ export function Keys() {
   }, []);
 
   const forYouOn = items.length > 0;
-  // The "Jump back in" offer never takes the row by itself: it is there to find, not to interrupt.
-  const sig = items.filter((i) => i.kind !== 'resume').map((i) => i.key).join('|');
+  const sig = items.map((i) => i.key).join('|');
   const summary = read.status === 'ready' ? read.summary : null;
 
   // A held page that is gone (a set left keys.json, nothing waits any more) goes back to Auto.
@@ -458,7 +466,7 @@ export function Keys() {
     return (
       <section className="keys deck-row" data-floor={floor} aria-label={heading} onWheel={onWheel} ref={rowRef}>
         {head}
-        <ForYouList items={items} onRun={runItem} />
+        <ForYouList items={items} resume={resume} onRun={runItem} />
       </section>
     );
   }

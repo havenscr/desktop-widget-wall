@@ -6,7 +6,7 @@ import { useSnoozed } from '../agents/snooze';
 import { agentsStale, useAgents } from '../agents/useAgents';
 import { isQuiet } from '../music/model';
 import { useNowPlayingStore } from '../music/store';
-import { canPlayLastOwn, playLastOwn, type LastOwn } from '../unwind/lastOwn';
+import { canPlayLastOwn, type LastOwn } from '../unwind/lastOwn';
 import { useLastPlayed } from '../unwind/lastPlayed';
 import type { WatchRef } from '../unwind/watch/links';
 import { useWatchStore } from '../unwind/watch/store';
@@ -130,6 +130,24 @@ export function resumeItem(own: LastOwn | null, saved: readonly WatchRef[], noth
   };
 }
 
+let resuming = false;
+
+/** Start the plate's own playlist (its `ref`), when it is still saved; a second press while it starts does nothing. */
+function playResume(item: ForYouItem): string {
+  const id = item.ref?.startsWith('playlist:') ? item.ref.slice('playlist:'.length) : '';
+  const st = useWatchStore.getState();
+  const own = useLastPlayed.getState().own;
+  const ref: WatchRef = { kind: 'playlist', id };
+  if (!id || !own || own.kind !== 'playlist' || own.id !== id || !canPlayLastOwn(own, st.saved)) throw new ActionError('Could not start the playlist');
+  if (resuming) return 'Starting the playlist';
+  resuming = true;
+  setTimeout(() => {
+    resuming = false;
+  }, 1500);
+  st.play(ref);
+  return 'Playing the playlist';
+}
+
 const flashTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
 /** Scroll the agent cards to a session and flash its ring once (calm: one slow pulse). A second Show restarts the flash. */
@@ -166,8 +184,7 @@ export async function runForYou(item: ForYouItem): Promise<string> {
       if (item.ref) showCard(item.ref);
       return 'Showing the card';
     case 'resume':
-      if (!playLastOwn(useLastPlayed.getState().own)) throw new ActionError('Could not start the playlist');
-      return 'Playing the playlist';
+      return playResume(item);
     case 'alarm':
       return viaCommand('wall2_open_link', { kind: 'security' }, 'Opened the alarms', 'Could not open the alarms');
   }
@@ -176,8 +193,8 @@ export async function runForYou(item: ForYouItem): Promise<string> {
 /**
  * Everything that waits on the owner, in order: a meeting, agents waiting, pull requests
  * ready, a network alarm. A source that is stale, down or not set up adds nothing, and the
- * agents helper being down says nothing about agents. Never shown from old data. Last comes the
- * "Jump back in" offer, only while nothing plays.
+ * agents helper being down says nothing about agents. Never shown from old data. The "Jump back in"
+ * offer is not here: it is not waiting on the owner, so it never counts or signals (see `useResumeOffer`).
  */
 export function useForYou(): ForYouItem[] {
   const meet = useNextMeeting();
@@ -195,10 +212,6 @@ export function useForYou(): ForYouItem[] {
       live = false;
     };
   }, [sec.attempts]);
-  const own = useLastPlayed((s) => s.own);
-  const saved = useWatchStore((s) => s.saved);
-  const watchPlays = useWatchStore((s) => s.playing !== null);
-  const quiet = useNowPlayingStore((s) => isQuiet(s.info));
   const agentsOk = agents.summary !== null && !agentsStale(agents);
   const quietKey = [...snoozed.ids].sort().join(',');
   return useMemo(() => {
@@ -211,8 +224,20 @@ export function useForYou(): ForYouItem[] {
     }
     const a = alarmItem(sec.summary, sec.status, linkOk, sec.now);
     if (a) out.push(a);
-    const r = resumeItem(own, saved, quiet && !watchPlays);
-    if (r) out.push(r);
     return out;
-  }, [own, saved, quiet, watchPlays, meet.meeting, meet.now, meet.stale, meet.unavailable, agents.summary, agentsOk, quietKey, sec.summary, sec.status, sec.now, linkOk]);
+  }, [meet.meeting, meet.now, meet.stale, meet.unavailable, agents.summary, agentsOk, quietKey, sec.summary, sec.status, sec.now, linkOk]);
+}
+
+/**
+ * The "Jump back in" offer, for the For you page when it is open. Not a thing waiting on the owner: it is
+ * never counted, never in the chip or its tooltip, never a take-over. "Nothing plays" is known only after
+ * the first media read has answered (`at` is set by an answer, never by a failed read).
+ */
+export function useResumeOffer(): ForYouItem | null {
+  const own = useLastPlayed((s) => s.own);
+  const saved = useWatchStore((s) => s.saved);
+  const watchPlays = useWatchStore((s) => s.playing !== null);
+  const known = useNowPlayingStore((s) => s.at > 0);
+  const quiet = useNowPlayingStore((s) => isQuiet(s.info));
+  return useMemo(() => resumeItem(own, saved, known && quiet && !watchPlays), [own, saved, known, quiet, watchPlays]);
 }

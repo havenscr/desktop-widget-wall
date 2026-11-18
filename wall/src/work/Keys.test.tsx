@@ -4,6 +4,9 @@ import { readFileSync } from 'node:fs';
 import { useSyncExternalStore } from 'react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { mocks } from '../bridge/tauri';
+import { useNowPlayingStore } from '../music/store';
+import { resetLastPlayed } from '../unwind/lastPlayed';
+import { useWatchStore } from '../unwind/watch/store';
 import { HoverTipLayer, resetTip } from '../ui/HoverTip';
 import type { ForYouItem } from './forYou';
 import { resetKeysFeed } from './keysFeed';
@@ -876,4 +879,65 @@ it('draws the Now keys at the size and column count for 1 to 5 keys', async () =
     expect(tiles.style.gridTemplateColumns).toBe(`repeat(${cols}, minmax(0px, 1fr))`);
     unmount();
   }
+});
+
+// Section: the "Jump back in" offer rides on the For you page and is never a thing waiting
+
+const offerOn = () => {
+  const list = { kind: 'playlist' as const, id: 'PLnightDrive0001', label: 'Night Drive' };
+  act(() => {
+    useWatchStore.setState({ saved: [list], playing: null });
+    resetLastPlayed(null, { ...list, from: 'watch' });
+    useNowPlayingStore.setState({ info: null, at: Date.now() });
+  });
+};
+const offerOff = () =>
+  act(() => {
+    resetLastPlayed(null, null);
+    useNowPlayingStore.setState({ info: null, art: null, at: 0, anchor: null });
+  });
+
+it('the offer is not counted: no page, no chip and no take-over while only it is left; it shows with a waiting item and is not behind "+N more"', async () => {
+  offerOn();
+  render(<Keys />);
+  await flush();
+  // Only the offer: no For you page, no chip.
+  expect(screen.getAllByRole('tab').map((t) => t.getAttribute('aria-label'))).toEqual(['Sales app', 'General']);
+  expect(screen.queryByRole('button', { name: /^For you/ })).toBeNull();
+  // A waiting item takes the row; the chip would count one, and the offer sits beside it.
+  await arrive(item('a'));
+  expect(screen.getByText('Now · For you')).toBeTruthy();
+  expect(screen.getByRole('button', { name: 'Play: Night Drive' })).toBeTruthy();
+  // The item resolves while the take-over still runs: the row goes back to its keys, the offer is gone with the page.
+  await arrive();
+  expect(screen.getByText('Now · Sales app')).toBeTruthy();
+  expect(screen.queryByRole('button', { name: 'Play: Night Drive' })).toBeNull();
+  await flush(TAKEOVER_MS + 1_000);
+  expect(screen.getByText('Now · Sales app')).toBeTruthy();
+  offerOff();
+});
+
+it('with two waiting items the offer is a third plate, and the heading and chip count only the items', async () => {
+  offerOn();
+  render(<Keys />);
+  await flush();
+  await arrive(item('a'), item('b'), item('c'));
+  await flush(TAKEOVER_MS + 1_000);
+  fireEvent.click(screen.getByRole('button', { name: 'For you 3' }));
+  expect(screen.getByText(/Now · For you · \+1 more/)).toBeTruthy();
+  expect(screen.getAllByRole('button', { name: /^Open chat:/ })).toHaveLength(2);
+  expect(screen.getByRole('button', { name: 'Play: Night Drive' })).toBeTruthy();
+  offerOff();
+});
+
+it('a new item arriving is the only thing that takes the row; the offer appearing does not', async () => {
+  render(<Keys />);
+  await flush();
+  await arrive(item('a'));
+  await flush(TAKEOVER_MS + 1_000);
+  expect(screen.getByText('Now · Sales app')).toBeTruthy();
+  offerOn();
+  await flush();
+  expect(screen.getByText('Now · Sales app')).toBeTruthy();
+  offerOff();
 });

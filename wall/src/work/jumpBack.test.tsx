@@ -5,7 +5,8 @@ import { resetNowPlaying } from '../music/store';
 import type { LastOwn } from '../unwind/lastOwn';
 import { resetLastPlayed } from '../unwind/lastPlayed';
 import { resetWatch, useWatchStore } from '../unwind/watch/store';
-import { resumeItem, runForYou, useForYou } from './forYou';
+import { useNowPlayingStore } from '../music/store';
+import { resumeItem, runForYou, useForYou, useResumeOffer } from './forYou';
 
 const LIST = { kind: 'playlist' as const, id: 'PLnightDrive0001', label: 'Night Drive' };
 const own = (over: Partial<LastOwn> = {}): LastOwn => ({ ...LIST, from: 'watch', ...over });
@@ -44,26 +45,55 @@ it('offers nothing when something plays, nothing is known, or it is not a playli
   expect(resumeItem(own(), [], true)).toBeNull();
 });
 
-it('is the last line of For you, and only while nothing plays', async () => {
+const read = (info: object | null, at = Date.now()) => act(() => useNowPlayingStore.setState({ info: info as never, at }));
+
+it('the offer is not in the For you list (it is never counted), and shows only after a media read has answered with nothing playing', async () => {
   useWatchStore.setState({ saved: [{ ...LIST }] });
   act(() => resetLastPlayed(null, own()));
-  const { result } = renderHook(() => useForYou());
+  const list = renderHook(() => useForYou());
+  const offer = renderHook(() => useResumeOffer());
   await flush();
-  expect(result.current.map((i) => i.kind)).toEqual(['resume']);
+  expect(list.result.current).toEqual([]);
+  // No media read has answered yet.
+  expect(offer.result.current).toBeNull();
+  read(null);
+  expect(offer.result.current).toMatchObject({ kind: 'resume', title: 'Night Drive' });
+  // A media session playing hides it, a quiet one does not.
+  read({ playback_status: 'playing', title: 'Song', artist: 'Band' });
+  expect(offer.result.current).toBeNull();
+  read({ playback_status: 'stopped' });
+  expect(offer.result.current).not.toBeNull();
+  // The wall's own player playing hides it.
   act(() => useWatchStore.setState({ playing: { ...LIST } }));
-  expect(result.current).toEqual([]);
+  expect(offer.result.current).toBeNull();
+  act(() => useWatchStore.setState({ playing: null }));
+  expect(offer.result.current).not.toBeNull();
+  // The playlist removed from the saved list hides it.
+  act(() => useWatchStore.setState({ saved: [] }));
+  expect(offer.result.current).toBeNull();
 });
 
-it('Play starts the playlist through the existing play path', async () => {
+it('Play starts the plate\'s own playlist through the existing play path, once', async () => {
   const play = vi.fn();
   useWatchStore.setState({ saved: [{ ...LIST }], play });
   act(() => resetLastPlayed(null, own()));
   const item = resumeItem(own(), SAVED, true)!;
   expect(await runForYou(item)).toBe('Playing the playlist');
+  expect(await runForYou(item)).toBe('Starting the playlist');
+  expect(play).toHaveBeenCalledTimes(1);
   expect(play).toHaveBeenCalledWith({ kind: 'playlist', id: LIST.id });
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(2_000);
+  });
 });
 
-it('Play says so when the playlist is gone', async () => {
-  act(() => resetLastPlayed(null, null));
+it('Play says so when the playlist is gone, or is no longer the remembered one', async () => {
+  const play = vi.fn();
+  useWatchStore.setState({ saved: [], play });
+  act(() => resetLastPlayed(null, own()));
   await expect(runForYou(resumeItem(own(), SAVED, true)!)).rejects.toThrow('Could not start the playlist');
+  useWatchStore.setState({ saved: [{ ...LIST }] });
+  act(() => resetLastPlayed(null, own({ id: 'PLotherPlaylist01' })));
+  await expect(runForYou(resumeItem(own(), SAVED, true)!)).rejects.toThrow('Could not start the playlist');
+  expect(play).not.toHaveBeenCalled();
 });
