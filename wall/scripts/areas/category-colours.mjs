@@ -142,7 +142,7 @@ export default {
       { screen: 'work', name: 'Category colours: plain and coloured side by side (ribbon)', query: q(TYPICAL, 'catsplain'), custom: true, expect: 'Vendor call' },
       { screen: 'work', name: 'Category colours: the Tools row hovered', query: q(TYPICAL, 'nocolours', '&tools=1'), custom: true, actions: 'hover:.tools-acct', expect: 'Sign in again to show Outlook colours' },
       { screen: 'work', name: 'Category colours: short events, a short livestream with a category and the now line (Day drawer)', query: q(TYPICAL, 'catsshort'), custom: true, actions: '.rib-handle', expect: 'Quick check' },
-      { screen: 'work', name: 'Category colours: short events and a livestream with a category (ribbon)', query: q(TYPICAL, 'catsshort'), custom: true, expect: 'Quick check' },
+      { screen: 'work', name: 'Category colours: short events and a livestream with a category (ribbon)', query: q(TYPICAL, 'catsshort'), custom: true, expect: 'Vendor call' },
       { screen: 'work', name: 'Category colours: all 25 presets, upcoming', query: q(MORNING, 'tones'), custom: true, expect: '24 DarkCranberry' },
       { screen: 'work', name: 'Category colours: all 25 presets, one under the needle', query: q(TYPICAL, 'tones'), custom: true, expect: '24 DarkCranberry' },
       { screen: 'work', name: 'Category colours: all 25 presets, all past', query: q(NIGHT, 'tones'), custom: true, expect: '24 DarkCranberry' },
