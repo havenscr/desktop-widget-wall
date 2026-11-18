@@ -41,7 +41,7 @@ import { knob } from './long';
  *   ?wplay=<n>                play saved item n (0 is the first)
  *   ?wsheet=one|kind          open the settings sheet (`kind`: a look per kind)
  *   ?wtune=sky.size=80,sky.soft=0,sun.up=-100   settings of a look (look.key=value, a switch as 0 or 1)
- *   ?wtab=listen              stay on Listen (for the art's Video corner)
+ *   ?wtab=listen              stay on Listen (for the art's video icon)
  *   ?wposter=bright           a pale bright picture, the worst case for text over video
  *   ?wpaste=<link>            after the tab is up, paste this link into the list's field and press Save, through
  *                             the real field and form (the link is a URL-encoded query value, so it can carry
