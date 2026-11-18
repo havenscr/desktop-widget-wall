@@ -1,5 +1,5 @@
 import { IconCheck } from '@tabler/icons-react';
-import { useLayoutEffect, useRef } from 'react';
+import { useLayoutEffect, useRef, useState } from 'react';
 import { tip } from '../ui/HoverTip';
 import { reviewNow } from '../ui/reviewClock';
 import { useRemeasure } from '../ui/useRemeasure';
@@ -10,7 +10,7 @@ import { TickWait } from '../tasks/TaskCard';
 import { clockText } from './sunLine';
 import { useShield } from './NetworkTile';
 import { alertsOpen } from './shieldModel';
-import { useChores } from './useChores';
+import { readTodayOnly, useChores, writeTodayOnly } from './useChores';
 
 /** Rows in view: five, or three while the network card is tall with open alerts. */
 export const ROWS_QUIET = 5;
@@ -49,7 +49,8 @@ export function chorePill(task: Pick<TaskItem, 'due_at' | 'due_is_all_day' | 'es
  * rest as icon dots) and keeps a fixed 62 px column at the right for its pill.
  */
 export function Chores() {
-  const { status, tasks, remaining, marks, hidden, complete } = useChores();
+  const [todayOnly, setTodayOnly] = useState(readTodayOnly);
+  const { status, tasks, remaining, marks, hidden, complete } = useChores(todayOnly);
   const fit = alertsOpen(useShield()) ? ROWS_ALERTS : ROWS_QUIET;
   const ticks = usePendingTicks(complete);
   const now = reviewNow ? reviewNow() : Date.now();
@@ -87,7 +88,7 @@ export function Chores() {
     body = (
       <div className="tk3 clear">
         <IconCheck size={28} stroke={2} aria-hidden="true" />
-        <span className="n">Nothing waiting around the house</span>
+        <span className="n">{todayOnly ? 'Nothing for today' : 'Nothing waiting around the house'}</span>
       </div>
     );
   } else {
@@ -147,6 +148,18 @@ export function Chores() {
         <span className="k">Around the house</span>
         <span className="chores-side">
           {stale && <span className="xs warn-text">Task app not reachable</span>}
+          <button
+            type="button"
+            className={todayOnly ? 'chores-today on' : 'chores-today'}
+            aria-pressed={todayOnly}
+            onClick={() => {
+              writeTodayOnly(!todayOnly);
+              setTodayOnly(!todayOnly);
+            }}
+            {...tip(todayOnly ? 'Showing what is due today or overdue. Click to show everything.' : 'Showing everything. Click to show only what is due today or overdue.')}
+          >
+            Today only
+          </button>
         </span>
       </div>
       {body}

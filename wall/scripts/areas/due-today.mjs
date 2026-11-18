@@ -18,6 +18,7 @@ const THREE = 'Work, Due today: three due';
 const TWELVE = 'Work, Due today: twelve due, two overdue';
 const LONG = 'Work, Due today: twelve due with the longest titles';
 const HOME_QUIET = 'Home, Around the house: tags, five rows in view';
+const HOME_TODAY = 'Home, Around the house: Today only on';
 const HOME_ALERTS = 'Home, Around the house: tags, three rows in view';
 const HOME_TIMED = 'Home, Around the house: a timed chore beside estimate pills';
 const EMPTY = 'Work, no task at all';
@@ -45,6 +46,19 @@ function measureTasks() {
   const want = Number(params.get('taskrows'));
   if (!rows.length && want) return [mode + ': no task rows were drawn'];
   if (rows.length !== want) fails.push(mode + ': ' + rows.length + ' rows drawn, expected ' + want);
+  if (mode === 'home') {
+    // The Today only chip sits in the heading row, inside the card, on the right of the heading, text 16 px or more.
+    const chip = document.querySelector('.home .chores .chores-today');
+    const card = document.querySelector('.home .chores');
+    const head = document.querySelector('.home .chores .k');
+    if (!chip || !card || !head) fails.push('home: the Today only chip or the heading is missing');
+    else {
+      const cb = box(chip);
+      const kb = box(head);
+      if (cb.left < kb.right + 8 || cb.right > box(card).right + 0.5 || cb.top < box(card).top - 8) fails.push('home: the Today only chip is not beside the heading inside the card');
+      if (parseFloat(getComputedStyle(chip).fontSize) < 16) fails.push('home: the Today only chip text is under 16 px');
+    }
+  }
   const titleSel = mode === 'work' ? '.task-title' : '.chore-open';
   const where = mode === 'work' ? 'tasks' : 'home';
 
@@ -190,6 +204,7 @@ export default {
     workState('due today: row ticked, Done with Undo', 'due=three', ['Done.', 'Undo'], '.tasks .task-check'),
     homeState('home tags: five rows, round tag pills, icon only', 'desk=typical&alerts=0&chores=many', ['Order printer paper', 'Sort the recycling']),
     homeState('home chores: a timed chore beside estimate pills', 'desk=typical&alerts=0&chores=timed', ['Pick up the dry cleaning', '4:30 PM', '15 m']),
+    homeState('home chores: Today only on, one chore due this afternoon', 'desk=typical&alerts=0&chores=timed&todayonly=on', ['Today only', 'Pick up the dry cleaning', '4:30 PM', '!Change the furnace filter']),
     homeState('home tags: three rows while alerts are open', 'desk=typical&alerts=6&chores=many', ['Order printer paper']),
   ] },
   fit: {
@@ -206,6 +221,7 @@ export default {
       { name: LONG, q: fitWork('due=twelve&long=1', 12, 2), checks: ['.work .tasks'] },
       { name: HOME_QUIET, q: fitHome('desk=typical&alerts=0&chores=many', 13), checks: ['.home .chores'] },
       { name: HOME_TIMED, q: fitHome('desk=typical&alerts=0&chores=timed', 14), checks: ['.home .chores'] },
+      { name: HOME_TODAY, q: fitHome('desk=typical&alerts=0&chores=timed&todayonly=on', 1), checks: ['.home .chores'] },
       { name: HOME_ALERTS, q: fitHome('desk=typical&alerts=6&chores=many', 13), checks: ['.home .chores'] },
     ],
     measurements: { tasks: measureTasks },
@@ -250,6 +266,7 @@ export default {
       'home-pill-text': { css: '.home .chore-rows .est { min-width: 0 !important; width: 40px !important; }', expect: /^ *FAIL home: the pill text ".*" is [\d.]+ px in a pill [\d.]+ px wide/m, appliesTo: (v) => v.name === HOME_TIMED },
       'home-pill-equal': { css: '.home .chore-rows .est { min-width: 0 !important; }', expect: /^ *FAIL home: the pill column is not the same width on every row \([\d.]+ to [\d.]+ px\)/m, appliesTo: (v) => v.name === HOME_TIMED },
       'home-pill-min': { css: '.home .chore-rows .est, .home .chore-rows .pill-ph { min-width: 0 !important; width: 50px !important; }', expect: /^ *FAIL home: the pill column is [\d.]+ px wide \(at least 62\)/m, appliesTo: (v) => v.name === HOME_QUIET },
+      'home-chip-away': { css: '.home .chores-today { position: relative !important; left: -400px !important; }', expect: /^ *FAIL home: the Today only chip is not beside the heading inside the card/m, appliesTo: (v) => v.name === HOME_QUIET },
       'home-touch': { css: '.home .chore-rows .t-tags { margin-right: -14px !important; }', expect: /^ *FAIL home: tags touch the pill/m, appliesTo: (v) => v.name === HOME_QUIET },
     },
   },

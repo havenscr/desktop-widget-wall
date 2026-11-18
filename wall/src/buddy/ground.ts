@@ -29,6 +29,15 @@ export interface Span {
 export const WATCH_GROUND: readonly Span[] = [{ min: 140, max: 1020, left: 124, right: 1140 }];
 
 /**
+ * Unwind on its Watch tab when the video is not on the drive-in screen or the Hologram or
+ * Feathered (the whole-sky and sun looks sit behind the land and end above the ground line, so he
+ * walks in front of them, under the video; an empty list draws no screen): the whole floor between
+ * the left wing and the right wing is his, the same reach as Listen's right-hand stretch and the
+ * left stretch joined. Feathered, the Hologram and the drive-in screen keep `WATCH_GROUND`.
+ */
+export const WATCH_OPEN_GROUND: readonly Span[] = [{ min: 140, max: 1870, left: 124, right: 1992 }];
+
+/**
  * His seat at the drive-in has its own ground: from the same left end as the Watch ground to the
  * latest left edge `limit` that keeps him clear of the screen (`audience.ts` gives the limit).
  * `WATCH_GROUND` is not stretched to it: that one also bounds his ordinary wander and where the
@@ -69,9 +78,9 @@ export const BANNER_GROUND: Readonly<Record<'home' | 'meet', readonly Span[]>> =
   ],
 };
 
-/** The ground of a place now (Unwind's depends on its tab; Home's and Meet's on the leave banner). */
-export function groundOf(place: WattPlace, watch: boolean, banner = false): readonly Span[] {
-  if (place === 'unwind' && watch) return WATCH_GROUND;
+/** The ground of a place now (Unwind's depends on its tab and, on Watch, on whether the video stands in front (`keepOut`); Home's and Meet's on the leave banner). */
+export function groundOf(place: WattPlace, watch: boolean, banner = false, keepOut = true): readonly Span[] {
+  if (place === 'unwind' && watch) return keepOut ? WATCH_GROUND : WATCH_OPEN_GROUND;
   if (banner && (place === 'home' || place === 'meet')) return BANNER_GROUND[place];
   return GROUNDS[place];
 }

@@ -1,6 +1,7 @@
 import { knob, longOr } from './long';
 import { reviewNow } from '../../ui/reviewClock';
 import { mocks } from '../tauri';
+import { TODAY_ONLY_KEY } from '../../home/useChores';
 
 type Est = '15' | '30' | '45' | '60plus' | null;
 interface MockTask {
@@ -124,6 +125,14 @@ export function registerTaskMocks(): void {
   else tasks = [...tasks, ...dueToday.slice(0, 5)];
   // `?chores=many`: thirteen home chores; `?chores=timed` adds one due this afternoon at 4:30 PM beside the estimate pills (Home shows five rows that scroll, and "8 more").
   const chores = knob('chores');
+  // Around the house starts with Today only on; the chore states below list undated chores, so they turn it off unless `?todayonly=on`.
+  if (chores) {
+    try {
+      localStorage.setItem(TODAY_ONLY_KEY, knob('todayonly') === 'on' ? 'on' : 'off');
+    } catch {
+      /* storage can be blocked */
+    }
+  }
   if (chores === 'many' || chores === 'timed') {
     const extra = ['Change the furnace filter', 'Call the chimney sweep', 'Renew the car tabs', 'Clean the gutters', 'Oil the squeaky hinge', 'Test the smoke alarms', 'Wash the front windows', 'Restock the pantry'];
     tasks = [...tasks, ...extra.map((title, i): MockTask => ({ id: `th${i + 1}`, title, due: 3 + i, allDay: true, hour: 0, estimate: i % 3 === 0 ? '15' : i % 3 === 1 ? '30' : null, tags: ['home'], bucket: 2 }))];

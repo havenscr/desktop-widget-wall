@@ -130,9 +130,9 @@ export function KeyPicker({
       <div className="pk-list">
         {filePins.length > 0 && query.trim() === '' && (
           <div className="pk-group">
-            <div className="pk-gh">From keys.json</div>
+            <div className="pk-gh">Your keys</div>
             {filePins.map((k, i) => (
-              <Row key={`file:${i}`} label={k.label} icon={k.icon} how="From keys.json" pinned={pins.includes(`file:${i}`)} here={current === `file:${i}`} onPick={() => onChoose(`file:${i}`)} />
+              <Row key={`file:${i}`} label={k.label} icon={k.icon} how="" pinned={pins.includes(`file:${i}`)} here={current === `file:${i}`} onPick={() => onChoose(`file:${i}`)} />
             ))}
           </div>
         )}
@@ -188,7 +188,7 @@ function Row({
       className={`pk-row${pinned ? ' pinned' : ''}${here ? ' here' : ''}${block ? ' off' : ''}`}
       aria-disabled={block ? true : undefined}
       aria-label={`${label}${pinned ? ', pinned' : ''}${badge ? `, ${badge}` : ''}`}
-      {...tip(block ?? (badge === 'check' ? `${how}. Confirm this shortcut on your PC; it is switched off in the automatic sets until you pin it.` : how))}
+      {...tip(block ?? (badge === 'check' ? `${how}. Confirm this shortcut on your PC; it is switched off in the automatic sets until you pin it.` : how || label))}
       onClick={() => !block && onPick()}
     >
       <KeyIcon name={icon} size={18} />
