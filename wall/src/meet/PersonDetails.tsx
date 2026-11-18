@@ -44,7 +44,7 @@ export function PersonDetails({ personKey, onAirLive }: { personKey: string | nu
   return (
     <div className="meet-pdet">
       {line !== null && (
-        <div className="meet-pdet-addr" data-kind={view.kind} role="status">
+        <div className="meet-pdet-addr" data-kind={view.kind} aria-live="polite">
           {line}
         </div>
       )}

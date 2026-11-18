@@ -2,6 +2,7 @@ import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { LIBRARY_DATA } from '../bridge/devMocks/libraryData';
 import { mocks } from '../bridge/tauri';
+import { useOnAirLiveStore } from '../onair/liveState';
 import { usePlaceStore } from '../state/places';
 import { useSignalStore } from '../signals/store';
 import type { CallSignal } from '../signals/model';
@@ -88,6 +89,7 @@ afterEach(() => {
   mocks.clear();
   usePlaceStore.setState({ active: 'work' });
   useSignalStore.setState({ known: false, call: null, recording: false, leave: null });
+  useOnAirLiveStore.setState({ live: false });
 });
 
 const before = (): [Meeting, unknown[]] => {
@@ -324,6 +326,29 @@ it('no address and no contact card appear in the hero or the card', async () => 
     expect(container.textContent).not.toContain(addr);
     expect(container.innerHTML).not.toContain(addr);
   }
+});
+
+it('the card shows the address from Rust after the click, and drops it when On Air turns live', async () => {
+  // A different invented address from the invite's, so the line can only have come from the click.
+  const FROM_RUST = 'm.veld@fabrikam.example';
+  const asked: unknown[] = [];
+  serve([m('1-0', 'Design review', -10, 20, { details })]);
+  mocks.set('wall2_meet_person_address', (args) => (asked.push(args), { address: FROM_RUST }));
+  await setCall(call());
+  const { container } = await renderMeet();
+  await flush(10);
+  expect(asked).toEqual([]);
+  expect(container.textContent).not.toContain(FROM_RUST);
+  fireEvent.click(person(container, /^Marcus Veld/));
+  await flush(10);
+  const card = screen.getByRole('dialog');
+  expect(asked).toHaveLength(1);
+  expect(card.textContent).toContain(FROM_RUST);
+  await act(async () => useOnAirLiveStore.setState({ live: true }));
+  expect(screen.getByRole('dialog').textContent).toContain('Address hidden while on air');
+  expect(container.textContent).not.toContain(FROM_RUST);
+  expect(container.innerHTML).not.toContain(FROM_RUST);
+  expect(asked).toHaveLength(1);
 });
 
 it('Escape returns the focus to the initial that opened the card', async () => {
