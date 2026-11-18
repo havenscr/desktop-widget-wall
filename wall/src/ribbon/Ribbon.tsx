@@ -1,4 +1,4 @@
-import { Fragment, useCallback, useEffect, useState, type CSSProperties } from 'react';
+import { Fragment, useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from 'react';
 import { IconBolt, IconCalendar, IconHome } from '@tabler/icons-react';
 import { invoke } from '../bridge/tauri';
 import { useFocusStore } from '../focus/store';
@@ -19,6 +19,31 @@ import { useDueTaskFeed } from './useDueTasks';
 export type RibbonKind = 'work' | 'home';
 
 const TICKS = ticks();
+
+/** A chip's title. When it does not fit, the last 16 px of the letters fade (the chip keeps its crisp edge and colour). */
+function ChipTitle({ text }: { text: string }) {
+  const ref = useRef<HTMLSpanElement>(null);
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const measure = () => {
+      if (el.scrollWidth > el.clientWidth + 1) el.setAttribute('data-cut', '');
+      else el.removeAttribute('data-cut');
+    };
+    measure();
+    // Letters can change width after the first paint (the font arrives); measure again then.
+    let live = true;
+    document.fonts?.ready.then(() => live && measure()).catch(() => undefined);
+    return () => {
+      live = false;
+    };
+  });
+  return (
+    <span ref={ref} className="ev-t">
+      {text}
+    </span>
+  );
+}
 
 /** Asks Rust to open the event in Outlook; Rust holds the link behind the key. */
 function openEvent(key: string): void {
@@ -343,7 +368,7 @@ export function Ribbon({ kind, now = Date.now }: { kind: RibbonKind; now?: () =>
                 }
                 {...tip(() => <ChipTip c={c} account={account} />)}
               >
-                {c.narrow ? null : c.title}
+                {c.narrow ? null : <ChipTitle text={c.title} />}
               </div>
             </Fragment>
           );

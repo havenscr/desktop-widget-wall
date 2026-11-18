@@ -443,3 +443,24 @@ it('a chip with an Outlook category takes its tone, names the category on hover 
   await flush(TIP_DELAY_MS);
   expect(document.querySelector('.hover-tip')!.textContent).toBe('Planning1:00 to 2:00 PM, WorkCategory: Sample blue');
 });
+
+it('fades the end of a title that does not fit, and leaves a title that fits alone', async () => {
+  mocks.set('wall2_meet_day', () => day);
+  const sw = vi.spyOn(HTMLElement.prototype, 'scrollWidth', 'get').mockImplementation(function (this: HTMLElement) {
+    return this.textContent === 'Design review' ? 200 : 50;
+  });
+  const cw = vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(100);
+  try {
+    const r = render(<Ribbon kind="work" />);
+    await flush();
+    const titles = [...r.container.querySelectorAll('.ev .ev-t')];
+    expect(titles.map((t) => [t.textContent, t.hasAttribute('data-cut')])).toEqual([
+      ['AE sync', false],
+      ['Design review', true],
+      ['Livestream: Fabric Apps', false],
+    ]);
+  } finally {
+    sw.mockRestore();
+    cw.mockRestore();
+  }
+});
