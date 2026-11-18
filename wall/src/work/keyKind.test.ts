@@ -2,6 +2,7 @@
 import { readFileSync } from 'node:fs';
 import { expect, it } from 'vitest';
 import { LIBRARY_DATA } from '../bridge/devMocks/libraryData';
+import { isMouseOnly, keyboardOnMouseKey } from './keyPress';
 import { ACTION_KIND, actionKind, GENERAL_SET, GROUP_KIND, KEY_KINDS, KIND_TOKEN, libIndex, libKeyKind, matchLibrary, normChord, pinKind, setKeyKind } from './keyKind';
 
 const rust: string = readFileSync('../src-tauri/src/wall2_keylib.rs', 'utf8');
@@ -104,4 +105,12 @@ it('every ShareX key is a capture key, and an unknown sharex action is still a c
   expect(actionKind('sharex:region')).toBe('capture');
   expect(libKeyKind('sharex', 'sx-folder', 'sharex:folder')).toBe('capture');
   for (const k of LIBRARY_DATA.find((g) => g.id === 'sharex')!.keys) expect(libKeyKind('sharex', k.id, k.action), k.id).toBe('capture');
+});
+
+it('ShareX keys, like lock, never run from Space or Enter on a focused tile', () => {
+  expect(isMouseOnly('sharex:record')).toBe(true);
+  expect(isMouseOnly('lock')).toBe(true);
+  expect(isMouseOnly('zen')).toBe(false);
+  expect(keyboardOnMouseKey('sharex:record-gif', 0)).toBe(true);
+  expect(keyboardOnMouseKey('sharex:record-gif', 1)).toBe(false);
 });

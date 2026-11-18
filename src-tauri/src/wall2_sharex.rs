@@ -130,6 +130,41 @@ pub(crate) fn unquote(p: &str) -> String {
     p.trim().trim_matches('"').to_string()
 }
 
+/// Where a candidate path for ShareX.exe came from.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Source {
+    /// Program Files, or a key under HKLM: writable only by an administrator.
+    ProgramFiles,
+    UninstallMachine,
+    AppPathsMachine,
+    /// A key under HKCU, which this user (or a program running as them) can write.
+    UninstallUser,
+    AppPathsUser,
+    /// The image path of a running process named ShareX.exe.
+    Running,
+}
+
+impl Source {
+    /// Whether only an administrator could have put the path here.
+    pub(crate) fn machine_wide(self) -> bool {
+        matches!(self, Source::ProgramFiles | Source::UninstallMachine | Source::AppPathsMachine)
+    }
+}
+
+/// The sources to try, in order: machine-wide ones first, then the user's keys, then the
+/// running process. An elevated wall tries only the machine-wide ones.
+pub(crate) fn source_order(elevated: bool) -> Vec<Source> {
+    let all = [Source::ProgramFiles, Source::UninstallMachine, Source::AppPathsMachine, Source::UninstallUser, Source::AppPathsUser, Source::Running];
+    all.into_iter().filter(|s| !elevated || s.machine_wide()).collect()
+}
+
+/// True when `path` is inside the profile folder `profile` (compared without case). The
+/// profile folder holds AppData and LocalLow, which a low-privilege program can write.
+pub(crate) fn under_profile(path: &str, profile: &str) -> bool {
+    let prof = profile.trim_end_matches('\\').to_ascii_lowercase();
+    !prof.is_empty() && path.to_ascii_lowercase().starts_with(&format!("{prof}\\"))
+}
+
 #[cfg(windows)]
 pub(crate) use win::launch;
 
@@ -146,7 +181,7 @@ mod win {
     use windows::Win32::Storage::FileSystem::GetDriveTypeW;
     use windows::Win32::System::Com::CoTaskMemFree;
     use windows::Win32::System::Registry::{RegGetValueW, HKEY, HKEY_CURRENT_USER, HKEY_LOCAL_MACHINE, RRF_RT_REG_SZ};
-    use windows::Win32::UI::Shell::{FOLDERID_ProgramFiles, SHGetKnownFolderPath, KF_FLAG_DEFAULT};
+    use windows::Win32::UI::Shell::{FOLDERID_Profile, FOLDERID_ProgramFiles, SHGetKnownFolderPath, KF_FLAG_DEFAULT};
 
     /// The path found last time, checked again before every use.
     static FOUND: Mutex<Option<PathBuf>> = Mutex::new(None);
@@ -159,15 +194,13 @@ mod win {
     /// Start one allowed task. Err is a fixed word: `busy` (the same task a moment ago), `not
     /// installed` (no valid ShareX.exe) or `failed` (the program would not start).
     pub(crate) fn launch(task: ShareXTask) -> Result<(), Refusal> {
-        {
-            let mut last = LAST.lock().map_err(|_| Refusal::Failed)?;
-            let now = Instant::now();
-            if !gap_ok(last[task.0], now) {
-                return Err(Refusal::Busy);
-            }
-            last[task.0] = Some(now);
+        let now = Instant::now();
+        if !gap_ok(LAST.lock().map_err(|_| Refusal::Failed)?[task.0], now) {
+            return Err(Refusal::Busy);
         }
         let exe = find_exe().ok_or(Refusal::NotInstalled)?;
+        // Stamped only once ShareX is found, so a "not installed" press never makes a retry busy.
+        LAST.lock().map_err(|_| Refusal::Failed)?[task.0] = Some(now);
         let mut cmd = Command::new(&exe);
         cmd.args(task.args()).stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null());
         if let Some(dir) = exe.parent() {
@@ -191,14 +224,35 @@ mod win {
         if let Some(p) = cached.and_then(|p| p.to_str().and_then(checked_exe)) {
             return Some(p);
         }
-        // The plan's order: the running copy, the installer's uninstall key (this user, then
-        // the machine), App Paths (the same), then the usual folder.
-        let sources: [fn() -> Option<String>; 6] = [running, uninstall_user, uninstall_machine, app_paths_user, app_paths_machine, program_files];
-        let found = sources.iter().find_map(|s| s().and_then(|p| checked_exe(&p)))?;
+        // Machine-wide sources first (Program Files, HKLM), then HKCU, then the running copy;
+        // an elevated wall uses the machine-wide ones only (see `source_order`).
+        let order = source_order(sys::self_elevated());
+        let found = order.into_iter().find_map(|s| candidate(s).and_then(|p| checked_exe(&p)))?;
         if let Ok(mut f) = FOUND.lock() {
             *f = Some(found.clone());
         }
         Some(found)
+    }
+
+    fn candidate(s: Source) -> Option<String> {
+        match s {
+            Source::ProgramFiles => program_files(),
+            Source::UninstallMachine => uninstall_machine(),
+            Source::AppPathsMachine => app_paths_machine(),
+            Source::UninstallUser => uninstall_user(),
+            Source::AppPathsUser => app_paths_user(),
+            Source::Running => running(),
+        }
+    }
+
+    /// The user's profile folder, from the known-folder call.
+    fn profile_dir() -> Option<String> {
+        unsafe {
+            let p = SHGetKnownFolderPath(&FOLDERID_Profile, KF_FLAG_DEFAULT, HANDLE::default()).ok()?;
+            let dir = p.to_string().ok();
+            CoTaskMemFree(Some(p.0 as *const std::ffi::c_void));
+            dir
+        }
     }
 
     /// The path as a path that is safe to start, or None: it must pass `plain_local_path`, be a
@@ -224,10 +278,13 @@ mod win {
 
     /// The image path of a process named ShareX.exe, from the top-level windows (the hidden
     /// main window of a tray program counts).
+    /// A copy whose path is under the user's profile (AppData, LocalLow) is skipped: a
+    /// low-privilege program could have put it there.
     fn running() -> Option<String> {
+        let profile = profile_dir()?;
         sys::top_level_windows().into_iter().find_map(|h| {
             let image = sys::image_path(sys::pid_of(h))?;
-            exe_matches(&image, EXE_NAME).then_some(image)
+            (exe_matches(&image, EXE_NAME) && !under_profile(&image, &profile)).then_some(image)
         })
     }
 
@@ -383,6 +440,27 @@ mod tests {
         assert_eq!(exe_in_dir("  "), None);
         assert_eq!(unquote("\"C:\\a\\ShareX.exe\""), r"C:\a\ShareX.exe");
         assert_eq!(unquote(r"C:\a\ShareX.exe"), r"C:\a\ShareX.exe");
+    }
+
+    #[test]
+    fn machine_wide_sources_come_first_and_an_elevated_wall_uses_only_those() {
+        assert_eq!(
+            source_order(false),
+            vec![Source::ProgramFiles, Source::UninstallMachine, Source::AppPathsMachine, Source::UninstallUser, Source::AppPathsUser, Source::Running]
+        );
+        assert_eq!(source_order(true), vec![Source::ProgramFiles, Source::UninstallMachine, Source::AppPathsMachine]);
+        assert!(!Source::Running.machine_wide() && !Source::UninstallUser.machine_wide() && !Source::AppPathsUser.machine_wide());
+    }
+
+    #[test]
+    fn a_path_under_the_profile_folder_is_recognised() {
+        let prof = r"C:\Users\Ann";
+        assert!(under_profile(r"C:\Users\Ann\AppData\Local\ShareX\ShareX.exe", prof));
+        assert!(under_profile(r"c:\users\ann\AppData\LocalLow\x\ShareX.exe", r"C:\Users\Ann\"));
+        assert!(!under_profile(r"C:\Program Files\ShareX\ShareX.exe", prof));
+        assert!(!under_profile(r"C:\Users\Annabel\ShareX.exe", prof), "a longer folder name is not inside it");
+        assert!(!under_profile(r"C:\Users\Ann", prof));
+        assert!(!under_profile(r"C:\x\ShareX.exe", ""));
     }
 
     #[test]
