@@ -63,6 +63,8 @@ import {
 import { POSES, SPRITES, pixelColor, type Pose } from './sprites';
 import { BANNER, BANNER_GROUND, GROUNDS, WATCH_GROUND, WATCH_OPEN_GROUND, groundOf, walkAround, type Span } from './ground';
 import type { Walk } from './model';
+import { DEFAULT_LOOKS } from '../unwind/watch/looks';
+import { videoInFront } from '../unwind/watch/store';
 
 const at = (h: number, m = 0) => new Date(2026, 10, 11, h, m);
 const PLACES = Object.keys(WALKS) as WattPlace[];
@@ -392,7 +394,7 @@ describe('the ground he can be set down on', () => {
       }
     }, 60_000);
   }
-  it('Watch with the video behind the mountains (no keep-out): the whole floor, left wing to right wing, clear of every panel but the picture', () => {
+  it('Watch with the video behind the mountains (Sky or Sun, no keep-out): the whole floor, left wing to right wing, clear of every panel but the picture', () => {
     expect(groundOf('unwind', true, false, false)).toBe(WATCH_OPEN_GROUND);
     expect(WATCH_OPEN_GROUND[0].min).toBe(WATCH_GROUND[0].min);
     expect(WATCH_OPEN_GROUND[0].max).toBeGreaterThan(1700);
@@ -402,6 +404,16 @@ describe('the ground he can be set down on', () => {
       expect(box.right).toBeLessThanOrEqual(span.right);
       expect(box.left).toBeGreaterThanOrEqual(span.left);
       for (const panel of panels('unwind', true, false)) expect(overlaps(box, panel), `open Watch span over ${JSON.stringify(panel)}`).toBe(false);
+    }
+  }, 60_000);
+  it('Watch with Feathered playing: his walk range never overlaps the picture box (x 1150 to 1960)', () => {
+    const state = { playing: { kind: 'video', id: 'x' }, looks: { ...DEFAULT_LOOKS, all: 'feather' }, saved: [] } as unknown as Parameters<typeof videoInFront>[0];
+    const spans = groundOf('unwind', true, false, videoInFront(state));
+    expect(spans).toBe(WATCH_GROUND);
+    for (const span of spans) {
+      const box = reach('unwind', CAMERAS.unwind, spanWalk('unwind', span));
+      expect(overlaps(box, { left: 1150, right: 1960, top: 50, bottom: 505 })).toBe(false);
+      expect(span.max).toBeLessThan(1150);
     }
   }, 60_000);
   it('Watch with the video on the hologram or the movie screen (keep-out): the narrow ground stays', () => {

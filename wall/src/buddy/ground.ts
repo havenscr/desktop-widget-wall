@@ -29,12 +29,11 @@ export interface Span {
 export const WATCH_GROUND: readonly Span[] = [{ min: 140, max: 1020, left: 124, right: 1140 }];
 
 /**
- * Unwind on its Watch tab when the video is not on the drive-in screen or the Hologram (the
- * feathered, whole-sky and sun looks are sky pictures: they end above the ground line, and he
- * walks in front of them, which reads as under the video; an empty list draws no screen): the
- * whole floor between the left wing and the right wing is his, the same reach as Listen's right-hand
- * stretch and the left stretch joined, so he walks the full width, under the picture. Only the
- * Hologram and the drive-in screen keep `WATCH_GROUND`.
+ * Unwind on its Watch tab when the video is not on the drive-in screen or the Hologram or
+ * Feathered (the whole-sky and sun looks sit behind the land and end above the ground line, so he
+ * walks in front of them, under the video; an empty list draws no screen): the whole floor between
+ * the left wing and the right wing is his, the same reach as Listen's right-hand stretch and the
+ * left stretch joined. Feathered, the Hologram and the drive-in screen keep `WATCH_GROUND`.
  */
 export const WATCH_OPEN_GROUND: readonly Span[] = [{ min: 140, max: 1870, left: 124, right: 1992 }];
 

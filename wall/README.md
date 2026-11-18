@@ -1875,8 +1875,8 @@ horizon canvas and the veil and under the panels; its styles are `buddy/watt.css
   2400 (the whole band between the top row and the ribbon); Unwind on Listen 140 to 494 (left
   of the transport row) and 1416 to 1870 (between the row and the Room card); Unwind on Watch
   140 to 1870, the whole floor between the wings (`WATCH_OPEN_GROUND`), so he walks under a
-  video that sits behind the mountains (Whole sky, The sun) or fades out above the ground line
-  (Feathered), and 140 to 1020 only while the video is on the drive-in screen or the Hologram
+  video that sits behind the mountains (Whole sky, The sun), and 140 to 1020 while the video is
+  Feathered, on the drive-in screen or the Hologram, so he never walks over a picture
   (`videoInFront` in the Watch store; the empty drive-in screen counts, nothing else does). While the leave banner shows in the band above the
   ribbon (Home and Meet, x 624 to 1914), his ground there goes round it: Home 140 to 516 and 1932
   to 2400, Meet 140 to 536 and 1930 to 2420; he fades over to the nearest free spot and his stored

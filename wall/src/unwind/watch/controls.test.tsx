@@ -589,14 +589,14 @@ describe('the buddy seam and the opener', () => {
     expect(driveInAudience(useWatchStore.getState())).toBeNull();
   });
 
-  it('videoInFront (his keep-out) is true only for the movie screen and the hologram, never for the sky looks', () => {
+  it('videoInFront (his keep-out) is true for the movie screen, the hologram and Feathered, never for the sky and sun looks', () => {
     seed({ mode: 'one', all: 'sky' });
     useWatchStore.getState().play(ITEMS[0]);
-    for (const look of ['sky', 'sun', 'feather'] as const) {
+    for (const look of ['sky', 'sun'] as const) {
       useWatchStore.getState().setLooks({ ...DEFAULT_LOOKS, all: look });
       expect(videoInFront(useWatchStore.getState()), look).toBe(false);
     }
-    for (const look of ['drivein', 'holo'] as const) {
+    for (const look of ['drivein', 'holo', 'feather'] as const) {
       useWatchStore.getState().setLooks({ ...DEFAULT_LOOKS, all: look });
       expect(videoInFront(useWatchStore.getState()), look).toBe(true);
     }
