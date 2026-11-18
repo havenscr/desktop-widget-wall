@@ -1299,6 +1299,15 @@
   border-style: dashed;
 }
 
+/* Camera check could not find the Camera app: the label is replaced by the message, which may take three lines. */
+.meet-hero.deck .meet-keys .meet-key.failed {
+  white-space: normal;
+  text-align: center;
+  font-size: 16px;
+  line-height: 18px;
+  padding: 0 6px;
+}
+
 /* The key press line and the notice take the 16 px under the lights section. */
 .meet-hero.deck .meet-hero-line .meet-brief,
 .meet-hero.deck .meet-hero-line .meet-notice {

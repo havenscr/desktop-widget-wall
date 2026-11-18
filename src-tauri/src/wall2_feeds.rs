@@ -1352,6 +1352,17 @@ pub fn wall2_open_link(window: tauri::WebviewWindow, app: tauri::AppHandle, kind
     app.opener().open_url(url, None::<&str>).map_err(|_| "Could not open the link".to_string())
 }
 
+/// The one address `wall2_open_camera` opens: the Windows Camera app. Fixed here, never built from anything the page sends.
+const CAMERA_URI: &str = "microsoft.windows.camera:";
+
+/// Opens the Windows Camera app so the camera can be checked before a call. Takes no arguments; only the Wall 2
+/// window may call it (`forbidden` otherwise); any other failure answers `failed`.
+#[tauri::command]
+pub fn wall2_open_camera(window: tauri::WebviewWindow, app: tauri::AppHandle) -> Result<(), String> {
+    crate::wall2_meet::require_wall2(window.label())?;
+    app.opener().open_url(CAMERA_URI, None::<&str>).map_err(|_| "failed".to_string())
+}
+
 fn fixed_link(kind: &str) -> Option<&'static str> {
     match kind {
         "youtube-music" => Some("https://music.youtube.com/"),
@@ -1373,6 +1384,7 @@ mod tests {
         for (command, check) in [
             ("pub fn wall2_links(", "if crate::wall2_meet::require_wall2(window.label()).is_err()"),
             ("pub fn wall2_open_link(", "crate::wall2_meet::require_wall2(window.label())?;"),
+            ("pub fn wall2_open_camera(", "crate::wall2_meet::require_wall2(window.label())?;"),
             ("pub async fn wall2_tasks_summary(", "crate::wall2_meet::require_wall2(window.label())?;"),
             ("pub async fn wall2_tasks_next(", "crate::wall2_meet::require_wall2(window.label())?;"),
             ("pub async fn wall2_task_done(", "crate::wall2_meet::require_wall2(window.label())?;"),
@@ -1383,6 +1395,18 @@ mod tests {
             let first = body[body.find('{').expect("body") + 1..].trim_start();
             assert!(first.starts_with(check), "{command}");
         }
+    }
+
+    #[test]
+    fn camera_command_opens_one_fixed_uri_and_takes_no_arguments() {
+        assert_eq!(CAMERA_URI, "microsoft.windows.camera:");
+        let src = include_str!("wall2_feeds.rs");
+        let start = src.find("pub fn wall2_open_camera(").expect("command");
+        let body = &src[start..start + src[start..].find("\n}\n").expect("end")];
+        // No argument besides the window and the app handle, and the opener gets the constant only.
+        assert!(body.lines().next().unwrap().ends_with("(window: tauri::WebviewWindow, app: tauri::AppHandle) -> Result<(), String> {"));
+        assert!(body.contains("open_url(CAMERA_URI, None::<&str>)"));
+        assert_eq!(body.matches("open_url(").count(), 1);
     }
 
     #[test]

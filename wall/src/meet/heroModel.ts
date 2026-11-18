@@ -225,14 +225,18 @@ export interface LaterKeySpec {
   /** A key icon name (`KEY_ICONS`), or `smile`. */
   icon: string;
   tint?: KeyTint;
-  /** Marked soon: the key is drawn as voted and has no action yet. */
-  soon?: boolean;
+  /** A key that works: drawn by `CameraCheckKey` instead of as a dashed tile. */
+  live?: 'camera';
 }
 
 /** The tint of the Open invite key and of the "No join link" tile, which share the invite's colour. */
 export const INVITE_TINT: KeyTint = 'invite';
 export const NO_JOIN_LINK_LABEL = 'No join link';
-export const CAMERA_CHECK_TIP = 'Soon: opens the Camera app so you can check framing and light before the call. Not available yet.';
+export const CAMERA_CHECK_LABEL = 'Camera check';
+export const CAMERA_CHECK_TIP = 'Opens the Camera app so you can check framing and light before the call';
+export const CAMERA_CHECK_FAILED = 'Camera app not found';
+/** How long the key says the Camera app was not found before it shows its label again. */
+export const CAMERA_CHECK_NOTE_MS = 5000;
 
 export const LATER_TIP = 'Not available yet';
 
@@ -242,7 +246,7 @@ export const BEFORE_LATER: readonly LaterKeySpec[] = [
   { label: 'Open chat', icon: 'chat', tint: 'people' },
   { label: 'Running late', icon: 'timer', tint: 'people' },
   { label: 'Do Not Disturb', icon: 'moon', tint: 'you' },
-  { label: 'Camera check', icon: 'camera', tint: 'you', soon: true },
+  { label: CAMERA_CHECK_LABEL, icon: 'camera', tint: 'you', live: 'camera' },
   { label: 'Open in Teams', icon: 'window', tint: 'teams' },
 ];
 
