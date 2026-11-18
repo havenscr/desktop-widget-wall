@@ -588,6 +588,8 @@ pub(crate) enum Refusal {
     Failed,
     /// Not a Windows build.
     Unsupported,
+    /// ShareX.exe was not found, or what was found failed the path checks.
+    NotInstalled,
 }
 
 impl Refusal {
@@ -601,6 +603,7 @@ impl Refusal {
             Refusal::NotForward => "not forward",
             Refusal::Failed => "failed",
             Refusal::Unsupported => "unsupported",
+            Refusal::NotInstalled => "not installed",
         }
     }
 }
@@ -1036,6 +1039,7 @@ mod win {
             KeyAction::Chord(steps) => send(set, steps, pass).map(|_| None),
             KeyAction::Wall(WallAction::Lock) => system_call(lock).map(|_| None),
             KeyAction::Wall(WallAction::DisplaysOff) => detach(displays_off).map(|_| None),
+            KeyAction::Wall(WallAction::ShareX(task)) => crate::wall2_sharex::launch(*task).map(|_| None),
             KeyAction::Wall(a) => Ok(outcome(a)),
         }
     }
@@ -1608,10 +1612,11 @@ mod tests {
 
     #[test]
     fn refusal_words_are_fixed_and_distinct() {
-        let all = [Refusal::Busy, Refusal::NoKey, Refusal::NoApp, Refusal::Gone, Refusal::Elevated, Refusal::NotForward, Refusal::Failed, Refusal::Unsupported];
+        let all = [Refusal::Busy, Refusal::NoKey, Refusal::NoApp, Refusal::Gone, Refusal::Elevated, Refusal::NotForward, Refusal::Failed, Refusal::Unsupported, Refusal::NotInstalled];
         let words: HashSet<&str> = all.iter().map(|r| r.word()).collect();
         assert_eq!(words.len(), all.len());
         assert_eq!(Refusal::NotForward.word(), "not forward");
+        assert_eq!(Refusal::NotInstalled.word(), "not installed");
     }
 
     #[test]
@@ -1777,6 +1782,7 @@ mod tests {
         assert_eq!(outcome(&WallAction::SonosPlaySuggested), Some("sonos:play-suggested".to_string()));
         assert_eq!(outcome(&WallAction::Lock), None);
         assert_eq!(outcome(&WallAction::DisplaysOff), None);
+        assert_eq!(outcome(&parse_action("sharex:region").unwrap()), None, "Rust starts ShareX itself; the page runs nothing");
     }
 
     #[test]

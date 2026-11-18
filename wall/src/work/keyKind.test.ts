@@ -2,6 +2,7 @@
 import { readFileSync } from 'node:fs';
 import { expect, it } from 'vitest';
 import { LIBRARY_DATA } from '../bridge/devMocks/libraryData';
+import { isMouseOnly, keyboardOnMouseKey } from './keyPress';
 import { ACTION_KIND, actionKind, GENERAL_SET, GROUP_KIND, KEY_KINDS, KIND_TOKEN, libIndex, libKeyKind, matchLibrary, normChord, pinKind, setKeyKind } from './keyKind';
 
 const rust: string = readFileSync('../src-tauri/src/wall2_keylib.rs', 'utf8');
@@ -97,4 +98,19 @@ it('else the set rule, and a key that matches nothing keeps it; no library read 
   expect(setKeyKind(app, { action: null, label: 'Refresh the report' }, 0, lib)).toBe('app');
   expect(setKeyKind(own, { action: null, label: 'Snip' }, 0, null)).toBe('system');
   expect(matchLibrary({ label: '' }, lib)).toBeNull();
+});
+
+it('every ShareX key is a capture key, and an unknown sharex action is still a capture action only by its prefix', () => {
+  expect(GROUP_KIND.sharex).toBe('capture');
+  expect(actionKind('sharex:region')).toBe('capture');
+  expect(libKeyKind('sharex', 'sx-folder', 'sharex:folder')).toBe('capture');
+  for (const k of LIBRARY_DATA.find((g) => g.id === 'sharex')!.keys) expect(libKeyKind('sharex', k.id, k.action), k.id).toBe('capture');
+});
+
+it('ShareX keys, like lock, never run from Space or Enter on a focused tile', () => {
+  expect(isMouseOnly('sharex:record')).toBe(true);
+  expect(isMouseOnly('lock')).toBe(true);
+  expect(isMouseOnly('zen')).toBe(false);
+  expect(keyboardOnMouseKey('sharex:record-gif', 0)).toBe(true);
+  expect(keyboardOnMouseKey('sharex:record-gif', 1)).toBe(false);
 });

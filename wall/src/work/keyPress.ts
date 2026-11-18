@@ -10,8 +10,11 @@ const RUST_DONE: Record<string, string> = { lock: 'Locking the PC', 'displays:of
 /** Mouse keys: they never run from the keyboard, so the Space or Enter that wakes the screens or follows an unlock cannot run them again. */
 export const MOUSE_ONLY = new Set(['lock', 'displays:off']);
 
+/** True for an action that runs only from a click: the mouse-only set, and every ShareX task (a toggle must not fire from Space or Enter). */
+export const isMouseOnly = (action: string): boolean => MOUSE_ONLY.has(action) || action.startsWith('sharex:');
+
 /** True for a click that came from the keyboard (detail 0) on a key that is mouse only. */
-export const keyboardOnMouseKey = (action: string | null, detail: number): boolean => action !== null && MOUSE_ONLY.has(action) && detail === 0;
+export const keyboardOnMouseKey = (action: string | null, detail: number): boolean => action !== null && isMouseOnly(action) && detail === 0;
 
 /** Where a key goes, for the words of a refusal: the set's name, or "the app in front". */
 export type Where = Pick<SetInfo, 'name' | 'general'>;
@@ -34,8 +37,9 @@ export function useKeyPress(show: (text: string) => void, refresh: () => void, s
           // Rust took the press without an error: the new On Air frame's Pause key learns of it here.
           sent?.(id);
           if (typeof answer === 'string') show(await runWallAction(answer));
-          else if (action && RUST_DONE[action]) {
-            show(RUST_DONE[action]);
+          else if (action && (RUST_DONE[action] || action.startsWith('sharex:'))) {
+            // Rust started the fixed ShareX task itself; the line names the key.
+            show(RUST_DONE[action] ?? `ShareX: ${label}`);
             // Rust ran it and the wall stays in front: the tile must not keep the focus.
             (document.activeElement as HTMLElement | null)?.blur?.();
           }
@@ -50,7 +54,7 @@ export function useKeyPress(show: (text: string) => void, refresh: () => void, s
   );
   /** Key handler for a tile: held keys never repeat, and a mouse-only key ignores Space and Enter. */
   const onKeyDown = (action: string | null) => (e: KeyboardEvent) => {
-    if (action !== null && MOUSE_ONLY.has(action) && (e.key === 'Enter' || e.key === ' ')) {
+    if (action !== null && isMouseOnly(action) && (e.key === 'Enter' || e.key === ' ')) {
       e.preventDefault();
       return;
     }
