@@ -926,6 +926,11 @@ it('no offer when something plays, when the last thing was not a playlist, or be
   expect(offerBtn()).toBeNull();
   offerOn();
   expect(offerBtn()).not.toBeNull();
+  // Playing with no title or artist is still playing.
+  act(() => useNowPlayingStore.setState({ info: { playback_status: 'playing' } as never, at: Date.now() }));
+  expect(offerBtn()).toBeNull();
+  offerOn();
+  expect(offerBtn()).not.toBeNull();
   act(() => useWatchStore.setState({ playing: { ...LIST } }));
   expect(offerBtn()).toBeNull();
   act(() => useWatchStore.setState({ playing: null }));

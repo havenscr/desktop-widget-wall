@@ -61,6 +61,11 @@ it('the offer is not in the For you list (it is never counted), and shows only a
   // A media session playing hides it, a quiet one does not.
   read({ playback_status: 'playing', title: 'Song', artist: 'Band' });
   expect(offer.result.current).toBeNull();
+  // Playing with no title or artist still hides it; paused or stopped does not.
+  read({ playback_status: 'playing' });
+  expect(offer.result.current).toBeNull();
+  read({ playback_status: 'paused', title: 'Song' });
+  expect(offer.result.current).not.toBeNull();
   read({ playback_status: 'stopped' });
   expect(offer.result.current).not.toBeNull();
   // The wall's own player playing hides it.

@@ -14,7 +14,7 @@ import { overlayOwnsPointer } from '../ribbon/DrawerScrim';
 import { tip } from '../ui/HoverTip';
 import { useVisible } from '../ui/useVisible';
 import { useArrangeStatus, layoutOffReason, isLayoutAction } from './arrangeStatus';
-import { runForYou, useForYou, useResumeOffer, type ForYouItem, type ForYouKind } from './forYou';
+import { runForYou, useForYou, useResumeOffer, type ForYouItem, type ForYouKind, type ResumeOffer } from './forYou';
 import { useGuard } from './useGuard';
 import { ActionError } from './wallActions';
 import { KeyIcon } from './keyIcons';
@@ -93,8 +93,8 @@ function secondRowFits(tiles: HTMLElement): boolean {
  */
 type HeadFit = 0 | 1 | 2 | 3;
 
-const KIND_ICON: Record<ForYouKind, Icon> = { meeting: IconVideo, waiting: IconMessageCircle, merge: IconGitPullRequest, alarm: IconAlertTriangle, resume: IconPlayerPlay };
-const KIND_TONE: Record<ForYouKind, string> = { meeting: 'mint', waiting: 'amber', merge: 'mint', alarm: 'amber', resume: 'mint' };
+const KIND_ICON: Record<ForYouKind, Icon> = { meeting: IconVideo, waiting: IconMessageCircle, merge: IconGitPullRequest, alarm: IconAlertTriangle };
+const KIND_TONE: Record<ForYouKind, string> = { meeting: 'mint', waiting: 'amber', merge: 'mint', alarm: 'amber' };
 /** A plate takes the tone the app already gives its item: mint (ready) as an app key, amber (waits on you) as an agent key. */
 const TONE_KIND: Record<string, KeyKind> = { mint: 'app', amber: 'agent' };
 
@@ -317,7 +317,7 @@ export function Keys() {
   const shown = pageSet ? `${pageSet.id}:${chunkAt}` : null;
   shownNow.current = shown;
 
-  const runItem = (item: ForYouItem, detail: number) =>
+  const runItem = (item: ForYouItem | ResumeOffer, detail: number) =>
     void fyGuard.run(`fy:${item.key}`, detail, async () => {
       try {
         showBrief(await runForYou(item));

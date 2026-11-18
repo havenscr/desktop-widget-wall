@@ -4,7 +4,7 @@ import { scrollToCard } from '../agents/cardScroll';
 import { cards, mergeReady, questionFor, sessionTitle, waitingIds, type OmniSummary } from '../agents/model';
 import { useSnoozed } from '../agents/snooze';
 import { agentsStale, useAgents } from '../agents/useAgents';
-import { isQuiet } from '../music/model';
+import { isPlaying } from '../music/model';
 import { useNowPlayingStore } from '../music/store';
 import { canPlayLastOwn, type LastOwn } from '../unwind/lastOwn';
 import { useLastPlayed } from '../unwind/lastPlayed';
@@ -21,7 +21,7 @@ export const MEETING_LEAD_MS = 10 * 60_000;
 /** "Show" flashes the card's ring this long. */
 export const FLASH_MS = 1_400;
 
-export type ForYouKind = 'meeting' | 'waiting' | 'merge' | 'alarm' | 'resume';
+export type ForYouKind = 'meeting' | 'waiting' | 'merge' | 'alarm';
 
 /** One line of the "For you" page: an icon kind, a title, a short reason and one action. */
 export interface ForYouItem {
@@ -37,6 +37,9 @@ export interface ForYouItem {
   /** The session or meeting key the action uses. */
   ref: string | null;
 }
+
+/** The "Jump back in" offer: the same fields as an item, but its own kind, so it can never be taken for a thing waiting. */
+export type ResumeOffer = Omit<ForYouItem, 'kind'> & { kind: 'resume' };
 
 const min = (ms: number) => Math.max(1, Math.round(ms / 60_000));
 
@@ -117,7 +120,7 @@ export function alarmItem(sec: SecuritySummary | null, status: string, linkOk: b
  * Only a playlist that can be started again right now (a Watch playlist still in the saved list); a video,
  * a live stream, no record, or anything playing adds nothing.
  */
-export function resumeItem(own: LastOwn | null, saved: readonly WatchRef[], nothingPlays: boolean): ForYouItem | null {
+export function resumeItem(own: LastOwn | null, saved: readonly WatchRef[], nothingPlays: boolean): ResumeOffer | null {
   if (!own || !nothingPlays || own.kind !== 'playlist' || !own.label || !canPlayLastOwn(own, saved)) return null;
   return {
     key: `resume:${own.kind}:${own.id}`,
@@ -133,7 +136,7 @@ export function resumeItem(own: LastOwn | null, saved: readonly WatchRef[], noth
 let resuming = false;
 
 /** Start the plate's own playlist (its `ref`), when it is still saved; a second press while it starts does nothing. */
-function playResume(item: ForYouItem): string {
+function playResume(item: ResumeOffer): string {
   const id = item.ref?.startsWith('playlist:') ? item.ref.slice('playlist:'.length) : '';
   const st = useWatchStore.getState();
   const own = useLastPlayed.getState().own;
@@ -174,7 +177,7 @@ export function showCard(id: string): void {
  * Run one item's action through the command that already exists for it, and answer with one
  * short line. A failure throws `ActionError` with a fixed line.
  */
-export async function runForYou(item: ForYouItem): Promise<string> {
+export async function runForYou(item: ForYouItem | ResumeOffer): Promise<string> {
   switch (item.kind) {
     case 'meeting':
       return viaCommand('wall2_meet_join', { key: item.ref }, 'Joining the meeting', 'Could not open the meeting');
@@ -233,11 +236,12 @@ export function useForYou(): ForYouItem[] {
  * never a plate, never counted, never in the chip or its tooltip, never a take-over. "Nothing plays" is known only after
  * the first media read has answered (`at` is set by an answer, never by a failed read).
  */
-export function useResumeOffer(): ForYouItem | null {
+export function useResumeOffer(): ResumeOffer | null {
   const own = useLastPlayed((s) => s.own);
   const saved = useWatchStore((s) => s.saved);
   const watchPlays = useWatchStore((s) => s.playing !== null);
   const known = useNowPlayingStore((s) => s.at > 0);
-  const quiet = useNowPlayingStore((s) => isQuiet(s.info));
-  return useMemo(() => resumeItem(own, saved, known && quiet && !watchPlays), [own, saved, known, quiet, watchPlays]);
+  // Whether a media session is playing, by its state alone: a player that reports no title or artist still plays.
+  const sessionPlays = useNowPlayingStore((s) => isPlaying(s.info));
+  return useMemo(() => resumeItem(own, saved, known && !sessionPlays && !watchPlays), [own, saved, known, sessionPlays, watchPlays]);
 }
