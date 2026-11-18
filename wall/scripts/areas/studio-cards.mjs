@@ -180,7 +180,7 @@ export default {
       'studiocards-gap': { css: '.st-gcard { bottom: 20px !important; }', expect: /^ *FAIL studiocards: the card ends at/m, appliesTo: (v) => v.name === V_KEYS },
       'studiocards-list': { css: '.st-eflist { top: 640px !important; }', expect: /^ *FAIL studiocards: the effect list is at/m, appliesTo: (v) => v.name === V_P8 },
       'studiocards-small': { css: '.st-gcard .st-effect { font-size: 12px !important; }', expect: /^ *FAIL studiocards: text under 16 px/m, appliesTo: (v) => v.name === V_P4 },
-      'studiocards-cut': { css: '.st-gcard-why { width: 120px !important; overflow: hidden !important; white-space: nowrap !important; }', expect: /^ *FAIL studiocards: cut text/m, appliesTo: (v) => v.name === V_ZONE },
+      'studiocards-cut': { css: '.st-gcard-why span { display: block !important; width: 120px !important; overflow: hidden !important; white-space: nowrap !important; }', expect: /^ *FAIL studiocards: cut text/m, appliesTo: (v) => v.name === V_ZONE },
       'studiocards-sheet': { css: '.st-d-rooms { padding-top: 120px !important; }', expect: /^ *FAIL studiocards: the sheet (ends|body scrolls)/m, appliesTo: (v) => v.name === V_SHEET8 },
     },
   },
