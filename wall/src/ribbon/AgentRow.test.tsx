@@ -88,6 +88,7 @@ it('the agents line counts the open sessions, amber for the ones that need the o
         lane({ id: 'a1b2c3d4-0003', state: 'review' }),
         lane({ id: 'a1b2c3d4-0004', live: 'idle' }),
       ],
+      slots: { used: 4, limit: 4 },
       day: [{ lane: 'a1b2c3d4-0001', start: iso('09:42'), end: null, kind: 'run' }],
     });
   const r = render(<Ribbon kind="work" />);

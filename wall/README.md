@@ -1092,7 +1092,20 @@ The day ribbon (`wall/src/ribbon/`, `styles/ribbon.css`) is on Work, Home and Me
     sits right-aligned before it. A click on the line or a cell opens Agents today. A stale
     answer is dimmed, its cells end at the last good answer, and the line adds "as of" that
     time. Task marks keep their labels off the bar and the line (diamond only, label in the
-    hover). The cells are not controls (no role); the line is the keyboard path.
+    hover). The cells are not controls (no role); the line is the keyboard path. The row is
+    click-through (the sky behind it keeps its clicks); the line itself takes the pointer.
+    Over the limit (more open sessions than the helper's limit, top level sessions only): the
+    line opens with a red "7 of 4 open" marker in place of "7 sessions:", and a 3 px red line
+    runs along the strip from when the limit was passed (the moment the open count reached the
+    limit plus one, read from each open card's `elapsedS`) to the needle; a stretch that ended
+    earlier today is drawn too, rebuilt from today's saved record (sessions that closed, by
+    their first and last stage span), an estimate the wall cannot confirm without a helper
+    series of the open count. The cells keep their meaning (how many worked at once). The
+    line's hover card lists the idle sessions by title with how long each has been idle
+    (`idleS`, else the wall's last sight of it working), then the working ones, then any that
+    wait on the owner, at most eight names with "and N more", then "Over the limit since 3:48 PM".
+    At or under the limit there is no marker and no red line and the card still names the idle
+    sessions.
   - *Handle* (`ribbon/DayLip.tsx`): the strip's whole top edge. One button, 26 px tall and
     the strip's width less 24 px at each end, from 17 px above the strip (the empty gap over
     it) to 9 px inside it, so it ends above the hour and sun labels and the all-day bar; the
@@ -1145,7 +1158,9 @@ The day ribbon (`wall/src/ribbon/`, `styles/ribbon.css`) is on Work, Home and Me
   opens its session. Rows are only ever sessions from the helper's `sessionsList` (parents and
   standalone sessions) or from a saved record (which holds only those, see "Saved records"
   under Agents); an id found only in the live day log or the names map (a child, a side chat)
-  never becomes a row. Today reads the live summary: waits are amber and only there, stage
+  never becomes a row. Idle time is drawn as idle: where the helper sends a day log, the part of a
+  stage span that none of the session's live runs covers is drawn in the plain idle grey and does not
+  count as worked (with no log at all, stage spans stay worked as before). Today reads the live summary: waits are amber and only there, stage
   colours come from today's saved record when the helper has one (a session it does not know
   draws its runs cyan); the totals read "12 h 20 m of agent work across 8 sessions, 2 h 18 m
   waiting on you". The day picker (Today, Yesterday, and arrows through the recorded days,

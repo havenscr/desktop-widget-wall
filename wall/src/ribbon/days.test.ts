@@ -168,3 +168,56 @@ it('an older helper with no sessionsList: the cards are its lanes, and a day log
   });
   expect(todayRows(s, null, NOW).map((r) => r.id)).toEqual(['a1b2c3d4-0001']);
 });
+
+// Idle time is drawn as idle and is not worked time: only the live log's runs are work.
+const idleDay = '2026-11-13';
+const idleNow = t(idleDay, '12:00');
+const idleRec = (spans: { stage: 'build' | 'review'; start: string; end: string | null }[]): DayRecord => ({
+  date: idleDay,
+  tz: 'America/Los_Angeles',
+  sessions: [{ id: 'a1b2c3d4-0001', title: 'Spend card refresh', spans: spans.map((x) => ({ ...x, start: iso(idleDay, x.start), end: x.end === null ? null : iso(idleDay, x.end) })), pr: null }],
+});
+const idleSummary = (day: { start: string; end: string | null; kind: 'run' | 'wait' | 'done' }[]) =>
+  summary({
+    sessionsList: [lane({ id: 'a1b2c3d4-0001', title: 'Spend card refresh', live: 'idle', state: 'review' })],
+    day: day.map((d) => ({ lane: 'a1b2c3d4-0001', kind: d.kind, start: iso(idleDay, d.start), end: d.end === null ? null : iso(idleDay, d.end) })),
+  });
+
+it('a session parked in a stage and doing nothing is drawn as idle and counts no work', () => {
+  // The log holds one finished run at 08:00 to 08:30; the review stage stays open until now.
+  const s = idleSummary([{ start: '08:00', end: '08:30', kind: 'run' }, { start: '09:00', end: '09:05', kind: 'done' }]);
+  const rows = todayRows(s, idleRec([{ stage: 'review', start: '08:00', end: null }]), idleNow);
+  expect(rows[0].spans.map((x) => [x.kind, x.from, x.to])).toEqual([
+    ['review', 8, 8.5],
+    ['idle', 8.5, 12],
+  ]);
+  expect(rows[0].workMs).toBe(30 * 60_000);
+  expect(totalsText(rows, true)).toContain('0 h 30 m of agent work');
+});
+
+it('a session that works, idles, then works again draws work, idle, work, and counts only the work', () => {
+  const s = idleSummary([{ start: '08:00', end: '08:40', kind: 'run' }, { start: '10:00', end: '10:20', kind: 'run' }]);
+  const rows = todayRows(s, idleRec([{ stage: 'build', start: '08:00', end: '11:00' }]), idleNow);
+  expect(rows[0].spans.map((x) => x.kind)).toEqual(['build', 'idle', 'build', 'idle']);
+  expect(rows[0].spans.map((x) => [x.from, x.to])).toEqual([
+    [8, 8 + 40 / 60],
+    [8 + 40 / 60, 10],
+    [10, 10 + 20 / 60],
+    [10 + 20 / 60, 11],
+  ]);
+  expect(rows[0].workMs).toBe(60 * 60_000);
+});
+
+it('a session with no record keeps its runs as work and draws no idle', () => {
+  const s = idleSummary([{ start: '08:00', end: '08:40', kind: 'run' }]);
+  const rows = todayRows(s, null, idleNow);
+  expect(rows[0].spans.map((x) => x.kind)).toEqual(['run']);
+  expect(rows[0].workMs).toBe(40 * 60_000);
+});
+
+it('with no day log at all nothing says the session idled, so its stage spans stay worked', () => {
+  const s = summary({ sessionsList: [lane({ id: 'a1b2c3d4-0001', title: 'Spend card refresh' })], day: [] });
+  const rows = todayRows(s, idleRec([{ stage: 'build', start: '08:00', end: '09:00' }]), idleNow);
+  expect(rows[0].spans.map((x) => x.kind)).toEqual(['build']);
+  expect(rows[0].workMs).toBe(60 * 60_000);
+});

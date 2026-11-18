@@ -143,7 +143,7 @@ export function neighbours(days: readonly DayCount[], shown: string, today: stri
   return { prev: dates[i + 1] ?? null, next: i > 0 ? dates[i - 1] : null };
 }
 
-export type SpanKind = Stage | 'run' | 'wait' | 'done';
+export type SpanKind = Stage | 'run' | 'wait' | 'done' | 'idle';
 
 /** One drawn span of a panel row, in local hours of the day shown (0 to 24). */
 export interface PanelSpan {
@@ -245,6 +245,21 @@ export function recordRows(r: DayRecord, now: number): PanelRow[] {
   });
 }
 
+/** The parts of [a, b] that any run covers, in order, with overlapping runs joined. */
+function mergeRuns(runs: readonly (readonly [number, number])[], a: number, b: number): [number, number][] {
+  const out: [number, number][] = [];
+  const inside = runs
+    .map(([x, y]) => [Math.max(x, a), Math.min(y, b)] as [number, number])
+    .filter(([x, y]) => Number.isFinite(x) && Number.isFinite(y) && y > x)
+    .sort((p, q) => p[0] - q[0]);
+  for (const r of inside) {
+    const last = out[out.length - 1];
+    if (last && r[0] <= last[1]) last[1] = Math.max(last[1], r[1]);
+    else out.push([r[0], r[1]]);
+  }
+  return out;
+}
+
 /**
  * Rows for today. A row is only ever a session from the helper's live `sessionsList` (its
  * parents and standalone sessions, in that order; `lanes` from an older helper without one) or from today's saved record, which holds
@@ -282,11 +297,27 @@ export function todayRows(s: OmniSummary, record: DayRecord | null, now: number,
       if (d.kind === 'wait' || !fromRec) spans.push({ kind: d.kind, from: hourOf(a, midnight), to: hourOf(b, midnight), open: d.end === null });
     }
     if (fromRec) {
+      // The live log's runs say when the session worked. When the helper sends a log, the part
+      // of a stage span that no run covers is idle time: drawn as idle, never counted as worked.
+      // With no log at all nothing says otherwise, so a stage span stays worked as it was.
+      const runs = s.day.length > 0 ? mine.filter((d) => d.kind === 'run').map((d) => clip(Date.parse(d.start) - skewMs, d.end === null ? until : Date.parse(d.end) - skewMs)) : null;
       for (const sp of fromRec.spans) {
         const [a, b] = clip(Date.parse(sp.start), sp.end === null ? Math.min(until, ends.get(id) ?? until) : Date.parse(sp.end));
         if (!Number.isFinite(a) || !Number.isFinite(b) || b <= a) continue;
-        workMs += b - a;
-        spans.push({ kind: sp.stage, from: hourOf(a, midnight), to: hourOf(b, midnight), open: sp.end === null });
+        const open = sp.end === null;
+        if (!runs) {
+          workMs += b - a;
+          spans.push({ kind: sp.stage, from: hourOf(a, midnight), to: hourOf(b, midnight), open });
+          continue;
+        }
+        let at = a;
+        for (const [r0, r1] of mergeRuns(runs, a, b)) {
+          if (r0 > at) spans.push({ kind: 'idle', from: hourOf(at, midnight), to: hourOf(r0, midnight), open: false });
+          workMs += r1 - r0;
+          spans.push({ kind: sp.stage, from: hourOf(r0, midnight), to: hourOf(r1, midnight), open: open && r1 === b });
+          at = r1;
+        }
+        if (at < b) spans.push({ kind: 'idle', from: hourOf(at, midnight), to: hourOf(b, midnight), open });
       }
     }
     spans.sort((x, y) => x.from - y.from);

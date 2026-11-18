@@ -1,11 +1,12 @@
 import { useEffect, useRef } from 'react';
-import { agentLayout, cards, dayTotals, helpersWork, laneWaits, laneWorks, type AgentSegment, type Lane, type OmniSummary } from '../agents/model';
+import { agentLayout, cards, clockText, dayTotals, helpersWork, laneWaits, laneWorks, type AgentSegment, type Lane, type OmniSummary } from '../agents/model';
 import { agentsStale, agentsUntil, useAgents, useAgentsStore, type AgentsState } from '../agents/useAgents';
 import { tip } from '../ui/HoverTip';
 import { busyAt, busyStep, countedSegments, knownLimit, logSegments, parentIds, settleOpenRuns, workingIds, workingSpans, type BusySpan, type LogSeg } from './busy';
-import { dayStart, isoDay, reloadDay, useDaysStore, type DayRecord } from './days';
+import { dayStart, isoDay, loadDay, reloadDay, useDaysStore, type DayRecord } from './days';
 import { noteWorking, seenWorking } from './workSeen';
-import { activityCells, agentsLineParts, agentsLineWidth, agentsLineX, END_HOUR, needle, RX, shortTime, START_HOUR, wallHour, type AgentCounts } from './model';
+import { activityCells, agentsLineParts, agentsLineWidth, agentsLineX, agentsOverParts, END_HOUR, needle, RX, shortTime, START_HOUR, wallHour, type AgentCounts } from './model';
+import { openList, overLine, overNow, type OpenList, type SessionRow } from './overLimit';
 
 /** x on the ribbon for a time today, clamped to 6 AM to 12 AM; null for another day. */
 export function ribbonX(ms: number, now: number): number | null {
@@ -79,12 +80,24 @@ export function daySegments(st: AgentsState, now: number, record: DayRecord | nu
   return agentLayout(t.summary, now, (ms) => ribbonX(ms, now), agentsUntil(st), st.skewMs, Number.POSITIVE_INFINITY).segs;
 }
 
+/** The words of the agents line: the plain ones, or, over the limit, the red marker then the rest. */
+function lineWords(s: OmniSummary): { head: string; marker: string | null; need: string | null; tail: string; over: boolean } {
+  const counts = agentCounts(s);
+  const limit = knownLimit(s.slots.limit);
+  if (limit !== null && overNow(s, limit) > 0) {
+    const p = agentsOverParts(counts, limit);
+    return { head: '', marker: p.marker, need: p.need, tail: p.tail, over: true };
+  }
+  const p = agentsLineParts(counts);
+  return { head: p.head, marker: null, need: p.need, tail: p.tail, over: false };
+}
+
 /** Where the agents line sits and how wide it is, or null when it is not drawn. */
 function lineBox(st: AgentsState, now: number): { x: number; width: number; text: string } | null {
   if (!st.summary || cards(st.summary).length === 0) return null;
-  const p = agentsLineParts(agentCounts(st.summary));
-  const text = `${p.head}${p.need ?? ''}${p.tail}`;
-  const width = agentsLineWidth(text);
+  const p = lineWords(st.summary);
+  const text = `${p.marker ? `${p.marker} ` : ''}${p.head}${p.need ?? ''}${p.tail}`;
+  const width = agentsLineWidth(text, p.over);
   return { x: agentsLineX(needle(now).x, width), width, text };
 }
 
@@ -199,6 +212,21 @@ export function AgentRow({ now, dueCount = null, onOpenPanel }: { now: number; d
     for (const id of fresh.split('|')) asked.current.add(`${today}|${id}`);
     void reloadDay(today);
   }, [fresh, st.status, today]);
+  // The red line needs sessions that closed earlier (today's record): read it once a day when a
+  // limit is known and nothing has read it, and again when the open count drops back under the
+  // limit (that is when a stretch ends). Never on a timer.
+  const isOver = limit !== null && s !== null && overNow(s, limit) > 0;
+  const wasOver = useRef(false);
+  const haveRecord = read !== undefined;
+  useEffect(() => {
+    if (st.status !== 'ready' || limit === null) return;
+    if (wasOver.current && !isOver) void reloadDay(today);
+    else if (!haveRecord && !asked.current.has(`${today}|record`)) {
+      asked.current.add(`${today}|record`);
+      void loadDay(today);
+    }
+    wasOver.current = isOver;
+  }, [isOver, haveRecord, limit, st.status, today]);
   const live = useRef(segs);
   live.current = segs;
   const line = lineBox(st, now);
@@ -210,8 +238,9 @@ export function AgentRow({ now, dueCount = null, onOpenPanel }: { now: number; d
       </span>
     ) : null;
   }
-  const counts = agentCounts(s);
-  const parts = agentsLineParts(counts);
+  const parts = lineWords(s);
+  const open = openList(s, limit, now, seenWorking(now));
+  const rails = overLine(s, read?.record ?? null, limit, now, Math.min(now, until));
   const asOf = stale && (st.freshAt ?? st.okAt) !== null ? `, as of ${shortTime((st.freshAt ?? st.okAt) as number)}` : '';
   return (
     <div className={`agent-row${stale ? ' stale' : ''}`}>
@@ -247,6 +276,11 @@ export function AgentRow({ now, dueCount = null, onOpenPanel }: { now: number; d
           <i className={`${limit === null ? 'bn' : `b${busyStep(c.busy, limit)}`}${c.waits ? ' wait' : ''}`} />
         </span>
       ))}
+      {rails.map((r) => {
+        const x0 = ribbonX(r.from, now) ?? RX(START_HOUR);
+        const x1 = ribbonX(r.to, now) ?? RX(START_HOUR);
+        return <i key={r.from} className="x-rail" data-over-rail="" style={{ left: x0, width: Math.max(3, x1 - x0) }} aria-hidden="true" />;
+      })}
       {line && (
         <button
           type="button"
@@ -257,12 +291,16 @@ export function AgentRow({ now, dueCount = null, onOpenPanel }: { now: number; d
           onClick={onOpenPanel}
           {...tip(() => (
             <>
-              <span className="tip-t">{line.text}</span>
-              {stale && <span className="tip-s">May be out of date{asOf}</span>}
+              <OpenCard list={open} stale={stale} asOf={asOf} />
               <span className="tip-k">Click to open Agents today</span>
             </>
           ))}
         >
+          {parts.marker && (
+            <span className="x-over" data-over-marker="">
+              {parts.marker}
+            </span>
+          )}
           {parts.head}
           {parts.need && <span className="need">{parts.need}</span>}
           {parts.tail}
@@ -270,5 +308,62 @@ export function AgentRow({ now, dueCount = null, onOpenPanel }: { now: number; d
         </button>
       )}
     </div>
+  );
+}
+
+/** Up to this many sessions are named in the line's card; the rest are counted. */
+const CARD_ROWS = 8;
+
+function Rows({ rows }: { rows: SessionRow[] }) {
+  return (
+    <>
+      {rows.map((r) => (
+        <span key={r.id} className="tip-s tip-row">
+          <span className="x-t">{r.title}</span>
+          <span className="tip-when">{r.when}</span>
+        </span>
+      ))}
+    </>
+  );
+}
+
+/**
+ * The agents line's hover card: how many are open (and how many over the limit), the idle
+ * sessions by title with how long each has been idle, the working ones, any that wait on the
+ * owner, and, over the limit, since when. At or under the limit it reads the same without the
+ * limit words. Top level sessions only (`openList` reads `cards`).
+ */
+function OpenCard({ list, stale, asOf }: { list: OpenList; stale: boolean; asOf: string }) {
+  // The rows that fit, handing out places to the waiting ones first, then idle, then working.
+  let room = CARD_ROWS;
+  const take = <T,>(rows: T[]): T[] => {
+    const got = rows.slice(0, room);
+    room -= got.length;
+    return got;
+  };
+  const needs = take(list.needs);
+  const idle = take(list.idle);
+  const working = take(list.working);
+  const hidden = list.total - needs.length - idle.length - working.length;
+  return (
+    <span className="ag-card">
+      <span className="tip-t">
+        {list.total} session{list.total === 1 ? '' : 's'} open
+        {list.over > 0 && list.limit !== null && (
+          <>
+            , <span className="x-overtx">{list.over} over your limit of {list.limit}</span>
+          </>
+        )}
+      </span>
+      {list.idle.length > 0 && <span className="tip-h">IDLE ({list.idle.length})</span>}
+      <Rows rows={idle} />
+      {list.working.length > 0 && <span className="tip-h">WORKING ({list.working.length})</span>}
+      <Rows rows={working} />
+      {list.needs.length > 0 && <span className="tip-h need">NEEDS YOU ({list.needs.length})</span>}
+      <Rows rows={needs} />
+      {hidden > 0 && <span className="tip-s">and {hidden} more</span>}
+      {list.over > 0 && list.since !== null && <span className="tip-s">Over the limit since {clockText(list.since)}</span>}
+      {stale && <span className="tip-s">May be out of date{asOf}</span>}
+    </span>
   );
 }
