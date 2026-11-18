@@ -4185,6 +4185,10 @@ button.sp-qrow:hover {
   left: 0;
   z-index: 60;
 }
+.u-pin-menu.u-lib-menu button {
+  /* Icon, label, and the chevron of a row that opens something: a third column, never a second grid row. */
+  grid-template-columns: 24px minmax(0, 1fr) auto;
+}
 .u-lib-sep {
   height: 1px;
   margin: 6px 0;

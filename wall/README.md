@@ -18,6 +18,8 @@ runner, so you rarely need it locally.
 
 ## Spotify
 
+Right-clicking a playlist or album tile (or the ContextMenu key, or Shift+F10) opens a menu: Play, Shuffle, Songs, then "Pin to the left", which opens a chooser of the three pin places under the Listen and Watch switch. An opened playlist or album also has a Pin button after Shuffle that opens the same chooser.
+
 Spotify support uses the Web API and a local `spotify.json` file in the same app config
 folder as `feeds.json`. Sign in at the Spotify developer dashboard, create an app with
 any name and description, add the redirect URI exactly
@@ -159,6 +161,8 @@ once a minute and 20 pages an hour in all. The switch in Tools, Accounts, Spotif
 
 ## YouTube
 
+Right-clicking a playlist tile opens Play, Shuffle, Videos and "Pin to the left". Play and Shuffle open the playlist and start it once its first page has loaded; if the page fails or nothing on it can play outside YouTube, nothing starts and the opened view shows its own line. A video row has its own menu (Play, Add to a playlist, Open in YouTube, Pin to the left); "Add to a playlist" closes it and opens the row's add menu at the row's right end. In an opened playlist Refresh is an icon (its last-read time is in its tip) and Pin keeps its word after Shuffle; in the tall view Pin is an icon.
+
 The wall signs in to YouTube so that it can read the owner's own playlists and liked videos.
 The sign-in and its row in Tools came first; the library came next, and a pick from it plays on the wall (see
 "Playing a pick" below). It needs a Google Cloud OAuth client of the
@@ -290,7 +294,7 @@ The sign-in and its row in Tools came first; the library came next, and a pick f
   keep today's remote with one line and one button under it. `?youtube=in&ytlib=full|few|empty|slow|down|busy|again|gone|low|spent|long`
   picks the library's state (development mock only), and `?ytsearch=<words>` runs a search on open.
   `?ytdetails=ok|none|down|slow` picks the own-playlist details answer.
-- **Add to a playlist on a row** (`YtRows` in `YtParts.tsx`, styles in `ytmusic.css`). Every row that plays (Liked, an opened
+- **Add to a playlist on a row** (`YtRows` in `YtParts.tsx`, styles in `ytmusic.css`). The row's right-click menu offers it too and hands over to this same menu. Every row that plays (Liked, an opened
   playlist, search results) has a 30 by 30 control at its right end, 8 px from the row's end and 6 px from its top and foot, in the
   length's place. It is a second button inside the row, never inside the play button, so a click on it never plays and a click
   anywhere else on the row still does. It shows while the pointer is on the row, on keyboard focus within the row (Tab reaches it

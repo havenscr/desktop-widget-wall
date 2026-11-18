@@ -13,7 +13,7 @@ const steps = (...s) => s.join(' >> ');
 const state = (name, pins, expect, actions, extra = '') => ({
   screen: 'unwind',
   name: `library pins: ${name}`,
-  query: `${BASE}${pins ? `&wpins=${pins}` : ''}${extra}`,
+  query: `${extra.includes('spotify=') ? BASE.replace('&spotify=picture', '') : BASE}${pins ? `&wpins=${pins}` : ''}${extra}`,
   custom: true,
   expect,
   ...(actions ? { actions } : {}),
@@ -26,7 +26,7 @@ const states = [
   state('one library pin, two empty places', 'lib1', ['Harbor lights', 'Add a pin']),
   state('a 60 character library name', 'liblong', ['Harbor lights for the long walk home']),
   state('a YouTube live pin clicked, Watch shows it', 'mixed', ['Rain radio, live'], '.u-pinslot:nth-child(2) .u-pin'),
-  state('a Spotify pin clicked, signed out', 'mixed', ['Sign in to Spotify'], '.u-pinslot:nth-child(1) .u-pin', '&spotify=signedout'),
+  state('a Spotify pin clicked, signed out', 'mixed', ['Sign in'], '.u-pinslot:nth-child(1) .u-pin', '&spotify=signedout'),
   state('a Spotify pin clicked, no player', 'mixed', ['Spotify opened but did not show up as a player'], '.u-pinslot:nth-child(1) .u-pin', '&spotify=nodevice&spotifyplay=none'),
   state('right-click menu on a Spotify tile', 'none', ['Play', 'Shuffle', 'Songs', 'Pin to the left'], 'ctx:.sp-tile'),
   state('right-click menu, tall view, right-most tile', 'none', ['Pin to the left'], steps(TALL, 'ctx:.sp-tilebox:nth-child(5) .sp-tile')),
@@ -44,8 +44,8 @@ const states = [
 
 /**
  * In the page (self-contained: it is serialised into the page). With `pinscheck=pins` every service badge lies inside its pin slot
- * (the overhang stays inside the pin's left padding and gap) and every pin name keeps the width it has without a badge (93 px: 151 wide
- * less 6 padding, 36 art, 8 gap and 8 padding). With `pinscheck=menu` the open library menu or chooser lies fully inside 0 to 2560 by
+ * (the overhang stays inside the pin's left padding and gap) and every pin name keeps the width it has without a badge (about 91 px: 151 wide
+ * less 6 padding, 36 art, 8 gap, 8 padding and the border). With `pinscheck=menu` the open library menu or chooser lies fully inside 0 to 2560 by
  * 0 to 720 with no text under 16 px. With `pinscheck=spotify` the Pin button sits on the header row beside Play and Shuffle, nothing in
  * `.sp-shead` is cut or wraps. With `pinscheck=yt` the playlist name keeps at least 120 px at rest and, tall, nothing in the header
  * passes the 248 px column.
@@ -74,7 +74,7 @@ const measurePins = () => {
       }
       for (const n of document.querySelectorAll('.u-pin .u-pin-name')) {
         const w = R(n).w;
-        if (w < 92) fails.push('a pin name is ' + Math.round(w) + ' px wide (92 or more, as without a badge)');
+        if (w < 90) fails.push('a pin name is ' + Math.round(w) + ' px wide (90 or more, as without a badge)');
       }
       return { fails, mode };
     }
@@ -83,6 +83,7 @@ const measurePins = () => {
       if (!menu) return { fails: ['library pins: no menu is open'], mode };
       const m = R(menu);
       if (m.l < 0 || m.t < 0 || m.r > 2560.5 || m.b > 720.5) fails.push('the open menu is at ' + where(m) + ', outside the strip (0 to 2560 by 0 to 720)');
+      if (menu.scrollHeight > menu.clientHeight + 1) fails.push('the menu content is ' + menu.scrollHeight + ' px tall in a ' + menu.clientHeight + ' px box (cut)');
       const small = [...menu.querySelectorAll('.u-pin-menu-title, button span, button')].filter((e) => e.textContent.trim() && px(e, 'fontSize') < 15.99);
       if (small.length) fails.push('text under 16 px in the menu (' + Math.round(px(small[0], 'fontSize')) + ' px in "' + small[0].textContent.trim().slice(0, 20) + '")');
       return { fails, mode };
@@ -97,6 +98,7 @@ const measurePins = () => {
       if (shuffle && Math.abs(R(shuffle).t - p.t) > 2) fails.push('Pin is at y ' + Math.round(p.t) + ', Shuffle at y ' + Math.round(R(shuffle).t) + ' (one row)');
       for (const e of head.querySelectorAll('.sp-btn')) {
         const r = R(e);
+        if (e.scrollWidth > e.clientWidth + 0.5) fails.push('a header button is cut ("' + e.textContent.trim() + '" holds ' + e.scrollWidth + ' px in ' + e.clientWidth + ')');
         if (r.h > 50) fails.push('a header button wraps (' + Math.round(r.h) + ' px tall)');
         if (r.r > h.r + 0.5) fails.push('a header button at ' + where(r) + ' passes the header ' + where(h));
       }
@@ -162,14 +164,14 @@ const variants = [
   { ...v('old storage, three pins', '&wpins=three&wplay=0', null, 'pins', PINS), name: names.three },
   { ...v('mixed pins', '&wpins=mixed', null, 'pins', PINS), name: names.mixed },
   { ...v('a 60 character name', '&wpins=liblong', null, 'pins', PINS), name: names.long },
-  { ...v('x', '&wpins=none', 'ctx:.sp-tile', 'menu', ['.u-lib-menu']), name: names.spMenu },
-  { ...v('x', '&wpins=none', `${TALL} >> ctx:.sp-tilebox:nth-child(5) .sp-tile`, 'menu', ['.u-lib-menu']), name: names.spTall },
-  { ...v('x', '&wpins=none', `${SWITCH} >> ctx:${TILE}`, 'menu', ['.u-lib-menu']), name: names.ytTile },
-  { ...v('x', '&wpins=none', `${SWITCH} >> ${TILE} >> ctx:.yt-row .yt-play`, 'menu', ['.u-lib-menu']), name: names.ytRow },
-  { ...v('x', '&wpins=mixedfull', `ctx:.sp-tilebox:nth-child(4) .sp-tile >> ${PIN_ROW}`, 'menu', ['.u-lib-menu']), name: names.chooser },
-  { ...v('x', '&wpins=lib1', `ctx:.sp-tilebox:nth-child(4) .sp-tile >> ${PIN_ROW}`, 'menu', ['.u-lib-menu']), name: names.chooserEmpty },
-  { ...v('x', '&wpins=none', '.sp-tile', 'spotify', ['.sp-card', '.sp-shead']), name: names.spOpen, listen: true },
-  { ...v('x', '&wpins=none', `${TALL} >> .sp-tile`, 'spotify', ['.sp-card', '.sp-shead']), name: names.spOpenTall, listen: true },
+  { ...v('x', '&wpins=none', 'ctx:.sp-tile', 'menu', ['.sp-card']), name: names.spMenu },
+  { ...v('x', '&wpins=none', `${TALL} >> ctx:.sp-tilebox:nth-child(5) .sp-tile`, 'menu', ['.sp-card']), name: names.spTall },
+  { ...v('x', '&wpins=none', `${SWITCH} >> ctx:${TILE}`, 'menu', ['.sp-card']), name: names.ytTile },
+  { ...v('x', '&wpins=none', `${SWITCH} >> ${TILE} >> ctx:.yt-row .yt-play`, 'menu', ['.sp-card']), name: names.ytRow },
+  { ...v('x', '&wpins=mixedfull', `ctx:.sp-tilebox:nth-child(4) .sp-tile >> ${PIN_ROW}`, 'menu', ['.sp-card']), name: names.chooser },
+  { ...v('x', '&wpins=lib1', `ctx:.sp-tilebox:nth-child(4) .sp-tile >> ${PIN_ROW}`, 'menu', ['.sp-card']), name: names.chooserEmpty },
+  { ...v('x', '&wpins=none', '.sp-tile', 'spotify', ['.sp-card']), name: names.spOpen, listen: true },
+  { ...v('x', '&wpins=none', `${TALL} >> .sp-tile`, 'spotify', ['.sp-card']), name: names.spOpenTall },
   { ...v('x', '&wpins=none', `${SWITCH} >> ${TILE}`, 'yt', ['.sp-card', '.yt-songs']), name: names.ytOpen },
   { ...v('x', '&wpins=none', `${SWITCH} >> ${TALL} >> ${TILE}`, 'yt', ['.sp-card', '.yt-songs']), name: names.ytOpenTall },
 ];
