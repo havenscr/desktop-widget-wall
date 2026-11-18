@@ -199,7 +199,7 @@ export default {
       'meet-island-box': { css: '.meet .meet-island { left: 600px !important; }', expect: /^ *FAIL meet layout: island is at /m, appliesTo: (v) => v.name === VARIANTS[0][0] },
       'meet-overlap': { css: '.meet .meet-later { left: 1600px !important; }', expect: /^ *FAIL meet layout: overlap: /m, appliesTo: (v) => v.name === VARIANTS[1][0] },
       'meet-text-size': { css: '.meet .meet-ppl-n { font-size: 13px !important; }', expect: /^ *FAIL meet layout: text under 16 px: /m, appliesTo: (v) => v.name === VARIANTS[1][0] },
-      'meet-control-size': { css: '.meet .meet-next-act .meet-btn { height: 24px !important; }', expect: /^ *FAIL meet layout: control size: /m, appliesTo: (v) => v.name === VARIANTS[1][0] },
+      'meet-control-size': { css: '.meet .meet-arrow { height: 24px !important; }', expect: /^ *FAIL meet layout: control size: /m, appliesTo: (v) => v.name === VARIANTS[1][0] },
       'meet-long-title': { css: '.meet .meet-hero-title { -webkit-line-clamp: unset !important; display: block !important; }', expect: /^ *FAIL meet layout: (the long title takes|the title takes|the title ends)/m, appliesTo: (v) => v.name === VARIANTS[6][0] },
       'meet-clock': { css: ".main[data-place='meet'] > .top > div:has(> .clk) { display: block !important; }", expect: /^ *FAIL meet layout: the frame clock is drawn/m, appliesTo: (v) => v.name === VARIANTS[1][0] },
       'meet-checklist-clipped': { css: '.meet .meet-isl-check { gap: 12px !important; }', expect: /^ *FAIL meet layout: checklist row \d+ at y /m, appliesTo: (v) => v.name.endsWith('eight checklist items') },

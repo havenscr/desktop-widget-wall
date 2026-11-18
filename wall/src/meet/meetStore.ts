@@ -36,7 +36,7 @@ export function resetMeetStore(): void {
   useMeetStore.setState({ callId: useSignalStore.getState().call?.since ?? null, anchor: null, ticks: {}, selected: {} });
 }
 
-// A call's meeting lives as long as the call: they start with it and end with it. A new kind inside the
+// A call's meeting lives as long as the call: it starts with the call and ends with it. A new kind inside the
 // same call (Teams to Zoom) changes the signal's `since` but not the call, so nothing resets then.
 useSignalStore.subscribe((s, prev) => {
   const was = prev.call !== null;
