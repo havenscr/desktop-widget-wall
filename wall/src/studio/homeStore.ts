@@ -27,7 +27,7 @@ export const TEXT = {
   notSetUp: "Office moods are view only here. To switch them, add the desk token in Tools.",
   /** A write the wall tried anyway with no desk token: the 5 second line, short enough for the lights block's summary line. */
   writeNotSetUp: "View only here. Add the home app's desk token in Tools.",
-  needsPrivate: 'The desk token is not sent over plain http. Use https or the tailnet.',
+  needsPrivate: 'The desk token goes only to this PC or a tailnet address.',
   nothingToUndo: 'Nothing to go back from. This is what the home app reports now.',
   /** Off refused because the studio is on air (the home app's "Studio on air"). */
   onAir: 'The studio is on air. End it with Back to normal on On Air first.',

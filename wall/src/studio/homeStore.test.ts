@@ -804,7 +804,7 @@ it('a refused action says why in fixed words, then reads again', async () => {
     expect(useHome.getState().note, word).toBe(text);
     await flush(NOTE_MS + 10);
   }
-  expect(TEXT.needsPrivate).toBe('The desk token is not sent over plain http. Use https or the tailnet.');
+  expect(TEXT.needsPrivate).toBe('The desk token goes only to this PC or a tailnet address.');
   expect(JSON.stringify(TEXT)).not.toMatch(/https?:\/\//);
 });
 

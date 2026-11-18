@@ -659,7 +659,7 @@ const EXPECT = [
   ['home', 'chores with alerts', ['10 more can wait', 'Show all 6']],
   ['home', 'sound playing on a speaker', ['Now playing', 'Lantern Song 1', 'Living room, 4 speakers', 'All Speakers', 'Common Areas']],
   ['home', 'shield drawer, stale read', ['open alerts as of', 'Clear all waits for a fresh read']],
-  ['home', 'shield drawer, plain http address', ['Clear all needs a private or https address']],
+  ['home', 'shield drawer, plain http address', ['Clear all needs a tailnet or local address']],
   ['home', 'sound nothing playing', ['Nothing playing', 'Play']],
   // end home round two
   ['home', 'chore ticked', ['Done.', 'Undo']],

@@ -192,7 +192,7 @@ export default {
       gstate('a stale read', 'office=six&officeoff=offered&officemood=relax&officestale=1', ['(not fresh)', 'Relax:']),
       gstate('no desk token', 'office=six&officeoff=offered&desktoken=unset', ["Office moods are view only here. To switch them, add the desk token in Tools."]),
       gstate('no desk token, a mood on keeps its ring', 'office=six&officeoff=offered&officemood=relax&desktoken=unset', ["Office moods are view only here. To switch them, add the desk token in Tools."]),
-      gstate('a base the token may not go to', 'office=six&officeoff=offered&desktoken=insecure', ['The desk token is not sent over plain http. Use https or the tailnet.']),
+      gstate('a base the token may not go to', 'office=six&officeoff=offered&desktoken=insecure', ['The desk token goes only to this PC or a tailnet address.']),
       gstate('a write that never answers', 'office=six&officeoff=offered&officeslow=1', ['Gaming: asking the home app'], '[data-mood="gaming"]'),
       gstate('Off that never answers', 'office=six&officeoff=offered&officeslow=1', ['Off: asking the home app'], '[data-mood="off"]'),
       gstate('a refused write, the studio is on air', 'office=six&officeoff=offered&studiowrite=onair', ['The studio is on air. End it with Back to normal on On Air first.'], '[data-mood="off"]'),
