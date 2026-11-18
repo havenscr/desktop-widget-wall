@@ -117,7 +117,7 @@ function Chip({ chip, row, cap, iconOnly, onClick }: { chip: ChipModel; row: Row
 
 /**
  * The Office moods row at the foot of Unwind: a label, one chip per mood the home app lists, an Off chip only
- * when the home app offers it, and the line above the row's left part that says what is on. It is the
+ * when the home app offers it, and, only for a refusal or a failure, the amber line above the row's left part (the plain status stays a screen reader live region). It is the
  * `office-lights` slot itself: hidden states leave the empty 420 by 34 box the older rules know. Chips show
  * the home app's last read back, never the clicked value. See "Office moods" in `wall/README.md`.
  */
@@ -192,10 +192,17 @@ export function OfficeMoods() {
           {!fit.backIcon && <span className="u-mood-name">{BACK_WORD}</span>}
         </button>
       </div>
-      <div className={`u-office-line${line.warn ? ' warn' : ''}`} data-part="line" data-rest={resting ? 'true' : 'false'} {...restZone('moods-line')}>
-        {line.lead && <b>{line.lead}</b>}
-        <span>{line.rest}</span>
+      {/* The plain status (what is on, off, asking) is the chips' and the tips' job; the screen reader still hears it here. */}
+      <div className="u-office-live" role="status" aria-live="polite" data-part="live">
+        {line.lead}
+        {line.rest}
       </div>
+      {line.warn && (
+        <div className="u-office-line warn" data-part="line" data-rest={resting ? 'true' : 'false'} aria-hidden="true" {...restZone('moods-line')}>
+          {line.lead && <b>{line.lead}</b>}
+          <span>{line.rest}</span>
+        </div>
+      )}
     </>
   );
 }
