@@ -11,7 +11,7 @@ import { resetLastPlayed } from '../lastPlayed';
 import { DEFAULT_LOOKS, DRIVE_IN_SCREEN, LOOKS_KEY, parseLooks } from './looks';
 import { AUTOPLAY_WAIT_MS, framePoster, HANDSHAKE_EVERY_MS, PlayerFrame, TWITCH_CLICK_MS } from './PlayerFrame';
 import { SAVED_KEY, type SavedItem } from './saved';
-import { driveInAudience, resetWatch, useWatchStore } from './store';
+import { driveInAudience, videoInFront, resetWatch, useWatchStore } from './store';
 import { LISTENING_MESSAGE, MAX_MESSAGE, MAX_SECONDS, PLAYER_VOLUME, readPlayerMessage, TWITCH_EMBED_ORIGIN, YOUTUBE_EMBED_ORIGIN } from './urls';
 import { openInBrowser } from './Watch';
 import { LOAD_GAP_MS, playAll, resetQueue } from '../ytmusic/queue';
@@ -587,6 +587,19 @@ describe('the buddy seam and the opener', () => {
     expect(driveInAudience(useWatchStore.getState())).toBe(DRIVE_IN_SCREEN);
     useWatchStore.getState().setLooks({ ...DEFAULT_LOOKS, all: 'feather' });
     expect(driveInAudience(useWatchStore.getState())).toBeNull();
+  });
+
+  it('videoInFront (his keep-out) is true for the movie screen, the hologram and Feathered, never for the sky and sun looks', () => {
+    seed({ mode: 'one', all: 'sky' });
+    useWatchStore.getState().play(ITEMS[0]);
+    for (const look of ['sky', 'sun'] as const) {
+      useWatchStore.getState().setLooks({ ...DEFAULT_LOOKS, all: look });
+      expect(videoInFront(useWatchStore.getState()), look).toBe(false);
+    }
+    for (const look of ['drivein', 'holo', 'feather'] as const) {
+      useWatchStore.getState().setLooks({ ...DEFAULT_LOOKS, all: look });
+      expect(videoInFront(useWatchStore.getState()), look).toBe(true);
+    }
   });
 
   it('opens only a validated kind and id through the Rust command', async () => {
