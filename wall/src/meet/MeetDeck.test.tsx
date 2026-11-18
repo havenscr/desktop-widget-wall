@@ -36,6 +36,9 @@ const details: MeetingDetails = {
   peopleMore: 0,
   invite: 'Walk through the sizing options.',
 };
+// The invite may carry an address for a person; the wall must never draw it. Invented, and not on the typed shape.
+const EMAILS: Record<string, string> = { 'Priya Calder': 'priya.calder@contoso.example', 'Marcus Veld': 'marcus.veld@contoso.example' };
+for (const p of details.people) if (EMAILS[p.name]) (p as unknown as Record<string, unknown>).email = EMAILS[p.name];
 const m = (key: string, title: string, from: number, to: number, over: Partial<Meeting> = {}): Meeting => ({ key, accountId: 'work', title, start: at(from), end: at(to), canJoin: false, ...over });
 const accounts = [{ id: 'work', label: 'Work', state: 'ok' as const }];
 let sent: { command: string; args?: unknown }[] = [];
@@ -140,6 +143,75 @@ it('in a Teams call the same eight places hold Mute, Camera, Share, Leave and fo
     fireEvent.click(k);
   }
   await flush(600);
+  expect(sent).toEqual([]);
+});
+
+for (const kind of ['teams', 'zoom'] as const) {
+  it(`in a ${kind} call Mute, Camera, Share and Leave each send their own key id`, async () => {
+    serve([m('1-0', 'Design review', -10, 20, { canJoin: true, details })]);
+    await setCall(call({ kind }));
+    const { container } = await renderMeet();
+    const keys = deck(container);
+    for (const [i, role] of ['mute', 'camera', 'share', 'leave'].entries()) {
+      sent = [];
+      fireEvent.click(keys[i]);
+      await flush(600);
+      expect(sent).toEqual([{ command: 'wall2_keys_send_library', args: { id: `${kind}-${role}` } }]);
+    }
+  });
+}
+
+it('the later keys and a browser call keys are out of the tab order and do nothing on click, Enter or Space', async () => {
+  const inert = async (inCall: CallSignal | null) => {
+    serve([m('1-0', 'Design review', inCall ? -10 : 12, inCall ? 20 : 42, { canJoin: true, details })]);
+    await setCall(inCall);
+    const { container, unmount } = await renderMeet();
+    const keys = deck(container);
+    // The tab stops of the hero: every button that is not tabIndex -1. None may be a later or unavailable key.
+    const stops = [...heroOf(container).querySelectorAll<HTMLElement>('button')].filter((b) => b.tabIndex >= 0);
+    for (const b of stops) {
+      expect(b.getAttribute('aria-disabled')).toBeNull();
+      expect(b.getAttribute('data-later')).toBeNull();
+    }
+    const unavailable = keys.filter((k) => k.getAttribute('aria-disabled') === 'true');
+    expect(unavailable.length).toBeGreaterThan(0);
+    sent = [];
+    for (const k of unavailable) {
+      expect(k.tabIndex).toBe(-1);
+      expect(k.hasAttribute('disabled')).toBe(false);
+      for (const key of ['Enter', ' ']) {
+        const ev = new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true });
+        act(() => void k.dispatchEvent(ev));
+        expect(ev.defaultPrevented).toBe(true);
+      }
+      fireEvent.click(k);
+    }
+    await flush(600);
+    expect(sent).toEqual([]);
+    unmount();
+    mocks.clear();
+    resetTip();
+  };
+  await inert(null);
+  await inert(call());
+  await inert(call({ kind: 'browser' }));
+});
+
+it('a key the library cannot run is not a tab stop and does nothing', async () => {
+  serve([m('1-0', 'Design review', -10, 20, { canJoin: true, details })]);
+  mocks.set('wall2_keys_library', () => ({ ...LIBRARY_DATA, groups: [] }));
+  await setCall(call());
+  const { container } = await renderMeet();
+  const first = deck(container)[0];
+  expect(first.className).toContain('off');
+  expect(first.tabIndex).toBe(-1);
+  expect(first.getAttribute('aria-disabled')).toBe('true');
+  sent = [];
+  fireEvent.click(first);
+  const ev = new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true });
+  act(() => void first.dispatchEvent(ev));
+  await flush(600);
+  expect(ev.defaultPrevented).toBe(true);
   expect(sent).toEqual([]);
 });
 
@@ -248,4 +320,72 @@ it('no address and no contact card appear in the hero or the card', async () => 
   fireEvent.click(person(container, /^Marcus Veld/));
   const text = heroOf(container).textContent ?? '';
   expect(text).not.toMatch(/@|mailto|Contact card|Open contact/i);
+  for (const addr of Object.values(EMAILS)) {
+    expect(container.textContent).not.toContain(addr);
+    expect(container.innerHTML).not.toContain(addr);
+  }
+});
+
+it('Escape returns the focus to the initial that opened the card', async () => {
+  serve([m('1-0', 'Design review', -10, 20, { details })]);
+  await setCall(call());
+  const { container } = await renderMeet();
+  const ini = person(container, /^Marcus Veld/);
+  ini.focus();
+  fireEvent.click(ini);
+  within(screen.getByRole('dialog')).getByRole('button', { name: 'Email' }).focus();
+  expect(document.activeElement).not.toBe(ini);
+  fireEvent.keyDown(document, { key: 'Escape' });
+  expect(screen.queryByRole('dialog')).toBeNull();
+  expect(document.activeElement).toBe(ini);
+});
+
+it('the Copied line clears when the card closes, also when the answer arrives after it closed', async () => {
+  serve([m('1-0', 'Design review', -10, 20, { details })]);
+  await setCall(call());
+  const { container } = await renderMeet();
+  fireEvent.click(person(container, /^Marcus Veld/));
+  fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Copy email' }));
+  await flush(10);
+  expect(within(screen.getByRole('dialog')).getByRole('status').textContent).toBe('Copied');
+  fireEvent.keyDown(document, { key: 'Escape' });
+  fireEvent.click(person(container, /^Marcus Veld/));
+  expect(within(screen.getByRole('dialog')).queryByRole('status')).toBeNull();
+  // A copy still running when the card closes does not leave a line on the next open.
+  let done: () => void = () => undefined;
+  mocks.set('wall2_meet_person_action', () => new Promise((r) => (done = () => r(null))));
+  fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Copy email' }));
+  fireEvent.keyDown(document, { key: 'Escape' });
+  fireEvent.click(person(container, /^Marcus Veld/));
+  await act(async () => done());
+  await flush(10);
+  expect(within(screen.getByRole('dialog')).queryByRole('status')).toBeNull();
+});
+
+it('the Escape listener exists only while the card is open and leaves other Escape handlers alone', async () => {
+  serve([m('1-0', 'Design review', -10, 20, { details })]);
+  await setCall(call());
+  const { container } = await renderMeet();
+  const add = vi.spyOn(document, 'addEventListener');
+  const remove = vi.spyOn(document, 'removeEventListener');
+  const keydowns = (spy: typeof add) => spy.mock.calls.filter((c) => c[0] === 'keydown').length;
+  const other = vi.fn();
+  document.addEventListener('keydown', other);
+  // Closed: Escape does nothing to the card and nothing is stolen.
+  fireEvent.keyDown(document, { key: 'Escape' });
+  expect(other).toHaveBeenCalledTimes(1);
+  const addedBefore = keydowns(add);
+  const removedBefore = keydowns(remove);
+  fireEvent.click(person(container, /^Marcus Veld/));
+  expect(keydowns(add) - addedBefore).toBe(1);
+  const stop = vi.spyOn(Event.prototype, 'stopImmediatePropagation');
+  const stopProp = vi.spyOn(Event.prototype, 'stopPropagation');
+  fireEvent.keyDown(document, { key: 'Escape' });
+  expect(other).toHaveBeenCalledTimes(2);
+  expect(stop).not.toHaveBeenCalled();
+  expect(stopProp).not.toHaveBeenCalled();
+  expect(screen.queryByRole('dialog')).toBeNull();
+  expect(keydowns(remove) - removedBefore).toBe(1);
+  document.removeEventListener('keydown', other);
+  vi.restoreAllMocks();
 });

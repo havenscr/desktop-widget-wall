@@ -1,3 +1,4 @@
+import type { KeyboardEvent, MouseEvent } from 'react';
 import { IconBulb, IconCalendarEvent, IconMoodSmile, IconVideo } from '@tabler/icons-react';
 import { invoke } from '../bridge/tauri';
 import type { DayEvent } from '../ribbon/model';
@@ -56,6 +57,19 @@ function Ring({ value, unit, frac, tone }: { value: number; unit: string; frac: 
   );
 }
 
+/**
+ * Props for a key that cannot run: out of the tab order, no click or Enter or Space action, and still a plain
+ * button (not `disabled`) so the hover tooltip keeps working.
+ */
+const inertKey = {
+  tabIndex: -1,
+  'aria-disabled': 'true' as const,
+  onClick: (e: { preventDefault: () => void }) => e.preventDefault(),
+  onKeyDown: (e: KeyboardEvent<HTMLElement>) => {
+    if (e.key === 'Enter' || e.key === ' ') e.preventDefault();
+  },
+};
+
 /** A call key from the key library, sent the way the key deck sends it. */
 function CallKey({ spec, groups, camera, kind, press, onKeyDown }: {
   spec: CallKeySpec;
@@ -75,13 +89,16 @@ function CallKey({ spec, groups, camera, kind, press, onKeyDown }: {
       type="button"
       className={`meet-key${tone}${ok ? '' : ' off'}`}
       aria-label={spec.label}
-      aria-disabled={ok ? undefined : 'true'}
       data-role={spec.role}
-      onKeyDown={onKeyDown(hit?.key.action ?? null)}
-      onClick={(e) => {
-        if (!ok || keyboardOnMouseKey(hit.key.action, e.detail)) return;
-        void press(`meet:${spec.id}`, e.detail, { command: 'wall2_keys_send_library', args: { id: spec.id } }, spec.label, hit.key.action, where, false);
-      }}
+      {...(ok
+        ? {
+            onKeyDown: onKeyDown(hit.key.action),
+            onClick: (e: MouseEvent<HTMLButtonElement>) => {
+              if (keyboardOnMouseKey(hit.key.action, e.detail)) return;
+              void press(`meet:${spec.id}`, e.detail, { command: 'wall2_keys_send_library', args: { id: spec.id } }, spec.label, hit.key.action, where, false);
+            },
+          }
+        : inertKey)}
       {...tip(text)}
     >
       <KeyIcon name={ok ? hit.key.icon : 'keyboard'} size={26} />
@@ -91,10 +108,10 @@ function CallKey({ spec, groups, camera, kind, press, onKeyDown }: {
 }
 
 
-/** A key of the deck that does nothing yet: dashed, dim, disabled, and a click does nothing. */
+/** A key of the deck that does nothing yet: dashed, dim, out of the tab order, and a click or Enter or Space does nothing. */
 function LaterKey({ k }: { k: LaterKeySpec }) {
   return (
-    <button type="button" className="meet-key later" aria-label={k.label} aria-disabled="true" data-later="true" {...tip(LATER_TIP)}>
+    <button type="button" className="meet-key later" aria-label={k.label} data-later="true" {...inertKey} {...tip(LATER_TIP)}>
       {k.icon === 'smile' ? <IconMoodSmile size={26} stroke={1.8} aria-hidden="true" /> : <KeyIcon name={k.icon} size={26} />}
       <span>{k.label}</span>
     </button>
@@ -113,7 +130,7 @@ function Keys({ meeting, m, openKey, showBrief }: { meeting: Meeting | undefined
       return (
         <div className="meet-keys" aria-label="Call keys">
           {BROWSER_KEYS.map((k) => (
-            <button key={k.role} type="button" className="meet-key off dashed" aria-label={k.label} aria-disabled="true" {...tip(BROWSER_TIP)}>
+            <button key={k.role} type="button" className="meet-key off dashed" aria-label={k.label} {...inertKey} {...tip(BROWSER_TIP)}>
               <KeyIcon name={{ mute: 'mic', camera: 'video', share: 'screen-share', leave: 'phone-off' }[k.role]} size={26} />
               <span>{k.label}</span>
             </button>

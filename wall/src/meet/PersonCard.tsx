@@ -27,10 +27,20 @@ export function People({ people, meetingId }: { people: PeopleBlock; meetingId: 
   const [anchor, setAnchor] = useState(24);
   const [line, setLine] = useState<string | null>(null);
   const rootRef = useRef<HTMLDivElement>(null);
+  const openerRef = useRef<HTMLElement | null>(null);
+  // Bumped on every open and close, so an answer that arrives after the card closed sets no line.
+  const epoch = useRef(0);
   const person = open === null ? undefined : people.circles[open];
   const close = () => {
+    epoch.current += 1;
     setOpen(null);
     setLine(null);
+  };
+  /** Escape: close and put the focus back on the initial that opened the card. */
+  const closeToOpener = () => {
+    const el = openerRef.current;
+    close();
+    el?.focus();
   };
   useEffect(close, [meetingId]);
   useEffect(() => {
@@ -39,7 +49,8 @@ export function People({ people, meetingId }: { people: PeopleBlock; meetingId: 
   useEffect(() => {
     if (open === null) return;
     const key = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') close();
+      // Ours only while the card is open; another handler that already took this Escape keeps it, and none is stopped.
+      if (e.key === 'Escape' && !e.defaultPrevented) closeToOpener();
     };
     const down = (e: Event) => {
       if (!rootRef.current?.contains(e.target as Node)) close();
@@ -55,6 +66,8 @@ export function People({ people, meetingId }: { people: PeopleBlock; meetingId: 
   const toggle = (i: number, el: HTMLElement) => {
     if (open === i) return close();
     setLine(null);
+    openerRef.current = el;
+    epoch.current += 1;
     setOpen(i);
     // Anchored at the initials; kept inside the hero's right column.
     setLeft(Math.max(0, Math.min(el.offsetLeft - 8, ROW_W - POP_W)));
@@ -63,12 +76,14 @@ export function People({ people, meetingId }: { people: PeopleBlock; meetingId: 
   const run = async (a: (typeof ACTIONS)[number]) => {
     const key = person?.key;
     if (!key) return;
+    const mine = epoch.current;
     try {
       await personAction(key, a.action);
+      if (epoch.current !== mine) return;
       if (a.action === 'copy') setLine('Copied');
       else close();
     } catch {
-      setLine(a.fail);
+      if (epoch.current === mine) setLine(a.fail);
     }
   };
 
