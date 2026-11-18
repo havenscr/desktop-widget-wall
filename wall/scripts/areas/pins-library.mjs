@@ -37,7 +37,7 @@ const states = [
   state('the chooser, all three places used', 'mixedfull', ['Pin 1', 'Pin 2', 'Pin 3', '!Empty'], steps('ctx:.sp-tilebox:nth-child(4) .sp-tile', PIN_ROW)),
   state('the chooser with an empty place', 'lib1', ['Pin 1', 'Pin 2', 'Empty'], steps('ctx:.sp-tilebox:nth-child(4) .sp-tile', PIN_ROW)),
   state('an opened Spotify playlist at rest, Pin enabled', 'none', ['Shuffle', 'Pin'], '.sp-tile'),
-  state('an opened Spotify playlist, tall, Pin enabled', 'none', ['Shuffle', 'Pin'], steps(TALL, '.sp-tile')),
+  state('an opened Spotify playlist, tall, Pin enabled', 'none', ['Playlists', 'Shuffle'], steps(TALL, '.sp-tile')),
   state('an opened YouTube playlist at rest', 'none', ['Playlist', 'Shuffle', 'Pin'], steps(SWITCH, TILE)),
   state('an opened YouTube playlist, tall', 'none', ['Playlist', 'Shuffle'], steps(SWITCH, TALL, TILE)),
 ];
