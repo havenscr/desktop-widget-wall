@@ -1,7 +1,9 @@
 import { useEffect, useId, useRef, type FocusEvent, type KeyboardEvent as ReactKeyboardEvent } from 'react';
-import { IconArrowsShuffle, IconChevronRight, IconPlayerPlayFilled } from '@tabler/icons-react';
+import { IconArrowsShuffle, IconChevronRight, IconListDetails, IconPlayerPlayFilled } from '@tabler/icons-react';
 import type { SpotifyItem } from '../../music/spotify';
-import { hideTip, pinTip, TIP_DELAY_MS } from '../../ui/HoverTip';
+import { hideTip, pinTip, quietFocus, TIP_DELAY_MS } from '../../ui/HoverTip';
+import { libraryMenuOpen, setSourceFocus } from '../watch/libraryMenu';
+import { libraryHandlers } from '../watch/libraryOpen';
 import { Cover } from './Cover';
 import { kindLine, songs, tileLine } from './model';
 
@@ -52,6 +54,17 @@ function gridKey(e: ReactKeyboardEvent<HTMLButtonElement>): boolean {
 
 /** Set while the program puts focus back on a tile after Escape: that focus must not reopen the card. */
 let keepClosed = false;
+
+// Focus that a library menu gives back to its source (a tile) must not open the tile's card.
+setSourceFocus((el) => {
+  quietFocus();
+  keepClosed = true;
+  try {
+    el.focus();
+  } finally {
+    keepClosed = false;
+  }
+});
 
 /**
  * The details card for a tile (R2): the name, the kind with its owner or artist said once, the
@@ -160,10 +173,23 @@ export function Tile({ item, kindWord, onOpen, onPlay, onShuffle }: { item: Spot
     timer.current = null;
   };
   useEffect(() => clear, []);
+  const menu = item.kind === 'track'
+    ? null
+    : libraryHandlers({
+        entry: { kind: item.kind === 'album' ? 'spotify-album' : 'spotify-playlist', id: item.id, name: item.name, art: item.imageUrl ?? item.thumbUrl ?? undefined },
+        name: item.name,
+        actions: () => [
+          { id: 'play', label: 'Play', icon: <IconPlayerPlayFilled size={20} aria-hidden="true" />, run: onPlay },
+          { id: 'shuffle', label: 'Shuffle', icon: <IconArrowsShuffle size={20} aria-hidden="true" />, run: onShuffle },
+          { id: 'songs', label: 'Songs', icon: <IconListDetails size={20} aria-hidden="true" />, run: onOpen },
+        ],
+      });
   const card = () => <TileDetails tileId={tileId} item={item} onOpen={onOpen} onPlay={onPlay} onShuffle={onShuffle} />;
   const show = (el: HTMLElement) => {
     clear();
-    timer.current = setTimeout(() => pinTip(el, card, { side: true }), TIP_DELAY_MS);
+    timer.current = setTimeout(() => {
+      if (!libraryMenuOpen()) pinTip(el, card, { side: true });
+    }, TIP_DELAY_MS);
   };
   const leave = () => {
     clear();
@@ -188,7 +214,7 @@ export function Tile({ item, kindWord, onOpen, onPlay, onShuffle }: { item: Spot
           pressed.current = true;
         }}
         onFocus={(e) => {
-          if (pressed.current || keepClosed) {
+          if (pressed.current || keepClosed || libraryMenuOpen()) {
             pressed.current = false;
             return;
           }
@@ -204,7 +230,9 @@ export function Tile({ item, kindWord, onOpen, onPlay, onShuffle }: { item: Spot
           if (to && (to.closest('.hover-tip') || to.closest('.sp-tile'))) return;
           leave();
         }}
+        onContextMenu={menu?.onContextMenu}
         onKeyDown={(e) => {
+          if (menu?.onMenuKey(e)) return;
           if (!e.ctrlKey && !e.altKey && !e.metaKey && !e.shiftKey && gridKey(e)) return;
           if (!cardOpen() || e.ctrlKey || e.altKey || e.metaKey) return;
           if (e.key === 'Escape') {

@@ -523,3 +523,18 @@ export const musicControls = {
     return sent;
   },
 };
+
+// A start asked from a playlist tile's menu runs once, when the opened playlist's first page has arrived. It is dropped when
+// the playlist closes, when another one opens (the id no longer matches) and when the first page fails (the view shows its own line).
+useYtLibrary.subscribe((s) => {
+  const want = s.pendingStart;
+  if (!want) return;
+  if (!s.opened || s.opened.id !== want.id || s.songs.problem) {
+    useYtLibrary.setState({ pendingStart: null });
+    return;
+  }
+  if (!s.songs.loaded || s.songs.loading) return;
+  useYtLibrary.setState({ pendingStart: null });
+  // Nothing playable on the first page: nothing plays, and the opened view shows its own "None of these videos plays outside YouTube".
+  if (s.songs.items.some((v) => queueable(v))) playAll(s.songs.items, want.shuffled, { list: 'songs', playlistId: want.id });
+});

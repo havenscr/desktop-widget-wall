@@ -4023,6 +4023,29 @@ button.sp-qrow:hover {
   place-items: center;
   color: #fff;
   transition: opacity 150ms ease;
+  position: relative;
+}
+.u-pin-art img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: inherit;
+}
+/* The service mark on a cover: 20 px round on the lower right corner, overhanging 5 px (inside the pin's padding and gap). */
+.u-pin-badge {
+  position: absolute;
+  right: -5px;
+  bottom: -5px;
+  width: 20px;
+  height: 20px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: rgb(14, 12, 34);
+  border: 1px solid rgba(220, 211, 251, 0.5);
+  color: #fff;
+  box-sizing: border-box;
 }
 .u-pin-name {
   min-width: 0;
@@ -4154,6 +4177,47 @@ button.sp-qrow:hover {
   border-radius: 14px;
   background: rgb(14, 12, 34);
   box-shadow: 0 12px 28px rgba(0, 0, 0, 0.55);
+}
+/* The library menu: the same box, fixed on the strip so no card clips it. Its place is set in the page. */
+.u-pin-menu.u-lib-menu {
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 60;
+}
+.u-lib-sep {
+  height: 1px;
+  margin: 6px 0;
+  background: rgba(220, 211, 251, 0.2);
+}
+.u-pin-menu button .u-lib-chev {
+  justify-self: end;
+}
+.u-pin-menu button[data-disabled] {
+  opacity: 0.45;
+  cursor: default;
+}
+.u-pin-menu button[data-disabled]:hover {
+  background: none;
+}
+.u-pin-menu.u-lib-chooser button {
+  height: 52px;
+  grid-template-columns: 52px 36px minmax(0, 1fr);
+}
+.u-pin-menu.u-lib-chooser .u-pin-art {
+  width: 36px;
+  height: 36px;
+}
+.u-lib-chooser-label {
+  color: var(--dim);
+  font: 600 16px/1 var(--body);
+}
+.u-lib-empty {
+  width: 36px;
+  height: 36px;
+  box-sizing: border-box;
+  border: 2px dashed rgba(220, 211, 251, 0.5);
+  border-radius: 9px;
 }
 .u-pin-menu-title {
   padding: 8px 10px;

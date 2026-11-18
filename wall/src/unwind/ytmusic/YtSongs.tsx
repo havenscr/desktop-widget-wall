@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
-import { IconArrowLeft, IconArrowsShuffle, IconBrandYoutube, IconPlayerPlayFilled } from '@tabler/icons-react';
+import { IconArrowLeft, IconArrowsShuffle, IconBrandYoutube, IconPlayerPlayFilled, IconRefresh } from '@tabler/icons-react';
 import { tip } from '../../ui/HoverTip';
 import { openInBrowser } from '../watch/openInBrowser';
+import { PinButton } from '../watch/PinButton';
 import { MAX_PAGES, PAGE_SIZE, nearEnd, readTime, videosLine } from './model';
 import { playAll, playFrom, queueable, useYtQueue, type QueueFrom } from './queue';
 import { closePlaylist, loadList, refreshSongs, retryList, useYtLibrary } from './store';
@@ -67,18 +68,25 @@ export function YtSongs({ tall }: { tall: boolean }) {
               <IconArrowsShuffle size={18} aria-hidden="true" />
               Shuffle
             </button>
+            <PinButton
+              entry={{ kind: 'playlist', id: opened.id, name: opened.title, art: opened.thumb ?? undefined }}
+              name={opened.title}
+              className="sp-btn plain big yt-pin"
+              icon={tall}
+              cannotLine="This playlist cannot be pinned."
+            />
           </span>
           <span className="yt-refreshrow">
             <button
               type="button"
-              className="sp-btn plain yt-refresh"
+              className="u-rd sm yt-refresh"
+              aria-label="Refresh"
               disabled={songs.loading}
-              {...tip(tall || !songs.readAt ? 'Reads this playlist from YouTube again' : `Reads this playlist from YouTube again. Last read at ${readTime(songs.readAt)}`)}
+              {...tip(!songs.readAt ? 'Reads this playlist from YouTube again' : `Reads this playlist from YouTube again. Last read at ${readTime(songs.readAt)}`)}
               onClick={refreshSongs}
             >
-              Refresh
+              <IconRefresh size={22} stroke={1.8} aria-hidden="true" />
             </button>
-            {tall && songs.readAt ? <span className="yt-readat">Read at {readTime(songs.readAt)}</span> : null}
             <button
               type="button"
               className="u-rd sm yt-openyt"

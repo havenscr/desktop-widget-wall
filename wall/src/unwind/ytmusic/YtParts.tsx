@@ -1,9 +1,11 @@
-import { useEffect, useMemo, useState, type FocusEvent, type MouseEvent, type ReactNode } from 'react';
-import { IconMusic, IconPlayerPlayFilled, IconPlaylistAdd } from '@tabler/icons-react';
+import { useEffect, useMemo, useRef, useState, type FocusEvent, type MouseEvent, type ReactNode } from 'react';
+import { IconBrandYoutube, IconMusic, IconPlayerPlayFilled, IconPlaylistAdd } from '@tabler/icons-react';
 import type { YtVideo } from '../../music/youtube';
 import { hideTip, quietFocus, tip } from '../../ui/HoverTip';
 import { useToolsStore } from '../../tools/store';
 import { AddMenu } from '../watch/AddToPlaylist';
+import { libraryHandlers } from '../watch/libraryOpen';
+import { openInBrowser } from '../watch/openInBrowser';
 import type { OwnVideo } from '../watch/ownLists';
 import { useWatchStore } from '../watch/store';
 import { PlayingBars } from '../spotify/Tile';
@@ -145,6 +147,11 @@ export function YtRows({ items, foot, list, onPlay }: { items: YtVideo[]; foot?:
   const paused = useWatchStore((s) => s.paused || s.needsClick);
   const now = list && entry && live === entry.id && sameList(from, list) ? entry : null;
   const [menu, setMenu] = useState<OpenMenu | null>(null);
+  // The row whose "Open in YouTube" failed: its card says so for 5 seconds.
+  const [openFailed, setOpenFailed] = useState<string | null>(null);
+  const failTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => void (failTimer.current !== null && clearTimeout(failTimer.current)), []);
+  const addButtons = useRef<(HTMLButtonElement | null)[]>([]);
   const listKey = list ? JSON.stringify(list) : '';
   // The menu goes when the list is another one, or when its row is no longer where it was (Refresh, a new page).
   useEffect(() => setMenu(null), [listKey]);
@@ -210,8 +217,42 @@ export function YtRows({ items, foot, list, onPlay }: { items: YtVideo[]; foot?:
               {lines.slice(1).map((l, n) => (
                 <span key={n}>{l}</span>
               ))}
+              {openFailed === v.id ? <span>Could not open the browser</span> : null}
             </div>
           ));
+          // The row's right-click menu: its own actions, then Pin to the left. A row with no length pins as a live stream.
+          const rowMenu = plays
+            ? libraryHandlers({
+                entry: { kind: v.seconds > 0 ? 'video' : 'live', id: v.id, name: v.title },
+                name: v.title,
+                actions: () => [
+                  { id: 'play', label: 'Play', icon: <IconPlayerPlayFilled size={20} aria-hidden="true" />, run: () => onPlay?.(i) },
+                  {
+                    id: 'add',
+                    label: 'Add to a playlist',
+                    icon: <IconPlaylistAdd size={20} aria-hidden="true" />,
+                    chevron: true,
+                    restore: false,
+                    run: () => {
+                      const anchor = addButtons.current[i];
+                      if (anchor) openAt(i, v.id, anchor);
+                    },
+                  },
+                  {
+                    id: 'open',
+                    label: 'Open in YouTube',
+                    icon: <IconBrandYoutube size={20} aria-hidden="true" />,
+                    run: () =>
+                      void openInBrowser({ kind: 'video', id: v.id }).then((ok) => {
+                        if (ok) return;
+                        setOpenFailed(v.id);
+                        if (failTimer.current !== null) clearTimeout(failTimer.current);
+                        failTimer.current = setTimeout(() => setOpenFailed(null), 5000);
+                      }),
+                  },
+                ],
+              })
+            : null;
           return (
             <li
               key={`${v.id}-${i}`}
@@ -223,7 +264,7 @@ export function YtRows({ items, foot, list, onPlay }: { items: YtVideo[]; foot?:
               onFocus={(e) => (menu ? undefined : rowCard.onFocus(e))}
             >
               {plays ? (
-                <button type="button" className="yt-play yt-cells" aria-current={on ? 'true' : undefined} aria-label={`Play ${v.title}`} onClick={() => onPlay?.(i)}>
+                <button type="button" className="yt-play yt-cells" aria-current={on ? 'true' : undefined} aria-label={`Play ${v.title}`} onClick={() => onPlay?.(i)} onContextMenu={rowMenu?.onContextMenu} onKeyDown={rowMenu ? (e) => void rowMenu.onMenuKey(e) : undefined}>
                   {cells}
                 </button>
               ) : (
@@ -233,6 +274,9 @@ export function YtRows({ items, foot, list, onPlay }: { items: YtVideo[]; foot?:
                 <button
                   type="button"
                   className="yt-add"
+                  ref={(el) => {
+                    addButtons.current[i] = el;
+                  }}
                   aria-label={`Add ${v.title} to a playlist`}
                   aria-haspopup="menu"
                   aria-expanded={open}

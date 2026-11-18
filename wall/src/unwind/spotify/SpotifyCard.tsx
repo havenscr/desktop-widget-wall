@@ -18,7 +18,7 @@ import { useSkyKeepClear } from '../../horizon/sky';
 import { isPlaying, isQuiet } from '../../music/model';
 import { playerName, sourceKey } from '../../music/players';
 import { spotify, type SpotifyItem, type SpotifyTrack } from '../../music/spotify';
-import { refreshNowPlaying, useNowPlayingStore } from '../../music/store';
+import { useNowPlayingStore } from '../../music/store';
 import { useNowPlaying } from '../../music/useNowPlaying';
 import { useToolsStore } from '../../tools/store';
 import { quietFocus, tip } from '../../ui/HoverTip';
@@ -58,6 +58,8 @@ import {
   type ListenSource,
   type SpotifyProblem,
 } from './model';
+import { PinButton } from '../watch/PinButton';
+import { finishPlay, playWhole, useSpotifyPinNote } from './playItem';
 import { readSpotifyStatus, spotifyReady, useSpotifyStatus } from './status';
 
 export type BrowseTab = 'search' | 'playlists' | 'albums' | 'liked' | 'recent' | 'queue';
@@ -418,35 +420,7 @@ function useIsNow(): (t: { id: string | null; name: string; artists?: string | n
   return (t) => isNowPlaying(t, nowId, title, artist);
 }
 
-const waitSecond = () => new Promise<void>((resolve) => setTimeout(resolve, 1_000));
-export async function finishPlay(answer: 'played' | 'starting', onStarting: () => void): Promise<void> {
-  if (answer === 'starting') {
-    onStarting();
-    // The "Play on" chip says "Starting Spotify" while the start flow runs, and reads the players again after it.
-    useSpotifyStart.setState({ starting: true });
-    try {
-      for (;;) {
-        const state = await spotify.startStatus();
-        if (!state.starting) {
-          if (state.result !== 'played') throw new Error(state.result ?? 'failed');
-          break;
-        }
-        await waitSecond();
-      }
-    } finally {
-      useSpotifyStart.setState((s) => ({ starting: false, rev: s.rev + 1 }));
-    }
-  }
-  await refreshNowPlaying();
-}
-
-/** Play an item whole, or shuffled, and report startup only when Rust opened Spotify. */
-async function playWhole(item: SpotifyItem, shuffled: boolean, onStarting: () => void): Promise<void> {
-  useSpotifyStart.setState({ name: item.name });
-  // The player is confirmed against a fresh list first (see `confirmPlayer`): nothing plays on another player than the one named.
-  const player = await confirmPlayer();
-  await finishPlay(await spotify.play(item.kind, item.id, { shuffle: shuffled, ...player }), onStarting);
-}
+export { finishPlay };
 
 function Browser({ tall }: { tall: boolean }) {
   const [tab, setTab] = useState<BrowseTab>('playlists');
@@ -472,7 +446,9 @@ function Browser({ tall }: { tall: boolean }) {
     setSpotifyInside(isOpen);
     return () => setSpotifyInside(false);
   }, [isOpen]);
-  const [note, setNote] = useState<string | null>(null);
+  const [ownNote, setNote] = useState<string | null>(null);
+  const pinNote = useSpotifyPinNote((s) => s.note);
+  const note = ownNote ?? pinNote;
   const nowTitle = useNowPlayingStore((s) => s.info?.title ?? '');
   useSpotifyNowRead(nowTitle);
   const isNow = useIsNow();
@@ -881,6 +857,12 @@ function SongsView({ item, tall, backLabel, onBack, onNote, onUpNext }: { item: 
         <IconArrowsShuffle size={18} aria-hidden="true" />
         Shuffle
       </button>
+      <PinButton
+        entry={{ kind: item.kind === 'album' ? 'spotify-album' : 'spotify-playlist', id: item.id, name: item.name, art: item.imageUrl ?? item.thumbUrl ?? undefined }}
+        name={item.name}
+        className="sp-btn plain big sp-pin"
+        cannotLine="This item's address is not one the wall can keep."
+      />
     </>
   );
   return (
