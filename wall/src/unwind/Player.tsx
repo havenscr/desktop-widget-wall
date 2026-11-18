@@ -16,6 +16,7 @@ import { useVisible } from '../ui/useVisible';
 import { useLastPlayed } from './lastPlayed';
 import { canPlayLastOwn, playLastOwn } from './lastOwn';
 import { isWallPlayer, ON_THE_WALL, PICK_IN_WATCH, shownSource } from './ownSource';
+import { useOwnView } from './watch/ownPlay';
 import { useWatchStore } from './watch/store';
 import { AUTOPLAY_LINE, musicControls, next as queueNext, playAgain, previous as queuePrevious, useMusicView, type MusicView } from './ytmusic/queue';
 import { StartOnWatch } from './ytmusic/YtFoot';
@@ -88,6 +89,10 @@ export function Player() {
   // (or last stopped) under an id that is not a known player: the web view's id changes by build.
   const ownVideo = webView || (source !== null && !isKnownPlayer(source));
   const watchMatch = !!sessionTitle && ownVideo && [watchPlaying, watchStopped].some((item) => watchTitle(item?.label) === sessionTitle);
+  // The video icon's own, stricter test: only the wall's own web view counts (never an unknown player, whose title can
+  // equal a Watch item's), and a playing wall playlist is matched on its current video's title, not the playlist label.
+  const ownPlaylist = useOwnView();
+  const iconWatch = !!sessionTitle && webView && [watchPlaying?.label, watchStopped?.label, ownPlaylist?.title].some((t) => watchTitle(t) === sessionTitle);
   const sourceLabel = watchMatch ? 'Watch' : shownSource(rawSourceLabel);
   // The horizon's moon keeps 40 px clear of the player (it moves to another of its places).
   const [box, setBox] = useState<HTMLDivElement | null>(null);
@@ -125,8 +130,8 @@ export function Player() {
   // card's playable own item), or a saved Watch video whose name is this track's exact title in a YouTube player.
   const idleOwnVideo = fromWall && ownKnown && !!own && own.from === 'watch';
   const hasVideo = quiet
-    ? watchMatch || idleOwnVideo || (!!idle && !fromWall && savedVideoMatch(idle.title, idle.source, savedItems))
-    : watchMatch || savedVideoMatch(info?.title, rawSourceLabel, savedItems);
+    ? iconWatch || idleOwnVideo || (!!idle && !fromWall && savedVideoMatch(idle.title, idle.source, savedItems))
+    : iconWatch || savedVideoMatch(info?.title, rawSourceLabel, savedItems);
   const startOwn = () => {
     if (!playLastOwn(own)) setRefused(ownKey);
   };
@@ -310,8 +315,8 @@ function MusicPlayer({ music, setBox }: { music: MusicView; setBox: (el: HTMLDiv
       <div className="u-now">
         <div className={`u-art${live ? '' : ' dim'}`}>
           {showArt ? <img src={art} alt="" referrerPolicy="no-referrer" onError={() => setFailed(art)} /> : <IconMusic size={72} stroke={1.25} aria-hidden="true" />}
-          {/* The wall's own YouTube pick: a video the wall holds by id. */}
-          <VideoCorner show />
+          {/* The wall's own YouTube pick: shown only while its video is in Watch's frame (playing or paused), where the click lands. */}
+          <VideoCorner show={live} />
         </div>
         <div className="u-meta">
           <span className="u-k u-src">{live ? 'YouTube, on the wall' : 'Last played on the wall'}</span>

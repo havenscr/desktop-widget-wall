@@ -125,6 +125,37 @@ it('gives the art a video icon when the track is a saved video, which switches t
   expect(screen.getByRole('button', { name: /Play Night drive mix/ })).toBeTruthy();
 });
 
+it('shows no video icon when an unknown player plays a track named like the Watch item last stopped', async () => {
+  seed();
+  useWatchStore.getState().play({ kind: 'video', id: V });
+  useWatchStore.getState().stop();
+  useWatchStore.getState().setTab('listen');
+  mocks.set('get_now_playing', () => ({ ...PLAYING, title: 'Night drive mix', artist: 'Example Host', source_app: 'com-example-radio7f3a2', source_app_id: 'com-example-radio7f3a2' }));
+  render(<UnwindView />);
+  await flush();
+  expect(document.querySelector('.u-video')).toBeNull();
+});
+
+it('shows no video icon for a browser tab with the saved name but no YouTube suffix', async () => {
+  seed();
+  mocks.set('get_now_playing', asEdge('Night drive mix'));
+  render(<UnwindView />);
+  await flush();
+  expect(document.querySelector('.u-video')).toBeNull();
+});
+
+it('keeps the video icon at full strength on the dimmed idle card of a stopped Watch item', async () => {
+  seed();
+  useWatchStore.getState().play({ kind: 'video', id: V });
+  useWatchStore.getState().stop();
+  useWatchStore.getState().setTab('listen');
+  mocks.set('get_now_playing', () => ({ ...PLAYING, title: 'Night drive mix', artist: '', source_app: 'msedgewebview2', source_app_id: 'msedgewebview2.exe', playback_status: 'stopped' }));
+  render(<UnwindView />);
+  await flush();
+  const icon = document.querySelector('.u-art.dim .u-video');
+  expect(icon).not.toBeNull();
+});
+
 it('gives the art a video icon when the wall itself is playing the Watch item', async () => {
   seed();
   mocks.set('get_now_playing', () => ({ ...PLAYING, title: 'Night drive mix', artist: '', source_app: 'msedgewebview2', source_app_id: 'msedgewebview2.exe' }));

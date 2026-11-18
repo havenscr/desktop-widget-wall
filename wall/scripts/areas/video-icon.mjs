@@ -8,6 +8,7 @@ const V = (n) => `Video icon, ${n}`;
 const STATES = [
   ['saved video in a browser', 'media=ytvideo', true, ['Night drive mix']],
   ['wall plays the Watch item', 'wplay=0&media=watchown', true, ['Playing in Watch']],
+  ['idle card, stopped Watch item', 'wplay=0&media=watchstopped', true, ['Last played in Watch']],
   ['plain audio, videos saved', 'media=on', false, ['Tokyo Burnout']],
   ['song sharing a saved video name', 'media=spotifysame', false, ['Night drive mix']],
 ];
@@ -42,6 +43,8 @@ function measureIcon() {
     text: (el.textContent || '').trim(),
     contrast: Math.round(((l1 + 0.05) / (l2 + 0.05)) * 100) / 100,
     round: cs.borderRadius,
+    // The chip is never dimmed with the idle card's cover: neither it nor the art it sits in carries an opacity.
+    opacity: Number(cs.opacity) * Number(getComputedStyle(el.parentElement).opacity),
   };
 }
 
@@ -69,6 +72,7 @@ export default {
         check(m.right >= 0 && m.right <= 12 && m.bottom >= 0 && m.bottom <= 12, 'bottom right of the art', `chip sits ${m.right}/${m.bottom} px from the art corner`);
         check(m.glyph && m.text === '', 'a glyph and no text', 'it holds text or no glyph');
         check(m.name === 'Watch the video' && m.title === 'Watch the video', 'named "Watch the video"', `name "${m.name}", title "${m.title}"`);
+        check(m.opacity === 1, 'full strength (not dimmed with the art)', `chip drawn at ${m.opacity} of full strength`);
         check(m.contrast >= 3, `icon contrast ${m.contrast} to 1 (3 needed)`, `icon contrast ${m.contrast} to 1, under 3`);
         return bad;
       },
@@ -77,6 +81,11 @@ export default {
       'video-icon-small': {
         css: '.u-art .u-video { width: 24px !important; height: 24px !important; }',
         expect: /^ *FAIL video icon: chip is \d+ x \d+ px/m,
+        appliesTo: (variant) => variant.name === V('saved video in a browser'),
+      },
+      'video-icon-dimmed': {
+        css: '.u-art .u-video { opacity: 0.7 !important; }',
+        expect: /^ *FAIL video icon: chip drawn at/m,
         appliesTo: (variant) => variant.name === V('saved video in a browser'),
       },
       'video-icon-pale': {

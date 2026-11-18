@@ -8,7 +8,7 @@ const SAVED = [
 ];
 
 it('matches a saved video or live stream by its exact title in a YouTube player', () => {
-  expect(savedVideoMatch('Night drive mix', 'Edge', SAVED)).toBe(true);
+  expect(savedVideoMatch('Night drive mix - YouTube', 'Edge', SAVED)).toBe(true);
   expect(savedVideoMatch('Night drive mix - YouTube', 'Chrome', SAVED)).toBe(true);
   expect(savedVideoMatch('Lofi radio', 'YouTube Music', SAVED)).toBe(true);
 });
@@ -30,4 +30,11 @@ it('is never a match in an audio app or an unknown source, even with the same ti
 
 it('ignores an item still carrying its default label', () => {
   expect(savedVideoMatch('YouTube video', 'Edge', [{ kind: 'video', id: 'Ab3dEfGh1jK', label: 'YouTube video' }])).toBe(false);
+});
+
+it('matches a browser only when the tab is YouTube, but the YouTube Music app by title alone', () => {
+  expect(savedVideoMatch('Night drive mix', 'Edge', SAVED)).toBe(false);
+  expect(savedVideoMatch('Night drive mix - Some Site', 'Chrome', SAVED)).toBe(false);
+  expect(savedVideoMatch('Night drive mix - YouTube', 'Firefox', SAVED)).toBe(true);
+  expect(savedVideoMatch('Night drive mix', 'YouTube Music', SAVED)).toBe(true);
 });
