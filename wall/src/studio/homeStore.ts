@@ -77,6 +77,8 @@ export interface HomeState {
   readMoods: () => Promise<void>;
   applyPreset: (id: string) => Promise<void>;
   goNormal: () => Promise<void>;
+  /** The Back to normal chip of the Office moods row: the same call as `goNormal`, then the moods are read again. A 409 (no mood on) is a quiet no-op. */
+  goBackFromMood: () => Promise<void>;
   setGroup: (id: GroupId, on: boolean, level?: number) => Promise<void>;
   applyLook: (id: string) => Promise<void>;
   applyMood: (id: string) => Promise<void>;
@@ -258,6 +260,24 @@ export const useHome = create<HomeState>((set, get) => {
     },
     goNormal() {
       return studioWrite('normal', () => api.goNormal(), { keys: true, applying: 'normal' });
+    },
+    goBackFromMood() {
+      if (get().applying !== null) return Promise.resolve();
+      return enqueue('normal', async () => {
+        set({ applying: 'normal' });
+        try {
+          applyStudio(await api.goNormal());
+          set({ sticky: null });
+          void useKeyLights.getState().read();
+        } catch (e) {
+          const w = homeWordOf(e);
+          // Nothing was on: nothing to go back from, and nothing to say about it.
+          if (w !== 'nothing-to-undo') await afterStudioWord(w);
+        } finally {
+          set({ applying: null });
+        }
+        await get().readMoods();
+      });
     },
     setGroup(id, on, level) {
       return studioWrite(`group:${id}`, () => api.setGroup(id, on, level));
