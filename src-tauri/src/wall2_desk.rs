@@ -4,9 +4,9 @@
 //! The write token is typed once in Tools and kept in Windows Credential Manager by
 //! `wall2_desk_token` (target `WidgetWall2/home/desk/0`); `feeds.json` key `homeDeskToken` is no
 //! longer read. The token is read here only, sent only as the `X-Desk-Token` header, and never
-//! returned to the web view, logged or put in an error. It is sent only to an `https` base, a
-//! loopback address or a tailnet address (see `token_may_go_to`); to a plain `http` base on
-//! the local network the clear is not tried.
+//! returned to the web view, logged or put in an error. It is sent only to a
+//! loopback address or a tailnet address (see `token_may_go_to`); to any other base, `https`
+//! included, the clear is not tried.
 //! Every answer is capped at 64 KB and checked field by field. Errors are fixed words:
 //! `not-configured`, `absent` (the route is not there yet), `failed`, `not-set-up` (no
 //! token), `nothing-to-clear`, `forbidden` and `needs-private-address`. Old data is never an error: each answer
@@ -283,10 +283,9 @@ pub(crate) fn shape_security(body: &Value, can_clear: bool) -> DeskSecurity {
     }
 }
 
-/// Where the write token may go: an `https` base, a loopback address (`localhost`,
-/// `127.0.0.0/8`, `::1`) or a tailnet address (`100.64.0.0/10`, or a `*.ts.net` name).
-/// Plain `http` to anything else would carry the token across the local network in the
-/// clear, so it is refused. `base` is a checked `scheme://host[:port]`; case does not matter.
+/// Where the write token may go, over `https` or `http`: a loopback address (`localhost`,
+/// `127.0.0.0/8`, `::1`) or a tailnet address (`100.64.0.0/10`, `fd7a:115c:a1e0::/48`, or a
+/// `*.ts.net` name). Any other host, `https` included, is refused. `base` is a checked `scheme://host[:port]`; case does not matter.
 pub(crate) fn token_may_go_to(base: &str) -> bool {
     let b = base.to_ascii_lowercase();
     let rest = if let Some(r) = b.strip_prefix("https://") {
@@ -325,14 +324,31 @@ pub(crate) fn token_may_go_to(base: &str) -> bool {
     if host.is_empty() || host.ends_with('.') {
         return false;
     }
-    if b.starts_with("https://") {
+    // Same rule for `https` and `http`: only the host decides. A public name over `https`
+    // is still not a place the desk token goes.
+    if !host.is_ascii() {
+        return false;
+    }
+    if host == "localhost" {
         return true;
     }
-    if host == "localhost" || host == "::1" {
-        return true;
+    if host.contains(':') {
+        // A bracketed IPv6 literal: loopback `::1` or the tailnet `fd7a:115c:a1e0::/48`.
+        // Mapped and every other form is refused.
+        return match host.parse::<std::net::Ipv6Addr>() {
+            Ok(ip) => {
+                let s = ip.segments();
+                ip == std::net::Ipv6Addr::LOCALHOST || (s[0] == 0xfd7a && s[1] == 0x115c && s[2] == 0xa1e0)
+            }
+            Err(_) => false,
+        };
     }
     if let Some(name) = host.strip_suffix(".ts.net") {
-        return !name.is_empty() && !name.starts_with('.') && name.bytes().all(|c| c.is_ascii_alphanumeric() || c == b'-' || c == b'.');
+        // Every label is 1 to 63 letters, digits or hyphens, none starting or ending with a hyphen.
+        return !name.is_empty()
+            && name.split('.').all(|l| {
+                !l.is_empty() && l.len() <= 63 && !l.starts_with('-') && !l.ends_with('-') && l.bytes().all(|c| c.is_ascii_alphanumeric() || c == b'-')
+            });
     }
     // Only a plain dotted quad: `127.1`, octal, hex and integer forms do not parse here, and
     // a part with a leading zero is refused whatever the parser version (it may read as octal).
@@ -563,11 +579,11 @@ mod tests {
     #[test]
     fn clear_sends_exactly_the_empty_object_with_both_headers() {
         let f = fake(200, "{\"ok\":true,\"cleared\":3,\"seen_alert_ids\":3}");
-        assert_eq!(clear_with(&f, "https://home.test", Some(TOKEN)), Ok(3));
+        assert_eq!(clear_with(&f, "https://box.tail1234.ts.net", Some(TOKEN)), Ok(3));
         let seen = f.seen.borrow();
         assert_eq!(seen.len(), 1);
         let (url, headers, body) = &seen[0];
-        assert_eq!(url, "https://home.test/api/desk/security/alerts/clear");
+        assert_eq!(url, "https://box.tail1234.ts.net/api/desk/security/alerts/clear");
         assert_eq!(body, "{}");
         assert!(headers.contains(&("Content-Type".to_string(), "application/json".to_string())));
         assert!(headers.contains(&("X-Desk-Token".to_string(), TOKEN.to_string())));
@@ -577,7 +593,7 @@ mod tests {
     fn clear_errors_are_fixed_words_and_never_carry_the_token() {
         let cases = [(409, NOTHING), (403, FORBIDDEN), (404, ABSENT), (503, NO_TOKEN), (500, FAILED), (415, FAILED), (400, FAILED)];
         for (code, word) in cases {
-            let err = clear_with(&fake(code, TOKEN), "https://home.test", Some(TOKEN)).unwrap_err();
+            let err = clear_with(&fake(code, TOKEN), "https://box.tail1234.ts.net", Some(TOKEN)).unwrap_err();
             assert_eq!(err, word);
             assert!(!err.contains(TOKEN));
         }
@@ -607,10 +623,15 @@ mod tests {
     }
 
     #[test]
-    fn the_token_goes_only_to_https_loopback_or_tailnet() {
+    fn the_token_goes_only_to_loopback_or_tailnet() {
         for ok in [
-            "https://home.test",
-            "HTTPS://Home.Test:8443",
+            "https://localhost:8443",
+            "HTTPS://LocalHost:8443",
+            "https://box.tail1234.ts.net",
+            "https://[::1]",
+            "http://[fd7a:115c:a1e0::1]:8080",
+            "https://[fd7a:115c:a1e0:ab12:4843:cd96:6200:1]",
+            "https://100.100.1.2",
             "http://localhost:3000",
             "http://127.0.0.1:8080",
             "http://127.9.9.9",
@@ -626,6 +647,29 @@ mod tests {
             assert!(token_may_go_to(ok), "{ok} must be allowed");
         }
         for no in [
+            // Any other https host, and http to a public name.
+            "https://home.test",
+            "HTTPS://Home.Test:8443",
+            "https://example.com",
+            "https://192.0.2.1",
+            "http://example.com",
+            // Tailnet look-alikes, bad labels, non-ASCII.
+            "https://evil.ts.net.attacker.com",
+            "https://box.ts.net.",
+            "https://-a.ts.net",
+            "https://a-.ts.net",
+            "https://a..ts.net",
+            "https://a_b.ts.net",
+            "https://b\u{00f6}x.ts.net",
+            "https://box.t\u{0455}.net",
+            "https://\u{ff4c}ocalhost",
+            "https://a.ts.net@evil.example",
+            "https://box.tail1234.ts.net:80@evil.example",
+            // IPv6 outside the allowed prefixes.
+            "http://[fd7a:115c:a1e1::1]",
+            "http://[fd7a:115d:a1e0::1]",
+            "http://[2001:db8::1]",
+            "http://[::]",
             "http://192.168.1.10:8080",
             "http://10.0.0.5",
             "http://home.lan",
@@ -687,6 +731,9 @@ mod tests {
         assert!(!err.contains(TOKEN));
         assert!(f.seen.borrow().is_empty());
         assert_eq!(clear_with(&f, "http://100.100.1.2:8080", Some(TOKEN)), Ok(1));
+        let g = fake(200, "{\"ok\":true,\"cleared\":1}");
+        assert_eq!(clear_with(&g, "https://home.test", Some(TOKEN)).unwrap_err(), INSECURE);
+        assert!(g.seen.borrow().is_empty());
     }
 
     #[test]

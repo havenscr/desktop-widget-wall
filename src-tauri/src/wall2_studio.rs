@@ -6,8 +6,8 @@
 //! fresh read shape of its family. The base is `feeds.json` key `homeBaseUrl`; the desk token
 //! is the one typed in Tools and kept by `wall2_desk_token`. The token goes only to the
 //! configured base, only as the `X-Desk-Token` header, only on a POST to a path built here from
-//! constants and a checked id, and only where `wall2_desk::token_may_go_to` allows (`https`,
-//! loopback or tailnet). Redirects stay off, so a 3xx is `failed` and the token never follows one.
+//! constants and a checked id, and only where `wall2_desk::token_may_go_to` allows (loopback or
+//! tailnet). Redirects stay off, so a 3xx is `failed` and the token never follows one.
 //!
 //! Unlike `wall2_desk`, the body of a 4xx or 5xx answer is read (capped at 64 KB), because two
 //! 503 answers differ only by their words. Only the fixed `error` words the home app is known to
@@ -745,7 +745,7 @@ mod tests {
     use std::collections::VecDeque;
 
     const TOKEN: &str = "s3cr3t-desk-token-value";
-    const HTTPS: &str = "https://home.invalid";
+    const HTTPS: &str = "https://box.tail1234.ts.net";
 
     #[derive(Debug, Clone)]
     struct Call {
@@ -1150,7 +1150,7 @@ mod tests {
         assert_eq!(calls[0].method, "GET");
         assert!(calls[0].headers.is_empty());
         assert_eq!(calls[1].method, "POST");
-        assert_eq!(calls[1].url, "https://home.invalid/api/desk/studio/presets/onAir/apply");
+        assert_eq!(calls[1].url, "https://box.tail1234.ts.net/api/desk/studio/presets/onAir/apply");
         assert!(calls[1].headers.contains(&("X-Desk-Token".to_string(), TOKEN.to_string())));
         assert!(calls[1].headers.contains(&("Content-Type".to_string(), "application/json".to_string())));
         for c in &calls {
@@ -1307,7 +1307,7 @@ mod tests {
         let m = office_mood(&e, "gaming").unwrap();
         assert_eq!(m.moods.len(), 2);
         let c = f.calls()[n].clone();
-        assert_eq!((c.method, c.url.as_str(), c.body.as_str()), ("POST", "https://home.invalid/api/desk/office/moods/gaming/apply", "{}"));
+        assert_eq!((c.method, c.url.as_str(), c.body.as_str()), ("POST", "https://box.tail1234.ts.net/api/desk/office/moods/gaming/apply", "{}"));
     }
 
     #[test]
@@ -1466,7 +1466,7 @@ mod tests {
         let calls = f.calls();
         assert_eq!(calls.len(), n + 1, "one request, no read first");
         let c = &calls[n];
-        assert_eq!((c.method, c.url.as_str(), c.body.as_str()), ("POST", "https://home.invalid/api/desk/office/off", "{}"));
+        assert_eq!((c.method, c.url.as_str(), c.body.as_str()), ("POST", "https://box.tail1234.ts.net/api/desk/office/off", "{}"));
         assert!(c.headers.contains(&("X-Desk-Token".to_string(), TOKEN.to_string())));
         assert!(c.headers.contains(&("Content-Type".to_string(), "application/json".to_string())));
         assert!(!c.url.contains(TOKEN) && !c.body.contains(TOKEN));
@@ -1510,7 +1510,7 @@ mod tests {
 
     #[test]
     fn a_moods_read_from_another_base_is_not_trusted_for_off_or_a_mood() {
-        const OTHER: &str = "https://other.invalid";
+        const OTHER: &str = "https://other.tail1234.ts.net";
         let seen = Mutex::new(Seen::default());
         let t0 = Instant::now();
         let f = Fake::default();
@@ -1524,7 +1524,7 @@ mod tests {
         assert_eq!(office_off(&at_b).unwrap_err(), "refused");
         let calls = f.calls();
         assert_eq!(calls.len(), n + 1, "one request only");
-        assert_eq!((calls[n].method, calls[n].url.as_str()), ("GET", "https://other.invalid/api/desk/office/moods"));
+        assert_eq!((calls[n].method, calls[n].url.as_str()), ("GET", "https://other.tail1234.ts.net/api/desk/office/moods"));
         // The entry now belongs to B; a mood id that only A listed is refused with a read of nothing new.
         let mut a_only = moods_body();
         a_only["moods"] = json!([{"id": "onlyA", "label": "Only A", "active": false}]);
@@ -1544,7 +1544,7 @@ mod tests {
         f3.push(200, &moods_body_off(json!(true), json!(true)).to_string());
         office_off(&env(&f3, OTHER, Some(TOKEN), &seen3, t0 + Duration::from_secs(5))).unwrap();
         let urls: Vec<String> = f3.calls().iter().map(|c| format!("{} {}", c.method, c.url)).collect();
-        assert_eq!(urls[1..], ["GET https://other.invalid/api/desk/office/moods", "POST https://other.invalid/api/desk/office/off"]);
+        assert_eq!(urls[1..], ["GET https://other.tail1234.ts.net/api/desk/office/moods", "POST https://other.tail1234.ts.net/api/desk/office/off"]);
     }
 
     #[test]
