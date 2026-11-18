@@ -63,7 +63,7 @@ it('renders the Listen tab with the same text as before when nothing is saved, a
   const panel = document.getElementById('u-panel-listen')!;
   // The text main showed for this track before Watch existed.
   expect(panel.textContent).toBe('Tokyo BurnoutTokyo Rose2:354:13');
-  expect(screen.queryByRole('button', { name: 'Video' })).toBeNull();
+  expect(screen.queryByRole('button', { name: 'Watch the video' })).toBeNull();
   expect(screen.queryByLabelText('How video is shown')).toBeNull();
   // The lines' gear (asked for on Listen) is there by its own name, and no sheet is open.
   expect(screen.getByRole('button', { name: 'How the lines move' }).getAttribute('aria-expanded')).toBe('false');
@@ -82,18 +82,57 @@ it('the gear on Listen opens the sheet on its Lines side; Watch opens it on Look
   expect(screen.getByRole('dialog', { name: 'How video is shown' }).querySelector('.ln-panel')).toBeNull();
 });
 
-it('gives the album art a Video corner when something is saved, which switches to Watch', async () => {
+const asEdge = (title: string) => () => ({ ...PLAYING, title, artist: 'Some Channel', source_app: 'Edge', source_app_id: 'msedge.exe' });
+const asSpotify = (title: string) => () => ({ ...PLAYING, title, source_app: 'Spotify', source_app_id: 'Spotify.exe' });
+
+it('shows no video icon for plain audio, even with videos saved in Watch', async () => {
   seed();
   render(<UnwindView />);
   await flush();
-  const corner = screen.getByRole('button', { name: 'Video' });
-  expect(corner.closest('.u-art')).not.toBeNull();
-  expect(corner.getAttribute('title')).toBe('Watch instead: 3 saved to watch');
-  await act(async () => corner.click());
+  expect(screen.queryByRole('button', { name: 'Watch the video' })).toBeNull();
+  expect(document.querySelector('.u-video')).toBeNull();
+});
+
+it('shows no video icon for a song that only shares a saved video name', async () => {
+  seed();
+  mocks.set('get_now_playing', asSpotify('Night drive mix'));
+  render(<UnwindView />);
+  await flush();
+  expect(document.querySelector('.u-video')).toBeNull();
+});
+
+it('shows no video icon in a browser playing a different track than the saved videos', async () => {
+  seed();
+  mocks.set('get_now_playing', asEdge('Some other video - YouTube'));
+  render(<UnwindView />);
+  await flush();
+  expect(document.querySelector('.u-video')).toBeNull();
+});
+
+it('gives the art a video icon when the track is a saved video, which switches to Watch', async () => {
+  seed();
+  mocks.set('get_now_playing', asEdge('Night drive mix - YouTube'));
+  render(<UnwindView />);
+  await flush();
+  const icon = screen.getByRole('button', { name: 'Watch the video' });
+  expect(icon.closest('.u-art')).not.toBeNull();
+  expect(icon.getAttribute('title')).toBe('Watch the video');
+  expect(icon.textContent).toBe('');
+  await act(async () => icon.click());
   expect(useWatchStore.getState().tab).toBe('watch');
   expect(document.getElementById('u-panel-watch')).not.toBeNull();
   expect(screen.getByText('Nothing on')).toBeTruthy();
   expect(screen.getByRole('button', { name: /Play Night drive mix/ })).toBeTruthy();
+});
+
+it('gives the art a video icon when the wall itself is playing the Watch item', async () => {
+  seed();
+  mocks.set('get_now_playing', () => ({ ...PLAYING, title: 'Night drive mix', artist: '', source_app: 'msedgewebview2', source_app_id: 'msedgewebview2.exe' }));
+  useWatchStore.getState().play({ kind: 'video', id: V });
+  useWatchStore.getState().setTab('listen');
+  render(<UnwindView />);
+  await flush();
+  expect(screen.getByRole('button', { name: 'Watch the video' })).toBeTruthy();
 });
 
 it('explains itself with nothing saved, refuses a bad link in one line and saves a good one', async () => {

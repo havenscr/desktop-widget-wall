@@ -1191,7 +1191,7 @@
   margin-top: auto;
 }
 
-/* Listen: the album art's Video corner, only when something is saved to watch. */
+/* Listen: the album art's video icon, only when the shown track has a video. */
 .u-art:has(.u-video) {
   position: relative;
 }
@@ -1199,14 +1199,14 @@
   position: absolute;
   right: 10px;
   bottom: 10px;
-  height: 32px;
-  padding: 0 12px;
-  border-radius: 16px;
-  font: 600 14px/1 var(--disp);
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  color: var(--tx);
-  background: rgba(8, 6, 26, 0.78);
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  color: #fff;
+  background: rgba(8, 6, 26, 0.86);
   border: 1px solid rgba(255, 255, 255, 0.18);
 }
 .u-video:hover {
