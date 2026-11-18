@@ -659,8 +659,9 @@ fn fetch_summary(base: &str) -> Result<OmniSummary, String> {
 
 // Section: session ids
 
-/// Parent session ids from the live sources in the most recent successful summary. A session
-/// can be opened only if its id is in here.
+/// Top-level session ids the wall itself lists (`lanes` and `sessionsList`) in the most recent
+/// successful summary. A session can be opened only if its id is in here. The your-move ids are
+/// not trusted: a needs-me id the wall does not list is refused.
 static KNOWN_IDS: Mutex<Vec<String>> = Mutex::new(Vec::new());
 
 fn ids_of(s: &OmniSummary) -> Vec<String> {
@@ -668,10 +669,6 @@ fn ids_of(s: &OmniSummary) -> Vec<String> {
     if let Some(list) = &s.sessions_list {
         ids.extend(list.iter().map(|l| l.id.clone()));
     }
-    if let Some(first) = &s.your_move.first {
-        ids.push(first.session_id.clone());
-    }
-    ids.extend(s.your_move.ids.iter().cloned());
     ids.sort();
     ids.dedup();
     ids
@@ -684,7 +681,12 @@ fn remember_ids(ids: Vec<String>) {
 }
 
 fn id_is_known(id: &str) -> bool {
-    KNOWN_IDS.lock().map(|g| g.iter().any(|k| k == id)).unwrap_or(false)
+    KNOWN_IDS.lock().map(|g| openable(&g, id)).unwrap_or(false)
+}
+
+/// Well formed and one of the listed top-level ids.
+fn openable(ids: &[String], id: &str) -> bool {
+    valid_session_id(id) && ids.iter().any(|k| k == id)
 }
 
 pub(crate) fn require_wall2(label: &str) -> Result<(), String> {
@@ -707,7 +709,7 @@ pub async fn wall2_omni_summary(window: tauri::WebviewWindow, app: tauri::AppHan
     Ok(summary)
 }
 
-/// Open a session by id: the id must be well formed and in the last summary, and the link
+/// Open a session by id: the id must be well formed and a top-level session the wall lists (lanes or session list) in the last summary, and the link
 /// is built here from `omniLinkHost`.
 fn open_known_session(app: &tauri::AppHandle, id: &str) -> Result<(), String> {
     if !valid_session_id(id) {
@@ -2256,7 +2258,7 @@ mod tests {
     }
 
     #[test]
-    fn known_ids_include_only_live_parent_sources() {
+    fn known_ids_include_only_listed_top_level_sources() {
         let mut body = full();
         body["sessionsList"] = json!([lane_json(&id(11))]);
         body["yourMove"]["ids"] = json!([id(12)]);
@@ -2265,13 +2267,42 @@ mod tests {
         body["sessions"][id(13)] = json!({ "title": "Named" });
         body["day"] = json!([{ "lane": id(14), "start": "2026-11-12T17:00:00Z", "end": null, "kind": "run" }]);
         let ids = ids_of(&shape_summary(&body).unwrap());
-        for n in [1, 2, 11, 12, 15] {
+        for n in [1, 2, 11] {
             assert!(ids.contains(&id(n)), "missing {}", id(n));
         }
-        for n in [13, 14] {
+        for n in [12, 13, 14, 15] {
             assert!(!ids.contains(&id(n)), "accepted {}", id(n));
         }
-        assert_eq!(ids.len(), 5);
+        assert_eq!(ids.len(), 3);
+    }
+
+    #[test]
+    fn a_your_move_id_in_sessions_list_opens() {
+        let mut body = full();
+        body["sessionsList"] = json!([lane_json(&id(21))]);
+        body["yourMove"]["first"]["sessionId"] = json!(id(21));
+        body["yourMove"]["ids"] = json!([id(21)]);
+        let ids = ids_of(&shape_summary(&body).unwrap());
+        assert!(openable(&ids, &id(21)));
+    }
+
+    #[test]
+    fn a_your_move_id_the_wall_does_not_list_is_refused() {
+        let mut body = full();
+        body["sessionsList"] = json!([lane_json(&id(21))]);
+        body["yourMove"]["first"]["sessionId"] = json!(id(22));
+        body["yourMove"]["ids"] = json!([id(22), id(23)]);
+        let ids = ids_of(&shape_summary(&body).unwrap());
+        assert!(valid_session_id(&id(22)));
+        assert!(!openable(&ids, &id(22)));
+        assert!(!openable(&ids, &id(23)));
+    }
+
+    #[test]
+    fn a_lane_id_opens() {
+        let ids = ids_of(&shape_summary(&full()).unwrap());
+        assert!(openable(&ids, "a1b2c3d4-0001"));
+        assert!(!openable(&ids, "not a session id"));
     }
 
     const EXE: &str = r"C:\Program Files\Example\omnigent.exe";
