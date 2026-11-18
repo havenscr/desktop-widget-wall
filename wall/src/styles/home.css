@@ -2272,6 +2272,9 @@
   border-radius: 14px;
   box-shadow: none;
 }
+.sound-np.compact.both .np-line {
+  gap: 10px;
+}
 .np-line .np-meta {
   padding-top: 0;
   gap: 2px;

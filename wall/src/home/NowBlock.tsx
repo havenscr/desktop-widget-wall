@@ -411,7 +411,7 @@ function MusicLine({ m, p, video }: { m: MusicView; p: NowBlockProps; video: Wal
         )}
       </div>
       <div className="np-btns">
-        {!video && m.canSkip && (
+        {m.canSkip && (
           <Rd label="Previous track" tipText="Previous track" disabled={p.locked} busy={p.skipBusy} onClick={() => p.skip('previous')}>
             <IconPlayerSkipBackFilled size={18} aria-hidden="true" />
           </Rd>
@@ -419,9 +419,14 @@ function MusicLine({ m, p, video }: { m: MusicView; p: NowBlockProps; video: Wal
         <Rd label="Pause" tipText="Pause every Sonos speaker" big disabled={p.locked} onClick={p.pauseAll}>
           <IconPlayerPauseFilled size={20} aria-hidden="true" />
         </Rd>
-        {!video && m.canSkip && (
+        {m.canSkip && (
           <Rd label="Next track" tipText="Next track" disabled={p.locked} busy={p.skipBusy} onClick={() => p.skip('next')}>
             <IconPlayerSkipForwardFilled size={18} aria-hidden="true" />
+          </Rd>
+        )}
+        {video && !(video.needsClick || !video.youtube) && (
+          <Rd label={video.paused ? 'Play video' : 'Pause video'} tipText={video.paused ? 'Play the video on the wall' : 'Pause the video on the wall'} onClick={wallVideoControls.togglePause}>
+            {video.paused ? <IconPlayerPlayFilled size={18} aria-hidden="true" /> : <IconPlayerPauseFilled size={18} aria-hidden="true" />}
           </Rd>
         )}
         {video && (

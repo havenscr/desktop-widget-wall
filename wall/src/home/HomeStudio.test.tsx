@@ -234,3 +234,41 @@ it('a blocked local storage still works: the condo shows, and the pick works for
   expect(names()).toEqual(['Relax', 'Gaming', 'Recording']);
   vi.restoreAllMocks();
 });
+
+it('an empty looks list keeps the row as one dashed Panel looks chip with a reason', async () => {
+  studio = studioAnswer({ looks: [] });
+  await show();
+  expect(rowNames('looks')).toEqual(['Panel looks']);
+  expect(screen.getByText('Panel looks').closest('.st-preset')!.getAttribute('aria-disabled')).toBe('true');
+  expect(await tipOf(screen.getByText('Panel looks'))).toContain('no panel looks');
+});
+
+it('a decoy named like a mood never wins: the id first, then the whole name, no substring', async () => {
+  moodList = [
+    { id: 'preGaming', label: 'Pre-gaming cleanup', line: null },
+    { id: 'notRec', label: 'Not recording', line: null },
+    { id: 'gaming', label: 'Game time', line: 'Room 25%' },
+    { id: 'x', label: 'office recording', line: 'Room 80%' },
+  ];
+  await show();
+  fireEvent.click(btn('Gaming'));
+  await flush(50);
+  expect(writes).toContainEqual({ command: 'wall2_office_mood', args: { id: 'gaming' } });
+  fireEvent.click(btn('Office Recording'));
+  await flush(50);
+  expect(writes).toContainEqual({ command: 'wall2_office_mood', args: { id: 'x' } });
+});
+
+it('only decoys listed: both buttons are dashed and send nothing', async () => {
+  moodList = [
+    { id: 'preGaming', label: 'Pre-gaming cleanup', line: null },
+    { id: 'notRec', label: 'Not recording', line: null },
+  ];
+  await show();
+  for (const n of ['Gaming', 'Office Recording']) {
+    expect(btn(n).getAttribute('aria-disabled')).toBe('true');
+    fireEvent.click(btn(n));
+  }
+  await flush(50);
+  expect(writes.some((w) => w.command === 'wall2_office_mood')).toBe(false);
+});

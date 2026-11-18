@@ -16,10 +16,16 @@ import { useMoodsPolling } from '../studio/useMoodsPolling';
 import { BackTip, Chip } from '../studio/OfficeMoods';
 
 /** The two mood buttons, in order: the name drawn and the office mood (by its name in the home app) it applies. */
-export const HOME_MOODS: { key: string; label: string; match: RegExp }[] = [
-  { key: 'gaming', label: 'Gaming', match: /gaming/i },
-  { key: 'recording', label: 'Office Recording', match: /record/i },
+export const HOME_MOODS: { key: string; label: string; ids: string[]; labels: string[] }[] = [
+  { key: 'gaming', label: 'Gaming', ids: ['gaming'], labels: ['gaming'] },
+  { key: 'recording', label: 'Office Recording', ids: ['recording', 'officerecording'], labels: ['recording', 'office recording'] },
 ];
+
+/** The office mood a button stands for: its id first, then the whole name (any case); never part of a name. */
+export function findMood(row: RowModel, d: (typeof HOME_MOODS)[number]): ChipModel | undefined {
+  const moods = row.chips.filter((c) => c.id !== null);
+  return moods.find((c) => d.ids.includes(c.id!.toLowerCase())) ?? moods.find((c) => d.labels.includes(c.label.trim().toLowerCase()));
+}
 
 /** At most this many panel looks sit on the page; the rest are in Fine tune. */
 export const HOME_LOOKS = 3;
@@ -64,7 +70,15 @@ function Looks() {
     );
   }
   const looks = studio.looks.slice(0, HOME_LOOKS);
-  if (looks.length === 0) return null;
+  if (looks.length === 0) {
+    return (
+      <div className="hs-row" data-row="looks" role="group" aria-label="Panel looks">
+        <span className="st-preset dis" aria-disabled="true" {...tip('The home app lists no panel looks yet')}>
+          <span>Panel looks</span>
+        </span>
+      </div>
+    );
+  }
   const may = canChange({ studio, readWord, readDone });
   return (
     <div className="hs-row" data-row="looks" role="group" aria-label="Panel looks">
@@ -129,7 +143,7 @@ function MoodButtons() {
   return (
     <div className="hs-row hs-moods" data-row="moods" role="group" aria-label="Office moods">
       {HOME_MOODS.map((d) => {
-        const c = row.chips.find((x) => x.id !== null && d.match.test(x.label));
+        const c = findMood(row, d);
         if (!c) return <DeadChip key={d.key} label={d.label} why={`The home app has no ${d.label} mood`} />;
         return <Chip key={d.key} chip={{ ...c, label: d.label }} row={row} cap={null} iconOnly={false} onClick={() => click(c)} />;
       })}
