@@ -21,7 +21,7 @@ function rustLibrary(): LibGroup[] {
   for (const m of rust.matchAll(/LibEntry \{ id: "([a-z0-9-]+)", label: "([^"]*)", icon: "([a-z0-9-]+)", group: "([a-z0-9-]+)", kind: LibKind::(\w+), how: "([^"]*)", spec: "([^"]*)" \}/g)) {
     const kind = m[5].toLowerCase() as LibKey['kind'];
     const spec = m[7];
-    const action = names.has(spec) || /^mood:[a-z0-9-]+$/.test(spec) ? spec : null;
+    const action = names.has(spec) || /^mood:[a-z0-9-]+$/.test(spec) || /^sharex:[a-z-]+$/.test(spec) ? spec : null;
     groups.find((g) => g.id === m[4])!.keys.push({ id: m[1], label: m[2], icon: m[3], kind, how: m[6], action, runnable: kind !== 'soon' && spec !== '' });
   }
   return groups;
@@ -30,11 +30,11 @@ function rustLibrary(): LibGroup[] {
 describe('the library the page and the mocks hold equals the Rust one', () => {
   const flat = lib.flatMap((g) => g.keys.map((k) => ({ ...k, group: g.id })));
 
-  it('has 104 keys in 16 groups, equal field by field to what library_info returns: ids, labels, icons, kinds, how, action, runnable and each group exes', () => {
+  it('has 120 keys in 17 groups, equal field by field to what library_info returns: ids, labels, icons, kinds, how, action, runnable and each group exes', () => {
     const fromRust = rustLibrary();
-    expect(fromRust.flatMap((g) => g.keys).length).toBe(104);
-    expect(fromRust.length).toBe(16);
-    expect(new Set(flat.map((k) => k.id)).size).toBe(104);
+    expect(fromRust.flatMap((g) => g.keys).length).toBe(120);
+    expect(fromRust.length).toBe(17);
+    expect(new Set(flat.map((k) => k.id)).size).toBe(120);
     expect(LIBRARY_DATA).toEqual(fromRust);
   });
 
@@ -64,7 +64,24 @@ describe('the library the page and the mocks hold equals the Rust one', () => {
   it('every action name is in the fixed list Rust parses', () => {
     const names = new Set([...rust.matchAll(/^\s+"([a-z0-9:-]+)" => WallAction::\w+,/gm)].map((m) => m[1]));
     expect(names.size).toBe(23);
-    for (const k of flat) if (k.action) expect(names.has(k.action) || /^mood:[a-z0-9-]+$/.test(k.action), `${k.id}: ${k.action}`).toBe(true);
+    for (const k of flat) if (k.action) expect(names.has(k.action) || /^mood:[a-z0-9-]+$/.test(k.action) || /^sharex:[a-z-]+$/.test(k.action), `${k.id}: ${k.action}`).toBe(true);
+  });
+
+  it('the ShareX group is exactly the 16 tasks of the Rust table, all runnable wall keys, and never an upload or an active-window task', () => {
+    const sharex: string = readFileSync('../src-tauri/src/wall2_sharex.rs', 'utf8');
+    const table = [...sharex.matchAll(/Row \{ spec: "([a-z-]+)", arg: "(-[A-Za-z]+)" \}/g)].map((m) => ({ spec: m[1], arg: m[2] }));
+    expect(table.length).toBe(16);
+    const group = lib.find((g) => g.id === 'sharex')!;
+    expect(group.title).toBe('ShareX');
+    expect(group.exes).toEqual([]);
+    expect(group.keys.map((k) => k.action)).toEqual(table.map((t) => `sharex:${t.spec}`));
+    for (const k of group.keys) {
+      expect(k.kind, k.id).toBe('wall');
+      expect(k.runnable, k.id).toBe(true);
+    }
+    const args = table.map((t) => t.arg);
+    for (const bad of ['-ClipboardUpload', '-FileUpload', '-ActiveWindow', '-ActiveMonitor', '-workflow', '-task', '-silent']) expect(args).not.toContain(bad);
+    expect(flat.filter((k) => k.action?.startsWith('sharex:') && k.group !== 'sharex')).toEqual([]);
   });
 
   it('the fallback pins equal the Rust defaults', () => {
@@ -135,7 +152,7 @@ describe('pins on this display', () => {
   });
 
   it('searches label, group and what a key does; empty groups drop out', () => {
-    expect(searchLibrary(lib, '')).toHaveLength(16);
+    expect(searchLibrary(lib, '')).toHaveLength(17);
     expect(searchLibrary(lib, 'volume').flatMap((g) => g.keys.map((k) => k.id))).toEqual(expect.arrayContaining(['volume-up', 'volume-down', 'mixer']));
     expect(searchLibrary(lib, 'ZOOM').map((g) => g.id)).toEqual(['zoom']);
     expect(searchLibrary(lib, 'zzzzzz')).toEqual([]);

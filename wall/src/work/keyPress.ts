@@ -34,8 +34,9 @@ export function useKeyPress(show: (text: string) => void, refresh: () => void, s
           // Rust took the press without an error: the new On Air frame's Pause key learns of it here.
           sent?.(id);
           if (typeof answer === 'string') show(await runWallAction(answer));
-          else if (action && RUST_DONE[action]) {
-            show(RUST_DONE[action]);
+          else if (action && (RUST_DONE[action] || action.startsWith('sharex:'))) {
+            // Rust started the fixed ShareX task itself; the line names the key.
+            show(RUST_DONE[action] ?? `ShareX: ${label}`);
             // Rust ran it and the wall stays in front: the tile must not keep the focus.
             (document.activeElement as HTMLElement | null)?.blur?.();
           }

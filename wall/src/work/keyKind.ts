@@ -37,6 +37,7 @@ export const GROUP_KIND: Record<string, KeyKind> = {
   excel: 'app',
   house: 'system',
   powertoys: 'system',
+  sharex: 'capture',
 };
 
 /** Library keys that capture the screen, coloured as capture whatever group they sit in. */
@@ -69,9 +70,10 @@ export const ACTION_KIND: Record<string, KeyKind> = {
   dream: 'system',
 };
 
-/** The kind of a wall action, or null when the page does not know it. Every `mood:` action is a house key. */
+/** The kind of a wall action, or null when the page does not know it. Every `mood:` action is a house key and every `sharex:` action a capture key. */
 export function actionKind(action: string): KeyKind | null {
   if (action.startsWith('mood:')) return 'system';
+  if (action.startsWith('sharex:')) return 'capture';
   return ACTION_KIND[action] ?? null;
 }
 

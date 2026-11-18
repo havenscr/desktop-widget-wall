@@ -124,6 +124,8 @@ export function sendReason(e: unknown, set: Pick<SetInfo, 'name' | 'general'>, h
       return `Could not bring ${set.general ? 'the app' : set.name} forward`;
     case 'failed':
       return 'The keys were not delivered';
+    case 'not installed':
+      return 'ShareX is not installed';
     default:
       return 'Could not send the key';
   }

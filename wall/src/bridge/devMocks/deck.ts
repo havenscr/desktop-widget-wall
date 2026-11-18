@@ -136,8 +136,8 @@ export function registerDeckMocks(): void {
     return { front, autoId, exe, sets, source: knob('source') === 'default' ? 'default' : 'file', defaultPins, filePins: [] };
   });
   mocks.set('wall2_keys_library', () => LIBRARY_DATA);
-  // Rust runs lock and monitors-to-sleep; every other action is answered by name for the page to run.
-  const answer = (action: string | null) => (action === null || action === 'lock' || action === 'displays:off' ? null : action);
+  // Rust runs lock, monitors-to-sleep and the ShareX tasks; every other action is answered by name for the page to run.
+  const answer = (action: string | null) => (action === null || action === 'lock' || action === 'displays:off' || action.startsWith('sharex:') ? null : action);
   mocks.set('wall2_keys_send', (args) => {
     if (mode === 'refuse') throw 'not forward';
     const set = args?.setId === 'pinned' ? null : sets.find((s) => s.id === args?.setId);

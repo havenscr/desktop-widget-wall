@@ -1075,5 +1075,156 @@ export const LIBRARY_DATA: LibGroup[] = [
     "runnable": true
    }
   ]
+ },
+ {
+  "id": "sharex",
+  "title": "ShareX",
+  "exes": [],
+  "keys": [
+   {
+    "id": "sx-region",
+    "label": "Capture region",
+    "icon": "screenshot",
+    "kind": "wall",
+    "how": "ShareX: drag a box on screen to capture",
+    "action": "sharex:region",
+    "runnable": true
+   },
+   {
+    "id": "sx-screen",
+    "label": "Capture entire screen",
+    "icon": "desktop",
+    "kind": "wall",
+    "how": "ShareX: every monitor, at once",
+    "action": "sharex:screen",
+    "runnable": true
+   },
+   {
+    "id": "sx-last-region",
+    "label": "Capture last region",
+    "icon": "refresh",
+    "kind": "wall",
+    "how": "ShareX: the same box as last time",
+    "action": "sharex:last-region",
+    "runnable": true
+   },
+   {
+    "id": "sx-scrolling",
+    "label": "Scrolling capture",
+    "icon": "window",
+    "kind": "wall",
+    "how": "ShareX: capture a window that scrolls",
+    "action": "sharex:scrolling",
+    "runnable": true
+   },
+   {
+    "id": "sx-record",
+    "label": "Record screen",
+    "icon": "record",
+    "kind": "wall",
+    "how": "ShareX: starts or stops a screen recording",
+    "action": "sharex:record",
+    "runnable": true
+   },
+   {
+    "id": "sx-record-gif",
+    "label": "Record GIF",
+    "icon": "video",
+    "kind": "wall",
+    "how": "ShareX: starts or stops a GIF recording",
+    "action": "sharex:record-gif",
+    "runnable": true
+   },
+   {
+    "id": "sx-pause-record",
+    "label": "Pause recording",
+    "icon": "timer",
+    "kind": "wall",
+    "how": "ShareX: pauses or resumes the recording",
+    "action": "sharex:pause-record",
+    "runnable": true
+   },
+   {
+    "id": "sx-stop-record",
+    "label": "Stop recording",
+    "icon": "timer-off",
+    "kind": "wall",
+    "how": "ShareX: stops the recording and saves it",
+    "action": "sharex:stop-record",
+    "runnable": true
+   },
+   {
+    "id": "sx-cancel-record",
+    "label": "Cancel recording",
+    "icon": "undo",
+    "kind": "wall",
+    "how": "ShareX: throws the recording away",
+    "action": "sharex:cancel-record",
+    "runnable": true
+   },
+   {
+    "id": "sx-ocr",
+    "label": "Text from screen",
+    "icon": "search",
+    "kind": "wall",
+    "how": "ShareX: read the text in a box on screen",
+    "action": "sharex:ocr",
+    "runnable": true
+   },
+   {
+    "id": "sx-color",
+    "label": "Pick a screen colour",
+    "icon": "brush",
+    "kind": "wall",
+    "how": "ShareX: pick a colour from anywhere on screen",
+    "action": "sharex:color",
+    "runnable": true
+   },
+   {
+    "id": "sx-ruler",
+    "label": "Measure on screen",
+    "icon": "sliders",
+    "kind": "wall",
+    "how": "ShareX: measure a distance in pixels",
+    "action": "sharex:ruler",
+    "runnable": true
+   },
+   {
+    "id": "sx-pin",
+    "label": "Pin to screen",
+    "icon": "flag",
+    "kind": "wall",
+    "how": "ShareX: keep a box of the screen on top",
+    "action": "sharex:pin",
+    "runnable": true
+   },
+   {
+    "id": "sx-highlighter",
+    "label": "Mouse highlighter",
+    "icon": "hand",
+    "kind": "wall",
+    "how": "ShareX: highlights the mouse pointer",
+    "action": "sharex:highlighter",
+    "runnable": true
+   },
+   {
+    "id": "sx-history",
+    "label": "Image history",
+    "icon": "camera",
+    "kind": "wall",
+    "how": "ShareX: opens ShareX image history",
+    "action": "sharex:history",
+    "runnable": true
+   },
+   {
+    "id": "sx-folder",
+    "label": "Screenshots folder",
+    "icon": "folder",
+    "kind": "wall",
+    "how": "ShareX: opens the screenshots folder",
+    "action": "sharex:folder",
+    "runnable": true
+   }
+  ]
  }
 ];

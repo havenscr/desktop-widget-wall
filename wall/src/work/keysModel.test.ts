@@ -75,9 +75,10 @@ describe('words', () => {
     expect(sendReason('no app', sales, false)).toBe('Sales app is not in front any more');
   });
   it('every refusal word has its own line', () => {
-    const lines = ['busy', 'no key', 'no app', 'gone', 'elevated', 'not forward', 'failed', 'whatever'].map((w) => sendReason(w, sales, false));
+    const lines = ['busy', 'no key', 'no app', 'gone', 'elevated', 'not forward', 'failed', 'not installed', 'whatever'].map((w) => sendReason(w, sales, false));
     expect(new Set(lines).size).toBe(lines.length);
     expect(sendReason('not forward', sales, false)).toBe('Could not bring Sales app forward');
+    expect(sendReason('not installed', sales, false)).toBe('ShareX is not installed');
   });
 });
 

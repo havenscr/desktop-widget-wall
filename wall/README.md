@@ -2990,7 +2990,7 @@ Files: `Keys.tsx` (Now), `PinnedRow.tsx` (Always here), `KeyMenu.tsx`, `KeyPicke
 
 ### What a key can do
 
-A key is either a **chord** (keys pressed in the program in front) or a **wall action**, one of a fixed list that Rust checks (`parse_action`). The page sends only a set id and a key index (or a library id). Rust answers one of three ways: the chord was sent, Rust ran the action itself (only `lock` and `displays:off`, which are system calls), or the fixed action name, which the page then runs through the control or command the wall already has for it. Each action is only what a visible control already does, and only on a click. Opening apps, files or links is not part of this.
+A key is either a **chord** (keys pressed in the program in front) or a **wall action**, one of a fixed list that Rust checks (`parse_action`). The page sends only a set id and a key index (or a library id). Rust answers one of three ways: the chord was sent, Rust ran the action itself (`lock` and `displays:off`, which are system calls, and the 16 `sharex:` tasks below), or the fixed action name, which the page then runs through the control or command the wall already has for it. Each action is only what a visible control already does, and only on a click. Opening apps, files or links is not part of this, with one narrow exception: the fixed list of 16 ShareX tasks (see "ShareX keys" below).
 
 | Action | What it does |
 |---|---|
@@ -3006,6 +3006,18 @@ A key is either a **chord** (keys pressed in the program in front) or a **wall a
 | `omnigent:front`, `agents:open-waiting` | Brings OmniGent forward, or opens the first waiting session that is not snoozed. Refused when the helper is not answering. |
 | `meet:join-next`, `event:open-next` | Joins, or opens in Outlook, the next meeting. Refused when the meeting list is old. |
 | `zen`, `dream` | Opens Zen or Dream. |
+| `sharex:<task>` | Hands one fixed task to ShareX (`ShareX.exe -silent -<Task>`). Only the 16 in "ShareX keys" exist; see there. |
+
+### ShareX keys
+
+The library has a "ShareX" group of 16 keys that start a ShareX task. This is the one place the wall starts a program, so it is narrow and fixed (`wall2_sharex.rs`):
+
+- **Allow-list.** The tasks are a compile-time table in Rust: `region` (RectangleRegion), `screen` (PrintScreen), `last-region` (LastRegion), `scrolling` (ScrollingCapture), `record` (ScreenRecorder), `record-gif` (ScreenRecorderGIF), `pause-record` (PauseScreenRecording), `stop-record` (StopScreenRecording), `cancel-record` (AbortScreenRecording), `ocr` (OCR), `color` (ScreenColorPicker), `ruler` (Ruler), `pin` (PinToScreen), `highlighter` (MouseHighlighter), `history` (OpenImageHistory) and `folder` (OpenScreenshotsFolder). Uploads, the active-window and active-monitor captures and every other ShareX task are not in it. `sharex:<spec>` is refused for any spec outside the table, wherever it comes from (the page or `keys.json`).
+- **Arguments.** Always exactly `-silent` and the table's `-<Task>`. Nothing from the page, `keys.json` or a file can add an argument, a file path or free text.
+- **No shell.** The program is started directly (`Command::new(<path>)`), never through `cmd` or a shell verb. ShareX normally runs in the tray; a second `ShareX.exe -<Task>` passes the task to the running copy and exits.
+- **Finding ShareX.exe**, first that passes: the running ShareX process, the installer's uninstall key (this user, then the machine), App Paths (the same), then `ShareX.exe` in Program Files. The path must be an absolute local `X:\` path whose file name is `ShareX.exe`, with no `..`, no `\\server` or `\\?\` form, a real file after links are followed, and not on a network drive. If none passes, nothing runs and the key says "ShareX is not installed".
+- **One at a time.** The same task is ignored for 700 ms after it starts, so a double fire cannot start and then stop a recording. Record, Record GIF and Pause are toggles in ShareX ("starts or stops" in the picker); the wall cannot see ShareX's state.
+- The keys are coloured as capture keys. The group is not a built-in set, so Auto never shows it unasked.
 
 Listed in the picker as "coming" and not runnable: `task:add` (needs a write to the task app), `tv:off` and `alarms:seen` (wait for the home app change), `omnigent:new-chat`.
 
@@ -3057,7 +3069,7 @@ The other groups (Sound and music, Windows and layouts, Tasks and focus, House, 
 
 ### The library
 
-`wall2_keylib.rs` holds 104 keys in 16 groups, each with a stable id, a label, an icon from the fixed set, a group and one action. `wall2_keys_library` gives the page ids, labels, icons, groups, `how` text and the action name, never a chord. A pinned library key goes only to the programs of its group (anywhere for the general groups), so a Teams key never types into another app. `wall/src/bridge/devMocks/libraryData.ts` is the same catalogue for dev mocks and tests, and a test holds it equal, field by field (ids, labels, icons, kinds, `how`, action, runnable and each group's programs), to what the Rust table returns.
+`wall2_keylib.rs` holds 120 keys in 17 groups, each with a stable id, a label, an icon from the fixed set, a group and one action. `wall2_keys_library` gives the page ids, labels, icons, groups, `how` text and the action name, never a chord. A pinned library key goes only to the programs of its group (anywhere for the general groups), so a Teams key never types into another app. `wall/src/bridge/devMocks/libraryData.ts` is the same catalogue for dev mocks and tests, and a test holds it equal, field by field (ids, labels, icons, kinds, `how`, action, runnable and each group's programs), to what the Rust table returns.
 
 ### Big screen layouts
 

@@ -98,3 +98,10 @@ it('else the set rule, and a key that matches nothing keeps it; no library read 
   expect(setKeyKind(own, { action: null, label: 'Snip' }, 0, null)).toBe('system');
   expect(matchLibrary({ label: '' }, lib)).toBeNull();
 });
+
+it('every ShareX key is a capture key, and an unknown sharex action is still a capture action only by its prefix', () => {
+  expect(GROUP_KIND.sharex).toBe('capture');
+  expect(actionKind('sharex:region')).toBe('capture');
+  expect(libKeyKind('sharex', 'sx-folder', 'sharex:folder')).toBe('capture');
+  for (const k of LIBRARY_DATA.find((g) => g.id === 'sharex')!.keys) expect(libKeyKind('sharex', k.id, k.action), k.id).toBe('capture');
+});

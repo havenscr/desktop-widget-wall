@@ -7,10 +7,13 @@
 //! never a chord, and sends back only an id (or a set id and an index). A wall action is
 //! always something a visible control on the wall already does, started by a click; the two
 //! that Rust runs itself (locking the PC and putting the monitors to sleep) are in
-//! `wall2_keys.rs` behind the same one-at-a-time guard as a chord.
+//! `wall2_keys.rs` behind the same one-at-a-time guard as a chord. The one exception is the
+//! fixed list of 16 ShareX tasks (`wall2_sharex.rs`), which Rust starts by handing a fixed
+//! task name to ShareX.exe.
 #![cfg_attr(not(windows), allow(dead_code))]
 
 use crate::wall2_keys::{parse_chord, valid_id, Matcher, Step};
+use crate::wall2_sharex::ShareXTask;
 use serde::Serialize;
 
 // Section: wall actions
@@ -33,6 +36,8 @@ pub(crate) enum WallAction {
     Lock,
     /// Puts every monitor to sleep until input (Rust, system call).
     DisplaysOff,
+    /// Starts one task of the fixed ShareX list (Rust, `wall2_sharex.rs`).
+    ShareX(ShareXTask),
     Mixer,
     SonosPauseAll,
     SonosPlaySuggested,
@@ -55,6 +60,9 @@ const MAX_MOOD_ID: usize = 24;
 pub(crate) fn parse_action(name: &str) -> Option<WallAction> {
     if let Some(id) = name.strip_prefix("mood:") {
         return valid_id(id, MAX_MOOD_ID).then(|| WallAction::Mood(id.to_string()));
+    }
+    if let Some(spec) = name.strip_prefix("sharex:") {
+        return ShareXTask::from_spec(spec).map(WallAction::ShareX);
     }
     Some(match name {
         "layout:thirds" => WallAction::LayoutThirds,
@@ -104,6 +112,7 @@ impl WallAction {
             WallAction::SonosPauseAll => "sonos:pause-all".into(),
             WallAction::SonosPlaySuggested => "sonos:play-suggested".into(),
             WallAction::Mood(id) => format!("mood:{id}"),
+            WallAction::ShareX(t) => format!("sharex:{}", t.spec()),
             WallAction::TasksOpen => "tasks:open".into(),
             WallAction::TaskFirst => "task:first".into(),
             WallAction::OmnigentFront => "omnigent:front".into(),
@@ -118,7 +127,7 @@ impl WallAction {
     /// Whether Rust carries the action out itself. Every other action is a fixed name the
     /// page runs through the command or control that already exists for it.
     pub(crate) fn runs_in_rust(&self) -> bool {
-        matches!(self, WallAction::Lock | WallAction::DisplaysOff)
+        matches!(self, WallAction::Lock | WallAction::DisplaysOff | WallAction::ShareX(_))
     }
 }
 
@@ -186,6 +195,7 @@ pub(crate) const GROUPS: &[LibGroup] = &[
     LibGroup { id: "excel", title: "Excel", exes: &["excel.exe"] },
     LibGroup { id: "house", title: "House", exes: &[] },
     LibGroup { id: "powertoys", title: "PowerToys, if you have it", exes: &[] },
+    LibGroup { id: "sharex", title: "ShareX", exes: &[] },
 ];
 
 pub(crate) const LIBRARY: &[LibEntry] = &[
@@ -293,6 +303,22 @@ pub(crate) const LIBRARY: &[LibEntry] = &[
     LibEntry { id: "pt-ocr", label: "Copy text from the screen", icon: "copy", group: "powertoys", kind: LibKind::Check, how: "Win+Shift+T", spec: "Win+Shift+T" },
     LibEntry { id: "pt-top", label: "Keep window on top", icon: "window", group: "powertoys", kind: LibKind::Check, how: "Win+Ctrl+T", spec: "Win+Ctrl+T" },
     LibEntry { id: "pt-plain", label: "Paste as plain text", icon: "clipboard", group: "powertoys", kind: LibKind::Check, how: "Win+Ctrl+Alt+V", spec: "Win+Ctrl+Alt+V" },
+    LibEntry { id: "sx-region", label: "Capture region", icon: "screenshot", group: "sharex", kind: LibKind::Wall, how: "ShareX: drag a box on screen to capture", spec: "sharex:region" },
+    LibEntry { id: "sx-screen", label: "Capture entire screen", icon: "desktop", group: "sharex", kind: LibKind::Wall, how: "ShareX: every monitor, at once", spec: "sharex:screen" },
+    LibEntry { id: "sx-last-region", label: "Capture last region", icon: "refresh", group: "sharex", kind: LibKind::Wall, how: "ShareX: the same box as last time", spec: "sharex:last-region" },
+    LibEntry { id: "sx-scrolling", label: "Scrolling capture", icon: "window", group: "sharex", kind: LibKind::Wall, how: "ShareX: capture a window that scrolls", spec: "sharex:scrolling" },
+    LibEntry { id: "sx-record", label: "Record screen", icon: "record", group: "sharex", kind: LibKind::Wall, how: "ShareX: starts or stops a screen recording", spec: "sharex:record" },
+    LibEntry { id: "sx-record-gif", label: "Record GIF", icon: "video", group: "sharex", kind: LibKind::Wall, how: "ShareX: starts or stops a GIF recording", spec: "sharex:record-gif" },
+    LibEntry { id: "sx-pause-record", label: "Pause recording", icon: "timer", group: "sharex", kind: LibKind::Wall, how: "ShareX: pauses or resumes the recording", spec: "sharex:pause-record" },
+    LibEntry { id: "sx-stop-record", label: "Stop recording", icon: "timer-off", group: "sharex", kind: LibKind::Wall, how: "ShareX: stops the recording and saves it", spec: "sharex:stop-record" },
+    LibEntry { id: "sx-cancel-record", label: "Cancel recording", icon: "undo", group: "sharex", kind: LibKind::Wall, how: "ShareX: throws the recording away", spec: "sharex:cancel-record" },
+    LibEntry { id: "sx-ocr", label: "Text from screen", icon: "search", group: "sharex", kind: LibKind::Wall, how: "ShareX: read the text in a box on screen", spec: "sharex:ocr" },
+    LibEntry { id: "sx-color", label: "Pick a screen colour", icon: "brush", group: "sharex", kind: LibKind::Wall, how: "ShareX: pick a colour from anywhere on screen", spec: "sharex:color" },
+    LibEntry { id: "sx-ruler", label: "Measure on screen", icon: "sliders", group: "sharex", kind: LibKind::Wall, how: "ShareX: measure a distance in pixels", spec: "sharex:ruler" },
+    LibEntry { id: "sx-pin", label: "Pin to screen", icon: "flag", group: "sharex", kind: LibKind::Wall, how: "ShareX: keep a box of the screen on top", spec: "sharex:pin" },
+    LibEntry { id: "sx-highlighter", label: "Mouse highlighter", icon: "hand", group: "sharex", kind: LibKind::Wall, how: "ShareX: highlights the mouse pointer", spec: "sharex:highlighter" },
+    LibEntry { id: "sx-history", label: "Image history", icon: "camera", group: "sharex", kind: LibKind::Wall, how: "ShareX: opens ShareX image history", spec: "sharex:history" },
+    LibEntry { id: "sx-folder", label: "Screenshots folder", icon: "folder", group: "sharex", kind: LibKind::Wall, how: "ShareX: opens the screenshots folder", spec: "sharex:folder" },
 ];
 
 /// The keys "Always here" shows when `keys.json` names none, by library id.
@@ -443,9 +469,9 @@ mod tests {
         ["refresh", "screenshot", "camera", "clipboard", "desktop", "brush", "gauge", "code", "copy", "save", "undo", "search", "lock", "mic", "play", "window", "keyboard"];
 
     #[test]
-    fn the_library_has_104_keys_in_16_groups_with_unique_stable_ids() {
-        assert_eq!(LIBRARY.len(), 104);
-        assert_eq!(GROUPS.len(), 16);
+    fn the_library_has_120_keys_in_17_groups_with_unique_stable_ids() {
+        assert_eq!(LIBRARY.len(), 120);
+        assert_eq!(GROUPS.len(), 17);
         let ids: HashSet<&str> = LIBRARY.iter().map(|e| e.id).collect();
         assert_eq!(ids.len(), LIBRARY.len(), "ids are unique");
         for e in LIBRARY {
@@ -556,6 +582,9 @@ mod tests {
             "sonos:play-suggested",
             "mood:evening",
             "mood:a-1",
+            "sharex:region",
+            "sharex:record-gif",
+            "sharex:folder",
             "tasks:open",
             "task:first",
             "omnigent:front",
@@ -583,6 +612,18 @@ mod tests {
             "mood:a/b",
             "mood:../x",
             "mood:aaaaaaaaaaaaaaaaaaaaaaaaa",
+            "sharex:",
+            "sharex:None",
+            "sharex:Region",
+            "sharex:upload",
+            "sharex:clipboard-upload",
+            "sharex:active-window",
+            "sharex:active-monitor",
+            "sharex:region ",
+            "sharex:-RectangleRegion",
+            "sharex:RectangleRegion",
+            "sharex:region -workflow x",
+            "sharex",
             "task:add",
             "tv:off",
             "alarms:seen",
@@ -596,9 +637,9 @@ mod tests {
     }
 
     #[test]
-    fn only_lock_and_displays_off_run_in_rust() {
-        for n in ["lock", "displays:off"] {
-            assert!(parse_action(n).unwrap().runs_in_rust());
+    fn only_lock_displays_off_and_sharex_run_in_rust() {
+        for n in ["lock", "displays:off", "sharex:region", "sharex:folder"] {
+            assert!(parse_action(n).unwrap().runs_in_rust(), "{n}");
         }
         for n in ["layout:thirds", "screens-off", "focus:25", "mixer", "sonos:pause-all", "mood:x", "tasks:open", "zen"] {
             assert!(!parse_action(n).unwrap().runs_in_rust(), "{n}");
@@ -616,7 +657,7 @@ mod tests {
     #[test]
     fn the_page_catalogue_carries_no_chord() {
         let info = library_info();
-        assert_eq!(info.iter().map(|g| g.keys.len()).sum::<usize>(), 104);
+        assert_eq!(info.iter().map(|g| g.keys.len()).sum::<usize>(), 120);
         let text = serde_json::to_string(&info).unwrap();
         assert!(!text.contains("\"spec\""));
         let thirds = info.iter().flat_map(|g| &g.keys).find(|k| k.id == "thirds").unwrap();
@@ -656,5 +697,32 @@ mod tests {
         assert!(builtin_set_ids("lib-powerbi").iter().all(|id| !id.starts_with("xl-")));
         assert!(builtin_set_ids("lib-excel").iter().all(|id| id.starts_with("xl-")));
         assert!(builtin_set_ids("lib-vscode").iter().all(|id| id.starts_with("vscode-")));
+    }
+
+    #[test]
+    fn the_sharex_group_holds_exactly_the_16_tasks_as_wall_actions() {
+        let keys: Vec<&LibEntry> = LIBRARY.iter().filter(|e| e.group == "sharex").collect();
+        assert_eq!(keys.len(), 16);
+        assert!(group("sharex").unwrap().exes.is_empty());
+        let mut specs: Vec<&str> = Vec::new();
+        for e in &keys {
+            assert_eq!(e.kind, LibKind::Wall, "{}", e.id);
+            assert!(e.id.starts_with("sx-"), "{}", e.id);
+            let a = e.spec.strip_prefix("sharex:").unwrap_or_else(|| panic!("{}: {}", e.id, e.spec));
+            assert!(ShareXTask::from_spec(a).is_some(), "{}", e.id);
+            assert!(matches!(action_of(e), Some(LibAction::Wall(WallAction::ShareX(_)))), "{}", e.id);
+            specs.push(a);
+        }
+        let table: Vec<&str> = crate::wall2_sharex::TASKS.iter().map(|r| r.spec).collect();
+        assert_eq!(specs, table, "the picker lists the table, in its order");
+        assert!(LIBRARY.iter().all(|e| e.group == "sharex" || !e.spec.starts_with("sharex:")));
+    }
+
+    #[test]
+    fn no_sharex_group_is_a_built_in_set() {
+        assert!(APP_SETS.iter().all(|(g, _, _)| *g != "sharex"));
+        for (id, _, _) in builtin_sets() {
+            assert!(builtin_set_ids(id).iter().all(|k| find(k).unwrap().group != "sharex"), "{id}");
+        }
     }
 }
