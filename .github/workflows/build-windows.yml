@@ -21,6 +21,18 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
 
+      - name: No file names that differ only by case
+        working-directory: .
+        run: |
+          # Windows treats Foo.tsx and foo.ts as one module, so a pair like that
+          # passes on Linux and fails the Windows build. Fail early here instead.
+          clashes=$(git ls-files | sed -E 's/\.(tsx?|jsx?|mjs|cjs)$//' | tr '[:upper:]' '[:lower:]' | sort | uniq -d)
+          if [ -n "$clashes" ]; then
+            echo "These paths differ only by case or by a script extension:"
+            for c in $clashes; do git ls-files | grep -iE "^${c}(\.(tsx?|jsx?|mjs|cjs))?$"; done
+            exit 1
+          fi
+
       - name: Setup Node
         uses: actions/setup-node@v7
         with:
