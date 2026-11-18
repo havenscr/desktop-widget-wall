@@ -5,6 +5,8 @@ import type { SpotifyDevice, SpotifyItem, SpotifyTrack } from '../../music/spoti
 import { resetNowPlaying } from '../../music/store';
 import { resetTools } from '../../tools/store';
 import { hideTip, resetTip } from '../../ui/HoverTip';
+import { closeLibraryMenu, useLibraryMenu } from '../watch/libraryMenu';
+import { LibraryMenuLayer } from '../watch/LibraryMenu';
 import { deviceKindWord, GONE_LINE, LOCKED_LINE, NOT_YOURS_LINE, PAGE_OFF_LINE, resetPublicPage, usePublicPage, WHILE_PLAYS, WHILE_HEADINGS, playDeviceId, resetSpotifyTarget, resetListenSource, seekPosition, SEARCH_WAIT_MS, TALL_CLOSE_MS, useListenSource, useSpotifyDevices, useSpotifyNow, useSpotifyStart, useSpotifyTarget } from './model';
 import { deviceRows, DEVICES_FOOT, STALE_NOTE } from './PlayOn';
 import { PLAYBACK_POLL_MS, SEEK_KEY_GAP_MS, SEEK_STEP_MS } from './PlayerRow';
@@ -237,6 +239,42 @@ describe('opening and closing the tall view', () => {
     await act(async () => fireEvent.contextMenu(target));
     await act(async () => fireEvent.click(target));
     expect(behind).toHaveBeenCalledTimes(2);
+  });
+
+  it('a right-click on a tile opens the library menu in the tall view, its clicks are not swallowed, and Escape closes only the menu', async () => {
+    await setup();
+    await open();
+    render(<LibraryMenuLayer />);
+    const tile = document.querySelector('.sp-tile') as HTMLElement;
+    await act(async () => fireEvent.contextMenu(tile, { clientX: 30, clientY: 30 }));
+    expect(useLibraryMenu.getState().open).not.toBeNull();
+    // Escape belongs to the menu first: the tall view stays.
+    await act(async () => fireEvent.keyDown(document.body, { key: 'Escape' }));
+    expect(useLibraryMenu.getState().open).toBeNull();
+    expect(isTall()).toBe(true);
+    // A press and click on a menu row is a press inside: it neither closes the tall view nor is swallowed.
+    await act(async () => fireEvent.contextMenu(tile, { clientX: 30, clientY: 30 }));
+    const row = screen.getByRole('menuitem', { name: 'Songs' });
+    await act(async () => {
+      fireEvent.pointerDown(row);
+      fireEvent.mouseDown(row);
+      fireEvent.pointerUp(row);
+      fireEvent.mouseUp(row);
+      fireEvent.click(row);
+    });
+    await flush();
+    expect(useLibraryMenu.getState().open).toBeNull();
+    expect(isTall()).toBe(true);
+    expect(document.querySelector('.sp-songs')).not.toBeNull();
+    // And the next click anywhere still works.
+    const target = screen.getByText('Behind');
+    await act(async () => {
+      fireEvent.pointerDown(target);
+      fireEvent.pointerCancel(target);
+    });
+    await act(async () => fireEvent.click(target));
+    expect(behind).toHaveBeenCalledTimes(1);
+    closeLibraryMenu();
   });
 
   it('a press inside the card, or on a tile details card, does not close it', async () => {

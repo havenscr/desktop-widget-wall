@@ -4,6 +4,7 @@ import type { YtVideo } from '../../music/youtube';
 import { hideTip, quietFocus, tip } from '../../ui/HoverTip';
 import { useToolsStore } from '../../tools/store';
 import { AddMenu } from '../watch/AddToPlaylist';
+import { libraryMenuOpen } from '../watch/libraryMenu';
 import { libraryHandlers } from '../watch/libraryOpen';
 import { openInBrowser } from '../watch/openInBrowser';
 import type { OwnVideo } from '../watch/ownLists';
@@ -260,8 +261,8 @@ export function YtRows({ items, foot, list, onPlay }: { items: YtVideo[]; foot?:
               data-playable={gone || bad ? 'no' : v.playable}
               {...rowCard}
               // The row's card stays away while a menu is open (the control has its own card).
-              onMouseEnter={(e) => (menu ? undefined : rowCard.onMouseEnter(e))}
-              onFocus={(e) => (menu ? undefined : rowCard.onFocus(e))}
+              onMouseEnter={(e) => (menu || libraryMenuOpen() ? undefined : rowCard.onMouseEnter(e))}
+              onFocus={(e) => (menu || libraryMenuOpen() ? undefined : rowCard.onFocus(e))}
             >
               {plays ? (
                 <button type="button" className="yt-play yt-cells" aria-current={on ? 'true' : undefined} aria-label={`Play ${v.title}`} onClick={() => onPlay?.(i)} onContextMenu={rowMenu?.onContextMenu} onKeyDown={rowMenu ? (e) => void rowMenu.onMenuKey(e) : undefined}>

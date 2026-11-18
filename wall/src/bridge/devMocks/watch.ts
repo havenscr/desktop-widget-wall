@@ -85,7 +85,7 @@ const THREE = [
 ];
 /** The three items with labels long enough to need two lines (and an ellipsis) on a pin. */
 /** Invented library pins: ids are made up, and the covers are real shaped addresses that the picture seam draws. */
-const HARBOR = { kind: 'spotify-playlist', id: '0000000000000000000771', name: 'Harbor lights', art: 'https://i.scdn.co/image/ab67616d00001e02' + 'a1b2c3d4e5f60718293a4b5c6d7e8f9001122334'.slice(0, 24) };
+const HARBOR = { kind: 'spotify-playlist', id: '0000000000000000000001', name: 'Harbor lights', art: 'https://i.scdn.co/image/ab67616d00001e02' + 'a1b2c3d4e5f60718293a4b5c6d7e8f9001122334'.slice(0, 24) };
 const RAIN = { kind: 'live', id: 'Rain_Radio01', name: 'Rain radio, live' };
 const LIBRARY_ALBUM = { kind: 'spotify-album', id: '0000000000000000000772', name: 'Night swimming', art: 'https://i.scdn.co/image/ab67616d00001e02b1c2d3e4f5a60718293a4b5c' };
 const LIBRARY_LIST = { kind: 'playlist', id: 'PLmocklistpin0001', name: 'Quiet focus', art: 'https://i.ytimg.com/vi/Qk3mPz7aXy1/mqdefault.jpg' };

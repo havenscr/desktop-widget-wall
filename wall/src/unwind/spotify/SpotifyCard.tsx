@@ -213,6 +213,8 @@ export function SpotifyCard() {
     if (!tall && !chooser) return;
     const key = (e: KeyboardEvent) => {
       if (e.key !== 'Escape' || e.defaultPrevented) return;
+      // An open library menu (drawn at the app root) has its own Escape.
+      if (document.querySelector('.u-lib-menu')) return;
       const at = document.activeElement;
       // A details card has its own Escape.
       if (document.querySelector('.hover-tip .sp-details') && at && (at.closest('.hover-tip') || at.closest('.sp-tile'))) return;
@@ -233,12 +235,12 @@ export function SpotifyCard() {
   }, [tall, chooser, card, close]);
 
   // A press anywhere outside closes it, and that press does nothing else: its follow-up mouse events
-  // are swallowed once. The details card of a tile (drawn elsewhere in the page) counts as inside.
+  // are swallowed once. The details card of a tile and a library menu (both drawn elsewhere in the page) count as inside.
   useEffect(() => {
     if (!tall) return;
     const away = (e: PointerEvent) => {
       const t = e.target as Element | null;
-      if (!t || (card && card.contains(t)) || t.closest?.('.hover-tip')) return;
+      if (!t || (card && card.contains(t)) || t.closest?.('.hover-tip') || t.closest?.('.u-lib-menu')) return;
       e.preventDefault();
       e.stopPropagation();
       swallowOff.current?.();

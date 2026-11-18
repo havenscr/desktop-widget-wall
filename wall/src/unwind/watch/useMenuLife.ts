@@ -1,5 +1,6 @@
 import { useEffect, useRef, type KeyboardEvent, type RefObject } from 'react';
 import { overlayOwnsPointer } from '../../ribbon/DrawerScrim';
+import { LIBRARY_MENU_OPENED } from './libraryMenu';
 
 /** How long a pin menu stays once the pointer rests elsewhere (never while keyboard focus is being used inside it). */
 export const PIN_MENU_CLOSE_MS = 5_000;
@@ -68,6 +69,9 @@ export function useMenuLife(menu: RefObject<HTMLElement | null>, onClose: (resto
     el.addEventListener('keydown', keyInside);
     document.addEventListener('pointerdown', away, true);
     document.addEventListener('keydown', escape);
+    // A library menu opening closes this one (the pin menu closes it; the library menu itself is not affected: it opens after the event).
+    const other = () => close(false);
+    document.addEventListener(LIBRARY_MENU_OPENED, other);
     schedule();
     return () => {
       el.removeEventListener('pointerenter', enter);
@@ -77,6 +81,7 @@ export function useMenuLife(menu: RefObject<HTMLElement | null>, onClose: (resto
       el.removeEventListener('keydown', keyInside);
       document.removeEventListener('pointerdown', away, true);
       document.removeEventListener('keydown', escape);
+      document.removeEventListener(LIBRARY_MENU_OPENED, other);
       clearTimeout(timer);
     };
   }, [menu]);

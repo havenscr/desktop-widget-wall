@@ -187,6 +187,7 @@ export function Tile({ item, kindWord, onOpen, onPlay, onShuffle }: { item: Spot
   const card = () => <TileDetails tileId={tileId} item={item} onOpen={onOpen} onPlay={onPlay} onShuffle={onShuffle} />;
   const show = (el: HTMLElement) => {
     clear();
+    if (libraryMenuOpen()) return;
     timer.current = setTimeout(() => {
       if (!libraryMenuOpen()) pinTip(el, card, { side: true });
     }, TIP_DELAY_MS);

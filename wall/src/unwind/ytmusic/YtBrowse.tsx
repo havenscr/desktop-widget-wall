@@ -4,6 +4,7 @@ import type { YtPlaylist, YtVideo } from '../../music/youtube';
 import { tip } from '../../ui/HoverTip';
 import { useVisible } from '../../ui/useVisible';
 import { arrowTarget, gridColumns } from '../spotify/Tile';
+import { libraryMenuOpen } from '../watch/libraryMenu';
 import { libraryHandlers } from '../watch/libraryOpen';
 import { MAX_PAGES, PAGE_SIZE, SEARCH_TIP, SPENT_LINE, devSearchKnob, nearEnd, searchSpent, searchesLine, videosLine } from './model';
 import { playFrom } from './queue';
@@ -45,6 +46,13 @@ function PlaylistTile({ p }: { p: YtPlaylist }) {
       { id: 'videos', label: 'Videos', icon: <IconListDetails size={20} aria-hidden="true" />, run: () => openPlaylist(p) },
     ],
   });
+  const card = tip(() => (
+    <div className="sp-tipline">
+      <b>{p.title}</b>
+      <span>{videosLine(p.count)}</span>
+      <span>Click to see its videos</span>
+    </div>
+  ));
   return (
     <div className="sp-tilebox">
       <button
@@ -54,13 +62,10 @@ function PlaylistTile({ p }: { p: YtPlaylist }) {
           if (!menu.onMenuKey(e)) gridKey(e);
         }}
         onContextMenu={menu.onContextMenu}
-        {...tip(() => (
-          <div className="sp-tipline">
-            <b>{p.title}</b>
-            <span>{videosLine(p.count)}</span>
-            <span>Click to see its videos</span>
-          </div>
-        ))}
+        {...card}
+        // The card does not come back while a library menu is open.
+        onMouseEnter={(e) => (libraryMenuOpen() ? undefined : card.onMouseEnter(e))}
+        onFocus={(e) => (libraryMenuOpen() ? undefined : card.onFocus(e))}
         onClick={() => openPlaylist(p)}
       >
         <YtThumb src={p.thumb} className="sp-tilecover yt-cover" />

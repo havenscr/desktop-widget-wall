@@ -33,7 +33,11 @@ interface State {
 /** At most one library menu is open at a time. */
 export const useLibraryMenu = create<State>(() => ({ open: null }));
 
+/** Fired on the document when a library menu opens: every other open menu (a pin menu, a row's add menu) closes. A pointer opening already does through its press; a keyboard opening has none. */
+export const LIBRARY_MENU_OPENED = 'wall-library-menu-opened';
+
 export function openLibraryMenu(menu: Omit<OpenLibraryMenu, 'view' | 'chooserOnly'> & { view?: 'actions' | 'chooser'; chooserOnly?: boolean }): void {
+  document.dispatchEvent(new Event(LIBRARY_MENU_OPENED));
   useLibraryMenu.setState({ open: { view: 'actions', chooserOnly: false, ...menu } });
 }
 
