@@ -2279,6 +2279,8 @@
 }
 .np-line .np-title {
   display: block;
+  -webkit-line-clamp: none;
+  line-clamp: none;
   font: 600 21px/26px var(--body);
   white-space: nowrap;
   overflow: hidden;
