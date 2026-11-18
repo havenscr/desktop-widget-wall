@@ -91,6 +91,23 @@
   border: 1px solid rgba(154, 123, 255, 0.55);
   color: #e4dcff;
 }
+/* A title that does not fit fades over its last 16 px, out to the chip's edge; one that fits is untouched. */
+.rib .ev .ev-t {
+  display: block;
+  overflow: hidden;
+  white-space: nowrap;
+  margin-right: -10px;
+}
+.rib .ev.s2 .ev-t {
+  margin-right: -7px;
+}
+.rib .ev.s3 .ev-t {
+  margin-right: 0;
+}
+.rib .ev .ev-t[data-cut] {
+  -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 16px), transparent);
+  mask-image: linear-gradient(to right, #000 calc(100% - 16px), transparent);
+}
 /* Stacked lanes for events that overlap (Ribbon.tsx sets each lane's top and height): two
    lanes keep a smaller title, three are thin bars with the title in the hover. */
 .rib .ev.s2,
