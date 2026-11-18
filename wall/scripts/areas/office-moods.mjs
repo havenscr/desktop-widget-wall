@@ -42,7 +42,7 @@ function measureMoods() {
   out.label = box(slot.querySelector('.u-mood-label'));
   out.chips = [...slot.querySelectorAll('.u-mood')].map((c) => {
     const name = c.querySelector('.u-mood-name');
-    return { text: (name?.textContent ?? '').trim().slice(0, 24), ...box(c), cut: !!name && name.scrollWidth > name.clientWidth + 1, pointer: getComputedStyle(c).pointerEvents };
+    return { text: (name?.textContent ?? '').trim().slice(0, 24), ...box(c), cut: !!name && name.scrollWidth > name.clientWidth + 1, pointer: getComputedStyle(c).pointerEvents, icon: c.classList.contains('icon-only'), label: c.getAttribute('aria-label') ?? '' };
   });
   out.lineCut = !!line && line.scrollWidth > line.clientWidth + 1;
   out.lineCs = line ? { ws: getComputedStyle(line).whiteSpace, ov: getComputedStyle(line).textOverflow } : null;
@@ -95,7 +95,9 @@ const rule = (variant, results, emit) => {
     if (m.pointer !== 'none') fails.push('officemoods: the row box takes the pointer');
     for (const c of m.chips) {
       if (c.h < 33 || c.h > 35) fails.push('officemoods: chip "' + c.text + '" is ' + r1(c.h) + ' px tall (34)');
-      if (c.w < 75.5 && c.text !== 'Off') fails.push('officemoods: chip "' + c.text + '" is ' + r1(c.w) + ' px wide (76 at least)');
+      // Back to normal and Off drop to a 40 px icon with a name only when twelve moods need the room.
+      if (c.icon) { if (c.w < 39.5 || !c.label) fails.push('officemoods: icon chip "' + c.label + '" is ' + r1(c.w) + ' px wide or has no name (40 and a name)'); }
+      else if (c.w < 75.5 && c.text !== 'Off') fails.push('officemoods: chip "' + c.text + '" is ' + r1(c.w) + ' px wide (76 at least)');
       if (c.pointer !== 'auto') fails.push('officemoods: chip "' + c.text + '" does not take the pointer');
       if (c.l < s.l - 0.5 || c.r > s.r + 0.5) fails.push('officemoods: chip "' + c.text + '" leaves the row box');
     }
