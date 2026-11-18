@@ -8,7 +8,7 @@ import { PINS_KEY, usePins } from '../../unwind/watch/pins';
 import { OWN_KEY, useOwnLists } from '../../unwind/watch/ownLists';
 import { ownTiming, playOwn, setFollow, useOwnPlay } from '../../unwind/watch/ownPlay';
 import { ownThumb } from '../../unwind/watch/OwnParts';
-import { pinArt } from '../../unwind/watch/pinArt';
+import { pinArt } from '../../unwind/watch/pinArtModel';
 import { cover } from './spotify';
 import { motif } from './youtube';
 import { markFailed } from '../../unwind/ytmusic/queue';

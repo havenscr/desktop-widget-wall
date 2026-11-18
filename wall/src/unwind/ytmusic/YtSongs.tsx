@@ -22,7 +22,8 @@ export function YtSongs({ tall }: { tall: boolean }) {
   const songs = useYtLibrary((s) => s.songs);
   useEffect(() => {
     const key = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') closePlaylist();
+      // An open library menu or chooser takes this Escape; the playlist closes on the next one.
+      if (e.key === 'Escape' && !e.defaultPrevented && !document.querySelector('.u-lib-menu')) closePlaylist();
     };
     document.addEventListener('keydown', key);
     return () => document.removeEventListener('keydown', key);

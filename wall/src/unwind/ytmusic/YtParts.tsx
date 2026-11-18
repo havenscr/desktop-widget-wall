@@ -4,7 +4,7 @@ import type { YtVideo } from '../../music/youtube';
 import { hideTip, quietFocus, tip } from '../../ui/HoverTip';
 import { useToolsStore } from '../../tools/store';
 import { AddMenu } from '../watch/AddToPlaylist';
-import { libraryMenuOpen } from '../watch/libraryMenu';
+import { libraryMenuOpen } from '../watch/libraryMenuModel';
 import { libraryHandlers } from '../watch/libraryOpen';
 import { openInBrowser } from '../watch/openInBrowser';
 import type { OwnVideo } from '../watch/ownLists';
@@ -224,7 +224,7 @@ export function YtRows({ items, foot, list, onPlay }: { items: YtVideo[]; foot?:
           // The row's right-click menu: its own actions, then Pin to the left. A row with no length pins as a live stream.
           const rowMenu = plays
             ? libraryHandlers({
-                entry: { kind: v.seconds > 0 ? 'video' : 'live', id: v.id, name: v.title },
+                entry: { kind: 'video', id: v.id, name: v.title },
                 name: v.title,
                 actions: () => [
                   { id: 'play', label: 'Play', icon: <IconPlayerPlayFilled size={20} aria-hidden="true" />, run: () => onPlay?.(i) },

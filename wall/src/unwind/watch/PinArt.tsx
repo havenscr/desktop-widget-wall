@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { PinGlyph, ServiceBadge } from './PinGlyph';
-import { artFailed, markArtFailed, pinArt } from './pinArt';
+import { artFailed, markArtFailed, pinArt } from './pinArtModel';
 import { artBackground, type PinShown } from './pins';
 
 /**

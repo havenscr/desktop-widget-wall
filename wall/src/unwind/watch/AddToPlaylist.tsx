@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { IconBrandYoutube, IconCheck, IconPlaylistAdd, IconPlus } from '@tabler/icons-react';
 import { create } from 'zustand';
 import { quietFocus, tip } from '../../ui/HoverTip';
-import { LIBRARY_MENU_OPENED } from './libraryMenu';
+import { LIBRARY_MENU_OPENED } from './libraryMenuModel';
 import { refKey } from './links';
 import { ADD_ERRORS, MAX_LABEL, MAX_SAVED } from './saved';
 import { MAX_OWN_VIDEOS, ownEntries, useOwnLists, type OwnVideo } from './ownLists';

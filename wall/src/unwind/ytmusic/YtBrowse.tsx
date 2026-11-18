@@ -4,7 +4,7 @@ import type { YtPlaylist, YtVideo } from '../../music/youtube';
 import { tip } from '../../ui/HoverTip';
 import { useVisible } from '../../ui/useVisible';
 import { arrowTarget, gridColumns } from '../spotify/Tile';
-import { libraryMenuOpen } from '../watch/libraryMenu';
+import { libraryMenuOpen } from '../watch/libraryMenuModel';
 import { libraryHandlers } from '../watch/libraryOpen';
 import { MAX_PAGES, PAGE_SIZE, SEARCH_TIP, SPENT_LINE, devSearchKnob, nearEnd, searchSpent, searchesLine, videosLine } from './model';
 import { playFrom } from './queue';

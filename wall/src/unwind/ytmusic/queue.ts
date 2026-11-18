@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import type { YtVideo } from '../../music/youtube';
 import { playerLink } from '../watch/playerLink';
 import { useWatchStore, type WatchState } from '../watch/store';
+import { usePins } from '../watch/pins';
 import { MAX_PAGES } from './model';
 import { loadList, onLibraryReset, useYtLibrary } from './store';
 
@@ -537,4 +538,13 @@ useYtLibrary.subscribe((s) => {
   useYtLibrary.setState({ pendingStart: null });
   // Nothing playable on the first page: nothing plays, and the opened view shows its own "None of these videos plays outside YouTube".
   if (s.songs.items.some((v) => queueable(v))) playAll(s.songs.items, want.shuffled, { list: 'songs', playlistId: want.id });
+});
+
+// A pin of a listed playlist takes the list's title and cover again when the Playlists list loads (one write, only when they differ).
+let seenPlaylists: unknown = null;
+useYtLibrary.subscribe((s) => {
+  if (s.playlists.items === seenPlaylists) return;
+  seenPlaylists = s.playlists.items;
+  if (!s.playlists.loaded || !s.playlists.items.length) return;
+  usePins.getState().refresh(s.playlists.items.map((p) => ({ kind: 'playlist' as const, id: p.id, name: p.title, art: p.thumb })));
 });

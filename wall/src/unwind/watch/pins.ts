@@ -8,11 +8,12 @@ import { useWatchStore } from './store';
 export const PINS_KEY = 'wall2-watch-pins';
 export const PIN_PLACES = 3;
 /**
- * A stored value longer than this is not read at all. The worst case is three library objects of about 400
- * characters each (a 16 character kind, a 22 character id, a 60 character name whose characters each need
- * a JSON escape, a 200 character cover address), about 1,200 in all; 2000 holds that with room.
+ * A stored value longer than this is not read at all. The worst case is three library objects of about 650
+ * characters each (a 16 character kind, a 22 character id, a 60 character name whose characters each need a
+ * 6 character JSON escape, a 200 character cover address), about 2,000 in all; 4000 holds that twice over. A value
+ * past it cannot have been written by the wall. Below it, a bad entry empties only its own place, never the others.
  */
-const MAX_STORED = 2000;
+const MAX_STORED = 4000;
 
 /** What a library pin can be: a Spotify playlist or album, or a YouTube video, live stream or playlist. */
 export type PinKind = 'spotify-playlist' | 'spotify-album' | 'video' | 'live' | 'playlist';

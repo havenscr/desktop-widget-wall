@@ -76,6 +76,8 @@ export function libraryMounted(): () => void {
   view.mounted = true;
   return () => {
     view.mounted = false;
+    // A start asked from a tile's menu does not outlive the screen; the loaded lists stay as they are.
+    if (useYtLibrary.getState().pendingStart) useYtLibrary.setState({ pendingStart: null });
   };
 }
 export function libraryVisible(visible: boolean): void {

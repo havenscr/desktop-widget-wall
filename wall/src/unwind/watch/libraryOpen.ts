@@ -1,5 +1,5 @@
 import type { KeyboardEvent, MouseEvent } from 'react';
-import { openLibraryMenu, type MenuAction, type OpenLibraryMenu } from './libraryMenu';
+import { openLibraryMenu, type MenuAction, type OpenLibraryMenu } from './libraryMenuModel';
 
 /** What a source (a tile or row) gives to open its menu: what it would pin, its name and its actions. */
 export interface LibrarySource {

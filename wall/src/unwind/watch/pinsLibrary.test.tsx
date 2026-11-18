@@ -2,11 +2,11 @@ import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { HoverTipLayer, resetTip } from '../../ui/HoverTip';
 import { Tile } from '../spotify/Tile';
-import { useLibraryMenu, closeLibraryMenu, placeBox } from './libraryMenu';
+import { useLibraryMenu, closeLibraryMenu, placeBox } from './libraryMenuModel';
 import { LibraryMenuLayer } from './LibraryMenu';
 import { PinArtSquare } from './PinArt';
 import { PinButton } from './PinButton';
-import { resetArtFailed } from './pinArt';
+import { resetArtFailed } from './pinArtModel';
 import { dropGone, makeLibraryPin, parsePins, pinKey, pinnable, pinnedAt, refreshLibraryPins, resetPins, usePins, validSpotifyImage, withLibraryPin, type LibraryPin } from './pins';
 import type { SavedItem } from './saved';
 import { resetWatch, useWatchStore } from './store';
@@ -60,10 +60,12 @@ describe('library pins as stored', () => {
     // A YouTube object and a Watch string for one video are one key.
     expect(parsePins(JSON.stringify([{ kind: 'video', id: 'Ab3dEfGh1jK', name: 'v' }, 'video:Ab3dEfGh1jK']))[1]).toBeNull();
   });
-  it('reads three worst case objects and refuses 2001 characters whole', () => {
+  it('reads three worst case objects and refuses 4001 characters whole', () => {
     const worst = (n: number) => ({ kind: 'spotify-playlist', id: `${n}`.repeat(22).slice(0, 22), name: '"'.repeat(60), art: `https://i.scdn.co/${'a'.repeat(180)}` });
     expect(parsePins(JSON.stringify([worst(1), worst(2), worst(3)])).filter(Boolean)).toHaveLength(3);
-    expect(parsePins(' '.repeat(2001))).toEqual([null, null, null]);
+    // A bad entry empties only its own place.
+    expect(parsePins(JSON.stringify([lib(), { kind: 'radio', id: SP, name: 'x' }, lib({ id: SP2 })]))).toEqual([lib(), null, lib({ id: SP2 })]);
+    expect(parsePins(' '.repeat(4001))).toEqual([null, null, null]);
     expect(parsePins(`[${'null,'.repeat(400)}null]`)).toEqual([null, null, null]);
   });
   it("shows the old reader empty places for objects while its own strings still read", () => {
@@ -192,6 +194,33 @@ describe('the right-click menu on a Spotify tile', () => {
     expect(off.getAttribute('aria-disabled')).toBe('true');
     fireEvent.click(off);
     expect(screen.queryByText('Pin 1Night drive mix')).toBeNull();
+  });
+  it('a menu opened right after the chooser shows the actions again', () => {
+    render(<Harness />);
+    const tile = document.querySelector('.sp-tile') as HTMLElement;
+    fireEvent.contextMenu(tile, { clientX: 20, clientY: 20 });
+    fireEvent.click(screen.getByRole('menuitem', { name: /Pin to the left/ }));
+    expect(screen.getByText(/in place of/)).toBeTruthy();
+    fireEvent.keyDown(tile, { key: 'ContextMenu' });
+    expect(screen.getAllByRole('menuitem').map((b) => b.textContent)).toEqual(['Play', 'Shuffle', 'Songs', 'Pin to the left']);
+    act(() => closeLibraryMenu());
+    fireEvent.click(tile);
+    fireEvent.contextMenu(tile, { clientX: 20, clientY: 20 });
+    fireEvent.click(screen.getByRole('menuitem', { name: /Pin to the left/ }));
+    act(() => closeLibraryMenu());
+    fireEvent.keyDown(tile, { key: 'F10', shiftKey: true });
+    expect(screen.getByRole('menuitem', { name: 'Play' })).toBeTruthy();
+  });
+  it('says so when the item was pinned elsewhere while the chooser was open', () => {
+    render(<Harness />);
+    const tile = document.querySelector('.sp-tile') as HTMLElement;
+    fireEvent.contextMenu(tile, { clientX: 20, clientY: 20 });
+    fireEvent.click(screen.getByRole('menuitem', { name: /Pin to the left/ }));
+    act(() => usePins.getState().pinLibrary(2, { kind: 'spotify-playlist', id: SP, name: 'Harbor lights' }));
+    fireEvent.click(screen.getAllByRole('menuitem')[0]!);
+    expect(screen.getByRole('status').textContent).toBe('Already pinned in Pin 3');
+    expect(useLibraryMenu.getState().open).not.toBeNull();
+    expect(usePins.getState().places[0]).toBeNull();
   });
   it('closes when the source scrolls', () => {
     render(<Harness />);

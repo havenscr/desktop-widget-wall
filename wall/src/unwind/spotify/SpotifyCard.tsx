@@ -59,6 +59,7 @@ import {
   type SpotifyProblem,
 } from './model';
 import { PinButton } from '../watch/PinButton';
+import { usePins } from '../watch/pins';
 import { finishPlay, playWhole, useSpotifyPinNote } from './playItem';
 import { readSpotifyStatus, spotifyReady, useSpotifyStatus } from './status';
 
@@ -483,6 +484,10 @@ function Browser({ tall }: { tall: boolean }) {
         (got) => {
           if (!mounted.current) return;
           const items = Array.isArray(got) ? got : [];
+          // A pin of a listed playlist or album takes the list's name and cover again (one write, only when they differ).
+          if (t === 'playlists' || t === 'albums') {
+            usePins.getState().refresh(items.filter((i) => i.kind === 'playlist' || i.kind === 'album').map((i) => ({ kind: i.kind === 'album' ? ('spotify-album' as const) : ('spotify-playlist' as const), id: i.id, name: i.name, art: i.imageUrl ?? i.thumbUrl })));
+          }
           setLists((all) => ({ ...all, [t]: { items: page === 0 ? items : [...all[t].items, ...items], page, more: t !== 'recent' && items.length >= PAGE, loading: false, problem: null, loaded: true } }));
         },
         (e) => {
@@ -807,7 +812,8 @@ function SongsView({ item, tall, backLabel, onBack, onNote, onUpNext }: { item: 
   useEffect(() => load(0), [load]);
   useEffect(() => {
     const key = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onBack();
+      // An open library menu or chooser takes this Escape; the playlist closes on the next one.
+      if (e.key === 'Escape' && !e.defaultPrevented && !document.querySelector('.u-lib-menu')) onBack();
     };
     document.addEventListener('keydown', key);
     return () => document.removeEventListener('keydown', key);

@@ -1,6 +1,6 @@
 import { useEffect, useRef, type KeyboardEvent, type RefObject } from 'react';
 import { overlayOwnsPointer } from '../../ribbon/DrawerScrim';
-import { LIBRARY_MENU_OPENED } from './libraryMenu';
+import { LIBRARY_MENU_OPENED } from './libraryMenuModel';
 
 /** How long a pin menu stays once the pointer rests elsewhere (never while keyboard focus is being used inside it). */
 export const PIN_MENU_CLOSE_MS = 5_000;

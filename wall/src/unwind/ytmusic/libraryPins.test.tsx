@@ -5,9 +5,9 @@ import { type YoutubeStatus, type YtPage, type YtPlayable, type YtPlaylist, type
 import { HoverTipLayer, hideTip, resetTip } from '../../ui/HoverTip';
 import { resetListenSource } from '../spotify/model';
 import { resetSpotifyStatus } from '../spotify/status';
-import { closeLibraryMenu, useLibraryMenu } from '../watch/libraryMenu';
+import { closeLibraryMenu, useLibraryMenu } from '../watch/libraryMenuModel';
 import { LibraryMenuLayer } from '../watch/LibraryMenu';
-import { resetPins } from '../watch/pins';
+import { resetPins, usePins } from '../watch/pins';
 import { resetWatch, useWatchStore } from '../watch/store';
 import { resetQueue } from './queue';
 import { resetYoutubeStatus } from './status';
@@ -219,14 +219,26 @@ describe('the row menu', () => {
     await waitFor(() => expect(screen.queryByText('Could not open the browser')).not.toBeNull(), { timeout: 3000 });
   });
 
-  it('a row with no length pins as a live stream, and one with a length as a video', async () => {
+  it('a row with no length pins as a video, never a live stream, so one key per video', async () => {
     reads = async () => page([video(1), video(7, 'yes', 0)]);
     await opened();
     fireEvent.contextMenu(playBtn('Clip 7'), { clientX: 40, clientY: 40 });
-    expect(useLibraryMenu.getState().open?.entry.kind).toBe('live');
+    expect(useLibraryMenu.getState().open?.entry.kind).toBe('video');
     shut();
     fireEvent.contextMenu(playBtn('Clip 1'), { clientX: 40, clientY: 40 });
     expect(useLibraryMenu.getState().open?.entry.kind).toBe('video');
+  });
+
+  it('Escape closes only the chooser, and the next Escape closes the playlist', async () => {
+    await opened();
+    fireEvent.contextMenu(playBtn('Clip 1'), { clientX: 40, clientY: 40 });
+    fireEvent.click(item('Pin to the left'));
+    expect(screen.getByText(/in place of/)).toBeTruthy();
+    fireEvent.keyDown(document.body, { key: 'Escape' });
+    expect(libMenu()).toBeNull();
+    expect(useYtLibrary.getState().opened).not.toBeNull();
+    fireEvent.keyDown(document.body, { key: 'Escape' });
+    expect(useYtLibrary.getState().opened).toBeNull();
   });
 
   it('a library menu opened from the keyboard closes an open add menu', async () => {
@@ -236,5 +248,34 @@ describe('the row menu', () => {
     fireEvent.keyDown(playBtn('Clip 3'), { key: 'ContextMenu' });
     expect(screen.queryByRole('menu', { name: 'Add this video to a playlist' })).toBeNull();
     expect(libMenu()).not.toBeNull();
+  });
+});
+
+describe('pins follow the library', () => {
+  it('a renamed playlist updates its pin when the list loads', async () => {
+    usePins.setState({ places: [{ kind: 'playlist', id: playlist(1).id, name: 'Old name', art: undefined }, null, null] });
+    await mounted();
+    await waitFor(() => expect((usePins.getState().places[0] as { name: string }).name).toBe('Mix 1'));
+    expect((usePins.getState().places[0] as { art?: string }).art).toBe(THUMB(1));
+  });
+});
+
+describe('a pending start does not outlive the screen', () => {
+  it('Play while pending, unmount, the page arrives, remount: nothing starts', async () => {
+    serve();
+    const first = side();
+    await screen.findByText('Mix 1');
+    const d = deferred();
+    reads = () => d.p;
+    fireEvent.contextMenu(tile('Mix 1'), { clientX: 30, clientY: 30 });
+    fireEvent.click(item('Play'));
+    expect(pending()).not.toBeNull();
+    first.unmount();
+    expect(pending()).toBeNull();
+    await act(async () => d.release(page(SONGS)));
+    reads = null;
+    side();
+    await new Promise((r) => setTimeout(r, 100));
+    expect(nowId()).toBeNull();
   });
 });

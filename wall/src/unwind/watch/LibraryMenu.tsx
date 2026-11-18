@@ -2,7 +2,7 @@ import { IconChevronRight, IconPin } from '@tabler/icons-react';
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { hideTip, tip } from '../../ui/HoverTip';
 import { useListenSource } from '../spotify/model';
-import { closeLibraryMenu, placeBox, useLibraryMenu, type OpenLibraryMenu } from './libraryMenu';
+import { closeLibraryMenu, placeBox, useLibraryMenu, type OpenLibraryMenu } from './libraryMenuModel';
 import { PinArtSquare } from './PinArt';
 import { displayPins, makeLibraryPin, pinKey, pinnedAt, usePins } from './pins';
 import { useWatchStore } from './store';
@@ -14,6 +14,8 @@ function PlaceChooser({ menu }: { menu: OpenLibraryMenu }) {
   const saved = useWatchStore((s) => s.saved);
   const shown = displayPins(places, saved);
   const pin = makeLibraryPin(menu.entry);
+  // Pinned elsewhere while the chooser was open: the menu says so instead of closing without a word.
+  const [note, setNote] = useState<string | null>(null);
   return (
     <>
       <div className="u-pin-menu-title" title={menu.name}>
@@ -25,6 +27,11 @@ function PlaceChooser({ menu }: { menu: OpenLibraryMenu }) {
           type="button"
           role="menuitem"
           onClick={() => {
+            const at = pin ? pinnedAt(usePins.getState().places, pinKey(pin)) : -1;
+            if (at >= 0) {
+              setNote(`Already pinned in Pin ${at + 1}`);
+              return;
+            }
             if (pin) usePins.getState().pinLibrary(i, pin);
             closeLibraryMenu(true);
           }}
@@ -34,6 +41,11 @@ function PlaceChooser({ menu }: { menu: OpenLibraryMenu }) {
           <span>{s ? s.name : 'Empty'}</span>
         </button>
       ))}
+      {note ? (
+        <div className="u-pin-menu-note" role="status">
+          {note}
+        </div>
+      ) : null}
     </>
   );
 }
@@ -42,7 +54,7 @@ function PlaceChooser({ menu }: { menu: OpenLibraryMenu }) {
 export function LibraryMenuLayer() {
   const menu = useLibraryMenu((s) => s.open);
   if (!menu) return null;
-  return <Box menu={menu} />;
+  return <Box key={menu.id} menu={menu} />;
 }
 
 function Box({ menu }: { menu: OpenLibraryMenu }) {

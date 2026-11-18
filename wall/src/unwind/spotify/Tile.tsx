@@ -2,7 +2,7 @@ import { useEffect, useId, useRef, type FocusEvent, type KeyboardEvent as ReactK
 import { IconArrowsShuffle, IconChevronRight, IconListDetails, IconPlayerPlayFilled } from '@tabler/icons-react';
 import type { SpotifyItem } from '../../music/spotify';
 import { hideTip, pinTip, quietFocus, TIP_DELAY_MS } from '../../ui/HoverTip';
-import { libraryMenuOpen, setSourceFocus } from '../watch/libraryMenu';
+import { libraryMenuOpen, setSourceFocus } from '../watch/libraryMenuModel';
 import { libraryHandlers } from '../watch/libraryOpen';
 import { Cover } from './Cover';
 import { kindLine, songs, tileLine } from './model';

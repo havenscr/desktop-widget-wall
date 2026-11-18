@@ -13,6 +13,8 @@ export interface MenuAction {
 }
 
 export interface OpenLibraryMenu {
+  /** Counts the openings: each opening is its own menu, with its own view and focus. */
+  id: number;
   /** What the Pin row and the chooser would pin; checked by `makeLibraryPin` when it matters. */
   entry: Pick<LibraryPin, 'kind' | 'id' | 'name'> & { art?: string };
   name: string;
@@ -34,11 +36,12 @@ interface State {
 export const useLibraryMenu = create<State>(() => ({ open: null }));
 
 /** Fired on the document when a library menu opens: every other open menu (a pin menu, a row's add menu) closes. A pointer opening already does through its press; a keyboard opening has none. */
+let openings = 0;
 export const LIBRARY_MENU_OPENED = 'wall-library-menu-opened';
 
-export function openLibraryMenu(menu: Omit<OpenLibraryMenu, 'view' | 'chooserOnly'> & { view?: 'actions' | 'chooser'; chooserOnly?: boolean }): void {
+export function openLibraryMenu(menu: Omit<OpenLibraryMenu, 'view' | 'chooserOnly' | 'id'> & { view?: 'actions' | 'chooser'; chooserOnly?: boolean }): void {
   document.dispatchEvent(new Event(LIBRARY_MENU_OPENED));
-  useLibraryMenu.setState({ open: { view: 'actions', chooserOnly: false, ...menu } });
+  useLibraryMenu.setState({ open: { view: 'actions', chooserOnly: false, ...menu, id: ++openings } });
 }
 
 /** Close the open menu; `restore` gives focus back to the source (the caller then also keeps the source's hover card closed). */

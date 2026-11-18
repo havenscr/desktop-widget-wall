@@ -1,6 +1,6 @@
 import { IconPin } from '@tabler/icons-react';
 import { tip } from '../../ui/HoverTip';
-import { openLibraryMenu, type OpenLibraryMenu } from './libraryMenu';
+import { openLibraryMenu, type OpenLibraryMenu } from './libraryMenuModel';
 import { makeLibraryPin, pinKey, pinnedAt, usePins } from './pins';
 
 /**
