@@ -1303,6 +1303,7 @@ the centre card; the date line takes it through the frame's `ClockSlot` portal.
   layout on purpose and must fail; `-- --self-test` runs every such case and passes only
   if each one failed with the FAIL line for the side it broke. jsdom has no layout, so the unit tests cannot check this; CI does
   not run it either.
+- **Jump back in** (Work, For you): when nothing plays, the For you page ends with the last playlist the wall's own player played and one Play (`resumeItem` in `src/work/forYou.ts`). The source is the record Listen already keeps (`lastOwn.ts`, through `useLastPlayed().own`): no new read, no new record. It shows only for a Watch playlist still in the saved list (a video, a live stream or an unknown last item adds nothing), and Play is `playLastOwn`, the same path as Listen's Play again. It never takes the row by itself (it is left out of the new-item take-over). Mock knob `?wjump=playlist|video|none` (with `watch=mock`); states and a deliberate break in `scripts/areas/jump-back-in.mjs`.
 - **Review script areas** (`wall/scripts/areas/`): new gallery states and fit-check
   variants, measurements, rules and deliberate breaks live in one area file. Both scripts
   discover the files in sorted order and reject duplicate state names, measurement keys,

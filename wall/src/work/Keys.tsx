@@ -4,6 +4,7 @@ import {
   IconChevronRight,
   IconGitPullRequest,
   IconMessageCircle,
+  IconPlayerPlay,
   IconVideo,
   type Icon,
 } from '@tabler/icons-react';
@@ -92,8 +93,8 @@ function secondRowFits(tiles: HTMLElement): boolean {
  */
 type HeadFit = 0 | 1 | 2;
 
-const KIND_ICON: Record<ForYouKind, Icon> = { meeting: IconVideo, waiting: IconMessageCircle, merge: IconGitPullRequest, alarm: IconAlertTriangle };
-const KIND_TONE: Record<ForYouKind, string> = { meeting: 'mint', waiting: 'amber', merge: 'mint', alarm: 'amber' };
+const KIND_ICON: Record<ForYouKind, Icon> = { meeting: IconVideo, waiting: IconMessageCircle, merge: IconGitPullRequest, alarm: IconAlertTriangle, resume: IconPlayerPlay };
+const KIND_TONE: Record<ForYouKind, string> = { meeting: 'mint', waiting: 'amber', merge: 'mint', alarm: 'amber', resume: 'mint' };
 /** A plate takes the tone the app already gives its item: mint (ready) as an app key, amber (waits on you) as an agent key. */
 const TONE_KIND: Record<string, KeyKind> = { mint: 'app', amber: 'agent' };
 
@@ -199,7 +200,8 @@ export function Keys() {
   }, []);
 
   const forYouOn = items.length > 0;
-  const sig = items.map((i) => i.key).join('|');
+  // The "Jump back in" offer never takes the row by itself: it is there to find, not to interrupt.
+  const sig = items.filter((i) => i.kind !== 'resume').map((i) => i.key).join('|');
   const summary = read.status === 'ready' ? read.summary : null;
 
   // A held page that is gone (a set left keys.json, nothing waits any more) goes back to Auto.

@@ -4,18 +4,24 @@ import { scrollToCard } from '../agents/cardScroll';
 import { cards, mergeReady, questionFor, sessionTitle, waitingIds, type OmniSummary } from '../agents/model';
 import { useSnoozed } from '../agents/snooze';
 import { agentsStale, useAgents } from '../agents/useAgents';
+import { isQuiet } from '../music/model';
+import { useNowPlayingStore } from '../music/store';
+import { canPlayLastOwn, playLastOwn, type LastOwn } from '../unwind/lastOwn';
+import { useLastPlayed } from '../unwind/lastPlayed';
+import type { WatchRef } from '../unwind/watch/links';
+import { useWatchStore } from '../unwind/watch/store';
 import { ageText, alertRows, type SecuritySummary } from '../home/model';
 import { useSecurity } from '../home/useSecurity';
 import type { Meeting } from '../meet/model';
 import { useNextMeeting } from './useNextMeeting';
-import { viaCommand } from './wallActions';
+import { ActionError, viaCommand } from './wallActions';
 
 /** A meeting counts as "for you" from this long before it starts until it ends. */
 export const MEETING_LEAD_MS = 10 * 60_000;
 /** "Show" flashes the card's ring this long. */
 export const FLASH_MS = 1_400;
 
-export type ForYouKind = 'meeting' | 'waiting' | 'merge' | 'alarm';
+export type ForYouKind = 'meeting' | 'waiting' | 'merge' | 'alarm' | 'resume';
 
 /** One line of the "For you" page: an icon kind, a title, a short reason and one action. */
 export interface ForYouItem {
@@ -106,6 +112,24 @@ export function alarmItem(sec: SecuritySummary | null, status: string, linkOk: b
   };
 }
 
+/**
+ * "Jump back in": the last playlist the wall's own player played, offered with one Play while nothing plays.
+ * Only a playlist that can be started again right now (a Watch playlist still in the saved list); a video,
+ * a live stream, no record, or anything playing adds nothing.
+ */
+export function resumeItem(own: LastOwn | null, saved: readonly WatchRef[], nothingPlays: boolean): ForYouItem | null {
+  if (!own || !nothingPlays || own.kind !== 'playlist' || !own.label || !canPlayLastOwn(own, saved)) return null;
+  return {
+    key: `resume:${own.kind}:${own.id}`,
+    kind: 'resume',
+    title: own.label,
+    reason: 'jump back in',
+    action: 'Play',
+    actionTip: 'Start this playlist again from the top, in the wall\'s own player',
+    ref: `${own.kind}:${own.id}`,
+  };
+}
+
 const flashTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
 /** Scroll the agent cards to a session and flash its ring once (calm: one slow pulse). A second Show restarts the flash. */
@@ -141,6 +165,9 @@ export async function runForYou(item: ForYouItem): Promise<string> {
     case 'merge':
       if (item.ref) showCard(item.ref);
       return 'Showing the card';
+    case 'resume':
+      if (!playLastOwn(useLastPlayed.getState().own)) throw new ActionError('Could not start the playlist');
+      return 'Playing the playlist';
     case 'alarm':
       return viaCommand('wall2_open_link', { kind: 'security' }, 'Opened the alarms', 'Could not open the alarms');
   }
@@ -149,7 +176,8 @@ export async function runForYou(item: ForYouItem): Promise<string> {
 /**
  * Everything that waits on the owner, in order: a meeting, agents waiting, pull requests
  * ready, a network alarm. A source that is stale, down or not set up adds nothing, and the
- * agents helper being down says nothing about agents. Never shown from old data.
+ * agents helper being down says nothing about agents. Never shown from old data. Last comes the
+ * "Jump back in" offer, only while nothing plays.
  */
 export function useForYou(): ForYouItem[] {
   const meet = useNextMeeting();
@@ -167,6 +195,10 @@ export function useForYou(): ForYouItem[] {
       live = false;
     };
   }, [sec.attempts]);
+  const own = useLastPlayed((s) => s.own);
+  const saved = useWatchStore((s) => s.saved);
+  const watchPlays = useWatchStore((s) => s.playing !== null);
+  const quiet = useNowPlayingStore((s) => isQuiet(s.info));
   const agentsOk = agents.summary !== null && !agentsStale(agents);
   const quietKey = [...snoozed.ids].sort().join(',');
   return useMemo(() => {
@@ -179,6 +211,8 @@ export function useForYou(): ForYouItem[] {
     }
     const a = alarmItem(sec.summary, sec.status, linkOk, sec.now);
     if (a) out.push(a);
+    const r = resumeItem(own, saved, quiet && !watchPlays);
+    if (r) out.push(r);
     return out;
-  }, [meet.meeting, meet.now, meet.stale, meet.unavailable, agents.summary, agentsOk, quietKey, sec.summary, sec.status, sec.now, linkOk]);
+  }, [own, saved, quiet, watchPlays, meet.meeting, meet.now, meet.stale, meet.unavailable, agents.summary, agentsOk, quietKey, sec.summary, sec.status, sec.now, linkOk]);
 }
