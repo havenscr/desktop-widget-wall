@@ -3994,6 +3994,7 @@ pub fn run() {
             wall2_feeds::wall2_home_security,
             wall2_feeds::wall2_links,
             wall2_feeds::wall2_open_link,
+            wall2_feeds::wall2_open_camera,
             wall2_feeds::wall2_open_task,
             wall2_watch::wall2_watch_open,
             wall2_home::wall2_moods,

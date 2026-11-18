@@ -214,7 +214,7 @@ it('reply words and marks: accepted and organizer tick, maybe asks, none and dec
 it('the later keys: six after Join and Open invite, four after the call keys, the last named for the call', () => {
   expect(BEFORE_LATER.map((k) => k.label)).toEqual(['Copy join info', 'Open chat', 'Running late', 'Do Not Disturb', 'Camera check', 'Open in Teams']);
   expect(BEFORE_LATER).toHaveLength(6);
-  expect(BEFORE_LATER.filter((k) => k.soon).map((k) => k.label)).toEqual(['Camera check']);
+  expect(BEFORE_LATER.filter((k) => k.live).map((k) => k.label)).toEqual(['Camera check']);
   expect(callLater('teams').map((k) => k.label)).toEqual(['Raise hand', 'Reactions', 'Chat panel', 'Open in Teams']);
   expect(callLater('zoom').at(-1)?.label).toBe('Open in Zoom');
 });
