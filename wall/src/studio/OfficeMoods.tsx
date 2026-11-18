@@ -1,10 +1,13 @@
-import { IconAlertTriangle, IconBulb, IconLoader2 } from '@tabler/icons-react';
+import { IconAlertTriangle, IconArrowBackUp, IconBulb, IconLoader2, IconPower } from '@tabler/icons-react';
 import { useLayoutEffect, useRef, useState, type CSSProperties } from 'react';
 import { restZone, useWatchRest } from '../unwind/watch/rest';
 import { tip } from '../ui/HoverTip';
 import { useHome } from './homeStore';
 import {
+  BACK_FIXED,
+  BACK_WORD,
   OFF_BUSY_EXTRA,
+  backTip,
   OFF_FIXED,
   chipTip,
   fitMoodRow,
@@ -43,7 +46,8 @@ function measure(row: RowModel, body: string, disp: string) {
   const names = row.chips.filter((c) => c.id !== null).map((c) => textWidth(c.label, chipFont));
   const label = LABEL_PAD + textWidth(LABEL_WORD.toUpperCase(), `600 16px ${disp}`) + LABEL_TRACK * LABEL_WORD.length;
   const off = row.chips.some((c) => c.id === null) ? OFF_FIXED + OFF_BUSY_EXTRA + textWidth('Off', chipFont) : 0;
-  return { names, label, off };
+  const back = BACK_FIXED + textWidth(BACK_WORD, chipFont);
+  return { names, label, off, back };
 }
 
 function Tip({ chip }: { chip: ChipModel }) {
@@ -60,27 +64,40 @@ function Tip({ chip }: { chip: ChipModel }) {
   );
 }
 
+function BackTip({ iconOnly }: { iconOnly: boolean }) {
+  const row = rowModel(useHome.getState());
+  if (!row) return null;
+  const t = backTip(row, iconOnly);
+  return (
+    <span className="u-mood-tip">
+      <span>{t.first}</span>
+      {t.second && <span className={t.warn ? 'u-mood-warn' : undefined}>{t.second}</span>}
+    </span>
+  );
+}
+
 function Swatch({ chip }: { chip: ChipModel }) {
   if (chip.failed) return <IconAlertTriangle className="u-mood-ico warn" size={14} stroke={2} aria-hidden="true" />;
   if (chip.busy) return <IconLoader2 className="u-mood-ico u-spin" size={14} stroke={2} aria-hidden="true" />;
   if (!chip.swatch) return null;
   return (
-    <span className="u-mood-sw" aria-hidden="true">
-      {chip.swatch.map((c) => (
-        <i key={c} style={{ background: c }} />
-      ))}
-    </span>
+    <span
+      className="u-mood-dot"
+      aria-hidden="true"
+      style={{ background: chip.swatch.length === 1 ? chip.swatch[0] : `linear-gradient(135deg, ${chip.swatch[0]} 20%, ${chip.swatch[1]} 85%)`, '--glow': chip.swatch[chip.swatch.length - 1] } as CSSProperties}
+    />
   );
 }
 
-function Chip({ chip, row, cap, onClick }: { chip: ChipModel; row: RowModel; cap: number | null; onClick: () => void }) {
+function Chip({ chip, row, cap, iconOnly, onClick }: { chip: ChipModel; row: RowModel; cap: number | null; iconOnly: boolean; onClick: () => void }) {
   const off = chip.id === null;
   const hasIcon = chip.failed || chip.busy;
   return (
     <button
       type="button"
-      className={`u-mood${off ? ' off' : ''}${chip.lit ? ' lit' : ''}${chip.failed ? ' failed' : ''}${row.blocked ? ' blocked' : ''}`}
+      className={`u-mood${off ? ' off' : ''}${iconOnly ? ' icon-only' : ''}${chip.lit ? ' lit' : ''}${chip.failed ? ' failed' : ''}${row.blocked ? ' blocked' : ''}`}
       data-mood={off ? 'off' : chip.id}
+      aria-label={iconOnly ? 'Off' : undefined}
       aria-pressed={chip.lit}
       aria-disabled={row.blocked ? 'true' : undefined}
       data-busy={chip.busy ? 'true' : undefined}
@@ -88,9 +105,12 @@ function Chip({ chip, row, cap, onClick }: { chip: ChipModel; row: RowModel; cap
       {...tip(() => <Tip chip={chip} />)}
     >
       {(off ? hasIcon : true) && <Swatch chip={chip} />}
-      <span className="u-mood-name" style={cap !== null && !off ? ({ maxWidth: `${cap}px` } as CSSProperties) : undefined}>
-        {chip.label}
-      </span>
+      {iconOnly && !hasIcon && <IconPower size={18} stroke={2} aria-hidden="true" />}
+      {!iconOnly && (
+        <span className="u-mood-name" style={cap !== null && !off ? ({ maxWidth: `${cap}px` } as CSSProperties) : undefined}>
+          {chip.label}
+        </span>
+      )}
     </button>
   );
 }
@@ -111,7 +131,7 @@ export function OfficeMoods() {
   const restNow = useWatchRest((s) => s.rest);
   const row = rowModel({ moods, moodsWord, applying, moodFail, sticky });
   const box = useRef<HTMLDivElement>(null);
-  const [fit, setFit] = useState<Fit>({ label: true, cap: null });
+  const [fit, setFit] = useState<Fit>({ label: true, cap: null, backIcon: false, offIcon: false, clip: false });
   const [fontsAt, setFontsAt] = useState(0);
   useLayoutEffect(() => {
     if (typeof document === 'undefined' || !document.fonts) return;
@@ -127,8 +147,8 @@ export function OfficeMoods() {
     const body = cs.getPropertyValue('--body').trim() || 'sans-serif';
     const disp = cs.getPropertyValue('--disp').trim() || 'sans-serif';
     const m = measure(row, body, disp);
-    const next = fitMoodRow(m.names, m.label, m.off);
-    setFit((f) => (f.label === next.label && f.cap === next.cap ? f : next));
+    const next = fitMoodRow(m.names, m.label, m.off, m.back);
+    setFit((f) => (f.label === next.label && f.cap === next.cap && f.backIcon === next.backIcon && f.offIcon === next.offIcon && f.clip === next.clip ? f : next));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [key, fontsAt]);
 
@@ -140,12 +160,16 @@ export function OfficeMoods() {
     const st = useHome.getState();
     void (chip.id === null ? st.applyOff() : st.applyMood(chip.id));
   };
+  const goBack = () => {
+    if (row.blocked || row.waiting || !row.canBack) return;
+    void useHome.getState().goBackFromMood();
+  };
   const line = row.line;
   // Rests with the Watch controls (same timing); a failure line (5 seconds) holds it in view. The chips never fade.
   const resting = restNow && moodFail === null;
   return (
     <>
-      <div className="u-office-slot" data-slot="office-lights" data-moods="shown" data-stale={row.stale ? 'true' : undefined} role="group" aria-label={LABEL_WORD} ref={box} {...restZone('moods-row')}>
+      <div className="u-office-slot" data-slot="office-lights" data-moods="shown" data-stale={row.stale ? 'true' : undefined} data-clip={fit.clip ? 'true' : undefined} role="group" aria-label={LABEL_WORD} ref={box} {...restZone('moods-row')}>
         {fit.label && (
           <span className="u-mood-label" data-part="label">
             <IconBulb size={18} aria-hidden="true" />
@@ -153,8 +177,20 @@ export function OfficeMoods() {
           </span>
         )}
         {row.chips.map((c) => (
-          <Chip key={c.id ?? 'office-off'} chip={c} row={row} cap={fit.cap} onClick={() => click(c)} />
+          <Chip key={c.id ?? 'office-off'} chip={c} row={row} cap={fit.cap} iconOnly={c.id === null && fit.offIcon} onClick={() => click(c)} />
         ))}
+        <button
+          type="button"
+          className={`u-mood u-mood-back${fit.backIcon ? ' icon-only' : ''}${row.canBack ? '' : ' dis'}${row.blocked ? ' blocked' : ''}`}
+          data-mood="back"
+          aria-label={fit.backIcon ? BACK_WORD : undefined}
+          aria-disabled={row.canBack && !row.blocked ? undefined : 'true'}
+          onClick={goBack}
+          {...tip(() => <BackTip iconOnly={fit.backIcon} />)}
+        >
+          <IconArrowBackUp size={18} stroke={2} aria-hidden="true" />
+          {!fit.backIcon && <span className="u-mood-name">{BACK_WORD}</span>}
+        </button>
       </div>
       <div className={`u-office-line${line.warn ? ' warn' : ''}`} data-part="line" data-rest={resting ? 'true' : 'false'} {...restZone('moods-line')}>
         {line.lead && <b>{line.lead}</b>}

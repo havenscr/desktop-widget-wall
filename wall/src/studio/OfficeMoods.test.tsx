@@ -4,7 +4,7 @@ import { mocks } from '../bridge/tauri';
 import { HoverTipLayer, resetTip } from '../ui/HoverTip';
 import { OFF_READ_DELAY_MS, resetHome, TEXT, useHome } from './homeStore';
 import { OfficeMoods } from './OfficeMoods';
-import { NAME_MIN, fitMoodRow } from './moodRow';
+import { BACK_FIXED, BACK_WORD, NAME_MIN, fitMoodRow } from './moodRow';
 import { NOTE_MS } from './store';
 
 vi.setConfig({ testTimeout: 20_000 });
@@ -30,6 +30,7 @@ let readWord: string | null;
 let calls: { command: string; args?: Record<string, unknown> }[];
 let writeWord: string | null;
 let hold: boolean;
+let normalWord: string | null;
 
 const answer = () => ({ stale, moods: list.map((m) => ({ ...m })), off, canWrite, writeBlock: block });
 const count = (c: string) => calls.filter((x) => x.command === c).length;
@@ -53,6 +54,13 @@ beforeEach(() => {
   calls = [];
   writeWord = null;
   hold = false;
+  normalWord = null;
+  mocks.set('wall2_studio_normal', async () => {
+    calls.push({ command: 'wall2_studio_normal' });
+    if (normalWord) throw normalWord;
+    list = list.map((m) => ({ ...m, active: false }));
+    return { nothing: 1 };
+  });
   mocks.set('wall2_office_moods', () => {
     calls.push({ command: 'wall2_office_moods' });
     if (readWord) throw readWord;
@@ -127,7 +135,7 @@ it('hidden states leave the empty slot: no children, aria-hidden, no line, and n
 
 it('a later read that fails hides the row again, and one that answers brings it back', async () => {
   await show();
-  expect(names()).toEqual(['Bright desk', 'Evening lamp', 'Gaming']);
+  expect(names()).toEqual(['Bright desk', 'Evening lamp', 'Gaming', BACK_WORD]);
   readWord = 'unreachable';
   await flush(60_000);
   expect(slot().childElementCount).toBe(0);
@@ -135,7 +143,7 @@ it('a later read that fails hides the row again, and one that answers brings it 
   expect(line()).toBeNull();
   readWord = null;
   await flush(60_000);
-  expect(names()).toEqual(['Bright desk', 'Evening lamp', 'Gaming']);
+  expect(names()).toEqual(['Bright desk', 'Evening lamp', 'Gaming', BACK_WORD]);
 });
 
 it('shown: a group named Office moods, the label, one chip per mood in the home app order, no Off without off, nothing lit', async () => {
@@ -145,8 +153,8 @@ it('shown: a group named Office moods, the label, one chip per mood in the home 
   expect(slot().getAttribute('aria-hidden')).toBeNull();
   expect(slot().getAttribute('data-moods')).toBe('shown');
   expect(screen.getByText('Office moods')).toBeTruthy();
-  expect(names()).toEqual(['Bright desk', 'Evening lamp', 'Gaming']);
-  expect(within(slot()).getAllByRole('button').every((b) => b.getAttribute('aria-pressed') === 'false')).toBe(true);
+  expect(names()).toEqual(['Bright desk', 'Evening lamp', 'Gaming', BACK_WORD]);
+  expect(within(slot()).getAllByRole('button').filter((b) => b.dataset.mood !== 'back').every((b) => b.getAttribute('aria-pressed') === 'false')).toBe(true);
   expect(line()?.textContent).toBe('No mood on.');
   // Every chip is a native button reached by Tab in this order.
   for (const b of within(slot()).getAllByRole('button')) {
@@ -156,20 +164,20 @@ it('shown: a group named Office moods, the label, one chip per mood in the home 
   }
 });
 
-it('the fit rule is applied: twelve names of 40 characters drop the label and cut every name; a short row keeps both', async () => {
+it('the fit rule is applied: nine names of 40 characters (with Off and Back to normal) drop the label and cut every name; a short row keeps both', async () => {
   // jsdom has no canvas, so the component measures with its rough guess (9 px a character): 360 px a name, far over 1124 in all.
   const forty = (i: number) => `Mood ${String(i).padStart(2, '0')} ${'x'.repeat(40 - 8)}`;
-  list = Array.from({ length: 12 }, (_, i) => ({ id: `mood${i}`, label: forty(i), line: null, active: i === 0 }));
+  list = Array.from({ length: 9 }, (_, i) => ({ id: `mood${i}`, label: forty(i), line: null, active: i === 0 }));
   off = { active: false };
   const { unmount } = await show();
   expect(forty(0)).toHaveLength(40);
   expect(slot().querySelector('.u-mood-label')).toBeNull();
   expect(slot().getAttribute('aria-label')).toBe('Office moods');
-  const named = [...slot().querySelectorAll<HTMLElement>('.u-mood-name')].filter((n) => n.textContent !== 'Off');
-  expect(named).toHaveLength(12);
+  const named = [...slot().querySelectorAll<HTMLElement>('.u-mood-name')].filter((n) => n.textContent !== 'Off' && n.textContent !== BACK_WORD);
+  expect(named).toHaveLength(9);
   for (const n of named) expect(n.style.maxWidth).toMatch(/^\d+px$/);
-  // Cut at the largest shared width that fits: exactly what the fit rule gives for 12 names of 360 px (9 px a character) and an Off chip measured by the same guess (30 + 22 + 27 px), above the floor.
-  const expected = fitMoodRow(Array(12).fill(360), 0, 79).cap as number;
+  // Cut at the largest shared width that fits: exactly what the fit rule gives for 9 names of 360 px (9 px a character) and an Off chip measured by the same guess (30 + 22 + 27 px), above the floor.
+  const expected = fitMoodRow(Array(9).fill(360), 0, 79, BACK_FIXED + BACK_WORD.length * 9).cap as number;
   expect(expected).toBeGreaterThan(NAME_MIN);
   for (const n of named) expect(n.style.maxWidth).toBe(`${expected}px`);
   expect(await tipOf(chip(forty(0)))).toBe(`${forty(0)} is on.`);
@@ -187,12 +195,108 @@ it('the fit rule is applied: twelve names of 40 characters drop the label and cu
   for (const n of slot().querySelectorAll<HTMLElement>('.u-mood-name')) expect(n.style.maxWidth).toBe('');
 });
 
+it('twelve moods with Off and Back to normal: the row fits ROW_MAX by turning Back to normal and Off into their icons, each with a name and a tip', async () => {
+  list = Array.from({ length: 12 }, (_, i) => ({ id: `m${i}`, label: `Mood ${String(i).padStart(2, '0')} ${'x'.repeat(32)}`, line: null, active: i === 0 }));
+  off = { active: false };
+  await show();
+  const back = slot().querySelector<HTMLElement>('[data-mood="back"]') as HTMLElement;
+  expect(back.getAttribute('aria-label')).toBe(BACK_WORD);
+  expect(back.querySelector('.u-mood-name')).toBeNull();
+  expect(back.querySelector('svg')).not.toBeNull();
+  expect(back.className).toContain('icon-only');
+  expect(chip(`Mood 00 ${'x'.repeat(32)}`).querySelector('.u-mood-name')).not.toBeNull();
+  expect(slot().getAttribute('data-clip')).toBeNull();
+  const tipText = await tipOf(back);
+  expect(tipText.startsWith(BACK_WORD)).toBe(true);
+  fireEvent.click(back);
+  await flush();
+  expect(count('wall2_studio_normal')).toBe(1);
+  const offChip = slot().querySelector<HTMLElement>('[data-mood="off"]') as HTMLElement;
+  expect(offChip.getAttribute('aria-label')).toBe('Off');
+  expect(offChip.querySelector('.u-mood-name')).toBeNull();
+  expect(offChip.className).toContain('icon-only');
+});
+
+it('2C: a mood chip carries a 12 px dot in its colour, never a swatch; it is the only chip look that glows when lit; Off has none', async () => {
+  list = [
+    { id: 'gaming', label: 'Gaming', line: null, active: true },
+    { id: 'recording', label: 'Recording', line: null, active: false },
+  ];
+  off = { active: false };
+  await show();
+  expect(slot().querySelector('.u-mood-sw')).toBeNull();
+  const dots = slot().querySelectorAll<HTMLElement>('.u-mood-dot');
+  expect(dots).toHaveLength(2);
+  expect(chip('Gaming').querySelector('.u-mood-dot')?.getAttribute('style')).toContain('--glow: #35e6ea');
+  // No colour word in "recording": the neutral pair, still a dot.
+  expect(chip('Recording').querySelector('.u-mood-dot')?.getAttribute('style')).toContain('--glow: #5b5480');
+  expect(chip('Off').querySelector('.u-mood-dot')).toBeNull();
+  expect(chip('Back to normal').querySelector('.u-mood-dot')).toBeNull();
+});
+
+it('1B: Back to normal is the last chip, after Off, dashed and disabled with no mood on; a click sends nothing', async () => {
+  off = { active: false };
+  await show();
+  const b = chip(BACK_WORD);
+  expect(names().at(-1)).toBe(BACK_WORD);
+  expect(b.className).toContain('dis');
+  expect(b.getAttribute('aria-disabled')).toBe('true');
+  expect(await tipOf(b)).toBe('Nothing to go back from');
+  fireEvent.click(b);
+  await flush();
+  expect(count('wall2_studio_normal')).toBe(0);
+});
+
+it('1B: with a mood on, Back to normal sends the studio normal call, then reads the moods again', async () => {
+  list[2].active = true;
+  await show();
+  const b = chip(BACK_WORD);
+  expect(b.className).not.toContain('dis');
+  expect(b.getAttribute('aria-disabled')).toBeNull();
+  const reads = count('wall2_office_moods');
+  fireEvent.click(b);
+  await flush();
+  expect(count('wall2_studio_normal')).toBe(1);
+  expect(count('wall2_office_moods')).toBe(reads + 1);
+  expect(chip('Gaming').getAttribute('aria-pressed')).toBe('false');
+  expect(chip(BACK_WORD).className).toContain('dis');
+});
+
+it('1B: a 409 nothing-to-undo is a quiet no-op: no note, no failure on a chip, the moods are read again', async () => {
+  list[2].active = true;
+  normalWord = 'nothing-to-undo';
+  await show();
+  const reads = count('wall2_office_moods');
+  fireEvent.click(chip(BACK_WORD));
+  await flush();
+  expect(count('wall2_studio_normal')).toBe(1);
+  expect(count('wall2_office_moods')).toBe(reads + 1);
+  expect(useHome.getState().note).toBeNull();
+  expect(useHome.getState().moodFail).toBeNull();
+  expect(slot().querySelector('.warn')).toBeNull();
+});
+
+it('1B: a real failure of the call shows the home words as a note, and Back to normal ignores clicks while a write is out', async () => {
+  list[2].active = true;
+  normalWord = 'unreachable';
+  await show();
+  fireEvent.click(chip(BACK_WORD));
+  await flush();
+  expect(useHome.getState().note).toBe(TEXT.unreachable);
+  hold = true;
+  fireEvent.click(chip('Bright desk'));
+  await flush();
+  fireEvent.click(chip(BACK_WORD));
+  await flush();
+  expect(count('wall2_studio_normal')).toBe(1);
+});
+
 it('Off shows only when the home app offers it, always last; it is lit only with no mood on', async () => {
   off = { active: false };
   await show();
-  expect(names()).toEqual(['Bright desk', 'Evening lamp', 'Gaming', 'Off']);
+  expect(names()).toEqual(['Bright desk', 'Evening lamp', 'Gaming', 'Off', BACK_WORD]);
   expect(chip('Off').getAttribute('aria-pressed')).toBe('false');
-  expect(chip('Off').querySelector('.u-mood-sw')).toBeNull();
+  expect(chip('Off').querySelector('.u-mood-dot')).toBeNull();
   expect(line()?.textContent).toBe('No mood on.');
   fireEvent.click(chip('Off'));
   await flush();
@@ -215,14 +319,14 @@ it('a click applies the mood and the chip shows what the home app read back; the
   expect(line()?.textContent).toBe('Evening lamp is on.');
 });
 
-it('in flight: the swatch turns into a spinner, the line says asking, every chip ignores clicks until the answer', async () => {
+it('in flight: the dot turns into a spinner, the line says asking, every chip ignores clicks until the answer', async () => {
   hold = true;
   await show();
   fireEvent.click(chip('Evening lamp'));
   await flush();
   expect(chip('Evening lamp').querySelector('.u-spin')).not.toBeNull();
-  expect(chip('Evening lamp').querySelector('.u-mood-sw')).toBeNull();
-  expect(chip('Gaming').querySelector('.u-mood-sw')).not.toBeNull();
+  expect(chip('Evening lamp').querySelector('.u-mood-dot')).toBeNull();
+  expect(chip('Gaming').querySelector('.u-mood-dot')).not.toBeNull();
   expect(line()?.textContent).toBe('Evening lamp: asking the home app');
   fireEvent.click(chip('Gaming'));
   fireEvent.click(chip('Evening lamp'));
@@ -327,7 +431,7 @@ it('every chip is a real button in the tab order, and focusing one shows its car
   off = { active: false };
   await show();
   const buttons = within(slot()).getAllByRole('button');
-  expect(buttons.map((b) => b.textContent)).toEqual(['Bright desk', 'Evening lamp', 'Gaming', 'Off']);
+  expect(buttons.map((b) => b.textContent)).toEqual(['Bright desk', 'Evening lamp', 'Gaming', 'Off', BACK_WORD]);
   for (const b of buttons) {
     expect(b.tagName).toBe('BUTTON');
     expect(b.tabIndex).toBe(0);
