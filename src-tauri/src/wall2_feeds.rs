@@ -1400,7 +1400,7 @@ mod tests {
     #[test]
     fn camera_command_opens_one_fixed_uri_and_takes_no_arguments() {
         assert_eq!(CAMERA_URI, "microsoft.windows.camera:");
-        let src = include_str!("wall2_feeds.rs");
+        let src = include_str!("wall2_feeds.rs").replace("\r\n", "\n");
         let start = src.find("pub fn wall2_open_camera(").expect("command");
         let body = &src[start..start + src[start..].find("\n}\n").expect("end")];
         // No argument besides the window and the app handle, and the opener gets the constant only.
