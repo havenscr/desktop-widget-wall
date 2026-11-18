@@ -1,5 +1,5 @@
 import type { KeyboardEvent, MouseEvent } from 'react';
-import { IconBulb, IconCalendarEvent, IconMoodSmile, IconVideo } from '@tabler/icons-react';
+import { IconCalendarEvent, IconLinkOff, IconMoodSmile, IconVideo } from '@tabler/icons-react';
 import { invoke } from '../bridge/tauri';
 import type { DayEvent } from '../ribbon/model';
 import { formatClock } from '../clock/format';
@@ -11,7 +11,7 @@ import { useLibGroups } from '../work/keyLibrary';
 import { keyboardOnMouseKey, useKeyPress } from '../work/keyPress';
 import { allKeys, type LibGroup } from '../work/libraryModel';
 import { useBrief } from '../work/useBrief';
-import { LightsChip } from '../studio/LightsChip';
+import { MeetLights } from './MeetLights';
 import { HeroChip, TroubleLine } from './parts';
 import {
   BROWSER_KEYS,
@@ -23,6 +23,9 @@ import {
   callLater,
   callWord,
   BEFORE_LATER,
+  CAMERA_CHECK_TIP,
+  INVITE_TINT,
+  NO_JOIN_LINK_LABEL,
   LATER_TIP,
   matchDayEvent,
   peopleBlock,
@@ -111,7 +114,7 @@ function CallKey({ spec, groups, camera, kind, press, onKeyDown }: {
 /** A key of the deck that does nothing yet: dashed, dim, out of the tab order, and a click or Enter or Space does nothing. */
 function LaterKey({ k }: { k: LaterKeySpec }) {
   return (
-    <button type="button" className="meet-key later" aria-label={k.label} data-later="true" {...inertKey} {...tip(LATER_TIP)}>
+    <button type="button" className="meet-key later" aria-label={k.label} data-later="true" data-tint={k.tint} data-soon={k.soon ? 'true' : undefined} {...inertKey} {...tip(k.soon ? CAMERA_CHECK_TIP : LATER_TIP)}>
       {k.icon === 'smile' ? <IconMoodSmile size={26} stroke={1.8} aria-hidden="true" /> : <KeyIcon name={k.icon} size={26} />}
       <span>{k.label}</span>
     </button>
@@ -152,17 +155,7 @@ function Keys({ meeting, m, openKey, showBrief }: { meeting: Meeting | undefined
   const urgent = joinIsUrgent(meeting, m.now);
   const canOpen = openKey !== undefined;
   const later = BEFORE_LATER.map((k) => <LaterKey key={k.label} k={k} />);
-  if (!meeting.canJoin && !canOpen) {
-    return (
-      <div className="meet-keys" aria-label="Meeting keys">
-        <span className="meet-key off dashed wide" role="note" {...tip('The calendar gave this meeting no join link, and Outlook cannot open it from here')}>
-          No join link on this meeting
-        </span>
-        {later}
-      </div>
-    );
-  }
-  // Positions 1 and 2 are Join and Open invite; one that does not apply leaves its place empty, so the rest stay put.
+  // Positions 1 and 2 are Join and Open invite. One that does not apply is a dim tile that says why, so no place is empty.
   return (
     <div className="meet-keys" aria-label="Meeting keys">
       {meeting.canJoin ? (
@@ -177,12 +170,16 @@ function Keys({ meeting, m, openKey, showBrief }: { meeting: Meeting | undefined
           <span>Join</span>
         </button>
       ) : (
-        <span className="meet-key-gap" aria-hidden="true" />
+        <span className="meet-key later" role="note" aria-label={NO_JOIN_LINK_LABEL} data-later="true" data-tint={INVITE_TINT} {...tip('The calendar gave this meeting no join link')}>
+          <IconLinkOff size={26} stroke={1.8} aria-hidden="true" />
+          <span>{NO_JOIN_LINK_LABEL}</span>
+        </span>
       )}
       {canOpen ? (
         <button
           type="button"
           className="meet-key"
+          data-tint={INVITE_TINT}
           aria-label="Open invite"
           onClick={() => void invoke('wall2_open_event', { key: openKey }).catch(() => undefined)}
           {...tip('Open this invite in Outlook')}
@@ -191,7 +188,10 @@ function Keys({ meeting, m, openKey, showBrief }: { meeting: Meeting | undefined
           <span>Open invite</span>
         </button>
       ) : (
-        <span className="meet-key-gap" aria-hidden="true" />
+        <span className="meet-key later" role="note" aria-label="Open invite" data-later="true" data-tint={INVITE_TINT} {...tip('Outlook has no invite to open for this meeting')}>
+          <IconCalendarEvent size={26} stroke={1.8} aria-hidden="true" />
+          <span>Open invite</span>
+        </span>
       )}
       {later}
     </div>
@@ -224,6 +224,8 @@ export function Hero({ m, meeting, label, events }: { m: MeetState; meeting: Mee
           <i aria-hidden="true" />
           {status.text}
         </span>
+        {/* The recording chip sits between the status and the time, clear of the lights section. */}
+        <HeroChip />
         <span className="meet-time" {...tip('The time now')}>
           {clock.time}
           <small>{clock.meridiem}</small>
@@ -251,18 +253,7 @@ export function Hero({ m, meeting, label, events }: { m: MeetState; meeting: Mee
       </div>
       <Keys meeting={meeting} m={m} openKey={openKey} showBrief={showBrief} />
       {people && <People people={people} meetingId={meetingId} />}
-      <div className="meet-hero-last">
-        {/* The recording chip stays while a key press line shows; the line sits under the chips. */}
-        <HeroChip />
-        {call ? (
-          <LightsChip where="meet" />
-        ) : (
-          <span className="meet-chip-later" aria-disabled="true" {...tip(LATER_TIP)}>
-            <IconBulb size={18} aria-hidden="true" />
-            Lights: later
-          </span>
-        )}
-      </div>
+      <MeetLights />
       {(brief || m.notice) && (
         <div className="meet-hero-line">
           {brief ? (

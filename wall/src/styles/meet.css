@@ -1117,9 +1117,11 @@
 .meet-hero-line {
   position: absolute;
   left: 326px;
-  top: 442px;
+  top: 470px;
   width: 494px;
-  min-height: 32px;
+  height: 16px;
+  min-height: 16px;
+  overflow: hidden;
   display: flex;
   align-items: center;
 }
@@ -1241,4 +1243,83 @@
 }
 .meet-pdet-addr[data-kind='address'] {
   color: var(--tx);
+}
+
+/* The studio lights under the people: two rows of 40 px controls in the right column (x 326, y 384). */
+.meet-hero.deck .meet-lights {
+  position: absolute;
+  left: 326px;
+  top: 384px;
+  width: 494px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.meet-lights-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 40px;
+  min-width: 0;
+}
+.meet-lights-row .st-presets {
+  flex: 1 1 auto;
+  margin-top: 0;
+}
+.meet-lights-row.st-switches {
+  margin-top: 0;
+  gap: 8px;
+}
+.meet-lights .st-switches .st-tg {
+  flex: none;
+  --tg-px: 12px;
+  --tg-gap: 8px;
+}
+.meet-office {
+  position: relative;
+  flex: none;
+}
+.meet-office-list {
+  position: absolute;
+  left: 0;
+  top: 46px;
+  z-index: 6;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  width: 360px;
+  padding: 10px;
+  border-radius: 14px;
+  background: rgba(11, 8, 34, 0.97);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+}
+
+/* Colour on the small keys by what each touches: the invite (violet), people (mint), you (amber), the Teams app (cyan). */
+.meet-hero.deck .meet-keys .meet-key[data-tint] {
+  --tint: 154, 123, 255;
+  background: rgba(var(--tint), 0.11);
+  border-color: rgba(var(--tint), 0.55);
+}
+.meet-hero.deck .meet-keys .meet-key[data-tint] svg {
+  color: rgb(var(--tint));
+}
+.meet-hero.deck .meet-keys .meet-key[data-tint='people'] {
+  --tint: 93, 242, 182;
+}
+.meet-hero.deck .meet-keys .meet-key[data-tint='you'] {
+  --tint: 255, 194, 77;
+}
+.meet-hero.deck .meet-keys .meet-key[data-tint='teams'] {
+  --tint: 53, 230, 234;
+}
+/* A dashed later key keeps its dashes and dim label; only the fill and the icon take the tint. */
+.meet-hero.deck .meet-keys .meet-key.later[data-tint] {
+  border-style: dashed;
+}
+
+/* The key press line and the notice take the 16 px under the lights section. */
+.meet-hero.deck .meet-hero-line .meet-brief,
+.meet-hero.deck .meet-hero-line .meet-notice {
+  font-size: 16px;
+  line-height: 16px;
 }

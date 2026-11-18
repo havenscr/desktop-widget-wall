@@ -102,7 +102,7 @@ function measureMeet() {
   const heroParts = [];
   if (hero) {
     const hb = hero.getBoundingClientRect();
-    for (const e of hero.querySelectorAll('.meet-hero-title, .meet-hero-left, .meet-hero-below, .meet-ring, .meet-keys, .meet-ppl, .meet-hero-last, .meet-hero-line')) {
+    for (const e of hero.querySelectorAll('.meet-hero-title, .meet-hero-left, .meet-hero-below, .meet-ring, .meet-keys, .meet-ppl, .meet-lights, .meet-hero-last, .meet-hero-line')) {
       const b = e.getBoundingClientRect();
       if (b.width === 0 && b.height === 0) continue;
       if (b.right > hb.right + 0.5 || b.bottom > hb.bottom + 0.5) out.push(`${e.className} reaches x ${r1(b.right)}, y ${r1(b.bottom)} past the hero (x ${r1(hb.right)}, y ${r1(hb.bottom)})`);
@@ -112,7 +112,7 @@ function measureMeet() {
     const keys = hero.querySelector('.meet-keys')?.getBoundingClientRect();
     if (left && keys && left.right > keys.left + 0.5) out.push(`the left column reaches x ${r1(left.right)}, into the keys at x ${r1(keys.left)}`);
     // Nothing the hero draws in its own parts overlaps another (the person card is a popover and is left out).
-    const parts = ['.meet-hero-st', '.meet-hero-title', '.meet-hero-left', '.meet-keys', '.meet-ppl', '.meet-hero-last', '.meet-hero-line'].map((sel) => [sel, hero.querySelector(sel)?.getBoundingClientRect()]).filter(([, b]) => b && (b.width > 0 || b.height > 0));
+    const parts = ['.meet-hero-st', '.meet-hero-title', '.meet-hero-left', '.meet-keys', '.meet-ppl', '.meet-lights', '.meet-hero-last', '.meet-hero-line'].map((sel) => [sel, hero.querySelector(sel)?.getBoundingClientRect()]).filter(([, b]) => b && (b.width > 0 || b.height > 0));
     for (let i = 0; i < parts.length; i++) for (let j = i + 1; j < parts.length; j++) {
       const a = parts[i][1], b = parts[j][1];
       if (a.left < b.right - 0.5 && b.left < a.right - 0.5 && a.top < b.bottom - 0.5 && b.top < a.bottom - 0.5) heroParts.push(`${parts[i][0]} overlaps ${parts[j][0]}`);
@@ -130,7 +130,7 @@ export default {
       state('in a call, new client', 'meet=new&call=teams&checklist=four', ['In call, Teams', 'Intro call with a new client', 'Called by Jordan Vale', '3 invited', 'Thanks for making time', 'Who is coming', 'First-meeting list']),
       state('heavy day: long title, 14 people, back to back', 'meet=heavy&call=teams&long=1&checklist=long', ['In call, Teams', 'Customer escalation review', '14 invited', 'Next, back to back', 'Starts as this one ends', 'more today, the last ends'], undefined, atLate),
       state('bare meeting: the island explains the list', 'meet=bare&call=teams&checklist=none', ['In call, Teams', 'Catch-up call', 'Your first-meeting list', 'meet-checklist.txt', 'Open file', 'one item a line', '!Who is coming', '!Also on file']),
-      state('the call key deck before a call: Join and Open invite, six later keys', 'meet=before&leave=100&checklist=four', ['Join', 'Open invite', 'Copy join info', 'Open chat', 'Running late', 'Do Not Disturb', 'Lights', 'Open in Teams', 'Lights: later', 'min to go']),
+      state('the call key deck before a call: Join and Open invite, six later keys', 'meet=before&leave=100&checklist=four', ['Join', 'Open invite', 'Copy join info', 'Open chat', 'Running late', 'Do Not Disturb', 'Camera check', 'Open in Teams', 'Office', 'Key lights', 'Panels', '!Lights: later', 'min to go']),
       state('the call key deck in a call: four live keys, four later keys', 'meet=known&call=teams&camera=1&rec=1&checklist=four', ['Mute', 'Camera on', 'Share', 'Leave', 'Raise hand', 'Reactions', 'Chat panel', 'Open in Teams', 'Recording']),
       state('the person card (P1) open at the initials', 'meet=known&call=teams&checklist=four', ['Dana Whitfield', 'Accepted', 'Copy email', 'Message on Teams', '!Contact card'], '.meet-ini[aria-label^="Dana Whitfield"]'),
       state('the person card for a person with no address: no actions', 'meet=known&call=teams&checklist=four', ['Robin Okafor', 'Accepted', 'No address on the invite', '!Copy email'], '.meet-ini[aria-label^="Robin Okafor"]'),

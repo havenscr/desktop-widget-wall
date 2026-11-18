@@ -69,7 +69,7 @@ const label = (e: HTMLElement) => e.getAttribute('aria-label');
 const person = (c: HTMLElement, name: RegExp) => within(heroOf(c)).getByRole('button', { name });
 const personCalls = () => sent.filter((s) => s.command === 'wall2_meet_person_action');
 
-const BEFORE = ['Join: Design review', 'Open invite', 'Copy join info', 'Open chat', 'Running late', 'Do Not Disturb', 'Lights', 'Open in Teams'];
+const BEFORE = ['Join: Design review', 'Open invite', 'Copy join info', 'Open chat', 'Running late', 'Do Not Disturb', 'Camera check', 'Open in Teams'];
 const IN_CALL = ['Mute', 'Camera off', 'Share', 'Leave', 'Raise hand', 'Reactions', 'Chat panel', 'Open in Teams'];
 
 beforeEach(() => {
@@ -117,13 +117,60 @@ it('before a call the deck has eight keys in fixed places; Join and Open invite 
   expect(sent).toEqual([]);
 });
 
-it('a key that does not apply keeps its place empty, so the others do not move', async () => {
+it('a key that does not apply is a dim tile, so the deck has eight places and none is empty', async () => {
   serve([m('1-0', 'Design review', 12, 42, { canJoin: true, details })]);
   const { container } = await renderMeet();
   const keys = deck(container);
   expect(keys).toHaveLength(8);
-  expect(keys[1].getAttribute('aria-hidden')).toBe('true');
+  expect(keys.every((k) => k.getAttribute('aria-hidden') !== 'true' && label(k))).toBe(true);
+  expect(label(keys[1])).toBe('Open invite');
+  expect(keys[1].getAttribute('data-later')).toBe('true');
   expect(keys.slice(2).map(label)).toEqual(BEFORE.slice(2));
+});
+
+it('with no join link the top left place is a dim "No join link" tile and the deck still has eight places', async () => {
+  const [hero, day] = before();
+  serve([{ ...hero, canJoin: false }], day);
+  const { container } = await renderMeet();
+  const keys = deck(container);
+  expect(keys).toHaveLength(8);
+  expect(label(keys[0])).toBe('No join link');
+  expect(keys[0].getAttribute('data-later')).toBe('true');
+  expect(keys[0].textContent).toBe('No join link');
+  expect(label(keys[1])).toBe('Open invite');
+  expect(keys.every((k) => k.getAttribute('aria-hidden') !== 'true')).toBe(true);
+});
+
+it('the Lights key is gone; Camera check takes its place as a soon tile with no action', async () => {
+  const [hero, day] = before();
+  serve([hero], day);
+  const { container } = await renderMeet();
+  const keys = deck(container);
+  expect(keys.map(label)).not.toContain('Lights');
+  expect(label(keys[6])).toBe('Camera check');
+  expect(keys[6].getAttribute('data-soon')).toBe('true');
+  expect(keys[6].getAttribute('aria-disabled')).toBe('true');
+  sent = [];
+  fireEvent.click(keys[6]);
+  await flush(600);
+  expect(sent).toEqual([]);
+});
+
+it('the small keys carry the tint of what they touch', async () => {
+  const [hero, day] = before();
+  serve([{ ...hero, canJoin: false }], day);
+  const { container } = await renderMeet();
+  const tint = Object.fromEntries(deck(container).map((k) => [label(k), k.getAttribute('data-tint')]));
+  expect(tint).toEqual({
+    'No join link': 'invite',
+    'Open invite': 'invite',
+    'Copy join info': 'invite',
+    'Open chat': 'people',
+    'Running late': 'people',
+    'Do Not Disturb': 'you',
+    'Camera check': 'you',
+    'Open in Teams': 'teams',
+  });
 });
 
 it('in a Teams call the same eight places hold Mute, Camera, Share, Leave and four unavailable keys', async () => {

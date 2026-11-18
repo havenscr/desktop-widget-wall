@@ -189,7 +189,7 @@ it('Join is filled even when the meeting is far off (no glow), and Open invite i
 it('a meeting with no join link and nothing to open says so instead of leaving a gap', async () => {
   serve([m('1-0', 'Lunch with Sam', 30, 90)]);
   const { container } = await renderMeet();
-  expect(within(heroOf(container)).getByText('No join link on this meeting')).toBeTruthy();
+  expect(within(heroOf(container)).getByText('No join link')).toBeTruthy();
   expect(screen.queryByRole('button', { name: /^Join/ })).toBeNull();
 });
 
@@ -493,12 +493,12 @@ it('a failed mark says so in one fixed line, and Open file opens marks.txt', asy
   expect(sent).toContainEqual({ command: 'wall2_onair_open', args: { which: 'marks' } });
 });
 
-it('the recording chip sits in the last row while a recorder runs', async () => {
+it('the recording chip sits in the status row while a recorder runs', async () => {
   serve([m('1-0', 'Design review', -10, 20)]);
   await setCall(call());
   act(() => useSignalStore.setState({ recording: true }));
   const { container } = await renderMeet();
-  expect(container.querySelector('.meet-hero-last .rec-chip')).not.toBeNull();
+  expect(container.querySelector('.meet-hero-st .rec-chip')).not.toBeNull();
 });
 
 it('a failed key press says why in the hero\'s last row', async () => {
