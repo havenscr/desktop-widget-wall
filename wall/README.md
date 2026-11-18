@@ -18,6 +18,8 @@ runner, so you rarely need it locally.
 
 ## Spotify
 
+Right-clicking a playlist or album tile (or the ContextMenu key, or Shift+F10) opens a menu: Play, Shuffle, Songs, then "Pin to the left", which opens a chooser of the three pin places under the Listen and Watch switch. An opened playlist or album also has a Pin button after Shuffle that opens the same chooser.
+
 Spotify support uses the Web API and a local `spotify.json` file in the same app config
 folder as `feeds.json`. Sign in at the Spotify developer dashboard, create an app with
 any name and description, add the redirect URI exactly
@@ -159,6 +161,8 @@ once a minute and 20 pages an hour in all. The switch in Tools, Accounts, Spotif
 
 ## YouTube
 
+Right-clicking a playlist tile opens Play, Shuffle, Videos and "Pin to the left". Play and Shuffle open the playlist and start it once its first page has loaded; if the page fails or nothing on it can play outside YouTube, nothing starts and the opened view shows its own line. A video row has its own menu (Play, Add to a playlist, Open in YouTube, Pin to the left); "Add to a playlist" closes it and opens the row's add menu at the row's right end. In an opened playlist Refresh is an icon (its last-read time is in its tip) and Pin keeps its word after Shuffle; in the tall view Pin is an icon.
+
 The wall signs in to YouTube so that it can read the owner's own playlists and liked videos.
 The sign-in and its row in Tools came first; the library came next, and a pick from it plays on the wall (see
 "Playing a pick" below). It needs a Google Cloud OAuth client of the
@@ -290,7 +294,7 @@ The sign-in and its row in Tools came first; the library came next, and a pick f
   keep today's remote with one line and one button under it. `?youtube=in&ytlib=full|few|empty|slow|down|busy|again|gone|low|spent|long`
   picks the library's state (development mock only), and `?ytsearch=<words>` runs a search on open.
   `?ytdetails=ok|none|down|slow` picks the own-playlist details answer.
-- **Add to a playlist on a row** (`YtRows` in `YtParts.tsx`, styles in `ytmusic.css`). Every row that plays (Liked, an opened
+- **Add to a playlist on a row** (`YtRows` in `YtParts.tsx`, styles in `ytmusic.css`). The row's right-click menu offers it too and hands over to this same menu. Every row that plays (Liked, an opened
   playlist, search results) has a 30 by 30 control at its right end, 8 px from the row's end and 6 px from its top and foot, in the
   length's place. It is a second button inside the row, never inside the play button, so a click on it never plays and a click
   anywhere else on the row still does. It shows while the pointer is on the row, on keyboard focus within the row (Tab reaches it
@@ -2401,8 +2405,23 @@ clock's date line to the last row).
   an item that left the list leaves an empty place. A word too long for a pin ends in an ellipsis on its line (the full label is in the hover tip). Right-click (or the menu key, or Shift+F10) opens a small menu:
   Replace and Remove on a pin, and the list ("Pin from the Watch list") on an empty place; with an empty Watch list it
   says to add a video first and has an Open Watch button. The pins are kept as three keys under `wall2-watch-pins`
-  and read strictly on every load (`watch/pins.ts`). The art square is a drawn gradient from the item's key: no
-  thumbnail is fetched.
+  and read strictly on every load (`watch/pins.ts`).
+  A place can also hold an item pinned from a library panel: a Spotify playlist or album, a YouTube playlist, video or
+  live stream, stored as an object `{ kind, id, name, art? }` in the same array (old string places read unchanged; an
+  older build reads the object places as empty, so the change is one way). Ids are checked by kind (Spotify: 22 letters
+  or digits; YouTube: the Watch list rules). `art` is kept only for Spotify kinds (a `https` address on `.scdn.co` or
+  `.spotifycdn.com`, no port, no credentials, at most 200 characters, the rules `wall2_spotify.rs` applies) and
+  YouTube playlists (the exact `i.ytimg.com/vi/<id>/mqdefault.jpg` shape); videos and live streams build their
+  picture from the id. A bad cover drops only the cover. The art square shows the real cover with a 20 px service
+  badge (Spotify or YouTube); with no cover (Twitch, a Watch list playlist, a failed load) it is the gradient and the
+  kind's glyph, no badge. A click plays a YouTube pin on Watch (`playPinned`) and a Spotify pin on Listen with the
+  card's own play path and notes; a Spotify pin is never lit. Right-click (or the menu key, or Shift+F10) on a Spotify
+  playlist or album tile, a YouTube playlist tile or a playing YouTube row opens the item's actions, then "Pin to the
+  left", which opens a chooser of the three places (art and name, or Empty); one click writes it. An opened Spotify
+  playlist or album, and an opened YouTube playlist, also have a Pin button that
+  opens the same chooser: a word after Shuffle at rest; in the tall YouTube view an icon in the header, and in the tall
+  Spotify view a 40 px round icon at the end of the back row (Back, the tab name, Pin). A pinned item's Pin row and button are off and name its place. The small "Add a pin" places
+  work as before.
 - **Volume.** On Watch the slider and sound button drive the wall's own video through the YouTube player's own
   `setVolume` (the level is kept in the Watch store under `wall2-watch-volume`, default 100, so nothing changes until
   it is moved; the sound button is the same mute as the play row's). The Windows session is not used for the wall's
@@ -2428,7 +2447,7 @@ clock's date line to the last row).
   pointer anywhere on the column from the date line to the last row, an open pin menu, or keyboard focus inside brings
   them to full strength, and they go quiet `CTL_REST_MS` after the last of those leaves.
 - **Up next** on Listen moves under the rows and keeps one song (`UpNext` takes a `rows` prop).
-- **Dev**: `?wpins=none|one|three|long|gone`, `?wvol=<0..100>`, `?wsleep=<minutes left>|end` and `?wrows=shown`
+- **Dev**: `?wpins=none|one|three|long|gone|mixed|mixedfull|mixedbroken|lib1|liblong` (the last five are library pins with drawn covers), `?wvol=<0..100>`, `?wsleep=<minutes left>|end` and `?wrows=shown`
   (all with `?watch=mock`). The gallery and the fit check have states in `scripts/areas/under-clock.mjs`.
 
 ## Home feeds (task card and network tile)
