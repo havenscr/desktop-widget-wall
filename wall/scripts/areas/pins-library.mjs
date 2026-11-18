@@ -209,6 +209,7 @@ export default {
       'pins-badge-out': { css: '.u-pin-badge { right: -40px !important; }', expect: /^ *FAIL library pins: a badge at [\d,]+ is outside its pin slot/m, appliesTo: on(names.mixed) },
       'pins-menu-offstrip': { css: '.u-lib-menu { left: 2450px !important; }', expect: /^ *FAIL library pins: the open menu is at [\d,]+, outside the strip/m, appliesTo: on(names.spMenu) },
       'pins-yt-name-squeeze': { css: '.yt-pin { min-width: 400px !important; }', expect: /^ *FAIL library pins: the playlist name is \d+ px wide/m, appliesTo: on(names.ytOpen) },
+      'pins-sp-tall-cut': { css: '.sp-songs.tall .sp-backrow .sp-tallpin { flex-basis: 90px !important; width: 90px !important; }', expect: /^ *FAIL library pins: (Pin is \d+ by \d+|the tab name is cut|Pin at [\d,]+ passes the back row)/m, appliesTo: on(names.spOpenTall) },
     },
   },
 };
