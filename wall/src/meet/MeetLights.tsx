@@ -8,12 +8,23 @@ import { PresetRow } from '../studio/PresetRow';
 import { RoomTile } from '../studio/RoomTiles';
 import { StudioDrawer } from '../studio/StudioDrawer';
 import { canChange, useHome } from '../studio/homeStore';
-import { rowModel, type RowModel } from '../studio/moodRow';
+import { moodFailText, rowModel, type RowModel } from '../studio/moodRow';
 import { anyOn, kelvinColour, savedDown, viewOf, working, type Snapshot } from '../studio/model';
 import { useKeyLights } from '../studio/store';
 import { useHomePolling } from '../studio/useHomePolling';
 import { useKeyLightPolling } from '../studio/useKeyLightPolling';
 import { useMoodsPolling } from '../studio/useMoodsPolling';
+
+/**
+ * The words a failed or refused light write leaves: a key light note, the home app's note, then a mood that did not
+ * take. Null when there is nothing to say. The hero shows it on its 16 px notice line under the section.
+ */
+export function useLightsNotice(): string | null {
+  const keyNote = useKeyLights((s) => s.note);
+  const homeNote = useHome((s) => s.note);
+  const moodFail = useHome((s) => s.moodFail);
+  return keyNote ?? homeNote ?? (moodFail ? moodFailText(moodFail.word) : null);
+}
 
 /** The office chip's words: the mood now on, else a plain name. */
 export function officeChipLabel(row: RowModel | null): string {
@@ -34,6 +45,7 @@ function OfficeChip() {
   const applying = useHome((s) => s.applying);
   const moodFail = useHome((s) => s.moodFail);
   const sticky = useHome((s) => s.sticky);
+  const writes = useHome((s) => s.writes);
   const row = rowModel({ moods, moodsWord, applying, moodFail, sticky });
   const [open, setOpen] = useState(false);
   const box = useRef<HTMLDivElement>(null);
@@ -53,11 +65,13 @@ function OfficeChip() {
     };
   }, [open]);
   if (!row) return null;
+  // Locked while this PC may not write, or while any home write runs or waits (a panel switch too).
+  const locked = row.blocked || row.waiting || writes > 0;
   const pick = (id: string | null) => {
-    if (row.blocked || row.waiting) return;
+    if (locked) return;
     const st = useHome.getState();
+    // The picker stays open: a failure shows on the chip and on the notice line, not by a silent close.
     void (id === null ? st.applyOff() : st.applyMood(id));
-    setOpen(false);
   };
   return (
     <div className="meet-office" ref={box}>
@@ -71,10 +85,10 @@ function OfficeChip() {
             <button
               key={c.id ?? 'office-off'}
               type="button"
-              className={`st-preset${c.lit ? ' on' : ''}${row.blocked ? ' dis' : ''}`}
+              className={`st-preset${c.lit ? ' on' : ''}${locked ? ' dis' : ''}${c.failed ? ' failed' : ''}`}
               data-mood={c.id ?? 'off'}
               aria-pressed={c.lit}
-              aria-disabled={row.blocked ? true : undefined}
+              aria-disabled={locked ? true : undefined}
               onClick={() => pick(c.id)}
               {...tip(c.line ? `${c.label}: ${c.line}` : c.label)}
             >

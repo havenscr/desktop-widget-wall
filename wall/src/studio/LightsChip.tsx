@@ -11,13 +11,12 @@ import { useHomePolling } from './useHomePolling';
 import { useKeyLightPolling } from './useKeyLightPolling';
 
 /**
- * The Lights chip, after the Recording chip on Work while a recording runs, and at the end of the recording
- * line on Meet while a call shows (`where="meet"`, shown by its host). It says what the studio lights are
+ * The Lights chip, after the Recording chip on Work while a recording runs. It says what the studio lights are
  * set to in a few words: "Lights: <preset>" while a preset is on, else what the key lights report. An
  * amber dot shows while an offer waits on On Air. A click opens the same sheet as Fine tune. Hidden when
  * there is nothing to say (no preset known and the key lights are not set up).
  */
-export function LightsChip({ compact = false, where = 'work' }: { compact?: boolean; where?: 'work' | 'meet' }) {
+export function LightsChip({ compact = false }: { compact?: boolean }) {
   const recording = useSignalStore((s) => s.recording);
   const drawer = useKeyLights((s) => s.drawer);
   const status = useKeyLights((s) => s.status);
@@ -25,7 +24,7 @@ export function LightsChip({ compact = false, where = 'work' }: { compact?: bool
   const right = useKeyLights((s) => s.right);
   const offer = useHome((s) => s.offer);
   const { preset, changed } = useActivePreset();
-  const shows = where === 'meet' || recording;
+  const shows = recording;
   useKeyLightPolling(shows || drawer);
   useHomePolling(shows || drawer);
   const snap: Snapshot = { status, left, right };
@@ -37,7 +36,6 @@ export function LightsChip({ compact = false, where = 'work' }: { compact?: bool
           type="button"
           className={`lights-chip${compact ? ' compact' : ''}`}
           data-st-opener=""
-          data-where={where}
           aria-expanded={drawer}
           onClick={() => useKeyLights.getState().setDrawer(!drawer)}
           {...tip(

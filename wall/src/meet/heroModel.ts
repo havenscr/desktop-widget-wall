@@ -216,10 +216,10 @@ export function replyMark(reply: Reply): { text: string; tone: 'yes' | 'maybe' |
   return reply === 'yes' || reply === 'organizer' ? { text: '\u2713', tone: 'yes' } : reply === 'maybe' ? { text: '?', tone: 'maybe' } : { text: '\u2013', tone: 'none' };
 }
 
-/** A key of the deck that does nothing yet: drawn dashed and dim, a tooltip says so. */
 /** What a small key touches, for its colour: the invite (violet), people (mint), you (amber), the Teams app (cyan). */
 export type KeyTint = 'invite' | 'people' | 'you' | 'teams';
 
+/** A key of the deck that does nothing yet: drawn dashed and dim, a tooltip says so. */
 export interface LaterKeySpec {
   label: string;
   /** A key icon name (`KEY_ICONS`), or `smile`. */

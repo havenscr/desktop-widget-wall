@@ -102,7 +102,7 @@ function measureMeet() {
   const heroParts = [];
   if (hero) {
     const hb = hero.getBoundingClientRect();
-    for (const e of hero.querySelectorAll('.meet-hero-title, .meet-hero-left, .meet-hero-below, .meet-ring, .meet-keys, .meet-ppl, .meet-lights, .meet-hero-last, .meet-hero-line')) {
+    for (const e of hero.querySelectorAll('.meet-hero-title, .meet-hero-left, .meet-hero-below, .meet-ring, .meet-keys, .meet-ppl, .meet-lights, .meet-hero-line')) {
       const b = e.getBoundingClientRect();
       if (b.width === 0 && b.height === 0) continue;
       if (b.right > hb.right + 0.5 || b.bottom > hb.bottom + 0.5) out.push(`${e.className} reaches x ${r1(b.right)}, y ${r1(b.bottom)} past the hero (x ${r1(hb.right)}, y ${r1(hb.bottom)})`);
@@ -112,7 +112,7 @@ function measureMeet() {
     const keys = hero.querySelector('.meet-keys')?.getBoundingClientRect();
     if (left && keys && left.right > keys.left + 0.5) out.push(`the left column reaches x ${r1(left.right)}, into the keys at x ${r1(keys.left)}`);
     // Nothing the hero draws in its own parts overlaps another (the person card is a popover and is left out).
-    const parts = ['.meet-hero-st', '.meet-hero-title', '.meet-hero-left', '.meet-keys', '.meet-ppl', '.meet-lights', '.meet-hero-last', '.meet-hero-line'].map((sel) => [sel, hero.querySelector(sel)?.getBoundingClientRect()]).filter(([, b]) => b && (b.width > 0 || b.height > 0));
+    const parts = ['.meet-hero-st', '.meet-hero-title', '.meet-hero-left', '.meet-keys', '.meet-ppl', '.meet-lights', '.meet-hero-line'].map((sel) => [sel, hero.querySelector(sel)?.getBoundingClientRect()]).filter(([, b]) => b && (b.width > 0 || b.height > 0));
     for (let i = 0; i < parts.length; i++) for (let j = i + 1; j < parts.length; j++) {
       const a = parts[i][1], b = parts[j][1];
       if (a.left < b.right - 0.5 && b.left < a.right - 0.5 && a.top < b.bottom - 0.5 && b.top < a.bottom - 0.5) heroParts.push(`${parts[i][0]} overlaps ${parts[j][0]}`);

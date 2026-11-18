@@ -6,7 +6,8 @@ import { HoverTipLayer, resetTip } from '../ui/HoverTip';
 import { studioAnswer, studioWith } from '../studio/homeKit';
 import { resetHome } from '../studio/homeStore';
 import { resetKeyLights } from '../studio/store';
-import { MeetLights, officeChipLabel } from './MeetLights';
+import { MeetLights, officeChipLabel, useLightsNotice } from './MeetLights';
+import { useKeyLights } from '../studio/store';
 import { rowModel } from '../studio/moodRow';
 
 vi.setConfig({ testTimeout: 20_000 });
@@ -61,10 +62,15 @@ afterEach(() => {
   mocks.clear();
 });
 
+function Notice() {
+  const n = useLightsNotice();
+  return <p data-testid="notice">{n ?? ''}</p>;
+}
 const show = async () => {
   const view = render(
     <>
       <MeetLights />
+      <Notice />
       <HoverTipLayer />
     </>,
   );
@@ -126,4 +132,100 @@ it('the office chip names the mood now on, else Office lights', () => {
   expect(officeChipLabel(none)).toBe('Office lights');
   const on = rowModel({ moods: moods('unwind'), moodsWord: null, applying: null, moodFail: null, sticky: null });
   expect(officeChipLabel(on)).toBe('Office: Unwind');
+});
+
+const officeButtons = () => [...document.querySelectorAll('.meet-office-list .st-preset')] as HTMLElement[];
+
+it('a refused office mood keeps the picker open, marks the chip and says why on the notice line', async () => {
+  mocks.set('wall2_office_mood', () => {
+    throw 'refused';
+  });
+  await show();
+  fireEvent.click(screen.getByRole('button', { name: 'Office: Meeting' }));
+  fireEvent.click(officeButtons()[1]);
+  await flush(50);
+  expect(document.querySelector('.meet-office-list')).toBeTruthy();
+  expect(officeButtons()[1].className).toContain('failed');
+  expect(screen.getByTestId('notice').textContent).not.toBe('');
+});
+
+it('a key light note reaches the notice line', async () => {
+  await show();
+  act(() => useKeyLights.setState({ note: 'Left key light did not answer' }));
+  expect(screen.getByTestId('notice').textContent).toBe('Left key light did not answer');
+});
+
+it('twelve long moods all draw inside the scrolling list', async () => {
+  const many = Array.from({ length: 12 }, (_, i) => ({ id: `m${i}`, label: `A very long office mood name number ${i}`, line: null, active: false }));
+  mocks.set('wall2_office_moods', () => ({ ...moods(null), moods: many }));
+  await show();
+  fireEvent.click(screen.getByRole('button', { name: 'Office lights' }));
+  expect(officeButtons()).toHaveLength(12);
+  expect(document.querySelector('.meet-office-list')?.getAttribute('aria-label')).toBe('Office moods');
+});
+
+it('a held panel write locks the office picker; nothing is sent until it ends', async () => {
+  let release: () => void = () => undefined;
+  mocks.set('wall2_studio_group', (args) => {
+    writes.push({ command: 'wall2_studio_group', args });
+    return new Promise((r) => {
+      release = () => r(answer);
+    });
+  });
+  await show();
+  fireEvent.click(screen.getByRole('switch', { name: 'Panels' }));
+  await flush(10);
+  fireEvent.click(screen.getByRole('button', { name: 'Office: Meeting' }));
+  expect(officeButtons()[1].getAttribute('aria-disabled')).toBe('true');
+  fireEvent.click(officeButtons()[1]);
+  await flush(50);
+  expect(writes.map((w) => w.command)).toEqual(['wall2_studio_group']);
+  release();
+  await flush(50);
+  expect(officeButtons()[1].getAttribute('aria-disabled')).toBeNull();
+});
+
+it('a PC that may not write: presets, Back to normal and the office picker send nothing', async () => {
+  answer = studioAnswer({ canWrite: false, writeBlock: 'not-set-up' });
+  mocks.set('wall2_office_moods', () => ({ ...moods('meeting'), canWrite: false, writeBlock: 'not-set-up' }));
+  await show();
+  const chips = [...document.querySelectorAll('.meet-lights .st-preset[data-preset]')] as HTMLElement[];
+  for (const c of chips) {
+    expect(c.getAttribute('aria-disabled')).toBe('true');
+    fireEvent.click(c);
+  }
+  fireEvent.click(screen.getByRole('button', { name: 'Office: Meeting' }));
+  fireEvent.click(officeButtons()[1]);
+  await flush(50);
+  expect(writes).toEqual([]);
+  expect(officeButtons()[1].getAttribute('aria-disabled')).toBe('true');
+});
+
+it('a failed home read dims the presets and sends nothing', async () => {
+  mocks.set('wall2_studio', () => {
+    throw 'unreachable';
+  });
+  await show();
+  for (const c of document.querySelectorAll('.meet-lights .st-preset[data-preset]')) {
+    expect(c.getAttribute('aria-disabled')).toBe('true');
+    fireEvent.click(c);
+  }
+  await flush(50);
+  expect(writes).toEqual([]);
+});
+
+it('a failed moods read leaves no office chip', async () => {
+  mocks.set('wall2_office_moods', () => {
+    throw 'unreachable';
+  });
+  await show();
+  expect(document.querySelector('[data-office-chip]')).toBeNull();
+});
+
+it('Fine tune opens the sheet', async () => {
+  await show();
+  fireEvent.click(screen.getByRole('button', { name: 'Fine tune' }));
+  await flush(10);
+  expect(useKeyLights.getState().drawer).toBe(true);
+  expect(document.querySelector('.st-drawer')).toBeTruthy();
 });

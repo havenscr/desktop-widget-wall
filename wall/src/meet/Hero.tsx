@@ -11,7 +11,7 @@ import { useLibGroups } from '../work/keyLibrary';
 import { keyboardOnMouseKey, useKeyPress } from '../work/keyPress';
 import { allKeys, type LibGroup } from '../work/libraryModel';
 import { useBrief } from '../work/useBrief';
-import { MeetLights } from './MeetLights';
+import { MeetLights, useLightsNotice } from './MeetLights';
 import { HeroChip, TroubleLine } from './parts';
 import {
   BROWSER_KEYS,
@@ -214,6 +214,7 @@ export function Hero({ m, meeting, label, events }: { m: MeetState; meeting: Mee
   const long = title.length > LONG_TITLE;
   const by = meeting ? calledByLine(meeting.details, label) : null;
   const people = meeting ? peopleBlock(meeting.details) : null;
+  const lightsNote = useLightsNotice();
   const trouble = troubleLine(m.data?.accounts ?? []);
   const outOfDate = meeting ? mayBeOutOfDate(m.data?.accounts ?? []) : false;
   const meetingId = meeting ? `${meeting.accountId}|${meeting.start}|${meeting.end}|${meeting.title}` : '';
@@ -254,11 +255,15 @@ export function Hero({ m, meeting, label, events }: { m: MeetState; meeting: Mee
       <Keys meeting={meeting} m={m} openKey={openKey} showBrief={showBrief} />
       {people && <People people={people} meetingId={meetingId} />}
       <MeetLights />
-      {(brief || m.notice) && (
+      {(brief || lightsNote || m.notice) && (
         <div className="meet-hero-line">
           {brief ? (
             <span className="meet-brief" role="status" {...tip(brief)}>
               {brief}
+            </span>
+          ) : lightsNote ? (
+            <span className="meet-notice meet-xxs amber" role="status" {...tip(lightsNote)}>
+              {lightsNote}
             </span>
           ) : (
             <span className="meet-notice meet-xxs">{m.notice}</span>
