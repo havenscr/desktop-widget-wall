@@ -221,3 +221,15 @@ it('with no day log at all nothing says the session idled, so its stage spans st
   expect(rows[0].spans.map((x) => x.kind)).toEqual(['build']);
   expect(rows[0].workMs).toBe(60 * 60_000);
 });
+
+it('a day log that starts at noon leaves the morning record work counted as worked', () => {
+  const s = idleSummary([{ start: '12:00', end: '12:30', kind: 'run' }]);
+  const rows = todayRows(s, idleRec([{ stage: 'build', start: '08:00', end: '14:00' }]), t(idleDay, '15:00'));
+  expect(rows[0].spans.map((x) => [x.kind, x.from, x.to])).toEqual([
+    ['build', 8, 12],
+    ['build', 12, 12.5],
+    ['idle', 12.5, 14],
+  ]);
+  // Four hours before the log, then the half hour it shows.
+  expect(rows[0].workMs).toBe(270 * 60_000);
+});

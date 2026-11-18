@@ -5,7 +5,7 @@ import { resetAgents } from '../agents/useAgents';
 import { mocks } from '../bridge/tauri';
 import { useFocusStore } from '../focus/store';
 import { HoverTipLayer, TIP_DELAY_MS } from '../ui/HoverTip';
-import { resetDays } from './days';
+import { resetDays, type DayRecord } from './days';
 import { RX } from './model';
 import { openList, overLine, overStretches, overSince } from './overLimit';
 import { Ribbon } from './Ribbon';
@@ -139,7 +139,7 @@ it('a child or a side chat is never listed, counted or marked: only the cards ar
   expect(r.container.querySelector('.hover-tip')!.textContent).toContain('5 sessions open, 1 over your limit of 4');
 });
 
-it('the card names eight sessions at most and counts the rest; one that waits on the owner is always named', async () => {
+it('the card names eight sessions at most and counts the rest, in the order it shows: idle, working, then waiting', async () => {
   const many = ids(12).map((id, i) => lane({ id, title: `Session ${i + 1}`, elapsedS: (100 + i) * 60, ...(i === 11 ? { waiting: true, state: 'blocked' as const } : {}) }));
   answer = () => summary({ slots: { used: 12, limit: 4 }, sessionsList: many, day: run(12) });
   const r = render(withTip(12));
@@ -148,9 +148,90 @@ it('the card names eight sessions at most and counts the rest; one that waits on
   await flush(TIP_DELAY_MS + 10);
   const card = r.container.querySelector('.hover-tip')!;
   expect(card.querySelectorAll('.tip-row')).toHaveLength(8);
-  expect(card.textContent).toContain('NEEDS YOU (1)');
-  expect(card.textContent).toContain('Session 12');
+  // Eight places go to the working ones first; the waiting one has no name and no heading.
+  expect(card.textContent).not.toContain('NEEDS YOU');
   expect(card.textContent).toContain('and 4 more');
+});
+
+it('eight waiting plus four idle: all four idle names come first, and no heading shows with no name under it', async () => {
+  const sess = ids(12).map((id, i) =>
+    i < 4 ? lane({ id, title: `Idle ${i + 1}`, state: 'review', live: 'idle', idleS: (i + 1) * 600 }) : lane({ id, title: `Waiting ${i - 3}`, waiting: true, state: 'blocked', waitingSinceS: 300 + i }),
+  );
+  answer = () => summary({ slots: { used: 12, limit: 4 }, sessionsList: sess, day: run(12) });
+  const r = render(withTip(12));
+  await flush();
+  fireEvent.mouseEnter(r.container.querySelector('.ag-line') as HTMLElement);
+  await flush(TIP_DELAY_MS + 10);
+  const card = r.container.querySelector('.hover-tip')!;
+  const names = [...card.querySelectorAll('.tip-row .x-t')].map((n) => n.textContent);
+  expect(names.slice(0, 4)).toEqual(['Idle 4', 'Idle 3', 'Idle 2', 'Idle 1']);
+  expect(names).toHaveLength(8);
+  expect(names.slice(4).every((n) => n!.startsWith('Waiting'))).toBe(true);
+  expect(card.textContent).toContain('and 4 more');
+});
+
+it('the start does not move after a failed poll: the same summary at two wall times gives the same start', async () => {
+  const good = summary({ slots: { used: 7, limit: 4 }, sessionsList: mk(7, [0, 1, 2, 3]), day: run(7) });
+  let fail = false;
+  answer = () => {
+    if (fail) throw new Error('no answer');
+    return good;
+  };
+  const r = render(withTip(7));
+  await flush();
+  const rail = () => r.container.querySelector('.agent-row .x-rail') as HTMLElement;
+  const left0 = parseFloat(rail().style.left);
+  fail = true;
+  // Two minutes of wall time with no answer: the render clock moves, the start of the red line does not.
+  await flush(120_000);
+  expect(rail()).not.toBeNull();
+  expect(parseFloat(rail().style.left)).toBeCloseTo(left0, 6);
+  fireEvent.mouseEnter(r.container.querySelector('.ag-line') as HTMLElement);
+  await flush(TIP_DELAY_MS + 10);
+  expect(r.container.querySelector('.hover-tip')!.textContent).toContain('Over the limit since 3:48 PM');
+});
+
+it('overLine and openList read their start from the answer time given, not a render clock', () => {
+  const at = t('16:30');
+  const s = summary({ slots: { used: 7, limit: 4 }, sessionsList: mk(7) });
+  expect(overLine(s, null, 4, at, at + 5 * MIN)[0].from).toBe(at - 42 * MIN);
+  expect(overLine(s, null, 4, at, at + 9 * MIN)[0].from).toBe(at - 42 * MIN);
+  expect(openList(s, 4, at, new Map(), null, at + 9 * MIN).since).toBe(at - 42 * MIN);
+});
+
+it('churn while the count stays over the limit does not reset the start', () => {
+  // Limit 4: A to E open (5) at 10:00, F opens at 10:30, A closes at 11:00; the count never fell to 4.
+  const now = t('12:00');
+  const open = (id: string, title: string, from: string) => lane({ id, title, elapsedS: (now - t(from)) / 1000 });
+  const s = summary({
+    slots: { used: 5, limit: 4 },
+    sessionsList: [open('b', 'B', '10:00'), open('c', 'C', '10:00'), open('d', 'D', '10:00'), open('e', 'E', '10:00'), open('f', 'F', '10:30')],
+  });
+  const rec: DayRecord = {
+    date: '2026-11-11',
+    tz: 'America/Los_Angeles',
+    sessions: [{ id: 'a', title: 'A', spans: [{ stage: 'build', start: iso('10:00'), end: iso('11:00') }], pr: null }],
+  };
+  expect(overLine(s, rec, 4, now, now)).toEqual([{ from: t('10:00'), to: now }]);
+  expect(openList(s, 4, now, new Map(), rec, now).since).toBe(t('10:00'));
+  // With no record of A the fifth-oldest open card is all that is known.
+  expect(overLine(s, null, 4, now, now)).toEqual([{ from: t('10:30'), to: now }]);
+});
+
+it('a past stretch that ended before the ribbon first hour draws no tick', async () => {
+  const closed = ['b1', 'b2', 'b3', 'b4', 'b5'].map((id, k) => ({
+    id: `closed-${id}`,
+    title: `Closed ${k}`,
+    spans: [{ stage: 'build' as const, start: iso('04:00'), end: new Date(t('05:00') + k * 5 * MIN).toISOString() }],
+    pr: null,
+  }));
+  mocks.set('wall2_omni_day', () => ({ date: '2026-11-11', tz: 'America/Los_Angeles', sessions: closed }));
+  mocks.set('wall2_omni_days', () => [{ date: '2026-11-11', sessions: 8 }]);
+  answer = () => summary({ slots: { used: 3, limit: 4 }, sessionsList: mk(3), day: run(3) });
+  const r = render(withTip(3));
+  await flush();
+  await flush(50);
+  expect(r.container.querySelectorAll('.agent-row .x-rail')).toHaveLength(0);
 });
 
 it('a long title is cut inside the card, not widening it', async () => {

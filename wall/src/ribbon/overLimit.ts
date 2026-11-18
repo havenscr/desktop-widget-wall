@@ -7,7 +7,9 @@ import type { DayRecord } from './days';
  * (`cards`: the helper's own list, never a child or a side chat). The wall receives no series
  * of the open count, so it is rebuilt from what it does receive: a card's `elapsedS` says when
  * it opened, and today's saved record names sessions that closed earlier (its first and last
- * stage span). Rebuilt history is an estimate; the count right now is exact.
+ * stage span). Rebuilt history is an estimate; the count right now is exact. Every time here is
+ * on this PC's clock, and `now` is the moment the summary was answered (the helper's own time
+ * less its skew), never the render clock, so a start does not move between polls.
  */
 export interface OpenSpan {
   start: number;
@@ -91,10 +93,22 @@ export function overSince(s: OmniSummary, limit: number | null, now: number): nu
  */
 export function overLine(s: OmniSummary, record: DayRecord | null, limit: number | null, now: number, until: number): OverStretch[] {
   if (limit === null) return [];
-  const since = overSince(s, limit, now);
-  const kept = overStretches(openSpans(s, record, now), limit, until).filter((x) => x.to < until - 1000 && (since === null || x.to <= since));
+  const all = overStretches(openSpans(s, record, now), limit, until);
+  const since = overStart(s, record, limit, now, until);
+  const kept = all.filter((x) => x.to < until - 1000 && (since === null || x.to <= since));
   if (since !== null && until - since >= 1000) kept.push({ from: since, to: until });
   return kept;
+}
+
+/**
+ * When the stretch that is still on began. Churn while the count stays over the limit does not
+ * start a new stretch: when the history rebuilt from the record runs unbroken to `until`, its
+ * start stands; otherwise the open sessions alone say it (`overSince`).
+ */
+export function overStart(s: OmniSummary, record: DayRecord | null, limit: number | null, now: number, until: number): number | null {
+  if (limit === null || overNow(s, limit) === 0) return null;
+  const run = overStretches(openSpans(s, record, now), limit, until).find((x) => x.to >= until - 1000);
+  return run ? run.from : overSince(s, limit, now);
 }
 
 /** "42 m" under an hour, else "2 h 05 m". */
@@ -124,10 +138,17 @@ export interface OpenList {
 
 /**
  * The open sessions named by where they stand, as the agents line counts them (waiting on the
- * owner, working, else idle). `idleSince` gives a moment a session was last seen working when the
+ * you, working, else idle). `idleSince` gives a moment a session was last seen working when the
  * helper sent no idle time.
  */
-export function openList(s: OmniSummary, limit: number | null, now: number, idleSince: ReadonlyMap<string, number> = new Map()): OpenList {
+export function openList(
+  s: OmniSummary,
+  limit: number | null,
+  now: number,
+  idleSince: ReadonlyMap<string, number> = new Map(),
+  record: DayRecord | null = null,
+  until: number = now,
+): OpenList {
   const idle: SessionRow[] = [];
   const working: SessionRow[] = [];
   const needs: SessionRow[] = [];
@@ -145,5 +166,5 @@ export function openList(s: OmniSummary, limit: number | null, now: number, idle
   idle.sort(longest);
   working.sort(longest);
   needs.sort(longest);
-  return { total: cards(s).length, limit, over: overNow(s, limit), since: overSince(s, limit, now), idle, working, needs };
+  return { total: cards(s).length, limit, over: overNow(s, limit), since: overStart(s, record, limit, now, until), idle, working, needs };
 }

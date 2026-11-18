@@ -300,11 +300,22 @@ export function todayRows(s: OmniSummary, record: DayRecord | null, now: number,
       // The live log's runs say when the session worked. When the helper sends a log, the part
       // of a stage span that no run covers is idle time: drawn as idle, never counted as worked.
       // With no log at all nothing says otherwise, so a stage span stays worked as it was.
+      // The log is read to cover only from its first entry on (the helper keeps no gap marker, so
+      // that entry is the bound): before it nothing says the session sat idle, so it counts as worked.
+      const covered = s.day.length > 0 ? Math.min(...s.day.map((d) => Date.parse(d.start) - skewMs).filter(Number.isFinite)) : Number.NEGATIVE_INFINITY;
       const runs = s.day.length > 0 ? mine.filter((d) => d.kind === 'run').map((d) => clip(Date.parse(d.start) - skewMs, d.end === null ? until : Date.parse(d.end) - skewMs)) : null;
       for (const sp of fromRec.spans) {
-        const [a, b] = clip(Date.parse(sp.start), sp.end === null ? Math.min(until, ends.get(id) ?? until) : Date.parse(sp.end));
-        if (!Number.isFinite(a) || !Number.isFinite(b) || b <= a) continue;
+        const [a0, b] = clip(Date.parse(sp.start), sp.end === null ? Math.min(until, ends.get(id) ?? until) : Date.parse(sp.end));
+        if (!Number.isFinite(a0) || !Number.isFinite(b) || b <= a0) continue;
         const open = sp.end === null;
+        let a = a0;
+        if (runs && Number.isFinite(covered) && a < covered) {
+          const cut = Math.min(b, covered);
+          workMs += cut - a;
+          spans.push({ kind: sp.stage, from: hourOf(a, midnight), to: hourOf(cut, midnight), open: open && cut === b });
+          a = cut;
+          if (a >= b) continue;
+        }
         if (!runs) {
           workMs += b - a;
           spans.push({ kind: sp.stage, from: hourOf(a, midnight), to: hourOf(b, midnight), open });

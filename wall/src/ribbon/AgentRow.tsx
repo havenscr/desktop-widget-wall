@@ -239,8 +239,13 @@ export function AgentRow({ now, dueCount = null, onOpenPanel }: { now: number; d
     ) : null;
   }
   const parts = lineWords(s);
-  const open = openList(s, limit, now, seenWorking(now));
-  const rails = overLine(s, read?.record ?? null, limit, now, Math.min(now, until));
+  // Every start is counted from when the summary was answered (the helper's time less its skew),
+  // never from the render clock: between polls, and after a failed poll, nothing moves.
+  const answeredAt = Date.parse(s.now) - st.skewMs;
+  const ref = Number.isFinite(answeredAt) ? answeredAt : now;
+  const stop = Math.min(now, until);
+  const open = openList(s, limit, ref, seenWorking(now), read?.record ?? null, stop);
+  const rails = overLine(s, read?.record ?? null, limit, ref, stop);
   const asOf = stale && (st.freshAt ?? st.okAt) !== null ? `, as of ${shortTime((st.freshAt ?? st.okAt) as number)}` : '';
   return (
     <div className={`agent-row${stale ? ' stale' : ''}`}>
@@ -277,6 +282,10 @@ export function AgentRow({ now, dueCount = null, onOpenPanel }: { now: number; d
         </span>
       ))}
       {rails.map((r) => {
+        // A stretch that ended before the ribbon's first hour has nothing to draw (no tick at its left edge).
+        if (wallHour(r.to, now) <= START_HOUR) return null;
+        // A stretch that ended before the ribbon's first hour has nothing to draw (no tick at its left edge).
+        
         const x0 = ribbonX(r.from, now) ?? RX(START_HOUR);
         const x1 = ribbonX(r.to, now) ?? RX(START_HOUR);
         return <i key={r.from} className="x-rail" data-over-rail="" style={{ left: x0, width: Math.max(3, x1 - x0) }} aria-hidden="true" />;
@@ -329,21 +338,21 @@ function Rows({ rows }: { rows: SessionRow[] }) {
 
 /**
  * The agents line's hover card: how many are open (and how many over the limit), the idle
- * sessions by title with how long each has been idle, the working ones, any that wait on the
- * owner, and, over the limit, since when. At or under the limit it reads the same without the
+ * sessions by title with how long each has been idle, the working ones, any that are waiting
+ * for a reply, and, over the limit, since when. At or under the limit it reads the same without the
  * limit words. Top level sessions only (`openList` reads `cards`).
  */
 function OpenCard({ list, stale, asOf }: { list: OpenList; stale: boolean; asOf: string }) {
-  // The rows that fit, handing out places to the waiting ones first, then idle, then working.
+  // The rows that fit, handing out places in the order the card shows: idle, working, waiting.
   let room = CARD_ROWS;
   const take = <T,>(rows: T[]): T[] => {
     const got = rows.slice(0, room);
     room -= got.length;
     return got;
   };
-  const needs = take(list.needs);
   const idle = take(list.idle);
   const working = take(list.working);
+  const needs = take(list.needs);
   const hidden = list.total - needs.length - idle.length - working.length;
   return (
     <span className="ag-card">
@@ -355,11 +364,11 @@ function OpenCard({ list, stale, asOf }: { list: OpenList; stale: boolean; asOf:
           </>
         )}
       </span>
-      {list.idle.length > 0 && <span className="tip-h">IDLE ({list.idle.length})</span>}
+      {idle.length > 0 && <span className="tip-h">IDLE ({list.idle.length})</span>}
       <Rows rows={idle} />
-      {list.working.length > 0 && <span className="tip-h">WORKING ({list.working.length})</span>}
+      {working.length > 0 && <span className="tip-h">WORKING ({list.working.length})</span>}
       <Rows rows={working} />
-      {list.needs.length > 0 && <span className="tip-h need">NEEDS YOU ({list.needs.length})</span>}
+      {needs.length > 0 && <span className="tip-h need">NEEDS YOU ({list.needs.length})</span>}
       <Rows rows={needs} />
       {hidden > 0 && <span className="tip-s">and {hidden} more</span>}
       {list.over > 0 && list.since !== null && <span className="tip-s">Over the limit since {clockText(list.since)}</span>}

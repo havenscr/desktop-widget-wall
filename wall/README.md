@@ -1103,7 +1103,8 @@ The day ribbon (`wall/src/ribbon/`, `styles/ribbon.css`) is on Work, Home and Me
     series of the open count. The cells keep their meaning (how many worked at once). The
     line's hover card lists the idle sessions by title with how long each has been idle
     (`idleS`, else the wall's last sight of it working), then the working ones, then any that
-    wait on the owner, at most eight names with "and N more", then "Over the limit since 3:48 PM".
+    are waiting for a reply (names are given in that order, idle first, so a heading never shows
+    with no name under it while a later section has names), at most eight names with "and N more", then "Over the limit since 3:48 PM".
     At or under the limit there is no marker and no red line and the card still names the idle
     sessions.
   - *Handle* (`ribbon/DayLip.tsx`): the strip's whole top edge. One button, 26 px tall and
