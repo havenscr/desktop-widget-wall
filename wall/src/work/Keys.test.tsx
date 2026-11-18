@@ -783,7 +783,7 @@ it('closes the menu when the feed brings another set under it', async () => {
   expect(menuUp()).toBeNull();
 });
 
-it('disables Pin with its reason when Always here is full, and when the key is already there', async () => {
+it('offers which of the five gives way when Always here is full, and disables Pin when the key is already there', async () => {
   libraryMocks();
   localStorage.setItem(PINS_KEY, JSON.stringify(['lib:thirds', 'lib:focus', 'lib:mute', 'lib:mixer', 'lib:zen']));
   answer = front('general', 'notepad.exe');
@@ -791,11 +791,17 @@ it('disables Pin with its reason when Always here is full, and when the key is a
   await flush();
   fireEvent.contextMenu(screen.getByRole('button', { name: 'Snip' }));
   await flush();
-  const full = screen.getByRole('menuitem', { name: /Always here is full/ }) as HTMLButtonElement;
-  expect(full.disabled).toBe(true);
-  expect(full.textContent).toContain('5 of 5');
-  fireEvent.click(full);
-  expect(JSON.parse(localStorage.getItem(PINS_KEY) ?? '')).toHaveLength(5);
+  expect(screen.getAllByRole('menuitem').map((m) => m.querySelector('span')?.textContent)).toEqual([
+    'Run it now',
+    'Thirds',
+    'Focus',
+    'Mute sound',
+    'Volume mixer',
+    'Zen',
+  ]);
+  expect(screen.queryByRole('menuitem', { name: /Edit keys file/ })).toBeNull();
+  fireEvent.click(screen.getByRole('menuitem', { name: /Mute sound/ }));
+  expect(JSON.parse(localStorage.getItem(PINS_KEY) ?? '')).toEqual(['lib:thirds', 'lib:focus', 'lib:snip', 'lib:mixer', 'lib:zen']);
   fireEvent.pointerDown(document.body);
   localStorage.setItem(PINS_KEY, JSON.stringify(['lib:snip']));
   act(() => window.dispatchEvent(new Event(PINS_CHANGED_EVENT)));
@@ -1007,4 +1013,56 @@ it('a heading that overflows turns the full button into the icon first, before t
     cw.mockRestore();
     offerOff();
   }
+});
+
+it('Run it now in a key menu sends the same call a click does', async () => {
+  render(<Keys />);
+  await flush();
+  fireEvent.contextMenu(screen.getByRole('button', { name: 'Refresh' }));
+  await flush();
+  expect(sent).toEqual([]);
+  fireEvent.click(screen.getByRole('menuitem', { name: /Run it now/ }), { detail: 1 });
+  await flush();
+  expect(sent).toEqual([{ setId: 'sales', index: 0 }]);
+});
+
+it('Run it now is disabled for a layout key with no big screen', async () => {
+  mocks.set('wall2_arrange_status', () => false);
+  answer = front('general', 'notepad.exe');
+  render(<Keys />);
+  await flush();
+  fireEvent.contextMenu(screen.getByRole('button', { name: 'Thirds' }));
+  await flush();
+  expect((screen.getByRole('menuitem', { name: /Run it now/ }) as HTMLButtonElement).disabled).toBe(true);
+});
+
+it('Run it now is disabled in a held wrong app', async () => {
+  localStorage.setItem(MODE_KEY, JSON.stringify({ hold: true, setId: 'sales' }));
+  answer = front('general', 'notepad.exe');
+  render(<Keys />);
+  await flush();
+  fireEvent.contextMenu(screen.getByRole('button', { name: 'Refresh' }));
+  await flush();
+  const run = screen.getByRole('menuitem', { name: /Run it now/ }) as HTMLButtonElement;
+  expect(run.disabled).toBe(true);
+  fireEvent.click(run, { detail: 1 });
+  await flush();
+  expect(sent).toEqual([]);
+});
+
+it('a mouse-only key does not run from a keyboard-activated menu, but does from a click', async () => {
+  answer = front('general', 'notepad.exe');
+  render(<Keys />);
+  await flush();
+  const lock = screen.getByRole('button', { name: 'Lock' });
+  fireEvent.keyDown(lock, { key: 'ContextMenu' });
+  await flush();
+  fireEvent.click(screen.getByRole('menuitem', { name: /Run it now/ }), { detail: 0 });
+  await flush();
+  expect(sent).toEqual([]);
+  fireEvent.contextMenu(lock);
+  await flush();
+  fireEvent.click(screen.getByRole('menuitem', { name: /Run it now/ }), { detail: 1 });
+  await flush();
+  expect(sent).toEqual([{ setId: 'general', index: 2 }]);
 });
