@@ -101,6 +101,8 @@ const show = async () => {
 };
 const slot = () => document.querySelector('[data-slot="office-lights"]') as HTMLElement;
 const line = () => document.querySelector('.u-office-line');
+/** The plain status: a visually hidden live region, never a drawn line. */
+const status = () => document.querySelector('.u-office-live');
 const chip = (name: string) => within(slot()).getByText(name).closest('button') as HTMLElement;
 const names = () => within(slot()).queryAllByRole('button').map((b) => b.textContent);
 const tipOf = async (el: Element) => {
@@ -155,7 +157,8 @@ it('shown: a group named Office moods, the label, one chip per mood in the home 
   expect(screen.getByText('Office moods')).toBeTruthy();
   expect(names()).toEqual(['Bright desk', 'Evening lamp', 'Gaming', BACK_WORD]);
   expect(within(slot()).getAllByRole('button').filter((b) => b.dataset.mood !== 'back').every((b) => b.getAttribute('aria-pressed') === 'false')).toBe(true);
-  expect(line()?.textContent).toBe('No mood on.');
+  expect(status()?.textContent).toBe('No mood on.');
+  expect(line()).toBeNull();
   // Every chip is a native button reached by Tab in this order.
   for (const b of within(slot()).getAllByRole('button')) {
     expect(b.tagName).toBe('BUTTON');
@@ -297,13 +300,15 @@ it('Off shows only when the home app offers it, always last; it is lit only with
   expect(names()).toEqual(['Bright desk', 'Evening lamp', 'Gaming', 'Off', BACK_WORD]);
   expect(chip('Off').getAttribute('aria-pressed')).toBe('false');
   expect(chip('Off').querySelector('.u-mood-dot')).toBeNull();
-  expect(line()?.textContent).toBe('No mood on.');
+  expect(status()?.textContent).toBe('No mood on.');
+  expect(line()).toBeNull();
   fireEvent.click(chip('Off'));
   await flush();
   expect(count('wall2_office_off')).toBe(1);
   expect(chip('Off').getAttribute('aria-pressed')).toBe('true');
   expect(chip('Gaming').getAttribute('aria-pressed')).toBe('false');
-  expect(line()?.textContent).toBe('Office lights are off.');
+  expect(status()?.textContent).toBe('Office lights are off.');
+  expect(line()).toBeNull();
 });
 
 it('a click applies the mood and the chip shows what the home app read back; the line says what is on', async () => {
@@ -312,11 +317,12 @@ it('a click applies the mood and the chip shows what the home app read back; the
   await flush();
   expect(calls.filter((c) => c.command === 'wall2_office_mood').map((c) => c.args)).toEqual([{ id: 'brightDesk' }]);
   expect(chip('Bright desk').getAttribute('aria-pressed')).toBe('true');
-  expect(line()?.textContent).toBe('Bright desk: Room 70%, neon 20%');
-  expect(line()?.querySelector('b')?.textContent).toBe('Bright desk:');
+  expect(status()?.textContent).toBe('Bright desk: Room 70%, neon 20%');
+  expect(line()).toBeNull();
   fireEvent.click(chip('Evening lamp'));
   await flush();
-  expect(line()?.textContent).toBe('Evening lamp is on.');
+  expect(status()?.textContent).toBe('Evening lamp is on.');
+  expect(line()).toBeNull();
 });
 
 it('in flight: the dot turns into a spinner, the line says asking, every chip ignores clicks until the answer', async () => {
@@ -327,7 +333,8 @@ it('in flight: the dot turns into a spinner, the line says asking, every chip ig
   expect(chip('Evening lamp').querySelector('.u-spin')).not.toBeNull();
   expect(chip('Evening lamp').querySelector('.u-mood-dot')).toBeNull();
   expect(chip('Gaming').querySelector('.u-mood-dot')).not.toBeNull();
-  expect(line()?.textContent).toBe('Evening lamp: asking the home app');
+  expect(status()?.textContent).toBe('Evening lamp: asking the home app');
+  expect(line()).toBeNull();
   fireEvent.click(chip('Gaming'));
   fireEvent.click(chip('Evening lamp'));
   await flush();
@@ -342,11 +349,13 @@ it('a refused write: an amber triangle and the words for 5 seconds, then the chi
   await flush();
   expect(chip('Gaming').querySelector('.u-mood-ico.warn')).not.toBeNull();
   expect(line()?.textContent).toBe(TEXT.onAir);
+  expect(status()?.textContent).toBe(TEXT.onAir);
   expect(line()?.className).toContain('warn');
   expect(chip('Gaming').getAttribute('aria-pressed')).toBe('false');
   await flush(NOTE_MS + 10);
   expect(chip('Gaming').querySelector('.u-mood-ico.warn')).toBeNull();
-  expect(line()?.textContent).toBe('No mood on.');
+  expect(status()?.textContent).toBe('No mood on.');
+  expect(line()).toBeNull();
 });
 
 it('a sticky word stays until a write works', async () => {
@@ -358,7 +367,8 @@ it('a sticky word stays until a write works', async () => {
   writeWord = null;
   fireEvent.click(chip('Gaming'));
   await flush();
-  expect(line()?.textContent).toBe('Gaming: Room 25%');
+  expect(status()?.textContent).toBe('Gaming: Room 25%');
+  expect(line()).toBeNull();
 });
 
 it('no token: dashed and aria-disabled, focusable with its tip, a click sends nothing, the amber line is the token words', async () => {
@@ -406,7 +416,8 @@ it('stale: dimmed, the line ends (not fresh), a click still works', async () => 
   list[0].active = true;
   await show();
   expect(slot().getAttribute('data-stale')).toBe('true');
-  expect(line()?.textContent).toBe('Bright desk: Room 70%, neon 20% (not fresh)');
+  expect(status()?.textContent).toBe('Bright desk: Room 70%, neon 20% (not fresh)');
+  expect(line()).toBeNull();
   fireEvent.click(chip('Gaming'));
   await flush();
   expect(count('wall2_office_mood')).toBe(1);
@@ -424,7 +435,8 @@ it('a tip carries the full name and the full line, for a long name and a long li
   await flush();
   expect(await tipOf(chip('Off'))).toBe('Turns the office lights off. No other room changes.');
   // The line above the row holds the same text, cut by the box and not by the text.
-  expect(line()?.textContent).toBe(`${LONG}: ${LINE}`);
+  expect(status()?.textContent).toBe(`${LONG}: ${LINE}`);
+  expect(line()).toBeNull();
 });
 
 it('every chip is a real button in the tab order, and focusing one shows its card at once', async () => {

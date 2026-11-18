@@ -102,8 +102,10 @@ const rule = (variant, results, emit) => {
     for (let i = 1; i < m.chips.length; i++) if (m.chips[i].l < m.chips[i - 1].r - 0.5) fails.push('officemoods: chips "' + m.chips[i - 1].text + '" and "' + m.chips[i].text + '" overlap');
     if (m.label && m.chips.length && m.label.r > m.chips[0].l + 0.5) fails.push('officemoods: the label overlaps the first chip');
     const ln = m.line;
-    if (!ln) fails.push('officemoods: the line above the row is missing');
-    else {
+    const WARN_V = [`Office moods, ${NAMES.token}`, `Office moods, ${NAMES.tokenOn}`];
+    if (!ln && WARN_V.includes(variant.name)) fails.push('officemoods: the amber line above the row is missing');
+    else if (ln && !WARN_V.includes(variant.name) && !variant.name.endsWith(NAMES.refused)) fails.push('officemoods: a plain status line is drawn above the row (the status is a hidden live region)');
+    else if (ln) {
       if (ln.r > 1695.5) fails.push('officemoods: the line ends at x ' + r1(ln.r) + ' (1695 at most, 12 px left of the tall Spotify panel)');
       if (Math.abs(ln.t - 630) > 1 || ln.b > 656.5) fails.push('officemoods: the line is at y ' + r1(ln.t) + ' to ' + r1(ln.b) + ' (630 to 656)');
       if (ln.l < 934.5) fails.push('officemoods: the line starts at x ' + r1(ln.l) + ' (935 at least, clear of the status line)');
@@ -118,7 +120,7 @@ const rule = (variant, results, emit) => {
   if (fails.length) return true;
   emit(variant.name === HIDDEN_V
     ? '  ok   officemoods: the slot is the empty 420 by 34 aria-hidden box with no line'
-    : '  ok   officemoods: the row is at right edge 2364, top 662, 34 tall, from x 1240 or more; chips 34 tall and 76 or wider; the line inside x 935 to 1695, y 630 to 656; nothing else draws inside either; text 16 px or more');
+    : '  ok   officemoods: the row is at right edge 2364, top 662, 34 tall, from x 1240 or more; chips 34 tall and 76 or wider; an amber line (refusals and failures only) inside x 935 to 1695, y 630 to 656; nothing else draws inside either; text 16 px or more');
   return false;
 };
 
@@ -218,7 +220,7 @@ export default {
     breaks: {
       'moods-left': { css: '.u-office-slot { max-width: none !important; } .u-mood-name { max-width: none !important; }', expect: /^ *FAIL officemoods: the row starts at x /m, appliesTo: on('twelve') },
       'moods-narrow': { css: '.u-mood { min-width: 40px !important; } .u-mood-name { max-width: 4px !important; }', expect: /^ *FAIL officemoods: chip ".*" is [\d.]+ px wide \(76 at least\)/m, appliesTo: on('six') },
-      'moods-line': { css: '.u-office-line { right: 780px !important; }', expect: /^ *FAIL officemoods: the line ends at x /m, appliesTo: on('tall') },
+      'moods-line': { css: '.u-office-line { right: 780px !important; }', expect: /^ *FAIL officemoods: the line ends at x /m, appliesTo: on('token') },
       'moods-small': { css: '.u-mood { height: 30px !important; }', expect: /^ *FAIL officemoods: chip ".*" is [\d.]+ px tall/m, appliesTo: on('six') },
       'moods-text': { css: '.u-mood { font-size: 14px !important; }', expect: /^ *FAIL officemoods: text under 16 px/m, appliesTo: on('six') },
     },
