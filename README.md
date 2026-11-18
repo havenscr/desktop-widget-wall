@@ -153,6 +153,9 @@ On first launch, configure the following in the Settings panel (gear icon):
 | `F11` | Toggle fullscreen |
 | `Escape` | Exit fullscreen |
 
+### PowerToys keys
+The key library's PowerToys group checks, read only, whether PowerToys is on the PC: the process `PowerToys.exe` is running, or the folder `%LOCALAPPDATA%\PowerToys` or `Program Files\PowerToys` exists. If so, its keys are plain keys. If not, the group is titled "PowerToys (not installed on this PC)" and its keys keep the "check" tag. Nothing is launched.
+
 ### System Tray
 - **Left-click**: Show/restore window
 - **Right-click menu**:
