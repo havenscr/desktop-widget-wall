@@ -998,6 +998,43 @@ fn dropped_word(word: &str) -> bool {
         || digits_in(&mask_year_chains(word)) >= 5
 }
 
+/// Whole sentences that are calendar boilerplate, never the person's words (compared lower case, without end punctuation).
+const BOILERPLATE_SENTENCES: [&str; 6] = [
+    "this event has been updated",
+    "this meeting has been updated",
+    "click the link below",
+    "just click the link below",
+    "click the link below to join",
+    "click here to join",
+];
+
+/// Trailing clauses cut off a sentence that has other words before them.
+const BOILERPLATE_TAILS: [&str; 2] = [", just click the link below", ", click the link below"];
+
+/// A line made only of a long run of dashes, equals signs, tildes or asterisks.
+fn is_rule_line(norm: &str) -> bool {
+    let t = norm.trim();
+    t.chars().count() >= 8 && t.chars().all(|c| matches!(c, '-' | '=' | '~' | '*' | '\u{2014}' | '\u{2013}'))
+}
+
+/// The sentence without boilerplate: None when it is only boilerplate.
+fn without_boilerplate(sentence: &str) -> Option<String> {
+    let t = sentence.trim();
+    let end = t.chars().last().filter(|c| matches!(c, '.' | '!' | '?'));
+    let body = t.trim_end_matches(['.', '!', '?']).trim();
+    let lower = body.to_lowercase();
+    if BOILERPLATE_SENTENCES.contains(&lower.as_str()) {
+        return None;
+    }
+    for tail in BOILERPLATE_TAILS {
+        if lower.ends_with(tail) {
+            let cut = body[..body.len() - tail.len()].trim_end();
+            return Some(format!("{cut}{}", end.map(String::from).unwrap_or_default()));
+        }
+    }
+    Some(sentence.to_string())
+}
+
 /// The invite's own words from `bodyPreview`, as a best effort on text that anyone who can send an invitation
 /// controls. Each line is normalized first (control and invisible characters, whitespace). The text is cut
 /// before the first line that holds a join-block marker or a run of 8 underscores, and before the first line
@@ -1005,18 +1042,38 @@ fn dropped_word(word: &str) -> bool {
 /// or has 5 or more digits is removed. The rest is collapsed and stops at 400 characters. None when
 /// nothing is left.
 pub fn clean_invite(raw: &str) -> Option<String> {
+    clean_invite_titled(raw, "")
+}
+
+/// Same as `clean_invite`, and also drops a leading line equal to the meeting title (case and spacing ignored), lines
+/// that are only a rule of dashes, and a short list of calendar boilerplate sentences.
+pub fn clean_invite_titled(raw: &str, title: &str) -> Option<String> {
+    let squash = |t: &str| normalize(t).split_whitespace().collect::<Vec<_>>().join(" ").to_lowercase();
+    let title_key = squash(title);
     let mut kept: Vec<String> = Vec::new();
+    let mut first_line = true;
     'lines: for line in raw.split(['\n', '\r']) {
         let norm = normalize(line);
+        if norm.trim().is_empty() {
+            continue;
+        }
+        let was_first = std::mem::replace(&mut first_line, false);
+        if was_first && !title_key.is_empty() && squash(&norm) == title_key {
+            continue;
+        }
         let lower = norm.to_lowercase();
         if has_underscore_run(&norm) || invite_marker_cuts(&lower) || DIVIDERS.iter().any(|m| lower.contains(m)) || everyday_marker_cuts(&lower) {
             break;
+        }
+        if is_rule_line(&norm) {
+            continue;
         }
         for sentence in sentences(&norm) {
             if longest_digit_run(sentence) >= 9 {
                 break 'lines;
             }
-            kept.push(strip_digit_chains(&without_long_number_words(sentence)));
+            let Some(sentence) = without_boilerplate(sentence) else { continue };
+            kept.push(strip_digit_chains(&without_long_number_words(&sentence)));
         }
     }
     let words: Vec<&str> = kept.iter().flat_map(|l| l.split_whitespace()).filter(|w| !dropped_word(w)).collect();
@@ -1066,7 +1123,8 @@ pub fn shape_details(e: &Value) -> Option<Details> {
             _ => more = more.saturating_add(1),
         }
     }
-    let invite = e.get("bodyPreview").and_then(Value::as_str).and_then(clean_invite);
+    let title = e.get("subject").and_then(Value::as_str).unwrap_or("");
+    let invite = e.get("bodyPreview").and_then(Value::as_str).and_then(|b| clean_invite_titled(b, title));
     if called_by.is_none() && people.is_empty() && more == 0 && invite.is_none() {
         return None;
     }
@@ -1975,6 +2033,20 @@ mod tests {
         assert_eq!(clean_invite("Microsoft Teams meeting\r\nhttps://t.example.test/x"), None);
         assert_eq!(clean_invite("  \r\n  "), None);
         assert_eq!(clean_invite("https://a.example.test www.b.example.test c@d.test"), None);
+    }
+
+    #[test]
+    fn a_leading_title_line_and_calendar_boilerplate_are_dropped() {
+        let body = "Design  REVIEW\r\nWe walk the new layout together. Bring notes.\r\nThis event has been updated\r\n----------------------------\r\nThere is nothing to install, just click the link below.";
+        assert_eq!(clean_invite_titled(body, "design review").as_deref(), Some("We walk the new layout together. Bring notes. There is nothing to install."));
+        // Only the first line is compared with the title; the same words later stay.
+        assert_eq!(clean_invite_titled("Intro.\nDesign review", "Design review").as_deref(), Some("Intro. Design review"));
+        // A line that merely starts with the title is the person's words and stays.
+        assert_eq!(clean_invite_titled("Design review notes are in the deck.", "Design review").as_deref(), Some("Design review notes are in the deck."));
+        // Nothing left after the cleanup is the same as an empty invite.
+        assert_eq!(clean_invite_titled("Design review\r\nThis event has been updated", "Design review"), None);
+        let d = details_of(json!({ "subject": "Design review", "bodyPreview": "Design review\r\nBring the draft." })).unwrap();
+        assert_eq!(d.invite.as_deref(), Some("Bring the draft."));
     }
 
     #[test]
