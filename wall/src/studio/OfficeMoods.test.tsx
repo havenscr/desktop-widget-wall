@@ -195,6 +195,28 @@ it('the fit rule is applied: nine names of 40 characters (with Off and Back to n
   for (const n of slot().querySelectorAll<HTMLElement>('.u-mood-name')) expect(n.style.maxWidth).toBe('');
 });
 
+it('twelve moods with Off and Back to normal: the row fits ROW_MAX by turning Back to normal and Off into their icons, each with a name and a tip', async () => {
+  list = Array.from({ length: 12 }, (_, i) => ({ id: `m${i}`, label: `Mood ${String(i).padStart(2, '0')} ${'x'.repeat(32)}`, line: null, active: i === 0 }));
+  off = { active: false };
+  await show();
+  const back = slot().querySelector<HTMLElement>('[data-mood="back"]') as HTMLElement;
+  expect(back.getAttribute('aria-label')).toBe(BACK_WORD);
+  expect(back.querySelector('.u-mood-name')).toBeNull();
+  expect(back.querySelector('svg')).not.toBeNull();
+  expect(back.className).toContain('icon-only');
+  expect(chip(`Mood 00 ${'x'.repeat(32)}`).querySelector('.u-mood-name')).not.toBeNull();
+  expect(slot().getAttribute('data-clip')).toBeNull();
+  const tipText = await tipOf(back);
+  expect(tipText.startsWith(BACK_WORD)).toBe(true);
+  fireEvent.click(back);
+  await flush();
+  expect(count('wall2_studio_normal')).toBe(1);
+  const offChip = slot().querySelector<HTMLElement>('[data-mood="off"]') as HTMLElement;
+  expect(offChip.getAttribute('aria-label')).toBe('Off');
+  expect(offChip.querySelector('.u-mood-name')).toBeNull();
+  expect(offChip.className).toContain('icon-only');
+});
+
 it('2C: a mood chip carries a 12 px dot in its colour, never a swatch; it is the only chip look that glows when lit; Off has none', async () => {
   list = [
     { id: 'gaming', label: 'Gaming', line: null, active: true },

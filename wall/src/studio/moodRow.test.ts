@@ -3,7 +3,7 @@ import type { Moods } from './home';
 import { OFFICE_OFF, TEXT } from './homeStore';
 // @ts-ignore node's own file calls; this test reads the stylesheet as text.
 import { readFileSync } from 'node:fs';
-import { CHIP_FIXED, chipTip, fitMoodRow, LABEL_MARGIN, MOOD_MAX, moodFailText, moodLine, NAME_MIN, OFF_BUSY_EXTRA, OFF_FIXED, ROW_GAP, ROW_MAX, rowModel, swatchFor } from './moodRow';
+import { BACK_FIXED, CHIP_FIXED, ICON_CHIP, chipTip, fitMoodRow, LABEL_MARGIN, MOOD_MAX, moodFailText, moodLine, NAME_MIN, OFF_BUSY_EXTRA, OFF_FIXED, ROW_GAP, ROW_MAX, rowModel, swatchFor } from './moodRow';
 
 const NEUTRAL = ['#b7afd6', '#5b5480'];
 
@@ -29,9 +29,10 @@ it('swatchFor matches plain words inside the lower-cased id, first row wins', ()
   expect(swatchFor('dayShift')).toEqual(['#ffd7a3', '#ff4fa3']);
 });
 
-const chipsWidth = (widths: number[], off = 0, label = 0) => {
+const chipsWidth = (widths: number[], off = 0, label = 0, back = 0) => {
   const items = widths.map((w) => CHIP_FIXED + Math.ceil(w));
   if (off) items.push(off);
+  if (back) items.push(back);
   return items.reduce((a, b) => a + b, 0) + (items.length - 1 + (label ? 1 : 0)) * ROW_GAP + (label ? label + LABEL_MARGIN : 0);
 };
 
@@ -39,12 +40,12 @@ it('fitMoodRow: as is when it fits, the label goes first, then long names shrink
   const label = 150;
   const off = 80;
   // Fits: as is.
-  expect(fitMoodRow([60, 70, 80], label, off)).toEqual({ label: true, cap: null });
+  expect(fitMoodRow([60, 70, 80], label, off)).toMatchObject({ label: true, cap: null, backIcon: false, offIcon: false, clip: false });
   // Six names that overflow only with the label: the label drops, no name is cut.
   const six = [120, 110, 100, 95, 90, 85];
   expect(chipsWidth(six, off, label)).toBeGreaterThan(ROW_MAX);
   expect(chipsWidth(six, off)).toBeLessThanOrEqual(ROW_MAX);
-  expect(fitMoodRow(six, label, off)).toEqual({ label: false, cap: null });
+  expect(fitMoodRow(six, label, off)).toMatchObject({ label: false, cap: null, backIcon: false, offIcon: false, clip: false });
   // Overflow without the label: every name is cut at the largest shared width that fits (long ones first).
   const long = [300, 260, 200, 150, 90, 60, 40, 330];
   const fit = fitMoodRow(long, label, off);
@@ -74,6 +75,27 @@ it('fitMoodRow: twelve 40 character names, with Off, stay within 1124 and never 
   expect(chipsWidth(Array(MOOD_MAX + 1).fill(NAME_MIN), busyOff)).toBeGreaterThan(ROW_MAX);
   // Too wide even at the minimum is clamped to the minimum.
   expect(fitMoodRow(Array(12).fill(500), 170, 600).cap).toBe(NAME_MIN);
+});
+
+it('fitMoodRow: twelve moods with Off and Back to normal stay inside ROW_MAX: Back to the arrow first, then Off, then a clip', () => {
+  const names = (n: number) => Array.from({ length: n }, () => 330);
+  const floor = (n: number) => Array(n).fill(NAME_MIN) as number[];
+  const off = OFF_FIXED + OFF_BUSY_EXTRA + 27;
+  const back = BACK_FIXED + 125;
+  // Eleven moods: at the floor the words do not fit, Back as the arrow does, so only Back changes.
+  expect(chipsWidth(floor(11), off, 0, back)).toBeGreaterThan(ROW_MAX);
+  expect(chipsWidth(floor(11), off, 0, ICON_CHIP)).toBeLessThanOrEqual(ROW_MAX);
+  expect(fitMoodRow(names(11), 170, off, back)).toEqual({ label: false, cap: NAME_MIN, backIcon: true, offIcon: false, clip: false });
+  // Twelve (the home app's most): the arrow is not enough, Off becomes its icon too, and the row fits.
+  expect(chipsWidth(floor(MOOD_MAX), off, 0, ICON_CHIP)).toBeGreaterThan(ROW_MAX);
+  expect(chipsWidth(floor(MOOD_MAX), ICON_CHIP, 0, ICON_CHIP)).toBeLessThanOrEqual(ROW_MAX);
+  expect(fitMoodRow(names(MOOD_MAX), 170, off, back)).toEqual({ label: false, cap: NAME_MIN, backIcon: true, offIcon: true, clip: false });
+  // Names are cut before any icon step: nine names still use the cap alone.
+  expect(fitMoodRow(names(9), 170, off, back)).toMatchObject({ backIcon: false, offIcon: false, clip: false });
+  // Last resort: more chips than the box holds even as icons clip the slot (mood chips keep their 76 px).
+  expect(fitMoodRow(names(14), 170, off, back)).toEqual({ label: false, cap: NAME_MIN, backIcon: true, offIcon: true, clip: true });
+  // Without Back or Off nothing becomes an icon.
+  expect(fitMoodRow(names(MOOD_MAX), 170, 0, 0)).toMatchObject({ backIcon: false, offIcon: false, clip: false });
 });
 
 const moods = (over: Partial<Moods> = {}): Moods => ({
@@ -182,4 +204,6 @@ it('ROW_MAX, the floor and the row\'s right edge match the stylesheet, so the tw
   expect(2540 - 176 - ROW_MAX).toBe(1240);
   expect(slot).toContain('right: 176px;');
   expect(block('.u-mood')).toContain(`min-width: ${CHIP_FIXED + NAME_MIN}px;`);
+  expect(block('.u-mood.icon-only')).toContain(`min-width: ${ICON_CHIP}px;`);
+  expect(css).toContain("[data-clip='true']");
 });

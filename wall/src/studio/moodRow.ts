@@ -24,6 +24,8 @@ export const OFF_BUSY_EXTRA = 22;
 /** The Back to normal chip: 2 px of border, 25 px of padding, the 18 px arrow and its 8 px gap (the words are measured). */
 export const BACK_FIXED = 53;
 export const BACK_WORD = 'Back to normal';
+/** Off or Back to normal drawn as the icon alone (the last steps of the fit rule): at least a 40 px click. */
+export const ICON_CHIP = 40;
 /** The home app's own caps, mirrored by the native side (`wall2_studio.rs`). */
 export const MOOD_MAX = 12;
 
@@ -55,26 +57,40 @@ export interface Fit {
   label: boolean;
   /** Each name's text is at most this wide (an ellipsis after it); null when none is cut. */
   cap: number | null;
+  /** Back to normal is the arrow alone (names are already at the floor). */
+  backIcon: boolean;
+  /** Off is the icon alone (Back to normal already is). */
+  offIcon: boolean;
+  /** Even then the row is wider than its box: the slot clips at its left edge instead of spilling over its neighbours. */
+  clip: boolean;
 }
 
 /**
  * The row's width limit as a rule on the names. `nameWidths` are the text widths of the mood names, `labelWidth`
- * the whole label pill, `offWidth` the whole Off chip (0 when there is none), `backWidth` the whole Back to normal chip (0 when not drawn). 1. As is when it fits 1124.
- * 2. Else the label goes (the group keeps its aria-label). 3. Else every name is cut at the largest shared
- * width that fits (long names shrink first), never under `NAME_MIN` of text.
+ * the whole label pill, `offWidth` the whole Off chip (0 when there is none), `backWidth` the whole Back to normal chip (0 when not drawn).
+ * 1. As is when it fits 1124. 2. Else the label goes (the group keeps its aria-label). 3. Else every name is cut at
+ * the largest shared width that fits (long names shrink first), never under `NAME_MIN` of text. 4. Else Back to normal
+ * becomes its arrow alone (`ICON_CHIP` wide). 5. Else Off does too. 6. Else the slot clips its left edge. Mood chips never go under 76 px.
  */
 export function fitMoodRow(nameWidths: readonly number[], labelWidth: number, offWidth: number, backWidth = 0): Fit {
-  const parts = (cap: number, label: boolean): number => {
+  const parts = (cap: number, label: boolean, off: number, back: number): number => {
     const chips = nameWidths.map((w) => CHIP_FIXED + Math.ceil(Math.min(w, cap)));
-    const items = [...chips, ...(offWidth > 0 ? [offWidth] : []), ...(backWidth > 0 ? [backWidth] : [])];
+    const items = [...chips, ...(off > 0 ? [off] : []), ...(back > 0 ? [back] : [])];
     const body = items.reduce((a, b) => a + b, 0) + Math.max(0, items.length - 1 + (label ? 1 : 0)) * ROW_GAP;
     return body + (label ? labelWidth + LABEL_MARGIN : 0);
   };
-  if (parts(Infinity, true) <= ROW_MAX) return { label: true, cap: null };
-  if (parts(Infinity, false) <= ROW_MAX) return { label: false, cap: null };
+  const base = { backIcon: false, offIcon: false, clip: false };
+  if (parts(Infinity, true, offWidth, backWidth) <= ROW_MAX) return { label: true, cap: null, ...base };
+  if (parts(Infinity, false, offWidth, backWidth) <= ROW_MAX) return { label: false, cap: null, ...base };
   const widest = Math.max(NAME_MIN, ...nameWidths.map((w) => Math.ceil(w)));
-  for (let cap = widest; cap > NAME_MIN; cap--) if (parts(cap, false) <= ROW_MAX) return { label: false, cap };
-  return { label: false, cap: NAME_MIN };
+  for (let cap = widest; cap > NAME_MIN; cap--) if (parts(cap, false, offWidth, backWidth) <= ROW_MAX) return { label: false, cap, ...base };
+  const floor = { label: false, cap: NAME_MIN };
+  if (parts(NAME_MIN, false, offWidth, backWidth) <= ROW_MAX) return { ...floor, ...base };
+  const backOnly = backWidth > 0 ? ICON_CHIP : 0;
+  if (parts(NAME_MIN, false, offWidth, backOnly) <= ROW_MAX) return { ...floor, ...base, backIcon: backWidth > 0 };
+  const offOnly = offWidth > 0 ? ICON_CHIP : 0;
+  const fits = parts(NAME_MIN, false, offOnly, backOnly) <= ROW_MAX;
+  return { ...floor, backIcon: backWidth > 0, offIcon: offWidth > 0, clip: !fits };
 }
 
 // Section: the model
@@ -223,7 +239,13 @@ export function rowModel(s: RowInput): RowModel | null {
 
 /** A chip's tip: "<label>: <line>" (the label alone when it has no line), Off its own two sentences, and a second line for a block, a failure or a write in flight. */
 /** The Back to normal chip's tip: the home app's own words for the call, or why it does nothing. */
-export function backTip(row: RowModel): { first: string; second: string | null; warn: boolean } {
+export function backTip(row: RowModel, iconOnly = false): { first: string; second: string | null; warn: boolean } {
+  const t = backTipFull(row);
+  // Drawn as the arrow alone, the tip names the chip first and keeps the home words under it.
+  return iconOnly ? { first: BACK_WORD, second: t.second ?? t.first, warn: t.second !== null && t.warn } : t;
+}
+
+function backTipFull(row: RowModel): { first: string; second: string | null; warn: boolean } {
   if (!row.canBack) return { first: 'Nothing to go back from', second: row.warnText, warn: row.warnText !== null };
   const first = 'Room back to the daytime light, key lights off; panels stay as they are';
   if (row.warnText) return { first, second: row.warnText, warn: true };
