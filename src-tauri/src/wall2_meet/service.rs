@@ -1,6 +1,7 @@
 //! The silent refresh and the calendar read, behind traits so tests can fake the network.
 
-use super::auth::{TokenClient, TokenReply, SCOPE, SIGN_IN_SCOPE};
+use super::auth::{TokenClient, TokenReply, SCOPE};
+use super::colours::{self, Palette, Pick};
 use super::graph::{merge, merge_capped, shape_events, Details, Clock, Ctx, Diag, Kind, RealClock, BUDGET, MAX_DAY_EVENTS, READ_TIMEOUT, utc_iso, Candidate, GraphClient, GraphReply};
 use super::meetlog::{format_line, format_line_detail};
 use super::reason::{is_valid_reason, GRAPH_TIMEOUT, STORE_READ, STORE_WRITE};
@@ -68,6 +69,11 @@ pub struct Core {
     pub clock: Option<Arc<dyn Clock + Send + Sync>>,
     /// Mailboxes that refused the optional EntryID expansion, with the next probe time.
     pub expand_refused: HashMap<String, ExpandRefusal>,
+    /// Whether each account's sign-in granted the colours permission, from the scope record.
+    /// Absent until looked up; dropped on sign-in and sign-out.
+    pub has_colours: HashMap<String, bool>,
+    /// Each account's master category colours and when to read them again.
+    pub palettes: HashMap<String, Palette>,
     /// The saved-contact lookup's own access token (scope Contacts.Read), per account. Memory
     /// only; dropped at sign-out and at a new sign-in. See `contacts.rs`.
     pub contact_cache: HashMap<String, Cached>,
@@ -321,6 +327,8 @@ pub struct AccountOut {
     /// Why the account is not connected: a fixed-shape code, never free text.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub reason: Option<String>,
+    /// True when this account's sign-in granted the permission to read Outlook category colours.
+    pub colours: bool,
 }
 
 #[derive(Debug, Serialize)]
@@ -383,7 +391,48 @@ pub(super) fn generation_of(core: &Core, id: &str) -> u64 {
 /// What one short look at the account's state decided.
 enum Step {
     Have(String),
-    Refresh(String),
+    /// The stored refresh token and the scope to refresh with.
+    Refresh(String, &'static str),
+}
+
+/// The id the scope record is kept under in the credential store. A real account id is
+/// lowercase letters and digits only, so this can never be another account's id.
+fn scope_record_id(id: &str) -> String {
+    format!("{id}.scope")
+}
+
+/// The scope recorded at the account's last sign-in; None when there is no record or it
+/// cannot be read (the old scope is then used, which is always safe).
+fn recorded_scope_of(store: &dyn SecretStore, id: &str) -> Option<String> {
+    match store.fetch(&scope_record_id(id)) {
+        Fetch::Found(v) => Some(v),
+        _ => None,
+    }
+}
+
+/// Whether the account was granted the colours permission, remembered per run. None when the
+/// answer is not known and the record cannot be read right now (it is asked again next time).
+fn colours_known(store: &dyn SecretStore, core: &mut Core, id: &str) -> Option<bool> {
+    if let Some(known) = core.has_colours.get(id) {
+        return Some(*known);
+    }
+    match store.fetch(&scope_record_id(id)) {
+        Fetch::Found(v) => {
+            let yes = colours::grants_colours(&v);
+            core.has_colours.insert(id.to_string(), yes);
+            Some(yes)
+        }
+        Fetch::Missing => {
+            core.has_colours.insert(id.to_string(), false);
+            Some(false)
+        }
+        Fetch::Failed => None,
+    }
+}
+
+/// `colours_known` for reading the palette: an unknown answer reads nothing this time.
+fn account_has_colours(store: &dyn SecretStore, core: &mut Core, id: &str) -> bool {
+    colours_known(store, core, id).unwrap_or(false)
 }
 
 /// One short critical section: retry a pending rotated token, read the stored token, and use
@@ -424,7 +473,8 @@ fn check(
         }
     }
     core.cache.remove(&acct.id);
-    Ok(Step::Refresh(refresh))
+    let scope = colours::refresh_scope(recorded_scope_of(store, &acct.id).as_deref());
+    Ok(Step::Refresh(refresh, scope))
 }
 
 /// A fresh access token for the account, from the cache or a refresh. The core lock is held
@@ -442,22 +492,36 @@ fn obtain(
     rejected: Option<&str>,
     failure: &mut Option<Diag>,
 ) -> Result<String, Stop> {
-    let refresh = match check(acct, store, &mut lock(core), now + ctx.elapsed_ms() / 1000, generation, rejected)? {
+    let (refresh, scope) = match check(acct, store, &mut lock(core), now + ctx.elapsed_ms() / 1000, generation, rejected)? {
         Step::Have(a) => return Ok(a),
-        Step::Refresh(r) => r,
+        Step::Refresh(r, scope) => (r, scope),
     };
     let left = ctx.remaining();
     if left.is_zero() {
         // No token request starts after the deadline.
         return Err(Stop::Fail((AccountState::Unavailable, Some(GRAPH_TIMEOUT.to_string()))));
     }
-    let form = [
-        ("client_id", acct.client_id.as_str()),
-        ("grant_type", "refresh_token"),
-        ("refresh_token", refresh.as_str()),
-        ("scope", SCOPE),
-    ];
-    let (reply, net) = tokens.post_diag(&acct.tenant, &form, left.min(READ_TIMEOUT), ctx);
+    let post = |scope: &str, limit: Duration| {
+        let form = [
+            ("client_id", acct.client_id.as_str()),
+            ("grant_type", "refresh_token"),
+            ("refresh_token", refresh.as_str()),
+            ("scope", scope),
+        ];
+        tokens.post_diag(&acct.tenant, &form, limit, ctx)
+    };
+    let (mut reply, mut net) = post(scope, left.min(READ_TIMEOUT));
+    // A colours-scope refresh that is rejected or refused may only mean the permission was
+    // withdrawn after sign-in: ask once more for the calendar alone before treating it as a
+    // sign-out. A calendar-only refresh is never repeated.
+    let mut dropped = false;
+    if matches!(reply, TokenReply::Rejected(_) | TokenReply::Refused(_)) && colours::retry_calendar_only(scope) {
+        let left = ctx.remaining();
+        if !left.is_zero() {
+            (reply, net) = post(SCOPE, left.min(READ_TIMEOUT));
+            dropped = true;
+        }
+    }
     *failure = net;
     // Apply the reply in one short step, and only if the account is unchanged. The credential
     // store calls below run under the core lock on purpose: they are local and brief, and
@@ -468,8 +532,17 @@ fn obtain(
         return Err(Stop::Stale);
     }
     match reply {
-        TokenReply::Ok { access, expires_in, refresh: rotated } => {
+        TokenReply::Ok { access, expires_in, refresh: rotated, scope: granted } => {
             core.cache.insert(acct.id.clone(), Cached { access: access.clone(), expires_at: now + expires_in });
+            // The reply says the colours permission is gone (an admin withdrew it), or only the
+            // calendar-only retry worked: record the
+            // calendar scope so the next refresh stops asking for it. A failed write only means
+            // the next reply says it again.
+            if scope == colours::SCOPE_COLOURS && (dropped || granted.as_deref().is_some_and(|g| !colours::grants_colours(g))) {
+                store.set(&scope_record_id(&acct.id), SCOPE);
+                core.has_colours.insert(acct.id.clone(), false);
+                core.palettes.remove(&acct.id);
+            }
             if let Some(new) = rotated {
                 if new != refresh && !store.set(&acct.id, &new) {
                     // The store kept the old value. Hold the new token in memory, retry next
@@ -582,12 +655,79 @@ fn read_window(
         remember_expand_refusal(&mut lock(core), acct, now);
     }
     let mut read = match reply {
-        GraphReply::Ok(body) => done(AccountState::Ok, Some(shape_events(&body, &acct.id)), None),
+        GraphReply::Ok(body) => {
+            let mut events = shape_events(&body, &acct.id);
+            if let Some(palette) = category_palette(acct, store, graph, core, &ctx, &access, now, generation) {
+                for event in &mut events {
+                    event.category = colours::pick(&event.categories, &palette);
+                }
+            }
+            done(AccountState::Ok, Some(events), None)
+        }
         GraphReply::Unauthorized => done(AccountState::Unavailable, None, Some("graph-401".to_string())),
         GraphReply::Transient(why) | GraphReply::Failed(why) => done(AccountState::Unavailable, None, Some(why)),
     };
     read.diag = diag;
     read
+}
+
+/// The account's category colours, read again when due. None when the account was not granted
+/// the permission or changed under the read. A failed read keeps the last good list and waits
+/// `RETRY_SECS` before the next try; it never fails the calendar read, and nothing about the
+/// categories is logged.
+#[allow(clippy::too_many_arguments)]
+fn category_palette(
+    acct: &Account,
+    store: &dyn SecretStore,
+    graph: &dyn GraphClient,
+    core: &Mutex<Core>,
+    ctx: &Ctx,
+    access: &str,
+    now: u64,
+    generation: u64,
+) -> Option<Palette> {
+    let now = now + ctx.elapsed_ms() / 1000;
+    let held = {
+        let mut c = lock(core);
+        if generation_of(&c, &acct.id) != generation || !account_has_colours(store, &mut c, &acct.id) {
+            return None;
+        }
+        let held = c.palettes.get(&acct.id).cloned();
+        if let Some(p) = &held {
+            if now < p.next_try {
+                return held;
+            }
+        }
+        held
+    };
+    let (reply, diag) = graph.master_categories(access, ctx);
+    if colours::read_says_withdrawn(matches!(reply, GraphReply::Unauthorized), diag.as_ref().map(|d| d.status)) {
+        // The permission is gone (an admin withdrew it): drop the account to calendar-only so
+        // the palette is cleared, Tools says so and the reads stop until the next sign-in. A
+        // failed write only means the next refresh reply says it again.
+        let mut c = lock(core);
+        if generation_of(&c, &acct.id) != generation {
+            return None;
+        }
+        store.set(&scope_record_id(&acct.id), SCOPE);
+        c.has_colours.insert(acct.id.clone(), false);
+        c.palettes.remove(&acct.id);
+        return None;
+    }
+    let parsed = match reply {
+        GraphReply::Ok(body) => colours::parse_master(&body),
+        _ => None,
+    };
+    let mut c = lock(core);
+    if generation_of(&c, &acct.id) != generation {
+        return None;
+    }
+    let fresh = match parsed {
+        Some(entries) => Palette { entries, next_try: now + colours::REFRESH_SECS },
+        None => Palette { entries: held.map(|p| p.entries).unwrap_or_default(), next_try: now + colours::RETRY_SECS },
+    };
+    c.palettes.insert(acct.id.clone(), fresh.clone());
+    Some(fresh)
 }
 
 /// A read that made no network call for the account.
@@ -614,7 +754,10 @@ fn settle(
     let mut lists = Vec::new();
     let mut stale = false;
     for (acct, read) in accounts.iter().zip(reads) {
-        let out = |state: AccountState, reason| AccountOut { id: acct.id.clone(), label: acct.label.clone(), state: state.as_str(), reason };
+        // A record that cannot be read now keeps the last known answer; with none, the Tools
+        // line stays quiet instead of claiming the colours are off.
+        let colours_granted = colours_known(store, core, &acct.id).unwrap_or(true);
+        let out = |state: AccountState, reason| AccountOut { id: acct.id.clone(), label: acct.label.clone(), state: state.as_str(), reason, colours: colours_granted };
         if read.discarded || generation_of(core, &acct.id) != read.generation {
             // The credential store read here is local and deliberate, like the other store
             // calls under this lock.
@@ -655,7 +798,7 @@ fn settle(
             let held = if keep_last { core.last.get(&acct.id) } else { core.last_day.get(&acct.id) };
             let list = if state == AccountState::SignedOut { Vec::new() } else { held.cloned().unwrap_or_default() };
             stale |= keep_last && state == AccountState::Unavailable && !list.is_empty();
-            statuses.push(AccountOut { id: acct.id.clone(), label: acct.label.clone(), state: state.as_str(), reason });
+            statuses.push(AccountOut { id: acct.id.clone(), label: acct.label.clone(), state: state.as_str(), reason, colours: colours_granted });
             lists.push(list);
             continue;
         }
@@ -836,6 +979,22 @@ pub struct DayEventOut {
     /// True when an allowed Outlook web link sits behind `key` for opening the event.
     pub can_open: bool,
     pub is_live: bool,
+    /// The Outlook category the event takes its colour from, when it has one with a known colour.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub category: Option<CategoryOut>,
+}
+
+/// A category name (cleaned, capped) and one of the 25 fixed tone tokens, `preset0` to `preset24`.
+#[derive(Debug, Serialize, PartialEq)]
+pub struct CategoryOut {
+    pub name: String,
+    pub tone: &'static str,
+}
+
+impl From<Pick> for CategoryOut {
+    fn from(p: Pick) -> Self {
+        CategoryOut { name: p.name, tone: p.tone }
+    }
 }
 
 #[derive(Debug, Serialize)]
@@ -909,7 +1068,7 @@ pub fn read_day_only(
                 guard.web_map.insert(key.clone(), OpenTarget { account_id: cand.account_id.clone(), web: cand.web, entry: cand.entry });
             }
             let is_live = is_live(&cand.title);
-            DayEventOut { key, account_id: cand.account_id, title: cand.title, start: cand.start, end: cand.end, can_join, can_open, is_live }
+            DayEventOut { key, account_id: cand.account_id, title: cand.title, start: cand.start, end: cand.end, can_join, can_open, is_live, category: cand.category.map(CategoryOut::from) }
         })
         .collect();
     drop(guard);
@@ -933,7 +1092,7 @@ pub fn complete_sign_in(
         ("code", granted.code.as_str()),
         ("redirect_uri", granted.redirect_uri.as_str()),
         ("code_verifier", granted.verifier.as_str()),
-        ("scope", SIGN_IN_SCOPE),
+        ("scope", granted.scope),
     ];
     let ctx = Ctx::new(Kind::Next, clock_of(core), BUDGET);
     let (mut reply, mut detail) = tokens.post_diag(&acct.tenant, &form, ctx.remaining().min(READ_TIMEOUT), &ctx);
@@ -941,7 +1100,7 @@ pub fn complete_sign_in(
         (reply, detail) = tokens.post_diag(&acct.tenant, &form, ctx.remaining().min(READ_TIMEOUT), &ctx);
     }
     match reply {
-        TokenReply::Ok { access, expires_in, refresh: Some(refresh) } => {
+        TokenReply::Ok { access, expires_in, refresh: Some(refresh), scope: reply_scope } => {
             // Store and bump the generation in one step, so a read that began earlier cannot
             // slip its own tokens in between. The store write under the lock is deliberate
             // (local, brief, keeps this ordered with sign-out).
@@ -950,7 +1109,17 @@ pub fn complete_sign_in(
                 drop(guard);
                 return Err(sign_in_failed(core, acct, STORE_WRITE, now, None));
             }
+            // Remember what this sign-in was granted, so later refreshes ask for no more. When
+            // the record cannot be written, delete any older one: no record means the calendar
+            // scope, which this token always covers.
+            let record = colours::recorded_scope(granted.scope, reply_scope.as_deref());
+            let recorded = store.set(&scope_record_id(&acct.id), record);
+            if !recorded {
+                store.delete(&scope_record_id(&acct.id));
+            }
             let core = &mut *guard;
+            core.has_colours.insert(acct.id.clone(), recorded && record == colours::SCOPE_COLOURS);
+            core.palettes.remove(&acct.id);
             *core.generations.entry(acct.id.clone()).or_insert(0) += 1;
             core.pending.remove(&acct.id);
             core.contact_cache.remove(&acct.id);
@@ -1000,6 +1169,9 @@ fn sign_in_failed(core: &Mutex<Core>, acct: &Account, reason: &str, now: u64, de
 pub fn sign_out(id: &str, store: &dyn SecretStore, core: &Mutex<Core>, links: &Mutex<Links>) {
     let mut core = lock(core);
     store.delete(id);
+    store.delete(&scope_record_id(id));
+    core.has_colours.remove(id);
+    core.palettes.remove(id);
     *core.generations.entry(id.to_string()).or_insert(0) += 1;
     core.cache.remove(id);
     core.last.remove(id);
@@ -1022,6 +1194,7 @@ pub fn sign_out(id: &str, store: &dyn SecretStore, core: &Mutex<Core>, links: &M
 
 #[cfg(test)]
 mod tests {
+    use super::super::auth::SIGN_IN_SCOPE;
     use super::*;
 
     #[test]
@@ -1138,7 +1311,7 @@ mod tests {
     }
 
     fn ok_token(access: &str, refresh: Option<&str>) -> TokenReply {
-        TokenReply::Ok { access: access.into(), expires_in: 3600, refresh: refresh.map(str::to_string) }
+        TokenReply::Ok { access: access.into(), expires_in: 3600, refresh: refresh.map(str::to_string), scope: None }
     }
 
     fn body(subject: &str, ical: &str) -> Value {
@@ -1327,11 +1500,11 @@ mod tests {
         let store = Chunked(MemoryBlobs::default());
         let core = Mutex::new(Core::default());
         let t = FakeTokens::new(vec![ok_token("acc", Some("ref"))]);
-        let granted = super::super::auth::Granted { code: "c".into(), verifier: "v".into(), redirect_uri: "http://localhost:1/auth-callback.html".into() };
+        let granted = super::super::auth::Granted { code: "c".into(), verifier: "v".into(), redirect_uri: "http://localhost:1/auth-callback.html".into(), scope: SIGN_IN_SCOPE };
         assert!(complete_sign_in(&acct("work"), &granted, &store, &t, &core, NOW).is_ok());
         assert_eq!(t.forms.borrow()[0].iter().find(|(k, _)| k == "grant_type").map(|(_, v)| v.as_str()), Some("authorization_code"));
         assert_eq!(scope_of(&t), SIGN_IN_SCOPE);
-        assert!(scope_of(&t).contains("Contacts.Read") && scope_of(&t).contains("Calendars.Read"));
+        assert!(scope_of(&t).contains("Contacts.Read") && scope_of(&t).contains("Calendars.Read") && scope_of(&t).contains("MailboxSettings.Read"));
     }
 
     #[test]
@@ -1789,7 +1962,7 @@ mod tests {
         let core = Mutex::new(Core::default());
         let links = Mutex::new(Links::default());
         let t = FakeTokens::new(vec![ok_token("acc", Some("ref"))]);
-        let granted = super::super::auth::Granted { code: "c".into(), verifier: "v".into(), redirect_uri: "http://localhost:1/auth-callback.html".into() };
+        let granted = super::super::auth::Granted { code: "c".into(), verifier: "v".into(), redirect_uri: "http://localhost:1/auth-callback.html".into(), scope: SCOPE };
         assert!(complete_sign_in(&acct("work"), &granted, &store, &t, &core, NOW).is_ok());
         assert_eq!(store.get("work").as_deref(), Some("ref"));
         assert_eq!(core.lock().unwrap().cache.get("work").unwrap().access, "acc");
@@ -1818,7 +1991,7 @@ mod tests {
         let store = Chunked(MemoryBlobs::default());
         let core = Mutex::new(Core::default());
         let tokens = RetryTokens { calls: Cell::new(0) };
-        let granted = super::super::auth::Granted { code: "c".into(), verifier: "v".into(), redirect_uri: "http://localhost:1/auth-callback.html".into() };
+        let granted = super::super::auth::Granted { code: "c".into(), verifier: "v".into(), redirect_uri: "http://localhost:1/auth-callback.html".into(), scope: SCOPE };
         assert!(complete_sign_in(&acct("work"), &granted, &store, &tokens, &core, NOW).is_ok());
         assert_eq!(tokens.calls.get(), 2);
     }
@@ -1836,7 +2009,7 @@ mod tests {
             fn post(&self,_:&str,_:&[(&str,&str)])->TokenReply{unreachable!()}
             fn post_diag(&self,_:&str,_:&[(&str,&str)],_:Duration,ctx:&Ctx)->(TokenReply,Option<Diag>){self.calls.set(self.calls.get()+1);let reply=match self.status{400=>TokenReply::Refused("token-400".into()),429=>TokenReply::Failed("token-429".into()),_=>TokenReply::Failed("token-500".into())};(reply,Some(Diag{kind:ctx.kind,host:"login",net:None,status:self.status,code:None,inner:None,request_id:None,client_request_id:None,attempt:1,elapsed_ms:1,probe:None}))}
         }
-        let granted=super::super::auth::Granted{code:"c".into(),verifier:"v".into(),redirect_uri:"http://localhost:1/auth-callback.html".into()};
+        let granted=super::super::auth::Granted{code:"c".into(),verifier:"v".into(),redirect_uri:"http://localhost:1/auth-callback.html".into(),scope:SCOPE};
         for status in [400,429,500] {
             let tokens=Answers{status,calls:Cell::new(0)}; let core=Mutex::new(Core::default()); let store=Chunked(MemoryBlobs::default());
             assert!(complete_sign_in(&acct("work"),&granted,&store,&tokens,&core,NOW).is_err()); assert_eq!(tokens.calls.get(),1);
@@ -1850,10 +2023,195 @@ mod tests {
             fn post(&self,_:&str,_:&[(&str,&str)])->TokenReply{unreachable!()}
             fn post_diag(&self,_:&str,_:&[(&str,&str)],_:Duration,ctx:&Ctx)->(TokenReply,Option<Diag>){(TokenReply::Transient("token-network".into()),Some(Diag{kind:ctx.kind,host:"login",net:Some("connect"),status:0,code:None,inner:None,request_id:None,client_request_id:None,attempt:1,elapsed_ms:9,probe:Some(super::super::netprobe::NetProbe{phase:"connect",af:"ipv4",resolved:2,dns_ms:Some(1),v4:super::super::netprobe::Probe::Fail(4),v6:super::super::netprobe::Probe::Fail(5),probe_ms:9})}))}
         }
-        let core=Mutex::new(Core::default()); let store=Chunked(MemoryBlobs::default()); let granted=super::super::auth::Granted{code:"c".into(),verifier:"v".into(),redirect_uri:"http://localhost:1/auth-callback.html".into()};
+        let core=Mutex::new(Core::default()); let store=Chunked(MemoryBlobs::default()); let granted=super::super::auth::Granted{code:"c".into(),verifier:"v".into(),redirect_uri:"http://localhost:1/auth-callback.html".into(),scope:SCOPE};
         assert_eq!(complete_sign_in(&acct("hc"),&granted,&store,&Down,&core,NOW),Err("token-network-connect".into()));
         let line=&core.lock().unwrap().log_lines[0];
         for field in ["net=connect","af=ipv4","v4=fail4","v6=fail5"] { assert!(line.contains(field),"{line}"); }
+    }
+
+    /// A calendar with two events (one in a category) and a scripted master category list.
+    struct ColourGraph {
+        master: RefCell<Vec<GraphReply>>,
+        master_calls: Cell<usize>,
+    }
+    impl ColourGraph {
+        fn new(master: Vec<GraphReply>) -> Self {
+            ColourGraph { master: RefCell::new(master), master_calls: Cell::new(0) }
+        }
+    }
+    impl GraphClient for ColourGraph {
+        fn calendar_view(&self, _access: &str, _start: &str, _end: &str) -> GraphReply {
+            let row = |hour: u32, categories: Value| {
+                json!({
+                    "subject": "Event", "isAllDay": false, "isCancelled": false,
+                    "start": { "dateTime": format!("2026-11-12T{hour:02}:00:00.0000000") },
+                    "end": { "dateTime": format!("2026-11-12T{hour:02}:30:00.0000000") },
+                    "categories": categories
+                })
+            };
+            GraphReply::Ok(json!({ "value": [row(17, json!(["Blue team"])), row(19, json!([]))] }))
+        }
+        fn master_categories(&self, _access: &str, _ctx: &Ctx) -> (GraphReply, Option<Diag>) {
+            self.master_calls.set(self.master_calls.get() + 1);
+            let mut m = self.master.borrow_mut();
+            (if m.is_empty() { GraphReply::Transient("graph-503".into()) } else { m.remove(0) }, None)
+        }
+    }
+
+    fn master_ok() -> GraphReply {
+        GraphReply::Ok(json!({ "value": [{ "displayName": "Blue team", "color": "preset7" }, { "displayName": "Plain", "color": "none" }] }))
+    }
+
+    fn form_scope(tokens: &FakeTokens, call: usize) -> String {
+        tokens.forms.borrow()[call].iter().find(|(k, _)| k == "scope").map(|(_, v)| v.clone()).unwrap()
+    }
+
+    #[test]
+    fn an_account_signed_in_before_the_colours_keeps_refreshing_with_the_old_scope() {
+        let (store, core) = setup();
+        let links = Mutex::new(Links::default());
+        let tokens = FakeTokens::new(vec![ok_token("a1", Some("refresh-2"))]);
+        let graph = ColourGraph::new(vec![master_ok()]);
+        let p = read_day(&[acct("work")], &store, &tokens, &graph, &core, &links, NOW, NOW, NOW + 3600);
+        assert_eq!(form_scope(&tokens, 0), SCOPE);
+        assert!(!form_scope(&tokens, 0).contains("MailboxSettings"));
+        assert_eq!(p.accounts[0].state, "ok");
+        assert!(!p.accounts[0].colours);
+        // No permission: the master list is never asked for and events stay uncoloured.
+        assert_eq!(graph.master_calls.get(), 0);
+        assert!(p.events.iter().all(|e| e.category.is_none()));
+    }
+
+    #[test]
+    fn a_sign_in_with_the_colours_permission_is_remembered_and_refreshes_with_it() {
+        let store = Chunked(MemoryBlobs::default());
+        let core = Mutex::new(Core::default());
+        let links = Mutex::new(Links::default());
+        let granted = super::super::auth::Granted { code: "c".into(), verifier: "v".into(), redirect_uri: "http://localhost:1/auth-callback.html".into(), scope: SIGN_IN_SCOPE };
+        let tokens = FakeTokens::new(vec![ok_token("a0", Some("refresh-1")), ok_token("a1", Some("refresh-2"))]);
+        assert!(complete_sign_in(&acct("work"), &granted, &store, &tokens, &core, NOW).is_ok());
+        assert_eq!(form_scope(&tokens, 0), SIGN_IN_SCOPE);
+        assert_eq!(store.get(&scope_record_id("work")).as_deref(), Some(colours::SCOPE_COLOURS));
+        // Drop the cached access token so the next read refreshes.
+        core.lock().unwrap().cache.clear();
+        let graph = ColourGraph::new(vec![master_ok()]);
+        let p = read_day(&[acct("work")], &store, &tokens, &graph, &core, &links, NOW, NOW, NOW + 3600);
+        assert_eq!(form_scope(&tokens, 1), colours::SCOPE_COLOURS);
+        assert!(p.accounts[0].colours);
+        assert_eq!(p.events[0].category, Some(CategoryOut { name: "Blue team".into(), tone: "preset7" }));
+        assert_eq!(p.events[1].category, None);
+    }
+
+    #[test]
+    fn a_reply_that_leaves_out_the_permission_is_recorded_as_calendar_only() {
+        let store = Chunked(MemoryBlobs::default());
+        let core = Mutex::new(Core::default());
+        let granted = super::super::auth::Granted { code: "c".into(), verifier: "v".into(), redirect_uri: "http://localhost:1/auth-callback.html".into(), scope: SIGN_IN_SCOPE };
+        let reply = TokenReply::Ok { access: "a".into(), expires_in: 3600, refresh: Some("r".into()), scope: Some("Calendars.Read".into()) };
+        let tokens = FakeTokens::new(vec![reply]);
+        assert!(complete_sign_in(&acct("work"), &granted, &store, &tokens, &core, NOW).is_ok());
+        assert_eq!(store.get(&scope_record_id("work")).as_deref(), Some(SCOPE));
+        assert!(!account_has_colours(&store, &mut core.lock().unwrap(), "work"));
+    }
+
+    #[test]
+    fn a_failed_colour_read_keeps_the_last_list_and_waits_before_trying_again() {
+        let (store, core) = setup();
+        store.set(&scope_record_id("work"), colours::SCOPE_COLOURS);
+        let links = Mutex::new(Links::default());
+        let tokens = FakeTokens::new(vec![ok_token("a1", Some("refresh-2"))]);
+        let graph = ColourGraph::new(vec![master_ok()]);
+        let read = |at: u64| read_day(&[acct("work")], &store, &tokens, &graph, &core, &links, at, at, at + 3600);
+        let p = read(NOW);
+        assert_eq!(graph.master_calls.get(), 1);
+        assert_eq!(p.events[0].category.as_ref().map(|c| c.tone), Some("preset7"));
+        read(NOW + 10);
+        assert_eq!(graph.master_calls.get(), 1);
+        // Due again: the read fails, the calendar still reads fine, the colours stay.
+        let p = read(NOW + colours::REFRESH_SECS + 5);
+        assert_eq!(graph.master_calls.get(), 2);
+        assert_eq!(p.accounts[0].state, "ok");
+        assert_eq!(p.events[0].category.as_ref().map(|c| c.tone), Some("preset7"));
+        read(NOW + colours::REFRESH_SECS + 10);
+        assert_eq!(graph.master_calls.get(), 2);
+        let p = read(NOW + colours::REFRESH_SECS + 5 + colours::RETRY_SECS + 1);
+        assert_eq!(graph.master_calls.get(), 3);
+        assert_eq!(p.events[0].category.as_ref().map(|c| c.tone), Some("preset7"));
+    }
+
+    #[test]
+    fn a_refused_colours_refresh_falls_back_to_calendar_only_and_keeps_the_account() {
+        for dead in [TokenReply::Rejected("token-invalid_grant".into()), TokenReply::Refused("token-consent_required".into())] {
+            let (store, core) = setup();
+            store.set(&scope_record_id("work"), colours::SCOPE_COLOURS);
+            let links = Mutex::new(Links::default());
+            let tokens = FakeTokens::new(vec![dead, ok_token("a1", Some("refresh-2"))]);
+            let graph = ColourGraph::new(vec![master_ok()]);
+            let p = read_day(&[acct("work")], &store, &tokens, &graph, &core, &links, NOW, NOW, NOW + 3600);
+            assert_eq!(tokens.calls.get(), 2);
+            assert_eq!(form_scope(&tokens, 0), colours::SCOPE_COLOURS);
+            assert_eq!(form_scope(&tokens, 1), SCOPE);
+            assert_eq!(p.accounts[0].state, "ok");
+            assert!(!p.accounts[0].colours);
+            assert_eq!(store.get(&scope_record_id("work")).as_deref(), Some(SCOPE));
+            assert!(store.get("work").is_some());
+            assert_eq!(graph.master_calls.get(), 0);
+        }
+    }
+
+    #[test]
+    fn a_calendar_refresh_that_is_rejected_still_signs_out_after_one_attempt() {
+        let (store, core) = setup();
+        let links = Mutex::new(Links::default());
+        let tokens = FakeTokens::new(vec![TokenReply::Rejected("token-invalid_grant".into())]);
+        let graph = ColourGraph::new(vec![]);
+        let p = read_day(&[acct("work")], &store, &tokens, &graph, &core, &links, NOW, NOW, NOW + 3600);
+        assert_eq!(tokens.calls.get(), 1);
+        assert_eq!(p.accounts[0].state, "needs-sign-in");
+    }
+
+    #[test]
+    fn a_401_on_the_category_read_clears_the_colours_and_stops_the_reads() {
+        let (store, core) = setup();
+        store.set(&scope_record_id("work"), colours::SCOPE_COLOURS);
+        let links = Mutex::new(Links::default());
+        let tokens = FakeTokens::new(vec![ok_token("a1", Some("refresh-2"))]);
+        let graph = ColourGraph::new(vec![master_ok(), GraphReply::Unauthorized]);
+        let read = |at: u64| read_day(&[acct("work")], &store, &tokens, &graph, &core, &links, at, at, at + 3600);
+        assert!(read(NOW).accounts[0].colours);
+        let p = read(NOW + colours::REFRESH_SECS + 5);
+        assert_eq!(graph.master_calls.get(), 2);
+        assert!(!p.accounts[0].colours);
+        assert!(p.events.iter().all(|e| e.category.is_none()));
+        assert_eq!(store.get(&scope_record_id("work")).as_deref(), Some(SCOPE));
+        assert!(core.lock().unwrap().palettes.is_empty());
+        read(NOW + 2 * colours::REFRESH_SECS);
+        assert_eq!(graph.master_calls.get(), 2);
+    }
+
+    #[test]
+    fn an_unreadable_permission_record_keeps_the_last_answer_or_stays_quiet() {
+        let (store, core) = setup();
+        let mut c = core.lock().unwrap();
+        c.has_colours.insert("work".into(), true);
+        assert_eq!(colours_known(&store, &mut c, "work"), Some(true));
+        drop(c);
+        let flaky = FlakySecrets { inner: Chunked(MemoryBlobs::default()), fail_set: Cell::new(false), fail_get: Cell::new(true) };
+        let mut c = Core::default();
+        assert_eq!(colours_known(&flaky, &mut c, "other"), None);
+        assert!(!account_has_colours(&flaky, &mut c, "other"));
+    }
+
+    #[test]
+    fn signing_out_forgets_the_permission_record() {
+        let (store, core) = setup();
+        let links = Mutex::new(Links::default());
+        store.set(&scope_record_id("work"), colours::SCOPE_COLOURS);
+        assert!(account_has_colours(&store, &mut core.lock().unwrap(), "work"));
+        sign_out("work", &store, &core, &links);
+        assert_eq!(store.get(&scope_record_id("work")), None);
+        assert!(!account_has_colours(&store, &mut core.lock().unwrap(), "work"));
+        assert!(core.lock().unwrap().palettes.is_empty());
     }
 
     fn reasons(p: &MeetPayload) -> Vec<Option<&str>> {
@@ -1990,7 +2348,7 @@ mod tests {
     fn a_failed_redemption_reports_and_logs_its_reason() {
         let store = Chunked(MemoryBlobs::default());
         let core = Mutex::new(Core::default());
-        let granted = super::super::auth::Granted { code: "c".into(), verifier: "v".into(), redirect_uri: "http://localhost:1/auth-callback.html".into() };
+        let granted = super::super::auth::Granted { code: "c".into(), verifier: "v".into(), redirect_uri: "http://localhost:1/auth-callback.html".into(), scope: SCOPE };
         let t = FakeTokens::new(vec![TokenReply::Refused("token-400-65001".into())]);
         assert_eq!(complete_sign_in(&acct("work"), &granted, &store, &t, &core, NOW), Err("token-400-65001".to_string()));
         let t = FakeTokens::new(vec![TokenReply::Transient("token-network".into())]);
@@ -2139,7 +2497,7 @@ mod tests {
         core.lock().unwrap().cache.insert("work".into(), Cached { access: "old".into(), expires_at: NOW + 6000 });
         let gate = Gate::default();
         let blocked = SyncGraph::new(vec![GraphReply::Ok(body("Stale", "s"))], Some(&gate));
-        let granted = super::super::auth::Granted { code: "c".into(), verifier: "v".into(), redirect_uri: "http://localhost:1/auth-callback.html".into() };
+        let granted = super::super::auth::Granted { code: "c".into(), verifier: "v".into(), redirect_uri: "http://localhost:1/auth-callback.html".into(), scope: SCOPE };
         let payload = std::thread::scope(|sc| {
             let h = sc.spawn(|| read_next(&[acct("work")], &store, &no_tokens(), &blocked, &core, &links, NOW));
             gate.wait_entered();
@@ -2410,7 +2768,7 @@ mod tests {
         read_next(&[acct("work")], &store, &no_tokens(), &first, &core, &links, NOW);
         let gate = Gate::default();
         let blocked = SyncGraph::new(vec![GraphReply::Ok(body("Late", "l"))], Some(&gate));
-        let granted = super::super::auth::Granted { code: "c".into(), verifier: "v".into(), redirect_uri: "http://localhost:1/auth-callback.html".into() };
+        let granted = super::super::auth::Granted { code: "c".into(), verifier: "v".into(), redirect_uri: "http://localhost:1/auth-callback.html".into(), scope: SCOPE };
         let payload = std::thread::scope(|sc| {
             let h = sc.spawn(|| read_next(&[acct("work")], &store, &no_tokens(), &blocked, &core, &links, NOW + 10));
             gate.wait_entered();

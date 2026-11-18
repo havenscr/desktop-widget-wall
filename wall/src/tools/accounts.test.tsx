@@ -489,3 +489,36 @@ it('Spotify\'s row holds the public page switch, with helper text, and it change
   fireEvent.click(row.querySelector('button[aria-label="Public page reads: Off"]')!);
   expect(usePublicPage.getState().on).toBe(true);
 });
+
+it('says quietly that a connected account lacks the Outlook colours, with a hover that says how to get them', async () => {
+  mocks.set('wall2_meet_open_status', () => 'desktop');
+  mocks.set('wall2_meet_next', () => ({
+    ...data,
+    accounts: [
+      { id: 'work', label: 'Work', state: 'ok', colours: false },
+      { id: 'second', label: 'Second', state: 'ok', colours: true },
+    ],
+  }));
+  render(
+    <>
+      <Accounts />
+      <HoverTipLayer />
+    </>,
+  );
+  await flush();
+  const rows = [...document.querySelectorAll('.tools-acct')] as HTMLElement[];
+  const work = rows.find((r) => r.textContent?.includes('Work'))!;
+  const second = rows.find((r) => r.textContent?.includes('Second'))!;
+  expect(work.textContent).toContain('No colours yet');
+  expect(await hoverText(work)).toBe('Sign in again to show Outlook colours');
+  expect(second.textContent).toContain('Connected');
+  expect(second.textContent).not.toContain('colours');
+});
+
+it('an account that does not say either way (an older answer) shows no colours line', async () => {
+  mocks.set('wall2_meet_open_status', () => 'desktop');
+  mocks.set('wall2_meet_next', () => ({ ...data, accounts: [{ id: 'work', label: 'Work', state: 'ok' }] }));
+  render(<Accounts />);
+  await flush();
+  expect(document.body.textContent).not.toContain('colours');
+});

@@ -199,7 +199,7 @@ fn contact_access(acct: &Account, store: &dyn SecretStore, tokens: &dyn TokenCli
         return None;
     }
     match reply {
-        TokenReply::Ok { access, expires_in, refresh: rotated } => {
+        TokenReply::Ok { access, expires_in, refresh: rotated, scope: _ } => {
             c.contact_cache.insert(acct.id.clone(), Cached { access: access.clone(), expires_at: now + expires_in });
             if let Some(new) = rotated {
                 if new != refresh && !store.set(&acct.id, &new) {
@@ -339,7 +339,7 @@ mod tests {
     }
 
     fn ok_token(access: &str, refresh: Option<&str>) -> TokenReply {
-        TokenReply::Ok { access: access.into(), expires_in: 3600, refresh: refresh.map(str::to_string) }
+        TokenReply::Ok { access: access.into(), expires_in: 3600, refresh: refresh.map(str::to_string), scope: None }
     }
 
     fn setup() -> (Chunked<MemoryBlobs>, Mutex<Core>) {

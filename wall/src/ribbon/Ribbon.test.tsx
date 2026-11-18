@@ -411,3 +411,35 @@ it('marks the ribbon late after 9 PM, so the agent bars and focus line dim', asy
   await flush();
   expect(late.container.querySelector('.rib')!.className).toBe('rib late');
 });
+
+it('a chip with an Outlook category takes its tone, names the category on hover and in its label, and a livestream or an uncategorised event does not', async () => {
+  mocks.set('wall2_meet_day', () => ({
+    accounts: [{ id: 'work', label: 'Work', state: 'ok' }],
+    events: [
+      { key: 'd-0', accountId: 'work', title: 'Planning', start: iso('13:00'), end: iso('14:00'), canJoin: false, canOpen: false, isLive: false, category: { name: 'Sample blue', tone: 'preset7' } },
+      { key: 'd-1', accountId: 'work', title: 'Lunch', start: iso('14:30'), end: iso('15:30'), canJoin: false, canOpen: false, isLive: false },
+      { key: 'd-2', accountId: 'work', title: 'Livestream: build', start: iso('16:00'), end: iso('17:00'), canJoin: false, canOpen: false, isLive: true, category: { name: 'Sample red', tone: 'preset0' } },
+      { key: 'd-3', accountId: 'work', title: 'Odd', start: iso('18:00'), end: iso('19:00'), canJoin: false, canOpen: false, isLive: false, category: { name: 'Free text', tone: '#ff0000' } },
+    ],
+  }));
+  const r = render(
+    <>
+      <Ribbon kind="work" />
+      <HoverTipLayer />
+    </>,
+  );
+  await flush();
+  const [a, b, c, d] = [...r.container.querySelectorAll('.ev')] as HTMLElement[];
+  expect(a.getAttribute('data-tone')).toBe('preset7');
+  expect(a.style.getPropertyValue('--tone-fill')).toMatch(/^rgba\(/);
+  expect(a.style.getPropertyValue('--tone-text')).toMatch(/^rgba\(/);
+  expect(a.getAttribute('aria-label')).toContain('Category: Sample blue');
+  expect(b.getAttribute('data-tone')).toBeNull();
+  expect(b.getAttribute('aria-label')).not.toContain('Category');
+  // The livestream stays pink; a token that is not one of the 25 is ignored.
+  expect(c.getAttribute('data-tone')).toBeNull();
+  expect(d.getAttribute('data-tone')).toBeNull();
+  fireEvent.mouseEnter(a);
+  await flush(TIP_DELAY_MS);
+  expect(document.querySelector('.hover-tip')!.textContent).toBe('Planning1:00 to 2:00 PM, WorkCategory: Sample blue');
+});

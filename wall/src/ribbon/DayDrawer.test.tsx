@@ -5,7 +5,7 @@ import { resetAgents } from '../agents/useAgents';
 import { mocks } from '../bridge/tauri';
 import { useFocusStore } from '../focus/store';
 import { HoverTipLayer, resetTip, TIP_DELAY_MS } from '../ui/HoverTip';
-import { agendaLanes, agendaRange, quietLine } from './DayDrawer';
+import { agendaLanes, agendaRange, nowSegments, quietLine } from './DayDrawer';
 import { laneStateWord } from './AgentRow';
 import { DrawerScrim } from './DrawerScrim';
 import { chips, RX } from './model';
@@ -308,4 +308,62 @@ it('a failed session that also waits on the owner keeps its place among those ne
   expect(rows[0].querySelector('.dd-pill')!.textContent).toBe('failed');
   expect(rows[0].querySelector('.dd-pill')!.className).toBe('dd-pill failed');
   expect(rows[0].querySelector('.dd-line')!.textContent).toBe('Waiting 5 min');
+});
+
+it('a Day drawer tile with an Outlook category takes its tone and names it on hover and in its label', async () => {
+  mocks.set('wall2_meet_day', () => ({
+    accounts: [{ id: 'work', label: 'Work', state: 'ok' }],
+    events: [
+      ev('c1', 'Planning', '13:00', '14:00', { category: { name: 'Sample green', tone: 'preset4' } }),
+      ev('c2', 'Lunch', '14:30', '15:30'),
+    ],
+  }));
+  const r = render(
+    <>
+      <Ribbon kind="work" />
+      <HoverTipLayer />
+    </>,
+  );
+  await flush();
+  fireEvent.click(r.container.querySelector('.rib-handle') as HTMLElement);
+  await flush();
+  const tiles = [...r.container.querySelectorAll('.dd-ev')] as HTMLElement[];
+  expect(tiles).toHaveLength(2);
+  expect(tiles[0].getAttribute('data-tone')).toBe('preset4');
+  expect(tiles[0].style.getPropertyValue('--tone-fill')).toMatch(/^rgba\(/);
+  expect(tiles[0].getAttribute('aria-label')).toContain('Category: Sample green');
+  expect(tiles[1].getAttribute('data-tone')).toBeNull();
+  fireEvent.mouseEnter(tiles[0]);
+  await flush(TIP_DELAY_MS);
+  expect(document.querySelector('.hover-tip')!.textContent).toContain('Category: Sample green');
+});
+
+it('a short event takes its lane for as long as its tile is drawn, so it never covers the tile after it', () => {
+  const now = t('10:24');
+  // 15 minutes at 2:00, then 2:15 to 3:00: the 15 minute tile is drawn about 40 minutes tall, so the two sit side by side.
+  const c = chips([ev('a', 'Quick', '14:00', '14:15'), ev('b', 'Next', '14:15', '15:00'), ev('c', 'Later', '15:30', '16:30')], now);
+  expect(agendaLanes(c).map((l) => [l.c.title, l.lane, l.lanes])).toEqual([
+    ['Quick', 0, 2],
+    ['Next', 1, 2],
+    ['Later', 0, 1],
+  ]);
+  // A 45 minute event needs no help.
+  const d = chips([ev('a', 'Half', '14:00', '14:45'), ev('b', 'Next', '14:45', '15:30')], now);
+  expect(agendaLanes(d).map((l) => [l.c.title, l.lane, l.lanes])).toEqual([
+    ['Half', 0, 1],
+    ['Next', 0, 1],
+  ]);
+});
+
+it('the now line stops short of the tile whose title it would cross, and runs whole elsewhere', () => {
+  expect(nowSegments([])).toEqual([{ left: '-8px', right: '0px' }]);
+  expect(nowSegments([{ lane: 0, lanes: 1 }])).toEqual([
+    { left: '-8px', right: 'calc(100% - 2px)' },
+    { left: 'calc(100% + -4px)', right: '0px' },
+  ]);
+  // The middle of three lanes: the line runs on each side of it.
+  const mid = nowSegments([{ lane: 1, lanes: 3 }]);
+  expect(mid).toHaveLength(2);
+  // Neighbouring lanes are one gap, not a sliver between them.
+  expect(nowSegments([{ lane: 0, lanes: 2 }, { lane: 1, lanes: 2 }])).toHaveLength(2);
 });
