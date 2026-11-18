@@ -6,6 +6,7 @@ import { openTask } from '../tasks/model';
 import { hideTip, pinTip, tip } from '../ui/HoverTip';
 import { AgentRow, agentBoxes } from './AgentRow';
 import { useAgentsStore } from '../agents/useAgents';
+import { useRemeasure } from '../ui/useRemeasure';
 import { useVisible } from '../ui/useVisible';
 import { allDayBarText, allDayChips, HANDLE_W, handleX, labelBox, allDayText, allDayWidth, calmLayout, chipLayout, chips, HIDDEN_NAMED, hiddenNames, dueLabelSpan, isLate, dueMarks, focusBars, hourLabels, msToNextMinute, needle, needleTip, overlapsAny, skyGradient, spanText, sunLabels, ticks, type Chip, type FoldChip, type MoreChip } from './model';
 import { AgentsToday } from './AgentsToday';
@@ -23,21 +24,15 @@ const TICKS = ticks();
 /** A chip's title. When it does not fit, the last 16 px of the letters fade (the chip keeps its crisp edge and colour). */
 function ChipTitle({ text }: { text: string }) {
   const ref = useRef<HTMLSpanElement>(null);
-  useLayoutEffect(() => {
+  const measure = useCallback(() => {
     const el = ref.current;
     if (!el) return;
-    const measure = () => {
-      if (el.scrollWidth > el.clientWidth + 1) el.setAttribute('data-cut', '');
-      else el.removeAttribute('data-cut');
-    };
-    measure();
-    // Letters can change width after the first paint (the font arrives); measure again then.
-    let live = true;
-    document.fonts?.ready.then(() => live && measure()).catch(() => undefined);
-    return () => {
-      live = false;
-    };
-  });
+    if (el.scrollWidth > el.clientWidth + 1) el.setAttribute('data-cut', '');
+    else el.removeAttribute('data-cut');
+  }, []);
+  useLayoutEffect(measure);
+  // A width change (layout or window resize) or a late font measures again.
+  useRemeasure(ref, measure);
   return (
     <span ref={ref} className="ev-t">
       {text}

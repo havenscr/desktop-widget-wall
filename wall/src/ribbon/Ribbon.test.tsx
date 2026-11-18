@@ -464,3 +464,44 @@ it('fades the end of a title that does not fit, and leaves a title that fits alo
     cw.mockRestore();
   }
 });
+
+it('measures a title again when its width changes', async () => {
+  mocks.set('wall2_meet_day', () => day);
+  const callbacks: ResizeObserverCallback[] = [];
+  const realRO = globalThis.ResizeObserver;
+  vi.stubGlobal(
+    'ResizeObserver',
+    class {
+      constructor(cb: ResizeObserverCallback) {
+        callbacks.push(cb);
+      }
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    },
+  );
+  let box = 100;
+  const sw = vi.spyOn(HTMLElement.prototype, 'scrollWidth', 'get').mockReturnValue(150);
+  const cw = vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockImplementation(() => box);
+  const rects = vi.spyOn(HTMLElement.prototype, 'getClientRects').mockReturnValue([{}] as unknown as DOMRectList);
+  const fire = (width: number) => {
+    act(() => callbacks.forEach((cb) => cb([{ contentRect: { width } }] as unknown as ResizeObserverEntry[], {} as ResizeObserver)));
+  };
+  try {
+    const r = render(<Ribbon kind="work" />);
+    await flush();
+    const title = () => r.container.querySelector('.ev .ev-t')!;
+    expect(title().hasAttribute('data-cut')).toBe(true);
+    box = 200;
+    fire(200);
+    expect(title().hasAttribute('data-cut')).toBe(false);
+    box = 100;
+    fire(100);
+    expect(title().hasAttribute('data-cut')).toBe(true);
+  } finally {
+    sw.mockRestore();
+    cw.mockRestore();
+    rects.mockRestore();
+    vi.stubGlobal('ResizeObserver', realRO);
+  }
+});
