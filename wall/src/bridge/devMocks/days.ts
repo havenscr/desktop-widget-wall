@@ -5,7 +5,7 @@ import { mocks } from '../tauri';
 /**
  * Dev only: the helper's saved day record (`wall2_omni_days`, `wall2_omni_day`), shaped like
  * the Rust answers. `?days=typical` (default: 14 recorded days with 3 to 9 sessions each),
- * `empty` (yesterday recorded with no session), `one`, `heavy` (forty sessions), `down` (the
+ * `empty` (yesterday recorded with no session), `one`, `heavy` (forty sessions), `pair` (yesterday 16 sessions, the day before 4), `down` (the
  * reads fail for a while), `absent` (an older helper: the day list answers 404); `&over=back` adds five sessions that closed earlier today. Invented titles only.
  */
 const TITLES = ['Release notes draft', 'Docs tidy pass', 'Settings helper text', 'Spend card refresh', 'Share sheet fix', 'Timeline label fix', 'Search index rebuild', 'Backup script fix', 'Photo export batch', 'Weekly report'];
@@ -26,6 +26,7 @@ const midnightOf = (date: string) => {
 function countFor(back: number, mode: string): number {
   if (mode === 'empty' && back === 1) return 0;
   if (mode === 'one') return 1;
+  if (mode === 'pair') return back === 1 ? 16 : back === 2 ? 4 : 5;
   if (mode === 'heavy') return 40;
   return 3 + ((back * 5) % 7);
 }
