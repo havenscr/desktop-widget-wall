@@ -132,7 +132,7 @@ export default {
       // The whole row takes the pointer: the sky beside the line is covered.
       'agents-row-covers': { css: '.rib .agent-row { pointer-events: auto !important; }', expect: /^ *FAIL agents line: the agent row covers the sky beside the line/m, appliesTo: (v) => v.name === AT_LIMIT },
       'over-marker-height': { css: '.rib .ag-line .x-over { height: 14px !important; }', expect: /^ *FAIL agents line: the red marker is [\d.]+ px tall \(22\)/m, appliesTo: (v) => v.name === BY_ONE },
-      'over-marker-out': { css: '.rib .ag-line .x-over { margin-right: 160px !important; }', expect: /^ *FAIL agents line: the red marker sticks out of the line|^ *FAIL agents line: the line cuts its words/m, appliesTo: (v) => v.name === BY_THREE },
+      'over-marker-out': { css: '.rib .ag-line .x-over { position: relative !important; left: 400px !important; }', expect: /^ *FAIL agents line: the red marker sticks out of the line/m, appliesTo: (v) => v.name === BY_THREE },
       'over-rail-height': { css: '.rib .agent-row .x-rail { height: 10px !important; }', expect: /^ *FAIL agents line: the red line is [\d.]+ px tall \(3\)/m, appliesTo: (v) => v.name === BY_THREE },
       'over-rail-hidden': { css: '.rib .agent-row .x-rail { display: none !important; }', expect: /^ *FAIL agents line: the red line is [\d.]+ px (tall|wide)|^ *FAIL agents line: no red line/m, appliesTo: (v) => v.name === BACK },
     },
