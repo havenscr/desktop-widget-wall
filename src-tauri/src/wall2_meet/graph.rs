@@ -1009,7 +1009,7 @@ const BOILERPLATE_SENTENCES: [&str; 6] = [
 ];
 
 /// Trailing clauses cut off a sentence that has other words before them.
-const BOILERPLATE_TAILS: [&str; 2] = [", just click the link below", ", click the link below"];
+const BOILERPLATE_TAILS: [&str; 1] = [", just click the link below"];
 
 /// A line made only of a long run of dashes, equals signs, tildes or asterisks.
 fn is_rule_line(norm: &str) -> bool {
@@ -1026,8 +1026,11 @@ fn without_boilerplate(sentence: &str) -> Option<String> {
     if BOILERPLATE_SENTENCES.contains(&lower.as_str()) {
         return None;
     }
+    // Tails are ASCII: compare the end of the original bytes, so a char whose lower case has another length cannot skew the cut.
     for tail in BOILERPLATE_TAILS {
-        if lower.ends_with(tail) {
+        let (b, t) = (body.as_bytes(), tail.as_bytes());
+        if b.len() >= t.len() && b[b.len() - t.len()..].eq_ignore_ascii_case(t) {
+            // The matched bytes are all ASCII, so this index is a char boundary.
             let cut = body[..body.len() - tail.len()].trim_end();
             return Some(format!("{cut}{}", end.map(String::from).unwrap_or_default()));
         }
@@ -1040,13 +1043,9 @@ fn without_boilerplate(sentence: &str) -> Option<String> {
 /// before the first line that holds a join-block marker or a run of 8 underscores, and before the first line
 /// or sentence with 9 or more digits. Every word that is a link, an address, a phone or sip address, host shaped
 /// or has 5 or more digits is removed. The rest is collapsed and stops at 400 characters. None when
-/// nothing is left.
-pub fn clean_invite(raw: &str) -> Option<String> {
-    clean_invite_titled(raw, "")
-}
-
-/// Same as `clean_invite`, and also drops a leading line equal to the meeting title (case and spacing ignored), lines
-/// that are only a rule of dashes, and a short list of calendar boilerplate sentences.
+/// nothing is left. It also drops a first line equal to the meeting `title` (case and spacing ignored; an empty
+/// title drops nothing), lines that are only a rule of dashes, a short list of calendar boilerplate sentences
+/// and a trailing ", just click the link below".
 pub fn clean_invite_titled(raw: &str, title: &str) -> Option<String> {
     let squash = |t: &str| normalize(t).split_whitespace().collect::<Vec<_>>().join(" ").to_lowercase();
     let title_key = squash(title);
@@ -1058,12 +1057,13 @@ pub fn clean_invite_titled(raw: &str, title: &str) -> Option<String> {
             continue;
         }
         let was_first = std::mem::replace(&mut first_line, false);
-        if was_first && !title_key.is_empty() && squash(&norm) == title_key {
-            continue;
-        }
         let lower = norm.to_lowercase();
         if has_underscore_run(&norm) || invite_marker_cuts(&lower) || DIVIDERS.iter().any(|m| lower.contains(m)) || everyday_marker_cuts(&lower) {
             break;
+        }
+        // After the cut checks: a title that is also a join marker ("Join Zoom Meeting") still cuts.
+        if was_first && !title_key.is_empty() && squash(&norm) == title_key {
+            continue;
         }
         if is_rule_line(&norm) {
             continue;
@@ -1209,13 +1209,13 @@ mod tests {
     #[test]
     fn plain_year_chains_survive_without_preserving_ids_or_phones() {
         for text in ["Goals for Q3 2026 2027 plan", "2026 2027", "2025-2026", "2025/2026", "FY 2025 2026 budget", "Plan 2025 2026 2027 ahead"] {
-            assert_eq!(clean_invite(text).as_deref(), Some(text), "{text}");
+            assert_eq!(clean_invite_titled(text, "").as_deref(), Some(text), "{text}");
             assert_eq!(strip_digit_chains(text), text);
         }
         for text in ["987 6543 2101", "912-3456-7890", "+1 555 123 4567", "+1 2025 2026", "2024 2025 2026 2027"] {
-            assert_eq!(clean_invite(&format!("Agenda.\n{text}\nLater.")), Some("Agenda.".into()), "{text}");
+            assert_eq!(clean_invite_titled(&format!("Agenda.\n{text}\nLater."), ""), Some("Agenda.".into()), "{text}");
         }
-        assert_eq!(clean_invite("Agenda 14.11.2026 later"), Some("Agenda later".into()));
+        assert_eq!(clean_invite_titled("Agenda 14.11.2026 later", ""), Some("Agenda later".into()));
         for text in ["1899 2026", "2100 2026", "2025.2026", "2025,2026", "2025 2026 999"] {
             assert_eq!(strip_digit_chains(text).trim(), "", "{text}");
         }
@@ -1266,10 +1266,10 @@ mod tests {
     fn short_invite_markers_do_not_cut_inside_agenda_words() {
         for line in ["Q4 spin: the new pricing", "pwdreset notes", "Review spw: notes", "Review épin: notes"] {
             let text = format!("{line}\nNext agenda item.");
-            assert_eq!(clean_invite(&text), Some(format!("{line} Next agenda item.")));
+            assert_eq!(clean_invite_titled(&text, ""), Some(format!("{line} Next agenda item.")));
         }
         for line in ["PIN: 1234", "PW: x", "pwd x", "pwd123", "https://meet.example/j/98765432101?pwd=x"] {
-            assert_eq!(clean_invite(&format!("Agenda.\n{line}\nLater.")), Some("Agenda.".into()));
+            assert_eq!(clean_invite_titled(&format!("Agenda.\n{line}\nLater."), ""), Some("Agenda.".into()));
         }
     }
 
@@ -1277,13 +1277,13 @@ mod tests {
     fn label_digits_do_not_cut_the_following_agenda() {
         assert_eq!(longest_digit_run("Goals for Q3 2026 2027"), 0);
         // The full year phrase and the following agenda survive.
-        assert_eq!(clean_invite("Goals for Q3 2026 2027\nNext agenda item."), Some("Goals for Q3 2026 2027 Next agenda item.".into()));
+        assert_eq!(clean_invite_titled("Goals for Q3 2026 2027\nNext agenda item.", ""), Some("Goals for Q3 2026 2027 Next agenda item.".into()));
         for line in ["+1 555 123 4567", "Meeting 987 6543 2101", "9876543210"] {
             assert!(longest_digit_run(line) >= 9);
-            assert_eq!(clean_invite(&format!("Agenda.\n{line}\nLater.")), Some("Agenda.".into()));
+            assert_eq!(clean_invite_titled(&format!("Agenda.\n{line}\nLater."), ""), Some("Agenda.".into()));
         }
-        assert_eq!(clean_invite("ID9 8765 4321\nNext agenda item."), Some("ID9 Next agenda item.".into()));
-        assert_eq!(clean_invite("Agenda x987654321\nNext agenda item."), Some("Agenda Next agenda item.".into()));
+        assert_eq!(clean_invite_titled("ID9 8765 4321\nNext agenda item.", ""), Some("ID9 Next agenda item.".into()));
+        assert_eq!(clean_invite_titled("Agenda x987654321\nNext agenda item.", ""), Some("Agenda Next agenda item.".into()));
     }
 
     #[test]
@@ -2003,7 +2003,7 @@ mod tests {
 
     #[test]
     fn a_teams_invite_keeps_the_agenda_and_drops_the_join_block() {
-        let text = clean_invite(TEAMS_INVITE).unwrap();
+        let text = clean_invite_titled(TEAMS_INVITE, "").unwrap();
         assert_eq!(text, "Agenda: capacity sizing and the cost estimate. Please read the draft first.");
         for secret in ["https", "teams.example", "SECRETTOKEN", "123 456", "Passcode", "aB3dEf", "Microsoft Teams", "____"] {
             assert!(!text.contains(secret), "{secret} reached the answer");
@@ -2012,7 +2012,7 @@ mod tests {
 
     #[test]
     fn a_zoom_invite_keeps_the_words_and_never_the_link_id_or_passcode() {
-        let text = clean_invite(ZOOM_INVITE).unwrap();
+        let text = clean_invite_titled(ZOOM_INVITE, "").unwrap();
         assert_eq!(text, "Quick intro and a look at the depot list. Notes at or mail");
         for secret in ["zoom.example", "SECRETPWD", "9876543", "987 6543", "424242", "Passcode", "www.", "@"] {
             assert!(!text.contains(secret), "{secret} reached the answer");
@@ -2026,13 +2026,13 @@ mod tests {
     fn each_cut_marker_ends_the_invite_and_a_bare_join_block_leaves_nothing() {
         for marker in ["Microsoft Teams", "Join on your computer", "Join Zoom", "Meeting ID", "Passcode", "Dial in:"] {
             let raw = format!("Words before.\r\nthing {marker} here\r\nWords after.");
-            assert_eq!(clean_invite(&raw).as_deref(), Some("Words before."), "{marker}");
+            assert_eq!(clean_invite_titled(&raw, "").as_deref(), Some("Words before."), "{marker}");
         }
-        assert_eq!(clean_invite("Words before.\n________\nWords after.").as_deref(), Some("Words before."));
-        assert_eq!(clean_invite("Words 7_______ stay.").as_deref(), Some("Words 7_______ stay."));
-        assert_eq!(clean_invite("Microsoft Teams meeting\r\nhttps://t.example.test/x"), None);
-        assert_eq!(clean_invite("  \r\n  "), None);
-        assert_eq!(clean_invite("https://a.example.test www.b.example.test c@d.test"), None);
+        assert_eq!(clean_invite_titled("Words before.\n________\nWords after.", "").as_deref(), Some("Words before."));
+        assert_eq!(clean_invite_titled("Words 7_______ stay.", "").as_deref(), Some("Words 7_______ stay."));
+        assert_eq!(clean_invite_titled("Microsoft Teams meeting\r\nhttps://t.example.test/x", ""), None);
+        assert_eq!(clean_invite_titled("  \r\n  ", ""), None);
+        assert_eq!(clean_invite_titled("https://a.example.test www.b.example.test c@d.test", ""), None);
     }
 
     #[test]
@@ -2050,9 +2050,22 @@ mod tests {
     }
 
     #[test]
+    fn only_the_just_click_tail_is_cut_and_a_title_that_is_a_marker_still_cuts() {
+        // A person's own sentence that ends the plain way stays whole.
+        assert_eq!(clean_invite_titled("For the agenda, click the link below.", "").as_deref(), Some("For the agenda, click the link below."));
+        assert_eq!(clean_invite_titled("For the agenda, just click the link below.", "").as_deref(), Some("For the agenda."));
+        // A first line equal to the title that is also a join marker is cut with everything after it.
+        let body = "Join Zoom Meeting\r\nAgenda follows.\r\nMeeting ID: 123 456";
+        assert_eq!(clean_invite_titled(body, "Join Zoom Meeting"), None);
+        // Tail matching is done on the original bytes: a Kelvin sign (3 bytes, 1 byte in lower case) neither panics nor garbles.
+        assert_eq!(clean_invite_titled("Sprint plan \u{212A}, JUST click the link below.", "").as_deref(), Some("Sprint plan \u{212A}."));
+        assert_eq!(clean_invite_titled("\u{212A}\u{212A}, just click the link below", "").as_deref(), Some("\u{212A}\u{212A}"));
+    }
+
+    #[test]
     fn the_invite_stops_at_four_hundred_characters_and_collapses_whitespace() {
         let raw = format!("a   b\t\tc {}", "word ".repeat(200));
-        let text = clean_invite(&raw).unwrap();
+        let text = clean_invite_titled(&raw, "").unwrap();
         assert!(text.starts_with("a b c word"));
         assert!(text.chars().count() <= MAX_INVITE_CHARS);
         assert!(!text.contains("  "));
@@ -2085,10 +2098,10 @@ mod tests {
         let invite = "Planning sync for the quarter.\r\nJoin with Google Meet\r\nhttps://meet.example/abc-defg-hij\r\nOr dial: (US) +1 555-123-4567 PIN: 123456789#";
         // "Join with Google Meet" is an everyday phrase on a line of its own (no colon, no digit after it): it stays, the link line and the
         // number line after it do not.
-        assert_eq!(clean_invite(invite).as_deref(), Some("Planning sync for the quarter. Join with Google Meet"));
+        assert_eq!(clean_invite_titled(invite, "").as_deref(), Some("Planning sync for the quarter. Join with Google Meet"));
         // A bare link before any marker, and a number alone on a line.
         let bare = "Agenda first.\r\nRoom: meet.example/abc-defg-hij\r\nDial +1 555 123 4567 then 987654321";
-        assert_eq!(clean_invite(bare).as_deref(), Some("Agenda first. Room:"));
+        assert_eq!(clean_invite_titled(bare, "").as_deref(), Some("Agenda first. Room:"));
         let wire = wire_of(invite, "Avery Example");
         assert_none_of(&wire, &["meet.example", "abc-defg-hij", "555", "123456789", "PIN", "https", "dial"]);
         assert_none_of(&wire_of(bare, "Avery Example"), &["meet.example", "abc-defg-hij", "555", "987654321"]);
@@ -2097,32 +2110,32 @@ mod tests {
     #[test]
     fn a_webex_invite_keeps_nothing_of_the_number_or_the_password() {
         let invite = "Quarterly review with the team.\r\nJoin from Webex\r\nMeeting number: 2551 234 5678\r\nPassword: Tk3xYz\r\nhttps://team.webex.example/meet/avery";
-        assert_eq!(clean_invite(invite).as_deref(), Some("Quarterly review with the team. Join from Webex"));
+        assert_eq!(clean_invite_titled(invite, "").as_deref(), Some("Quarterly review with the team. Join from Webex"));
         let no_webex_word = "Quarterly review.\r\nMeeting number: 2551 234 5678\r\nPassword: Tk3xYz";
-        assert_eq!(clean_invite(no_webex_word).as_deref(), Some("Quarterly review."));
+        assert_eq!(clean_invite_titled(no_webex_word, "").as_deref(), Some("Quarterly review."));
         assert_none_of(&wire_of(invite, "Avery Example"), &["2551", "5678", "Tk3xYz", "team.webex", "meet/avery", "https"]);
     }
 
     #[test]
     fn a_german_zoom_invite_cannot_hide_behind_the_hyphen() {
         let invite = "Kurze Vorstellung der Zahlen.\r\nMeeting-ID: 912 3456 7890\r\nKenncode: 123456";
-        assert_eq!(clean_invite(invite).as_deref(), Some("Kurze Vorstellung der Zahlen."));
-        assert_eq!(clean_invite("Kurz.\r\nCode secret : 654321").as_deref(), Some("Kurz."));
-        assert_eq!(clean_invite("Kurz.\r\nAccess code 111222").as_deref(), Some("Kurz."));
-        assert_eq!(clean_invite("Kurz.\r\nConference ID 5551212").as_deref(), Some("Kurz."));
-        assert_eq!(clean_invite("Kurz.\r\nJoin by phone +49 30 123456").as_deref(), Some("Kurz."));
-        assert_eq!(clean_invite("Kurz.\r\nDial-in: x").as_deref(), Some("Kurz."));
-        assert_eq!(clean_invite("Kurz.\r\n-::~:~::~:~:~:~:~:~:~:~:~:~:~:~:~:~:~:~:~:~:~:~::~:~::-").as_deref(), Some("Kurz."));
+        assert_eq!(clean_invite_titled(invite, "").as_deref(), Some("Kurze Vorstellung der Zahlen."));
+        assert_eq!(clean_invite_titled("Kurz.\r\nCode secret : 654321", "").as_deref(), Some("Kurz."));
+        assert_eq!(clean_invite_titled("Kurz.\r\nAccess code 111222", "").as_deref(), Some("Kurz."));
+        assert_eq!(clean_invite_titled("Kurz.\r\nConference ID 5551212", "").as_deref(), Some("Kurz."));
+        assert_eq!(clean_invite_titled("Kurz.\r\nJoin by phone +49 30 123456", "").as_deref(), Some("Kurz."));
+        assert_eq!(clean_invite_titled("Kurz.\r\nDial-in: x", "").as_deref(), Some("Kurz."));
+        assert_eq!(clean_invite_titled("Kurz.\r\n-::~:~::~:~:~:~:~:~:~:~:~:~:~:~:~:~:~:~:~:~:~:~::~:~::-", "").as_deref(), Some("Kurz."));
         assert_none_of(&wire_of(invite, "Avery Example"), &["912", "7890", "123456", "Kenncode"]);
     }
 
     #[test]
     fn links_with_no_scheme_phone_and_sip_addresses_and_ids_are_removed_word_by_word() {
         let text = "Notes at host.example/j/12345?x=secret and tel:+1555 and sip:room.example plus short.example/Ab3 and code 54321 end.";
-        assert_eq!(clean_invite(text).as_deref(), Some("Notes at and and plus and code end."));
+        assert_eq!(clean_invite_titled(text, "").as_deref(), Some("Notes at and and plus and code end."));
         // The digit rule cuts a sentence with nine or more digits, however they are spaced.
-        assert_eq!(clean_invite("Fine words. Call 555 123 4567 now. Never seen.").as_deref(), Some("Fine words."));
-        assert_eq!(clean_invite("Fine words. Call (555) 123-4567 now.").as_deref(), Some("Fine words."));
+        assert_eq!(clean_invite_titled("Fine words. Call 555 123 4567 now. Never seen.", "").as_deref(), Some("Fine words."));
+        assert_eq!(clean_invite_titled("Fine words. Call (555) 123-4567 now.", "").as_deref(), Some("Fine words."));
         assert_none_of(&wire_of(text, "Avery Example"), &["host.example", "secret", "tel:", "sip:", "short.example", "54321"]);
     }
 
@@ -2130,21 +2143,21 @@ mod tests {
     fn an_invisible_character_inside_a_scheme_or_www_cannot_hide_it() {
         for hidden in ["\u{200B}", "\u{200C}", "\u{200D}", "\u{2060}", "\u{FEFF}", "\u{202E}", "\u{200E}", "\u{00AD}"] {
             let text = format!("Words. ht{hidden}tps://secret.example/x ww{hidden}w.corp.example and ma{hidden}ry@corp.example done.");
-            let got = clean_invite(&text).unwrap();
+            let got = clean_invite_titled(&text, "").unwrap();
             assert_eq!(got, "Words. and done.", "hidden {hidden:?}");
             assert_none_of(&wire_of(&text, "Avery Example"), &["secret", "corp", "https", "ww"]);
         }
         // A marker split by a hidden character or a tab is still a marker.
-        assert_eq!(clean_invite("Words.\nMeeting\tID: 123456").as_deref(), Some("Words."));
-        assert_eq!(clean_invite("Words.\nMeet\u{200B}ing  I\u{200D}D: 1").as_deref(), Some("Words."));
-        assert_eq!(clean_invite("Words.\nPASS\u{FEFF}CODE 12").as_deref(), Some("Words."));
+        assert_eq!(clean_invite_titled("Words.\nMeeting\tID: 123456", "").as_deref(), Some("Words."));
+        assert_eq!(clean_invite_titled("Words.\nMeet\u{200B}ing  I\u{200D}D: 1", "").as_deref(), Some("Words."));
+        assert_eq!(clean_invite_titled("Words.\nPASS\u{FEFF}CODE 12", "").as_deref(), Some("Words."));
     }
 
     #[test]
     fn ordinary_words_that_end_a_sentence_stay() {
-        assert_eq!(clean_invite("The review will start. Bring your notes.").as_deref(), Some("The review will start. Bring your notes."));
-        assert_eq!(clean_invite("Version v1.2 ships. See e.g. the list.").as_deref(), Some("Version v1.2 ships. See e.g. the list."));
-        assert_eq!(clean_invite("Room 4 is booked until 11.").as_deref(), Some("Room 4 is booked until 11."));
+        assert_eq!(clean_invite_titled("The review will start. Bring your notes.", "").as_deref(), Some("The review will start. Bring your notes."));
+        assert_eq!(clean_invite_titled("Version v1.2 ships. See e.g. the list.", "").as_deref(), Some("Version v1.2 ships. See e.g. the list."));
+        assert_eq!(clean_invite_titled("Room 4 is booked until 11.", "").as_deref(), Some("Room 4 is booked until 11."));
     }
 
     #[test]
@@ -2187,68 +2200,68 @@ mod tests {
     fn more_markers_cut_in_other_languages() {
         for line in ["Passwort: x", "Kennwort x1", "C\u{f3}digo de acceso 77", "Contrase\u{f1}a: x", "Mot de passe: x", "Senha: x", "PW: x", "pwd x", "Password: AbCd1234", "Dial-in: x", "PIN 1234", "Google Meet x1"] {
             let text = format!("Kurz.\r\n{line}\r\nNach dem Block.");
-            assert_eq!(clean_invite(&text).as_deref(), Some("Kurz."), "{line}");
+            assert_eq!(clean_invite_titled(&text, "").as_deref(), Some("Kurz."), "{line}");
         }
     }
 
     #[test]
     fn everyday_words_do_not_wipe_a_sentence_that_only_mentions_them() {
         let agenda = "Agenda: rotate the shared password list, then Webex licences.";
-        assert_eq!(clean_invite(agenda).as_deref(), Some(agenda));
-        assert_eq!(clean_invite("Agenda: the pin on the board and a dial in plan for later.").as_deref(), Some("Agenda: the pin on the board and a dial in plan for later."));
-        assert_eq!(clean_invite("Please use senha or contrase\u{f1}a managers only.").as_deref(), Some("Please use senha or contrase\u{f1}a managers only."));
+        assert_eq!(clean_invite_titled(agenda, "").as_deref(), Some(agenda));
+        assert_eq!(clean_invite_titled("Agenda: the pin on the board and a dial in plan for later.", "").as_deref(), Some("Agenda: the pin on the board and a dial in plan for later."));
+        assert_eq!(clean_invite_titled("Please use senha or contrase\u{f1}a managers only.", "").as_deref(), Some("Please use senha or contrase\u{f1}a managers only."));
         // "Join the Webex meeting" and then a link line: the words before the link, and no link.
-        assert_eq!(clean_invite("Join the Webex meeting\r\nhttps://team.example/meet/x").as_deref(), Some("Join the Webex meeting"));
+        assert_eq!(clean_invite_titled("Join the Webex meeting\r\nhttps://team.example/meet/x", "").as_deref(), Some("Join the Webex meeting"));
         // A marker word that starts the line, or is followed by a colon or a word with a digit, still cuts.
-        assert_eq!(clean_invite("Words.\r\nPassword: AbCd1234").as_deref(), Some("Words."));
-        assert_eq!(clean_invite("Words.\r\nPassword AbCd1234").as_deref(), Some("Words."));
-        assert_eq!(clean_invite("Words.\r\nThe password is x7y.").as_deref(), Some("Words."));
-        assert_eq!(clean_invite("Words.\r\nThe password: hidden").as_deref(), Some("Words."));
+        assert_eq!(clean_invite_titled("Words.\r\nPassword: AbCd1234", "").as_deref(), Some("Words."));
+        assert_eq!(clean_invite_titled("Words.\r\nPassword AbCd1234", "").as_deref(), Some("Words."));
+        assert_eq!(clean_invite_titled("Words.\r\nThe password is x7y.", "").as_deref(), Some("Words."));
+        assert_eq!(clean_invite_titled("Words.\r\nThe password: hidden", "").as_deref(), Some("Words."));
         // Inside a longer word it is not a marker at all.
-        assert_eq!(clean_invite("Words.\r\nSpinning wheels: ok").as_deref(), Some("Words. Spinning wheels: ok"));
+        assert_eq!(clean_invite_titled("Words.\r\nSpinning wheels: ok", "").as_deref(), Some("Words. Spinning wheels: ok"));
         // The unambiguous markers cut always.
-        assert_eq!(clean_invite("Words.\r\nsee the meeting id below").as_deref(), Some("Words."));
-        assert_eq!(clean_invite("Words.\r\nThe passcode for this call").as_deref(), Some("Words."));
+        assert_eq!(clean_invite_titled("Words.\r\nsee the meeting id below", "").as_deref(), Some("Words."));
+        assert_eq!(clean_invite_titled("Words.\r\nThe passcode for this call", "").as_deref(), Some("Words."));
     }
 
     #[test]
     fn full_width_digits_and_other_scripts_count_as_digits() {
-        assert_eq!(clean_invite("Fine. ID \u{ff11}\u{ff12}\u{ff13}\u{ff14}\u{ff15}\u{ff16}\u{ff17}\u{ff18}\u{ff19} here. After.").as_deref(), Some("Fine."));
-        assert_eq!(clean_invite("Fine. Code \u{661}\u{662}\u{663}\u{664}\u{665}\u{666} end.").as_deref(), Some("Fine. Code end."));
+        assert_eq!(clean_invite_titled("Fine. ID \u{ff11}\u{ff12}\u{ff13}\u{ff14}\u{ff15}\u{ff16}\u{ff17}\u{ff18}\u{ff19} here. After.", "").as_deref(), Some("Fine."));
+        assert_eq!(clean_invite_titled("Fine. Code \u{661}\u{662}\u{663}\u{664}\u{665}\u{666} end.", "").as_deref(), Some("Fine. Code end."));
         assert_eq!(clean_name("Ana \u{ff11}\u{ff12}\u{ff13}\u{ff14}\u{ff15}\u{ff16}\u{ff17}\u{ff18}\u{ff19}"), None);
     }
 
     #[test]
     fn other_dots_and_invisible_marks_cannot_hide_a_host() {
-        assert_eq!(clean_invite("Words. see meet\u{2024}example/abc and meet\u{ff0e}example now.").as_deref(), Some("Words. see and now."));
+        assert_eq!(clean_invite_titled("Words. see meet\u{2024}example/abc and meet\u{ff0e}example now.", "").as_deref(), Some("Words. see and now."));
         // The ideographic full stop ends a sentence of running text; only ASCII letters after it make a host.
         let ja = "\u{4f1a}\u{8b70}\u{306e}\u{8cc7}\u{6599}\u{3092}\u{78ba}\u{8a8d}\u{3057}\u{3066}\u{304f}\u{3060}\u{3055}\u{3044}\u{3002}\u{6b21}\u{306e}\u{8b70}\u{984c}";
-        assert_eq!(clean_invite(ja).as_deref(), Some(ja));
-        assert_eq!(clean_invite("Words. go\u{3002}example/abc end.").as_deref(), Some("Words. end."));
-        assert_eq!(clean_invite("Words. ht\u{34f}tps://x.example/y and ww\u{e0001}w.corp.example end.").as_deref(), Some("Words. and end."));
+        assert_eq!(clean_invite_titled(ja, "").as_deref(), Some(ja));
+        assert_eq!(clean_invite_titled("Words. go\u{3002}example/abc end.", "").as_deref(), Some("Words. end."));
+        assert_eq!(clean_invite_titled("Words. ht\u{34f}tps://x.example/y and ww\u{e0001}w.corp.example end.", "").as_deref(), Some("Words. and end."));
         assert_eq!(clean_name("Ana corp\u{2024}example"), None);
         assert_eq!(clean_name("A\u{34f}na\u{e0041} Example").as_deref(), Some("Ana Example"));
     }
 
     #[test]
     fn a_meeting_code_shaped_word_is_dropped() {
-        assert_eq!(clean_invite("Room abc-defg-hij now.").as_deref(), Some("Room now."));
-        assert_eq!(clean_invite("Room (abc-defg-hij), now.").as_deref(), Some("Room now."));
-        assert_eq!(clean_invite("The well-known-fact stays: a-bcd-ef too.").as_deref(), Some("The well-known-fact stays: a-bcd-ef too."));
+        assert_eq!(clean_invite_titled("Room abc-defg-hij now.", "").as_deref(), Some("Room now."));
+        assert_eq!(clean_invite_titled("Room (abc-defg-hij), now.", "").as_deref(), Some("Room now."));
+        assert_eq!(clean_invite_titled("The well-known-fact stays: a-bcd-ef too.", "").as_deref(), Some("The well-known-fact stays: a-bcd-ef too."));
     }
 
     #[test]
     fn digit_groups_that_total_seven_or_more_are_dropped_as_one_run() {
-        assert_eq!(clean_invite("Ref 1234 5678 done.").as_deref(), Some("Ref done."));
-        assert_eq!(clean_invite("Ref 123-4567 done.").as_deref(), Some("Ref done."));
-        assert_eq!(clean_invite("Ref 123.456.7890 done.").as_deref(), Some("Ref done."));
-        assert_eq!(clean_invite("Ref 123, 456, 78 done.").as_deref(), Some("Ref 123, 456, 78 done."));
+        assert_eq!(clean_invite_titled("Ref 1234 5678 done.", "").as_deref(), Some("Ref done."));
+        assert_eq!(clean_invite_titled("Ref 123-4567 done.", "").as_deref(), Some("Ref done."));
+        assert_eq!(clean_invite_titled("Ref 123.456.7890 done.", "").as_deref(), Some("Ref done."));
+        assert_eq!(clean_invite_titled("Ref 123, 456, 78 done.", "").as_deref(), Some("Ref 123, 456, 78 done."));
         // Everyday numbers survive.
         let ok = "Meet at 10:30 in 2026 for $1,250 by 4.12 with 3 or 12 people.";
-        assert_eq!(clean_invite(ok).as_deref(), Some(ok));
+        assert_eq!(clean_invite_titled(ok, "").as_deref(), Some(ok));
         // A long price is a five-digit word and goes (best effort, the safe side).
-        assert_eq!(clean_invite("Budget 1,250,000 later.").as_deref(), Some("Budget later."));
-        assert_eq!(clean_invite("Items 12-34 and 12 34 56 stay.").as_deref(), Some("Items 12-34 and 12 34 56 stay."));
+        assert_eq!(clean_invite_titled("Budget 1,250,000 later.", "").as_deref(), Some("Budget later."));
+        assert_eq!(clean_invite_titled("Items 12-34 and 12 34 56 stay.", "").as_deref(), Some("Items 12-34 and 12 34 56 stay."));
     }
 
     #[test]
