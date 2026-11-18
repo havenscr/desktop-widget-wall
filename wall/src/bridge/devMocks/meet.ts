@@ -79,6 +79,20 @@ function catsPlainDay(day: (hour: number, mins: number) => string) {
   ];
 }
 
+/** Short events back to back, one under way, and a short livestream with a category (`?meet=catsshort`). */
+function catsShortDay(day: (hour: number, mins: number) => string) {
+  const e = (key: string, title: string, a: [number, number], b: [number, number], category?: { name: string; tone: string }, canJoin = false, isLive = false) => ({
+    key, accountId: 'work', title, start: day(...a), end: day(...b), canJoin, canOpen: true, isLive, ...(category ? { category } : {}),
+  });
+  return [
+    e('d1-s0', 'Design review', [10, 0], [11, 15], { name: 'Sample projects', tone: 'preset0' }, true),
+    e('d1-s1', 'Quick check', [14, 0], [14, 15], { name: 'Sample team', tone: 'preset7' }, true),
+    e('d1-s2', 'Vendor call', [14, 15], [15, 0], undefined, true),
+    e('d1-s3', 'Livestream: short', [15, 0], [15, 20], { name: 'Sample shows', tone: 'preset4' }, false, true),
+    e('d1-s4', 'Wrap up', [15, 20], [16, 0], { name: 'Sample admin', tone: 'preset8' }),
+  ];
+}
+
 /** Meet: two accounts and a few meetings around now. Sign-in just flips the state. */
 export function registerMeetMocks(): void {
   let second = false;
@@ -93,6 +107,7 @@ export function registerMeetMocks(): void {
   // `?meet=none`: both read, nothing scheduled. `?meet=busy`: five meetings at once at 1 PM.
   // `?meet=cats`: a day with five invented Outlook categories and one uncategorised event. `?meet=tones`: 25 events, one per preset colour, 40 minutes apart from 6:20 AM.
   // `?meet=catsplain`: plain and coloured events side by side, past and joinable, and a livestream with a category.
+  // `?meet=catsshort`: short events back to back (a 15 minute one before a 45 minute one), a short livestream with a category, and one under way.
   // `?meet=nocolours`: the account is connected without the permission to read Outlook colours.
   const mode = () => knob('meet') ?? '';
   // `?meet=before|known|new|bare` (the Meet layout): `before` has the next meeting 20 minutes away, `known` and `new` a meeting
@@ -190,7 +205,7 @@ export function registerMeetMocks(): void {
     const day = (hour: number, mins: number) => new Date(midnight.getTime() + (hour * 60 + mins) * 60_000).toISOString().replace('.000Z', 'Z');
     return {
       accounts: accounts(),
-      events: mode() === 'down' || mode() === 'none' ? [] : mode() === 'cats' ? catsDay(day) : mode() === 'catsplain' ? catsPlainDay(day) : mode() === 'tones' ? TONE_COLOURS.map((name, i) => {
+      events: mode() === 'down' || mode() === 'none' ? [] : mode() === 'cats' ? catsDay(day) : mode() === 'catsplain' ? catsPlainDay(day) : mode() === 'catsshort' ? catsShortDay(day) : mode() === 'tones' ? TONE_COLOURS.map((name, i) => {
         const from = 6 * 60 + 20 + i * 40;
         return { key: `d1-t${i}`, accountId: 'work', title: `${i} ${name}`, start: day(Math.floor(from / 60), from % 60), end: day(Math.floor((from + 36) / 60), (from + 36) % 60), canJoin: false, canOpen: true, isLive: false, category: { name: `Sample ${name}`, tone: `preset${i}` } };
       }) : layout() ? layoutMeetings().map((e, i) => ({ key: `d1-L${i}`, accountId: e.accountId, title: e.title, start: e.start, end: e.end, canJoin: e.canJoin, canOpen: i < 2 || undefined, isLive: false })) : [

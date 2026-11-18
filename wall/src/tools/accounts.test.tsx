@@ -509,7 +509,7 @@ it('says quietly that a connected account lacks the Outlook colours, with a hove
   const rows = [...document.querySelectorAll('.tools-acct')] as HTMLElement[];
   const work = rows.find((r) => r.textContent?.includes('Work'))!;
   const second = rows.find((r) => r.textContent?.includes('Second'))!;
-  expect(work.textContent).toContain('Connected, Outlook colours off');
+  expect(work.textContent).toContain('No colours yet');
   expect(await hoverText(work)).toBe('Sign in again to show Outlook colours');
   expect(second.textContent).toContain('Connected');
   expect(second.textContent).not.toContain('colours');

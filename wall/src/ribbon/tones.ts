@@ -77,12 +77,21 @@ export const GROUNDS: Record<'ribbon' | 'drawer', readonly Rgb[]> = {
   drawer: [[14, 11, 34]],
 };
 
-const ALPHA: Record<ToneState, { fill: number; edge: number }> = {
-  next: { fill: 0.22, edge: 0.55 },
-  now: { fill: 0.32, edge: 0.8 },
-  // Dimmed by a quieter fill, edge and text, never by fading the whole chip: fading drops the text below the floor.
-  past: { fill: 0.1, edge: 0.3 },
+/** The tint behind the words and the edge of a coloured chip. The colour itself is the 6 px bar (`--tone-bar`). */
+const ALPHA: Record<'next' | 'now', { fill: number; edge: number }> = {
+  next: { fill: 0.16, edge: 0.34 },
+  now: { fill: 0.3, edge: 0.7 },
 };
+
+/** The bar on the left of a coloured chip or tile: full colour, a little quieter once the event is over. */
+const BAR_ALPHA: Record<ToneState, number> = { next: 1, now: 1, past: 0.8 };
+
+/**
+ * A past event, coloured or plain, is a grey wash: the same fill, edge and text whatever the tone, with the
+ * colour kept only on the bar. A past chip is never faded as a whole, which would drop its text under the floor.
+ */
+const GREY: Rgb = [160, 156, 190];
+const PAST_ALPHA = { fill: 0.12, edge: 0.3 };
 
 const mix = (a: Rgb, b: Rgb, t: number): Rgb => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t];
 
@@ -133,10 +142,22 @@ function pickText(base: Rgb, fillAlpha: number, grounds: readonly Rgb[], target:
 
 const css = (c: Rgb, a = 1) => `rgba(${Math.round(c[0])}, ${Math.round(c[1])}, ${Math.round(c[2])}, ${a})`;
 
+/** The grounds a past chip or tile can sit on, all of them: its text is one colour for every place. */
+const ALL_GROUNDS: readonly Rgb[] = [...GROUNDS.ribbon, ...GROUNDS.drawer];
+
+/** The grey wash of a past event as colours, for ribbon.css (plain past chips and tiles) and the tests. */
+export const PAST = (() => {
+  // A little margin over the floor, so rounding to whole colour values never takes it under.
+  const text = pickText(GREY, PAST_ALPHA.fill, ALL_GROUNDS, FLOOR + 0.3, mix(GREY, GROUNDS.drawer[0], 0.3));
+  return { fill: css(GREY, PAST_ALPHA.fill), edge: css(GREY, PAST_ALPHA.edge), text: css(text), rgb: { base: GREY, fillAlpha: PAST_ALPHA.fill, text } };
+})();
+
 export interface ToneStyle {
   fill: string;
   edge: string;
   text: string;
+  /** The 6 px bar: the tone at full strength (a little less once past). */
+  bar: string;
   /** The same colours as numbers, for the tests. */
   rgb: { base: Rgb; fillAlpha: number; text: Rgb };
 }
@@ -152,18 +173,20 @@ export function toneStyle(token: ToneToken, state: ToneState, where: 'ribbon' | 
   const hit = cache.get(key);
   if (hit) return hit;
   const base = BASE[Number(token.slice(6))];
+  const bar = css(base, BAR_ALPHA[state]);
+  if (state === 'past') {
+    const style: ToneStyle = { fill: PAST.fill, edge: PAST.edge, text: PAST.text, bar, rgb: PAST.rgb };
+    cache.set(key, style);
+    return style;
+  }
   const { fill, edge } = ALPHA[state];
   const grounds = GROUNDS[where];
   // A little margin over the floor, so rounding to whole colour values never takes it under.
   const target = FLOOR + 0.3;
-  const text =
-    state === 'past'
-      ? pickText(base, fill, grounds, target, mix(base, grounds[0], 0.45))
-      : // Next and now read at 7 to 1 where the fill allows it, else at the floor.
-        worst(pickText(base, fill, grounds, 7, mix(base, WHITE, 0.7)), base, fill, grounds) >= 7
-        ? pickText(base, fill, grounds, 7, mix(base, WHITE, 0.7))
-        : pickText(base, fill, grounds, target, mix(base, WHITE, 0.7));
-  const style: ToneStyle = { fill: css(base, fill), edge: css(base, edge), text: css(text), rgb: { base, fillAlpha: fill, text } };
+  // Upcoming and under way read at 7 to 1 where the fill allows it, else at the floor.
+  const seven = pickText(base, fill, grounds, 7, mix(base, WHITE, 0.7));
+  const text = worst(seven, base, fill, grounds) >= 7 ? seven : pickText(base, fill, grounds, target, mix(base, WHITE, 0.7));
+  const style: ToneStyle = { fill: css(base, fill), edge: css(base, edge), text: css(text), bar, rgb: { base, fillAlpha: fill, text } };
   cache.set(key, style);
   return style;
 }
@@ -171,7 +194,12 @@ export function toneStyle(token: ToneToken, state: ToneState, where: 'ribbon' | 
 /** Inline custom properties for an element carrying `data-tone`. */
 export function toneVars(token: ToneToken, state: ToneState, where: 'ribbon' | 'drawer'): Record<string, string> {
   const s = toneStyle(token, state, where);
-  return { '--tone-fill': s.fill, '--tone-edge': s.edge, '--tone-text': s.text };
+  return { '--tone-fill': s.fill, '--tone-edge': s.edge, '--tone-text': s.text, '--tone-bar': s.bar };
+}
+
+/** The category dot a livestream carries: the tone at full strength, on a chip that keeps its pink. */
+export function toneDotVars(token: ToneToken): Record<string, string> {
+  return { '--tone-dot': css(BASE[Number(token.slice(6))]) };
 }
 
 /** The category line for a hover card and an accessible name. */

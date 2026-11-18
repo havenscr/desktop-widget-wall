@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import ribbonCss from '../styles/ribbon.css?raw';
-import { composite, FLOOR, HOVER_BRIGHTNESS, GROUNDS, isToneToken, ratio, readCategory, TONE_NAMES, TONE_TOKENS, toneStyle, type Rgb, type ToneState } from './tones';
+import { composite, FLOOR, PAST, toneVars, HOVER_BRIGHTNESS, GROUNDS, isToneToken, ratio, readCategory, TONE_NAMES, TONE_TOKENS, toneStyle, type Rgb, type ToneState } from './tones';
 
 /** The numbers inside a `rgba(r, g, b, a)` string, as the browser will read them. */
 const parse = (c: string): { rgb: Rgb; a: number } => {
@@ -101,5 +101,68 @@ describe('every text on a coloured chip keeps its contrast floor', () => {
       expect(l(past.text)).toBeLessThan(l(next.text));
     }
     expect(fills.size).toBe(25);
+  });
+});
+
+/** The declarations of the first rule in `css` whose selector is exactly `selector`. */
+const rule = (selector: string): string => {
+  const at = ribbonCss.indexOf(`\n${selector} {`);
+  if (at < 0) throw new Error(`no rule ${selector}`);
+  return ribbonCss.slice(at, ribbonCss.indexOf('}', at));
+};
+
+describe('the 6 px bar, the grey past wash and plain chips', () => {
+  it('each tone draws its bar at full strength, a little less once past', () => {
+    for (const token of TONE_TOKENS) {
+      expect(parse(toneVars(token, 'next', 'ribbon')['--tone-bar']).a).toBe(1);
+      expect(parse(toneVars(token, 'now', 'drawer')['--tone-bar']).a).toBe(1);
+      expect(parse(toneVars(token, 'past', 'ribbon')['--tone-bar']).a).toBe(0.8);
+      expect(parse(toneVars(token, 'next', 'ribbon')['--tone-bar']).rgb).toEqual(toneStyle(token, 'next', 'ribbon').rgb.base);
+    }
+    expect(rule('.rib .ev[data-tone]')).toContain('inset 6px 0 0 var(--tone-bar)');
+    expect(rule('.dd-ev[data-tone]')).toContain('inset 6px 0 0 var(--tone-bar)');
+  });
+
+  it('a past tile is the same grey wash whatever the tone, with only the bar in colour', () => {
+    for (const token of TONE_TOKENS) {
+      for (const where of WHERE) {
+        const s = toneStyle(token, 'past', where);
+        expect([s.fill, s.edge, s.text]).toEqual([PAST.fill, PAST.edge, PAST.text]);
+      }
+    }
+  });
+
+  it('the grey wash clears the floor on every ground, hovered too', () => {
+    const fill = parse(PAST.fill);
+    for (const ground of [...GROUNDS.ribbon, ...GROUNDS.drawer]) {
+      expect(ratio(parse(PAST.text).rgb, composite(fill.rgb, fill.a, ground))).toBeGreaterThanOrEqual(FLOOR);
+      const under = composite(lift(fill.rgb, HOVER_BRIGHTNESS), fill.a, ground);
+      expect(ratio(lift(parse(PAST.text).rgb, HOVER_BRIGHTNESS), under)).toBeGreaterThanOrEqual(FLOOR);
+    }
+  });
+
+  it('a plain past chip and tile in ribbon.css use that wash, and nothing fades them', () => {
+    for (const sel of ['.rib .ev.past', '.dd-ev.past', '.rib .ev.fold.past']) {
+      const r = rule(sel);
+      expect(r, sel).toContain(`background: ${PAST.fill}`);
+      expect(r, sel).toContain(`border-color: ${PAST.edge}`);
+      expect(r, sel).toContain(`color: ${PAST.text}`);
+      expect(r, sel).not.toContain('opacity');
+    }
+    expect(rule('.rib .ev-side.past')).toContain(`color: ${PAST.text}`);
+    expect(rule('.rib .ev-side.past')).not.toContain('opacity');
+    expect(rule('.dd-ev.past .dd-t')).toContain('opacity: 1');
+  });
+
+  it('a livestream with a category keeps its pink and takes a dot in the category colour', () => {
+    expect(rule('.rib .ev.live[data-dot]::before')).toContain('var(--tone-dot)');
+    expect(rule('.dd-ev.live[data-dot] b::before')).toContain('var(--tone-dot)');
+    expect(rule('.rib .ev.live')).toContain('rgba(255, 61, 154');
+  });
+
+  it('Day drawer tile text is 16 px or more', () => {
+    expect(rule('.dd-ev')).toContain('font: 600 16px');
+    expect(rule('.dd-ev .dd-t')).toContain('font: 400 16px');
+    expect(rule('.dd-join')).toContain('font: 600 16px');
   });
 });

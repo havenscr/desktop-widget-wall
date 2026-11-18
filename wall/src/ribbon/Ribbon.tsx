@@ -13,7 +13,7 @@ import { DayDrawer } from './DayDrawer';
 import { DayLip } from './DayLip';
 import { sunTimes } from './sun';
 import { useDayFeed } from './useDayEvents';
-import { categoryLine, toneVars } from './tones';
+import { categoryLine, toneDotVars, toneVars } from './tones';
 import { useDueTaskFeed } from './useDueTasks';
 
 export type RibbonKind = 'work' | 'home';
@@ -313,6 +313,8 @@ export function Ribbon({ kind, now = Date.now }: { kind: RibbonKind; now?: () =>
           const cls = `${c.state}${c.live ? ' live' : ''}${c.lanes > 1 ? ` s${Math.min(3, c.lanes)}` : ''}`;
           // A livestream keeps its pink; every other event with a known category takes its colour.
           const toned = c.category && !c.live ? c.category : null;
+          // ...and a livestream that has a category keeps its pink and gains a small dot in that colour (room permitting).
+          const dot = c.category && c.live && !c.narrow ? c.category : null;
           return (
             <Fragment key={c.key}>
               {c.narrow && c.beside !== null && (
@@ -323,7 +325,8 @@ export function Ribbon({ kind, now = Date.now }: { kind: RibbonKind; now?: () =>
               <div
                 className={`ev ${cls}${c.canOpen ? ' open' : ''}`}
                 data-tone={toned?.tone}
-                style={{ left: c.x, width: c.width, ...(toned ? toneVars(toned.tone, c.state, 'ribbon') : {}), ...(box ?? {}) } as CSSProperties}
+                data-dot={dot ? '' : undefined}
+                style={{ left: c.x, width: c.width, ...(toned ? toneVars(toned.tone, c.state, 'ribbon') : {}), ...(dot ? toneDotVars(dot.tone) : {}), ...(box ?? {}) } as CSSProperties}
                 role={c.canOpen ? 'button' : undefined}
                 tabIndex={c.canOpen ? 0 : undefined}
                 aria-label={`${c.title}, ${spanText(c.start, c.end)}${account ? `, ${account}` : ''}${c.category ? `. ${categoryLine(c.category.name)}` : ''}${c.canOpen ? '. Opens it in Outlook' : ''}${c.hidden?.length ? `. ${c.hidden.length} more at this time: ${hiddenNames(c.hidden).titles.join(', ')}${hiddenNames(c.hidden).more ? `, and ${hiddenNames(c.hidden).more} more` : ''}` : ''}`}

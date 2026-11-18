@@ -10,6 +10,9 @@ export interface MeetAccount {
   colours?: boolean;
 }
 
+/** The Tools line of a connected account without the colour permission; it has to fit the row whole (about 125 px). */
+export const COLOURS_LINE = 'No colours yet';
+
 export const COLOURS_HINT = 'Sign in again to show Outlook colours';
 
 export type Reply = 'yes' | 'maybe' | 'no' | 'none' | 'organizer';
