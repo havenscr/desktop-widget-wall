@@ -161,16 +161,12 @@
   font-weight: 400;
 }
 .st-switches .st-tg {
-  gap: 8px;
-  padding: 0 8px;
+  --tg-px: 8px;
+  --tg-gap: 8px;
 }
-.st-tg.dim {
+/* A zone group is dimmed at its switch, not at its name: the name stays readable (7 to 1, not 4.4 to 1). */
+.st-tg-sw.dim .st-sw {
   opacity: 0.65;
-}
-.st-room > span:not(.st-sw) {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
 }
 
 /* The block is 148 px (the older one was 134): the footnote under it keeps its place in the column by closing up
@@ -232,9 +228,11 @@
   min-width: 0;
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 0;
+  --tg-px: 12px;
+  --tg-gap: 0;
   height: 40px;
-  padding: 0 12px;
+  padding: 0;
   border-radius: 12px;
   background: rgba(14, 10, 36, 0.78);
   border: 1px solid rgba(255, 255, 255, 0.14);
@@ -244,13 +242,70 @@
   text-align: left;
   transition: border-color 160ms ease, color 160ms ease;
 }
-button.st-tg {
-  cursor: pointer;
-}
-button.st-tg:hover {
+.st-tg:hover,
+.st-tg:has(.st-name.open) {
   border-color: rgba(53, 230, 234, 0.8);
   box-shadow: 0 0 0 2px rgba(53, 230, 234, 0.28);
   color: var(--tx);
+}
+/* The two targets of a tile: the switch (from the tile's left edge to the name) and the name. */
+.st-tg > svg:first-child {
+  flex: none;
+  margin: 0 var(--tg-gap) 0 var(--tg-px);
+}
+.st-tg-sw {
+  flex: none;
+  display: flex;
+  align-items: center;
+  height: 100%;
+  padding: 0 var(--tg-gap) 0 var(--tg-px);
+  border-radius: 11px 0 0 11px;
+  background: none;
+  border: 0;
+  color: inherit;
+  font: inherit;
+}
+button.st-tg-sw {
+  cursor: pointer;
+}
+button.st-tg-sw:hover .st-sw {
+  box-shadow: 0 0 0 3px rgba(53, 230, 234, 0.4);
+}
+span.st-tg-sw {
+  cursor: default;
+}
+.st-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 100%;
+  padding: 0 var(--tg-px) 0 0;
+  background: none;
+  border: 0;
+  border-radius: 0 11px 11px 0;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+.st-tg.warn .st-name {
+  color: var(--amber);
+}
+.st-tg.on.warn .st-name {
+  color: var(--tx);
+}
+.st-name:hover,
+.st-name.open {
+  color: var(--cyan);
+  text-decoration: underline;
+  text-underline-offset: 4px;
+}
+.st-tg-sw:focus-visible,
+.st-name:focus-visible {
+  outline: 3px solid var(--cyan);
+  outline-offset: -3px;
 }
 .st-tg.on {
   color: var(--tx);
@@ -910,4 +965,178 @@ button.st-tg:hover {
 }
 .kl-stack .tools-src {
   height: 34px;
+}
+
+/* ---- the card on a group's name, and the Panels effect row and list ---- */
+.st-gcard,
+.st-gcard *,
+.st-eflist,
+.st-eflist * {
+  box-sizing: border-box;
+}
+.st-gcard {
+  position: absolute;
+  z-index: 45;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  padding: 10px 14px 12px;
+  background: rgb(14, 12, 34);
+  border: 2px solid rgba(220, 211, 251, 0.58);
+  border-radius: 14px;
+  box-shadow: 0 18px 50px -8px rgba(2, 1, 10, 0.85);
+  color: var(--tx);
+}
+.st-gcard button:focus-visible,
+.st-gcard .st-sl:focus-visible,
+.st-eflist button:focus-visible {
+  outline: 3px solid var(--cyan);
+  outline-offset: 2px;
+}
+.st-gcard-tail {
+  position: absolute;
+  bottom: -9px;
+  width: 14px;
+  height: 14px;
+  background: rgb(14, 12, 34);
+  border-right: 2px solid rgba(220, 211, 251, 0.58);
+  border-bottom: 2px solid rgba(220, 211, 251, 0.58);
+  transform: rotate(45deg);
+}
+.st-gcard-hd,
+.st-gcard .st-k-hd {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  height: 34px;
+}
+.st-gcard .st-h {
+  font-size: 18px;
+}
+.st-gcard .st-d-keys {
+  border-top: 0;
+  padding-top: 0;
+}
+.st-gcard .st-sides {
+  grid-template-columns: 1fr;
+  gap: 4px;
+}
+.st-gcard-why {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding-top: 4px;
+  font: 600 16px/22px var(--body);
+  color: var(--tx);
+}
+.st-gcard-why.amber {
+  color: var(--amber);
+}
+.st-gcard-why svg {
+  flex: none;
+  margin-top: 1px;
+}
+.st-gcard-line {
+  margin-top: 6px;
+}
+.st-gcard-act {
+  align-self: flex-start;
+  margin-top: 10px;
+}
+.st-effect {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  height: 36px;
+  margin-top: 2px;
+  padding: 0 10px;
+  border-radius: 10px;
+  background: rgba(14, 10, 36, 0.78);
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  color: var(--tx);
+  font: 500 16px/1 var(--body);
+  cursor: pointer;
+}
+.st-effect:hover:not(.dis),
+.st-effect.open {
+  border-color: rgba(53, 230, 234, 0.8);
+}
+.st-effect.dis {
+  border-style: dashed;
+  border-color: rgba(183, 175, 214, 0.5);
+  color: var(--dim);
+  cursor: default;
+}
+.st-effect > svg {
+  flex: none;
+  color: var(--dim);
+}
+.st-effect-k {
+  flex: none;
+  font-weight: 600;
+}
+.st-effect-v {
+  flex: 1 1 auto;
+  min-width: 0;
+  text-align: right;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.st-eflist {
+  position: absolute;
+  z-index: 47;
+  display: flex;
+  flex-direction: column;
+  padding: 6px;
+  background: rgb(14, 12, 34);
+  border: 2px solid rgba(220, 211, 251, 0.58);
+  border-radius: 12px;
+  box-shadow: 0 18px 50px -8px rgba(2, 1, 10, 0.85);
+}
+.st-ef {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 34px;
+  padding: 0 10px 0 6px;
+  border-radius: 8px;
+  background: none;
+  border: 0;
+  color: var(--tx);
+  font: 500 16px/1 var(--body);
+  text-align: left;
+  cursor: pointer;
+}
+.st-ef:hover,
+.st-ef:focus-visible {
+  background: rgba(255, 255, 255, 0.1);
+}
+.st-ef.on {
+  color: var(--cyan);
+}
+.st-ef-tick {
+  flex: none;
+  display: flex;
+  width: 18px;
+}
+.st-ef-n {
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* A group that needs a Hue zone says so whole, on a line of its own under its name. */
+.st-zone {
+  padding-left: 46px;
+  line-height: 24px;
+  white-space: normal;
+}
+.st-gcard:focus {
+  outline: none;
+}
+/* The voted card has no range line: the values at the right end of each slider say it. The sheet keeps the range. */
+.st-gcard .st-scale {
+  display: none;
 }

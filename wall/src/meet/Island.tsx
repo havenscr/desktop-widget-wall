@@ -4,7 +4,7 @@ import { invoke } from '../bridge/tauri';
 import { elapsedText } from '../signals/RecordingChip';
 import { tip } from '../ui/HoverTip';
 import { initials } from './heroModel';
-import { HOW_TO, indexName, inviteSize, islandKinds, orderLine, stepKind, type CallMark, type IslandKind, type KindId } from './islandModel';
+import { HOW_TO, indexName, inviteSize, islandKinds, stepKind, type CallMark, type IslandKind, type KindId } from './islandModel';
 import { clockText, type MeetingDetails, type Reply } from './model';
 import { useMeetStore } from './meetStore';
 import type { ChecklistRead } from './useChecklist';
@@ -185,9 +185,7 @@ export function Island({ details, checklist, reloadSoon, meetingId, marks }: { d
         )}
       </div>
       <div className="meet-isl-foot">
-        <span className="meet-xxs ellipsis meet-isl-order" {...tip(orderLine(kinds))}>
-          {orderLine(kinds)}
-        </span>
+        <span className="meet-isl-gap" aria-hidden="true" />
         {many && (
           <>
             <button type="button" className="meet-arrow" aria-label="Previous" onClick={() => go(-1)} {...tip('Show the previous kind')}>

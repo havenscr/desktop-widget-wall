@@ -30,7 +30,7 @@ import { useWatchStore } from '../../unwind/watch/store';
  */
 const PALETTES = [['#1b1440', '#ff5c96', '#ffb054', '#35e6ea'], ['#10243a', '#7dd3c7', '#f5cf77', '#f2b8c6'], ['#241038', '#9a7bff', '#ff3d9a', '#ffd9a0'], ['#0e2030', '#5cc4ff', '#d8f1ff', '#7df0c2'], ['#2a1430', '#ff7a6b', '#ffc24d', '#5df2b6'], ['#141a3c', '#92a8d1', '#f2b8c6', '#f5cf77']];
 /** A drawn 16:9 motif (six shapes, six palettes) as a data address: stands in for a picture from YouTube. */
-function motif(seed: number): string {
+export function motif(seed: number): string {
   const [bg, a, b, c] = PALETTES[seed % PALETTES.length];
   const w = 160;
   const h = 90;

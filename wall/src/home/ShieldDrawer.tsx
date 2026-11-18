@@ -27,7 +27,7 @@ const CLEAR_WORDS: Record<string, string> = {
   'nothing-to-clear': 'Nothing to clear',
   forbidden: 'The home app refused the clear',
   absent: 'The home app cannot clear yet',
-  'needs-private-address': 'Clear all needs a private or https address',
+  'needs-private-address': 'Clear all needs a tailnet or local address',
 };
 
 const NOTE_MS = 5000;
@@ -131,8 +131,8 @@ export function ShieldDrawer({ s, refresh, onClose }: { s: Shield; refresh: numb
             </span>
           )}
           {s.clearInsecure && (
-            <span className="sd-txt off" {...tip('The home app address in feeds.json is plain http on the local network, so the wall does not send its desk token there. Use https, a loopback or a tailnet address.')}>
-              Clear all needs a private or https address
+            <span className="sd-txt off" {...tip('The home app address in feeds.json is not this PC or a tailnet address, so the wall does not send its desk token there. Use a loopback or a tailnet address.')}>
+              Clear all needs a tailnet or local address
             </span>
           )}
         </div>

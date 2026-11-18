@@ -122,7 +122,7 @@
   line-height: 16px;
 }
 .rib .ev-side.past {
-  opacity: 0.45;
+  color: rgba(193, 191, 205, 1);
 }
 /* All-day events fold into one chip at the start of the calendar row. */
 .rib .ev.allday {
@@ -142,8 +142,23 @@
 .rib.late .agent-row .sg-more {
   opacity: 0.4;
 }
+/* A past event, coloured or plain, is a grey wash (ribbon/tones.ts `PAST` holds these numbers and
+   the tests hold them to the same values): never faded as a whole, which drops its text under 4.5 to 1. */
 .rib .ev.past {
-  opacity: 0.45;
+  background: rgba(160, 156, 190, 0.12);
+  border-color: rgba(160, 156, 190, 0.3);
+  color: rgba(193, 191, 205, 1);
+}
+.rib .ev.fold.past {
+  background: rgba(160, 156, 190, 0.12);
+  border-color: rgba(160, 156, 190, 0.3);
+  color: rgba(193, 191, 205, 1);
+}
+.rib .ev.fold.past .fold-n {
+  color: rgba(193, 191, 205, 1);
+}
+.rib .ev.fold.past .fold-t {
+  opacity: 1;
 }
 .rib .ev.now {
   background: rgba(154, 123, 255, 0.5);
@@ -153,6 +168,34 @@
   background: rgba(255, 61, 154, 0.2);
   border-color: rgba(255, 61, 154, 0.6);
   color: #ffd3e8;
+}
+/* An event with an Outlook category takes its colour: a 6 px bar in the full colour on the left and a
+   light tint behind the words (ribbon/tones.ts sets --tone-* per state, so the text clears 4.5 to 1 on
+   its own fill). A past chip is the grey wash with the colour kept on the bar. A livestream carries no
+   data-tone and keeps its pink; its category is a small dot (--tone-dot). */
+.rib .ev[data-tone] {
+  background: var(--tone-fill);
+  border-color: var(--tone-edge);
+  color: var(--tone-text);
+  box-shadow: inset 6px 0 0 var(--tone-bar);
+  padding-left: 15px;
+}
+.rib .ev.s2[data-tone] {
+  padding-left: 13px;
+}
+.rib .ev.s3[data-tone] {
+  padding-left: 0;
+}
+.rib .ev.live[data-dot]::before {
+  content: '';
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  margin-right: 8px;
+  border-radius: 50%;
+  vertical-align: middle;
+  background: var(--tone-dot);
+  box-shadow: 0 0 0 2px rgba(8, 6, 24, 0.9);
 }
 /* Task due marks, row 2: a cyan diamond on the due time, then a short title and the time
    (the concept's publish marker, `.pub`). */
@@ -398,6 +441,36 @@
   white-space: nowrap;
   text-shadow: 0 0 4px rgba(6, 4, 22, 0.95);
   cursor: pointer;
+  /* The row is click-through (so the sky behind it is not covered); the line itself takes the pointer. */
+  pointer-events: auto;
+}
+/* Over the session limit: a red marker "7 of 4 open" opens the line, and a thin red line runs along
+   the strip from when the limit was passed (or from each stretch that passed it) to now or to when
+   the count dropped back. The cells keep their meaning (how many worked at once). */
+.rib .ag-line .x-over {
+  display: inline-block;
+  box-sizing: border-box;
+  height: 22px;
+  margin-right: 8px;
+  padding: 0 9px;
+  border: 1px solid #ff6b81;
+  border-radius: 11px;
+  background: rgba(255, 77, 109, 0.2);
+  font: 600 16px/20px var(--disp);
+  color: #ffd0d8;
+  vertical-align: top;
+  text-shadow: none;
+}
+.rib .agent-row .x-rail {
+  position: absolute;
+  top: 73px;
+  height: 3px;
+  border-radius: 2px;
+  background: #ff4d6d;
+  pointer-events: none;
+}
+.rib .agent-row.stale .x-rail {
+  opacity: 0.6;
 }
 /* Late in the day the line sits before the needle, over the bar: on a dark backing. */
 .rib .ag-line.before {
@@ -749,7 +822,7 @@ button.dd-k.link:hover {
   background: rgba(154, 123, 255, 0.22);
   border: 1px solid rgba(154, 123, 255, 0.55);
   color: #e4dcff;
-  font: 600 15px/1.2 var(--body);
+  font: 600 16px/1.2 var(--body);
   overflow: hidden;
 }
 .dd-ev.short {
@@ -765,7 +838,40 @@ button.dd-k.link:hover {
   filter: brightness(1.15);
 }
 .dd-ev.past {
-  opacity: 0.55;
+  background: rgba(160, 156, 190, 0.12);
+  border-color: rgba(160, 156, 190, 0.3);
+  color: rgba(193, 191, 205, 1);
+}
+.dd-ev.past .dd-t {
+  opacity: 1;
+}
+.dd-ev[data-tone] {
+  background: var(--tone-fill);
+  border-color: var(--tone-edge);
+  color: var(--tone-text);
+  box-shadow: inset 6px 0 0 var(--tone-bar);
+  padding-left: 15px;
+}
+.dd-ev.short[data-tone] {
+  padding-left: 15px;
+}
+.dd-ev[data-tone] .dd-t {
+  opacity: 1;
+}
+/* The Join button keeps its cyan text on a dark wash, so it clears the floor on any tone. */
+.dd-ev[data-tone] .dd-join {
+  background: rgba(8, 6, 24, 0.7);
+}
+.dd-ev.live[data-dot] b::before {
+  content: '';
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  margin-right: 8px;
+  border-radius: 50%;
+  vertical-align: middle;
+  background: var(--tone-dot);
+  box-shadow: 0 0 0 2px rgba(8, 6, 24, 0.9);
 }
 .dd-ev.live {
   background: rgba(255, 61, 154, 0.2);
@@ -780,20 +886,20 @@ button.dd-k.link:hover {
 }
 .dd-ev .dd-t {
   flex: none;
-  font: 400 13px/1.4 var(--body);
+  font: 400 16px/1.2 var(--body);
   opacity: 0.75;
   white-space: nowrap;
 }
 .dd-join {
   margin-left: auto;
   flex: none;
-  height: 22px;
+  height: 24px;
   padding: 0 10px;
   border-radius: 7px;
   border: 1px solid rgba(53, 230, 234, 0.5);
   background: rgba(53, 230, 234, 0.14);
   color: var(--cyan);
-  font: 600 13px/1 var(--body);
+  font: 600 16px/1 var(--body);
   cursor: pointer;
 }
 .dd-join:hover {

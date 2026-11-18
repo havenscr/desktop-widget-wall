@@ -7,9 +7,11 @@
 //! failure maps to a fixed string or a reason code built from numbers and a checked name.
 
 mod auth;
+mod colours;
 pub(crate) mod brief;
 pub(crate) mod brief_token;
 pub(crate) mod checklist;
+mod contacts;
 mod desktop;
 mod graph;
 mod meetlog;
@@ -172,6 +174,10 @@ fn raw_of(resp: ureq::Response, success_body: bool) -> graph::Raw {
 }
 
 impl graph::GraphClient for HttpGraph {
+    fn master_categories(&self, access: &str, ctx: &graph::Ctx) -> (graph::GraphReply, Option<graph::Diag>) {
+        self.calendar_request(access, graph::MASTER_CATEGORIES_URL.to_string(), ctx)
+    }
+
     fn calendar_view(&self, access: &str, start: &str, end: &str) -> graph::GraphReply {
         let ctx = graph::Ctx::new(graph::Kind::Next, std::sync::Arc::new(graph::RealClock), graph::BUDGET);
         self.calendar_view_diag(access, start, end, &ctx).0
@@ -367,7 +373,17 @@ pub async fn wall2_meet_sign_in(window: tauri::WebviewWindow, id: String) -> Res
         .ok_or_else(|| NOT_CONFIGURED.to_string())?;
     let app = window.app_handle().clone();
     tauri::async_runtime::spawn_blocking(move || -> Result<(), String> {
-        let granted = auth::authorize(&app, &account).map_err(str::to_string)?;
+        // Ask for the colours permission too. A refusal of that permission (the consent page
+        // declined, or a tenant that says so in its error) is answered once with the same
+        // sign-in for the calendar alone, so a blocked extra permission never costs the
+        // calendar. A cancel, a time-out and any other failure open nothing more, and the
+        // second attempt is never followed by a third.
+        let granted = match auth::authorize(&app, &account, auth::SIGN_IN_SCOPE) {
+            Err(outcome) if colours::offer_calendar_only(auth::SIGN_IN_SCOPE, outcome) => auth::authorize(&app, &account, auth::SIGN_IN_SCOPE_NO_COLOURS),
+            other => other,
+        }
+        // The caller sees the one word it always saw for a refused sign-in.
+        .map_err(|e| if e == "consent" { "denied".to_string() } else { e.to_string() })?;
         let result = service::complete_sign_in(&account, &granted, &secrets(), &auth::HttpTokens, core(), now_secs());
         let lines = std::mem::take(&mut lock_core().log_lines);
         meetlog::write_all(lines);

@@ -428,18 +428,21 @@
   font-size: 17px;
   min-width: 0;
 }
+.yt-songs.tall .yt-playbtns .sp-btn.yt-pin.icon {
+  /* In the tall view Pin is an icon only: its word would run past the 248 px column. */
+  width: 40px;
+  padding: 0;
+  justify-content: center;
+}
 .yt-playall[data-disabled],
-.yt-shuffle[data-disabled] {
+.yt-shuffle[data-disabled],
+.yt-pin[data-disabled],
+.sp-pin[data-disabled] {
   opacity: 0.45;
   cursor: default;
 }
 .yt-refresh:disabled {
   opacity: 0.6;
-}
-.yt-readat {
-  font: 400 16px/20px var(--body);
-  color: var(--dim);
-  white-space: nowrap;
 }
 
 /* While the library cannot show: the remote stays, with one line and one button under it. */

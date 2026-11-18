@@ -6,7 +6,14 @@ export interface MeetAccount {
   state: AccountState;
   /** Why the account is not connected: a short fixed-shape code such as `graph-403-ErrorAccessDenied`. */
   reason?: string;
+  /** False when this account's sign-in lacks the permission to read Outlook category colours. Absent means not known. */
+  colours?: boolean;
 }
+
+/** The Tools line of a connected account without the colour permission; it has to fit the row whole (about 125 px). */
+export const COLOURS_LINE = 'No colours yet';
+
+export const COLOURS_HINT = 'Sign in again to show Outlook colours';
 
 export type Reply = 'yes' | 'maybe' | 'no' | 'none' | 'organizer';
 

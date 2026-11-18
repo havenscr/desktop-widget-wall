@@ -8,6 +8,9 @@ import { PINS_KEY, usePins } from '../../unwind/watch/pins';
 import { OWN_KEY, useOwnLists } from '../../unwind/watch/ownLists';
 import { ownTiming, playOwn, setFollow, useOwnPlay } from '../../unwind/watch/ownPlay';
 import { ownThumb } from '../../unwind/watch/OwnParts';
+import { pinArt } from '../../unwind/watch/pinArtModel';
+import { cover } from './spotify';
+import { motif } from './youtube';
 import { markFailed } from '../../unwind/ytmusic/queue';
 import { SAVED_KEY } from '../../unwind/watch/saved';
 import { endSleepNow, startSleepAt } from '../../unwind/watch/sleep';
@@ -52,6 +55,10 @@ import { knob } from './long';
  *                             shown, as with the pointer over the video's lower edge
  *   ?wpins=none|one|three|long|gone   the pins under the clock: nothing pinned; the first item; the three items of the
  *                             mock list (default none); three with long labels; one pin whose item left the Watch list
+ *   ?wpins=mixed|mixedfull|mixedbroken|lib1|liblong   pins made from the library panels: a Spotify playlist with its cover, a YouTube
+ *                             live stream and the Twitch item; three library pins (a Spotify playlist and album, a YouTube playlist);
+ *                             as `mixed` with the Spotify cover failing to load; the Spotify playlist alone; one with a 60 character name.
+ *                             Every pins value draws its pictures (no picture host is asked).
  *   ?wvol=<0..100>            the video's level under the clock (default 100)
  *   ?wsleep=<minutes left>|end   a running sleep timer with that many minutes left; `end` ends the timer at once (the video
  *                             stops with its line and the player the wall follows is paused through the mocked commands)
@@ -79,6 +86,17 @@ const THREE = [
   { kind: 'twitch', id: 'pixel_harbor', label: 'pixel_harbor' },
 ];
 /** The three items with labels long enough to need two lines (and an ellipsis) on a pin. */
+/** Invented library pins: ids are made up, and the covers are real shaped addresses that the picture seam draws. */
+const HARBOR = { kind: 'spotify-playlist', id: '0000000000000000000771', name: 'Harbor lights', art: 'https://i.scdn.co/image/ab67616d00001e02' + 'a1b2c3d4e5f60718293a4b5c6d7e8f9001122334'.slice(0, 24) };
+const RAIN = { kind: 'live', id: 'Rain_Radio1', name: 'Rain radio, live' };
+const LIBRARY_ALBUM = { kind: 'spotify-album', id: '0000000000000000000772', name: 'Night swimming', art: 'https://i.scdn.co/image/ab67616d00001e02b1c2d3e4f5a60718293a4b5c' };
+const LIBRARY_LIST = { kind: 'playlist', id: 'PLmocklistpin0001', name: 'Quiet focus', art: 'https://i.ytimg.com/vi/Qk3mPz7aXy1/mqdefault.jpg' };
+const LONG_NAME = 'Harbor lights for the long walk home after the last ferry, slow and warm and low';
+const seedOf = (address: string) => [...address].reduce((a, c) => (a * 31 + c.charCodeAt(0)) % 9973, 7);
+/** The picture seam for pins: a drawn cover from the address (the covers of a Spotify address, the motifs of a YouTube one). */
+function drawnPin(address: string): string {
+  return address.includes('ytimg.com') ? motif(seedOf(address)) : cover(seedOf(address));
+}
 const LONG_THREE = [
   { kind: 'video', id: 'Ab3dEfGh1jK', label: 'Night drive mix for the long way home, the whole album with the extended intro and the bonus tracks' },
   { kind: 'live', id: 'Lofi_Live01', label: 'Lofi beats radio, live from the harbor studio all night long' },
@@ -328,7 +346,16 @@ export function registerWatchMocks(): void {
     if (pins === 'one') localStorage.setItem(PINS_KEY, JSON.stringify([keys[0]]));
     else if (pins === 'three' || pins === 'long') localStorage.setItem(PINS_KEY, JSON.stringify(keys));
     else if (pins === 'gone') localStorage.setItem(PINS_KEY, JSON.stringify(['video:Zz9yXxWw8vU']));
+    else if (pins === 'mixed' || pins === 'mixedbroken') localStorage.setItem(PINS_KEY, JSON.stringify([HARBOR, RAIN, keys[2]]));
+    else if (pins === 'mixedfull') localStorage.setItem(PINS_KEY, JSON.stringify([{ ...HARBOR, id: '0000000000000000000001' }, LIBRARY_ALBUM, LIBRARY_LIST]));
+    else if (pins === 'lib1') localStorage.setItem(PINS_KEY, JSON.stringify([HARBOR]));
+    else if (pins === 'liblong') localStorage.setItem(PINS_KEY, JSON.stringify([{ ...HARBOR, name: LONG_NAME.slice(0, 60) }]));
     else localStorage.removeItem(PINS_KEY);
+    // Whatever is pinned draws its pictures: no review page or test loads a picture host.
+    if (pins && pins !== 'none') {
+      ownThumb.url = drawnThumb;
+      pinArt.src = pins === 'mixedbroken' ? (a) => (a.includes('scdn.co') ? 'data:image/png;base64,broken' : drawnPin(a)) : drawnPin;
+    }
     const vol = Number(knob('wvol'));
     if (knob('wvol') !== null && Number.isFinite(vol)) localStorage.setItem(VOLUME_KEY, String(Math.min(100, Math.max(0, Math.round(vol)))));
     else localStorage.removeItem(VOLUME_KEY);

@@ -95,7 +95,7 @@ it('during a Teams call the keys are Mute, Camera, Share and Leave, and each pre
   await setCall(call());
   await renderMeet();
   const keys = within(screen.getByLabelText('Call keys'));
-  expect(keys.getAllByRole('button').map((b) => b.getAttribute('aria-label'))).toEqual(['Mute', 'Camera off', 'Share', 'Leave']);
+  expect(keys.getAllByRole('button').slice(0, 4).map((b) => b.getAttribute('aria-label'))).toEqual(['Mute', 'Camera off', 'Share', 'Leave']);
   for (const [label, id] of [['Mute', 'teams-mute'], ['Camera off', 'teams-camera'], ['Share', 'teams-share'], ['Leave', 'teams-leave']]) {
     sent = [];
     fireEvent.click(keys.getByRole('button', { name: label }));
@@ -146,12 +146,12 @@ it('a call in the browser draws the four keys dashed and disabled, and a press s
   await renderMeet();
   const keys = screen.getByLabelText('Call keys');
   const buttons = within(keys).getAllByRole('button');
-  expect(buttons.map((b) => b.getAttribute('aria-label'))).toEqual(['Mute', 'Camera', 'Share', 'Leave']);
+  expect(buttons.map((b) => b.getAttribute('aria-label'))).toEqual(['Mute', 'Camera', 'Share', 'Leave', 'Raise hand', 'Reactions', 'Chat panel', 'Open in browser']);
   for (const b of buttons) {
     expect(b.getAttribute('aria-disabled')).toBe('true');
-    expect(b.className).toContain('dashed');
     fireEvent.click(b);
   }
+  for (const b of buttons.slice(0, 4)) expect(b.className).toContain('dashed');
   await flush(600);
   expect(sent.filter((s) => s.command === 'wall2_keys_send_library')).toEqual([]);
   expect(await tipWords(buttons[0])).toBe('A call in the browser takes no shortcuts from the wall');
@@ -201,11 +201,12 @@ it('the hero says who called, how many are invited and how they replied; a perso
   expect(within(hero).getByText('Called by Casey Rowe · Work')).toBeTruthy();
   expect(within(hero).getByText('6 invited')).toBeTruthy();
   expect(within(hero).getByText('3 said yes, 1 maybe')).toBeTruthy();
-  const circles = [...hero.querySelectorAll('.meet-ppl-row .meet-ini')].map((e) => e.textContent);
+  const circles = [...hero.querySelectorAll('.meet-ppl-row .meet-ini')].map((e) => e.querySelector('.meet-ini-t')?.textContent);
   // Six invited, one declined: five drawn, so five circles and no "+N".
   expect(circles).toEqual(['CR', 'DW', 'EN', 'RO', 'NH']);
   expect(circles.join(' ')).not.toContain('TL');
-  expect(hero.textContent).toContain('Walk through the sizing options');
+  // The invite's words stay in the island; the hero no longer draws them.
+  expect(hero.textContent).not.toContain('Walk through the sizing options');
   // The status row carries the time of day and a red dot's words.
   expect(hero.querySelector('.meet-time')?.textContent).toMatch(/^\d{1,2}:\d{2}[AP]M$/);
   // The ring is minutes left, in violet during a call.
@@ -360,7 +361,8 @@ it('the island opens on the invite; an arrow, an Also on file row and the dots c
   fireEvent.click(isl.getByRole('tab', { name: 'Who is coming' }));
   expect(heading(container)).toBe('Who is coming');
   expect(isl.getByRole('tab', { name: 'Who is coming' }).getAttribute('aria-selected')).toBe('true');
-  expect(isl.getByText('Order: the invite, who is coming, your first-meeting list')).toBeTruthy();
+  // The footer carries only the arrows and dots; no line repeats the kinds.
+  expect(isl.queryByText(/^Order:/)).toBeNull();
 });
 
 it('with one kind there is no index, no arrows and no dots', async () => {
@@ -506,5 +508,5 @@ it('a failed key press says why in the hero\'s last row', async () => {
   const { container } = await renderMeet();
   fireEvent.click(screen.getByRole('button', { name: 'Mute' }));
   await flush(10);
-  expect(container.querySelector('.meet-hero-last .meet-brief')).not.toBeNull();
+  expect(container.querySelector('.meet-hero-line .meet-brief')).not.toBeNull();
 });

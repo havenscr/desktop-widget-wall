@@ -209,7 +209,7 @@ it('a stale read: the drawer title says when, and Clear all waits for a fresh re
   expect(calls).toEqual([]);
 });
 
-it('a plain http home address on the network: Clear all says it needs a private or https address', async () => {
+it('a plain http home address on the network: Clear all says it needs a tailnet or local address', async () => {
   mocks.set('wall2_home_security', () => summary);
   mocks.set('wall2_desk_security', () => desk(2, { canClear: false, clearInsecure: true }));
   mocks.set('wall2_links', () => ({ security: true, portal: false }));
@@ -217,7 +217,7 @@ it('a plain http home address on the network: Clear all says it needs a private 
   await flush();
   showAll();
   await flush();
-  expect(screen.getByText('Clear all needs a private or https address')).toBeTruthy();
+  expect(screen.getByText('Clear all needs a tailnet or local address')).toBeTruthy();
   expect(screen.queryByText('Clear all: not set up')).toBeNull();
   expect(screen.queryByRole('button', { name: 'Clear all' })).toBeNull();
 });

@@ -269,10 +269,10 @@ describe('Play and Shuffle', () => {
     expect(nowId()).toBe(q().entries[0]!.id);
   });
 
-  it('keep Refresh, with the time shown tall and in the hover card at rest', async () => {
+  it('keep Refresh as an icon button, with the time read in its hover card tall and at rest', async () => {
     await openList(true);
     expect(screen.getByRole('button', { name: 'Refresh' })).toBeTruthy();
-    expect(screen.getByText(/^Read at /)).toBeTruthy();
+    expect(screen.queryByText(/^Read at /)).toBeNull();
     cleanup();
     resetLibrary();
     await openList(false);

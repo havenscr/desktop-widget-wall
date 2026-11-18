@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, type ReactNode } from 'react';
+import { useEffect, useLayoutEffect, useRef, type CSSProperties, type ReactNode } from 'react';
 import { IconChevronDown } from '@tabler/icons-react';
 import { invoke } from '../bridge/tauri';
 import { cards, elapsedText, helpersWork, helpersWorkText, laneWaits, prText, type Lane, type OmniSummary } from '../agents/model';
@@ -8,10 +8,23 @@ import { tip } from '../ui/HoverTip';
 import { daySegments, laneStateWord } from './AgentRow';
 import { isoDay, useDaysStore } from './days';
 import { useBehindDrawer } from './DrawerScrim';
+import { categoryLine, toneDotVars, toneVars } from './tones';
 import { allDayBarText, hm, hourText, shortTime, spanText, wallHour, type Chip } from './model';
 
 /** Pixels per hour in the agenda. */
 const P = 40;
+
+/** A tile is never drawn shorter than this many pixels, so its time line and Join button stay whole. */
+const MIN_TILE = 24;
+
+/** A tile's height in pixels for the time it spans (3 px of air between tiles), never under `MIN_TILE`. */
+const tileHeight = (hours: number): number => Math.max(MIN_TILE, hours * P - 3);
+
+/** The longest an event is taken to run for the lanes: as long as its tile is drawn, so a short event never covers the tile after it. */
+const MIN_RUN_MS = ((MIN_TILE + 3) / P) * 3_600_000;
+
+/** How far down a tile its title and time line reach, in pixels: the now line stops short of that part. */
+const TITLE_ZONE = 30;
 
 /** The agenda's hours: 8 AM to 6 PM, widened to the first and last meeting. */
 export function agendaRange(items: readonly Chip[], now: number): { lo: number; hi: number } {
@@ -26,7 +39,9 @@ export function agendaRange(items: readonly Chip[], now: number): { lo: number; 
 
 /** Lanes for the agenda: overlapping meetings side by side, each run as wide as its lanes need. */
 export function agendaLanes(items: readonly Chip[]): { c: Chip; lane: number; lanes: number }[] {
-  const sorted = [...items].sort((a, b) => a.start - b.start || a.end - b.end);
+  // A short event is drawn as tall as `MIN_TILE`, so it takes its lane for that long: side by side with what follows, never under it.
+  const endOf = (c: Chip) => Math.max(c.end, c.start + MIN_RUN_MS);
+  const sorted = [...items].sort((a, b) => a.start - b.start || endOf(a) - endOf(b));
   const out: { c: Chip; lane: number; lanes: number }[] = [];
   let run: { c: Chip; lane: number; lanes: number }[] = [];
   let reach = -Infinity;
@@ -44,11 +59,38 @@ export function agendaLanes(items: readonly Chip[]): { c: Chip; lane: number; la
     }
     let lane = ends.findIndex((e) => e <= c.start);
     if (lane < 0) lane = ends.length;
-    ends[lane] = c.end;
+    ends[lane] = endOf(c);
     run.push({ c, lane, lanes: 1 });
-    reach = Math.max(reach, c.end);
+    reach = Math.max(reach, endOf(c));
   }
   if (run.length > 0) flush();
+  return out;
+}
+
+/**
+ * The now line as pieces: whole across the agenda, except where the title and time of an event under way sit, where
+ * it stops short of the tile and starts again after it. `cuts` are the lanes of those tiles.
+ */
+export function nowSegments(cuts: readonly { lane: number; lanes: number }[]): { left: string; right: string }[] {
+  // A tile spans (lane / n) to ((lane + 1) / n) of the width, less 2 px at the left and 4 px at the right.
+  const spans = cuts
+    .map(({ lane, lanes }) => ({ a: lane / lanes, b: (lane + 1) / lanes }))
+    .sort((x, y) => x.a - y.a)
+    .reduce<{ a: number; b: number }[]>((out, s) => {
+      const last = out[out.length - 1];
+      if (last && s.a <= last.b + 1e-9) last.b = Math.max(last.b, s.b);
+      else out.push({ ...s });
+      return out;
+    }, []);
+  const at = (f: number, px: number) => `calc(${f * 100}% + ${px}px)`;
+  const from = (f: number, px: number) => `calc(${(1 - f) * 100}% - ${px}px)`;
+  const out: { left: string; right: string }[] = [];
+  let start: { left: string } = { left: '-8px' };
+  for (const s of spans) {
+    out.push({ ...start, right: from(s.a, 2) });
+    start = { left: at(s.b, -4) };
+  }
+  out.push({ ...start, right: '0px' });
   return out;
 }
 
@@ -194,17 +236,21 @@ export function DayDrawer({
               {chips.length === 0 && <span className="dd-none">No meetings today</span>}
               {lanes.map(({ c, lane, lanes: n }) => {
                 const top = (Math.max(lo, wallHour(c.start, now)) - lo) * P + 1;
-                const height = Math.max(22, (Math.min(hi, wallHour(c.end, now)) - Math.max(lo, wallHour(c.start, now))) * P - 3);
+                const height = tileHeight(Math.min(hi, wallHour(c.end, now)) - Math.max(lo, wallHour(c.start, now)));
                 const account = c.accountId ? (labels[c.accountId] ?? null) : null;
                 const short = height < 32;
+                const toned = c.category && !c.live ? c.category : null;
+                const dot = c.category && c.live ? c.category : null;
                 return (
                   <div
                     key={c.key}
                     className={`dd-ev ${c.state}${c.live ? ' live' : ''}${c.canOpen ? ' open' : ''}${short ? ' short' : ''}`}
-                    style={{ top, height, left: `calc(${(lane / n) * 100}% + 2px)`, width: `calc(${100 / n}% - 6px)` }}
+                    data-tone={toned?.tone}
+                    data-dot={dot ? '' : undefined}
+                    style={{ top, height, left: `calc(${(lane / n) * 100}% + 2px)`, width: `calc(${100 / n}% - 6px)`, ...(toned ? toneVars(toned.tone, c.state, 'drawer') : {}), ...(dot ? toneDotVars(dot.tone) : {}) } as CSSProperties}
                     role={c.canOpen ? 'button' : undefined}
                     tabIndex={c.canOpen ? 0 : undefined}
-                    aria-label={`${c.title}, ${spanText(c.start, c.end)}${c.canOpen ? '. Opens it in Outlook' : ''}`}
+                    aria-label={`${c.title}, ${spanText(c.start, c.end)}${c.category ? `. ${categoryLine(c.category.name)}` : ''}${c.canOpen ? '. Opens it in Outlook' : ''}`}
                     onClick={c.canOpen ? () => invoke('wall2_open_event', { key: c.key }).catch(() => undefined) : undefined}
                     onKeyDown={
                       c.canOpen
@@ -224,6 +270,7 @@ export function DayDrawer({
                           {spanText(c.start, c.end)}
                           {account ? `, ${account}` : ''}
                         </span>
+                        {c.category && <span className="tip-s">{categoryLine(c.category.name)}</span>}
                         {c.canOpen && <span className="tip-k">Click to open it in Outlook</span>}
                       </>
                     ))}
@@ -248,7 +295,16 @@ export function DayDrawer({
                   </div>
                 );
               })}
-              {nowH >= lo && nowH <= hi && <i className="dd-now" style={{ top: (nowH - lo) * P }} aria-hidden="true" />}
+              {nowH >= lo &&
+                nowH <= hi &&
+                nowSegments(
+                  lanes.flatMap(({ c, lane, lanes: n }) => {
+                    const top = (Math.max(lo, wallHour(c.start, now)) - lo) * P + 1;
+                    return nowH >= wallHour(c.start, now) && nowH < wallHour(c.end, now) && (nowH - lo) * P <= top + TITLE_ZONE ? [{ lane, lanes: n }] : [];
+                  }),
+                ).map((seg, i) => (
+                  <i key={i} className="dd-now" style={{ top: (nowH - lo) * P, left: seg.left, right: seg.right }} aria-hidden="true" />
+                ))}
             </div>
           </div>
         </div>

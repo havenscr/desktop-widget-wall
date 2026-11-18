@@ -1,9 +1,11 @@
 import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react';
-import { IconSearch } from '@tabler/icons-react';
+import { IconArrowsShuffle, IconListDetails, IconPlayerPlayFilled, IconSearch } from '@tabler/icons-react';
 import type { YtPlaylist, YtVideo } from '../../music/youtube';
 import { tip } from '../../ui/HoverTip';
 import { useVisible } from '../../ui/useVisible';
 import { arrowTarget, gridColumns } from '../spotify/Tile';
+import { libraryMenuOpen } from '../watch/libraryMenuModel';
+import { libraryHandlers } from '../watch/libraryOpen';
 import { MAX_PAGES, PAGE_SIZE, SEARCH_TIP, SPENT_LINE, devSearchKnob, nearEnd, searchSpent, searchesLine, videosLine } from './model';
 import { playFrom } from './queue';
 import { useYoutubeStatus } from './status';
@@ -34,19 +36,36 @@ function gridKey(e: ReactKeyboardEvent<HTMLButtonElement>): void {
 }
 
 function PlaylistTile({ p }: { p: YtPlaylist }) {
+  // The right-click menu: Play and Shuffle open the playlist and start it when its first page arrives; then Pin to the left.
+  const menu = libraryHandlers({
+    entry: { kind: 'playlist', id: p.id, name: p.title, art: p.thumb ?? undefined },
+    name: p.title,
+    actions: () => [
+      { id: 'play', label: 'Play', icon: <IconPlayerPlayFilled size={20} aria-hidden="true" />, run: () => openPlaylist(p, 'play') },
+      { id: 'shuffle', label: 'Shuffle', icon: <IconArrowsShuffle size={20} aria-hidden="true" />, run: () => openPlaylist(p, 'shuffle') },
+      { id: 'videos', label: 'Videos', icon: <IconListDetails size={20} aria-hidden="true" />, run: () => openPlaylist(p) },
+    ],
+  });
+  const card = tip(() => (
+    <div className="sp-tipline">
+      <b>{p.title}</b>
+      <span>{videosLine(p.count)}</span>
+      <span>Click to see its videos</span>
+    </div>
+  ));
   return (
     <div className="sp-tilebox">
       <button
         type="button"
         className="sp-tile yt-tile"
-        onKeyDown={gridKey}
-        {...tip(() => (
-          <div className="sp-tipline">
-            <b>{p.title}</b>
-            <span>{videosLine(p.count)}</span>
-            <span>Click to see its videos</span>
-          </div>
-        ))}
+        onKeyDown={(e) => {
+          if (!menu.onMenuKey(e)) gridKey(e);
+        }}
+        onContextMenu={menu.onContextMenu}
+        {...card}
+        // The card does not come back while a library menu is open.
+        onMouseEnter={(e) => (libraryMenuOpen() ? undefined : card.onMouseEnter(e))}
+        onFocus={(e) => (libraryMenuOpen() ? undefined : card.onFocus(e))}
         onClick={() => openPlaylist(p)}
       >
         <YtThumb src={p.thumb} className="sp-tilecover yt-cover" />

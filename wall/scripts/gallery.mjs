@@ -659,7 +659,7 @@ const EXPECT = [
   ['home', 'chores with alerts', ['10 more can wait', 'Show all 6']],
   ['home', 'sound playing on a speaker', ['Now playing', 'Lantern Song 1', 'Living room, 4 speakers', 'All Speakers', 'Common Areas']],
   ['home', 'shield drawer, stale read', ['open alerts as of', 'Clear all waits for a fresh read']],
-  ['home', 'shield drawer, plain http address', ['Clear all needs a private or https address']],
+  ['home', 'shield drawer, plain http address', ['Clear all needs a tailnet or local address']],
   ['home', 'sound nothing playing', ['Nothing playing', 'Play']],
   // end home round two
   ['home', 'chore ticked', ['Done.', 'Undo']],
@@ -853,7 +853,7 @@ const EXPECT = [
 ];
 // The calm strip, the Day drawer and the Agents today panel.
 EXPECT.push(
-  ['work', 'bottom: overlaps and twelve', ['3 at 1:30', '12 sessions: 2 need you']],
+  ['work', 'bottom: overlaps and twelve', ['3 at 1:30', '12 of 4 open', '2 need you']],
   ['work', 'bottom: overlap hover', ['3 meetings overlap', 'Vendor demo1:30 to 3:30 PM']],
   ['work', 'bottom: day drawer', ['Agents today', 'Vendor demo1:30 to 3:30', 'waiting on you']],
   ['work', 'bottom: helpers working in day drawer', ['helpers working', '2 working (1 through helpers)']],
@@ -876,7 +876,7 @@ EXPECT.push(
   ['work', 'colours: header at 2 of 4', '2 of 4 working'],
   ['work', 'colours: header at 4 of 4', ['4 of 4 working', 'at the limit']],
   ['work', 'colours: header at 9 of 4', ['9 of 4 working', '5 over']],
-  ['work', 'colours: the strip over the limit', ['12 sessions: 1 needs you, 9 working', '5 over']],
+  ['work', 'colours: the strip over the limit', ['12 of 4 open', '1 needs you, 9 working', '5 over']],
   ['work', 'colours: the panel over the limit', ['Busy at once', 'Over your limit of 4 for']],
   ['work', 'colours: no limit, header and strip', ['9 working', '!5 over', '!of 4']],
   ['work', 'colours: no limit, the panel', ['Click a row to open its session', '!Busy at once', '!Over your limit']],

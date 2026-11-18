@@ -5,6 +5,9 @@ import type { SpotifyDevice, SpotifyItem, SpotifyTrack } from '../../music/spoti
 import { resetNowPlaying } from '../../music/store';
 import { resetTools } from '../../tools/store';
 import { hideTip, resetTip } from '../../ui/HoverTip';
+import { closeLibraryMenu, useLibraryMenu } from '../watch/libraryMenuModel';
+import { LibraryMenuLayer } from '../watch/LibraryMenu';
+import { resetPins, usePins } from '../watch/pins';
 import { deviceKindWord, GONE_LINE, LOCKED_LINE, NOT_YOURS_LINE, PAGE_OFF_LINE, resetPublicPage, usePublicPage, WHILE_PLAYS, WHILE_HEADINGS, playDeviceId, resetSpotifyTarget, resetListenSource, seekPosition, SEARCH_WAIT_MS, TALL_CLOSE_MS, useListenSource, useSpotifyDevices, useSpotifyNow, useSpotifyStart, useSpotifyTarget } from './model';
 import { deviceRows, DEVICES_FOOT, STALE_NOTE } from './PlayOn';
 import { PLAYBACK_POLL_MS, SEEK_KEY_GAP_MS, SEEK_STEP_MS } from './PlayerRow';
@@ -239,6 +242,68 @@ describe('opening and closing the tall view', () => {
     expect(behind).toHaveBeenCalledTimes(2);
   });
 
+  it('a right-click on a tile opens the library menu in the tall view, its clicks are not swallowed, and Escape closes only the menu', async () => {
+    await setup();
+    await open();
+    render(<LibraryMenuLayer />);
+    const tile = document.querySelector('.sp-tile') as HTMLElement;
+    await act(async () => fireEvent.contextMenu(tile, { clientX: 30, clientY: 30 }));
+    expect(useLibraryMenu.getState().open).not.toBeNull();
+    // Escape belongs to the menu first: the tall view stays.
+    await act(async () => fireEvent.keyDown(document.body, { key: 'Escape' }));
+    expect(useLibraryMenu.getState().open).toBeNull();
+    expect(isTall()).toBe(true);
+    // A press and click on a menu row is a press inside: it neither closes the tall view nor is swallowed.
+    await act(async () => fireEvent.contextMenu(tile, { clientX: 30, clientY: 30 }));
+    const row = screen.getByRole('menuitem', { name: 'Songs' });
+    await act(async () => {
+      fireEvent.pointerDown(row);
+      fireEvent.mouseDown(row);
+      fireEvent.pointerUp(row);
+      fireEvent.mouseUp(row);
+      fireEvent.click(row);
+    });
+    await flush();
+    expect(useLibraryMenu.getState().open).toBeNull();
+    expect(isTall()).toBe(true);
+    expect(document.querySelector('.sp-songs')).not.toBeNull();
+    // And the next click anywhere still works.
+    const target = screen.getByText('Behind');
+    await act(async () => {
+      fireEvent.pointerDown(target);
+      fireEvent.pointerCancel(target);
+    });
+    await act(async () => fireEvent.click(target));
+    expect(behind).toHaveBeenCalledTimes(1);
+    closeLibraryMenu();
+  });
+
+  it('Escape closes only the chooser opened from Pin, and the next Escape closes the playlist', async () => {
+    await setup();
+    await open();
+    render(<LibraryMenuLayer />);
+    await act(async () => (document.querySelector('.sp-tile') as HTMLButtonElement).click());
+    await flush();
+    await act(async () => (document.querySelector('.sp-backrow .sp-tallpin') as HTMLButtonElement).click());
+    expect(useLibraryMenu.getState().open?.view).toBe('chooser');
+    await act(async () => fireEvent.keyDown(document.body, { key: 'Escape' }));
+    expect(useLibraryMenu.getState().open).toBeNull();
+    expect(document.querySelector('.sp-songs')).not.toBeNull();
+    await act(async () => fireEvent.keyDown(document.body, { key: 'Escape' }));
+    expect(document.querySelector('.sp-songs')).toBeNull();
+    expect(isTall()).toBe(true);
+  });
+
+  it('a renamed playlist updates its pin when the Playlists list loads', async () => {
+    localStorage.clear();
+    resetPins();
+    usePins.setState({ places: [{ kind: 'spotify-playlist', id: id(1), name: 'Old name' }, null, null] });
+    await setup();
+    expect((usePins.getState().places[0] as { name: string }).name).toBe('List 1');
+    localStorage.clear();
+    resetPins();
+  });
+
   it('a press inside the card, or on a tile details card, does not close it', async () => {
     await setup();
     await open();
@@ -399,6 +464,14 @@ describe('inside the tall view', () => {
     await flush();
     expect(document.querySelector('.sp-backlabel')?.textContent).toBe('Playlists');
     expect(document.querySelectorAll('.sp-shbtns .sp-btn')).toHaveLength(2);
+    // Pin is a round icon in the back row, after the tab name.
+    const pinBtn = document.querySelector('.sp-backrow .sp-tallpin') as HTMLButtonElement;
+    expect(pinBtn).not.toBeNull();
+    expect(pinBtn.getAttribute('aria-label')).toBe('Pin to the left');
+    expect(document.querySelector('.sp-shbtns .sp-pin')).toBeNull();
+    await act(async () => pinBtn.click());
+    expect(useLibraryMenu.getState().open?.view).toBe('chooser');
+    closeLibraryMenu();
     expect(document.querySelectorAll('.sp-track')).toHaveLength(3);
     await act(async () => (document.querySelectorAll('.sp-track')[1] as HTMLButtonElement).click());
     await flush();

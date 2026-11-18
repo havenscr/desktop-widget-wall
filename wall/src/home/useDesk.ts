@@ -51,7 +51,7 @@ export interface DeskSecurity {
   alerts: DeskAlert[];
   /** A desk token is set on this PC, so Clear all can be offered (the token stays in Rust). */
   canClear: boolean;
-  /** The token is set but the home app's address is plain http on the local network: Rust
+  /** The token is set but the home app's address is not loopback or tailnet: Rust
    * does not send it there, and the drawer says why Clear all is not offered. */
   clearInsecure?: boolean;
 }

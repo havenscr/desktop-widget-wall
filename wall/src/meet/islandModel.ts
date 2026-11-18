@@ -69,11 +69,6 @@ export function islandKinds(i: IslandInput): IslandKind[] {
   return out;
 }
 
-/** The footer's order line, naming the kinds that exist now. */
-export function orderLine(kinds: readonly IslandKind[]): string {
-  return `Order: ${kinds.map((k) => k.title.toLowerCase()).join(', ')}`;
-}
-
 /** What the island says with no kind at all: how the checklist file works, in three lines. */
 export const HOW_TO: readonly string[] = [
   'Write your own first-meeting list in meet-checklist.txt, one item a line.',

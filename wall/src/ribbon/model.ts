@@ -9,6 +9,7 @@ import { dayKey, sessionsOn, type FocusSession } from '../focus/day';
 import type { TaskItem } from '../tasks/model';
 import type { SunTimes } from './sun';
 import { busyPeak, workingSpans } from './busy';
+import { readCategory, type EventCategory } from './tones';
 
 export const RIBBON_WIDTH = 2416;
 export const START_HOUR = 6;
@@ -41,6 +42,8 @@ export interface DayEvent {
   canOpen?: boolean;
   /** Rust holds a join link (`wall2_meet_join`). */
   canJoin?: boolean;
+  /** The Outlook category the event takes its colour from: a name and a fixed tone token. */
+  category?: { name?: unknown; tone?: unknown } | null;
 }
 
 /**
@@ -150,6 +153,8 @@ export interface Chip {
   canJoin?: boolean;
   /** Events of its group that had no room for a "+N" chip, named in its hover (`chipLayout`). */
   hidden?: Chip[];
+  /** The Outlook category it is coloured by (a livestream keeps its own pink), or null. */
+  category: EventCategory | null;
 }
 
 const DAY_MS = 86_400_000;
@@ -184,6 +189,7 @@ function toChip(e: DayEvent, start: number, end: number, x: number, width: numbe
     accountId: typeof e.accountId === 'string' ? e.accountId : null,
     canOpen: e.canOpen === true,
     canJoin: e.canJoin === true,
+    category: readCategory(e.category),
   };
 }
 
@@ -615,9 +621,21 @@ export function agentsLineParts(c: AgentCounts): { head: string; need: string | 
   return { head, need: null, tail: `${c.working} working${helper}, ${c.idle} idle` };
 }
 
+/**
+ * The agents line over the limit: a red marker "7 of 4 open" in place of the head, then the rest
+ * of the words ("2 need you, 3 working (1 through helpers)" or "3 working, 4 idle").
+ */
+export function agentsOverParts(c: AgentCounts, limit: number): { marker: string; need: string | null; tail: string } {
+  const p = agentsLineParts(c);
+  return { marker: `${c.total} of ${limit} open`, need: p.need, tail: p.tail };
+}
+
+/** Space the red marker takes beyond its words: padding, border and the gap after it. */
+export const OVER_MARKER_EXTRA_PX = 26;
+
 /** Width the agents line takes, estimated from its words (16 px type). */
-export function agentsLineWidth(text: string): number {
-  return Math.ceil(text.length * 8.2) + 4;
+export function agentsLineWidth(text: string, over = false): number {
+  return Math.ceil(text.length * 8.2) + 4 + (over ? OVER_MARKER_EXTRA_PX : 0);
 }
 
 /** Fewer than this many pixels right of the needle and the agents line goes before it. */

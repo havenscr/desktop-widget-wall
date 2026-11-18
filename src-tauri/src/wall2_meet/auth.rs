@@ -8,7 +8,17 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 use tauri_plugin_opener::OpenerExt;
 
+/// The scope every silent calendar refresh asks for. It must not change: a sign-in that never
+/// consented to Contacts.Read keeps its calendar working.
 pub const SCOPE: &str = "offline_access https://graph.microsoft.com/Calendars.Read";
+/// What the interactive sign-in asks for: the calendar, one read permission for the
+/// saved-contact lookup and one for the Outlook category colours (a new sign-in consents to all).
+pub const SIGN_IN_SCOPE: &str = "offline_access https://graph.microsoft.com/Calendars.Read https://graph.microsoft.com/Contacts.Read https://graph.microsoft.com/MailboxSettings.Read";
+/// The sign-in offered once when the colours permission is refused: everything but
+/// `MailboxSettings.Read`, so a blocked colours permission never costs the calendar or contacts.
+pub const SIGN_IN_SCOPE_NO_COLOURS: &str = "offline_access https://graph.microsoft.com/Calendars.Read https://graph.microsoft.com/Contacts.Read";
+/// What the separate contact-lookup token request asks for (see `contacts.rs`).
+pub const CONTACTS_SCOPE: &str = "offline_access https://graph.microsoft.com/Contacts.Read";
 const CALLBACK_PATH: &str = "/auth-callback.html";
 const WAIT: Duration = Duration::from_secs(300);
 
@@ -33,13 +43,13 @@ fn random_bytes(n: usize) -> Option<Vec<u8>> {
     if unsafe { BCryptGenRandom(BCRYPT_ALG_HANDLE::default(), &mut bytes, BCRYPT_USE_SYSTEM_PREFERRED_RNG) }.is_ok() { Some(bytes) } else { None }
 }
 
-pub fn authorize_url(tenant: &str, client_id: &str, redirect_uri: &str, challenge: &str, state: &str) -> String {
+pub fn authorize_url(tenant: &str, client_id: &str, redirect_uri: &str, challenge: &str, state: &str, scope: &str) -> String {
     use urlencoding::encode;
     format!(
         "https://login.microsoftonline.com/{tenant}/oauth2/v2.0/authorize?client_id={}&response_type=code&redirect_uri={}&response_mode=query&scope={}&code_challenge={}&code_challenge_method=S256&state={}&prompt=select_account",
         encode(client_id),
         encode(redirect_uri),
-        encode(SCOPE),
+        encode(scope),
         encode(challenge),
         encode(state),
     )
@@ -81,10 +91,12 @@ pub struct Granted {
     pub code: String,
     pub verifier: String,
     pub redirect_uri: String,
+    /// The scope this sign-in asked for; the code is redeemed with the same one.
+    pub scope: &'static str,
 }
 
 /// Open the system browser and wait for the one callback. Blocks up to five minutes.
-pub fn authorize(app: &tauri::AppHandle, account: &Account) -> Result<Granted, &'static str> {
+pub fn authorize(app: &tauri::AppHandle, account: &Account, scope: &'static str) -> Result<Granted, &'static str> {
     if SIGNING_IN.swap(true, Ordering::SeqCst) {
         return Err("busy");
     }
@@ -98,16 +110,25 @@ pub fn authorize(app: &tauri::AppHandle, account: &Account) -> Result<Granted, &
     let server = tiny_http::Server::http("127.0.0.1:0").map_err(|_| "failed")?;
     let port = server.server_addr().to_ip().ok_or("failed")?.port();
     let redirect_uri = format!("http://localhost:{port}{CALLBACK_PATH}");
-    let url = authorize_url(&account.tenant, &account.client_id, &redirect_uri, &challenge, &state);
+    let url = authorize_url(&account.tenant, &account.client_id, &redirect_uri, &challenge, &state, scope);
     app.opener().open_url(url, None::<&str>).map_err(|_| "failed")?;
 
     let code = wait_for_callback(&server, &state, WAIT)?;
-    Ok(Granted { code, verifier, redirect_uri })
+    Ok(Granted { code, verifier, redirect_uri, scope })
+}
+
+/// True when an error redirect names a refusal of the permission (not a cancel). Only the
+/// error code and its description are read, never logged.
+fn refused_permission(request_target: &str) -> bool {
+    let Ok(url) = tauri::Url::parse(&format!("http://127.0.0.1{request_target}")) else { return false };
+    let get = |name: &str| url.query_pairs().find(|(k, _)| k == name).map(|(_, v)| v.into_owned()).unwrap_or_default();
+    super::colours::consent_refused(&get("error"), &get("error_description"))
 }
 
 /// Serve the listener until the one valid callback arrives. Other paths get 404 and a callback
 /// with a wrong or missing `state` gets 400; both keep waiting. Ends on the first valid
-/// callback, an error answer, cancel, or the time limit.
+/// callback, an error answer, cancel, or the time limit. An error answer that names a refusal of
+/// the permission ends as `consent`; a plain cancel is `denied`.
 fn wait_for_callback(server: &tiny_http::Server, state: &str, wait: Duration) -> Result<String, &'static str> {
     let started = Instant::now();
     loop {
@@ -136,11 +157,11 @@ fn wait_for_callback(server: &tiny_http::Server, state: &str, wait: Duration) ->
             }
             Callback::Denied => {
                 crate::wall2_oauth::respond(request, 200, crate::wall2_oauth::page("Sign-in did not finish. You can close this tab."));
-                return Err("denied");
+                return Err(if refused_permission(&target) { "consent" } else { "denied" });
             }
             Callback::Failed => {
                 crate::wall2_oauth::respond(request, 200, crate::wall2_oauth::page("Sign-in did not finish. You can close this tab."));
-                return Err("failed");
+                return Err(if refused_permission(&target) { "consent" } else { "failed" });
             }
         }
     }
@@ -150,7 +171,8 @@ fn wait_for_callback(server: &tiny_http::Server, state: &str, wait: Duration) ->
 
 #[derive(Debug, PartialEq)]
 pub enum TokenReply {
-    Ok { access: String, expires_in: u64, refresh: Option<String> },
+    /// `scope` is what the reply says was granted (the identity platform's `scope` field), capped.
+    Ok { access: String, expires_in: u64, refresh: Option<String>, scope: Option<String> },
     /// The grant is dead: the user has to sign in again.
     Rejected(String),
     /// Network trouble, throttling or a server error: try again later, keep the token.
@@ -187,6 +209,7 @@ pub fn classify_token(status: u16, body: &[u8]) -> TokenReply {
             access: access.to_string(),
             expires_in: j.get("expires_in").and_then(Value::as_u64).unwrap_or(3600),
             refresh: j.get("refresh_token").and_then(Value::as_str).filter(|s| !s.is_empty()).map(str::to_string),
+            scope: j.get("scope").and_then(Value::as_str).filter(|s| !s.is_empty()).map(|s| s.chars().take(1024).collect()),
         };
     }
     if status == 429 || status >= 500 {
@@ -277,7 +300,7 @@ mod tests {
     fn authorize_url_has_every_parameter() {
         let id = "00000000-0000-0000-0000-000000000000";
         let redirect = "http://localhost:50123/auth-callback.html";
-        let raw = authorize_url("common", id, redirect, "chal", "st");
+        let raw = authorize_url("common", id, redirect, "chal", "st", SIGN_IN_SCOPE);
         assert!(raw.starts_with("https://login.microsoftonline.com/common/oauth2/v2.0/authorize?"));
         let url = tauri::Url::parse(&raw).unwrap();
         let get = |k: &str| url.query_pairs().find(|(n, _)| n == k).map(|(_, v)| v.into_owned());
@@ -285,13 +308,29 @@ mod tests {
         assert_eq!(get("response_type").as_deref(), Some("code"));
         assert_eq!(get("redirect_uri").as_deref(), Some(redirect));
         assert_eq!(get("response_mode").as_deref(), Some("query"));
-        assert_eq!(get("scope").as_deref(), Some("offline_access https://graph.microsoft.com/Calendars.Read"));
+        assert_eq!(get("scope").as_deref(), Some("offline_access https://graph.microsoft.com/Calendars.Read https://graph.microsoft.com/Contacts.Read https://graph.microsoft.com/MailboxSettings.Read"));
+        let fallback = authorize_url("common", id, redirect, "chal", "st", SIGN_IN_SCOPE_NO_COLOURS);
+        assert!(fallback.contains("scope=offline_access%20https%3A%2F%2Fgraph.microsoft.com%2FCalendars.Read%20https%3A%2F%2Fgraph.microsoft.com%2FContacts.Read&code_challenge="));
         assert_eq!(get("code_challenge").as_deref(), Some("chal"));
         assert_eq!(get("code_challenge_method").as_deref(), Some("S256"));
         assert_eq!(get("state").as_deref(), Some("st"));
         assert_eq!(get("prompt").as_deref(), Some("select_account"));
         assert_eq!(url.query_pairs().count(), 9);
         assert!(get("redirect_uri").unwrap().contains("localhost:50123"));
+    }
+
+    #[test]
+    fn scopes_are_pinned() {
+        // The silent calendar refresh keeps asking for the calendar alone.
+        assert_eq!(SCOPE, "offline_access https://graph.microsoft.com/Calendars.Read");
+        assert!(!SCOPE.contains("Contacts"));
+        assert_eq!(CONTACTS_SCOPE, "offline_access https://graph.microsoft.com/Contacts.Read");
+        assert!(!CONTACTS_SCOPE.contains("Calendars"));
+        // Only the interactive sign-in asks for all three permissions.
+        assert_eq!(SIGN_IN_SCOPE, format!("{SCOPE} https://graph.microsoft.com/Contacts.Read https://graph.microsoft.com/MailboxSettings.Read"));
+        // The fallback after a refused colours permission keeps the calendar and the contacts.
+        assert_eq!(SIGN_IN_SCOPE_NO_COLOURS, format!("{SCOPE} https://graph.microsoft.com/Contacts.Read"));
+        assert!(!SIGN_IN_SCOPE_NO_COLOURS.contains("MailboxSettings"));
     }
 
     #[test]
@@ -340,7 +379,12 @@ mod tests {
         let ok = br#"{"access_token":"a","expires_in":3599,"refresh_token":"r"}"#;
         assert_eq!(
             classify_token(200, ok),
-            TokenReply::Ok { access: "a".into(), expires_in: 3599, refresh: Some("r".into()) }
+            TokenReply::Ok { access: "a".into(), expires_in: 3599, refresh: Some("r".into()), scope: None }
+        );
+        let scoped = br#"{"access_token":"a","expires_in":10,"scope":"Calendars.Read MailboxSettings.Read"}"#;
+        assert_eq!(
+            classify_token(200, scoped),
+            TokenReply::Ok { access: "a".into(), expires_in: 10, refresh: None, scope: Some("Calendars.Read MailboxSettings.Read".into()) }
         );
         assert_eq!(classify_token(200, b"{}"), TokenReply::Failed("token-200".into()));
         assert_eq!(classify_token(400, br#"{"error":"invalid_grant"}"#), TokenReply::Rejected("token-400".into()));
