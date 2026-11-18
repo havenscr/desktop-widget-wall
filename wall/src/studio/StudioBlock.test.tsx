@@ -163,11 +163,13 @@ it('every control has a hover tip', async () => {
   for (const [text, want] of [
     ['Fine tune', 'Opens the sliders'],
     ['Key lights', 'Turns both key lights off'],
+    ['Key lights name', 'Opens the settings for Key lights'],
   ] as const) {
-    fireEvent.mouseEnter(screen.getByText(text).closest('button')!);
+    const node = () => (text === 'Key lights' ? screen.getByRole('switch') : text === 'Key lights name' ? screen.getByText('Key lights') : screen.getByText(text).closest('button')!);
+    fireEvent.mouseEnter(node());
     await flush(300);
     expect(document.querySelector('.hover-tip')?.textContent ?? '').toContain(want);
-    fireEvent.mouseLeave(screen.getByText(text).closest('button')!);
+    fireEvent.mouseLeave(node());
     await flush(10);
   }
 });

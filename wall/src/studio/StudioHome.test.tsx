@@ -84,7 +84,7 @@ it('ready, nothing on: the preset chips in the home app order, Back to normal da
   expect(chipOf('Back to normal').getAttribute('aria-disabled')).toBe('true');
   expect(screen.getByText('No preset on.')).toBeTruthy();
   expect(screen.getByText(/Key lights 60%, 4400 K/)).toBeTruthy();
-  expect(screen.getAllByRole('switch').map((s) => s.textContent)).toEqual(['Key lights', 'Panels', 'Behind monitor', 'Overhead']);
+  expect(screen.getAllByRole('switch').map((s) => s.getAttribute('aria-label'))).toEqual(['Key lights', 'Panels', 'Behind monitor', 'Overhead']);
   expect(screen.queryByText(/does not offer them here yet/)).toBeNull();
 });
 
@@ -124,7 +124,7 @@ it('stale shows the values with (not fresh) and a tip; an unreachable group is d
   answer = studioAnswer({ stale: true, groups: [group('panels', 'Panels', true, 70), group('behindMonitor', 'Behind monitor', true, 80), group('overhead', 'Overhead', true, 90, { reachable: false })] });
   await showBlock();
   expect(screen.getByText('(not fresh)')).toBeTruthy();
-  const oh = screen.getByText('Overhead').closest('[role="switch"]') as HTMLElement;
+  const oh = screen.getByRole('switch', { name: 'Overhead' });
   expect(oh.className).toContain('dim');
   expect(await tipOf(oh)).toContain('Not answering');
 });
@@ -139,7 +139,7 @@ it('the home app away: amber line, dashed chips and tiles that take no click, Tr
   expect(screen.getByText('The home app is not answering.')).toBeTruthy();
   expect(chipOf('On air').getAttribute('aria-disabled')).toBe('true');
   fireEvent.click(chipOf('On air'));
-  fireEvent.click(screen.getByText('Overhead'));
+  fireEvent.click(screen.getByRole('switch', { name: 'Overhead' }));
   await flush();
   expect(writes).toHaveLength(0);
   // Key lights are unaffected.
@@ -181,7 +181,7 @@ it('no token on this PC: every home control disabled, the line says where to typ
   expect(screen.getByText("These lights are view only here. To switch them from the wall, add the home app's desk token in Tools.")).toBeTruthy();
   expect(chipOf('On air').getAttribute('aria-disabled')).toBe('true');
   fireEvent.click(chipOf('On air'));
-  fireEvent.click(screen.getByText('Panels'));
+  fireEvent.click(screen.getByRole('switch', { name: 'Panels' }));
   await flush();
   expect(writes).toHaveLength(0);
   fireEvent.click(screen.getByText('Open Tools'));
@@ -206,7 +206,7 @@ it('a base the token may not go to: disabled, the https or tailnet line, Check a
 it('a group that needs a Hue zone is dashed and disabled with its tip, and takes no click', async () => {
   answer = studioAnswer({ groups: [group('panels', 'Panels', true, 70), group('behindMonitor', 'Behind monitor', true, 80), group('overhead', 'Overhead', false, 0, { canSwitch: false, canDim: false, setTo: 'Needs a Hue zone', floor: null })] });
   await showBlock();
-  const oh = screen.getByText('Overhead').closest('[role="switch"]') as HTMLElement;
+  const oh = screen.getByRole('switch', { name: 'Overhead' });
   expect(oh.getAttribute('aria-disabled')).toBe('true');
   expect(await tipOf(oh)).toContain('The home app needs a Hue zone for this light group. Its README says how.');
   fireEvent.click(oh);
@@ -216,34 +216,34 @@ it('a group that needs a Hue zone is dashed and disabled with its tip, and takes
 
 it('a room switch writes its id and the opposite state, and shows what was read back', async () => {
   await showBlock();
-  fireEvent.click(screen.getByText('Panels'));
+  fireEvent.click(screen.getByRole('switch', { name: 'Panels' }));
   await flush();
   expect(writes).toEqual([{ command: 'wall2_studio_group', args: { id: 'panels', on: true } }]);
   // The home app says it did not turn on: the switch stays off.
-  expect(screen.getByText('Panels').closest('[role="switch"]')?.getAttribute('aria-checked')).toBe('false');
+  expect(screen.getByRole('switch', { name: 'Panels' }).getAttribute('aria-checked')).toBe('false');
 });
 
 it('the second room switch will not turn off while the other room light is off, with the dark-room tip, and sends nothing', async () => {
   answer = studioAnswer({ groups: [group('panels', 'Panels', true, 70), group('behindMonitor', 'Behind monitor', false, 0), group('overhead', 'Overhead', true, 90)] });
   await showBlock();
-  const oh = screen.getByText('Overhead').closest('[role="switch"]') as HTMLElement;
+  const oh = screen.getByRole('switch', { name: 'Overhead' });
   expect(oh.getAttribute('aria-disabled')).toBe('true');
   expect(await tipOf(oh)).toContain('One room light stays on so the room is never dark around the monitor');
   fireEvent.click(oh);
   await flush();
   expect(writes).toHaveLength(0);
   // The one that is off can still be turned on.
-  const bm = screen.getByText('Behind monitor').closest('[role="switch"]') as HTMLElement;
+  const bm = screen.getByRole('switch', { name: 'Behind monitor' });
   expect(bm.getAttribute('aria-disabled')).toBeNull();
 });
 
 it('the home app refusing with room-dark springs the switch back and says why for five seconds', async () => {
   await showBlock();
   writeWord = 'room-dark';
-  fireEvent.click(screen.getByText('Overhead'));
+  fireEvent.click(screen.getByRole('switch', { name: 'Overhead' }));
   await flush();
   expect(screen.getByText('One room light stays on, so the room is never dark around the monitor.')).toBeTruthy();
-  expect(screen.getByText('Overhead').closest('[role="switch"]')?.getAttribute('aria-checked')).toBe('true');
+  expect(screen.getByRole('switch', { name: 'Overhead' }).getAttribute('aria-checked')).toBe('true');
   await flush(5100);
   expect(screen.queryByText(/never dark around the monitor\./)).toBeNull();
 });
@@ -433,8 +433,11 @@ it('the sheet: preset tiles with each line, Back to normal, then the key lights 
   expect(tiles).toEqual(['On air', 'Recording', 'Back to normal']);
   expect(sheet().getByText('Key lights on, panels glow')).toBeTruthy();
   expect(sheet().getByText('Linked')).toBeTruthy();
-  expect(sheet().getByText('Glow')).toBeTruthy();
-  expect(sheet().getByText('Calm')).toBeTruthy();
+  // One Effect row with the current effect; the list is closed and adds nothing to the sheet.
+  expect(sheet().getByText('Effect')).toBeTruthy();
+  expect(sheet().getByText('Not set')).toBeTruthy();
+  expect(sheet().queryByText('Calm')).toBeNull();
+  expect(sheet().getByRole('slider', { name: 'Panels brightness' })).toBeTruthy();
   // The short words sit on the name's line; the full sentence is the tip.
   const floors = sheet().getAllByText('Floor 45%');
   expect(floors).toHaveLength(2);
@@ -460,12 +463,18 @@ it('a room slider stops at the floor and sends a whole level with on', async () 
   expect(writes.at(-1)).toEqual({ command: 'wall2_studio_group', args: { id: 'behindMonitor', on: true, level: 75 } });
 });
 
-it('a look chip applies its look; the active look shows the check', async () => {
+it('an effect in the list applies its look; the current one is ticked', async () => {
   answer = studioWith('onAir', { looks: [{ id: 'glow', label: 'Glow', active: true }, { id: 'calm', label: 'Calm', active: false }] });
   await openSheet();
-  expect(sheet().getByText('Glow').closest('button')?.getAttribute('aria-pressed')).toBe('true');
-  fireEvent.click(sheet().getByText('Calm'));
+  fireEvent.click(sheet().getByRole('button', { name: /Effect/ }));
   await flush();
+  const list = within(document.querySelector('.st-eflist') as HTMLElement);
+  expect(list.getByRole('option', { name: 'Glow' }).getAttribute('aria-selected')).toBe('true');
+  expect(list.getByRole('option', { name: 'Calm' }).getAttribute('aria-selected')).toBe('false');
+  fireEvent.click(list.getByRole('option', { name: 'Calm' }));
+  await flush();
+  expect(document.querySelector('.st-eflist')).toBeNull();
+  expect(document.querySelector('.st-drawer')).not.toBeNull();
   expect(writes.at(-1)).toEqual({ command: 'wall2_studio_look', args: { id: 'calm' } });
 });
 
@@ -473,7 +482,7 @@ it('without a token the sheet shows its tiles and rooms disabled, and one amber 
   answer = studioAnswer({ canWrite: false, writeBlock: 'not-set-up' });
   await openSheet();
   expect(sheet().getByText('On air').closest('button')?.getAttribute('aria-disabled')).toBe('true');
-  fireEvent.click(sheet().getByText('Calm'));
+  expect(sheet().getByRole('button', { name: /Effect/ }).getAttribute('aria-disabled')).toBe('true');
   fireEvent.click(sheet().getAllByRole('switch', { name: '' })[1]);
   await flush();
   expect(writes).toHaveLength(0);
@@ -510,12 +519,15 @@ it('the sheet reads the home app once when it opens', async () => {
 
 // Section: fix round, the sheet
 
-it('six panel looks: every look chip is there and reachable, and the last one applies', async () => {
+it('six panel effects: every effect is in the list and reachable, and the last one applies', async () => {
   const looks = ['glow', 'calm', 'sunrise', 'ocean', 'ember', 'aurora'].map((id) => ({ id, label: id.toUpperCase(), active: false }));
   answer = studioAnswer({ looks });
   await openSheet();
-  expect(sheet().getAllByRole('button').filter((b) => looks.some((l) => l.label === b.textContent))).toHaveLength(6);
-  fireEvent.click(sheet().getByText('AURORA'));
+  fireEvent.click(sheet().getByRole('button', { name: /Effect/ }));
+  await flush();
+  const list = within(document.querySelector('.st-eflist') as HTMLElement);
+  expect(list.getAllByRole('option')).toHaveLength(6);
+  fireEvent.click(list.getByRole('option', { name: 'AURORA' }));
   await flush();
   expect(writes.at(-1)).toEqual({ command: 'wall2_studio_look', args: { id: 'aurora' } });
 });

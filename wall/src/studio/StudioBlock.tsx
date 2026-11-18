@@ -6,6 +6,8 @@ import { StudioDrawer } from './StudioDrawer';
 import { ABSENT_LINE, CHANGED_TIP, DOWN_LINE, homeLine, NOT_SET_UP_LINE, presetChipLabel, PRIVATE_LINE, STALE_TIP, summaryParts } from './homeModel';
 import { canChange, homeView, useHome } from './homeStore';
 import { PAGE_PRESETS, PresetRow } from './PresetRow';
+import { GroupCard } from './GroupCard';
+import { NameButton, TileSwitch } from './GroupTile';
 import { RoomTiles } from './RoomTiles';
 import { StudioOffer } from './StudioOffer';
 import { useHomePolling } from './useHomePolling';
@@ -61,10 +63,10 @@ export function StudioBlock() {
   let action;
   if (v === 'none') {
     tile = (
-      <span className="st-tg warn" aria-disabled="true" {...tip('Neither key light answered the last read. Check that both are plugged in and on the same network, then Check again.')}>
+      <div className="st-tg warn" data-group="keys" aria-disabled="true" {...tip('Neither key light answered the last read. Check that both are plugged in and on the same network, then Check again.')}>
         <IconAlertTriangle size={20} aria-hidden="true" />
-        <span>{noneTitle(snap)}</span>
-      </span>
+        <NameButton id="keys" label={noneTitle(snap)} />
+      </div>
     );
     action = (
       <button type="button" className="st-chip" onClick={checkAgain} {...tip('Reads both key lights again now')}>
@@ -74,26 +76,23 @@ export function StudioBlock() {
     );
   } else if (v === 'live' || v === 'one') {
     tile = (
-      <button
-        type="button"
-        role="switch"
-        aria-checked={on}
-        className={`st-tg${on ? ' on' : ''}${warnTile ? ' warn' : ''}`}
-        onClick={flip}
-        {...tip(
-          v === 'one'
-            ? `Turns the key light that answers ${on ? 'off' : 'on'}. The other one is ${warnTile ? 'not answering' : 'not set up'}.`
-            : on
-              ? 'Turns both key lights off. The sliders in Fine tune keep their values.'
-              : 'Turns both key lights on, at the brightness and warmth they last had.',
-        )}
-      >
-        <i className={`st-sw${on ? ' on' : ''}`} style={{ ['--c' as string]: knob }} aria-hidden="true">
-          <i />
-        </i>
-        <span>Key lights</span>
+      <div className={`st-tg${on ? ' on' : ''}${warnTile ? ' warn' : ''}`} data-group="keys">
+        <TileSwitch
+          label="Key lights"
+          on={on}
+          knob={knob}
+          onClick={flip}
+          tipText={
+            v === 'one'
+              ? `Turns the key light that answers ${on ? 'off' : 'on'}. The other one is ${warnTile ? 'not answering' : 'not set up'}.`
+              : on
+                ? 'Turns both key lights off. The sliders in Fine tune keep their values.'
+                : 'Turns both key lights on, at the brightness and warmth they last had.'
+          }
+        />
+        <NameButton id="keys" label="Key lights" />
         {warnTile && <IconAlertTriangle size={20} aria-hidden="true" className="st-tg-warn" />}
-      </button>
+      </div>
     );
     action = (
       <button
@@ -121,12 +120,10 @@ export function StudioBlock() {
     }
   } else if (v === 'unset') {
     tile = (
-      <span className="st-tg dis" aria-disabled="true" {...tip('The key lights need their addresses, typed once in Tools')}>
-        <i className="st-sw dis" aria-hidden="true">
-          <i />
-        </i>
-        <span>Key lights</span>
-      </span>
+      <div className="st-tg dis" data-group="keys" aria-disabled="true" {...tip('The key lights need their addresses, typed once in Tools')}>
+        <TileSwitch label="Key lights" on={false} plain />
+        <NameButton id="keys" label="Key lights" />
+      </div>
     );
     action = (
       <button type="button" className="st-chip" onClick={() => useToolsStore.getState().openDrawer('keylights')} {...tip('Opens Tools at Key lights, where each light\'s address is typed once')}>
@@ -136,12 +133,10 @@ export function StudioBlock() {
     );
   } else {
     tile = (
-      <span className="st-tg dis" aria-disabled="true">
-        <i className="st-sw dis" aria-hidden="true">
-          <i />
-        </i>
-        <span>Key lights</span>
-      </span>
+      <div className="st-tg dis" data-group="keys" aria-disabled="true">
+        <TileSwitch label="Key lights" on={false} plain />
+        <NameButton id="keys" label="Key lights" />
+      </div>
     );
     action = null;
   }
@@ -195,6 +190,7 @@ export function StudioBlock() {
           )}
         </div>
         {drawer && <StudioDrawer />}
+        <GroupCard />
       </div>
     );
   }
@@ -255,6 +251,7 @@ export function StudioBlock() {
         <RoomTiles />
       </div>
       {drawer && <StudioDrawer />}
+      <GroupCard />
     </div>
   );
 }
