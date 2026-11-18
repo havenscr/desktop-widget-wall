@@ -1,5 +1,7 @@
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { composite, FLOOR, GROUNDS, isToneToken, ratio, readCategory, TONE_NAMES, TONE_TOKENS, toneStyle, type Rgb, type ToneState } from './tones';
+import { composite, FLOOR, HOVER_BRIGHTNESS, GROUNDS, isToneToken, ratio, readCategory, TONE_NAMES, TONE_TOKENS, toneStyle, type Rgb, type ToneState } from './tones';
 
 /** The numbers inside a `rgba(r, g, b, a)` string, as the browser will read them. */
 const parse = (c: string): { rgb: Rgb; a: number } => {
@@ -29,6 +31,36 @@ describe('tone tokens', () => {
     expect(readCategory({ name: 'a‮b\u0007c', tone: 'preset2' })?.name).toBe('abc');
     expect(readCategory({ name: 'n'.repeat(200), tone: 'preset2' })?.name).toHaveLength(64);
   });
+});
+
+/** What `filter: brightness(k)` does to a colour: each channel scaled, clamped at white. */
+const lift = (c: Rgb, k: number): Rgb => [Math.min(255, c[0] * k), Math.min(255, c[1] * k), Math.min(255, c[2] * k)];
+
+describe('hover keeps the contrast floor', () => {
+  it('ribbon.css lifts a hovered event by the same factor the test uses', () => {
+    const css = readFileSync(resolve(__dirname, '../styles/ribbon.css'), 'utf8');
+    const lifts = css.match(/\.(?:rib \.ev|dd-ev)\.open:hover \{[^}]*\}/g) ?? [];
+    expect(lifts).toHaveLength(2);
+    for (const rule of lifts) expect(rule).toContain(`brightness(${HOVER_BRIGHTNESS})`);
+  });
+
+  for (const where of WHERE) {
+    for (const state of STATES) {
+      it(`${where}, ${state}: all 25 presets clear ${FLOOR} to 1 on every ground while hovered`, () => {
+        for (const token of TONE_TOKENS) {
+          const s = toneStyle(token, state, where);
+          const fill = parse(s.fill);
+          // The filter scales the element's own colours (fill and text) before they meet the ground.
+          const hoverFill = lift(fill.rgb, HOVER_BRIGHTNESS);
+          const hoverText = lift(parse(s.text).rgb, HOVER_BRIGHTNESS);
+          for (const ground of GROUNDS[where]) {
+            const under = composite(hoverFill, fill.a, ground);
+            expect(ratio(hoverText, under), `${token} ${state} ${where} hover on ${ground.join(',')}`).toBeGreaterThanOrEqual(FLOOR);
+          }
+        }
+      });
+    }
+  }
 });
 
 describe('every text on a coloured chip keeps its contrast floor', () => {

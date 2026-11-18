@@ -61,6 +61,9 @@ export function readCategory(v: unknown): EventCategory | null {
 
 export type ToneState = 'past' | 'now' | 'next';
 
+/** The lift ribbon.css gives a hovered, openable event (`filter: brightness`); its contrast is tested at this factor. */
+export const HOVER_BRIGHTNESS = 1.15;
+
 /** The least contrast any text on a coloured chip or tile may have against its own fill. */
 export const FLOOR = 4.5;
 
