@@ -80,7 +80,7 @@ export interface BriefTokenStatus {
   unreadable: boolean;
 }
 
-export type PersonAction = 'copy' | 'email' | 'teams';
+export type PersonAction = 'copy' | 'email' | 'teams' | 'contact';
 
 /** The brief for a meeting. `key` is the meeting key from the last `wall2_meet_next` read. */
 export const readBrief = (key: string): Promise<BriefOut> => invoke<BriefOut>('wall2_meet_brief', { key });
@@ -92,5 +92,27 @@ export const briefTokenStatus = (): Promise<BriefTokenStatus> => invoke<BriefTok
 export const setBriefToken = (value: string): Promise<void> => invoke<void>('wall2_meet_brief_token_set', { value });
 export const clearBriefToken = (): Promise<void> => invoke<void>('wall2_meet_brief_token_clear');
 
-/** Copy the address, start an email or start a Teams chat for a listed person; `key` is `Person.key`. Nothing is sent. */
+/**
+ * Copy the address, start an email, start a Teams chat or open the saved contact in classic Outlook for a listed person; `key` is
+ * `Person.key`. Nothing is sent. `contact` is refused with `unavailable` unless `personContact` said `available` for that key.
+ */
 export const personAction = (key: string, action: PersonAction): Promise<void> => invoke<void>('wall2_meet_person_action', { key, action });
+
+/** The one address Rust hands the page, for one person key, on a click. Never while On Air is live (`on-air`). */
+export interface PersonAddress {
+  address: string;
+}
+
+/** Fixed words `personAddress` can reject with: `on-air`, `gone` (no such key) and `invalid` (the stored address failed the check). */
+export const personAddress = (key: string): Promise<PersonAddress> => invoke<PersonAddress>('wall2_meet_person_address', { key });
+
+/** Tell Rust whether On Air is live, so it refuses `personAddress` (it also refuses on its own when the native recorder is on). */
+export const setOnAirLive = (live: boolean): Promise<void> => invoke<void>('wall2_meet_set_on_air', { live });
+
+/** Whether "Open contact card" is offered: one saved contact for the person and classic Outlook usable and selected. */
+export interface PersonContact {
+  available: boolean;
+}
+
+/** Asked when a card opens; Rust answers from its own lookup and holds the answer for the life of that read. */
+export const personContact = (key: string): Promise<PersonContact> => invoke<PersonContact>('wall2_meet_person_contact', { key });

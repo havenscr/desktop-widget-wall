@@ -6,7 +6,7 @@ import { mocks } from '../tauri';
  * Dev only: the helper's saved day record (`wall2_omni_days`, `wall2_omni_day`), shaped like
  * the Rust answers. `?days=typical` (default: 14 recorded days with 3 to 9 sessions each),
  * `empty` (yesterday recorded with no session), `one`, `heavy` (forty sessions), `down` (the
- * reads fail for a while), `absent` (an older helper: the day list answers 404). Invented titles only.
+ * reads fail for a while), `absent` (an older helper: the day list answers 404); `&over=back` adds five sessions that closed earlier today. Invented titles only.
  */
 const TITLES = ['Release notes draft', 'Docs tidy pass', 'Settings helper text', 'Spend card refresh', 'Share sheet fix', 'Timeline label fix', 'Search index rebuild', 'Backup script fix', 'Photo export batch', 'Weekly report'];
 const LONG = 'Release notes draft for the next public cut with screenshots and the full upgrade section';
@@ -106,5 +106,14 @@ function todayRecord(date: string): unknown {
       ...(i === 6 ? { pr: { number: 640, state: 'merged' } } : {}),
     }))
     .filter((x) => x.spans.length > 0);
+  // `?over=back`: five sessions that closed an hour ago after sharing the morning with the open ones,
+  // so the open count was past the limit for a while and has dropped back.
+  if (knob('over') === 'back') {
+    const at = reviewNow ? reviewNow() : Date.now();
+    const ago = (m: number) => new Date(at - m * 60_000).toISOString();
+    ['Morning inbox triage', 'Photo export batch', 'Weekly report', 'Search index rebuild', 'Backup script fix'].forEach((title, k) => {
+      sessions.push({ id: `a1b2c3d4-0f0${k + 1}`, title, spans: [{ stage: 'build', start: ago(110 + k), end: ago(70 - k * 5) }] });
+    });
+  }
   return { date, tz: 'America/Los_Angeles', sessions };
 }

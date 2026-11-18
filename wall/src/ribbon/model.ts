@@ -615,9 +615,21 @@ export function agentsLineParts(c: AgentCounts): { head: string; need: string | 
   return { head, need: null, tail: `${c.working} working${helper}, ${c.idle} idle` };
 }
 
+/**
+ * The agents line over the limit: a red marker "7 of 4 open" in place of the head, then the rest
+ * of the words ("2 need you, 3 working (1 through helpers)" or "3 working, 4 idle").
+ */
+export function agentsOverParts(c: AgentCounts, limit: number): { marker: string; need: string | null; tail: string } {
+  const p = agentsLineParts(c);
+  return { marker: `${c.total} of ${limit} open`, need: p.need, tail: p.tail };
+}
+
+/** Space the red marker takes beyond its words: padding, border and the gap after it. */
+export const OVER_MARKER_EXTRA_PX = 26;
+
 /** Width the agents line takes, estimated from its words (16 px type). */
-export function agentsLineWidth(text: string): number {
-  return Math.ceil(text.length * 8.2) + 4;
+export function agentsLineWidth(text: string, over = false): number {
+  return Math.ceil(text.length * 8.2) + 4 + (over ? OVER_MARKER_EXTRA_PX : 0);
 }
 
 /** Fewer than this many pixels right of the needle and the agents line goes before it. */

@@ -10,6 +10,7 @@ mod auth;
 pub(crate) mod brief;
 pub(crate) mod brief_token;
 pub(crate) mod checklist;
+mod contacts;
 mod desktop;
 mod graph;
 mod meetlog;

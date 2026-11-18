@@ -6,7 +6,7 @@ import { mocks } from '../tauri';
  * Dev only: `?agents=` picks a helper state for review stills and the fit check:
  * `run1`, `run6`, `run12`... (`runN`: that many sessions, every one working, none waiting; `run2ask2` adds two waiting after the two running), `3` (default), `2`, `1`, `0`, `6`, `7`, `12` or `30` sessions from a helper 1.1.0 answer, `helpers`
  * (one idle own turn with agents, a command and a child still running), `ask` (one
- * waiting, with a question), `ask2` (two waiting, one of them not on a card), `7ask` (seven sessions, the fifth waiting), `12busy` (twelve open, nine working at once, over the limit of 4 since mid morning, one waiting, one failed, one idle, and a helper's run that never counts), `12ask` (twelve sessions, two waiting) and `12staleask` (the same, stale), `staleask` (one waiting, then the answer goes stale), `failed` (one failed), `old`
+ * waiting, with a question), `ask2` (two waiting, one of them not on a card), `4` and `5` (at the limit and one over it), `7idle` (seven open, three working, four idle, each idle one with the seconds the helper gives), `7ask` (seven sessions, the fifth waiting), `12busy` (twelve open, nine working at once, over the limit of 4 since mid morning, one waiting, one failed, one idle, and a helper's run that never counts), `12ask` (twelve sessions, two waiting) and `12staleask` (the same, stale), `staleask` (one waiting, then the answer goes stale), `failed` (one failed), `old`
  * (three lanes as the older helper sends them), `stale`, `off` (not set up) and `down` (set
  * up, not answering). `&limit=0` sends a zero limit (an older helper with none to give): the
  * wall then draws no pips, steps or limit line, only the honest count.
@@ -29,6 +29,9 @@ const POOL: [string, string, string, string, string, string | null, number][] = 
   ['Search index rebuild', 'Search index rebuild after the move, with the old links redirected and checked', 'review', 'review', 'idle', null, 600],
 ];
 
+/** `?agents=7idle`: the sessions that work (the rest sit idle). */
+const WORKING_7 = [0, 1, 3];
+
 /**
  * The helper summary and the machine numbers, shaped exactly like the Rust commands'
  * answers (`wall2_omni_summary`, `wall2_open_session`, `wall2_machines`). Fictional data.
@@ -48,8 +51,9 @@ export function registerOmniMocks(): void {
     // `runN`: N sessions, every one running (the capsule's dots on Unwind), then `askM` for M more that wait.
     const runN = /^run(\d{1,2})(?:ask(\d{1,2}))?$/.exec(AGENTS);
     const runWait = runN ? Number(runN[2] ?? 0) : 0;
-    const count = runN ? Math.max(1, Number(runN[1])) + runWait : { '0': 0, '1': 1, '2': 2, '6': 6, '7': 7, '7ask': 7, '12': 12, '30': 30, '12ask': 12, '12staleask': 12, '12busy': 12, helpers: 3 }[AGENTS] ?? 3;
+    const count = runN ? Math.max(1, Number(runN[1])) + runWait : { '0': 0, '1': 1, '2': 2, '4': 4, '5': 5, '6': 6, '7': 7, '7idle': 7, '7ask': 7, '12': 12, '30': 30, '12ask': 12, '12staleask': 12, '12busy': 12, helpers: 3 }[AGENTS] ?? 3;
     const busy12 = AGENTS === '12busy';
+    const idleNamed = AGENTS === '7idle';
     const helperWork = AGENTS === 'helpers';
     const stale = AGENTS === 'stale' || AGENTS === 'staleask' || AGENTS === '12staleask';
     const waitOn = runN ? Array.from({ length: runWait }, (_, k) => Number(runN[1]) + k) : busy12 ? [4] : AGENTS === 'ask' || AGENTS === 'ask2' || AGENTS === 'staleask' || old ? [1] : AGENTS === '7ask' ? [4] : AGENTS === '12ask' || AGENTS === '12staleask' ? [1, 4] : [];
@@ -69,19 +73,19 @@ export function registerOmniMocks(): void {
         // Rust caps titles and lines at 80 characters.
         title: longOr(title, long).slice(0, 80),
         stage,
-        state: waiting ? 'blocked' : runN ? 'working' : busy12 ? (i === 11 ? 'review' : 'working') : state,
+        state: waiting ? 'blocked' : runN ? 'working' : idleNamed ? (WORKING_7.includes(i) ? 'working' : 'review') : busy12 ? (i === 11 ? 'review' : 'working') : state,
         line: (waiting ? 'Waiting on a thumbnail choice' : failed ? 'Two web tests failed' : busy12 && line === 'idle' && !busyIdle ? 'running' : line).slice(0, 80),
         elapsedS: mins * 60,
         waiting,
         pr: i === 0 ? { number: 553, ci: failed ? 'failing' : 'pending', ready: false } : i === 2 ? { number: 561, ci: 'passing', ready: true } : i === 8 ? { number: 570, ci: 'pending', ready: true } : null,
       };
       if (old) return base;
-      const idle = runN ? false : helperWork && i === 0 ? true : busy12 ? busyIdle || waiting : line === 'idle' || waiting;
+      const idle = runN ? false : idleNamed ? !WORKING_7.includes(i) : helperWork && i === 0 ? true : busy12 ? busyIdle || waiting : line === 'idle' || waiting;
       return {
         ...base,
         line: helperWork && i === 0 ? 'idle' : base.line,
         live: idle ? 'idle' : 'working',
-        idleS: waiting ? 720 : null,
+        idleS: waiting ? 720 : idleNamed && idle ? Math.round(base.elapsedS * 0.6) : null,
         kids: i === 0 ? { total: 3, working: 2, running: helperWork ? 1 : 0 } : i === 5 ? { total: 1, working: 0, running: 0 } : null,
         bg: helperWork && i === 0 ? { agents: 2, shells: 1 } : null,
         waitingSinceS: waiting ? 720 : null,
