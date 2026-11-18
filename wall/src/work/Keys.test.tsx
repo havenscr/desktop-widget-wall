@@ -881,13 +881,13 @@ it('draws the Now keys at the size and column count for 1 to 5 keys', async () =
   }
 });
 
-// Section: the "Jump back in" offer rides on the For you page and is never a thing waiting
+// Section: the "Jump back in" offer is a button in the Now heading, never a plate and never a thing waiting
 
+const LIST = { kind: 'playlist' as const, id: 'PLnightDrive0001', label: 'Night Drive' };
 const offerOn = () => {
-  const list = { kind: 'playlist' as const, id: 'PLnightDrive0001', label: 'Night Drive' };
   act(() => {
-    useWatchStore.setState({ saved: [list], playing: null });
-    resetLastPlayed(null, { ...list, from: 'watch' });
+    useWatchStore.setState({ saved: [LIST], playing: null });
+    resetLastPlayed(null, { ...LIST, from: 'watch' });
     useNowPlayingStore.setState({ info: null, at: Date.now() });
   });
 };
@@ -896,28 +896,83 @@ const offerOff = () =>
     resetLastPlayed(null, null);
     useNowPlayingStore.setState({ info: null, art: null, at: 0, anchor: null });
   });
+const offerBtn = () => screen.queryByRole('button', { name: 'Play: Night Drive' });
 
-it('the offer is not counted: no page, no chip and no take-over while only it is left; it shows with a waiting item and is not behind "+N more"', async () => {
+it('nothing waits: the full mint button sits in the heading, with no chip, no For you page and no plate', async () => {
   offerOn();
   render(<Keys />);
   await flush();
-  // Only the offer: no For you page, no chip.
+  const b = offerBtn()!;
+  expect(b.textContent).toBe('Night Drive');
+  expect(b.className).not.toContain('ico');
+  expect(b.closest('.deck-hd')).not.toBeNull();
   expect(screen.getAllByRole('tab').map((t) => t.getAttribute('aria-label'))).toEqual(['Sales app', 'General']);
   expect(screen.queryByRole('button', { name: /^For you/ })).toBeNull();
-  // A waiting item takes the row; the chip would count one, and the offer sits beside it.
-  await arrive(item('a'));
-  expect(screen.getByText('Now · For you')).toBeTruthy();
-  expect(screen.getByRole('button', { name: 'Play: Night Drive' })).toBeTruthy();
-  // The item resolves while the take-over still runs: the row goes back to its keys, the offer is gone with the page.
-  await arrive();
-  expect(screen.getByText('Now · Sales app')).toBeTruthy();
-  expect(screen.queryByRole('button', { name: 'Play: Night Drive' })).toBeNull();
-  await flush(TAKEOVER_MS + 1_000);
-  expect(screen.getByText('Now · Sales app')).toBeTruthy();
+  expect(document.querySelector('.fy-li')).toBeNull();
+  // One click starts the playlist.
+  const play = vi.fn();
+  act(() => useWatchStore.setState({ play }));
+  fireEvent.click(b);
+  expect(play).toHaveBeenCalledWith({ kind: 'playlist', id: LIST.id });
   offerOff();
 });
 
-it('with two waiting items the offer is a third plate, and the heading and chip count only the items', async () => {
+it('no offer when something plays, when the last thing was not a playlist, or before a media read has answered', async () => {
+  offerOn();
+  render(<Keys />);
+  await flush();
+  expect(offerBtn()).not.toBeNull();
+  act(() => useNowPlayingStore.setState({ info: { playback_status: 'playing', title: 'Song', artist: 'Band' } as never, at: Date.now() }));
+  expect(offerBtn()).toBeNull();
+  offerOn();
+  expect(offerBtn()).not.toBeNull();
+  act(() => useWatchStore.setState({ playing: { ...LIST } }));
+  expect(offerBtn()).toBeNull();
+  act(() => useWatchStore.setState({ playing: null }));
+  act(() => resetLastPlayed(null, { kind: 'video', id: 'abcdefghijk', label: 'A video', from: 'watch' }));
+  expect(offerBtn()).toBeNull();
+  offerOff();
+  expect(offerBtn()).toBeNull();
+});
+
+it('the offer is not waiting: one waiting item counts one in the chip, the offer is the icon beside it, and it never takes the row', async () => {
+  offerOn();
+  render(<Keys />);
+  await flush();
+  await arrive(item('a'));
+  // Held on the keys page by the take-over ending; the chip counts the item only.
+  await flush(TAKEOVER_MS + 1_000);
+  expect(screen.getByText('Now · Sales app')).toBeTruthy();
+  expect(screen.getByRole('button', { name: 'For you 1' })).toBeTruthy();
+  const b = offerBtn()!;
+  expect(b.textContent).toBe('');
+  expect(b.className).toContain('ico');
+  // The item goes: no chip, the full button again.
+  await arrive();
+  expect(screen.queryByRole('button', { name: /^For you/ })).toBeNull();
+  expect(offerBtn()!.textContent).toBe('Night Drive');
+  offerOff();
+});
+
+it('the offer appearing does not take the row, and with waiting items the plates keep full width', async () => {
+  render(<Keys />);
+  await flush();
+  await arrive(item('a'), item('b'));
+  await flush(TAKEOVER_MS + 1_000);
+  expect(screen.getByText('Now · Sales app')).toBeTruthy();
+  offerOn();
+  await flush();
+  expect(screen.getByText('Now · Sales app')).toBeTruthy();
+  fireEvent.click(screen.getByRole('button', { name: 'For you 2' }));
+  expect(screen.getByText('Now · For you')).toBeTruthy();
+  // No chip on its own page, two plates, none of them the offer, and the button is the full one.
+  expect(document.querySelectorAll('.fy-li')).toHaveLength(2);
+  expect(document.querySelector('[data-fy="resume"].fy-li')).toBeNull();
+  expect(offerBtn()!.textContent).toBe('Night Drive');
+  offerOff();
+});
+
+it('three waiting: "+1 more" keeps its place and the button is the icon', async () => {
   offerOn();
   render(<Keys />);
   await flush();
@@ -926,18 +981,25 @@ it('with two waiting items the offer is a third plate, and the heading and chip 
   fireEvent.click(screen.getByRole('button', { name: 'For you 3' }));
   expect(screen.getByText(/Now · For you · \+1 more/)).toBeTruthy();
   expect(screen.getAllByRole('button', { name: /^Open chat:/ })).toHaveLength(2);
-  expect(screen.getByRole('button', { name: 'Play: Night Drive' })).toBeTruthy();
+  expect(offerBtn()!.className).toContain('ico');
   offerOff();
 });
 
-it('a new item arriving is the only thing that takes the row; the offer appearing does not', async () => {
-  render(<Keys />);
-  await flush();
-  await arrive(item('a'));
-  await flush(TAKEOVER_MS + 1_000);
-  expect(screen.getByText('Now · Sales app')).toBeTruthy();
-  offerOn();
-  await flush();
-  expect(screen.getByText('Now · Sales app')).toBeTruthy();
-  offerOff();
+it('a heading that overflows turns the full button into the icon first, before the dots give way', async () => {
+  const sw = vi.spyOn(HTMLElement.prototype, 'scrollWidth', 'get').mockImplementation(function (this: HTMLElement) {
+    // Wide only while the heading still holds the full-size button.
+    return this.classList.contains('deck-hd') && this.querySelector('.deck-resume:not(.ico)') ? 900 : 100;
+  });
+  const cw = vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(600);
+  try {
+    offerOn();
+    render(<Keys />);
+    await flush();
+    expect(offerBtn()!.className).toContain('ico');
+    expect(screen.getByRole('tablist', { name: 'Pages' }).hasAttribute('hidden')).toBe(false);
+  } finally {
+    sw.mockRestore();
+    cw.mockRestore();
+    offerOff();
+  }
 });

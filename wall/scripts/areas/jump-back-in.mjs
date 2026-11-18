@@ -1,42 +1,49 @@
-// "Jump back in" on Work: the For you page offers the last playlist the wall's own player played, with one Play, only
-// while nothing plays. It is not a thing waiting: it never counts, never makes the chip, never takes the row. Gallery states and fit variants for the card shown, hidden by a video, hidden when nothing is
-// known and hidden while something plays; one in-page measurement, its rules and a deliberate break. The knob `wjump=`
-// is in `devMocks/watch.ts`; the mock frame never loads a real player (`watch=mock`).
+// "Jump back in" on Work: while nothing plays, the Now heading carries a mint Play button with the last playlist the wall's own player
+// played, on every page. It is not a thing waiting: never a plate, never counted, never the For you chip or page, never a take-over.
+// It shrinks to a 40 by 32 Play icon when the heading is tight. Gallery states and fit variants for the voted frames and the cases
+// where no button shows; one in-page measurement, its rules and a deliberate break. The knob `wjump=` is in `devMocks/watch.ts`;
+// the mock frame never loads a real player (`watch=mock`).
 
 const AT = encodeURIComponent('2026-11-11T16:10:00-08:00');
-const BASE = `hz=work&at=${AT}&long=1&keys=typical&meet=none&net=calm&media=none&watch=mock&wlist=three`;
-const q = (extra) => `${BASE}&hold=foryou&${extra}`;
-const WALL = ['.work .right-wing', '.work .right-wing .fy-list', '.work .right-wing .fy-li'];
+const BASE = `hz=work&at=${AT}&keys=typical&net=calm&media=none&watch=mock&wlist=three`;
+const HEAD = '.work .right-wing .keys .deck-hd';
+const WALL = ['.work .right-wing', HEAD];
 
-// [name, knobs, gallery expect, plates wanted, chip label wanted (null: no chip), the page is For you]
-// `agents=3` leaves one thing waiting (a pull request), `agents=ask` two. Nothing waiting (no page, no plate, no chip) is a unit test: the mock always leaves one thing.
+// [name, knobs, gallery expect, button wanted ('full' | 'icon' | null), chip label wanted (null: no chip), plates wanted]
+// `agents=0` with `meet=none` leaves nothing waiting; `agents=3` leaves one thing (a pull request), `ask` two, `ask2` three.
 const states = [
-  ['beside one waiting item', 'agents=3&wjump=playlist', ['Night Drive', 'jump back in', 'Play', 'Now · For you'], 1, null],
-  ['with two waiting items, a narrow third plate', 'agents=ask&wjump=playlist', ['Play', 'Now · For you', '!jump back in'], 1, null],
-  ['the last thing was a video, no plate', 'agents=3&wjump=video', ['!Night Drive', '!jump back in'], 0, null],
-  ['nothing known, no plate', 'agents=3&wjump=none', ['!jump back in'], 0, null],
-  ['something plays, no plate', 'agents=3&wjump=playlist&wplay=0', ['!jump back in'], 0, null],
-  ['Recording page, the chip counts the waiting item only', 'agents=3&wjump=playlist&rec=1', ['Recording', 'For you 1', '!jump back in'], 0, 'For you 1'],
+  ['nothing waits, the full button', 'meet=none&agents=0&wjump=playlist', ['Night Drive', 'Now · '], 'full', null, 0],
+  ['one waits, the chip counts it only, the icon', 'meet=none&agents=3&hold=sales&wjump=playlist', ['For you 1'], 'icon', 'For you 1', 0],
+  ['two wait, full-width plates and the full button', 'meet=none&agents=ask&hold=foryou&wjump=playlist', ['Night Drive', 'Now · For you'], 'full', null, 2],
+  ['three wait, +1 more and the icon', 'meet=none&agents=ask2&hold=foryou&wjump=playlist', ['Now · For you · +1 more'], 'icon', null, 2],
+  ['the last thing was a video, no button', 'meet=none&agents=0&wjump=video', ['!Night Drive'], null, null, 0],
+  ['nothing known, no button', 'meet=none&agents=0&wjump=none', ['!Night Drive'], null, null, 0],
+  ['something plays, no button', 'meet=none&agents=0&wjump=playlist&wplay=0', ['!Night Drive'], null, null, 0],
 ];
 
-// Runs in the page: the "Jump back in" plates, whether each holds its parts inside its box, the list's box, and the chip labels.
+// Runs in the page: the heading's offer button (its kind and size), whether the heading holds everything inside the wing, the plates and the chip labels.
 function measureJump() {
-  const plates = [...document.querySelectorAll('.work .right-wing .fy-li')].filter((p) => p.getAttribute('data-fy') === 'resume');
+  const btns = [...document.querySelectorAll('.work .right-wing .deck-resume')];
+  const wing = document.querySelector('.work .right-wing').getBoundingClientRect();
+  const row = [...document.querySelectorAll('.work .right-wing .keys.deck-row')].pop();
+  const hd = row.querySelector('.deck-hd');
+  const hr = hd.getBoundingClientRect();
+  const name = hd.querySelector('.deck-name');
+  const ctrl = hd.querySelector('.deck-hd-r');
+  const cr = ctrl.getBoundingClientRect();
+  const plates = [...document.querySelectorAll('.work .right-wing .fy-li')];
   const list = document.querySelector('.work .right-wing .fy-list');
-  const inside = (a, b) => a.left >= b.left - 0.5 && a.right <= b.right + 0.5 && a.top >= b.top - 0.5 && a.bottom <= b.bottom + 0.5;
+  const half = list ? (list.getBoundingClientRect().width - 8) / 2 : 0;
+  const b = btns[0] ? btns[0].getBoundingClientRect() : null;
   return {
+    buttons: btns.length,
+    kind: !b ? null : btns[0].classList.contains('ico') ? 'icon' : 'full',
+    size: b ? [Math.round(b.width), Math.round(b.height)] : null,
+    inWing: cr.right <= wing.right + 0.5 && hr.right <= wing.right + 0.5,
+    nameWhole: !!name && name.scrollWidth <= name.clientWidth + 1,
     plates: plates.length,
-    parts: plates.map((p) => {
-      const box = p.getBoundingClientRect();
-      const btn = p.querySelector('button');
-      const b = p.querySelector('.fy-tx b');
-      return {
-        play: !!btn && /^Play$/.test((btn.textContent || '').trim()) && inside(btn.getBoundingClientRect(), box),
-        // The narrow plate keeps only its icon and Play; the wide one its title and reason too.
-        words: p.classList.contains('fy-compact') || (!!b && (b.textContent || '').trim() === 'Night Drive' && !!p.querySelector('.fy-tx em') && inside(b.getBoundingClientRect(), box)),
-        inList: !!list && inside(box, list.getBoundingClientRect()),
-      };
-    }),
+    fullWidth: plates.every((p) => Math.abs(p.getBoundingClientRect().width - half) <= 1),
+    resumePlates: plates.filter((p) => p.getAttribute('data-fy') === 'resume').length,
     chips: [...document.querySelectorAll('.work .right-wing .deck-chip')].map((c) => c.getAttribute('aria-label') || ''),
   };
 }
@@ -46,35 +53,31 @@ const find = (variant) => states.find((st) => V(st[0]) === variant.name);
 
 export default {
   name: 'jump-back-in',
-  gallery: { states: states.map(([n, k, expect]) => ({ screen: 'work', name: `jump back in: ${n}`, query: q(k), custom: true, expect })) },
+  gallery: { states: states.map(([n, k, expect]) => ({ screen: 'work', name: `jump back in: ${n}`, query: `${BASE}&${k}`, custom: true, expect })) },
   fit: {
-    variants: states.map(([n, k, , want]) => ({
-      name: V(n),
-      q: `?${q(k)}`,
-      checks: want > 0 ? [...WALL] : ['.work .right-wing .keys'],
-    })),
+    variants: states.map(([n, k]) => ({ name: V(n), q: `?${BASE}&${k}`, checks: [...WALL] })),
     measurements: { jumpBack: measureJump },
     rules: {
       jumpBack: (variant, results, emit) => {
         const st = find(variant);
         if (!st) return false;
-        const [, , , want, chip] = st;
+        const [, , , want, chip, plates] = st;
         const r = results.jumpBack;
-        const parts = r.parts.every((p) => p.play && p.words && p.inList);
+        const kindOk = want === null ? r.buttons === 0 : r.buttons === 1 && r.kind === want && r.size[1] === 32 && r.size[0] === (want === 'icon' ? 40 : r.size[0]);
         const chipOk = chip === null ? r.chips.length === 0 : r.chips.length === 1 && r.chips[0] === chip;
-        if (r.plates === want && parts && chipOk) {
-          emit(`  ok   jump back in: ${want ? 'one plate with its parts inside it' : 'no plate'}, ${chip === null ? 'no chip' : `the chip says "${chip}"`}`);
+        if (kindOk && chipOk && r.inWing && r.nameWhole && r.plates === plates && r.fullWidth && r.resumePlates === 0) {
+          emit(`  ok   jump back in: ${want ? `the ${want} button` : 'no button'}, ${chip === null ? 'no chip' : `the chip says "${chip}"`}, ${plates} full-width plates, the heading inside the wing`);
           return false;
         }
-        emit(`  FAIL jump back in: the offer is wrong (${r.plates} plates, wanted ${want}; ${JSON.stringify(r.parts)}; chips ${JSON.stringify(r.chips)}, wanted ${JSON.stringify(chip)})`);
+        emit(`  FAIL jump back in: the offer is wrong (${JSON.stringify(r)}; wanted ${want ?? 'no'} button, chip ${JSON.stringify(chip)}, ${plates} plates)`);
         return true;
       },
     },
     breaks: {
-      'jump-back-play': {
-        css: '.work .right-wing .fy-li .deck-mini { display: none !important; }',
+      'jump-back-button': {
+        css: '.work .right-wing .deck-resume { display: none !important; }',
         expect: /^ *FAIL jump back in: the offer is wrong/m,
-        appliesTo: (variant) => variant.name === V('beside one waiting item'),
+        appliesTo: (variant) => variant.name === V('nothing waits, the full button'),
       },
     },
   },

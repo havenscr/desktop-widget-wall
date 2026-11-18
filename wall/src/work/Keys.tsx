@@ -87,11 +87,11 @@ function secondRowFits(tiles: HTMLElement): boolean {
 }
 
 /**
- * How far the Now heading has given way to keep the page name whole: 0 the page dots (or
- * "8 of 12" past seven pages), 1 "8 of 12" in place of the dots, 2 the "For you" chip as a
- * dot and a count.
+ * How far the Now heading has given way to keep the page name whole: 0 everything, 1 the
+ * "Jump back in" button as its Play icon, 2 "8 of 12" in place of the page dots, 3 the "For you"
+ * chip as a dot and a count.
  */
-type HeadFit = 0 | 1 | 2;
+type HeadFit = 0 | 1 | 2 | 3;
 
 const KIND_ICON: Record<ForYouKind, Icon> = { meeting: IconVideo, waiting: IconMessageCircle, merge: IconGitPullRequest, alarm: IconAlertTriangle, resume: IconPlayerPlay };
 const KIND_TONE: Record<ForYouKind, string> = { meeting: 'mint', waiting: 'amber', merge: 'mint', alarm: 'amber', resume: 'mint' };
@@ -110,32 +110,25 @@ function useKeysRead() {
  * one height on every page. A long title is cut; the full title and reason show on hover. One
  * item leaves the second half empty (the plate never stretches past half the row).
  */
-function ForYouList({ items, resume, onRun }: { items: ForYouItem[]; resume: ForYouItem | null; onRun: (item: ForYouItem, detail: number) => void }) {
-  const shown = items.slice(0, FOR_YOU_SHOWN);
-  // The offer takes the free half when there is one; beside two items it is a narrow third plate (icon and Play), so it is never behind "+N more".
-  const narrow = resume !== null && shown.length >= FOR_YOU_SHOWN;
-  const plate = (it: ForYouItem, compact = false) => {
-    const I = KIND_ICON[it.kind];
-    const tone = KIND_TONE[it.kind];
-    return (
-      <div key={it.key} className={`fy-li fy-plate ${tone}${compact ? ' fy-compact' : ''}`} data-kind={TONE_KIND[tone]} data-fy={it.kind} {...tip(`${it.title}: ${it.reason}`)}>
-        <I size={20} stroke={1.8} aria-hidden="true" />
-        {compact ? null : (
-          <span className="fy-tx">
-            <b>{it.title}</b>
-            <em>{it.reason}</em>
-          </span>
-        )}
-        <button type="button" className="deck-mini" aria-label={`${it.action}: ${it.title}`} {...tip(it.actionTip)} onClick={(e) => onRun(it, e.detail)}>
-          {it.action}
-        </button>
-      </div>
-    );
-  };
+function ForYouList({ items, onRun }: { items: ForYouItem[]; onRun: (item: ForYouItem, detail: number) => void }) {
   return (
-    <div className={`fy-list${narrow ? ' fy-three' : ''}`}>
-      {shown.map((it) => plate(it))}
-      {resume ? plate(resume, narrow) : null}
+    <div className="fy-list">
+      {items.slice(0, FOR_YOU_SHOWN).map((it) => {
+        const I = KIND_ICON[it.kind];
+        const tone = KIND_TONE[it.kind];
+        return (
+          <div key={it.key} className={`fy-li fy-plate ${tone}`} data-kind={TONE_KIND[tone]} {...tip(`${it.title}: ${it.reason}`)}>
+            <I size={20} stroke={1.8} aria-hidden="true" />
+            <span className="fy-tx">
+              <b>{it.title}</b>
+              <em>{it.reason}</em>
+            </span>
+            <button type="button" className="deck-mini" aria-label={`${it.action}: ${it.title}`} {...tip(it.actionTip)} onClick={(e) => onRun(it, e.detail)}>
+              {it.action}
+            </button>
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -150,7 +143,7 @@ function ForYouList({ items, resume, onRun }: { items: ForYouItem[]; resume: For
 export function Keys() {
   const { read, refresh } = useKeysRead();
   const items = useForYou();
-  // The "Jump back in" offer rides on the For you page only: it is not counted, not in the chip, never a take-over.
+  // The "Jump back in" offer is a button in the Now heading on every page while nothing plays: never counted, never in the chip, never a take-over.
   const resume = useResumeOffer();
   const recording = useSignalStore((s) => s.recording);
   const libIdx = useLibIndex();
@@ -285,7 +278,7 @@ export function Keys() {
     const hd = headRef.current;
     if (!hd) return;
     const level = headFit.key === m.headKey ? headFit.level : 0;
-    if (level < 2 && hd.scrollWidth > hd.clientWidth + 1) setHeadFit({ key: m.headKey, level: (level + 1) as HeadFit });
+    if (level < 3 && hd.scrollWidth > hd.clientWidth + 1) setHeadFit({ key: m.headKey, level: (level + 1) as HeadFit });
     else if (headFit.key !== m.headKey) setHeadFit({ key: m.headKey, level });
   });
 
@@ -365,24 +358,39 @@ export function Keys() {
   const shownId = onRecording ? null : page?.id;
   // The Recording page is none of the pages: no dot is lit and no position is written while it shows.
   const pageAt = onRecording ? -1 : Math.max(0, pages.findIndex((p) => p.id === shownId));
-  const headKey = `${heading}|${pages.length}|${showChip}|${items.length}|${brief ?? ''}`;
+  const headKey = `${heading}|${pages.length}|${showChip}|${items.length}|${brief ?? ''}|${resume?.key ?? ''}`;
   const fit: HeadFit = headFit.key === headKey ? headFit.level : 0;
   drawn.current = { many: allKeys.length > KEYS_PER_ROW, headKey };
-  const dotsShown = pages.length <= MAX_DOTS && fit < 1;
+  const dotsShown = pages.length <= MAX_DOTS && fit < 2;
+  // The offer is the icon alone when the heading is tight: the chip shows, "+N more" is on the name, or the measuring above ran out of room.
+  const offerIcon = resume !== null && (showChip || more !== '' || fit >= 1);
   const partText = paged ? `${chunkAt + 1}/${chunks.length}` : null;
   const where = sum.source === 'default' ? 'You are using the built-in keys. To change them put keys.json in the app\'s config folder; the wall never writes it.' : 'Keys come from keys.json and the built-in library.';
 
   const controls = (
     <span className="deck-hd-r">
+      {resume && (
+        <button
+          type="button"
+          className={`deck-mini deck-resume${offerIcon ? ' ico' : ''}`}
+          data-fy="resume"
+          aria-label={`${resume.action}: ${resume.title}`}
+          {...tip(`${resume.title}: ${resume.reason}. ${resume.actionTip}`)}
+          onClick={(e) => runItem(resume, e.detail)}
+        >
+          <IconPlayerPlay size={20} stroke={1.8} aria-hidden="true" />
+          {offerIcon ? null : <span>{resume.title}</span>}
+        </button>
+      )}
       {showChip && (
         <button
           type="button"
-          className={`deck-chip${fit >= 2 ? ' small' : ''}`}
+          className={`deck-chip${fit >= 3 ? ' small' : ''}`}
           aria-label={`For you ${items.length}`}
           {...tip(`${items.length} thing${items.length === 1 ? '' : 's'} waiting on you. Click to see them.`)}
           onClick={() => goTo(pages.find((p) => p.id === FOR_YOU) ?? null)}
         >
-          {fit >= 2 ? (
+          {fit >= 3 ? (
             <>
               <i className="deck-chip-dot" aria-hidden="true" />
               {items.length}
@@ -466,7 +474,7 @@ export function Keys() {
     return (
       <section className="keys deck-row" data-floor={floor} aria-label={heading} onWheel={onWheel} ref={rowRef}>
         {head}
-        <ForYouList items={items} resume={resume} onRun={runItem} />
+        <ForYouList items={items} onRun={runItem} />
       </section>
     );
   }

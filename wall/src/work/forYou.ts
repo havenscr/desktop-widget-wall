@@ -113,7 +113,7 @@ export function alarmItem(sec: SecuritySummary | null, status: string, linkOk: b
 }
 
 /**
- * "Jump back in": the last playlist the wall's own player played, offered with one Play while nothing plays.
+ * "Jump back in": the last playlist the wall's own player played, offered as one Play button in the Now heading while nothing plays.
  * Only a playlist that can be started again right now (a Watch playlist still in the saved list); a video,
  * a live stream, no record, or anything playing adds nothing.
  */
@@ -194,7 +194,7 @@ export async function runForYou(item: ForYouItem): Promise<string> {
  * Everything that waits on the owner, in order: a meeting, agents waiting, pull requests
  * ready, a network alarm. A source that is stale, down or not set up adds nothing, and the
  * agents helper being down says nothing about agents. Never shown from old data. The "Jump back in"
- * offer is not here: it is not waiting on the owner, so it never counts or signals (see `useResumeOffer`).
+ * offer is not here: it is not waiting on the owner, so it never counts or signals (see `useResumeOffer`; the heading button in `Keys.tsx` shows it).
  */
 export function useForYou(): ForYouItem[] {
   const meet = useNextMeeting();
@@ -229,8 +229,8 @@ export function useForYou(): ForYouItem[] {
 }
 
 /**
- * The "Jump back in" offer, for the For you page when it is open. Not a thing waiting on the owner: it is
- * never counted, never in the chip or its tooltip, never a take-over. "Nothing plays" is known only after
+ * The "Jump back in" offer, for the Now heading. Not a thing waiting on you: it is
+ * never a plate, never counted, never in the chip or its tooltip, never a take-over. "Nothing plays" is known only after
  * the first media read has answered (`at` is set by an answer, never by a failed read).
  */
 export function useResumeOffer(): ForYouItem | null {
