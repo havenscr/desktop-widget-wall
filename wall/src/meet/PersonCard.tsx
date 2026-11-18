@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { IconBrandTeams, IconCopy, IconMail } from '@tabler/icons-react';
+import { IconAddressBook, IconBrandTeams, IconCopy, IconMail } from '@tabler/icons-react';
 import { personAction, type PersonAction } from '../bridge/meetBrief';
 import { tip } from '../ui/HoverTip';
 import { initials, replyMark, replyWord, type PeopleBlock } from './heroModel';
@@ -12,7 +12,9 @@ const ACTIONS: { action: PersonAction; label: string; fail: string }[] = [
   { action: 'email', label: 'Email', fail: 'Could not open email' },
   { action: 'teams', label: 'Message on Teams', fail: 'Could not open Teams' },
 ];
-const ICON = { copy: IconCopy, email: IconMail, teams: IconBrandTeams } as const;
+// Every action has an icon, so a new action fails to compile here until it gets one. `contact` is not in ACTIONS: its key
+// is drawn only after the saved-contact lookup says it is available.
+const ICON: Record<PersonAction, typeof IconCopy> = { copy: IconCopy, email: IconMail, teams: IconBrandTeams, contact: IconAddressBook };
 
 /**
  * The people under the key grid: up to five round initials with a reply mark, and "N invited" with the replies.
