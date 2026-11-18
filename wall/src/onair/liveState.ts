@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import type { CallSignal } from '../signals/model';
 import type { PlaceId } from '../state/places';
-import { pickMode } from './modes';
+import { seenModes } from './seen';
 
 export interface LiveInput {
   active: PlaceId;
@@ -18,8 +18,8 @@ export interface LiveInput {
  */
 export function isOnAirLive(i: LiveInput): boolean {
   if (i.active === 'onair') return true;
-  const pick = pickMode({ known: i.known, recording: i.recording, call: i.call, browserAv: i.browserAv, live: null, held: null, now: i.now });
-  return pick.seen.includes('live') || pick.seen.includes('rec');
+  const seen = seenModes({ known: i.known, recording: i.recording, call: i.call, browserAv: i.browserAv, live: null, held: null, now: i.now });
+  return seen.includes('live') || seen.includes('rec');
 }
 
 interface LiveState {

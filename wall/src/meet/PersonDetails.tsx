@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { IconAddressBook } from '@tabler/icons-react';
 import { personAction, personContact } from '../bridge/meetBrief';
-import { ADDRESS_LINES, CONTACT_FAIL_LINE, usePersonAddress } from './personDetails';
+import { ADDRESS_LINES, CONTACT_FAIL_LINE, usePersonAddress } from './personDetailsModel';
 
 /**
  * The address line and the Open contact card key for the person card. Mount it where the card opens, so a mount is
