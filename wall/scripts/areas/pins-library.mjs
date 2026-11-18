@@ -70,6 +70,9 @@ const measurePins = () => {
       for (const b of badges) {
         const slot = R(b.closest('.u-pinslot'));
         const r = R(b);
+        const art = R(b.closest('.u-pin-art'));
+        // The overhang past the art square is 5 px (the pin has 6 px of padding and an 8 px gap there): never more.
+        if (r.r > art.r + 5.5 || r.b > art.b + 5.5) fails.push('a badge at ' + where(r) + ' is outside its pin slot: it hangs ' + Math.round(Math.max(r.r - art.r, r.b - art.b)) + ' px past the art (5 at most)');
         if (r.l < slot.l - 0.5 || r.r > slot.r + 0.5 || r.t < slot.t - 0.5 || r.b > slot.b + 0.5) fails.push('a badge at ' + where(r) + ' is outside its pin slot ' + where(slot));
       }
       for (const n of document.querySelectorAll('.u-pin .u-pin-name')) {
