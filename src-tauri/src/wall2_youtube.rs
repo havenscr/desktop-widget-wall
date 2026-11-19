@@ -482,6 +482,7 @@ const READ_BODY: u64 = 512 * 1024;
 const READ_TIMEOUT: Duration = Duration::from_secs(6);
 const PAGE_SIZE: &str = "50";
 const SEARCH_SIZE: &str = "25";
+const PLAYLIST_SEARCH_SIZE: &str = "20";
 /// The wall's region for the "blocked here" check.
 const REGION: &str = "US";
 const MAX_SECONDS: u64 = 7 * 24 * 3600;
@@ -663,6 +664,10 @@ struct Library {
     searches: Cache<Page<YtVideo>>,
     /// The video ids a successful `search.list` answered, by words, until the details read has used them.
     found: Cache<Vec<String>>,
+    /// Playlist searches by words (the cover and count read included), and the playlist ids a successful
+    /// `search.list` answered until that read has used them.
+    playlist_searches: Cache<Vec<YtPlaylist>>,
+    found_lists: Cache<Vec<String>>,
     /// Per list: pages served since its first page was last read, and the token that comes next.
     paging: Cache<(u32, Option<String>)>,
     category: Option<String>,
@@ -674,7 +679,7 @@ struct Library {
 }
 impl Library {
     fn new() -> Self {
-        Self { playlists: Cache::new(MAX_LISTS), videos: Cache::new(MAX_LISTS), details: Cache::new(MAX_DETAILS), searches: Cache::new(MAX_SEARCHES), found: Cache::new(MAX_SEARCHES), paging: Cache::new(MAX_LISTS), category: None, search_day: i64::MIN, search_count: 0, details_hour: u64::MAX, details_count: 0, details_spent_day: i64::MIN }
+        Self { playlists: Cache::new(MAX_LISTS), videos: Cache::new(MAX_LISTS), details: Cache::new(MAX_DETAILS), searches: Cache::new(MAX_SEARCHES), found: Cache::new(MAX_SEARCHES), playlist_searches: Cache::new(MAX_SEARCHES), found_lists: Cache::new(MAX_SEARCHES), paging: Cache::new(MAX_LISTS), category: None, search_day: i64::MIN, search_count: 0, details_hour: u64::MAX, details_count: 0, details_spent_day: i64::MIN }
     }
     /// Searches made on this Pacific day so far.
     fn used(&mut self, now: u64) -> u32 {
@@ -909,6 +914,15 @@ fn page_served(gen: u64, list: &str, token: Option<&str>, next: &Option<String>,
     });
 }
 
+/// The playlists of a `playlists.list` answer, checked and cleaned, in the order given.
+fn playlist_rows(answer: &Value) -> Vec<YtPlaylist> {
+    answer.get("items").and_then(Value::as_array).map(|list| list.iter().filter_map(|p| {
+        let id = p.get("id")?.as_str().filter(|id| valid_playlist_id(id))?.to_string();
+        let thumb = ["medium", "high", "default"].iter().find_map(|size| p.pointer(&format!("/snippet/thumbnails/{size}/url")).and_then(Value::as_str).and_then(playlist_thumb));
+        Some(YtPlaylist { id, title: clean_text(p.pointer("/snippet/title"), 200).unwrap_or_else(|| "Untitled".to_string()), count: p.pointer("/contentDetails/itemCount").and_then(Value::as_u64).unwrap_or(0), thumb })
+    }).collect()).unwrap_or_default()
+}
+
 /// The owner's playlists, a page at a time.
 fn playlists_with(ctx: &Ctx, page_token: Option<&str>, fresh: bool) -> Result<Page<YtPlaylist>, &'static str> {
     let token = check_token(page_token)?;
@@ -921,11 +935,7 @@ fn playlists_with(ctx: &Ctx, page_token: Option<&str>, fresh: bool) -> Result<Pa
         ("fields", "nextPageToken,items(id,snippet(title,thumbnails(default/url,medium/url,high/url)),contentDetails/itemCount)")];
     if let Some(t) = token { params.push(("pageToken", t)); }
     let answer = api_get(ctx, EP_PLAYLISTS, &params, false)?;
-    let items = answer.get("items").and_then(Value::as_array).map(|list| list.iter().filter_map(|p| {
-        let id = p.get("id")?.as_str().filter(|id| valid_playlist_id(id))?.to_string();
-        let thumb = ["medium", "high", "default"].iter().find_map(|size| p.pointer(&format!("/snippet/thumbnails/{size}/url")).and_then(Value::as_str).and_then(playlist_thumb));
-        Some(YtPlaylist { id, title: clean_text(p.pointer("/snippet/title"), 200).unwrap_or_else(|| "Untitled".to_string()), count: p.pointer("/contentDetails/itemCount").and_then(Value::as_u64).unwrap_or(0), thumb })
-    }).collect()).unwrap_or_default();
+    let items = playlist_rows(&answer);
     let page = Page { items, next: next_token(&answer) };
     put_lib(gen, |l| l.playlists.put(key, now, page.clone()));
     page_served(gen, "p", token, &page.next, now);
@@ -1001,33 +1011,36 @@ fn music_category(ctx: &Ctx, gen: u64) -> String {
 }
 
 /// One search in flight: the first caller with these words runs it, the others with the same words wait for its answer.
-struct Flight { done: Mutex<Option<Result<Page<YtVideo>, &'static str>>>, ready: std::sync::Condvar }
-static FLIGHTS: Mutex<Vec<(String, std::sync::Arc<Flight>)>> = Mutex::new(Vec::new());
+struct Flight<T> { done: Mutex<Option<Result<T, &'static str>>>, ready: std::sync::Condvar }
+type Flights<T> = Mutex<Vec<(String, std::sync::Arc<Flight<T>>)>>;
+static FLIGHTS: Flights<Page<YtVideo>> = Mutex::new(Vec::new());
+/// Playlist searches have their own flights (and their own cache), so a song search and a playlist search never share.
+static PLAYLIST_FLIGHTS: Flights<Vec<YtPlaylist>> = Mutex::new(Vec::new());
 /// Held by the caller that runs a search; ends the flight (with `down` if it never finished) when dropped.
-struct Lead { key: String, flight: std::sync::Arc<Flight> }
-impl Lead {
-    fn finish(&self, result: Result<Page<YtVideo>, &'static str>) { *lock(&self.flight.done) = Some(result); }
+struct Lead<T: 'static> { key: String, flight: std::sync::Arc<Flight<T>>, registry: &'static Flights<T> }
+impl<T> Lead<T> {
+    fn finish(&self, result: Result<T, &'static str>) { *lock(&self.flight.done) = Some(result); }
 }
-impl Drop for Lead {
+impl<T> Drop for Lead<T> {
     fn drop(&mut self) {
         let mut done = lock(&self.flight.done);
         if done.is_none() { *done = Some(Err(DOWN)); }
         drop(done);
-        lock(&FLIGHTS).retain(|(k, f)| !(k == &self.key && std::sync::Arc::ptr_eq(f, &self.flight)));
+        lock(self.registry).retain(|(k, f)| !(k == &self.key && std::sync::Arc::ptr_eq(f, &self.flight)));
         self.flight.ready.notify_all();
     }
 }
-enum Joined { Lead(Lead), Follow(std::sync::Arc<Flight>) }
-fn join_flight(key: &str) -> Joined {
-    let mut flights = lock(&FLIGHTS);
+enum Joined<T: 'static> { Lead(Lead<T>), Follow(std::sync::Arc<Flight<T>>) }
+fn join_flight<T>(registry: &'static Flights<T>, key: &str) -> Joined<T> {
+    let mut flights = lock(registry);
     if let Some((_, f)) = flights.iter().find(|(k, _)| k == key) { return Joined::Follow(f.clone()) }
     let flight = std::sync::Arc::new(Flight { done: Mutex::new(None), ready: std::sync::Condvar::new() });
     flights.push((key.to_string(), flight.clone()));
-    Joined::Lead(Lead { key: key.to_string(), flight })
+    Joined::Lead(Lead { key: key.to_string(), flight, registry })
 }
 /// How long a follower waits for the search it shares (three reads of 6 s each, and a little more).
 const FLIGHT_WAIT: Duration = Duration::from_secs(25);
-fn wait_for(flight: &Flight) -> Result<Page<YtVideo>, &'static str> {
+fn wait_for<T: Clone>(flight: &Flight<T>) -> Result<T, &'static str> {
     let mut done = lock(&flight.done);
     let until = Instant::now() + FLIGHT_WAIT;
     while done.is_none() {
@@ -1047,7 +1060,8 @@ fn search_with(ctx: &Ctx, text: &str) -> Result<Page<YtVideo>, &'static str> {
     let now = (ctx.now)();
     let gen = lib_gen();
     if let Some(page) = with_lib(|l| l.searches.get(&key, now, SEARCH_TTL)) { return Ok(page) }
-    let lead = match join_flight(&key) { Joined::Follow(flight) => return wait_for(&flight), Joined::Lead(lead) => lead };
+    // The flight is tied to this sign-in, so a search that spans a sign-out never answers the next session.
+    let lead = match join_flight(&FLIGHTS, &format!("{gen}:{key}")) { Joined::Follow(flight) => return wait_for(&flight), Joined::Lead(lead) => lead };
     // The same words may have been answered while this call waited to start.
     let result = match with_lib(|l| l.searches.get(&key, now, SEARCH_TTL)) { Some(page) => Ok(page), None => search_run(ctx, gen, &query, &key, now) };
     lead.finish(result.clone());
@@ -1090,6 +1104,65 @@ fn search_run(ctx: &Ctx, gen: u64, query: &str, key: &str, now: u64) -> Result<P
     let page = Page { items, next: None };
     put_lib(gen, |l| { l.searches.put(key.to_string(), now, page.clone()); });
     Ok(page)
+}
+
+/// Playlist search, run only when asked. The same words again are answered from memory and cost nothing, the
+/// same words in flight share one call, and the day's budget is reserved before the call and given back only
+/// when no request left the machine. Answers the playlists in YouTube's order with their counts and covers.
+fn search_playlists_with(ctx: &Ctx, text: &str) -> Result<Vec<YtPlaylist>, &'static str> {
+    let query = check_query(text).ok_or(INVALID)?;
+    let key = query.to_lowercase();
+    let now = (ctx.now)();
+    let gen = lib_gen();
+    if let Some(list) = with_lib(|l| l.playlist_searches.get(&key, now, SEARCH_TTL)) { return Ok(list) }
+    // The flight is tied to this sign-in, so a search that spans a sign-out never answers the next session.
+    let lead = match join_flight(&PLAYLIST_FLIGHTS, &format!("{gen}:{key}")) { Joined::Follow(flight) => return wait_for(&flight), Joined::Lead(lead) => lead };
+    let result = match with_lib(|l| l.playlist_searches.get(&key, now, SEARCH_TTL)) { Some(list) => Ok(list), None => search_playlists_run(ctx, gen, &query, &key, now) };
+    lead.finish(result.clone());
+    result
+}
+
+fn search_playlists_run(ctx: &Ctx, gen: u64, query: &str, key: &str, now: u64) -> Result<Vec<YtPlaylist>, &'static str> {
+    // A search that succeeded while its details read failed keeps its ids: a retry reads the details only.
+    let ids = match with_lib(|l| l.found_lists.get(key, now, FOUND_TTL)) {
+        Some(ids) => ids,
+        None => {
+            let day = pacific_day(now);
+            match put_lib(gen, |l| if l.used(now) >= SEARCH_DAILY { false } else { l.search_count += 1; true }) {
+                Some(true) => {}
+                Some(false) => return Err(QUOTA),
+                None => return Err(DOWN),
+            }
+            // No category filter: Google allows one only with a video search.
+            let params = [("part", "snippet"), ("type", "playlist"), ("maxResults", PLAYLIST_SEARCH_SIZE), ("q", query), ("fields", "items(id/playlistId)")];
+            let sent = std::cell::Cell::new(false);
+            let answer = match api_get_sent(ctx, EP_SEARCH, &params, true, &sent) {
+                Ok(a) => a,
+                Err(word) => {
+                    if word == QUOTA { put_lib(gen, |l| { l.used(now); l.search_count = SEARCH_DAILY; }); }
+                    else if !sent.get() { put_lib(gen, |l| if l.search_day == day && l.search_count > 0 { l.search_count -= 1; }); }
+                    return Err(word);
+                }
+            };
+            let mut ids: Vec<String> = Vec::new();
+            for id in answer.get("items").and_then(Value::as_array).into_iter().flatten().filter_map(|item| item.pointer("/id/playlistId")?.as_str().filter(|id| valid_playlist_id(id)).map(str::to_string)) {
+                if !ids.contains(&id) { ids.push(id); }
+            }
+            put_lib(gen, |l| l.found_lists.put(key.to_string(), now, ids.clone()));
+            ids
+        }
+    };
+    let list = if ids.is_empty() { Vec::new() } else {
+        let joined = ids.join(",");
+        let answer = api_get(ctx, EP_PLAYLISTS, &[("part", "snippet,contentDetails"), ("id", &joined),
+            ("fields", "items(id,snippet(title,thumbnails(default/url,medium/url,high/url)),contentDetails/itemCount)")], false)?;
+        let mut rows = playlist_rows(&answer);
+        rows.retain(|p| ids.contains(&p.id));
+        rows.sort_by_key(|p| ids.iter().position(|id| id == &p.id));
+        rows
+    };
+    put_lib(gen, |l| { l.playlist_searches.put(key.to_string(), now, list.clone()); });
+    Ok(list)
 }
 
 // ---- tests ----------------------------------------------------------------------------------
@@ -2709,6 +2782,146 @@ mod tests {
         assert_eq!(retry.get_urls().len(), 1);
     }
 
+    fn list_hits(ids: &[&str]) -> Result<HttpReply, ()> { ok(json!({ "items": ids.iter().map(|id| json!({ "id": { "kind": "youtube#playlist", "playlistId": id } })).collect::<Vec<_>>() })) }
+    fn list_details(rows: &[(&str, &str, u64)]) -> Result<HttpReply, ()> {
+        ok(json!({ "items": rows.iter().map(|(id, title, n)| json!({ "id": id, "snippet": { "title": title, "thumbnails": { "medium": { "url": format!("https://i.ytimg.com/vi/{VID_A}/mqdefault.jpg") } } }, "contentDetails": { "itemCount": n } })).collect::<Vec<_>>() }))
+    }
+
+    #[test]
+    fn a_playlist_search_is_one_call_then_one_details_read_and_a_repeat_costs_nothing() {
+        let _t = exclusive(); token_in_memory();
+        let creds = FakeCreds::new(Some("stored-refresh"));
+        let now = clock(T0);
+        // The details come back in another order than the hits; the answer keeps the search order.
+        let http = FakeHttp::reads(vec![list_hits(&["PLnight_drive", "PLrain", "PLnight_drive", "x", "bad id!"]), list_details(&[("PLrain", "Rain", 28), ("PLnight_drive", "Night Drive", 41)])], vec![]);
+        let first = run(&http, &creds, &now, |c| playlist_search_answer(c, "  Night Drive ")).unwrap();
+        assert_eq!(first.playlists.iter().map(|p| (p.id.as_str(), p.count)).collect::<Vec<_>>(), [("PLnight_drive", 41), ("PLrain", 28)]);
+        assert_eq!(first.searches_left, 99);
+        let urls = http.get_urls();
+        assert_eq!(urls.len(), 2, "one search.list and one playlists.list");
+        for part in ["search?", "type=playlist", "maxResults=20", "q=Night%20Drive&", "fields=items%28id%2FplaylistId%29"] { assert!(urls[0].contains(part), "{part} in {}", urls[0]); }
+        assert!(!urls[0].contains("videoCategoryId") && !urls[0].contains("videoEmbeddable"), "{}", urls[0]);
+        for part in ["playlists?", "id=PLnight_drive%2CPLrain", "contentDetails"] { assert!(urls[1].contains(part), "{part} in {}", urls[1]); }
+        // The same words again (other case and spaces) come from memory: no call, no unit.
+        let again = run(&http, &creds, &now, |c| playlist_search_answer(c, "night drive")).unwrap();
+        assert_eq!(again, first);
+        assert_eq!(http.get_urls().len(), 2);
+        assert_eq!(with_lib(|l| l.used(T0)), 1);
+        // New words spend one more unit and make their own two calls.
+        let more = FakeHttp::reads(vec![list_hits(&["PLcalm"]), list_details(&[("PLcalm", "Calm", 9)])], vec![]);
+        let other = run(&more, &creds, &now, |c| playlist_search_answer(c, "calm")).unwrap();
+        assert_eq!((other.playlists.len(), other.searches_left), (1, 98));
+        assert_eq!(more.get_urls().len(), 2);
+        // A song search with the same words is its own search with its own cache.
+        assert_eq!(with_lib(|l| l.searches.len()), 0);
+    }
+
+    #[test]
+    fn a_playlist_search_with_no_hits_reads_no_details() {
+        let _t = exclusive(); token_in_memory();
+        let creds = FakeCreds::new(Some("r"));
+        let http = FakeHttp::reads(vec![list_hits(&[])], vec![]);
+        let answer = run(&http, &creds, &clock(T0), |c| playlist_search_answer(c, "zzzz")).unwrap();
+        assert!(answer.playlists.is_empty());
+        assert_eq!(http.get_urls().len(), 1);
+    }
+
+    #[test]
+    fn a_playlist_search_reserves_before_sending_refunds_an_unsent_call_and_fills_on_quota() {
+        let _t = exclusive(); token_in_memory();
+        let at = clock(T0);
+        // Nothing left: refused with no request.
+        let creds = FakeCreds::new(Some("r"));
+        with_lib(|l| { l.used(T0); l.search_count = SEARCH_DAILY; });
+        let none = FakeHttp::reads(vec![], vec![]);
+        assert_eq!(run(&none, &creds, &at, |c| playlist_search_answer(c, "full")).err(), Some(QUOTA));
+        assert!(none.get_urls().is_empty());
+        // A call that never left (no stored sign-in, so no token) gives its unit back.
+        clear_library(false);
+        *lock(&TOKEN) = None;
+        let signed_out = FakeCreds::new(None);
+        let http = FakeHttp::reads(vec![], vec![]);
+        assert!(run(&http, &signed_out, &at, |c| playlist_search_answer(c, "never sent")).is_err());
+        assert!(http.get_urls().is_empty());
+        assert_eq!(with_lib(|l| l.used(T0)), 0, "refunded");
+        // A call that left and failed keeps its unit.
+        token_in_memory();
+        let down = FakeHttp::reads(vec![reply(500, "")], vec![]);
+        assert_eq!(run(&down, &creds, &at, |c| playlist_search_answer(c, "went out")).err(), Some(DOWN));
+        assert_eq!(with_lib(|l| l.used(T0)), 1);
+        // A quota answer fills the day's count.
+        let quota = FakeHttp::reads(vec![reply(403, r#"{"error":{"errors":[{"reason":"quotaExceeded"}]}}"#)], vec![]);
+        assert_eq!(run(&quota, &creds, &at, |c| playlist_search_answer(c, "over")).err(), Some(QUOTA));
+        assert_eq!(with_lib(|l| l.used(T0)), SEARCH_DAILY);
+    }
+
+    #[test]
+    fn a_failed_playlist_details_read_keeps_the_hits_and_a_retry_spends_nothing() {
+        let _t = exclusive(); token_in_memory();
+        let creds = FakeCreds::new(Some("r"));
+        let at = clock(T0);
+        let http = FakeHttp::reads(vec![list_hits(&["PLnight_drive"]), reply(500, "")], vec![]);
+        assert_eq!(run(&http, &creds, &at, |c| playlist_search_answer(c, "keep me")).err(), Some(DOWN));
+        assert_eq!(with_lib(|l| l.used(T0)), 1);
+        let retry = FakeHttp::reads(vec![list_details(&[("PLnight_drive", "Night Drive", 41)])], vec![]);
+        let answer = run(&retry, &creds, &at, |c| playlist_search_answer(c, "keep me")).unwrap();
+        assert_eq!(answer.playlists.len(), 1);
+        let urls = retry.get_urls();
+        assert!(urls.len() == 1 && urls[0].contains("playlists?") && !urls[0].contains("search?"));
+        assert_eq!(with_lib(|l| l.used(T0)), 1);
+        assert_eq!(answer.searches_left, 99);
+    }
+
+    #[test]
+    fn the_same_playlist_words_in_flight_share_one_search() {
+        let _t = exclusive(); token_in_memory();
+        let creds = FakeCreds::new(Some("r"));
+        let gate = GateHttp::new(vec![list_hits(&["PLnight_drive"]), list_details(&[("PLnight_drive", "Night Drive", 41)])]);
+        let (first, second) = std::thread::scope(|s| {
+            let a = s.spawn(|| run_dyn(&gate, &creds, &clock(T0), |c| search_playlists_with(c, "Night Drive")));
+            wait_until("the first search to start", || gate.started() == 1);
+            let b = s.spawn(|| run_dyn(&gate, &creds, &clock(T0), |c| search_playlists_with(c, "  night DRIVE ")));
+            std::thread::sleep(Duration::from_millis(80));
+            gate.release();
+            (a.join().unwrap(), b.join().unwrap())
+        });
+        assert_eq!(first.as_ref().unwrap().len(), 1);
+        assert_eq!(first, second);
+        assert_eq!(gate.urls().iter().filter(|u| u.contains("search?")).count(), 1);
+        assert_eq!(with_lib(|l| l.used(T0)), 1);
+        assert!(lock(&PLAYLIST_FLIGHTS).is_empty(), "the flight is over");
+    }
+
+    #[test]
+    fn a_playlist_search_after_a_sign_out_never_joins_the_old_flight() {
+        let _t = exclusive(); token_in_memory();
+        let creds = FakeCreds::new(Some("r"));
+        let gate = GateHttp::new(vec![list_hits(&["PLnight_drive"]), list_hits(&["PLnight_drive"]),
+            list_details(&[("PLnight_drive", "Night Drive", 41)]), list_details(&[("PLnight_drive", "Night Drive", 41)])]);
+        std::thread::scope(|s| {
+            let a = s.spawn(|| run_dyn(&gate, &creds, &clock(T0), |c| search_playlists_with(c, "Night Drive")));
+            wait_until("the first search to start", || gate.started() == 1);
+            clear_library(true);
+            let b = s.spawn(|| run_dyn(&gate, &creds, &clock(T0), |c| search_playlists_with(c, "Night Drive")));
+            wait_until("the second search to send its own call", || gate.started() == 2);
+            gate.release();
+            let _ = (a.join().unwrap(), b.join().unwrap());
+        });
+        assert_eq!(gate.urls().iter().filter(|u| u.contains("search?")).count(), 2);
+        assert!(lock(&PLAYLIST_FLIGHTS).is_empty(), "both flights are over");
+    }
+
+    #[test]
+    fn the_playlist_search_is_its_own_command_and_the_song_search_stays_videos_only() {
+        let source = include_str!("wall2_youtube.rs").replace("\r\n", "\n");
+        let song = source.split(["fn search", "_run("].concat().as_str()).nth(1).unwrap_or("");
+        let song_body = song.split(["/// Playlist", " search, run only"].concat().as_str()).next().unwrap_or("");
+        assert!(song_body.contains("\"video\"") && !song_body.contains("\"playlist\""), "{song_body}");
+        let run = source.split(["fn search_playlists", "_run("].concat().as_str()).nth(1).unwrap_or("");
+        let run_body = run.split("\n}\n").next().unwrap_or("");
+        assert!(run_body.contains("\"playlist\"") && !run_body.contains(["video", "CategoryId"].concat().as_str()), "{run_body}");
+    }
+
     #[test]
     fn every_command_checks_the_window_first() {
         // The needles are built at run time so this test's own text never matches them.
@@ -2716,7 +2929,7 @@ mod tests {
         let function = ["pub async fn ", "wall2_youtube_"].concat();
         let attribute = ["#[tauri", "::command]"].concat();
         let commands = source.split(function.as_str()).skip(1).map(|rest| rest.split('(').next().unwrap_or("")).collect::<Vec<_>>();
-        assert_eq!(commands, ["status", "set_client", "forget_client", "sign_in", "cancel_sign_in", "sign_out", "playlists", "items", "liked", "search", "videos"]);
+        assert_eq!(commands, ["status", "set_client", "forget_client", "sign_in", "cancel_sign_in", "sign_out", "playlists", "items", "liked", "search", "search_playlists", "videos"]);
         for part in source.split(attribute.as_str()).skip(1) {
             let body: String = part.lines().skip(1).take(3).collect::<Vec<_>>().join("\n");
             assert!(body.contains("require(&window)?"), "{body}");
@@ -2834,6 +3047,23 @@ pub async fn wall2_youtube_search(window: WebviewWindow, query: String) -> Resul
     require(&window)?;
     let app = window.app_handle().clone();
     tauri::async_runtime::spawn_blocking(move || read_with_app(&app, |ctx| search_with(ctx, &query))).await.map_err(|_| FAILED.to_string())?
+}
+
+/// The answer of a playlist search: the playlists and what is left of the day's budget.
+#[derive(Serialize, Clone, Debug, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct PlaylistSearch { playlists: Vec<YtPlaylist>, searches_left: u32 }
+
+fn playlist_search_answer(ctx: &Ctx, text: &str) -> Result<PlaylistSearch, &'static str> {
+    let playlists = search_playlists_with(ctx, text)?;
+    Ok(PlaylistSearch { playlists, searches_left: SEARCH_DAILY.saturating_sub(with_lib(|l| l.used((ctx.now)()))) })
+}
+
+#[tauri::command]
+pub async fn wall2_youtube_search_playlists(window: WebviewWindow, query: String) -> Result<PlaylistSearch, String> {
+    require(&window)?;
+    let app = window.app_handle().clone();
+    tauri::async_runtime::spawn_blocking(move || read_with_app(&app, |ctx| playlist_search_answer(ctx, &query))).await.map_err(|_| FAILED.to_string())?
 }
 
 #[tauri::command]
