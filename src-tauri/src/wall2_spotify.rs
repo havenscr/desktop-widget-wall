@@ -550,17 +550,54 @@ pub async fn wall2_spotify_search(window: WebviewWindow, query: String) -> Resul
     let query = valid_query(&query)?;
     tauri::async_runtime::spawn_blocking(move || { let cfg = config(window.app_handle())?; let current_user = profile(&cfg)?; search_with(&cfg, &query, &current_user, &RealHttp, &RealCreds) }).await.map_err(|_| "failed".to_string())?
 }
-fn search_path(query: &str) -> String { format!("/search?type=track,album,playlist&limit=10&q={}", urlencoding::encode(query)) }
+/// Two reads fill the shelves: 20 albums and 20 playlists in one, 50 songs in the other.
+const SEARCH_SHELF: usize = 20;
+const SEARCH_SONGS: usize = 50;
+/// The page size the fallback uses when Spotify refuses the larger limit.
+const SEARCH_PAGE: usize = 10;
+static SEARCH_LIMIT_LOGGED: AtomicBool = AtomicBool::new(false);
+fn search_path(query: &str, types: &str, limit: usize, offset: usize) -> String {
+    let offset = if offset == 0 { String::new() } else { format!("&offset={offset}") };
+    format!("/search?type={types}&limit={limit}{offset}&q={}", urlencoding::encode(query))
+}
 /// A song's length in milliseconds when Spotify gives one: a whole number, at most a day, else absent.
 fn song_length(v: &Value) -> Option<u32> { v.get("duration_ms").and_then(Value::as_u64).filter(|n| *n <= 86_400_000).and_then(|n| u32::try_from(n).ok()) }
 /// The songs of a search answer, each with its length (the grouped search shows it); no other list is shaped this way.
 fn shape_search_tracks(v: &Value) -> Vec<Item> {
     v.get("items").and_then(Value::as_array).into_iter().flatten().take(PAGE_SIZE).filter_map(|x| shape_item(x, "track", None).map(|item| Item { duration_ms: song_length(x), ..item })).collect()
 }
+/// One search read for `types` (comma separated) asking `target` items of each. When Spotify answers 400 to the
+/// larger limit, the same target is read in pages of `SEARCH_PAGE` with an offset; any failing page fails the read.
+fn search_half(cfg: &Config, query: &str, types: &str, target: usize, http: &dyn Http, creds: &dyn Creds) -> Result<Value, String> {
+    match get_json_with_limit(cfg, &search_path(query, types, target, 0), TRACK_BODY, http, creds) {
+        Err(answer) if answer == "status-400" => {}
+        other => return other,
+    }
+    if !SEARCH_LIMIT_LOGGED.swap(true, Ordering::SeqCst) { crate::wall2_spotify_log::write(crate::wall2_spotify_log::Event::ApiFailed, crate::wall2_spotify_log::Reason::BadRequest, 400, 0); }
+    let keys: Vec<&str> = types.split(',').map(|t| match t { "track" => "tracks", "album" => "albums", _ => "playlists" }).collect();
+    let mut merged: Vec<Vec<Value>> = keys.iter().map(|_| Vec::new()).collect();
+    let mut offset = 0;
+    while offset < target {
+        let page = get_json_with_limit(cfg, &search_path(query, types, SEARCH_PAGE, offset), TRACK_BODY, http, creds)?;
+        let mut full = false;
+        for (key, into) in keys.iter().zip(merged.iter_mut()) {
+            let items = page.pointer(&format!("/{key}/items")).and_then(Value::as_array).cloned().unwrap_or_default();
+            full |= items.len() >= SEARCH_PAGE;
+            into.extend(items);
+        }
+        if !full { break }
+        offset += SEARCH_PAGE;
+    }
+    let mut out = serde_json::Map::new();
+    for (key, items) in keys.iter().zip(merged) { out.insert((*key).to_string(), json!({ "items": items })); }
+    Ok(Value::Object(out))
+}
 fn search_with(cfg: &Config, query: &str, current_user: &Profile, http: &dyn Http, creds: &dyn Creds) -> Result<Search, String> {
-    let v=get_json_with_limit(cfg,&search_path(query),TRACK_BODY,http,creds)?;
-    log_refused_covers(&v);
-    Ok(Search { tracks: shape_search_tracks(v.get("tracks").unwrap_or(&Value::Null)), albums: shape_list(v.get("albums").unwrap_or(&Value::Null), "album", None), playlists: shape_list(v.get("playlists").unwrap_or(&Value::Null), "playlist", Some(current_user)) })
+    let shelves = search_half(cfg, query, "album,playlist", SEARCH_SHELF, http, creds)?;
+    let songs = search_half(cfg, query, "track", SEARCH_SONGS, http, creds)?;
+    log_refused_covers(&shelves);
+    log_refused_covers(&songs);
+    Ok(Search { tracks: shape_search_tracks(songs.get("tracks").unwrap_or(&Value::Null)), albums: shape_list(shelves.get("albums").unwrap_or(&Value::Null), "album", None), playlists: shape_list(shelves.get("playlists").unwrap_or(&Value::Null), "playlist", Some(current_user)) })
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
@@ -1201,8 +1238,8 @@ mod tests {
         let path=tracks_path("playlist",ID,2);
         assert!(path.starts_with(&format!("/playlists/{ID}/items?")));
         for part in ["limit=50","offset=100","additional_types=track","fields=items(item("] { assert!(path.contains(part),"{part}"); }
-        assert!(search_path("two words").contains("limit=10"));
-        assert!(!search_path("two words").contains("market"));
+        assert!(search_path("two words", "track", 50, 0).contains("limit=50"));
+        assert!(!search_path("two words", "track", 50, 0).contains("market"));
         for path in [tracks_path("playlist", ID, 0), tracks_path("album", ID, 0), "/me/tracks?market=from_token".into()] { assert!(path.contains("market=from_token"), "{path}"); }
     }
 
@@ -1320,7 +1357,7 @@ mod tests {
         let _test_guard = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         reset_state();
         *token().lock().unwrap()=Some(Token{access:"ok".into(),expires:Instant::now()+Duration::from_secs(3600)});
-        let http=FakeHttp::new(vec![],vec![hr(200,r#"{"items":[],"total":0,"next":null}"#),hr(200,r#"{"tracks":{"items":[]},"albums":{"items":[]},"playlists":{"items":[]}}"#)]);
+        let http=FakeHttp::new(vec![],vec![hr(200,r#"{"items":[],"total":0,"next":null}"#),hr(200,r#"{"albums":{"items":[]},"playlists":{"items":[]}}"#),hr(200,r#"{"tracks":{"items":[]}}"#)]);
         let creds=FakeCreds::new(Some("old"));
         tracks_with(&cfg(),"playlist",ID,2,&http,&creds).unwrap();
         search_with(&cfg(),"two words",&Profile{id:"me".into(),display_name:None},&http,&creds).unwrap();
@@ -1328,7 +1365,75 @@ mod tests {
         assert!(paths[0].starts_with(&format!("/playlists/{ID}/items?")));
         for part in ["limit=50","offset=100","additional_types=track","fields=items(item("] { assert!(paths[0].contains(part),"{part}"); }
         assert!(paths[1].starts_with("/search?"));
-        assert!(paths[1].contains("limit=10"));
+        assert!(paths[1].contains("type=album,playlist") && paths[1].contains("limit=20"));
+        assert!(paths[2].contains("type=track") && paths[2].contains("limit=50"));
+    }
+
+    fn search_id(prefix: &str, n: usize) -> String { format!("{prefix}{n:021}") }
+    fn search_images() -> Value { json!([{"height":640,"url":"https://i.scdn.co/image/ab67616d0000b273aaaaaaaaaaaaaaaaaaaaaaaa","width":640},{"height":300,"url":"https://i.scdn.co/image/ab67616d00001e02aaaaaaaaaaaaaaaaaaaaaaaa","width":300},{"height":64,"url":"https://i.scdn.co/image/ab67616d00004851aaaaaaaaaaaaaaaaaaaaaaaa","width":64}]) }
+    /// `n` search songs starting at `from`, each with its album, artists and links like Spotify's reply.
+    fn search_songs(from: usize, n: usize) -> Vec<Value> {
+        (from..from + n).map(|i| json!({"id":search_id("T",i),"name":format!("Song {i}"),"duration_ms":215_000,"artists":[{"id":search_id("R",i),"name":"Night Signals","type":"artist","uri":format!("spotify:artist:{}",search_id("R",i)),"href":format!("https://api.spotify.com/v1/artists/{}",search_id("R",i)),"external_urls":{"spotify":format!("https://open.spotify.com/artist/{}",search_id("R",i))}}],"album":{"id":search_id("A",i),"name":format!("Album {i}"),"album_type":"album","images":search_images(),"release_date":"2026-01-01","total_tracks":12,"type":"album","uri":format!("spotify:album:{}",search_id("A",i))},"explicit":false,"is_playable":true,"popularity":50,"type":"track","uri":format!("spotify:track:{}",search_id("T",i)),"href":format!("https://api.spotify.com/v1/tracks/{}",search_id("T",i)),"external_urls":{"spotify":format!("https://open.spotify.com/track/{}",search_id("T",i))}})).collect()
+    }
+    fn search_albums(from: usize, n: usize) -> Vec<Value> { (from..from + n).map(|i| json!({"id":search_id("A",i),"name":format!("Album {i}"),"images":search_images(),"total_tracks":10,"artists":[{"name":"Night Signals"}]})).collect() }
+    fn search_playlists(from: usize, n: usize) -> Vec<Value> { (from..from + n).map(|i| json!({"id":search_id("P",i),"name":format!("Playlist {i}"),"images":search_images(),"owner":{"id":"other"},"tracks":{"total":30}})).collect() }
+    fn shelves_reply(albums: usize, playlists: usize, from: usize) -> Result<HttpReply,()> { hr(200,&json!({"albums":{"items":search_albums(from,albums)},"playlists":{"items":search_playlists(from,playlists)}}).to_string()) }
+    fn songs_reply(n: usize, from: usize) -> Result<HttpReply,()> { hr(200,&json!({"tracks":{"items":search_songs(from,n)}}).to_string()) }
+    fn run_search(apis: Vec<Result<HttpReply,()>>) -> (Result<Search,String>, FakeHttp) {
+        reset_state();
+        *token().lock().unwrap()=Some(Token{access:"ok".into(),expires:Instant::now()+Duration::from_secs(3600)});
+        let http=FakeHttp::new(vec![],apis);
+        let creds=FakeCreds::new(Some("old"));
+        let out=search_with(&cfg(),"two words",&Profile{id:"me".into(),display_name:None},&http,&creds);
+        (out,http)
+    }
+
+    #[test]
+    fn search_keeps_kinds_apart_in_two_reads_and_a_50_song_reply_fits_the_body_limit() {
+        let _test_guard = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let songs=songs_reply(50,0);
+        assert!((songs.as_ref().unwrap().body.len() as u64) < TRACK_BODY);
+        let (out,http)=run_search(vec![shelves_reply(20,20,0),songs]);
+        let found=out.unwrap();
+        assert_eq!((found.albums.len(),found.playlists.len(),found.tracks.len()),(20,20,50));
+        assert!(found.albums.iter().all(|i| i.kind=="album" && i.id.starts_with('A')));
+        assert!(found.playlists.iter().all(|i| i.kind=="playlist" && i.id.starts_with('P')));
+        assert!(found.tracks.iter().all(|i| i.kind=="track" && i.id.starts_with('T') && i.duration_ms==Some(215_000)));
+        let paths=http.paths();
+        assert_eq!(paths.len(),2);
+        assert!(paths[0].starts_with("/search?type=album,playlist&limit=20&q="));
+        assert!(paths[1].starts_with("/search?type=track&limit=50&q="));
+        assert_eq!(http.limits(),vec![TRACK_BODY,TRACK_BODY]);
+    }
+
+    #[test]
+    fn search_falls_back_to_pages_of_ten_when_the_limit_is_refused() {
+        let _test_guard = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let mut apis=vec![hr(400,""),shelves_reply(10,10,0),shelves_reply(10,10,10),hr(400,"")];
+        for page in 0..5 { apis.push(songs_reply(10,page*10)); }
+        let (out,http)=run_search(apis);
+        let found=out.unwrap();
+        assert_eq!((found.albums.len(),found.playlists.len(),found.tracks.len()),(20,20,50));
+        assert_eq!(found.tracks[49].id,search_id("T",49));
+        let paths=http.paths();
+        assert_eq!(paths.len(),9);
+        let want=["type=album,playlist&limit=20&q=","type=album,playlist&limit=10&q=","type=album,playlist&limit=10&offset=10&q=","type=track&limit=50&q=","type=track&limit=10&q=","type=track&limit=10&offset=10&q=","type=track&limit=10&offset=20&q=","type=track&limit=10&offset=30&q=","type=track&limit=10&offset=40&q="];
+        for (path,part) in paths.iter().zip(want) { assert!(path.starts_with(&format!("/search?{part}")),"{path} {part}"); }
+    }
+
+    #[test]
+    fn one_failing_half_fails_the_whole_search_and_a_429_arms_the_backoff() {
+        let _test_guard = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let (out,http)=run_search(vec![hr(503,"")]);
+        assert_eq!(out.unwrap_err(),"server-503");
+        assert_eq!(http.counts().1,1);
+        let (out,http)=run_search(vec![shelves_reply(20,20,0),hr(503,"")]);
+        assert_eq!(out.unwrap_err(),"server-503");
+        assert_eq!(http.counts().1,2);
+        let (out,_)=run_search(vec![shelves_reply(20,20,0),hr(429,"")]);
+        assert_eq!(out.unwrap_err(),BUSY);
+        assert_eq!(check_backoff(),Err(BUSY.to_string()));
+        reset_state();
     }
 
     /// A saved-albums page in the shape Spotify's reference gives for `/me/albums` (each saved album
