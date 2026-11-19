@@ -4368,6 +4368,12 @@ button.sp-qrow:hover {
   display: flex;
   gap: 4px;
   min-width: 0;
+  /* If the five tabs ever outgrow the card they scroll inside the row, never the page sideways. */
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.mu-places::-webkit-scrollbar {
+  display: none;
 }
 .mu-places button {
   height: 40px;
@@ -4391,7 +4397,11 @@ button.sp-qrow:hover {
 .mu-places button:not(.on):hover {
   color: var(--tx);
 }
-.mu-places button:focus-visible,
+.mu-places button:focus-visible {
+  /* Inside the tab: the row scrolls, so an outer ring would be cut. */
+  outline: 3px solid var(--cyan);
+  outline-offset: -3px;
+}
 .mu-chip:focus-visible,
 .mu-leave:focus-visible,
 .mu-see:focus-visible {
@@ -4400,6 +4410,8 @@ button.sp-qrow:hover {
 }
 .mu-chips {
   flex: none;
+  /* 5 px at both sides for the focus ring (3 px outline, 2 px offset) of the first chip and the Library button; .sp-body clips. */
+  padding: 0 5px;
   display: flex;
   align-items: center;
   justify-content: space-between;

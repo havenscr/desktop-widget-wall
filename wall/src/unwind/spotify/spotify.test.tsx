@@ -526,6 +526,87 @@ it('applies only the newest search: an older answer that lands last is dropped',
   expect(screen.queryByText('Spotify is not answering right now.')).toBeNull();
 });
 
+it('an edit below the minimum, or clearing the field, drops the search in flight', async () => {
+  signedIn();
+  mocks.set('wall2_spotify_playlists', () => []);
+  const pending: Record<string, ReturnType<typeof deferred<unknown>>> = {};
+  mocks.set('wall2_spotify_search', (a) => {
+    const d = deferred<unknown>();
+    pending[String(a?.query)] = d;
+    return d.promise;
+  });
+  render(<SpotifyCard />);
+  await flush();
+  const box = screen.getByRole('searchbox');
+  fireEvent.change(box, { target: { value: 'abc' } });
+  fireEvent.keyDown(box, { key: 'Enter' });
+  await flush();
+  fireEvent.change(box, { target: { value: 'a' } });
+  await flush();
+  await act(async () => pending.abc.resolve({ tracks: [item(1, 'track', 'Stale Song')], albums: [], playlists: [] }));
+  await flush();
+  expect(screen.queryByText('Stale Song')).toBeNull();
+  expect(document.querySelector('.mu-chip-n')).toBeNull();
+  // Clearing the field drops it as well, and the same words can be asked again afterwards.
+  fireEvent.change(box, { target: { value: 'abcd' } });
+  fireEvent.keyDown(box, { key: 'Enter' });
+  await flush();
+  fireEvent.change(box, { target: { value: '' } });
+  await flush();
+  await act(async () => pending.abcd.resolve({ tracks: [item(2, 'track', 'Cleared Song')], albums: [], playlists: [] }));
+  await flush();
+  expect(screen.queryByText('Cleared Song')).toBeNull();
+  fireEvent.change(box, { target: { value: 'abcd' } });
+  fireEvent.keyDown(box, { key: 'Enter' });
+  await flush();
+  await act(async () => pending.abcd.resolve({ tracks: [item(3, 'track', 'Fresh Song')], albums: [], playlists: [] }));
+  await flush();
+  expect(screen.getByText('Fresh Song')).toBeTruthy();
+});
+
+it('while new words load, the old chips and counts are gone and the searching line shows', async () => {
+  signedIn();
+  mocks.set('wall2_spotify_playlists', () => []);
+  const pending: Record<string, ReturnType<typeof deferred<unknown>>> = {};
+  mocks.set('wall2_spotify_search', (a) => {
+    const d = deferred<unknown>();
+    pending[String(a?.query)] = d;
+    return d.promise;
+  });
+  render(<SpotifyCard />);
+  await flush();
+  const box = screen.getByRole('searchbox');
+  fireEvent.change(box, { target: { value: 'old' } });
+  fireEvent.keyDown(box, { key: 'Enter' });
+  await flush();
+  await act(async () => pending.old.resolve({ tracks: [item(1, 'track', 'Old Song')], albums: [], playlists: [] }));
+  await flush();
+  expect(document.querySelector('.mu-chip-n')).not.toBeNull();
+  fireEvent.change(box, { target: { value: 'newer' } });
+  fireEvent.keyDown(box, { key: 'Enter' });
+  await flush();
+  expect(screen.queryByText('Old Song')).toBeNull();
+  expect(document.querySelector('.mu-chip-n')).toBeNull();
+  expect(document.querySelector('[aria-busy="true"]')).not.toBeNull();
+});
+
+it('the search field stays mounted, with its words, when a result is opened', async () => {
+  signedIn();
+  mocks.set('wall2_spotify_playlists', () => []);
+  mocks.set('wall2_spotify_search', () => ({ tracks: [], albums: [], playlists: [item(8, 'playlist', 'Found List')] }));
+  mocks.set('wall2_spotify_tracks', () => []);
+  render(<SpotifyCard />);
+  await flush();
+  const box = screen.getByRole('searchbox') as HTMLInputElement;
+  fireEvent.change(box, { target: { value: 'found' } });
+  await flush(500);
+  await act(async () => (document.querySelector('.sp-tile .sp-open, .sp-tile') as HTMLElement).click());
+  await flush();
+  expect(document.querySelector('.mu-chip')).toBeNull();
+  expect(screen.getByRole('searchbox')).toBe(box);
+  expect(box.value).toBe('found');
+});
+
 it('a failed search keeps the last good results under a note, offers Retry, and the same words can be asked again', async () => {
   signedIn();
   mocks.set('wall2_spotify_playlists', () => []);

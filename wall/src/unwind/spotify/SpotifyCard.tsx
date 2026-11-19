@@ -442,7 +442,9 @@ function Browser({ tall }: { tall: boolean }) {
   // What the search box last asked, for the empty-state line (state) and to skip asking the same
   // words twice (ref: `runSearch` must not change identity when a search starts or fails, or the
   // debounce effect below would re-arm and search again by itself).
-  const [asked, setAsked] = useState('');
+  const [, setAsked] = useState('');
+  // The words the held answer belongs to: chips and counts show only while they match the field.
+  const [answeredFor, setAnsweredFor] = useState('');
   const askedRef = useRef('');
   const [open, setOpen] = useState<SpotifyItem | null>(null);
   // The card's top heading tells the panel to go home (see `SourceSwitch`); the panel tells it when it is inside.
@@ -533,6 +535,7 @@ function Browser({ tall }: { tall: boolean }) {
         (r) => {
           if (!mounted.current || mine !== searchSeq.current) return;
           const items = [...(r?.tracks ?? []), ...(r?.playlists ?? []), ...(r?.albums ?? [])];
+          setAnsweredFor(text);
           patch('search', { items, loading: false, loaded: true, more: false, page: 0 });
         },
         (e) => {
@@ -543,6 +546,7 @@ function Browser({ tall }: { tall: boolean }) {
           setAsked('');
           // A failure keeps the last good results under a note; with none, the line and Retry show.
           if (listsRef.current.search.items.length > 0) {
+            setAnsweredFor(text);
             patch('search', { loading: false, problem });
             setNote(`${problemLine(problem)} These are the last results.`);
           } else patch('search', { items: [], loading: false, loaded: true, problem });
@@ -551,6 +555,14 @@ function Browser({ tall }: { tall: boolean }) {
     },
     [patch],
   );
+  // Every normalized change of the field (an edit below the minimum, clearing it) drops the search in flight and lets the same words be asked again.
+  useEffect(() => {
+    if (query.trim() === askedRef.current) return;
+    searchSeq.current += 1;
+    askedRef.current = '';
+    setAsked('');
+    setLists((all) => (all.search.loading ? { ...all, search: { ...all.search, loading: false } } : all));
+  }, [query]);
   useEffect(() => {
     if (query.trim().length < SEARCH_MIN) return;
     const id = setTimeout(() => runSearch(query), SEARCH_WAIT_MS);
@@ -572,6 +584,7 @@ function Browser({ tall }: { tall: boolean }) {
   const words = query.trim();
   const inSearch = words !== '';
   const hits = lists.search;
+  const fresh = answeredFor === words;
   const found = splitHits(hits.items);
   const cur = lists[tab];
   const scrolled = (e: UIEvent<HTMLElement>) => {
@@ -581,6 +594,7 @@ function Browser({ tall }: { tall: boolean }) {
     searchSeq.current += 1;
     askedRef.current = '';
     setAsked('');
+    setAnsweredFor('');
     setChip('all');
     setQuery('');
     setLists((all) => ({ ...all, search: EMPTY_LIST }));
@@ -617,7 +631,11 @@ function Browser({ tall }: { tall: boolean }) {
           retry
         )}
       </div>
-    ) : hits.items.length === 0 && !asked && words.length < SEARCH_MIN ? (
+    ) : !fresh && words.length >= SEARCH_MIN && !(hits.problem && hits.items.length > 0) ? (
+      <div className="sp-empty" aria-busy="true">
+        {SEARCHING_LINE}
+      </div>
+    ) : words.length < SEARCH_MIN ? (
       <div className="sp-empty">Type at least two letters, then wait a moment or press Enter.</div>
     ) : hits.items.length === 0 && (hits.loading || !hits.loaded) ? (
       <div className="sp-empty" aria-busy="true">
@@ -697,11 +715,11 @@ function Browser({ tall }: { tall: boolean }) {
   const songsView = open ? <SongsView item={open} tall={tall} backLabel={inSearch ? 'Search' : PLACES.find((t) => t.id === tab)?.label ?? 'Back'} onBack={() => setOpen(null)} onNote={setNote} onUpNext={tall ? () => { setOpen(null); setTab('queue'); } : undefined} /> : null;
   return (
     <div className="sp-body">
+      {searchBox}
       {songsView ?? (
         <>
-          {searchBox}
           {inSearch ? (
-            <SearchChips value={chip} counts={{ playlists: found.playlists.length, albums: found.albums.length, songs: found.songs.length }} kinds={['playlists', 'albums', 'songs']} icons={CHIP_ICONS} onPick={setChip} onLeave={leaveSearch} />
+            <SearchChips value={chip} counts={fresh ? { playlists: found.playlists.length, albums: found.albums.length, songs: found.songs.length } : null} kinds={['playlists', 'albums', 'songs']} icons={CHIP_ICONS} onPick={setChip} onLeave={leaveSearch} />
           ) : (
             <LibraryRow label="Spotify library" places={PLACES} value={tab} onPick={setTab} />
           )}

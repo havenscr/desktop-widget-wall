@@ -1224,7 +1224,7 @@ describe('every first read shows loading words, and a re-read keeps what is on s
     expect(screen.getByText('Held list')).toBeTruthy();
   });
 
-  it('a search, and then a second search keeps the results on screen', async () => {
+  it('a search, and then a second search shows the searching line, not the first answer', async () => {
     await setup();
     await open();
     const h = held();
@@ -1239,8 +1239,8 @@ describe('every first read shows loading words, and a re-read keeps what is on s
     mocks.set('wall2_spotify_search', () => h2.promise);
     await act(async () => fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'second' } }));
     await flush(SEARCH_WAIT_MS);
-    expect(document.querySelector('[aria-busy="true"]')).toBeNull();
-    expect(screen.getByText('Hit 1')).toBeTruthy();
+    expect(document.querySelector('[aria-busy="true"]')?.textContent).toBe('Searching Spotify.');
+    expect(screen.queryByText('Hit 1')).toBeNull();
   });
 
   it('the songs of a playlist', async () => {
