@@ -53,28 +53,33 @@ function usePreview(): Read {
   return read;
 }
 
-/** The hover card of My zones: the big screen as a small map, each zone with its program and why. */
+const HINT = 'Right-click for more.';
+
+/** The hover card of My zones: the big screen as a small map, each zone with its program and why. Its box is the
+ * same size loading, failed and loaded, so the card never moves or grows after it is placed above its key. */
 export function ZonesPreviewCard() {
   const read = usePreview();
-  if (read.state !== 'ok') {
-    return (
-      <div className="zp">
-        <span className="zp-k">My zones preview</span>
-        <span className="zp-t">{read.state === 'loading' ? 'Looking at your windows' : read.text}</span>
-      </div>
-    );
-  }
-  const { zones, moves, stay } = read.data;
-  const by = new Map(moves.map((m) => [m.zone, m]));
-  const foot = stay > 0 ? `${plural(stay, 'other window stays', 'other windows stay')} where ${stay === 1 ? 'it is' : 'they are'}. ` : '';
+  const ok = read.state === 'ok' ? read.data : null;
+  const by = new Map((ok?.moves ?? []).map((m) => [m.zone, m]));
+  const stay = ok?.stay ?? 0;
+  const moves = ok?.moves.length ?? 0;
+  const click = `Click to move ${moves === 1 ? 'it' : 'them'}.`;
+  const left = stay > 0 ? `${plural(stay, 'other window stays', 'other windows stay')} where ${stay === 1 ? 'it is' : 'they are'}. ` : '';
   return (
-    <div className="zp">
+    <div className="zp" style={{ width: MAP_W + 2 }}>
       <span className="zp-k">My zones preview</span>
       <span className="zp-t">
-        <b>{plural(moves.length, 'window', 'windows')}</b> move on the big screen
+        {ok ? (
+          <>
+            <b>{plural(moves, 'window', 'windows')}</b> move on the big screen
+          </>
+        ) : (
+          '\u00a0'
+        )}
       </span>
       <div className="zp-map" style={{ width: MAP_W, height: MAP_H }}>
-        {zones.map((z) => {
+        {!ok && <span className="zp-note">{read.state === 'fail' ? read.text : 'Looking at your windows'}</span>}
+        {ok?.zones.map((z) => {
           const m = by.get(z.n);
           return (
             <div
@@ -95,9 +100,16 @@ export function ZonesPreviewCard() {
         })}
       </div>
       <span className="zp-f">
-        {foot}
-        <b>Click to move {moves.length === 1 ? 'it' : 'them'}.</b>
+        {ok ? (
+          <>
+            {left}
+            <b>{click}</b>
+          </>
+        ) : (
+          '\u00a0'
+        )}
       </span>
+      <span className="zp-f zp-hint">{HINT}</span>
     </div>
   );
 }

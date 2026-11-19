@@ -56,6 +56,40 @@ it('draws every zone with its program and why, and how many windows stay', async
   expect(document.querySelector('.zp-f')!.textContent).toBe('3 other windows stay where they are. Click to move them.');
 });
 
+it('keeps the right-click hint as its last line', async () => {
+  render(<ZonesPreviewCard />);
+  await flush();
+  const lines = [...document.querySelectorAll('.zp-f')];
+  expect(lines).toHaveLength(2);
+  expect(lines[1].textContent).toBe('Right-click for more.');
+});
+
+it('is the same size loading, failed and loaded', async () => {
+  const shape = () => ({
+    root: document.querySelector<HTMLElement>('.zp')!.style.width,
+    map: document.querySelector<HTMLElement>('.zp-map')!.getAttribute('style')!.match(/width: \d+px; height: \d+px/)![0],
+    parts: ['.zp-k', '.zp-t', '.zp-map', '.zp-f'].map((q) => document.querySelectorAll(q).length),
+  });
+  mocks.set('wall2_arrange_preview', () => new Promise(() => undefined));
+  const slow = render(<ZonesPreviewCard />);
+  await flush();
+  const loading = shape();
+  expect(screen.getByText('Looking at your windows')).toBeTruthy();
+  slow.unmount();
+  mocks.set('wall2_arrange_preview', () => {
+    throw 'no windows';
+  });
+  const failed = render(<ZonesPreviewCard />);
+  await flush();
+  const fail = shape();
+  failed.unmount();
+  mocks.set('wall2_arrange_preview', () => DATA);
+  render(<ZonesPreviewCard />);
+  await flush();
+  expect(loading).toEqual(shape());
+  expect(fail).toEqual(shape());
+});
+
 it('says one window stays in the singular, and names nothing when none stay', async () => {
   mocks.set('wall2_arrange_preview', () => ({ ...DATA, stay: 1 }));
   const r = render(<ZonesPreviewCard />);

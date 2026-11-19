@@ -455,6 +455,16 @@ pub(crate) fn friendly_app(image: &str) -> String {
     }
 }
 
+/// How long the last preview answers again without a new window scan.
+#[cfg_attr(not(windows), allow(dead_code))]
+const PREVIEW_TTL: Duration = Duration::from_secs(1);
+
+/// The cached value when it is younger than `ttl`.
+#[cfg_attr(not(windows), allow(dead_code))]
+pub(crate) fn cache_get<T: Clone>(slot: &Option<(Instant, T)>, now: Instant, ttl: Duration) -> Option<T> {
+    slot.as_ref().filter(|(at, _)| now.checked_duration_since(*at).is_some_and(|age| age < ttl)).map(|(_, v)| v.clone())
+}
+
 /// The preview for these zones, windows and rules: the same `assign_explained` the run uses.
 #[cfg_attr(not(windows), allow(dead_code))]
 pub(crate) fn build_preview(work: Rect, zones: &[Rect], windows: &[ZoneWindow], rules: &[ZoneApp]) -> ZonesPreview {
@@ -628,6 +638,9 @@ mod win {
     }
 
     static UNDO: Mutex<Option<UndoSet<Saved>>> = Mutex::new(None);
+
+    /// The last successful preview and when it was read: a card opened again within a second reuses it.
+    static PREVIEW_CACHE: Mutex<Option<(Instant, ZonesPreview)>> = Mutex::new(None);
 
     fn to_rect(r: RECT) -> Rect {
         Rect { left: r.left, top: r.top, right: r.right, bottom: r.bottom }
@@ -873,11 +886,18 @@ mod win {
 
     /// Read only: no lock, nothing moves, no window is asked anything but its process image.
     pub fn preview(wall: Option<isize>, file_zones: Vec<FractionZone>, rules: Vec<ZoneApp>) -> Result<ZonesPreview, String> {
+        if let Some(hit) = PREVIEW_CACHE.lock().ok().and_then(|slot| cache_get(&slot, Instant::now(), PREVIEW_TTL)) {
+            return Ok(hit);
+        }
         let (monitor, identity, candidates) = pick_candidates(wall, Layout::Zones.windows())?;
         let zones = zone_targets(identity.as_ref(), monitor.work, &file_zones)?;
         wall2_zones::validate_zone_apps(&rules, zones.len())?;
         let windows: Vec<ZoneWindow> = candidates.iter().map(|c| ZoneWindow { id: c.id, image: sys::image_path(c.pid).unwrap_or_default() }).collect();
-        Ok(build_preview(monitor.work, &zones, &windows, &rules))
+        let built = build_preview(monitor.work, &zones, &windows, &rules);
+        if let Ok(mut slot) = PREVIEW_CACHE.lock() {
+            *slot = Some((Instant::now(), built.clone()));
+        }
+        Ok(built)
     }
 
     pub fn arrange(layout: Layout, wall: Option<isize>, file_zones: Vec<FractionZone>, rules: Vec<ZoneApp>) -> Result<ArrangeResult, String> {
@@ -1497,5 +1517,32 @@ mod tests {
         let run = &src[at + end..];
         let run = &run[..run.find("    pub fn undo(").expect("undo fn")];
         assert!(run.contains("zone_targets("), "the run must use the shared zone choice");
+    }
+
+    #[test]
+    fn a_preview_younger_than_a_second_is_reused_and_an_older_or_missing_one_is_not() {
+        let t0 = Instant::now();
+        let ttl = Duration::from_secs(1);
+        let slot = Some((t0, 7u32));
+        assert_eq!(cache_get(&slot, t0, ttl), Some(7));
+        assert_eq!(cache_get(&slot, t0 + Duration::from_millis(999), ttl), Some(7));
+        assert_eq!(cache_get(&slot, t0 + ttl, ttl), None);
+        assert_eq!(cache_get(&slot, t0 + Duration::from_secs(5), ttl), None);
+        assert_eq!(cache_get::<u32>(&None, t0, ttl), None);
+        assert_eq!(PREVIEW_TTL, ttl);
+    }
+
+    #[test]
+    fn the_preview_reads_the_cache_first_and_stores_only_a_good_result() {
+        let src = include_str!("wall2_arrange.rs").replace("\r\n", "\n");
+        let at = src.find("    pub fn preview(").expect("preview fn");
+        let end = src[at..].find("    pub fn arrange(").expect("arrange fn");
+        let body = &src[at..at + end];
+        let read = body.find("cache_get(").expect("cache read");
+        let scan = body.find("pick_candidates(").expect("scan");
+        let store = body.find("*slot = Some(").expect("cache store");
+        assert!(read < scan && scan < store, "read the cache, then scan, then store");
+        // The scan's errors leave through `?` before the store, so a failure is never cached.
+        assert_eq!(body.matches("*slot = Some(").count(), 1);
     }
 }
