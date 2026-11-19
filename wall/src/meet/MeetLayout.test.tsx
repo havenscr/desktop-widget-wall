@@ -48,7 +48,7 @@ const serve = (meetings: Meeting[], extra: { checklist?: string[]; day?: unknown
   mocks.set('wall2_meet_day', () => ({ accounts, events: extra.day ?? [] }));
   mocks.set('wall2_meet_checklist', () => ({ state: extra.checklist ? 'ok' : 'missing', items: extra.checklist ?? [], reason: null }));
   mocks.set('wall2_keys_library', () => LIBRARY_DATA);
-  for (const c of ['wall2_keys_send_library', 'wall2_meet_join', 'wall2_open_event', 'wall2_onair_mark', 'wall2_onair_open', 'wall2_meet_checklist_open']) {
+  for (const c of ['wall2_keys_send_library', 'wall2_meet_join', 'wall2_open_event', 'wall2_onair_mark', 'wall2_meet_checklist_open']) {
     mocks.set(c, (args) => (sent.push({ command: c, args }), null));
   }
 };
@@ -414,83 +414,14 @@ it('the checklist ticks an item for this meeting only', async () => {
   expect(useMeetStore.getState().ticks[occurrenceId(m('1-5', 'Other', -10, 20))]).toEqual([]);
 });
 
-const capture = (c: HTMLElement) => c.querySelector('.meet-capture') as HTMLElement;
-const markTile = (c: HTMLElement) => within(capture(c)).getByRole('button', { name: /Mark a moment/ });
-
-it('Capture before a call is dashed and dim, says why on hover, and a click does nothing', async () => {
-  serve([m('1-0', 'Design review', 10, 40, { details })]);
-  const { container } = await renderMeet();
-  const tile = markTile(container);
-  expect(tile.getAttribute('aria-disabled')).toBe('true');
-  expect(tile.parentElement?.className).toContain('off');
-  fireEvent.click(tile);
-  await flush(10);
-  expect(sent.filter((s) => s.command === 'wall2_onair_mark')).toEqual([]);
-  expect(await tipWords(tile)).toBe('Wakes when the call starts');
-  expect(capture(container).classList.contains('panel')).toBe(false);
-});
-
-it('Mark a moment writes the time in the call and the meeting title cut to 60 characters, once for a double click', async () => {
-  const title = `${'Quarterly planning and roadmap review '.repeat(3)}`.trim();
-  serve([m('1-0', title, -10, 20, { details })]);
+it('there is no Capture block and no Mark a moment key; the Next card fills the right edge to the hero and island foot', async () => {
+  serve([m('1-0', 'Design review', -10, 20, { details })]);
   await setCall(call({ since: NOW - 192_000 }));
   const { container } = await renderMeet();
-  const tile = markTile(container);
-  expect(tile.getAttribute('aria-disabled')).toBeNull();
-  expect(capture(container).textContent).toContain('Marks the time in the call to marks.txt');
-  fireEvent.click(tile, { detail: 1 });
-  await flush(10);
-  fireEvent.click(tile, { detail: 2 });
-  await flush(10);
-  const marks = sent.filter((s) => s.command === 'wall2_onair_mark');
-  expect(marks).toHaveLength(1);
-  const args = marks[0].args as { showMs: number; part: string };
-  expect(args.showMs).toBeGreaterThanOrEqual(192_000);
-  expect(args.showMs).toBeLessThan(192_100);
-  expect(args.part.length).toBeLessThanOrEqual(60);
-  expect(title.startsWith(args.part)).toBe(true);
-  expect(capture(container).textContent).toContain('1 marked: 03:12');
-  // A second mark inside a second counts once; later ones add.
-  fireEvent.click(tile, { detail: 1 });
-  await flush(10);
-  expect(sent.filter((s) => s.command === 'wall2_onair_mark')).toHaveLength(1);
-  await flush(2000);
-  fireEvent.click(tile, { detail: 1 });
-  await flush(10);
-  expect(sent.filter((s) => s.command === 'wall2_onair_mark')).toHaveLength(2);
-  expect(capture(container).textContent).toMatch(/2 marked: 03:12, 03:14/);
-});
-
-it('this call\'s marks appear in the island as Live notes and are cleared when the call ends', async () => {
-  serve([m('1-0', 'Design review', -10, 20, { details })], { checklist: ['One'] });
-  await setCall(call({ since: NOW - 60_000 }));
-  const { container } = await renderMeet();
-  fireEvent.click(markTile(container), { detail: 1 });
-  await flush(10);
-  const isl = within(island(container));
-  fireEvent.click(isl.getByRole('tab', { name: 'Live notes' }));
-  expect(heading(container)).toBe('Live notes');
-  expect(isl.getByText('From Capture')).toBeTruthy();
-  expect(island(container).querySelectorAll('.meet-isl-note')).toHaveLength(1);
-  expect(useMeetStore.getState().marks).toHaveLength(1);
-  await setCall(null);
-  expect(useMeetStore.getState().marks).toEqual([]);
-  expect(isl.queryByRole('tab', { name: 'Live notes' })).toBeNull();
-  expect(capture(container).textContent).toContain('Nothing running');
-});
-
-it('a failed mark says so in one fixed line, and Open file opens marks.txt', async () => {
-  serve([m('1-0', 'Design review', -10, 20)]);
-  mocks.set('wall2_onair_mark', () => Promise.reject(new Error('refused')));
-  await setCall(call());
-  const { container } = await renderMeet();
-  fireEvent.click(markTile(container), { detail: 1 });
-  await flush(10);
-  expect(capture(container).textContent).toContain('marks.txt is full or the mark was refused');
-  expect(useMeetStore.getState().marks).toEqual([]);
-  fireEvent.click(within(capture(container)).getByRole('button', { name: /Open file/ }));
-  await flush(10);
-  expect(sent).toContainEqual({ command: 'wall2_onair_open', args: { which: 'marks' } });
+  expect(container.querySelector('.meet-capture')).toBeNull();
+  expect(within(container).queryByRole('button', { name: /Mark a moment/ })).toBeNull();
+  expect(within(island(container)).queryByRole('tab', { name: 'Live notes' })).toBeNull();
+  expect(sent.filter((s) => s.command === 'wall2_onair_mark')).toEqual([]);
 });
 
 it('the recording chip sits in the status row while a recorder runs', async () => {
