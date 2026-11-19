@@ -4,7 +4,8 @@ import { invoke } from '../bridge/tauri';
 import { useOnAirLive } from '../onair/useOnAirLiveReport';
 import { tip } from '../ui/HoverTip';
 import { BriefFeed } from './BriefFeed';
-import { REFRESH_LINE, briefView } from './briefModel';
+import { BriefConnect } from './BriefKey';
+import { OFF_LINE, REFRESH_LINE, briefView } from './briefModel';
 import { initials } from './heroModel';
 import { HOW_TO, indexName, inviteSize, islandKinds, stepKind, type IslandKind, type KindId } from './islandModel';
 import { type MeetingDetails, type Reply } from './model';
@@ -28,6 +29,7 @@ function KindIcon({ kind, size }: { kind: IslandKind['icon']; size: number }) {
 function BriefNote({ view, retry }: { view: ReturnType<typeof briefView>; retry: () => void }) {
   const line = view.stale ? REFRESH_LINE : view.line;
   if (!line) return null;
+  if (view.mode === 'off' && line === OFF_LINE) return <BriefConnect onChanged={retry} />;
   return (
     <>
       <span className="meet-brief-note meet-xs meet-dimline ellipsis">{line}</span>
