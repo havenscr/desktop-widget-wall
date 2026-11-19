@@ -217,7 +217,7 @@ describe('the settings sheet with five looks', () => {
     expect(document.querySelector('.w-stage')?.getAttribute('data-look')).toBe('sun');
     expect(screen.getByText(/only its middle shows/)).toBeTruthy();
 
-    await act(async () => screen.getByRole('radio', { name: 'A look for each kind' }).click());
+    await act(async () => screen.getByRole('radio', { name: 'Each source its own' }).click());
     for (const name of ['Look for videos and playlists', 'Look for live streams', 'Look for twitch']) {
       const row = screen.getByRole('radiogroup', { name });
       expect([...row.querySelectorAll('[role=radio]')].map((b) => b.textContent)).toEqual(['Feathered', 'Whole sky', 'The sun', 'Drive-in', 'Hologram']);

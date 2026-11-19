@@ -163,13 +163,14 @@ export function behindTheLand(look: LookId): boolean {
 }
 
 /**
- * sky layers: whether the picture is behind the land right now. While the player waits for a
- * click to start, the sun comes forward so the click reaches it; the whole sky stays behind (the
- * wall lets the pointer through to it, see the whole sky's rules in `unwind.css`, and the front
- * canvas takes no pointer).
+ * sky layers: whether the picture is behind the land right now. Always, for a look behind the
+ * land, also while the player waits for a click to start: the ranges and the floor stay in front
+ * of the sun's lower part as they do while it plays. The front canvas takes no pointer, and while
+ * a click is awaited the wall lets the pointer through to the picture (the whole sky's and the
+ * sun's waiting rules in `unwind.css`), so the click still reaches it.
  */
-export function layeredNow(look: LookId, needsClick: boolean): boolean {
-  return behindTheLand(look) && (look === 'sky' || !needsClick);
+export function layeredNow(look: LookId): boolean {
+  return behindTheLand(look);
 }
 
 /** sky layers: the looks that own the part of the sky the moon is in, so no moon is drawn while they show (the sun, the drive-in). */

@@ -686,7 +686,7 @@ const EXPECT = [
   ['unwind', 'watch: feathered', ['Open in YouTube', 'Lofi beats radio']],
   ['unwind', 'watch: drive-in, Twitch', ['Open on Twitch', 'Twitch channel', 'Live on the wall']],
   ['unwind', 'watch: 24 saved', ['24 saved', 'Saved for the weekend, a very long playlist name', 'YouTube playlist']],
-  ['unwind', 'watch: settings, one look', ['How video is shown', 'One look for everything', 'Feathered']],
+  ['unwind', 'watch: settings, one look', ['How video is shown', 'Same for all', 'Feathered']],
   ['unwind', 'watch: settings, a look per kind', ['Videos and playlists', 'Live streams', 'Saved here: 19 YouTube, 5 Twitch']],
   ['unwind', 'watch: listen, plain audio with videos saved', ['Tokyo Burnout', '!Video', '!Nothing on']],
   ['unwind', 'watch: sparse data', ['Night drive mix', 'Open in YouTube']],
@@ -714,7 +714,7 @@ const EXPECT = [
   ['unwind', 'watch block: shown,', ['Playing on the wall', 'Open in YouTube', '12:34', '!Feathered', '!Whole sky', '!The sun']],
   ['unwind', 'watch block: at rest,', ['Night drive mix', '!Feathered', '!Whole sky', '!The sun']],
   ['unwind', 'watch block: nothing on,', ['Nothing on', 'Play Night drive mix', '!Feathered', '!Whole sky', '!The sun']],
-  ['unwind', 'tower and hologram: settings, five tiles', ['How video is shown', 'One look for everything', 'Hologram', 'The whole picture floats']],
+  ['unwind', 'tower and hologram: settings, five tiles', ['How video is shown', 'Same for all', 'Hologram', 'The whole picture floats']],
   ['unwind', 'tower and hologram: settings, five looks per kind', ['Videos and playlists', 'Live streams', 'Hologram']],
   // watch polish
   ['unwind', 'watch polish: drive-in, paused', ['Paused', '12:34', '45:10', 'Open in YouTube']],

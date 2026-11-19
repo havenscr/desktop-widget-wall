@@ -156,7 +156,7 @@ describe('the Hologram on the wall', () => {
 
   it('sits in front of the land with no front layer, owns no moon sky, and asks the moon to keep out of its box', async () => {
     expect(behindTheLand('holo')).toBe(false);
-    expect(layeredNow('holo', false)).toBe(false);
+    expect(layeredNow('holo')).toBe(false);
     expect(ownsTheMoonSky('holo')).toBe(false);
     setup('holo');
     render(<UnwindView />);

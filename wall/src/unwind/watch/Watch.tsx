@@ -98,7 +98,7 @@ export function WatchGear() {
 
 /** The drive-in screen with nothing on it (the drive-in look, nothing playing). */
 function EmptyDriveIn() {
-  useWatchSky('drivein', null, false);
+  useWatchSky('drivein', null);
   return (
     <div className="w-stage w-drivein w-empty" data-look="drivein" aria-hidden="true">
       <DriveInFrame mode="empty" />

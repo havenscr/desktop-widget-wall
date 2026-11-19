@@ -645,7 +645,7 @@ describe('the sheet\'s section for the look', () => {
 
   it('with a look per kind, a chooser says which look is adjusted and each look keeps its own settings', async () => {
     const sheet = await open('sky');
-    await act(async () => screen.getByRole('radio', { name: 'A look for each kind' }).click());
+    await act(async () => screen.getByRole('radio', { name: 'Each source its own' }).click());
     const pick = within(sheet).getByRole('radiogroup', { name: 'Look to adjust' });
     expect(within(sheet).getByText('A look keeps its own settings, whatever kind of video plays in it. Changes show at once.')).toBeTruthy();
     await act(async () => within(pick).getByRole('radio', { name: 'The sun' }).click());

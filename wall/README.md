@@ -2256,16 +2256,20 @@ there, still playing, when the owner comes back (see "The stage layer" below).
   all); the whole sky and the sun (`behindTheLand`) also give `.w-front`, after the picture, where the
   horizon mounts its front canvas, and their stage sits at z-index -1 in the main area's own
   layer group (`.w-layered`), under every control and line of text. While the player waits for a
-  click, the sun comes forward (`layeredNow`). The left block and the Watch list
+  click both stay there (`layeredNow`): the ranges and the floor still cover the sun's lower part,
+  the front canvas takes no pointer, and the wall's own boxes let the pointer through to the picture
+  (`.top:has(:is(.w-sky, .w-sun) .w-take)` in `unwind.css`), so the click reaches it wherever it
+  shows. The left block and the Watch list
   card claim their own boxes as keep-clear (`useSkyKeepClear`). The look's claim is held only while
   the stage is in sight; the keep-clear claims go with the Watch panel (Listen, nothing on, another
   place, Zen). The gear on Watch opens a sheet over the right wing on its Looks side; the gear on
   Listen (`LinesGear`, "How the lines move") opens it on its Lines side. A "Looks | Lines" switch
-  in its heading row changes the side, and the heading follows it. The Lines side
+  in its heading row changes the side, and the heading follows it. On the Looks side the heading row
+  is as tall as the switch, so the choice under it starts below the switch. The Lines side
   (`LinesPanel.tsx`) has one control per 40 px row with its value read back in words, and sizes
   the sheet to its content. The Looks side:
-  one look for everything (five picture tiles), or one each for videos and playlists, live
-  streams and Twitch (five choices a row), at 540 px (`wall2-watch-look`, checked on read;
+  "Same for all" (one look, five picture tiles), or "Each source its own" (one each for videos and
+  playlists, live streams and Twitch, five choices a row), at 540 px (`wall2-watch-look`, checked on read;
   values stored before the newer looks still read the same).
 - **Settings for each look** (`lookSettings.ts`, `LookTunePanel.tsx`, key `wall2-watch-look-tune`):
   under the tiles the sheet shows the chosen look's own sliders and switches in the Lines side's
@@ -3341,7 +3345,7 @@ The rail's Tools button (pressed while open) opens a drawer over the right third
 
 - **Accounts.** Each calendar account from `useMeet(true)` (the same hook Meet uses, reading on any place while the drawer is open) with its state line and Sign in, Sign out or Try again; Spotify from `src/music/spotify.ts` (Not set up, with a hover naming `spotify.json` in the app's config folder, and no button, when it has no `spotify.json`). YouTube (see "YouTube" above) is the row under Spotify, with its Set up form (the form takes the left column while it is open, so Video look and Keys file are hidden until it closes) and a line with its two required links. While a sign-in waits, the row says "Waiting for the browser" and has Cancel. There is no Twitch row: Twitch has no sign-in yet, and a button that does nothing is never drawn. A sign-in or sign-out refreshes Meet and Work's calendar read at once.
 - **Sources.** One row each for Calendar, Tasks, Agents, Home, Sound, Music, Weather and Box: a dot (mint fresh, amber stale or failing, red down or not set up, grey nothing read yet), the last good read as a clock time or "never", the store's own reason on hover, and Retry, which runs that store's existing refresh and stays busy until that read settles (15 seconds at most); a second click while it runs starts nothing. Music's Retry says "Nothing is playing to read" when its poll is not running. The rules are in `src/tools/sources.ts` and use each store's own stale rule: the agents helper's `agentsStale`, Home's alarm age, Sound's two minutes, the weather card's "updated N min ago" age, Music's 2 second poll. Tasks, Sound and Box keep their state inside their hooks, so each hook reports every read to `src/tools/reports.ts` and registers its own refresh while mounted; when no screen has it mounted, Retry (and opening the drawer) reads the same command once. Home here is the home app's security read, which is also what the rail's alarm dot uses.
-- **Video look.** The chips are the Watch looks (`LOOKS` in `src/unwind/watch/looks.ts`) and use the Watch store's `setLooks`: picking one sets one look for everything. When Watch is set to a look per kind no chip is lit and the hint says so. There is no Off, because the Watch store has none.
+- **Video look.** The chips are the Watch looks (`LOOKS` in `src/unwind/watch/looks.ts`) and use the Watch store's `setLooks`: picking one sets one look for everything (the sheet's "Same for all"). When Watch is set to "Each source its own" no chip is lit and the hint says so. There is no Off, because the Watch store has none.
 - **Weather in the scene.** Two chips, On and Off (on by default), under Video look: rain and wind from the forecast on the mountains and on Watt (see "The weather layer" and "Watt in rain and wind"). Stored as `{"on":true|false}` under `wall2-scene-weather`; a bad or unreadable value reads as on. Turning it off fades the scene's weather out over 8 seconds and puts Watt back to a dry day.
 - **Keys file.** "keys.json, N keys, read 8:02 AM" counts the keys the file names (its own sets and its pinned keys, not the built-in sets). A refused file shows in amber with the whole reason on hover; no file says "No keys.json. Defaults in use". Reload forgets the shared read and asks `wall2_keys_summary` again. Open calls `wall2_open_keys_file`, which takes no argument: Rust opens `keys.json` in the app config folder with the default editor, or the folder when there is no file yet, and only answers `not-configured` or `failed`. Only the `wall2` window may call it.
 - **Key lights.** Under Sources: Left and Right, each Not set up (Set up) or Saved (Test, Change), the address typed once and never shown again. See "Studio lights" under On Air. Open Tools on the On Air block opens the drawer with this section ringed for 2 seconds.
