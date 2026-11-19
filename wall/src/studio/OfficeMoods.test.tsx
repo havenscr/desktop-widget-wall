@@ -209,7 +209,7 @@ it('twelve moods with Off and As before: the row fits ROW_MAX by turning As befo
   expect(back.querySelector('svg')).not.toBeNull();
   expect(back.className).toContain('icon-only');
   expect(chip(`Mood 00 ${'x'.repeat(32)}`).querySelector('.u-mood-name')).not.toBeNull();
-  // Twelve moods and the fixed 216 px Music sync chip no longer fit 1124 even at the floor: the slot's last resort clips its left edge.
+  // Twelve moods and the fixed 208 px Music sync chip no longer fit 1124 even at the floor: the slot's last resort clips its left edge.
   expect(slot().querySelector('.u-mood-run')?.getAttribute('data-clip')).toBe('true');
   // The moods give way; the Music sync chip sits outside the clipped run, whole, and first.
   expect(slot().querySelector('.u-mood-run')?.contains(syncOf())).toBe(false);

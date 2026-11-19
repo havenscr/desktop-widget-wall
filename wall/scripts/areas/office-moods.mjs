@@ -137,8 +137,7 @@ const rule = (variant, results, emit) => {
       if (m.lineCs && (m.lineCs.ws !== 'nowrap' || m.lineCs.ov !== 'ellipsis')) fails.push('officemoods: the line is not one line with an ellipsis');
     }
     for (const e of m.enters.slice(0, 3)) fails.push('officemoods: something else draws inside the ' + e);
-    // Six real names cut by the fit rule are tolerated for now: 6.2 px short of fitting whole at x 1240 (measured, see the report).
-    void CUTS_OK;
+    if (m.chips.some((c) => c.cut) && !CUTS_OK.includes(variant.name)) fails.push('officemoods: a chip name is cut in a state that must show every name whole (' + m.chips.filter((c) => c.cut).map((c) => c.text).join(', ') + ')');
   }
   if (m && m.small) for (const x of m.small) fails.push('officemoods: text under 16 px: ' + x);
   for (const f of fails) emit('  FAIL ' + f);
