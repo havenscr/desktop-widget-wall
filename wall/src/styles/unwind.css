@@ -3864,7 +3864,7 @@ button.sp-qrow:hover {
   opacity: 1;
   box-shadow: 0 0 0 1.5px rgba(255, 255, 255, 0.55), 0 0 10px 3px var(--glow);
 }
-/* Back to normal: the last chip, beside Off. Dashed and dim while no mood is on, as the Studio sheet's. */
+/* As before: the last chip, beside Off. Dashed and dim while no mood is on, as the Studio sheet's. */
 .u-mood.icon-only {
   min-width: 40px;
   width: 40px;

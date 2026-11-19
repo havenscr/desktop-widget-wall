@@ -24,6 +24,8 @@ function measureNow() {
   if (!block) return { fails: ['now playing: the block is not on the page'], info: '' };
   const R = (e) => e.getBoundingClientRect();
   const n = (v) => Math.round(v * 10) / 10;
+  // Home's short form (the 64 px line with the studio lights under it) has its own box and no foot, bar or halves.
+  const compact = block.classList.contains('compact');
   const layers = [...block.querySelectorAll(':scope > .np-layer')];
   const layer = layers.find((l) => !l.classList.contains('out')) || layers[0];
   if (layers.length !== 1) fails.push('now playing: ' + layers.length + ' layers on screen (one is expected once the cross-fade is over)');
@@ -39,9 +41,10 @@ function measureNow() {
   // first row starts, ends where the last row of the right column ends, and the layers never grow or shrink it.
   const rows = panel ? [...panel.children].filter((c) => c !== block && R(c).height > 0 && !c.classList.contains('sound-confirm')) : [];
   const rowsBottom = rows.length ? Math.max(...rows.map((c) => R(c).bottom)) : null;
-  if (Math.abs(bb.width - 390) > 1.5) fails.push('now playing: the block is ' + box.w + ' px wide, main\'s is 390');
+  if (Math.abs(bb.width - (compact ? 398 : 390)) > 1.5) fails.push('now playing: the block is ' + box.w + ' px wide, ' + (compact ? 'the short form\'s is 398' : 'main\'s is 390'));
+  if (compact && Math.abs(bb.height - 64) > 1) fails.push('now playing: the short form is ' + box.h + ' px high (64)');
   if (first && Math.abs(bb.top - first.top) > 2) fails.push('now playing: the block starts ' + n(bb.top - first.top) + ' px from the top of the card\'s first row');
-  if (rowsBottom !== null && Math.abs(rowsBottom - bb.bottom) > 2) fails.push('now playing: the block is ' + box.h + ' px high but the card\'s rows give it ' + n(rowsBottom - bb.top) + ' (' + box.w + ' by ' + box.h + ' against ' + n(bb.width) + ' by ' + n(rowsBottom - bb.top) + ')');
+  if (!compact && rowsBottom !== null && Math.abs(rowsBottom - bb.bottom) > 2) fails.push('now playing: the block is ' + box.h + ' px high but the card\'s rows give it ' + n(rowsBottom - bb.top) + ' (' + box.w + ' by ' + box.h + ' against ' + n(bb.width) + ' by ' + n(rowsBottom - bb.top) + ')');
   // Leaves: the parts that must not overlap or leave the layer.
   const lr = R(layer);
   const sel = 'button, img, .np-cover, .np-slot, .np-k, .np-title, .np-artist, .np-l1, .np-l2, .np-prog, .np-where, .np-mid, .np-hair';
@@ -63,7 +66,12 @@ function measureNow() {
   }
   // The foot: the control row (the music half in the split view) ends within 12 px of the block's bottom.
   const foot = kind === 'both' ? layer.querySelector('.np-half[data-half="music"]') : layer.querySelector('.np-foot');
-  if (!foot) fails.push('now playing: no control row');
+  if (compact) {
+    // The short form's controls sit at the line's right end.
+    const btns = layer.querySelector('.np-btns');
+    if (!btns) fails.push('now playing: no control row');
+    else if (R(btns).right > bb.right + 0.5 || R(btns).bottom > bb.bottom + 0.5 || R(btns).top < bb.top - 0.5) fails.push('now playing: the control row leaves the line');
+  } else if (!foot) fails.push('now playing: no control row');
   else {
     const gap = bb.bottom - R(foot).bottom;
     if (gap < -0.5 || gap > 12) fails.push('now playing: the control row ends ' + n(gap) + ' px from the block\'s bottom (0 to 12 allowed)');
@@ -81,7 +89,8 @@ function measureNow() {
   const buttons = [...layer.querySelectorAll('button')].filter((e) => R(e).width > 0);
   for (const e of buttons) {
     const r = R(e);
-    if (r.width < 39.5 || r.height < 39.5) fails.push('now playing: the ' + name(e) + ' button is ' + n(r.width) + ' by ' + n(r.height) + ' px (40 by 40 at least)');
+    const least = compact ? 37.5 : 39.5;
+    if (r.width < least || r.height < least) fails.push('now playing: the ' + name(e) + ' button is ' + n(r.width) + ' by ' + n(r.height) + ' px (' + (compact ? '38 by 38' : '40 by 40') + ' at least)');
   }
   for (let i = 0; i < buttons.length; i++) {
     for (let j = i + 1; j < buttons.length; j++) {
@@ -98,7 +107,7 @@ function measureNow() {
     if (fs < 15.9) fails.push('now playing: "' + t.nodeValue.trim().slice(0, 24) + '" is set at ' + fs + ' px (16 at least)');
   }
   // The split view: the hairline between the halves, 6 px clear of text on each side.
-  if (kind === 'both') {
+  if (kind === 'both' && !compact) {
     const halves = [...layer.querySelectorAll('.np-half')];
     const hair = layer.querySelector('.np-hair');
     if (halves.length !== 2 || !hair) fails.push('now playing: the split view has ' + halves.length + ' halves and ' + (hair ? 'a' : 'no') + ' hairline');
@@ -143,32 +152,32 @@ export default {
   name: 'now-playing',
   gallery: { states: [
     // Music alone: the full block (cover, title, artist, time bar, controls at the foot).
-    state('now playing: music with a cover and a time bar', '', ['Now playing', 'Night Drive', 'Neon Coast', '1:05', '3:01', 'Den, 4 speakers']),
-    state('now playing: music, no cover address (the speaker glyph)', 'np=noart', ['Night Drive', '1:05', '3:01']),
+    state('now playing: music with a cover and a time bar', '', ['Night Drive', 'Den, 4 speakers', '!1:05', '!Now playing']),
+    state('now playing: music, no cover address (the speaker glyph)', 'np=noart', ['Night Drive', '!1:05']),
     state('now playing: a station with no length (no bar)', 'np=station', ['Night Drive', 'Den, 4 speakers', '!3:01']),
-    state('now playing: back and next offered', 'np=skip', ['Night Drive', '1:05']),
+    state('now playing: back and next offered', 'np=skip', ['Night Drive']),
     state('now playing: back and next refused as a station that cannot skip', 'np=skip,skipfail,station', ['This station cannot skip'], 'button[aria-label="Next track"]'),
-    state('now playing: a very long title and artist, two lines and an ellipsis', 'np=long,skip', ['A Song With A Rather Long Title', '1:05']),
-    state('now playing: heavy Sonos, long names', 'sonos=heavy&np=skip', ['Now playing', 'Extended Mix']),
+    state('now playing: a very long title and artist, two lines and an ellipsis', 'np=long,skip', ['A Song With A Rather Long Title']),
+    state('now playing: heavy Sonos, long names', 'sonos=heavy&np=skip', ['Extended Mix']),
     state('now playing: not live, dimmed, the bar stopped', 'sonos=timeout&np=skip', ['Night Drive', 'Sonos did not answer in time']),
     state('now playing: nothing playing', QUIET, ['Nothing playing', 'Suggested for this hour']),
     state('now playing: a TV room is not music, the quiet words stay', `${QUIET}&np=tv`, ['Nothing playing', 'Suggested for this hour', '!On the wall']),
-    state('now playing: a Spotify track on a speaker', 'spotifyplay=speaker', ['Now playing', 'Living room']),
+    state('now playing: a Spotify track on a speaker', 'spotifyplay=speaker', ['Living room']),
     state('now playing: Pause tip', 'np=skip', ['Pause every Sonos speaker'], 'hover:.sound-np .np-rd.big'),
     // The wall's own video alone.
-    state('now playing: the wall video', `${QUIET}&${WALL}&wplay=0`, ['On the wall', 'Night drive mix', 'YouTube video', '12:34', '45:10', 'Open Watch']),
-    state('now playing: the wall video, paused', `${QUIET}&${WALL}&wplay=0&wstate=paused`, ['On the wall', 'Night drive mix', 'Open Watch']),
-    state('now playing: a playlist on the wall with back and next', `${QUIET}&${LIST}&wplay=3`, ['On the wall', 'YouTube playlist, 4 of 24', '12:34', 'Open Watch']),
-    state('now playing: a live stream on the wall (no length)', `${QUIET}&${WALL}&wplay=1`, ['On the wall', 'Lofi beats radio, live', 'YouTube live stream', 'Open Watch']),
-    state('now playing: a Twitch stream takes only Stop', `${QUIET}&${WALL}&wplay=2`, ['On the wall', 'Twitch stream', 'Open Watch', '!12:34']),
-    state('now playing: the wall video waits for a click', `${QUIET}&${WALL}&wplay=0&wstate=refused`, ['On the wall', 'Click the video on Watch to start it', 'Open Watch']),
+    state('now playing: the wall video', `${QUIET}&${WALL}&wplay=0`, ['Night drive mix', 'On the wall. YouTube video', '!12:34']),
+    state('now playing: the wall video, paused', `${QUIET}&${WALL}&wplay=0&wstate=paused`, ['Night drive mix', 'On the wall']),
+    state('now playing: a playlist on the wall with back and next', `${QUIET}&${LIST}&wplay=3`, ['On the wall. YouTube playlist, 4 of 24']),
+    state('now playing: a live stream on the wall (no length)', `${QUIET}&${WALL}&wplay=1`, ['Lofi beats radio, live', 'On the wall. YouTube live stream']),
+    state('now playing: a Twitch stream takes only Stop', `${QUIET}&${WALL}&wplay=2`, ['Twitch stream', 'On the wall', '!12:34']),
+    state('now playing: the wall video waits for a click', `${QUIET}&${WALL}&wplay=0&wstate=refused`, ['Click the video on Watch to start it']),
     // Both at once: two halves.
-    state('now playing: both, video above music', `${WALL}&wplay=0`, ['On the wall', 'Night drive mix', '12:34 of 45:10', 'Now playing', 'Night Drive', 'Neon Coast', 'Den, 4 speakers']),
-    state('now playing: both, a playlist', `${LIST}&wplay=3`, ['On the wall', 'Playlist, 4 of 24', '12:34 of 45:10', 'Night Drive']),
-    state('now playing: both, a Twitch stream', `${WALL}&wplay=2`, ['On the wall', 'Twitch stream', 'Night Drive']),
-    state('now playing: both, the video waits for a click', `${WALL}&wplay=0&wstate=refused`, ['On the wall', 'Click the video on Watch', 'Night Drive']),
-    state('now playing: both, a station and long names', `${WALL}&wplay=0&np=station,long,skip`, ['On the wall', 'A Song With A Rather Long Title']),
-    state('now playing: both, the video paused', `${WALL}&wplay=0&wstate=paused`, ['On the wall', 'Night Drive']),
+    state('now playing: both, video above music', `${WALL}&wplay=0`, ['Night Drive', 'Night drive mix']),
+    state('now playing: both, a playlist', `${LIST}&wplay=3`, ['Night Drive']),
+    state('now playing: both, a Twitch stream', `${WALL}&wplay=2`, ['Night Drive']),
+    state('now playing: both, the video waits for a click', `${WALL}&wplay=0&wstate=refused`, ['Night Drive']),
+    state('now playing: both, a station and long names', `${WALL}&wplay=0&np=station,long,skip`, ['A Song With A Rather Long Title']),
+    state('now playing: both, the video paused', `${WALL}&wplay=0&wstate=paused`, ['Night Drive']),
   ] },
 
   fit: {
@@ -200,18 +209,16 @@ export default {
       },
     },
     breaks: {
-      // The block's box changes; parts overlap or leave the block; the foot floats up; a title is cut with no ellipsis.
-      'now-box': { css: '.sound-panel.l2 > .sound-np { align-self: start !important; height: 150px !important; }', expect: /^ *FAIL now playing: the block is [\d.]+ px high but the card's rows give it [\d.]+/m, appliesTo: (v) => v.name === NAMES.music },
-      'now-overlap': { css: '.np-prog, .np-mid { margin-top: -70px !important; }', expect: /^ *FAIL now playing: .* overlaps .* \([\d.]+ by [\d.]+ px\)/m, appliesTo: (v) => v.name === NAMES.music || v.name === NAMES.video },
-      'now-overlap-split': { css: '.np-half .np-l1 { top: 20px !important; }', expect: /^ *FAIL now playing: .* overlaps .* \([\d.]+ by [\d.]+ px\)/m, appliesTo: (v) => v.name === NAMES.both },
-      'now-leave': { css: '.np-title { margin-left: 260px !important; }', expect: /^ *FAIL now playing: np-title leaves the block/m, appliesTo: (v) => v.name === NAMES.music || v.name === NAMES.both },
-      'now-foot': { css: '.np-foot { margin-top: 0 !important; } .np-hair { margin: 8px 0 60px !important; }', expect: /^ *FAIL now playing: the control row ends -?[\d.]+ px from the block's bottom/m, appliesTo: (v) => v.name === NAMES.music || v.name === NAMES.both },
-      'now-clip': { css: '.np-title { -webkit-line-clamp: none !important; line-clamp: none !important; display: block !important; max-height: 40px !important; }', expect: /^ *FAIL now playing: ".*" is clipped without an ellipsis/m, appliesTo: LONG_TITLES },
-      // Buttons too small or too close; text too small; the hairline in the wrong place or text touching it.
-      'now-button-size': { css: '.np-rd { width: 30px !important; height: 30px !important; }', expect: /^ *FAIL now playing: the .* button is [\d.]+ by [\d.]+ px \(40 by 40 at least\)/m, appliesTo: MUSIC_OR_VIDEO },
-      'now-button-gap': { css: '.np-foot, .np-btns { gap: 2px !important; }', expect: /^ *FAIL now playing: the .* and .* buttons are -?[\d.]+ px apart \(8 at least\)/m, appliesTo: (v) => v.name === NAMES.musicLong || v.name === NAMES.playlist || SPLIT(v) },
-      'now-text-size': { css: '.np-prog, .np-l2, .np-where, .np-mid, .np-l1 { font-size: 12px !important; }', expect: /^ *FAIL now playing: ".*" is set at [\d.]+ px \(16 at least\)/m, appliesTo: (v) => v.name === NAMES.music || v.name === NAMES.quiet || v.name === NAMES.both },
-      'now-hairline': { css: '.np-hair { position: relative !important; top: -40px !important; }', expect: /^ *FAIL now playing: (the hairline \(y [\d.]+\) is not between the halves|in the first half .* comes within -?[\d.]+ px of the hairline)/m, appliesTo: SPLIT },
+      // The short form's box changes; parts overlap or leave the line; the controls leave it; a title is cut with no ellipsis.
+      'now-box': { css: '.np-col > .sound-np { height: 100px !important; }', expect: /^ *FAIL now playing: the short form is [\d.]+ px high/m, appliesTo: (v) => v.name === NAMES.music },
+      'now-overlap': { css: '.np-line .np-meta { margin-left: -50px !important; }', expect: /^ *FAIL now playing: .* overlaps .* \([\d.]+ by [\d.]+ px\)/m, appliesTo: (v) => v.name === NAMES.music || v.name === NAMES.video },
+      'now-leave': { css: '.np-line .np-title { position: relative !important; left: 300px !important; }', expect: /^ *FAIL now playing: np-title leaves the block/m, appliesTo: (v) => v.name === NAMES.music || v.name === NAMES.both },
+      'now-foot': { css: '.np-line .np-btns { margin-top: 50px !important; }', expect: /^ *FAIL now playing: the control row leaves the line/m, appliesTo: (v) => v.name === NAMES.music || v.name === NAMES.video },
+      'now-clip': { css: '.np-line .np-title { text-overflow: clip !important; }', expect: /^ *FAIL now playing: ".*" is clipped without an ellipsis/m, appliesTo: LONG_TITLES },
+      // Buttons too small or too close; text too small.
+      'now-button-size': { css: '.np-line .np-rd, .np-line .np-rd.big { width: 30px !important; height: 30px !important; }', expect: /^ *FAIL now playing: the .* button is [\d.]+ by [\d.]+ px \(38 by 38 at least\)/m, appliesTo: MUSIC_OR_VIDEO },
+      'now-button-gap': { css: '.np-line .np-btns { gap: 2px !important; }', expect: /^ *FAIL now playing: the .* and .* buttons are -?[\d.]+ px apart \(8 at least\)/m, appliesTo: (v) => v.name === NAMES.musicLong || v.name === NAMES.video },
+      'now-text-size': { css: '.np-where, .np-title { font-size: 12px !important; }', expect: /^ *FAIL now playing: ".*" is set at [\d.]+ px \(16 at least\)/m, appliesTo: (v) => v.name === NAMES.music || v.name === NAMES.quiet },
     },
   },
 };

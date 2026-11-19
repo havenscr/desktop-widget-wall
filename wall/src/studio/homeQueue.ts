@@ -1,6 +1,6 @@
 /**
  * One home write at a time from the wall, for every write that goes to the home app (presets, groups,
- * looks, Back to normal and the key lights' fallback). A write waiting for its turn is replaced by a newer
+ * looks, As before and the key lights' fallback). A write waiting for its turn is replaced by a newer
  * one with the same key, which keeps a slider drag to the newest value. The module holds no other state
  * and imports nothing, so the key light seam and the home store can share it.
  */

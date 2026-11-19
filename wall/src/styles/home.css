@@ -47,6 +47,39 @@
   gap: 20px;
   min-height: 22px;
 }
+/* The heading's Condo / Office pick: two words as the heading, the one showing in a cyan pill. 24 px tall inside the 22 px
+   heading (1 px of margin pulled back each side), so the row below does not move. */
+.moods-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin: -1px 0;
+}
+.moods-pick {
+  height: 24px;
+  padding: 0 12px;
+  border: 1px solid transparent;
+  border-radius: 12px;
+  background: none;
+  color: var(--dim);
+  font: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  cursor: pointer;
+  transition: border-color 160ms ease, color 160ms ease;
+}
+.moods-pick:hover {
+  color: var(--tx);
+}
+.moods-pick.on {
+  background: rgba(9, 32, 50, 0.88);
+  border-color: rgba(83, 230, 235, 0.65);
+  color: var(--cyan);
+}
+.moods-pick:focus-visible {
+  outline: 3px solid var(--cyan);
+  outline-offset: 2px;
+}
 /* No list to show (not set up, loading, or never read): the heading and its line only,
    as tall as that, not a blank centre. */
 .moods.bare {
@@ -1838,7 +1871,8 @@
 .sound-panel.l2 > * {
   grid-column: 2;
 }
-.sound-panel.l2 > .sound-np {
+.sound-panel.l2 > .sound-np,
+.sound-panel.l2 > .np-col {
   grid-column: 1;
   grid-row: 1 / span 3;
 }
@@ -2197,6 +2231,131 @@
 .np-btns .np-rd.big {
   width: 40px;
   height: 40px;
+}
+/*
+ * The short form on Home: the left column is `.np-col`, the one line (64 px cover, title and where it plays, the controls at
+ * 38 px; 72 px with the gap under it) and the studio lights block under it. The line is the same box in every layout.
+ */
+.sound-panel.l2:has(> .np-col) {
+  grid-template-columns: 399px minmax(0, 1fr);
+}
+.np-col {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  border-right: 1px solid var(--line);
+}
+.np-col > .sound-np {
+  flex: none;
+  height: 64px;
+  padding: 0;
+  border-right: 0;
+}
+.sound-np.compact .np-layer {
+  bottom: 0;
+  width: calc(100% - 22px);
+}
+.np-line {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  height: 64px;
+  min-width: 0;
+}
+.sound-np.compact .np-cover,
+.sound-np.compact .np-tile,
+.sound-np.compact .np-slot,
+.sound-np.compact .sound-art {
+  width: 64px;
+  height: 64px;
+  border-radius: 14px;
+  box-shadow: none;
+}
+.sound-np.compact.both .np-line {
+  gap: 10px;
+}
+.np-line .np-meta {
+  padding-top: 0;
+  gap: 2px;
+  justify-content: center;
+}
+.np-line .np-title {
+  display: block;
+  -webkit-line-clamp: none;
+  line-clamp: none;
+  font: 600 21px/26px var(--body);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.np-line .np-where {
+  font: 400 17px/22px var(--body);
+}
+.np-line .np-btns {
+  position: static;
+  flex: none;
+  gap: 8px;
+}
+.np-line .np-rd,
+.np-line .np-rd.big {
+  width: 38px;
+  height: 38px;
+}
+.np-line .np-btns .sound-btn {
+  height: 38px;
+}
+/* The studio lights block under the line: a title, then three rows (switches 40, looks 34, mood buttons 34). */
+.hs-block {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+  padding-right: 22px;
+}
+.hs-block,
+.hs-block * {
+  box-sizing: border-box;
+}
+.hs-title {
+  font-size: 16px;
+  line-height: 18px;
+  white-space: nowrap;
+}
+.hs-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.hs-row.st-switches {
+  height: 40px;
+  margin-top: 0;
+}
+.hs-row .st-tg {
+  flex: none;
+  --tg-px: 12px;
+  --tg-gap: 8px;
+}
+.hs-row .st-preset {
+  height: 34px;
+  padding: 0 14px;
+  border-radius: 17px;
+  font-size: 17px;
+}
+.hs-moods {
+  gap: 4px;
+}
+/* The three buttons are the Unwind chips, a little tighter so "Office Recording" fits the 377 px of the left column. */
+.hs-moods .u-mood {
+  min-width: 0;
+  gap: 6px;
+  padding: 0 9px 0 8px;
+  font-size: 16px;
+}
+.hs-moods .u-mood-back {
+  padding: 0 10px 0 8px;
 }
 .np-hair {
   flex: none;

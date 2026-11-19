@@ -167,7 +167,7 @@ it('shown: a group named Office moods, the label, one chip per mood in the home 
   }
 });
 
-it('the fit rule is applied: nine names of 40 characters (with Off and Back to normal) drop the label and cut every name; a short row keeps both', async () => {
+it('the fit rule is applied: nine names of 40 characters (with Off and As before) drop the label and cut every name; a short row keeps both', async () => {
   // jsdom has no canvas, so the component measures with its rough guess (9 px a character): 360 px a name, far over 1124 in all.
   const forty = (i: number) => `Mood ${String(i).padStart(2, '0')} ${'x'.repeat(40 - 8)}`;
   list = Array.from({ length: 9 }, (_, i) => ({ id: `mood${i}`, label: forty(i), line: null, active: i === 0 }));
@@ -198,7 +198,7 @@ it('the fit rule is applied: nine names of 40 characters (with Off and Back to n
   for (const n of slot().querySelectorAll<HTMLElement>('.u-mood-name')) expect(n.style.maxWidth).toBe('');
 });
 
-it('twelve moods with Off and Back to normal: the row fits ROW_MAX by turning Back to normal and Off into their icons, each with a name and a tip', async () => {
+it('twelve moods with Off and As before: the row fits ROW_MAX by turning As before and Off into their icons, each with a name and a tip', async () => {
   list = Array.from({ length: 12 }, (_, i) => ({ id: `m${i}`, label: `Mood ${String(i).padStart(2, '0')} ${'x'.repeat(32)}`, line: null, active: i === 0 }));
   off = { active: false };
   await show();
@@ -234,10 +234,10 @@ it('2C: a mood chip carries a 12 px dot in its colour, never a swatch; it is the
   // No colour word in "recording": the neutral pair, still a dot.
   expect(chip('Recording').querySelector('.u-mood-dot')?.getAttribute('style')).toContain('--glow: #5b5480');
   expect(chip('Off').querySelector('.u-mood-dot')).toBeNull();
-  expect(chip('Back to normal').querySelector('.u-mood-dot')).toBeNull();
+  expect(chip('As before').querySelector('.u-mood-dot')).toBeNull();
 });
 
-it('1B: Back to normal is the last chip, after Off, dashed and disabled with no mood on; a click sends nothing', async () => {
+it('1B: As before is the last chip, after Off, dashed and disabled with no mood on; a click sends nothing', async () => {
   off = { active: false };
   await show();
   const b = chip(BACK_WORD);
@@ -250,7 +250,7 @@ it('1B: Back to normal is the last chip, after Off, dashed and disabled with no 
   expect(count('wall2_studio_normal')).toBe(0);
 });
 
-it('1B: with a mood on, Back to normal sends the studio normal call, then reads the moods again', async () => {
+it('1B: with a mood on, As before sends the studio normal call, then reads the moods again', async () => {
   list[2].active = true;
   await show();
   const b = chip(BACK_WORD);
@@ -279,7 +279,7 @@ it('1B: a 409 nothing-to-undo is a quiet no-op: no note, no failure on a chip, t
   expect(slot().querySelector('.warn')).toBeNull();
 });
 
-it('1B: a real failure of the call shows the home words as a note, and Back to normal ignores clicks while a write is out', async () => {
+it('1B: a real failure of the call shows the home words as a note, and As before ignores clicks while a write is out', async () => {
   list[2].active = true;
   normalWord = 'unreachable';
   await show();
