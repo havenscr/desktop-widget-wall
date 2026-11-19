@@ -1,4 +1,4 @@
-import { act, cleanup, render, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { LIBRARY_DATA } from '../../bridge/devMocks/libraryData';
 import { mocks } from '../../bridge/tauri';
@@ -15,7 +15,7 @@ const p = (id: string, label: string): Preset => ({ id, label, line: null, activ
 beforeEach(() => {
   localStorage.clear();
   resetLibIndex();
-  useOnAirStore.setState({ saved: IDLE, show: null, marks: null, marksNote: null });
+  useOnAirStore.setState({ saved: IDLE, show: null, showError: null, showNote: null, marks: null, marksNote: null });
   mocks.set('wall2_keys_library', () => LIBRARY_DATA);
   mocks.set('wall2_onair_marks_today', () => ({ today: 0, last: [] }));
   mocks.set('wall2_onair_show', () => ({ state: 'missing', title: null, parts: [], skipped: 0, reason: null, readAt: 1 }));
@@ -25,6 +25,11 @@ afterEach(() => {
   resetTip();
   mocks.clear();
   vi.restoreAllMocks();
+});
+
+it('finds a preset by its shown name only: an internal id that matches a different name is no match', () => {
+  expect(findPreset([p('onair', 'Evening')], 'live')).toBeUndefined();
+  expect(findPreset([p('recording', 'Late night')], 'rec')).toBeUndefined();
 });
 
 it('finds a preset by its name, ignoring case and spacing, and none for a name the home app does not list', () => {
@@ -55,4 +60,37 @@ it('shows the last time on air', async () => {
   await act(async () => undefined);
   expect(screen.getByText('Live for 58:12')).toBeTruthy();
   expect(screen.getByText('4 marks saved')).toBeTruthy();
+});
+
+const SHOW_OK = { state: 'ok', title: 'Friday stream', parts: [{ name: 'Welcome', minutes: 5, notes: ['First note'] }, { name: 'Demo', minutes: 10, notes: ['Later note'] }], skipped: 0, reason: null, readAt: 1 } as const;
+
+it('names the first part and its notes even when the saved part is a later one', async () => {
+  useOnAirStore.setState({ saved: { ...IDLE, partIndex: 1 }, show: SHOW_OK as never });
+  render(<IdlePage now={Date.parse('2026-11-12T10:00:00-08:00')} last={null} onHold={() => undefined} />);
+  await act(async () => undefined);
+  expect(screen.getByText('Next show notes \u00b7 Welcome')).toBeTruthy();
+  expect(screen.getByText('First note')).toBeTruthy();
+  expect(screen.queryByText('Later note')).toBeNull();
+});
+
+it('says why there are no parts and Open file asks for the file: refused, failed read, failed open', async () => {
+  const opened: unknown[] = [];
+  mocks.set('wall2_onair_open', (args) => void opened.push(args));
+  const now = Date.parse('2026-11-12T10:00:00-08:00');
+  useOnAirStore.setState({ show: { ...SHOW_OK, state: 'refused', parts: [], reason: 'run-of-show.txt is over 32 KB' } as never });
+  const a = render(<IdlePage now={now} last={null} onHold={() => undefined} />);
+  await act(async () => undefined);
+  expect(screen.getByText('run-of-show.txt is over 32 KB')).toBeTruthy();
+  fireEvent.click(screen.getByRole('button', { name: 'Open file' }));
+  await act(async () => undefined);
+  expect(opened).toEqual([{ which: 'show' }]);
+  a.unmount();
+  useOnAirStore.setState({ show: null, showError: 'Could not read run-of-show.txt' });
+  const b = render(<IdlePage now={now} last={null} onHold={() => undefined} />);
+  expect(screen.getByText('Could not read run-of-show.txt')).toBeTruthy();
+  b.unmount();
+  useOnAirStore.setState({ show: null, showError: null, showNote: 'Could not open run-of-show.txt' });
+  render(<IdlePage now={now} last={null} onHold={() => undefined} />);
+  expect(screen.getByText('Could not open run-of-show.txt')).toBeTruthy();
+  expect(screen.getByRole('button', { name: 'Open file' })).toBeTruthy();
 });

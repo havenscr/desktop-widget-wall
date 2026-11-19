@@ -416,3 +416,8 @@
 .oa2-idlenotes .oa-notes { gap: 8px; }
 .oa2-idlenotes .oa-card-foot { padding-top: 10px; }
 .oa2-idlenotes .oa-step { height: 44px; }
+
+/* Why the run of show is empty: one line and Open file */
+.oa2-showproblem { display: flex; flex-direction: row; align-items: center; gap: 8px; min-width: 0; width: 100%; }
+.oa2-showproblem-t { color: var(--amber); flex: 1; min-width: 0; display: flex; align-items: center; gap: 6px; font: 500 18px/26px var(--body); }
+.oa2-showproblem .oa-btn { flex: none; font-size: 16px; }

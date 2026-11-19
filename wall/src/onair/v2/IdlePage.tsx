@@ -18,7 +18,7 @@ import { Head } from './Tiles';
 /** The notes of the first part are drawn large: one size, 26 px. */
 const NOTES_SIZES = [26] as const;
 
-/** The home app's preset names for each page (the owner's own, matched without case, spaces or punctuation). */
+/** The home app's preset names for each page (matched against the shown name, without case, spaces or punctuation). */
 const PRESET_NAME: Record<PageMode, string> = { live: 'On air', rec: 'Recording', meet: 'Presenting' };
 
 const norm = (s: string): string => s.toLowerCase().replace(/[^a-z0-9]/g, '');
@@ -26,7 +26,7 @@ const norm = (s: string): string => s.toLowerCase().replace(/[^a-z0-9]/g, '');
 /** The preset the home app lists under this name, or undefined: the Get ready button is drawn only for one that exists. */
 export function findPreset(presets: readonly Preset[] | undefined, mode: PageMode): Preset | undefined {
   const want = norm(PRESET_NAME[mode]);
-  return presets?.find((p) => norm(p.label) === want || norm(p.id) === want);
+  return presets?.find((p) => norm(p.label) === want);
 }
 
 /** The show timer with nothing on: its time (00:00 unless a stopped timer still holds one) and why it is not running. */
@@ -203,7 +203,7 @@ export function IdlePage({ now, last, onHold }: { now: number; last: LastOnAir |
       <ReadyCard mode="live" icon={<IconBroadcast size={20} aria-hidden="true" />} next={liveNext} onHold={onHold} className="oa2-ready-1" />
       <ReadyCard mode="rec" icon={<IconPlayerRecordFilled size={20} aria-hidden="true" />} next="No recorder running" onHold={onHold} className="oa2-ready-2" />
       <ReadyCard mode="meet" icon={<IconPresentation size={20} aria-hidden="true" />} next={meetNext} onHold={onHold} className="oa2-ready-3" />
-      <NotesCard title="Next show notes" right={first?.name} sizes={NOTES_SIZES} icon={<IconNotes size={20} aria-hidden="true" />} className="oa2-idlenotes" />
+      <NotesCard title="Next show notes" right={first?.name} sizes={NOTES_SIZES} icon={<IconNotes size={20} aria-hidden="true" />} className="oa2-idlenotes" index={0} />
       <Checklist onHold={onHold} />
       <div className="oa2-b oa2-lights-idle">
         <StudioBlock />

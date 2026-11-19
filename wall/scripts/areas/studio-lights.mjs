@@ -14,7 +14,8 @@ const LEFT_BRI = '.st-side[data-side="left"] .st-sl';
 
 const state = (screen, name, query, expect, actions) => ({ screen, name, query, custom: true, expect, actions });
 
-const BLOCK_CHECKS = ['.onair .oa-right', '.st-block', '.st-block .st-row'];
+const LIGHTS = '[class*="oa2-lights-"]';
+const BLOCK_CHECKS = [LIGHTS, '.st-block', '.st-block .st-row'];
 
 // What the block, the drawer, the chip and the Tools section must hold. The page measures; the rule below judges.
 function measureStudio() {
@@ -68,8 +69,7 @@ function measureStudio() {
     floor,
     block: box(block),
     blockKids: kids(block).map((k) => ({ n: k.n, l: k.b.l, r: k.b.r, t: k.b.t, b: k.b.b })),
-    foot: box(q('.oa-foot')),
-    column: box(q('.oa-right')),
+    column: box(q('[class*="oa2-lights-"]')),
     drawer: box(drawer),
     drawerKids: kids(drawer).map((k) => ({ n: k.n, l: k.b.l, r: k.b.r, t: k.b.t, b: k.b.b })),
     tools: box(tools),
@@ -168,11 +168,12 @@ export default {
           const b = s.block;
           if (!b) fails.push('studio: the block is not on the page');
           else {
-            // x 1920 to 2540, from y 314 (plus or minus 2), ending above the footnote, which ends above the column's bottom.
-            if (Math.abs(b.l - 1920) > 2 || b.r > 2542 || Math.abs(b.t - 314) > 2) fails.push('studio: the block is at x ' + r1(b.l) + ' to ' + r1(b.r) + ', y from ' + r1(b.t) + ' (wanted x 1920 to 2540, y 314 plus or minus 2)');
-            if (b.b > 462 + 2) fails.push('studio: the block ends at y ' + r1(b.b) + ' (462 at most, and the footnote below it must still fit the column)');
-            if (s.foot && s.foot.t < b.b + 4) fails.push('studio: the footnote starts at y ' + r1(s.foot.t) + ', inside the block (ends ' + r1(b.b) + ')');
-            if (s.foot && s.foot.b > s.floor + 0.5) fails.push('studio: the footnote ends at y ' + r1(s.foot.b) + ', below the column (' + r1(s.floor) + ')');
+            // Inside the lights box of the page (x and y as the box gives them), and ending at or above y 510 (Watt starts below it).
+            const c = s.column;
+            if (!c) fails.push('studio: the lights box is not on the page');
+            else if (b.l < c.l - 2 || b.r > c.r + 2 || b.t < c.t - 2 || b.b > c.b + 2) fails.push('studio: the block is at x ' + r1(b.l) + ' to ' + r1(b.r) + ', y ' + r1(b.t) + ' to ' + r1(b.b) + ' (inside its box at x ' + r1(c.l) + ' to ' + r1(c.r) + ', y ' + r1(c.t) + ' to ' + r1(c.b) + ')');
+            if (b.r > 2542) fails.push('studio: the block ends at x ' + r1(b.r) + ' (2540 at most)');
+            if (b.b > 510) fails.push('studio: the block ends at y ' + r1(b.b) + ' (510 at most: Watt starts below it)');
             for (const k of s.blockKids) if (k.l < 1920 - 2 || k.r > 2540 + 2 || k.t < b.t - 2 || k.b > b.b + 2) fails.push('studio: "' + k.n.trim() + '" leaves the block (x ' + r1(k.l) + ' to ' + r1(k.r) + ', y ' + r1(k.t) + ' to ' + r1(k.b) + ')');
           }
           for (const c of s.controls) if (c.h < 39.5 || c.h > 48.5) fails.push('studio: control "' + c.name + '" is ' + r1(c.h) + ' px high (40 to 48)');
@@ -183,7 +184,7 @@ export default {
           if (!d) fails.push('studio: the drawer is not on the page');
           else {
             if (d.l < 0 || d.r > 2560 || d.t < 0 || d.b > s.floor + 0.5) fails.push('studio: the drawer is at x ' + r1(d.l) + ' to ' + r1(d.r) + ', y ' + r1(d.t) + ' to ' + r1(d.b) + ' (inside the wall, above the strip at y ' + r1(s.floor) + ')');
-            if (s.column && (d.r > s.column.r + 2 || (s.column.w >= 560 && d.l < s.column.l - 2))) fails.push('studio: the drawer at x ' + r1(d.l) + ' to ' + r1(d.r) + ' reaches outside the right column at x ' + r1(s.column.l) + ' to ' + r1(s.column.r) + ' (it must not cover the notes card)');
+            if (s.column && (d.r > s.column.r + 2 || (s.column.w >= 560 && d.l < s.column.l - 2))) fails.push('studio: the drawer at x ' + r1(d.l) + ' to ' + r1(d.r) + ' reaches outside the lights box at x ' + r1(s.column.l) + ' to ' + r1(s.column.r) + ' (it must not cover the notes card)');
             for (const k of s.drawerKids) if (k.l < d.l - 1 || k.r > d.r + 1 || k.b > d.b + 1) fails.push('studio: "' + k.n.trim() + '" leaves the drawer');
           }
         }

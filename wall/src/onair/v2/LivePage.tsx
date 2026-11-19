@@ -4,6 +4,7 @@ import { StudioBlock } from '../../studio/StudioBlock';
 import { useSignalStore } from '../../signals/store';
 import { tip } from '../../ui/HoverTip';
 import { NotesCard } from '../NotesCard';
+import { ShowProblem, useShowProblem } from '../ShowProblem';
 import { atLimit, clampIndex, elapsedMs, formatShowTime, partTime, RESET_CONFIRM_MS, startedLine } from '../model';
 import { useOnAirStore } from '../store';
 import { statusStale } from '../ytlive';
@@ -145,9 +146,18 @@ function RunLine({ now }: { now: number }) {
   const show = useOnAirStore((s) => s.show);
   const saved = useOnAirStore((s) => s.saved);
   const goPart = useOnAirStore((s) => s.goPart);
+  const problem = useShowProblem();
   const parts = show?.state === 'ok' ? show.parts : [];
-  // Not drawn without parts (no file, a refused file, a failed read): the box stays in the DOM, hidden.
-  if (parts.length === 0) return <div className="oa2-b oa2-runline" hidden />;
+  // Without parts (no file, a refused file, a failed read) the box says why, with Open file; before the first read it stays hidden.
+  if (parts.length === 0) {
+    return problem ? (
+      <div className="oa2-b oa2-runline" role="group" aria-label="Run of show">
+        <ShowProblem text={problem} />
+      </div>
+    ) : (
+      <div className="oa2-b oa2-runline" hidden />
+    );
+  }
   const i = clampIndex(saved.partIndex, parts.length);
   const p = parts[i];
   const t = partTime(p, true, Math.max(0, elapsedMs(saved, now) - saved.partSinceMs));

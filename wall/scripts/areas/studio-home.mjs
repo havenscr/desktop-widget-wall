@@ -20,9 +20,10 @@ const STOP = '[aria-label="Stop timer"]';
 
 const state = (screen, name, query, expect, actions) => ({ screen, name: `studio home: ${name}`, query, custom: true, expect, actions });
 
-const BLOCK_CHECKS = ['.onair .oa-right', '.st-block', '.st-block .st-presets', '.st-block .st-switches'];
-const OFFER_CHECKS = ['.onair .oa-right', '.st-block', '.st-block .st-offer', '.st-block .st-switches'];
-const COMPAT_CHECKS = ['.onair .oa-right', '.st-block', '.st-block .st-homeline'];
+const LIGHTS = '[class*="oa2-lights-"]';
+const BLOCK_CHECKS = [LIGHTS, '.st-block', '.st-block .st-presets', '.st-block .st-switches'];
+const OFFER_CHECKS = [LIGHTS, '.st-block', '.st-block .st-offer', '.st-block .st-switches'];
+const COMPAT_CHECKS = [LIGHTS, '.st-block', '.st-block .st-homeline'];
 const SHEET_CHECKS = ['.st-drawer', '.st-d-keys', '.st-d-rooms'];
 const TOOLS_CHECKS = ['.tools-drawer', '.tools-drawer .tools-col', '.tools-drawer .tools-block', '.tools-drawer .tools-list', '.tools-drawer .tools-foot'];
 
@@ -82,9 +83,8 @@ function measureHome() {
     floor,
     block: box(block),
     blockKids: kids('.st-block').map((k) => ({ n: k.n, l: k.b.l, r: k.b.r, t: k.b.t, b: k.b.b })),
-    foot: box(q('.oa-foot')),
     sumCut: (() => { const e = q('.st-sum'); return e ? { sw: e.scrollWidth, cw: e.clientWidth, text: (e.textContent || '').trim().slice(0, 30) } : null; })(),
-    column: box(q('.oa-right')),
+    column: box(q('[class*="oa2-lights-"]')),
     presets: row('.st-presets > *:not(.st-spacer)'),
     presetsBox: box(q('.st-presets')),
     switches: row('.st-switches > *'),
@@ -147,8 +147,8 @@ export default {
       state('onair', 'block, a light did not answer', onAirGallery(`${READY}&studiowrite=lights`), ['A light did not answer the home app. This shows what it reports now.'], '[data-preset="onAir"]'),
       state('onair', 'block, the home app did not answer in time', onAirGallery(`${READY}&studiowrite=unreachable`), ['The home app did not answer in time. This is what it reports now.'], '[data-preset="onAir"]'),
       state('onair', 'block, a click on On air applies it', onAirGallery(READY), ['On air:', 'Key lights on, panels glow, monitor and overhead white', 'As before'], '[data-preset="onAir"]'),
-      state('onair', 'block, offer after the timer starts', onAirGallery(`${READY}`).replace('oatimer=run', 'oatimer=idle'), ['Studio lights are not set.', 'The timer started just now.', 'Set for the stream', 'Not now', 'Panels'], START),
-      state('onair', 'block, offer after the timer stops', onAirGallery('keys2=both&studio=onair&desktoken=set'), ['The show timer stopped.', 'The room is still on On air.', 'As before', 'Keep'], STOP),
+      state('onair', 'block, offer after the timer starts', onAirGallery(`${READY}`).replace('oatimer=run', 'oatimer=idle') + '&oamode=live', ['Studio lights are not set.', 'The timer started just now.', 'Set for the stream', 'Not now', 'Panels'], START),
+      state('onair', 'block, offer after the timer stops', onAirGallery('keys2=both&studio=onair&desktoken=set') + '&oamode=live', ['The show timer stopped.', 'The room is still on On air.', 'As before', 'Keep'], STOP),
       state('onair', 'block, a click the token cannot be sent for', onAirGallery(`${READY}&studiowrite=private`), ['The desk token goes only to this PC or a tailnet address.'], '[data-preset="onAir"]'),
       state('onair', 'block, a refused click says why', onAirGallery(`${READY}&studiowrite=unknown`), ['The home app no longer lists that one. This is what it reports now.'], '[data-preset="onAir"]'),
       state('onair', 'sheet, six panel effects, the list open', onAirGallery('keys2=both&studio=sixlooks&desktoken=set'), ['Ocean waves', 'Aurora', 'Behind monitor'], `${FINE} >> .st-drawer .st-effect`),
@@ -185,8 +185,8 @@ export default {
       variant('Studio home, block, one key light silent', onAirFit(`${READY.replace('keys2=both', 'keys2=left-silent')}`)),
       variant('Studio home, block, no key lights set up', onAirFit(`${READY.replace('keys2=both', 'keys2=none')}`)),
       variant('Studio home, block, the home app does not offer presets', onAirFit('keys2=both&studio=absent'), { checks: COMPAT_CHECKS }),
-      variant(OFFER_V, onAirFit(READY).replace('oatimer=run', 'oatimer=idle'), { click: START, checks: OFFER_CHECKS }),
-      variant('Studio home, block, offer after the timer stops', onAirFit('keys2=both&studio=onair&desktoken=set'), { click: STOP, checks: OFFER_CHECKS }),
+      variant(OFFER_V, onAirFit(READY).replace('oatimer=run', 'oatimer=idle') + '&oamode=live', { click: START, checks: OFFER_CHECKS }),
+      variant('Studio home, block, offer after the timer stops', onAirFit('keys2=both&studio=onair&desktoken=set') + '&oamode=live', { click: STOP, checks: OFFER_CHECKS }),
       sheetVariant(SHEET_V, onAirFit(READY), FINE),
       sheetVariant('Studio home, sheet, linked, three looks', onAirFit('keys2=both&studio=threelooks&desktoken=set'), FINE),
       sheetVariant('Studio home, sheet, split, three looks', onAirFit('keys2=mismatch&studio=threelooks&desktoken=set'), `${FINE} >> ${LINKED}`),
@@ -216,12 +216,13 @@ export default {
           const b = s.block;
           if (!b) fails.push('studiohome: the block is not on the page');
           else {
-            // x 1920 to 2540, from y 314 (plus or minus 2), ending by y 462, the footnote below it inside the column.
-            if (Math.abs(b.l - 1920) > 2 || b.r > 2542 || Math.abs(b.t - 314) > 2) fails.push('studiohome: the block is at x ' + r1(b.l) + ' to ' + r1(b.r) + ', y from ' + r1(b.t) + ' (wanted x 1920 to 2540, y 314 plus or minus 2)');
-            if (b.b > 464) fails.push('studiohome: the block ends at y ' + r1(b.b) + ' (462 at most), and the footnote below it must still fit the column');
-            if (s.foot && s.foot.t < b.b + 4) fails.push('studiohome: the footnote starts at y ' + r1(s.foot.t) + ', inside the block (ends ' + r1(b.b) + ')');
-            if (s.foot && s.foot.b > s.floor + 0.5) fails.push('studiohome: the footnote ends at y ' + r1(s.foot.b) + ', below the column (' + r1(s.floor) + ')');
-            for (const k of s.blockKids) if (k.l < 1920 - 2 || k.r > 2540 + 2 || k.t < b.t - 2 || k.b > b.b + 2) fails.push('studiohome: block part "' + k.n.trim() + '" leaves the block (x ' + r1(k.l) + ' to ' + r1(k.r) + ', y ' + r1(k.t) + ' to ' + r1(k.b) + ')');
+            // Inside the lights box of the page (x and y as the box gives them), and ending at or above y 510 (Watt starts below it).
+            const c = s.column;
+            if (!c) fails.push('studiohome: the lights box is not on the page');
+            else if (b.l < c.l - 2 || b.r > c.r + 2 || b.t < c.t - 2 || b.b > c.b + 2) fails.push('studiohome: the block is at x ' + r1(b.l) + ' to ' + r1(b.r) + ', y ' + r1(b.t) + ' to ' + r1(b.b) + ' (inside its box at x ' + r1(c.l) + ' to ' + r1(c.r) + ', y ' + r1(c.t) + ' to ' + r1(c.b) + ')');
+            if (b.r > 2542) fails.push('studiohome: the block ends at x ' + r1(b.r) + ' (2540 at most)');
+            if (b.b > 510) fails.push('studiohome: the block ends at y ' + r1(b.b) + ' (510 at most: Watt starts below it)');
+            for (const k of s.blockKids) if (k.l < b.l - 2 || k.r > b.r + 2 || k.t < b.t - 2 || k.b > b.b + 2) fails.push('studiohome: block part "' + k.n.trim() + '" leaves the block (x ' + r1(k.l) + ' to ' + r1(k.r) + ', y ' + r1(k.t) + ' to ' + r1(k.b) + ')');
             if (s.presets.length) {
               // The preset row: chips, As before and Fine tune on one 40 px line inside the block.
               const top = s.presets[0].b.t;
