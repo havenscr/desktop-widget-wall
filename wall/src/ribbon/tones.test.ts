@@ -166,3 +166,12 @@ describe('the 6 px bar, the grey past wash and plain chips', () => {
     expect(rule('.dd-join')).toContain('font: 600 16px');
   });
 });
+
+describe('a calendar-coloured category', () => {
+  it('is read with an empty name only when the native side marks it as the calendar colour', () => {
+    expect(readCategory({ name: '', tone: 'preset5', calendar: true })).toEqual({ name: '', tone: 'preset5', calendar: true });
+    expect(readCategory({ tone: 'preset5', calendar: true })).toEqual({ name: '', tone: 'preset5', calendar: true });
+    expect(readCategory({ tone: '#00b7c3', calendar: true })).toBeNull();
+    expect(readCategory({ name: '', tone: 'preset5', calendar: 'yes' })).toBeNull();
+  });
+});

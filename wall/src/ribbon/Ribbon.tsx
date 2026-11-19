@@ -95,7 +95,7 @@ function ChipTip({ c, account }: { c: Chip; account: string | null }) {
         {spanText(c.start, c.end)}
         {account ? `, ${account}` : ''}
       </span>
-      {c.category && <span className="tip-s">{categoryLine(c.category.name)}</span>}
+      {c.category?.name && <span className="tip-s">{categoryLine(c.category.name)}</span>}
       {c.hidden && c.hidden.length > 0 && <span className="tip-t">{c.hidden.length} more at this time, no room to draw them</span>}
       {c.hidden?.slice(0, HIDDEN_NAMED).map((h) => (
         <span key={h.key} className="tip-s">
@@ -334,7 +334,7 @@ export function Ribbon({ kind, now = Date.now }: { kind: RibbonKind; now?: () =>
           // A livestream keeps its pink; every other event with a known category takes its colour.
           const toned = c.category && !c.live ? c.category : null;
           // ...and a livestream that has a category keeps its pink and gains a small dot in that colour (room permitting).
-          const dot = c.category && c.live && !c.narrow ? c.category : null;
+          const dot = c.category?.name && c.live && !c.narrow ? c.category : null;
           return (
             <Fragment key={c.key}>
               {c.narrow && c.beside !== null && (
@@ -349,7 +349,7 @@ export function Ribbon({ kind, now = Date.now }: { kind: RibbonKind; now?: () =>
                 style={{ left: c.x, width: c.width, ...(toned ? toneVars(toned.tone, c.state, 'ribbon') : {}), ...(dot ? toneDotVars(dot.tone) : {}), ...(box ?? {}) } as CSSProperties}
                 role={c.canOpen ? 'button' : undefined}
                 tabIndex={c.canOpen ? 0 : undefined}
-                aria-label={`${c.title}, ${spanText(c.start, c.end)}${account ? `, ${account}` : ''}${c.category ? `. ${categoryLine(c.category.name)}` : ''}${c.canOpen ? '. Opens it in Outlook' : ''}${c.hidden?.length ? `. ${c.hidden.length} more at this time: ${hiddenNames(c.hidden).titles.join(', ')}${hiddenNames(c.hidden).more ? `, and ${hiddenNames(c.hidden).more} more` : ''}` : ''}`}
+                aria-label={`${c.title}, ${spanText(c.start, c.end)}${account ? `, ${account}` : ''}${c.category?.name ? `. ${categoryLine(c.category.name)}` : ''}${c.canOpen ? '. Opens it in Outlook' : ''}${c.hidden?.length ? `. ${c.hidden.length} more at this time: ${hiddenNames(c.hidden).titles.join(', ')}${hiddenNames(c.hidden).more ? `, and ${hiddenNames(c.hidden).more} more` : ''}` : ''}`}
                 onClick={c.canOpen ? () => openEvent(c.key) : undefined}
                 onKeyDown={
                   c.canOpen

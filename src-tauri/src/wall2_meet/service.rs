@@ -718,13 +718,20 @@ fn category_palette(
         GraphReply::Ok(body) => colours::parse_master(&body),
         _ => None,
     };
+    // The calendar's own colour, on the same cadence. Some(x) is a good read (x may be none for a
+    // colour the wall cannot match); None is a failed one, which keeps the colour held.
+    let held_calendar = held.as_ref().and_then(|p| p.calendar);
+    let calendar = match graph.calendar_colour(access, ctx).0 {
+        GraphReply::Ok(body) => Some(colours::calendar_token(&body)),
+        _ => None,
+    };
     let mut c = lock(core);
     if generation_of(&c, &acct.id) != generation {
         return None;
     }
     let fresh = match parsed {
-        Some(entries) => Palette { entries, next_try: now + colours::REFRESH_SECS },
-        None => Palette { entries: held.map(|p| p.entries).unwrap_or_default(), next_try: now + colours::RETRY_SECS },
+        Some(entries) => Palette { entries, calendar: calendar.unwrap_or(held_calendar), next_try: now + colours::REFRESH_SECS },
+        None => Palette { entries: held.map(|p| p.entries).unwrap_or_default(), calendar: calendar.unwrap_or(held_calendar), next_try: now + colours::RETRY_SECS },
     };
     c.palettes.insert(acct.id.clone(), fresh.clone());
     Some(fresh)
@@ -989,11 +996,14 @@ pub struct DayEventOut {
 pub struct CategoryOut {
     pub name: String,
     pub tone: &'static str,
+    /// True when the tone is the calendar's own colour and the name is empty.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub calendar: bool,
 }
 
 impl From<Pick> for CategoryOut {
     fn from(p: Pick) -> Self {
-        CategoryOut { name: p.name, tone: p.tone }
+        CategoryOut { name: p.name, tone: p.tone, calendar: p.calendar }
     }
 }
 
@@ -2033,10 +2043,17 @@ mod tests {
     struct ColourGraph {
         master: RefCell<Vec<GraphReply>>,
         master_calls: Cell<usize>,
+        calendar: RefCell<Vec<GraphReply>>,
+        calendar_calls: Cell<usize>,
     }
     impl ColourGraph {
         fn new(master: Vec<GraphReply>) -> Self {
-            ColourGraph { master: RefCell::new(master), master_calls: Cell::new(0) }
+            ColourGraph { master: RefCell::new(master), master_calls: Cell::new(0), calendar: RefCell::new(Vec::new()), calendar_calls: Cell::new(0) }
+        }
+        /// Scripted answers for the calendar colour read; once spent, the read fails.
+        fn with_calendar(self, replies: Vec<GraphReply>) -> Self {
+            *self.calendar.borrow_mut() = replies;
+            self
         }
     }
     impl GraphClient for ColourGraph {
@@ -2050,6 +2067,11 @@ mod tests {
                 })
             };
             GraphReply::Ok(json!({ "value": [row(17, json!(["Blue team"])), row(19, json!([]))] }))
+        }
+        fn calendar_colour(&self, _access: &str, _ctx: &Ctx) -> (GraphReply, Option<Diag>) {
+            self.calendar_calls.set(self.calendar_calls.get() + 1);
+            let mut c = self.calendar.borrow_mut();
+            (if c.is_empty() { GraphReply::Transient("graph-503".into()) } else { c.remove(0) }, None)
         }
         fn master_categories(&self, _access: &str, _ctx: &Ctx) -> (GraphReply, Option<Diag>) {
             self.master_calls.set(self.master_calls.get() + 1);
@@ -2098,7 +2120,7 @@ mod tests {
         let p = read_day(&[acct("work")], &store, &tokens, &graph, &core, &links, NOW, NOW, NOW + 3600);
         assert_eq!(form_scope(&tokens, 1), colours::SCOPE_COLOURS);
         assert!(p.accounts[0].colours);
-        assert_eq!(p.events[0].category, Some(CategoryOut { name: "Blue team".into(), tone: "preset7" }));
+        assert_eq!(p.events[0].category, Some(CategoryOut { name: "Blue team".into(), tone: "preset7", calendar: false }));
         assert_eq!(p.events[1].category, None);
     }
 
@@ -2112,6 +2134,31 @@ mod tests {
         assert!(complete_sign_in(&acct("work"), &granted, &store, &tokens, &core, NOW).is_ok());
         assert_eq!(store.get(&scope_record_id("work")).as_deref(), Some(SCOPE));
         assert!(!account_has_colours(&store, &mut core.lock().unwrap(), "work"));
+    }
+
+    #[test]
+    fn an_event_with_no_category_takes_the_calendar_colour_and_a_failed_read_keeps_it_and_the_events() {
+        let (store, core) = setup();
+        store.set(&scope_record_id("work"), colours::SCOPE_COLOURS);
+        let links = Mutex::new(Links::default());
+        let tokens = FakeTokens::new(vec![ok_token("a1", Some("refresh-2"))]);
+        let teal = GraphReply::Ok(json!({ "color": "lightTeal", "hexColor": "" }));
+        let graph = ColourGraph::new(vec![master_ok()]).with_calendar(vec![teal]);
+        let read = |at: u64| read_day(&[acct("work")], &store, &tokens, &graph, &core, &links, at, at, at + 3600);
+        let p = read(NOW);
+        assert_eq!(graph.calendar_calls.get(), 1);
+        // The categorised event keeps its category; the plain one takes the calendar colour.
+        assert_eq!(p.events[0].category, Some(CategoryOut { name: "Blue team".into(), tone: "preset7", calendar: false }));
+        assert_eq!(p.events[1].category, Some(CategoryOut { name: String::new(), tone: "preset5", calendar: true }));
+        read(NOW + 10);
+        assert_eq!(graph.calendar_calls.get(), 1);
+        // Due again: the calendar read fails (and so does the list), the events still read and both colours stay.
+        let p = read(NOW + colours::REFRESH_SECS + 5);
+        assert_eq!(graph.calendar_calls.get(), 2);
+        assert_eq!(p.accounts[0].state, "ok");
+        assert_eq!(p.events.len(), 2);
+        assert_eq!(p.events[0].category.as_ref().map(|c| c.tone), Some("preset7"));
+        assert_eq!(p.events[1].category.as_ref().map(|c| c.tone), Some("preset5"));
     }
 
     #[test]

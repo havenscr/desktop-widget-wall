@@ -340,15 +340,15 @@ it('a Day drawer tile with an Outlook category takes its tone and names it on ho
 
 it('a short event takes its lane for as long as its tile is drawn, so it never covers the tile after it', () => {
   const now = t('10:24');
-  // 15 minutes at 2:00, then 2:15 to 3:00: the 15 minute tile is drawn about 40 minutes tall, so the two sit side by side.
+  // 15 minutes at 2:00, then 2:15 to 3:00: the 15 minute tile is drawn about 50 minutes tall, so the two sit side by side.
   const c = chips([ev('a', 'Quick', '14:00', '14:15'), ev('b', 'Next', '14:15', '15:00'), ev('c', 'Later', '15:30', '16:30')], now);
   expect(agendaLanes(c).map((l) => [l.c.title, l.lane, l.lanes])).toEqual([
     ['Quick', 0, 2],
     ['Next', 1, 2],
     ['Later', 0, 1],
   ]);
-  // A 45 minute event needs no help.
-  const d = chips([ev('a', 'Half', '14:00', '14:45'), ev('b', 'Next', '14:45', '15:30')], now);
+  // An hour needs no help.
+  const d = chips([ev('a', 'Half', '14:00', '15:00'), ev('b', 'Next', '15:00', '15:30')], now);
   expect(agendaLanes(d).map((l) => [l.c.title, l.lane, l.lanes])).toEqual([
     ['Half', 0, 1],
     ['Next', 0, 1],

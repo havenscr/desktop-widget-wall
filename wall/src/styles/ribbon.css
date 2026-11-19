@@ -849,6 +849,7 @@ button.dd-k.link:hover {
 }
 .dd-ev.one {
   flex-wrap: nowrap;
+  align-items: center;
 }
 .dd-ev.open {
   cursor: pointer;
@@ -921,6 +922,11 @@ button.dd-k.link:hover {
   color: var(--cyan);
   font: 600 16px/1 var(--body);
   cursor: pointer;
+}
+/* A short tile (28 px inside its border) gets a 20 px pill, so it keeps 4 px of air from every edge. */
+.dd-ev.short .dd-join {
+  height: 20px;
+  padding: 0 8px;
 }
 .dd-join:hover {
   background: rgba(53, 230, 234, 0.28);

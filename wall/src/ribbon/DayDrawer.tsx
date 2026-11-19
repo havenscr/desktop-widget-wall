@@ -14,8 +14,8 @@ import { allDayBarText, hm, hourText, shortTime, spanText, wallHour, type Chip }
 /** Pixels per hour in the agenda. */
 const P = 40;
 
-/** A tile is never drawn shorter than this many pixels, so its time line and Join button stay whole. */
-const MIN_TILE = 24;
+/** A tile is never drawn shorter than this many pixels, so its time line and Join button stay whole and the Join pill keeps 4 px of air inside the border. */
+const MIN_TILE = 30;
 
 /** A tile's height in pixels for the time it spans (3 px of air between tiles), never under `MIN_TILE`. */
 const tileHeight = (hours: number): number => Math.max(MIN_TILE, hours * P - 3);
@@ -28,6 +28,9 @@ const TITLE_ZONE = 30;
 
 /** A tile lower than this cannot show the time on a second line (5 px padding twice, a 19 px title line, a 24 px Join row, the 2 px gap, the border). */
 export const ONE_LINE_BELOW = 58;
+
+/** A tile lower than this is "short": one line, with a 20 px Join pill (4 px of air above and below it). Above it the 24 px pill keeps at least 4 px. */
+const SHORT_BELOW = 34;
 
 /** The agenda's hours: 8 AM to 6 PM, widened to the first and last meeting. */
 export function agendaRange(items: readonly Chip[], now: number): { lo: number; hi: number } {
@@ -241,11 +244,11 @@ export function DayDrawer({
                 const top = (Math.max(lo, wallHour(c.start, now)) - lo) * P + 1;
                 const height = tileHeight(Math.min(hi, wallHour(c.end, now)) - Math.max(lo, wallHour(c.start, now)));
                 const account = c.accountId ? (labels[c.accountId] ?? null) : null;
-                const short = height < 32;
+                const short = height < SHORT_BELOW;
                 // Too low for a second line: keep title and time on one line, so the title gives way and the time is never hidden.
                 const oneLine = !short && height < ONE_LINE_BELOW;
                 const toned = c.category && !c.live ? c.category : null;
-                const dot = c.category && c.live ? c.category : null;
+                const dot = c.category?.name && c.live ? c.category : null;
                 return (
                   <div
                     key={c.key}
@@ -255,7 +258,7 @@ export function DayDrawer({
                     style={{ top, height, left: `calc(${(lane / n) * 100}% + 2px)`, width: `calc(${100 / n}% - 6px)`, ...(toned ? toneVars(toned.tone, c.state, 'drawer') : {}), ...(dot ? toneDotVars(dot.tone) : {}) } as CSSProperties}
                     role={c.canOpen ? 'button' : undefined}
                     tabIndex={c.canOpen ? 0 : undefined}
-                    aria-label={`${c.title}, ${spanText(c.start, c.end)}${c.category ? `. ${categoryLine(c.category.name)}` : ''}${c.canOpen ? '. Opens it in Outlook' : ''}`}
+                    aria-label={`${c.title}, ${spanText(c.start, c.end)}${c.category?.name ? `. ${categoryLine(c.category.name)}` : ''}${c.canOpen ? '. Opens it in Outlook' : ''}`}
                     onClick={c.canOpen ? () => invoke('wall2_open_event', { key: c.key }).catch(() => undefined) : undefined}
                     onKeyDown={
                       c.canOpen
@@ -275,7 +278,7 @@ export function DayDrawer({
                           {spanText(c.start, c.end)}
                           {account ? `, ${account}` : ''}
                         </span>
-                        {c.category && <span className="tip-s">{categoryLine(c.category.name)}</span>}
+                        {c.category?.name && <span className="tip-s">{categoryLine(c.category.name)}</span>}
                         {c.canOpen && <span className="tip-k">Click to open it in Outlook</span>}
                       </>
                     ))}

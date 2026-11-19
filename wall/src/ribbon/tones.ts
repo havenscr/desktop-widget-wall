@@ -45,6 +45,8 @@ export const TONE_TOKENS: readonly ToneToken[] = TONE_NAMES.map((_, i) => `prese
 export interface EventCategory {
   name: string;
   tone: ToneToken;
+  /** True when the tone is the calendar's own colour (an event with no category): the name is empty. */
+  calendar?: true;
 }
 
 /** The longest category name shown, matching the native cap. */
@@ -53,8 +55,10 @@ export const MAX_CATEGORY_CHARS = 64;
 /** The category of an event answer, or null when it is missing or not in the expected shape. */
 export function readCategory(v: unknown): EventCategory | null {
   if (typeof v !== 'object' || v === null) return null;
-  const { name, tone } = v as { name?: unknown; tone?: unknown };
-  if (!isToneToken(tone) || typeof name !== 'string') return null;
+  const { name, tone, calendar } = v as { name?: unknown; tone?: unknown; calendar?: unknown };
+  if (!isToneToken(tone)) return null;
+  if (calendar === true) return { name: '', tone, calendar: true };
+  if (typeof name !== 'string') return null;
   const clean = name.replace(/[\u0000-\u001f\u007f-\u009f​-‏‪-‮⁦-⁩﻿]/g, '').trim().slice(0, MAX_CATEGORY_CHARS);
   return clean === '' ? null : { name: clean, tone };
 }
