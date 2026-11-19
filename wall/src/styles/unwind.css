@@ -3961,11 +3961,11 @@ button.sp-qrow:hover {
   outline: 3px solid var(--cyan);
   outline-offset: 2px;
 }
-/* Music sync: the first chip, a fixed 216 px (`SYNC_WIDTH`): the name starts and stops sync, the dots open the palette strip. Lit magenta while on. */
+/* Music sync: the first chip, a fixed 208 px (`SYNC_WIDTH`): the name starts and stops sync, the dots open the palette strip. Lit magenta while on. */
 .u-mood.u-sync {
   box-sizing: border-box;
-  width: 216px;
-  min-width: 216px;
+  width: 208px;
+  min-width: 208px;
   padding: 0;
   gap: 0;
   justify-content: flex-start;
@@ -4021,7 +4021,7 @@ button.sp-qrow:hover {
   border-radius: 17px;
 }
 .u-mood.u-sync.lit {
-  background: rgba(52, 10, 38, 0.9);
+  background: linear-gradient(rgba(255, 61, 154, 0.14), rgba(255, 61, 154, 0.14)), rgba(10, 7, 28, 0.9);
   border-color: var(--mag);
   color: var(--tx);
 }
@@ -4061,7 +4061,7 @@ button.sp-qrow:hover {
   padding: 0 10px 0 8px;
   border-radius: 17px;
   border: 1px solid var(--line);
-  background: rgba(15, 11, 42, 0.9);
+  background: rgba(10, 7, 28, 0.9);
   color: var(--dim);
   font: 500 17px/1 var(--body);
   white-space: nowrap;

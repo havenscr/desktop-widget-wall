@@ -9,7 +9,7 @@ import { resetHome, useHome } from '../homeStore';
 import { SYNC_WIDTH, SYNC_WORD, fitMoodRow, syncChipModel } from '../moodRow';
 import { OfficeMoods } from '../OfficeMoods';
 import { DEFAULT_LIGHT_SYNC, PALETTES, clampSettings, isHex, resolvePalette, type PaletteId } from './model';
-import { resetLightSync, useLightSync } from './store';
+import { attachPoll, resetLightSync, useLightSync } from './store';
 
 vi.setConfig({ testTimeout: 20_000 });
 
@@ -26,6 +26,7 @@ let running: boolean;
 let hue: boolean;
 let startWord: string | null;
 let startHold: boolean;
+let startGate: Promise<void> | null;
 const order = () => calls.map((c) => c.command);
 const count = (c: string) => calls.filter((x) => x.command === c).length;
 
@@ -45,6 +46,7 @@ beforeEach(() => {
   hue = false;
   startWord = null;
   startHold = false;
+  startGate = null;
   const answer = () => ({ stale: false, moods: list.map((m) => ({ ...m })), off, canWrite: true, writeBlock: null });
   mocks.set('wall2_office_moods', () => answer());
   mocks.set('wall2_office_mood', (args) => {
@@ -62,6 +64,7 @@ beforeEach(() => {
   mocks.set('wall2_lightsync_start', async (args) => {
     calls.push({ command: 'wall2_lightsync_start', args });
     if (startHold) await new Promise<never>(() => undefined);
+    if (startGate) await startGate;
     if (startWord) throw startWord;
     running = true;
     // Start turns the Plays on: the home app's mood read no longer shows one lit.
@@ -298,4 +301,79 @@ it('Album art sends the colours of the cover now playing, read from the lines fo
   expect(sent.palette.colors).toEqual(['#ff0000', '#00ff00', '#0000ff']);
   useNowPlayingStore.setState({ art: null });
   resetCoverTint();
+});
+
+const deferStart = () => {
+  let open!: () => void;
+  startGate = new Promise<void>((r) => (open = r));
+  return open;
+};
+
+it('a mood clicked while the start is out wins: sync stops without lights back, then that mood applies', async () => {
+  const open = deferStart();
+  await show();
+  fireEvent.click(main());
+  await flush();
+  fireEvent.click(mood('gaming'));
+  await flush();
+  expect(count('wall2_office_mood')).toBe(0);
+  open();
+  await flush(50);
+  expect(order()).toEqual(['wall2_lightsync_start', 'wall2_lightsync_stop', 'wall2_office_mood']);
+  expect(calls[1].args).toEqual({ restorePanels: true });
+  expect(calls[2].args?.id).toBe('gaming');
+  expect(useLightSync.getState().status).toBeNull();
+});
+
+it('Off clicked while the start is out wins, and the last click of two wins', async () => {
+  const open = deferStart();
+  await show();
+  fireEvent.click(main());
+  await flush();
+  fireEvent.click(mood('gaming'));
+  fireEvent.click(mood('off'));
+  open();
+  await flush(50);
+  expect(order()).toEqual(['wall2_lightsync_start', 'wall2_lightsync_stop', 'wall2_office_off']);
+});
+
+it('unmounting the chip stops the status polling, and a remount resumes it', async () => {
+  running = true;
+  const view = await show();
+  await flush(0);
+  const base = count('wall2_lightsync_status');
+  mocks.set('wall2_lightsync_status', () => {
+    calls.push({ command: 'wall2_lightsync_status' });
+    return { paired: true, bridgeChanged: false, running, starting: false, lastError: null, stoppedHueSync: false };
+  });
+  await flush(4100);
+  expect(count('wall2_lightsync_status')).toBeGreaterThan(0);
+  view.unmount();
+  const after = count('wall2_lightsync_status');
+  await flush(10_000);
+  expect(count('wall2_lightsync_status')).toBe(after);
+  expect(base).toBe(0);
+  const detach = attachPoll();
+  await flush(2100);
+  expect(count('wall2_lightsync_status')).toBeGreaterThan(after);
+  detach();
+});
+
+it('a failed stop keeps polling', async () => {
+  running = true;
+  await show();
+  await flush(2100);
+  mocks.set('wall2_lightsync_stop', () => {
+    throw 'nope';
+  });
+  mocks.set('wall2_lightsync_status', () => {
+    calls.push({ command: 'wall2_lightsync_status' });
+    return { paired: true, bridgeChanged: false, running: true, starting: false, lastError: null, stoppedHueSync: false };
+  });
+  await act(async () => {
+    await useLightSync.getState().stop();
+  });
+  const n = count('wall2_lightsync_status');
+  await flush(4100);
+  expect(count('wall2_lightsync_status')).toBeGreaterThan(n);
 });

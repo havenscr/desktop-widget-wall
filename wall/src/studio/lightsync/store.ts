@@ -42,6 +42,8 @@ export interface LightSyncState {
   stop: () => Promise<void>;
   /** Stop, then apply the remembered mood (with none, the stop alone). */
   lightsBack: () => Promise<void>;
+  /** A mood chip (id) or Off (null) was clicked: stops sync if it is on or coming on (no Lights back), then applies it. A click during a start or stop is queued; the last one wins. */
+  choose: (id: string | null) => Promise<void>;
   /** The chip's own click. */
   toggle: () => Promise<void>;
   setPalette: (id: PaletteId) => void;
@@ -57,12 +59,37 @@ export const isOn = (s: Pick<LightSyncState, 'starting' | 'status'>): boolean =>
 const word = (e: unknown): string => (typeof e === 'string' ? e : e instanceof Error ? e.message : 'failed');
 
 let timer: ReturnType<typeof setInterval> | undefined;
+/** How many mounted chips read the status; the timer runs only while one is mounted. */
+let pollOwners = 0;
 function pollWhile(on: boolean): void {
-  if (on && timer === undefined) timer = setInterval(() => void useLightSync.getState().poll(), SYNC_POLL_MS);
+  if (on && pollOwners > 0 && timer === undefined) timer = setInterval(() => void useLightSync.getState().poll(), SYNC_POLL_MS);
   if (!on && timer !== undefined) {
     clearInterval(timer);
     timer = undefined;
   }
+}
+
+/** A chip mounts: it may poll. Returns the cleanup; the last owner to leave stops the timer. Safe across remounts. */
+export function attachPoll(): () => void {
+  pollOwners += 1;
+  let released = false;
+  if (isOn(useLightSync.getState())) pollWhile(true);
+  return () => {
+    if (released) return;
+    released = true;
+    pollOwners = Math.max(0, pollOwners - 1);
+    if (pollOwners === 0) pollWhile(false);
+  };
+}
+
+/** The user's last click on a mood or Off while sync was starting or stopping; it is applied once sync is down. The last click wins. */
+let pendingChoice: { id: string | null } | undefined;
+function drainChoice(): Promise<void> {
+  const c = pendingChoice;
+  pendingChoice = undefined;
+  if (!c) return Promise.resolve();
+  const st = useHome.getState();
+  return c.id === null ? st.applyOff() : st.applyMood(c.id);
 }
 
 const fresh = () => {
@@ -96,10 +123,31 @@ export const useLightSync = create<LightSyncState>((set, get) => ({
       }
       set({ starting: false, status, hueNote: status?.stoppedHueSync === true, failure: status?.lastError ?? null });
       pollWhile(true);
+      // A mood or Off was clicked while the start was out: it wins. Sync stops without Lights back, then it applies.
+      if (pendingChoice) {
+        await get().stop();
+        if (get().failure === null) await drainChoice();
+        else pendingChoice = undefined;
+      }
     } catch (e) {
       set({ starting: false, failure: word(e), status: null, remembered: null });
       pollWhile(false);
+      await drainChoice();
     }
+  },
+  async choose(id) {
+    pendingChoice = { id };
+    const s = get();
+    // The start or stop in flight drains it when it ends.
+    if (s.starting || s.stopping) return;
+    if (isOn(s)) {
+      await get().stop();
+      if (get().failure !== null) {
+        pendingChoice = undefined;
+        return;
+      }
+    }
+    await drainChoice();
   },
   async stop() {
     if (get().stopping) return;
@@ -110,6 +158,8 @@ export const useLightSync = create<LightSyncState>((set, get) => ({
       set({ status: null, failure: null, hueNote: false });
     } catch (e) {
       set({ failure: word(e) });
+      // The stop failed: sync is still running, so the status keeps being read.
+      pollWhile(isOn(get()));
     } finally {
       set({ stopping: false });
     }
@@ -117,8 +167,16 @@ export const useLightSync = create<LightSyncState>((set, get) => ({
   async lightsBack() {
     const back = get().remembered;
     await get().stop();
-    if (get().failure !== null) return;
+    if (get().failure !== null) {
+      pendingChoice = undefined;
+      return;
+    }
     set({ remembered: null });
+    // A mood or Off clicked during the stop is the user's last action; it replaces Lights back.
+    if (pendingChoice) {
+      await drainChoice();
+      return;
+    }
     if (back !== null) await useHome.getState().applyMood(back);
   },
   async toggle() {
@@ -146,9 +204,10 @@ export const useLightSync = create<LightSyncState>((set, get) => ({
     return true;
   },
   async poll() {
+    if (get().stopping) return;
     try {
       const status = await lightSyncStatus();
-      if (get().starting) return;
+      if (get().starting || get().stopping || pollOwners === 0) return;
       const wasOn = get().status?.running === true;
       // Sync ended by itself (a lock, silence, a lost link): the chip goes dark, a lost link says why.
       if (wasOn && !status.running && !status.starting) {
@@ -170,6 +229,7 @@ export const useLightSync = create<LightSyncState>((set, get) => ({
 
 export function resetLightSync(): void {
   pollWhile(false);
+  pendingChoice = undefined;
   useLightSync.setState({ ...fresh(), status: null, starting: false, stopping: false, failure: null, hueNote: false, remembered: null, stripOpen: false, context: {} });
 }
 

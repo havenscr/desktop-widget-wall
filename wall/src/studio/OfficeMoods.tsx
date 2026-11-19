@@ -19,7 +19,7 @@ import {
 } from './moodRow';
 import { useMoodsPolling } from './useMoodsPolling';
 import { PaletteStrip, SyncChip } from './SyncChip';
-import { isOn, useLightSync } from './lightsync/store';
+import { useLightSync } from './lightsync/store';
 
 const LABEL_WORD = 'Office moods';
 /** The label pill's own parts: 9 px of padding each side, the 18 px bulb and its 8 px gap, letter spacing 3 px. */
@@ -160,14 +160,8 @@ export function OfficeMoods() {
   const click = (chip: ChipModel) => {
     // Nothing is sent while this PC may not write or a write is out; the native side checks again.
     if (row.blocked || row.waiting) return;
-    const ls = useLightSync.getState();
-    if (ls.starting || ls.stopping) return;
-    const apply = () => {
-      const st = useHome.getState();
-      return chip.id === null ? st.applyOff() : st.applyMood(chip.id);
-    };
-    // Sync running: it stops first, without Lights back; then the chosen mood (or Off) is applied.
-    void (isOn(ls) ? ls.stop().then(() => (useLightSync.getState().failure === null ? apply() : undefined)) : apply());
+    // Sync is stopped first without Lights back (queued when a start or stop is out; the last click wins), then the mood or Off applies.
+    void useLightSync.getState().choose(chip.id);
   };
   const goBack = () => {
     if (row.blocked || row.waiting || !row.canBack) return;

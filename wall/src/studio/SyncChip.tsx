@@ -2,7 +2,7 @@ import { IconAlertTriangle, IconChevronUp, IconLoader2, IconWaveSine } from '@ta
 import { useEffect, useState, type CSSProperties } from 'react';
 import { tip } from '../ui/HoverTip';
 import { PALETTES, type PaletteEntry } from './lightsync/model';
-import { isOn, useLightSync } from './lightsync/store';
+import { attachPoll, isOn, useLightSync } from './lightsync/store';
 import { SYNC_WORD, syncChipModel, syncTip, type SyncChipInput } from './moodRow';
 
 const NOT_YET = 'Your own colours come in a later update.';
@@ -22,7 +22,10 @@ export function useSyncInput(): SyncChipInput & { on: boolean } {
 
 function SyncTip() {
   // Drawn from the store as it is when the tip shows; "Stopped Hue Sync" is taken here, so it shows once.
-  const [hue] = useState(() => useLightSync.getState().takeHueNote());
+  const [hue, setHue] = useState(false);
+  useEffect(() => {
+    if (useLightSync.getState().takeHueNote()) setHue(true);
+  }, []);
   const s = useLightSync.getState();
   const name = PALETTES.find((p) => p.id === s.palette)?.name ?? 'Synthwave';
   const t = syncTip({ starting: s.starting, running: s.status?.running === true, failure: s.failure, paletteName: name, hueNote: hue });
@@ -41,7 +44,9 @@ export function SyncChip({ blocked }: { blocked: boolean }) {
   const palette = useLightSync((s) => s.palette);
   // The first read: sync may already be running (the page was reopened, or a key started it).
   useEffect(() => {
+    const detach = attachPoll();
     void useLightSync.getState().poll();
+    return detach;
   }, []);
   const m = syncChipModel(input);
   const entry = PALETTES.find((p) => p.id === palette) ?? PALETTES[0];

@@ -109,7 +109,7 @@ const rule = (variant, results, emit) => {
       if ((c.l < s.l - 0.5 || c.r > s.r + 0.5) && !(CUTS_OK.includes(variant.name) && c.text !== 'Music sync')) fails.push('officemoods: chip "' + c.text + '" leaves the row box');
     }
     for (let i = 1; i < m.chips.length; i++) if (m.chips[i].l < m.chips[i - 1].r - 0.5 && !CUTS_OK.includes(variant.name)) fails.push('officemoods: chips "' + m.chips[i - 1].text + '" and "' + m.chips[i].text + '" overlap');
-    if (!m.sync || Math.abs(m.sync.w - 216) > 0.5) fails.push('officemoods: the Music sync chip is ' + (m.sync ? r1(m.sync.w) : 'missing') + ' px wide (216, fixed)');
+    if (!m.sync || Math.abs(m.sync.w - 208) > 0.5) fails.push('officemoods: the Music sync chip is ' + (m.sync ? r1(m.sync.w) : 'missing') + ' px wide (208, fixed)');
     else if (!m.syncFirst) fails.push('officemoods: the Music sync chip is not the first chip');
     const STRIP_V = variant.name.includes(NAMES.strip);
     if (STRIP_V && !m.strip) fails.push('officemoods: the palette strip is not open');
