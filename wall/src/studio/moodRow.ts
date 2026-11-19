@@ -21,10 +21,10 @@ export const LABEL_MARGIN = 2;
 /** The Off chip: 28 px of padding, 2 px of border, and (while its write is out) a 14 px icon and its 8 px gap. */
 export const OFF_FIXED = 30;
 export const OFF_BUSY_EXTRA = 22;
-/** The Back to normal chip: 2 px of border, 25 px of padding, the 18 px arrow and its 8 px gap (the words are measured). */
+/** The As before chip: 2 px of border, 25 px of padding, the 18 px arrow and its 8 px gap (the words are measured). */
 export const BACK_FIXED = 53;
-export const BACK_WORD = 'Back to normal';
-/** Off or Back to normal drawn as the icon alone (the last steps of the fit rule): at least a 40 px click. */
+export const BACK_WORD = 'As before';
+/** Off or As before drawn as the icon alone (the last steps of the fit rule): at least a 40 px click. */
 export const ICON_CHIP = 40;
 /** The home app's own caps, mirrored by the native side (`wall2_studio.rs`). */
 export const MOOD_MAX = 12;
@@ -57,9 +57,9 @@ export interface Fit {
   label: boolean;
   /** Each name's text is at most this wide (an ellipsis after it); null when none is cut. */
   cap: number | null;
-  /** Back to normal is the arrow alone (names are already at the floor). */
+  /** As before is the arrow alone (names are already at the floor). */
   backIcon: boolean;
-  /** Off is the icon alone (Back to normal already is). */
+  /** Off is the icon alone (As before already is). */
   offIcon: boolean;
   /** Even then the row is wider than its box: the slot clips at its left edge instead of spilling over its neighbours. */
   clip: boolean;
@@ -67,9 +67,9 @@ export interface Fit {
 
 /**
  * The row's width limit as a rule on the names. `nameWidths` are the text widths of the mood names, `labelWidth`
- * the whole label pill, `offWidth` the whole Off chip (0 when there is none), `backWidth` the whole Back to normal chip (0 when not drawn).
+ * the whole label pill, `offWidth` the whole Off chip (0 when there is none), `backWidth` the whole As before chip (0 when not drawn).
  * 1. As is when it fits 1124. 2. Else the label goes (the group keeps its aria-label). 3. Else every name is cut at
- * the largest shared width that fits (long names shrink first), never under `NAME_MIN` of text. 4. Else Back to normal
+ * the largest shared width that fits (long names shrink first), never under `NAME_MIN` of text. 4. Else As before
  * becomes its arrow alone (`ICON_CHIP` wide). 5. Else Off does too. 6. Else the slot clips its left edge. Mood chips never go under 76 px.
  */
 export function fitMoodRow(nameWidths: readonly number[], labelWidth: number, offWidth: number, backWidth = 0): Fit {
@@ -119,7 +119,7 @@ export interface LineModel {
 export interface RowModel {
   chips: ChipModel[];
   stale: boolean;
-  /** A mood is on: the Back to normal chip is live. */
+  /** A mood is on: the As before chip is live. */
   canBack: boolean;
   /** This PC may not change the home app: dashed look, clicks send nothing. */
   blocked: boolean;
@@ -238,7 +238,7 @@ export function rowModel(s: RowInput): RowModel | null {
 }
 
 /** A chip's tip: "<label>: <line>" (the label alone when it has no line), Off its own two sentences, and a second line for a block, a failure or a write in flight. */
-/** The Back to normal chip's tip: the home app's own words for the call, or why it does nothing. */
+/** The As before chip's tip: the home app's own words for the call, or why it does nothing. */
 export function backTip(row: RowModel, iconOnly = false): { first: string; second: string | null; warn: boolean } {
   const t = backTipFull(row);
   // Drawn as the arrow alone, the tip names the chip first and keeps the home words under it.
@@ -247,7 +247,7 @@ export function backTip(row: RowModel, iconOnly = false): { first: string; secon
 
 function backTipFull(row: RowModel): { first: string; second: string | null; warn: boolean } {
   if (!row.canBack) return { first: 'Nothing to go back from', second: row.warnText, warn: row.warnText !== null };
-  const first = 'Room back to the daytime light, key lights off; panels stay as they are';
+  const first = 'Puts the office back the way it was before the mood';
   if (row.warnText) return { first, second: row.warnText, warn: true };
   if (row.waiting) return { first, second: 'Asking the home app', warn: false };
   return { first, second: null, warn: false };

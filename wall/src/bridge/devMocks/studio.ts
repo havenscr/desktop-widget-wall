@@ -25,7 +25,7 @@ import { knob } from './long';
  *   ?studio=absent|notsetup|ready|onair|recording|changed|stale|nozone|threelooks|fourlooks|eightlooks|sixlooks|down|lost|slow
  *   ?studiowrite=ok|forbidden|homeunset|dark|busy|lights|unknown|unreachable|refused|private|notset|failed
  *   ?desktoken=unset|set|unreadable|insecure
- *   ?office=absent|empty|two|five|six|twelve|down
+ *   ?office=absent|empty|two|five|six|desk|twelve|down
  *   ?officeoff=none|offered|on   ?officemood=<id>|none   ?officestale=1   ?officeslow=1
  *
  *   absent        the home app does not offer studio routes (the default: every older page is the day-one page)
@@ -45,7 +45,7 @@ import { knob } from './long';
  *   slow          ready, but a preset answers after 3 seconds
  *   studiowrite   the answer of every write: ok (default), or the home app's refusal
  *   desktoken     unset (default): no token on this PC; set; unreadable; insecure: set, but the base may not carry it
- *   office        absent (default), empty, two, five, six or twelve moods (twelve with names near 40 characters and
+ *   office        absent (default), empty, two, five, six, desk (Relax, Gaming, Recording, Meeting) or twelve moods (twelve with names near 40 characters and
  *                 lines near 120), or down
  *   officeoff     none (default: the answer has no `off`), offered (the Off chip), on (offered, and the lights are off)
  *   officemood    the id of the mood on at the start, or none (default)
@@ -143,6 +143,14 @@ const MOODS = [
   { id: 'gaming', label: 'Gaming', line: 'Room 25%, panels 10%' },
   { id: 'meeting', label: 'Meeting', line: 'Room 80%, desk lamp on' },
   { id: 'night', label: 'Night', line: 'Room 10%' },
+];
+
+/** The moods the Home tab's buttons look for (Gaming and Recording), with Relax and Meeting. */
+const DESK_MOODS = [
+  { id: 'relax', label: 'Relax', line: 'Room 35%, neon 30%' },
+  { id: 'gaming', label: 'Gaming', line: 'Room 25%, panels 10%' },
+  { id: 'recording', label: 'Recording', line: 'Room 80%, panels calm, key lights on' },
+  { id: 'meeting', label: 'Meeting', line: 'Room 80%, desk lamp on' },
 ];
 
 /** Twelve moods with names near the native cap of 40 characters and lines near the cap of 120. */
@@ -286,7 +294,9 @@ function registerHomeHalf(keys: LightMock): void {
         ? MOODS.slice(0, 2)
         : officeKind === 'five'
           ? MOODS.slice(0, 5)
-          : officeKind === 'twelve'
+          : officeKind === 'desk'
+            ? DESK_MOODS
+            : officeKind === 'twelve'
             ? TWELVE.map(([id, label, line]) => ({ id, label, line }))
             : MOODS;
 

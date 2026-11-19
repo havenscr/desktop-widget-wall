@@ -244,7 +244,7 @@ it('a slider drag keeps only the newest waiting value for a group', async () => 
   expect(useHome.getState().writes).toBe(0);
 });
 
-it('a preset that sets the key lights, and Back to normal, read the key lights again; a look does not', async () => {
+it('a preset that sets the key lights, and As before, read the key lights again; a look does not', async () => {
   await useHome.getState().readStudio();
   await useKeyLightsRefresh();
   const before = keyReads;
@@ -427,7 +427,7 @@ it('applyOff: a refusal sets moodFail on the Off id for 5 seconds and reads agai
   expect(useHome.getState().moodFail).toEqual({ id: OFFICE_OFF, word: 'on-air' });
   expect(calls.filter((c) => c.command === 'wall2_office_moods')).toHaveLength(n + 1);
   expect(useHome.getState().moods?.moods[0].active).toBe(true);
-  expect(TEXT.onAir).toBe('The studio is on air. End it with Back to normal on On Air first.');
+  expect(TEXT.onAir).toBe('The studio is on air. End it with As before on On Air first.');
   await flush(NOTE_MS + 10);
   expect(useHome.getState().moodFail).toBeNull();
   word = 'forbidden';

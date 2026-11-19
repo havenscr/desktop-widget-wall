@@ -102,7 +102,7 @@ function OfficeChip() {
 }
 
 /** The key lights switch, as On Air draws it. Without a working light it is a dead switch with a plain tip. */
-function KeyTile({ snap }: { snap: Snapshot }) {
+export function KeyTile({ snap }: { snap: Snapshot }) {
   const v = viewOf(snap);
   const on = anyOn(snap);
   const target = keyTarget(snap);
@@ -131,7 +131,7 @@ function KeyTile({ snap }: { snap: Snapshot }) {
 }
 
 /** Fine tune at the right end of the moods row; when the key lights cannot be tuned, the action that fixes it. */
-function Trailing({ snap }: { snap: Snapshot }) {
+export function Trailing({ snap }: { snap: Snapshot }) {
   const drawer = useKeyLights((s) => s.drawer);
   const v = viewOf(snap);
   if (v === 'live' || v === 'one') {
@@ -165,7 +165,7 @@ function Trailing({ snap }: { snap: Snapshot }) {
 
 /**
  * The studio lights a meeting needs, under the people: one row of moods (the presets the home app lists, at most
- * three), Back to normal and Fine tune; one row with the Key lights switch, the Panels switch and the office
+ * three), As before and Fine tune; one row with the Key lights switch, the Panels switch and the office
  * lights as a mood chip. Same calls as the On Air block; it replaces the old Lights key and chip.
  */
 export function MeetLights() {

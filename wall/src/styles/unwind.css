@@ -3402,8 +3402,10 @@
 .sp-grid3 {
   grid-template-columns: repeat(3, minmax(0, 1fr));
   column-gap: 18px;
+  /* All 5 px of room for a tile's hover and focus ring (2 px outline, 3 px offset) sits inside the scroll area, so no ring is
+     clipped and the grid is never wider than its scroller (no sideways scrollbar). Tiles are about 3 px narrower for it. */
   padding: 5px 5px 2px;
-  margin: -5px -5px 0;
+  margin: -5px 0 0;
 }
 .sp-gnone {
   padding: 8px 4px;
@@ -3864,7 +3866,7 @@ button.sp-qrow:hover {
   opacity: 1;
   box-shadow: 0 0 0 1.5px rgba(255, 255, 255, 0.55), 0 0 10px 3px var(--glow);
 }
-/* Back to normal: the last chip, beside Off. Dashed and dim while no mood is on, as the Studio sheet's. */
+/* As before: the last chip, beside Off. Dashed and dim while no mood is on, as the Studio sheet's. */
 .u-mood.icon-only {
   min-width: 40px;
   width: 40px;

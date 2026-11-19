@@ -47,7 +47,7 @@ export function SheetWhy({ studio, away }: { studio: Studio; away: boolean }) {
   );
 }
 
-/** The preset tiles at the top of the sheet: each preset's name and its line, then Back to normal. */
+/** The preset tiles at the top of the sheet: each preset's name and its line, then As before. */
 export function SheetPresets({ studio, may }: { studio: Studio; may: boolean }) {
   const applying = useHome((s) => s.applying);
   const dis = !may;
@@ -82,7 +82,7 @@ export function SheetPresets({ studio, may }: { studio: Studio; may: boolean }) 
           onClick={dis || !studio.canNormal ? undefined : () => void useHome.getState().goNormal()}
           {...tip(!studio.canNormal ? 'Nothing to go back from' : (studio.normalLine ?? 'Goes back to how the room was before'))}
         >
-          <span className="st-pt-n">Back to normal</span>
+          <span className="st-pt-n">As before</span>
           <span className="st-pt-l">{studio.canNormal ? (studio.normalLine ?? '') : 'Nothing to go back from'}</span>
         </button>
       </div>

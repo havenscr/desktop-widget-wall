@@ -663,3 +663,24 @@ it('under reduced motion the layouts change at once', async () => {
     window.matchMedia = original;
   }
 });
+
+it('compact, both at once: music pause and skip, video play or pause and stop, all on the one line', async () => {
+  const pauseAll = vi.fn();
+  const skip = vi.fn();
+  const { container } = render(<NowBlock {...props({ s: summary({ canSkip: true }), compact: true, pauseAll, skip })} />);
+  await play(0);
+  expect(block(container).dataset.layout).toBe('both');
+  expect(block(container).classList.contains('compact')).toBe(true);
+  expect([...container.querySelectorAll('.np-btns button')].map((b) => b.getAttribute('aria-label'))).toEqual(['Previous track', 'Pause', 'Next track', 'Pause video', 'Stop the video']);
+  fireEvent.click(label(container, 'Pause')!);
+  expect(pauseAll).toHaveBeenCalled();
+  fireEvent.click(label(container, 'Next track')!);
+  expect(skip).toHaveBeenCalledWith('next');
+  fireEvent.click(label(container, 'Pause video')!);
+  expect(useWatchStore.getState().paused).toBe(true);
+  expect(label(container, 'Play video')).toBeTruthy();
+  fireEvent.click(label(container, 'Play video')!);
+  expect(useWatchStore.getState().paused).toBe(false);
+  fireEvent.click(label(container, 'Stop the video')!);
+  expect(useWatchStore.getState().playing).toBeNull();
+});

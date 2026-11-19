@@ -1,12 +1,12 @@
-import { useEffect, useRef, useState } from 'react';
-import { IconAlertTriangle, IconChevronLeft, IconChevronRight, IconGitPullRequest, IconX } from '@tabler/icons-react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { IconAlertTriangle, IconCalendar, IconChevronLeft, IconChevronRight, IconGitPullRequest, IconX } from '@tabler/icons-react';
 import { STAGES } from '../agents/model';
 import { invoke } from '../bridge/tauri';
 import { agentsStale, agentsUntil, useAgentsStore } from '../agents/useAgents';
 import { tip } from '../ui/HoverTip';
 import { useBusyToday } from './AgentRow';
 import { busyLevels, busyStep, knownLimit, shortSpan, stepsFor, stepWords, timeBySteps, type BusySpan } from './busy';
-import { axisRange, dayBefore, dayStart, isoDay, loadDay, loadDays, longDate, neighbours, recordRows, todayRows, totalsText, useDaysStore, type PanelRow } from './days';
+import { axisRange, dayBefore, dayStart, isoDay, loadDay, loadDays, longDate, neighbours, recordRows, todayRows, totalsText, useDaysStore, type DayCount, type PanelRow } from './days';
 import { useBehindDrawer } from './DrawerScrim';
 import { hm, hourText, shortTime, wallHour } from './model';
 
@@ -49,7 +49,7 @@ function clockAt(h: number): string {
   return `${hh % 12 || 12}:${String(m % 60).padStart(2, '0')} ${hh < 12 ? 'AM' : 'PM'}`;
 }
 /** The "Sessions busy at once" row: bar height for each step (one, two, three, at the limit, over it). */
-const BAND_H = [0, 6, 11, 16, 21, 28];
+const BAND_H = [0, 4, 6, 8, 10, 12];
 
 /**
  * "Busy at once" under the heading: the time spent at each count of sessions working at once
@@ -104,6 +104,80 @@ function BusyLine({ spans, limit, today }: { spans: BusySpan[]; limit: number; t
   );
 }
 
+const WEEKDAYS = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
+const ym = (date: string) => ({ y: Number(date.slice(0, 4)), m: Number(date.slice(5, 7)) });
+const shiftMonth = (y: number, m: number, by: number) => {
+  const i = y * 12 + (m - 1) + by;
+  return { y: Math.floor(i / 12), m: (i % 12) + 1 };
+};
+const pad2 = (n: number) => String(n).padStart(2, '0');
+
+/**
+ * The month calendar behind the date button. A day with a saved record (the helper's day list, each
+ * date with its session count) is bright with a small bar sized by its count; every other day is dim
+ * and cannot be picked, today included when it has no record (the Today button is its way in). Today
+ * has its own ring and the shown day is cyan; the two are independent. Days after today are ignored.
+ * The months it walks run from the earliest saved day to this one. On open, focus goes to the shown
+ * day (or the first pickable one).
+ */
+function DayCalendar({ days, today, shown, onPick }: { days: readonly DayCount[]; today: string; shown: string; onPick: (date: string) => void }) {
+  const [view, setView] = useState(() => ym(shown));
+  const calRef = useRef<HTMLDivElement>(null);
+  const counts = useMemo(() => new Map(days.filter((d) => d.date <= today).map((d) => [d.date, d.sessions])), [days, today]);
+  const earliest = useMemo(() => ym([today, ...counts.keys()].sort()[0]), [counts, today]);
+  useEffect(() => {
+    const el = calRef.current;
+    if (!el) return;
+    (el.querySelector<HTMLButtonElement>('.at-cal-day.shown:not(:disabled)') ?? el.querySelector<HTMLButtonElement>('.at-cal-day:not(:disabled)') ?? el).focus();
+  }, []);
+  const latest = ym(today);
+  const idx = (v: { y: number; m: number }) => v.y * 12 + v.m;
+  const first = new Date(Date.UTC(view.y, view.m - 1, 1)).getUTCDay();
+  const length = new Date(Date.UTC(view.y, view.m, 0)).getUTCDate();
+  const most = Math.max(1, ...[...counts.entries()].filter(([d]) => d.startsWith(`${view.y}-${pad2(view.m)}`)).map(([, n]) => n));
+  const title = new Date(Date.UTC(view.y, view.m - 1, 1)).toLocaleDateString('en-US', { month: 'long', year: 'numeric', timeZone: 'UTC' });
+  const cells: (number | null)[] = [...Array(first).fill(null), ...Array.from({ length }, (_, i) => i + 1)];
+  return (
+    <div className="at-cal" role="dialog" aria-label="Pick a day" tabIndex={-1} ref={calRef}>
+      <div className="at-cal-head">
+        <button type="button" className="at-arrow" aria-label="Earlier month" disabled={idx(view) <= idx(earliest)} onClick={() => setView(shiftMonth(view.y, view.m, -1))}>
+          <IconChevronLeft stroke={1.8} aria-hidden="true" />
+        </button>
+        <span className="at-cal-title">{title}</span>
+        <button type="button" className="at-arrow" aria-label="Later month" disabled={idx(view) >= idx(latest)} onClick={() => setView(shiftMonth(view.y, view.m, 1))}>
+          <IconChevronRight stroke={1.8} aria-hidden="true" />
+        </button>
+      </div>
+      <div className="at-cal-grid">
+        {WEEKDAYS.map((w, i) => (
+          <span key={i} className="at-cal-wd" aria-hidden="true">
+            {w}
+          </span>
+        ))}
+        {cells.map((d, i) => {
+          if (d === null) return <span key={`e${i}`} />;
+          const date = `${view.y}-${pad2(view.m)}-${pad2(d)}`;
+          const n = counts.get(date);
+          const live = n !== undefined;
+          return (
+            <button
+              key={date}
+              type="button"
+              className={`at-cal-day${live ? ' has' : ''}${date === shown ? ' shown' : ''}${date === today ? ' today' : ''}`}
+              disabled={!live}
+              aria-label={live ? `${longDate(date)}${n !== undefined ? `, ${n} ${n === 1 ? 'session' : 'sessions'}` : ''}` : `${longDate(date)}, no record`}
+              onClick={() => onPick(date)}
+            >
+              {d}
+              {n !== undefined && <i style={{ width: `${Math.max(20, Math.round((n / most) * 100))}%` }} aria-hidden="true" />}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 /**
  * "Agents today", over the horizon: one row per session with its number, title, stage
  * coloured spans, pull request marks and an end word (merged, carried over, waiting on you,
@@ -126,6 +200,13 @@ export function AgentsToday({ now, onClose }: { now: number; onClose: () => void
     const id = setTimeout(() => setOpenFailed(false), 8000);
     return () => clearTimeout(id);
   }, [openFailed]);
+  const [calOpen, setCalOpen] = useState(false);
+  const calRef = useRef<HTMLSpanElement>(null);
+  const dateBtn = useRef<HTMLButtonElement>(null);
+  const closeCal = () => {
+    setCalOpen(false);
+    dateBtn.current?.focus();
+  };
   const open = (r: PanelRow) => {
     setOpenFailed(false);
     const call = r.openDate ? invoke('wall2_focus_day_session', { id: r.id, date: r.openDate }) : invoke('wall2_focus_omnigent', { id: r.id });
@@ -142,11 +223,26 @@ export function AgentsToday({ now, onClose }: { now: number; onClose: () => void
   }, [shown]);
   useEffect(() => {
     const key = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
+      if (e.key !== 'Escape') return;
+      // With the calendar open, Escape closes the calendar only: the capture phase and
+      // stopPropagation keep it from reaching any other Escape listener (the popover's own too).
+      if (calOpen) {
+        e.stopPropagation();
+        e.stopImmediatePropagation();
+        closeCal();
+      } else onClose();
     };
-    window.addEventListener('keydown', key);
-    return () => window.removeEventListener('keydown', key);
-  }, [onClose]);
+    window.addEventListener('keydown', key, true);
+    return () => window.removeEventListener('keydown', key, true);
+  }, [onClose, calOpen]);
+  useEffect(() => {
+    if (!calOpen) return;
+    const down = (e: MouseEvent) => {
+      if (!calRef.current?.contains(e.target as Node)) closeCal();
+    };
+    document.addEventListener('mousedown', down);
+    return () => document.removeEventListener('mousedown', down);
+  }, [calOpen]);
   // The page behind is dimmed and inert; a click on the scrim (DrawerScrim) closes the panel.
   useBehindDrawer(ref, onClose, 'opener');
 
@@ -185,7 +281,7 @@ export function AgentsToday({ now, onClose }: { now: number; onClose: () => void
   const axis = axisRange(rows ?? [], isToday, nowHour);
   const tx = (h: number) => ((Math.min(axis.hi, Math.max(axis.lo, h)) - axis.lo) / (axis.hi - axis.lo)) * 100;
   const hours: number[] = [];
-  for (let h = axis.lo; h <= axis.hi; h += axis.step) hours.push(h);
+  for (let h = Math.ceil(axis.lo / axis.step) * axis.step; h <= axis.hi; h += axis.step) hours.push(h);
   const noWait = !isToday;
   // Busy at once: today from the live working spans (one rule with the meter and the strip),
   // a past day from its record's spans (hours from that day's midnight). The limit is the
@@ -230,7 +326,23 @@ export function AgentsToday({ now, onClose }: { now: number; onClose: () => void
             <button type="button" className="at-arrow" disabled={!nb.next} aria-label="Later day" onClick={() => nb.next && setShown(nb.next)} {...tip(nb.next ? (nb.next === today ? 'Today' : longDate(nb.next)) : 'This is today')}>
               <IconChevronRight stroke={1.8} aria-hidden="true" />
             </button>
-            <span className="at-date">{longDate(shown)}</span>
+            <span className="at-datewrap" ref={calRef}>
+              <button type="button" ref={dateBtn} className={`at-date${calOpen ? ' on' : ''}`} aria-haspopup="dialog" aria-expanded={calOpen} onClick={() => setCalOpen((o) => !o)} {...tip('Pick a day')}>
+                <IconCalendar stroke={1.8} aria-hidden="true" />
+                <span>{longDate(shown)}</span>
+              </button>
+              {calOpen && (
+                <DayCalendar
+                  days={days.days}
+                  today={today}
+                  shown={shown}
+                  onPick={(d) => {
+                    setShown(d);
+                    closeCal();
+                  }}
+                />
+              )}
+            </span>
           </div>
         )}
         <span className="at-legend" aria-hidden="true">
@@ -254,14 +366,13 @@ export function AgentsToday({ now, onClose }: { now: number; onClose: () => void
           )}
           <span>
             <IconGitPullRequest stroke={1.8} />
-            Pull request
+            PR opened
           </span>
         </span>
         <button type="button" className="at-close" aria-label="Close" onClick={onClose} {...tip('Close (Escape)')}>
           <IconX stroke={1.8} aria-hidden="true" />
         </button>
       </div>
-      {showBusy && <BusyLine spans={busySpans} limit={lim} today={isToday} />}
       <div className="at-axis" aria-hidden="true">
         {hours.map((h) => (
           <span key={h} style={{ left: `${tx(h)}%` }}>
@@ -269,6 +380,21 @@ export function AgentsToday({ now, onClose }: { now: number; onClose: () => void
           </span>
         ))}
       </div>
+      {showBusy && (
+        <div className="at-band">
+          <span className="at-track">
+            {band.map((b) => (
+              <i
+                key={b.from}
+                className={`b${b.step}`}
+                style={{ left: `${tx(b.from)}%`, width: `max(2px, calc(${tx(b.to) - tx(b.from)}% - 1px))`, height: BAND_H[b.step] }}
+                {...tip(`${clockAt(b.from)} to ${clockAt(b.to)}: ${b.lo === b.hi ? b.hi : `${b.lo} to ${b.hi}`} ${isToday ? 'working' : 'open'} at once${isToday && b.hi > lim ? `, over your limit of ${lim}` : ''}`)}
+              />
+            ))}
+            {isToday && <i className="at-limit" style={{ bottom: 2 + BAND_H[4] }} aria-hidden="true" />}
+          </span>
+        </div>
+      )}
       <div className="at-rows">
         <div className="at-grid" aria-hidden="true">
           {hours.map((h) => (
@@ -276,23 +402,6 @@ export function AgentsToday({ now, onClose }: { now: number; onClose: () => void
           ))}
           {isToday && rows && rows.length > 0 && <i className="at-now" style={{ left: `${tx(Math.min(nowHour, wallHour(until, now)))}%` }} />}
         </div>
-        {showBusy && (
-          <div className="at-band">
-            <span className="at-band-k">{isToday ? 'Sessions busy at once' : 'Sessions open at once'}</span>
-            <span className="at-track">
-              {band.map((b) => (
-                <i
-                  key={b.from}
-                  className={`b${b.step}`}
-                  style={{ left: `${tx(b.from)}%`, width: `max(2px, calc(${tx(b.to) - tx(b.from)}% - 1px))`, height: BAND_H[b.step] }}
-                  {...tip(`${clockAt(b.from)} to ${clockAt(b.to)}: ${b.lo === b.hi ? b.hi : `${b.lo} to ${b.hi}`} ${isToday ? 'working' : 'open'} at once${isToday && b.hi > lim ? `, over your limit of ${lim}` : ''}`)}
-                />
-              ))}
-              {isToday && <i className="at-limit" style={{ bottom: 3 + BAND_H[4] }} aria-hidden="true" />}
-            </span>
-            <span className="at-band-note">{isToday ? `dashed line: your limit of ${lim}` : 'from the saved record'}</span>
-          </div>
-        )}
         {loading && <Skeleton />}
         {rows && rows.length === 0 && <span className="at-none">{isToday ? 'No agent activity yet today' : 'No sessions recorded on this day'}</span>}
         {!loading && !rows && <span className="at-none">{note}</span>}
@@ -316,18 +425,21 @@ export function AgentsToday({ now, onClose }: { now: number; onClose: () => void
           >
             <span className="num">{r.num}</span>
             <span className="at-name">{r.title}</span>
+            <span className="at-prn">{r.pr !== null ? `PR ${r.pr}` : ''}</span>
             <span className="at-track">
+              {(() => {
+                const sp = r.spans.filter((x) => !(noWait && x.kind === 'wait'));
+                if (sp.length < 2) return null;
+                const a = tx(Math.min(...sp.map((x) => x.from)));
+                const z = tx(Math.max(...sp.map((x) => x.to)));
+                return <i className="at-join" style={{ left: `${a}%`, width: `${z - a}%` }} />;
+              })()}
               {r.spans
                 .filter((x) => !(noWait && x.kind === 'wait'))
                 .map((x, i) => (
                   <i key={i} className={`at-sg ${x.kind}`} style={{ left: `${tx(x.from)}%`, width: `max(4px, calc(${tx(x.to) - tx(x.from)}% - 2px))` }} />
                 ))}
-              {r.pr !== null && r.prAt !== null && (
-                <span className="at-pr" style={{ left: `${tx(r.prAt)}%` }}>
-                  <IconGitPullRequest stroke={1.8} aria-hidden="true" />
-                  PR {r.pr}
-                </span>
-              )}
+              {r.pr !== null && r.prAt !== null && <i className="at-prtick" style={{ left: `${tx(r.prAt)}%` }} />}
             </span>
             <span className={`at-end t-${END_TONE[r.end] ?? 'dim'}`}>{r.end}</span>
             <span className="at-time">{hm(r.workMs)}</span>
@@ -335,8 +447,11 @@ export function AgentsToday({ now, onClose }: { now: number; onClose: () => void
         ))}
       </div>
       <div className="at-foot">
-        <span>{rows && rows.length > 0 ? totalsText(rows, isToday) : ''}</span>
-        <span className={`at-note${openFailed ? ' warn' : ''}`}>{rows || openFailed ? foot : ''}</span>
+        {showBusy && <BusyLine spans={busySpans} limit={lim} today={isToday} />}
+        <div className="at-foot-line">
+          <span>{rows && rows.length > 0 ? totalsText(rows, isToday) : ''}</span>
+          <span className={`at-note${openFailed ? ' warn' : ''}`}>{rows || openFailed ? foot : ''}</span>
+        </div>
       </div>
     </div>
   );

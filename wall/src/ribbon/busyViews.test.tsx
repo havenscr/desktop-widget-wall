@@ -110,8 +110,8 @@ it('the header, a cell and the Busy at once line agree: five working at once, on
   expect(line.querySelector('.at-busy-sum')!.textContent).toBe('Over your limit of 4 for 24 m today');
   const band = [...r.container.querySelectorAll('.at-band .at-track i:not(.at-limit)')].map((i) => [i.className, (i as HTMLElement).style.height]);
   expect(band).toEqual([
-    ['b3', '16px'],
-    ['b5', '28px'],
+    ['b3', '8px'],
+    ['b5', '12px'],
   ]);
   // The meter's hover says the same and the rule.
   fireEvent.mouseEnter(meter);

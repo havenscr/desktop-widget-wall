@@ -30,7 +30,7 @@ export const TEXT = {
   needsPrivate: 'The desk token goes only to this PC or a tailnet address.',
   nothingToUndo: 'Nothing to go back from. This is what the home app reports now.',
   /** Off refused because the studio is on air (the home app's "Studio on air"). */
-  onAir: 'The studio is on air. End it with Back to normal on On Air first.',
+  onAir: 'The studio is on air. End it with As before on On Air first.',
 } as const;
 
 /** The office moods row's own key for the Off chip in `applying` and `moodFail`. A hyphen is never in a mood id, so a mood named Off cannot collide. */
@@ -77,7 +77,7 @@ export interface HomeState {
   readMoods: () => Promise<void>;
   applyPreset: (id: string) => Promise<void>;
   goNormal: () => Promise<void>;
-  /** The Back to normal chip of the Office moods row: the same call as `goNormal`, then the moods are read again. A 409 (no mood on) is a quiet no-op. */
+  /** The As before chip of the Office moods row: the same call as `goNormal`, then the moods are read again. A 409 (no mood on) is a quiet no-op. */
   goBackFromMood: () => Promise<void>;
   setGroup: (id: GroupId, on: boolean, level?: number) => Promise<void>;
   applyLook: (id: string) => Promise<void>;

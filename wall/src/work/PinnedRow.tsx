@@ -3,6 +3,7 @@ import { useEffect, useRef, useState, type KeyboardEvent, type MouseEvent } from
 import { invoke } from '../bridge/tauri';
 import { overlayOwnsPointer } from '../ribbon/DrawerScrim';
 import { tip } from '../ui/HoverTip';
+import { previewTip } from './ZonesPreview';
 import { useVisible } from '../ui/useVisible';
 import { isLayoutAction, layoutOffReason, useArrangeStatus } from './arrangeStatus';
 import { errorText } from './deckModel';
@@ -298,7 +299,9 @@ export function PinnedRow() {
                 aria-label={p.label}
                 data-kind={layoutOff ? undefined : kindOf(p)}
                 aria-disabled={layoutOff || undefined}
-                {...tip(
+                {...previewTip(
+                  p.action,
+                  layoutOff,
                   layoutOff
                     ? layoutOffReason(arrange)
                     : `${p.label}${p.group ? ` (${p.group})` : ''}${p.kind === 'check' ? ', a shortcut to check on your PC' : ''}.${p.how ? ` ${p.how}.` : ''} Right-click for more.`,

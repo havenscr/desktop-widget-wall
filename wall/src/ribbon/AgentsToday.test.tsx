@@ -1,3 +1,5 @@
+// @ts-ignore node's own file calls; one test reads the style sheet as text.
+import { readFileSync } from 'node:fs';
 import { act, fireEvent, render } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { lane, summary } from '../agents/fixtures';
@@ -89,7 +91,10 @@ it('Yesterday reads the saved record: merged, carried over, no wait, and the arr
   expect(r.container.querySelector('.at-date')!.textContent).toBe('Thursday, November 12');
   const rows = [...r.container.querySelectorAll('.at-row')] as HTMLElement[];
   expect(rows.map((x) => x.querySelector('.at-end')!.textContent)).toEqual(['merged', 'carried over']);
-  expect(rows[0].querySelector('.at-pr')!.textContent).toBe('PR 552');
+  expect(rows[0].querySelector('.at-prn')!.textContent).toBe('PR 552');
+  expect(rows[0].querySelector('.at-prtick')).not.toBeNull();
+  expect(rows[1].querySelector('.at-prn')!.textContent).toBe('');
+  expect(rows[1].querySelector('.at-prtick')).toBeNull();
   expect(r.container.querySelectorAll('.at-sg.wait')).toHaveLength(0);
   const foot = r.container.querySelector('.at-foot')!.textContent!;
   expect(foot).toContain('of agent work across 2 sessions');
@@ -208,4 +213,177 @@ it('a child id only in the live day log, or only in the names map, makes no row;
   fireEvent.click(rows[1]);
   await flush();
   expect(opened).toEqual([{ id: 'a1b2c3d4-0e09', date: '2026-11-13' }]);
+});
+
+const labels = (c: HTMLElement) => [...c.querySelectorAll('.at-axis span')].map((x) => x.textContent);
+
+it('the hour labels run every 3 hours on a full day, and a faint line joins a session\'s spans', async () => {
+  const r = render(<Panel />);
+  await flush();
+  fireEvent.click([...r.container.querySelectorAll('.at-seg button')][1] as HTMLElement);
+  await flush();
+  expect(labels(r.container)).toEqual(['9 AM', '12 PM', '3 PM', '6 PM', '9 PM', '12 AM']);
+  const rows = [...r.container.querySelectorAll('.at-row')] as HTMLElement[];
+  expect(rows[0].querySelector('.at-join')).not.toBeNull();
+  expect(rows[1].querySelector('.at-join')).toBeNull();
+  expect(rows[0].querySelector('.at-pr')).toBeNull();
+});
+
+it('the busy figures sit in the footer, and the open at once strip sits between the hours and the rows', async () => {
+  const r = render(<Panel />);
+  await flush();
+  fireEvent.click([...r.container.querySelectorAll('.at-seg button')][1] as HTMLElement);
+  await flush();
+  expect(r.container.querySelector('.at-foot .at-busy')).not.toBeNull();
+  const kids = [...r.container.querySelector('.agents-today')!.children].map((c) => c.className.split(' ')[0]);
+  expect(kids.indexOf('at-axis') + 1).toBe(kids.indexOf('at-band'));
+  expect(kids.indexOf('at-band') + 1).toBe(kids.indexOf('at-rows'));
+});
+
+const openCalendar = async (r: ReturnType<typeof render>) => {
+  fireEvent.click(r.container.querySelector('.at-date') as HTMLElement);
+  await flush();
+};
+
+it('the date is a button that opens a month calendar: recorded days bright with a count bar, the rest dim and not clickable', async () => {
+  const r = render(<Panel />);
+  await flush();
+  expect(r.container.querySelector('.at-cal')).toBeNull();
+  await openCalendar(r);
+  expect(r.container.querySelector('.at-cal-title')!.textContent).toBe('November 2026');
+  const day = (n: number) => [...r.container.querySelectorAll('.at-cal-day')][n - 1] as HTMLButtonElement;
+  expect(day(12).disabled).toBe(false);
+  expect(day(12).classList.contains('has')).toBe(true);
+  expect(day(12).querySelector('i')).not.toBeNull();
+  expect(day(12).getAttribute('aria-label')).toBe('Thursday, November 12, 2 sessions');
+  expect(day(11).disabled).toBe(true);
+  expect(day(11).querySelector('i')).toBeNull();
+  expect(day(14).disabled).toBe(true);
+  fireEvent.click(day(11));
+  expect(r.container.querySelector('.at-date')!.textContent).toBe('Friday, November 13');
+  fireEvent.click(day(10));
+  await flush();
+  expect(r.container.querySelector('.at-cal')).toBeNull();
+  expect(r.container.querySelector('.at-date')!.textContent).toBe('Tuesday, November 10');
+});
+
+it('Escape closes the calendar only; a second Escape closes the popover', async () => {
+  const onClose = vi.fn();
+  const r = render(<Panel onClose={onClose} />);
+  await flush();
+  await openCalendar(r);
+  fireEvent.keyDown(window, { key: 'Escape' });
+  expect(r.container.querySelector('.at-cal')).toBeNull();
+  expect(onClose).not.toHaveBeenCalled();
+  fireEvent.keyDown(window, { key: 'Escape' });
+  expect(onClose).toHaveBeenCalledTimes(1);
+});
+
+it('a click outside the calendar closes it without closing the popover', async () => {
+  const onClose = vi.fn();
+  const r = render(<Panel onClose={onClose} />);
+  await flush();
+  await openCalendar(r);
+  fireEvent.mouseDown(r.container.querySelector('.at-foot') as HTMLElement);
+  expect(r.container.querySelector('.at-cal')).toBeNull();
+  expect(onClose).not.toHaveBeenCalled();
+  await openCalendar(r);
+  fireEvent.mouseDown(r.container.querySelector('.at-cal-title') as HTMLElement);
+  expect(r.container.querySelector('.at-cal')).not.toBeNull();
+});
+
+it('the month arrows stop at the earliest saved month and this month', async () => {
+  const r = render(<Panel />);
+  await flush();
+  await openCalendar(r);
+  const [earlier, later] = [...r.container.querySelectorAll('.at-cal-head .at-arrow')] as HTMLButtonElement[];
+  expect(earlier.disabled).toBe(true);
+  expect(later.disabled).toBe(true);
+});
+
+it('a quiet past day fits its hours on the axis; a busy one keeps the usual axis', async () => {
+  const r = render(<Panel />);
+  await flush();
+  fireEvent.click([...r.container.querySelectorAll('.at-seg button')][1] as HTMLElement);
+  await flush();
+  // Yesterday has 2 sessions (08:00 to 10:30, and 19:00 to the end of the day): fitted 7 AM to midnight (labels on the multiples of 3).
+  expect(labels(r.container)[0]).toBe('9 AM');
+  expect(r.container.querySelector('.at-grid i')).not.toBeNull();
+});
+
+const dayBtn = (r: ReturnType<typeof render>, n: number) => [...r.container.querySelectorAll('.at-cal-day')][n - 1] as HTMLButtonElement;
+
+it('opening the calendar focuses the shown day, or the first pickable day; closing returns focus to the date button', async () => {
+  const r = render(<Panel />);
+  await flush();
+  // Shown day is today (13th), which has a record in this mock: it takes focus.
+  await openCalendar(r);
+  expect(document.activeElement).toBe(dayBtn(r, 13));
+  // Escape returns focus to the date button.
+  fireEvent.keyDown(window, { key: 'Escape' });
+  expect(document.activeElement).toBe(r.container.querySelector('.at-date'));
+  // Pick with Enter (the browser turns Enter on a focused button into this click).
+  await openCalendar(r);
+  const day = dayBtn(r, 10);
+  day.focus();
+  expect(document.activeElement).toBe(day);
+  fireEvent.click(day);
+  await flush();
+  expect(r.container.querySelector('.at-date')!.textContent).toBe('Tuesday, November 10');
+  expect(document.activeElement).toBe(r.container.querySelector('.at-date'));
+  // Shown day is the 10th now: focus goes there on the next open. An outside click returns focus too.
+  await openCalendar(r);
+  expect(document.activeElement).toBe(dayBtn(r, 10));
+  fireEvent.mouseDown(r.container.querySelector('.at-foot') as HTMLElement);
+  expect(document.activeElement).toBe(r.container.querySelector('.at-date'));
+});
+
+it('Escape from a focused calendar control closes only the calendar, even with another window Escape listener', async () => {
+  const onClose = vi.fn();
+  const other = vi.fn();
+  window.addEventListener('keydown', other);
+  const r = render(<Panel onClose={onClose} />);
+  await flush();
+  await openCalendar(r);
+  fireEvent.keyDown(document.activeElement as HTMLElement, { key: 'Escape' });
+  expect(r.container.querySelector('.at-cal')).toBeNull();
+  expect(onClose).not.toHaveBeenCalled();
+  expect(other).not.toHaveBeenCalled();
+  window.removeEventListener('keydown', other);
+});
+
+it('today without a saved record is dim and not pickable, keeps its ring, and the shown day is cyan independently', async () => {
+  mocks.set('wall2_omni_days', () => [
+    { date: '2026-11-12', sessions: 16 },
+    { date: '2026-11-11', sessions: 4 },
+    { date: '2026-11-20', sessions: 2 },
+  ]);
+  const r = render(<Panel />);
+  await flush();
+  await openCalendar(r);
+  const today = dayBtn(r, 13);
+  expect(today.classList.contains('has')).toBe(false);
+  expect(today.disabled).toBe(true);
+  expect(today.classList.contains('today')).toBe(true);
+  expect(today.classList.contains('shown')).toBe(true);
+  // Focus falls to the first pickable day, since the shown one cannot take it.
+  expect(document.activeElement).toBe(dayBtn(r, 11));
+  // A day after today is never bright, and does not add a month to walk to.
+  expect(dayBtn(r, 20).disabled).toBe(true);
+  expect(r.container.querySelectorAll('.at-cal-head .at-arrow:not(:disabled)').length).toBe(0);
+  // Pick another day: the ring stays on today, cyan moves.
+  fireEvent.click(dayBtn(r, 12));
+  await flush();
+  await openCalendar(r);
+  expect(dayBtn(r, 12).classList.contains('shown')).toBe(true);
+  expect(dayBtn(r, 12).classList.contains('today')).toBe(false);
+  expect(dayBtn(r, 13).classList.contains('shown')).toBe(false);
+  expect(dayBtn(r, 13).classList.contains('today')).toBe(true);
+});
+
+it('count bars centre with a transform, not a negative margin', () => {
+  const css: string = readFileSync('src/styles/ribbon.css', 'utf8');
+  const m = css.match(/\n\.at-cal-day i \{([^}]*)\}/);
+  expect(m![1]).toMatch(/transform: translateX\(-50%\);/);
+  expect(m![1]).not.toMatch(/margin-left/);
 });
