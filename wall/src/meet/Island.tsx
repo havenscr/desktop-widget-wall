@@ -1,11 +1,15 @@
 import { IconCheck, IconChecklist, IconChevronLeft, IconChevronRight, IconCircle, IconFileText, IconMail, IconUsers } from '@tabler/icons-react';
 import { useState, type ReactNode } from 'react';
 import { invoke } from '../bridge/tauri';
+import { useOnAirLive } from '../onair/useOnAirLiveReport';
 import { tip } from '../ui/HoverTip';
+import { BriefFeed } from './BriefFeed';
+import { briefView } from './briefModel';
 import { initials } from './heroModel';
 import { HOW_TO, indexName, inviteSize, islandKinds, stepKind, type IslandKind, type KindId } from './islandModel';
 import { type MeetingDetails, type Reply } from './model';
 import { useMeetStore } from './meetStore';
+import { useBrief } from './useBrief';
 import type { ChecklistRead } from './useChecklist';
 
 const ICONS = { mail: IconMail, users: IconUsers, checklist: IconChecklist } as const;
@@ -18,6 +22,21 @@ const REPLY_WORDS: Record<Reply, string> = { yes: 'Said yes', maybe: 'Maybe', no
 function KindIcon({ kind, size }: { kind: IslandKind['icon']; size: number }) {
   const I = ICONS[kind];
   return <I size={size} stroke={1.8} aria-hidden="true" />;
+}
+
+/** The brief's quiet line (and Retry) under the island's usual pages; nothing when the brief has nothing to say. */
+function BriefNote({ view, retry }: { view: ReturnType<typeof briefView>; retry: () => void }) {
+  if (!view.line) return null;
+  return (
+    <>
+      <span className="meet-brief-note meet-xs meet-dimline ellipsis">{view.line}</span>
+      {view.retry && (
+        <button type="button" className="meet-btn meet-retry" onClick={retry} {...tip('Read the brief again now')}>
+          Retry
+        </button>
+      )}
+    </>
+  );
 }
 
 function InvitePane({ text }: { text: string }) {
@@ -64,7 +83,7 @@ function ChecklistPane({ items, ticked, onTick }: { items: readonly string[]; ti
 }
 
 /** When no kind has anything: how the checklist file works, and its Open file button. Never an empty box. */
-function HowTo({ checklist, reloadSoon }: { checklist: ChecklistRead; reloadSoon: () => void }) {
+function HowTo({ checklist, reloadSoon, note: brief, top }: { checklist: ChecklistRead; reloadSoon: () => void; note: React.ReactNode; top: string | null }) {
   const [note, setNote] = useState<string | null>(null);
   return (
     <section className="panel meet-island" aria-label="Meeting notes">
@@ -73,6 +92,7 @@ function HowTo({ checklist, reloadSoon }: { checklist: ChecklistRead; reloadSoon
           <IconChecklist size={22} stroke={1.8} aria-hidden="true" />
         </span>
         <span className="k meet-k">Your first-meeting list</span>
+        {top && <span className="meet-brief-top meet-xs meet-dimline ellipsis">{top}</span>}
         <span className="meet-src" {...tip('The list lives in a text file you write yourself')}>
           From meet-checklist.txt
         </span>
@@ -103,6 +123,7 @@ function HowTo({ checklist, reloadSoon }: { checklist: ChecklistRead; reloadSoon
             Open file
           </button>
           {note && <span className="meet-notice meet-xs">{note}</span>}
+          {brief}
         </div>
       </div>
     </section>
@@ -113,7 +134,10 @@ function HowTo({ checklist, reloadSoon }: { checklist: ChecklistRead; reloadSoon
  * The island: one kind large at the left, "Also on file" at the right, the order line, arrows and dots under them.
  * Arrows, a click on an index row and the dots change the large kind; nothing turns by itself.
  */
-export function Island({ details, checklist, reloadSoon, meetingId }: { details: MeetingDetails | null | undefined; checklist: ChecklistRead; reloadSoon: () => void; meetingId: string }) {
+export function Island({ details, checklist, reloadSoon, meetingId, briefKey = null }: { details: MeetingDetails | null | undefined; checklist: ChecklistRead; reloadSoon: () => void; meetingId: string; briefKey?: string | null }) {
+  const brief = useBrief(briefKey);
+  const onAir = useOnAirLive();
+  const view = briefView(brief.out, brief.err);
   // Ticks and the chosen kind belong to the occurrence of the meeting, so a refresh of the calendar keeps them.
   const ticked = useMeetStore((s) => s.ticks[meetingId]) ?? [];
   const toggle = useMeetStore((s) => s.toggleTick);
@@ -121,7 +145,9 @@ export function Island({ details, checklist, reloadSoon, meetingId }: { details:
   const select = useMeetStore((s) => s.select);
   const setSel = (k: KindId) => select(meetingId, k);
   const kinds = islandKinds({ details, checklist: checklist.items });
-  if (kinds.length === 0) return <HowTo checklist={checklist} reloadSoon={reloadSoon} />;
+  if (view.mode === 'feed' && brief.out) return <BriefFeed out={brief.out} view={view} onAir={onAir} />;
+  const note = <BriefNote view={view} retry={brief.retry} />;
+  if (kinds.length === 0) return <HowTo checklist={checklist} reloadSoon={reloadSoon} note={view.mode === 'empty' ? null : note} top={view.mode === 'empty' ? [view.line, ...view.sourceLines].filter(Boolean).join(' · ') : null} />;
   const found = kinds.findIndex((k) => k.id === sel);
   const index = found < 0 ? 0 : found;
   const cur = kinds[index];
@@ -140,6 +166,7 @@ export function Island({ details, checklist, reloadSoon, meetingId }: { details:
         </span>
         <span className="k meet-k">{cur.title}</span>
         {cur.count !== undefined && <span className="meet-cnt">{cur.count}</span>}
+        {view.mode === 'empty' && <span className="meet-brief-top meet-xs meet-dimline ellipsis">{[view.line, ...view.sourceLines].filter(Boolean).join(' · ')}</span>}
         <span className="meet-src" {...tip('Where these words come from')}>
           {cur.source}
         </span>
@@ -163,7 +190,7 @@ export function Island({ details, checklist, reloadSoon, meetingId }: { details:
         )}
       </div>
       <div className="meet-isl-foot">
-        <span className="meet-isl-gap" aria-hidden="true" />
+        {view.mode === 'empty' ? <span className="meet-isl-gap" aria-hidden="true" /> : view.line ? note : <span className="meet-isl-gap" aria-hidden="true" />}
         {many && (
           <>
             <button type="button" className="meet-arrow" aria-label="Previous" onClick={() => go(-1)} {...tip('Show the previous kind')}>

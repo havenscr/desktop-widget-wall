@@ -139,6 +139,8 @@ interface Parts {
   details?: Meeting['details'];
   /** True when the calendar is in its ordinary state (a meeting is next), so a call's Next card can be rebuilt. */
   ordinary?: boolean;
+  /** The meeting key the brief is read for (the hero meeting), if any. */
+  briefKey?: string | null;
 }
 
 /**
@@ -230,6 +232,7 @@ export function Meet() {
       hero: <Hero m={m} meeting={hero} label={labels.get(hero.accountId) ?? ''} events={day.events} />,
       meeting: hero,
       details: hero.details,
+      briefKey: hero.key,
       next: after(hero, false, leave),
       ordinary: true,
     };
@@ -241,6 +244,7 @@ export function Meet() {
       hero: <Hero m={m} meeting={callMeeting} label={callMeeting ? (labels.get(callMeeting.accountId) ?? '') : ''} events={day.events} />,
       meeting: callMeeting,
       details: callMeeting?.details,
+      briefKey: callMeeting?.key ?? null,
       next: parts.ordinary || (parts.next.kind === 'after' && !none) ? after(callMeeting, true, leave) : parts.next,
     };
   }
@@ -248,7 +252,7 @@ export function Meet() {
   return (
     <Layout
       hero={parts.hero}
-      island={<Island key={parts.meeting ? occurrenceId(parts.meeting) : 'none'} details={parts.details} checklist={read} reloadSoon={reloadSoon} meetingId={parts.meeting ? occurrenceId(parts.meeting) : 'none'} />}
+      island={<Island key={parts.meeting ? occurrenceId(parts.meeting) : 'none'} details={parts.details} checklist={read} reloadSoon={reloadSoon} meetingId={parts.meeting ? occurrenceId(parts.meeting) : 'none'} briefKey={parts.briefKey ?? null} />}
       next={parts.next}
     />
   );
