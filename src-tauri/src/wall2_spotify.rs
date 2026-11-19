@@ -33,6 +33,8 @@ const ANSWER_BODY: u64 = 64 * 1024;
 /// The most of a 403 answer that is read.
 const FORBIDDEN_BODY: u64 = 4 * 1024;
 const TRACK_BODY: u64 = 512 * 1024;
+/// The saved albums list: every saved album carries its songs (up to 50 each), so 50 albums run past `TRACK_BODY`.
+const ALBUMS_BODY: u64 = 8 * 1024 * 1024;
 const PAGE_SIZE: usize = 50;
 
 #[derive(Clone, Debug, PartialEq)]
@@ -530,7 +532,8 @@ fn profile(cfg: &Config) -> Result<Profile, String> { profile_with(cfg, &RealHtt
 fn list(window: &WebviewWindow, endpoint: &str, kind: &str) -> Result<Vec<Item>, String> { let cfg = config(window.app_handle())?; let current_user = if kind == "playlist" { Some(profile(&cfg)?) } else { None }; let value = get_track_json(&cfg, endpoint)?; log_refused_covers(&value); Ok(shape_list(&value, kind, current_user.as_ref())) }
 
 #[tauri::command] pub async fn wall2_spotify_playlists(window: WebviewWindow, page: Option<u32>) -> Result<Vec<Item>, String> { require(&window)?; tauri::async_runtime::spawn_blocking(move || list(&window, &format!("/me/playlists?limit=50&offset={}", page_path(page)), "playlist")).await.map_err(|_| "failed".to_string())? }
-#[tauri::command] pub async fn wall2_spotify_albums(window: WebviewWindow, page: Option<u32>) -> Result<Vec<Item>, String> { require(&window)?; tauri::async_runtime::spawn_blocking(move || list(&window, &format!("/me/albums?limit=50&offset={}", page_path(page)), "album")).await.map_err(|_| "failed".to_string())? }
+#[tauri::command] pub async fn wall2_spotify_albums(window: WebviewWindow, page: Option<u32>) -> Result<Vec<Item>, String> { require(&window)?; tauri::async_runtime::spawn_blocking(move || { let cfg = config(window.app_handle())?; albums_with(&cfg, page, &RealHttp, &RealCreds) }).await.map_err(|_| "failed".to_string())? }
+fn albums_with(cfg: &Config, page: Option<u32>, http: &dyn Http, creds: &dyn Creds) -> Result<Vec<Item>, String> { let value = get_json_with_limit(cfg, &format!("/me/albums?limit=50&offset={}", page_path(page)), ALBUMS_BODY, http, creds)?; log_refused_covers(&value); Ok(shape_list(&value, "album", None)) }
 #[tauri::command] pub async fn wall2_spotify_liked(window: WebviewWindow, page: Option<u32>) -> Result<Vec<Item>, String> { require(&window)?; tauri::async_runtime::spawn_blocking(move || list(&window, &format!("/me/tracks?market=from_token&limit=50&offset={}", page_path(page)), "track")).await.map_err(|_| "failed".to_string())? }
 #[tauri::command] pub async fn wall2_spotify_recent(window: WebviewWindow) -> Result<Vec<Item>, String> { require(&window)?; tauri::async_runtime::spawn_blocking(move || list(&window, "/me/player/recently-played?market=from_token&limit=50", "track")).await.map_err(|_| "failed".to_string())? }
 
@@ -1326,6 +1329,47 @@ mod tests {
         for part in ["limit=50","offset=100","additional_types=track","fields=items(item("] { assert!(paths[0].contains(part),"{part}"); }
         assert!(paths[1].starts_with("/search?"));
         assert!(paths[1].contains("limit=10"));
+    }
+
+    /// A saved-albums page in the shape Spotify's reference gives for `/me/albums` (each saved album
+    /// carries its songs page), serialized compact so its size does not depend on whitespace.
+    fn saved_albums_body(albums: usize, songs: usize) -> String {
+        let artist = |n: usize| json!({"external_urls":{"spotify":format!("https://open.spotify.com/artist/{:022}", n)},"href":format!("https://api.spotify.com/v1/artists/{:022}", n),"id":format!("{:022}", n),"name":"Night Signals","type":"artist","uri":format!("spotify:artist:{:022}", n)});
+        let items: Vec<Value> = (0..albums).map(|a| {
+            let id = format!("{:022}", a);
+            let tracks: Vec<Value> = (0..songs).map(|t| json!({"artists":[artist(a)],"disc_number":1,"duration_ms":215_000,"explicit":false,"external_urls":{"spotify":format!("https://open.spotify.com/track/{:011}{:011}", a, t)},"href":format!("https://api.spotify.com/v1/tracks/{:011}{:011}", a, t),"id":format!("{:011}{:011}", a, t),"is_local":false,"is_playable":true,"name":format!("Song {t}"),"preview_url":null,"track_number":t + 1,"type":"track","uri":format!("spotify:track:{:011}{:011}", a, t)})).collect();
+            json!({"added_at":"2026-01-02T03:04:05Z","album":{"album_type":"album","artists":[artist(a)],"copyrights":[{"text":"2026 Night Signals","type":"C"},{"text":"2026 Night Signals","type":"P"}],"external_ids":{"upc":"000000000000"},"external_urls":{"spotify":format!("https://open.spotify.com/album/{id}")},"genres":[],"href":format!("https://api.spotify.com/v1/albums/{id}"),"id":id,"images":[{"height":640,"url":"https://i.scdn.co/image/ab67616d0000b273aaaaaaaaaaaaaaaaaaaaaaaa","width":640},{"height":300,"url":"https://i.scdn.co/image/ab67616d00001e02aaaaaaaaaaaaaaaaaaaaaaaa","width":300},{"height":64,"url":"https://i.scdn.co/image/ab67616d00004851aaaaaaaaaaaaaaaaaaaaaaaa","width":64}],"name":format!("Album {a}"),"release_date":"2026-01-01","release_date_precision":"day","total_tracks":songs,"tracks":{"href":format!("https://api.spotify.com/v1/albums/{id}/tracks?offset=0&limit=50"),"items":tracks,"limit":50,"next":null,"offset":0,"previous":null,"total":songs},"type":"album","uri":format!("spotify:album:{id}")}})
+        }).collect();
+        serde_json::to_string(&json!({"href":"https://api.spotify.com/v1/me/albums?offset=0&limit=50","items":items,"limit":50,"next":"https://api.spotify.com/v1/me/albums?offset=50&limit=50","offset":0,"previous":null,"total":120})).unwrap()
+    }
+
+    #[test]
+    fn a_full_saved_albums_page_reads_past_the_song_page_cap() {
+        let _test_guard = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        reset_state();
+        *token().lock().unwrap()=Some(Token{access:"ok".into(),expires:Instant::now()+Duration::from_secs(3600)});
+        let creds=FakeCreds::new(Some("old"));
+        // A full page of 50 saved albums with 20 songs each. Compact byte count, hand-traced (the body
+        // has no escapes or non-ASCII, so serde_json writes the same bytes as a compact JSON writer):
+        // 731,830 bytes, over TRACK_BODY (524,288) and far under ALBUMS_BODY (8,388,608).
+        let typical=saved_albums_body(50,20);
+        assert!(typical.len() as u64 > TRACK_BODY && (typical.len() as u64) < ALBUMS_BODY, "{}", typical.len());
+        assert!(typical.len() as u64 > TRACK_BODY, "{}", typical.len());
+        let old=FakeHttp::new(vec![],vec![hr(200,&typical)]);
+        assert_eq!(get_json_with_limit(&cfg(),"/me/albums?limit=50&offset=0",TRACK_BODY,&old,&creds),Err("down".into()));
+        let http=FakeHttp::new(vec![],vec![hr(200,&typical)]);
+        let got=albums_with(&cfg(),Some(1),&http,&creds).unwrap();
+        assert_eq!(got.len(),50);
+        assert_eq!((got[0].name.as_str(),got[0].kind.as_str(),got[0].count,got[0].subtitle.as_deref()),("Album 0","album",Some(20),Some("Night Signals")));
+        assert_eq!(http.paths(),vec!["/me/albums?limit=50&offset=50".to_string()]);
+        assert_eq!(http.limits(),vec![ALBUMS_BODY]);
+        // A page of 50 albums with 50 songs each is 1,732,330 bytes compact: about a fifth of the 8 MB
+        // limit, so a longer real body (longer names, more images) still fits. The 8 MB read plus the
+        // Value parse is bounded memory, and it runs only on the Albums tab.
+        let largest=saved_albums_body(50,50);
+        assert!((largest.len() as u64) < ALBUMS_BODY, "{}", largest.len());
+        let http=FakeHttp::new(vec![],vec![hr(200,&largest)]);
+        assert_eq!(albums_with(&cfg(),None,&http,&creds).unwrap().len(),50);
     }
 
     #[test]

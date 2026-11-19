@@ -428,6 +428,79 @@ it('searches after a pause of 400 ms with two letters, or on Enter, songs as row
   expect(document.querySelector('.sp-grid')?.textContent).toContain('Found List');
 });
 
+it('Albums shows the albums the search found while words are typed, and the saved ones once the field is empty', async () => {
+  signedIn();
+  mocks.set('wall2_spotify_playlists', () => []);
+  mocks.set('wall2_spotify_albums', () => [item(1, 'album', 'Saved Album')]);
+  mocks.set('wall2_spotify_search', () => ({ tracks: [item(7, 'track', 'Found Song')], albums: [item(9, 'album', 'Found Album')], playlists: [item(8, 'playlist', 'Found List')] }));
+  render(<SpotifyCard />);
+  await flush();
+  const box = screen.getByRole('searchbox');
+  fireEvent.change(box, { target: { value: 'synthwave' } });
+  await flush(500);
+  await act(async () => screen.getByRole('tab', { name: 'Albums' }).click());
+  await flush();
+  const grid = document.querySelector('.sp-grid')?.textContent ?? '';
+  expect(grid).toContain('Found Album');
+  expect(grid).not.toContain('Found List');
+  expect(grid).not.toContain('Saved Album');
+  expect(document.querySelector('.sp-list')).toBeNull();
+  fireEvent.change(box, { target: { value: '' } });
+  await flush();
+  expect(document.querySelector('.sp-grid')?.textContent).toContain('Saved Album');
+  mocks.set('wall2_spotify_search', () => ({ tracks: [], albums: [], playlists: [] }));
+  fireEvent.change(box, { target: { value: 'nothing here' } });
+  await flush(500);
+  await act(async () => screen.getByRole('tab', { name: 'Albums' }).click());
+  await flush();
+  expect(screen.getByText('No albums found. Try other words.')).toBeTruthy();
+});
+
+it('Albums never shows the previous words\' albums while a new search runs, and Retry after a failed search reruns it', async () => {
+  signedIn();
+  mocks.set('wall2_spotify_playlists', () => []);
+  mocks.set('wall2_spotify_albums', () => [item(1, 'album', 'Saved Album')]);
+  const pending: Record<string, ReturnType<typeof deferred<unknown>>> = {};
+  const asked: string[] = [];
+  mocks.set('wall2_spotify_search', (a) => {
+    asked.push(String(a?.query));
+    const d = deferred<unknown>();
+    pending[String(a?.query)] = d;
+    return d.promise;
+  });
+  render(<SpotifyCard />);
+  await flush();
+  const box = screen.getByRole('searchbox');
+  fireEvent.change(box, { target: { value: 'first' } });
+  fireEvent.keyDown(box, { key: 'Enter' });
+  await flush();
+  await act(async () => pending.first.resolve({ tracks: [], albums: [item(9, 'album', 'First Album')], playlists: [] }));
+  await act(async () => screen.getByRole('tab', { name: 'Albums' }).click());
+  await flush();
+  expect(document.querySelector('.sp-grid')?.textContent).toContain('First Album');
+  // New words: the second search has not answered, so no album of the first one may show.
+  fireEvent.change(box, { target: { value: 'second' } });
+  fireEvent.keyDown(box, { key: 'Enter' });
+  await flush();
+  await act(async () => screen.getByRole('tab', { name: 'Albums' }).click());
+  await flush();
+  expect(screen.queryByText('First Album')).toBeNull();
+  expect(screen.queryByText('Saved Album')).toBeNull();
+  expect(document.querySelector('[aria-busy="true"]')).toBeTruthy();
+  // The search fails: Retry on the Albums tab asks the same words again.
+  await act(async () => pending.second.reject(new Error('busy')));
+  await flush();
+  expect(screen.queryByText('First Album')).toBeNull();
+  expect(screen.queryByText('Saved Album')).toBeNull();
+  const retry = screen.getByRole('button', { name: 'Retry' });
+  await act(async () => retry.click());
+  await flush();
+  expect(asked).toEqual(['first', 'second', 'second']);
+  await act(async () => pending.second.resolve({ tracks: [], albums: [item(10, 'album', 'Second Album')], playlists: [] }));
+  await flush();
+  expect(document.querySelector('.sp-grid')?.textContent).toContain('Second Album');
+});
+
 it('applies only the newest search: an older answer that lands last is dropped', async () => {
   signedIn();
   mocks.set('wall2_spotify_playlists', () => []);

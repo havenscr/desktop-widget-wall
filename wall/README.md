@@ -89,7 +89,8 @@ Search sends no market value, so the signed-in user's country takes priority. Ot
 track; a missing `is_playable` means playable. An unplayable row reaches the web view
 with `playable: false` and `id: null`. Profile, devices and playback state answers are
 capped at 64 KB. Liked, recent, search, queue, playlist and album pages, album metadata,
-and the playlists and albums lists are capped at 512 KB. The signed-in profile is cached
+and the playlists list are capped at 512 KB. The saved albums list is capped at 8 MB: each
+saved album comes with its songs (up to 50), so a page of 50 albums runs past 512 KB. The signed-in profile is cached
 in memory until sign in or sign out so search and playlist paging reuse it safely.
 When a play request includes a context, that context and its optional offset take
 precedence over the top-level kind and id; the top-level values remain validated.
@@ -1829,7 +1830,8 @@ frame (no ribbon) in the wide zones `470px 1fr 540px`. The parts are in `wall/sr
   or 400 ms after the last key, two characters at least; only the newest search may change the
   list, and a failed one keeps the last good results under a note with Retry), then the tabs
   Search, Playlists, Albums, Liked and Recent in a pill. Playlists and Albums are a grid of large
-  cover tiles, five across, the name and the song count under each (`imageUrl`; a neutral tile
+  cover tiles (Albums shows the saved albums; while the field holds the words of the last search,
+  it shows the albums that search found, up to ten, or "No albums found. Try other words."; the saved albums list and its paging are hidden while the field holds searched words), five across, the name and the song count under each (`imageUrl`; a neutral tile
   with a music note when there is none or it fails to load, never a colour gradient). Resting on
   a tile rings it and opens its details card (the shared tip, pinned): the kind with its owner
   or artist said once, the song count when the bridge gives it, and Play, Shuffle and Songs.
