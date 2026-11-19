@@ -81,8 +81,9 @@ it('draws the Live page: chip, comments newest at the bottom, the foot, and the 
   expect(rows[rows.length - 1]).toBe(SECRET);
   expect(screen.getByText('YouTube only, read every 10 seconds.')).toBeTruthy();
   expect(screen.getByText('$5.00')).toBeTruthy();
-  // Comment rows are not buttons.
-  expect(document.querySelectorAll('.oa2-cms button').length).toBe(0);
+  // Comment rows are not buttons: the heading's expand button is the card's only button.
+  expect(document.querySelectorAll('.oa2-comments button:not(.oa2-exp)').length).toBe(0);
+  expect(document.querySelectorAll('.oa2-comments .oa2-exp').length).toBe(1);
   await waitFor(() => expect(screen.getByText(/^Part 1 of 2: Load the data/)).toBeTruthy());
   // Row 2 of the studio keys: three tiles; the prompter and status boxes stay empty.
   expect(document.querySelectorAll('.oa2-studiokeys .key-tile').length).toBe(3);
