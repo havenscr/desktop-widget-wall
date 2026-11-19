@@ -209,3 +209,34 @@ it('every rail tab carries a hover tip and the panel title matches the group', a
     expect(document.querySelector(`#tools-panel-${g.id} .tools-ptitle`)?.textContent).toBe(g.name);
   }
 });
+
+it('a failed Spotify or YouTube status read shows Could not check on the Accounts rail line, not All signed in', async () => {
+  mocks.set('wall2_meet_next', () => ({ accounts: [{ id: 'work', label: 'Work', state: 'ok' }], meetings: [] }));
+  mocks.set('wall2_spotify_status', () => {
+    throw new Error('no answer');
+  });
+  await openAt();
+  expect(lines().accounts).toBe('Could not check');
+  expect(document.querySelector('[data-rail-status="accounts"]')?.className).toContain('bad');
+});
+
+it('a failed YouTube status read alone shows Could not check too', async () => {
+  mocks.set('wall2_meet_next', () => ({ accounts: [{ id: 'work', label: 'Work', state: 'ok' }], meetings: [] }));
+  mocks.set('wall2_youtube_status', () => {
+    throw new Error('no answer');
+  });
+  await openAt();
+  expect(lines().accounts).toBe('Could not check');
+});
+
+it('a status read that never answers times out to Could not check after 15 s, never Checking for good', async () => {
+  mocks.set('wall2_meet_next', () => ({ accounts: [{ id: 'work', label: 'Work', state: 'ok' }], meetings: [] }));
+  mocks.set('wall2_spotify_status', () => new Promise(() => undefined));
+  await openAt();
+  expect(lines().accounts).toBe('Checking');
+  await flush(14000);
+  expect(lines().accounts).toBe('Checking');
+  await flush(1500);
+  expect(lines().accounts).toBe('Could not check');
+  expect(document.querySelector('[data-rail-status="accounts"]')?.className).toContain('bad');
+});

@@ -508,7 +508,24 @@ export function Accounts() {
   const blocked = m.signingIn !== null || sp.waiting || yt.waiting;
   // The rail's line: how many accounts are set up but signed out.
   const need = accounts.filter((a) => needsSignIn(a.state)).length + (sp.status?.setup && !sp.status.signedIn ? 1 : 0) + (yt.status?.setup && !yt.status.signedIn ? 1 : 0);
-  useRailStatus('accounts', need === 0 ? 'All signed in' : need === 1 ? '1 needs sign-in' : `${need} need sign-in`, need === 0 ? 'ok' : 'warn');
+  // A status read that has not answered within 15 s counts as failed, so the rail never reads Checking for good.
+  const pending = (sp.status === null && !sp.failed) || (yt.status === null && !yt.failed);
+  const [late, setLate] = useState(false);
+  useEffect(() => {
+    setLate(false);
+    if (!pending) return undefined;
+    const id = setTimeout(() => setLate(true), 15000);
+    return () => clearTimeout(id);
+  }, [pending, opened]);
+  const unchecked = sp.failed || yt.failed || sp.status?.reason === 'failed' || yt.status?.reason === 'failed' || (pending && late);
+  const railLine = need > 0
+    ? { text: need === 1 ? '1 needs sign-in' : `${need} need sign-in`, tone: 'warn' as const }
+    : unchecked
+      ? { text: 'Could not check', tone: 'warn' as const }
+      : pending
+        ? { text: 'Checking', tone: 'none' as const }
+        : { text: 'All signed in', tone: 'ok' as const };
+  useRailStatus('accounts', railLine.text, railLine.tone);
   const setWaiting = useToolsStore((s) => s.setWaiting);
   const note = useToolsStore((s) => s.note);
   const clearNote = useToolsStore((s) => s.clearNote);

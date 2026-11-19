@@ -329,6 +329,12 @@ function Drawer() {
   const ringing = useRinging(focus, opened);
   const ringed = (section: ToolsFocus) => section !== null && ringing === section;
   const rail = useToolsStore((s) => s.rail);
+  // A group whose panel has not reported in 15 s reads Could not check, never Checking for good.
+  const [stale, setStale] = useState(false);
+  useEffect(() => {
+    const id = setTimeout(() => setStale(true), 15000);
+    return () => clearTimeout(id);
+  }, []);
   // A link opens the group it names; otherwise the group this viewer had open last.
   const [group, setGroup] = useState<ToolsGroup['id']>(() => groupOf(focus) ?? rememberedGroup() ?? GROUPS[0].id);
   useEffect(() => {
@@ -394,7 +400,7 @@ function Drawer() {
       <div className="tools-body">
         <div className="tools-rail" role="tablist" aria-label="Tools groups" aria-orientation="vertical">
           {GROUPS.map((g, i) => {
-            const st = rail[g.id] ?? { text: 'Checking', tone: 'none' as const };
+            const st = rail[g.id] ?? (stale ? { text: 'Could not check', tone: 'warn' as const } : { text: 'Checking', tone: 'none' as const });
             const Ico = g.icon;
             return (
               <button

@@ -1241,6 +1241,12 @@ try {
         if (!line || !(line.textContent || '').trim()) toolsOut.push('tools rail: ' + tab.getAttribute('data-group') + ' has no status line');
         else if (parseFloat(getComputedStyle(line).fontSize) < 16 - 0.01) toolsOut.push('tools rail: status line under 16 px in ' + tab.getAttribute('data-group'));
       }
+      // Every rendered text in the drawer, headings and captions included, is 16 px or more.
+      for (const e of drawer.querySelectorAll('*')) {
+        if (e.getClientRects().length === 0 || ![...e.childNodes].some((n) => n.nodeType === 3 && (n.textContent || '').trim())) continue;
+        const px = parseFloat(getComputedStyle(e).fontSize);
+        if (px < 16 - 0.01) toolsOut.push('tools: text under 16 px in ' + (typeof e.className === 'string' ? e.className : e.tagName) + ' "' + (e.textContent || '').trim().slice(0, 24) + '" (' + px + ' px)');
+      }
       for (const e of drawer.querySelectorAll('.tools-name, .tools-srcname, .tools-line, .tools-hint, .tools-note, .tools-chip, .tools-btn, .tools-faint')) {
         if (e.scrollWidth > e.clientWidth + 1 && !e.closest('[data-tip]')) toolsOut.push('tools: "' + (e.textContent || '').trim().slice(0, 40) + '" is cut with no tooltip');
         // The row's hover card does not excuse a cut name or a cut read time: those cells must show whole.

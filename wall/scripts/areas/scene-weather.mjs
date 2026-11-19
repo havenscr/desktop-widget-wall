@@ -22,7 +22,7 @@ const toolsFit = (knobs) => `?hz=work&at=${at(10, 24)}&clock=review&agents=3&too
 // few percent opaque on transparency): plenty must be drawn outside the film's box (so the rule fails for a missing
 // layer) and none of the streaks may lie inside it (shrunk by 12 px, since the layer keeps 8 px clear and a streak may pass a corner). In Tools: the Weather block sits in the drawer's top
 // row between the title and the close button, overlaps neither, keeps the drawer inside the wall, and no text in it
-// is under 16 px (the 15 px section heading is the drawer's own).
+// is under 16 px.
 function measureWeather() {
   const out = { film: null, tools: null };
   const params = new URLSearchParams(location.search);
@@ -61,7 +61,7 @@ function measureWeather() {
     const kids = [...block.children].map((e) => ({ n: (e.getAttribute('aria-label') || e.textContent || '').trim().slice(0, 14), ...R(e) }));
     const small = [];
     for (const e of [block, ...block.querySelectorAll('*')]) {
-      if (!e.matches || e.classList.contains('tools-k')) continue; // the section headings are the drawer's own 15 px caps
+      if (!e.matches) continue;
       if (![...e.childNodes].some((n) => n.nodeType === 3 && n.textContent.trim())) continue;
       const px = parseFloat(getComputedStyle(e).fontSize);
       if (px < 15.99) small.push('"' + e.textContent.trim().slice(0, 30) + '" is ' + px + ' px');
