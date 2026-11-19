@@ -27,3 +27,11 @@ it('keeps the Shelf list names that are text, trimmed, at most eight', () => {
   expect(loadSettings(store(JSON.stringify({ shelfLists: names }))).shelfLists).toEqual(['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H']);
   expect(loadSettings(store('{"shelfLists":"x"}')).shelfLists).toEqual([]);
 });
+
+it('Shelf list names match the native rules: no control characters, 60 characters at most, no duplicates after trimming', () => {
+  const long60 = 'x'.repeat(60);
+  const names = ['A', ' A ', 'bad\nname', 'tab\tname', 'nul\u0000', 'x'.repeat(61), ' ' + long60 + ' ', 'B', 'A'];
+  expect(loadSettings(store(JSON.stringify({ shelfLists: names }))).shelfLists).toEqual(['A', long60, 'B']);
+  const nine = ['1', '2', '3', '4', '5', '6', '7', '8', '8', '9'];
+  expect(loadSettings(store(JSON.stringify({ shelfLists: nine }))).shelfLists).toEqual(['1', '2', '3', '4', '5', '6', '7', '8']);
+});

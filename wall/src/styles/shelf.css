@@ -78,6 +78,9 @@
 .shelf-list {
   height: 52px;
   min-width: 0;
+  max-width: 100%;
   padding: 0 20px;
   font-size: 20px;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }

@@ -3,6 +3,7 @@
 // each part inside its own card, every text at 16 px or larger, and every key at least 40 by 40 px.
 const at = encodeURIComponent('2026-11-11T10:24:00-08:00');
 const LISTS = 'shelflists=' + encodeURIComponent('Tasks (To-Do);Tax / Business;House, garden');
+const MANY = 'shelflists=' + encodeURIComponent(['Tasks (To-Do)', 'Tax / Business', 'House, garden', 'Errands', 'Reading list', 'Someday maybe', 'Waiting on others', 'W'.repeat(60)].join(';'));
 const galleryQuery = (knobs) => `hz=work&at=${at}&clock=review&weather=ok&screen=shelf&${knobs}`;
 const fitQuery = (knobs) => `?hz=work&at=${at}&clock=review&weather=ok&screen=shelf&${knobs}`;
 const checks = ['.shelf-place .shelf-captures', '.shelf-place .shelf-side', '.shelf-place .right-wing'];
@@ -43,6 +44,11 @@ function measureShelf() {
   }
   const lists = root.querySelector('.shelf-lists');
   if (lists && lists.scrollWidth > lists.clientWidth + 1) fails.push('shelf: the list chips run sideways out of their row');
+  const side = root.querySelector('.shelf-side');
+  if (side) for (const c of side.querySelectorAll('.shelf-list')) {
+    const b = c.getBoundingClientRect(), sb = side.getBoundingClientRect();
+    if (b.right > sb.right + 0.5 || b.left < sb.left - 0.5) { fails.push('shelf: list chip "' + c.textContent.slice(0, 20) + '" is outside the side card'); break; }
+  }
   return fails;
 }
 
@@ -56,6 +62,7 @@ export default {
   fit: {
     variants: [
       variant('Shelf, three lists', LISTS),
+      variant('Shelf, eight lists with a 60 character name', MANY),
       variant('Shelf, no list names set', 'x=1'),
       variant('Shelf, Watt set down at the far right', LISTS + '&wattspot=2300'),
     ],

@@ -6,7 +6,7 @@ label `wall2`, the app identifier) keep that name on purpose. It lives beside th
 existing app (`src/`, untouched) and is built with Vite, React and TypeScript
 (strict). It runs in a plain browser for development and inside Tauri as a second
 app, "Ridgeline". So far: a scaled stage, the live horizon, a left rail with
-Work, Home and Unwind and below them Meet, On air, Zen, Tools and (in the app) a fullscreen button, a clock, the Work tab basics (weather, music, focus timer), a task
+Work, Home and Unwind and below them Meet, On air, Shelf, Zen, Tools and (in the app) a fullscreen button, a clock, the Work tab basics (weather, music, focus timer), a task
 card, a network tile and mood buttons on Home, the Unwind tab with Watt the sheep, a sound ripple
 on the horizon, the Zen place with Dream, a small Tauri bridge and tests. Home has its moods, a Rooms row, Sonos controls and a network tile.
 
@@ -1490,7 +1490,20 @@ the centre card; the date line takes it through the frame's `ClockSlot` portal.
 - **Settings** (`wall/src/settings/`). `localStorage` key `wall2-settings`, JSON
   with optional `latitude` and `longitude` (defaults 47.68, -122.21), `zenDimHour` (whole
   hour 18 to 23, default 22) and `zenDimWaitMin` (whole minutes 1 to 60, default 10). No settings
-  screen yet; Zen shows the two Zen values as a quiet line in the evening.
+  screen yet; Zen shows the two Zen values as a quiet line in the evening. `shelfLists` is an array of
+  task app list names for the Shelf place (at most 8; each trimmed, 1 to 60 characters, no control
+  characters, the same rule as the native list check; duplicates dropped after trimming). With no
+  settings screen, set it in the browser console or by editing the stored JSON, for example
+  `localStorage.setItem('wall2-settings', JSON.stringify({ shelfLists: ['Tasks (To-Do)', 'House'] }))`.
+- **Shelf place** (`screens/ShelfPlace.tsx`, `styles/shelf.css`). A rail button between On air and Zen.
+  Three parts: a Captures card on the left (it waits for the ShareX history PR, until then it says so), a
+  side card with six ShareX keys (Region, Screen, GIF, Record, Text (OCR), History; they use the same press
+  path as a pinned key, and a keyboard press never fires a ShareX task) and the Lists chips, and the task
+  column on the right showing the picked list with the Always here deck under it. The chips come from the
+  `shelfLists` setting (no list names set shows a hint); a chip never grows past the side card and long
+  names end in an ellipsis. The picked list is remembered per viewer under `wall2-shelf-list`. Dev knobs:
+  `?screen=shelf` opens the place and `?shelflists=Tasks (To-Do);House, garden` seeds the list names.
+  Check: `npm run fit-check -- --area=shelf`.
 - **Browser dev.** `npm run dev` registers mocks for the commands Work calls
   (`src/bridge/devMocks/`, dev server only); in a review still (`?hz=&at=`) the
   meeting and task mocks follow the review's time. Review knobs: `?meet=none` (no
@@ -2826,7 +2839,7 @@ The next-meetings read (not the day read) also selects `organizer`, `attendees` 
 
 ### Switching by itself
 
-`meet/autoSwitch.ts`, started from `App.tsx`: when a call goes from none to a call and the place is Work, Home, Unwind or Meet and the page is visible, the wall opens Meet once for that call. It never switches from On Air (a show is running) or Zen, never twice for one call, and never switches back when the call ends. A call that starts while the page is hidden opens Meet once, when the page becomes visible while that call is still on (the same place rules apply then).
+`meet/autoSwitch.ts`, started from `App.tsx`: when a call goes from none to a call and the place is Work, Home, Unwind, Shelf or Meet and the page is visible, the wall opens Meet once for that call. It never switches from On Air (a show is running) or Zen, never twice for one call, and never switches back when the call ends. A call that starts while the page is hidden opens Meet once, when the page becomes visible while that call is still on (the same place rules apply then).
 
 ### Dev knobs
 

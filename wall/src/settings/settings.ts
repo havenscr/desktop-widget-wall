@@ -35,10 +35,13 @@ export function loadSettings(storage: Pick<Storage, 'getItem'> | null = safeStor
       if (validInt(saved.zenDimHour, 18, 23)) out.zenDimHour = saved.zenDimHour;
       if (validInt(saved.zenDimWaitMin, 1, 60)) out.zenDimWaitMin = saved.zenDimWaitMin;
       if (Array.isArray(saved.shelfLists)) {
-        out.shelfLists = saved.shelfLists
-          .filter((n): n is string => typeof n === 'string' && n.trim() !== '' && n.length <= 60)
+        // The same rule as the native list-name check (`valid_list_name` in wall2_feeds.rs): 1 to 60 characters
+        // after trimming, no control characters. Duplicates are dropped after trimming.
+        const clean = saved.shelfLists
+          .filter((n): n is string => typeof n === 'string')
           .map((n) => n.trim())
-          .slice(0, 8);
+          .filter((n) => n.length > 0 && [...n].length <= 60 && !/\p{Cc}/u.test(n));
+        out.shelfLists = [...new Set(clean)].slice(0, 8);
       }
     }
   } catch {
