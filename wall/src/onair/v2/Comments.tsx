@@ -87,7 +87,7 @@ function pick(channelSet: boolean | null, state: string | null, chat: LiveChat |
  * it cannot be read (no channel, signed out, refused). The channel field lives here, not in Tools. Chat text is shown from memory
  * and never written anywhere.
  */
-export function Comments({ now }: { now: number }) {
+export function Comments({ now, style, action }: { now: number; style?: React.CSSProperties; action?: React.ReactNode }) {
   const channel = useYtLive((s) => s.channel);
   const status = useYtLive((s) => s.status);
   const chat = useYtLive((s) => s.chat);
@@ -192,8 +192,8 @@ export function Comments({ now }: { now: number }) {
   }
   const showLine = noShow && named && !editing && view !== 'signed-out-card' && view !== 'reading';
   return (
-    <section className="panel oa2-b oa2-comments" data-view={view} data-dashed={dashed ? 'true' : 'false'} aria-label="Comments">
-      <Head label="Comments" right={right} icon={<IconMessageCircle size={20} aria-hidden="true" />} />
+    <section className="panel oa2-b oa2-comments" data-view={view} data-dashed={dashed ? 'true' : 'false'} aria-label="Comments" style={style}>
+      <Head label="Comments" right={right} icon={<IconMessageCircle size={20} aria-hidden="true" />} action={action} />
       {body}
       {showLine && <ChannelLine title={channel?.title ?? null} onChange={() => setEditing(true)} />}
     </section>

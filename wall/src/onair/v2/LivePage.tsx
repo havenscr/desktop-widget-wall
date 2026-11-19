@@ -1,5 +1,5 @@
-import { IconArrowLeft, IconArrowRight, IconNotes, IconPlayerPauseFilled, IconPlayerPlayFilled } from '@tabler/icons-react';
-import { useEffect, useRef, useState } from 'react';
+import { IconArrowLeft, IconArrowRight, IconMessageCircle, IconNotes, IconPlayerPauseFilled, IconPlayerPlayFilled } from '@tabler/icons-react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { StudioBlock } from '../../studio/StudioBlock';
 import { useSignalStore } from '../../signals/store';
 import { tip } from '../../ui/HoverTip';
@@ -9,6 +9,8 @@ import { useOnAirStore } from '../store';
 import { statusStale } from '../ytlive';
 import { useChatPolling, useYtLive } from '../ytliveStore';
 import { Comments } from './Comments';
+import { ExpandButton, SplitHandle, useSplit } from './SplitHandle';
+import { SPLIT_GAP, widths } from './splitModel';
 import { Head, LibTile, MarkTile, TileRow } from './Tiles';
 import { clockText } from './time';
 import { useDeckKeys } from './useDeckKeys';
@@ -184,6 +186,71 @@ function StudioKeys() {
   );
 }
 
+/** Where the split area starts inside the frame. */
+const SPLIT_X = 676;
+
+/** A folded panel: 72 px wide, its count, and a click puts it back. */
+function Rail({ kind, count, left, onClick }: { kind: 'comments' | 'notes'; count: number; left: number; onClick: () => void }) {
+  const isC = kind === 'comments';
+  const label = isC ? `${count} new comment${count === 1 ? '' : 's'} since you folded it. Show comments` : `${count} part${count === 1 ? '' : 's'} left. Show notes`;
+  return (
+    <button type="button" className={`panel oa2-b oa2-rail oa2-rail-${kind}`} style={{ left }} aria-label={label} onClick={onClick} {...tip(isC ? 'Show the comments' : 'Show the notes')}>
+      {isC ? <IconMessageCircle size={22} aria-hidden="true" /> : <IconNotes size={22} aria-hidden="true" />}
+      <span className="oa2-rail-n">{count}</span>
+      <span className="oa2-rail-w">{isC ? 'new' : 'left'}</span>
+    </button>
+  );
+}
+
+/** The comments and the notes side by side, with the handle between them, or one of them folded to a rail. */
+function SplitArea({ now }: { now: number }) {
+  const status = useYtLive((s) => s.status);
+  const chat = useYtLive((s) => s.chat);
+  const show = useOnAirStore((s) => s.show);
+  const saved = useOnAirStore((s) => s.saved);
+  const entered = useRef(Date.now()).current;
+  const key = status === null ? null : status.state === 'live' && status.startedAt !== null ? `yt-${status.startedAt}` : `page-${entered}`;
+  const { mode, set } = useSplit(key);
+  const w = widths(mode);
+  const folded = mode === 'full' || mode === 'rail';
+  // New comments since the panel folded: counted from ids kept in memory only, never the text.
+  const [seen, setSeen] = useState<Set<string> | null>(null);
+  const ids = useMemo(() => (chat?.messages ?? []).map((m) => m.id), [chat]);
+  const commentsFolded = mode === 'rail';
+  useEffect(() => {
+    setSeen(commentsFolded ? new Set(ids) : null);
+    // Taken once when the panel folds.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [commentsFolded]);
+  const fresh = seen ? ids.filter((id) => !seen.has(id)).length : 0;
+  const parts = show?.state === 'ok' ? show.parts : [];
+  const left = parts.length === 0 ? 0 : parts.length - clampIndex(saved.partIndex, parts.length);
+  const cLeft = SPLIT_X;
+  const nLeft = SPLIT_X + w.comments + SPLIT_GAP;
+  return (
+    <>
+      {mode === 'rail' ? (
+        <Rail kind="comments" count={fresh} left={cLeft} onClick={() => set(620)} />
+      ) : (
+        <Comments now={now} style={{ left: cLeft, width: w.comments }} action={<ExpandButton expanded={mode === 'full'} what="comments" onClick={() => set(mode === 'full' ? 620 : 'full')} />} />
+      )}
+      {!folded && <SplitHandle comments={w.comments} left={cLeft + w.comments} onChange={set} />}
+      {mode === 'full' ? (
+        <Rail kind="notes" count={left} left={nLeft} onClick={() => set(620)} />
+      ) : (
+        <NotesCard
+          title="Notes"
+          sizes={LIVE_NOTE_SIZES}
+          icon={<IconNotes size={20} aria-hidden="true" />}
+          className="oa2-livenotes"
+          style={{ left: nLeft, width: w.notes }}
+          action={<ExpandButton expanded={mode === 'rail'} what="notes" onClick={() => set(mode === 'rail' ? 620 : 'rail')} />}
+        />
+      )}
+    </>
+  );
+}
+
 /**
  * The Live page: the show timer, the YouTube and camera chips, the run of show line, the comments (with the channel field in the
  * card), the notes, the studio keys (row 2 only) and the studio lights. The studio status box and the prompter's box stay empty
@@ -197,8 +264,7 @@ export function LivePage({ now }: { now: number }) {
       <LiveChips now={now} />
       <div className="oa2-b oa2-empty oa2-empty-status" aria-hidden="true" />
       <RunLine now={now} />
-      <Comments now={now} />
-      <NotesCard title="Notes" sizes={LIVE_NOTE_SIZES} icon={<IconNotes size={20} aria-hidden="true" />} className="oa2-livenotes" />
+      <SplitArea now={now} />
       <StudioKeys />
       <div className="oa2-b oa2-empty oa2-empty-prompter oa2-empty-live" aria-hidden="true" />
       <div className="oa2-b oa2-lights-live">

@@ -82,7 +82,7 @@ it('draws the Live page: chip, comments newest at the bottom, the foot, and the 
   expect(screen.getByText('YouTube only, read every 10 seconds.')).toBeTruthy();
   expect(screen.getByText('$5.00')).toBeTruthy();
   // Comment rows are not buttons.
-  expect(document.querySelectorAll('.oa2-comments button').length).toBe(0);
+  expect(document.querySelectorAll('.oa2-cms button').length).toBe(0);
   await waitFor(() => expect(screen.getByText(/^Part 1 of 2: Load the data/)).toBeTruthy());
   // Row 2 of the studio keys: three tiles; the prompter and status boxes stay empty.
   expect(document.querySelectorAll('.oa2-studiokeys .key-tile').length).toBe(3);
@@ -301,4 +301,82 @@ it('live without a chat clears the old chat, reads no chat, and says the chat is
   });
   expect(chatReads).toBe(after);
   expect(after).toBeGreaterThanOrEqual(before);
+});
+
+const KEY = 'wall2-onair-split';
+const handle = () => screen.getByRole('separator') as HTMLElement;
+const cw = () => (document.querySelector('.oa2-comments') as HTMLElement).style.width;
+const nw = () => (document.querySelector('.oa2-livenotes') as HTMLElement).style.width;
+const ptr = (el: Element, type: string, x: number) => fireEvent(el, new MouseEvent(type, { clientX: x, bubbles: true }));
+
+it('the split: starts 620 / 436, a drag clamps, a double click resets, arrows move 20 px', async () => {
+  await open();
+  await waitFor(() => expect(cw()).toBe('620px'));
+  expect(nw()).toBe('436px');
+  ptr(handle(), 'pointerdown', 1000);
+  ptr(handle(), 'pointermove', 900);
+  expect(cw()).toBe('520px');
+  expect(nw()).toBe('536px');
+  ptr(handle(), 'pointermove', -5000);
+  expect(cw()).toBe('360px');
+  ptr(handle(), 'pointermove', 9000);
+  expect(cw()).toBe('756px');
+  expect(nw()).toBe('300px');
+  ptr(handle(), 'pointerup', 9000);
+  fireEvent.doubleClick(handle());
+  expect(cw()).toBe('620px');
+  fireEvent.keyDown(handle(), { key: 'ArrowLeft' });
+  expect(cw()).toBe('600px');
+  fireEvent.keyDown(handle(), { key: 'ArrowRight' });
+  fireEvent.keyDown(handle(), { key: 'ArrowRight' });
+  expect(cw()).toBe('640px');
+});
+
+it('the split: folding the notes and the comments, and restoring from the rail', async () => {
+  await open();
+  fireEvent.click(screen.getByRole('button', { name: /Fill the space with the comments/ }));
+  expect(document.querySelector('.oa2-rail-notes')).not.toBeNull();
+  expect(cw()).toBe('984px');
+  expect(screen.queryByRole('separator')).toBeNull();
+  fireEvent.click(document.querySelector('.oa2-rail-notes') as HTMLElement);
+  expect(cw()).toBe('620px');
+  fireEvent.click(screen.getByRole('button', { name: /Fill the space with the notes/ }));
+  const rail = document.querySelector('.oa2-rail-comments') as HTMLElement;
+  expect(rail).not.toBeNull();
+  expect(nw()).toBe('984px');
+  expect(rail.querySelector('.oa2-rail-n')?.textContent).toBe('0');
+  chat = { ...okChat(5), messages: msgs(5) };
+  await act(async () => {
+    await useYtLive.getState().readChat();
+  });
+  await waitFor(() => expect(rail.querySelector('.oa2-rail-n')?.textContent).toBe('2'));
+  fireEvent.click(rail);
+  expect(cw()).toBe('620px');
+});
+
+it('the split: a reload in the same show keeps it, a new show resets it', async () => {
+  const a = await open();
+  fireEvent.keyDown(handle(), { key: 'ArrowLeft' });
+  expect(cw()).toBe('600px');
+  const stored = localStorage.getItem(KEY) as string;
+  expect(JSON.parse(stored).comments).toBe(600);
+  a.unmount();
+  useYtLive.getState().reset();
+  await open();
+  await waitFor(() => expect(cw()).toBe('600px'));
+  cleanup();
+  useYtLive.getState().reset();
+  status = live({ startedAt: Date.now() - 3 * 60 * MIN });
+  await open();
+  await waitFor(() => expect(cw()).toBe('620px'));
+});
+
+it('the split: a storage that throws does not stop it', async () => {
+  const spy = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(function (this: Storage, k: string) {
+    if (k === KEY) throw new Error('blocked');
+  });
+  await open();
+  fireEvent.keyDown(handle(), { key: 'ArrowLeft' });
+  expect(cw()).toBe('600px');
+  spy.mockRestore();
 });
