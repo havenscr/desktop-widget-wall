@@ -195,7 +195,7 @@ describe('the rows play', () => {
     expect(document.querySelectorAll('.yt-row.on').length).toBe(1);
     // A search.
     await flush(LOAD_GAP_MS);
-    const field = screen.getByPlaceholderText('Search music on YouTube');
+    const field = screen.getByPlaceholderText('Search YouTube Music');
     fireEvent.change(field, { target: { value: 'night' } });
     fireEvent.keyDown(field, { key: 'Enter' });
     await flush(10);

@@ -166,7 +166,7 @@ describe('the side', () => {
     side();
     await screen.findByText(text);
     expect(screen.getByTestId('remote')).toBeTruthy();
-    expect(screen.queryByText('Search music on YouTube')).toBeNull();
+    expect(screen.queryByText('Search YouTube Music')).toBeNull();
     return screen.getByRole('button', { name: button });
   };
 
@@ -255,7 +255,7 @@ describe('the library', () => {
     expect(screen.getByText('1 video')).toBeTruthy();
     expect(document.querySelectorAll('.yt-tile').length).toBe(3);
     expect(screen.getByRole('tab', { name: 'Playlists' }).getAttribute('aria-selected')).toBe('true');
-    expect(screen.getByPlaceholderText('Search music on YouTube')).toBeTruthy();
+    expect(screen.getByPlaceholderText('Search YouTube Music')).toBeTruthy();
   });
 
   it('says on hover what a tile click does', async () => {
@@ -334,7 +334,7 @@ describe('the library', () => {
     await library(false);
     fireEvent.click(tile('Mix 1'));
     await screen.findByText('Clip 1');
-    expect(screen.queryByPlaceholderText('Search music on YouTube')).toBeNull();
+    expect(screen.queryByPlaceholderText('Search YouTube Music')).toBeNull();
     expect(document.querySelector('.yt-lib')).toBeTruthy();
     expect(document.querySelector('.yt-songs.tall')).toBeNull();
   });
@@ -457,14 +457,13 @@ describe('the rows', () => {
 describe('search', () => {
   it('runs on Enter only, never while typing, and the same words twice make one call', async () => {
     const { calls } = await library();
-    const field = screen.getByPlaceholderText('Search music on YouTube') as HTMLInputElement;
+    const field = screen.getByPlaceholderText('Search YouTube Music') as HTMLInputElement;
     for (const text of ['n', 'ni', 'nig', 'night', 'night d', 'night drive']) fireEvent.change(field, { target: { value: text } });
     expect(calls.search.length).toBe(0);
     fireEvent.keyDown(field, { key: 'Enter' });
     await screen.findByText('Clip 21');
     expect(calls.search).toEqual([{ query: 'night drive' }]);
-    expect(screen.getByText('Results for', { exact: false }).textContent).toBe('Results for night drive');
-    fireEvent.click(screen.getByRole('button', { name: 'Back to Playlists' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Library' }));
     await screen.findByText('Mix 1');
     expect(field.value).toBe('');
     fireEvent.change(field, { target: { value: ' Night Drive ' } });
@@ -475,7 +474,7 @@ describe('search', () => {
 
   it('refuses empty and over-long words without a call', async () => {
     const { calls } = await library();
-    const field = screen.getByPlaceholderText('Search music on YouTube') as HTMLInputElement;
+    const field = screen.getByPlaceholderText('Search YouTube Music') as HTMLInputElement;
     expect(field.maxLength).toBe(100);
     fireEvent.change(field, { target: { value: '   ' } });
     fireEvent.keyDown(field, { key: 'Enter' });
@@ -486,7 +485,7 @@ describe('search', () => {
 
   it('says Nothing found for an empty answer', async () => {
     const { calls } = await library(false, { search: () => page([]) });
-    const field = screen.getByPlaceholderText('Search music on YouTube');
+    const field = screen.getByPlaceholderText('Search YouTube Music');
     fireEvent.change(field, { target: { value: 'zzz' } });
     fireEvent.keyDown(field, { key: 'Enter' });
     await screen.findByText('Nothing found. Try other words.');
@@ -517,7 +516,7 @@ describe('search', () => {
   it('disables the field after YouTube says the searches are used up', async () => {
     mocks.set('wall2_youtube_search', () => { throw new Error('quota'); });
     await library(false, { search: () => { throw new Error('quota'); } });
-    const field = screen.getByPlaceholderText('Search music on YouTube');
+    const field = screen.getByPlaceholderText('Search YouTube Music');
     fireEvent.change(field, { target: { value: 'night' } });
     fireEvent.keyDown(field, { key: 'Enter' });
     await screen.findByText('Searches are used up until midnight Pacific.');
@@ -787,7 +786,7 @@ describe('reads and the page being shown', () => {
     expect(songs.getAttribute('tabindex')).toBe('0');
     fireEvent.click(screen.getByRole('button', { name: 'Back to Playlists' }));
     await screen.findByText('Mix 2');
-    const field = screen.getByPlaceholderText('Search music on YouTube') as HTMLInputElement;
+    const field = screen.getByPlaceholderText('Search YouTube Music') as HTMLInputElement;
     fireEvent.change(field, { target: { value: 'night' } });
     fireEvent.keyDown(field, { key: 'Enter' });
     await screen.findByText('Clip 21');
@@ -815,7 +814,7 @@ describe('reads and the page being shown', () => {
 
 describe('searches that overlap', () => {
   const enter = (value: string) => {
-    const field = screen.getByPlaceholderText('Search music on YouTube');
+    const field = screen.getByPlaceholderText('Search YouTube Music');
     fireEvent.change(field, { target: { value } });
     fireEvent.keyDown(field, { key: 'Enter' });
   };
@@ -831,7 +830,6 @@ describe('searches that overlap', () => {
     held.aaa.resolve(page([video(32)]));
     await act(async () => { await new Promise((ok) => setTimeout(ok, 30)); });
     expect(screen.queryByText('Clip 32')).toBeNull();
-    expect(screen.getByText('Results for', { exact: false }).textContent).toBe('Results for bbb');
   });
 
   it('keeps the newest search when the older one answers first', async () => {
@@ -871,7 +869,6 @@ describe('searches that overlap', () => {
     held.bbb.resolve(page([video(52)]));
     await act(async () => { await new Promise((ok) => setTimeout(ok, 30)); });
     expect(screen.queryByText('Clip 52')).toBeNull();
-    expect(screen.getByText('Results for', { exact: false }).textContent).toBe('Results for aaa');
   });
 
   it('repeats a failed search by asking again (Rust keeps the answer and reads the details only)', async () => {
@@ -939,22 +936,23 @@ describe('the keyboard', () => {
     await screen.findByText('Clip 1');
     expect(screen.getByRole('region', { name: 'Videos in Mix 1' }).getAttribute('tabindex')).toBe('0');
     fireEvent.click(screen.getByRole('button', { name: 'Back to Playlists' }));
-    const field = screen.getByPlaceholderText('Search music on YouTube');
+    const field = screen.getByPlaceholderText('Search YouTube Music');
     fireEvent.change(field, { target: { value: 'night' } });
     fireEvent.keyDown(field, { key: 'Enter' });
     await screen.findByText('Clip 21');
     expect(screen.getByRole('region', { name: 'Search results' }).getAttribute('tabindex')).toBe('0');
   });
 
-  it('keeps one tab reachable while a search shows', async () => {
+  it('swaps the library row for the chips while a search shows, and Library brings it back', async () => {
     await library(false);
-    const field = screen.getByPlaceholderText('Search music on YouTube');
+    const field = screen.getByPlaceholderText('Search YouTube Music');
     fireEvent.change(field, { target: { value: 'night' } });
     fireEvent.keyDown(field, { key: 'Enter' });
     await screen.findByText('Clip 21');
-    const tabs = screen.getAllByRole('tab');
-    expect(tabs.filter((t) => t.getAttribute('tabindex') === '0').length).toBe(1);
-    expect(tabs.every((t) => t.getAttribute('aria-selected') === 'false')).toBe(true);
+    expect(screen.queryAllByRole('tab')).toHaveLength(0);
+    expect(screen.getAllByRole('radio').map((r) => r.textContent?.replace(/\d+$/, ''))).toEqual(['All', 'Playlists', 'Songs']);
+    fireEvent.click(screen.getByRole('button', { name: 'Library' }));
+    expect(screen.getAllByRole('tab').map((t) => t.textContent)).toEqual(['For you', 'Playlists', 'Liked']);
   });
 });
 

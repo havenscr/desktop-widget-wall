@@ -1,8 +1,10 @@
-import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react';
-import { IconArrowsShuffle, IconListDetails, IconPlayerPlayFilled, IconSearch } from '@tabler/icons-react';
+import { useEffect, useRef, useState } from 'react';
+import { IconArrowsShuffle, IconHeart, IconListDetails, IconMusic, IconPlayerPlayFilled, IconPlaylist, IconSearch, IconSparkles } from '@tabler/icons-react';
 import type { YtPlaylist, YtVideo } from '../../music/youtube';
 import { tip } from '../../ui/HoverTip';
 import { useVisible } from '../../ui/useVisible';
+import { LibraryRow, type Place } from '../music/LibraryRow';
+import { SearchChips, type SearchChip } from '../music/SearchResults';
 import { libraryMenuOpen } from '../watch/libraryMenuModel';
 import { libraryHandlers } from '../watch/libraryOpen';
 import { MAX_PAGES, PAGE_SIZE, SEARCH_TIP, SPENT_LINE, devSearchKnob, nearEnd, searchSpent, searchesLine, videosLine } from './model';
@@ -11,14 +13,18 @@ import { loadForYou } from './forYouStore';
 import { playFrom } from './queue';
 import { useYoutubeStatus } from './status';
 import { YtSongs } from './YtSongs';
-import { libraryMounted, libraryVisible, loadList, openPlaylist, retryList, runSearch, searchesBack, setTab, startReads, useYtLibrary, type Loaded, type YtTab } from './store';
+import { libraryMounted, libraryVisible, loadList, loadPlaylistHits, openPlaylist, pickChip, retryList, runSearch, searchesBack, setTab, startReads, useYtLibrary, type Loaded, type YtChip, type YtTab } from './store';
 import { RowSkeletons, TileSkeletons, YtEmpty, YtRows, YtState, YtThumb, gridKey } from './YtParts';
 
-const TABS: { id: YtTab; label: string }[] = [
-  { id: 'foryou', label: 'For you' },
-  { id: 'playlists', label: 'Playlists' },
-  { id: 'liked', label: 'Liked' },
+const PLACES: readonly Place<YtTab>[] = [
+  { id: 'foryou', label: 'For you', icon: <IconSparkles size={18} stroke={1.8} aria-hidden="true" /> },
+  { id: 'playlists', label: 'Playlists', icon: <IconPlaylist size={18} stroke={1.8} aria-hidden="true" /> },
+  { id: 'liked', label: 'Liked', icon: <IconHeart size={18} stroke={1.8} aria-hidden="true" /> },
 ];
+const CHIP_ICONS = {
+  playlists: <IconPlaylist size={18} stroke={1.8} aria-hidden="true" />,
+  songs: <IconMusic size={18} stroke={1.8} aria-hidden="true" />,
+};
 const EMPTY_LINE: Record<Exclude<YtTab, 'foryou'>, string> = { playlists: 'No playlists yet', liked: 'No liked videos yet' };
 
 function PlaylistTile({ p }: { p: YtPlaylist }) {
@@ -82,6 +88,8 @@ export function YtBrowse({ tall }: { tall: boolean }) {
   const opened = useYtLibrary((s) => s.opened);
   const query = useYtLibrary((s) => s.query);
   const found = useYtLibrary((s) => s.found);
+  const chip = useYtLibrary((s) => s.chip);
+  const plHits = useYtLibrary((s) => s.playlistHits);
   const quotaSaid = useYtLibrary((s) => s.searchQuota);
   const left = useYoutubeStatus((s) => s.status?.searchesLeft ?? null);
   const [text, setText] = useState('');
@@ -112,26 +120,9 @@ export function YtBrowse({ tall }: { tall: boolean }) {
   const spent = searchSpent(left, quotaSaid);
   const line = searchesLine(left);
 
-  const tabKey = (e: ReactKeyboardEvent<HTMLElement>) => {
-    if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return;
-    const buttons = [...e.currentTarget.querySelectorAll<HTMLButtonElement>('button')];
-    const at = buttons.indexOf(document.activeElement as HTMLButtonElement);
-    if (at < 0) return;
-    e.preventDefault();
-    const to = buttons[(at + (e.key === 'ArrowRight' ? 1 : -1) + buttons.length) % buttons.length];
-    to.focus();
-    to.click();
-  };
   const searching = query !== '';
   const bar = (
     <div className="yt-bar">
-      <div className="sp-tabs" role="tablist" aria-label="Your YouTube library" onKeyDown={tabKey}>
-        {TABS.map((t) => (
-          <button key={t.id} type="button" role="tab" aria-selected={!searching && tab === t.id} tabIndex={(!searching && tab === t.id) || (searching && t.id === 'playlists') ? 0 : -1} className={!searching && tab === t.id ? 'on' : ''} onClick={() => setTab(t.id)}>
-            {t.label}
-          </button>
-        ))}
-      </div>
       <label className={`sp-search yt-search${spent ? ' spent' : ''}`} {...(line || spent ? tip(SEARCH_TIP) : {})}>
         <IconSearch size={20} stroke={1.8} aria-hidden="true" />
         <input
@@ -139,8 +130,8 @@ export function YtBrowse({ tall }: { tall: boolean }) {
           value={text}
           maxLength={100}
           disabled={spent}
-          placeholder={spent ? '' : 'Search music on YouTube'}
-          aria-label={spent ? SPENT_LINE : 'Search music on YouTube'}
+          placeholder={spent ? '' : 'Search YouTube Music'}
+          aria-label={spent ? SPENT_LINE : 'Search YouTube Music'}
           onChange={(e) => setText(e.target.value)}
           onKeyDown={(e) => {
             if (e.key === 'Enter') void runSearch(text);
@@ -151,6 +142,12 @@ export function YtBrowse({ tall }: { tall: boolean }) {
       </label>
     </div>
   );
+  const plWords = plHits && plHits.words === query ? plHits : null;
+  const row = searching ? (
+    <SearchChips value={chip} counts={{ songs: found?.loaded && !found.problem ? found.items.length : undefined, playlists: plWords && !plWords.loading && !plWords.problem ? plWords.items.length : undefined }} kinds={['playlists', 'songs']} icons={CHIP_ICONS} onPick={(c: SearchChip) => pickChip(c as YtChip)} onLeave={() => setTab(tab)} />
+  ) : (
+    <LibraryRow label="Your YouTube library" places={PLACES} value={tab} onPick={setTab} />
+  );
 
   // A playlist opened: tall keeps the bar above it, at rest it takes the card (Back, name, Refresh).
   let main;
@@ -158,16 +155,22 @@ export function YtBrowse({ tall }: { tall: boolean }) {
   else if (searching) {
     main = (
       <div className="yt-main">
-        <div className="yt-resultsbar">
-          <span className="yt-resultsfor">
-            Results for <b>{query}</b>
-          </span>
-          <button type="button" className="sp-btn plain" onClick={() => setTab('playlists')}>
-            Back to Playlists
-          </button>
-        </div>
         <div className="yt-scroll yt-rowscroll" tabIndex={0} role="region" aria-label="Search results">
-          {found?.problem ? (
+          {chip === 'playlists' ? (
+            !plWords || plWords.loading ? (
+              <YtEmpty text="Looking for playlists" />
+            ) : plWords.problem ? (
+              <YtState problem={plWords.problem} onRetry={() => void loadPlaylistHits(true)} />
+            ) : plWords.items.length === 0 ? (
+              <YtEmpty text="No playlists found. Try other words." />
+            ) : (
+              <div className="yt-grid">
+                {plWords.items.map((p) => (
+                  <PlaylistTile key={p.id} p={p} />
+                ))}
+              </div>
+            )
+          ) : found?.problem ? (
             <YtState problem={found.problem} onRetry={() => void runSearch(query)} />
           ) : !found || found.loading || !found.loaded ? (
             <RowSkeletons count={8} />
@@ -218,6 +221,7 @@ export function YtBrowse({ tall }: { tall: boolean }) {
   return (
     <div className="yt-lib" data-tall={tall ? 'true' : 'false'}>
       {opened && !tall ? null : bar}
+      {opened && !tall ? null : row}
       {main}
     </div>
   );
