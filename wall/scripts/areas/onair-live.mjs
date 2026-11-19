@@ -47,10 +47,10 @@ function measureOnAirLive() {
     ...(cRail ? { '.oa2-rail-comments': [800, 24, 72, 486] } : { '.oa2-comments': [800, 24, cw, 486] }),
     ...(nRail ? { '.oa2-rail-notes': [1808, 24, 72, 486] } : { '.oa2-livenotes': [800 + cw + 24, 24, nw, 486] }),
     '.oa2-studiokeys': [1920, 24, 620, 192],
+    '.oa2-stagepop': [1920, 230, 620, 104],
     '.oa2-lights-live': [1920, 348, 620, 154],
     ...(hasParts ? { '.oa2-runline': [124, 458, 640, 46] } : {}),
   };
-  const empties = { '.oa2-empty-live': [1920, 230, 620, 104] };
   for (const [sel, [x, y, w, h]] of Object.entries(boxes)) {
     const el = root.querySelector(sel);
     if (!el) {
@@ -73,18 +73,6 @@ function measureOnAirLive() {
   }
   // The run line is not drawn without parts.
   if (run && !hasParts && runShown) fails.push('on air live: the run line is shown with no parts');
-  // The two empty boxes hold nothing and draw nothing.
-  for (const [sel, [x, y, w, h]] of Object.entries(empties)) {
-    const el = root.querySelector(sel);
-    if (!el) {
-      fails.push('on air live: ' + sel + ' is missing');
-      continue;
-    }
-    const b = el.getBoundingClientRect();
-    if (Math.abs(b.left - x) > 1 || Math.abs(b.top - y) > 1 || Math.abs(b.width - w) > 1 || Math.abs(b.height - h) > 1) fails.push('on air live: ' + sel + ' is at x ' + r1(b.left) + ', y ' + r1(b.top) + ', ' + r1(b.width) + ' by ' + r1(b.height));
-    const drawn = [getComputedStyle(el, '::after').content, getComputedStyle(el, '::before').content].filter((c) => c !== 'none' && c !== 'normal');
-    if (el.children.length > 0 || (el.textContent || '').trim() !== '' || drawn.length > 0) fails.push('on air live: ' + sel + ' is not empty');
-  }
   // The handle sits in the gap between the two panels, and only when both show.
   const hd = root.querySelector('.oa2-split-h');
   if (cRail || nRail) {
@@ -223,7 +211,7 @@ export default {
       onairLive: (variantEntry, results, emit) => {
         for (const failure of results.onairLive) emit(`  FAIL ${failure}`);
         if (results.onairLive.length) return true;
-        if (variantEntry.name.startsWith('On Air live,')) emit('  ok   on air live: every block in its planned box (the split at 620 / 436 or the dragged and folded states, the handle in the gap) inside y 20 to 510, the empty boxes empty, row 1 of the studio keys above row 2 and row 2 at its final y, comment rows at most two lines and none cut, notes 27 px, key tiles at least 76 px, text at least 16 px');
+        if (variantEntry.name.startsWith('On Air live,')) emit('  ok   on air live: every block in its planned box (the split at 620 / 436 or the dragged and folded states, the handle in the gap) inside y 20 to 510, row 1 of the studio keys above row 2 and row 2 at its final y, comment rows at most two lines and none cut, notes 27 px, key tiles at least 76 px, text at least 16 px');
         return false;
       },
     },

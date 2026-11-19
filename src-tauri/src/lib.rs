@@ -82,6 +82,8 @@ mod wall2_sonos_read;
 mod wall2_watch;
 mod wall2_tools;
 mod wall2_onair;
+mod wall2_stagepop;
+mod wall2_stagepop_cmd;
 mod wall2_keylights;
 mod wall2_keylights_cmd;
 mod wall2_weather;
@@ -4194,6 +4196,10 @@ pub fn run() {
             wall2_lightsync::wall2_huesync_open,
             wall2_studio::wall2_office_off,
             wall2_onair::wall2_onair_show,
+            wall2_stagepop_cmd::wall2_stagepop_status,
+            wall2_stagepop_cmd::wall2_stagepop_send,
+            wall2_stagepop_cmd::wall2_stagepop_token,
+            wall2_stagepop_cmd::wall2_stagepop_placement_set,
             wall2_onair::wall2_onair_mark,
             wall2_onair::wall2_onair_marks_today,
             wall2_onair::wall2_onair_open,
@@ -4362,6 +4368,7 @@ pub fn run() {
                 wall2_media::start_log(app.path().app_log_dir().ok());
                 wall2_weather::start_log(app.path().app_log_dir().ok());
                 wall2_keylights_cmd::start_log(app.path().app_log_dir().ok());
+                wall2_stagepop_cmd::start(app.handle().clone());
                 #[cfg(windows)]
                 {
                     start_displays_worker();

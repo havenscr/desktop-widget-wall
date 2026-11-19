@@ -15,6 +15,8 @@ import { SPLIT_GAP, widths } from './splitModel';
 import { clockText } from './time';
 import { StudioKeys } from './StudioKeys';
 import { Head } from './Tiles';
+import { StagePop } from './StagePop';
+import { useStagePopSync } from './stagepopStore';
 import { StudioStatus } from './StudioStatus';
 import { useStudioPolling } from './studioStore';
 
@@ -246,11 +248,12 @@ function SplitArea({ now }: { now: number }) {
 
 /**
  * The Live page: the show timer, the YouTube and camera chips, the run of show line, the comments (with the channel field in the
- * card), the notes, the studio keys, the studio status and the studio lights. The prompter's box stays empty until its own pull request.
+ * card), the notes, the studio keys, the studio status, the prompter box (the pop-out controls) and the studio lights.
  */
 export function LivePage({ now }: { now: number }) {
   useChatPolling();
   useStudioPolling();
+  useStagePopSync();
   return (
     <>
       <LiveTimer now={now} />
@@ -259,7 +262,7 @@ export function LivePage({ now }: { now: number }) {
       <RunLine now={now} />
       <SplitArea now={now} />
       <StudioKeys now={now} />
-      <div className="oa2-b oa2-empty oa2-empty-prompter oa2-empty-live" aria-hidden="true" />
+      <StagePop />
       <div className="oa2-b oa2-lights-live">
         <StudioBlock />
       </div>

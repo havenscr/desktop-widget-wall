@@ -15,6 +15,7 @@ import { registerPowerMocks } from './power';
 import { registerSonosMocks } from './sonos';
 import { registerSignalMocks } from './signals';
 import { registerSpotifyMocks } from './spotify';
+import { registerStagePopMocks } from './stagepop';
 import { registerStudioMocks } from './studio';
 import { registerStudioKeysMocks } from './studioKeys';
 import { registerTaskMocks } from './tasks';
@@ -54,6 +55,7 @@ export function registerDevMocks(): void {
   registerStudioMocks();
   registerStudioKeysMocks();
   registerLightSyncMocks();
+  registerStagePopMocks();
   mocks.set('wall2_build_info', () => ({ commit: 'dev', builtAt: '2026-11-13T09:05Z' }));
   registerLightSyncMocks();
   registerToolsMocks();

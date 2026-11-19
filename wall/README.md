@@ -3238,6 +3238,17 @@ Both live in the app config folder, beside `feeds.json`. The page never sends a 
 ```text
 # Friday stream
 // Comments start with two slashes and are ignored.
+
+### Stage pop-out (the prompter box on Live)
+
+The Firefox add-on's pop-out window (the StreamYard stage on the Elgato monitor) is driven from the box under the studio keys: Open or Close, Full screen, the Tools link and one view button per view the add-on lists (Stage, Share, each camera). It replaces the wall's own prompter mirror for Live; the Presenting and Recording boxes stay empty.
+
+- **Server.** `src-tauri/src/wall2_stagepop.rs` runs a sync `tungstenite` server on `127.0.0.1:47231` (fixed; busy gives the state `port busy`, never another port). It accepts a handshake only from an `Origin` of `moz-extension://<id>`, pinned to the first one that says hello (kept in `onair-stagepop.json` in the config folder), and a first frame `{type:"hello", token, v:1}` within 2 s, compared in constant time. Text frames only, 8 KiB, 20 messages a second, ping every 30 s, closed after 60 s of silence. One client; a newer authenticated one replaces the old. The module logs nothing.
+- **Pairing code.** 32 random bytes in Credential Manager (`WidgetWall2/stagepop/token/0`). The only way it reaches the page is the answer to `wall2_stagepop_token("show" | "new")` (shown once, in Tools; a second show says `hidden`; New code drops the connected add-on). Status and the `stagepop-state` event never carry it.
+- **Messages in:** `feeds` (1 to 12 `{key, name}`, `mode` must be listed) and `window` (`open`, `fullscreen`). **Out:** `mode`, `open` (with `left` and `top` when a place is known), `close`, `fullscreen`. The wall shows what the add-on reports, never what it asked for.
+- **Commands** (wall2 window only): `wall2_stagepop_status`, `wall2_stagepop_send`, `wall2_stagepop_token`, `wall2_stagepop_placement_set`. Default place: the monitor that is exactly 1024 by 600.
+- **Page.** `src/onair/v2/StagePop.tsx`, `stagepopStore.ts`, `stagepopModel.ts`; the Tools block is `src/tools/StagePop.tsx` (under Lights and home). Dev knobs: `?sp=open|closed|waiting|full|busy|off`, `?spshare=none`, `?spcode=ready`, `?spplace=none` (`devMocks/stagepop.ts`). Area script: `scripts/areas/onair-stagepop.mjs` (`npm run fit-check -- --area=onair-stagepop`).
+
 ## Welcome | 5
 - Say hello and what today is about
 ## Product demo | 20

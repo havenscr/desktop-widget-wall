@@ -2,7 +2,7 @@ import { useEffect } from 'react';
 import { create } from 'zustand';
 
 /** A section that rings when a link opens the drawer at it, or a rail group id (opens the group, no ring). */
-export type ToolsFocus = 'accounts' | 'keylights' | 'desktoken' | 'health' | 'lights' | 'display' | null;
+export type ToolsFocus = 'accounts' | 'keylights' | 'desktoken' | 'health' | 'lights' | 'display' | 'stagepop' | null;
 /** The localStorage key holding the rail group this viewer had open last. */
 export const GROUP_KEY = 'wall.tools.group';
 /** One rail entry's status line: its text, and the dot beside it (ok mint, warn amber, none grey). */

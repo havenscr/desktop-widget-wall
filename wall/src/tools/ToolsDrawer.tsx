@@ -13,6 +13,7 @@ import type { KeysSummary } from '../work/keysModel';
 import { Accounts, LightSyncBlock } from './accounts';
 import { useLightSync } from './lightSync';
 import { DeskToken } from './DeskToken';
+import { StagePopTools } from './StagePop';
 import { KeyLights } from './KeyLights';
 import { readText, readUnmountedSources, retrySource, SOURCE_NAMES, useSources, type SourceId, type SourceRow } from './sources';
 import { useKeyLights } from '../studio/store';
@@ -253,6 +254,7 @@ function LightsPanel({ ringed }: PanelProps) {
       <KeyLights ringed={ringed('keylights')} />
       <LightSyncBlock ls={ls} />
       <DeskToken ringed={ringed('desktoken')} />
+      <StagePopTools ringed={ringed('stagepop')} />
     </>
   );
 }
@@ -270,7 +272,7 @@ function DisplayPanel() {
 
 /** One rail entry's group. Adding an option to the drawer is one new entry here (and its panel above). */
 export interface ToolsGroup {
-  id: Exclude<ToolsFocus, null | 'keylights' | 'desktoken'>;
+  id: Exclude<ToolsFocus, null | 'keylights' | 'desktoken' | 'stagepop'>;
   name: string;
   icon: Icon;
   tip: string;
@@ -282,7 +284,7 @@ export interface ToolsGroup {
 export const GROUPS: readonly ToolsGroup[] = [
   { id: 'accounts', name: 'Accounts', icon: IconUserCircle, tip: 'Calendar, Spotify and YouTube sign-ins', sections: ['accounts'], Panel: AccountsPanel },
   { id: 'health', name: 'Health', icon: IconHeartbeat, tip: 'When each source was last read, and the keys file', sections: [], Panel: HealthPanel },
-  { id: 'lights', name: 'Lights and home', icon: IconBulb, tip: 'Key lights, Light sync and the home app token', sections: ['keylights', 'desktoken'], Panel: LightsPanel },
+  { id: 'lights', name: 'Lights and home', icon: IconBulb, tip: 'Key lights, Light sync, the home app token and the stage pop-out', sections: ['keylights', 'desktoken', 'stagepop'], Panel: LightsPanel },
   { id: 'display', name: 'Display', icon: IconPalette, tip: 'Weather in the scene and the video look', sections: [], Panel: DisplayPanel },
 ];
 

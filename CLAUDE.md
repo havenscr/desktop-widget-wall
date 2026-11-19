@@ -378,6 +378,7 @@ Wall 2 is placed through Win32 in `src-tauri/src/wall2_window.rs` (not tao) and 
 Meet tokens and Graph calls live in `wall2_meet` (Rust); the web view never sees tokens or join URLs. See the Meet section of `wall/README.md`.
 Sonos reads and commands live in `wall2_sonos` (Rust, `sonosBaseUrl` in `feeds.json`): every write is checked against the last good read (two minutes at most), anything that could leave a speaker above 40 needs `confirm`, and plays are unforced unless "Play anyway" follows a skip. See "Sound on Home" in `wall/README.md`.
 Unwind's lower right is the Office moods row (`wall/src/studio/OfficeMoods.tsx`): the home app's moods read and writes through `wall2_studio.rs`, and an Off chip only while the home app offers it (`off.offered`); `wall2_office_off` is refused unless the last moods read offered Off. See "Office moods" under Studio lights in `wall/README.md`.
+The prompter box on On Air Live drives the Firefox stage pop-out add-on over a loopback WebSocket (`wall2_stagepop.rs`, `127.0.0.1:47231`, moz-extension origin pinned, pairing token in Credential Manager shown once in Tools). See "Stage pop-out" under On Air in `wall/README.md`.
 
 ## Fingerprinting
 
