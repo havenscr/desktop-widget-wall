@@ -166,19 +166,19 @@ it('does not cancel when no sign-in is pending', async () => {
   expect(cancel).not.toHaveBeenCalled();
 });
 
-it('lays out the hero, the island, the Next card and Capture inside .meet-body; the Next card is the one panel at the right edge', async () => {
+it('lays out the hero, the island and the Next card inside .meet-body; the Next card is the one panel at the right edge', async () => {
   mocks.set('wall2_meet_next', () => data);
   const { container } = render(<Meet />);
   await flush(10);
   const body = container.querySelector('.meet-body')!;
   expect(body).not.toBeNull();
-  for (const label of ['Next meeting', 'Meeting notes', 'Later meetings', 'Capture']) {
+  for (const label of ['Next meeting', 'Meeting notes', 'Later meetings']) {
     expect(body.contains(screen.getByLabelText(label))).toBe(true);
   }
   expect(container.querySelectorAll('.meet > .panel')).toHaveLength(0);
-  // The built-in fit measurement reads the direct panels of the body: the Next card keeps its class, Capture is not a panel.
+  // The built-in fit measurement reads the direct panels of the body: the Next card keeps its class.
   expect([...body.querySelectorAll(':scope > .panel')].map((e) => e.className)).toEqual(['panel meet-island', 'panel meet-later']);
-  expect(screen.getByLabelText('Capture').classList.contains('panel')).toBe(false);
+  expect(screen.queryByLabelText('Capture')).toBeNull();
   // The frame clock steps aside; the hero draws its own time.
   expect(container.querySelector('.meet-time')).not.toBeNull();
 });

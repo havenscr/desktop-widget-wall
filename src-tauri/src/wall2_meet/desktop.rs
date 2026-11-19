@@ -42,6 +42,24 @@ pub fn open_decision(classic_usable: bool, has_entry: bool, desktop_enabled: boo
     }
 }
 
+/// Fixed target for the new Outlook app: its Calendar. New Outlook has no documented way to
+/// open one event, so a meeting click lands here. Nothing from the page is ever added to it.
+pub const NEW_OUTLOOK_CALENDAR: &str = "outlookcal:";
+
+/// The documented mailto ProgId of the new Outlook (exact match, any letter case).
+pub const NEW_OUTLOOK_PROGID: &str = "AppXbx2ce4vcxjdhff3d1ms66qqzk12zn827";
+
+pub fn is_new_outlook_progid(progid: &str) -> bool {
+    progid.eq_ignore_ascii_case(NEW_OUTLOOK_PROGID)
+}
+
+/// New Outlook counts as in use when any one signal says so, checked cheapest first and
+/// stopping at the first yes: the mailto default app is the new Outlook, the classic Outlook
+/// toggle is set to new, or olk.exe is running (the last one scans process names).
+pub fn new_outlook_decision(mailto_is_new: impl FnOnce() -> bool, toggle_is_new: impl FnOnce() -> bool, olk_running: impl FnOnce() -> bool) -> bool {
+    mailto_is_new() || toggle_is_new() || olk_running()
+}
+
 pub fn select_arg(hex: &str) -> Option<String> {
     if !(40..=1024).contains(&hex.len()) || hex.len() % 2 != 0 || !hex.bytes().all(|byte| byte.is_ascii_digit() || (b'A'..=b'F').contains(&byte)) {
         return None;
@@ -74,20 +92,27 @@ fn starts_with_drive(text: &str) -> bool {
     matches!(text.as_bytes(), [letter, b':', b'\\' | b'/', ..] if letter.is_ascii_alphabetic())
 }
 
-pub fn open_with<Find, Launch, Open>(
+#[allow(clippy::too_many_arguments)]
+pub fn open_with<Find, Launch, LaunchNew, Open>(
     desktop_enabled: bool,
+    new_outlook: bool,
     entry: Option<&str>,
     web: Option<&str>,
     mut find: Find,
     mut launch: Launch,
+    mut launch_new: LaunchNew,
     mut open: Open,
 ) -> Result<(), OpenError>
 where
     Find: FnMut() -> Option<PathBuf>,
     Launch: FnMut(&Path, &str) -> bool,
+    LaunchNew: FnMut(&str) -> bool,
     Open: FnMut(&str) -> bool,
 {
     if desktop_enabled {
+        if new_outlook && launch_new(NEW_OUTLOOK_CALENDAR) {
+            return Ok(());
+        }
         if let Some(exe) = find() {
             let arg = entry.and_then(select_arg).unwrap_or_else(|| "outlook:calendar".to_string());
             if launch(&exe, &arg) {
@@ -104,7 +129,7 @@ where
 
 #[cfg(windows)]
 mod windows_impl {
-    use super::{registry_lookup_order, valid_outlook_path, PathBuf, RegistryRoot, RegistryView};
+    use super::{is_new_outlook_progid, new_outlook_decision, registry_lookup_order, valid_outlook_path, PathBuf, RegistryRoot, RegistryView};
     use windows::core::{w, PCWSTR};
     use windows::Win32::Foundation::ERROR_SUCCESS;
     use windows::Win32::System::Registry::{
@@ -150,6 +175,48 @@ mod windows_impl {
         status == ERROR_SUCCESS && value == 1
     }
 
+    fn mailto_progid() -> Option<String> {
+        let mut buf = vec![0u16; 130];
+        let mut bytes = (buf.len() * 2) as u32;
+        let status = unsafe {
+            RegGetValueW(
+                HKEY_CURRENT_USER,
+                w!("Software\\Microsoft\\Windows\\Shell\\Associations\\UrlAssociations\\mailto\\UserChoice"),
+                w!("ProgId"),
+                RRF_RT_REG_SZ,
+                None,
+                Some(buf.as_mut_ptr().cast()),
+                Some(&mut bytes),
+            )
+        };
+        if status != ERROR_SUCCESS {
+            return None;
+        }
+        let len = ((bytes as usize) / 2).min(buf.len());
+        let end = buf[..len].iter().position(|&unit| unit == 0).unwrap_or(len);
+        Some(String::from_utf16_lossy(&buf[..end]))
+    }
+
+    fn olk_running() -> bool {
+        let mut system = sysinfo::System::new();
+        system.refresh_processes(sysinfo::ProcessesToUpdate::All, true);
+        system.processes().values().any(|p| p.name().to_string_lossy().eq_ignore_ascii_case("olk.exe"))
+    }
+
+    /// Cached for 60 seconds so a burst of clicks scans at most once.
+    pub fn new_outlook_in_use() -> bool {
+        static CACHE: std::sync::Mutex<Option<(std::time::Instant, bool)>> = std::sync::Mutex::new(None);
+        let mut cache = CACHE.lock().unwrap_or_else(|e| e.into_inner());
+        if let Some((at, value)) = *cache {
+            if at.elapsed() < std::time::Duration::from_secs(60) {
+                return value;
+            }
+        }
+        let value = new_outlook_decision(|| mailto_progid().is_some_and(|id| is_new_outlook_progid(&id)), use_new_outlook, olk_running);
+        *cache = Some((std::time::Instant::now(), value));
+        value
+    }
+
     pub fn classic_outlook_exe() -> Option<PathBuf> {
         if use_new_outlook() {
             return None;
@@ -166,6 +233,8 @@ mod windows_impl {
 pub use windows_impl::classic_outlook_exe;
 #[cfg(windows)]
 pub use windows_impl::use_new_outlook;
+#[cfg(windows)]
+pub use windows_impl::new_outlook_in_use;
 
 #[cfg(not(windows))]
 pub fn classic_outlook_exe() -> Option<PathBuf> {
@@ -177,8 +246,9 @@ pub fn use_new_outlook() -> bool {
     false
 }
 
-pub fn new_outlook_present() -> bool {
-    std::env::var_os("LOCALAPPDATA").is_some_and(|base| PathBuf::from(base).join("Microsoft").join("Olk").is_dir())
+#[cfg(not(windows))]
+pub fn new_outlook_in_use() -> bool {
+    false
 }
 
 #[cfg(test)]
@@ -276,29 +346,78 @@ mod tests {
     #[test]
     fn click_sequence_has_exact_side_effects() {
         for enabled in [false, true] {
-            for classic in [false, true] {
-                for entry in [false, true] {
-                    for web in [false, true] {
-                        for launch_ok in [false, true] {
-                            let entry_value = "AB".repeat(20);
-                            let mut finds = 0;
-                            let mut launches = 0;
-                            let mut opens = 0;
-                            let result = open_with(
-                                enabled,
-                                entry.then_some(entry_value.as_str()),
-                                web.then_some("https://outlook.office.com/item"),
-                                || { finds += 1; classic.then(|| PathBuf::from(r"C:\Office\OUTLOOK.EXE")) },
-                                |_, _| { launches += 1; launch_ok },
-                                |_| { opens += 1; true },
-                            );
-                            assert_eq!(finds, usize::from(enabled));
-                            let tried_launch = enabled && classic;
-                            assert_eq!(launches, usize::from(tried_launch));
-                            assert_eq!(opens, usize::from(web && !(tried_launch && launch_ok)));
-                            assert_eq!(result.is_ok(), (tried_launch && launch_ok) || web);
+            for new_outlook in [false, true] {
+                for classic in [false, true] {
+                    for entry in [false, true] {
+                        for web in [false, true] {
+                            for launch_ok in [false, true] {
+                                for new_ok in [false, true] {
+                                    let entry_value = "AB".repeat(20);
+                                    let mut finds = 0;
+                                    let mut launches = 0;
+                                    let mut new_launches = 0;
+                                    let mut opens = 0;
+                                    let result = open_with(
+                                        enabled,
+                                        new_outlook,
+                                        entry.then_some(entry_value.as_str()),
+                                        web.then_some("https://outlook.office.com/item"),
+                                        || { finds += 1; classic.then(|| PathBuf::from(r"C:\Office\OUTLOOK.EXE")) },
+                                        |_, _| { launches += 1; launch_ok },
+                                        |target| { assert_eq!(target, "outlookcal:"); new_launches += 1; new_ok },
+                                        |_| { opens += 1; true },
+                                    );
+                                    let tried_new = enabled && new_outlook;
+                                    let new_done = tried_new && new_ok;
+                                    let tried_classic = enabled && !new_done && classic;
+                                    let classic_done = tried_classic && launch_ok;
+                                    assert_eq!(new_launches, usize::from(tried_new));
+                                    assert_eq!(finds, usize::from(enabled && !new_done));
+                                    assert_eq!(launches, usize::from(tried_classic));
+                                    assert_eq!(opens, usize::from(web && !new_done && !classic_done));
+                                    assert_eq!(result.is_ok(), new_done || classic_done || web);
+                                }
+                            }
                         }
                     }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn new_outlook_target_is_the_fixed_calendar_scheme() {
+        assert_eq!(NEW_OUTLOOK_CALENDAR, "outlookcal:");
+    }
+
+    #[test]
+    fn new_outlook_progid_is_an_exact_match() {
+        assert!(is_new_outlook_progid("AppXbx2ce4vcxjdhff3d1ms66qqzk12zn827"));
+        assert!(is_new_outlook_progid("appxbx2ce4vcxjdhff3d1ms66qqzk12zn827"));
+        for bad in [
+            "",
+            "AppXbx2ce4vcxjdhff3d1ms66qqzk12zn82",
+            "AppXbx2ce4vcxjdhff3d1ms66qqzk12zn8277",
+            "xAppXbx2ce4vcxjdhff3d1ms66qqzk12zn827",
+            " AppXbx2ce4vcxjdhff3d1ms66qqzk12zn827",
+            "Outlook.URL.mailto.15",
+            "ChromeHTML",
+        ] {
+            assert!(!is_new_outlook_progid(bad), "accepted {bad:?}");
+        }
+    }
+
+    #[test]
+    fn new_outlook_decision_is_true_when_any_signal_is_true_and_stops_at_the_first() {
+        for a in [false, true] {
+            for b in [false, true] {
+                for c in [false, true] {
+                    let calls = [std::cell::Cell::new(0usize), std::cell::Cell::new(0usize), std::cell::Cell::new(0usize)];
+                    let got = new_outlook_decision(|| { calls[0].set(calls[0].get() + 1); a }, || { calls[1].set(calls[1].get() + 1); b }, || { calls[2].set(calls[2].get() + 1); c });
+                    assert_eq!(got, a || b || c);
+                    assert_eq!(calls[0].get(), 1);
+                    assert_eq!(calls[1].get(), usize::from(!a));
+                    assert_eq!(calls[2].get(), usize::from(!a && !b));
                 }
             }
         }
