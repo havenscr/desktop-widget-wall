@@ -437,6 +437,10 @@ function Browser({ tall }: { tall: boolean }) {
   // debounce effect below would re-arm and search again by itself).
   const [asked, setAsked] = useState('');
   const askedRef = useRef('');
+  // The words whose search last answered (done) or failed (failed), so the Albums tab never shows
+  // the albums of an earlier query under new words while the new search is still running.
+  const [done, setDone] = useState('');
+  const [failed, setFailed] = useState('');
   const [open, setOpen] = useState<SpotifyItem | null>(null);
   // The card's top heading tells the panel to go home (see `SourceSwitch`); the panel tells it when it is inside.
   const homeRev = useSpotifyHome((s) => s.rev);
@@ -525,6 +529,7 @@ function Browser({ tall }: { tall: boolean }) {
       const mine = ++searchSeq.current;
       askedRef.current = text;
       setAsked(text);
+      setFailed('');
       setTab('search');
       setOpen(null);
       patch('search', { loading: true, problem: null });
@@ -532,6 +537,7 @@ function Browser({ tall }: { tall: boolean }) {
         (r) => {
           if (!mounted.current || mine !== searchSeq.current) return;
           const items = [...(r?.tracks ?? []), ...(r?.playlists ?? []), ...(r?.albums ?? [])];
+          setDone(text);
           patch('search', { items, loading: false, loaded: true, more: false, page: 0 });
         },
         (e) => {
@@ -540,6 +546,7 @@ function Browser({ tall }: { tall: boolean }) {
           // The same words may be asked again (Retry, or typing them once more).
           askedRef.current = '';
           setAsked('');
+          setFailed(text);
           // A failure keeps the last good results under a note; with none, the line and Retry show.
           if (listsRef.current.search.items.length > 0) {
             patch('search', { loading: false, problem });
@@ -568,8 +575,13 @@ function Browser({ tall }: { tall: boolean }) {
   const shuffleItem = (item: SpotifyItem) => playIt(item, true);
 
   // Albums with words in the search field shows the albums that search found; an empty field shows the saved ones.
-  const albumHits = tab === 'albums' && asked !== '' && query.trim() === asked;
-  const cur = albumHits ? { ...lists.search, items: lists.search.items.filter((i) => i.kind === 'album'), more: false } : lists[tab];
+  // Searched albums show only once the search for exactly these words has answered; while it runs
+  // (or after it failed) the list is empty, so the loading line or the failure line and Retry show.
+  const words = query.trim();
+  const albumHits = tab === 'albums' && words !== '' && (words === asked || words === failed);
+  const cur = albumHits
+    ? { ...lists.search, items: done === words ? lists.search.items.filter((i) => i.kind === 'album') : [], loading: words === asked && done !== words, more: false }
+    : lists[tab];
   const songsIn = cur.items.filter((i) => i.kind === 'track');
   const lists2 = cur.items.filter((i) => i.kind !== 'track');
   const scrolled = (e: UIEvent<HTMLElement>) => {
@@ -667,7 +679,7 @@ function Browser({ tall }: { tall: boolean }) {
                 Open Tools
               </button>
             ) : spotifyRetryable(cur.problem) ? (
-              <button type="button" className="sp-btn" onClick={() => (tab === 'search' ? runSearch(query, true) : load(tab as Exclude<BrowseTab, 'search' | 'queue'>, 0))}>
+              <button type="button" className="sp-btn" onClick={() => (tab === 'search' || albumHits ? runSearch(query, true) : load(tab as Exclude<BrowseTab, 'search' | 'queue'>, 0))}>
                 Retry
               </button>
             ) : null}

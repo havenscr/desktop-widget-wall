@@ -1813,7 +1813,7 @@ frame (no ribbon) in the wide zones `470px 1fr 540px`. The parts are in `wall/sr
   list, and a failed one keeps the last good results under a note with Retry), then the tabs
   Search, Playlists, Albums, Liked and Recent in a pill. Playlists and Albums are a grid of large
   cover tiles (Albums shows the saved albums; while the field holds the words of the last search,
-  it shows the albums that search found, up to ten, or "No albums found. Try other words."), five across, the name and the song count under each (`imageUrl`; a neutral tile
+  it shows the albums that search found, up to ten, or "No albums found. Try other words."; the saved albums list and its paging are hidden while the field holds searched words), five across, the name and the song count under each (`imageUrl`; a neutral tile
   with a music note when there is none or it fails to load, never a colour gradient). Resting on
   a tile rings it and opens its details card (the shared tip, pinned): the kind with its owner
   or artist said once, the song count when the bridge gives it, and Play, Shuffle and Songs.

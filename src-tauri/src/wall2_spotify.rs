@@ -1332,7 +1332,7 @@ mod tests {
     }
 
     /// A saved-albums page in the shape Spotify's reference gives for `/me/albums` (each saved album
-    /// carries its songs page), pretty printed as Spotify sends it.
+    /// carries its songs page), serialized compact so its size does not depend on whitespace.
     fn saved_albums_body(albums: usize, songs: usize) -> String {
         let artist = |n: usize| json!({"external_urls":{"spotify":format!("https://open.spotify.com/artist/{:022}", n)},"href":format!("https://api.spotify.com/v1/artists/{:022}", n),"id":format!("{:022}", n),"name":"Night Signals","type":"artist","uri":format!("spotify:artist:{:022}", n)});
         let items: Vec<Value> = (0..albums).map(|a| {
@@ -1340,7 +1340,7 @@ mod tests {
             let tracks: Vec<Value> = (0..songs).map(|t| json!({"artists":[artist(a)],"disc_number":1,"duration_ms":215_000,"explicit":false,"external_urls":{"spotify":format!("https://open.spotify.com/track/{:011}{:011}", a, t)},"href":format!("https://api.spotify.com/v1/tracks/{:011}{:011}", a, t),"id":format!("{:011}{:011}", a, t),"is_local":false,"is_playable":true,"name":format!("Song {t}"),"preview_url":null,"track_number":t + 1,"type":"track","uri":format!("spotify:track:{:011}{:011}", a, t)})).collect();
             json!({"added_at":"2026-01-02T03:04:05Z","album":{"album_type":"album","artists":[artist(a)],"copyrights":[{"text":"2026 Night Signals","type":"C"},{"text":"2026 Night Signals","type":"P"}],"external_ids":{"upc":"000000000000"},"external_urls":{"spotify":format!("https://open.spotify.com/album/{id}")},"genres":[],"href":format!("https://api.spotify.com/v1/albums/{id}"),"id":id,"images":[{"height":640,"url":"https://i.scdn.co/image/ab67616d0000b273aaaaaaaaaaaaaaaaaaaaaaaa","width":640},{"height":300,"url":"https://i.scdn.co/image/ab67616d00001e02aaaaaaaaaaaaaaaaaaaaaaaa","width":300},{"height":64,"url":"https://i.scdn.co/image/ab67616d00004851aaaaaaaaaaaaaaaaaaaaaaaa","width":64}],"name":format!("Album {a}"),"release_date":"2026-01-01","release_date_precision":"day","total_tracks":songs,"tracks":{"href":format!("https://api.spotify.com/v1/albums/{id}/tracks?offset=0&limit=50"),"items":tracks,"limit":50,"next":null,"offset":0,"previous":null,"total":songs},"type":"album","uri":format!("spotify:album:{id}")}})
         }).collect();
-        serde_json::to_string_pretty(&json!({"href":"https://api.spotify.com/v1/me/albums?offset=0&limit=50","items":items,"limit":50,"next":"https://api.spotify.com/v1/me/albums?offset=50&limit=50","offset":0,"previous":null,"total":120})).unwrap()
+        serde_json::to_string(&json!({"href":"https://api.spotify.com/v1/me/albums?offset=0&limit=50","items":items,"limit":50,"next":"https://api.spotify.com/v1/me/albums?offset=50&limit=50","offset":0,"previous":null,"total":120})).unwrap()
     }
 
     #[test]
@@ -1349,18 +1349,23 @@ mod tests {
         reset_state();
         *token().lock().unwrap()=Some(Token{access:"ok".into(),expires:Instant::now()+Duration::from_secs(3600)});
         let creds=FakeCreds::new(Some("old"));
-        // Fifty saved albums of twelve songs: past the 512 KB song page cap, which read as "not answering".
-        let typical=saved_albums_body(50,12);
+        // A full page of 50 saved albums with 20 songs each. Compact byte count, hand-traced (the body
+        // has no escapes or non-ASCII, so serde_json writes the same bytes as a compact JSON writer):
+        // 731,830 bytes, over TRACK_BODY (524,288) and far under ALBUMS_BODY (8,388,608).
+        let typical=saved_albums_body(50,20);
+        assert!(typical.len() as u64 > TRACK_BODY && (typical.len() as u64) < ALBUMS_BODY, "{}", typical.len());
         assert!(typical.len() as u64 > TRACK_BODY, "{}", typical.len());
         let old=FakeHttp::new(vec![],vec![hr(200,&typical)]);
         assert_eq!(get_json_with_limit(&cfg(),"/me/albums?limit=50&offset=0",TRACK_BODY,&old,&creds),Err("down".into()));
         let http=FakeHttp::new(vec![],vec![hr(200,&typical)]);
         let got=albums_with(&cfg(),Some(1),&http,&creds).unwrap();
         assert_eq!(got.len(),50);
-        assert_eq!((got[0].name.as_str(),got[0].kind.as_str(),got[0].count,got[0].subtitle.as_deref()),("Album 0","album",Some(12),Some("Night Signals")));
+        assert_eq!((got[0].name.as_str(),got[0].kind.as_str(),got[0].count,got[0].subtitle.as_deref()),("Album 0","album",Some(20),Some("Night Signals")));
         assert_eq!(http.paths(),vec!["/me/albums?limit=50&offset=50".to_string()]);
         assert_eq!(http.limits(),vec![ALBUMS_BODY]);
-        // The largest page Spotify can send (fifty albums, each with a full fifty-song page) still fits.
+        // A page of 50 albums with 50 songs each is 1,732,330 bytes compact: about a fifth of the 8 MB
+        // limit, so a longer real body (longer names, more images) still fits. The 8 MB read plus the
+        // Value parse is bounded memory, and it runs only on the Albums tab.
         let largest=saved_albums_body(50,50);
         assert!((largest.len() as u64) < ALBUMS_BODY, "{}", largest.len());
         let http=FakeHttp::new(vec![],vec![hr(200,&largest)]);
