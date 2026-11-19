@@ -43,13 +43,14 @@ function measureOnAirLive() {
   const boxes = {
     '.oa2-showtimer': [124, 76, 640, 166],
     '.oa2-livechips': [124, 250, 640, 36],
+    '.oa2-studiostatus': [124, 298, 640, 152],
     ...(cRail ? { '.oa2-rail-comments': [800, 24, 72, 486] } : { '.oa2-comments': [800, 24, cw, 486] }),
     ...(nRail ? { '.oa2-rail-notes': [1808, 24, 72, 486] } : { '.oa2-livenotes': [800 + cw + 24, 24, nw, 486] }),
     '.oa2-studiokeys': [1920, 24, 620, 192],
     '.oa2-lights-live': [1920, 348, 620, 154],
     ...(hasParts ? { '.oa2-runline': [124, 458, 640, 46] } : {}),
   };
-  const empties = { '.oa2-empty-status': [124, 298, 640, 152], '.oa2-empty-live': [1920, 230, 620, 104] };
+  const empties = { '.oa2-empty-live': [1920, 230, 620, 104] };
   for (const [sel, [x, y, w, h]] of Object.entries(boxes)) {
     const el = root.querySelector(sel);
     if (!el) {
@@ -93,18 +94,28 @@ function measureOnAirLive() {
     const b = hd.getBoundingClientRect();
     if (Math.abs(b.left - (800 + cw)) > 1 || Math.abs(b.width - 24) > 1) fails.push('on air live: the split handle is at x ' + r1(b.left) + ', ' + r1(b.width) + ' wide and should be in the 24 px gap at x ' + (800 + cw));
   }
-  // Studio keys: row 2 at its final y (box top + 98), three tiles, nothing above them but the heading.
+  // Studio keys: row 1 (four StreamYard keys) between the heading and row 2, row 2 (three tiles) at its final y (box top + 98).
   const sk = root.querySelector('.oa2-studiokeys');
   if (sk) {
     const top = sk.getBoundingClientRect().top;
-    const tiles = [...sk.querySelectorAll('.key-tile')];
-    if (tiles.length > 0) {
-      if (tiles.length !== 3) fails.push('on air live: the studio keys box has ' + tiles.length + ' tiles (row 2 has 3)');
-      for (const t of tiles) {
-        const y = t.getBoundingClientRect().top - top;
-        if (Math.abs(y - 98) > 1.5) fails.push('on air live: row 2 tile "' + t.getAttribute('aria-label') + '" is ' + r1(y) + ' px under the box top (its final y is 98)');
-      }
+    const r1t = [...sk.querySelectorAll('.oa2-skrow1 .key-tile')];
+    const r2t = [...sk.querySelectorAll('.oa2-skrow2 .key-tile')];
+    if (r1t.length !== 4) fails.push('on air live: row 1 of the studio keys has ' + r1t.length + ' tiles (it has 4)');
+    if (r2t.length > 0 && r2t.length !== 3) fails.push('on air live: row 2 of the studio keys has ' + r2t.length + ' tiles (it has 3)');
+    for (const t of r2t) {
+      const y = t.getBoundingClientRect().top - top;
+      if (Math.abs(y - 98) > 1.5) fails.push('on air live: row 2 tile "' + t.getAttribute('aria-label') + '" is ' + r1(y) + ' px under the box top (its final y is 98)');
     }
+    const head = sk.querySelector('.oa2-hd');
+    for (const t of r1t) {
+      const b = t.getBoundingClientRect();
+      if (head && b.top < head.getBoundingClientRect().bottom - 0.5) fails.push('on air live: row 1 tile "' + t.getAttribute('aria-label') + '" overlaps the heading');
+      if (b.bottom > top + 98 - 0.5) fails.push('on air live: row 1 tile "' + t.getAttribute('aria-label') + '" reaches into row 2');
+    }
+    const want = q.get('skeys') === 'unset' ? 4 : 0;
+    const dim = r1t.filter((t) => t.classList.contains('off')).length;
+    if (q.get('skeys') === 'unset' && dim !== want) fails.push('on air live: with no chords set ' + dim + ' of 4 studio keys are dim (all 4 should be)');
+    if (q.get('skeys') !== 'unset' && q.get('skeys') !== null && dim > 1) fails.push('on air live: with chords set ' + dim + ' studio keys are dim');
   }
   // Comments: a row is at most two lines, no visible row is cut at the top, and eight short rows fit.
   const list = root.querySelector('.oa2-cms[role="log"]');
@@ -129,10 +140,11 @@ function measureOnAirLive() {
   // Notes: 27 px, in a card 436 wide.
   const note = root.querySelector('.oa2-livenotes .oa-note');
   if (note && Math.abs(parseFloat(getComputedStyle(note).fontSize) - 27) > 0.6) fails.push('on air live: the notes are ' + getComputedStyle(note).fontSize + ' (27 px)');
-  // Every key tile at least 76 by 76, no text under 16 px.
+  // Every key tile at least 76 by 76 (row 1 of the studio keys is 58 tall: it sits between the heading and row 2), no text under 16 px.
   for (const tile of root.querySelectorAll('.key-tile')) {
     const b = tile.getBoundingClientRect();
-    if (b.height < 75.5 || b.width < 75.5) fails.push('on air live: key tile "' + tile.getAttribute('aria-label') + '" is ' + Math.round(b.width) + ' x ' + Math.round(b.height) + ' px (at least 76 by 76)');
+    const low = tile.closest('.oa2-skrow1') ? 57.5 : 75.5;
+    if (b.height < low || b.width < 75.5) fails.push('on air live: key tile "' + tile.getAttribute('aria-label') + '" is ' + Math.round(b.width) + ' x ' + Math.round(b.height) + ' px (at least ' + Math.round(low + 0.5) + ' high and 76 wide)');
   }
   for (const e of root.querySelectorAll('*')) {
     if (!visible(e)) continue;
@@ -159,7 +171,12 @@ export default {
   name: 'onair-live',
   gallery: {
     states: [
-      state('live with comments', 'yt=live', ['Live, 37 watching, since 10:02 AM', 'Comments', 'YouTube · read 4 s ago', 'Could you zoom in a little?', 'YouTube only, read every 10 seconds.', 'Show timer', 'Started 10:02 AM, when the broadcast went live.', 'Studio keys', 'Mark a moment', 'Snip', 'Part 1 of 5: Welcome and news', '!Name channel']),
+      state('live with comments', 'yt=live', ['Live, 37 watching, since 10:02 AM', 'Comments', 'YouTube · read 4 s ago', 'Could you zoom in a little?', 'YouTube only, read every 10 seconds.', 'Show timer', 'Started 10:02 AM, when the broadcast went live.', 'Studio keys', 'Solo', 'Two up', 'Share', 'Go live', 'No key sent yet', 'StreamYard studio', 'Studio window: open (Firefox)', 'The wall cannot see which layout is live. It shows what it sent.', 'Mark a moment', 'Snip', 'Part 1 of 5: Welcome and news', '!Name channel']),
+      state('studio keys, no chords yet', 'yt=none&skeys=unset&swin=none', ['Solo', 'Two up', 'Pick window', 'Studio window: not picked', '!Go live?']),
+      state('studio keys, window picked, no chords', 'yt=none&skeys=unset', ['Open keys file', 'Studio window: open']),
+      state('studio keys, Go live armed', 'yt=none', ['Click again', 'Go live? Click again'], '[data-key="golive"]'),
+      state('studio keys, a key sent', 'yt=live', ['Sent: Two up, just now', 'Last key sent: Two up, just now', 'End show'], '[data-key="two"]'),
+      state('studio window minimized', 'yt=none&swin=minimized', ['Studio window: minimized']),
       state('busy chat, wrapped rows and a Super Chat', 'yt=busy', ['$5.00', 'Thanks', 'YouTube only, read every 10 seconds.']),
       state('live, no comments yet', 'yt=empty', ['No comments yet. They show here within about 10 seconds of being posted.']),
       state('scheduled', 'yt=scheduled', ['Scheduled, 11:00 AM, in 36 min', 'Chat opens with the broadcast. Scheduled for 11:00 AM on YouTube. Comments show here once it is live.', 'Channel: Sample Studio', 'Change', 'Forget']),
@@ -196,6 +213,9 @@ export default {
       variant('comments full', 'yt=live&split=comments'),
       variant('notes full', 'yt=live&split=notes'),
       variant('busy chat, notes full', 'yt=busy&split=notes'),
+      variant('studio keys set', 'yt=live&skeys=set'),
+      variant('studio keys unset, no window', 'yt=none&skeys=unset&swin=none'),
+      variant('studio window minimized', 'yt=none&swin=minimized'),
       variant('channel field open', 'yt=notsetup', { click: OPEN }),
     ],
     measurements: { onairLive: measureOnAirLive },
@@ -203,7 +223,7 @@ export default {
       onairLive: (variantEntry, results, emit) => {
         for (const failure of results.onairLive) emit(`  FAIL ${failure}`);
         if (results.onairLive.length) return true;
-        if (variantEntry.name.startsWith('On Air live,')) emit('  ok   on air live: every block in its planned box (the split at 620 / 436 or the dragged and folded states, the handle in the gap) inside y 20 to 510, the empty boxes empty, row 2 of the studio keys at its final y, comment rows at most two lines and none cut, notes 27 px, key tiles at least 76 px, text at least 16 px');
+        if (variantEntry.name.startsWith('On Air live,')) emit('  ok   on air live: every block in its planned box (the split at 620 / 436 or the dragged and folded states, the handle in the gap) inside y 20 to 510, the empty boxes empty, row 1 of the studio keys above row 2 and row 2 at its final y, comment rows at most two lines and none cut, notes 27 px, key tiles at least 76 px, text at least 16 px');
         return false;
       },
     },

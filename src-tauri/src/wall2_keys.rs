@@ -49,6 +49,9 @@ const MAX_EXE_CHARS: usize = 64;
 /// The pause between the steps of a chord, in milliseconds. Fixed; the file cannot change it.
 #[cfg_attr(not(windows), allow(dead_code))]
 const STEP_GAP_MS: u64 = 150;
+/// The pause between the two presses of a studio Go live or End show, in milliseconds.
+#[cfg_attr(not(windows), allow(dead_code))]
+pub(crate) const STUDIO_REPEAT_MS: u64 = 400;
 
 // Section: chords
 
@@ -136,7 +139,7 @@ fn is_extended(vk: u16) -> bool {
 /// combination of modifiers and at most one ordinary key. Returns None for anything outside
 /// the vocabulary, an empty step or chord, a repeated modifier, more than one ordinary key
 /// in a step, or more than six steps.
-fn parse_steps(text: &str) -> Option<Vec<Step>> {
+pub(crate) fn parse_steps(text: &str) -> Option<Vec<Step>> {
     if text.is_empty() || text.chars().count() > MAX_CHORD_CHARS {
         return None;
     }
@@ -761,7 +764,7 @@ pub(crate) fn config_from_read(read: Result<Vec<u8>, std::io::ErrorKind>) -> Res
 pub(crate) const UNREADABLE: &str = "keys file could not be read";
 
 /// Read the file, at most one byte past the limit.
-fn read_keys_file(path: &std::path::Path) -> Result<Vec<u8>, std::io::ErrorKind> {
+pub(crate) fn read_keys_file(path: &std::path::Path) -> Result<Vec<u8>, std::io::ErrorKind> {
     use std::io::Read;
     let file = std::fs::File::open(path).map_err(|e| e.kind())?;
     let mut buf = Vec::new();
@@ -896,7 +899,7 @@ async fn run_key(set: AppDef, action: KeyAction, pass: Option<RecordingPass>) ->
 // Section: Windows
 
 #[cfg(windows)]
-mod win {
+pub(crate) mod win {
     use super::*;
     use crate::wall2_winutil::{is_shell_class, sys, try_begin};
     use std::sync::atomic::AtomicBool;
@@ -956,7 +959,7 @@ mod win {
         alive.then_some(rem)
     }
 
-    fn look(rem: &Remembered) -> Live {
+    pub fn look(rem: &Remembered) -> Live {
         let hw = sys::hwnd(rem.hwnd);
         let exists = unsafe { IsWindow(hw).as_bool() };
         let pid = if exists { sys::pid_of(rem.hwnd) } else { 0 };
@@ -970,7 +973,7 @@ mod win {
         }
     }
 
-    fn bring_forward(hwnd: isize) -> bool {
+    pub fn bring_forward(hwnd: isize) -> bool {
         let hw = sys::hwnd(hwnd);
         unsafe {
             if IsHungAppWindow(hw).as_bool() {
@@ -993,7 +996,7 @@ mod win {
         }
     }
 
-    fn foreground_is(hwnd: isize) -> bool {
+    pub fn foreground_is(hwnd: isize) -> bool {
         unsafe { GetForegroundWindow() }.0 as isize == hwnd
     }
 
@@ -1097,8 +1100,35 @@ mod win {
                 return Err(Refusal::NotForward);
             }
         }
-        // One step at a time: the front window must still be the target before each step,
-        // and anything held is released if a step fails.
+        play(steps, target)
+    }
+
+    /// Send one chord (`times` times, 400 ms apart: StreamYard wants Go live and End show pressed twice) to the studio window the owner picked (`wall2_studio_keys`). The window is looked
+    /// at again here, right before anything is raised or sent: `check_target` against `app` (a browser
+    /// image only), then `title_ok` (a title check may only refuse), then the same raise and step by
+    /// step send as any key.
+    pub fn send_studio(app: &AppDef, rem: &Remembered, steps: &[Step], times: u8, title_ok: &dyn Fn(isize) -> bool) -> Result<(), Refusal> {
+        let _busy = try_begin(&SENDING).ok_or(Refusal::Busy)?;
+        for i in 0..times.max(1) {
+            if i > 0 {
+                std::thread::sleep(Duration::from_millis(STUDIO_REPEAT_MS));
+            }
+            // Before every send, the first and the repeat: the window is looked at again and must be in front.
+            check_target(app, Some(rem), &look(rem))?;
+            if !title_ok(rem.hwnd) {
+                return Err(Refusal::NoApp);
+            }
+            if !foreground_is(rem.hwnd) && !bring_forward(rem.hwnd) {
+                return Err(Refusal::NotForward);
+            }
+            play(steps, Some(rem.hwnd))?;
+        }
+        Ok(())
+    }
+
+    /// Deliver a plan one step at a time: the front window must still be the target before each
+    /// step, and anything held is released if a step fails.
+    fn play(steps: &[Step], target: Option<isize>) -> Result<(), Refusal> {
         let events = plan_events(steps);
         let mut sent = 0usize;
         let mut step: Vec<Event> = Vec::new();

@@ -85,10 +85,11 @@ it('draws the Live page: chip, comments newest at the bottom, the foot, and the 
   expect(document.querySelectorAll('.oa2-comments button:not(.oa2-exp)').length).toBe(0);
   expect(document.querySelectorAll('.oa2-comments .oa2-exp').length).toBe(1);
   await waitFor(() => expect(screen.getByText(/^Part 1 of 2: Load the data/)).toBeTruthy());
-  // Row 2 of the studio keys: three tiles; the prompter and status boxes stay empty.
-  expect(document.querySelectorAll('.oa2-studiokeys .key-tile').length).toBe(3);
+  // The studio keys: four StreamYard keys in row 1 and three in row 2; the prompter box stays empty and the status block is drawn.
+  expect(document.querySelectorAll('.oa2-studiokeys .oa2-skrow1 .key-tile').length).toBe(4);
+  expect(document.querySelectorAll('.oa2-studiokeys .oa2-skrow2 .key-tile').length).toBe(3);
   expect(document.querySelector('.oa2-empty-live')?.children.length).toBe(0);
-  expect(document.querySelector('.oa2-empty-status')?.children.length).toBe(0);
+  expect(document.querySelector('.oa2-studiostatus')).not.toBeNull();
 });
 
 it('the run line is not drawn without parts', async () => {
