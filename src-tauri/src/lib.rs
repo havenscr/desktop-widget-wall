@@ -74,6 +74,7 @@ mod wall2_youtube_played;
 mod wall2_omni;
 mod wall2_power;
 mod wall2_signals;
+mod wall2_studio_keys;
 mod wall2_sonos;
 mod wall2_media;
 mod wall2_sonos_log;
@@ -4088,6 +4089,9 @@ pub fn run() {
             wall2_keys::wall2_keys_send,
             wall2_keys::wall2_keys_library,
             wall2_keys::wall2_keys_send_library,
+            wall2_studio_keys::wall2_studio_pick_start,
+            wall2_studio_keys::wall2_studio_pick_status,
+            wall2_studio_keys::wall2_studio_key,
             wall2_tools::wall2_open_keys_file,
             list_audio_devices,
             start_audio_capture,
