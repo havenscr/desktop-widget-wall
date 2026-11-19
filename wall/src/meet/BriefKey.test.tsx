@@ -11,7 +11,7 @@ describe('BriefConnect', () => {
     render(<BriefConnect />);
     expect(screen.getByText('Meeting brief not connected ·')).toBeTruthy();
     const b = screen.getByRole('button', { name: 'Connect' });
-    expect(b.getAttribute('data-tip') ?? b.getAttribute('aria-label') ?? '').toBeDefined();
+    expect(b).toBeTruthy();
     expect(KEY_TIP).toContain('Windows Credential Manager');
   });
 

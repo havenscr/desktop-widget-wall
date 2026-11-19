@@ -70,7 +70,8 @@ export function BriefConnect({ onChanged }: { onChanged?: () => void }) {
         aria-label="Brief key"
         autoComplete="off"
         spellCheck={false}
-        disabled={busy}
+        readOnly={busy}
+        aria-busy={busy}
         value={value}
         onChange={(e) => setValue(e.target.value)}
         onKeyDown={onKey}
@@ -122,7 +123,7 @@ export function BriefConnected({ onChanged }: { onChanged?: () => void }) {
       <button type="button" className="meet-btn" onClick={forget} {...tip('Remove the brief key from this PC')}>
         Forget
       </button>
-      {fail && <span className="meet-notice meet-xs">Could not forget the key</span>}
+      {fail && <span className="meet-notice meet-xs" role="alert">Could not forget the key</span>}
     </>
   );
 }
