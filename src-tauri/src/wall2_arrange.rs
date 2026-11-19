@@ -371,6 +371,139 @@ pub struct ArrangeResult {
     pub asked: u32,
 }
 
+// Section: zones preview
+
+/// The most moves a preview lists: the zones layout never places more than this many windows.
+#[cfg_attr(not(windows), allow(dead_code))]
+const MAX_PREVIEW_MOVES: usize = 16;
+/// The longest program name a preview carries.
+#[cfg_attr(not(windows), allow(dead_code))]
+const MAX_APP_CHARS: usize = 24;
+
+/// One zone's shape as fractions of the screen's work area, with its reading-order number.
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+pub struct PreviewZone {
+    pub n: usize,
+    pub x: f64,
+    pub y: f64,
+    pub w: f64,
+    pub h: f64,
+}
+
+/// One window the layout would move: the zone number, the program's friendly name and why
+/// (`rule` or `recent`). Never a title, a path or a process id.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct PreviewMove {
+    pub zone: usize,
+    pub app: String,
+    pub why: &'static str,
+}
+
+/// What a click on My zones would do, read without moving anything.
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+pub struct ZonesPreview {
+    pub zones: Vec<PreviewZone>,
+    pub moves: Vec<PreviewMove>,
+    /// Windows the layout looked at that have no zone and stay where they are.
+    pub stay: u32,
+}
+
+/// Fixed friendly names for common program files (stem, lower case).
+#[cfg_attr(not(windows), allow(dead_code))]
+const FRIENDLY: &[(&str, &str)] = &[
+    ("code", "Code"),
+    ("msedge", "Edge"),
+    ("chrome", "Chrome"),
+    ("firefox", "Firefox"),
+    ("ms-teams", "Teams"),
+    ("teams", "Teams"),
+    ("outlook", "Outlook"),
+    ("olk", "Outlook"),
+    ("explorer", "Explorer"),
+    ("windowsterminal", "Terminal"),
+    ("notepad", "Notepad"),
+    ("slack", "Slack"),
+    ("sharex", "ShareX"),
+    ("spotify", "Spotify"),
+    ("discord", "Discord"),
+    ("winword", "Word"),
+    ("excel", "Excel"),
+    ("powerpnt", "PowerPoint"),
+    ("onenote", "OneNote"),
+    ("devenv", "Visual Studio"),
+    ("pbidesktop", "Power BI"),
+    ("obsidian", "Obsidian"),
+    ("zoom", "Zoom"),
+    ("claude", "Claude"),
+];
+
+/// A program name safe to show: the file's stem through the fixed friendly names, else the
+/// stem itself limited to letters, digits, space, dot, underscore and hyphen, at most 24 characters.
+#[cfg_attr(not(windows), allow(dead_code))]
+pub(crate) fn friendly_app(image: &str) -> String {
+    let file = crate::wall2_winutil::exe_file_part(image);
+    let stem = file.strip_suffix(".exe").unwrap_or(&file);
+    if let Some((_, name)) = FRIENDLY.iter().find(|(k, _)| *k == stem) {
+        return (*name).to_string();
+    }
+    let cleaned: String = stem.chars().filter(|c| c.is_ascii_alphanumeric() || matches!(c, ' ' | '.' | '_' | '-')).take(MAX_APP_CHARS).collect();
+    let cleaned = cleaned.trim().to_string();
+    if cleaned.is_empty() {
+        "Window".to_string()
+    } else {
+        cleaned
+    }
+}
+
+/// How long the last preview answers again without a new window scan.
+#[cfg_attr(not(windows), allow(dead_code))]
+const PREVIEW_TTL: Duration = Duration::from_secs(1);
+
+/// The cached value when it is younger than `ttl`.
+#[cfg_attr(not(windows), allow(dead_code))]
+pub(crate) fn cache_get<T: Clone>(slot: &Option<(Instant, T)>, now: Instant, ttl: Duration) -> Option<T> {
+    slot.as_ref().filter(|(at, _)| now.checked_duration_since(*at).is_some_and(|age| age < ttl)).map(|(_, v)| v.clone())
+}
+
+/// The preview for these zones, windows and rules: the same `assign_explained` the run uses.
+#[cfg_attr(not(windows), allow(dead_code))]
+pub(crate) fn build_preview(work: Rect, zones: &[Rect], windows: &[ZoneWindow], rules: &[ZoneApp]) -> ZonesPreview {
+    let order = wall2_zones::reading_order(zones);
+    let width = f64::from(work.width().max(1));
+    let height = f64::from(work.height().max(1));
+    let shapes = order
+        .iter()
+        .enumerate()
+        .map(|(at, &i)| {
+            let z = zones[i];
+            PreviewZone {
+                n: at + 1,
+                x: f64::from(z.left - work.left) / width,
+                y: f64::from(z.top - work.top) / height,
+                w: f64::from(z.width()) / width,
+                h: f64::from(z.height()) / height,
+            }
+        })
+        .collect();
+    let placements = wall2_zones::assign_explained(zones, windows, rules);
+    let mut moves: Vec<PreviewMove> = placements
+        .iter()
+        .filter_map(|p| {
+            let window = windows.iter().find(|w| w.id == p.id)?;
+            let zone = order.iter().position(|&i| i == p.zone)? + 1;
+            let why = match p.why {
+                wall2_zones::Why::Rule => "rule",
+                wall2_zones::Why::Recent => "recent",
+            };
+            Some(PreviewMove { zone, app: friendly_app(&window.image), why })
+        })
+        .collect();
+    moves.sort_by_key(|m| m.zone);
+    moves.truncate(MAX_PREVIEW_MOVES);
+    let stay = windows.len().saturating_sub(placements.len()) as u32;
+    ZonesPreview { zones: shapes, moves, stay }
+}
+
 // Section: commands
 
 /// Fixed reason words.
@@ -424,6 +557,28 @@ pub async fn wall2_arrange(window: tauri::WebviewWindow, app: tauri::AppHandle, 
     #[cfg(not(windows))]
     {
         let _ = (app, layout);
+        Err(UNSUPPORTED.to_string())
+    }
+}
+
+/// What My zones would do right now, without moving anything: the zone shapes on the big
+/// screen, which program goes to which zone and why, and how many windows stay. Program
+/// names only, never a window title.
+#[tauri::command]
+pub async fn wall2_arrange_preview(window: tauri::WebviewWindow, app: tauri::AppHandle) -> Result<ZonesPreview, String> {
+    require_wall2(window.label())?;
+    #[cfg(windows)]
+    {
+        let wall = window.hwnd().ok().map(|h| h.0 as isize);
+        let (config, _) = crate::wall2_keys::load_config(&app)?;
+        let (file_zones, rules) = (config.zones, config.zone_apps);
+        tauri::async_runtime::spawn_blocking(move || win::preview(wall, file_zones, rules))
+            .await
+            .map_err(|_| BUSY.to_string())?
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = app;
         Err(UNSUPPORTED.to_string())
     }
 }
@@ -483,6 +638,9 @@ mod win {
     }
 
     static UNDO: Mutex<Option<UndoSet<Saved>>> = Mutex::new(None);
+
+    /// The last successful preview and when it was read: a card opened again within a second reuses it.
+    static PREVIEW_CACHE: Mutex<Option<(Instant, ZonesPreview)>> = Mutex::new(None);
 
     fn to_rect(r: RECT) -> Rect {
         Rect { left: r.left, top: r.top, right: r.right, bottom: r.bottom }
@@ -698,16 +856,54 @@ mod win {
         }
     }
 
-    pub fn arrange(layout: Layout, wall: Option<isize>, file_zones: Vec<FractionZone>, rules: Vec<ZoneApp>) -> Result<ArrangeResult, String> {
-        let _busy = try_begin(&WORKING).ok_or_else(|| BUSY.to_string())?;
+    /// The big screen and the top windows on it, newest first, at most `max`.
+    fn pick_candidates(wall: Option<isize>, max: usize) -> Result<(Monitor, Option<MonitorIdentity>, Vec<WinRec>), String> {
         let (monitor, identity) = big_monitor(wall).ok_or_else(|| NO_BIG_SCREEN.to_string())?;
         let self_elevated = sys::self_elevated();
         let recs: Vec<WinRec> = sys::top_level_windows().into_iter().map(|h| record(h, monitor_of(h), self_elevated)).collect();
-        let picked = pick_windows(&recs, monitor.id, layout.windows());
+        let picked = pick_windows(&recs, monitor.id, max);
         if picked.is_empty() {
             return Err(NO_WINDOWS.to_string());
         }
-        let candidates: Vec<WinRec> = picked.iter().map(|&i| recs[i]).collect();
+        Ok((monitor, identity, picked.iter().map(|&i| recs[i]).collect()))
+    }
+
+    /// The zones of the zones layout, scaled to the work area: PowerToys' applied custom layout
+    /// for this display, else keys.json, else the four measured defaults. The run and the preview
+    /// both call this, so they cannot choose differently.
+    fn zone_targets(identity: Option<&MonitorIdentity>, work: Rect, file_zones: &[FractionZone]) -> Result<Vec<Rect>, String> {
+        let fancy = identity.and_then(|identity| {
+            std::env::var_os("LOCALAPPDATA")
+                .and_then(|p| wall2_zones::load_fancy(std::path::Path::new(&p), identity))
+                .and_then(|z| wall2_zones::scale_zones(&z, work).ok())
+        });
+        match fancy {
+            Some(zones) => Ok(zones),
+            None if !file_zones.is_empty() => wall2_zones::scale_zones(file_zones, work).map_err(|n| format!("zone {n}: rectangle is empty after scaling")),
+            None => wall2_zones::scale_zones(&wall2_zones::default_zones(), work).map_err(|_| NO_WINDOWS.to_string()),
+        }
+    }
+
+    /// Read only: no lock, nothing moves, no window is asked anything but its process image.
+    pub fn preview(wall: Option<isize>, file_zones: Vec<FractionZone>, rules: Vec<ZoneApp>) -> Result<ZonesPreview, String> {
+        if let Some(hit) = PREVIEW_CACHE.lock().ok().and_then(|slot| cache_get(&slot, Instant::now(), PREVIEW_TTL)) {
+            return Ok(hit);
+        }
+        let (monitor, identity, candidates) = pick_candidates(wall, Layout::Zones.windows())?;
+        let zones = zone_targets(identity.as_ref(), monitor.work, &file_zones)?;
+        wall2_zones::validate_zone_apps(&rules, zones.len())?;
+        let windows: Vec<ZoneWindow> = candidates.iter().map(|c| ZoneWindow { id: c.id, image: sys::image_path(c.pid).unwrap_or_default() }).collect();
+        let built = build_preview(monitor.work, &zones, &windows, &rules);
+        if let Ok(mut slot) = PREVIEW_CACHE.lock() {
+            *slot = Some((Instant::now(), built.clone()));
+        }
+        Ok(built)
+    }
+
+    pub fn arrange(layout: Layout, wall: Option<isize>, file_zones: Vec<FractionZone>, rules: Vec<ZoneApp>) -> Result<ArrangeResult, String> {
+        let _busy = try_begin(&WORKING).ok_or_else(|| BUSY.to_string())?;
+        let (monitor, identity, candidates) = pick_candidates(wall, layout.windows())?;
+        let self_elevated = sys::self_elevated();
         let lefts: Vec<(isize, i32)> = candidates
             .iter()
             .map(|c| {
@@ -718,17 +914,7 @@ mod win {
             .collect();
         let mut desk = WinDesk { self_elevated };
         let placed = if layout == Layout::Zones {
-            let fancy = identity.as_ref().and_then(|identity| {
-                std::env::var_os("LOCALAPPDATA")
-                    .and_then(|p| wall2_zones::load_fancy(std::path::Path::new(&p), identity))
-                    .and_then(|z| wall2_zones::scale_zones(&z, monitor.work).ok())
-            });
-            let zones = match fancy {
-                Some(zones) => zones,
-                None if !file_zones.is_empty() => wall2_zones::scale_zones(&file_zones, monitor.work)
-                    .map_err(|n| format!("zone {n}: rectangle is empty after scaling"))?,
-                None => wall2_zones::scale_zones(&wall2_zones::default_zones(), monitor.work).map_err(|_| NO_WINDOWS.to_string())?,
-            };
+            let zones = zone_targets(identity.as_ref(), monitor.work, &file_zones)?;
             wall2_zones::validate_zone_apps(&rules, zones.len())?;
             let windows: Vec<ZoneWindow> = candidates.iter().map(|c| ZoneWindow { id: c.id, image: sys::image_path(c.pid).unwrap_or_default() }).collect();
             let targets = wall2_zones::assign(&zones, &windows, &rules);
@@ -1239,12 +1425,124 @@ mod tests {
     fn the_commands_are_gated_to_wall2_before_anything_else() {
         assert_eq!(require_wall2("main"), Err("forbidden".to_string()));
         let src = include_str!("wall2_arrange.rs");
-        for name in ["pub async fn wall2_arrange_status(", "pub async fn wall2_arrange(", "pub async fn wall2_arrange_undo("] {
+        for name in ["pub async fn wall2_arrange_status(", "pub async fn wall2_arrange(", "pub async fn wall2_arrange_preview(", "pub async fn wall2_arrange_undo("] {
             let at = src.find(name).expect("command");
             let body = &src[at..];
             let open = body.find('{').expect("body");
             let first = body[open + 1..].trim_start();
             assert!(first.starts_with("require_wall2(window.label())?;"), "{name}: {}", &first[..first.len().min(60)]);
         }
+    }
+
+    // Section: zones preview tests
+
+    fn zw(id: isize, exe: &str) -> ZoneWindow {
+        ZoneWindow { id, image: format!(r"C:\Apps\{exe}") }
+    }
+
+    fn four_zones(work: Rect) -> Vec<Rect> {
+        wall2_zones::scale_zones(&wall2_zones::default_zones(), work).expect("scale")
+    }
+
+    #[test]
+    fn friendly_names_are_fixed_cleaned_and_capped() {
+        assert_eq!(friendly_app(r"C:\Program Files\Microsoft VS Code\Code.exe"), "Code");
+        assert_eq!(friendly_app(r"C:\Edge\MSEDGE.EXE"), "Edge");
+        assert_eq!(friendly_app(r"C:\x\my tool.exe"), "my tool");
+        assert_eq!(friendly_app(r"C:\x\we<ird>$$name.exe"), "weirdname");
+        assert_eq!(friendly_app(r"C:\x\abcdefghijklmnopqrstuvwxyz0123456789.exe").chars().count(), 24);
+        assert_eq!(friendly_app(""), "Window");
+        assert_eq!(friendly_app(r"C:\x\<>.exe"), "Window");
+    }
+
+    #[test]
+    fn the_preview_matches_what_the_run_assigns() {
+        let work = r(0, 0, 5120, 1440);
+        let zones = four_zones(work);
+        let windows = [zw(1, "msedge.exe"), zw(2, "outlook.exe"), zw(3, "code.exe"), zw(4, "ms-teams.exe"), zw(5, "extra.exe")];
+        let rules = [ZoneApp { exe: "code.exe".into(), zone: 1 }];
+        let run = wall2_zones::assign(&zones, &windows, &rules);
+        let order = wall2_zones::reading_order(&zones);
+        let preview = build_preview(work, &zones, &windows, &rules);
+        assert_eq!(preview.moves.len(), run.len());
+        for m in &preview.moves {
+            let rect = zones[order[m.zone - 1]];
+            let window = run.iter().find(|(_, target)| *target == rect).expect("run placed this zone");
+            assert_eq!(friendly_app(&windows.iter().find(|w| w.id == window.0).unwrap().image), m.app);
+        }
+        assert_eq!(preview.stay, 1);
+    }
+
+    #[test]
+    fn the_preview_numbers_zones_in_reading_order_and_tags_why() {
+        let work = r(100, 50, 5220, 1490);
+        let zones = four_zones(work);
+        let windows = [zw(1, "msedge.exe"), zw(2, "outlook.exe"), zw(3, "code.exe")];
+        let rules = [ZoneApp { exe: "code.exe".into(), zone: 1 }];
+        let p = build_preview(work, &zones, &windows, &rules);
+        assert_eq!(p.zones.iter().map(|z| z.n).collect::<Vec<_>>(), vec![1, 2, 3, 4]);
+        assert_eq!((p.zones[0].x, p.zones[0].y, p.zones[0].h), (0.0, 0.0, 1.0));
+        assert!((p.zones[1].x - 0.31).abs() < 0.001 && (p.zones[2].x - 0.80).abs() < 0.001 && (p.zones[3].y - 0.5).abs() < 0.001);
+        assert_eq!(p.moves[0], PreviewMove { zone: 1, app: "Code".into(), why: "rule" });
+        assert_eq!(p.moves[1], PreviewMove { zone: 2, app: "Edge".into(), why: "recent" });
+        assert_eq!(p.moves[2], PreviewMove { zone: 3, app: "Outlook".into(), why: "recent" });
+        assert_eq!(p.stay, 0);
+    }
+
+    #[test]
+    fn the_preview_has_no_titles_paths_or_ids_and_at_most_16_moves() {
+        let work = r(0, 0, 3200, 1000);
+        let zones: Vec<Rect> = (0..20).map(|i| r(i * 100, 0, i * 100 + 100, 1000)).collect();
+        let windows: Vec<ZoneWindow> = (0..20).map(|i| zw(i, &format!("app{i}.exe"))).collect();
+        let p = build_preview(work, &zones, &windows, &[]);
+        assert_eq!(p.moves.len(), 16);
+        let text = serde_json::to_string(&p).expect("json");
+        assert!(!text.contains("Apps") && !text.contains('\\'), "{text}");
+        assert!(p.moves.iter().all(|m| m.app.len() <= 24));
+        for key in ["title", "path", "pid", "exe"] {
+            assert!(!text.contains(&format!("\"{key}\"")), "{key}: {text}");
+        }
+    }
+
+    #[test]
+    fn the_preview_command_moves_nothing_and_takes_no_working_lock() {
+        let src = include_str!("wall2_arrange.rs").replace("\r\n", "\n");
+        let at = src.find("    pub fn preview(").expect("preview fn");
+        let end = src[at..].find("    pub fn arrange(").expect("arrange fn");
+        let body = &src[at..at + end];
+        for banned in ["WORKING", "try_begin", "apply_targets", "apply(", "place(", "merge_undo", "UNDO", "SetWindowPos", "SetWindowPlacement", "ShowWindowAsync"] {
+            assert!(!body.contains(banned), "preview must not use {banned}");
+        }
+        assert!(body.contains("zone_targets("), "the preview must use the shared zone choice");
+        let run = &src[at + end..];
+        let run = &run[..run.find("    pub fn undo(").expect("undo fn")];
+        assert!(run.contains("zone_targets("), "the run must use the shared zone choice");
+    }
+
+    #[test]
+    fn a_preview_younger_than_a_second_is_reused_and_an_older_or_missing_one_is_not() {
+        let t0 = Instant::now();
+        let ttl = Duration::from_secs(1);
+        let slot = Some((t0, 7u32));
+        assert_eq!(cache_get(&slot, t0, ttl), Some(7));
+        assert_eq!(cache_get(&slot, t0 + Duration::from_millis(999), ttl), Some(7));
+        assert_eq!(cache_get(&slot, t0 + ttl, ttl), None);
+        assert_eq!(cache_get(&slot, t0 + Duration::from_secs(5), ttl), None);
+        assert_eq!(cache_get::<u32>(&None, t0, ttl), None);
+        assert_eq!(PREVIEW_TTL, ttl);
+    }
+
+    #[test]
+    fn the_preview_reads_the_cache_first_and_stores_only_a_good_result() {
+        let src = include_str!("wall2_arrange.rs").replace("\r\n", "\n");
+        let at = src.find("    pub fn preview(").expect("preview fn");
+        let end = src[at..].find("    pub fn arrange(").expect("arrange fn");
+        let body = &src[at..at + end];
+        let read = body.find("cache_get(").expect("cache read");
+        let scan = body.find("pick_candidates(").expect("scan");
+        let store = body.find("*slot = Some(").expect("cache store");
+        assert!(read < scan && scan < store, "read the cache, then scan, then store");
+        // The scan's errors leave through `?` before the store, so a failure is never cached.
+        assert_eq!(body.matches("*slot = Some(").count(), 1);
     }
 }

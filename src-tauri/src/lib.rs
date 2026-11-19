@@ -4076,6 +4076,7 @@ pub fn run() {
             wall2_signals::wall2_signals_report,
             wall2_arrange::wall2_arrange_status,
             wall2_arrange::wall2_arrange,
+            wall2_arrange::wall2_arrange_preview,
             wall2_arrange::wall2_arrange_undo,
             wall2_keys::wall2_keys_summary,
             wall2_keys::wall2_keys_send,

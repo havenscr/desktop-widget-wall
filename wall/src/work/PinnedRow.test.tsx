@@ -133,14 +133,18 @@ it('with no big screen the layout keys are off with the reason and do nothing; t
   expect(libCalls).toEqual([{ id: 'snip' }]);
 });
 
-it('My zones explains the placement rule and is disabled without a big screen', async () => {
+it('My zones shows its preview map on hover (the rule behind each place) and is disabled without a big screen', async () => {
+  mocks.set('wall2_arrange_preview', () => ({ zones: [{ n: 1, x: 0, y: 0, w: 0.5, h: 1 }, { n: 2, x: 0.5, y: 0, w: 0.5, h: 1 }], moves: [{ zone: 1, app: 'Code', why: 'rule' }, { zone: 2, app: 'Edge', why: 'recent' }], stay: 0 }));
   localStorage.setItem(PINS_KEY, JSON.stringify(['lib:my-zones']));
   render(<><PinnedRow /><HoverTipLayer /></>);
   await flush();
   const zones = screen.getByRole('button', { name: 'My zones' });
   fireEvent.mouseEnter(zones);
   await flush(TIP_DELAY_MS);
-  expect(screen.getByRole('tooltip').textContent).toContain('The windows you used last move; the rest stay where they are');
+  const card = screen.getByRole('tooltip').textContent ?? '';
+  expect(card).toContain('your rule');
+  expect(card).toContain('used last');
+  expect(card).toContain('Click to move them.');
   arrangeOk = false;
   await flush(60_000);
   expect(screen.getByRole('button', { name: 'My zones' }).getAttribute('aria-disabled')).toBe('true');

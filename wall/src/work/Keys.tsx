@@ -12,6 +12,7 @@ import { useCallback, useEffect, useLayoutEffect, useReducer, useRef, useState, 
 import { invoke } from '../bridge/tauri';
 import { overlayOwnsPointer } from '../ribbon/DrawerScrim';
 import { tip } from '../ui/HoverTip';
+import { previewTip } from './ZonesPreview';
 import { useVisible } from '../ui/useVisible';
 import { useArrangeStatus, layoutOffReason, isLayoutAction } from './arrangeStatus';
 import { runForYou, useForYou, useResumeOffer, type ForYouItem, type ForYouKind, type ResumeOffer } from './forYou';
@@ -550,7 +551,9 @@ export function Keys() {
               aria-label={k.label}
               data-kind={wrongApp || layoutOff ? undefined : setKeyKind(set, k, i, libIdx)}
               aria-disabled={layoutOff || wrongApp || undefined}
-              {...tip(
+              {...previewTip(
+                k.action,
+                layoutOff || wrongApp,
                 layoutOff
                   ? layoutOffReason(arrange)
                   : wrongApp
