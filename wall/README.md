@@ -284,7 +284,7 @@ The sign-in and its row in Tools came first; the library came next, and a pick f
   and times, no id twice (its newest time stays), at most 200 entries, nothing older than 30 days, a time
   more than an hour ahead dropped; a file over 64 KB, junk or not an array reads as empty. The id must be a
   video id; anything else is refused and writes nothing. `wall2_youtube_played` answers the list newest first
-  and `wall2_youtube_forget_played` removes the file; signing out removes it too. Only a video the wall itself
+  and `wall2_youtube_forget_played` removes the file (if it cannot be removed it is overwritten with an empty list); signing out does the same. If the clock cannot be read nothing is written and the record is left as it is. Only a video the wall itself
   started goes in it (the queue notes each entry it loads); a video played in the YouTube Music app or a
   browser never does. Titles come from `wall2_youtube_videos`, never from the file.
 - **In the card** (`wall/src/unwind/ytmusic/`). Set up and signed in, the YouTube side is the library:
@@ -297,7 +297,7 @@ The sign-in and its row in Tools came first; the library came next, and a pick f
   played): four tiles with how long ago (Today, Yesterday, N days ago, Last week, ...) and See all, which
   shows the whole record in the same grid (Back to the shelf returns). A tile plays that video, and the ones
   after it in the shelf, on the wall. The shelf is read each time the tab shows (a read under a minute old
-  is kept) with one `wall2_youtube_videos` call for the newest 24 and more only on See all; a video YouTube
+  is kept, and a play the wall starts reads it again once it is written) with one `wall2_youtube_videos` call for the newest 24 and more only on See all; a video YouTube
   no longer answers for is left out. Search runs on Enter only, never on typing; the same words again
   make no call, the same words in flight share one call, and an older answer never replaces a newer one. Nothing
   is read while the page is hidden or after the side is gone; what is loaded stays across the tall view (Refresh

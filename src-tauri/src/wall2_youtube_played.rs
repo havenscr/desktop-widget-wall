@@ -96,17 +96,33 @@ fn played_in(dir: &Path, now: u64) -> Vec<YtPlayed> {
     read_file(&dir.join(FILE_NAME), now)
 }
 
-/// Remove the file. A missing file is fine.
-pub fn forget_in(dir: &Path) -> Result<(), &'static str> {
+/// Remove the file. A missing file is fine. If the file cannot be removed for any other reason it is
+/// overwritten with an empty list, so no record survives.
+pub fn forget_in(dir: &Path) -> Result<(), &'static str> { forget_with(dir, |p| std::fs::remove_file(p)) }
+
+fn forget_with(dir: &Path, remove: impl Fn(&Path) -> std::io::Result<()>) -> Result<(), &'static str> {
     let _g = locked();
-    match std::fs::remove_file(dir.join(FILE_NAME)) {
+    let path = dir.join(FILE_NAME);
+    match remove(&path) {
         Ok(()) => Ok(()),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
-        Err(_) => Err(FAILED),
+        Err(_) => std::fs::write(&path, "[]").map_err(|_| FAILED),
     }
 }
 
-fn unix_now() -> u64 { std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0) }
+/// `note_in` with a clock that may have failed: no time, no write (never a rewrite from a time of 0).
+fn note_clocked(dir: &Path, id: &str, now: Option<u64>) -> Result<(), &'static str> {
+    let now = now.ok_or(FAILED)?;
+    note_in(dir, id, now)
+}
+
+/// `played_in` with a clock that may have failed: no time gives an empty list and touches nothing.
+fn played_clocked(dir: &Path, now: Option<u64>) -> Vec<YtPlayed> {
+    match now { Some(now) => played_in(dir, now), None => Vec::new() }
+}
+
+/// Seconds since 1970, or None when the clock cannot be read.
+fn unix_now() -> Option<u64> { std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).ok().map(|d| d.as_secs()) }
 
 #[cfg(test)]
 mod tests {
@@ -202,20 +218,56 @@ mod tests {
     }
 
     #[test]
+    fn no_clock_means_no_write_and_the_record_stays() {
+        let dir = temp("noclock");
+        note_in(&dir, &id(1), NOW).unwrap();
+        assert_eq!(note_clocked(&dir, &id(2), None), Err(FAILED));
+        assert!(played_clocked(&dir, None).is_empty());
+        assert_eq!(played_in(&dir, NOW), vec![p(1, NOW)], "the file was neither rewritten nor wiped");
+        note_clocked(&dir, &id(2), Some(NOW)).unwrap();
+        assert_eq!(played_clocked(&dir, Some(NOW)), vec![p(2, NOW), p(1, NOW)]);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_file_that_cannot_be_removed_is_overwritten_with_an_empty_list() {
+        let dir = temp("fallback");
+        note_in(&dir, &id(1), NOW).unwrap();
+        let denied = |_: &Path| Err(std::io::Error::from(std::io::ErrorKind::PermissionDenied));
+        forget_with(&dir, denied).unwrap();
+        assert_eq!(std::fs::read_to_string(dir.join(FILE_NAME)).unwrap(), "[]");
+        assert!(played_in(&dir, NOW).is_empty());
+        // A missing file is success and nothing is created.
+        let gone = temp("fallback-gone");
+        std::fs::create_dir_all(&gone).unwrap();
+        forget_with(&gone, |_: &Path| Err(std::io::Error::from(std::io::ErrorKind::NotFound))).unwrap();
+        assert!(!gone.join(FILE_NAME).exists());
+        let _ = std::fs::remove_dir_all(&dir);
+        let _ = std::fs::remove_dir_all(&gone);
+    }
+
+    #[test]
     fn every_command_checks_the_window_first_and_sign_out_forgets_the_file() {
-        // The needles are built at run time so this test's own text never matches them.
-        let source = include_str!("wall2_youtube_played.rs").replace("\r\n", "\n");
+        // Every needle is built at run time so this test's own text never matches it, and only the text
+        // after the commands marker (the last one in the file) is searched for commands.
+        let whole = include_str!("wall2_youtube_played.rs").replace("\r\n", "\n");
+        let marker = ["// ---- ", "commands ----"].concat();
+        let source = whole.rsplit_once(marker.as_str()).unwrap().1;
         let function = ["pub async fn ", "wall2_youtube_"].concat();
         let attribute = ["#[tauri", "::command]"].concat();
         let commands = source.split(function.as_str()).skip(1).map(|rest| rest.split('(').next().unwrap_or("")).collect::<Vec<_>>();
         assert_eq!(commands, ["note_play", "played", "forget_played"]);
-        for part in source.split(attribute.as_str()).skip(1) {
+        let parts = source.split(attribute.as_str()).skip(1).collect::<Vec<_>>();
+        assert_eq!(parts.len(), 3);
+        for part in parts {
             let body: String = part.lines().skip(1).take(3).collect::<Vec<_>>().join("\n");
             assert!(body.contains("require(&window)?"), "{body}");
         }
         let youtube = include_str!("wall2_youtube.rs").replace("\r\n", "\n");
-        let out = youtube.split("pub async fn wall2_youtube_sign_out").nth(1).unwrap().split("#[tauri").next().unwrap();
-        assert!(out.contains("wall2_youtube_played::forget_in"), "{out}");
+        let sign_out = ["pub async fn ", "wall2_youtube_sign_out"].concat();
+        let forget = ["wall2_youtube_played::", "forget_in"].concat();
+        let out = youtube.split(sign_out.as_str()).nth(1).unwrap().split(attribute.as_str()).next().unwrap();
+        assert!(out.contains(forget.as_str()), "{out}");
     }
 }
 
@@ -235,7 +287,7 @@ pub async fn wall2_youtube_note_play(window: WebviewWindow, id: String) -> Resul
     let app = window.app_handle().clone();
     tauri::async_runtime::spawn_blocking(move || {
         let dir = dir_of(&app).ok_or(FAILED)?;
-        note_in(&dir, &id, unix_now())
+        note_clocked(&dir, &id, unix_now())
     }).await.map_err(|_| FAILED.to_string())?.map_err(str::to_string)
 }
 
@@ -244,7 +296,7 @@ pub async fn wall2_youtube_note_play(window: WebviewWindow, id: String) -> Resul
 pub async fn wall2_youtube_played(window: WebviewWindow) -> Result<Vec<YtPlayed>, String> {
     require(&window)?;
     let app = window.app_handle().clone();
-    tauri::async_runtime::spawn_blocking(move || dir_of(&app).map(|dir| played_in(&dir, unix_now())).unwrap_or_default()).await.map_err(|_| FAILED.to_string())
+    tauri::async_runtime::spawn_blocking(move || dir_of(&app).map(|dir| played_clocked(&dir, unix_now())).unwrap_or_default()).await.map_err(|_| FAILED.to_string())
 }
 
 /// Forget the whole record.

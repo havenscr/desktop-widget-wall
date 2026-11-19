@@ -5,7 +5,7 @@ import { tip } from '../../ui/HoverTip';
 import { loadAllForYou, loadForYou, useForYou, whenWords } from './forYou';
 import { lengthText } from './model';
 import { playFrom } from './queue';
-import { RowSkeletons, TileSkeletons, YtEmpty, YtState, YtThumb, gridKey } from './YtParts';
+import { TileSkeletons, YtEmpty, YtState, YtThumb, gridKey } from './YtParts';
 
 /** The eight mood words (vote 2A). The chips only show for now: the searches behind them arrive in a later change. */
 export const MOODS = ['Focus', 'Energize', 'Relax', 'Sleep', 'Chill', 'Workout', 'Party', 'Romance'] as const;
@@ -49,7 +49,7 @@ export function ForYou({ tall }: { tall: boolean }) {
   const first = s.rows.length === 0;
   const more = s.rows.length > SHELF || s.rest.length > 0;
   const shown = all ? s.rows : s.rows.slice(0, SHELF);
-  const skeleton = (all ? <RowSkeletons count={8} /> : <TileSkeletons count={SHELF} />);
+  const skeleton = <TileSkeletons count={SHELF} />;
   const body = s.problem && first ? (
     <YtState problem={s.problem} onRetry={() => void loadForYou(true)} />
   ) : !s.loaded && first ? (
@@ -59,17 +59,20 @@ export function ForYou({ tall }: { tall: boolean }) {
   ) : first ? (
     skeleton
   ) : (
-    <div className="yt-grid">
-      {shown.map((v, i) => (
-        <PlayedTile key={v.id} v={v} at={s.at.get(v.id)} onPlay={() => playFrom(s.rows, i, { list: 'played' })} />
-      ))}
-    </div>
+    <>
+      <div className="yt-grid">
+        {shown.map((v, i) => (
+          <PlayedTile key={v.id} v={v} at={s.at.get(v.id)} onPlay={() => playFrom(shown, i, { list: 'played' })} />
+        ))}
+      </div>
+      {all && s.loading ? <TileSkeletons count={SHELF} /> : null}
+    </>
   );
   return (
     <div className="yt-foryou">
       <div className="yt-chips" role="group" aria-label="Moods">
         {MOODS.map((m) => (
-          <button key={m} type="button" className="yt-chip" aria-disabled="true" onClick={(e) => e.preventDefault()} {...tip(MOOD_TIP)}>
+          <button key={m} type="button" className="yt-chip" aria-disabled="true" tabIndex={-1} onClick={(e) => e.preventDefault()} {...tip(MOOD_TIP)}>
             {m}
           </button>
         ))}

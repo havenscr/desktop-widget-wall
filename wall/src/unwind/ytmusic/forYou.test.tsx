@@ -98,6 +98,8 @@ describe('the For you tab', () => {
     expect(screen.getByRole('tab', { name: 'For you' }).getAttribute('aria-selected')).toBe('true');
     expect([...document.querySelectorAll('.yt-chip')].map((c) => c.textContent)).toEqual([...MOODS]);
     expect(MOODS).toHaveLength(8);
+    // The chips do nothing yet, so the keyboard skips them.
+    expect([...document.querySelectorAll('.yt-chip')].every((c) => c.getAttribute('tabindex') === '-1')).toBe(true);
   });
 
   it('shows the Back to shelf: four tiles with their words for when, and See all', async () => {
@@ -153,7 +155,8 @@ describe('the For you tab', () => {
     await flush(10);
     expect(useWatchStore.getState().playing?.id).toBe(id(1));
     expect(useYtQueue.getState().from).toEqual({ list: 'played' });
-    expect(useYtQueue.getState().entries.map((e) => e.id)).toEqual(Array.from({ length: 6 }, (_, i) => id(i)));
+    // Only the tiles on the shelf are queued.
+    expect(useYtQueue.getState().entries.map((e) => e.id)).toEqual(Array.from({ length: SHELF }, (_, i) => id(i)));
     expect(noted).toEqual([id(1)]);
   });
 
@@ -191,6 +194,22 @@ describe('the play record', () => {
       useWatchStore.getState().playMusic('Ab3dEfGh1jK', 'x');
     });
     expect(noted).toEqual([id(0)]);
+  });
+
+  it('reads the record again after a play is written, so Back to shows the video just played', async () => {
+    serve(3);
+    const record: YtPlayed[] = [{ id: id(0), at: nowS() }];
+    mocks.set('wall2_youtube_played', () => record.slice());
+    mocks.set('wall2_youtube_note_play', (args) => void record.unshift({ id: args?.id as string, at: nowS() + 1 }));
+    await openForYou();
+    expect(tiles()).toHaveLength(1);
+    act(() => {
+      useWatchStore.getState().playMusic(id(0), 'x');
+    });
+    await act(async () => void (await import('./queue')).playFrom([{ id: id(9), title: 'Nine', channel: 'c', seconds: 100, thumb: null, playable: 'yes' }], 0, { list: 'played' }));
+    await flush(10);
+    await flush(10);
+    expect(tiles().map((t) => t.querySelector('.sp-tname2')?.textContent)).toEqual(['Played 9', 'Played 0']);
   });
 
   it('whenWords reads days back: Today, Yesterday, N days ago, Last week, N weeks ago, Last month', () => {

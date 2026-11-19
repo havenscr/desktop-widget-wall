@@ -4,6 +4,7 @@ import { playerLink } from '../watch/playerLink';
 import { useWatchStore, type WatchState } from '../watch/store';
 import { usePins } from '../watch/pins';
 import { MAX_PAGES } from './model';
+import { loadForYou, useForYou } from './forYou';
 import { loadList, onLibraryReset, useYtLibrary } from './store';
 
 /**
@@ -225,7 +226,12 @@ function load(pos: number, keepNote = false): void {
     return;
   }
   // Only a video the wall itself started goes in the play record (ids and times; a failure is not the pick's business).
-  void youtube.notePlay(e.id).catch(() => undefined);
+  // This runs on every load, an automatic advance and a retried autoplay included. Once it is written, a For you
+  // shelf that is already loaded reads the record again, so "Back to" shows the video just played.
+  void youtube
+    .notePlay(e.id)
+    .then(() => (useForYou.getState().loaded ? loadForYou(true) : undefined))
+    .catch(() => undefined);
   maybeGrow();
 }
 
