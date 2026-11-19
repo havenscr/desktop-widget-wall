@@ -3402,8 +3402,10 @@
 .sp-grid3 {
   grid-template-columns: repeat(3, minmax(0, 1fr));
   column-gap: 18px;
-  padding: 5px 5px 2px;
-  margin: -5px -5px 0;
+  /* The 5 px of room for a tile's focus ring sits on the left and inside the group's width: a negative right margin
+     pushed the grid 5 px past the scroll area and gave it a sideways scrollbar. Tiles keep their width. */
+  padding: 5px 0 2px 5px;
+  margin: -5px 0 0 -5px;
 }
 .sp-gnone {
   padding: 8px 4px;

@@ -64,6 +64,12 @@ function measureTallMusic() {
       }
     }
   }
+  // No scroll area of the card scrolls sideways: only a vertical bar may show (a grid pushed past its scroller is the usual cause).
+  for (const e of cardEl.querySelectorAll('*')) {
+    const cs = getComputedStyle(e);
+    if (cs.overflowY !== 'auto' && cs.overflowY !== 'scroll') continue;
+    if (e.scrollWidth > e.clientWidth + 1) fails.push('listen: ' + ((e.className?.baseVal ?? e.className) || e.tagName) + ' scrolls sideways (content ' + e.scrollWidth + ' px in ' + e.clientWidth + ' px)');
+  }
   // At rest the card is today's 800 by 462 (YouTube Music's own height aside), with the Play on chip and the round button on one line.
   if (card && !tall && !cardEl.classList.contains('yt') && (Math.abs(card.width - 800) > 1.5 || Math.abs(card.height - 462) > 1.5)) fails.push('listen: the resting card is ' + Math.round(card.width) + ' by ' + Math.round(card.height) + ' (800 by 462)');
   const chipEl = cardEl?.querySelector('.sp-dev');
@@ -125,6 +131,7 @@ export default {
     tallVariant('a playlist opened', '&audio=demo', '.sp-grow >> .sp-tile'),
     tallVariant('the songs of a 2000 song playlist', '&spotify=heavy', '.sp-grow >> .sp-tile'),
     tallVariant('search in groups', '&audio=demo', '.sp-grow >> type:.sp-search input=road'),
+    tallVariant('YouTube Music, search in groups', '&audio=demo', '.sp-switch button:nth-child(2) >> .sp-grow >> type:.sp-search input=road'),
     tallVariant('Up next', '&audio=demo', '.sp-grow >> .sp-tabs button:nth-child(5)'),
     tallVariant('Play on open', '&audio=demo', '.sp-grow >> .sp-dev'),
     tallVariant('Play on, nothing awake', '&spotify=nodevices&spotifyplay=none&media=none', '.sp-grow >> .sp-dev'),
@@ -165,6 +172,7 @@ export default {
       'tall-pop': { css: '.sp-devices { right: -700px !important; }', expect: /^ *FAIL listen: the Play on list is at /m, appliesTo: (v) => v.name === 'Listen, the tall view, Play on open' },
       'tall-btns': { css: '.sp-shbtns .sp-btn { flex: none !important; padding: 0 34px !important; }', expect: /^ *FAIL listen tall: .* runs past its column by \d+ px/m, appliesTo: (v) => v.name === 'Listen, the tall view, a playlist opened' },
       // A moon forced into the open view is not drawn at all (the card claims its box), so the night check finds none.
+      'tall-hscroll': { css: '.sp-grid3 { margin-right: -12px !important; }', expect: /^ *FAIL listen: sp-gscroll scrolls sideways/m, appliesTo: (v) => v.name === 'Listen, the tall view, search in groups' },
       'tall-moon': { query: '&skymoon=2200,300,44', expect: /^ *FAIL sky layers: no moon drawn at night/m, appliesTo: (v) => v.name === 'Sky layers, Listen at night, the tall view open, the moon in open sky' },
     },
   },
