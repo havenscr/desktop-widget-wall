@@ -80,7 +80,7 @@ it('the header controls are the same elements on a 16 row day, a 4 row day and t
 it('the header controls have fixed widths in the style sheet, so no day moves them', () => {
   expect(rule('.at-seg button')).toMatch(/flex: none;/);
   expect(rule('.at-seg button')).toMatch(/width: 104px;/);
-  expect(rule('.at-date')).toMatch(/width: 200px;/);
+  expect(rule('.at-date')).toMatch(/width: 248px;/);
   expect(rule('.at-date')).toMatch(/flex: none;/);
   expect(rule('.at-pick')).toMatch(/flex: none;/);
   expect(rule('.at-k')).toMatch(/flex: none;/);

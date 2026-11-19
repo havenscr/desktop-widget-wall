@@ -246,3 +246,20 @@ it('a day log that starts at noon leaves the morning record work counted as work
   // Four hours before the log, then the half hour it shows.
   expect(rows[0].workMs).toBe(270 * 60_000);
 });
+
+it('a quiet axis is sized from run and working-stage spans only: a long idle or pr span does not stretch it', () => {
+  const mk = (kind: 'build' | 'pr' | 'idle', from: number, to: number) => ({ kind, from, to, open: false });
+  const row = (spans: ReturnType<typeof mk>[]) => ({ id: 'x', num: 1, openDate: null, title: 'S', spans, pr: null, prAt: null, end: 'finished' as const, workMs: 0, waitMs: 0 });
+  const base = axisRange([row([mk('build', 10.2, 10.7)])], false, 10.4);
+  expect(axisRange([row([mk('build', 10.2, 10.7), mk('idle', 10.7, 23)])], false, 10.4)).toEqual(base);
+  expect(axisRange([row([mk('build', 10.2, 10.7), mk('pr', 10.7, 22)])], false, 10.4)).toEqual(base);
+});
+
+it('prAt comes only from a real pr span: a PR number with no pr span has no tick', () => {
+  const rows = recordRows(
+    { ...record, sessions: [{ id: 'a1b2c3d4-0010', title: 'No pr span', spans: [{ stage: 'build', start: iso('2026-11-12', '09:00'), end: iso('2026-11-12', '10:00') }], pr: { number: 700, state: 'open' } }] },
+    NOW,
+  );
+  expect(rows[0].pr).toBe(700);
+  expect(rows[0].prAt).toBeNull();
+});

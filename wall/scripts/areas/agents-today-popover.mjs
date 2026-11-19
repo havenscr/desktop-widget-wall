@@ -7,6 +7,8 @@ const FULL = 'Agents today popover, 16 sessions';
 const QUIET = 'Agents today popover, 4 sessions';
 const TODAY = 'Agents today popover, today';
 const CAL = 'Agents today popover, calendar open';
+const LONGDATE = 'Agents today popover, long date';
+const longQuery = query.replace(encodeURIComponent('2026-11-11T10:24:00-08:00'), encodeURIComponent('2026-09-30T10:24:00-07:00'));
 const OPEN = '.rib .ag-line >> .at-seg button:nth-child(2)';
 
 // Runs in the page.
@@ -46,8 +48,14 @@ function measurePopover() {
     if (p.scrollWidth > p.clientWidth + 0.5 || pb.right > tb.left + 0.5) prBad++;
   }
   const calCells = cal ? [...cal.querySelectorAll('.at-cal-day')].map((c) => ({ off: c.disabled, has: c.classList.contains('has'), bar: !!c.querySelector('i') })) : [];
+  const dateEl = box.querySelector('.at-date span');
+  const dateCut = dateEl ? dateEl.scrollWidth > dateEl.clientWidth + 0.5 : false;
+  const dateNeed = dateEl ? dateEl.scrollWidth : 0;
   const rowsR = r(rows);
   return {
+    dateCut,
+    dateNeed,
+    dateText: dateEl?.textContent ?? '',
     labels: lab.map((l) => l.text),
     labelTouch: touch,
     legendCut,
@@ -79,15 +87,22 @@ export default {
       { name: FULL, q: query, click: '.rib .ag-line >> .at-seg button:nth-child(2)', checks: ['.agents-today', '.agents-today .at-head'], strip: true, viewportOnly: true },
       { name: QUIET, q: query, click: '.rib .ag-line >> .at-seg button:nth-child(2) >> .at-pick .at-arrow:first-child', checks: ['.agents-today', '.agents-today .at-head'], strip: true, viewportOnly: true },
       { name: CAL, q: query, click: '.rib .ag-line >> .at-seg button:nth-child(2) >> .at-date', checks: ['.agents-today', '.agents-today .at-cal'], strip: true, viewportOnly: true },
+      { name: LONGDATE, q: longQuery, click: '.rib .ag-line', checks: ['.agents-today', '.agents-today .at-head'], strip: true, viewportOnly: true },
       { name: TODAY, q: query, click: '.rib .ag-line', checks: ['.agents-today', '.agents-today .at-head'], strip: true, viewportOnly: true },
     ],
     measurements: { popover: measurePopover },
     rules: {
       popover: (variant, results, emit) => {
-        if (variant.name !== FULL && variant.name !== QUIET && variant.name !== TODAY && variant.name !== CAL) return false;
+        if (variant.name !== FULL && variant.name !== QUIET && variant.name !== TODAY && variant.name !== CAL && variant.name !== LONGDATE) return false;
         const m = results.popover;
         if (!m) { emit('  FAIL agents popover: the popover or its rows are missing'); return true; }
         let bad = false;
+        if (m.dateCut) { emit(`  FAIL agents popover: the date text is cut ("${m.dateText}" needs ${m.dateNeed} px of text room, button ${m.head.date?.w} px)`); bad = true; }
+        if (variant.name === LONGDATE) {
+          if (m.head.date?.w !== 248) { emit(`  FAIL agents popover: the date button is ${m.head.date?.w} px wide, wanted 248`); bad = true; }
+          if (!bad) emit(`  ok   agents popover: "${m.dateText}" fits in its button`);
+          return bad;
+        }
         if (variant.name === FULL) {
           full = m;
           if (m.n < 16) { emit(`  FAIL agents popover: the full day shows ${m.n} rows, wanted 16`); bad = true; }
@@ -119,7 +134,7 @@ export default {
         }
         // Absolute: the box is the full day's 420 px whatever the day, and the header controls keep their widths.
         if (m.box.h !== 420) { emit(`  FAIL agents popover: the popover box moved or changed size: ${m.box.h} px tall, wanted 420`); bad = true; }
-        for (const [k, w] of [['today', 104], ['yesterday', 104], ['date', 200]]) {
+        for (const [k, w] of [['today', 104], ['yesterday', 104], ['date', 248]]) {
           if (m.head[k]?.w !== w) { emit(`  FAIL agents popover: header control "${k}" moved: ${m.head[k]?.w} px wide, wanted ${w}`); bad = true; }
         }
         if (m.labelTouch > 0) { emit(`  FAIL agents popover: ${m.labelTouch} hour labels touch (${m.labels.join(', ')})`); bad = true; }
@@ -153,6 +168,11 @@ export default {
         css: '.at-prn { width: 20px !important; overflow: visible !important; } .at-track { margin-left: -20px !important; }',
         expect: /^ *FAIL agents popover: \d+ PR numbers sit outside their column/m,
         appliesTo: (v) => v.name === FULL,
+      },
+      'popover-date-width': {
+        css: '.at-date { width: 150px !important; }',
+        expect: /^ *FAIL agents popover: the date (text is cut|button is)/m,
+        appliesTo: (v) => v.name === LONGDATE,
       },
       'popover-calendar': {
         css: '.at-cal { left: 900px !important; }',

@@ -115,13 +115,21 @@ const pad2 = (n: number) => String(n).padStart(2, '0');
 /**
  * The month calendar behind the date button. A day with a saved record (the helper's day list, each
  * date with its session count) is bright with a small bar sized by its count; every other day is dim
- * and cannot be picked. Today is always pickable (its live view needs no record). The months it
- * walks run from the earliest saved day to this one.
+ * and cannot be picked, today included when it has no record (the Today button is its way in). Today
+ * has its own ring and the shown day is cyan; the two are independent. Days after today are ignored.
+ * The months it walks run from the earliest saved day to this one. On open, focus goes to the shown
+ * day (or the first pickable one).
  */
 function DayCalendar({ days, today, shown, onPick }: { days: readonly DayCount[]; today: string; shown: string; onPick: (date: string) => void }) {
   const [view, setView] = useState(() => ym(shown));
-  const counts = useMemo(() => new Map(days.map((d) => [d.date, d.sessions])), [days]);
-  const earliest = useMemo(() => ym([today, ...days.map((d) => d.date)].sort()[0]), [days, today]);
+  const calRef = useRef<HTMLDivElement>(null);
+  const counts = useMemo(() => new Map(days.filter((d) => d.date <= today).map((d) => [d.date, d.sessions])), [days, today]);
+  const earliest = useMemo(() => ym([today, ...counts.keys()].sort()[0]), [counts, today]);
+  useEffect(() => {
+    const el = calRef.current;
+    if (!el) return;
+    (el.querySelector<HTMLButtonElement>('.at-cal-day.shown:not(:disabled)') ?? el.querySelector<HTMLButtonElement>('.at-cal-day:not(:disabled)') ?? el).focus();
+  }, []);
   const latest = ym(today);
   const idx = (v: { y: number; m: number }) => v.y * 12 + v.m;
   const first = new Date(Date.UTC(view.y, view.m - 1, 1)).getUTCDay();
@@ -130,7 +138,7 @@ function DayCalendar({ days, today, shown, onPick }: { days: readonly DayCount[]
   const title = new Date(Date.UTC(view.y, view.m - 1, 1)).toLocaleDateString('en-US', { month: 'long', year: 'numeric', timeZone: 'UTC' });
   const cells: (number | null)[] = [...Array(first).fill(null), ...Array.from({ length }, (_, i) => i + 1)];
   return (
-    <div className="at-cal" role="dialog" aria-label="Pick a day">
+    <div className="at-cal" role="dialog" aria-label="Pick a day" tabIndex={-1} ref={calRef}>
       <div className="at-cal-head">
         <button type="button" className="at-arrow" aria-label="Earlier month" disabled={idx(view) <= idx(earliest)} onClick={() => setView(shiftMonth(view.y, view.m, -1))}>
           <IconChevronLeft stroke={1.8} aria-hidden="true" />
@@ -150,12 +158,12 @@ function DayCalendar({ days, today, shown, onPick }: { days: readonly DayCount[]
           if (d === null) return <span key={`e${i}`} />;
           const date = `${view.y}-${pad2(view.m)}-${pad2(d)}`;
           const n = counts.get(date);
-          const live = n !== undefined || date === today;
+          const live = n !== undefined;
           return (
             <button
               key={date}
               type="button"
-              className={`at-cal-day${live ? ' has' : ''}${date === shown ? ' on' : ''}`}
+              className={`at-cal-day${live ? ' has' : ''}${date === shown ? ' shown' : ''}${date === today ? ' today' : ''}`}
               disabled={!live}
               aria-label={live ? `${longDate(date)}${n !== undefined ? `, ${n} ${n === 1 ? 'session' : 'sessions'}` : ''}` : `${longDate(date)}, no record`}
               onClick={() => onPick(date)}
@@ -194,6 +202,11 @@ export function AgentsToday({ now, onClose }: { now: number; onClose: () => void
   }, [openFailed]);
   const [calOpen, setCalOpen] = useState(false);
   const calRef = useRef<HTMLSpanElement>(null);
+  const dateBtn = useRef<HTMLButtonElement>(null);
+  const closeCal = () => {
+    setCalOpen(false);
+    dateBtn.current?.focus();
+  };
   const open = (r: PanelRow) => {
     setOpenFailed(false);
     const call = r.openDate ? invoke('wall2_focus_day_session', { id: r.id, date: r.openDate }) : invoke('wall2_focus_omnigent', { id: r.id });
@@ -211,17 +224,21 @@ export function AgentsToday({ now, onClose }: { now: number; onClose: () => void
   useEffect(() => {
     const key = (e: KeyboardEvent) => {
       if (e.key !== 'Escape') return;
-      // With the calendar open, Escape closes the calendar only.
-      if (calOpen) setCalOpen(false);
-      else onClose();
+      // With the calendar open, Escape closes the calendar only: the capture phase and
+      // stopPropagation keep it from reaching any other Escape listener (the popover's own too).
+      if (calOpen) {
+        e.stopPropagation();
+        e.stopImmediatePropagation();
+        closeCal();
+      } else onClose();
     };
-    window.addEventListener('keydown', key);
-    return () => window.removeEventListener('keydown', key);
+    window.addEventListener('keydown', key, true);
+    return () => window.removeEventListener('keydown', key, true);
   }, [onClose, calOpen]);
   useEffect(() => {
     if (!calOpen) return;
     const down = (e: MouseEvent) => {
-      if (!calRef.current?.contains(e.target as Node)) setCalOpen(false);
+      if (!calRef.current?.contains(e.target as Node)) closeCal();
     };
     document.addEventListener('mousedown', down);
     return () => document.removeEventListener('mousedown', down);
@@ -310,7 +327,7 @@ export function AgentsToday({ now, onClose }: { now: number; onClose: () => void
               <IconChevronRight stroke={1.8} aria-hidden="true" />
             </button>
             <span className="at-datewrap" ref={calRef}>
-              <button type="button" className={`at-date${calOpen ? ' on' : ''}`} aria-haspopup="dialog" aria-expanded={calOpen} onClick={() => setCalOpen((o) => !o)} {...tip('Pick a day')}>
+              <button type="button" ref={dateBtn} className={`at-date${calOpen ? ' on' : ''}`} aria-haspopup="dialog" aria-expanded={calOpen} onClick={() => setCalOpen((o) => !o)} {...tip('Pick a day')}>
                 <IconCalendar stroke={1.8} aria-hidden="true" />
                 <span>{longDate(shown)}</span>
               </button>
@@ -321,7 +338,7 @@ export function AgentsToday({ now, onClose }: { now: number; onClose: () => void
                   shown={shown}
                   onPick={(d) => {
                     setShown(d);
-                    setCalOpen(false);
+                    closeCal();
                   }}
                 />
               )}

@@ -1180,7 +1180,14 @@ The day ribbon (`wall/src/ribbon/`, `styles/ribbon.css`) is on Work, Home and Me
   draws its runs cyan); the totals read "12 h 20 m of agent work across 8 sessions, 2 h 18 m
   waiting on you". The day picker (Today, Yesterday, and arrows through the recorded days,
   disabled at the ends, each naming its date on hover) reads the saved record: no wait spans
-  and no wait total on a past day (hidden, never zero). End words: merged
+  and no wait total on a past day (hidden, never zero). The date is a 248 px button that opens a
+  month calendar: only days with a saved record (and not after today) are bright and pickable, with a
+  count bar centred under the number; every other day, today without a record included, is dim and
+  disabled. Today has its own ring (`today`) and the shown day is cyan (`shown`), independent. Opening
+  it focuses the shown day (or the first pickable one); Escape (a capture-phase listener that stops
+  there, so only the calendar closes), a pick or an outside click returns focus to the date button. A
+  quiet past day (6 sessions or fewer) fits its axis to run and working-stage spans only; idle, wait and
+  pr spans never stretch it. The pink PR tick is drawn only from a real pr span. End words: merged
   (`pr.state` merged), carried over (the session's last span has no end on that day),
   pull request open or closed, finished; today also waiting on you, in review, working,
   helpers working, idle. A past day's hours run midnight to midnight in the record's own zone (`tz`). States:
