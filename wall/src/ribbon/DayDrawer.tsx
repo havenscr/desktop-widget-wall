@@ -26,6 +26,9 @@ const MIN_RUN_MS = ((MIN_TILE + 3) / P) * 3_600_000;
 /** How far down a tile its title and time line reach, in pixels: the now line stops short of that part. */
 const TITLE_ZONE = 30;
 
+/** A tile lower than this cannot show the time on a second line (5 px padding twice, a 19 px title line, a 24 px Join row, the 2 px gap, the border). */
+export const ONE_LINE_BELOW = 58;
+
 /** The agenda's hours: 8 AM to 6 PM, widened to the first and last meeting. */
 export function agendaRange(items: readonly Chip[], now: number): { lo: number; hi: number } {
   let lo = 8;
@@ -239,12 +242,14 @@ export function DayDrawer({
                 const height = tileHeight(Math.min(hi, wallHour(c.end, now)) - Math.max(lo, wallHour(c.start, now)));
                 const account = c.accountId ? (labels[c.accountId] ?? null) : null;
                 const short = height < 32;
+                // Too low for a second line: keep title and time on one line, so the title gives way and the time is never hidden.
+                const oneLine = !short && height < ONE_LINE_BELOW;
                 const toned = c.category && !c.live ? c.category : null;
                 const dot = c.category && c.live ? c.category : null;
                 return (
                   <div
                     key={c.key}
-                    className={`dd-ev ${c.state}${c.live ? ' live' : ''}${c.canOpen ? ' open' : ''}${short ? ' short' : ''}`}
+                    className={`dd-ev ${c.state}${c.live ? ' live' : ''}${c.canOpen ? ' open' : ''}${short ? ' short' : ''}${oneLine ? ' one' : ''}`}
                     data-tone={toned?.tone}
                     data-dot={dot ? '' : undefined}
                     style={{ top, height, left: `calc(${(lane / n) * 100}% + 2px)`, width: `calc(${100 / n}% - 6px)`, ...(toned ? toneVars(toned.tone, c.state, 'drawer') : {}), ...(dot ? toneDotVars(dot.tone) : {}) } as CSSProperties}
