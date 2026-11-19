@@ -7,7 +7,7 @@ const HEAD = 'hz=onair&at=' + at + '&clock=review&weather=ok&screen=onair&onair=
 const full = (knobs) => `${HEAD}${/(^|&)show=/.test(knobs) ? '' : '&show=typical'}${/(^|&)marks=/.test(knobs) ? '' : '&marks=2'}${knobs ? '&' + knobs : ''}`;
 const state = (name, knobs, expect, actions) => ({ screen: 'onair', name: 'on air live: ' + name, query: full(knobs), custom: true, expect, actions });
 const checks = ['.oa2 .oa2-modes', '.oa2 .oa2-comments'];
-const variant = (name, knobs, extra = {}) => ({ name: 'On Air live, ' + name, q: '?' + full(knobs), checks, ...extra });
+const variant = (name, knobs, extra = {}) => ({ name: 'On Air live, ' + name, q: '?' + full(knobs), checks: /split=notes/.test(knobs) ? ['.oa2 .oa2-modes', '.oa2 .oa2-rail-comments'] : checks, ...extra });
 const isNamed = (n) => (v) => v.name === 'On Air live, ' + n;
 
 const OPEN = '.oa2-cq .oa-btn';
@@ -31,11 +31,20 @@ function measureOnAirLive() {
   const run = root.querySelector('.oa2-runline');
   const runShown = run && visible(run);
   const hasParts = !!run && !run.hasAttribute('hidden');
+  // The split: comments + 24 + notes = 1080 from x 800; a folded panel is a 72 px rail. `?split=` picks a fit state in development.
+  const SPLITS = { left: [400, 656], right: [740, 316], comments: [984, 72], notes: [72, 984] };
+  const [cw, nw] = SPLITS[q.get('split')] || [620, 436];
+  const cRail = cw === 72;
+  const nRail = nw === 72;
+  const nEl = root.querySelector('.oa2-livenotes');
+  if (nEl && nEl.getBoundingClientRect().width < 299.5) fails.push('on air live: the notes are ' + r1(nEl.getBoundingClientRect().width) + ' px wide, under their minimum of 300');
+  const cEl = root.querySelector('.oa2-comments');
+  if (cEl && cEl.getBoundingClientRect().width < 359.5) fails.push('on air live: the comments are ' + r1(cEl.getBoundingClientRect().width) + ' px wide, under their minimum of 360');
   const boxes = {
     '.oa2-showtimer': [124, 76, 640, 166],
     '.oa2-livechips': [124, 250, 640, 36],
-    '.oa2-comments': [800, 24, 620, 486],
-    '.oa2-livenotes': [1444, 24, 436, 486],
+    ...(cRail ? { '.oa2-rail-comments': [800, 24, 72, 486] } : { '.oa2-comments': [800, 24, cw, 486] }),
+    ...(nRail ? { '.oa2-rail-notes': [1808, 24, 72, 486] } : { '.oa2-livenotes': [800 + cw + 24, 24, nw, 486] }),
     '.oa2-studiokeys': [1920, 24, 620, 192],
     '.oa2-lights-live': [1920, 348, 620, 154],
     ...(hasParts ? { '.oa2-runline': [124, 458, 640, 46] } : {}),
@@ -74,6 +83,15 @@ function measureOnAirLive() {
     if (Math.abs(b.left - x) > 1 || Math.abs(b.top - y) > 1 || Math.abs(b.width - w) > 1 || Math.abs(b.height - h) > 1) fails.push('on air live: ' + sel + ' is at x ' + r1(b.left) + ', y ' + r1(b.top) + ', ' + r1(b.width) + ' by ' + r1(b.height));
     const drawn = [getComputedStyle(el, '::after').content, getComputedStyle(el, '::before').content].filter((c) => c !== 'none' && c !== 'normal');
     if (el.children.length > 0 || (el.textContent || '').trim() !== '' || drawn.length > 0) fails.push('on air live: ' + sel + ' is not empty');
+  }
+  // The handle sits in the gap between the two panels, and only when both show.
+  const hd = root.querySelector('.oa2-split-h');
+  if (cRail || nRail) {
+    if (hd) fails.push('on air live: the split handle is drawn with a panel folded');
+  } else if (!hd) fails.push('on air live: the split handle is missing');
+  else {
+    const b = hd.getBoundingClientRect();
+    if (Math.abs(b.left - (800 + cw)) > 1 || Math.abs(b.width - 24) > 1) fails.push('on air live: the split handle is at x ' + r1(b.left) + ', ' + r1(b.width) + ' wide and should be in the 24 px gap at x ' + (800 + cw));
   }
   // Studio keys: row 2 at its final y (box top + 98), three tiles, nothing above them but the heading.
   const sk = root.querySelector('.oa2-studiokeys');
@@ -173,6 +191,11 @@ export default {
       variant('live, no run of show file', 'yt=live&show=missing'),
       variant('live, run of show refused', 'yt=live&show=refused'),
       variant('live, long notes', 'yt=live&show=long'),
+      variant('comments dragged left', 'yt=live&split=left'),
+      variant('comments dragged right', 'yt=live&split=right'),
+      variant('comments full', 'yt=live&split=comments'),
+      variant('notes full', 'yt=live&split=notes'),
+      variant('busy chat, notes full', 'yt=busy&split=notes'),
       variant('channel field open', 'yt=notsetup', { click: OPEN }),
     ],
     measurements: { onairLive: measureOnAirLive },
@@ -180,7 +203,7 @@ export default {
       onairLive: (variantEntry, results, emit) => {
         for (const failure of results.onairLive) emit(`  FAIL ${failure}`);
         if (results.onairLive.length) return true;
-        if (variantEntry.name.startsWith('On Air live,')) emit('  ok   on air live: every block in its planned box inside y 20 to 510, the empty boxes empty, row 2 of the studio keys at its final y, comment rows at most two lines and none cut, notes 27 px, key tiles at least 76 px, text at least 16 px');
+        if (variantEntry.name.startsWith('On Air live,')) emit('  ok   on air live: every block in its planned box (the split at 620 / 436 or the dragged and folded states, the handle in the gap) inside y 20 to 510, the empty boxes empty, row 2 of the studio keys at its final y, comment rows at most two lines and none cut, notes 27 px, key tiles at least 76 px, text at least 16 px');
         return false;
       },
     },
@@ -188,6 +211,7 @@ export default {
       'onair-cm-cut': { css: '.oa2-cm-t { display: block !important; -webkit-line-clamp: unset !important; overflow: visible !important; }', expect: /^ *FAIL on air live: a comment row is [\d.]+ px tall/m, appliesTo: isNamed('busy chat') },
       'onair-notes-wide': { css: '.oa2 .oa-card.oa2-livenotes { width: 620px !important; }', expect: /^ *FAIL on air live: \.oa2-livenotes is at/m, appliesTo: isNamed('live with comments') },
       'onair-run-file': { css: '.oa2-runline[hidden] { display: flex !important; min-height: 20px; }', expect: /^ *FAIL on air live: the run line is shown with no parts/m, appliesTo: isNamed('live, no run of show file') },
+      'onair-split-min': { css: '.oa2 .oa-card.oa2-livenotes { width: 200px !important; }', expect: /^ *FAIL on air live: the notes are [\d.]+ px wide, under their minimum/m, appliesTo: isNamed('live with comments') },
       'onair-keys-move': { css: '.oa2-skrow2 { top: 40px !important; }', expect: /^ *FAIL on air live: row 2 tile ".*" is [\d.]+ px under the box top/m, appliesTo: isNamed('live with comments') },
     },
   },

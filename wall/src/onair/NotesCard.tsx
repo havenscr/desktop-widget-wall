@@ -1,5 +1,5 @@
 import { IconArrowLeft, IconArrowRight } from '@tabler/icons-react';
-import { useLayoutEffect, useRef, useState, type ReactNode } from 'react';
+import { useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { tip } from '../ui/HoverTip';
 import { clampIndex, nextLine } from './model';
 import { useOnAirStore } from './store';
@@ -72,6 +72,9 @@ export interface NotesCardProps {
   sizes?: readonly number[];
   icon?: ReactNode;
   className?: string;
+  /** A box's own position and width, and a control at the end of the heading. */
+  style?: CSSProperties;
+  action?: ReactNode;
 }
 
 /**
@@ -79,7 +82,7 @@ export interface NotesCardProps {
  * and what comes next. Notes that cannot fit even at the smallest size end in "+N more", whose
  * tooltip carries the rest.
  */
-export function NotesCard({ title, right, sizes = NOTE_SIZES, icon, className }: NotesCardProps = {}) {
+export function NotesCard({ title, right, sizes = NOTE_SIZES, icon, className, style, action }: NotesCardProps = {}) {
   const show = useOnAirStore((s) => s.show);
   const partIndex = useOnAirStore((s) => s.saved.partIndex);
   const goPart = useOnAirStore((s) => s.goPart);
@@ -101,7 +104,7 @@ export function NotesCard({ title, right, sizes = NOTE_SIZES, icon, className }:
   const prev = current > 0 ? parts[current - 1] : null;
   const next = parts[current + 1] ?? null;
   return (
-    <section className={`panel oa-card${className ? ` ${className}` : ''}`} aria-label={title ?? 'Notes for this part'}>
+    <section className={`panel oa-card${className ? ` ${className}` : ''}`} aria-label={title ?? 'Notes for this part'} style={style}>
       {title === undefined ? (
         <span className="k oa-k ellipsis" {...(part ? tip(part.name) : {})}>
           Notes for this part{part ? ` · ${part.name}` : ''}
@@ -114,6 +117,7 @@ export function NotesCard({ title, right, sizes = NOTE_SIZES, icon, className }:
             {part ? ` · ${part.name}` : ''}
           </span>
           {right && <span className="oa2-hd-r ellipsis">{right}</span>}
+          {action}
         </div>
       )}
       {!part ? (
@@ -137,12 +141,12 @@ export function NotesCard({ title, right, sizes = NOTE_SIZES, icon, className }:
         </ul>
       )}
       <div className="oa-card-foot">
-        <button type="button" className="oa-btn fill oa-step" aria-disabled={!prev} onClick={() => prev && goPart(current - 1)} {...tip(prev ? `Back to ${prev.name}` : 'This is the first part')}>
+        <button type="button" className="oa-btn fill oa-step" aria-label={title === undefined ? undefined : 'Previous part'} aria-disabled={!prev} onClick={() => prev && goPart(current - 1)} {...tip(prev ? `Back to ${prev.name}` : 'This is the first part')}>
           <IconArrowLeft size={22} aria-hidden="true" />
-          Previous part
+          {title === undefined ? 'Previous part' : <span className="oa-step-t">Previous part</span>}
         </button>
-        <button type="button" className="oa-btn cy oa-step" aria-disabled={!next} onClick={() => next && goPart(current + 1)} {...tip(next ? `On to ${next.name}` : 'This is the last part')}>
-          Next part
+        <button type="button" className="oa-btn cy oa-step" aria-label={title === undefined ? undefined : 'Next part'} aria-disabled={!next} onClick={() => next && goPart(current + 1)} {...tip(next ? `On to ${next.name}` : 'This is the last part')}>
+          {title === undefined ? 'Next part' : <span className="oa-step-t">Next part</span>}
           <IconArrowRight size={22} aria-hidden="true" />
         </button>
         <span className="xs oa-nextline ellipsis" {...tip(nextLine(parts, current))}>

@@ -8,7 +8,7 @@ import { resolveKey } from '../RightColumn';
 import type { DeckKeys } from './useDeckKeys';
 
 /** A heading row: an icon, the label, and text at the right. A press result takes the label's place for a few seconds. */
-export function Head({ label, right, icon, brief }: { label: string; right?: ReactNode; icon?: ReactNode; brief?: string | null }) {
+export function Head({ label, right, icon, brief, action }: { label: string; right?: ReactNode; icon?: ReactNode; brief?: string | null; action?: ReactNode }) {
   return (
     <div className="oa2-hd">
       {icon}
@@ -20,6 +20,7 @@ export function Head({ label, right, icon, brief }: { label: string; right?: Rea
         <span className="k">{label}</span>
       )}
       {right !== undefined && <span className="oa2-hd-r ellipsis">{right}</span>}
+      {action}
     </div>
   );
 }
