@@ -3402,10 +3402,10 @@
 .sp-grid3 {
   grid-template-columns: repeat(3, minmax(0, 1fr));
   column-gap: 18px;
-  /* The 5 px of room for a tile's focus ring sits on the left and inside the group's width: a negative right margin
-     pushed the grid 5 px past the scroll area and gave it a sideways scrollbar. Tiles keep their width. */
-  padding: 5px 0 2px 5px;
-  margin: -5px 0 0 -5px;
+  /* All 5 px of room for a tile's hover and focus ring (2 px outline, 3 px offset) sits inside the scroll area, so no ring is
+     clipped and the grid is never wider than its scroller (no sideways scrollbar). Tiles are about 3 px narrower for it. */
+  padding: 5px 5px 2px;
+  margin: -5px 0 0;
 }
 .sp-gnone {
   padding: 8px 4px;
