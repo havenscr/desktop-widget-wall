@@ -75,10 +75,23 @@ it('the day picker steps through the recorded days, with today at the newest end
 });
 
 it('the axis runs 6 AM to midnight for a past day and to just past now today', () => {
-  expect(axisRange([], false, 10.4)).toEqual({ lo: 6, hi: 24, step: 2 });
+  expect(axisRange([], false, 10.4)).toEqual({ lo: 6, hi: 24, step: 3 });
   expect(axisRange([], true, 10.4)).toEqual({ lo: 6, hi: 11, step: 1 });
   const early = recordRows({ ...record, sessions: [{ id: 'a1b2c3d4-0009', title: 'Early', spans: [{ stage: 'plan', start: iso('2026-11-12', '04:30'), end: iso('2026-11-12', '05:00') }], pr: null }] }, NOW);
-  expect(axisRange(early, false, 10.4).lo).toBe(4);
+  // One quiet session: the axis fits its hours, an hour of padding each side (4 to 5 becomes 3 to 7, four hours at least).
+  expect(axisRange(early, false, 10.4)).toEqual({ lo: 3, hi: 7, step: 1 });
+  // Today never fits: the live axis keeps running to now.
+  expect(axisRange(early, true, 10.4).lo).toBe(4);
+});
+
+it('a quiet past day (6 sessions or fewer) fits its hours; a busy day keeps the usual axis', () => {
+  const mk = (n: number, from: string, to: string) => ({ id: `a1b2c3d4-00${n}`, title: `S${n}`, spans: [{ stage: 'build' as const, start: iso('2026-11-12', from), end: iso('2026-11-12', to) }], pr: null });
+  const quiet = recordRows({ ...record, sessions: [mk(1, '10:10', '10:40'), mk(2, '10:30', '11:20')] }, NOW);
+  expect(axisRange(quiet, false, 10.4)).toEqual({ lo: 9, hi: 13, step: 1 });
+  const wide = recordRows({ ...record, sessions: [mk(1, '08:00', '09:00'), mk(2, '18:00', '21:30')] }, NOW);
+  expect(axisRange(wide, false, 10.4)).toEqual({ lo: 7, hi: 23, step: 2 });
+  const busy = recordRows({ ...record, sessions: [1, 2, 3, 4, 5, 6, 7].map((n) => mk(n, '10:10', '10:40')) }, NOW);
+  expect(axisRange(busy, false, 10.4)).toEqual({ lo: 6, hi: 24, step: 3 });
 });
 
 it('folds a run of overlapping meetings into one chip, its count never narrower than its words', () => {

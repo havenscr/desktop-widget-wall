@@ -99,3 +99,14 @@ it('the rows reserve the scrollbar gutter and use the wall thin scrollbar', () =
   expect(rows).toMatch(/scrollbar-width: thin;/);
   expect(rows).toContain('scrollbar-color: rgba(154, 123, 255, 0.75) rgba(255, 255, 255, 0.05);');
 });
+
+it('every text in the popover is 16 px or larger', () => {
+  // The last font declaration of each selector wins (the shared number badge is overridden for the rows).
+  const size = new Map<string, number>();
+  for (const m of css.matchAll(/(?:^|\n)((?:\.agents-today|\.at-)[^{,]*)\{([^}]*)\}/g)) {
+    const f = m[2].match(/font: (?:\d+ )?(\d+)px/);
+    if (f) size.set(m[1].trim(), Number(f[1]));
+  }
+  expect(size.size).toBeGreaterThan(15);
+  expect([...size].filter(([, px]) => px < 16)).toEqual([]);
+});
