@@ -156,12 +156,13 @@ it('puts a dot on every case that is on now, lit or not, and says so to a screen
   expect(document.querySelector('.oa2-why')?.textContent).toBe('a recorder is running');
 });
 
-it('shows Live for the browser camera and mic with an empty body', async () => {
+it('shows Live for the browser camera and mic, with the Live page below the row', async () => {
   signals({ browserAv: true });
   await open();
   expect(lit()).toEqual(['Live']);
   expect(document.querySelector('.oa2-why')?.textContent).toBe('mic or camera in use');
-  expect(document.querySelectorAll('.oa2 > .oa2-b').length).toBe(1);
+  expect(document.querySelector('.oa2-showtimer')).not.toBeNull();
+  expect(document.querySelector('.oa2-comments')).not.toBeNull();
 });
 
 it('says the wall cannot read the signals when they are unknown', async () => {

@@ -34,6 +34,8 @@ export interface OnAirState {
   /** Forget a delayed read of the run of show that Open file asked for (the place was closed). */
   cancelPending: () => void;
   start: () => void;
+  /** Start the timer as if it began at `startedAt` (the broadcast's start). Only an idle timer; a running, stopped or full one is left alone. */
+  startAt: (startedAt: number, now?: number) => void;
   stop: () => void;
   /** Back to 00:00 and the first part. Only while stopped. */
   reset: () => void;
@@ -108,6 +110,13 @@ export function createOnAirStore(deps: OnAirDeps) {
         if (s.running || m.atLimit(s)) return;
         const now = deps.now();
         save({ ...s, running: true, startedAt: now, firstStartAt: s.firstStartAt ?? now, stoppedAt: null });
+      },
+      startAt: (startedAt, at) => {
+        const s = get().saved;
+        const now = at ?? deps.now();
+        if (s.running || m.atLimit(s) || s.firstStartAt !== null || s.accumulatedMs > 0) return;
+        const from = Math.min(now, Math.max(now - m.MAX_SHOW_MS + 1000, startedAt));
+        save({ ...s, running: true, startedAt: from, firstStartAt: from, stoppedAt: null });
       },
       stop: () => {
         const s = get().saved;

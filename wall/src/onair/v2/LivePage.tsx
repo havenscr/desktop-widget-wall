@@ -1,0 +1,209 @@
+import { IconArrowLeft, IconArrowRight, IconNotes, IconPlayerPauseFilled, IconPlayerPlayFilled } from '@tabler/icons-react';
+import { useEffect, useRef, useState } from 'react';
+import { StudioBlock } from '../../studio/StudioBlock';
+import { useSignalStore } from '../../signals/store';
+import { tip } from '../../ui/HoverTip';
+import { NotesCard } from '../NotesCard';
+import { atLimit, clampIndex, elapsedMs, formatShowTime, partTime, RESET_CONFIRM_MS, startedLine } from '../model';
+import { useOnAirStore } from '../store';
+import { statusStale } from '../ytlive';
+import { useChatPolling, useYtLive } from '../ytliveStore';
+import { Comments } from './Comments';
+import { Head, LibTile, MarkTile, TileRow } from './Tiles';
+import { clockText } from './time';
+import { useDeckKeys } from './useDeckKeys';
+
+/** The notes' size: one, the card is 436 wide and only Previous and Next sit under it. */
+const LIVE_NOTE_SIZES = [27] as const;
+
+/** The broadcast starts the timer once per start time; a Reset by hand is not undone by the next read. */
+const autoStarted = new Set<number>();
+
+/** The show timer. When the broadcast goes live and the timer is idle it starts by itself from the broadcast's start. */
+function LiveTimer({ now }: { now: number }) {
+  const saved = useOnAirStore((s) => s.saved);
+  const start = useOnAirStore((s) => s.start);
+  const stop = useOnAirStore((s) => s.stop);
+  const reset = useOnAirStore((s) => s.reset);
+  const startAt = useOnAirStore((s) => s.startAt);
+  const status = useYtLive((s) => s.status);
+  const [confirm, setConfirm] = useState(false);
+  const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  useEffect(() => () => clearTimeout(timer.current), []);
+  useEffect(() => {
+    if (saved.running) setConfirm(false);
+  }, [saved.running]);
+  const startedAt = status && status.state === 'live' && !statusStale(status, now) ? status.startedAt : null;
+  useEffect(() => {
+    if (startedAt === null || autoStarted.has(startedAt)) return;
+    autoStarted.add(startedAt);
+    startAt(startedAt, now);
+    // Read the clock once when the start time arrives; later ticks never start it again.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [startedAt, startAt]);
+  const ms = elapsedMs(saved, now);
+  const time = formatShowTime(ms);
+  const full = atLimit(saved);
+  const nothing = !saved.running && ms === 0 && saved.firstStartAt === null;
+  const fromBroadcast = status?.state === 'live' && status.startedAt !== null && saved.firstStartAt !== null && Math.abs(saved.firstStartAt - status.startedAt) < 1500;
+  const sub = nothing ? 'Not started. It starts with the broadcast, or press Start.' : fromBroadcast && saved.running ? `Started ${clockText(status!.startedAt!)}, when the broadcast went live.` : startedLine(saved, now);
+  const onReset = () => {
+    if (saved.running || nothing) return;
+    if (confirm) {
+      clearTimeout(timer.current);
+      setConfirm(false);
+      reset();
+      return;
+    }
+    setConfirm(true);
+    clearTimeout(timer.current);
+    timer.current = setTimeout(() => setConfirm(false), RESET_CONFIRM_MS);
+  };
+  return (
+    <div className="oa2-b oa2-timer oa2-showtimer" role="group" aria-label="Show timer">
+      <Head label="Show timer" />
+      <div className="oa-time-row">
+        <span className="oa-time" data-running={saved.running ? 'true' : 'false'} role="timer" aria-label={`Show time ${time}`} {...tip(saved.running ? 'Counts from when the broadcast went live, or from when you pressed Start.' : 'Not running')}>
+          {time}
+        </span>
+        <div className="oa-time-btns">
+          {saved.running ? (
+            <button type="button" className="oa-btn cy oa-go" aria-label="Stop timer" onClick={stop} {...tip('Stop the timer (it keeps its time; Start carries on)')}>
+              <IconPlayerPauseFilled size={20} aria-hidden="true" />
+              Stop
+            </button>
+          ) : (
+            <button type="button" className="oa-btn cy oa-go" aria-label="Start timer" aria-disabled={full} onClick={start} {...tip(full ? 'The timer stopped itself at 24 hours. Reset it to start again.' : ms > 0 ? `Carry on from ${time}` : 'Start the show timer')}>
+              <IconPlayerPlayFilled size={20} aria-hidden="true" />
+              Start
+            </button>
+          )}
+          <button type="button" className={`oa-btn oa-reset${confirm ? ' confirm' : ''}`} aria-disabled={saved.running || nothing} onClick={onReset} {...tip(saved.running ? 'Stop the timer first to reset it' : nothing ? 'Nothing to reset yet' : 'Set the timer to 00:00 and go back to the first part (asks again first)')}>
+            {confirm ? 'Reset? Click again' : 'Reset'}
+          </button>
+        </div>
+      </div>
+      <div className="oa2-sub" {...tip(sub)}>
+        {sub}
+      </div>
+    </div>
+  );
+}
+
+/** What YouTube says (live, stale, scheduled) and what the browser holds (camera and mic). */
+function LiveChips({ now }: { now: number }) {
+  const status = useYtLive((s) => s.status);
+  const browserAv = useSignalStore((s) => s.browserAv);
+  const call = useSignalStore((s) => s.call);
+  const stale = status ? statusStale(status, now) : false;
+  let yt: React.ReactNode = null;
+  if (status?.state === 'live') {
+    const since = status.startedAt !== null ? `, since ${clockText(status.startedAt)}` : '';
+    const watching = status.viewers !== null ? `, ${status.viewers} watching` : '';
+    yt = stale ? (
+      <span className="oa2-chip" data-kind="stale">
+        Live, as of {clockText(status.readAt ?? now)}
+      </span>
+    ) : (
+      <span className="oa2-chip" data-kind="live">
+        <i className="oa2-dot" data-mode="live" aria-hidden="true" />
+        Live{watching}
+        {since}
+      </span>
+    );
+  } else if (status?.state === 'scheduled' && status.scheduledAt !== null) {
+    const min = Math.max(0, Math.round((status.scheduledAt - now) / 60_000));
+    yt = (
+      <span className="oa2-chip" data-kind="stale">
+        Scheduled, {clockText(status.scheduledAt)}, in {min} min
+      </span>
+    );
+  } else if (status?.state === 'none') {
+    yt = (
+      <span className="oa2-chip" data-kind="stale">
+        Nothing live on YouTube
+      </span>
+    );
+  }
+  const av = browserAv || call?.camera === true;
+  return (
+    <div className="oa2-b oa2-chips oa2-livechips">
+      {yt}
+      {av && (
+        <span className="oa2-chip" data-kind="call">
+          Camera and mic on
+        </span>
+      )}
+    </div>
+  );
+}
+
+/** The run of show as one small line: the part, the time left in it and two arrow buttons. Not drawn without parts. */
+function RunLine({ now }: { now: number }) {
+  const show = useOnAirStore((s) => s.show);
+  const saved = useOnAirStore((s) => s.saved);
+  const goPart = useOnAirStore((s) => s.goPart);
+  const parts = show?.state === 'ok' ? show.parts : [];
+  // Not drawn without parts (no file, a refused file, a failed read): the box stays in the DOM, hidden.
+  if (parts.length === 0) return <div className="oa2-b oa2-runline" hidden />;
+  const i = clampIndex(saved.partIndex, parts.length);
+  const p = parts[i];
+  const t = partTime(p, true, Math.max(0, elapsedMs(saved, now) - saved.partSinceMs));
+  const line = `Part ${i + 1} of ${parts.length}: ${p.name}${t.text ? ` · ${t.text}` : ''}`;
+  return (
+    <div className="oa2-b oa2-runline" role="group" aria-label="Run of show">
+      <span className="oa2-runline-t ellipsis" {...tip(line)}>
+        {line}
+      </span>
+      <button type="button" className="oa-btn oa2-arrow" aria-label="Previous part" aria-disabled={i === 0} onClick={() => goPart(i - 1)} {...tip('Go back one part')}>
+        <IconArrowLeft size={20} aria-hidden="true" />
+      </button>
+      <button type="button" className="oa-btn cy oa2-arrow" aria-label="Next part" aria-disabled={i >= parts.length - 1} onClick={() => goPart(i + 1)} {...tip('Go to the next part')}>
+        <IconArrowRight size={20} aria-hidden="true" />
+      </button>
+    </div>
+  );
+}
+
+/** The studio keys box: heading, row 1 empty until the studio keys pull request, row 2 the three keys that work now. */
+function StudioKeys() {
+  const keys = useDeckKeys();
+  const mark = useOnAirStore((s) => s.mark);
+  const marking = useOnAirStore((s) => s.marking);
+  return (
+    <div className="oa2-b oa2-studiokeys" role="group" aria-label="Studio keys">
+      <Head label="Studio keys" brief={keys.brief} />
+      <div className="oa2-skrow2">
+        <TileRow keys={keys} cols={3}>
+          <MarkTile mark={mark} showMs={undefined} marking={marking} />
+          <LibTile keys={keys} spec={{ id: 'snip' }} />
+          <LibTile keys={keys} spec={{ id: 'strip-dark' }} />
+        </TileRow>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * The Live page: the show timer, the YouTube and camera chips, the run of show line, the comments (with the channel field in the
+ * card), the notes, the studio keys (row 2 only) and the studio lights. The studio status box and the prompter's box stay empty
+ * until their own pull requests.
+ */
+export function LivePage({ now }: { now: number }) {
+  useChatPolling();
+  return (
+    <>
+      <LiveTimer now={now} />
+      <LiveChips now={now} />
+      <div className="oa2-b oa2-empty oa2-empty-status" aria-hidden="true" />
+      <RunLine now={now} />
+      <Comments now={now} />
+      <NotesCard title="Notes" sizes={LIVE_NOTE_SIZES} icon={<IconNotes size={20} aria-hidden="true" />} className="oa2-livenotes" />
+      <StudioKeys />
+      <div className="oa2-b oa2-empty oa2-empty-prompter oa2-empty-live" aria-hidden="true" />
+      <div className="oa2-b oa2-lights-live">
+        <StudioBlock />
+      </div>
+    </>
+  );
+}
