@@ -752,15 +752,24 @@ fn run_audio_capture(
         // keeps the ring consumer running at producer pace.
         thread::sleep(std::time::Duration::from_millis(33));
 
-        if !audio_push_active() {
-            // Nobody is drawing: hidden, locked, displays off, or a mode that
+        // The light sync needs the analysis even when nobody is drawing; the emit below stays tied to the visualizer.
+        let push = audio_push_active();
+        let sync = wall2_lightsync::sync_on();
+        if !push && !sync {
+            // Nobody is drawing and no light sync runs: hidden, locked, displays off, or a mode that
             // ignores audio. Mark the ring read so nothing stale is analyzed
             // when the push resumes, and skip the FFT and the IPC entirely.
             buffer.samples.reset();
             silence_announced = false;
         } else {
             let levels = compute_audio_levels(&buffer);
-            if !levels.waveform.is_empty() {
+            if sync {
+                // One slot, newest wins: empty bands mean silence.
+                wall2_lightsync::publish(&levels.bands);
+            }
+            if !push {
+                // Sync only: nothing is emitted to the web view.
+            } else if !levels.waveform.is_empty() {
                 let _ = app.emit("audio-levels", &levels);
                 silence_announced = false;
             } else if !silence_announced
@@ -4178,6 +4187,11 @@ pub fn run() {
             wall2_lightsync::wall2_lightsync_pair,
             wall2_lightsync::wall2_lightsync_forget,
             wall2_lightsync::wall2_lightsync_test,
+            wall2_lightsync::wall2_lightsync_start,
+            wall2_lightsync::wall2_lightsync_tune,
+            wall2_lightsync::wall2_lightsync_stop,
+            wall2_lightsync::wall2_lightsync_stop_all,
+            wall2_lightsync::wall2_huesync_open,
             wall2_studio::wall2_office_off,
             wall2_onair::wall2_onair_show,
             wall2_onair::wall2_onair_mark,
@@ -4254,6 +4268,7 @@ pub fn run() {
                             #[cfg(windows)]
                             wall2_power::shutdown();
                             wall2_signals::shutdown();
+                            wall2_lightsync::shutdown();
                             app.exit(0);
                         }
                         _ => {}
@@ -4375,6 +4390,7 @@ pub fn run() {
                 if matches!(event, tauri::WindowEvent::Destroyed) {
                     wall2_power::shutdown();
                     wall2_signals::shutdown();
+                    wall2_lightsync::shutdown();
                 }
             }
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
