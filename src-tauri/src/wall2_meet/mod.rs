@@ -427,7 +427,7 @@ fn valid_day_key(key: &str) -> bool {
     digits(generation, 19) && digits(index, 3)
 }
 
-/// Open a day view event in classic Outlook when configured and usable, otherwise on the web.
+/// Open a day view event: the new Outlook's Calendar when it is in use, else classic Outlook when usable, else the web.
 #[tauri::command]
 pub async fn wall2_open_event(window: tauri::WebviewWindow, key: String) -> Result<(), String> {
     require_wall2(window.label())?;
@@ -438,8 +438,9 @@ pub async fn wall2_open_event(window: tauri::WebviewWindow, key: String) -> Resu
     let desktop_enabled = matches!(load_open_preference(&window), Ok(OpenPreference::Desktop | OpenPreference::Typo));
     if target.web.as_deref().is_some_and(|url| !graph::web_link_allowed(url)) { return Err("gone".to_string()); }
     let result = tauri::async_runtime::spawn_blocking(move || desktop::open_with(
-        desktop_enabled, target.entry.as_deref(), target.web.as_deref(), desktop::classic_outlook_exe,
+        desktop_enabled, desktop_enabled && desktop::new_outlook_in_use(), target.entry.as_deref(), target.web.as_deref(), desktop::classic_outlook_exe,
         |exe, arg| std::process::Command::new(exe).args(["/select", arg]).spawn().is_ok(),
+        |target| window.opener().open_url(target, None::<&str>).is_ok(),
         |url| window.opener().open_url(url, None::<&str>).is_ok(),
     )).await.map_err(|_| "failed".to_string())?;
     result.map_err(|e| match e { desktop::OpenError::Gone => "gone", desktop::OpenError::Failed => "failed" }.to_string())
@@ -451,8 +452,8 @@ pub async fn wall2_meet_open_status(window: tauri::WebviewWindow) -> Result<&'st
     tauri::async_runtime::spawn_blocking(move || match load_open_preference(&window)? {
         OpenPreference::Browser => Ok("browser-config"),
         OpenPreference::Typo => Ok("desktop-config-typo"),
+        OpenPreference::Desktop if desktop::new_outlook_in_use() => Ok("new-outlook-calendar"),
         OpenPreference::Desktop if desktop::classic_outlook_exe().is_some() => Ok("desktop"),
-        OpenPreference::Desktop if desktop::use_new_outlook() || desktop::new_outlook_present() => Ok("browser-new-outlook"),
         OpenPreference::Desktop => Ok("browser-not-found"),
     }).await.map_err(|_| "failed".to_string())?.map_err(str::to_string)
 }
