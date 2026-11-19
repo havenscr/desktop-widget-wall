@@ -6,14 +6,21 @@
 //! learns `paired` and `bridgeChanged`, never a key or an address. Errors are fixed words.
 //! `running`, `starting`, `lastError` and `stoppedHueSync` belong to the stream (41-4) and are
 //! idle values until then.
+//!
+//! 41-3 adds the DTLS stream (`stream.rs`), the Nanoleaf UDP frame (`nanoleaf.rs`) and
+//! `wall2_lightsync_test`: a 3 s magenta sweep over the Plays and a ring over the panels, then
+//! stop. Every answer is a fixed word; no key, PSK, token or address ever reaches one.
 
 pub(crate) mod bridge;
+pub(crate) mod nanoleaf;
 pub(crate) mod store;
+pub(crate) mod stream;
 
 use bridge::{BridgeNet, Facts};
 use serde::Serialize;
 use std::sync::atomic::{AtomicBool, Ordering};
 use store::{KeyStore, Loaded, Saved};
+use stream::Frames;
 
 /// What the web view may learn. Never a key, a client key, an app id or an address.
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -76,6 +83,230 @@ fn home_facts(app: &tauri::AppHandle) -> Result<Facts, &'static str> {
     bridge::read_facts(&bridge::RealFacts, &base, token.as_deref())
 }
 
+// Section: the test flash (41-3)
+
+/// What the home app says about the entertainment area and the panels (`/api/desk/office/lightsync`).
+#[derive(Debug, PartialEq)]
+pub(crate) struct Layout {
+    pub area_id: String,
+    /// Channel ids in order of their `x`, left to right.
+    pub channels: Vec<u8>,
+    /// The panels, when the home app knows them.
+    pub panels: Option<Vec<nanoleaf::Panel>>,
+}
+
+/// The area and the panels from the facts answer. None when there is no usable area.
+pub(crate) fn shape_layout(v: &serde_json::Value) -> Option<Layout> {
+    let area = v.get("area").filter(|a| a.is_object())?;
+    let area_id = area.get("id")?.as_str()?.trim().to_string();
+    if !bridge::valid_area_id(&area_id) {
+        return None;
+    }
+    let mut chans: Vec<(u8, f64)> = Vec::new();
+    for c in area.get("channels")?.as_array()?.iter().take(20) {
+        let id = u8::try_from(c.get("id")?.as_u64()?).ok()?;
+        let x = c.get("x")?.as_f64().filter(|x| x.is_finite())?;
+        chans.push((id, x));
+    }
+    if chans.is_empty() {
+        return None;
+    }
+    chans.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
+    let panels = v.pointer("/panels/layout").and_then(nanoleaf::shape_layout);
+    Some(Layout { area_id, channels: chans.into_iter().map(|c| c.0).collect(), panels })
+}
+
+/// Everything the test needs, so it can run against fakes.
+pub(crate) trait Rig {
+    fn layout(&self) -> Result<Layout, &'static str>;
+    fn saved(&self) -> Loaded;
+    fn area(&self, area_id: &str, action: &str) -> Result<(), &'static str>;
+    fn open_hue(&self, saved: &Saved) -> Result<Box<dyn Frames + '_>, &'static str>;
+    /// Panels into extControl; the answer is where to send frames.
+    fn panels_on(&self) -> Result<Box<dyn Frames + '_>, &'static str>;
+    fn panels_off(&self);
+    fn pause(&self, ms: u64);
+}
+
+/// The final area stop failed, so the Entertainment area may still be active.
+pub(crate) const STOP_FAILED: &str = "stop-failed";
+
+const TEST_SECONDS: u64 = 3;
+const TEST_HZ: u64 = 50;
+
+/// The test: stop any other streamer, start the area, connect, sweep for 3 s, stop. The Plays
+/// always get their sweep; cleanup always runs. When several things fail the word is, in order:
+/// `dtls` (a Hue frame did not go out), `stop-failed` (the area is still active), then
+/// `panels-unavailable` (a panel link would not open or a panel packet did not go out).
+pub(crate) fn run_test(rig: &dyn Rig) -> Result<&'static str, &'static str> {
+    let saved = match rig.saved() {
+        Loaded::Paired(s) => s,
+        _ => return Err("not-paired"),
+    };
+    let layout = rig.layout()?;
+    let area_id = layout.area_id.clone();
+    // Another streamer (Hue Sync) would hold the area; ending it first is allowed to fail.
+    let _ = rig.area(&area_id, "stop");
+    rig.pause(300);
+    rig.area(&area_id, "start")?;
+    let outcome = flash(rig, &saved, &layout);
+    let stopped = rig.area(&area_id, "stop");
+    match outcome {
+        Err(stream::DTLS) => Err(stream::DTLS),
+        _ if stopped.is_err() => Err(STOP_FAILED),
+        other => other,
+    }
+}
+
+fn flash(rig: &dyn Rig, saved: &Saved, layout: &Layout) -> Result<&'static str, &'static str> {
+    let mut hue = rig.open_hue(saved)?;
+    let mut panels_down = false;
+    let mut hue_failed = false;
+    let mut panels: Option<Box<dyn Frames + '_>> = None;
+    if layout.panels.is_some() {
+        match rig.panels_on() {
+            Ok(link) => panels = Some(link),
+            Err(_) => panels_down = true,
+        }
+    }
+    let total = TEST_SECONDS * TEST_HZ;
+    for i in 0..=total {
+        let t = i as f64 / total as f64;
+        let frame = stream::encode_frame((i % 256) as u8, &layout.area_id, &stream::sweep_frame(&layout.channels, t));
+        if !frame.is_some_and(|f| hue.send(&f)) {
+            hue_failed = true;
+            break;
+        }
+        // Panels at about 25 Hz: every other tick.
+        if i % 2 == 0 {
+            if let (Some(link), Some(ps)) = (panels.as_mut(), layout.panels.as_ref()) {
+                if let Some(pkt) = nanoleaf::encode_packet(&nanoleaf::ring_frame(ps, t)) {
+                    if !link.send(&pkt) {
+                        panels_down = true;
+                    }
+                }
+            }
+        }
+        rig.pause(1000 / TEST_HZ);
+    }
+    if panels.is_some() || panels_down {
+        rig.panels_off();
+    }
+    if hue_failed {
+        Err(stream::DTLS)
+    } else if panels_down {
+        Err(nanoleaf::UNAVAILABLE)
+    } else {
+        Ok("ok")
+    }
+}
+
+/// The real rig: Credential Manager, the pinned bridge, the home app and real sockets.
+struct RealRig {
+    base: String,
+    token: Option<String>,
+    net: bridge::PinnedNet,
+    facts: Facts,
+    json: serde_json::Value,
+}
+
+impl RealRig {
+    fn new(app: &tauri::AppHandle) -> Result<RealRig, &'static str> {
+        let base = crate::wall2_desk::base(app).map_err(|_| bridge::UNREACHABLE)?;
+        let token = crate::wall2_desk_token::read_token();
+        let json = read_lightsync_json(&bridge::RealFacts, &base, token.as_deref())?;
+        let facts = bridge::shape_facts(&json).ok_or(bridge::UNREACHABLE)?;
+        let net = bridge::PinnedNet::new(facts.ip, &facts.bridge_id).ok_or(bridge::UNREACHABLE)?;
+        Ok(RealRig { base, token, net, facts, json })
+    }
+
+    fn panels_post(&self, body: &str) -> Result<serde_json::Value, &'static str> {
+        let token = self.token.as_deref().filter(|_| crate::wall2_desk::token_may_go_to(&self.base)).ok_or(nanoleaf::UNAVAILABLE)?;
+        let agent = ureq::AgentBuilder::new().redirects(0).timeout(std::time::Duration::from_secs(8)).build();
+        let resp = agent
+            .post(&format!("{}/api/desk/office/panels/stream", self.base))
+            .set("Content-Type", "application/json")
+            .set("X-Desk-Token", token)
+            .send_string(body)
+            .map_err(|_| nanoleaf::UNAVAILABLE)?;
+        use std::io::Read;
+        let mut buf = Vec::new();
+        resp.into_reader().take(64 * 1024).read_to_end(&mut buf).map_err(|_| nanoleaf::UNAVAILABLE)?;
+        serde_json::from_slice(&buf).map_err(|_| nanoleaf::UNAVAILABLE)
+    }
+}
+
+/// The same GET `read_facts` makes, kept whole so the area and panels can be read from it too.
+fn read_lightsync_json(http: &dyn bridge::FactsHttp, base: &str, token: Option<&str>) -> Result<serde_json::Value, &'static str> {
+    let token = token.filter(|_| crate::wall2_desk::token_may_go_to(base));
+    let (code, body) = http.get(&format!("{base}/api/desk/office/lightsync"), token).map_err(|_| bridge::UNREACHABLE)?;
+    if !(200..300).contains(&code) {
+        return Err(bridge::UNREACHABLE);
+    }
+    serde_json::from_slice(&body).map_err(|_| bridge::UNREACHABLE)
+}
+
+impl Rig for RealRig {
+    fn layout(&self) -> Result<Layout, &'static str> {
+        shape_layout(&self.json).ok_or("no-area")
+    }
+    fn saved(&self) -> Loaded {
+        match store::load_with(&store::RealStore) {
+            Loaded::Paired(s) if s.bridge_id.eq_ignore_ascii_case(&self.facts.bridge_id) => Loaded::Paired(s),
+            Loaded::Paired(_) => Loaded::None,
+            other => other,
+        }
+    }
+    fn area(&self, area_id: &str, action: &str) -> Result<(), &'static str> {
+        match store::load_with(&store::RealStore) {
+            Loaded::Paired(s) => bridge::area_action(&self.net, &s.username, area_id, action),
+            _ => Err("not-paired"),
+        }
+    }
+    fn open_hue(&self, saved: &Saved) -> Result<Box<dyn Frames + '_>, &'static str> {
+        Ok(Box::new(stream::HueLink::connect(self.facts.ip, &saved.app_id, &saved.clientkey)?))
+    }
+    fn panels_on(&self) -> Result<Box<dyn Frames + '_>, &'static str> {
+        let answer = self.panels_post(&nanoleaf::stream_body(true, false, false))?;
+        let (ip, port) = nanoleaf::shape_stream_answer(&answer).ok_or(nanoleaf::UNAVAILABLE)?;
+        Ok(Box::new(nanoleaf::PanelLink::open(ip, port)?))
+    }
+    fn panels_off(&self) {
+        let _ = self.panels_post(&nanoleaf::stream_body(false, false, true));
+    }
+    fn pause(&self, ms: u64) {
+        std::thread::sleep(std::time::Duration::from_millis(ms));
+    }
+}
+
+/// One test at a time, and not while pairing.
+fn testing() -> &'static AtomicBool {
+    static TESTING: AtomicBool = AtomicBool::new(false);
+    &TESTING
+}
+
+struct TestGuard;
+
+/// Takes the test slot unless a pairing runs or a test already does.
+fn test_slot(testing: &AtomicBool, pairing: &AtomicBool) -> bool {
+    if pairing.load(Ordering::Acquire) {
+        return false;
+    }
+    testing.compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire).is_ok()
+}
+
+impl TestGuard {
+    fn take() -> Option<TestGuard> {
+        test_slot(testing(), pairing()).then_some(TestGuard)
+    }
+}
+
+impl Drop for TestGuard {
+    fn drop(&mut self) {
+        testing().store(false, Ordering::Release);
+    }
+}
+
 // Section: commands (wall2 window only; blocking work off the async thread)
 
 #[tauri::command]
@@ -123,6 +354,17 @@ pub async fn wall2_lightsync_forget(window: tauri::WebviewWindow) -> Result<(), 
         } else {
             Err(bridge::FAILED.to_string())
         }
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn wall2_lightsync_test(window: tauri::WebviewWindow, app: tauri::AppHandle) -> Result<String, String> {
+    crate::wall2_meet::require_wall2(window.label())?;
+    crate::wall2_desk::off_thread(move || {
+        let Some(_guard) = TestGuard::take() else { return Err(bridge::BUSY.to_string()) };
+        let rig = RealRig::new(&app).map_err(str::to_string)?;
+        run_test(&rig).map(str::to_string).map_err(str::to_string)
     })
     .await
 }
@@ -241,13 +483,279 @@ mod tests {
         assert!(PairGuard::take().is_some());
     }
 
+    // Section: the test flash
+
+    const AREA: &str = "0a1b2c3d-0000-4000-8000-123456789abc";
+
+    #[derive(Default)]
+    struct Log {
+        events: std::cell::RefCell<Vec<String>>,
+        hue_frames: std::cell::RefCell<Vec<Vec<u8>>>,
+        panel_frames: std::cell::RefCell<Vec<Vec<u8>>>,
+    }
+
+    struct Sink<'a>(&'a Log, bool, bool);
+
+    impl Frames for Sink<'_> {
+        fn send(&mut self, bytes: &[u8]) -> bool {
+            if self.2 {
+                return false;
+            }
+            if self.1 { self.0.hue_frames.borrow_mut().push(bytes.to_vec()) } else { self.0.panel_frames.borrow_mut().push(bytes.to_vec()) }
+            true
+        }
+    }
+
+    struct FakeRig<'a> {
+        log: &'a Log,
+        store: Fake,
+        layout: Result<Layout, &'static str>,
+        start_fails: bool,
+        dtls_fails: bool,
+        panels_fail: bool,
+        hue_send_fails: bool,
+        panel_send_fails: bool,
+        stop_fails: bool,
+    }
+
+    impl<'a> FakeRig<'a> {
+        fn new(log: &'a Log, with_panels: bool) -> FakeRig<'a> {
+            let store = Fake::default();
+            store::save_with(&store, &sample());
+            let panels = with_panels.then(|| vec![nanoleaf::Panel { id: 5, x: 0.0, y: 0.0 }, nanoleaf::Panel { id: 6, x: 50.0, y: 0.0 }]);
+            FakeRig { log, store, layout: Ok(Layout { area_id: AREA.to_string(), channels: vec![3, 1, 2, 0], panels }), start_fails: false, dtls_fails: false, panels_fail: false, hue_send_fails: false, panel_send_fails: false, stop_fails: false }
+        }
+        fn note(&self, e: &str) {
+            self.log.events.borrow_mut().push(e.to_string());
+        }
+    }
+
+    impl Rig for FakeRig<'_> {
+        fn layout(&self) -> Result<Layout, &'static str> {
+            match &self.layout {
+                Ok(l) => Ok(Layout { area_id: l.area_id.clone(), channels: l.channels.clone(), panels: l.panels.clone() }),
+                Err(e) => Err(e),
+            }
+        }
+        fn saved(&self) -> Loaded {
+            store::load_with(&self.store)
+        }
+        fn area(&self, _id: &str, action: &str) -> Result<(), &'static str> {
+            self.note(&format!("area:{action}"));
+            if (action == "start" && self.start_fails) || (action == "stop" && self.stop_fails) { Err(bridge::FAILED) } else { Ok(()) }
+        }
+        fn open_hue(&self, _s: &Saved) -> Result<Box<dyn Frames + '_>, &'static str> {
+            self.note("hue:open");
+            if self.dtls_fails { Err(stream::DTLS) } else { Ok(Box::new(Sink(self.log, true, self.hue_send_fails))) }
+        }
+        fn panels_on(&self) -> Result<Box<dyn Frames + '_>, &'static str> {
+            self.note("panels:on");
+            if self.panels_fail { Err(nanoleaf::UNAVAILABLE) } else { Ok(Box::new(Sink(self.log, false, self.panel_send_fails))) }
+        }
+        fn panels_off(&self) {
+            self.note("panels:off");
+        }
+        fn pause(&self, _ms: u64) {}
+    }
+
+    #[test]
+    fn test_flash_runs_in_order_and_ends_with_stop() {
+        let log = Log::default();
+        let rig = FakeRig::new(&log, true);
+        assert_eq!(run_test(&rig), Ok("ok"));
+        assert_eq!(*log.events.borrow(), vec!["area:stop", "area:start", "hue:open", "panels:on", "panels:off", "area:stop"]);
+        let hue = log.hue_frames.borrow();
+        assert_eq!(hue.len(), 151);
+        assert_eq!(hue[0].len(), stream::HEADER_LEN + 4 * 7);
+        assert_eq!(&hue[0][..9], b"HueStream");
+        assert_eq!(hue[0][11], 0);
+        assert_eq!(hue[150][11], 150);
+        assert_eq!(hue[0][stream::HEADER_LEN], 3, "first channel by x");
+        assert!(!log.panel_frames.borrow().is_empty());
+        assert_eq!(&log.panel_frames.borrow()[0][..2], &[0, 2]);
+    }
+
+    #[test]
+    fn test_flash_without_panels_skips_them() {
+        let log = Log::default();
+        assert_eq!(run_test(&FakeRig::new(&log, false)), Ok("ok"));
+        assert!(!log.events.borrow().iter().any(|e| e.starts_with("panels")));
+    }
+
+    #[test]
+    fn test_flash_needs_a_pair() {
+        let log = Log::default();
+        let rig = FakeRig::new(&log, true);
+        rig.store.delete();
+        assert_eq!(run_test(&rig), Err("not-paired"));
+        assert!(log.events.borrow().is_empty());
+    }
+
+    #[test]
+    fn test_flash_without_an_area_says_so() {
+        let log = Log::default();
+        let mut rig = FakeRig::new(&log, true);
+        rig.layout = Err("no-area");
+        assert_eq!(run_test(&rig), Err("no-area"));
+        assert!(!log.events.borrow().iter().any(|e| e == "area:start"));
+    }
+
+    #[test]
+    fn test_flash_stops_the_area_when_the_handshake_fails() {
+        let log = Log::default();
+        let mut rig = FakeRig::new(&log, true);
+        rig.dtls_fails = true;
+        assert_eq!(run_test(&rig), Err("dtls"));
+        assert_eq!(log.events.borrow().last().map(String::as_str), Some("area:stop"));
+        assert!(log.hue_frames.borrow().is_empty());
+    }
+
+    #[test]
+    fn test_flash_does_not_connect_when_the_area_will_not_start() {
+        let log = Log::default();
+        let mut rig = FakeRig::new(&log, true);
+        rig.start_fails = true;
+        assert_eq!(run_test(&rig), Err(bridge::FAILED));
+        assert!(!log.events.borrow().iter().any(|e| e == "hue:open"));
+    }
+
+    #[test]
+    fn test_flash_runs_the_plays_even_when_panels_are_down() {
+        let log = Log::default();
+        let mut rig = FakeRig::new(&log, true);
+        rig.panels_fail = true;
+        assert_eq!(run_test(&rig), Err(nanoleaf::UNAVAILABLE));
+        assert_eq!(log.hue_frames.borrow().len(), 151);
+        assert!(log.events.borrow().iter().any(|e| e == "panels:off"));
+    }
+
+    #[test]
+    fn test_flash_reports_a_failed_hue_write_and_still_cleans_up() {
+        let log = Log::default();
+        let mut rig = FakeRig::new(&log, true);
+        rig.hue_send_fails = true;
+        assert_eq!(run_test(&rig), Err("dtls"));
+        let events = log.events.borrow();
+        assert!(events.iter().any(|e| e == "panels:off"));
+        assert_eq!(events.last().map(String::as_str), Some("area:stop"));
+    }
+
+    #[test]
+    fn test_flash_reports_a_failed_final_stop() {
+        let log = Log::default();
+        let mut rig = FakeRig::new(&log, true);
+        rig.stop_fails = true;
+        assert_eq!(run_test(&rig), Err(STOP_FAILED));
+        let events = log.events.borrow();
+        assert!(events.iter().any(|e| e == "panels:off"));
+        assert_eq!(events.last().map(String::as_str), Some("area:stop"));
+        assert_eq!(log.hue_frames.borrow().len(), 151);
+    }
+
+    #[test]
+    fn test_flash_reports_a_failed_panel_write_after_the_full_sweep() {
+        let log = Log::default();
+        let mut rig = FakeRig::new(&log, true);
+        rig.panel_send_fails = true;
+        assert_eq!(run_test(&rig), Err(nanoleaf::UNAVAILABLE));
+        assert_eq!(log.hue_frames.borrow().len(), 151);
+        let events = log.events.borrow();
+        assert!(events.iter().any(|e| e == "panels:off"));
+        assert_eq!(events.last().map(String::as_str), Some("area:stop"));
+    }
+
+    #[test]
+    fn test_flash_failure_words_rank_dtls_then_stop_then_panels() {
+        let log = Log::default();
+        let mut rig = FakeRig::new(&log, true);
+        rig.stop_fails = true;
+        rig.panel_send_fails = true;
+        assert_eq!(run_test(&rig), Err(STOP_FAILED));
+        rig.hue_send_fails = true;
+        assert_eq!(run_test(&rig), Err("dtls"));
+    }
+
+    #[test]
+    fn layout_orders_channels_by_x_and_reads_panels() {
+        let v = serde_json::json!({
+            "ok": true,
+            "area": { "id": AREA, "name": "Gaming Desk", "channels": [
+                { "id": 0, "x": 0.5, "y": 0 }, { "id": 1, "x": -0.5, "y": 0 }, { "id": 2, "x": 0.9, "y": 0 }, { "id": 3, "x": -0.9, "y": 0 } ] },
+            "panels": { "ip": "192.168.1.30", "layout": [ { "id": 5, "x": 0, "y": 0 } ] }
+        });
+        let l = shape_layout(&v).unwrap();
+        assert_eq!(l.channels, vec![3, 1, 0, 2]);
+        assert_eq!(l.panels.unwrap()[0].id, 5);
+    }
+
+    #[test]
+    fn layout_refuses_a_missing_or_odd_area() {
+        assert!(shape_layout(&serde_json::json!({ "area": null })).is_none());
+        assert!(shape_layout(&serde_json::json!({ "area": { "id": "short", "channels": [{ "id": 0, "x": 0 }] } })).is_none());
+        assert!(shape_layout(&serde_json::json!({ "area": { "id": AREA, "channels": [] } })).is_none());
+        assert!(shape_layout(&serde_json::json!({ "area": { "id": AREA, "channels": [{ "id": 300, "x": 0 }] } })).is_none());
+        let no_panels = shape_layout(&serde_json::json!({ "area": { "id": AREA, "channels": [{ "id": 0, "x": 0 }] }, "panels": null })).unwrap();
+        assert!(no_panels.panels.is_none());
+    }
+
+    /// No answer or error word of the test carries a key, an identity or an address.
+    #[test]
+    fn test_words_carry_no_secret() {
+        let log = Log::default();
+        let mut words = Vec::new();
+        for variant in 0..5 {
+            let mut rig = FakeRig::new(&log, true);
+            match variant {
+                0 => rig.dtls_fails = true,
+                1 => rig.start_fails = true,
+                2 => rig.panels_fail = true,
+                3 => rig.stop_fails = true,
+                _ => rig.layout = Err("no-area"),
+            }
+            words.push(run_test(&rig).unwrap_err().to_string());
+        }
+        words.push(run_test(&FakeRig::new(&log, true)).unwrap().to_string());
+        let secrets = ["secret", "0123456789ABCDEF", "192.168", "user-secret", "app-id"];
+        for w in &words {
+            for s in secrets {
+                assert!(!w.to_lowercase().contains(&s.to_lowercase()), "{w}");
+            }
+            assert!(w.len() <= 20 && w.chars().all(|c| c.is_ascii_lowercase() || c == '-'), "{w}");
+        }
+        for w in [bridge::FAILED, bridge::UNREACHABLE, bridge::CERT, bridge::BUSY, stream::DTLS, nanoleaf::UNAVAILABLE, STOP_FAILED] {
+            assert!(w.chars().all(|c| c.is_ascii_lowercase() || c == '-'));
+        }
+    }
+
+    #[test]
+    fn testing_refuses_while_pairing_runs() {
+        let testing = AtomicBool::new(false);
+        let pairing = AtomicBool::new(true);
+        assert!(!test_slot(&testing, &pairing));
+        assert!(!testing.load(Ordering::Acquire));
+        pairing.store(false, Ordering::Release);
+        assert!(test_slot(&testing, &pairing));
+        assert!(!test_slot(&testing, &pairing));
+    }
+
+    #[test]
+    fn testing_runs_one_at_a_time() {
+        // Local flags, so the pairing tests holding the global flag never race this one.
+        let testing = AtomicBool::new(false);
+        let pairing = AtomicBool::new(false);
+        assert!(test_slot(&testing, &pairing));
+        assert!(!test_slot(&testing, &pairing));
+        testing.store(false, Ordering::Release);
+        assert!(test_slot(&testing, &pairing));
+    }
+
     /// Every command checks the window first: as many window checks as command attributes.
     #[test]
     fn every_command_checks_the_window() {
         let src = include_str!("mod.rs").replace("\r\n", "\n");
         let commands = src.matches(concat!("#[tauri::", "command]")).count();
         let checks = src.matches(concat!("crate::wall2_meet::require_", "wall2(window.label())?;")).count();
-        assert_eq!(commands, 3);
+        assert_eq!(commands, 4);
         assert_eq!(commands, checks);
     }
 }

@@ -350,11 +350,10 @@ pub(crate) fn action_body(action: &str) -> Option<String> {
     matches!(action, "start" | "stop").then(|| json!({ "action": action }).to_string())
 }
 
-fn valid_area_id(id: &str) -> bool {
+pub(crate) fn valid_area_id(id: &str) -> bool {
     id.len() == 36 && id.chars().all(|c| c.is_ascii_hexdigit() || c == '-')
 }
 
-#[allow(dead_code)]
 pub(crate) fn area_action(net: &dyn BridgeNet, key: &str, area_id: &str, action: &str) -> Result<(), &'static str> {
     let body = action_body(action).ok_or(FAILED)?;
     if !valid_area_id(area_id) {
