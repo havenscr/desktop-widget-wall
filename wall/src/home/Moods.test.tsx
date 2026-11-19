@@ -12,6 +12,8 @@ const flush = async (ms = 0) => {
     await vi.advanceTimersByTimeAsync(ms);
   });
 };
+/** The mood cards: every button but the Condo / Office pick in the heading. */
+const cardButtons = () => screen.getAllByRole('button').filter((b) => !b.classList.contains('moods-pick'));
 const LIST = [
   { id: 'day', label: 'Day' },
   { id: 'evening', label: 'Evening' },
@@ -43,7 +45,7 @@ it('lists the moods in order and never applies one without a tap', async () => {
   mocks.set('wall2_apply_mood', apply);
   render(<Moods />);
   await flush(11 * 60_000);
-  const names = screen.getAllByRole('button').map((b) => b.querySelector('.mood-name')?.textContent);
+  const names = cardButtons().map((b) => b.querySelector('.mood-name')?.textContent);
   expect(names).toEqual(['Day', 'Evening', 'Late Night']);
   expect(apply).not.toHaveBeenCalled();
 });
@@ -138,7 +140,7 @@ it('marks the last mood "On now" and does not use aria-pressed', async () => {
   expect(container.querySelectorAll('.mood-tag')).toHaveLength(1);
   expect(screen.getByText('On now').closest('button')?.getAttribute('data-mood')).toBe('evening');
   expect(screen.getByRole('button', { name: 'Day' })).toBeTruthy();
-  for (const b of screen.getAllByRole('button')) expect(b.hasAttribute('aria-pressed')).toBe(false);
+  for (const b of cardButtons()) expect(b.hasAttribute('aria-pressed')).toBe(false);
 });
 
 it('still works when local storage throws', async () => {
@@ -152,7 +154,7 @@ it('still works when local storage throws', async () => {
   mocks.set('wall2_apply_mood', () => undefined);
   const { container } = render(<Moods />);
   await flush();
-  expect(screen.getAllByRole('button')).toHaveLength(3);
+  expect(cardButtons()).toHaveLength(3);
   fireEvent.click(screen.getByText('Day'));
   await flush();
   expect(container.querySelector('.mood-btn.done')).toBeTruthy();
@@ -197,7 +199,7 @@ it('shows nothing, not Loading, while the page is hidden at first mount', async 
   });
   await flush();
   expect(list).toHaveBeenCalledTimes(1);
-  expect(screen.getAllByRole('button')).toHaveLength(3);
+  expect(cardButtons()).toHaveLength(3);
   hidden.mockRestore();
 });
 
@@ -210,7 +212,7 @@ it('keeps the last good cards with a quiet amber line when the home app is away'
   mocks.set('wall2_moods', () => Promise.reject(new Error('Could not reach the service')));
   const { container } = render(<Moods />);
   await flush();
-  expect(screen.getAllByRole('button')).toHaveLength(3);
+  expect(cardButtons()).toHaveLength(3);
   expect(container.querySelector('.warn-text')?.textContent).toBe('Home app not reachable');
 });
 
@@ -218,7 +220,7 @@ it('with no list ever read, a failure is one quiet line and no cards', async () 
   mocks.set('wall2_moods', () => Promise.reject(new Error('Could not reach the service')));
   const { container } = render(<Moods />);
   await flush();
-  expect(screen.queryByRole('button')).toBeNull();
+  expect(screen.queryAllByRole('button').filter((b) => !b.classList.contains('moods-pick'))).toHaveLength(0);
   expect(container.querySelector('.moods.bare')).toBeTruthy();
   expect(screen.getByText('Home app not reachable')).toBeTruthy();
 });

@@ -78,13 +78,13 @@ const show = async () => {
   return view;
 };
 
-it('two rows: moods with Back to normal and Fine tune, then Key lights, Panels and the office chip', async () => {
+it('two rows: moods with As before and Fine tune, then Key lights, Panels and the office chip', async () => {
   await show();
   const rows = [...document.querySelectorAll('.meet-lights-row')];
   expect(rows).toHaveLength(2);
   const first = within(rows[0] as HTMLElement);
   expect(first.getByRole('button', { name: 'On air' })).toBeTruthy();
-  expect(first.getByRole('button', { name: 'Back to normal' })).toBeTruthy();
+  expect(first.getByRole('button', { name: 'As before' })).toBeTruthy();
   expect(first.getByRole('button', { name: 'Fine tune' })).toBeTruthy();
   const second = within(rows[1] as HTMLElement);
   expect(second.getByRole('switch', { name: 'Key lights' })).toBeTruthy();
@@ -114,7 +114,7 @@ it('the chips send the real calls: preset, normal, group, key lights, office moo
   await show();
   fireEvent.click(screen.getByRole('button', { name: 'Recording' }));
   await flush(50);
-  fireEvent.click(screen.getByRole('button', { name: 'Back to normal' }));
+  fireEvent.click(screen.getByRole('button', { name: 'As before' }));
   await flush(50);
   fireEvent.click(screen.getByRole('switch', { name: 'Panels' }));
   await flush(50);
@@ -185,7 +185,7 @@ it('a held panel write locks the office picker; nothing is sent until it ends', 
   expect(officeButtons()[1].getAttribute('aria-disabled')).toBeNull();
 });
 
-it('a PC that may not write: presets, Back to normal and the office picker send nothing', async () => {
+it('a PC that may not write: presets, As before and the office picker send nothing', async () => {
   answer = studioAnswer({ canWrite: false, writeBlock: 'not-set-up' });
   mocks.set('wall2_office_moods', () => ({ ...moods('meeting'), canWrite: false, writeBlock: 'not-set-up' }));
   await show();

@@ -237,7 +237,7 @@ export function recordRows(r: DayRecord, now: number): PanelRow[] {
       title: s.title,
       spans,
       pr: s.pr?.number ?? null,
-      prAt: s.pr ? (prSpan?.from ?? spans[spans.length - 1]?.to ?? null) : null,
+      prAt: prSpan?.from ?? null,
       end,
       workMs,
       waitMs: 0,
@@ -361,7 +361,7 @@ export function todayRows(s: OmniSummary, record: DayRecord | null, now: number,
       title: card?.title ?? fromRec?.title ?? 'An earlier session',
       spans,
       pr,
-      prAt: pr !== null ? (prSpan?.from ?? spans[spans.length - 1]?.to ?? null) : null,
+      prAt: prSpan?.from ?? null,
       end,
       workMs,
       waitMs,
@@ -384,8 +384,29 @@ export function totalsText(rows: readonly PanelRow[], today: boolean): string {
 
 /** The hour axis: from 6 AM (earlier when a span starts earlier) to midnight, or to just past now today. */
 export function axisRange(rows: readonly PanelRow[], today: boolean, nowHour: number): { lo: number; hi: number; step: number } {
-  const first = Math.min(6, ...rows.flatMap((r) => r.spans.map((s) => Math.floor(s.from))));
+  // Label step: no more than about eight labels, so they never touch (3 hours on a full day).
+  const stepFor = (span: number) => (span <= 8 ? 1 : span <= 16 ? 2 : 3);
+  const spans = rows.flatMap((r) => r.spans);
+  // Only run and working-stage spans size a quiet axis; a long idle, wait, done or pr span must not stretch it.
+  const worked = spans.filter((s) => s.kind !== 'idle' && s.kind !== 'pr' && s.kind !== 'wait' && s.kind !== 'done');
+  const fit = worked.length > 0 ? worked : spans;
+  // A quiet past day (few sessions): the axis fits the hours that had work, one hour of padding each
+  // side and at least four hours wide. A busy day and today keep the usual axis.
+  if (!today && rows.length > 0 && rows.length <= QUIET_ROWS && spans.length > 0) {
+    let lo = Math.max(0, Math.floor(Math.min(...fit.map((s) => s.from))) - 1);
+    let hi = Math.min(24, Math.ceil(Math.max(...fit.map((s) => s.to))) + 1);
+    if (hi - lo < QUIET_MIN_SPAN) {
+      hi = Math.min(24, lo + QUIET_MIN_SPAN);
+      lo = Math.max(0, hi - QUIET_MIN_SPAN);
+    }
+    return { lo, hi, step: stepFor(hi - lo) };
+  }
+  const first = Math.min(6, ...spans.map((s) => Math.floor(s.from)));
   const lo = Math.max(0, first % 2 === 0 ? first : first - 1);
   const hi = today ? Math.min(24, Math.max(lo + 4, Math.ceil(nowHour + 0.6))) : 24;
-  return { lo, hi, step: hi - lo > 12 ? 2 : 1 };
+  return { lo, hi, step: stepFor(hi - lo) };
 }
+
+/** A past day with this many sessions or fewer is "quiet": its hour axis fits the hours that had work. */
+export const QUIET_ROWS = 6;
+const QUIET_MIN_SPAN = 4;

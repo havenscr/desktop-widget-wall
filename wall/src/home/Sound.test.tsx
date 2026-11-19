@@ -2,6 +2,7 @@ import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { mocks } from '../bridge/tauri';
 import { usePacificTime } from '../ribbon/testZone';
+import { HoverTipLayer } from '../ui/HoverTip';
 import { KEY_SETTLE_MS, RESULT_MS, Sound } from './Sound';
 import { LAST_PLAY_KEY, LATCH_MS, NEEDS_CONFIRM, type SonosSummary } from './soundModel';
 
@@ -814,6 +815,11 @@ it('a read that fails after Sonos was up keeps the block, marked stale, and the 
 });
 
 // home round two: now playing at the left of the block.
+const tipText = async (el: Element) => {
+  fireEvent.mouseEnter(el);
+  await flush(400);
+  return document.querySelector('.hover-tip')?.textContent ?? '';
+};
 const playback = (device: { name: string; kind: string }) => ({
   playing: true,
   device,
@@ -824,13 +830,21 @@ const playback = (device: { name: string; kind: string }) => ({
 it('a Spotify track on a house speaker shows its title, artist, where it plays and progress, with pause and no next', async () => {
   wire();
   mocks.set('wall2_spotify_playback', () => playback({ name: 'Den', kind: 'Speaker' }));
-  const { container } = render(<Sound />);
+  const { container } = render(
+    <>
+      <Sound />
+      <HoverTipLayer />
+    </>,
+  );
   await flush(1_000);
   const strip = container.querySelector('.sound-np')!;
   expect(within(strip as HTMLElement).getByText('Paper Lanterns')).toBeTruthy();
-  expect(within(strip as HTMLElement).getByText('The Quiet Hours')).toBeTruthy();
+  // The short form: the artist and the length are on hover, not drawn.
+  expect(strip.classList.contains('compact')).toBe(true);
+  expect(strip.textContent).not.toContain('The Quiet Hours');
+  expect(await tipText(strip.querySelector('.np-title')!)).toContain('The Quiet Hours');
   expect(strip.textContent).toContain('Den, 2 speakers');
-  expect(strip.querySelector('.np-prog')!.textContent).toContain('3:20');
+  expect(await tipText(strip.querySelector('.np-where')!)).toContain('of 3:20');
   expect(within(strip as HTMLElement).getByLabelText('Pause')).toBeTruthy();
   expect(within(strip as HTMLElement).queryByLabelText('Next')).toBeNull();
 });
@@ -842,7 +856,7 @@ it('a Spotify track playing on this PC is never shown as the house playing', asy
   await flush(1_000);
   const strip = container.querySelector('.sound-np')!;
   expect(strip.textContent).not.toContain('Paper Lanterns');
-  expect(strip.querySelector('.np-prog')).toBeNull();
+  expect(strip.querySelector('.np-where')!.textContent).not.toContain('of 3:20');
   expect(strip.textContent).toContain('Song A');
 });
 
@@ -867,12 +881,17 @@ it('the progress counts from the Spotify read that carries the position, not fro
     landed = Date.now();
     done(playback({ name: 'Den', kind: 'Speaker' }));
   }, 5_000)));
-  const { container } = render(<Sound />);
+  const { container } = render(
+    <>
+      <Sound />
+      <HoverTipLayer />
+    </>,
+  );
   await flush();
   await flush(20_000);
   // The bar's own clock moves each second; the shown position is 1:05 plus the time since the
   // Spotify read landed (counting from the Sonos read would add five seconds).
-  const shown = container.querySelector('.np-prog span')?.textContent ?? '';
+  const shown = /\. (\d+:\d\d) of /.exec(await tipText(container.querySelector('.np-where')!))?.[1] ?? '';
   const [m, sec] = shown.split(':').map(Number);
   expect(landed).toBeGreaterThan(NOW);
   expect(m * 60 + sec).toBe(65 + Math.floor((Date.now() - landed) / 1000));

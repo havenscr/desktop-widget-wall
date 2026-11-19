@@ -75,6 +75,7 @@ import {
 } from './soundModel';
 import { clock, useSonos } from './useSonos';
 import { NowBlock } from './NowBlock';
+import { HomeStudio } from './HomeStudio';
 
 export const RESULT_MS = 4000;
 /** The service needs a moment after a command before its status shows the change. */
@@ -506,6 +507,8 @@ function Live({
     <Shell side={side} extra={extra} stale={stale}>
       <div className="panel sound-panel l2">
         <NowBlock
+          compact
+          below={<HomeStudio />}
           s={s}
           now={now}
           live={!stale}

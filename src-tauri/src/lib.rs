@@ -69,6 +69,7 @@ mod wall2_spotify_log;
 mod wall2_spotify_page;
 mod wall2_youtube;
 mod wall2_youtube_log;
+mod wall2_youtube_played;
 mod wall2_omni;
 mod wall2_power;
 mod wall2_signals;
@@ -4042,6 +4043,9 @@ pub fn run() {
             wall2_youtube::wall2_youtube_liked,
             wall2_youtube::wall2_youtube_search,
             wall2_youtube::wall2_youtube_videos,
+            wall2_youtube_played::wall2_youtube_note_play,
+            wall2_youtube_played::wall2_youtube_played,
+            wall2_youtube_played::wall2_youtube_forget_played,
             wall2_youtube::live::wall2_ytlive_channel,
             wall2_youtube::live::wall2_ytlive_set_channel,
             wall2_youtube::live::wall2_ytlive_forget_channel,
@@ -4076,6 +4080,7 @@ pub fn run() {
             wall2_signals::wall2_signals_report,
             wall2_arrange::wall2_arrange_status,
             wall2_arrange::wall2_arrange,
+            wall2_arrange::wall2_arrange_preview,
             wall2_arrange::wall2_arrange_undo,
             wall2_keys::wall2_keys_summary,
             wall2_keys::wall2_keys_send,

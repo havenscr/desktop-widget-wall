@@ -8,7 +8,7 @@ const day = '2026-11-11T10:24:00-08:00';
 const SWITCH = '.sp-switch button:nth-child(2)';
 const TALL = '.sp-grow';
 const TILE = '.yt-tile';
-const LIKED = '.sp-tabs button:nth-child(2)';
+const LIKED = '.sp-tabs button:nth-child(3)';
 // The pointer goes to the right end of what it is sent to: on the title, so it is on the play part and not on the add control.
 const ROW4 = 'hover:.yt-row:nth-child(4) .yt-title';
 const steps = (...s) => s.join(' >> ');
@@ -206,7 +206,7 @@ export default {
       state('Listen, the top player with the wall\'s music', base(play('on')), ['YouTube, on the wall', 'Glass Harbor', 'Mira Vale', '1:06', '3:34', 'Up next']),
       state('Listen, Up next with the wall\'s music', base(play('on')), ['Up next', 'Low Tide Motel', 'Aurora Set'], SWITCH),
       state('the Watch tab with a music pick', base(`youtube=in&ytlib=full&media=none&watch=mock&ytplay=on`), ['Glass Harbor', 'Mira Vale', 'Playing on the wall']),
-      state('Home, Now Playing with a music pick', `hz=home&at=${night}&clock=review&weather=ok&audio=demo&${play('on')}`, ['Glass Harbor', 'YouTube Music']),
+      state('Home, Now Playing with a music pick', `hz=home&at=${night}&clock=review&weather=ok&audio=demo&${play('on')}`, ['Glass Harbor']),
       state('a row\'s hover card', base(play('on')), ['Glass Harbor', 'Mira Vale', 'Click to play it on the wall'], steps(SWITCH, TILE, ROW4)),
       state('Play\'s hover card', base(play('on')), ['Play this playlist on the wall, sound only'], steps(SWITCH, TILE, 'hover:.yt-playall')),
       state('Shuffle\'s hover card', base(play('on')), ['Play it in a random order'], steps(SWITCH, TILE, 'hover:.yt-shuffle')),

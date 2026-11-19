@@ -343,7 +343,7 @@ it('carries the one quiet line for what is not built yet, and no control for it'
   await open();
   const line = screen.getByText('Presets and room lights: the home app does not offer them here yet.');
   expect(line.closest('button')).toBeNull();
-  expect(screen.queryByText('Back to normal')).toBeNull();
+  expect(screen.queryByText('As before')).toBeNull();
   expect(screen.queryByText('Panels')).toBeNull();
 });
 

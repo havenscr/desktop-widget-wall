@@ -77,7 +77,7 @@ it('fitMoodRow: twelve 40 character names, with Off, stay within 1124 and never 
   expect(fitMoodRow(Array(12).fill(500), 170, 600).cap).toBe(NAME_MIN);
 });
 
-it('fitMoodRow: twelve moods with Off and Back to normal stay inside ROW_MAX: Back to the arrow first, then Off, then a clip', () => {
+it('fitMoodRow: twelve moods with Off and As before stay inside ROW_MAX: Back to the arrow first, then Off, then a clip', () => {
   const names = (n: number) => Array.from({ length: n }, () => 330);
   const floor = (n: number) => Array(n).fill(NAME_MIN) as number[];
   const off = OFF_FIXED + OFF_BUSY_EXTRA + 27;

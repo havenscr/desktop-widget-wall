@@ -18,6 +18,7 @@ import { useWatchStore } from '../../unwind/watch/store';
  * not found), `low` (12 searches left), `spent` (none left), `long` (very long names, a list of 2000).
  * `ytscroll=<px>` scrolls every list of rows to that many pixels once it has more rows than it shows (a still of the menu on a
  * row near the foot of the list). Names are invented; pictures are drawn motifs, never an address.
+ * `ytplayed=` seeds the play record the For you tab reads (`none`, or a count up to 12, default 6) and `ytfy=down` makes that read fail.
  * `ytdetails=` picks own-playlist details: `ok` (default), `none`, `down` or `slow`.
  *
  * `ytplay=` (with `youtube=in` and the mock frame, `watch=mock`: it never loads a real player, and without it nothing
@@ -127,9 +128,30 @@ export function registerYoutubeMocks(): void {
     return ids.map((id) => {
       const hash = Array.from(id).reduce((sum, char) => (sum * 33 + char.charCodeAt(0)) >>> 0, 0);
       const song = SONGS[hash % SONGS.length];
-      return { id, title: song[0], channel: song[1], seconds: 150 + (hash % 240) } satisfies YtDetail;
+      return { id, title: song[0], channel: song[1], seconds: 150 + (hash % 240), thumb: motif(hash) } satisfies YtDetail;
     });
   });
+  // The play record: `ytplayed=` seeds it in a development build (`none`, or a count up to 12; default 6; the times are days back).
+  const playedSeed = (): { id: string; at: number }[] => {
+    const knob = new URLSearchParams(window.location.search).get('ytplayed') ?? '6';
+    const n = knob === 'none' ? 0 : Math.min(12, Math.max(0, Number(knob) || 0));
+    const now = Math.floor(Date.now() / 1000);
+    const days = [0.2, 1, 2, 4, 7, 9, 12, 15, 20, 24, 27, 29];
+    return Array.from({ length: n }, (_, i) => ({ id: vid(300 + i), at: now - Math.round(days[i]! * 86400) }));
+  };
+  let played: { id: string; at: number }[] | null = null;
+  mocks.set('wall2_youtube_played', () => {
+    if (!signedIn) throw new Error('sign in again');
+    if (new URLSearchParams(window.location.search).get('ytfy') === 'down') throw new Error('down');
+    played ??= playedSeed();
+    return played.slice();
+  });
+  mocks.set('wall2_youtube_note_play', (args) => {
+    const id = typeof args?.id === 'string' ? args.id : '';
+    played ??= playedSeed();
+    played = [{ id, at: Math.floor(Date.now() / 1000) }, ...played.filter((p) => p.id !== id)].slice(0, 200);
+  });
+  mocks.set('wall2_youtube_forget_played', () => { played = []; });
   mocks.set('wall2_youtube_status', () => {
     if (mode() === 'down') throw new Error('failed');
     const reason = mode() === 'missing' && !setup && signedIn ? 'setup missing' : !setup ? 'not set up' : waitingNative ? 'signing in' : damaged ? 'setup unreadable' : mode() === 'again' && !signedIn ? 'sign in again' : mode().startsWith('broken') ? 'setup broken' : null;
@@ -152,7 +174,7 @@ export function registerYoutubeMocks(): void {
   mocks.set('wall2_youtube_cancel_sign_in', () => {
     waitingNative = false;
   });
-  mocks.set('wall2_youtube_sign_out', () => { signedIn = false; });
+  mocks.set('wall2_youtube_sign_out', () => { signedIn = false; played = []; });
   const scrolled = Number(new URLSearchParams(window.location.search).get('ytscroll'));
   if (scrolled > 0) {
     const seen = new WeakSet<Element>();

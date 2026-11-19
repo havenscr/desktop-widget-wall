@@ -1130,7 +1130,7 @@ button.dd-k.link:hover {
   flex: none;
   width: 82px;
   text-align: right;
-  font: 500 15px/1 var(--disp);
+  font: 500 16px/1 var(--disp);
   color: var(--dim);
   white-space: nowrap;
 }
@@ -1162,13 +1162,13 @@ button.dd-k.link:hover {
 .at-head {
   display: flex;
   align-items: center;
-  gap: 16px;
+  gap: 12px;
   height: 36px;
   flex: none;
 }
 .at-k {
   flex: none;
-  font: 600 15px/1 var(--disp);
+  font: 600 16px/1 var(--disp);
   letter-spacing: 0.18em;
   text-transform: uppercase;
   white-space: nowrap;
@@ -1225,9 +1225,8 @@ button.dd-k.link:hover {
   border-radius: 14px;
   background: none;
   color: var(--dim);
-  font: 600 14px/1 var(--disp);
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
+  font: 600 16px/1 var(--disp);
+  letter-spacing: 0.02em;
   cursor: pointer;
 }
 .at-seg button.on {
@@ -1238,29 +1237,130 @@ button.dd-k.link:hover {
   opacity: 0.4;
   cursor: default;
 }
-.at-date {
+.at-datewrap {
+  position: relative;
   flex: none;
-  width: 200px;
-  overflow: hidden;
-  text-overflow: ellipsis;
   margin-left: 6px;
+}
+/* The date is a fixed-width button that opens the month calendar. */
+.at-date {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  box-sizing: border-box;
+  flex: none;
+  width: 248px;
+  height: 32px;
+  padding: 0 8px;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: none;
   font: 400 16px/1 var(--body);
   color: var(--dim);
   white-space: nowrap;
+  cursor: pointer;
+}
+.at-date span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.at-date svg {
+  flex: none;
+  width: 18px;
+  height: 18px;
+}
+.at-date:hover,
+.at-date.on {
+  color: var(--tx);
+  background: rgba(255, 255, 255, 0.08);
+}
+.at-cal {
+  position: absolute;
+  top: 40px;
+  left: 0;
+  z-index: 5;
+  width: 308px;
+  box-sizing: border-box;
+  padding: 10px;
+  border-radius: 14px;
+  background: rgb(22, 18, 48);
+  border: 1px solid var(--line);
+  box-shadow: 0 14px 36px -10px rgba(2, 1, 10, 0.9);
+}
+.at-cal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 36px;
+}
+.at-cal-title {
+  font: 600 16px/1 var(--body);
+  color: var(--tx);
+}
+.at-cal-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 40px);
+  grid-auto-rows: 40px;
+  justify-content: center;
+}
+.at-cal-wd {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font: 500 16px/1 var(--body);
+  color: var(--faint);
+}
+.at-cal-day {
+  position: relative;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  font: 400 16px/1 var(--body);
+  color: var(--faint);
+  opacity: 0.8;
+  cursor: default;
+}
+.at-cal-day.has {
+  color: var(--tx);
+  font-weight: 600;
+  opacity: 1;
+  cursor: pointer;
+}
+.at-cal-day.has:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+.at-cal-day.today {
+  box-shadow: inset 0 0 0 1px var(--dim);
+}
+.at-cal-day.shown {
+  background: rgba(53, 230, 234, 0.2);
+  color: var(--cyan);
+}
+.at-cal-day i {
+  position: absolute;
+  left: 50%;
+  bottom: 4px;
+  max-width: 28px;
+  height: 4px;
+  transform: translateX(-50%);
+  border-radius: 2px;
+  background: var(--cyan);
 }
 .at-legend {
   margin-left: auto;
   min-width: 0;
   display: flex;
-  gap: 12px;
+  gap: 8px;
 }
 .at-legend span {
   display: inline-flex;
   align-items: center;
   gap: 7px;
-  font: 500 13px/1 var(--disp);
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
+  font: 500 16px/1 var(--disp);
+  letter-spacing: 0.02em;
   color: var(--dim);
   white-space: nowrap;
 }
@@ -1276,16 +1376,16 @@ button.dd-k.link:hover {
 .at-axis {
   position: relative;
   height: 26px;
-  margin: 8px 0 0 290px;
-  width: 780px;
+  margin: 8px 0 0 366px;
+  width: 700px;
   flex: none;
 }
 .at-axis span {
   position: absolute;
-  top: 6px;
+  top: 4px;
   transform: translateX(-50%);
-  font: 500 13px/1 var(--disp);
-  letter-spacing: 0.08em;
+  font: 500 16px/1 var(--disp);
+  letter-spacing: 0.02em;
   color: var(--dim);
   white-space: nowrap;
 }
@@ -1302,8 +1402,8 @@ button.dd-k.link:hover {
 }
 .at-grid {
   position: absolute;
-  left: 290px;
-  width: 780px;
+  left: 366px;
+  width: 700px;
   top: 0;
   bottom: 0;
   pointer-events: none;
@@ -1325,7 +1425,7 @@ button.dd-k.link:hover {
   display: flex;
   align-items: center;
   width: 100%;
-  height: 36px;
+  height: 32px;
   min-height: 32px;
   flex: none;
   padding: 0;
@@ -1340,7 +1440,10 @@ button.dd-k.link:hover {
   background: rgba(255, 255, 255, 0.05);
 }
 .at-row .num {
-  margin-right: 12px;
+  width: 28px;
+  height: 28px;
+  margin-right: 8px;
+  font: 600 16px/1 var(--disp);
 }
 .at-name {
   width: 254px;
@@ -1350,15 +1453,39 @@ button.dd-k.link:hover {
   overflow: hidden;
   text-overflow: ellipsis;
 }
+.at-prn {
+  width: 76px;
+  flex: none;
+  font: 600 16px/1 var(--disp);
+  color: var(--st-pr);
+  white-space: nowrap;
+}
 .at-track {
   position: relative;
   flex: none;
-  width: 780px;
-  height: 36px;
+  width: 700px;
+  height: 32px;
+}
+/* A faint line joins a session's first start to its last end, so a session with gaps reads as one. */
+.at-join {
+  position: absolute;
+  top: 15px;
+  height: 2px;
+  background: rgba(255, 255, 255, 0.22);
+}
+/* A small tick on the bar where the pull request opened. */
+.at-prtick {
+  position: absolute;
+  top: 7px;
+  width: 3px;
+  height: 18px;
+  margin-left: -1px;
+  border-radius: 1px;
+  background: var(--st-pr);
 }
 .at-sg {
   position: absolute;
-  top: 17px;
+  top: 12px;
   height: 8px;
   border-radius: 2px;
   background: rgba(255, 255, 255, 0.3);
@@ -1385,24 +1512,9 @@ button.dd-k.link:hover {
   background: var(--amber);
   box-shadow: 0 0 10px var(--amber);
 }
-.at-pr {
-  position: absolute;
-  top: 1px;
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  transform: translateX(-7px);
-  font: 600 11px/1 var(--disp);
-  color: var(--st-pr);
-  white-space: nowrap;
-}
-.at-pr svg {
-  width: 14px;
-  height: 14px;
-}
 .at-end {
   margin-left: auto;
-  font: 500 15px/1 var(--body);
+  font: 500 16px/1 var(--body);
   white-space: nowrap;
 }
 .at-end.t-dim {
@@ -1446,13 +1558,18 @@ button.dd-k.link:hover {
 }
 .at-foot {
   display: flex;
+  flex-direction: column;
+  gap: 6px;
+  flex: none;
+  padding-top: 8px;
+  border-top: 1px solid var(--line);
+  font: 400 16px/1.3 var(--body);
+  color: var(--dim);
+}
+.at-foot-line {
+  display: flex;
   justify-content: space-between;
   gap: 20px;
-  flex: none;
-  padding-top: 10px;
-  border-top: 1px solid var(--line);
-  font: 400 15px/1.3 var(--body);
-  color: var(--dim);
 }
 .at-note {
   color: var(--faint);
@@ -1464,7 +1581,7 @@ button.dd-k.link:hover {
 /* A past day in the panel: its record holds a title, spans and a pull request only, so the
    title takes the room (520 px) and the track is 514. */
 .agents-today.past .at-name {
-  width: 520px;
+  width: 444px;
 }
 .agents-today.past .at-axis {
   margin-left: 556px;
@@ -1477,6 +1594,10 @@ button.dd-k.link:hover {
 .agents-today.past .at-track {
   width: 514px;
 }
+.agents-today.past .at-band {
+  margin-left: 556px;
+  width: 514px;
+}
 .agents-today.past .at-end,
 .agents-today.past .at-time {
   font-size: 16px;
@@ -1487,9 +1608,7 @@ button.dd-k.link:hover {
   display: flex;
   align-items: center;
   gap: 22px;
-  height: 44px;
-  margin-top: 8px;
-  border-top: 1px solid var(--line);
+  height: 24px;
   flex: none;
   white-space: nowrap;
   cursor: help;
@@ -1544,29 +1663,21 @@ button.dd-k.link:hover {
   width: 16px;
   height: 16px;
 }
-/* "Sessions busy at once": the first row, on the panel's own hour axis, a dashed line at the limit. */
+/* "Busy at once": a thin colour strip right under the hours, on the panel's own axis; a dashed line at the limit. */
 .at-band {
   position: relative;
-  display: flex;
-  align-items: center;
-  height: 36px;
+  height: 16px;
+  margin: 0 0 6px 366px;
+  width: 700px;
   flex: none;
-  border-top: 1px solid var(--line);
 }
-.at-band-k {
-  width: 290px;
-  flex: none;
-  box-sizing: border-box;
-  padding-left: 36px;
-  font: 600 18px/1.2 var(--body);
-  white-space: nowrap;
-}
-.agents-today.past .at-band-k {
-  width: 556px;
+.at-band .at-track {
+  width: 100%;
+  height: 16px;
 }
 .at-band .at-track i {
   position: absolute;
-  bottom: 3px;
+  bottom: 2px;
   border-radius: 2px 2px 0 0;
 }
 .at-band .at-track i.at-limit {
@@ -1577,10 +1688,4 @@ button.dd-k.link:hover {
   border-top: 1px dashed rgba(255, 255, 255, 0.55);
   background: none;
   pointer-events: none;
-}
-.at-band-note {
-  margin-left: auto;
-  font: 400 16px/1 var(--body);
-  color: var(--dim);
-  white-space: nowrap;
 }
