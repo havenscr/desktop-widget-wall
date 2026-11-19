@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { YtVideo } from '../../music/youtube';
+import { youtube, type YtVideo } from '../../music/youtube';
 import { playerLink } from '../watch/playerLink';
 import { useWatchStore, type WatchState } from '../watch/store';
 import { usePins } from '../watch/pins';
@@ -34,7 +34,7 @@ export interface QueueEntry {
   at: number;
 }
 
-export type QueueFrom = { list: 'songs'; playlistId: string } | { list: 'liked' } | { list: 'found'; query: string };
+export type QueueFrom = { list: 'songs'; playlistId: string } | { list: 'liked' } | { list: 'found'; query: string } | { list: 'played' };
 
 export type FailedWhy = 'embed' | 'removed';
 
@@ -224,6 +224,8 @@ function load(pos: number, keepNote = false): void {
     if (n !== null) load(n, keepNote);
     return;
   }
+  // Only a video the wall itself started goes in the play record (ids and times; a failure is not the pick's business).
+  void youtube.notePlay(e.id).catch(() => undefined);
   maybeGrow();
 }
 
@@ -338,6 +340,8 @@ function listOf(from: QueueFrom): { items: YtVideo[]; next: string | null; loadi
   const lib = useYtLibrary.getState();
   if (from.list === 'songs') return lib.opened?.id === from.playlistId ? { ...lib.songs, key: 'songs' } : null;
   if (from.list === 'liked') return { ...lib.liked, key: 'liked' };
+  // The For you shelf is a fixed list: the queue ends where its rows end.
+  if (from.list === 'played') return null;
   return lib.found && lib.query === from.query ? { ...lib.found, key: null } : null;
 }
 

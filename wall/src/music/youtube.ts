@@ -14,7 +14,9 @@ export type YtPlayable = 'yes' | 'embed' | 'private' | 'removed' | 'region';
 /** One video. `seconds` is 0 when YouTube gives no length. */
 export interface YtVideo { id: string; title: string; channel: string; seconds: number; thumb: string | null; playable: YtPlayable }
 /** What YouTube says about one video of an own playlist. `seconds` is null for a live video or when no length came back. */
-export interface YtDetail { id: string; title: string | null; channel: string | null; seconds: number | null }
+export interface YtDetail { id: string; title: string | null; channel: string | null; seconds: number | null; /** Development mocks only (a drawn motif, so no picture is fetched); Rust sends none. */ thumb?: string | null }
+/** One play the wall made: a video id and when it started (seconds since 1970). Nothing else is kept. */
+export interface YtPlayed { id: string; at: number }
 /** A page of answers and the token of the next page (null at the end). */
 export interface YtPage<T> { items: T[]; next: string | null }
 
@@ -51,5 +53,11 @@ export const youtube = {
   /** Title, channel and length for 1 to 50 video ids from an own playlist. */
   videos: (ids: readonly string[]): Promise<YtDetail[]> =>
     ids.length >= 1 && ids.length <= 50 && ids.every((id) => VIDEO_ID.test(id)) ? invoke<YtDetail[]>('wall2_youtube_videos', { ids: [...ids] }) : refuse(),
+  /** The wall started this video: Rust adds it to the play record (ids and times only). */
+  notePlay: (id: string): Promise<void> => (VIDEO_ID.test(id) ? invoke<void>('wall2_youtube_note_play', { id }) : refuse()),
+  /** What the wall played in the last 30 days, newest first (at most 200). */
+  played: () => invoke<YtPlayed[]>('wall2_youtube_played'),
+  /** Forget the whole record. */
+  forgetPlayed: () => invoke<void>('wall2_youtube_forget_played'),
   openLink: (kind: YoutubeLink) => invoke<void>('wall2_open_link', { kind }),
 };

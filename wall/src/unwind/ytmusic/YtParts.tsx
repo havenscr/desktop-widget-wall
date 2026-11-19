@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type FocusEvent, type MouseEvent, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type FocusEvent, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent, type ReactNode } from 'react';
 import { IconBrandYoutube, IconMusic, IconPlayerPlayFilled, IconPlaylistAdd } from '@tabler/icons-react';
 import type { YtVideo } from '../../music/youtube';
 import { hideTip, quietFocus, tip } from '../../ui/HoverTip';
@@ -9,9 +9,25 @@ import { libraryHandlers } from '../watch/libraryOpen';
 import { openInBrowser } from '../watch/openInBrowser';
 import type { OwnVideo } from '../watch/ownLists';
 import { useWatchStore } from '../watch/store';
-import { PlayingBars } from '../spotify/Tile';
+import { PlayingBars, arrowTarget, gridColumns } from '../spotify/Tile';
 import { failedReason, lengthText, problemAction, problemLine, rowTip, rowWords, safeThumb, type YtProblem } from './model';
 import { failedWords, sameList, useYtQueue, validVideoId, type QueueFrom } from './queue';
+
+/** Arrow keys move the focus between the tiles of the grid (the card's own walk, `arrowTarget`). */
+export function gridKey(e: ReactKeyboardEvent<HTMLButtonElement>): void {
+  if (!['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(e.key)) return;
+  const grid = e.currentTarget.closest<HTMLElement>('.yt-grid');
+  if (!grid) return;
+  const tiles = [...grid.querySelectorAll<HTMLElement>('.yt-tile')];
+  const at = tiles.indexOf(e.currentTarget);
+  if (at < 0) return;
+  e.preventDefault();
+  const to = arrowTarget(at, tiles.length, gridColumns(grid, tiles), e.key);
+  if (to !== at) {
+    tiles[to].focus();
+    tiles[to].scrollIntoView?.({ block: 'nearest', inline: 'nearest' });
+  }
+}
 
 /**
  * A picture from YouTube's picture host, or a neutral tile with a music note when there is none or it
