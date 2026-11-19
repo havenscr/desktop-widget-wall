@@ -194,7 +194,7 @@ pub(crate) const GROUPS: &[LibGroup] = &[
     LibGroup { id: "powerbi", title: "Power BI", exes: &["pbidesktop.exe"] },
     LibGroup { id: "excel", title: "Excel", exes: &["excel.exe"] },
     LibGroup { id: "house", title: "House", exes: &[] },
-    LibGroup { id: "powertoys", title: "PowerToys, if you have it", exes: &[] },
+    LibGroup { id: "powertoys", title: "PowerToys (not installed on this PC)", exes: &[] },
     LibGroup { id: "sharex", title: "ShareX", exes: &[] },
 ];
 
@@ -405,6 +405,7 @@ pub(crate) fn group_exes(id: &str) -> Vec<String> {
 
 // Section: what the page sees
 
+
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct LibKeyInfo {
     pub id: String,
@@ -428,13 +429,40 @@ pub struct LibGroupInfo {
     pub keys: Vec<LibKeyInfo>,
 }
 
-/// The whole catalogue for the picker. Pure; no chord in it.
-pub(crate) fn library_info() -> Vec<LibGroupInfo> {
+/// Whether PowerToys is on this PC: running, or either install folder present. Read only;
+/// nothing is launched.
+pub(crate) fn powertoys_detected() -> bool {
+    static CACHE: std::sync::Mutex<Option<(std::time::Instant, bool)>> = std::sync::Mutex::new(None);
+    let mut cache = CACHE.lock().unwrap_or_else(|e| e.into_inner());
+    if let Some((at, found)) = *cache {
+        if at.elapsed() < std::time::Duration::from_secs(60) { return found; }
+    }
+    let dir = |var: &str| std::env::var_os(var).map(std::path::PathBuf::from);
+    let (local, files) = (dir("LOCALAPPDATA"), dir("ProgramFiles"));
+    // Folders first; the process list is read (names only) only when neither folder is there.
+    let mut found = powertoys_found(false, local.as_deref(), files.as_deref());
+    if !found {
+        let mut system = sysinfo::System::new();
+        system.refresh_processes_specifics(sysinfo::ProcessesToUpdate::All, true, sysinfo::ProcessRefreshKind::new());
+        found = system.processes().values().any(|p| p.name().to_string_lossy().eq_ignore_ascii_case("PowerToys.exe"));
+    }
+    *cache = Some((std::time::Instant::now(), found));
+    found
+}
+
+/// The pure part of the check: running, or `PowerToys` under the per-user or machine folder.
+pub(crate) fn powertoys_found(running: bool, local_app_data: Option<&std::path::Path>, program_files: Option<&std::path::Path>) -> bool {
+    running || [local_app_data, program_files].into_iter().flatten().any(|d| d.join("PowerToys").is_dir())
+}
+
+/// The whole catalogue for the picker. Pure; no chord in it. With PowerToys found its keys are
+/// plain keys; without it the group says so and its keys keep the check tag.
+pub(crate) fn library_info(powertoys: bool) -> Vec<LibGroupInfo> {
     GROUPS
         .iter()
         .map(|g| LibGroupInfo {
             id: g.id.to_string(),
-            title: g.title.to_string(),
+            title: if g.id == "powertoys" && powertoys { "PowerToys".to_string() } else { g.title.to_string() },
             exes: g.exes.iter().map(|s| s.to_string()).collect(),
             keys: LIBRARY
                 .iter()
@@ -445,7 +473,7 @@ pub(crate) fn library_info() -> Vec<LibGroupInfo> {
                         id: e.id.to_string(),
                         label: e.label.to_string(),
                         icon: e.icon.to_string(),
-                        kind: e.kind.word(),
+                        kind: if powertoys && e.group == "powertoys" && e.kind == LibKind::Check { LibKind::Key.word() } else { e.kind.word() },
                         how: e.how.to_string(),
                         action: match &act {
                             Some(LibAction::Wall(a)) => Some(a.name()),
@@ -655,8 +683,32 @@ mod tests {
     }
 
     #[test]
+    fn powertoys_is_found_when_running_or_either_folder_exists() {
+        let dir = std::env::temp_dir().join(format!("wall-pt-{}", std::process::id()));
+        std::fs::create_dir_all(dir.join("PowerToys")).unwrap();
+        let none = std::env::temp_dir().join(format!("wall-pt-none-{}", std::process::id()));
+        std::fs::create_dir_all(&none).unwrap();
+        assert!(powertoys_found(true, None, None));
+        assert!(powertoys_found(false, Some(&dir), None));
+        assert!(powertoys_found(false, Some(&none), Some(&dir)));
+        assert!(!powertoys_found(false, Some(&none), None));
+        assert!(!powertoys_found(false, None, None));
+        std::fs::remove_dir_all(&dir).unwrap();
+        std::fs::remove_dir_all(&none).unwrap();
+    }
+
+    #[test]
+    fn powertoys_keys_lose_the_check_tag_only_when_found() {
+        let pt = |on: bool| library_info(on).into_iter().find(|g| g.id == "powertoys").unwrap();
+        assert!(pt(false).keys.iter().all(|k| k.kind == "check") && pt(false).title.contains("not installed"));
+        assert!(pt(true).keys.iter().all(|k| k.kind == "key") && !pt(true).title.contains("not installed"));
+        let other = |on: bool| library_info(on).into_iter().find(|g| g.id == "mail").unwrap().keys[0].kind;
+        assert_eq!(other(true), other(false), "other groups are unaffected");
+    }
+
+    #[test]
     fn the_page_catalogue_carries_no_chord() {
-        let info = library_info();
+        let info = library_info(false);
         assert_eq!(info.iter().map(|g| g.keys.len()).sum::<usize>(), 120);
         let text = serde_json::to_string(&info).unwrap();
         assert!(!text.contains("\"spec\""));

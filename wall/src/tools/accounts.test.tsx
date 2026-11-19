@@ -56,7 +56,7 @@ const hoverText = async (el: Element): Promise<string> => {
 
 it.each([
   ['desktop', 'Outlook on this PC', 'Meetings open in classic Outlook when it is available.'],
-  ['browser-new-outlook', 'the browser', 'New Outlook has no way to open one meeting.'],
+  ['new-outlook-calendar', 'new Outlook, on Calendar', 'Meetings open in new Outlook, on Calendar.'],
   ['browser-not-found', 'the browser', 'Outlook was not found on this PC.'],
   ['browser-config', 'the browser', 'This is set in meet.json.'],
   ['desktop-config-typo', 'Outlook on this PC', 'meet.json has an unknown openIn value, so the desktop default is used.'],

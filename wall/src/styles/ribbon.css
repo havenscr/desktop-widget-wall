@@ -847,6 +847,9 @@ button.dd-k.link:hover {
   align-items: center;
   padding: 0 10px;
 }
+.dd-ev.one {
+  flex-wrap: nowrap;
+}
 .dd-ev.open {
   cursor: pointer;
 }
@@ -896,7 +899,7 @@ button.dd-k.link:hover {
   color: #ffd9ea;
 }
 .dd-ev b {
-  min-width: 0;
+  min-width: 3em;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1138,7 +1141,9 @@ button.dd-k.link:hover {
   left: 436px;
   bottom: 112px;
   width: 1420px;
-  max-height: 420px;
+  /* One height whatever the day: a day with fewer rows must not move the header or the arrows
+     (the panel is anchored by its bottom, so a shorter panel would raise its top). */
+  height: 420px;
   box-sizing: border-box;
   z-index: 47;
   display: flex;
@@ -1162,6 +1167,7 @@ button.dd-k.link:hover {
   flex: none;
 }
 .at-k {
+  flex: none;
   font: 600 15px/1 var(--disp);
   letter-spacing: 0.18em;
   text-transform: uppercase;
@@ -1171,6 +1177,7 @@ button.dd-k.link:hover {
   display: flex;
   align-items: center;
   gap: 8px;
+  flex: none;
 }
 .at-arrow,
 .at-close {
@@ -1210,8 +1217,10 @@ button.dd-k.link:hover {
   background: rgba(10, 7, 28, 0.6);
 }
 .at-seg button {
+  flex: none;
+  width: 104px;
   height: 28px;
-  padding: 0 16px;
+  padding: 0;
   border: 0;
   border-radius: 14px;
   background: none;
@@ -1230,6 +1239,10 @@ button.dd-k.link:hover {
   cursor: default;
 }
 .at-date {
+  flex: none;
+  width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
   margin-left: 6px;
   font: 400 16px/1 var(--body);
   color: var(--dim);
@@ -1237,6 +1250,7 @@ button.dd-k.link:hover {
 }
 .at-legend {
   margin-left: auto;
+  min-width: 0;
   display: flex;
   gap: 12px;
 }
@@ -1280,7 +1294,11 @@ button.dd-k.link:hover {
   flex: 1 1 auto;
   min-height: 0;
   overflow-y: auto;
+  /* The wall's thin scrollbar (as the lists of the YouTube library); its gutter is always reserved
+     so the right column never sits under it. */
   scrollbar-width: thin;
+  scrollbar-color: rgba(154, 123, 255, 0.75) rgba(255, 255, 255, 0.05);
+  scrollbar-gutter: stable;
 }
 .at-grid {
   position: absolute;

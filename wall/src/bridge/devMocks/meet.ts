@@ -95,6 +95,25 @@ function catsShortDay(day: (hour: number, mins: number) => string) {
   ];
 }
 
+/** One hour and 90 minute tiles with a long title and a Join button, alone and two or three to a lane (`?meet=agenda`). */
+function agendaDay(day: (hour: number, mins: number) => string) {
+  const t = 'Quarterly planning and roadmap review with the whole platform team';
+  const e = (key: string, title: string, a: [number, number], b: [number, number]) => ({
+    key, accountId: 'work', title, start: day(...a), end: day(...b), canJoin: true, canOpen: true, isLive: false,
+  });
+  return [
+    e('d1-a0', t, [11, 0], [12, 0]),
+    e('d1-a1', t, [13, 0], [14, 0]),
+    e('d1-a2', t + ' two', [13, 0], [14, 0]),
+    e('d1-a3', t, [15, 0], [16, 0]),
+    e('d1-a4', t + ' two', [15, 0], [16, 0]),
+    e('d1-a5', t + ' three', [15, 0], [16, 0]),
+    e('d1-a6', t, [17, 0], [18, 30]),
+    e('d1-a7', t, [19, 0], [20, 30]),
+    e('d1-a8', t + ' two', [19, 0], [20, 30]),
+  ];
+}
+
 /** Meet: two accounts and a few meetings around now. Sign-in just flips the state. */
 export function registerMeetMocks(): void {
   let second = false;
@@ -207,7 +226,7 @@ export function registerMeetMocks(): void {
     const day = (hour: number, mins: number) => new Date(midnight.getTime() + (hour * 60 + mins) * 60_000).toISOString().replace('.000Z', 'Z');
     return {
       accounts: accounts(),
-      events: mode() === 'down' || mode() === 'none' ? [] : mode() === 'cats' ? catsDay(day) : mode() === 'catsplain' ? catsPlainDay(day) : mode() === 'catsshort' ? catsShortDay(day) : mode() === 'tones' ? TONE_COLOURS.map((name, i) => {
+      events: mode() === 'down' || mode() === 'none' ? [] : mode() === 'cats' ? catsDay(day) : mode() === 'catsplain' ? catsPlainDay(day) : mode() === 'catsshort' ? catsShortDay(day) : mode() === 'agenda' ? agendaDay(day) : mode() === 'tones' ? TONE_COLOURS.map((name, i) => {
         const from = 6 * 60 + 20 + i * 40;
         return { key: `d1-t${i}`, accountId: 'work', title: `${i} ${name}`, start: day(Math.floor(from / 60), from % 60), end: day(Math.floor((from + 36) / 60), (from + 36) % 60), canJoin: false, canOpen: true, isLive: false, category: { name: `Sample ${name}`, tone: `preset${i}` } };
       }) : layout() ? layoutMeetings().map((e, i) => ({ key: `d1-L${i}`, accountId: e.accountId, title: e.title, start: e.start, end: e.end, canJoin: e.canJoin, canOpen: i < 2 || undefined, isLive: false })) : [

@@ -49,7 +49,7 @@ const serve = (meetings: Meeting[], day: unknown[] = []) => {
   mocks.set('wall2_meet_day', () => ({ accounts, events: day }));
   mocks.set('wall2_meet_checklist', () => ({ state: 'missing', items: [], reason: null }));
   mocks.set('wall2_keys_library', () => LIBRARY_DATA);
-  for (const c of ['wall2_keys_send_library', 'wall2_meet_join', 'wall2_open_event', 'wall2_meet_checklist_open', 'wall2_meet_person_action']) {
+  for (const c of ['wall2_keys_send_library', 'wall2_meet_join', 'wall2_open_event', 'wall2_meet_checklist_open', 'wall2_meet_person_action', 'wall2_open_camera']) {
     mocks.set(c, (args) => (sent.push({ command: c, args }), null));
   }
 };
@@ -95,7 +95,7 @@ const before = (): [Meeting, unknown[]] => {
   return [hero, [{ key: 'd-hero', accountId: 'work', title: 'Design review', start: hero.start, end: hero.end, canOpen: true }]];
 };
 
-it('before a call the deck has eight keys in fixed places; Join and Open invite work, the six others are unavailable', async () => {
+it('before a call the deck has eight keys in fixed places; Join and Open invite work, the five others are unavailable and Camera check works', async () => {
   const [hero, day] = before();
   serve([hero], day);
   const { container } = await renderMeet();
@@ -108,7 +108,7 @@ it('before a call the deck has eight keys in fixed places; Join and Open invite 
     { command: 'wall2_open_event', args: { key: 'd-hero' } },
   ]);
   sent = [];
-  for (const k of keys.slice(2)) {
+  for (const k of keys.slice(2).filter((x) => label(x) !== 'Camera check')) {
     expect(k.getAttribute('aria-disabled')).toBe('true');
     expect(k.getAttribute('data-later')).toBe('true');
     fireEvent.click(k);
@@ -141,19 +141,34 @@ it('with no join link the top left place is a dim "No join link" tile and the de
   expect(keys.every((k) => k.getAttribute('aria-hidden') !== 'true')).toBe(true);
 });
 
-it('the Lights key is gone; Camera check takes its place as a soon tile with no action', async () => {
+it('the Lights key is gone; Camera check is a live key that opens the Camera app with no arguments', async () => {
   const [hero, day] = before();
   serve([hero], day);
   const { container } = await renderMeet();
   const keys = deck(container);
   expect(keys.map(label)).not.toContain('Lights');
   expect(label(keys[6])).toBe('Camera check');
-  expect(keys[6].getAttribute('data-soon')).toBe('true');
-  expect(keys[6].getAttribute('aria-disabled')).toBe('true');
+  expect(keys[6].getAttribute('data-later')).toBeNull();
+  expect(keys[6].getAttribute('aria-disabled')).toBeNull();
+  expect(keys[6].className).not.toContain('later');
   sent = [];
   fireEvent.click(keys[6]);
-  await flush(600);
-  expect(sent).toEqual([]);
+  await flush(10);
+  expect(sent).toEqual([{ command: 'wall2_open_camera', args: undefined }]);
+  expect(keys[6].textContent).toBe('Camera check');
+});
+
+it('Camera check says "Camera app not found" on the key when the open is refused, then goes back', async () => {
+  const [hero, day] = before();
+  serve([hero], day);
+  mocks.set('wall2_open_camera', () => Promise.reject(new Error('failed')));
+  const { container } = await renderMeet();
+  const key = deck(container)[6];
+  fireEvent.click(key);
+  await flush(10);
+  expect(key.textContent).toBe('Camera app not found');
+  await flush(5100);
+  expect(key.textContent).toBe('Camera check');
 });
 
 it('the small keys carry the tint of what they touch', async () => {

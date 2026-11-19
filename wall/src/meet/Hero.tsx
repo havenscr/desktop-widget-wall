@@ -1,4 +1,4 @@
-import type { KeyboardEvent, MouseEvent } from 'react';
+import { useEffect, useRef, useState, type KeyboardEvent, type MouseEvent } from 'react';
 import { IconCalendarEvent, IconLinkOff, IconMoodSmile, IconVideo } from '@tabler/icons-react';
 import { invoke } from '../bridge/tauri';
 import type { DayEvent } from '../ribbon/model';
@@ -23,6 +23,8 @@ import {
   callLater,
   callWord,
   BEFORE_LATER,
+  CAMERA_CHECK_FAILED,
+  CAMERA_CHECK_NOTE_MS,
   CAMERA_CHECK_TIP,
   INVITE_TINT,
   NO_JOIN_LINK_LABEL,
@@ -111,10 +113,33 @@ function CallKey({ spec, groups, camera, kind, press, onKeyDown }: {
 }
 
 
+/** Camera check: opens the Windows Camera app (nothing from the page reaches the address). A refusal shows "Camera app not found" on the key for a few seconds. */
+function CameraCheckKey({ k }: { k: LaterKeySpec }) {
+  const [failed, setFailed] = useState(false);
+  const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  useEffect(() => () => clearTimeout(timer.current), []);
+  const open = () => {
+    invoke('wall2_open_camera')
+      .then(() => setFailed(false))
+      .catch(() => {
+        setFailed(true);
+        clearTimeout(timer.current);
+        timer.current = setTimeout(() => setFailed(false), CAMERA_CHECK_NOTE_MS);
+      });
+  };
+  return (
+    <button type="button" className={failed ? 'meet-key failed' : 'meet-key'} aria-label={k.label} data-tint={k.tint} data-role="camera-check" onClick={open} {...tip(failed ? CAMERA_CHECK_FAILED : CAMERA_CHECK_TIP)}>
+      {!failed && <KeyIcon name={k.icon} size={26} />}
+      <span>{failed ? CAMERA_CHECK_FAILED : k.label}</span>
+    </button>
+  );
+}
+
 /** A key of the deck that does nothing yet: dashed, dim, out of the tab order, and a click or Enter or Space does nothing. */
 function LaterKey({ k }: { k: LaterKeySpec }) {
+  if (k.live === 'camera') return <CameraCheckKey k={k} />;
   return (
-    <button type="button" className="meet-key later" aria-label={k.label} data-later="true" data-tint={k.tint} data-soon={k.soon ? 'true' : undefined} {...inertKey} {...tip(k.soon ? CAMERA_CHECK_TIP : LATER_TIP)}>
+    <button type="button" className="meet-key later" aria-label={k.label} data-later="true" data-tint={k.tint} {...inertKey} {...tip(LATER_TIP)}>
       {k.icon === 'smile' ? <IconMoodSmile size={26} stroke={1.8} aria-hidden="true" /> : <KeyIcon name={k.icon} size={26} />}
       <span>{k.label}</span>
     </button>

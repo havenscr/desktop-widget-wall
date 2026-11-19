@@ -1026,7 +1026,7 @@ export const LIBRARY_DATA: LibGroup[] = [
  },
  {
   "id": "powertoys",
-  "title": "PowerToys, if you have it",
+  "title": "PowerToys (not installed on this PC)",
   "exes": [],
   "keys": [
    {
