@@ -113,8 +113,9 @@ export function RoomCard() {
     setError(false);
     clearTimeout(errorTimer.current);
     try {
-      await invoke('wall2_apply_mood', { id });
-      if (!mounted.current) return;
+      const outcome = await invoke<{ superseded?: boolean } | null | undefined>('wall2_apply_mood', { id });
+      // A newer mood took over before this one finished: it is not the one that is on.
+      if (!mounted.current || outcome?.superseded === true) return;
       const next = { id, at: Date.now() };
       writeMark(next);
       setMark(next);

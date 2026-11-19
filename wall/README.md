@@ -452,7 +452,7 @@ allows 20 seconds. A newer press that supersedes an older one makes the home app
 `{ok:true, superseded:true}`: the command returns `{superseded:true}` (only the exact
 boolean true counts) and the page then shows no check, no "On now" and does not save the
 mood as the last one, because that press did not run; the newer press's own answer marks
-its mood. The "On now" and "In N min" tags are 16 px.
+its mood. The Unwind room chips skip their mark the same way, and a mood key says "A newer mood took over" instead of "Lights set". The "On now" and "In N min" tags are 16 px.
 
 The commands are `wall2_moods` and `wall2_apply_mood` in
 `src-tauri/src/wall2_home.rs`. They read `homeBaseUrl` from `feeds.json` like the

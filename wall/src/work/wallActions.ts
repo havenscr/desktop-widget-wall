@@ -96,7 +96,12 @@ export async function runWallAction(name: string, now: number = Date.now()): Pro
   }
   if (name.startsWith('mood:')) {
     const id = name.slice(5);
-    return viaCommand('wall2_apply_mood', { id }, 'Lights set', 'Could not set the lights');
+    try {
+      const outcome = await invoke<{ superseded?: boolean } | null | undefined>('wall2_apply_mood', { id });
+      return outcome?.superseded === true ? 'A newer mood took over' : 'Lights set';
+    } catch {
+      return refuse('Could not set the lights');
+    }
   }
   switch (name) {
     case 'layout:undo':
