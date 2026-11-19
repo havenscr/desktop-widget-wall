@@ -391,7 +391,16 @@ fn calendar_view_url_inner(start: &str, end: &str, expand: bool, select: &str) -
 /// The master category list (names and preset colours), read-only. Needs `MailboxSettings.Read`.
 pub const MASTER_CATEGORIES_URL: &str = "https://graph.microsoft.com/v1.0/me/outlook/masterCategories";
 
+/// The account's default calendar and its colour, read-only. `Calendars.Read` covers it.
+pub const CALENDAR_COLOUR_URL: &str = "https://graph.microsoft.com/v1.0/me/calendar?$select=color,hexColor";
+
 pub trait GraphClient {
+    /// The default calendar's colour (`color` and `hexColor`). The default has none, so a
+    /// client that does not offer it (a test fake) simply gives no calendar colour.
+    fn calendar_colour(&self, _access: &str, _ctx: &Ctx) -> (GraphReply, Option<Diag>) {
+        (GraphReply::Failed("graph-400".to_string()), None)
+    }
+
     /// The account's master category list. The default has none, so a client that does not
     /// offer it (a test fake) simply gives no colours.
     fn master_categories(&self, _access: &str, _ctx: &Ctx) -> (GraphReply, Option<Diag>) {

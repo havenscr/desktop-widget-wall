@@ -174,6 +174,10 @@ fn raw_of(resp: ureq::Response, success_body: bool) -> graph::Raw {
 }
 
 impl graph::GraphClient for HttpGraph {
+    fn calendar_colour(&self, access: &str, ctx: &graph::Ctx) -> (graph::GraphReply, Option<graph::Diag>) {
+        self.calendar_request(access, graph::CALENDAR_COLOUR_URL.to_string(), ctx)
+    }
+
     fn master_categories(&self, access: &str, ctx: &graph::Ctx) -> (graph::GraphReply, Option<graph::Diag>) {
         self.calendar_request(access, graph::MASTER_CATEGORIES_URL.to_string(), ctx)
     }

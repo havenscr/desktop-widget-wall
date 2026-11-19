@@ -149,6 +149,9 @@ fn match_key(name: &str) -> String {
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct Palette {
     pub entries: Vec<(String, &'static str)>,
+    /// The token of the account's own calendar colour, for an event with no category. None when
+    /// it is not known or not one the wall can match.
+    pub calendar: Option<&'static str>,
     /// Epoch seconds before which no new read is made.
     pub next_try: u64,
 }
@@ -192,11 +195,67 @@ pub fn event_categories(event: &Value) -> Vec<String> {
 pub struct Pick {
     pub name: String,
     pub tone: &'static str,
+    /// True when the colour is the calendar's own (the event has no category with a colour); the name is empty then.
+    pub calendar: bool,
 }
 
-/// The first category on the event that has a known colour.
+/// The colour an event takes: the first category on it that has a known colour, else the
+/// calendar's own colour, else none (the wall keeps its purple).
 pub fn pick(categories: &[String], palette: &Palette) -> Option<Pick> {
-    categories.iter().find_map(|name| palette.token_of(name).map(|tone| Pick { name: name.clone(), tone }))
+    categories
+        .iter()
+        .find_map(|name| palette.token_of(name).map(|tone| Pick { name: name.clone(), tone, calendar: false }))
+        .or_else(|| palette.calendar.map(|tone| Pick { name: String::new(), tone, calendar: true }))
+}
+
+/// The shade the wall draws for each token (the same table as `wall/src/ribbon/tones.ts`), used
+/// only to find the token nearest to a calendar's `hexColor`.
+const SHADES: [[i32; 3]; 25] = [
+    [229, 72, 77], [245, 129, 43], [168, 116, 74], [242, 194, 48], [63, 185, 80], [31, 181, 166], [154, 162, 46], [77, 141, 245], [179, 95, 224],
+    [214, 69, 122], [127, 155, 181], [95, 122, 147], [163, 163, 181], [125, 125, 143], [85, 85, 106], [184, 54, 60], [201, 99, 26], [138, 90, 51],
+    [184, 146, 31], [47, 138, 63], [23, 133, 122], [119, 128, 31], [59, 111, 198], [138, 63, 192], [168, 51, 95],
+];
+
+/// `#RRGGBB` and nothing else: seven characters, a hash and six hex digits.
+pub fn parse_hex(s: &str) -> Option<[i32; 3]> {
+    let b = s.as_bytes();
+    if b.len() != 7 || b[0] != b'#' || !b[1..].iter().all(u8::is_ascii_hexdigit) {
+        return None;
+    }
+    let c = |i: usize| i32::from_str_radix(&s[i..i + 2], 16).ok();
+    Some([c(1)?, c(3)?, c(5)?])
+}
+
+/// The token whose shade is nearest to a colour (squared distance in RGB, first wins a tie).
+pub fn nearest_token(rgb: [i32; 3]) -> &'static str {
+    let mut best = (i32::MAX, 0usize);
+    for (i, shade) in SHADES.iter().enumerate() {
+        let d: i32 = (0..3).map(|k| (shade[k] - rgb[k]).pow(2)).sum();
+        if d < best.0 {
+            best = (d, i);
+        }
+    }
+    TOKENS[best.1]
+}
+
+/// The token for a calendar's colour from `GET /me/calendar?$select=color,hexColor`. The enum
+/// maps to the nearest token; `auto` goes by a strictly parsed `hexColor`; `maxColor`, an
+/// unknown word, a wrong type or a bad hex give none. Untrusted input.
+pub fn calendar_token(body: &Value) -> Option<&'static str> {
+    let named = |n: usize| Some(TOKENS[n]);
+    match body.get("color")?.as_str()?.to_ascii_lowercase().as_str() {
+        "lightblue" => named(7),
+        "lightgreen" => named(4),
+        "lightorange" => named(1),
+        "lightgray" => named(12),
+        "lightyellow" => named(3),
+        "lightteal" => named(5),
+        "lightpink" => named(9),
+        "lightbrown" => named(2),
+        "lightred" => named(0),
+        "auto" => body.get("hexColor").and_then(Value::as_str).and_then(parse_hex).map(nearest_token),
+        _ => None,
+    }
 }
 
 #[cfg(test)]
@@ -319,7 +378,7 @@ mod tests {
         let long = "n".repeat(500);
         let name = clean_name(&long);
         assert_eq!(name.chars().count(), MAX_NAME_CHARS);
-        let p = Palette { entries: parse_master(&json!({"value": [{"displayName": long, "color": "preset9"}]})).unwrap(), next_try: 0 };
+        let p = Palette { entries: parse_master(&json!({"value": [{"displayName": long, "color": "preset9"}]})).unwrap(), calendar: None, next_try: 0 };
         assert_eq!(p.token_of(&long), Some("preset9"));
     }
 
@@ -329,16 +388,48 @@ mod tests {
             {"displayName": "Blue team", "color": "preset7"},
             {"displayName": "Reds", "color": "preset0"},
             {"displayName": "Blank", "color": "none"}
-        ]})).unwrap(), next_try: 0 };
+        ]})).unwrap(), calendar: None, next_try: 0 };
         let ev = json!({"categories": ["Blank", "unknown", "reds", "Blue team"]});
         let cats = event_categories(&ev);
         assert_eq!(cats, ["Blank", "unknown", "reds", "Blue team"]);
-        assert_eq!(pick(&cats, &palette), Some(Pick { name: "reds".into(), tone: "preset0" }));
+        assert_eq!(pick(&cats, &palette), Some(Pick { name: "reds".into(), tone: "preset0", calendar: false }));
         assert_eq!(pick(&event_categories(&json!({"categories": ["Blank", "unknown"]})), &palette), None);
         assert_eq!(pick(&event_categories(&json!({})), &palette), None);
         assert_eq!(pick(&event_categories(&json!({"categories": "x"})), &palette), None);
         let long: Vec<Value> = (0..40).map(|n| json!(format!("c{n}"))).collect();
         assert_eq!(event_categories(&json!({"categories": long})).len(), MAX_EVENT_CATEGORIES);
         assert_eq!(event_categories(&json!({"categories": ["\u{200B}", 5, "  A\u{7} b "]})), ["A b"]);
+    }
+
+    #[test]
+    fn a_calendar_colour_maps_by_enum_or_by_hex_and_garbage_gives_none() {
+        for (word, token) in [("lightBlue", "preset7"), ("lightGreen", "preset4"), ("lightOrange", "preset1"), ("lightGray", "preset12"), ("lightYellow", "preset3"),
+            ("lightTeal", "preset5"), ("lightPink", "preset9"), ("lightBrown", "preset2"), ("LIGHTRED", "preset0")] {
+            assert_eq!(calendar_token(&json!({"color": word, "hexColor": "#000000"})), Some(token), "{word}");
+        }
+        // auto goes by the hex, and only by a strictly parsed one.
+        assert_eq!(calendar_token(&json!({"color": "auto", "hexColor": "#1FB5A6"})), Some("preset5"));
+        assert_eq!(calendar_token(&json!({"color": "auto", "hexColor": "#4d8df5"})), Some("preset7"));
+        for bad_hex in ["", "1FB5A6", "#1FB5A", "#1FB5A6F", "#GGGGGG", "#1FB5A\u{e9}", " #1FB5A6", "rgb(1,2,3)"] {
+            assert_eq!(calendar_token(&json!({"color": "auto", "hexColor": bad_hex})), None, "{bad_hex}");
+        }
+        assert_eq!(calendar_token(&json!({"color": "auto"})), None);
+        assert_eq!(calendar_token(&json!({"color": "auto", "hexColor": 5})), None);
+        for body in [json!({"color": "maxColor", "hexColor": "#1FB5A6"}), json!({"color": "chartreuse"}), json!({"color": 7}), json!({"hexColor": "#1FB5A6"}), json!({}), json!("lightBlue"), json!(null)] {
+            assert_eq!(calendar_token(&body), None, "{body}");
+        }
+    }
+
+    #[test]
+    fn an_event_takes_its_category_then_the_calendar_then_nothing() {
+        let master = parse_master(&json!({"value": [{"displayName": "Reds", "color": "preset0"}]})).unwrap();
+        let with = Palette { entries: master.clone(), calendar: Some("preset5"), next_try: 0 };
+        let without = Palette { entries: master, calendar: None, next_try: 0 };
+        let cats = |names: &[&str]| names.iter().map(|n| n.to_string()).collect::<Vec<_>>();
+        assert_eq!(pick(&cats(&["reds"]), &with), Some(Pick { name: "reds".into(), tone: "preset0", calendar: false }));
+        assert_eq!(pick(&cats(&[]), &with), Some(Pick { name: String::new(), tone: "preset5", calendar: true }));
+        assert_eq!(pick(&cats(&["unknown"]), &with), Some(Pick { name: String::new(), tone: "preset5", calendar: true }));
+        assert_eq!(pick(&cats(&[]), &without), None);
+        assert_eq!(pick(&cats(&["reds"]), &without).map(|p| p.tone), Some("preset0"));
     }
 }
