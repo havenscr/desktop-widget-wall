@@ -11,26 +11,29 @@ import { MoodArt } from './MoodArt';
 export interface Mood {
   id: string;
   label: string;
+  /** False when the home app has never saved this mood (Still Working before its first
+   * save): the card is quiet and a tap sends nothing. Missing counts as saved. */
+  saved?: boolean;
   /** When the home app's schedule next runs this mood, epoch ms. The home app does not send
    * it yet; when it does, the card says "In N min" within the hour ahead. */
   nextAtMs?: number | null;
 }
 
 /**
- * Three mood cards share the row. With more, a narrow More card follows them (the next
- * mood peeking, "N more", dots), and a click or the wheel slides by three; at the end it
+ * Four mood cards share the row. With more, a narrow More card follows them (the next
+ * mood peeking, "N more", dots), and a click or the wheel slides by four; at the end it
  * reads Back and slides to the start.
  */
-export const MOODS_PAGE = 3;
+export const MOODS_PAGE = 4;
 /** One wheel step per gesture: further wheel events within this time are ignored. */
 export const WHEEL_MS = 450;
 
-/** The first mood shown on page `page`: steps of three, the last page showing the last three. */
+/** The first mood shown on page `page`: steps of four, the last page showing the last three. */
 export function pageStart(page: number, count: number): number {
   return Math.max(0, Math.min(page * MOODS_PAGE, count - MOODS_PAGE));
 }
 
-/** Pages of three for `count` moods (one when three or fewer). */
+/** Pages of four for `count` moods (one when four or fewer). */
 export function pageCount(count: number): number {
   return Math.max(1, Math.ceil(count / MOODS_PAGE));
 }
@@ -55,8 +58,9 @@ export const LAST_MOOD_AT_KEY = 'wall2-last-mood-at';
 /** The last good list, so the cards stay when the home app is briefly away. */
 export const MOODS_CACHE_KEY = 'wall2-moods-cache';
 
-/** The concept's line under each mood it drew; other moods have none. */
+/** The line under each mood the concept drew, and Still Working's; other moods have none. */
 const NOTES: Record<string, string> = {
+  stillWorking: 'bright and focused',
   day: 'bright and cool',
   evening: 'warm and golden',
   lateNight: 'dim and violet',
@@ -67,6 +71,9 @@ const NOTES: Record<string, string> = {
 export function moodNote(id: string): string | null {
   return NOTES[id] ?? null;
 }
+
+/** What an unsaved mood's card says in place of its line. */
+export const UNSAVED_NOTE = 'Not set up yet';
 
 function readCache(): Mood[] {
   try {
@@ -80,7 +87,7 @@ function readCache(): Mood[] {
 
 function writeCache(list: Mood[]): void {
   try {
-    localStorage.setItem(MOODS_CACHE_KEY, JSON.stringify(list.map((m) => ({ id: m.id, label: m.label }))));
+    localStorage.setItem(MOODS_CACHE_KEY, JSON.stringify(list.map((m) => ({ id: m.id, label: m.label, ...(m.saved === false ? { saved: false } : {}) }))));
   } catch {
     /* storage can be blocked; the cache is a convenience */
   }
@@ -167,8 +174,9 @@ export function Moods() {
     return () => clearInterval(id);
   }, [visible, scheduled]);
 
-  const tap = useCallback(async (id: string) => {
-    if (busy.current) return;
+  const tap = useCallback(async (id: string, saved: boolean) => {
+    // A mood the home app never saved would answer 409: nothing is sent.
+    if (busy.current || !saved) return;
     busy.current = true;
     clearTimeout(doneTimer.current);
     clearTimeout(errorTimer.current);
@@ -261,9 +269,10 @@ export function Moods() {
           {shown.map((m) => {
             const busyHere = phase?.id === m.id ? phase.kind : null;
             const on = last === m.id;
-            const sub = moodNote(m.id);
-            const soon = on ? null : inText(m.nextAtMs, now);
-            const cls = ['mood-btn', busyHere ?? '', on ? 'last' : ''].filter(Boolean).join(' ');
+            const saved = m.saved !== false;
+            const sub = saved ? moodNote(m.id) : UNSAVED_NOTE;
+            const soon = on || !saved ? null : inText(m.nextAtMs, now);
+            const cls = ['mood-btn', busyHere ?? '', on ? 'last' : '', saved ? '' : 'unsaved'].filter(Boolean).join(' ');
             return (
               <button
                 key={paged ? `${start}:${m.id}` : m.id}
@@ -271,9 +280,10 @@ export function Moods() {
                 className={cls}
                 data-mood={m.id}
                 disabled={phase?.kind === 'working'}
-                aria-label={on ? `${moodLabel(m)}, on now` : soon ? `${moodLabel(m)}, ${soon.toLowerCase()}` : moodLabel(m)}
-                title={`Set the ${moodLabel(m)} mood${sub ? `: ${sub}` : ''}${on ? '. Last set from this wall' : ''}`}
-                onClick={() => void tap(m.id)}
+                aria-label={!saved ? `${moodLabel(m)}, not set up yet` : on ? `${moodLabel(m)}, on now` : soon ? `${moodLabel(m)}, ${soon.toLowerCase()}` : moodLabel(m)}
+                aria-disabled={saved ? undefined : true}
+                title={saved ? `Set the ${moodLabel(m)} mood${sub ? `: ${sub}` : ''}${on ? '. Last set from this wall' : ''}` : `${moodLabel(m)} is not set up in the home app yet`}
+                onClick={() => void tap(m.id, saved)}
               >
                 <MoodArt id={m.id} />
                 {on && <u className="mood-tag">On now</u>}
@@ -301,7 +311,7 @@ export function Moods() {
               className={atEnd ? 'mood-more back' : 'mood-more'}
               aria-label={atEnd ? 'Back to the first moods' : `${left} more moods`}
               onClick={() => (atEnd ? setPage(0) : step(1))}
-              {...tip(atEnd ? 'Back to the first three moods' : `Next: ${moods.slice(start + MOODS_PAGE, start + MOODS_PAGE * 2).map(moodLabel).join(', ')}`)}
+              {...tip(atEnd ? 'Back to the first moods' : `Next: ${moods.slice(start + MOODS_PAGE, start + MOODS_PAGE * 2).map(moodLabel).join(', ')}`)}
             >
               <span className="mood-peek" aria-hidden="true">
                 <MoodArt id={peek.id} />

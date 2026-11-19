@@ -5,7 +5,7 @@ import { useId } from 'react';
  * gradient, its light, and three smooth ridges with soft haze between them. Day has a
  * sun and a few rounded cumulus clouds lit along their top edge; Evening a striped sun
  * with clean, even slats sinking behind the ridges; Late Night a calm starfield and a
- * moon in a soft glow. Movie, Goodnight and any other mood keep their simpler lights.
+ * moon in a soft glow; Still Working a lit bulb rising from the far ridge on a bright blue night. Movie, Goodnight and any other mood keep their simpler lights.
  * One SVG that covers the card at any size.
  */
 export function MoodArt({ id }: { id: string }) {
@@ -67,7 +67,20 @@ export function MoodArt({ id }: { id: string }) {
           <circle cx="200" cy="214" r="100" fill={`url(#${u}sun)`} mask={`url(#${u}slats)`} />
         </>
       )}
-      {(kind === 'night' || kind === 'goodnight' || kind === 'movie') && <Stars dim={kind === 'movie'} />}
+      {(kind === 'night' || kind === 'goodnight' || kind === 'movie' || kind === 'bulb') && <Stars dim={kind === 'movie'} />}
+      {kind === 'bulb' && (
+        <>
+          <circle cx="206" cy="176" r="150" fill={`url(#${u}glow)`} />
+          <circle cx="206" cy="176" r="70" fill={`url(#${u}glow)`} />
+          <g stroke="#ffe9a8" strokeWidth="5" strokeLinecap="round" opacity="0.85">
+            <path d="M206 112v-16M160 130l-11 -11M252 130l11 -11M144 176h-16M268 176h16" />
+          </g>
+          <path d="M182 192q18 6 24 22q6 -16 24 -22z" fill="#fff6d2" />
+          <circle cx="206" cy="176" r="34" fill="#fff6d2" />
+          <path d="M194 182q6 -14 12 0t12 0" fill="none" stroke="#ff9c3d" strokeWidth="3" strokeLinecap="round" />
+          <rect x="192" y="204" width="28" height="18" rx="4" fill="#c9b79a" />
+        </>
+      )}
       {kind === 'night' && (
         <>
           <circle cx="290" cy="104" r="150" fill={`url(#${u}glow)`} opacity="0.55" />
@@ -102,7 +115,7 @@ export function MoodArt({ id }: { id: string }) {
   );
 }
 
-type Kind = 'day' | 'evening' | 'night' | 'movie' | 'goodnight' | 'lamp';
+type Kind = 'day' | 'evening' | 'night' | 'movie' | 'goodnight' | 'lamp' | 'bulb';
 
 /** The art for a mood id; any mood the concept did not draw gets a warm lamp glow. */
 export function artKind(id: string): Kind {
@@ -111,6 +124,7 @@ export function artKind(id: string): Kind {
   if (key === 'evening' || key === 'sunset') return 'evening';
   if (key === 'latenight' || key === 'night') return 'night';
   if (key === 'movie' || key === 'tv') return 'movie';
+  if (key === 'stillworking') return 'bulb';
   if (key === 'goodnight' || key === 'sleep' || key === 'off') return 'goodnight';
   return 'lamp';
 }
@@ -143,6 +157,12 @@ const SKY: Record<Kind, [string, string][]> = {
     ['0', '#1a0f3a'],
     ['1', '#4a2a5a'],
   ],
+  // A brighter blue than Late Night on purpose: the card reads awake, not sleepy.
+  bulb: [
+    ['0', '#0a2a6e'],
+    ['0.62', '#1d62b4'],
+    ['1', '#4aa8e0'],
+  ],
 };
 
 const GLOW: Record<Kind, string> = {
@@ -152,6 +172,7 @@ const GLOW: Record<Kind, string> = {
   movie: '#9a7bff',
   goodnight: '#9fb6ff',
   lamp: '#ffc24d',
+  bulb: '#ffe9a8',
 };
 
 /** Far, middle and near ridge, lighter to darker, in each card's palette. */
@@ -162,6 +183,7 @@ const RIDGE: Record<Kind, [string, string, string]> = {
   movie: ['#15122e', '#0d0b24', '#060512'],
   goodnight: ['#100d24', '#0a0818', '#040309'],
   lamp: ['#3a2050', '#2a1640', '#140a22'],
+  bulb: ['#2a63a4', '#1a4a86', '#0d2f5c'],
 };
 
 /** The haze between the ridges: the sky's light near the horizon. */
@@ -172,6 +194,7 @@ const HAZE: Record<Kind, string> = {
   movie: '#3a2a70',
   goodnight: '#2a2a60',
   lamp: '#a06a5a',
+  bulb: '#9ad4f0',
 };
 
 /**

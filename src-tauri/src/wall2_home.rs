@@ -9,11 +9,17 @@ use serde::Serialize;
 use serde_json::Value;
 
 const MAX_MOODS: usize = 12;
+/// Applying a mood can wait inside the home app (Still Working pauses before its Lutron
+/// levels, about 6 to 7 seconds in all), so it gets longer than the shared agent's timeout.
+const APPLY_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(20);
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct Mood {
     pub id: String,
     pub label: String,
+    /// False only when the home app says the mood was never saved (`saved: false`); a card
+    /// for it is drawn quiet and applying it sends nothing. Anything else counts as saved.
+    pub saved: bool,
 }
 
 /// `^[A-Za-z][A-Za-z0-9]{0,31}$`
@@ -53,7 +59,7 @@ fn pick_moods(body: &Value) -> Vec<Mood> {
     map.keys()
         .filter(|k| valid_mood_id(k))
         .take(MAX_MOODS)
-        .map(|k| Mood { id: k.clone(), label: mood_label(k) })
+        .map(|k| Mood { id: k.clone(), label: mood_label(k), saved: map.get(k).and_then(|m| m.get("saved")) != Some(&Value::Bool(false)) })
         .collect()
 }
 
@@ -86,6 +92,7 @@ pub async fn wall2_apply_mood(app: tauri::AppHandle, id: String) -> Result<(), S
         let result = agent()
             .post(&format!("{base}/api/moods/{id}/apply"))
             .set("Accept", "application/json")
+            .timeout(APPLY_TIMEOUT)
             .call();
         match result {
             Ok(resp) => require_ok(resp).map(|_| ()).map_err(|_| apply_error(0).to_string()),
@@ -139,6 +146,13 @@ mod tests {
         let body = json!({"moods": {"lateNight": {}, "day": {}, "evening": {}}});
         let ids: Vec<String> = pick_moods(&body).into_iter().map(|m| m.id).collect();
         assert_eq!(ids, vec!["lateNight", "day", "evening"]);
+    }
+
+    #[test]
+    fn reads_the_saved_flag() {
+        let body = json!({"moods": {"stillWorking": {"saved": false}, "day": {"saved": true}, "evening": {}, "lateNight": {"saved": "no"}}});
+        let saved: Vec<bool> = pick_moods(&body).into_iter().map(|m| m.saved).collect();
+        assert_eq!(saved, vec![false, true, true, true]);
     }
 
     #[test]

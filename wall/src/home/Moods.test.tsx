@@ -242,62 +242,96 @@ it('says "In N min" for a mood the home app schedules within the hour, and never
   expect(inText(t + 61 * 60_000, t)).toBeNull();
 });
 
-it('three moods fill the row; more show three large and a More card that slides by three, then Back', async () => {
-  const many = Array.from({ length: 7 }, (_, i) => ({ id: `m${i}`, label: `Mood ${i}` }));
+it('four moods fill the row; more show four large and a More card that slides by four, then Back', async () => {
+  const many = Array.from({ length: 9 }, (_, i) => ({ id: `m${i}`, label: `Mood ${i}` }));
   mocks.set('wall2_moods', () => many.slice(0, MOODS_PAGE));
-  const three = render(<Moods />);
+  const four = render(<Moods />);
   await flush();
-  const row = three.container.querySelector('.mood-row') as HTMLElement;
+  const row = four.container.querySelector('.mood-row') as HTMLElement;
   expect(row.className).toBe('mood-row');
-  expect(row.style.gridTemplateColumns).toMatch(/^repeat\(3, /);
-  expect(three.container.querySelector('.mood-more')).toBeNull();
-  three.unmount();
+  expect(row.style.gridTemplateColumns).toMatch(/^repeat\(4, /);
+  expect(four.container.querySelector('.mood-more')).toBeNull();
+  four.unmount();
   mocks.set('wall2_moods', () => many);
-  const seven = render(<Moods />);
+  const nine = render(<Moods />);
   await flush();
-  const names = () => [...seven.container.querySelectorAll('.mood-btn .mood-name')].map((n) => n.textContent);
-  expect(names()).toEqual(['Mood 0', 'Mood 1', 'Mood 2']);
-  expect(screen.getByText('4 more')).toBeTruthy();
-  expect(screen.getByText('7 moods')).toBeTruthy();
-  fireEvent.click(seven.container.querySelector('.mood-more') as HTMLElement);
-  expect(names()).toEqual(['Mood 3', 'Mood 4', 'Mood 5']);
+  const names = () => [...nine.container.querySelectorAll('.mood-btn .mood-name')].map((n) => n.textContent);
+  expect(names()).toEqual(['Mood 0', 'Mood 1', 'Mood 2', 'Mood 3']);
+  expect(screen.getByText('5 more')).toBeTruthy();
+  fireEvent.click(nine.container.querySelector('.mood-more') as HTMLElement);
+  expect(names()).toEqual(['Mood 4', 'Mood 5', 'Mood 6', 'Mood 7']);
   expect(screen.getByText('1 more')).toBeTruthy();
-  // Past the first page a Back arrow steps back by three.
-  fireEvent.click(seven.container.querySelector('.mood-back') as HTMLElement);
-  expect(names()).toEqual(['Mood 0', 'Mood 1', 'Mood 2']);
-  expect(seven.container.querySelector('.mood-back')).toBeNull();
-  fireEvent.click(seven.container.querySelector('.mood-more') as HTMLElement);
-  expect(names()).toEqual(['Mood 3', 'Mood 4', 'Mood 5']);
-  // The last page shows the last three, and the More card turns into Back.
-  fireEvent.click(seven.container.querySelector('.mood-more') as HTMLElement);
-  expect(names()).toEqual(['Mood 4', 'Mood 5', 'Mood 6']);
+  // The last page shows the last four, and the More card turns into Back.
+  fireEvent.click(nine.container.querySelector('.mood-more') as HTMLElement);
+  expect(names()).toEqual(['Mood 5', 'Mood 6', 'Mood 7', 'Mood 8']);
   expect(screen.getByText('Back')).toBeTruthy();
-  fireEvent.click(seven.container.querySelector('.mood-more') as HTMLElement);
-  expect(names()).toEqual(['Mood 0', 'Mood 1', 'Mood 2']);
+  fireEvent.click(nine.container.querySelector('.mood-more') as HTMLElement);
+  expect(names()).toEqual(['Mood 0', 'Mood 1', 'Mood 2', 'Mood 3']);
   // The wheel steps once per gesture.
-  fireEvent.wheel(seven.container.querySelector('.mood-row') as HTMLElement, { deltaY: 40 });
-  expect(names()).toEqual(['Mood 3', 'Mood 4', 'Mood 5']);
-  expect(pageStart(5, 7)).toBe(4);
+  fireEvent.wheel(nine.container.querySelector('.mood-row') as HTMLElement, { deltaY: 40 });
+  expect(names()).toEqual(['Mood 4', 'Mood 5', 'Mood 6', 'Mood 7']);
+  expect(pageStart(2, 9)).toBe(5);
   expect(pageStart(0, 2)).toBe(0);
 });
 
-it('the last page keeps a full row of three, as the drawn carousel stops at its end: dots and the More card stay truthful', async () => {
-  const four = Array.from({ length: 4 }, (_, i) => ({ id: `m${i}`, label: `Mood ${i}` }));
-  mocks.set('wall2_moods', () => four);
+it('the last page keeps a full row of four, as the drawn carousel stops at its end: dots and the More card stay truthful', async () => {
+  const five = Array.from({ length: 5 }, (_, i) => ({ id: `m${i}`, label: `Mood ${i}` }));
+  mocks.set('wall2_moods', () => five);
   const { container } = render(<Moods />);
   await flush();
   const names = () => [...container.querySelectorAll('.mood-btn .mood-name')].map((n) => n.textContent);
   const dots = () => [...container.querySelectorAll('.mood-dots i')].map((d) => d.className);
-  expect(names()).toEqual(['Mood 0', 'Mood 1', 'Mood 2']);
+  expect(names()).toEqual(['Mood 0', 'Mood 1', 'Mood 2', 'Mood 3']);
   expect(screen.getByText('1 more')).toBeTruthy();
   expect(dots()).toEqual(['on', '']);
   fireEvent.click(container.querySelector('.mood-more') as HTMLElement);
-  // The row stops at its end: the last three, so the one new mood comes in on the right
+  // The row stops at its end: the last four, so the one new mood comes in on the right
   // and no card slot is left empty. Nothing is left to the right, so the card reads Back.
-  expect(names()).toEqual(['Mood 1', 'Mood 2', 'Mood 3']);
+  expect(names()).toEqual(['Mood 1', 'Mood 2', 'Mood 3', 'Mood 4']);
   expect(screen.queryByText(/ more$/)).toBeNull();
   expect(screen.getByText('Back')).toBeTruthy();
   expect(dots()).toEqual(['', 'on']);
+});
+
+it('Still Working leads with its line and art, and an unsaved one is quiet and sends nothing', async () => {
+  expect(moodNote('stillWorking')).toBe('bright and focused');
+  expect(artKind('stillWorking')).toBe('bulb');
+  const apply = vi.fn();
+  mocks.set('wall2_moods', () => [{ id: 'stillWorking', label: 'Still Working', saved: false }, ...LIST]);
+  mocks.set('wall2_apply_mood', apply);
+  const { container } = render(<Moods />);
+  await flush();
+  const first = container.querySelector('.mood-btn') as HTMLElement;
+  expect(first.getAttribute('data-mood')).toBe('stillWorking');
+  expect(first.classList.contains('unsaved')).toBe(true);
+  expect(first.querySelector('.mood-sub')?.textContent).toBe('Not set up yet');
+  expect(first.getAttribute('aria-label')).toBe('Still Working, not set up yet');
+  expect(container.querySelectorAll('.mood-btn.unsaved')).toHaveLength(1);
+  expect(container.querySelector('.mood-more')).toBeNull();
+  fireEvent.click(first);
+  await flush();
+  expect(apply).not.toHaveBeenCalled();
+  expect(container.querySelector('.mood-btn.working')).toBeNull();
+  expect(localStorage.getItem(LAST_MOOD_KEY)).toBeNull();
+  // The saved flag survives the cache, so the card stays quiet while the home app is away.
+  expect(JSON.parse(localStorage.getItem(MOODS_CACHE_KEY) ?? '[]')[0]).toEqual({ id: 'stillWorking', label: 'Still Working', saved: false });
+  fireEvent.click(screen.getByText('Day'));
+  await flush();
+  expect(apply).toHaveBeenCalledWith({ id: 'day' });
+});
+
+it('a saved Still Working applies like the others', async () => {
+  const apply = vi.fn();
+  mocks.set('wall2_moods', () => [{ id: 'stillWorking', label: 'Still Working', saved: true }, ...LIST]);
+  mocks.set('wall2_apply_mood', apply);
+  const { container } = render(<Moods />);
+  await flush();
+  const first = container.querySelector('.mood-btn') as HTMLElement;
+  expect(first.classList.contains('unsaved')).toBe(false);
+  expect(first.querySelector('.mood-sub')?.textContent).toBe('bright and focused');
+  fireEvent.click(first);
+  await flush();
+  expect(apply).toHaveBeenCalledWith({ id: 'stillWorking' });
 });
 
 it('"In N min" counts down while the wall stays open', async () => {
