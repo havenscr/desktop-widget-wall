@@ -3865,6 +3865,11 @@ button.sp-qrow:hover {
   min-width: 0;
   padding: 0 14px;
 }
+.u-mood.off[data-busy='true'],
+.u-mood.off.failed {
+  /* The 14 px icon and its 8 px gap sit in the chip's padding: the chip keeps its width. */
+  padding: 0 3px;
+}
 .u-mood-name {
   min-width: 0;
   overflow: hidden;
@@ -3888,8 +3893,16 @@ button.sp-qrow:hover {
   width: 40px;
   padding: 0;
 }
-.u-office-slot[data-clip='true'] {
-  /* Last resort: never spill past the left edge over the neighbours; room for the focus ring on the other sides. */
+.u-mood-run {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  min-width: 0;
+  flex: 0 1 auto;
+}
+.u-mood-run[data-clip='true'] {
+  /* Last resort: the moods give way at their left edge (never the Music sync chip, which sits outside this run); room for the focus ring on the other sides. */
   overflow-x: clip;
   overflow-clip-margin: 8px;
 }
@@ -3915,7 +3928,9 @@ button.sp-qrow:hover {
   flex: none;
   display: inline-flex;
   justify-content: center;
-  width: 24px;
+  /* As wide as the swatch dot it replaces, so a write in flight or a failure never widens a chip. */
+  width: 12px;
+  overflow: visible;
 }
 .u-mood.off .u-mood-ico {
   width: 14px;

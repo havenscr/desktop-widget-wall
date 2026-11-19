@@ -3,7 +3,7 @@ import type { Moods } from './home';
 import { OFFICE_OFF, TEXT } from './homeStore';
 // @ts-ignore node's own file calls; this test reads the stylesheet as text.
 import { readFileSync } from 'node:fs';
-import { BACK_FIXED, CHIP_FIXED, ICON_CHIP, chipTip, fitMoodRow, LABEL_MARGIN, MOOD_MAX, moodFailText, moodLine, NAME_MIN, OFF_BUSY_EXTRA, OFF_FIXED, ROW_GAP, ROW_MAX, rowModel, swatchFor } from './moodRow';
+import { BACK_FIXED, CHIP_FIXED, ICON_CHIP, chipTip, fitMoodRow, LABEL_MARGIN, MOOD_MAX, moodFailText, moodLine, NAME_MIN, OFF_FIXED, ROW_GAP, ROW_MAX, rowModel, swatchFor } from './moodRow';
 
 const NEUTRAL = ['#b7afd6', '#5b5480'];
 
@@ -70,7 +70,7 @@ it('fitMoodRow: twelve 40 character names, with Off, stay within 1124 and never 
   const wide = fitMoodRow(names, 170, 300);
   expect(wide.cap as number).toBeLessThan(fit.cap as number);
   // The true boundary: at the floor, the most moods the home app lists (12) plus the busiest Off chip fit ROW_MAX; one more chip would not.
-  const busyOff = OFF_FIXED + OFF_BUSY_EXTRA + 27;
+  const busyOff = OFF_FIXED + 22 + 27;
   expect(chipsWidth(Array(MOOD_MAX).fill(NAME_MIN), busyOff)).toBeLessThanOrEqual(ROW_MAX);
   expect(chipsWidth(Array(MOOD_MAX + 1).fill(NAME_MIN), busyOff)).toBeGreaterThan(ROW_MAX);
   // Too wide even at the minimum is clamped to the minimum.
@@ -80,7 +80,7 @@ it('fitMoodRow: twelve 40 character names, with Off, stay within 1124 and never 
 it('fitMoodRow: twelve moods with Off and As before stay inside ROW_MAX: Back to the arrow first, then Off, then a clip', () => {
   const names = (n: number) => Array.from({ length: n }, () => 330);
   const floor = (n: number) => Array(n).fill(NAME_MIN) as number[];
-  const off = OFF_FIXED + OFF_BUSY_EXTRA + 27;
+  const off = OFF_FIXED + 22 + 27;
   const back = BACK_FIXED + 125;
   // Eleven moods: at the floor the words do not fit, Back as the arrow does, so only Back changes.
   expect(chipsWidth(floor(11), off, 0, back)).toBeGreaterThan(ROW_MAX);

@@ -21,7 +21,8 @@ export const NAME_MIN = 28;
 export const LABEL_MARGIN = 2;
 /** The Off chip: 28 px of padding, 2 px of border, and (while its write is out) a 14 px icon and its 8 px gap. */
 export const OFF_FIXED = 30;
-export const OFF_BUSY_EXTRA = 22;
+/** The icon takes the Off chip's own padding while its write is out (see `.u-mood.off[data-busy]`), so it adds no width. */
+export const OFF_BUSY_EXTRA = 0;
 /** The As before chip: 2 px of border, 25 px of padding, the 18 px arrow and its 8 px gap (the words are measured). */
 export const BACK_FIXED = 53;
 export const BACK_WORD = 'As before';

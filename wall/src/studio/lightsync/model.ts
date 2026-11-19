@@ -111,7 +111,7 @@ export interface PaletteEntry {
 
 export const PALETTES: readonly PaletteEntry[] = [
   { id: 'synthwave', name: 'Synthwave', swatch: SYNTHWAVE.colors, tip: 'The wall horizon: magenta, cyan and violet.', enabled: true },
-  { id: 'album', name: 'Album art', swatch: ['#ff3d9a', '#9a7bff'], tip: 'Colours from the cover now playing. Grey covers fall back to Synthwave.', enabled: true },
+  { id: 'album', name: 'Album art', swatch: ['#ff3d9a', '#9a7bff'], tip: 'The colours of the cover now playing, as the dancing lines take them. With no cover playing it uses Synthwave.', enabled: true },
   { id: 'sky', name: 'Wall sky', swatch: ['#9a7bff', '#4fc3f7'], tip: "The wall's own colours.", enabled: true },
   { id: 'mood', name: 'Office mood', swatch: ['#ffb975', '#ff8a4d'], tip: 'The colours of the office mood that was on before sync.', enabled: true },
   { id: 'sheep', name: 'Electric Sheep', swatch: ['#ff7a1a', '#ffc24d', '#9a7bff', '#4f6bff'], tip: 'Fire orange and gold curling into violet and electric blue.', enabled: true },

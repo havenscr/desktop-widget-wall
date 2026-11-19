@@ -99,6 +99,7 @@ const show = async () => {
   await flush();
   return view;
 };
+const syncOf = () => document.querySelector('[data-mood="sync"]') as HTMLElement;
 const slot = () => document.querySelector('[data-slot="office-lights"]') as HTMLElement;
 const line = () => document.querySelector('.u-office-line');
 /** The plain status: a visually hidden live region, never a drawn line. */
@@ -180,7 +181,7 @@ it('the fit rule is applied: seven names of 40 characters (with Off and As befor
   expect(named).toHaveLength(7);
   for (const n of named) expect(n.style.maxWidth).toMatch(/^\d+px$/);
   // Cut at the largest shared width that fits: exactly what the fit rule gives for 7 names of 360 px (9 px a character) and an Off chip measured by the same guess (30 + 22 + 27 px), above the floor.
-  const expected = fitMoodRow(Array(7).fill(360), 0, 79, BACK_FIXED + BACK_WORD.length * 9, SYNC_WIDTH).cap as number;
+  const expected = fitMoodRow(Array(7).fill(360), 0, 57, BACK_FIXED + BACK_WORD.length * 9, SYNC_WIDTH).cap as number;
   expect(expected).toBeGreaterThan(NAME_MIN);
   for (const n of named) expect(n.style.maxWidth).toBe(`${expected}px`);
   expect(await tipOf(chip(forty(0)))).toBe(`${forty(0)} is on.`);
@@ -209,7 +210,11 @@ it('twelve moods with Off and As before: the row fits ROW_MAX by turning As befo
   expect(back.className).toContain('icon-only');
   expect(chip(`Mood 00 ${'x'.repeat(32)}`).querySelector('.u-mood-name')).not.toBeNull();
   // Twelve moods and the fixed 216 px Music sync chip no longer fit 1124 even at the floor: the slot's last resort clips its left edge.
-  expect(slot().getAttribute('data-clip')).toBe('true');
+  expect(slot().querySelector('.u-mood-run')?.getAttribute('data-clip')).toBe('true');
+  // The moods give way; the Music sync chip sits outside the clipped run, whole, and first.
+  expect(slot().querySelector('.u-mood-run')?.contains(syncOf())).toBe(false);
+  expect(syncOf().getAttribute('data-state')).toBe('off');
+  expect(slot().firstElementChild === syncOf() || slot().children[0]?.contains(syncOf()) === true).toBe(true);
   const tipText = await tipOf(back);
   expect(tipText.startsWith(BACK_WORD)).toBe(true);
   fireEvent.click(back);

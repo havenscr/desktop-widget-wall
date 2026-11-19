@@ -3,6 +3,8 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { mocks } from '../../bridge/tauri';
 import { LIGHT_SYNC_KEY, loadLightSync } from '../../settings/settings';
 import { HoverTipLayer, resetTip } from '../../ui/HoverTip';
+import { setCoverTint, resetCoverTint } from '../../music/coverTint';
+import { useNowPlayingStore } from '../../music/store';
 import { resetHome, useHome } from '../homeStore';
 import { SYNC_WIDTH, SYNC_WORD, fitMoodRow, syncChipModel } from '../moodRow';
 import { OfficeMoods } from '../OfficeMoods';
@@ -283,4 +285,17 @@ it('the strip opens and picks in two clicks, names in view, and the pick is reme
   expect(count('wall2_lightsync_tune')).toBe(1);
   expect((calls.find((c) => c.command === 'wall2_lightsync_tune')?.args as { palette: { colors: string[] } }).palette.colors).toEqual(resolvePalette('zen').colors);
   void useHome;
+});
+
+it('Album art sends the colours of the cover now playing, read from the lines follower', async () => {
+  useNowPlayingStore.setState({ art: 'cover.jpg' });
+  setCoverTint({ left: [255, 0, 0], centre: [0, 255, 0], right: [0, 0, 255] }, 0, true);
+  useLightSync.setState({ palette: 'album' });
+  await show();
+  fireEvent.click(main());
+  await flush();
+  const sent = calls.find((c) => c.command === 'wall2_lightsync_start')?.args as { palette: { colors: string[] } };
+  expect(sent.palette.colors).toEqual(['#ff0000', '#00ff00', '#0000ff']);
+  useNowPlayingStore.setState({ art: null });
+  resetCoverTint();
 });

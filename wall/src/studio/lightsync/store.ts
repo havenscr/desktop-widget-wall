@@ -1,9 +1,20 @@
 import { create } from 'zustand';
 import { lightSyncStart, lightSyncStatus, lightSyncStop, lightSyncTune } from '../../bridge/lightsync';
 import { loadLightSync, saveLightSync } from '../../settings/settings';
+import { targetTint } from '../../music/coverTint';
+import { useNowPlayingStore } from '../../music/store';
 import { useHome } from '../homeStore';
 import { swatchFor } from '../moodRow';
 import { resolvePalette, type LightSyncSettings, type LightSyncStatus, type PaletteContext, type PaletteId } from './model';
+
+const hex = (c: number[]) => '#' + c.map((v) => Math.max(0, Math.min(255, Math.round(v))).toString(16).padStart(2, '0')).join('');
+
+/** The cover now playing, as the three colours the dancing lines already read from it (`music/coverTint.ts`); null with no cover playing. */
+export function coverNow(): string[] | null {
+  if (!useNowPlayingStore.getState().art) return null;
+  const t = targetTint();
+  return [t.left, t.centre, t.right].map(hex);
+}
 
 /** How often the status is read while sync is on. */
 export const SYNC_POLL_MS = 2000;
@@ -75,7 +86,7 @@ export const useLightSync = create<LightSyncState>((set, get) => ({
     const lit = useHome.getState().moods?.moods.find((m) => m.active) ?? null;
     set({ starting: true, failure: null, hueNote: false, stripOpen: false, remembered: lit ? lit.id : null });
     try {
-      const ctx: PaletteContext = { ...get().context, mood: lit ? swatchFor(lit.id) : null };
+      const ctx: PaletteContext = { ...get().context, cover: coverNow(), mood: lit ? swatchFor(lit.id) : null };
       await lightSyncStart(resolvePalette(get().palette, ctx), get().settings);
       let status: LightSyncStatus | null = null;
       try {
@@ -123,7 +134,7 @@ export const useLightSync = create<LightSyncState>((set, get) => ({
     const s = get();
     if (isOn(s) && !s.starting) {
       const mood = s.remembered === null ? null : swatchFor(s.remembered);
-      void lightSyncTune(resolvePalette(id, { ...s.context, mood }), s.settings).catch(() => undefined);
+      void lightSyncTune(resolvePalette(id, { ...s.context, cover: coverNow(), mood }), s.settings).catch(() => undefined);
     }
   },
   openStrip(open) {
@@ -161,3 +172,15 @@ export function resetLightSync(): void {
   pollWhile(false);
   useLightSync.setState({ ...fresh(), status: null, starting: false, stopping: false, failure: null, hueNote: false, remembered: null, stripOpen: false, context: {} });
 }
+
+// Album art: a new cover is read by the lines' own follower; a moment later the lights follow it.
+let lastArt: string | null | undefined;
+useNowPlayingStore.subscribe((n) => {
+  if (n.art === lastArt) return;
+  lastArt = n.art ?? null;
+  setTimeout(() => {
+    const s = useLightSync.getState();
+    if (s.palette !== 'album' || !isOn(s) || s.starting) return;
+    void lightSyncTune(resolvePalette('album', { cover: coverNow() }), s.settings).catch(() => undefined);
+  }, 1500);
+});

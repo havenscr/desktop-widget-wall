@@ -178,7 +178,7 @@ export function OfficeMoods() {
   const resting = restNow && moodFail === null;
   return (
     <>
-      <div className="u-office-slot" data-slot="office-lights" data-moods="shown" data-stale={row.stale ? 'true' : undefined} data-clip={fit.clip ? 'true' : undefined} role="group" aria-label={LABEL_WORD} ref={box} {...restZone('moods-row')}>
+      <div className="u-office-slot" data-slot="office-lights" data-moods="shown" data-stale={row.stale ? 'true' : undefined} role="group" aria-label={LABEL_WORD} ref={box} {...restZone('moods-row')}>
         {fit.label && (
           <span className="u-mood-label" data-part="label">
             <IconBulb size={18} aria-hidden="true" />
@@ -187,6 +187,7 @@ export function OfficeMoods() {
         )}
         <PaletteStrip />
         <SyncChip blocked={false} />
+        <div className="u-mood-run" data-clip={fit.clip ? 'true' : undefined}>
         {row.chips.map((c) => (
           <Chip key={c.id ?? 'office-off'} chip={c} row={row} cap={fit.cap} iconOnly={c.id === null && fit.offIcon} onClick={() => click(c)} />
         ))}
@@ -202,6 +203,7 @@ export function OfficeMoods() {
           <IconArrowBackUp size={18} stroke={2} aria-hidden="true" />
           {!fit.backIcon && <span className="u-mood-name">{BACK_WORD}</span>}
         </button>
+        </div>
       </div>
       {/* The plain status (what is on, off, asking) is the chips' and the tips' job; the screen reader still hears it here. */}
       <div className="u-office-live" role="status" aria-live="polite" data-part="live">
