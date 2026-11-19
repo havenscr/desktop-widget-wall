@@ -21,7 +21,7 @@ export function splitHits(items: readonly SpotifyItem[]) {
 }
 
 /** The chip row of a search: square chips with counts (a radio group), and "Library" to leave the search. */
-export function SearchChips({ value, counts, kinds, icons, onPick, onLeave }: { value: SearchChip; counts: { playlists: number; albums: number; songs: number } | null; kinds: readonly Exclude<SearchChip, 'all'>[]; icons: Record<Exclude<SearchChip, 'all'>, ReactNode>; onPick: (c: SearchChip) => void; onLeave: () => void }) {
+export function SearchChips({ value, counts, kinds, icons, onPick, onLeave }: { value: SearchChip; counts: Partial<Record<Exclude<SearchChip, 'all'>, number>> | null; kinds: readonly Exclude<SearchChip, 'all'>[]; icons: Partial<Record<Exclude<SearchChip, 'all'>, ReactNode>>; onPick: (c: SearchChip) => void; onLeave: () => void }) {
   const words: Record<Exclude<SearchChip, 'all'>, string> = { playlists: 'Playlists', albums: 'Albums', songs: 'Songs' };
   const key = (e: ReactKeyboardEvent<HTMLDivElement>) => {
     if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
@@ -41,7 +41,7 @@ export function SearchChips({ value, counts, kinds, icons, onPick, onLeave }: { 
           <button key={c} type="button" role="radio" aria-checked={value === c} tabIndex={value === c ? 0 : -1} className={`mu-chip${value === c ? ' on' : ''}`} onClick={() => onPick(c)}>
             {c === 'all' ? null : icons[c]}
             {c === 'all' ? 'All' : words[c]}
-            {c === 'all' || !counts ? null : <span className="mu-chip-n">{counts[c]}</span>}
+            {c === 'all' || !counts || typeof counts[c] !== 'number' ? null : <span className="mu-chip-n">{counts[c]}</span>}
           </button>
         ))}
       </div>
