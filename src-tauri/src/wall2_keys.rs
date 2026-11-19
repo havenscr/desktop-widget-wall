@@ -842,7 +842,7 @@ pub async fn wall2_keys_summary(window: tauri::WebviewWindow, app: tauri::AppHan
 #[tauri::command]
 pub async fn wall2_keys_library(window: tauri::WebviewWindow) -> Result<Vec<wall2_keylib::LibGroupInfo>, String> {
     require_wall2(window.label())?;
-    Ok(wall2_keylib::library_info())
+    Ok(wall2_keylib::library_info(wall2_keylib::powertoys_detected()))
 }
 
 /// Run one key of a set. Ok(None) when it is done (a chord was delivered, or Rust ran the

@@ -5,7 +5,7 @@ import { resetAgents } from '../agents/useAgents';
 import { mocks } from '../bridge/tauri';
 import { useFocusStore } from '../focus/store';
 import { HoverTipLayer, resetTip, TIP_DELAY_MS } from '../ui/HoverTip';
-import { agendaLanes, agendaRange, nowSegments, quietLine } from './DayDrawer';
+import { ONE_LINE_BELOW, agendaLanes, agendaRange, nowSegments, quietLine } from './DayDrawer';
 import { laneStateWord } from './AgentRow';
 import { DrawerScrim } from './DrawerScrim';
 import { chips, RX } from './model';
@@ -366,4 +366,46 @@ it('the now line stops short of the tile whose title it would cross, and runs wh
   expect(mid).toHaveLength(2);
   // Neighbouring lanes are one gap, not a sliver between them.
   expect(nowSegments([{ lane: 0, lanes: 2 }, { lane: 1, lanes: 2 }])).toHaveLength(2);
+});
+
+it('a one hour tile keeps its time on the same line, so a long title gives way and the time is never cut off', async () => {
+  mocks.set('wall2_meet_day', () => ({
+    accounts: [{ id: 'work', label: 'Work', state: 'ok' }],
+    events: [
+      ev('h1', 'A very long meeting title that cannot fit beside its time in half the width', '13:00', '14:00'),
+      ev('h2', 'Workshop', '14:00', '16:00'),
+    ],
+  }));
+  const r = render(<Ribbon kind="work" />);
+  await flush();
+  fireEvent.click(r.container.querySelector('.rib-handle') as HTMLElement);
+  await flush();
+  const tiles = [...r.container.querySelectorAll('.dd-ev')] as HTMLElement[];
+  expect(tiles).toHaveLength(2);
+  expect(tiles[0].classList.contains('one')).toBe(true);
+  expect(tiles[0].querySelector('.dd-t')!.textContent).toBe('1:00 to 2:00');
+  // Two hours is room for a second line, so it wraps as before.
+  expect(tiles[1].classList.contains('one')).toBe(false);
+});
+
+it('a 59 and a 61 minute tile are both one line, and the threshold sits between 91 and 93 minutes', async () => {
+  const run = async (mins: number) => {
+    const end = `${13 + Math.floor(mins / 60)}:${String(mins % 60).padStart(2, '0')}`;
+    mocks.set('wall2_meet_day', () => ({
+      accounts: [{ id: 'work', label: 'Work', state: 'ok' }],
+      events: [ev('t1', 'Planning', '13:00', end)],
+    }));
+    const r = render(<Ribbon kind="work" />);
+    await flush();
+    fireEvent.click(r.container.querySelector('.rib-handle') as HTMLElement);
+    await flush();
+    const one = (r.container.querySelector('.dd-ev') as HTMLElement).classList.contains('one');
+    r.unmount();
+    return one;
+  };
+  expect(await run(59)).toBe(true);
+  expect(await run(61)).toBe(true);
+  expect(await run(91)).toBe(true);
+  expect(await run(93)).toBe(false);
+  expect(ONE_LINE_BELOW).toBe(58);
 });

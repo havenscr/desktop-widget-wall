@@ -38,6 +38,19 @@ describe('the library the page and the mocks hold equals the Rust one', () => {
     expect(LIBRARY_DATA).toEqual(fromRust);
   });
 
+  it('PowerToys: the not-installed state is the mock (title, all keys check); the found state is plain keys under "PowerToys"', () => {
+    const pt = lib.find((g) => g.id === 'powertoys')!;
+    expect(pt.title).toBe('PowerToys (not installed on this PC)');
+    expect(pt.keys.length).toBe(5);
+    expect(pt.keys.every((k) => k.kind === 'check')).toBe(true);
+    // Rust's found state, as text: the plain title and the check-to-key swap for this group only.
+    expect(rust).toContain('if g.id == "powertoys" && powertoys { "PowerToys".to_string() }');
+    expect(rust).toContain('if powertoys && e.group == "powertoys" && e.kind == LibKind::Check { LibKind::Key.word() }');
+    const found = { ...pt, title: 'PowerToys', keys: pt.keys.map((k) => ({ ...k, kind: 'key' as const })) };
+    expect(found.keys.every((k) => k.kind === 'key') && found.title === 'PowerToys').toBe(true);
+    expect(found.keys.map((k) => k.id)).toEqual(pt.keys.map((k) => k.id));
+  });
+
   it('the comparison bites: one changed action, one changed exe, one changed runnable each make it unequal', () => {
     const fromRust = rustLibrary();
     const swapped = structuredClone(LIBRARY_DATA);

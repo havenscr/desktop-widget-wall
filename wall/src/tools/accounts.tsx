@@ -11,12 +11,12 @@ import { useToolsStore } from './store';
 import { calendarName } from './trouble';
 
 type Tone = 'plain' | 'bad';
-type OpenStatus = 'desktop' | 'browser-new-outlook' | 'browser-not-found' | 'browser-config' | 'desktop-config-typo';
+type OpenStatus = 'desktop' | 'new-outlook-calendar' | 'browser-not-found' | 'browser-config' | 'desktop-config-typo';
 type OpenStatusState = OpenStatus | 'failed' | null;
 
 const openWords: Record<OpenStatus, { line: string; hint: string }> = {
   desktop: { line: 'Outlook on this PC', hint: 'Meetings open in classic Outlook when it is available.' },
-  'browser-new-outlook': { line: 'the browser', hint: 'New Outlook has no way to open one meeting.' },
+  'new-outlook-calendar': { line: 'new Outlook, on Calendar', hint: 'Meetings open in new Outlook, on Calendar.' },
   'browser-not-found': { line: 'the browser', hint: 'Outlook was not found on this PC.' },
   'browser-config': { line: 'the browser', hint: 'This is set in meet.json.' },
   'desktop-config-typo': { line: 'Outlook on this PC', hint: 'meet.json has an unknown openIn value, so the desktop default is used.' },
