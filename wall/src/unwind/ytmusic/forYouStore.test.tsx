@@ -11,7 +11,7 @@ import { resetSpotifyStatus } from '../spotify/status';
 import { playerLink } from '../watch/PlayerFrame';
 import { resetWatch, useWatchStore } from '../watch/store';
 import { MOODS, SHELF } from './ForYou';
-import { FIRST, loadForYou, useForYou, whenWords } from './forYou';
+import { FIRST, afterPlay, loadForYou, useForYou, whenWords } from './forYouStore';
 import { resetQueue, useYtQueue } from './queue';
 import { resetYoutubeStatus } from './status';
 import { resetLibrary } from './store';
@@ -210,6 +210,75 @@ describe('the play record', () => {
     await flush(10);
     await flush(10);
     expect(tiles().map((t) => t.querySelector('.sp-tname2')?.textContent)).toEqual(['Played 9', 'Played 0']);
+  });
+
+  it('a play from See all keeps the long list; the shelf reads again when it is back to four', async () => {
+    serve(30);
+    let reads = 0;
+    const inner = mocks.get('wall2_youtube_played')!;
+    mocks.set('wall2_youtube_played', (a) => (reads++, inner(a)));
+    await openForYou();
+    fireEvent.click(screen.getByRole('button', { name: /See all/ }));
+    await flush(10);
+    await flush(10);
+    expect(tiles()).toHaveLength(30);
+    expect(reads).toBe(1);
+    fireEvent.click(tiles()[2]!);
+    await flush(10);
+    await flush(10);
+    expect(tiles()).toHaveLength(30);
+    expect(reads).toBe(1);
+    expect(useForYou.getState().stale).toBe(true);
+    fireEvent.click(screen.getByRole('button', { name: 'Back to the shelf' }));
+    await flush(10);
+    await flush(10);
+    expect(reads).toBe(2);
+    expect(useForYou.getState().stale).toBe(false);
+  });
+
+  it('a play while a read is running makes one more read when that one settles', async () => {
+    serve(3);
+    let reads = 0;
+    let release: (() => void) | null = null;
+    const inner = mocks.get('wall2_youtube_played')!;
+    mocks.set('wall2_youtube_played', async (a) => {
+      reads++;
+      if (reads === 2) await new Promise<void>((r) => (release = r));
+      return inner(a);
+    });
+    await openForYou();
+    expect(reads).toBe(1);
+    void loadForYou(true);
+    await flush(10);
+    expect(reads).toBe(2);
+    afterPlay();
+    afterPlay();
+    await flush(10);
+    expect(reads).toBe(2);
+    await act(async () => release?.());
+    await flush(10);
+    await flush(10);
+    expect(reads).toBe(3);
+  });
+
+  it('a play while the tab is hidden makes no read; the next show reads it', async () => {
+    serve(3);
+    let reads = 0;
+    const inner = mocks.get('wall2_youtube_played')!;
+    mocks.set('wall2_youtube_played', (a) => (reads++, inner(a)));
+    await openForYou();
+    expect(reads).toBe(1);
+    fireEvent.click(screen.getByRole('tab', { name: 'Playlists' }));
+    await flush(10);
+    afterPlay();
+    await flush(10);
+    expect(reads).toBe(1);
+    expect(useForYou.getState().stale).toBe(true);
+    fireEvent.click(screen.getByRole('tab', { name: 'For you' }));
+    await flush(10);
+    await flush(10);
+    expect(reads).toBe(2);
+    expect(useForYou.getState().stale).toBe(false);
   });
 
   it('whenWords reads days back: Today, Yesterday, N days ago, Last week, N weeks ago, Last month', () => {

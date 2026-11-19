@@ -7,7 +7,7 @@ import { libraryMenuOpen } from '../watch/libraryMenuModel';
 import { libraryHandlers } from '../watch/libraryOpen';
 import { MAX_PAGES, PAGE_SIZE, SEARCH_TIP, SPENT_LINE, devSearchKnob, nearEnd, searchSpent, searchesLine, videosLine } from './model';
 import { ForYou } from './ForYou';
-import { loadForYou } from './forYou';
+import { loadForYou } from './forYouStore';
 import { playFrom } from './queue';
 import { useYoutubeStatus } from './status';
 import { YtSongs } from './YtSongs';

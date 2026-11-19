@@ -96,7 +96,7 @@ export function startReads(now = Date.now()): void {
   if (!canRead()) return;
   const s = useYtLibrary.getState();
   if (s.opened && !s.songs.loaded && !s.songs.loading) void loadList('songs');
-  // The For you tab keeps its own read (`forYou.ts`), started by the tab.
+  // The For you tab keeps its own read (`forYouStore.ts`), started by the tab.
   if (s.tab === 'foryou') return;
   const cur = s[s.tab];
   if (cur.loading) return;

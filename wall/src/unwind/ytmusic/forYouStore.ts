@@ -21,9 +21,11 @@ export interface ForYouState {
   loaded: boolean;
   problem: YtProblem | null;
   readAt: number | null;
+  /** A play was written while the shelf was hidden or on See all: the next show reads it again. */
+  stale: boolean;
 }
 
-const blank = (): ForYouState => ({ rows: [], at: new Map(), rest: [], loading: false, loaded: false, problem: null, readAt: null });
+const blank = (): ForYouState => ({ rows: [], at: new Map(), rest: [], loading: false, loaded: false, problem: null, readAt: null, stale: false });
 export const useForYou = create<ForYouState>(() => blank());
 
 /** Ids asked about on the first read, and at most per call. */
@@ -32,8 +34,17 @@ export const CHUNK = 50;
 export const STALE_MS = 60_000;
 
 let epoch = 0;
+/** A forced read asked for while one was running: made once, when that one settles. */
+let again = false;
+/** Whether the For you tab is on screen (and the page visible), and whether it shows See all. Set by the tab. */
+const view = { showing: false, all: false };
+export function setForYouView(showing: boolean, all: boolean): void {
+  view.showing = showing;
+  view.all = all;
+}
 onLibraryReset(() => {
   epoch += 1;
+  again = false;
   useForYou.setState(blank());
 });
 
@@ -60,10 +71,18 @@ async function detailed(ids: string[]): Promise<YtVideo[]> {
 /** Read the record and the details of its newest videos. `force` skips the freshness check. */
 export async function loadForYou(force = false, now = Date.now()): Promise<void> {
   const cur = useForYou.getState();
-  if (cur.loading) return;
-  if (!force && cur.loaded && !cur.problem && cur.readAt !== null && now - cur.readAt < STALE_MS) return;
+  if (cur.loading) {
+    if (force) again = true;
+    return;
+  }
+  if (!force && cur.loaded && !cur.problem && !cur.stale && cur.readAt !== null && now - cur.readAt < STALE_MS) return;
   const mine = epoch;
-  useForYou.setState({ loading: true, problem: null });
+  useForYou.setState({ loading: true, problem: null, stale: false });
+  const settled = () => {
+    if (!again) return;
+    again = false;
+    void loadForYou(true);
+  };
   try {
     const record: YtPlayed[] = (await youtube.played()).filter((p) => typeof p?.id === 'string' && typeof p?.at === 'number');
     if (mine !== epoch) return;
@@ -73,10 +92,22 @@ export async function loadForYou(force = false, now = Date.now()): Promise<void>
     const rows = first.length ? await detailed(first) : [];
     if (mine !== epoch) return;
     useForYou.setState({ rows, at, rest: ids.slice(FIRST), loading: false, loaded: true, problem: null, readAt: Date.now() });
+    settled();
   } catch (e) {
     if (mine !== epoch) return;
     useForYou.setState({ loading: false, loaded: true, problem: ytProblem(e) });
+    settled();
   }
+}
+
+/**
+ * A play was just written to the record. A loaded shelf that is showing (and not on See all, whose list a read
+ * would cut back to the first few) reads it again; otherwise it is marked stale and the next show reads it.
+ */
+export function afterPlay(): void {
+  if (!useForYou.getState().loaded) return;
+  if (view.showing && !view.all) void loadForYou(true);
+  else useForYou.setState({ stale: true });
 }
 
 /** "See all": the rest of the record, asked about in calls of up to 50. */

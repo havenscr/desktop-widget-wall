@@ -291,7 +291,7 @@ The sign-in and its row in Tools came first; the library came next, and a pick f
   one row with the tabs For you, Playlists and Liked and the search field, and under it the playlists as 16:9
   tiles (four columns at rest, five tall) or the liked videos or a search answer as rows. A tile opens
   its videos (Back and Escape return; Refresh reads that playlist from YouTube again and the line
-  under it says when it was read). **For you** (`ForYou.tsx`, `forYou.ts`) is the first tab, though Playlists
+  under it says when it was read). **For you** (`ForYou.tsx`, `forYouStore.ts`) is the first tab, though Playlists
   is still the one that opens first: a row of the eight mood words (Focus, Energize, Relax, Sleep, Chill,
   Workout, Party, Romance), shown but not yet working, and under it the shelf "Back to" (what the wall
   played): four tiles with how long ago (Today, Yesterday, N days ago, Last week, ...) and See all, which

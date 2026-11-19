@@ -2,7 +2,8 @@ import { useEffect, useState } from 'react';
 import { IconChevronRight } from '@tabler/icons-react';
 import type { YtVideo } from '../../music/youtube';
 import { tip } from '../../ui/HoverTip';
-import { loadAllForYou, loadForYou, useForYou, whenWords } from './forYou';
+import { loadAllForYou, loadForYou, setForYouView, useForYou, whenWords } from './forYouStore';
+import { useVisible } from '../../ui/useVisible';
 import { lengthText } from './model';
 import { playFrom } from './queue';
 import { TileSkeletons, YtEmpty, YtState, YtThumb, gridKey } from './YtParts';
@@ -37,12 +38,18 @@ function PlayedTile({ v, at, onPlay }: { v: YtVideo; at: number | undefined; onP
 /**
  * The For you tab: the mood chip row on top, then shelves, each a heading with a grey line saying where it comes
  * from, one row of four tiles and "See all", which shows the whole shelf in the library's own grid. For now the
- * one shelf is "Back to": what the wall itself played (see `forYou.ts`). A tile plays that video, and the ones
+ * one shelf is "Back to": what the wall itself played (see `forYouStore.ts`). A tile plays that video, and the ones
  * after it in the shelf, on the wall.
  */
 export function ForYou({ tall }: { tall: boolean }) {
   const s = useForYou();
   const [all, setAll] = useState(false);
+  const visible = useVisible();
+  // The shelf tells the store when it is on screen, so a play written meanwhile reads again only then.
+  useEffect(() => {
+    setForYouView(visible, all);
+    return () => setForYouView(false, false);
+  }, [visible, all]);
   useEffect(() => {
     if (all) void loadAllForYou();
   }, [all]);
@@ -83,7 +90,11 @@ export function ForYou({ tall }: { tall: boolean }) {
             <span className="yt-shelfname">Back to</span>
             <span className="yt-shelfsub">what the wall played</span>
             {all ? (
-              <button type="button" className="yt-seeall" onClick={() => setAll(false)}>
+              <button type="button" className="yt-seeall" onClick={() => {
+                  setAll(false);
+                  // A play made on See all marked the shelf stale: read it now that the list is short again.
+                  void loadForYou();
+                }}>
                 Back to the shelf
               </button>
             ) : more ? (
