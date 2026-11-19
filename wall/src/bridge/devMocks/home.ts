@@ -44,29 +44,32 @@ export function registerHomeMocks(): void {
   mocks.set('wall2_open_link', () => undefined);
   // `?camcheck=missing` makes the Camera check key answer `failed`.
   mocks.set('wall2_open_camera', () => (knob('camcheck') === 'missing' ? Promise.reject(new Error('failed')) : undefined));
-  // `?moods=five` gives the concept's five, `?moods=many` nine (the row scrolls), `?moods=none`
-  // an empty list, `?moods=off` not set up, `?moods=down` not reachable; with a review time, Evening is "In 4 min" in five.
+  // Still Working comes first, as the home app sends it. `?moods=five` gives five, `?moods=many`
+  // nine (More card), `?moods=none` an empty list, `?moods=off` not set up, `?moods=down` not
+  // reachable, `?moods=unsaved` the four with Still Working not saved yet; with a review time,
+  // Evening is "In 4 min" in five.
   mocks.set('wall2_moods', () => {
     const k = knob('moods');
     if (k === 'off') return Promise.reject(new Error('not-configured'));
     if (k === 'down') return Promise.reject(new Error('Could not reach the service'));
     if (k === 'none') return [];
-    // `?moods=3|7|12`: that many moods (Home shows three large and a More card past three).
+    // `?moods=3|7|12`: that many moods (Home shows four large and a More card past four).
     if (k === '3' || k === '7' || k === '12') {
-      const names = ['Day', 'Evening', 'Late Night', 'Movie', 'Goodnight', 'Reading', 'Dinner', 'Focus Time', 'Party Night', 'Wake Up', 'Rainy Day', 'Away'];
+      const names = ['Still Working', 'Day', 'Evening', 'Late Night', 'Movie', 'Goodnight', 'Reading', 'Dinner', 'Focus Time', 'Party Night', 'Wake Up', 'Rainy Day', 'Away'];
       return names.slice(0, Number(k)).map((label) => ({ id: label.replace(/ (.)/g, (_, c: string) => c.toUpperCase()).replace(/^./, (c) => c.toLowerCase()), label }));
     }
-    const three = [
+    const four = [
+      { id: 'stillWorking', label: 'Still Working', ...(k === 'unsaved' ? { saved: false } : {}) },
       { id: 'day', label: 'Day' },
       { id: 'evening', label: 'Evening', ...(k === 'five' ? { nextAtMs: now() + 4 * 60_000 } : {}) },
       { id: 'lateNight', label: 'Late Night' },
     ];
     if (k === 'five' || k === 'many') {
-      const five = [...three, { id: 'movie', label: 'Movie' }, { id: 'goodnight', label: 'Goodnight' }];
+      const five = [...four, { id: 'movie', label: 'Movie' }];
       if (k === 'five') return five;
-      return [...five, { id: 'reading', label: 'Reading' }, { id: 'dinner', label: 'Dinner' }, { id: 'focusTime', label: 'Focus Time' }, { id: 'partyNight', label: 'Party Night' }];
+      return [...five, { id: 'goodnight', label: 'Goodnight' }, { id: 'reading', label: 'Reading' }, { id: 'dinner', label: 'Dinner' }, { id: 'focusTime', label: 'Focus Time' }, { id: 'partyNight', label: 'Party Night' }];
     }
-    return three;
+    return four;
   });
   mocks.set('wall2_apply_mood', async () => {
     await new Promise((resolve) => setTimeout(resolve, 400));

@@ -163,6 +163,21 @@
   height: 100%;
   display: block;
 }
+/* A mood the home app has not saved yet: quiet, dashed, the art faded; a tap sends nothing. */
+.mood-btn.unsaved {
+  border: 2px dashed rgba(255, 255, 255, 0.28);
+  cursor: default;
+}
+.mood-btn.unsaved .mood-art {
+  opacity: 0.28;
+  filter: saturate(0.4);
+}
+.mood-btn.unsaved .mood-name {
+  color: var(--dim);
+}
+.mood-btn.unsaved:enabled:active {
+  transform: none;
+}
 .mood-btn.last {
   box-shadow: 0 0 0 2px var(--cyan), 0 0 40px -8px var(--cyan);
 }
@@ -209,7 +224,7 @@
   border-radius: 8px;
   background: var(--cyan);
   color: #06041a;
-  font: 600 14px/1 var(--disp);
+  font: 600 16px/1 var(--disp);
   letter-spacing: 0.12em;
   text-transform: uppercase;
   text-decoration: none;
@@ -1276,9 +1291,9 @@
   color: var(--lw-soft);
 }
 
-/* Moods: three large and a narrow More card; the cards slide in slowly. */
+/* Moods: four large and a narrow More card; the cards slide in slowly. */
 .mood-row.paged {
-  grid-template-columns: repeat(3, minmax(0, 1fr)) 124px;
+  grid-template-columns: repeat(4, minmax(0, 1fr)) 124px;
 }
 .mood-row.paged .mood-btn {
   animation: mood-slide 500ms ease-out;

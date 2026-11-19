@@ -4,16 +4,22 @@
 //! `wall2_feeds.rs` and is never put in an error message. Nothing here runs unless the
 //! front end calls it, and the front end calls `wall2_apply_mood` only on a tap.
 
-use crate::wall2_feeds::{agent, describe, get_json, read_base, require_ok};
+use crate::wall2_feeds::{agent, describe, get_json, read_base, read_body, require_ok};
 use serde::Serialize;
 use serde_json::Value;
 
 const MAX_MOODS: usize = 12;
+/// Applying a mood can wait inside the home app (Still Working pauses before its Lutron
+/// levels, about 6 to 7 seconds in all), so it gets longer than the shared agent's timeout.
+const APPLY_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(20);
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct Mood {
     pub id: String,
     pub label: String,
+    /// False only when the home app says the mood was never saved (`saved: false`); a card
+    /// for it is drawn quiet and applying it sends nothing. Anything else counts as saved.
+    pub saved: bool,
 }
 
 /// `^[A-Za-z][A-Za-z0-9]{0,31}$`
@@ -53,8 +59,21 @@ fn pick_moods(body: &Value) -> Vec<Mood> {
     map.keys()
         .filter(|k| valid_mood_id(k))
         .take(MAX_MOODS)
-        .map(|k| Mood { id: k.clone(), label: mood_label(k) })
+        .map(|k| Mood { id: k.clone(), label: mood_label(k), saved: map.get(k).and_then(|m| m.get("saved")) != Some(&Value::Bool(false)) })
         .collect()
+}
+
+/// What a successful apply tells the page. `superseded` is true when the home app answered
+/// `{"ok":true,"superseded":true}`: a newer press took over, so this one did not run and the
+/// page must not mark its mood as set.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct ApplyOutcome {
+    pub superseded: bool,
+}
+
+/// Only the exact boolean true counts; anything else (missing, a string, a number) is a normal apply.
+fn apply_outcome(body: &Value) -> ApplyOutcome {
+    ApplyOutcome { superseded: body.get("superseded") == Some(&Value::Bool(true)) }
 }
 
 fn apply_error(code: u16) -> &'static str {
@@ -77,7 +96,7 @@ pub async fn wall2_moods(app: tauri::AppHandle) -> Result<Vec<Mood>, String> {
 }
 
 #[tauri::command]
-pub async fn wall2_apply_mood(app: tauri::AppHandle, id: String) -> Result<(), String> {
+pub async fn wall2_apply_mood(app: tauri::AppHandle, id: String) -> Result<ApplyOutcome, String> {
     if !valid_mood_id(&id) {
         return Err("Unknown mood".to_string());
     }
@@ -86,9 +105,15 @@ pub async fn wall2_apply_mood(app: tauri::AppHandle, id: String) -> Result<(), S
         let result = agent()
             .post(&format!("{base}/api/moods/{id}/apply"))
             .set("Accept", "application/json")
+            .timeout(APPLY_TIMEOUT)
             .call();
         match result {
-            Ok(resp) => require_ok(resp).map(|_| ()).map_err(|_| apply_error(0).to_string()),
+            Ok(resp) => {
+                let resp = require_ok(resp).map_err(|_| apply_error(0).to_string())?;
+                // A body that cannot be read or parsed still means the mood ran.
+                let body = read_body(resp).ok().and_then(|b| serde_json::from_slice::<Value>(&b).ok()).unwrap_or(Value::Null);
+                Ok(apply_outcome(&body))
+            }
             Err(ureq::Error::Status(code, _)) => Err(apply_error(code).to_string()),
             Err(e) => {
                 let _ = describe(e);
@@ -139,6 +164,22 @@ mod tests {
         let body = json!({"moods": {"lateNight": {}, "day": {}, "evening": {}}});
         let ids: Vec<String> = pick_moods(&body).into_iter().map(|m| m.id).collect();
         assert_eq!(ids, vec!["lateNight", "day", "evening"]);
+    }
+
+    #[test]
+    fn reads_the_saved_flag() {
+        let body = json!({"moods": {"stillWorking": {"saved": false}, "day": {"saved": true}, "evening": {}, "lateNight": {"saved": "no"}}});
+        let saved: Vec<bool> = pick_moods(&body).into_iter().map(|m| m.saved).collect();
+        assert_eq!(saved, vec![false, true, true, true]);
+    }
+
+    #[test]
+    fn reads_superseded_from_the_apply_answer() {
+        assert!(apply_outcome(&json!({"ok": true, "superseded": true})).superseded);
+        assert!(!apply_outcome(&json!({"ok": true})).superseded);
+        assert!(!apply_outcome(&json!({"ok": true, "superseded": false})).superseded);
+        assert!(!apply_outcome(&json!({"ok": true, "superseded": "true"})).superseded);
+        assert!(!apply_outcome(&Value::Null).superseded);
     }
 
     #[test]

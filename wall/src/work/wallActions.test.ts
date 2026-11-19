@@ -129,6 +129,13 @@ it('mixer, pause everything, moods and OmniGent each call their existing command
   }
 });
 
+it('a mood key says a newer mood took over when the home app answers superseded', async () => {
+  track('wall2_apply_mood', { superseded: true });
+  expect(await runWallAction('mood:evening')).toBe('A newer mood took over');
+  track('wall2_apply_mood', { superseded: false });
+  expect(await runWallAction('mood:evening')).toBe('Lights set');
+});
+
 const music = [{ key: 'k1', name: 'Evening Jazz', favorite: null, volume: 20 }];
 const sonos = (readAtMs = NOW) => ({ speakers: [], groups: [], presets: [], music, controls: [], scenes: [], sleepTimers: [], nowPlaying: null, currentGroup: null, readAtMs });
 

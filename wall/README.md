@@ -429,14 +429,16 @@ row (`home/Rooms.tsx`) and the House line render nothing until the home app read
 - **Columns** are fixed (`.home-wing` 1, `.home-centre` 2, `.home-right` 3), so a zone
   that renders nothing never shifts the others.
 - **Mood cards** (`home/Moods.tsx`, `home/MoodArt.tsx`): one card per mood the home
-  app defines, in its order (today Day, Evening and Late Night). Each card has painted
-  art drawn as one SVG (Day a sun, Evening a striped sunset, Late Night a moon and
+  app defines, in its order (today Still Working, Day, Evening and Late Night). Each card
+  has painted art drawn as one SVG (Still Working a lit bulb rising from the far ridge on
+  a bright blue night, Day a sun, Evening a striped sunset, Late Night a moon and
   stars; Movie and Goodnight are drawn too for when they exist, and any other mood gets
-  a lamp glow) and the concept's line under the name where it has one. Nothing fakes a
-  mood the home app lacks. The last mood tapped carries an "On now" tag and a cyan ring.
-  The cards are 150 px tall in one row; up to six share its width, and with more than
-  six each keeps a sixth and the row scrolls sideways (the mouse wheel scrolls it), so
-  the Sound block keeps its room. When the home app sends a schedule (`nextAtMs` on a
+  a lamp glow) and the concept's line under the name where it has one (Still Working:
+  "bright and focused"). Nothing fakes a mood the home app lacks. The last mood tapped
+  carries an "On now" tag and a cyan ring. The cards are 150 px tall in one row; up to
+  four share its width (277 px each beside a More card, 312 px with no More card), and
+  with more than four a narrow More card follows and a click or the wheel slides by four,
+  so the Sound block keeps its room. When the home app sends a schedule (`nextAtMs` on a
   mood; it does not yet), a mood due within the hour says "In N min". With Sonos not
   set up, not reachable or loading the cards grow to 300 px into the room it leaves.
 
@@ -454,6 +456,19 @@ compact card says "No moods set up in the home app yet". "On now" marks the last
 tapped on this wall; a mood set from a phone or a routine shows only once the home feed
 carries the active mood.
 
+**Still Working, not saved yet.** The home app sends `saved: false` on a mood in `GET
+/api/moods` until that mood has been saved from its Moods editor (Still Working until the
+first save). The wall draws that card dashed and quiet, its art faded, with "Not set up
+yet" in place of its line, and a tap sends nothing (the home app would answer 409). A mood
+without the flag counts as saved. The flag rides with the list in `wall2-moods-cache`, so
+the quiet card stays quiet while the home app is away. Applying Still Working takes about
+6 to 7 seconds in the home app (it waits before the Lutron levels), so `wall2_apply_mood`
+allows 20 seconds. A newer press that supersedes an older one makes the home app answer
+`{ok:true, superseded:true}`: the command returns `{superseded:true}` (only the exact
+boolean true counts) and the page then shows no check, no "On now" and does not save the
+mood as the last one, because that press did not run; the newer press's own answer marks
+its mood. The Unwind room chips skip their mark the same way, and a mood key says "A newer mood took over" instead of "Lights set". The "On now" and "In N min" tags are 16 px.
+
 The commands are `wall2_moods` and `wall2_apply_mood` in
 `src-tauri/src/wall2_home.rs`. They read `homeBaseUrl` from `feeds.json` like the
 network tile and call two home app routes: `GET /api/moods` (the keys of `moods`
@@ -461,7 +476,8 @@ are the ids) and `POST /api/moods/<id>/apply` with no body. Ids must match
 `^[A-Za-z][A-Za-z0-9]{0,31}$` and are checked before any request. Errors are
 short and never hold the address: 409 reads "Moods are not set up in the home app
 yet", 404 "Unknown mood", anything else "Could not set the mood". The requests
-use the same 8 second timeout, 1 MB cap and no redirects as the other feeds. With
+use the same 8 second timeout, 1 MB cap and no redirects as the other feeds (the apply
+request alone waits 20 seconds). With
 no `homeBaseUrl` the row says "Not set up"; with no moods it shows the one compact card.
 
 ### Sound on Home
@@ -658,7 +674,8 @@ read and a failed second try of that kind: the dimmed card with its line) or
 nothing shown). A dev review frame (`?hz=&at=`) shortens the 5 second wait to a quarter of
 a second, so these states show at once in the gallery and the fit check; the real timers
 are proven by the unit tests;
-`?moods=five|many|none|off|down` sets the mood cards.
+`?moods=five|many|none|off|down|unsaved` sets the mood cards (Still Working always first;
+`unsaved` sends it with `saved: false`).
 
 **The Sonos log.** `wall2-sonos.log` and `wall2-sonos.log.1` in the app's log folder hold
 one line per failed read and one per successful read that took over 2 seconds:
@@ -714,7 +731,8 @@ fit:home`) builds a development bundle, opens Home at 16:36 in headless Chromium
 every chore a long title and checks that the right wing stays inside the 490 px band,
 that titles stay on one line, that three alert rows show and that no two tick hit areas
 overlap. It prints what it measured and exits 1 on any failure. `npm run fit-check`
-checks the Home centre too: the mood row and every part of the Sound card inside the
+checks the Home centre too (and `--area=still-working` the Still Working card, saved and
+not set up yet): the mood row and every part of the Sound card inside the
 band with Sound at its fullest (many moods, many speakers, long names, a sleep timer),
 typical, sparse, not reachable and not set up, the one status card when both sources are
 out, and the Speakers and More pop-outs open.
@@ -2707,10 +2725,10 @@ words: `not-configured`, `absent` (404, the route is not live yet), `failed`, `s
   per room (lit when its lights are on; the name and state on hover), under the weather
   row in the left third (see "Left third" above). Hidden while the routes are absent. The
   "Next" automation line is not built: the home app has no routine schedule yet.
-- **Moods** (`home/Moods.tsx`): three large cards; with more, a narrow More card shows
-  the next mood peeking, "N more" and dots, and a click or the wheel slides by three.
+- **Moods** (`home/Moods.tsx`): four large cards; with more, a narrow More card shows
+  the next mood peeking, "N more" and dots, and a click or the wheel slides by four.
   Later pages carry a Back arrow, and the last page's More card reads Back. The last
-  page shows the last three (the row stops at its end), so no card slot is left empty.
+  page shows the last four (the row stops at its end), so no card slot is left empty.
 - **Chores** (`home/Chores.tsx`): up to twenty tagged chores, five rows in view (three
   while alerts are open, since the shield card is taller then), a slim scrollbar and the
   wheel with the pointer over the list, and "N more can wait" under it.

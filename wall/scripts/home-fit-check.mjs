@@ -14,7 +14,7 @@
 //   drawer: the alert drawer stays inside the stage and below the top of the band (under
 //     the clock line);
 //   house: the house line fits the 458 by 215 area under the date and cuts no room name;
-//   moods: with a More card, each of the three large mood cards is at least 340 px wide.
+//   moods: with a More card, each of the four large mood cards is at least 270 px wide.
 // Prints what it measured and exits 1 on any failure. `--break=<name>` adds a stylesheet
 // that breaks one rule on purpose; `--self-test` runs every break and exits 0 only if each
 // one failed with its own FAIL line. `--shots=dir` saves a screenshot of each state.
@@ -39,7 +39,7 @@ const BREAKS = {
   rows: { css: '.home .chore-rows.fit3 { max-height: 200px !important; }', state: 'alerts', expect: /^FAIL chores: \d+ rows in view/m },
   drawer: { css: '.shield-drawer { top: -400px !important; bottom: auto !important; }', state: 'drawer', expect: /^FAIL drawer: /m },
   house: { css: '.home .house .house-line, .home .house .house-room { font-size: 30px !important; }', state: 'house', expect: /^FAIL house: /m },
-  moods: { css: '.mood-row.paged { grid-template-columns: repeat(4, minmax(0, 1fr)) 124px !important; }', state: 'moods', expect: /^FAIL moods: /m },
+  moods: { css: '.mood-row.paged { grid-template-columns: repeat(5, minmax(0, 1fr)) 124px !important; }', state: 'moods', expect: /^FAIL moods: /m },
 };
 
 if (flag('self-test')) {
@@ -194,8 +194,8 @@ setTimeout(() => {
       const cards = [...document.querySelectorAll('.home .mood-row .mood-btn')].map(box);
       const more = document.querySelector('.home .mood-more');
       if (!more) fail.push('moods: no More card');
-      if (cards.length !== 3) fail.push('moods: ' + cards.length + ' large cards, expected 3');
-      cards.forEach((c, i) => { if (c.w < 339.5) fail.push('moods: card ' + (i + 1) + ' is ' + c.w.toFixed(1) + ' px wide, under 340'); });
+      if (cards.length !== 4) fail.push('moods: ' + cards.length + ' large cards, expected 4');
+      cards.forEach((c, i) => { if (c.w < 269.5) fail.push('moods: card ' + (i + 1) + ' is ' + c.w.toFixed(1) + ' px wide, under 270'); });
       const row = document.querySelector('.home .mood-row');
       if (row && row.scrollWidth > row.clientWidth + 1) fail.push('moods: the row overflows');
       Object.assign(m, { cards: cards.map((c) => +c.w.toFixed(1)), more: more ? +box(more).w.toFixed(1) : null });
