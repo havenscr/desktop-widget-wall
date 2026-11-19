@@ -1,7 +1,7 @@
 // Tools, Accounts: the Light sync row (Pair, Test the light link, Forget). In each state its name, line, buttons and
 // note stay inside the drawer, text is 16 px or more, nothing is cut, and the row's line is never cut.
-const Q = (state, extra = '') => `?hz=work&at=${encodeURIComponent('2026-11-11T10:24:00-08:00')}&clock=review&weather=ok&tools=accounts&lightsync=${state}${extra}`;
-const ROW = '.tools-list[aria-label="Accounts"] [data-account="lightsync"]';
+const Q = (state, extra = '') => `?hz=work&at=${encodeURIComponent('2026-11-11T10:24:00-08:00')}&clock=review&weather=ok&tools=1&lightsync=${state}${extra}`;
+const ROW = '.tools-list[aria-label="Light sync"] [data-account="lightsync"]';
 
 // Runs in the page.
 function measureLightSyncRow() {

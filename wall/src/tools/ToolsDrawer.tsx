@@ -10,7 +10,7 @@ import { useSceneWeather } from '../weather/sceneSetting';
 import { errorText, isAbsent } from '../work/deckModel';
 import { joinKeys, reloadKeys, useKeysFeedStore, type Read } from '../work/keysFeed';
 import type { KeysSummary } from '../work/keysModel';
-import { Accounts } from './accounts';
+import { Accounts, LightSync } from './accounts';
 import { DeskToken } from './DeskToken';
 import { KeyLights } from './KeyLights';
 import { readText, readUnmountedSources, retrySource, SOURCE_NAMES, useSources, type SourceId, type SourceRow } from './sources';
@@ -315,6 +315,7 @@ function Drawer() {
         <div className="kl-stack">
           <Sources />
           <KeyLights ringed={ringKeys} />
+          <LightSync />
           <DeskToken ringed={ringDesk} />
         </div>
       </div>

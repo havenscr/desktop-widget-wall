@@ -24,7 +24,6 @@ beforeEach(() => {
   usePlaceStore.setState({ active: 'meet' });
   // The YouTube row asks too; these tests are about the calendar and Spotify rows, so YouTube sits at its first-run state.
   mocks.set('wall2_youtube_status', () => ({ setup: false, signedIn: false, reason: 'not set up', searchesLeft: null }));
-  mocks.set('wall2_lightsync_status', () => ({ paired: false, bridgeChanged: false, running: false, starting: false, lastError: null, stoppedHueSync: false }));
 });
 afterEach(() => {
   vi.useRealTimers();

@@ -421,12 +421,12 @@ function YoutubeRow({ yt, blocked }: { yt: ReturnType<typeof useYoutubeAccount>;
 }
 
 /** Light sync: pairing with the Hue bridge, a test of the light link, and Forget. Never shows a key or an address. */
-function LightSyncRow({ ls, blocked }: { ls: ReturnType<typeof useLightSync>; blocked: boolean }) {
+function LightSyncRow({ ls }: { ls: ReturnType<typeof useLightSync> }) {
   const icon = <IconBulb size={22} aria-hidden="true" />;
   const spin = <IconLoader2 className="tools-spin" size={18} aria-hidden="true" />;
   const FORGET_HOVER = 'Forget this pairing. The bridge keeps its own copy; remove it in the Hue app (Settings, Bridges, Entertainment).';
   const forgetBtn = <Btn label="Forget" icon={<IconTrash size={18} aria-hidden="true" />} disabled={ls.test.state === 'running'} onClick={ls.forget} hover={FORGET_HOVER} />;
-  const pairBtn = (label: string) => <Btn label={label} cy disabled={blocked} onClick={ls.pair} hover="Pairs the wall with the Hue bridge, for music light sync." />;
+  const pairBtn = (label: string) => <Btn label={label} cy onClick={ls.pair} hover="Pairs the wall with the Hue bridge, for music light sync." />;
   const row = (line: string, tone: Tone, hover: string | undefined, buttons: ReactNode, extra?: string | null) => (
     <>
       <Row icon={icon} name="Light sync" line={line} tone={tone} hover={hover} account="lightsync">
@@ -452,6 +452,20 @@ function LightSyncRow({ ls, blocked }: { ls: ReturnType<typeof useLightSync>; bl
   );
   const result = testing ? 'Testing the light link' : t.state === 'done' ? testLine(t.word) : null;
   return row(testing ? 'Testing' : 'Paired', 'plain', undefined, <>{testBtn}{forgetBtn}</>, ls.notice ?? result);
+}
+
+/** The Light sync block under the key lights: its own heading and the one row. */
+export function LightSync() {
+  const opened = useToolsStore((st) => st.opened);
+  const ls = useLightSync(opened);
+  return (
+    <div className="tools-block" data-section="lightsync">
+      <div className="tools-k sm">Light sync</div>
+      <ul className="tools-list" aria-label="Light sync">
+        <LightSyncRow ls={ls} />
+      </ul>
+    </div>
+  );
 }
 
 /** Under the YouTube row: the two links YouTube API Services asks for. The page sends only a kind word. */
@@ -481,7 +495,6 @@ export function Accounts() {
   const opened = useToolsStore((s) => s.opened);
   const sp = useSpotifyAccount(opened);
   const yt = useYoutubeAccount(opened);
-  const ls = useLightSync(opened);
   const accounts = m.data?.accounts ?? [];
   const openStatus = useOpenStatus(opened);
   const openLine = openStatus === 'failed' ? 'Could not check' : openStatus ? openWords[openStatus].line : 'Checking';
@@ -538,7 +551,6 @@ export function Accounts() {
         <YoutubeRow yt={yt} blocked={blocked} />
         {yt.editing && <YoutubeSetup onSaved={yt.saved} onCancel={() => yt.setEditing(false)} onEscape={yt.escapeForm} canForget={yt.status?.setup === true && !yt.status.signedIn} />}
         <YoutubeLinks openLink={yt.openLink} />
-        <LightSyncRow ls={ls} blocked={blocked || ls.test.state === 'running'} />
       </ul>
       {(m.notice || sp.notice || yt.notice || yt.brokenHint) && <div className="tools-note bad">{m.notice ?? sp.notice ?? yt.notice ?? yt.brokenHint}</div>}
     </>

@@ -3,7 +3,7 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { mocks } from '../bridge/tauri';
 import { usePlaceStore } from '../state/places';
 import { HoverTipLayer, resetTip } from '../ui/HoverTip';
-import { Accounts } from './accounts';
+import { LightSync } from './accounts';
 import { PAIR_PROMPT, TEST_WORDS } from './lightSync';
 import { resetTools } from './store';
 
@@ -36,7 +36,7 @@ const note = () => document.querySelector('[data-lightsync-note]')?.textContent 
 const open = async () => {
   render(
     <>
-      <Accounts />
+      <LightSync />
       <HoverTipLayer />
     </>,
   );
