@@ -20,7 +20,26 @@ import { mocks } from '../tauri';
  * `?pins=long` pins the five longest library labels. `?hide=fail`: the Hide screen control
  * answers that input cannot be watched, so its failure words show after a click; `?hide=on`:
  * it answers that the screens are hidden, so it reads Cancel hide after a click.
+ * `?zpreview=` is what My zones' hover card reads: `ok` (default: four zones, one rule, three used last,
+ * three windows stay), `long` (four 24 character program names and twelve windows staying), `norule`, `nowin` (no windows), `nobig` (no big screen) or
+ * `slow` (never answers, so the card says it is looking). `?keys=zones` is a set whose keys are My zones,
+ * Focus and Thirds.
  */
+const zonesPreview = (mode: string) => {
+  if (mode === 'nowin') throw 'no windows';
+  if (mode === 'nobig') throw 'no big screen';
+  if (mode === 'slow') return new Promise(() => undefined);
+  const zones = [
+    { n: 1, x: 0, y: 0, w: 0.31, h: 1 },
+    { n: 2, x: 0.31, y: 0, w: 0.49, h: 1 },
+    { n: 3, x: 0.8, y: 0, w: 0.2, h: 0.5 },
+    { n: 4, x: 0.8, y: 0.5, w: 0.2, h: 0.5 },
+  ];
+  const names = mode === 'long' ? ['Visual Studio Insiders 1', 'Power BI Desktop Beta 2', 'Microsoft Teams Classic', 'Outlook Calendar Wide 4'] : ['Code', 'Edge', 'Teams', 'Outlook'];
+  const moves = names.map((app, i) => ({ zone: i + 1, app, why: i === 0 && mode !== 'norule' ? 'rule' : 'recent' }));
+  return { zones, moves, stay: mode === 'long' ? 12 : 3 };
+};
+
 const key = (label: string, icon: string, action: string | null = null) => ({ label, icon, action });
 
 export function registerDeckMocks(): void {
@@ -34,6 +53,7 @@ export function registerDeckMocks(): void {
       return { moved: args?.layout === 'zones' ? 4 : 3, asked: args?.layout === 'zones' ? 4 : 3 };
     });
     mocks.set('wall2_arrange_undo', () => 3);
+    mocks.set('wall2_arrange_preview', () => zonesPreview(knob('zpreview') ?? 'ok'));
   }
 
   const mode = knob('keys') ?? 'typical';
@@ -113,6 +133,10 @@ export function registerDeckMocks(): void {
       autoId = 'lib-vscode';
       break;
     }
+    case 'zones':
+      sets = [{ ...app, id: 'zk', name: 'Layouts', keys: [key('My zones', 'window', 'layout:zones'), key('Focus', 'window', 'layout:focus'), key('Thirds', 'window', 'layout:thirds')] }, general];
+      autoId = 'zk';
+      break;
     case 'wrong':
       autoId = 'general';
       exe = 'notepad.exe';

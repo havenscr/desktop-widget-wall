@@ -1800,3 +1800,91 @@
 .deck-dots[hidden] {
   display: none;
 }
+
+/* My zones hover card (work/ZonesPreview.tsx): the big screen as a small map, in the shared hover card. */
+.hover-tip:has(.zp) {
+  max-width: 560px;
+}
+.zp {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font: 400 16px/1.4 var(--body);
+  color: var(--dim);
+}
+.zp-k {
+  font: 600 16px/1.2 var(--disp);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--dim);
+}
+.zp-t {
+  font: 600 18px/1.3 var(--disp);
+  color: var(--tx);
+}
+.zp-t b {
+  color: var(--cyan);
+  font-weight: 600;
+}
+.zp-map {
+  position: relative;
+  box-sizing: content-box;
+  flex: none;
+  background: rgba(7, 5, 26, 0.9);
+  border: 1px solid var(--edge);
+}
+.zp-zone {
+  position: absolute;
+  box-sizing: border-box;
+  border: 1px solid rgba(53, 230, 234, 0.55);
+  overflow: hidden;
+}
+.zp-zone.rule {
+  border-color: var(--amber);
+}
+.zp-zone.empty {
+  border-style: dashed;
+  border-color: var(--edge);
+}
+.zp-n {
+  position: absolute;
+  left: 5px;
+  top: 2px;
+  font: 600 16px/1.2 var(--disp);
+  color: var(--faint);
+}
+.zp-c {
+  position: absolute;
+  inset: 20px 0 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 0 4px;
+  text-align: center;
+}
+.zp-app {
+  max-width: 100%;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font: 600 16px/1.15 var(--disp);
+  color: var(--tx);
+}
+.zp-why {
+  max-width: 100%;
+  overflow: hidden;
+  white-space: nowrap;
+  font: 400 16px/1.15 var(--body);
+  color: var(--faint);
+}
+.zp-zone.rule .zp-why {
+  color: var(--amber);
+}
+.zp-f {
+  color: var(--dim);
+}
+.zp-f b {
+  color: var(--tx);
+  font-weight: 600;
+}

@@ -106,9 +106,26 @@ pub(crate) fn reading_order(zones: &[Rect]) -> Vec<usize> {
     order
 }
 
+/// Why a window landed in its zone.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Why {
+    /// A keys.json rule named this program for the zone.
+    Rule,
+    /// No rule applied: the next most recent window took the largest free zone.
+    Recent,
+}
+
+/// One window's placement: its index into the zone list (not the reading-order number) and why.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct Placement {
+    pub id: isize,
+    pub zone: usize,
+    pub why: Why,
+}
+
 /// Rules take their named zones first. Free zones then take remaining windows in z order,
 /// largest zone first. A repeated rule for a zone cannot displace the first assignment.
-pub(crate) fn assign(zones: &[Rect], windows: &[ZoneWindow], rules: &[ZoneApp]) -> Vec<(isize, Rect)> {
+pub(crate) fn assign_explained(zones: &[Rect], windows: &[ZoneWindow], rules: &[ZoneApp]) -> Vec<Placement> {
     let numbered = reading_order(zones);
     let mut used_zones = HashSet::new();
     let mut used_windows = HashSet::new();
@@ -123,14 +140,19 @@ pub(crate) fn assign(zones: &[Rect], windows: &[ZoneWindow], rules: &[ZoneApp]) 
         };
         used_zones.insert(zone_index);
         used_windows.insert(window.id);
-        out.push((window.id, zones[zone_index]));
+        out.push(Placement { id: window.id, zone: zone_index, why: Why::Rule });
     }
     let mut free: Vec<usize> = (0..zones.len()).filter(|i| !used_zones.contains(i)).collect();
     free.sort_by_key(|&i| (std::cmp::Reverse(zones[i].width() as i64 * zones[i].height() as i64), i));
     for (zone_index, window) in free.into_iter().zip(windows.iter().filter(|w| !used_windows.contains(&w.id))) {
-        out.push((window.id, zones[zone_index]));
+        out.push(Placement { id: window.id, zone: zone_index, why: Why::Recent });
     }
     out
+}
+
+/// The window-to-rectangle pairs the layout moves to: `assign_explained` without the reasons.
+pub(crate) fn assign(zones: &[Rect], windows: &[ZoneWindow], rules: &[ZoneApp]) -> Vec<(isize, Rect)> {
+    assign_explained(zones, windows, rules).into_iter().map(|p| (p.id, zones[p.zone])).collect()
 }
 
 fn number(v: &Value, names: &[&str]) -> Option<f64> {
