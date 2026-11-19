@@ -1355,3 +1355,14 @@
   margin-top: 0;
   align-self: center;
 }
+.meet-key {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.meet-key-in {
+  flex: 1;
+  min-width: 0;
+}
