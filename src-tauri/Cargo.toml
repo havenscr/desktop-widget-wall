@@ -96,6 +96,10 @@ ureq = "2.9"
 # Pinned TLS for the Hue bridge (wall2_lightsync): same rustls and ring as ureq in the lockfile.
 rustls = { version = "0.23.46", default-features = false, features = ["ring", "std", "tls12"] }
 urlencoding = "2.1"
+# Hue Entertainment stream (wall2_lightsync/stream.rs): pure Rust DTLS 1.2 with PSK, no OpenSSL.
+webrtc-dtls = { version = "=0.12.0", default-features = false }
+webrtc-util = { version = "=0.11.0", default-features = false, features = ["conn"] }
+tokio = { version = "=1.52.3", default-features = false, features = ["net", "time", "rt"] }
 
 # Recent Files - directory operations
 dirs = "5.0"

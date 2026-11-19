@@ -4177,6 +4177,7 @@ pub fn run() {
             wall2_lightsync::wall2_lightsync_status,
             wall2_lightsync::wall2_lightsync_pair,
             wall2_lightsync::wall2_lightsync_forget,
+            wall2_lightsync::wall2_lightsync_test,
             wall2_studio::wall2_office_off,
             wall2_onair::wall2_onair_show,
             wall2_onair::wall2_onair_mark,

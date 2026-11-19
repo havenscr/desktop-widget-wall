@@ -2,6 +2,7 @@ import { IconArrowLeft, IconArrowRight } from '@tabler/icons-react';
 import { useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { tip } from '../ui/HoverTip';
 import { clampIndex, nextLine } from './model';
+import { ShowProblem, useShowProblem } from './ShowProblem';
 import { useOnAirStore } from './store';
 
 /** Note sizes tried in turn, largest first, until every note fits. */
@@ -75,6 +76,8 @@ export interface NotesCardProps {
   /** A box's own position and width, and a control at the end of the heading. */
   style?: CSSProperties;
   action?: ReactNode;
+  /** Show this part instead of the saved current one (the idle page shows the first). */
+  index?: number;
 }
 
 /**
@@ -82,12 +85,13 @@ export interface NotesCardProps {
  * and what comes next. Notes that cannot fit even at the smallest size end in "+N more", whose
  * tooltip carries the rest.
  */
-export function NotesCard({ title, right, sizes = NOTE_SIZES, icon, className, style, action }: NotesCardProps = {}) {
+export function NotesCard({ title, right, sizes = NOTE_SIZES, icon, className, style, action, index }: NotesCardProps = {}) {
   const show = useOnAirStore((s) => s.show);
   const partIndex = useOnAirStore((s) => s.saved.partIndex);
   const goPart = useOnAirStore((s) => s.goPart);
   const parts = show?.state === 'ok' ? show.parts : [];
-  const current = clampIndex(partIndex, parts.length);
+  const current = clampIndex(index ?? partIndex, parts.length);
+  const problem = useShowProblem();
   const part = parts[current] ?? null;
   const notes = part?.notes ?? [];
   const listRef = useRef<HTMLUListElement | null>(null);
@@ -121,7 +125,10 @@ export function NotesCard({ title, right, sizes = NOTE_SIZES, icon, className, s
         </div>
       )}
       {!part ? (
-        <FormatHelp />
+        <>
+          {problem && <ShowProblem text={problem} />}
+          <FormatHelp />
+        </>
       ) : notes.length === 0 ? (
         <div className="oa-nonotes">
           <span className="oa-nonotes-t">No notes for this part</span>

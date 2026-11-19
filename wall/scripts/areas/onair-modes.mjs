@@ -1,8 +1,8 @@
-// The new On Air frame (development only, behind `?onair=v2`): the modes row, the Recording page and the Presenting page.
+// The On Air frame: the modes row, the Recording page, the Presenting page and the idle page (nothing on air).
 // Gallery states, fit variants, the `onair2` measurement and its deliberate breaks live here; the two big review scripts are not edited for it.
 
 const at = encodeURIComponent('2026-11-11T10:24:00-08:00');
-const HEAD = 'hz=onair&at=' + at + '&clock=review&weather=ok&screen=onair&onair=v2';
+const HEAD = 'hz=onair&at=' + at + '&clock=review&weather=ok&screen=onair';
 // A knob that is given replaces the default; the page reads the first of a repeated knob.
 const full = (knobs) => `${HEAD}${/(^|&)show=/.test(knobs) ? '' : '&show=typical'}${/(^|&)marks=/.test(knobs) ? '' : '&marks=2'}${knobs ? '&' + knobs : ''}`;
 const galleryQuery = (knobs) => full(knobs);
@@ -19,7 +19,7 @@ const KEYS = '.oa2-reckeys .key-tile';
 function measureOnAir2() {
   const fails = [];
   const root = document.querySelector('.oa2');
-  const want = new URLSearchParams(location.search).get('onair') === 'v2' && new URLSearchParams(location.search).get('screen') === 'onair';
+  const want = new URLSearchParams(location.search).get('screen') === 'onair';
   if (!root) return want ? ['on air v2: the new frame did not open'] : [];
   const r1 = (n) => Math.round(n * 10) / 10;
   const mode = root.getAttribute('data-mode');
@@ -31,6 +31,7 @@ function measureOnAir2() {
   };
   const boxes = {
     '.oa2-modes': [124, 24, 640, 40],
+    ...(mode === 'none' ? { '.oa2-idletimer': [124, 76, 640, 166], '.oa2-lastair': [124, 262, 640, 150], '.oa2-ready-1': [800, 24, 344, 268], '.oa2-ready-2': [1168, 24, 344, 268], '.oa2-ready-3': [1536, 24, 344, 268], '.oa2-idlenotes': [800, 308, 1080, 202], '.oa2-checklist': [1920, 24, 620, 190], '.oa2-lights-idle': [1920, 348, 620, 154] } : {}),
     ...(mode === 'rec' ? { '.oa2-marks': [124, 84, 640, 230], '.oa2-outline': [800, 24, 890, 486], '.oa2-take': [1720, 24, 820, 166], '.oa2-reckeys': [1720, 202, 820, 110], '.oa2-lights-rec': [1720, 328, 820, 154] } : {}),
     ...(mode === 'meet' ? { '.oa2-talk': [124, 76, 640, 166], '.oa2-callchips': [124, 250, 640, 36], '.oa2-meeting': [124, 298, 640, 212], '.oa2-speaker': [800, 24, 1080, 486], '.oa2-callkeys': [1920, 24, 620, 192], '.oa2-lights-meet': [1920, 348, 620, 154] } : {}),
   };
@@ -38,13 +39,6 @@ function measureOnAir2() {
   const expected = Object.keys(boxes).length;
   const found = Object.keys(boxes).filter((s) => document.querySelector('.oa2 ' + s)).length;
   if (found !== expected) fails.push('on air v2: ' + found + ' of ' + expected + ' blocks are on the ' + mode + ' page');
-  // The page for nothing on air is empty below the row: no other child of the frame, nothing drawn after it or before it, no text but the row's. (The Live page is measured by the onair-live area.)
-  if (mode === 'none') {
-    const others = [...root.children].filter((c) => c !== document.querySelector('.oa2 .oa2-modes'));
-    if (others.length > 0) fails.push('on air v2: the ' + 'nothing on air' + ' page has ' + others.length + ' block(s) below the modes row (it must be empty)');
-    const drawn = [getComputedStyle(root, '::after').content, getComputedStyle(root, '::before').content].filter((c) => c !== 'none' && c !== 'normal');
-    if (drawn.length > 0) fails.push('on air v2: the ' + 'nothing on air' + ' page draws ' + drawn[0] + ' below the modes row (it must be empty)');
-  }
   // Every block inside its table box (1 px of slack), and everything in it too.
   for (const [sel, [x, y, w, h]] of Object.entries(boxes)) {
     const el = document.querySelector('.oa2 ' + sel);
@@ -163,7 +157,8 @@ export default {
       state('Auto picks Recording over a call', `${REC}&call=teams&meetnow=1`, ['a recorder is running', 'Take timer', '!Held by hand']),
       state('held on Presenting while recording', `${REC}&call=teams&meetnow=1&oamode=meet`, ['Held by hand', 'Talk timer', 'Community talk: November']),
       state('Live picked from the browser camera and mic', 'callbrowserav=1&meet=none&yt=notsetup', ['mic or camera in use', '!Take timer', '!Talk timer']),
-      state('nothing on air', '', ['nothing is on air', '!Take timer', '!Talk timer']),
+      state('nothing on air', 'oalast=1', ['nothing is on air', '!Take timer', '!Talk timer', 'Show timer', 'Not started. It starts with a broadcast, a recording or a call.', 'Last time on air', 'Live for 58:12', '4 marks saved', 'Open marks.txt', 'Live on StreamYard', 'No broadcast scheduled on YouTube', 'Recording', 'No recorder running', 'Presenting', 'Needs a home app preset named On air.', 'Next show notes', 'Checklist', 'Lights preset:', 'Studio lights']),
+      state('nothing on air, no record yet', '', ['Nothing yet. It fills in when a show ends.', 'Needs a home app preset named Recording.']),
     ],
   },
   fit: {
@@ -171,7 +166,12 @@ export default {
       variant('Recording running', REC),
       variant('Recording paused', `${REC}&oapaused=1`),
       variant('Recording held with nothing on', 'oamode=rec'),
-      variant('nothing on air (empty below the row)', ''),
+      variant('nothing on air (the idle page)', 'oalast=1'),
+      variant('nothing on air, no record yet, no run of show file', 'show=missing'),
+      variant('nothing on air, Watt standing at x 1000', 'oalast=1&wattspot=1000'),
+      variant('Live, forty parts', 'oamode=live&yt=live&show=forty'),
+      variant('Live, marks.txt full after a click', 'oamode=live&yt=live&marks=full', { click: '.oa2-skrow2 .key-tile[aria-label="Mark a moment"]' }),
+      variant('Live, Watt standing at x 1000', 'oamode=live&yt=live&wattspot=1000'),
       variant('Presenting matched', MEET),
       variant('Presenting matched with a 120 character meeting title', `${MEET}&meetlong=1`),
       variant('Presenting unmatched', 'call=zoom&callsince=-12&meet=none'),
@@ -195,7 +195,7 @@ export default {
       'onair2-keys': { css: '.oa2 .key-tile { height: 30px !important; min-height: 0 !important; }', expect: /^ *FAIL on air v2: key tile ".*" is \d+ x \d+ px/m, appliesTo: isNamed('Recording running') },
       'onair2-box': { css: '.oa2-outline { width: 1100px !important; }', expect: /^ *FAIL on air v2: \.oa2-outline is at/m, appliesTo: isNamed('Recording running') },
       'onair2-empty': { css: '.oa2-empty-prompter::after { content: "x"; }', expect: /^ *FAIL on air v2: the empty prompter box draws/m, appliesTo: isNamed('Recording running') },
-      'onair2-empty-none': { css: '.oa2::after { content: "x"; display: block; }', expect: /^ *FAIL on air v2: the nothing on air page draws/m, appliesTo: isNamed('nothing on air (empty below the row)') },
+      'onair2-idle-box': { css: '.oa2-idlenotes { width: 1300px !important; }', expect: /^ *FAIL on air v2: \.oa2-idlenotes is at/m, appliesTo: isNamed('nothing on air (the idle page)') },
       'onair2-watt': { css: '.watt-sheep, .watt-hit { margin-top: -300px !important; }', expect: /^ *FAIL on air v2: Watt .* overlaps /m, appliesTo: isNamed('Recording, Watt standing at x 1000') },
     },
   },

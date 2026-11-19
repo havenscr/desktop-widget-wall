@@ -92,11 +92,30 @@ it('draws the Live page: chip, comments newest at the bottom, the foot, and the 
   expect(document.querySelector('.oa2-studiostatus')).not.toBeNull();
 });
 
-it('the run line is not drawn without parts', async () => {
-  show = { ...SHOW, state: 'missing', parts: [] };
+it('the run line says why there are no parts, and Open file asks for the file, in all three cases', async () => {
+  const opened: unknown[] = [];
+  mocks.set('wall2_onair_open', (args) => void opened.push(args));
+  const line = () => document.querySelector('.oa2-runline') as HTMLElement;
+  // The store is set directly: the five second floor between reads would skip a second read of the file here.
+  const put = (patch: Partial<ReturnType<typeof useOnAirStore.getState>>) => act(() => useOnAirStore.setState({ show: null, showError: null, showNote: null, ...patch }));
   await open();
-  await waitFor(() => expect(document.querySelector('.oa2-runline')).not.toBeNull());
-  expect((document.querySelector('.oa2-runline') as HTMLElement).hidden).toBe(true);
+  // A refused file: the reason itself.
+  put({ show: { ...SHOW, state: 'refused', parts: [], reason: 'run-of-show.txt is over 32 KB' } });
+  expect(line().hidden).toBe(false);
+  expect(line().textContent).toContain('run-of-show.txt is over 32 KB');
+  fireEvent.click(line().querySelector('button') as HTMLElement);
+  await waitFor(() => expect(opened).toEqual([{ which: 'show' }]));
+  // No file.
+  put({ show: { ...SHOW, state: 'missing', parts: [], reason: null } });
+  expect(line().textContent).toContain('No run-of-show.txt yet');
+  // A failed read, and a failed Open file.
+  put({ showError: 'Could not read run-of-show.txt' });
+  expect(line().textContent).toContain('Could not read run-of-show.txt');
+  put({ showNote: 'Could not open run-of-show.txt' });
+  expect(line().textContent).toContain('Could not open run-of-show.txt');
+  // Nothing wrong and nothing read yet: hidden.
+  put({});
+  expect(line().hidden).toBe(true);
 });
 
 it('says so when the comments cannot be read: no channel, signed out, refused', async () => {

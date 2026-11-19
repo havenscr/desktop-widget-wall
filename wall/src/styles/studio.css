@@ -169,12 +169,6 @@
   opacity: 0.65;
 }
 
-/* The block is 148 px (the older one was 134): the footnote under it keeps its place in the column by closing up
-   its gap and its line height (two lines of 19 px end at y 507, inside the column). */
-.oa-right > .oa-foot {
-  margin-top: -7px;
-  line-height: 19px;
-}
 /* A key light tile that carries a warning is already dashed and amber: the triangle would crowd the four tiles. */
 .st-switches .st-tg-warn {
   display: none;
