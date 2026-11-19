@@ -41,6 +41,8 @@ export function App() {
       <HorizonCanvas />
       <div className="veil" data-place={active} aria-hidden="true" />
       <WeatherOverlay />
+      {/* The sun row (ribbon/Ribbon.tsx draws into it): under Watt, who walks that band. */}
+      <div className="sun-layer" data-sun-layer="" aria-hidden="true" />
       <Watt />
       <div className="shell">
         <Rail />

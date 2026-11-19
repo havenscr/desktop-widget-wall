@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest';
-import { HIDDEN_NAMED, MIN_CHIP_PX, MORE_GAP, MORE_MIN_PX, hiddenNames, allDayChips, allDayText, allDayWidth, chipLayout, chips, focusBars, isAllDay, isLate, needleTip, hourLabels, hourText, needle, RIBBON_WIDTH, RX, shortTime, skyGradient, sunLabels, sunMarkerBox, RIBBON_LABEL_TOP, SUN_MARKER_W, ticks, wallHour } from './model';
+import { HIDDEN_NAMED, MIN_CHIP_PX, MORE_GAP, MORE_MIN_PX, hiddenNames, allDayChips, allDayText, allDayWidth, chipLayout, chips, focusBars, isAllDay, isLate, needleTip, hourLabels, hourText, labelBox, handleX, HANDLE_W, needle, RIBBON_WIDTH, RX, shortTime, skyGradient, sunLabels, sunMarkerBox, RIBBON_LABEL_TOP, SUN_MARKER_W, ticks, wallHour } from './model';
 import { sunTimes } from './sun';
 import { useFixedClock, usePacificTime } from './testZone';
 
@@ -100,30 +100,57 @@ it('leaves out a sun time outside 6 AM to midnight', () => {
   expect(sunLabels({ rise: null, set: null }, t('12:00'))).toEqual([]);
 });
 
-// The worst cases at this place (47.6 N): sunrise 7:55 AM, sunset 4:16 and 4:28 PM, 9:10 PM and the
-// made-up 4:05 PM, plus every minute within 10 minutes of each even hour.
-it('never lets a marker box touch an hour label or the needle pill, at any minute', () => {
-  const LABEL_HALF = 25;
-  const checked: string[] = [];
-  const minutes = new Set<number>();
-  for (let h = 6; h <= 23; h++) for (let m = 0; m < 60; m++) minutes.add(h * 60 + m);
-  for (const min of minutes) {
-    const hm = `${String(Math.floor(min / 60)).padStart(2, '0')}:${String(min % 60).padStart(2, '0')}`;
-    const m = sunLabels(mk(hm, hm), t('12:00'));
-    expect(m).toHaveLength(2);
-    const box = sunMarkerBox(m[0]!.x);
-    // Vertically: marker y -26 to -4, hour labels and needle pill inside y 6 to 28.
-    expect(box.bottom).toBeLessThanOrEqual(RIBBON_LABEL_TOP - 8);
+// Real boxes: every sun minute from 6:00 AM to midnight against every needle position (every 3 minutes),
+// the marker's box (sunMarkerBox) against each shown hour label's box (y 10 to 25) and the needle pill's
+// box (y 6 to 28), both from labelBox. Their boxes must keep an 8 px gap in at least one axis.
+it('keeps every marker box 8 px clear of every shown hour label and the needle pill, at every sun and needle minute', () => {
+  const GAP = 8;
+  const apart = (a: { left: number; right: number; top: number; bottom: number }, b: { left: number; right: number; top: number; bottom: number }) =>
+    Math.max(b.left - a.right, a.left - b.right, b.top - a.bottom, a.top - b.bottom);
+  const hm = (min: number) => `${String(Math.floor(min / 60)).padStart(2, '0')}:${String(min % 60).padStart(2, '0')}`;
+  let pairs = 0;
+  let nearest = Infinity;
+  for (let sunMin = 6 * 60; sunMin < 24 * 60; sunMin++) {
+    const marker = sunLabels(mk(hm(sunMin), hm(sunMin)), t('12:00'))[0]!;
+    const box = sunMarkerBox(marker.x);
     expect(box.right - box.left).toBe(SUN_MARKER_W);
-    expect(box.left).toBeGreaterThanOrEqual(0);
-    expect(box.right).toBeLessThanOrEqual(RIBBON_WIDTH);
-    if (min % 120 <= 10 || min % 120 >= 110) checked.push(hm);
+    for (let needleMin = 6 * 60; needleMin < 24 * 60; needleMin += 3) {
+      const n = needle(t(hm(needleMin)));
+      const pill = labelBox(n.x, n.text, 11);
+      const boxes = [
+        { left: pill.x, right: pill.x + pill.width, top: RIBBON_LABEL_TOP, bottom: 28 },
+        ...hourLabels(n.x).map((l) => {
+          const lb = labelBox(l.x, l.text);
+          return { left: lb.x, right: lb.x + lb.width, top: 10, bottom: 25 };
+        }),
+      ];
+      for (const o of boxes) {
+        pairs++;
+        nearest = Math.min(nearest, apart(box, o));
+      }
+    }
   }
-  expect(checked.length).toBeGreaterThan(100);
-  // Even where the marker sits right over an even hour's label (x equal), the rows stay 14 px apart.
-  const over = sunMarkerBox(RX(16));
-  expect(over.left).toBeLessThan(RX(16) - LABEL_HALF);
-  expect(10 - over.bottom).toBe(14);
+  expect(pairs).toBeGreaterThan(100_000);
+  expect(nearest).toBeGreaterThanOrEqual(GAP);
+});
+
+it('keeps the drawer handle off the hour labels and the needle pill, and does not move for a sun marker', () => {
+  const centre = Math.round(RIBBON_WIDTH / 2 - HANDLE_W / 2);
+  const hm = (min: number) => `${String(Math.floor(min / 60)).padStart(2, '0')}:${String(min % 60).padStart(2, '0')}`;
+  const blocksAt = (needleMin: number) => {
+    const n = needle(t(hm(needleMin)));
+    return [...hourLabels(n.x).map((l) => labelBox(l.x, l.text)), labelBox(n.x, n.text, 11)];
+  };
+  for (let needleMin = 6 * 60; needleMin < 24 * 60; needleMin += 7) {
+    const blocks = blocksAt(needleMin);
+    const x = handleX(blocks);
+    for (const b of blocks) expect(x < b.x + b.width + 4 && b.x - 4 < x + HANDLE_W).toBe(false);
+  }
+  // A sun marker standing right over the handle's centre (a 2:36 PM sunset) does not move it: the marker is in another row.
+  const m = sunLabels(mk('07:55', '14:36'), t('12:00'));
+  const over = sunMarkerBox(m[1]!.x);
+  expect(over.left < centre + HANDLE_W && centre < over.right).toBe(true);
+  expect(handleX(blocksAt(22 * 60))).toBe(centre);
 });
 
 it('keeps sunrise and sunset markers at least 8 hours apart on the worst dates', () => {

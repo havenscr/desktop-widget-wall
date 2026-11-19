@@ -54,7 +54,10 @@ it('draws today\'s calendar with past, now and live chips, and the needle with t
   expect(ndl.textContent).toBe('10:24');
   expect(ndl.style.left).toBe(`${RX(10.4)}px`);
   expect(r.container.querySelectorAll('.tk')).toHaveLength(19);
-  expect([...r.container.querySelectorAll('.sunm')].map((e) => [e.textContent, e.getAttribute('title')])).toEqual([['7:09', 'Sunrise 7:09 AM'], ['4:37', 'Sunset 4:37 PM']]);
+  expect([...r.container.querySelectorAll('.sunm')].map((e) => e.textContent)).toEqual(['7:09', '4:37']);
+  expect([...r.container.querySelectorAll('.sunm-hit')].map((e) => e.getAttribute('title'))).toEqual(['Sunrise 7:09 AM', 'Sunset 4:37 PM']);
+  // Outside the clipped ribbon.
+  expect(r.container.querySelector('.rib .sunm')).toBeNull();
 });
 
 it('moves the needle on the minute', async () => {

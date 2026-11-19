@@ -15,7 +15,7 @@ export const RIBBON_WIDTH = 2416;
 export const START_HOUR = 6;
 export const END_HOUR = 24;
 export const HOUR_PX = 128;
-/** Hour labels hide this close to the needle, sunrise and sunset labels this close. */
+/** Hour labels hide this close to the needle (the sun markers stand on their own row and never hide for it). */
 export const HOUR_LABEL_GAP = 70;
 /** Narrowest calendar chip, so a 5 minute event still shows. */
 export const MIN_CHIP_PX = 12;
@@ -683,8 +683,8 @@ export const HANDLE_H = 26;
 
 /**
  * Where the handle's hit area starts: centred on the strip, or the nearest place either side
- * (in 40 px steps) where it covers none of `blocks` (the hour and sun labels and the needle's
- * time pill), so it never sits on a label.
+ * (in 40 px steps) where it covers none of `blocks` (the hour labels and the needle's
+ * time pill; the sun markers are on their own row), so it never sits on a label.
  */
 export function handleX(blocks: readonly { x: number; width: number }[]): number {
   const centre = Math.round(RIBBON_WIDTH / 2 - HANDLE_W / 2);

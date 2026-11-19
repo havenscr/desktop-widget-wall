@@ -1,6 +1,9 @@
 import { Fragment, useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from 'react';
+import { createPortal } from 'react-dom';
 import { IconBolt, IconCalendar, IconHome, IconSunrise, IconSunset2 } from '@tabler/icons-react';
 import { invoke } from '../bridge/tauri';
+import { usePlaceStore } from '../state/places';
+import { useChipLayout } from '../signals/layout';
 import { useFocusStore } from '../focus/store';
 import { openTask } from '../tasks/model';
 import { hideTip, pinTip, tip } from '../ui/HoverTip';
@@ -8,7 +11,7 @@ import { AgentRow, agentBoxes } from './AgentRow';
 import { useAgentsStore } from '../agents/useAgents';
 import { useRemeasure } from '../ui/useRemeasure';
 import { useVisible } from '../ui/useVisible';
-import { allDayBarText, allDayChips, HANDLE_W, handleX, labelBox, allDayText, allDayWidth, calmLayout, chipLayout, chips, HIDDEN_NAMED, hiddenNames, dueLabelSpan, isLate, dueMarks, focusBars, hourLabels, msToNextMinute, needle, needleTip, overlapsAny, skyGradient, spanText, SUN_MARKER_W, sunLabels, sunMarkerBox, ticks, type Chip, type FoldChip, type MoreChip } from './model';
+import { allDayBarText, allDayChips, HANDLE_W, handleX, labelBox, allDayText, allDayWidth, calmLayout, chipLayout, chips, HIDDEN_NAMED, hiddenNames, dueLabelSpan, isLate, dueMarks, focusBars, hourLabels, msToNextMinute, needle, needleTip, overlapsAny, skyGradient, spanText, sunLabels, ticks, type Chip, type FoldChip, type MoreChip } from './model';
 import { AgentsToday } from './AgentsToday';
 import { DayDrawer } from './DayDrawer';
 import { DayLip } from './DayLip';
@@ -226,12 +229,32 @@ export function Ribbon({ kind, now = Date.now }: { kind: RibbonKind; now?: () =>
   // The panel needs the helper: hidden when it is not set up.
   const canPanel = calm && agents.status !== 'unconfigured';
   const openPanel = useCallback(() => setOverlay({ kind: 'panel' }), []);
-  // The handle keeps off the hour and sun labels and the needle's time pill.
-  const handleLeft = handleX([...hourLabels(n.x).map((l) => labelBox(l.x, l.text)), ...sunLabels(sun, t).map((l) => ({ x: sunMarkerBox(l.x).left, width: SUN_MARKER_W })), labelBox(n.x, n.text, 11)]);
+  // The handle keeps off the hour labels and the needle's time pill (the sun markers stand on their own row, outside the ribbon).
+  const handleLeft = handleX([...hourLabels(n.x).map((l) => labelBox(l.x, l.text)), labelBox(n.x, n.text, 11)]);
+  // The sun row stands over the horizon band, where Home's and Meet's leave banner also sits: while it shows, the markers go.
+  const bannerOn = useChipLayout((st) => st.banner);
+  const placeNow = usePlaceStore((st) => st.active);
+  const bannerInBand = bannerOn && placeNow !== 'work';
+  const sunMarks = bannerInBand ? [] : sunLabels(sun, t);
+  // Watt walks that band and draws in front of the markers, so they live in the stage's own layer under him (`.sun-layer`, App.tsx).
+  const [sunLayer, setSunLayer] = useState<Element | null>(null);
+  useLayoutEffect(() => setSunLayer(document.querySelector('[data-sun-layer]')), []);
   const openDrawer = useCallback((hour: number | null) => setOverlay((o) => (o?.kind === 'drawer' && hour === null ? null : { kind: 'drawer', hour })), []);
   // The handle moves between the strip and the drawer's top edge. Focus follows the drawer's own
   // rule (it takes focus on open and the strip's handle gets it back on close), so nothing here.
   const toggleByLip = useCallback(() => openDrawer(null), [openDrawer]);
+  const sunMarkers = sunMarks.map((l) => {
+    const SunIcon = l.kind === 'rise' ? IconSunrise : IconSunset2;
+    return (
+      <span key={l.kind} className="sunm" style={{ left: l.x }} aria-hidden="true">
+        <span className="sunm-pill">
+          <SunIcon size={18} stroke={1.8} aria-hidden="true" />
+          {l.text}
+        </span>
+        <i className="sunm-tick" />
+      </span>
+    );
+  });
   return (
     <>
       <section className={`${isLate(t) ? 'rib late' : 'rib'}${calm && allDay.length > 0 ? ' has-allday' : ''}`} data-kind={kind} aria-label="Today">
@@ -245,20 +268,6 @@ export function Ribbon({ kind, now = Date.now }: { kind: RibbonKind; now?: () =>
               {l.text}
             </span>
           ))}
-        </div>
-        <div aria-hidden="true">
-          {sunLabels(sun, t).map((l) => {
-            const SunIcon = l.kind === 'rise' ? IconSunrise : IconSunset2;
-            return (
-              <span key={l.kind} className="sunm" style={{ left: l.x }} title={l.tip}>
-                <span className="sunm-pill">
-                  <SunIcon size={18} stroke={1.8} aria-hidden="true" />
-                  {l.text}
-                </span>
-                <i className="sunm-tick" />
-              </span>
-            );
-          })}
         </div>
         <span className="li" style={{ top: 38 }} title="Today's calendar" aria-label="Today's calendar" role="img">
           <IconCalendar stroke={1.8} aria-hidden="true" />
@@ -421,6 +430,10 @@ export function Ribbon({ kind, now = Date.now }: { kind: RibbonKind; now?: () =>
           <b {...tip(() => needleTip(dayChips, t, day.calendar === 'ok'))}>{n.text}</b>
         </div>
       </section>
+      {sunLayer ? createPortal(sunMarkers, sunLayer) : <div className="sun-layer">{sunMarkers}</div>}
+      {sunMarks.map((l) => (
+        <span key={l.kind} className="sunm-hit" style={{ left: l.x }} title={l.tip} aria-hidden="true" />
+      ))}
       {calm && overlay?.kind !== 'drawer' && <DayLip open={false} x={handleLeft + HANDLE_W / 2 - LIP_INSET} onToggle={toggleByLip} />}
       {calm && overlay?.kind === 'drawer' && (
         <DayDrawer
