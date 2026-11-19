@@ -9,6 +9,7 @@ import {
   OFF_BUSY_EXTRA,
   backTip,
   OFF_FIXED,
+  SYNC_WIDTH,
   chipTip,
   fitMoodRow,
   rowModel,
@@ -17,6 +18,8 @@ import {
   type RowModel,
 } from './moodRow';
 import { useMoodsPolling } from './useMoodsPolling';
+import { PaletteStrip, SyncChip } from './SyncChip';
+import { isOn, useLightSync } from './lightsync/store';
 
 const LABEL_WORD = 'Office moods';
 /** The label pill's own parts: 9 px of padding each side, the 18 px bulb and its 8 px gap, letter spacing 3 px. */
@@ -147,7 +150,7 @@ export function OfficeMoods() {
     const body = cs.getPropertyValue('--body').trim() || 'sans-serif';
     const disp = cs.getPropertyValue('--disp').trim() || 'sans-serif';
     const m = measure(row, body, disp);
-    const next = fitMoodRow(m.names, m.label, m.off, m.back);
+    const next = fitMoodRow(m.names, m.label, m.off, m.back, SYNC_WIDTH);
     setFit((f) => (f.label === next.label && f.cap === next.cap && f.backIcon === next.backIcon && f.offIcon === next.offIcon && f.clip === next.clip ? f : next));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [key, fontsAt]);
@@ -157,8 +160,14 @@ export function OfficeMoods() {
   const click = (chip: ChipModel) => {
     // Nothing is sent while this PC may not write or a write is out; the native side checks again.
     if (row.blocked || row.waiting) return;
-    const st = useHome.getState();
-    void (chip.id === null ? st.applyOff() : st.applyMood(chip.id));
+    const ls = useLightSync.getState();
+    if (ls.starting || ls.stopping) return;
+    const apply = () => {
+      const st = useHome.getState();
+      return chip.id === null ? st.applyOff() : st.applyMood(chip.id);
+    };
+    // Sync running: it stops first, without Lights back; then the chosen mood (or Off) is applied.
+    void (isOn(ls) ? ls.stop().then(() => (useLightSync.getState().failure === null ? apply() : undefined)) : apply());
   };
   const goBack = () => {
     if (row.blocked || row.waiting || !row.canBack) return;
@@ -176,6 +185,8 @@ export function OfficeMoods() {
             <span>{LABEL_WORD}</span>
           </span>
         )}
+        <PaletteStrip />
+        <SyncChip blocked={false} />
         {row.chips.map((c) => (
           <Chip key={c.id ?? 'office-off'} chip={c} row={row} cap={fit.cap} iconOnly={c.id === null && fit.offIcon} onClick={() => click(c)} />
         ))}

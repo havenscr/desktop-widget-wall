@@ -3946,6 +3946,140 @@ button.sp-qrow:hover {
   outline: 3px solid var(--cyan);
   outline-offset: 2px;
 }
+/* Music sync: the first chip, a fixed 216 px (`SYNC_WIDTH`): the name starts and stops sync, the dots open the palette strip. Lit magenta while on. */
+.u-mood.u-sync {
+  box-sizing: border-box;
+  width: 216px;
+  min-width: 216px;
+  padding: 0;
+  gap: 0;
+  justify-content: flex-start;
+  overflow: hidden;
+  color: var(--tx);
+}
+.u-sync button {
+  all: unset;
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  height: 100%;
+  cursor: pointer;
+  font: 500 17px/1 var(--body);
+  color: inherit;
+}
+.u-sync-main {
+  flex: 1 1 auto;
+  min-width: 0;
+  gap: 8px;
+  padding: 0 8px 0 12px;
+}
+.u-sync-main svg {
+  flex: none;
+  color: var(--mag);
+}
+.u-sync-main .u-mood-ico {
+  width: 18px;
+}
+.u-sync-dots {
+  flex: none;
+  gap: 4px;
+  padding: 0 8px;
+  border-left: 1px solid var(--line);
+}
+.u-sync-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+}
+.u-sync-chev {
+  flex: none;
+  color: var(--dim);
+  transition: transform 200ms ease;
+  transform: rotate(180deg);
+}
+.u-sync.open .u-sync-chev {
+  transform: none;
+}
+.u-sync button:focus-visible {
+  outline: 3px solid var(--cyan);
+  outline-offset: -3px;
+  border-radius: 17px;
+}
+.u-mood.u-sync.lit {
+  background: rgba(52, 10, 38, 0.9);
+  border-color: var(--mag);
+  color: var(--tx);
+}
+.u-mood.u-sync.lit .u-sync-dots {
+  border-left-color: rgba(255, 61, 154, 0.5);
+}
+.u-mood.u-sync.failed {
+  border-color: var(--amber);
+}
+.u-mood.u-sync:hover,
+.u-mood.u-sync:focus-within {
+  border-color: rgba(255, 61, 154, 0.7);
+  color: var(--tx);
+}
+/* The palette strip: opens above the row, right edge on the row's, every palette named. */
+.u-pal-strip {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 10px);
+  display: flex;
+  gap: 6px;
+  padding: 6px;
+  border-radius: 25px;
+  border: 1px solid var(--line);
+  background: rgba(10, 7, 28, 0.92);
+  pointer-events: auto;
+  width: max-content;
+}
+.u-pal {
+  all: unset;
+  box-sizing: border-box;
+  pointer-events: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 34px;
+  padding: 0 10px 0 8px;
+  border-radius: 17px;
+  border: 1px solid var(--line);
+  background: rgba(15, 11, 42, 0.9);
+  color: var(--dim);
+  font: 500 17px/1 var(--body);
+  white-space: nowrap;
+  cursor: pointer;
+}
+.u-pal:hover,
+.u-pal:focus-visible {
+  border-color: rgba(83, 230, 235, 0.45);
+  color: var(--tx);
+}
+.u-pal:focus-visible {
+  outline: 3px solid var(--cyan);
+  outline-offset: 2px;
+}
+.u-pal.picked {
+  border-color: rgba(83, 230, 235, 0.65);
+  color: var(--cyan);
+}
+.u-pal.dis {
+  border-style: dashed;
+  color: var(--faint);
+  cursor: default;
+}
+.u-pal-sw {
+  flex: none;
+  width: 20px;
+  height: 14px;
+  border-radius: 7px;
+  border: 1px dashed rgba(183, 175, 214, 0.4);
+}
+.u-pal:not(.dis) .u-pal-sw {
+  border: 0;
+}
 /* A stale read: dimmed, the lit chip keeps only its outline (never shown as live). */
 .u-office-slot[data-stale='true'] .u-mood {
   opacity: 0.6;

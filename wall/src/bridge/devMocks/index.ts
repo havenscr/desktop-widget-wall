@@ -53,6 +53,7 @@ export function registerDevMocks(): void {
   registerYtLiveMocks();
   registerStudioMocks();
   registerStudioKeysMocks();
+  registerLightSyncMocks();
   mocks.set('wall2_build_info', () => ({ commit: 'dev', builtAt: '2026-11-13T09:05Z' }));
   registerLightSyncMocks();
   registerToolsMocks();

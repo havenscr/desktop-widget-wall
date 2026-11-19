@@ -1,3 +1,5 @@
+import { DEFAULT_LIGHT_SYNC, DEFAULT_PALETTE, clampSettings, isPaletteId, type LightSyncSettings, type PaletteId } from '../studio/lightsync/model';
+
 /** Wall 2 settings, read from localStorage. No settings screen yet. */
 export const SETTINGS_KEY = 'wall2-settings';
 
@@ -55,5 +57,39 @@ function safeStorage(): Storage | null {
     return typeof localStorage === 'undefined' ? null : localStorage;
   } catch {
     return null;
+  }
+}
+
+/** The per-PC light sync choice: the palette last picked and the tuning (`wall2.lightsync`). */
+export const LIGHT_SYNC_KEY = 'wall2.lightsync';
+
+export interface LightSyncChoice {
+  palette: PaletteId;
+  settings: LightSyncSettings;
+}
+
+/** Saved values, each checked; a missing, odd or unreadable one (a throwing `localStorage` too) takes the default. */
+export function loadLightSync(storage: Pick<Storage, 'getItem'> | null = safeStorage()): LightSyncChoice {
+  const out: LightSyncChoice = { palette: DEFAULT_PALETTE, settings: { ...DEFAULT_LIGHT_SYNC } };
+  try {
+    const raw = storage?.getItem(LIGHT_SYNC_KEY);
+    if (!raw) return out;
+    const saved = JSON.parse(raw) as Record<string, unknown> | null;
+    if (saved && typeof saved === 'object') {
+      // The custom palette is not pickable yet, so it is never restored.
+      if (isPaletteId(saved.palette) && saved.palette !== 'custom') out.palette = saved.palette;
+      out.settings = clampSettings(saved.settings);
+    }
+  } catch {
+    /* unreadable: use the defaults */
+  }
+  return out;
+}
+
+export function saveLightSync(choice: LightSyncChoice, storage: Pick<Storage, 'setItem'> | null = safeStorage()): void {
+  try {
+    storage?.setItem(LIGHT_SYNC_KEY, JSON.stringify(choice));
+  } catch {
+    /* a full or blocked store: the choice lasts until the page closes */
   }
 }
