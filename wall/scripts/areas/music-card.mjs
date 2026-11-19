@@ -70,19 +70,28 @@ function measureTallMusic() {
     if (cs.overflowY !== 'auto' && cs.overflowY !== 'scroll') continue;
     if (e.scrollWidth > e.clientWidth + 1) fails.push('listen: ' + ((e.className?.baseVal ?? e.className) || e.tagName) + ' scrolls sideways (content ' + e.scrollWidth + ' px in ' + e.clientWidth + ' px)');
   }
-  // The hover and focus ring of a tile (2 px outline, 3 px offset: 5 px past its cover) of the first and the third column lies inside its scroll area, sideways.
-  for (const grid of cardEl.querySelectorAll('.sp-grid3')) {
-    const sc = grid.closest('.sp-gscroll');
-    if (!sc) continue;
+  // The hover and focus ring of a tile (2 px outline, 3 px offset: 5 px past its cover) of the first and the last column lies inside its scroll area, sideways.
+  for (const grid of cardEl.querySelectorAll('.sp-scroll .sp-grid')) {
+    const sc = grid.closest('.sp-scroll');
     const sr = sc.getBoundingClientRect();
     const lo = sr.left + sc.clientLeft, hi = lo + sc.clientWidth;
+    const cols = getComputedStyle(grid).gridTemplateColumns.split(' ').length;
     const covers = [...grid.querySelectorAll('.sp-tilecover')];
     for (const [i, c] of covers.entries()) {
-      if (i % 3 === 1) continue;
+      if (i % cols !== 0 && i % cols !== cols - 1) continue;
       const r = c.getBoundingClientRect();
+      if (r.width === 0) continue;
       if (r.left - 5 < lo - 0.5 || r.right + 5 > hi + 0.5) fails.push('listen: the hover ring of tile ' + (i + 1) + ' is cut by its scroll area (ring ' + Math.round(r.left - 5) + ' to ' + Math.round(r.right + 5) + ', area ' + Math.round(lo) + ' to ' + Math.round(hi) + ')');
     }
   }
+  // The Library row fits the card (its tabs do not scroll), and the focus ring (3 px outline, 2 px offset: 5 px) of the first chip and the Library button lies inside .sp-body.
+  const places = cardEl.querySelector('.mu-places');
+  if (places && places.scrollWidth > places.clientWidth + 1) fails.push('listen: the Library row does not fit the card (tabs ' + places.scrollWidth + ' px in ' + places.clientWidth + ' px)');
+  const body = cardEl.querySelector('.sp-body')?.getBoundingClientRect();
+  const first = cardEl.querySelector('.mu-chiplist button')?.getBoundingClientRect();
+  const leave = cardEl.querySelector('.mu-leave')?.getBoundingClientRect();
+  if (body && first && first.left - 5 < body.left - 0.5) fails.push('listen: the focus ring of the first chip is cut at the left by ' + Math.round(body.left - (first.left - 5)) + ' px');
+  if (body && leave && leave.right + 5 > body.right + 0.5) fails.push('listen: the focus ring of the Library button is cut at the right by ' + Math.round(leave.right + 5 - body.right) + ' px');
   // YouTube Music search shows its results region (the search ran on Enter).
   // At rest the card is today's 800 by 462 (YouTube Music's own height aside), with the Play on chip and the round button on one line.
   if (card && !tall && !cardEl.classList.contains('yt') && (Math.abs(card.width - 800) > 1.5 || Math.abs(card.height - 462) > 1.5)) fails.push('listen: the resting card is ' + Math.round(card.width) + ' by ' + Math.round(card.height) + ' (800 by 462)');
@@ -119,7 +128,7 @@ export default {
     state('tall music: open on Playlists', 'hz=unwind&at=2026-11-11T22%3A30%3A00-08%3A00&clock=review&weather=ok&audio=demo', ['!Which player the wall follows', 'Up next', 'Road Trip 8'], '.sp-grow'),
     state('tall music: a playlist opened', 'hz=unwind&at=2026-11-11T22%3A30%3A00-08%3A00&clock=review&weather=ok&audio=demo', ['Lantern Song 9', 'Shuffle', '58 songs', 'Playlists'], '.sp-grow >> .sp-tile'),
     state('tall music: search in groups', 'hz=unwind&at=2026-11-11T22%3A30%3A00-08%3A00&clock=review&weather=ok&audio=demo', ['Songs', 'Albums', 'Playlists', 'Track 1', 'Album 1', 'Playlist 1'], '.sp-grow >> type:.sp-search input=road'),
-    state('tall music: Up next', 'hz=unwind&at=2026-11-11T22%3A30%3A00-08%3A00&clock=review&weather=ok&audio=demo', ['Playing now', 'Spotify sets the order. A click skips ahead to that song.', 'Lantern Song 2'], '.sp-grow >> .sp-tabs button:nth-child(5)'),
+    state('tall music: Up next', 'hz=unwind&at=2026-11-11T22%3A30%3A00-08%3A00&clock=review&weather=ok&audio=demo', ['Playing now', 'Spotify sets the order. A click skips ahead to that song.', 'Lantern Song 2'], '.sp-grow >> .mu-places button:nth-child(5)'),
     state('tall music: time bar dragged', 'hz=unwind&at=2026-11-11T22%3A30%3A00-08%3A00&clock=review&weather=ok&audio=demo', ['Lantern Song 1', '3:01', '!1:05'], '.sp-grow >> drag:.sp-seek@2250,606'),
     state('tall music: Play on open', 'hz=unwind&at=2026-11-11T22%3A30%3A00-08%3A00&clock=review&weather=ok&audio=demo', ['Kitchen speaker', 'Phone', 'Computer, playing now', 'A phone or speaker shows here only while its Spotify is awake.'], '.sp-grow >> .sp-dev'),
     state('tall music: Play on, music on a speaker', 'hz=unwind&at=2026-11-11T22%3A30%3A00-08%3A00&clock=review&weather=ok&spotifyplay=speaker', ['Speaker, playing now', 'Play on'], '.sp-grow >> .sp-dev'),
@@ -130,8 +139,9 @@ export default {
     state('tall music: long names, a playlist opened', 'hz=unwind&at=2026-11-11T10%3A24%3A00-08%3A00&clock=review&weather=ok&long=1&media=long&spotify=long', ['240 songs', 'Lantern Song 9, an extremely long name'], '.sp-grow >> .sp-tile'),
     state('tall music pictures: open on Playlists', 'hz=unwind&at=2026-11-11T22%3A30%3A00-08%3A00&clock=review&weather=ok&audio=demo&spotify=picture', ['Road Trip 10', '!Which player the wall follows'], '.sp-grow'),
     state('tall music pictures: a playlist opened', 'hz=unwind&at=2026-11-11T22%3A30%3A00-08%3A00&clock=review&weather=ok&audio=demo&spotify=picture', ['Lantern Song 9', 'Shuffle', 'Playlists'], '.sp-grow >> .sp-tile'),
-    state('tall music pictures: search in groups', 'hz=unwind&at=2026-11-11T22%3A30%3A00-08%3A00&clock=review&weather=ok&audio=demo&spotify=picture', ['Track 6', 'Album 3', 'Playlist 3', '3:00'], '.sp-grow >> type:.sp-search input=night'),
-    state('tall music pictures: Up next', 'hz=unwind&at=2026-11-11T22%3A30%3A00-08%3A00&clock=review&weather=ok&audio=demo&spotify=picture', ['Playing now', 'Lantern Song 2'], '.sp-grow >> .sp-tabs button:nth-child(5)'),
+    state('tall music pictures: search, chips and the All view', 'hz=unwind&at=2026-11-11T22%3A30%3A00-08%3A00&clock=review&weather=ok&audio=demo&spotify=picture', ['Track 6', 'Album 3', 'Playlist 3', '3:00'], '.sp-grow >> type:.sp-search input=night'),
+    state('music pictures: search at rest, the All view', 'hz=unwind&at=2026-11-11T22%3A30%3A00-08%3A00&clock=review&weather=ok&audio=demo&spotify=picture', ['Playlist 3', 'See all'], 'type:.sp-search input=night'),
+    state('tall music pictures: Up next', 'hz=unwind&at=2026-11-11T22%3A30%3A00-08%3A00&clock=review&weather=ok&audio=demo&spotify=picture', ['Playing now', 'Lantern Song 2'], '.sp-grow >> .mu-places button:nth-child(5)'),
     state('tall music pictures: Play on open', 'hz=unwind&at=2026-11-11T22%3A30%3A00-08%3A00&clock=review&weather=ok&audio=demo&spotify=picture', ['Kitchen speaker', 'Phone'], '.sp-grow >> .sp-dev'),
     state('tall music: Spotify not answering', 'hz=unwind&at=2026-11-11T22%3A30%3A00-08%3A00&clock=review&weather=ok&spotify=down', 'Spotify is not answering right now.', '.sp-grow'),
     state('tall music: nothing playing', 'hz=unwind&at=2026-11-11T22%3A30%3A00-08%3A00&clock=review&weather=ok&media=none&spotifyplay=none', ['Nothing playing', 'Road Trip 1'], '.sp-grow'),
@@ -147,7 +157,7 @@ export default {
     tallVariant('the songs of a 2000 song playlist', '&spotify=heavy', '.sp-grow >> .sp-tile'),
     tallVariant('search in groups', '&audio=demo', '.sp-grow >> type:.sp-search input=road'),
     tallVariant('YouTube Music, search in groups', '&audio=demo&youtube=in', '.sp-switch button:nth-child(2) >> .sp-grow >> type:.sp-search input=road >> key:.yt-search input=Enter'),
-    tallVariant('Up next', '&audio=demo', '.sp-grow >> .sp-tabs button:nth-child(5)'),
+    tallVariant('Up next', '&audio=demo', '.sp-grow >> .mu-places button:nth-child(5)'),
     tallVariant('Play on open', '&audio=demo', '.sp-grow >> .sp-dev'),
     tallVariant('Play on, nothing awake', '&spotify=nodevices&spotifyplay=none&media=none', '.sp-grow >> .sp-dev'),
     tallVariant('starting Spotify', '&spotify=starting', '.sp-grow >> .sp-tile >> .sp-shbtns .sp-btn.fill'),
@@ -158,6 +168,10 @@ export default {
     tallVariant('Spotify not answering', '&spotify=down', '.sp-grow'),
     tallVariant('signed out', '&spotify=signedout', '.sp-grow'),
     { name: REST, q: fitQuery('&audio=demo'), checks: ['.sp-card'], listen: true },
+    { name: 'Listen, the resting card, a search: chip row and the All view', q: fitQuery('&audio=demo&spotify=picture'), checks: ['.sp-card'], click: 'type:.sp-search input=night', listen: true },
+    { name: 'Listen, the resting card, a search: the Albums chip', q: fitQuery('&audio=demo&spotify=picture'), checks: ['.sp-card'], click: 'type:.sp-search input=night >> .mu-chip:nth-child(3)', listen: true },
+    tallVariant('a search: chip row and the All view', '&audio=demo&spotify=picture', '.sp-grow >> type:.sp-search input=night'),
+    tallVariant('a search: the Songs chip', '&audio=demo&spotify=picture', '.sp-grow >> type:.sp-search input=night >> .mu-chip:nth-child(4)'),
     { name: 'Listen, the tall view, a playlist that is not his', q: fitQuery('&audio=demo&spotify=notyours'), checks: ['.sp-card'], click: '.sp-grow >> .sp-tile' },
     { name: 'Listen, the resting card, a playlist that is not his', q: fitQuery('&audio=demo&spotify=notyours'), checks: ['.sp-card'], click: '.sp-tile', listen: true },
     { name: 'Sky layers, Listen at night, the tall view open, the moon in open sky', q: fitQuery('&audio=demo', night), checks: ['.sp-card'], click: '.sp-grow', sky: 'moon', moonAt: '760,352,44' },
@@ -188,8 +202,10 @@ export default {
       'tall-pop': { css: '.sp-devices { right: -700px !important; }', expect: /^ *FAIL listen: the Play on list is at /m, appliesTo: (v) => v.name === 'Listen, the tall view, Play on open' },
       'tall-btns': { css: '.sp-shbtns .sp-btn { flex: none !important; padding: 0 34px !important; }', expect: /^ *FAIL listen tall: .* runs past its column by \d+ px/m, appliesTo: (v) => v.name === 'Listen, the tall view, a playlist opened' },
       // A moon forced into the open view is not drawn at all (the card claims its box), so the night check finds none.
-      'tall-hscroll': { css: '.sp-grid3 { margin-right: -12px !important; }', expect: /^ *FAIL listen: sp-gscroll scrolls sideways/m, appliesTo: (v) => v.name === 'Listen, the tall view, search in groups' },
-      'tall-ring': { css: '.sp-grid3 { padding-right: 0 !important; }', expect: /^ *FAIL listen: the hover ring of tile 3 is cut/m, appliesTo: (v) => v.name === 'Listen, the tall view, search in groups' },
+      'tall-hscroll': { css: '.sp-scroll .mu-row { margin-right: -12px !important; }', expect: /^ *FAIL listen: sp-scroll scrolls sideways/m, appliesTo: (v) => v.name === 'Listen, the tall view, search in groups' },
+      'tall-ring': { css: '.sp-card.tall .sp-scroll { padding-right: 0 !important; margin-right: 0 !important; }', expect: /^ *FAIL listen: the hover ring of tile \d+ is cut/m, appliesTo: (v) => v.name === 'Listen, the tall view, search in groups' },
+      'chip-ring': { css: '.mu-chips { padding: 0 !important; }', expect: /^ *FAIL listen: the focus ring of the first chip is cut/m, appliesTo: (v) => v.name === 'Listen, the resting card, a search: chip row and the All view' },
+      'lib-row': { css: '.mu-places button { padding: 0 40px !important; }', expect: /^ *FAIL listen: the Library row does not fit the card/m, appliesTo: (v) => v.name === REST },
       'yt-search-enter': { css: '[aria-label="Search results"] { display: none !important; }', expect: /^ *FAIL listen: YouTube Music search shows no results region/m, appliesTo: (v) => v.name === YT_SEARCH },
       'tall-moon': { query: '&skymoon=2200,300,44', expect: /^ *FAIL sky layers: no moon drawn at night/m, appliesTo: (v) => v.name === 'Sky layers, Listen at night, the tall view open, the moon in open sky' },
     },

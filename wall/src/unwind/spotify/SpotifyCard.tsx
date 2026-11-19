@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type UIEvent } from 'react';
+import { useCallback, useEffect, useRef, useState, type UIEvent } from 'react';
 import {
   IconArrowLeft,
   IconArrowsMaximize,
@@ -6,6 +6,12 @@ import {
   IconArrowsShuffle,
   IconBrandSpotify,
   IconBrandYoutube,
+  IconDisc,
+  IconHeart,
+  IconClock,
+  IconListDetails,
+  IconMusic,
+  IconPlaylist,
   IconExternalLink,
   IconPlayerPauseFilled,
   IconPlayerPlayFilled,
@@ -30,7 +36,9 @@ import { PlayOn } from './PlayOn';
 import { PlayerRow } from './PlayerRow';
 import { TrackRow, usePublicList, WhilePlays } from './SavedPlaylist';
 import { Tile } from './Tile';
-import { QueueView, SearchGroups } from './TallViews';
+import { QueueView } from './TallViews';
+import { LibraryRow, type Place } from '../music/LibraryRow';
+import { SearchChips, SearchResults, splitHits, type SearchChip } from '../music/SearchResults';
 import {
   isNowPlaying,
   kindLine,
@@ -63,29 +71,29 @@ import { usePins } from '../watch/pins';
 import { finishPlay, playWhole, useSpotifyPinNote } from './playItem';
 import { readSpotifyStatus, spotifyReady, useSpotifyStatus } from './status';
 
-export type BrowseTab = 'search' | 'playlists' | 'albums' | 'liked' | 'recent' | 'queue';
-/** The resting card: Search, then the library. */
-export const BROWSE_TABS: readonly { id: BrowseTab; label: string }[] = [
-  { id: 'search', label: 'Search' },
-  { id: 'playlists', label: 'Playlists' },
-  { id: 'albums', label: 'Albums' },
-  { id: 'liked', label: 'Liked' },
-  { id: 'recent', label: 'Recent' },
+export type BrowseTab = 'playlists' | 'albums' | 'liked' | 'recent' | 'queue';
+/** The library row, at rest and tall alike: the places of your own library, then Up next. */
+export const PLACES: readonly Place<BrowseTab>[] = [
+  { id: 'playlists', label: 'Playlists', icon: <IconPlaylist size={18} stroke={1.8} aria-hidden="true" /> },
+  { id: 'albums', label: 'Albums', icon: <IconDisc size={18} stroke={1.8} aria-hidden="true" /> },
+  { id: 'liked', label: 'Liked', icon: <IconHeart size={18} stroke={1.8} aria-hidden="true" /> },
+  { id: 'recent', label: 'Recent', icon: <IconClock size={18} stroke={1.8} aria-hidden="true" /> },
+  { id: 'queue', label: 'Up next', icon: <IconListDetails size={18} stroke={1.8} aria-hidden="true" /> },
 ];
-/** The tall view: the search field is the search, and Up next is a tab. */
-export const TALL_TABS: readonly { id: BrowseTab; label: string }[] = [
-  { id: 'playlists', label: 'Playlists' },
-  { id: 'albums', label: 'Albums' },
-  { id: 'liked', label: 'Liked' },
-  { id: 'recent', label: 'Recent' },
-  { id: 'queue', label: 'Up next' },
-];
+const CHIP_ICONS = {
+  playlists: <IconPlaylist size={18} stroke={1.8} aria-hidden="true" />,
+  albums: <IconDisc size={18} stroke={1.8} aria-hidden="true" />,
+  songs: <IconMusic size={18} stroke={1.8} aria-hidden="true" />,
+};
+const SEARCH_PLACEHOLDER = 'Search songs, albums and playlists';
 /** A page of a list or of a playlist's songs (Spotify gives 50 at a time). */
 export const PAGE = 50;
 /** Within this many pixels of the end of a list, the next page is read. */
 const MORE_AT_PX = 160;
 /** A note at the foot of the card goes away after this long. */
 export const NOTE_MS = 6000;
+
+type ListKey = BrowseTab | 'search';
 
 interface ListState {
   items: SpotifyItem[];
@@ -97,8 +105,10 @@ interface ListState {
 }
 const EMPTY_LIST: ListState = { items: [], page: 0, more: false, loading: false, problem: null, loaded: false };
 
+/** What a search says when it found nothing, and while it runs. */
+const NO_HITS = 'Nothing found. Try other words.';
+const SEARCHING_LINE = 'Searching Spotify.';
 const EMPTY_LINE: Record<BrowseTab, string> = {
-  search: 'Nothing found. Try other words.',
   playlists: 'No playlists in your library yet.',
   albums: 'No saved albums yet.',
   liked: 'No liked songs yet.',
@@ -106,12 +116,8 @@ const EMPTY_LINE: Record<BrowseTab, string> = {
   queue: 'Nothing is queued.',
 };
 
-/** Albums when the search found none. */
-const NO_ALBUM_HITS = 'No albums found. Try other words.';
-
 /** What a list says while its first read is on its way (it never shows blank). */
 export const LOADING_LINE: Record<BrowseTab, string> = {
-  search: 'Searching Spotify.',
   playlists: 'Reading your playlists.',
   albums: 'Reading your albums.',
   liked: 'Reading your liked songs.',
@@ -119,7 +125,7 @@ export const LOADING_LINE: Record<BrowseTab, string> = {
   queue: 'Reading the queue.',
 };
 
-function readTab(tab: Exclude<BrowseTab, 'search' | 'queue'>, page: number): Promise<SpotifyItem[]> {
+function readTab(tab: Exclude<BrowseTab, 'queue'>, page: number): Promise<SpotifyItem[]> {
   if (tab === 'playlists') return spotify.playlists(page);
   if (tab === 'albums') return spotify.albums(page);
   if (tab === 'liked') return spotify.liked(page);
@@ -430,17 +436,16 @@ export { finishPlay };
 
 function Browser({ tall }: { tall: boolean }) {
   const [tab, setTab] = useState<BrowseTab>('playlists');
-  const [lists, setLists] = useState<Record<BrowseTab, ListState>>(() => ({ search: EMPTY_LIST, playlists: EMPTY_LIST, albums: EMPTY_LIST, liked: EMPTY_LIST, recent: EMPTY_LIST, queue: EMPTY_LIST }));
+  const [lists, setLists] = useState<Record<ListKey, ListState>>(() => ({ search: EMPTY_LIST, playlists: EMPTY_LIST, albums: EMPTY_LIST, liked: EMPTY_LIST, recent: EMPTY_LIST, queue: EMPTY_LIST }));
   const [query, setQuery] = useState('');
+  const [chip, setChip] = useState<SearchChip>('all');
   // What the search box last asked, for the empty-state line (state) and to skip asking the same
   // words twice (ref: `runSearch` must not change identity when a search starts or fails, or the
   // debounce effect below would re-arm and search again by itself).
-  const [asked, setAsked] = useState('');
+  const [, setAsked] = useState('');
+  // The words the held answer belongs to: chips and counts show only while they match the field.
+  const [answeredFor, setAnsweredFor] = useState('');
   const askedRef = useRef('');
-  // The words whose search last answered (done) or failed (failed), so the Albums tab never shows
-  // the albums of an earlier query under new words while the new search is still running.
-  const [done, setDone] = useState('');
-  const [failed, setFailed] = useState('');
   const [open, setOpen] = useState<SpotifyItem | null>(null);
   // The card's top heading tells the panel to go home (see `SourceSwitch`); the panel tells it when it is inside.
   const homeRev = useSpotifyHome((s) => s.rev);
@@ -480,10 +485,10 @@ function Browser({ tall }: { tall: boolean }) {
     return () => clearTimeout(id);
   }, [note]);
 
-  const patch = useCallback((t: BrowseTab, p: Partial<ListState>) => setLists((all) => ({ ...all, [t]: { ...all[t], ...p } })), []);
+  const patch = useCallback((t: ListKey, p: Partial<ListState>) => setLists((all) => ({ ...all, [t]: { ...all[t], ...p } })), []);
 
   const load = useCallback(
-    (t: Exclude<BrowseTab, 'search' | 'queue'>, page: number) => {
+    (t: Exclude<BrowseTab, 'queue'>, page: number) => {
       const cur = listsRef.current[t];
       if (cur.loading) return;
       patch(t, { loading: true });
@@ -512,13 +517,8 @@ function Browser({ tall }: { tall: boolean }) {
   );
 
   useEffect(() => {
-    if (tab !== 'search' && tab !== 'queue' && !lists[tab].loaded && !lists[tab].loading) load(tab, 0);
+    if (tab !== 'queue' && !lists[tab].loaded && !lists[tab].loading) load(tab, 0);
   }, [tab, lists, load]);
-  // Up next lives only in the tall view: closing it leaves that tab for the first one.
-  useEffect(() => {
-    if (!tall && tab === 'queue') setTab('playlists');
-  }, [tall, tab]);
-
   // Search: on Enter, or after 400 ms without typing, with at least two characters. `again` asks
   // the same words once more (Retry after a failure). Nothing a search sets is read by the effect
   // below, so a failure never starts another search: only typing, Enter and Retry do.
@@ -529,15 +529,13 @@ function Browser({ tall }: { tall: boolean }) {
       const mine = ++searchSeq.current;
       askedRef.current = text;
       setAsked(text);
-      setFailed('');
-      setTab('search');
       setOpen(null);
       patch('search', { loading: true, problem: null });
       spotify.search(text).then(
         (r) => {
           if (!mounted.current || mine !== searchSeq.current) return;
           const items = [...(r?.tracks ?? []), ...(r?.playlists ?? []), ...(r?.albums ?? [])];
-          setDone(text);
+          setAnsweredFor(text);
           patch('search', { items, loading: false, loaded: true, more: false, page: 0 });
         },
         (e) => {
@@ -546,9 +544,9 @@ function Browser({ tall }: { tall: boolean }) {
           // The same words may be asked again (Retry, or typing them once more).
           askedRef.current = '';
           setAsked('');
-          setFailed(text);
           // A failure keeps the last good results under a note; with none, the line and Retry show.
           if (listsRef.current.search.items.length > 0) {
+            setAnsweredFor(text);
             patch('search', { loading: false, problem });
             setNote(`${problemLine(problem)} These are the last results.`);
           } else patch('search', { items: [], loading: false, loaded: true, problem });
@@ -557,6 +555,14 @@ function Browser({ tall }: { tall: boolean }) {
     },
     [patch],
   );
+  // Every normalized change of the field (an edit below the minimum, clearing it) drops the search in flight and lets the same words be asked again.
+  useEffect(() => {
+    if (query.trim() === askedRef.current) return;
+    searchSeq.current += 1;
+    askedRef.current = '';
+    setAsked('');
+    setLists((all) => (all.search.loading ? { ...all, search: { ...all.search, loading: false } } : all));
+  }, [query]);
   useEffect(() => {
     if (query.trim().length < SEARCH_MIN) return;
     const id = setTimeout(() => runSearch(query), SEARCH_WAIT_MS);
@@ -574,29 +580,24 @@ function Browser({ tall }: { tall: boolean }) {
   const playItem = (item: SpotifyItem) => playIt(item, false);
   const shuffleItem = (item: SpotifyItem) => playIt(item, true);
 
-  // Albums with words in the search field shows the albums that search found; an empty field shows the saved ones.
-  // Searched albums show only once the search for exactly these words has answered; while it runs
-  // (or after it failed) the list is empty, so the loading line or the failure line and Retry show.
+  // Words in the field swap the library row for the chips; clearing the field or "Library" brings the row (and the last place) back.
   const words = query.trim();
-  const albumHits = tab === 'albums' && words !== '' && (words === asked || words === failed);
-  const cur = albumHits
-    ? { ...lists.search, items: done === words ? lists.search.items.filter((i) => i.kind === 'album') : [], loading: words === asked && done !== words, more: false }
-    : lists[tab];
-  const songsIn = cur.items.filter((i) => i.kind === 'track');
-  const lists2 = cur.items.filter((i) => i.kind !== 'track');
+  const inSearch = words !== '';
+  const hits = lists.search;
+  const fresh = answeredFor === words;
+  const found = splitHits(hits.items);
+  const cur = lists[tab];
   const scrolled = (e: UIEvent<HTMLElement>) => {
-    if (tab !== 'search' && tab !== 'queue' && tab !== 'recent' && cur.more && !cur.loading && nearEnd(e)) load(tab, cur.page + 1);
+    if (!inSearch && tab !== 'queue' && tab !== 'recent' && cur.more && !cur.loading && nearEnd(e)) load(tab, cur.page + 1);
   };
-  // Left and right move along the tab row (the arrow keys of a tab list).
-  const tabKey = (e: ReactKeyboardEvent<HTMLDivElement>) => {
-    if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
-    const buttons = [...e.currentTarget.querySelectorAll<HTMLButtonElement>('button[role="tab"]')];
-    const at = buttons.indexOf(document.activeElement as HTMLButtonElement);
-    if (at < 0) return;
-    e.preventDefault();
-    const to = buttons[(at + (e.key === 'ArrowRight' ? 1 : -1) + buttons.length) % buttons.length];
-    to.focus();
-    to.click();
+  const leaveSearch = () => {
+    searchSeq.current += 1;
+    askedRef.current = '';
+    setAsked('');
+    setAnsweredFor('');
+    setChip('all');
+    setQuery('');
+    setLists((all) => ({ ...all, search: EMPTY_LIST }));
   };
   const searchBox = (
     <label className="sp-search">
@@ -604,116 +605,126 @@ function Browser({ tall }: { tall: boolean }) {
       <input
         type="search"
         value={query}
-        placeholder="Search Spotify"
+        placeholder={SEARCH_PLACEHOLDER}
         aria-label="Search Spotify"
-        onChange={(e) => {
-          setQuery(e.target.value);
-          // In the tall view the field is the search: emptying it goes back to the library.
-          if (tall && e.target.value.trim() === '' && tab === 'search') setTab('playlists');
-        }}
+        onChange={(e) => setQuery(e.target.value)}
         onKeyDown={(e) => {
           if (e.key === 'Enter') runSearch(query, true);
         }}
       />
     </label>
   );
-  const tabs = tall ? TALL_TABS : BROWSE_TABS;
-  const tabsEl = (
-    <div className="sp-tabs" role="tablist" aria-label="Spotify library" onKeyDown={tabKey}>
-      {tabs.map((t) => (
-        <button key={t.id} type="button" role="tab" aria-selected={tab === t.id} tabIndex={tab === t.id || (tab === 'search' && tall && t.id === 'playlists') ? 0 : -1} className={tab === t.id ? 'on' : ''} onClick={() => setTab(t.id)}>
-          {t.label}
-        </button>
-      ))}
-    </div>
-  );
-  const grouped = tall && tab === 'search' && cur.items.length > 0;
-  const list = (
-    <>
-      {tab === 'search' && cur.problem ? (
-        <div className="sp-empty sp-stale">
-          {problemLine(cur.problem)}
-          {spotifyRetryable(cur.problem) ? <button type="button" className="sp-btn" onClick={() => runSearch(query, true)}>Retry</button> : null}
-        </div>
-      ) : null}
-      {songsIn.length > 0 ? (
-        <div className="sp-list" role="list">
-          {songsIn.map((item, i) => (
-            <Row key={`${item.id}-${i}`} item={item} playing={isNow({ id: item.id, name: item.name, artists: item.subtitle })} onPlay={() => playItem(item)} />
-          ))}
-        </div>
-      ) : null}
-      {lists2.length > 0 ? (
-        <div className="sp-grid" role="list">
-          {lists2.map((item, i) => (
-            <Tile key={`${item.kind}-${item.id}-${i}`} item={item} kindWord={tab === 'search'} onOpen={() => setOpen(item)} onPlay={() => playItem(item)} onShuffle={() => shuffleItem(item)} />
-          ))}
-        </div>
-      ) : null}
-    </>
-  );
+  const retry = hits.problem && spotifyRetryable(hits.problem) ? (
+    <button type="button" className="sp-btn" onClick={() => runSearch(query, true)}>
+      Retry
+    </button>
+  ) : null;
+  const searchBody =
+    hits.problem && hits.items.length === 0 ? (
+      <div className="sp-empty">
+        {problemLine(hits.problem)}
+        {hits.problem === 'needsSignIn' || hits.problem === 'notsetup' ? (
+          <button type="button" className="sp-btn" onClick={() => useToolsStore.getState().openDrawer('accounts')}>
+            Open Tools
+          </button>
+        ) : (
+          retry
+        )}
+      </div>
+    ) : !fresh && words.length >= SEARCH_MIN && !(hits.problem && hits.items.length > 0) ? (
+      <div className="sp-empty" aria-busy="true">
+        {SEARCHING_LINE}
+      </div>
+    ) : words.length < SEARCH_MIN ? (
+      <div className="sp-empty">Type at least two letters, then wait a moment or press Enter.</div>
+    ) : hits.items.length === 0 && (hits.loading || !hits.loaded) ? (
+      <div className="sp-empty" aria-busy="true">
+        {SEARCHING_LINE}
+      </div>
+    ) : hits.items.length === 0 ? (
+      <div className="sp-empty">{NO_HITS}</div>
+    ) : (
+      <>
+        {hits.problem ? (
+          <div className="sp-empty sp-stale">
+            {problemLine(hits.problem)}
+            {retry}
+          </div>
+        ) : null}
+        <SearchResults
+          items={hits.items}
+          chip={chip}
+          tall={tall}
+          isNow={isNow}
+          onPlay={playItem}
+          onChip={setChip}
+          tile={(item) => <Tile item={item} kindWord={false} onOpen={() => setOpen(item)} onPlay={() => playItem(item)} onShuffle={() => shuffleItem(item)} />}
+        />
+      </>
+    );
+  const songsIn = cur.items.filter((i) => i.kind === 'track');
+  const lists2 = cur.items.filter((i) => i.kind !== 'track');
+  const libraryBody =
+    cur.problem && cur.items.length === 0 ? (
+      <div className="sp-empty">
+        {problemLine(cur.problem)}
+        {cur.problem === 'needsSignIn' || cur.problem === 'notsetup' ? (
+          <button type="button" className="sp-btn" onClick={() => useToolsStore.getState().openDrawer('accounts')}>
+            Open Tools
+          </button>
+        ) : spotifyRetryable(cur.problem) ? (
+          <button type="button" className="sp-btn" onClick={() => load(tab as Exclude<BrowseTab, 'queue'>, 0)}>
+            Retry
+          </button>
+        ) : null}
+      </div>
+    ) : cur.items.length === 0 && (cur.loading || !cur.loaded) ? (
+      <div className="sp-empty" aria-busy="true">
+        {LOADING_LINE[tab]}
+      </div>
+    ) : cur.loaded && cur.items.length === 0 ? (
+      <div className="sp-empty">{EMPTY_LINE[tab]}</div>
+    ) : (
+      <>
+        {songsIn.length > 0 ? (
+          <div className="sp-list" role="list">
+            {songsIn.map((item, i) => (
+              <Row key={`${item.id}-${i}`} item={item} playing={isNow({ id: item.id, name: item.name, artists: item.subtitle })} onPlay={() => playItem(item)} />
+            ))}
+          </div>
+        ) : null}
+        {lists2.length > 0 ? (
+          <div className="sp-grid" role="list">
+            {lists2.map((item, i) => (
+              <Tile key={`${item.kind}-${item.id}-${i}`} item={item} kindWord={false} onOpen={() => setOpen(item)} onPlay={() => playItem(item)} onShuffle={() => shuffleItem(item)} />
+            ))}
+          </div>
+        ) : null}
+      </>
+    );
   const main =
-    tall && tab === 'queue' ? (
+    !inSearch && tab === 'queue' ? (
       <div className="sp-main">
         <QueueView />
       </div>
-    ) : grouped ? (
-      <div className="sp-main">
-        {cur.problem ? (
-          <div className="sp-empty sp-stale">
-            {problemLine(cur.problem)}
-            {spotifyRetryable(cur.problem) ? <button type="button" className="sp-btn" onClick={() => runSearch(query, true)}>Retry</button> : null}
-          </div>
-        ) : null}
-        <SearchGroups items={cur.items} isNow={isNow} onPlay={playItem} onOpen={setOpen} onShuffle={shuffleItem} />
-      </div>
     ) : (
       <div className="sp-scroll" onScroll={scrolled}>
-        {tab === 'search' && !asked && cur.items.length === 0 && !cur.problem ? (
-          <div className="sp-empty">Type at least two letters, then wait a moment or press Enter.</div>
-        ) : cur.problem && cur.items.length === 0 ? (
-          <div className="sp-empty">
-            {problemLine(cur.problem)}
-            {cur.problem === 'needsSignIn' || cur.problem === 'notsetup' ? (
-              <button type="button" className="sp-btn" onClick={() => useToolsStore.getState().openDrawer('accounts')}>
-                Open Tools
-              </button>
-            ) : spotifyRetryable(cur.problem) ? (
-              <button type="button" className="sp-btn" onClick={() => (tab === 'search' || albumHits ? runSearch(query, true) : load(tab as Exclude<BrowseTab, 'search' | 'queue'>, 0))}>
-                Retry
-              </button>
-            ) : null}
-          </div>
-        ) : cur.items.length === 0 && (cur.loading || !cur.loaded) ? (
-          <div className="sp-empty" aria-busy="true">
-            {LOADING_LINE[tab]}
-          </div>
-        ) : cur.loaded && cur.items.length === 0 ? (
-          <div className="sp-empty">{albumHits ? NO_ALBUM_HITS : EMPTY_LINE[tab]}</div>
-        ) : (
-          list
-        )}
+        {inSearch ? searchBody : libraryBody}
       </div>
     );
-  const songsView = open ? <SongsView item={open} tall={tall} backLabel={tabs.find((t) => t.id === tab)?.label ?? 'Back'} onBack={() => setOpen(null)} onNote={setNote} onUpNext={tall ? () => { setOpen(null); setTab('queue'); } : undefined} /> : null;
+  const songsView = open ? <SongsView item={open} tall={tall} backLabel={inSearch ? 'Search' : PLACES.find((t) => t.id === tab)?.label ?? 'Back'} onBack={() => setOpen(null)} onNote={setNote} onUpNext={tall ? () => { setOpen(null); setTab('queue'); } : undefined} /> : null;
   return (
     <div className="sp-body">
-      {tall ? (
+      {searchBox}
+      {songsView ?? (
         <>
-          <div className="sp-bar">
-            {tabsEl}
-            {searchBox}
-          </div>
-          {songsView ?? main}
+          {inSearch ? (
+            <SearchChips value={chip} counts={fresh ? { playlists: found.playlists.length, albums: found.albums.length, songs: found.songs.length } : null} kinds={['playlists', 'albums', 'songs']} icons={CHIP_ICONS} onPick={setChip} onLeave={leaveSearch} />
+          ) : (
+            <LibraryRow label="Spotify library" places={PLACES} value={tab} onPick={setTab} />
+          )}
+          {main}
         </>
-      ) : (
-        songsView ?? (
-          <>
-            {searchBox}
-            {tabsEl}
-            {main}
-          </>
-        )
       )}
       {note ? <Note text={note} /> : null}
     </div>

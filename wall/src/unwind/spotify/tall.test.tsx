@@ -404,24 +404,26 @@ describe('opening and closing the tall view', () => {
 });
 
 describe('inside the tall view', () => {
-  it('has the tabs and the search field in one row, no Search tab, and Up next; closing brings Search back', async () => {
+  it('has the search field on top and the Library row under it, no Search tab, Up next at rest and tall alike', async () => {
     await setup();
-    expect([...document.querySelectorAll('.sp-tabs button')].map((b) => b.textContent)).toEqual(['Search', 'Playlists', 'Albums', 'Liked', 'Recent']);
+    const names = ['Playlists', 'Albums', 'Liked', 'Recent', 'Up next'];
+    expect([...document.querySelectorAll('.mu-places button')].map((b) => b.textContent)).toEqual(names);
+    expect(document.querySelector('.mu-lib-word')?.textContent).toBe('Library');
+    expect((screen.getByRole('searchbox') as HTMLInputElement).placeholder).toBe('Search songs, albums and playlists');
     await open();
-    expect([...document.querySelectorAll('.sp-tabs button')].map((b) => b.textContent)).toEqual(['Playlists', 'Albums', 'Liked', 'Recent', 'Up next']);
-    expect(document.querySelector('.sp-bar .sp-tabs')).not.toBeNull();
-    expect(document.querySelector('.sp-bar .sp-search')).not.toBeNull();
-    await act(async () => (document.querySelectorAll('.sp-tabs button')[4] as HTMLButtonElement).click());
+    expect([...document.querySelectorAll('.mu-places button')].map((b) => b.textContent)).toEqual(names);
+    expect(document.querySelector('.sp-bar')).toBeNull();
+    await act(async () => (document.querySelectorAll('.mu-places button')[4] as HTMLButtonElement).click());
     await flush();
     expect(screen.getByText('Playing now')).toBeTruthy();
     await act(async () => openButton().click());
-    expect(document.querySelectorAll('.sp-tabs button')[1].getAttribute('aria-selected')).toBe('true');
+    expect(document.querySelectorAll('.mu-places button')[4].getAttribute('aria-selected')).toBe('true');
   });
 
   it('keeps the tab row on the arrow keys', async () => {
     await setup();
     await open();
-    const tabs = [...document.querySelectorAll<HTMLButtonElement>('.sp-tabs button')];
+    const tabs = [...document.querySelectorAll<HTMLButtonElement>('.mu-places button')];
     await act(async () => tabs[0].focus());
     fireEvent.keyDown(tabs[0], { key: 'ArrowRight' });
     await flush();
@@ -436,11 +438,11 @@ describe('inside the tall view', () => {
     await open();
     const order = (a: Element, b: Element) => expect(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     const slider = screen.getByRole('slider');
-    const tab = document.querySelector('.sp-tabs button[tabindex="0"]') as Element;
+    const tab = document.querySelector('.mu-places button[tabindex="0"]') as Element;
     order(chip(), openButton());
-    order(openButton(), tab);
-    order(tab, screen.getByRole('searchbox'));
-    order(screen.getByRole('searchbox'), document.querySelector('.sp-tile') as Element);
+    order(openButton(), screen.getByRole('searchbox'));
+    order(screen.getByRole('searchbox'), tab);
+    order(tab, document.querySelector('.sp-tile') as Element);
     order(document.querySelector('.sp-tile') as Element, document.querySelector('.sp-pl-btn') as Element);
     order(document.querySelector('.sp-pl-btn') as Element, slider);
     // The chooser opens right under the chip in the page order, so Tab goes from the chip into it.
@@ -481,23 +483,23 @@ describe('inside the tall view', () => {
     expect(document.querySelector('.sp-songs')).toBeNull();
   });
 
-  it('search is in groups: songs, then at most three albums and three playlists; emptying the field returns to the library', async () => {
+  it('search shows the chips, then playlists and albums as cover rows (five in the tall view) and songs as rows; emptying the field returns to the library', async () => {
     await setup();
     await open();
     const field = screen.getByRole('searchbox');
     await act(async () => fireEvent.change(field, { target: { value: 'hit' } }));
     await flush(SEARCH_WAIT_MS);
     expect(document.querySelectorAll('.sp-li')).toHaveLength(4);
-    expect([...document.querySelectorAll('.sp-gk')].map((e) => e.textContent)).toEqual(['Songs', 'Albums', 'Playlists']);
-    expect(document.querySelectorAll('.sp-grid3 .sp-tile')).toHaveLength(6);
+    expect([...document.querySelectorAll('.mu-head-w')].map((e) => e.textContent)).toEqual(['Playlists', 'Albums', 'Songs']);
+    expect([...document.querySelectorAll('.mu-row')].map((g) => g.querySelectorAll('.sp-tile').length)).toEqual([5, 5]);
+    expect(document.querySelector('.mu-places')).toBeNull();
     // A song plays on a click.
     await act(async () => (document.querySelectorAll('.sp-li')[2] as HTMLButtonElement).click());
     await flush();
     expect(sent.find((s) => s[0] === 'wall2_spotify_play')?.[1]).toMatchObject({ request: { kind: 'track', id: id(3) } });
-    // None of the tabs is lit while results show; emptying the field goes back to Playlists.
-    expect(document.querySelectorAll('.sp-tabs [aria-selected="true"]')).toHaveLength(0);
+    // Emptying the field brings the Library row back with Playlists lit.
     await act(async () => fireEvent.change(field, { target: { value: '' } }));
-    expect(document.querySelectorAll('.sp-tabs button')[0].getAttribute('aria-selected')).toBe('true');
+    expect(document.querySelectorAll('.mu-places button')[0].getAttribute('aria-selected')).toBe('true');
   });
 
   it('search with nothing found says so in each group, and a failed search says why with Retry', async () => {
@@ -519,7 +521,7 @@ describe('inside the tall view', () => {
   describe('Up next', () => {
     const tabUp = async () => {
       await open();
-      await act(async () => (document.querySelectorAll('.sp-tabs button')[4] as HTMLButtonElement).click());
+      await act(async () => (document.querySelectorAll('.mu-places button')[4] as HTMLButtonElement).click());
       await flush();
     };
     it('shows what plays and what follows, with the honest line', async () => {
@@ -565,8 +567,8 @@ describe('inside the tall view', () => {
       mocks.set('wall2_spotify_queue', () => {
         throw new Error('down');
       });
-      await act(async () => (document.querySelectorAll('.sp-tabs button')[3] as HTMLButtonElement).click());
-      await act(async () => (document.querySelectorAll('.sp-tabs button')[4] as HTMLButtonElement).click());
+      await act(async () => (document.querySelectorAll('.mu-places button')[3] as HTMLButtonElement).click());
+      await act(async () => (document.querySelectorAll('.mu-places button')[4] as HTMLButtonElement).click());
       await flush(QUEUE_POLL_MS_FOR_TEST);
       expect(screen.getByText('Spotify is not answering right now.')).toBeTruthy();
       mocks.set('wall2_spotify_queue', () => ({ current: track(1), next: [track(2)] }));
@@ -1187,7 +1189,7 @@ describe('every first read shows loading words, and a re-read keeps what is on s
     });
     return { promise, resolve };
   };
-  const tabs = () => [...document.querySelectorAll<HTMLButtonElement>('.sp-tabs button')];
+  const tabs = () => [...document.querySelectorAll<HTMLButtonElement>('.mu-places button')];
 
   it('Playlists, Albums, Liked and Recent', async () => {
     await setup();
@@ -1222,7 +1224,7 @@ describe('every first read shows loading words, and a re-read keeps what is on s
     expect(screen.getByText('Held list')).toBeTruthy();
   });
 
-  it('a search, and then a second search keeps the results on screen', async () => {
+  it('a search, and then a second search shows the searching line, not the first answer', async () => {
     await setup();
     await open();
     const h = held();
@@ -1237,8 +1239,8 @@ describe('every first read shows loading words, and a re-read keeps what is on s
     mocks.set('wall2_spotify_search', () => h2.promise);
     await act(async () => fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'second' } }));
     await flush(SEARCH_WAIT_MS);
-    expect(document.querySelector('[aria-busy="true"]')).toBeNull();
-    expect(screen.getByText('Hit 1')).toBeTruthy();
+    expect(document.querySelector('[aria-busy="true"]')?.textContent).toBe('Searching Spotify.');
+    expect(screen.queryByText('Hit 1')).toBeNull();
   });
 
   it('the songs of a playlist', async () => {
@@ -1339,19 +1341,19 @@ describe('arrow keys in the cover grid', () => {
     });
   }
 
-  it('walks the three-column grids of a grouped search', async () => {
+  it('walks the cover row of a search, and the chip grids', async () => {
     await setup();
     await open();
     await act(async () => fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'hit' } }));
     await flush(SEARCH_WAIT_MS);
-    const grids = [...document.querySelectorAll<HTMLElement>('.sp-grid3')];
-    expect(grids).toHaveLength(2);
-    columns(grids[0], 3);
-    const albums = tilesIn(grids[0]);
+    const rows = [...document.querySelectorAll<HTMLElement>('.mu-row')];
+    expect(rows).toHaveLength(2);
+    columns(rows[0], 5);
+    const albums = tilesIn(rows[0]);
     await act(async () => albums[1].focus());
     await arrow(albums[1], 'ArrowRight');
     expect(document.activeElement).toBe(albums[2]);
-    // The arrows stay inside their own grid: no tile of the playlists group is reached from the albums.
+    // The arrows stay inside their own row: no tile of the albums row is reached from the playlists.
     await arrow(albums[2], 'ArrowDown');
     expect(document.activeElement).toBe(albums[2]);
   });
@@ -1429,7 +1431,7 @@ describe('closing by itself follows the keyboard focus too', () => {
     await act(async () => openButton().click());
     expect(isTall()).toBe(false);
     await open();
-    expect(document.activeElement).not.toBe(screen.getByRole('searchbox'));
+    await act(async () => (document.activeElement as HTMLElement).blur());
     fireEvent.pointerLeave(c);
     await flush(TALL_CLOSE_MS);
     expect(isTall()).toBe(false);

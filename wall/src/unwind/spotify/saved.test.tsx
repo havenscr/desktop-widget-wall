@@ -645,6 +645,6 @@ describe('fix round 1: the rest', () => {
     await act(async () => screen.getByRole('button', { name: '12 more in Up next' }).click());
     await flush();
     expect(document.querySelector('.sp-songs')).toBeNull();
-    expect(document.querySelector('.sp-tabs [aria-selected="true"]')?.textContent).toBe('Up next');
+    expect(document.querySelector('.mu-places [aria-selected="true"]')?.textContent).toBe('Up next');
   });
 });
