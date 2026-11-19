@@ -4,6 +4,7 @@ import { registerDaysMocks } from './days';
 import { registerDeckMocks } from './deck';
 import { registerGalleryMocks } from './gallery';
 import { registerHomeMocks } from './home';
+import { registerLightSyncMocks } from './lightsync';
 import { registerLinesMocks } from './lines';
 import { registerMeetMocks } from './meet';
 import { registerMeetBriefMocks } from './meetBrief';
@@ -53,5 +54,6 @@ export function registerDevMocks(): void {
   registerStudioMocks();
   registerStudioKeysMocks();
   mocks.set('wall2_build_info', () => ({ commit: 'dev', builtAt: '2026-11-13T09:05Z' }));
+  registerLightSyncMocks();
   registerToolsMocks();
 }

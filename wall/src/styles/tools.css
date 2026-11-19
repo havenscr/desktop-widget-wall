@@ -368,3 +368,18 @@
 .tools-drawer:has(.tools-yt-form) .tools-col.left > :not([data-section='accounts']) {
   display: none;
 }
+
+.tools-ls-note {
+  font: 16px/1.2 var(--body);
+  color: var(--dim);
+  padding: 0 0 6px 34px;
+  list-style: none;
+}
+.tools-spin {
+  animation: tools-spin 900ms linear infinite;
+}
+@keyframes tools-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}

@@ -1,4 +1,4 @@
-import { IconBrandSpotify, IconBrandYoutube, IconCalendar, IconSettings, IconWorld, IconWorldOff } from '@tabler/icons-react';
+import { IconBrandSpotify, IconBrandYoutube, IconBulb, IconCalendar, IconLoader2, IconSettings, IconTrash, IconWorld, IconWorldOff } from '@tabler/icons-react';
 import { useCallback, useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 import { accountWords, clockText, COLOURS_HINT, COLOURS_LINE, needsSignIn, reasonLine, type MeetAccount } from '../meet/model';
 import { useMeet, type MeetState } from '../meet/useMeet';
@@ -7,6 +7,7 @@ import { PAGE_SWITCH_NAME, PAGE_SWITCH_TIP, usePublicPage } from '../unwind/spot
 import { youtube, type YoutubeLink, type YoutubeStatus } from '../music/youtube';
 import { invoke } from '../bridge/tauri';
 import { hover as hoverCard } from './hover';
+import { PAIR_PROMPT, testLine, useLightSync } from './lightSync';
 import { useToolsStore } from './store';
 import { calendarName } from './trouble';
 
@@ -419,6 +420,40 @@ function YoutubeRow({ yt, blocked }: { yt: ReturnType<typeof useYoutubeAccount>;
   return row(again ? 'Sign in again' : 'Signed out', again ? 'bad' : 'plain', again ? 'Google ended the saved sign-in.' : undefined, yt.editing ? null : (<>{change}{signInButton}</>));
 }
 
+/** Light sync: pairing with the Hue bridge, a test of the light link, and Forget. Never shows a key or an address. */
+function LightSyncRow({ ls, blocked }: { ls: ReturnType<typeof useLightSync>; blocked: boolean }) {
+  const icon = <IconBulb size={22} aria-hidden="true" />;
+  const spin = <IconLoader2 className="tools-spin" size={18} aria-hidden="true" />;
+  const FORGET_HOVER = 'Forget this pairing. The bridge keeps its own copy; remove it in the Hue app (Settings, Bridges, Entertainment).';
+  const forgetBtn = <Btn label="Forget" icon={<IconTrash size={18} aria-hidden="true" />} disabled={ls.test.state === 'running'} onClick={ls.forget} hover={FORGET_HOVER} />;
+  const pairBtn = (label: string) => <Btn label={label} cy disabled={blocked} onClick={ls.pair} hover="Pairs the wall with the Hue bridge, for music light sync." />;
+  const row = (line: string, tone: Tone, hover: string | undefined, buttons: ReactNode, extra?: string | null) => (
+    <>
+      <Row icon={icon} name="Light sync" line={line} tone={tone} hover={hover} account="lightsync">
+        {buttons}
+      </Row>
+      {extra && <li className="tools-ls-note" data-lightsync-note>{extra}</li>}
+    </>
+  );
+  if (ls.pairing) {
+    return row('Pairing', 'plain', 'Waits up to 30 seconds for the link button.', <Btn label="Pairing" icon={spin} disabled hover="Waiting for the link button." onClick={() => undefined} />, PAIR_PROMPT);
+  }
+  if (ls.failed) return row('Could not check', 'bad', 'The light link status did not come back.', <Btn label="Retry" onClick={ls.read} hover="Asks again." />);
+  const s = ls.status;
+  if (!s) return <Row icon={icon} name="Light sync" line="Checking" account="lightsync" />;
+  if (!s.paired) return row('Not paired', 'plain', undefined, pairBtn('Pair'), ls.notice);
+  if (s.bridgeChanged) {
+    return row('Bridge changed', 'bad', 'The home app now names another bridge. Forget this pairing, then pair again.', <>{forgetBtn}{pairBtn('Pair')}</>, ls.notice ?? 'Pair again with the new bridge');
+  }
+  const t = ls.test;
+  const testing = t.state === 'running';
+  const testBtn = (
+    <Btn label="Test the light link" icon={testing ? <IconLoader2 className="tools-spin" size={18} aria-hidden="true" /> : <IconBulb size={18} aria-hidden="true" />} disabled={testing} onClick={ls.runTest} hover="Lights the Plays and panels for about 3 seconds." />
+  );
+  const result = testing ? 'Testing the light link' : t.state === 'done' ? testLine(t.word) : null;
+  return row(testing ? 'Testing' : 'Paired', 'plain', undefined, <>{testBtn}{forgetBtn}</>, ls.notice ?? result);
+}
+
 /** Under the YouTube row: the two links YouTube API Services asks for. The page sends only a kind word. */
 function YoutubeLinks({ openLink }: { openLink: (kind: YoutubeLink) => void }) {
   return (
@@ -446,6 +481,7 @@ export function Accounts() {
   const opened = useToolsStore((s) => s.opened);
   const sp = useSpotifyAccount(opened);
   const yt = useYoutubeAccount(opened);
+  const ls = useLightSync(opened);
   const accounts = m.data?.accounts ?? [];
   const openStatus = useOpenStatus(opened);
   const openLine = openStatus === 'failed' ? 'Could not check' : openStatus ? openWords[openStatus].line : 'Checking';
@@ -502,6 +538,7 @@ export function Accounts() {
         <YoutubeRow yt={yt} blocked={blocked} />
         {yt.editing && <YoutubeSetup onSaved={yt.saved} onCancel={() => yt.setEditing(false)} onEscape={yt.escapeForm} canForget={yt.status?.setup === true && !yt.status.signedIn} />}
         <YoutubeLinks openLink={yt.openLink} />
+        <LightSyncRow ls={ls} blocked={blocked || ls.test.state === 'running'} />
       </ul>
       {(m.notice || sp.notice || yt.notice || yt.brokenHint) && <div className="tools-note bad">{m.notice ?? sp.notice ?? yt.notice ?? yt.brokenHint}</div>}
     </>
