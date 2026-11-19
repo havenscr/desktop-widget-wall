@@ -9,6 +9,7 @@ import {
   OFF_BUSY_EXTRA,
   backTip,
   OFF_FIXED,
+  SYNC_WIDTH,
   chipTip,
   fitMoodRow,
   rowModel,
@@ -17,6 +18,8 @@ import {
   type RowModel,
 } from './moodRow';
 import { useMoodsPolling } from './useMoodsPolling';
+import { PaletteStrip, SyncChip } from './SyncChip';
+import { useLightSync } from './lightsync/store';
 
 const LABEL_WORD = 'Office moods';
 /** The label pill's own parts: 9 px of padding each side, the 18 px bulb and its 8 px gap, letter spacing 3 px. */
@@ -147,7 +150,7 @@ export function OfficeMoods() {
     const body = cs.getPropertyValue('--body').trim() || 'sans-serif';
     const disp = cs.getPropertyValue('--disp').trim() || 'sans-serif';
     const m = measure(row, body, disp);
-    const next = fitMoodRow(m.names, m.label, m.off, m.back);
+    const next = fitMoodRow(m.names, m.label, m.off, m.back, SYNC_WIDTH);
     setFit((f) => (f.label === next.label && f.cap === next.cap && f.backIcon === next.backIcon && f.offIcon === next.offIcon && f.clip === next.clip ? f : next));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [key, fontsAt]);
@@ -157,8 +160,8 @@ export function OfficeMoods() {
   const click = (chip: ChipModel) => {
     // Nothing is sent while this PC may not write or a write is out; the native side checks again.
     if (row.blocked || row.waiting) return;
-    const st = useHome.getState();
-    void (chip.id === null ? st.applyOff() : st.applyMood(chip.id));
+    // Sync is stopped first without Lights back (queued when a start or stop is out; the last click wins), then the mood or Off applies.
+    void useLightSync.getState().choose(chip.id);
   };
   const goBack = () => {
     if (row.blocked || row.waiting || !row.canBack) return;
@@ -169,13 +172,16 @@ export function OfficeMoods() {
   const resting = restNow && moodFail === null;
   return (
     <>
-      <div className="u-office-slot" data-slot="office-lights" data-moods="shown" data-stale={row.stale ? 'true' : undefined} data-clip={fit.clip ? 'true' : undefined} role="group" aria-label={LABEL_WORD} ref={box} {...restZone('moods-row')}>
+      <div className="u-office-slot" data-slot="office-lights" data-moods="shown" data-stale={row.stale ? 'true' : undefined} role="group" aria-label={LABEL_WORD} ref={box} {...restZone('moods-row')}>
         {fit.label && (
           <span className="u-mood-label" data-part="label">
             <IconBulb size={18} aria-hidden="true" />
             <span>{LABEL_WORD}</span>
           </span>
         )}
+        <PaletteStrip />
+        <SyncChip blocked={false} />
+        <div className="u-mood-run" data-clip={fit.clip ? 'true' : undefined}>
         {row.chips.map((c) => (
           <Chip key={c.id ?? 'office-off'} chip={c} row={row} cap={fit.cap} iconOnly={c.id === null && fit.offIcon} onClick={() => click(c)} />
         ))}
@@ -191,6 +197,7 @@ export function OfficeMoods() {
           <IconArrowBackUp size={18} stroke={2} aria-hidden="true" />
           {!fit.backIcon && <span className="u-mood-name">{BACK_WORD}</span>}
         </button>
+        </div>
       </div>
       {/* The plain status (what is on, off, asking) is the chips' and the tips' job; the screen reader still hears it here. */}
       <div className="u-office-live" role="status" aria-live="polite" data-part="live">

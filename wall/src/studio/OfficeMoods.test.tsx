@@ -4,7 +4,7 @@ import { mocks } from '../bridge/tauri';
 import { HoverTipLayer, resetTip } from '../ui/HoverTip';
 import { OFF_READ_DELAY_MS, resetHome, TEXT, useHome } from './homeStore';
 import { OfficeMoods } from './OfficeMoods';
-import { BACK_FIXED, BACK_WORD, NAME_MIN, fitMoodRow } from './moodRow';
+import { BACK_FIXED, BACK_WORD, NAME_MIN, SYNC_WIDTH, SYNC_WORD, fitMoodRow } from './moodRow';
 import { NOTE_MS } from './store';
 
 vi.setConfig({ testTimeout: 20_000 });
@@ -99,12 +99,13 @@ const show = async () => {
   await flush();
   return view;
 };
+const syncOf = () => document.querySelector('[data-mood="sync"]') as HTMLElement;
 const slot = () => document.querySelector('[data-slot="office-lights"]') as HTMLElement;
 const line = () => document.querySelector('.u-office-line');
 /** The plain status: a visually hidden live region, never a drawn line. */
 const status = () => document.querySelector('.u-office-live');
 const chip = (name: string) => within(slot()).getByText(name).closest('button') as HTMLElement;
-const names = () => within(slot()).queryAllByRole('button').map((b) => b.textContent);
+const names = () => within(slot()).queryAllByRole('button').filter((b) => !b.closest('.u-sync')).map((b) => b.textContent);
 const tipOf = async (el: Element) => {
   fireEvent.mouseEnter(el);
   await flush(300);
@@ -156,7 +157,7 @@ it('shown: a group named Office moods, the label, one chip per mood in the home 
   expect(slot().getAttribute('data-moods')).toBe('shown');
   expect(screen.getByText('Office moods')).toBeTruthy();
   expect(names()).toEqual(['Bright desk', 'Evening lamp', 'Gaming', BACK_WORD]);
-  expect(within(slot()).getAllByRole('button').filter((b) => b.dataset.mood !== 'back').every((b) => b.getAttribute('aria-pressed') === 'false')).toBe(true);
+  expect(within(slot()).getAllByRole('button').filter((b) => b.dataset.mood !== 'back' && b.dataset.part !== 'sync-dots').every((b) => b.getAttribute('aria-pressed') === 'false')).toBe(true);
   expect(status()?.textContent).toBe('No mood on.');
   expect(line()).toBeNull();
   // Every chip is a native button reached by Tab in this order.
@@ -167,20 +168,20 @@ it('shown: a group named Office moods, the label, one chip per mood in the home 
   }
 });
 
-it('the fit rule is applied: nine names of 40 characters (with Off and As before) drop the label and cut every name; a short row keeps both', async () => {
+it('the fit rule is applied: seven names of 40 characters (with Off and As before) drop the label and cut every name; a short row keeps both', async () => {
   // jsdom has no canvas, so the component measures with its rough guess (9 px a character): 360 px a name, far over 1124 in all.
   const forty = (i: number) => `Mood ${String(i).padStart(2, '0')} ${'x'.repeat(40 - 8)}`;
-  list = Array.from({ length: 9 }, (_, i) => ({ id: `mood${i}`, label: forty(i), line: null, active: i === 0 }));
+  list = Array.from({ length: 7 }, (_, i) => ({ id: `mood${i}`, label: forty(i), line: null, active: i === 0 }));
   off = { active: false };
   const { unmount } = await show();
   expect(forty(0)).toHaveLength(40);
   expect(slot().querySelector('.u-mood-label')).toBeNull();
   expect(slot().getAttribute('aria-label')).toBe('Office moods');
-  const named = [...slot().querySelectorAll<HTMLElement>('.u-mood-name')].filter((n) => n.textContent !== 'Off' && n.textContent !== BACK_WORD);
-  expect(named).toHaveLength(9);
+  const named = [...slot().querySelectorAll<HTMLElement>('.u-mood-name')].filter((n) => n.textContent !== 'Off' && n.textContent !== BACK_WORD && n.textContent !== SYNC_WORD);
+  expect(named).toHaveLength(7);
   for (const n of named) expect(n.style.maxWidth).toMatch(/^\d+px$/);
-  // Cut at the largest shared width that fits: exactly what the fit rule gives for 9 names of 360 px (9 px a character) and an Off chip measured by the same guess (30 + 22 + 27 px), above the floor.
-  const expected = fitMoodRow(Array(9).fill(360), 0, 79, BACK_FIXED + BACK_WORD.length * 9).cap as number;
+  // Cut at the largest shared width that fits: exactly what the fit rule gives for 7 names of 360 px (9 px a character) and an Off chip measured by the same guess (30 + 22 + 27 px), above the floor.
+  const expected = fitMoodRow(Array(7).fill(360), 0, 57, BACK_FIXED + BACK_WORD.length * 9, SYNC_WIDTH).cap as number;
   expect(expected).toBeGreaterThan(NAME_MIN);
   for (const n of named) expect(n.style.maxWidth).toBe(`${expected}px`);
   expect(await tipOf(chip(forty(0)))).toBe(`${forty(0)} is on.`);
@@ -208,7 +209,12 @@ it('twelve moods with Off and As before: the row fits ROW_MAX by turning As befo
   expect(back.querySelector('svg')).not.toBeNull();
   expect(back.className).toContain('icon-only');
   expect(chip(`Mood 00 ${'x'.repeat(32)}`).querySelector('.u-mood-name')).not.toBeNull();
-  expect(slot().getAttribute('data-clip')).toBeNull();
+  // Twelve moods and the fixed 208 px Music sync chip no longer fit 1124 even at the floor: the slot's last resort clips its left edge.
+  expect(slot().querySelector('.u-mood-run')?.getAttribute('data-clip')).toBe('true');
+  // The moods give way; the Music sync chip sits outside the clipped run, whole, and first.
+  expect(slot().querySelector('.u-mood-run')?.contains(syncOf())).toBe(false);
+  expect(syncOf().getAttribute('data-state')).toBe('off');
+  expect(slot().firstElementChild === syncOf() || slot().children[0]?.contains(syncOf()) === true).toBe(true);
   const tipText = await tipOf(back);
   expect(tipText.startsWith(BACK_WORD)).toBe(true);
   fireEvent.click(back);
@@ -443,7 +449,7 @@ it('every chip is a real button in the tab order, and focusing one shows its car
   off = { active: false };
   await show();
   const buttons = within(slot()).getAllByRole('button');
-  expect(buttons.map((b) => b.textContent)).toEqual(['Bright desk', 'Evening lamp', 'Gaming', 'Off', BACK_WORD]);
+  expect(buttons.map((b) => b.textContent)).toEqual(['Music sync', '', 'Bright desk', 'Evening lamp', 'Gaming', 'Off', BACK_WORD]);
   for (const b of buttons) {
     expect(b.tagName).toBe('BUTTON');
     expect(b.tabIndex).toBe(0);

@@ -1,5 +1,6 @@
 import type { HomeWord, Mood, Moods } from './home';
 import { OFFICE_OFF, TEXT, type HomeState } from './homeStore';
+import { failText } from './lightsync/model';
 
 /**
  * The Office moods row at the foot of Unwind: pure rules (swatches, the fit rule, the one line, the
@@ -20,12 +21,16 @@ export const NAME_MIN = 28;
 export const LABEL_MARGIN = 2;
 /** The Off chip: 28 px of padding, 2 px of border, and (while its write is out) a 14 px icon and its 8 px gap. */
 export const OFF_FIXED = 30;
-export const OFF_BUSY_EXTRA = 22;
+/** The icon takes the Off chip's own padding while its write is out (see `.u-mood.off[data-busy]`), so it adds no width. */
+export const OFF_BUSY_EXTRA = 0;
 /** The As before chip: 2 px of border, 25 px of padding, the 18 px arrow and its 8 px gap (the words are measured). */
 export const BACK_FIXED = 53;
 export const BACK_WORD = 'As before';
 /** Off or As before drawn as the icon alone (the last steps of the fit rule): at least a 40 px click. */
 export const ICON_CHIP = 40;
+/** The Music sync chip, first in the row, a fixed width: 2 px of border, 12 px of padding, the 18 px pulse icon and its 8 px gap, the name, a 1 px divider and the dots button (three 10 px dots, the 16 px chevron, 8 px of padding each side). Measured as 196 to 204 px of content in the chip font; 208 keeps 4 px spare so six real mood names fit whole by wall x 1240. */
+export const SYNC_WIDTH = 208;
+export const SYNC_WORD = 'Music sync';
 /** The home app's own caps, mirrored by the native side (`wall2_studio.rs`). */
 export const MOOD_MAX = 12;
 
@@ -71,11 +76,12 @@ export interface Fit {
  * 1. As is when it fits 1124. 2. Else the label goes (the group keeps its aria-label). 3. Else every name is cut at
  * the largest shared width that fits (long names shrink first), never under `NAME_MIN` of text. 4. Else As before
  * becomes its arrow alone (`ICON_CHIP` wide). 5. Else Off does too. 6. Else the slot clips its left edge. Mood chips never go under 76 px.
+ * `syncWidth` is the Music sync chip's fixed width (`SYNC_WIDTH`, 0 when it is not drawn); it never shrinks.
  */
-export function fitMoodRow(nameWidths: readonly number[], labelWidth: number, offWidth: number, backWidth = 0): Fit {
+export function fitMoodRow(nameWidths: readonly number[], labelWidth: number, offWidth: number, backWidth = 0, syncWidth = 0): Fit {
   const parts = (cap: number, label: boolean, off: number, back: number): number => {
     const chips = nameWidths.map((w) => CHIP_FIXED + Math.ceil(Math.min(w, cap)));
-    const items = [...chips, ...(off > 0 ? [off] : []), ...(back > 0 ? [back] : [])];
+    const items = [...(syncWidth > 0 ? [syncWidth] : []), ...chips, ...(off > 0 ? [off] : []), ...(back > 0 ? [back] : [])];
     const body = items.reduce((a, b) => a + b, 0) + Math.max(0, items.length - 1 + (label ? 1 : 0)) * ROW_GAP;
     return body + (label ? labelWidth + LABEL_MARGIN : 0);
   };
@@ -258,4 +264,33 @@ export function chipTip(row: RowModel, chip: ChipModel): { first: string; second
   if (row.warnText) return { first, second: row.warnText, warn: true };
   if (row.waiting) return { first, second: 'Asking the home app', warn: false };
   return { first, second: null, warn: false };
+}
+
+// Section: the Music sync chip
+
+export interface SyncChipInput {
+  starting: boolean;
+  running: boolean;
+  failure: string | null;
+  paletteName: string;
+  /** The tip says "Stopped Hue Sync" (true only the one time). */
+  hueNote: boolean;
+}
+
+export interface SyncChipModel {
+  lit: boolean;
+  busy: boolean;
+  failed: boolean;
+}
+
+export function syncChipModel(i: SyncChipInput): SyncChipModel {
+  return { lit: i.running && !i.starting, busy: i.starting, failed: i.failure !== null && !i.starting };
+}
+
+/** The chip's tip: what a click does now, then (second line) a failure or the one-time Hue Sync note. */
+export function syncTip(i: SyncChipInput): { first: string; second: string | null; warn: boolean } {
+  if (i.starting) return { first: 'Starting music sync', second: null, warn: false };
+  if (i.failure !== null) return { first: 'Music sync: click to try again', second: failText(i.failure), warn: true };
+  if (i.running) return { first: `Music sync is on in ${i.paletteName}. Click to stop it and put the lights back.`, second: i.hueNote ? 'Stopped Hue Sync' : null, warn: false };
+  return { first: `Starts the lights dancing to the music in ${i.paletteName}.`, second: null, warn: false };
 }
