@@ -20,7 +20,7 @@ export function useSyncInput(): SyncChipInput & { on: boolean } {
   return { starting, running, failure, paletteName: name, hueNote: false, on };
 }
 
-function SyncTip() {
+export function SyncTip() {
   // Drawn from the store as it is when the tip shows; "Stopped Hue Sync" is taken here, so it shows once.
   const [hue, setHue] = useState(false);
   useEffect(() => {

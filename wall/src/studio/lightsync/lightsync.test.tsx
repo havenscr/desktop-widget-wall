@@ -1,3 +1,4 @@
+import { StrictMode } from 'react';
 import { act, fireEvent, render, within } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { mocks } from '../../bridge/tauri';
@@ -8,6 +9,8 @@ import { useNowPlayingStore } from '../../music/store';
 import { resetHome, useHome } from '../homeStore';
 import { SYNC_WIDTH, SYNC_WORD, fitMoodRow, syncChipModel } from '../moodRow';
 import { OfficeMoods } from '../OfficeMoods';
+import { SyncTip } from '../SyncChip';
+import { renderToString } from 'react-dom/server';
 import { DEFAULT_LIGHT_SYNC, PALETTES, clampSettings, isHex, resolvePalette, type PaletteId } from './model';
 import { attachPoll, resetLightSync, useLightSync } from './store';
 
@@ -376,4 +379,119 @@ it('a failed stop keeps polling', async () => {
   const n = count('wall2_lightsync_status');
   await flush(4100);
   expect(count('wall2_lightsync_status')).toBeGreaterThan(n);
+});
+
+it('a mood then Off clicked during a stop: the last choice is applied, and Lights back is skipped', async () => {
+  await show();
+  fireEvent.click(main());
+  await flush();
+  let release!: () => void;
+  const gate = new Promise<void>((r) => (release = r));
+  mocks.set('wall2_lightsync_stop', async (args) => {
+    calls.push({ command: 'wall2_lightsync_stop', args });
+    await gate;
+    running = false;
+  });
+  calls.length = 0;
+  fireEvent.click(main());
+  await flush();
+  expect(useLightSync.getState().stopping).toBe(true);
+  fireEvent.click(mood('gaming'));
+  fireEvent.click(mood('off'));
+  await flush();
+  expect(count('wall2_office_mood') + count('wall2_office_off')).toBe(0);
+  release();
+  await flush(50);
+  expect(order()).toEqual(['wall2_lightsync_stop', 'wall2_office_off']);
+});
+
+it('StrictMode mounts and a double detach never underflow the poll owners', async () => {
+  running = true;
+  const view = render(
+    <StrictMode>
+      <OfficeMoods />
+    </StrictMode>,
+  );
+  await flush();
+  mocks.set('wall2_lightsync_status', () => {
+    calls.push({ command: 'wall2_lightsync_status' });
+    return { paired: true, bridgeChanged: false, running: true, starting: false, lastError: null, stoppedHueSync: false };
+  });
+  await flush(4100);
+  expect(count('wall2_lightsync_status')).toBeGreaterThan(0);
+  view.unmount();
+  // A second owner stays mounted while the first detaches twice: polling must go on.
+  const keep = attachPoll();
+  const a = attachPoll();
+  a();
+  a();
+  calls.length = 0;
+  await flush(4100);
+  expect(count('wall2_lightsync_status')).toBeGreaterThan(0);
+  keep();
+  // Underflow would leave a negative count: one new owner must still poll.
+  const again = attachPoll();
+  calls.length = 0;
+  await flush(4100);
+  expect(count('wall2_lightsync_status')).toBeGreaterThan(0);
+  again();
+});
+
+it('a status read in flight when stop begins sets no stale running state and starts no timer', async () => {
+  running = true;
+  await show();
+  await flush(0);
+  let releaseRead!: () => void;
+  const readGate = new Promise<void>((r) => (releaseRead = r));
+  let releaseStop!: () => void;
+  const stopGate = new Promise<void>((r) => (releaseStop = r));
+  mocks.set('wall2_lightsync_status', async () => {
+    calls.push({ command: 'wall2_lightsync_status' });
+    await readGate;
+    return { paired: true, bridgeChanged: false, running: true, starting: false, lastError: null, stoppedHueSync: false };
+  });
+  mocks.set('wall2_lightsync_stop', async (args) => {
+    calls.push({ command: 'wall2_lightsync_stop', args });
+    await stopGate;
+    running = false;
+  });
+  useLightSync.setState({ status: { paired: true, bridgeChanged: false, running: true, starting: false, lastError: null, stoppedHueSync: false } as never });
+  await act(async () => {
+    void useLightSync.getState().poll();
+    void useLightSync.getState().stop();
+    await vi.advanceTimersByTimeAsync(0);
+  });
+  releaseRead();
+  await flush(0);
+  releaseStop();
+  await flush(0);
+  expect(useLightSync.getState().status).toBeNull();
+  calls.length = 0;
+  await flush(10_000);
+  expect(count('wall2_lightsync_status')).toBe(0);
+});
+
+it('the Hue note is taken in an effect: a double render under StrictMode still shows it once', async () => {
+  hue = true;
+  render(
+    <StrictMode>
+      <OfficeMoods />
+      <HoverTipLayer />
+    </StrictMode>,
+  );
+  await flush();
+  fireEvent.click(main());
+  await flush();
+  expect(await tipOf(main())).toContain('Stopped Hue Sync');
+  expect(await tipOf(main())).not.toContain('Stopped Hue Sync');
+});
+
+it('rendering the tip without committing it (no effects) does not consume the Hue note', () => {
+  useLightSync.setState({ hueNote: true, status: { paired: true, bridgeChanged: false, running: true, starting: false, lastError: null, stoppedHueSync: true } as never });
+  renderToString(<SyncTip />);
+  renderToString(<SyncTip />);
+  expect(useLightSync.getState().hueNote).toBe(true);
+  const view = render(<SyncTip />);
+  expect(view.container.textContent).toContain('Stopped Hue Sync');
+  expect(useLightSync.getState().hueNote).toBe(false);
 });
