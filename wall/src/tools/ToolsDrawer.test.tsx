@@ -11,7 +11,7 @@ import { resetKeysFeed, useKeysFeedStore } from '../work/keysFeed';
 import type { KeysSummary } from '../work/keysModel';
 import { resetReports } from './reports';
 import { resetRetries } from './sources';
-import { resetTools, useToolsStore } from './store';
+import { GROUP_KEY, resetTools, useToolsStore, type ToolsFocus } from './store';
 import { AUTO_CLOSE_MS, RING_MS, ToolsDrawer, fileKeyCount, keysLine } from './ToolsDrawer';
 
 /** Move the clock in steps of at most 10 s, each its own act, so the 2 second keys poll never piles into one render batch. */
@@ -46,6 +46,7 @@ let opened: ReturnType<typeof vi.fn<(a?: unknown) => unknown>>;
 const openedHandler = (a?: unknown) => opened(a);
 beforeEach(() => {
   vi.useFakeTimers();
+  localStorage.removeItem(GROUP_KEY);
   vi.setSystemTime(Date.parse('2026-11-13T17:00:00Z'));
   resetTools();
   resetTip();
@@ -71,21 +72,40 @@ afterEach(() => {
   mocks.clear();
 });
 
-const openIt = async (focus: 'accounts' | null = null) => {
+/** Open the drawer (on the group a link names, else Accounts), then the rail group asked for. */
+const openIt = async (focus: ToolsFocus = null, group?: 'Accounts' | 'Health' | 'Lights and home' | 'Display') => {
   render(<ToolsDrawer />);
   act(() => useToolsStore.getState().openDrawer(focus));
   await flush();
+  if (group) await pick(group);
+};
+const pick = async (group: string) => {
+  fireEvent.click(screen.getByRole('tab', { name: new RegExp(`^${group}`) }));
+  await flush();
 };
 
-it('draws nothing until it is opened, then the five sections and the footer', async () => {
+it('draws nothing until it is opened, then the rail of four groups, the build stamp and no footer', async () => {
   render(<ToolsDrawer />);
   expect(screen.queryByLabelText('Tools')).toBeNull();
   act(() => useToolsStore.getState().openDrawer());
   await flush();
   const drawer = screen.getByLabelText('Tools');
-  for (const text of ['Accounts', 'Video look', 'Keys file', 'Sources', 'Build 7c9f442']) expect(drawer.textContent).toContain(text);
-  expect(drawer.textContent).toContain('Accounts and sources moved here from the screens');
+  expect(screen.getAllByRole('tab').map((t) => t.getAttribute('data-group'))).toEqual(['accounts', 'health', 'lights', 'display']);
+  expect(drawer.querySelector('.tools-top')?.textContent).toContain('Build 7c9f442');
+  expect(drawer.textContent).not.toContain('Accounts and sources moved here from the screens');
+  // One panel is open (Accounts); every current function is one click away in its group.
+  expect(drawer.querySelectorAll('[role="tabpanel"]:not([hidden])')).toHaveLength(1);
+  expect(screen.getByRole('list', { name: 'Accounts' })).toBeTruthy();
+  await pick('Health');
+  expect(screen.getByRole('list', { name: 'Sources' })).toBeTruthy();
+  expect(drawer.textContent).toContain('Keys file');
   expect(screen.getAllByRole('button', { name: /^Retry / })).toHaveLength(8);
+  await pick('Lights and home');
+  expect(screen.getByRole('list', { name: 'Key lights' })).toBeTruthy();
+  expect(screen.getByRole('list', { name: 'Light sync' })).toBeTruthy();
+  expect(drawer.querySelector('[data-section="desktoken"]')?.textContent).toContain('Desk token');
+  await pick('Display');
+  for (const text of ['Weather in the scene', 'Video look']) expect(drawer.textContent).toContain(text);
 });
 
 it('the rail button opens it from any place, shows pressed, and closes it again', async () => {
@@ -110,7 +130,7 @@ it('the rail button opens it from any place, shows pressed, and closes it again'
 
 it('Escape, the close button and a click outside close it; a click inside does not', async () => {
   await openIt();
-  fireEvent.pointerDown(screen.getByText('Accounts'));
+  fireEvent.pointerDown(screen.getByRole('list', { name: 'Accounts' }));
   expect(useToolsStore.getState().open).toBe(true);
   fireEvent.keyDown(document, { key: 'Escape' });
   expect(useToolsStore.getState().open).toBe(false);
@@ -174,7 +194,7 @@ it('Accounts: the signed-out calendar has Sign in, Spotify not set up has no but
 });
 
 it('Video look: chips from the Watch looks, the active one lit, a click uses the Watch setter', async () => {
-  await openIt();
+  await openIt(null, 'Display');
   const feathered = screen.getByRole('button', { name: 'Feathered' });
   const drive = screen.getByRole('button', { name: 'Drive-in' });
   expect(drive.getAttribute('aria-pressed')).toBe('true');
@@ -187,7 +207,7 @@ it('Video look: chips from the Watch looks, the active one lit, a click uses the
 });
 
 it('Keys file: count and read time, Open calls the fixed command, Reload reads again', async () => {
-  await openIt();
+  await openIt(null, 'Health');
   await flush();
   expect(screen.getByText(/^keys\.json, 4 keys, read /)).toBeTruthy();
   fireEvent.click(screen.getByRole('button', { name: 'Open' }));
@@ -206,7 +226,7 @@ it('Keys file: count and read time, Open calls the fixed command, Reload reads a
 
 it('Keys file: no file says defaults, and a refusal shows amber with the whole reason on hover', async () => {
   keysAnswer = () => summary({ source: 'default' });
-  await openIt();
+  await openIt(null, 'Health');
   await flush();
   expect(screen.getByText('No keys.json. Defaults in use')).toBeTruthy();
   expect(screen.getByRole('button', { name: 'Open' })).toBeTruthy();
@@ -223,7 +243,7 @@ it('Keys file: no file says defaults, and a refusal shows amber with the whole r
 
 it('an Open that fails says so', async () => {
   mocks.set('wall2_open_keys_file', () => Promise.reject('failed'));
-  await openIt();
+  await openIt(null, 'Health');
   fireEvent.click(screen.getByRole('button', { name: 'Open' }));
   await flush();
   expect(screen.getByText('Could not open the file')).toBeTruthy();
@@ -240,7 +260,7 @@ it('Retry reads exactly once however it is clicked while the read is slow (click
   let release: (v: unknown) => void = () => undefined;
   const tasks = vi.fn(() => new Promise((r) => (release = r)));
   mocks.set('wall2_tasks_next', tasks);
-  await openIt();
+  await openIt(null, 'Health');
   // Opening the drawer already started the one read (no screen has the task list mounted).
   expect(tasks).toHaveBeenCalledTimes(1);
   const retry = screen.getByRole('button', { name: 'Retry Tasks' }) as HTMLButtonElement;
@@ -322,7 +342,7 @@ it('closing on purpose during a Spotify sign-in cancels it too', async () => {
 
 it('the could not open note clears on the next success and on Reload', async () => {
   mocks.set('wall2_open_keys_file', () => Promise.reject('failed'));
-  await openIt();
+  await openIt(null, 'Health');
   fireEvent.click(screen.getByRole('button', { name: 'Open' }));
   await flush();
   expect(screen.getByText('Could not open the file')).toBeTruthy();
@@ -338,7 +358,7 @@ it('the could not open note clears on the next success and on Reload', async () 
 });
 
 it('Reload keeps the last good read for the deck and marks only the drawer line as reading', async () => {
-  await openIt();
+  await openIt(null, 'Health');
   await flush();
   keysAnswer = () => new Promise(() => undefined);
   fireEvent.click(screen.getByRole('button', { name: 'Reload' }));
@@ -436,7 +456,7 @@ it('unmounting the drawer during a waiting sign-in cancels it (calendar)', async
   expect(cancel).toHaveBeenCalled();
 });
 
-it('Weather in the scene: two chips in the top row, on by default, each stores the choice, shows pressed and carries its tip, the heading its explanation, and the hint is one short line', async () => {
+it('Weather in the scene: two chips in the Display group, on by default, each stores the choice, shows pressed and carries its tip, the heading its explanation, and the hint is one short line', async () => {
   localStorage.removeItem(SCENE_WEATHER_KEY);
   useSceneWeather.setState({ on: true });
   render(
@@ -445,13 +465,13 @@ it('Weather in the scene: two chips in the top row, on by default, each stores t
       <HoverTipLayer />
     </>,
   );
-  act(() => useToolsStore.getState().openDrawer());
+  act(() => useToolsStore.getState().openDrawer('display'));
   await flush();
   const drawer = screen.getByLabelText('Tools');
   const block = drawer.querySelector('.tools-weather')!;
-  expect(block.parentElement?.classList.contains('tools-top')).toBe(true);
-  expect(block.previousElementSibling?.textContent).toBe('Tools');
-  expect(block.nextElementSibling?.getAttribute('aria-label')).toBe('Close Tools');
+  expect(block.parentElement?.getAttribute('aria-labelledby')).toBe('tools-tab-display');
+  expect(block.parentElement?.hasAttribute('hidden')).toBe(false);
+  expect(drawer.querySelector('.tools-top .tools-weather')).toBeNull();
   expect(block.querySelector('.tools-k.sm')?.textContent).toBe('Weather in the scene');
   expect(block.querySelector('.tools-hint')?.textContent).toBe('Rain and wind from your forecast.');
   const on = screen.getByRole('button', { name: 'On' });

@@ -26,7 +26,7 @@ it('the video look chips follow whatever list the Watch looks hold (four here)',
   mocks.set('wall2_spotify_status', () => ({ setup: false, signedIn: false }));
   useWatchStore.setState({ looks: { ...DEFAULT_LOOKS } });
   render(<ToolsDrawer />);
-  act(() => useToolsStore.getState().openDrawer());
+  act(() => useToolsStore.getState().openDrawer('display'));
   const names = ['Feathered', 'Drive-in', 'Whole sky', 'The sun'];
   for (const n of names) expect(screen.getByRole('button', { name: n })).toBeTruthy();
   fireEvent.click(screen.getByRole('button', { name: 'The sun' }));

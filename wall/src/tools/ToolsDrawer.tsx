@@ -1,5 +1,5 @@
-import { IconRefresh, IconX } from '@tabler/icons-react';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { IconBulb, IconHeartbeat, IconPalette, IconRefresh, IconUserCircle, IconX, type Icon } from '@tabler/icons-react';
+import { useEffect, useMemo, useRef, useState, type ComponentType, type KeyboardEvent as ReactKeyboardEvent } from 'react';
 import { invoke } from '../bridge/tauri';
 import { formatBuild, type BuildInfo } from '../clock/format';
 import { clockText } from '../meet/model';
@@ -10,11 +10,13 @@ import { useSceneWeather } from '../weather/sceneSetting';
 import { errorText, isAbsent } from '../work/deckModel';
 import { joinKeys, reloadKeys, useKeysFeedStore, type Read } from '../work/keysFeed';
 import type { KeysSummary } from '../work/keysModel';
-import { Accounts } from './accounts';
+import { Accounts, LightSyncBlock } from './accounts';
+import { useLightSync } from './lightSync';
 import { DeskToken } from './DeskToken';
 import { KeyLights } from './KeyLights';
 import { readText, readUnmountedSources, retrySource, SOURCE_NAMES, useSources, type SourceId, type SourceRow } from './sources';
-import { anySignInWaiting, useToolsStore } from './store';
+import { useKeyLights } from '../studio/store';
+import { anySignInWaiting, GROUP_KEY, useRailStatus, useToolsStore, type ToolsFocus } from './store';
 import { overlayOwnsPointer } from '../ribbon/DrawerScrim';
 
 /** The drawer closes by itself after this long with no pointer over it. */
@@ -65,13 +67,12 @@ function SourceLine({ row }: { row: SourceRow }) {
   );
 }
 
-function Sources() {
-  const rows = useSources();
+function Sources({ rows }: { rows: SourceRow[] }) {
   // Hook-held sources whose screen is not open are read once when the drawer opens, so the list is honest at a glance.
   useEffect(() => readUnmountedSources(), []);
   const byId = new Map<SourceId, SourceRow>(rows.map((r) => [r.id, r]));
   return (
-    <div className="tools-col">
+    <div className="tools-block">
       <div className="tools-head">
         <span className="tools-k">Sources</span>
         <span className="tools-faint">last good read</span>
@@ -108,19 +109,17 @@ function VideoLook() {
   );
 }
 
-/**
- * The switch for rain and wind from the forecast on the mountains and on Watt (on by default; kept across restarts).
- * It sits in the drawer's top row, between the title and the close button: the columns below are full in their worst
- * case (the drawer is 700 px tall at most), so a block among them would push the drawer past the wall.
- */
+/** The switch for rain and wind from the forecast on the mountains and on Watt (on by default; kept across restarts). It sits in the Display group. */
 function SceneWeather() {
   const on = useSceneWeather((s) => s.on);
   const setOn = useSceneWeather((s) => s.setOn);
   return (
     <div className="tools-weather">
+      <div className="tools-head">
       <span className="tools-k sm" {...hover('Rain and wind from your forecast, on the mountains and on Watt. Off under reduced motion.')}>
         Weather in the scene
       </span>
+      </div>
       <div className="tools-chips">
         <button type="button" className={on ? 'tools-chip on' : 'tools-chip'} aria-pressed={on} {...hover('Show rain and wind from the forecast on the mountains and on Watt')} onClick={() => setOn(true)}>
           On
@@ -129,7 +128,7 @@ function SceneWeather() {
           Off
         </button>
       </div>
-      <span className="tools-hint">Rain and wind from your forecast.</span>
+      <div className="tools-hint">Rain and wind from your forecast.</div>
     </div>
   );
 }
@@ -209,12 +208,117 @@ function BuildStamp() {
       live = false;
     };
   }, []);
+  return <span className="tools-faint tools-build">{build ?? 'Build unknown'}</span>;
+}
+
+/** The groups' panels. Each stays mounted while the drawer is open (only the open one is shown), so every read, sign-in wait and rail line keeps running. */
+interface PanelProps {
+  ringed: (section: ToolsFocus) => boolean;
+}
+
+function AccountsPanel({ ringed }: PanelProps) {
   return (
-    <div className="tools-foot">
-      <span className="tools-faint">{build ?? 'Build unknown'}</span>
-      <span className="tools-faint">Accounts and sources moved here from the screens</span>
+    <div className={ringed('accounts') ? 'tools-block tools-ringed' : 'tools-block'} data-section="accounts">
+      <Accounts />
     </div>
   );
+}
+
+function HealthPanel() {
+  const rows = useSources();
+  const keys = useKeysFeedStore((s) => s.read);
+  const bad = rows.filter((r) => r.tone === 'warn' || r.tone === 'down').length + (keys.status === 'problem' ? 1 : 0);
+  useRailStatus('health', bad === 0 ? 'All fresh' : `${bad} need a look`, bad === 0 ? 'ok' : 'warn');
+  return (
+    <>
+      <Sources rows={rows} />
+      <KeysFile />
+    </>
+  );
+}
+
+function LightsPanel({ ringed }: PanelProps) {
+  const opened = useToolsStore((s) => s.opened);
+  const ls = useLightSync(opened);
+  const keyStatus = useKeyLights((s) => s.saved ?? s.status);
+  const set = keyStatus === null || keyStatus === 'failed' ? 0 : Number(keyStatus.left) + Number(keyStatus.right);
+  let line: { text: string; tone: 'ok' | 'warn' | 'none' };
+  if (ls.pairing) line = { text: 'Hue pairing', tone: 'none' };
+  else if (ls.failed || ls.status?.bridgeChanged) line = { text: ls.failed ? 'Could not check' : 'Bridge changed', tone: 'warn' };
+  else if (ls.status?.paired) line = { text: 'Hue paired', tone: 'none' };
+  else line = { text: set === 0 ? 'Nothing set up' : set === 1 ? '1 key light set' : '2 key lights set', tone: 'none' };
+  useRailStatus('lights', line.text, line.tone);
+  return (
+    <>
+      <KeyLights ringed={ringed('keylights')} />
+      <LightSyncBlock ls={ls} />
+      <DeskToken ringed={ringed('desktoken')} />
+    </>
+  );
+}
+
+function DisplayPanel() {
+  const on = useSceneWeather((s) => s.on);
+  useRailStatus('display', on ? 'Weather on' : 'Weather off', 'none');
+  return (
+    <>
+      <SceneWeather />
+      <VideoLook />
+    </>
+  );
+}
+
+/** One rail entry's group. Adding an option to the drawer is one new entry here (and its panel above). */
+export interface ToolsGroup {
+  id: Exclude<ToolsFocus, null | 'keylights' | 'desktoken'>;
+  name: string;
+  icon: Icon;
+  tip: string;
+  /** The ring targets inside the group: a link that names one opens the group. */
+  sections: Exclude<ToolsFocus, null>[];
+  Panel: ComponentType<PanelProps>;
+}
+
+export const GROUPS: readonly ToolsGroup[] = [
+  { id: 'accounts', name: 'Accounts', icon: IconUserCircle, tip: 'Calendar, Spotify and YouTube sign-ins', sections: ['accounts'], Panel: AccountsPanel },
+  { id: 'health', name: 'Health', icon: IconHeartbeat, tip: 'When each source was last read, and the keys file', sections: [], Panel: HealthPanel },
+  { id: 'lights', name: 'Lights and home', icon: IconBulb, tip: 'Key lights, Light sync and the home app token', sections: ['keylights', 'desktoken'], Panel: LightsPanel },
+  { id: 'display', name: 'Display', icon: IconPalette, tip: 'Weather in the scene and the video look', sections: [], Panel: DisplayPanel },
+];
+
+/** The group a focus names: a group id, or a section inside a group. */
+export function groupOf(focus: ToolsFocus): ToolsGroup['id'] | null {
+  if (!focus) return null;
+  return GROUPS.find((g) => g.id === focus || g.sections.includes(focus))?.id ?? null;
+}
+
+function rememberedGroup(): ToolsGroup['id'] | null {
+  try {
+    const v = localStorage.getItem(GROUP_KEY);
+    return GROUPS.find((g) => g.id === v)?.id ?? null;
+  } catch {
+    return null;
+  }
+}
+
+function remember(id: string): void {
+  try {
+    localStorage.setItem(GROUP_KEY, id);
+  } catch {
+    /* A blocked store only means the choice is not kept. */
+  }
+}
+
+/** The section a link named stays ringed for 2 seconds; a group id rings nothing. */
+function useRinging(focus: ToolsFocus, opened: number): ToolsFocus {
+  const [on, setOn] = useState<ToolsFocus>(focus);
+  useEffect(() => {
+    setOn(focus);
+    if (!focus) return;
+    const id = setTimeout(() => setOn(null), RING_MS);
+    return () => clearTimeout(id);
+  }, [focus, opened]);
+  return on;
 }
 
 function Drawer() {
@@ -222,9 +326,31 @@ function Drawer() {
   const focus = useToolsStore((s) => s.focus);
   const opened = useToolsStore((s) => s.opened);
   const ref = useRef<HTMLElement>(null);
-  const [ring, setRing] = useState(focus === 'accounts');
-  const [ringKeys, setRingKeys] = useState(focus === 'keylights');
-  const [ringDesk, setRingDesk] = useState(focus === 'desktoken');
+  const ringing = useRinging(focus, opened);
+  const ringed = (section: ToolsFocus) => section !== null && ringing === section;
+  const rail = useToolsStore((s) => s.rail);
+  // A group whose panel has not reported in 15 s reads Could not check, never Checking for good.
+  const [stale, setStale] = useState(false);
+  useEffect(() => {
+    const id = setTimeout(() => setStale(true), 15000);
+    return () => clearTimeout(id);
+  }, []);
+  // A link opens the group it names; otherwise the group this viewer had open last.
+  const [group, setGroup] = useState<ToolsGroup['id']>(() => groupOf(focus) ?? rememberedGroup() ?? GROUPS[0].id);
+  useEffect(() => {
+    const g = groupOf(focus);
+    if (g) setGroup(g);
+  }, [focus, opened]);
+  useEffect(() => remember(group), [group]);
+  const tabs = useRef<Record<string, HTMLButtonElement | null>>({});
+  const onTabKey = (e: ReactKeyboardEvent<HTMLButtonElement>, i: number) => {
+    const step = e.key === 'ArrowDown' ? 1 : e.key === 'ArrowUp' ? -1 : 0;
+    if (!step) return;
+    e.preventDefault();
+    const next = GROUPS[(i + step + GROUPS.length) % GROUPS.length];
+    setGroup(next.id);
+    tabs.current[next.id]?.focus();
+  };
   const idle = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const startIdle = useMemo(() => {
     const start = (): void => {
@@ -234,38 +360,6 @@ function Drawer() {
     };
     return start;
   }, [close]);
-
-  // Ring the Accounts section for 2 seconds when opened from a link.
-  useEffect(() => {
-    if (focus !== 'accounts') {
-      setRing(false);
-      return;
-    }
-    setRing(true);
-    const id = setTimeout(() => setRing(false), RING_MS);
-    return () => clearTimeout(id);
-  }, [focus, opened]);
-  // The same for Key lights, when the drawer opens from the On Air block.
-  useEffect(() => {
-    if (focus !== 'keylights') {
-      setRingKeys(false);
-      return;
-    }
-    setRingKeys(true);
-    const id = setTimeout(() => setRingKeys(false), RING_MS);
-    return () => clearTimeout(id);
-  }, [focus, opened]);
-
-  // The same for Home app, when the drawer opens from the studio lights.
-  useEffect(() => {
-    if (focus !== 'desktoken') {
-      setRingDesk(false);
-      return;
-    }
-    setRingDesk(true);
-    const id = setTimeout(() => setRingDesk(false), RING_MS);
-    return () => clearTimeout(id);
-  }, [focus, opened]);
 
   // Escape or a click outside closes it (the Tools button toggles itself).
   useEffect(() => {
@@ -298,27 +392,53 @@ function Drawer() {
     <section ref={ref} className="tools-drawer" aria-label="Tools" onPointerEnter={() => clearTimeout(idle.current)} onPointerLeave={startIdle}>
       <div className="tools-top">
         <span className="tools-k tx">Tools</span>
-        <SceneWeather />
+        <BuildStamp />
         <button type="button" className="tools-x" aria-label="Close Tools" onClick={close}>
           <IconX size={18} aria-hidden="true" />
         </button>
       </div>
-      <div className="tools-cols">
-        <div className="tools-col left">
-          <div className={ring ? 'tools-block tools-ringed' : 'tools-block'} data-section="accounts">
-            <div className="tools-k sm">Accounts</div>
-            <Accounts />
+      <div className="tools-body">
+        <div className="tools-rail" role="tablist" aria-label="Tools groups" aria-orientation="vertical">
+          {GROUPS.map((g, i) => {
+            const st = rail[g.id] ?? (stale ? { text: 'Could not check', tone: 'warn' as const } : { text: 'Checking', tone: 'none' as const });
+            const Ico = g.icon;
+            return (
+              <button
+                key={g.id}
+                ref={(el) => {
+                  tabs.current[g.id] = el;
+                }}
+                type="button"
+                role="tab"
+                id={`tools-tab-${g.id}`}
+                aria-selected={group === g.id}
+                aria-controls={`tools-panel-${g.id}`}
+                tabIndex={group === g.id ? 0 : -1}
+                className={group === g.id ? 'tools-tab on' : 'tools-tab'}
+                data-group={g.id}
+                {...hover(g.tip)}
+                onClick={() => setGroup(g.id)}
+                onKeyDown={(e) => onTabKey(e, i)}
+              >
+                <Ico size={22} aria-hidden="true" />
+                <span className="tools-tabtext">
+                  <span className="tools-tabname">{g.name}</span>
+                  <span className={st.tone === 'warn' ? 'tools-tabline bad' : 'tools-tabline'} data-rail-status={g.id}>
+                    {st.text}
+                  </span>
+                </span>
+                <i className={`tools-dot ${st.tone}`} aria-hidden="true" />
+              </button>
+            );
+          })}
+        </div>
+        {GROUPS.map((g) => (
+          <div key={g.id} className="tools-panel" role="tabpanel" id={`tools-panel-${g.id}`} aria-labelledby={`tools-tab-${g.id}`} hidden={group !== g.id}>
+            <div className="tools-k tools-ptitle">{g.name}</div>
+            <g.Panel ringed={ringed} />
           </div>
-          <VideoLook />
-          <KeysFile />
-        </div>
-        <div className="kl-stack">
-          <Sources />
-          <KeyLights ringed={ringKeys} />
-          <DeskToken ringed={ringDesk} />
-        </div>
+        ))}
       </div>
-      <BuildStamp />
     </section>
   );
 }

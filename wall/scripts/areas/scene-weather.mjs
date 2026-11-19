@@ -16,13 +16,13 @@ const state = (screen, name, query, extra = {}) => ({ screen, name, query, custo
 
 const WATCH = 'watch=mock&wlist=three&wlook=sky&wplay=0';
 const fit = (when, knobs) => `?hz=unwind&at=${when}&clock=review&meet=none&long=1&agents=3&${knobs}`;
-const toolsFit = (knobs) => `?hz=work&at=${at(10, 24)}&clock=review&agents=3&tools=1&${knobs}`;
+const toolsFit = (knobs) => `?hz=work&at=${at(10, 24)}&clock=review&agents=3&tools=display&${knobs}`;
 
 // Runs in the page. With a weather knob on Watch: the front canvas holds the layer's streaks and rings (pale blue, a
 // few percent opaque on transparency): plenty must be drawn outside the film's box (so the rule fails for a missing
 // layer) and none of the streaks may lie inside it (shrunk by 12 px, since the layer keeps 8 px clear and a streak may pass a corner). In Tools: the Weather block sits in the drawer's top
 // row between the title and the close button, overlaps neither, keeps the drawer inside the wall, and no text in it
-// is under 16 px (the 15 px section heading is the drawer's own).
+// is under 16 px.
 function measureWeather() {
   const out = { film: null, tools: null };
   const params = new URLSearchParams(location.search);
@@ -58,10 +58,10 @@ function measureWeather() {
   if (drawer && block) {
     const R = (e) => { const r = e.getBoundingClientRect(); return { l: r.left, t: r.top, r: r.right, b: r.bottom }; };
     const top = block.parentElement;
-    const kids = [...top.children].map((e) => ({ n: (e.getAttribute('aria-label') || e.textContent || '').trim().slice(0, 14), ...R(e) }));
+    const kids = [...block.children].map((e) => ({ n: (e.getAttribute('aria-label') || e.textContent || '').trim().slice(0, 14), ...R(e) }));
     const small = [];
     for (const e of [block, ...block.querySelectorAll('*')]) {
-      if (!e.matches || e.classList.contains('tools-k')) continue; // the section headings are the drawer's own 15 px caps
+      if (!e.matches) continue;
       if (![...e.childNodes].some((n) => n.nodeType === 3 && n.textContent.trim())) continue;
       const px = parseFloat(getComputedStyle(e).fontSize);
       if (px < 15.99) small.push('"' + e.textContent.trim().slice(0, 30) + '" is ' + px + ' px');
@@ -73,7 +73,7 @@ function measureWeather() {
       drawer: R(drawer),
       small,
       cut,
-      inTop: !!top.classList.contains('tools-top'),
+      inTop: !!top.classList.contains('tools-panel') && !top.hidden,
       chips: [...block.querySelectorAll('.tools-chip')].map((c) => c.getBoundingClientRect().height),
     };
   }
@@ -107,17 +107,17 @@ export default {
       state('unwind', 'scene weather: Watt fluffy after the shake', unwind(EVE, 'weather=rain&wattwx=fluffy')),
       state('unwind', 'scene weather: Watt leaning in the wind, facing left, with the loose strand', unwind(DAY, 'weather=wind&wattwx=lean')),
       state('unwind', 'scene weather: reduced motion with rain, no layer and Watt damp', unwind(EVE, 'weather=rain&reduced=1')),
-      { screen: 'work', name: 'scene weather: Tools, the switch on', query: `hz=work&at=${at(10, 24)}&clock=review&agents=3&weather=rain&tools=1`, custom: true, expect: ['Weather in the scene', 'On', 'Off', 'Rain and wind from your forecast.'] },
-      { screen: 'work', name: 'scene weather: Tools, the switch off', query: `hz=work&at=${at(10, 24)}&clock=review&agents=3&weather=rain&tools=1`, custom: true, actions: '.tools-weather .tools-chip:nth-child(2)', expect: ['Weather in the scene', 'Off'] },
-      { screen: 'work', name: 'scene weather: Tools, the Off tip', query: `hz=work&at=${at(10, 24)}&clock=review&agents=3&weather=rain&tools=1`, custom: true, actions: 'hover:.tools-weather .tools-chip:nth-child(2)', expect: ['Keep the scene and Watt as on a dry day'] },
-      { screen: 'work', name: 'scene weather: Tools, the On tip', query: `hz=work&at=${at(10, 24)}&clock=review&agents=3&weather=rain&tools=1`, custom: true, actions: 'hover:.tools-weather .tools-chip:nth-child(1)', expect: ['Show rain and wind from the forecast on the mountains and on Watt'] },
-      { screen: 'unwind', name: 'scene weather: the switch off, Unwind has no rain and a dry Watt', query: unwind(EVE, 'weather=rain&tools=1'), custom: true, actions: '.tools-weather .tools-chip:nth-child(2)', expect: ['Weather in the scene', 'Off'] },
+      { screen: 'work', name: 'scene weather: Tools, the switch on', query: `hz=work&at=${at(10, 24)}&clock=review&agents=3&weather=rain&tools=display`, custom: true, expect: ['Weather in the scene', 'On', 'Off', 'Rain and wind from your forecast.'] },
+      { screen: 'work', name: 'scene weather: Tools, the switch off', query: `hz=work&at=${at(10, 24)}&clock=review&agents=3&weather=rain&tools=display`, custom: true, actions: '.tools-weather .tools-chip:nth-child(2)', expect: ['Weather in the scene', 'Off'] },
+      { screen: 'work', name: 'scene weather: Tools, the Off tip', query: `hz=work&at=${at(10, 24)}&clock=review&agents=3&weather=rain&tools=display`, custom: true, actions: 'hover:.tools-weather .tools-chip:nth-child(2)', expect: ['Keep the scene and Watt as on a dry day'] },
+      { screen: 'work', name: 'scene weather: Tools, the On tip', query: `hz=work&at=${at(10, 24)}&clock=review&agents=3&weather=rain&tools=display`, custom: true, actions: 'hover:.tools-weather .tools-chip:nth-child(1)', expect: ['Show rain and wind from the forecast on the mountains and on Watt'] },
+      { screen: 'unwind', name: 'scene weather: the switch off, Unwind has no rain and a dry Watt', query: unwind(EVE, 'weather=rain&tools=display'), custom: true, actions: '.tools-weather .tools-chip:nth-child(2)', expect: ['Weather in the scene', 'Off'] },
     ],
   },
   fit: {
     variants: [
       { name: FILM_V, q: fit(EVE, `weather=heavy&${WATCH}&wxt=6.5`), checks: ['.w-stage'], viewportOnly: true },
-      { name: TOOLS_V, q: toolsFit('weather=rain'), checks: ['.tools-drawer', '.tools-drawer .tools-col', '.tools-drawer .tools-foot', '.tools-weather'], viewportOnly: true },
+      { name: TOOLS_V, q: toolsFit('weather=rain'), checks: ['.tools-drawer', '.tools-drawer .tools-rail', '.tools-weather'], viewportOnly: true },
     ],
     measurements: { sceneWeather: measureWeather },
     rules: {
@@ -136,7 +136,7 @@ export default {
           const t = m.tools;
           if (!t) fails.push('scene weather: the Tools block is not on the page');
           else {
-            if (!t.inTop) fails.push('scene weather: the block is not in the drawer\'s top row');
+            if (!t.inTop) fails.push('scene weather: the block is not in the open Display group');
             const ks = t.kids;
             for (let i = 0; i < ks.length; i++) {
               if (ks[i].b > t.drawer.b + 0.5 || ks[i].r > t.drawer.r + 0.5) fails.push('scene weather: "' + ks[i].n + '" is outside the Tools drawer');
@@ -147,11 +147,11 @@ export default {
               }
             }
             if (t.drawer.b > 720.5) fails.push('scene weather: the drawer ends at y ' + r1(t.drawer.b) + ', past the wall (720)');
-            if (t.block.b - t.block.t > 40) fails.push('scene weather: the block is ' + r1(t.block.b - t.block.t) + ' px high (the 36 px top row, 40 at most)');
+            if (t.block.b - t.block.t > 100) fails.push('scene weather: the block is ' + r1(t.block.b - t.block.t) + ' px high (heading, chips and one hint line, 100 at most)');
             for (const x of t.small) fails.push('scene weather: text under 16 px: ' + x);
             for (const x of t.cut) fails.push('scene weather: "' + x + '" is cut');
             for (const h of t.chips) if (h < 31.5) fails.push('scene weather: a chip is ' + r1(h) + ' px high (32 at least, for a mouse)');
-            if (!fails.length) said = 'the block sits in the top row between the title and the close button, ' + r1(t.block.b - t.block.t) + ' px high, chips 32 px, text 16 px or more';
+            if (!fails.length) said = 'the block sits in the open Display group, ' + r1(t.block.b - t.block.t) + ' px high, chips 32 px, text 16 px or more';
           }
         }
         for (const f of fails) emit('  FAIL ' + f);

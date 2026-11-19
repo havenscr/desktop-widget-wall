@@ -25,7 +25,7 @@ const BLOCK_CHECKS = [LIGHTS, '.st-block', '.st-block .st-presets', '.st-block .
 const OFFER_CHECKS = [LIGHTS, '.st-block', '.st-block .st-offer', '.st-block .st-switches'];
 const COMPAT_CHECKS = [LIGHTS, '.st-block', '.st-block .st-homeline'];
 const SHEET_CHECKS = ['.st-drawer', '.st-d-keys', '.st-d-rooms'];
-const TOOLS_CHECKS = ['.tools-drawer', '.tools-drawer .tools-col', '.tools-drawer .tools-block', '.tools-drawer .tools-list', '.tools-drawer .tools-foot'];
+const TOOLS_CHECKS = ['.tools-drawer', '.tools-drawer .tools-rail', '.tools-drawer .tools-panel:not([hidden])', '.tools-drawer .tools-list'];
 
 // What the block, the offer, the sheet, the chips and the Tools section must hold. The page measures; the rule judges.
 function measureHome() {
@@ -166,11 +166,11 @@ export default {
       state('work', 'Work chip, a tight header', workGallery('agents=ask&long=1&rec=1&keys2=both&studio=onair&desktoken=set'), ['Lights', 'Recording']),
       state('meet', 'Meet chip in a call', meetGallery('meet=known&call=teams&camera=1&rec=1&checklist=four&keys2=both&studio=onair&desktoken=set'), ['In call, Teams', 'Recording', 'Lights: On air']),
       state('meet', 'Meet chip opens the sheet', meetGallery('meet=known&call=teams&camera=1&rec=1&checklist=four&keys2=both&studio=onair&desktoken=set'), ['Lights: On air', 'As before', 'Linked', 'Behind monitor'], '.lights-chip'),
-      state('work', 'Tools, Home app, not set', workGallery('tools=1&desktoken=unset'), ['Home app', 'Desk token', 'Not set', 'Set up']),
-      state('work', 'Tools, Home app, typing the token', workGallery('tools=1&desktoken=unset'), ['Save', 'Cancel'], '[data-section="desktoken"] .tools-btn'),
-      state('work', 'Tools, Home app, set', workGallery('tools=1&desktoken=set'), ['Home app', 'Set', 'Change', 'Forget']),
-      state('work', 'Tools, Home app, unreadable', workGallery('tools=1&desktoken=unreadable'), ['The saved token could not be read. Type it again.', 'Change']),
-      state('work', 'Tools, Home app, a token with a space is refused', workGallery('tools=1&desktoken=unset'), ['That token has characters the home app cannot take'], '[data-section="desktoken"] .tools-btn >> type:.dt-field=two words >> [data-section="desktoken"] .tools-btn.cy'),
+      state('work', 'Tools, Home app, not set', workGallery('tools=lights&desktoken=unset'), ['Home app', 'Desk token', 'Not set', 'Set up']),
+      state('work', 'Tools, Home app, typing the token', workGallery('tools=lights&desktoken=unset'), ['Save', 'Cancel'], '[data-section="desktoken"] .tools-btn'),
+      state('work', 'Tools, Home app, set', workGallery('tools=lights&desktoken=set'), ['Home app', 'Set', 'Change', 'Forget']),
+      state('work', 'Tools, Home app, unreadable', workGallery('tools=lights&desktoken=unreadable'), ['The saved token could not be read. Type it again.', 'Change']),
+      state('work', 'Tools, Home app, a token with a space is refused', workGallery('tools=lights&desktoken=unset'), ['That token has characters the home app cannot take'], '[data-section="desktoken"] .tools-btn >> type:.dt-field=two words >> [data-section="desktoken"] .tools-btn.cy'),
     ],
   },
   fit: {
@@ -198,8 +198,8 @@ export default {
       { name: 'Studio home, Work chip, a preset, tight header', q: workFit('agents=ask&long=1&rec=1&keys2=both&studio=onair&desktoken=set'), checks: ['.lanes-hd', '.lanes-hd-l'] },
       { name: MEET_V, q: meetFit('meet=known&call=teams&camera=1&rec=1&checklist=four&keys2=both&studio=onair&desktoken=set'), checks: ['.meet .meet-hero'] },
       { name: 'Studio home, Meet chip, sheet from the chip', q: meetFit('meet=known&call=teams&camera=1&rec=1&checklist=four&keys2=both&studio=onair&desktoken=set'), click: '.lights-chip', checks: SHEET_CHECKS },
-      toolsVariant('Studio home, Tools, set', workFit('agents=3&tools=1&desktoken=set')),
-      toolsVariant(TOOLS_V, workFit('agents=3&tools=1&desktoken=unset'), { click: '[data-section="desktoken"] .tools-btn >> type:.dt-field=abcdefghijklmnopqrstuvwxyz0123456789' }),
+      toolsVariant('Studio home, Tools, set', workFit('agents=3&tools=lights&desktoken=set')),
+      toolsVariant(TOOLS_V, workFit('agents=3&tools=lights&desktoken=unset'), { click: '[data-section="desktoken"] .tools-btn >> type:.dt-field=abcdefghijklmnopqrstuvwxyz0123456789' }),
     ],
     measurements: { studioHome: measureHome },
     rules: {

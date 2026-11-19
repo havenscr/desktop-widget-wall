@@ -1,4 +1,4 @@
-import { IconBrandSpotify, IconBrandYoutube, IconCalendar, IconSettings, IconWorld, IconWorldOff } from '@tabler/icons-react';
+import { IconBrandSpotify, IconBrandYoutube, IconBulb, IconCalendar, IconLoader2, IconSettings, IconTrash, IconWorld, IconWorldOff } from '@tabler/icons-react';
 import { useCallback, useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 import { accountWords, clockText, COLOURS_HINT, COLOURS_LINE, needsSignIn, reasonLine, type MeetAccount } from '../meet/model';
 import { useMeet, type MeetState } from '../meet/useMeet';
@@ -7,7 +7,8 @@ import { PAGE_SWITCH_NAME, PAGE_SWITCH_TIP, usePublicPage } from '../unwind/spot
 import { youtube, type YoutubeLink, type YoutubeStatus } from '../music/youtube';
 import { invoke } from '../bridge/tauri';
 import { hover as hoverCard } from './hover';
-import { useToolsStore } from './store';
+import { PAIR_PROMPT, testLine, useLightSync } from './lightSync';
+import { useRailStatus, useToolsStore } from './store';
 import { calendarName } from './trouble';
 
 type Tone = 'plain' | 'bad';
@@ -419,6 +420,58 @@ function YoutubeRow({ yt, blocked }: { yt: ReturnType<typeof useYoutubeAccount>;
   return row(again ? 'Sign in again' : 'Signed out', again ? 'bad' : 'plain', again ? 'Google ended the saved sign-in.' : undefined, yt.editing ? null : (<>{change}{signInButton}</>));
 }
 
+/** Light sync: pairing with the Hue bridge, a test of the light link, and Forget. Never shows a key or an address. */
+function LightSyncRow({ ls }: { ls: ReturnType<typeof useLightSync> }) {
+  const icon = <IconBulb size={22} aria-hidden="true" />;
+  const spin = <IconLoader2 className="tools-spin" size={18} aria-hidden="true" />;
+  const FORGET_HOVER = 'Forget this pairing. The bridge keeps its own copy; remove it in the Hue app (Settings, Bridges, Entertainment).';
+  const forgetBtn = <Btn label="Forget" icon={<IconTrash size={18} aria-hidden="true" />} disabled={ls.test.state === 'running'} onClick={ls.forget} hover={FORGET_HOVER} />;
+  const pairBtn = (label: string) => <Btn label={label} cy onClick={ls.pair} hover="Pairs the wall with the Hue bridge, for music light sync." />;
+  const row = (line: string, tone: Tone, hover: string | undefined, buttons: ReactNode, extra?: string | null) => (
+    <>
+      <Row icon={icon} name="Light sync" line={line} tone={tone} hover={hover} account="lightsync">
+        {buttons}
+      </Row>
+      {extra && <li className="tools-ls-note" data-lightsync-note>{extra}</li>}
+    </>
+  );
+  if (ls.pairing) {
+    return row('Pairing', 'plain', 'Waits up to 30 seconds for the link button.', <Btn label="Pairing" icon={spin} disabled hover="Waiting for the link button." onClick={() => undefined} />, PAIR_PROMPT);
+  }
+  if (ls.failed) return row('Could not check', 'bad', 'The light link status did not come back.', <Btn label="Retry" onClick={ls.read} hover="Asks again." />);
+  const s = ls.status;
+  if (!s) return <Row icon={icon} name="Light sync" line="Checking" account="lightsync" />;
+  if (!s.paired) return row('Not paired', 'plain', undefined, pairBtn('Pair'), ls.notice);
+  if (s.bridgeChanged) {
+    return row('Bridge changed', 'bad', 'The home app now names another bridge. Forget this pairing, then pair again.', <>{forgetBtn}{pairBtn('Pair')}</>, ls.notice ?? 'Pair again with the new bridge');
+  }
+  const t = ls.test;
+  const testing = t.state === 'running';
+  const testBtn = (
+    <Btn label="Test the light link" icon={testing ? <IconLoader2 className="tools-spin" size={18} aria-hidden="true" /> : <IconBulb size={18} aria-hidden="true" />} disabled={testing} onClick={ls.runTest} hover="Lights the Plays and panels for about 3 seconds." />
+  );
+  const result = testing ? 'Testing the light link' : t.state === 'done' ? testLine(t.word) : null;
+  return row(testing ? 'Testing' : 'Paired', 'plain', undefined, <>{testBtn}{forgetBtn}</>, ls.notice ?? result);
+}
+
+/** The Light sync block under the key lights: its own heading and the one row. The state is held by the caller, so the rail can read it. */
+export function LightSyncBlock({ ls }: { ls: ReturnType<typeof useLightSync> }) {
+  return (
+    <div className="tools-block" data-section="lightsync">
+      <div className="tools-k sm">Light sync</div>
+      <ul className="tools-list" aria-label="Light sync">
+        <LightSyncRow ls={ls} />
+      </ul>
+    </div>
+  );
+}
+
+/** Light sync with its own state. */
+export function LightSync() {
+  const opened = useToolsStore((st) => st.opened);
+  return <LightSyncBlock ls={useLightSync(opened)} />;
+}
+
 /** Under the YouTube row: the two links YouTube API Services asks for. The page sends only a kind word. */
 function YoutubeLinks({ openLink }: { openLink: (kind: YoutubeLink) => void }) {
   return (
@@ -453,6 +506,26 @@ export function Accounts() {
     ? 'The wall could not ask Windows how meetings open. It will ask again when Tools opens.'
     : openStatus ? openWords[openStatus].hint : 'Checking how meetings open.';
   const blocked = m.signingIn !== null || sp.waiting || yt.waiting;
+  // The rail's line: how many accounts are set up but signed out.
+  const need = accounts.filter((a) => needsSignIn(a.state)).length + (sp.status?.setup && !sp.status.signedIn ? 1 : 0) + (yt.status?.setup && !yt.status.signedIn ? 1 : 0);
+  // A status read that has not answered within 15 s counts as failed, so the rail never reads Checking for good.
+  const pending = (sp.status === null && !sp.failed) || (yt.status === null && !yt.failed);
+  const [late, setLate] = useState(false);
+  useEffect(() => {
+    setLate(false);
+    if (!pending) return undefined;
+    const id = setTimeout(() => setLate(true), 15000);
+    return () => clearTimeout(id);
+  }, [pending, opened]);
+  const unchecked = sp.failed || yt.failed || sp.status?.reason === 'failed' || yt.status?.reason === 'failed' || (pending && late);
+  const railLine = need > 0
+    ? { text: need === 1 ? '1 needs sign-in' : `${need} need sign-in`, tone: 'warn' as const }
+    : unchecked
+      ? { text: 'Could not check', tone: 'warn' as const }
+      : pending
+        ? { text: 'Checking', tone: 'none' as const }
+        : { text: 'All signed in', tone: 'ok' as const };
+  useRailStatus('accounts', railLine.text, railLine.tone);
   const setWaiting = useToolsStore((s) => s.setWaiting);
   const note = useToolsStore((s) => s.note);
   const clearNote = useToolsStore((s) => s.clearNote);

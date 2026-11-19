@@ -1,5 +1,5 @@
 /* The Tools drawer: 806 px wide at x 1734, top 20, over the right third of any place.
-   Two columns (410 px and the rest), rows 46 and 44 px, buttons 32 px (mouse sizes). */
+   A rail of groups (221 px) on the left and the open group's panel on the right; rows 46 and 44 px, buttons 32 px (mouse sizes). */
 .rb.rb-tools[aria-pressed='true'] {
   color: var(--cyan);
   background: rgba(53, 230, 234, 0.1);
@@ -23,17 +23,11 @@
   font: 22px/1.3 var(--body);
   color: var(--tx);
 }
-.tools-drawer:has(.tools-note) {
-  gap: 0;
-  padding-top: 3px;
-  padding-bottom: 0;
-}
 .tools-drawer * {
   box-sizing: border-box;
 }
 .tools-top,
-.tools-head,
-.tools-foot {
+.tools-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -42,19 +36,12 @@
 .tools-head {
   margin-bottom: 10px;
 }
-/* The weather switch in the top row: heading, the two chips and a short hint on one line, 36 px high like the close button. */
-.tools-weather {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  min-width: 0;
-}
+/* The weather switch in the Display group: heading, the two chips and a short hint. */
 .tools-weather .tools-chips {
   flex-wrap: nowrap;
 }
-.tools-weather .tools-hint {
-  margin: 0;
-  white-space: nowrap;
+.tools-weather .tools-head {
+  margin-bottom: 10px;
 }
 .tools-k {
   font: 600 18px/1 var(--disp);
@@ -64,14 +51,13 @@
   white-space: nowrap;
 }
 .tools-k.sm {
-  font-size: 15px;
+  font-size: 16px;
 }
 .tools-k.tx {
   color: var(--tx);
 }
 .tools-block > .tools-k.sm,
-.tools-col > .tools-k.sm,
-.tools-col.left > div > .tools-k.sm {
+.tools-panel > div > .tools-k.sm {
   margin-bottom: 10px;
 }
 .tools-head > .tools-k.sm {
@@ -90,18 +76,85 @@
 .tools-x:hover {
   color: var(--tx);
 }
-.tools-cols {
+/* The rail and the open panel. The panel's top is the rail's top. */
+.tools-body {
   display: grid;
-  grid-template-columns: 410px 1fr;
-  gap: 28px;
+  grid-template-columns: 242px 1fr;
+  gap: 17px;
 }
-.tools-col {
-  min-width: 0;
-}
-.tools-col.left {
+.tools-rail {
   display: flex;
   flex-direction: column;
-  gap: 20px;
+  gap: 7px;
+  padding-right: 20px;
+  border-right: 1px solid var(--line);
+  align-self: stretch;
+}
+.tools-tab {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 63px;
+  padding: 0 12px;
+  border-radius: 12px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--dim);
+  text-align: left;
+  cursor: pointer;
+}
+.tools-tab:hover {
+  color: var(--tx);
+  background: rgba(255, 255, 255, 0.05);
+}
+.tools-tab.on {
+  color: var(--cyan);
+  background: rgba(53, 230, 234, 0.1);
+  border-color: rgba(53, 230, 234, 0.4);
+}
+.tools-tab:focus-visible {
+  outline: 3px solid var(--cyan);
+  outline-offset: 2px;
+}
+.tools-tabtext {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.tools-tabname {
+  font: 600 18px/1.1 var(--body);
+  color: var(--tx);
+  white-space: nowrap;
+}
+.tools-tabline {
+  font: 16px/1.15 var(--body);
+  color: var(--dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tools-tabline.bad {
+  color: var(--amber);
+}
+.tools-panel {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.tools-panel[hidden] {
+  display: none;
+}
+.tools-ptitle {
+  color: var(--cyan);
+}
+.tools-build {
+  flex: 1;
+  text-align: right;
+  white-space: nowrap;
 }
 .tools-block {
   border-radius: 8px;
@@ -178,7 +231,7 @@
   color: var(--faint);
 }
 .tools-head .tools-faint {
-  font-size: 14px;
+  font-size: 16px;
 }
 .tools-dot {
   width: 10px;
@@ -265,10 +318,6 @@
   margin-top: 8px;
   font: 16px/1.3 var(--body);
   color: var(--faint);
-}
-.tools-foot {
-  border-top: 1px solid var(--line);
-  padding-top: 12px;
 }
 
 /* The YouTube row's extras (the Set up form and the links line). The row itself is a plain
@@ -362,9 +411,17 @@
   outline: 3px solid var(--cyan);
   outline-offset: 2px;
 }
-/* The drawer is 700 px tall at most and the Accounts block already fills most of it, so while
-   the Set up form is open it has the left column to itself: Video look and Keys file come back
-   the moment the form closes. */
-.tools-drawer:has(.tools-yt-form) .tools-col.left > :not([data-section='accounts']) {
-  display: none;
+.tools-ls-note {
+  font: 16px/1.2 var(--body);
+  color: var(--dim);
+  padding: 0 0 6px 34px;
+  list-style: none;
+}
+.tools-spin {
+  animation: tools-spin 900ms linear infinite;
+}
+@keyframes tools-spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
