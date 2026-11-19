@@ -76,8 +76,11 @@
   align-content: flex-start;
   gap: 10px;
   flex: 1 1 0;
-  min-height: 62px;
+  min-height: 74px;
   overflow-y: auto;
+  /* Room for the chip focus ring (3px outline, 2px offset) inside the scroller. */
+  padding: 6px;
+  margin: -6px;
 }
 .shelf-list {
   flex: 0 0 auto;
