@@ -20,7 +20,12 @@ const VARIANTS = [
   ['Meet layout, the call is 12 minutes past its meeting', at, 'meet=over&call=teams&callsince=-70&rec=1'],
   ['Meet layout, the next meeting overlaps this one', at, 'meet=clash&call=teams'],
   ['Meet layout, a signed out account: the amber line pushes the ring down', at, 'meet=signin-fault&call=teams'],
+  ['Meet layout, brief feed (3 items)', at, 'meet=known&call=teams&checklist=four&brief=ready'],
+  ['Meet layout, brief feed (10 items: 7 rows and a count)', at, 'meet=known&call=teams&checklist=four&brief=many'],
+  ['Meet layout, brief empty (no history yet)', at, 'meet=known&call=teams&checklist=four&brief=empty'],
+  ['Meet layout, brief building', at, 'meet=known&call=teams&checklist=four&brief=building'],
 ];
+const BRIEF_MANY_VARIANT = 'Meet layout, brief feed (10 items: 7 rows and a count)';
 
 /** Runs in the page: every measurement of the Meet layout, as plain data. */
 function measureMeet() {
@@ -50,7 +55,7 @@ function measureMeet() {
   }
   // Controls: 40 to 48 px tall (the hero keys 112), as far as the control is drawn.
   const controls = [];
-  for (const [sel, lo, hi] of [['.meet .meet-key', 112, 112], ['.meet .meet-arrow', 40, 48], ['.meet .meet-dot', 40, 48], ['.meet .meet-next-act .meet-btn', 40, 48], ['.meet .meet-isl-howrow .meet-btn', 40, 48], ['.meet .meet-isl-item', 40, 48], ['.meet .meet-retry', 40, 48], ['.meet .meet-trouble-link', 40, 48], ['.meet .meet-isl-row', 48, 70]]) {
+  for (const [sel, lo, hi] of [['.meet .meet-key', 112, 112], ['.meet .meet-arrow', 40, 48], ['.meet .meet-dot', 40, 48], ['.meet .meet-next-act .meet-btn', 40, 48], ['.meet .meet-isl-howrow .meet-btn', 40, 48], ['.meet .meet-isl-item', 40, 48], ['.meet .meet-retry', 40, 48], ['.meet .meet-trouble-link', 40, 48], ['.meet .meet-isl-row', 48, 70], ['.meet .meet-brief-row', 40, 48]]) {
     for (const e of document.querySelectorAll(sel)) {
       const b = e.getBoundingClientRect();
       if (b.width === 0 && b.height === 0) continue;
@@ -87,6 +92,14 @@ function measureMeet() {
   const rows = [...document.querySelectorAll('.meet .meet-isl-item')].map((e) => { const b = e.getBoundingClientRect(); return { t: r1(b.top), b: r1(b.bottom) }; });
   const paneBox = pane ? pane.getBoundingClientRect() : null;
   const rowsCut = paneBox ? rows.map((r, i) => ({ i, r })).filter(({ r }) => r.t < paneBox.top - 0.5 || r.b > paneBox.bottom + 0.5).map(({ i, r }) => `row ${i + 1} at y ${r.t} to ${r.b} is outside the pane (y ${r1(paneBox.top)} to ${r1(paneBox.bottom)})`) : [];
+  // The brief feed: at most 7 rows, every row inside the body, a title that never wraps, a sub line of 16 px or more.
+  const briefBody = document.querySelector('.meet .meet-brief-body')?.getBoundingClientRect() ?? null;
+  const briefRows = [...document.querySelectorAll('.meet .meet-brief-row')];
+  const briefCut = briefBody ? briefRows.map((e, i) => ({ i, b: e.getBoundingClientRect() })).filter(({ b }) => b.top < briefBody.top - 0.5 || b.bottom > briefBody.bottom + 0.5).map(({ i, b }) => `brief row ${i + 1} at y ${r1(b.top)} to ${r1(b.bottom)} is outside the feed (y ${r1(briefBody.top)} to ${r1(briefBody.bottom)})`) : [];
+  const briefWrap = briefRows.map((e, i) => ({ i, t: e.querySelector('.meet-brief-title') })).filter(({ t }) => t && t.getBoundingClientRect().height > parseFloat(getComputedStyle(t).lineHeight) * 1.5).map(({ i }) => `brief row ${i + 1} title wraps to a second line`);
+  const briefSub = briefRows.map((e) => e.querySelector('.meet-brief-sub')).filter((t) => t && parseFloat(getComputedStyle(t).fontSize) < 15.95).length;
+  const briefMore = document.querySelector('.meet .meet-brief-more');
+  const brief = { rows: briefRows.length, cut: briefCut, wrap: briefWrap, subSmall: briefSub, more: briefMore ? (briefMore.textContent || '').trim() : null, ask: !!document.querySelector('.meet .meet-brief-ask'), bodyBottom: briefBody ? r1(briefBody.bottom) : null };
   const island = document.querySelector('.meet .meet-island');
   const islandText = island ? (island.innerText || '').trim().length : 0;
   const overlaps = [];
@@ -117,7 +130,7 @@ function measureMeet() {
       if (a.left < b.right - 0.5 && b.left < a.right - 0.5 && a.top < b.bottom - 0.5 && b.top < a.bottom - 0.5) heroParts.push(`${parts[i][0]} overlaps ${parts[j][0]}`);
     }
   }
-  return { present: true, boxes, small, controls, narrow, dialInfo, grid, heroParts, titleInfo, clockShown, bodyBox: bodyShown && bodyBox ? { t: r1(bodyBox.top), b: r1(bodyBox.bottom), h: r1(bodyBox.height) } : null, bodyText, islandText, overlaps, out, rowCount: rows.length, rowsCut };
+  return { present: true, boxes, small, controls, narrow, dialInfo, grid, heroParts, titleInfo, clockShown, bodyBox: bodyShown && bodyBox ? { t: r1(bodyBox.top), b: r1(bodyBox.bottom), h: r1(bodyBox.height) } : null, bodyText, islandText, overlaps, out, rowCount: rows.length, rowsCut, brief };
 }
 
 export default {
@@ -147,6 +160,14 @@ export default {
       state('the call is 12 minutes past its meeting', 'meet=over&call=teams&callsince=-70&rec=1', ['In call, Teams', 'Design review with the platform team', 'min over', 'ended', 'Recording', 'Lunch with Sam']),
       state('the next meeting overlaps this one', 'meet=clash&call=teams', ['Next, overlaps', 'Starts before this one ends', 'Lunch with Sam']),
       state('the hover tip on Mute', 'meet=known&call=teams&checklist=four', ['Sends Ctrl+Shift+M to Teams. The wall cannot see whether you are muted.'], 'hover:.meet-key[data-role="mute"]'),
+      state('brief feed: strip, rows, dimmed ask box', 'meet=known&call=teams&checklist=four&brief=ready', ['Priya Calder', 'Northwind Outfitters', 'Annual renewal', 'Re: renewal terms for next year', 'Quarterly check-in', 'Ask about this meeting (coming later)', '!Also on file']),
+      state('brief feed: a row opened', 'meet=known&call=teams&checklist=four&brief=ready', ['Back', 'Happy to go ahead if the support hours stay the same', 'Send the revised quote', 'Open'], '.meet-brief-row'),
+      state('brief feed: ten items, seven rows and a count', 'meet=known&call=teams&checklist=four&brief=many', ['+ 3 more items', 'Item 1: notes from the renewal talks', '!Item 8']),
+      state('brief empty: no history yet, the island keeps its pages', 'meet=known&call=teams&checklist=four&brief=empty', ['No history yet with Northwind Outfitters', 'Teams is not signed in yet', 'The invite', 'Also on file']),
+      state('brief building', 'meet=known&call=teams&checklist=four&brief=building', ['Getting the brief ready', 'The invite']),
+      state('brief not connected: one faint line', 'meet=known&call=teams&checklist=four', ['Meeting brief not connected', 'The invite']),
+      state('brief failed: a Retry key', 'meet=known&call=teams&checklist=four&brief=failed', ['Meeting brief could not be read', 'Retry']),
+      state('brief refused by the box', 'meet=known&call=teams&checklist=four&brief=forbidden', ['The box refused the brief key']),
       state('the island moved to its second kind (arrow click)', 'meet=known&call=teams&checklist=four', ['Who is coming', 'Said yes', 'Also on file', 'Casey Rowe'], '.meet-arrow[aria-label="Next"]'),
     ],
   },
@@ -177,6 +198,12 @@ export default {
         if (m.islandText === 0 || !m.bodyBox || m.bodyBox.h < 60 || m.bodyText === 0) fail('the island is empty (its body is ' + (m.bodyBox ? m.bodyBox.h + ' px tall with ' + m.bodyText + ' characters' : 'not drawn') + ')');
         for (const c of m.rowsCut.slice(0, 3)) fail('checklist ' + c);
         if (variant.name.endsWith('eight checklist items') && m.rowCount !== 8) fail('the checklist pane shows ' + m.rowCount + ' rows, not 8');
+        for (const c of m.brief.cut.slice(0, 3)) fail(c);
+        for (const w of m.brief.wrap.slice(0, 3)) fail(w);
+        if (m.brief.subSmall > 0) fail(`brief sub line is under 16 px on ${m.brief.subSmall} rows`);
+        if (m.brief.rows > 7) fail(`the brief feed draws ${m.brief.rows} rows (7 at most)`);
+        if (variant.name === BRIEF_MANY_VARIANT && (m.brief.rows !== 7 || m.brief.more !== '+ 3 more items')) fail(`the ten item feed shows ${m.brief.rows} rows and "${m.brief.more}" (7 rows and "+ 3 more items")`);
+        if (m.brief.rows > 0 && !m.brief.ask) fail('the feed has no ask box');
         for (const o of m.out) fail(o);
         for (const o of m.heroParts.slice(0, 3)) fail(`hero overlap: ${o}`);
         for (const n of m.narrow.slice(0, 3)) fail(`key size: ${n}`);
@@ -203,6 +230,9 @@ export default {
       'meet-long-title': { css: '.meet .meet-hero-title { -webkit-line-clamp: unset !important; display: block !important; }', expect: /^ *FAIL meet layout: (the long title takes|the title takes|the title ends)/m, appliesTo: (v) => v.name === VARIANTS[6][0] },
       'meet-clock': { css: ".main[data-place='meet'] > .top > div:has(> .clk) { display: block !important; }", expect: /^ *FAIL meet layout: the frame clock is drawn/m, appliesTo: (v) => v.name === VARIANTS[1][0] },
       'meet-checklist-clipped': { css: '.meet .meet-isl-check { gap: 12px !important; }', expect: /^ *FAIL meet layout: checklist row \d+ at y /m, appliesTo: (v) => v.name.endsWith('eight checklist items') },
+      'brief-wrap': { css: '.meet .meet-brief-title { white-space: normal !important; overflow: visible !important; text-overflow: clip !important; }', expect: /^ *FAIL meet layout: brief row \d+ title wraps/m, appliesTo: (v) => v.name === BRIEF_MANY_VARIANT },
+      'brief-small': { css: '.meet .meet-brief-sub { font-size: 13px !important; }', expect: /^ *FAIL meet layout: (brief sub line is under 16 px|text under 16 px)/m, appliesTo: (v) => v.name === BRIEF_MANY_VARIANT },
+      'brief-tall': { css: '.meet .meet-brief-row { height: 72px !important; }', expect: /^ *FAIL meet layout: brief row \d+ at y /m, appliesTo: (v) => v.name === BRIEF_MANY_VARIANT },
       'meet-island-empty': { css: '.meet .meet-isl-body, .meet .meet-isl-howto { display: none !important; }', expect: /^ *FAIL meet layout: the island is empty/m, appliesTo: (v) => v.name === VARIANTS[4][0] },
     },
   },

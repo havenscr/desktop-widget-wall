@@ -1208,3 +1208,150 @@
   border-color: var(--amber);
   color: var(--amber);
 }
+
+/* ---------- The meeting brief in the island (look C) ---------- */
+.meet-brief-strip {
+  flex: 1;
+  min-width: 0;
+  font: 600 22px/1.2 var(--body);
+  color: var(--tx);
+}
+.meet-brief-top {
+  flex: 1;
+  min-width: 0;
+  margin-left: 12px;
+}
+.meet-brief-note {
+  flex: 1;
+  min-width: 0;
+}
+.meet-brief-body {
+  display: block;
+  overflow: hidden;
+}
+.meet-brief-list {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+.meet-brief-row {
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr) minmax(0, 300px) 90px;
+  align-items: center;
+  column-gap: 14px;
+  height: 44px;
+  padding: 0 6px;
+  border-top: 1px solid var(--line);
+  text-align: left;
+  color: var(--dim);
+  border-radius: 0;
+  box-sizing: border-box;
+  transition: background 160ms ease;
+}
+.meet-brief-row:first-child {
+  border-top: 0;
+}
+.meet-brief-row:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+.meet-brief-row:focus-visible,
+.meet-brief-detail .meet-btn:focus-visible {
+  outline: 2px solid var(--cyan);
+  outline-offset: -2px;
+}
+.meet-brief-title {
+  font: 600 19px/1.2 var(--body);
+  color: var(--tx);
+  white-space: nowrap;
+}
+.meet-brief-sub {
+  font: 16px/1.2 var(--body);
+  color: var(--dim);
+  white-space: nowrap;
+}
+.meet-brief-when {
+  font: 16px/1.2 var(--body);
+  color: var(--dim);
+  text-align: right;
+  white-space: nowrap;
+}
+.meet-brief-more {
+  height: 28px;
+  display: flex;
+  align-items: center;
+  padding-left: 6px;
+  border-top: 1px solid var(--line);
+}
+.meet-brief-hidden {
+  padding: 12px 6px;
+}
+.meet-brief-ask {
+  flex: 1;
+  min-width: 0;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 16px;
+  border-radius: 12px;
+  border: 1px dashed var(--line);
+  box-sizing: border-box;
+  font: 19px/1 var(--body);
+  color: var(--dim);
+  opacity: 0.5;
+  pointer-events: none;
+  user-select: none;
+}
+.meet-brief-detail {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+}
+.meet-brief-dhd {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+.meet-brief-dtitle {
+  font: 600 24px/1.25 var(--body);
+  color: var(--tx);
+  max-width: 100%;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.meet-brief-dmeta {
+  max-width: 100%;
+}
+.meet-brief-tag {
+  padding: 2px 12px;
+  border-radius: 14px;
+  border: 1px solid var(--line);
+  font: 16px/1.4 var(--body);
+  color: var(--dim);
+}
+.meet-brief-preview {
+  font: 19px/1.35 var(--body);
+  border-left: 3px solid var(--violet);
+  padding-left: 14px;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.meet-brief-acts {
+  margin: 0;
+  padding-left: 24px;
+  font: 19px/1.35 var(--body);
+  color: var(--tx);
+  overflow: hidden;
+}
+.meet-isl-foot .meet-retry {
+  margin-top: 0;
+  align-self: center;
+}

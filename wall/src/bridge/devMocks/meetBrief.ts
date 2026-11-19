@@ -2,7 +2,7 @@ import type { BriefOut, BriefTokenStatus } from '../meetBrief';
 import { mocks } from '../tauri';
 
 /**
- * Invented answers for the brief commands (plumbing only: no screen reads them yet). Every name, company and domain here is
+ * Invented answers for the brief commands (the Meet island reads them). Every name, company and domain here is
  * made up. Three meetings: a client with history, a brand-new contact with every source empty or not set up, and a mixed
  * invite. Nothing in them is a URL, an id or an address.
  */
@@ -103,8 +103,35 @@ export const BRIEF_MIXED: BriefOut = {
   items: [],
 };
 
-/** The mock meeting keys (`wall2_meet_next` mocks rotate them, so the brief mock cycles by key's last digit instead). */
-const BRIEFS: BriefOut[] = [BRIEF_CLIENT, BRIEF_NEW_CONTACT, BRIEF_MIXED];
+/** A known client and nothing on file yet: Teams is not signed in. */
+export const BRIEF_EMPTY: BriefOut = { ...BRIEF_NEW_CONTACT, match: { kind: 'client', label: 'Northwind Outfitters' }, sources: sources({ chats: 'not-set-up' }) };
+
+export const BRIEF_BUILDING: BriefOut = { ...BRIEF_NEW_CONTACT, state: 'building' };
+
+const KINDS: [BriefOut['items'][number]['source'], BriefOut['items'][number]['kind']][] = [['mail', 'thread'], ['chat', 'chat'], ['file', 'file'], ['file', 'folder'], ['crm', 'note'], ['note', 'meeting']];
+
+/** Ten items, one with a 120 character title (the cap), for the 7 row limit and the ellipsis. */
+export const BRIEF_MANY: BriefOut = {
+  ...BRIEF_CLIENT,
+  items: Array.from({ length: 10 }, (_, i) => ({
+    ...BRIEF_CLIENT.items[i % BRIEF_CLIENT.items.length],
+    id: `m${i}`,
+    source: KINDS[i % KINDS.length][0],
+    kind: KINDS[i % KINDS.length][1],
+    title: i === 1 ? 'Re: the revised support hours, the renewal quote, the dashboard refresh scope and who signs off on each part before the end of the year' : `Item ${i + 1}: notes from the renewal talks`,
+    unverifiedSender: i === 2,
+    openKey: i % 2 === 0 ? `b1-${i}` : null,
+  })),
+};
+
+/** `?brief=ready|empty|building|off|forbidden|failed|many` picks the answer for every meeting; the default is `off`. */
+const briefMode = (): string => {
+  try {
+    return new URLSearchParams(globalThis.location?.search ?? '').get('brief') ?? 'off';
+  } catch {
+    return 'off';
+  }
+};
 
 export function registerMeetBriefMocks(): void {
   let token: BriefTokenStatus = { set: true, unreadable: false };
@@ -118,11 +145,24 @@ export function registerMeetBriefMocks(): void {
     token = { set: false, unreadable: false };
   });
   mocks.set('wall2_meet_brief', (args) => {
+    if (typeof args?.key !== 'string' || args.key === '') throw 'gone';
     if (!token.set) throw 'not-set-up';
-    const key = typeof args?.key === 'string' ? args.key : '';
-    const n = Number(key.split('-')[1]);
-    if (!Number.isInteger(n) || n < 0) throw 'gone';
-    return BRIEFS[n % BRIEFS.length];
+    switch (briefMode()) {
+      case 'ready':
+        return BRIEF_CLIENT;
+      case 'many':
+        return BRIEF_MANY;
+      case 'empty':
+        return BRIEF_EMPTY;
+      case 'building':
+        return BRIEF_BUILDING;
+      case 'forbidden':
+        throw 'forbidden';
+      case 'failed':
+        throw 'failed';
+      default:
+        throw 'not-configured';
+    }
   });
   mocks.set('wall2_meet_brief_open', () => undefined);
   mocks.set('wall2_meet_person_action', (args) => {
