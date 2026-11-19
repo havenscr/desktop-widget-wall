@@ -4,8 +4,8 @@ import { stageBox } from '../horizon/sky';
 export const DRAWER_FALLBACK = { left: 1680, width: 860 } as const;
 /** The sheet is never narrower than this, in canvas pixels. */
 export const DRAWER_MIN_WIDTH = 560;
-/** The columns a sheet may overlay: the right column of On Air. */
-const COLUMN = '.oa-right';
+/** The boxes a sheet may overlay: the On Air box that holds the studio lights. */
+const COLUMN = '.oa2-b';
 
 /** The column that holds the control that opened the sheet, or null when it sits in none. */
 export function openerColumn(): Element | null {

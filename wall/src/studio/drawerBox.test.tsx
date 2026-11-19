@@ -9,9 +9,9 @@ const rect = (left: number, width: number): DOMRect => ({ left, right: left + wi
 
 /** A stage of 2560 canvas pixels drawn at `scale`, holding a column of `width` canvas pixels at `left`. */
 function page(left: number, width: number, scale = 1, inColumn = true) {
-  document.body.innerHTML = `<div class="stage"><div class="oa-right"></div><div class="rail"></div></div>`;
+  document.body.innerHTML = `<div class="stage"><div class="oa2-b"></div><div class="rail"></div></div>`;
   const stage = document.querySelector('.stage') as HTMLElement;
-  const col = document.querySelector('.oa-right') as HTMLElement;
+  const col = document.querySelector('.oa2-b') as HTMLElement;
   const holder = inColumn ? col : (document.querySelector('.rail') as HTMLElement);
   const opener = document.createElement('button');
   opener.setAttribute('data-st-opener', '');

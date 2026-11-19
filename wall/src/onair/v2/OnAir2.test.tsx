@@ -88,15 +88,15 @@ afterEach(() => {
 const radios = () => screen.getAllByRole('radio');
 const lit = () => radios().filter((r) => r.getAttribute('aria-checked') === 'true').map((r) => r.textContent);
 
-it('draws only the modes row with nothing on air: no segment lit, Auto on, the reason in words', async () => {
+it('draws the modes row and the idle page with nothing on air: no segment lit, Auto on, the reason in words', async () => {
   await open();
   expect(screen.getByRole('radiogroup', { name: 'On Air mode' })).toBeTruthy();
   expect(radios().map((r) => r.textContent)).toEqual(['Live', 'Recording', 'Presenting']);
   expect(lit()).toEqual([]);
   expect(screen.getByRole('button', { name: 'Auto' }).getAttribute('aria-pressed')).toBe('true');
-  expect(screen.getByRole('status', { name: '' }).textContent).toBe('nothing is on air');
-  // Nothing but the row: no page below it.
-  expect(document.querySelectorAll('.oa2 > .oa2-b').length).toBe(1);
+  expect(document.querySelector('.oa2-why')?.textContent).toBe('nothing is on air');
+  // The idle page below the row: the timer, last time on air, three Get ready cards, notes, checklist, studio lights.
+  for (const c of ['.oa2-idletimer', '.oa2-lastair', '.oa2-ready-1', '.oa2-ready-2', '.oa2-ready-3', '.oa2-idlenotes', '.oa2-checklist', '.oa2-lights-idle']) expect(document.querySelector(c), c).not.toBeNull();
   expect(document.querySelector('.onair')).toBeNull();
   expect(document.querySelector('section.oa2')?.getAttribute('data-place')).toBe('onair');
 });

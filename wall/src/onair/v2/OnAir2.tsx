@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { reviewNow } from '../../ui/reviewClock';
 import { useSignalStore } from '../../signals/store';
 import { MODE_STORAGE_KEY, parseHeld, pickMode, type PageMode } from '../modes';
@@ -6,6 +6,9 @@ import { startTakes } from '../takes';
 import { useOnAirLoad } from '../useOnAirLoad';
 import { useNow } from '../useNow';
 import { useLivePolling, useYtLive } from '../ytliveStore';
+import { readLast, writeLast, type LastOnAir } from '../lastOnAir';
+import { useOnAirStore } from '../store';
+import { IdlePage } from './IdlePage';
 import { LivePage } from './LivePage';
 import { ModesRow } from './ModesRow';
 import { PresentingPage } from './PresentingPage';
@@ -31,8 +34,8 @@ function writeHeld(held: PageMode | null): void {
 const WHY_LONG = 'the wall picked this page because a recorder, a broadcast and a call are all on at the same time';
 
 /**
- * The new On Air frame, behind `?onair=v2` in development only: the modes row on every page, and a page
- * for Live, Recording and Presenting. The page for nothing on air is empty below the row until its pull request.
+ * On Air: the modes row on every page, and a page for Live, Recording, Presenting and nothing on air.
+ * When a page that something was on for gives way to the idle page, what it was is kept for "Last time on air".
  */
 export function OnAir2() {
   const real = useNow();
@@ -54,10 +57,27 @@ export function OnAir2() {
     writeHeld(m);
   }, []);
   const pick = pickMode({ known, recording, call, browserAv, live: status ? { state: status.state, scheduledAt: status.scheduledAt } : null, held, now });
+  // The idle page's record: when a page ends, how long it ran and how many marks the day holds.
+  const [last, setLast] = useState<LastOnAir | null>(readLast);
+  const running = useRef<{ mode: PageMode; since: number } | null>(null);
+  const mode = pick.mode;
+  useEffect(() => {
+    const was = running.current;
+    if (mode !== 'none') {
+      if (!was || was.mode !== mode) running.current = { mode, since: Date.now() };
+      return;
+    }
+    if (!was) return;
+    running.current = null;
+    const rec: LastOnAir = { endedAt: Date.now(), mode: was.mode, lengthMs: Math.max(0, Date.now() - was.since), marks: useOnAirStore.getState().marks?.today ?? 0 };
+    writeLast(rec);
+    setLast(rec);
+  }, [mode]);
   const why = new URLSearchParams(window.location.search).get('whylong') === '1' ? WHY_LONG : pick.why;
   return (
     <section className="oa2" data-place="onair" data-mode={pick.mode} data-held={held ? 'true' : 'false'} aria-label="On air">
       <ModesRow pick={pick} held={held} why={why} onHold={hold} onAuto={() => hold(null)} />
+      {pick.mode === 'none' && <IdlePage now={now} last={last} onHold={hold} />}
       {pick.mode === 'live' && <LivePage now={now} />}
       {pick.mode === 'rec' && <RecordingPage now={now} />}
       {pick.mode === 'meet' && <PresentingPage now={now} />}
