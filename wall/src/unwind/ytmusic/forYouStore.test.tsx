@@ -94,7 +94,7 @@ describe('the For you tab', () => {
   it('is the first tab, then Playlists and Liked, and shows the eight mood chips', async () => {
     serve(6);
     await openForYou();
-    expect(screen.getAllByRole('tab').map((t) => t.textContent)).toEqual(['For you', 'Playlists', 'Liked']);
+    expect(screen.getAllByRole('tab').map((t) => t.textContent)).toEqual(['For you', 'Playlists', 'Liked', 'Up next']);
     expect(screen.getByRole('tab', { name: 'For you' }).getAttribute('aria-selected')).toBe('true');
     expect([...document.querySelectorAll('.yt-chip')].map((c) => c.textContent)).toEqual([...MOODS]);
     expect(MOODS).toHaveLength(8);

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { IconArrowsShuffle, IconHeart, IconListDetails, IconMusic, IconPlayerPlayFilled, IconPlaylist, IconSearch, IconSparkles } from '@tabler/icons-react';
+import { IconArrowsShuffle, IconHeart, IconListDetails, IconListNumbers, IconMusic, IconPlayerPlayFilled, IconPlaylist, IconSearch, IconSparkles } from '@tabler/icons-react';
 import type { YtPlaylist, YtVideo } from '../../music/youtube';
 import { tip } from '../../ui/HoverTip';
 import { useVisible } from '../../ui/useVisible';
@@ -10,22 +10,23 @@ import { libraryHandlers } from '../watch/libraryOpen';
 import { MAX_PAGES, PAGE_SIZE, SEARCH_TIP, SPENT_LINE, devSearchKnob, nearEnd, searchSpent, searchesLine, videosLine } from './model';
 import { ForYou } from './ForYou';
 import { loadForYou } from './forYouStore';
-import { playFrom } from './queue';
+import { jump, playFrom, upcoming, useYtQueue } from './queue';
 import { useYoutubeStatus } from './status';
 import { YtSongs } from './YtSongs';
-import { libraryMounted, libraryVisible, loadList, loadPlaylistHits, openPlaylist, pickChip, retryList, runSearch, searchesBack, setTab, startReads, useYtLibrary, type Loaded, type YtChip, type YtTab } from './store';
+import { libraryMounted, libraryVisible, loadList, loadPlaylistHits, openPlaylist, pickChip, retryList, runSearch, searchesBack, setTab, startReads, wordsKey, useYtLibrary, type Loaded, type YtChip, type YtTab } from './store';
 import { RowSkeletons, TileSkeletons, YtEmpty, YtRows, YtState, YtThumb, gridKey } from './YtParts';
 
 const PLACES: readonly Place<YtTab>[] = [
   { id: 'foryou', label: 'For you', icon: <IconSparkles size={18} stroke={1.8} aria-hidden="true" /> },
   { id: 'playlists', label: 'Playlists', icon: <IconPlaylist size={18} stroke={1.8} aria-hidden="true" /> },
   { id: 'liked', label: 'Liked', icon: <IconHeart size={18} stroke={1.8} aria-hidden="true" /> },
+  { id: 'upnext', label: 'Up next', icon: <IconListNumbers size={18} stroke={1.8} aria-hidden="true" /> },
 ];
 const CHIP_ICONS = {
   playlists: <IconPlaylist size={18} stroke={1.8} aria-hidden="true" />,
   songs: <IconMusic size={18} stroke={1.8} aria-hidden="true" />,
 };
-const EMPTY_LINE: Record<Exclude<YtTab, 'foryou'>, string> = { playlists: 'No playlists yet', liked: 'No liked videos yet' };
+const EMPTY_LINE: Record<'playlists' | 'liked', string> = { playlists: 'No playlists yet', liked: 'No liked videos yet' };
 
 function PlaylistTile({ p }: { p: YtPlaylist }) {
   // The right-click menu: Play and Shuffle open the playlist and start it when its first page arrives; then Pin to the left.
@@ -84,7 +85,10 @@ function ListFoot({ cur, name }: { cur: Loaded<unknown>; name: 'playlists' | 'li
  */
 export function YtBrowse({ tall }: { tall: boolean }) {
   const tab = useYtLibrary((s) => s.tab);
-  const lists = useYtLibrary((s) => (s.tab === 'foryou' ? s.playlists : s[s.tab]));
+  const lists = useYtLibrary((s) => (s.tab === 'foryou' || s.tab === 'upnext' ? s.playlists : s[s.tab]));
+  const queued = useYtQueue((s) => s.entries);
+  const queuePos = useYtQueue((s) => s.pos);
+  const queueFailed = useYtQueue((s) => s.failed);
   const opened = useYtLibrary((s) => s.opened);
   const query = useYtLibrary((s) => s.query);
   const found = useYtLibrary((s) => s.found);
@@ -142,7 +146,7 @@ export function YtBrowse({ tall }: { tall: boolean }) {
       </label>
     </div>
   );
-  const plWords = plHits && plHits.words === query ? plHits : null;
+  const plWords = plHits && plHits.key === wordsKey(query) ? plHits : null;
   const row = searching ? (
     <SearchChips value={chip} counts={{ songs: found?.loaded && !found.problem ? found.items.length : undefined, playlists: plWords && !plWords.loading && !plWords.problem ? plWords.items.length : undefined }} kinds={['playlists', 'songs']} icons={CHIP_ICONS} onPick={(c: SearchChip) => pickChip(c as YtChip)} onLeave={() => setTab(tab)} />
   ) : (
@@ -184,6 +188,14 @@ export function YtBrowse({ tall }: { tall: boolean }) {
     );
   } else if (tab === 'foryou') {
     main = <ForYou tall={tall} />;
+  } else if (tab === 'upnext') {
+    const next = upcoming({ entries: queued, pos: queuePos, failed: queueFailed }, queued.length);
+    const rows: YtVideo[] = next.map(({ entry }) => ({ id: entry.id, title: entry.title, channel: entry.channel, seconds: entry.seconds, thumb: entry.thumb, playable: 'yes' }));
+    main = (
+      <div className="yt-scroll yt-rowscroll" tabIndex={0} role="region" aria-label="Up next">
+        {rows.length === 0 ? <YtEmpty text="Nothing queued yet" /> : <YtRows items={rows} onPlay={(i) => jump(next[i]!.index)} />}
+      </div>
+    );
   } else {
     const first = lists.items.length === 0;
     const body = lists.problem && first ? (

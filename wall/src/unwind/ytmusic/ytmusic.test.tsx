@@ -12,6 +12,7 @@ import { resetYoutubeStatus, useYoutubeStatus } from './status';
 import { loadList, resetLibrary, runSearch, useYtLibrary } from './store';
 import { useWatchStore } from '../watch/store';
 import { YT_STATUS_POLL_MS } from './status';
+import { useYtQueue } from './queue';
 import { YtMusicSide } from './YtMusicSide';
 
 vi.setConfig({ testTimeout: 20_000 });
@@ -365,6 +366,17 @@ describe('the library', () => {
     expect(document.activeElement).toBe(tile('Mix 2'));
     fireEvent.keyDown(tile('Mix 2'), { key: 'ArrowLeft' });
     expect(document.activeElement).toBe(tile('Mix 1'));
+  });
+
+  it('shows the queue after the entry now on as plain rows under Up next', async () => {
+    await library();
+    const e = (n: number) => ({ id: String(n).padStart(11, 'q'), title: `Queued ${n}`, channel: `Chan ${n}`, seconds: 100 + n, thumb: null, at: n });
+    useYtQueue.setState({ entries: [e(1), e(2), e(3)], pos: 0 });
+    fireEvent.click(screen.getByRole('tab', { name: 'Up next' }));
+    await screen.findByText('Queued 2');
+    expect(screen.queryByText('Queued 1')).toBeNull();
+    expect(document.querySelectorAll('.yt-row').length).toBe(2);
+    useYtQueue.setState({ entries: [], pos: 0 });
   });
 
   it('shows liked videos as rows', async () => {
@@ -952,7 +964,7 @@ describe('the keyboard', () => {
     expect(screen.queryAllByRole('tab')).toHaveLength(0);
     expect(screen.getAllByRole('radio').map((r) => r.textContent?.replace(/\d+$/, ''))).toEqual(['All', 'Playlists', 'Songs']);
     fireEvent.click(screen.getByRole('button', { name: 'Library' }));
-    expect(screen.getAllByRole('tab').map((t) => t.textContent)).toEqual(['For you', 'Playlists', 'Liked']);
+    expect(screen.getAllByRole('tab').map((t) => t.textContent)).toEqual(['For you', 'Playlists', 'Liked', 'Up next']);
   });
 });
 

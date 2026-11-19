@@ -111,6 +111,35 @@ describe('YouTube search: playlists only when asked', () => {
     expect(calls.playlistSearch).toHaveLength(2);
   });
 
+  it('case and space variants of the same words show the held playlists with no extra call', async () => {
+    const calls = await open();
+    await search('night');
+    fireEvent.click(chip(/^Playlists/));
+    await screen.findByText('Found list 1');
+    const field = screen.getByPlaceholderText('Search YouTube Music');
+    for (const variant of ['Night ', '  NIGHT']) {
+      fireEvent.change(field, { target: { value: variant } });
+      fireEvent.keyDown(field, { key: 'Enter' });
+      expect(chip(/^Playlists/).getAttribute('aria-checked')).toBe('true');
+      expect(await screen.findByText('Found list 1')).toBeTruthy();
+    }
+    expect(calls.playlistSearch).toHaveLength(1);
+  });
+
+  it('words changing while the playlist call is in flight: the new words show none of the old playlists and make no extra call', async () => {
+    let release: (v: YtPlaylistSearch) => void = () => {};
+    const calls = await open(() => new Promise<YtPlaylistSearch>((r) => { release = r; }));
+    await search('night');
+    fireEvent.click(chip(/^Playlists/));
+    await screen.findByText('Looking for playlists');
+    await search('day');
+    release({ playlists: [hit(1), hit(2)], searchesLeft: 17 });
+    await new Promise((r) => setTimeout(r, 30));
+    expect(screen.queryByText('Found list 1')).toBeNull();
+    expect(chip(/^All/).getAttribute('aria-checked')).toBe('true');
+    expect(calls.playlistSearch).toHaveLength(1);
+  });
+
   it('a failed playlist search says so and Retry asks again', async () => {
     let n = 0;
     const calls = await open(() => { n += 1; if (n === 1) throw new Error('busy'); return { playlists: [hit(1)], searchesLeft: 9 }; });

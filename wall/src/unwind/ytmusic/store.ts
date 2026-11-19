@@ -30,11 +30,11 @@ export interface Loaded<T> {
   readAt: number | null;
 }
 
-export type YtTab = 'foryou' | 'playlists' | 'liked';
+export type YtTab = 'foryou' | 'playlists' | 'liked' | 'upnext';
 /** The chips of a search: All shows the songs; Playlists asks YouTube for playlists the first time it is clicked. */
 export type YtChip = 'all' | 'playlists' | 'songs';
 /** The playlists a search found, asked only when the Playlists chip was clicked. `words` is what they answer. */
-export interface PlaylistHits { words: string; items: YtPlaylist[]; loading: boolean; problem: YtProblem | null }
+export interface PlaylistHits { words: string; /** The words trimmed and lower-cased: what "the same words" means. */ key: string; items: YtPlaylist[]; loading: boolean; problem: YtProblem | null }
 type Key = 'playlists' | 'liked' | 'songs';
 
 const blank = <T,>(): Loaded<T> => ({ items: [], next: null, pages: 0, loading: false, loaded: false, problem: null, failed: null, failedFresh: false, readAt: null });
@@ -103,7 +103,7 @@ export function startReads(now = Date.now()): void {
   const s = useYtLibrary.getState();
   if (s.opened && !s.songs.loaded && !s.songs.loading) void loadList('songs');
   // The For you tab keeps its own read (`forYouStore.ts`), started by the tab.
-  if (s.tab === 'foryou') return;
+  if (s.tab === 'foryou' || s.tab === 'upnext') return;
   const cur = s[s.tab];
   if (cur.loading) return;
   const old = cur.readAt !== null && now - cur.readAt > STALE_MS[s.tab];
@@ -180,7 +180,7 @@ export function retryList(key: Key): void {
 
 export function setTab(tab: YtTab): void {
   useYtLibrary.setState({ tab, opened: null, songs: blank(), query: '', found: null, chip: 'all', playlistHits: null });
-  if (tab !== 'foryou' && !useYtLibrary.getState()[tab].loaded) void loadList(tab);
+  if (tab !== 'foryou' && tab !== 'upnext' && !useYtLibrary.getState()[tab].loaded) void loadList(tab);
 }
 
 /** Open a playlist; `start` also asks for it to play, or shuffle, as soon as its first page has arrived (any other open or a close cancels it). */
@@ -198,6 +198,9 @@ export function refreshSongs(): void {
   void loadList('songs', false, true);
 }
 
+/** What "the same words" means: trimmed and lower-cased. */
+export const wordsKey = (text: string): string => text.trim().toLowerCase();
+
 /** Each search takes the next number; an answer applies only while it still carries the latest one. */
 let searchSeq = 0;
 /** Searches in flight by lower-cased words: the same words asked again share the call. */
@@ -209,9 +212,9 @@ export async function runSearch(text: string): Promise<void> {
   if (!words || !canRead()) return;
   const mine = epoch;
   const seq = ++searchSeq;
-  const key = words.toLowerCase();
+  const key = wordsKey(words);
   // New words start on All with no playlists asked for; the same words again keep the chip and what it found.
-  if (useYtLibrary.getState().query.toLowerCase() !== key) useYtLibrary.setState({ chip: 'all', playlistHits: null });
+  if (wordsKey(useYtLibrary.getState().query) !== key) useYtLibrary.setState({ chip: 'all', playlistHits: null });
   const seen = memo.get(key);
   if (seen && Date.now() - seen.at < MEMO_MS) {
     useYtLibrary.setState({ opened: null, songs: blank(), query: words, found: { items: seen.page.items, next: null, pages: 1, loading: false, loaded: true, problem: null, failed: null, failedFresh: false, readAt: seen.at } });
@@ -271,15 +274,15 @@ export function pickChip(chip: YtChip): void {
 export async function loadPlaylistHits(again = false): Promise<void> {
   const { query, playlistHits } = useYtLibrary.getState();
   if (!query || !canRead()) return;
-  const key = query.toLowerCase();
-  if (!again && playlistHits && playlistHits.words === query && (playlistHits.loading || !playlistHits.problem)) return;
+  const key = wordsKey(query);
+  if (!again && playlistHits && playlistHits.key === key && (playlistHits.loading || !playlistHits.problem)) return;
   const held = plMemo.get(key);
   if (held) {
-    useYtLibrary.setState({ playlistHits: { words: query, items: held, loading: false, problem: null } });
+    useYtLibrary.setState({ playlistHits: { words: query, key, items: held, loading: false, problem: null } });
     return;
   }
   const mine = epoch;
-  useYtLibrary.setState({ playlistHits: { words: query, items: [], loading: true, problem: null } });
+  useYtLibrary.setState({ playlistHits: { words: query, key, items: [], loading: true, problem: null } });
   let flight = plFlights.get(key);
   if (!flight) {
     flight = youtube.searchPlaylists(query);
@@ -291,7 +294,7 @@ export async function loadPlaylistHits(again = false): Promise<void> {
     started.then(done, done);
   }
   // The answer applies only while the same words are on show.
-  const current = () => mine === epoch && useYtLibrary.getState().playlistHits?.words === query;
+  const current = () => mine === epoch && useYtLibrary.getState().playlistHits?.key === key;
   try {
     const answer = await flight;
     const items = Array.isArray(answer?.playlists) ? answer.playlists : [];
@@ -304,11 +307,11 @@ export async function loadPlaylistHits(again = false): Promise<void> {
       useYoutubeStatus.setState((s) => (s.status ? { status: { ...s.status, searchesLeft: answer.searchesLeft } } : s));
     }
     if (!current()) return;
-    useYtLibrary.setState({ playlistHits: { words: query, items, loading: false, problem: null } });
+    useYtLibrary.setState({ playlistHits: { words: query, key, items, loading: false, problem: null } });
   } catch (e) {
     if (!current()) return;
     const problem = ytProblem(e);
-    useYtLibrary.setState((s) => ({ playlistHits: { words: query, items: [], loading: false, problem }, searchQuota: s.searchQuota || problem === 'quota' }));
+    useYtLibrary.setState((s) => ({ playlistHits: { words: query, key, items: [], loading: false, problem }, searchQuota: s.searchQuota || problem === 'quota' }));
     if (staleStatus(problem)) void readYoutubeStatus();
   }
 }
