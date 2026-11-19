@@ -11,7 +11,7 @@ import { MOCK_DETAILS } from './meet';
  * screen in a sparse, heavy or broken state through the real code paths. Each knob wraps
  * or replaces one mock; with no knob in the URL nothing here changes anything.
  *
- *   ?screen=meet|zen|dream   open that place (Meet, Zen, Zen straight into Dream)
+ *   ?screen=meet|zen|shelf|dream   open that place (Meet, Zen, Zen straight into Dream)
  *   ?tasks=none|few|heavy|off|down
  *   ?meet=none|one|heavy|off|bothok|failing|signedout|partial   (`down` and `mixed` are in meet.ts: both accounts
  *                              failing, one failing; `failing` here makes the read itself error)
@@ -384,8 +384,17 @@ export function registerGalleryMocks(): void {
   if (knob('focus') === 'done') setTimeout(() => useFocusStore.setState({ state: { status: 'finished', minutes: 25 } }), 400);
   if (knob('focus') === 'run') setTimeout(() => useFocusStore.getState().startLabeled('Review the draft'), 400);
   if (knob('focus') === 'long') setTimeout(() => useFocusStore.getState().startLabeled(LONG_FOCUS), 400);
+  // The Shelf's list names come from the saved settings; this seeds them, e.g. `?shelflists=Tasks (To-Do);House, garden`.
+  const shelfLists = knob('shelflists');
+  if (shelfLists) {
+    try {
+      localStorage.setItem('wall2-settings', JSON.stringify({ shelfLists: shelfLists.split(';') }));
+    } catch {
+      /* storage can be blocked */
+    }
+  }
   const screen = knob('screen');
   // After main.tsx and the horizon canvas have opened the place `?hz=` names (the canvas does so on mount).
-  if (screen === 'meet' || screen === 'zen') setTimeout(() => usePlaceStore.getState().setActive(screen), 300);
+  if (screen === 'meet' || screen === 'zen' || screen === 'shelf') setTimeout(() => usePlaceStore.getState().setActive(screen), 300);
   if (screen === 'dream') setTimeout(() => usePlaceStore.getState().openDream(), 300);
 }

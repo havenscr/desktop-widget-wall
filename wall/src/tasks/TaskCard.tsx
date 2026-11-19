@@ -264,8 +264,8 @@ function TaskList({ children, rows }: { children: ReactNode; rows: number }) {
  * and shows the next three tasks. Click the circle to finish one, the title to open it, hold
  * a row to focus on it.
  */
-export function TaskCard() {
-  const t = useTasks(WORK_QUERY);
+export function TaskCard({ query = WORK_QUERY, title }: { query?: TasksQuery; title?: string } = {}) {
+  const t = useTasks(query);
   const ticks = usePendingTicks(t.complete);
   const focusStatus = useFocusStore((s) => s.state.status);
   const canFocus = focusStatus === 'idle' || focusStatus === 'finished';
@@ -285,7 +285,7 @@ export function TaskCard() {
     body = <div className="s">Tasks unavailable</div>;
   } else if (rows.length === 0) {
     // No open task at all: the heading stays "Due today" (Next up is only ever the next tasks).
-    body = <div className="s">Nothing due today</div>;
+    body = <div className="s">{title ? 'Nothing open' : 'Nothing due today'}</div>;
   } else {
     body = (
       <TaskList rows={rows.length}>
@@ -308,7 +308,7 @@ export function TaskCard() {
   return (
     <section className="tasks" aria-label="Tasks">
       <div className="row sb tasks-hd">
-        <span className="k">{nextUp ? 'Next up' : 'Due today'}</span>
+        <span className="k">{title ?? (nextUp ? 'Next up' : 'Due today')}</span>
         {side && <span className="xs">{side}</span>}
       </div>
       <div className="tasks-body">{body}</div>

@@ -7,6 +7,7 @@ import {
   IconMinimize,
   IconMoon,
   IconBroadcast,
+  IconStack2,
   IconTools,
   IconUsers,
   type Icon,
@@ -125,6 +126,17 @@ export function Rail() {
       >
         <IconBroadcast size={30} stroke={1.8} aria-hidden="true" />
         On air
+      </button>
+      <button
+        type="button"
+        className="rb"
+        aria-label="Shelf"
+        aria-current={active === 'shelf' ? 'page' : undefined}
+        onClick={() => setActive('shelf')}
+        {...tip('Captures, the ShareX keys and your task lists')}
+      >
+        <IconStack2 size={30} stroke={1.8} aria-hidden="true" />
+        Shelf
       </button>
       <div className="rail-spacer" />
       <button

@@ -1,0 +1,83 @@
+/* Shelf place (screens/ShelfPlace.tsx): captures, the ShareX keys, the task lists. It sits on the
+   Work zones (the left wing keeps the clock, the right wing keeps the task column and the deck). */
+.shelf-centre {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 520px;
+  gap: 30px;
+  min-width: 0;
+  min-height: 0;
+  padding-top: 4px;
+}
+.shelf-card {
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-width: 0;
+  min-height: 0;
+  padding: 20px 26px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.055), rgba(255, 255, 255, 0.015)), rgba(10, 7, 28, 0.72);
+  border: 1px solid var(--line);
+  border-radius: 26px;
+}
+.shelf-card .k {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.shelf-sub {
+  font: 400 18px/1 var(--body);
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--faint);
+}
+.shelf-note {
+  margin: 0;
+  font: 400 20px/1.35 var(--body);
+  color: var(--dim);
+}
+.shelf-keys {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+.shelf-key {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 84px;
+  border-radius: 18px;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.06);
+  color: inherit;
+  font: 600 20px/1 var(--body);
+}
+.shelf-key:hover {
+  background: rgba(53, 230, 234, 0.12);
+}
+.shelf-key:active {
+  transform: scale(0.96);
+}
+.shelf-key:focus-visible {
+  outline: 3px solid var(--cyan);
+  outline-offset: 2px;
+}
+.shelf-brief {
+  margin: 0;
+  min-height: 22px;
+  font: 400 18px/1.2 var(--body);
+  color: var(--dim);
+}
+.shelf-lists {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.shelf-list {
+  height: 52px;
+  min-width: 0;
+  padding: 0 20px;
+  font-size: 20px;
+}

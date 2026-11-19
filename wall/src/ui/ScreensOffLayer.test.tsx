@@ -43,7 +43,7 @@ const emit = async (payload: unknown) => {
 const zenCss = readFileSync('src/styles/zen.css', 'utf8');
 const soCss = readFileSync('src/styles/screens-off.css', 'utf8');
 // A Record, so a place added to the store without a row here fails the type check. Dream is Zen dimmed.
-const TABLE: Record<PlaceId, true> = { work: true, home: true, meet: true, onair: true, unwind: true, zen: true };
+const TABLE: Record<PlaceId, true> = { work: true, home: true, meet: true, onair: true, shelf: true, unwind: true, zen: true };
 const ALL = Object.keys(TABLE) as PlaceId[];
 
 beforeEach(() => {

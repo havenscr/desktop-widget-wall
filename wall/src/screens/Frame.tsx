@@ -11,10 +11,10 @@ import { WatchStageLayer } from '../unwind/watch/StageLayer';
  */
 export const ClockSlot = createContext<HTMLElement | null>(null);
 
-/** Work, Home, Meet and On Air carry the day ribbon. Unwind (it has Tomorrow instead) and Zen do not. */
+/** Work, Home, Meet, On Air and Shelf carry the day ribbon. Unwind (it has Tomorrow instead) and Zen do not. */
 export function ribbonKind(place: PlaceId): RibbonKind | null {
   if (place === 'home') return 'home';
-  if (place === 'work' || place === 'meet' || place === 'onair') return 'work';
+  if (place === 'work' || place === 'meet' || place === 'onair' || place === 'shelf') return 'work';
   return null;
 }
 

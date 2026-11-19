@@ -5,6 +5,7 @@ import { reviewNow } from '../ui/reviewClock';
 import { Zen } from '../zen/Zen';
 import { Frame } from './Frame';
 import { Home } from './Home';
+import { ShelfPlace } from './ShelfPlace';
 import { Unwind } from './Unwind';
 import { Work } from './Work';
 
@@ -20,6 +21,8 @@ function Place({ id }: { id: PlaceId }) {
       return <Unwind />;
     case 'onair':
       return <OnAir />;
+    case 'shelf':
+      return <ShelfPlace />;
     case 'zen':
       return <Zen nowMs={reviewNow} />;
   }

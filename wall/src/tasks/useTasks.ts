@@ -27,6 +27,8 @@ export interface TasksState {
 export interface TasksQuery {
   tag?: string;
   notTag?: string;
+  /** A task app list name (the Shelf's picked list). */
+  list?: string;
   /**
    * `today`: every task due today or overdue (up to `DUE_LIMIT`), overdue first. When none is
    * due, the hook reads the next three instead (the same filters, no `due`) and sets `nextUp`.
@@ -36,6 +38,8 @@ export interface TasksQuery {
 
 /** Rows a due-today read asks for: Rust allows up to 60 with the filter. */
 export const DUE_LIMIT = 60;
+/** Rows a picked-list read asks for (the Shelf's list scrolls). */
+export const LIST_LIMIT = 20;
 
 interface SummaryAnswer {
   next?: TaskItem[];
@@ -50,7 +54,7 @@ interface SummaryAnswer {
  */
 export function useTasks(query?: TasksQuery): TasksState {
   const visible = useVisible();
-  const queryKey = query ? JSON.stringify({ tag: query.tag, notTag: query.notTag, due: query.due }) : null;
+  const queryKey = query ? JSON.stringify({ tag: query.tag, notTag: query.notTag, list: query.list, due: query.due }) : null;
   const [remaining, setRemaining] = useState<number | null>(null);
   const [nextUp, setNextUp] = useState(false);
   const [status, setStatus] = useState<TasksStatus>('loading');
@@ -88,8 +92,8 @@ export function useTasks(query?: TasksQuery): TasksState {
       let fallback = false;
       if (queryKey) {
         const args = JSON.parse(queryKey) as TasksQuery;
-        const filters = { ...(args.tag ? { tag: args.tag } : {}), ...(args.notTag ? { notTag: args.notTag } : {}) };
-        let r = await invoke<SummaryAnswer>('wall2_tasks_summary', args.due ? { ...filters, due: args.due, limit: DUE_LIMIT } : filters);
+        const filters = { ...(args.tag ? { tag: args.tag } : {}), ...(args.notTag ? { notTag: args.notTag } : {}), ...(args.list ? { list: args.list } : {}) };
+        let r = await invoke<SummaryAnswer>('wall2_tasks_summary', args.due ? { ...filters, due: args.due, limit: DUE_LIMIT } : args.list ? { ...filters, limit: LIST_LIMIT } : filters);
         // A summary without a `next` list is a bad answer, not an empty one.
         if (!Array.isArray(r?.next)) throw new Error('bad answer');
         if (args.due && r.next.length === 0) {
