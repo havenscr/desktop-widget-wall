@@ -1,4 +1,4 @@
-/* The new On Air frame (development only, behind ?onair=v2). Boxes are in stage pixels: CSS left is wall x minus 124,
+/* The new On Air frame. Boxes are in stage pixels: CSS left is wall x minus 124,
    CSS top is wall y minus 20. Every block ends at or above wall y 510, the band under it is Watt's. */
 .oa2 {
   position: absolute;
@@ -395,3 +395,24 @@
   }
 }
 .oa2-runline[hidden] { display: none; }
+
+/* ---- the boxes: nothing on air (the idle page) ---- */
+.oa2-idletimer { left: 0; top: 56px; width: 640px; height: 166px; }
+.oa2-lastair { left: 0; top: 242px; width: 640px; height: 150px; }
+.oa2-ready { top: 4px; width: 344px; height: 268px; }
+.oa2-ready-1 { left: 676px; }
+.oa2-ready-2 { left: 1044px; }
+.oa2-ready-3 { left: 1412px; }
+.oa2-ready-next { margin-top: 14px; font: 600 20px/26px var(--body); color: var(--tx); overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.oa2-ready-does { margin-top: 8px; font: 400 18px/24px var(--body); color: var(--dim); }
+.oa2 .oa2-ready-go { margin-top: auto; align-self: flex-start; }
+.oa2 .oa-card.oa2-idlenotes { left: 676px; top: 288px; width: 1080px; height: 202px; }
+.oa2-checklist { left: 1796px; top: 4px; width: 620px; height: 190px; }
+.oa2-checklist .oa2-row { min-height: 40px; }
+.oa2-lights-idle { left: 1796px; top: 328px; width: 620px; height: 154px; }
+.oa2-lights-idle > .st-block { height: 148px; }
+/* The idle notes card is 202 px tall: a tighter frame so the first part's notes at 26 px have room. */
+.oa2 .oa-card.oa2-idlenotes { padding: 18px 24px 14px; }
+.oa2-idlenotes .oa-notes { gap: 8px; }
+.oa2-idlenotes .oa-card-foot { padding-top: 10px; }
+.oa2-idlenotes .oa-step { height: 44px; }

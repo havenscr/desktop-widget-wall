@@ -4,7 +4,7 @@ import { tip } from '../../ui/HoverTip';
 import { KeyIcon } from '../../work/keyIcons';
 import { libKeyKind } from '../../work/keyKind';
 import { keyboardOnMouseKey } from '../../work/keyPress';
-import { resolveKey } from '../RightColumn';
+import { resolveKey } from '../keyResolve';
 import type { DeckKeys } from './useDeckKeys';
 
 /** A heading row: an icon, the label, and text at the right. A press result takes the label's place for a few seconds. */

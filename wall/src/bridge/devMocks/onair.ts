@@ -2,6 +2,7 @@ import { localDate as localDateOf, MAX_SHOW_MS, STORAGE_KEY, type MarkResult, ty
 import { usePlaceStore } from '../../state/places';
 import { resetTakes } from '../../onair/takes';
 import { STORAGE_KEY as TAKES_KEY } from '../../onair/takeModel';
+import { LAST_KEY } from '../../onair/lastOnAir';
 import { MODE_STORAGE_KEY } from '../../onair/modes';
 import { reviewNow } from '../../ui/reviewClock';
 import { mocks } from '../tauri';
@@ -17,8 +18,8 @@ import { knob } from './long';
  *   ?marks=0|2|full                    marks so far today (`full`: marks.txt refuses the next mark)
  *   ?oatimer=run|stopped|idle|limit    the stored timer: running at 42:13, stopped at 42:13, never started, stopped itself at 24 hours
  *   ?openfail=show|marks               Open file (or Open marks.txt) fails
- *   ?onair=v2                          the new On Air frame (development only)
- *   ?oamode=live|rec|meet              the new frame starts held on that page
+ *   ?oamode=live|rec|meet              On Air starts held on that page
+ *   ?oalast=1                          the idle page's last time on air: Live for 58:12, 4 marks, the review day at 9:12 AM
  *   ?oatake=N                          the new frame's takes: N today, the running one began 4:12 before the review clock, the longest ran 06:40
  *   ?oapaused=1                        with oatake, the running take is paused
  *   ?meetnow=1                         the one meeting a call belongs to, 10:00 to 11:00 (devMocks/meet.ts); ?meetlong=1 gives it a 120 character title
@@ -132,6 +133,14 @@ export function registerOnAirMocks(): void {
       window.localStorage.setItem(MODE_STORAGE_KEY, JSON.stringify({ held: hold }));
     } catch {
       // No storage: the page is in Auto.
+    }
+  }
+  if (knob('oalast') === '1') {
+    try {
+      const at = reviewNow ? reviewNow() : Date.now();
+      window.localStorage.setItem(LAST_KEY, JSON.stringify({ endedAt: at - 72 * 60_000, mode: 'live', lengthMs: 58 * 60_000 + 12_000, marks: 4 }));
+    } catch {
+      // No storage: no record.
     }
   }
   const took = Number(knob('oatake'));

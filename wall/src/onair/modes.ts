@@ -43,6 +43,8 @@ export function pickMode(i: ModeInput): ModePick {
   const liveNow = seen.includes('live');
   const rec = seen.includes('rec');
   if (i.held) return { mode: i.held, why: HELD_WHY, seen };
+  // A broadcast YouTube says is live is the show: it wins over a recorder, so the comments are on screen.
+  if (!fallback && i.live!.state === 'live') return { mode: 'live', why: 'a broadcast is live', seen };
   if (rec) return { mode: 'rec', why: 'a recorder is running', seen };
   if (liveNow) {
     const why = fallback ? 'mic or camera in use' : i.live!.state === 'live' ? 'a broadcast is live' : 'a broadcast starts soon';

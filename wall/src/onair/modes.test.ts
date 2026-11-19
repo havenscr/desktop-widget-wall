@@ -27,14 +27,18 @@ describe('pickMode: one case on', () => {
 });
 
 describe('pickMode: more than one case on', () => {
-  it('recording wins over live and a call, live over a call, in every pair and the triple', () => {
+  it('a broadcast YouTube says is live wins over a recorder; recording wins over the other live cases and a call', () => {
     const rec = { recording: true };
     const liveOn = { live: live('live') };
     const call = { call: teams };
-    expect(pick({ ...rec, ...liveOn }).mode).toBe('rec');
+    expect(pick({ ...rec, ...liveOn }).mode).toBe('live');
+    expect(pick({ ...rec, ...liveOn }).why).toBe('a broadcast is live');
     expect(pick({ ...rec, ...call }).mode).toBe('rec');
     expect(pick({ ...liveOn, ...call }).mode).toBe('live');
-    expect(pick({ ...rec, ...liveOn, ...call }).mode).toBe('rec');
+    expect(pick({ ...rec, ...liveOn, ...call }).mode).toBe('live');
+    // A broadcast starting soon, or the browser camera and mic, is not proof: the recorder still wins.
+    expect(pick({ ...rec, live: live('scheduled', NOW + 10 * MIN) }).mode).toBe('rec');
+    expect(pick({ ...rec, browserAv: true }).mode).toBe('rec');
   });
   it('seen lists every case on now in the order live, rec, meet', () => {
     expect(pick({ recording: true, call: teams, live: live('live') }).seen).toEqual(['live', 'rec', 'meet']);
