@@ -340,18 +340,38 @@ it('a Day drawer tile with an Outlook category takes its tone and names it on ho
 
 it('a short event takes its lane for as long as its tile is drawn, so it never covers the tile after it', () => {
   const now = t('10:24');
-  // 15 minutes at 2:00, then 2:15 to 3:00: the 15 minute tile is drawn about 50 minutes tall, so the two sit side by side.
+  // 15 minutes at 2:00, then 2:15 to 3:00: the 15 minute tile is drawn about 45 minutes tall, so the two sit side by side.
   const c = chips([ev('a', 'Quick', '14:00', '14:15'), ev('b', 'Next', '14:15', '15:00'), ev('c', 'Later', '15:30', '16:30')], now);
   expect(agendaLanes(c).map((l) => [l.c.title, l.lane, l.lanes])).toEqual([
     ['Quick', 0, 2],
     ['Next', 1, 2],
     ['Later', 0, 1],
   ]);
-  // An hour needs no help.
-  const d = chips([ev('a', 'Half', '14:00', '15:00'), ev('b', 'Next', '15:00', '15:30')], now);
+  // A 45 minute event needs no help.
+  const d = chips([ev('a', 'Half', '14:00', '14:45'), ev('b', 'Next', '14:45', '15:30')], now);
   expect(agendaLanes(d).map((l) => [l.c.title, l.lane, l.lanes])).toEqual([
     ['Half', 0, 1],
     ['Next', 0, 1],
+  ]);
+  // Back-to-back 45 minute events stay one full-width lane each; so do a 15 and a 30 minute event followed 45 minutes later.
+  const e = chips([ev('a', 'One', '14:00', '14:45'), ev('b', 'Two', '14:45', '15:30'), ev('c', 'Three', '15:30', '16:15')], now);
+  expect(agendaLanes(e).map((l) => [l.c.title, l.lane, l.lanes])).toEqual([
+    ['One', 0, 1],
+    ['Two', 0, 1],
+    ['Three', 0, 1],
+  ]);
+  const f = chips([ev('a', 'Quick', '14:00', '14:15'), ev('b', 'After', '14:45', '15:30'), ev('c', 'Half', '16:00', '16:30'), ev('d', 'Last', '16:45', '17:30')], now);
+  expect(agendaLanes(f).map((l) => [l.c.title, l.lane, l.lanes])).toEqual([
+    ['Quick', 0, 1],
+    ['After', 0, 1],
+    ['Half', 0, 1],
+    ['Last', 0, 1],
+  ]);
+  // Events that truly overlap still split.
+  const g = chips([ev('a', 'Long', '14:00', '15:00'), ev('b', 'Inside', '14:30', '15:30')], now);
+  expect(agendaLanes(g).map((l) => [l.c.title, l.lane, l.lanes])).toEqual([
+    ['Long', 0, 2],
+    ['Inside', 1, 2],
   ]);
 });
 

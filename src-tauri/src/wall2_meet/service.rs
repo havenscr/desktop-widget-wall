@@ -671,10 +671,11 @@ fn read_window(
     read
 }
 
-/// The account's category colours, read again when due. None when the account was not granted
-/// the permission or changed under the read. A failed read keeps the last good list and waits
-/// `RETRY_SECS` before the next try; it never fails the calendar read, and nothing about the
-/// categories is logged.
+/// The account's calendar colour and, when the account was granted the permission, its category
+/// colours, read again when due. None only when the account changed under the read. The calendar
+/// colour is read for every signed-in account (the calendar permission covers it); the category
+/// list only when granted. A failed read keeps what is held and waits `RETRY_SECS` before the
+/// next try; it never fails the calendar read, and nothing about the colours is logged.
 #[allow(clippy::too_many_arguments)]
 fn category_palette(
     acct: &Account,
@@ -687,37 +688,34 @@ fn category_palette(
     generation: u64,
 ) -> Option<Palette> {
     let now = now + ctx.elapsed_ms() / 1000;
-    let held = {
+    let (held, granted) = {
         let mut c = lock(core);
-        if generation_of(&c, &acct.id) != generation || !account_has_colours(store, &mut c, &acct.id) {
+        if generation_of(&c, &acct.id) != generation {
             return None;
         }
+        let granted = account_has_colours(store, &mut c, &acct.id);
         let held = c.palettes.get(&acct.id).cloned();
         if let Some(p) = &held {
             if now < p.next_try {
                 return held;
             }
         }
-        held
+        (held, granted)
     };
-    let (reply, diag) = graph.master_categories(access, ctx);
-    if colours::read_says_withdrawn(matches!(reply, GraphReply::Unauthorized), diag.as_ref().map(|d| d.status)) {
-        // The permission is gone (an admin withdrew it): drop the account to calendar-only so
-        // the palette is cleared, Tools says so and the reads stop until the next sign-in. A
-        // failed write only means the next refresh reply says it again.
-        let mut c = lock(core);
-        if generation_of(&c, &acct.id) != generation {
-            return None;
+    let mut withdrawn = false;
+    let mut parsed = None;
+    if granted {
+        let (reply, diag) = graph.master_categories(access, ctx);
+        // The permission is gone (an admin withdrew it): the category list is cleared, Tools says
+        // so and those reads stop until the next sign-in. The calendar colour carries on.
+        withdrawn = colours::read_says_withdrawn(matches!(reply, GraphReply::Unauthorized), diag.as_ref().map(|d| d.status));
+        if !withdrawn {
+            parsed = match reply {
+                GraphReply::Ok(body) => colours::parse_master(&body),
+                _ => None,
+            };
         }
-        store.set(&scope_record_id(&acct.id), SCOPE);
-        c.has_colours.insert(acct.id.clone(), false);
-        c.palettes.remove(&acct.id);
-        return None;
     }
-    let parsed = match reply {
-        GraphReply::Ok(body) => colours::parse_master(&body),
-        _ => None,
-    };
     // The calendar's own colour, on the same cadence. Some(x) is a good read (x may be none for a
     // colour the wall cannot match); None is a failed one, which keeps the colour held.
     let held_calendar = held.as_ref().and_then(|p| p.calendar);
@@ -729,9 +727,17 @@ fn category_palette(
     if generation_of(&c, &acct.id) != generation {
         return None;
     }
-    let fresh = match parsed {
-        Some(entries) => Palette { entries, calendar: calendar.unwrap_or(held_calendar), next_try: now + colours::REFRESH_SECS },
-        None => Palette { entries: held.map(|p| p.entries).unwrap_or_default(), calendar: calendar.unwrap_or(held_calendar), next_try: now + colours::RETRY_SECS },
+    if withdrawn {
+        // A failed write only means the next refresh reply says it again.
+        store.set(&scope_record_id(&acct.id), SCOPE);
+        c.has_colours.insert(acct.id.clone(), false);
+    }
+    let read_ok = if granted && !withdrawn { parsed.is_some() } else { calendar.is_some() };
+    let entries = if withdrawn { Vec::new() } else { parsed.or_else(|| held.map(|p| p.entries)).unwrap_or_default() };
+    let fresh = Palette {
+        entries,
+        calendar: calendar.unwrap_or(held_calendar),
+        next_try: now + if read_ok { colours::REFRESH_SECS } else { colours::RETRY_SECS },
     };
     c.palettes.insert(acct.id.clone(), fresh.clone());
     Some(fresh)
@@ -2045,14 +2051,20 @@ mod tests {
         master_calls: Cell<usize>,
         calendar: RefCell<Vec<GraphReply>>,
         calendar_calls: Cell<usize>,
+        master_status: Cell<u16>,
     }
     impl ColourGraph {
         fn new(master: Vec<GraphReply>) -> Self {
-            ColourGraph { master: RefCell::new(master), master_calls: Cell::new(0), calendar: RefCell::new(Vec::new()), calendar_calls: Cell::new(0) }
+            ColourGraph { master: RefCell::new(master), master_calls: Cell::new(0), calendar: RefCell::new(Vec::new()), calendar_calls: Cell::new(0), master_status: Cell::new(0) }
         }
         /// Scripted answers for the calendar colour read; once spent, the read fails.
         fn with_calendar(self, replies: Vec<GraphReply>) -> Self {
             *self.calendar.borrow_mut() = replies;
+            self
+        }
+        /// Every category list answer carries this HTTP status in its diagnostics.
+        fn with_master_status(self, status: u16) -> Self {
+            self.master_status.set(status);
             self
         }
     }
@@ -2076,7 +2088,10 @@ mod tests {
         fn master_categories(&self, _access: &str, _ctx: &Ctx) -> (GraphReply, Option<Diag>) {
             self.master_calls.set(self.master_calls.get() + 1);
             let mut m = self.master.borrow_mut();
-            (if m.is_empty() { GraphReply::Transient("graph-503".into()) } else { m.remove(0) }, None)
+            let reply = if m.is_empty() { GraphReply::Transient("graph-503".into()) } else { m.remove(0) };
+            let status = self.master_status.get();
+            let diag = (status != 0).then(|| Diag { kind: Kind::Day, host: "graph", net: None, status, code: None, inner: None, request_id: None, client_request_id: None, attempt: 1, elapsed_ms: 1, probe: None });
+            (reply, diag)
         }
     }
 
@@ -2162,6 +2177,36 @@ mod tests {
     }
 
     #[test]
+    fn a_calendar_only_account_gets_the_calendar_colour_and_never_asks_for_categories() {
+        let (store, core) = setup();
+        let links = Mutex::new(Links::default());
+        let tokens = FakeTokens::new(vec![ok_token("a1", Some("refresh-2"))]);
+        let teal = GraphReply::Ok(json!({ "color": "lightTeal", "hexColor": "" }));
+        let graph = ColourGraph::new(vec![master_ok()]).with_calendar(vec![teal]);
+        let p = read_day(&[acct("work")], &store, &tokens, &graph, &core, &links, NOW, NOW, NOW + 3600);
+        assert!(!p.accounts[0].colours);
+        assert_eq!(graph.master_calls.get(), 0);
+        assert_eq!(graph.calendar_calls.get(), 1);
+        assert_eq!(p.events[1].category, Some(CategoryOut { name: String::new(), tone: "preset5", calendar: true }));
+    }
+
+    #[test]
+    fn a_403_on_the_category_list_still_keeps_the_calendar_colour() {
+        let (store, core) = setup();
+        store.set(&scope_record_id("work"), colours::SCOPE_COLOURS);
+        let links = Mutex::new(Links::default());
+        let tokens = FakeTokens::new(vec![ok_token("a1", Some("refresh-2"))]);
+        let teal = GraphReply::Ok(json!({ "color": "lightTeal", "hexColor": "" }));
+        let graph = ColourGraph::new(vec![GraphReply::Failed("graph-403".into())]).with_master_status(403).with_calendar(vec![teal]);
+        let p = read_day(&[acct("work")], &store, &tokens, &graph, &core, &links, NOW, NOW, NOW + 3600);
+        assert_eq!(graph.master_calls.get(), 1);
+        assert_eq!(p.accounts[0].state, "ok");
+        assert!(!p.accounts[0].colours);
+        assert_eq!(p.events[0].category, Some(CategoryOut { name: String::new(), tone: "preset5", calendar: true }));
+        assert_eq!(p.events[1].category, Some(CategoryOut { name: String::new(), tone: "preset5", calendar: true }));
+    }
+
+    #[test]
     fn a_failed_colour_read_keeps_the_last_list_and_waits_before_trying_again() {
         let (store, core) = setup();
         store.set(&scope_record_id("work"), colours::SCOPE_COLOURS);
@@ -2231,7 +2276,7 @@ mod tests {
         assert!(!p.accounts[0].colours);
         assert!(p.events.iter().all(|e| e.category.is_none()));
         assert_eq!(store.get(&scope_record_id("work")).as_deref(), Some(SCOPE));
-        assert!(core.lock().unwrap().palettes.is_empty());
+        assert!(core.lock().unwrap().palettes.values().all(|p| p.entries.is_empty()));
         read(NOW + 2 * colours::REFRESH_SECS);
         assert_eq!(graph.master_calls.get(), 2);
     }

@@ -20,8 +20,8 @@ const MIN_TILE = 30;
 /** A tile's height in pixels for the time it spans (3 px of air between tiles), never under `MIN_TILE`. */
 const tileHeight = (hours: number): number => Math.max(MIN_TILE, hours * P - 3);
 
-/** The longest an event is taken to run for the lanes: as long as its tile is drawn, so a short event never covers the tile after it. */
-const MIN_RUN_MS = ((MIN_TILE + 3) / P) * 3_600_000;
+/** The shortest an event is taken to run for the lanes: the pixels its tile is drawn down from its top (the 3 px of air sits in the gap, so a tile of 45 minutes or more ends where the next one may begin), so a short event never covers the tile after it. */
+const MIN_RUN_MS = (MIN_TILE / P) * 3_600_000;
 
 /** How far down a tile its title and time line reach, in pixels: the now line stops short of that part. */
 const TITLE_ZONE = 30;

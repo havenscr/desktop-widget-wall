@@ -114,12 +114,14 @@ function agendaDay(day: (hour: number, mins: number) => string) {
   ];
 }
 
-/** Tiles of 15, 30, 60 and 180 minutes, each with Join, and a plain event in the calendar's own colour (`?meet=fit`). */
+/** Tiles of 15, 30, 60 and 180 minutes, each with Join, a 15 then a 30 minute event back to back, and plain events in the calendar's own colour (`?meet=fit`). */
 function fitDay(day: (hour: number, mins: number) => string) {
   const e = (key: string, title: string, a: [number, number], b: [number, number], category?: { name: string; tone: string; calendar?: true }) => ({
     key, accountId: 'work', title, start: day(...a), end: day(...b), canJoin: true, canOpen: true, isLive: false, ...(category ? { category } : {}),
   });
   return [
+    e('d1-f6', 'Stand up', [20, 30], [20, 45]),
+    e('d1-f7', 'Short chat', [20, 45], [21, 15]),
     e('d1-f0', 'Quick sync', [11, 0], [11, 15], { name: 'Sample team', tone: 'preset7' }),
     e('d1-f1', 'Planning chat', [12, 0], [12, 30], { name: 'Sample projects', tone: 'preset0' }),
     e('d1-f2', 'Design review with the platform group', [13, 0], [14, 0]),
@@ -143,7 +145,7 @@ export function registerMeetMocks(): void {
   // `?meet=none`: both read, nothing scheduled. `?meet=busy`: five meetings at once at 1 PM.
   // `?meet=cats`: a day with five invented Outlook categories and one uncategorised event. `?meet=tones`: 25 events, one per preset colour, 40 minutes apart from 6:20 AM.
   // `?meet=catsplain`: plain and coloured events side by side, past and joinable, and a livestream with a category.
-  // `?meet=fit`: 15, 30, 60 and 180 minute events with Join, and two in the calendar's own colour.
+  // `?meet=fit`: 15, 30, 60 and 180 minute events with Join, a 15 then a 30 minute event back to back, and two in the calendar's own colour.
   // `?meet=catsshort`: short events back to back (a 15 minute one before a 45 minute one), a short livestream with a category, and one under way.
   // `?meet=nocolours`: the account is connected without the permission to read Outlook colours.
   const mode = () => knob('meet') ?? '';
