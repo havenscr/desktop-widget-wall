@@ -279,11 +279,26 @@ The sign-in and its row in Tools came first; the library came next, and a pick f
   the details only and spends no second search. `wall2_youtube_videos` shares the 24 hour details
   cache, makes at most 60 requests an hour (`busy` past that) and none after a `quota-all` until
   midnight Pacific; each request costs 1 unit of the daily quota.
+- **The play record** (`src-tauri/src/wall2_youtube_played.rs`). `wall2_youtube_note_play(id)` writes a video
+  id and Rust's own time to `yt-played.json` in the app's config folder (write beside, then rename): only ids
+  and times, no id twice (its newest time stays), at most 200 entries, nothing older than 30 days, a time
+  more than an hour ahead dropped; a file over 64 KB, junk or not an array reads as empty. The id must be a
+  video id; anything else is refused and writes nothing. `wall2_youtube_played` answers the list newest first
+  and `wall2_youtube_forget_played` removes the file (if it cannot be removed it is overwritten with an empty list); signing out does the same. If the clock cannot be read nothing is written and the record is left as it is. Only a video the wall itself
+  started goes in it (the queue notes each entry it loads); a video played in the YouTube Music app or a
+  browser never does. Titles come from `wall2_youtube_videos`, never from the file.
 - **In the card** (`wall/src/unwind/ytmusic/`). Set up and signed in, the YouTube side is the library:
-  one row with the tabs Playlists and Liked and the search field, and under it the playlists as 16:9
+  one row with the tabs For you, Playlists and Liked and the search field, and under it the playlists as 16:9
   tiles (four columns at rest, five tall) or the liked videos or a search answer as rows. A tile opens
   its videos (Back and Escape return; Refresh reads that playlist from YouTube again and the line
-  under it says when it was read). Search runs on Enter only, never on typing; the same words again
+  under it says when it was read). **For you** (`ForYou.tsx`, `forYouStore.ts`) is the first tab, though Playlists
+  is still the one that opens first: a row of the eight mood words (Focus, Energize, Relax, Sleep, Chill,
+  Workout, Party, Romance), shown but not yet working, and under it the shelf "Back to" (what the wall
+  played): four tiles with how long ago (Today, Yesterday, N days ago, Last week, ...) and See all, which
+  shows the whole record in the same grid (Back to the shelf returns). A tile plays that video, and the ones
+  after it in the shelf, on the wall. The shelf is read each time the tab shows (a read under a minute old
+  is kept, and a play the wall starts reads it again once it is written) with one `wall2_youtube_videos` call for the newest 24 and more only on See all; a video YouTube
+  no longer answers for is left out. Search runs on Enter only, never on typing; the same words again
   make no call, the same words in flight share one call, and an older answer never replaces a newer one. Nothing
   is read while the page is hidden or after the side is gone; what is loaded stays across the tall view (Refresh
   re-reads). Retry repeats the read that failed (the first page or the next page). Each list of rows takes
@@ -326,8 +341,8 @@ The sign-in and its row in Tools came first; the library came next, and a pick f
   frame, and page visibility and focus are not overridden. It plays as a guest and counts as YouTube plays.
   There is one player: a pick replaces a Watch video and a Watch play or a pin replaces the music; Spotify and the
   wall's player can still play together. It stops as a Watch video does (the page hidden, the display off or
-  Windows locked, Screens off, a call, the sleep timer) and nothing starts it again. A pick is never saved and
-  never changes the tab; a pick the owner starts (a row, Play, Shuffle, Play again) is heard even if a Watch video left the player muted, while an automatic advance never changes mute; on the Watch tab it shows as the single video it is, with its real title and channel.
+  Windows locked, Screens off, a call, the sleep timer) and nothing starts it again. A pick is never saved as a list and
+  never changes the tab (the wall only notes its video id and time in the play record, see above); a pick the owner starts (a row, Play, Shuffle, Play again) is heard even if a Watch video left the player muted, while an automatic advance never changes mute; on the Watch tab it shows as the single video it is, with its real title and channel.
   The queue is the list the pick came from, in memory only (never kept across a restart) and never wrapping. It
   grows only through the library store (within 10 entries of its end, and up to 200 rows after Play, Shuffle or a
   click, counted in rows read of the list, however few of them can play): it takes the rows the store has read and asks the store for its next page; it never reads with a page

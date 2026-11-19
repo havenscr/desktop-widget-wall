@@ -9,7 +9,7 @@ const day = '2026-11-11T10:24:00-08:00';
 const SWITCH = '.sp-switch button:nth-child(2)';
 const TALL = '.sp-grow';
 const TILE = '.yt-tile';
-const LIKED = '.sp-tabs button:nth-child(2)';
+const LIKED = '.sp-tabs button:nth-child(3)';
 const steps = (...s) => s.join(' >> ');
 const ctl = (row) => `.yt-row:nth-child(${row}) .yt-add`;
 const own = (kind, extra = '') => `youtube=in&ytlib=full&media=none&watch=mock&wtab=listen&ytown=${kind}${extra}`;

@@ -527,7 +527,7 @@ pub struct Page<T> { items: Vec<T>, next: Option<String> }
 fn id_chars(s: &str, lengths: std::ops::RangeInclusive<usize>) -> bool {
     lengths.contains(&s.len()) && s.bytes().all(|b| b.is_ascii_alphanumeric() || matches!(b, b'_' | b'-'))
 }
-fn valid_video_id(s: &str) -> bool { id_chars(s, 11..=11) }
+pub(crate) fn valid_video_id(s: &str) -> bool { id_chars(s, 11..=11) }
 fn valid_playlist_id(s: &str) -> bool { id_chars(s, 2..=64) }
 fn valid_page_token(s: &str) -> bool { id_chars(s, 1..=128) }
 
@@ -2800,7 +2800,12 @@ pub async fn wall2_youtube_cancel_sign_in(window: WebviewWindow) -> Result<(), S
 #[tauri::command]
 pub async fn wall2_youtube_sign_out(window: WebviewWindow) -> Result<(), String> {
     require(&window)?;
-    tauri::async_runtime::spawn_blocking(move || sign_out_with(&RealHttp, &RealCreds)).await.map_err(|_| FAILED.to_string())
+    let app = window.app_handle().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        sign_out_with(&RealHttp, &RealCreds);
+        // What the wall played goes with the sign-in (a missing file is fine).
+        if let Some(dir) = crate::wall2_youtube_played::dir_of(&app) { let _ = crate::wall2_youtube_played::forget_in(&dir); }
+    }).await.map_err(|_| FAILED.to_string())
 }
 
 #[tauri::command]

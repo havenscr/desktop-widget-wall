@@ -526,3 +526,80 @@
   height: 48px;
   border-radius: 10px;
 }
+
+/* The For you tab (vote 1A): the mood chips on top (one row, 36 px), under them the shelves in the one
+   scroller. A shelf is a heading (name, a grey line, See all at the right) and a row of four tiles. */
+.yt-foryou {
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.yt-chips {
+  flex: none;
+  display: flex;
+  gap: 8px;
+  min-width: 0;
+}
+.yt-chip {
+  flex: none;
+  height: 36px;
+  padding: 0 14px;
+  border-radius: 999px;
+  font: 500 16px/1 var(--body);
+  color: var(--dim);
+  background: rgba(10, 7, 28, 0.66);
+  border: 1px solid var(--line);
+  white-space: nowrap;
+  cursor: default;
+}
+.yt-chip:focus-visible,
+.yt-seeall:focus-visible {
+  outline: 2px solid var(--cyan);
+  outline-offset: 2px;
+}
+.yt-shelf {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.yt-shelfhead {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  min-height: 32px;
+}
+.yt-shelfname {
+  flex: none;
+  font: 600 16px/1 var(--disp);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--tx);
+}
+.yt-shelfsub {
+  flex: 1;
+  min-width: 0;
+  font: 400 18px/1 var(--body);
+  color: var(--dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.yt-seeall {
+  flex: none;
+  height: 32px;
+  padding: 0 4px 0 8px;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  border-radius: 8px;
+  font: 500 18px/1 var(--body);
+  color: var(--dim);
+  white-space: nowrap;
+}
+.yt-seeall:hover {
+  color: var(--tx);
+}

@@ -30,7 +30,7 @@ export interface Loaded<T> {
   readAt: number | null;
 }
 
-export type YtTab = 'playlists' | 'liked';
+export type YtTab = 'foryou' | 'playlists' | 'liked';
 type Key = 'playlists' | 'liked' | 'songs';
 
 const blank = <T,>(): Loaded<T> => ({ items: [], next: null, pages: 0, loading: false, loaded: false, problem: null, failed: null, failedFresh: false, readAt: null });
@@ -96,6 +96,8 @@ export function startReads(now = Date.now()): void {
   if (!canRead()) return;
   const s = useYtLibrary.getState();
   if (s.opened && !s.songs.loaded && !s.songs.loading) void loadList('songs');
+  // The For you tab keeps its own read (`forYouStore.ts`), started by the tab.
+  if (s.tab === 'foryou') return;
   const cur = s[s.tab];
   if (cur.loading) return;
   const old = cur.readAt !== null && now - cur.readAt > STALE_MS[s.tab];
@@ -172,7 +174,7 @@ export function retryList(key: Key): void {
 
 export function setTab(tab: YtTab): void {
   useYtLibrary.setState({ tab, opened: null, songs: blank(), query: '', found: null });
-  if (!useYtLibrary.getState()[tab].loaded) void loadList(tab);
+  if (tab !== 'foryou' && !useYtLibrary.getState()[tab].loaded) void loadList(tab);
 }
 
 /** Open a playlist; `start` also asks for it to play, or shuffle, as soon as its first page has arrived (any other open or a close cancels it). */

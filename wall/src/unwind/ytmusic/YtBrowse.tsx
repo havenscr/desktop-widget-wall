@@ -3,37 +3,23 @@ import { IconArrowsShuffle, IconListDetails, IconPlayerPlayFilled, IconSearch } 
 import type { YtPlaylist, YtVideo } from '../../music/youtube';
 import { tip } from '../../ui/HoverTip';
 import { useVisible } from '../../ui/useVisible';
-import { arrowTarget, gridColumns } from '../spotify/Tile';
 import { libraryMenuOpen } from '../watch/libraryMenuModel';
 import { libraryHandlers } from '../watch/libraryOpen';
 import { MAX_PAGES, PAGE_SIZE, SEARCH_TIP, SPENT_LINE, devSearchKnob, nearEnd, searchSpent, searchesLine, videosLine } from './model';
+import { ForYou } from './ForYou';
+import { loadForYou } from './forYouStore';
 import { playFrom } from './queue';
 import { useYoutubeStatus } from './status';
 import { YtSongs } from './YtSongs';
 import { libraryMounted, libraryVisible, loadList, openPlaylist, retryList, runSearch, searchesBack, setTab, startReads, useYtLibrary, type Loaded, type YtTab } from './store';
-import { RowSkeletons, TileSkeletons, YtEmpty, YtRows, YtState, YtThumb } from './YtParts';
+import { RowSkeletons, TileSkeletons, YtEmpty, YtRows, YtState, YtThumb, gridKey } from './YtParts';
 
 const TABS: { id: YtTab; label: string }[] = [
+  { id: 'foryou', label: 'For you' },
   { id: 'playlists', label: 'Playlists' },
   { id: 'liked', label: 'Liked' },
 ];
-const EMPTY_LINE: Record<YtTab, string> = { playlists: 'No playlists yet', liked: 'No liked videos yet' };
-
-/** Arrow keys move the focus between the tiles of the grid (the card's own walk, `arrowTarget`). */
-function gridKey(e: ReactKeyboardEvent<HTMLButtonElement>): void {
-  if (!['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(e.key)) return;
-  const grid = e.currentTarget.closest<HTMLElement>('.yt-grid');
-  if (!grid) return;
-  const tiles = [...grid.querySelectorAll<HTMLElement>('.yt-tile')];
-  const at = tiles.indexOf(e.currentTarget);
-  if (at < 0) return;
-  e.preventDefault();
-  const to = arrowTarget(at, tiles.length, gridColumns(grid, tiles), e.key);
-  if (to !== at) {
-    tiles[to].focus();
-    tiles[to].scrollIntoView?.({ block: 'nearest', inline: 'nearest' });
-  }
-}
+const EMPTY_LINE: Record<Exclude<YtTab, 'foryou'>, string> = { playlists: 'No playlists yet', liked: 'No liked videos yet' };
 
 function PlaylistTile({ p }: { p: YtPlaylist }) {
   // The right-click menu: Play and Shuffle open the playlist and start it when its first page arrives; then Pin to the left.
@@ -92,7 +78,7 @@ function ListFoot({ cur, name }: { cur: Loaded<unknown>; name: 'playlists' | 'li
  */
 export function YtBrowse({ tall }: { tall: boolean }) {
   const tab = useYtLibrary((s) => s.tab);
-  const lists = useYtLibrary((s) => s[s.tab]);
+  const lists = useYtLibrary((s) => (s.tab === 'foryou' ? s.playlists : s[s.tab]));
   const opened = useYtLibrary((s) => s.opened);
   const query = useYtLibrary((s) => s.query);
   const found = useYtLibrary((s) => s.found);
@@ -113,6 +99,10 @@ export function YtBrowse({ tall }: { tall: boolean }) {
     knobRun.current = true;
     if (knob) void runSearch(knob);
   }, [visible]);
+  // The For you shelf is read each time its tab shows (a read under a minute old is kept).
+  useEffect(() => {
+    if (visible && tab === 'foryou') void loadForYou();
+  }, [visible, tab]);
   useEffect(() => {
     if (query === '') setText('');
   }, [query]);
@@ -189,6 +179,8 @@ export function YtBrowse({ tall }: { tall: boolean }) {
         </div>
       </div>
     );
+  } else if (tab === 'foryou') {
+    main = <ForYou tall={tall} />;
   } else {
     const first = lists.items.length === 0;
     const body = lists.problem && first ? (
