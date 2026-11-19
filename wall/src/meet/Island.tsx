@@ -1,19 +1,17 @@
-import { IconBookmark, IconCheck, IconChecklist, IconChevronLeft, IconChevronRight, IconCircle, IconFileText, IconMail, IconUsers } from '@tabler/icons-react';
+import { IconCheck, IconChecklist, IconChevronLeft, IconChevronRight, IconCircle, IconFileText, IconMail, IconUsers } from '@tabler/icons-react';
 import { useState, type ReactNode } from 'react';
 import { invoke } from '../bridge/tauri';
-import { elapsedText } from '../signals/RecordingChip';
 import { tip } from '../ui/HoverTip';
 import { initials } from './heroModel';
-import { HOW_TO, indexName, inviteSize, islandKinds, stepKind, type CallMark, type IslandKind, type KindId } from './islandModel';
-import { clockText, type MeetingDetails, type Reply } from './model';
+import { HOW_TO, indexName, inviteSize, islandKinds, stepKind, type IslandKind, type KindId } from './islandModel';
+import { type MeetingDetails, type Reply } from './model';
 import { useMeetStore } from './meetStore';
 import type { ChecklistRead } from './useChecklist';
 
-const ICONS = { mail: IconMail, users: IconUsers, checklist: IconChecklist, bookmark: IconBookmark } as const;
+const ICONS = { mail: IconMail, users: IconUsers, checklist: IconChecklist } as const;
 
-/** How many people rows and notes the large pane draws; the rest are a count. */
+/** How many people rows the large pane draws; the rest are a count. */
 export const PEOPLE_ROWS = 6;
-export const NOTE_ROWS = 6;
 
 const REPLY_WORDS: Record<Reply, string> = { yes: 'Said yes', maybe: 'Maybe', no: 'Declined', none: 'No reply yet', organizer: 'Organizer' };
 
@@ -61,25 +59,6 @@ function ChecklistPane({ items, ticked, onTick }: { items: readonly string[]; ti
           </button>
         );
       })}
-    </div>
-  );
-}
-
-function NotesPane({ marks }: { marks: readonly CallMark[] }) {
-  const shown = marks.slice(-NOTE_ROWS);
-  const earlier = marks.length - shown.length;
-  return (
-    <div className="meet-isl-notes">
-      {earlier > 0 && <div className="meet-xs meet-dimline">{earlier} earlier</div>}
-      {shown.map((mk, i) => (
-        <div key={mk.at} className="meet-isl-note" {...tip(`Marked at ${clockText(mk.at)}, ${elapsedText(mk.showMs)} into the call`)}>
-          <span className="meet-isl-box" aria-hidden="true">
-            <IconBookmark size={22} stroke={1.8} />
-          </span>
-          <span className="meet-isl-ntime">{elapsedText(mk.showMs)}</span>
-          <span className="meet-xs">Mark {marks.length - shown.length + i + 1}, at {clockText(mk.at)}</span>
-        </div>
-      ))}
     </div>
   );
 }
@@ -134,14 +113,14 @@ function HowTo({ checklist, reloadSoon }: { checklist: ChecklistRead; reloadSoon
  * The island: one kind large at the left, "Also on file" at the right, the order line, arrows and dots under them.
  * Arrows, a click on an index row and the dots change the large kind; nothing turns by itself.
  */
-export function Island({ details, checklist, reloadSoon, meetingId, marks }: { details: MeetingDetails | null | undefined; checklist: ChecklistRead; reloadSoon: () => void; meetingId: string; marks: readonly CallMark[] }) {
+export function Island({ details, checklist, reloadSoon, meetingId }: { details: MeetingDetails | null | undefined; checklist: ChecklistRead; reloadSoon: () => void; meetingId: string }) {
   // Ticks and the chosen kind belong to the occurrence of the meeting, so a refresh of the calendar keeps them.
   const ticked = useMeetStore((s) => s.ticks[meetingId]) ?? [];
   const toggle = useMeetStore((s) => s.toggleTick);
   const sel = useMeetStore((s) => s.selected[meetingId]) ?? null;
   const select = useMeetStore((s) => s.select);
   const setSel = (k: KindId) => select(meetingId, k);
-  const kinds = islandKinds({ details, checklist: checklist.items, marks });
+  const kinds = islandKinds({ details, checklist: checklist.items });
   if (kinds.length === 0) return <HowTo checklist={checklist} reloadSoon={reloadSoon} />;
   const found = kinds.findIndex((k) => k.id === sel);
   const index = found < 0 ? 0 : found;
@@ -152,7 +131,6 @@ export function Island({ details, checklist, reloadSoon, meetingId, marks }: { d
   if (cur.id === 'invite' && details?.invite) pane = <InvitePane text={details.invite} />;
   else if (cur.id === 'people' && details) pane = <PeoplePane d={details} />;
   else if (cur.id === 'checklist') pane = <ChecklistPane items={checklist.items} ticked={ticked} onTick={(i) => toggle(meetingId, i)} />;
-  else if (cur.id === 'notes') pane = <NotesPane marks={marks} />;
   const many = kinds.length > 1;
   return (
     <section className="panel meet-island" aria-label="Meeting notes">

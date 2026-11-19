@@ -74,7 +74,7 @@ const serve = (o: Serve) => {
     return { state: o.checklist ? 'ok' : 'missing', items: o.checklist ?? [], reason: null };
   });
   mocks.set('wall2_keys_library', () => LIBRARY_DATA);
-  for (const c of ['wall2_keys_send_library', 'wall2_meet_join', 'wall2_open_event', 'wall2_onair_mark', 'wall2_onair_open', 'wall2_meet_checklist_open']) {
+  for (const c of ['wall2_keys_send_library', 'wall2_meet_join', 'wall2_open_event', 'wall2_meet_checklist_open']) {
     mocks.set(c, (args) => (sent.push({ command: c, args }), null));
   }
 };
@@ -154,7 +154,7 @@ it('the occurrence identity is the same for the same event under another key and
 
 // ---------- 3: a call keeps its controls ----------
 
-it('a call that outlasts its meeting keeps the meeting, the keys and the marks, and shows the minutes over', async () => {
+it('a call that outlasts its meeting keeps the meeting and the keys, and shows the minutes over', async () => {
   serve({ meetings: () => [m('a', 'Design review', -50, 5, { details }), m('b', 'Lunch with Sam', 90, 150)] });
   await setCall(call({ since: NOW - 50 * 60_000 }));
   const { container } = await renderMeet();
@@ -172,13 +172,9 @@ it('a call that outlasts its meeting keeps the meeting, the keys and the marks, 
   expect(hero(container).textContent).not.toMatch(/min left/);
   // The Next card shows the meeting after the call's meeting as usual.
   expect(nextCard(container).textContent).toContain('Lunch with Sam');
-  // Marks are written under the call's meeting.
-  fireEvent.click(within(container.querySelector('.meet-capture') as HTMLElement).getByRole('button', { name: /Mark a moment/ }), { detail: 1 });
-  await flush(10);
-  expect(sent.find((s) => s.command === 'wall2_onair_mark')?.args).toMatchObject({ part: 'Design review' });
 });
 
-it('a call with no meeting is a plain call: status, time, the four keys, no ring, "Call in progress", marks under "Call"', async () => {
+it('a call with no meeting is a plain call: status, time, the four keys, no ring, "Call in progress"', async () => {
   serve({ meetings: () => [] });
   await setCall(call());
   const { container } = await renderMeet();
@@ -189,9 +185,6 @@ it('a call with no meeting is a plain call: status, time, the four keys, no ring
   expect(h.querySelector('.meet-ring')).toBeNull();
   expect(callKeyLabels(container)).toEqual(CALL_DECK);
   expect(h.textContent).not.toContain('Nothing scheduled');
-  fireEvent.click(within(container.querySelector('.meet-capture') as HTMLElement).getByRole('button', { name: /Mark a moment/ }), { detail: 1 });
-  await flush(10);
-  expect(sent.find((s) => s.command === 'wall2_onair_mark')?.args).toMatchObject({ part: 'Call' });
   // The keys still work.
   fireEvent.click(within(h).getByRole('button', { name: 'Leave' }));
   await flush(600);
@@ -208,9 +201,6 @@ it('a call with only a later, unrelated meeting is a plain call; the later meeti
   const card = within(nextCard(container));
   expect(card.getByText('Next')).toBeTruthy();
   expect(card.getByText('Budget review')).toBeTruthy();
-  fireEvent.click(within(container.querySelector('.meet-capture') as HTMLElement).getByRole('button', { name: /Mark a moment/ }), { detail: 1 });
-  await flush(10);
-  expect(sent.find((s) => s.command === 'wall2_onair_mark')?.args).toMatchObject({ part: 'Call' });
 });
 
 it('a meeting that starts within 10 minutes after the call began is the call\'s; one that starts later is not', async () => {
@@ -299,81 +289,16 @@ it('the unavailable state with no history keeps the amber line and Open Tools in
   expect(hero(container).querySelector('.meet-trouble')?.textContent).toContain('Work');
 });
 
-// ---------- 4: a late Capture write ----------
+// ---------- 4: the call's identity ----------
 
-const markTile = (c: HTMLElement) => within(c.querySelector('.meet-capture') as HTMLElement).getByRole('button', { name: /Mark a moment/ });
-
-it('a mark answered after the call ended is not put into the list, and a mark answered in a second call is not either', async () => {
-  serve({ meetings: () => [m('a', 'Design review', -10, 50)] });
-  let release: () => void = () => undefined;
-  mocks.set('wall2_onair_mark', () => new Promise<null>((res) => { release = () => res(null); }));
-  await setCall(call({ since: NOW - 60_000 }));
-  const { container } = await renderMeet();
-  fireEvent.click(markTile(container), { detail: 1 });
-  await flush(10);
-  // The call ends first.
-  await setCall(null);
-  release();
-  await flush(10);
-  expect(useMeetStore.getState().marks).toEqual([]);
-  // A second call starts first.
-  await setCall(call({ since: NOW + 1000 }));
-  fireEvent.click(markTile(container), { detail: 1 });
-  await flush(10);
-  await setCall(null);
-  await setCall(call({ since: NOW + 5000 }));
-  release();
-  await flush(10);
-  expect(useMeetStore.getState().marks).toEqual([]);
-  expect(container.querySelector('.meet-capture')?.textContent).toContain('Marks the time in the call to marks.txt');
-});
-
-it('a failed mark in a call that has ended leaves no error line in the next call', async () => {
-  serve({ meetings: () => [m('a', 'Design review', -10, 50)] });
-  let fail: (e: Error) => void = () => undefined;
-  mocks.set('wall2_onair_mark', () => new Promise<null>((_, rej) => { fail = rej; }));
-  await setCall(call());
-  const { container } = await renderMeet();
-  fireEvent.click(markTile(container), { detail: 1 });
-  await flush(10);
-  await setCall(null);
-  await setCall(call({ since: NOW + 9000 }));
-  fail(new Error('refused'));
-  await flush(10);
-  expect(container.querySelector('.meet-capture')?.textContent).not.toContain('refused');
-  expect(container.querySelector('.meet-capture')?.textContent).not.toContain('marks.txt is full');
-});
-
-it('the marks and the elapsed time do not reset when only the call\'s kind changes', async () => {
+it('the call keeps its identity and the elapsed time when only the call\'s kind changes', async () => {
   serve({ meetings: () => [m('a', 'Design review', -10, 50)] });
   await setCall(call({ since: NOW - 120_000 }));
   const { container } = await renderMeet();
-  fireEvent.click(markTile(container), { detail: 1 });
-  await flush(10);
-  expect(useMeetStore.getState().marks).toHaveLength(1);
   // Teams to Zoom: the signal's `since` is new, the call is the same.
   await setCall({ kind: 'zoom', since: NOW + 30_000, camera: false });
-  expect(useMeetStore.getState().marks).toHaveLength(1);
   expect(useMeetStore.getState().callId).toBe(NOW - 120_000);
-  await flush(2000);
-  fireEvent.click(markTile(container), { detail: 1 });
-  await flush(10);
-  const marks = sent.filter((s) => s.command === 'wall2_onair_mark').map((s) => (s.args as { showMs: number }).showMs);
-  expect(marks[1]).toBeGreaterThanOrEqual(120_000);
-  expect(useMeetStore.getState().marks).toHaveLength(2);
   expect(hero(container).textContent).toContain('In call, Zoom');
-});
-
-it('a double click is stopped by the detail guard itself, not by the one second quiet time', async () => {
-  serve({ meetings: () => [m('a', 'Design review', -10, 50)] });
-  await setCall(call());
-  const { container } = await renderMeet();
-  fireEvent.click(markTile(container), { detail: 1 });
-  await flush(10);
-  await flush(5000);
-  fireEvent.click(markTile(container), { detail: 2 });
-  await flush(10);
-  expect(sent.filter((s) => s.command === 'wall2_onair_mark')).toHaveLength(1);
 });
 
 // ---------- 5: nothing runs while hidden ----------
