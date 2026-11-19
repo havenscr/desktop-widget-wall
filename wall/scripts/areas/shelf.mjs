@@ -27,6 +27,8 @@ function measureShelf() {
     for (const e of col.querySelectorAll('*')) {
       const b = e.getBoundingClientRect();
       if (b.width === 0 && b.height === 0) continue;
+      // Chips past the row's box are scrolled out of sight (the row scrolls); the row itself and the sideways check below hold them.
+      if (e.closest('.shelf-lists') && !e.classList.contains('shelf-lists')) continue;
       if (b.left < cb.left - 0.5 || b.right > cb.right + 0.5 || b.bottom > cb.bottom + 0.5) { fails.push('shelf: ' + sel + ' ' + (e.className || e.tagName) + ' sticks out of its card'); break; }
     }
   }

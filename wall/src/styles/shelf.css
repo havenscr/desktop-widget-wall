@@ -73,9 +73,14 @@
 .shelf-lists {
   display: flex;
   flex-wrap: wrap;
+  align-content: flex-start;
   gap: 10px;
+  flex: 1 1 0;
+  min-height: 62px;
+  overflow-y: auto;
 }
 .shelf-list {
+  flex: 0 0 auto;
   height: 52px;
   min-width: 0;
   max-width: 100%;
