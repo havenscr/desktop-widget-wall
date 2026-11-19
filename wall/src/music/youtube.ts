@@ -17,6 +17,8 @@ export interface YtVideo { id: string; title: string; channel: string; seconds: 
 export interface YtDetail { id: string; title: string | null; channel: string | null; seconds: number | null; /** Development mocks only (a drawn motif, so no picture is fetched); Rust sends none. */ thumb?: string | null }
 /** One play the wall made: a video id and when it started (seconds since 1970). Nothing else is kept. */
 export interface YtPlayed { id: string; at: number }
+/** The answer of a playlist search: the playlists and what is left of the day's search budget. */
+export interface YtPlaylistSearch { playlists: YtPlaylist[]; searchesLeft: number }
 /** A page of answers and the token of the next page (null at the end). */
 export interface YtPage<T> { items: T[]; next: string | null }
 
@@ -50,6 +52,8 @@ export const youtube = {
     tokenOk(pageToken) ? invoke<YtPage<YtVideo>>('wall2_youtube_liked', { pageToken: pageToken ?? null, fresh: fresh === true }) : refuse(),
   /** A music search (Rust counts it against the day's budget; the same words again are free). */
   search: (query: string): Promise<YtPage<YtVideo>> => invoke<YtPage<YtVideo>>('wall2_youtube_search', { query }),
+  /** A playlist search, run only when asked (one search call of the day's budget; the same words again are free). */
+  searchPlaylists: (query: string): Promise<YtPlaylistSearch> => invoke<YtPlaylistSearch>('wall2_youtube_search_playlists', { query }),
   /** Title, channel and length for 1 to 50 video ids from an own playlist. */
   videos: (ids: readonly string[]): Promise<YtDetail[]> =>
     ids.length >= 1 && ids.length <= 50 && ids.every((id) => VIDEO_ID.test(id)) ? invoke<YtDetail[]>('wall2_youtube_videos', { ids: [...ids] }) : refuse(),

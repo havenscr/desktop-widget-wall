@@ -1,5 +1,5 @@
 import { mocks } from '../tauri';
-import type { YtDetail, YtPage, YtPlayable, YtPlaylist, YtVideo } from '../../music/youtube';
+import type { YtDetail, YtPage, YtPlaylistSearch, YtPlayable, YtPlaylist, YtVideo } from '../../music/youtube';
 import { FIVE_LINE, playFrom, setNote } from '../../unwind/ytmusic/queue';
 import { useWatchStore } from '../../unwind/watch/store';
 
@@ -117,6 +117,20 @@ export function registerYoutubeMocks(): void {
     const words = String(args?.query ?? '').trim().toLowerCase();
     if (words === 'nothing') return { items: [], next: null };
     return { items: Array.from({ length: 12 }, (_, i) => video(200 + i, 'yes', SONGS[i % SONGS.length])), next: null };
+  });
+  // A playlist search is its own call: it spends one search, and the same words again are free.
+  const heardLists = new Set<string>();
+  mocks.set('wall2_youtube_search_playlists', (args): YtPlaylistSearch => {
+    failing();
+    const words = String(args?.query ?? '').trim().toLowerCase();
+    if (!words) throw new Error('invalid');
+    if (!heardLists.has(words)) {
+      if (left() <= 0) throw new Error('quota');
+      searched += 1;
+      heardLists.add(words);
+    }
+    const n = words === 'nothing' ? 0 : 20;
+    return { playlists: Array.from({ length: n }, (_, i) => ({ id: `PLfound${i}`, title: LIST_NAMES[i % LIST_NAMES.length][0], count: 10 + i * 3, thumb: motif(30 + i) })), searchesLeft: left() };
   });
   mocks.set('wall2_youtube_videos', (args) => {
     if (!signedIn) throw new Error('sign in again');

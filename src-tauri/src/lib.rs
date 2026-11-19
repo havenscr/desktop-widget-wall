@@ -4042,6 +4042,7 @@ pub fn run() {
             wall2_youtube::wall2_youtube_items,
             wall2_youtube::wall2_youtube_liked,
             wall2_youtube::wall2_youtube_search,
+            wall2_youtube::wall2_youtube_search_playlists,
             wall2_youtube::wall2_youtube_videos,
             wall2_youtube_played::wall2_youtube_note_play,
             wall2_youtube_played::wall2_youtube_played,
