@@ -17,7 +17,6 @@ export const END_HOUR = 24;
 export const HOUR_PX = 128;
 /** Hour labels hide this close to the needle, sunrise and sunset labels this close. */
 export const HOUR_LABEL_GAP = 70;
-export const SUN_LABEL_GAP = 90;
 /** Narrowest calendar chip, so a 5 minute event still shows. */
 export const MIN_CHIP_PX = 12;
 /** A chip narrower than this shows no title (it keeps a tooltip and an accessible name). */
@@ -92,19 +91,45 @@ export function hourLabels(needleX: number): { x: number; text: string }[] {
   return out;
 }
 
-/** Sunrise and sunset labels inside the ribbon, leaving out any within 90 px of the needle. */
-export function sunLabels(sun: SunTimes, now: number, needleX: number): { x: number; text: string }[] {
-  const out: { x: number; text: string }[] = [];
-  for (const [ms, word] of [
-    [sun.rise, 'sunrise'],
-    [sun.set, 'sunset'],
+/** The sun row: its own row on the horizon above the ribbon, 22 px tall, top 26 px above the ribbon's top edge. */
+export const SUN_ROW_TOP = -26;
+export const SUN_ROW_H = 22;
+/** The ribbon's own labels (hour labels, the needle's pill) sit inside y 6 to 28, so the row never touches them. */
+export const RIBBON_LABEL_TOP = 6;
+/** The marker pill: 7 px padding, an 18 px icon, a 4 px gap and "h:mm" at 16 px; 78 px is its widest. */
+export const SUN_MARKER_W = 78;
+
+export interface SunMarker {
+  x: number;
+  kind: 'rise' | 'set';
+  /** `4:28` */
+  text: string;
+  /** `Sunset 4:28 PM` */
+  tip: string;
+}
+
+/** The marker's box in ribbon coordinates (y is negative: above the ribbon). */
+export function sunMarkerBox(x: number): { left: number; right: number; top: number; bottom: number } {
+  return { left: x - SUN_MARKER_W / 2, right: x + SUN_MARKER_W / 2, top: SUN_ROW_TOP, bottom: SUN_ROW_TOP + SUN_ROW_H };
+}
+
+/**
+ * Sunrise and sunset markers for the sun row, at the exact minute. They sit on their own row, so
+ * no hour label or needle pill can be near them; nothing to hide.
+ */
+export function sunLabels(sun: SunTimes, now: number): SunMarker[] {
+  const out: SunMarker[] = [];
+  for (const [ms, kind] of [
+    [sun.rise, 'rise'],
+    [sun.set, 'set'],
   ] as const) {
     if (ms === null) continue;
     const h = wallHour(ms, now);
     if (h < START_HOUR || h > END_HOUR) continue;
-    const x = RX(h);
     // Rounded to the nearest minute, as almanacs print them.
-    if (Math.abs(x - needleX) > SUN_LABEL_GAP) out.push({ x, text: `${word} ${shortTime(Math.round(ms / 60_000) * 60_000)}` });
+    const rounded = Math.round(ms / 60_000) * 60_000;
+    const pm = new Date(rounded).getHours() >= 12;
+    out.push({ x: RX(h), kind, text: shortTime(rounded), tip: `${kind === 'rise' ? 'Sunrise' : 'Sunset'} ${shortTime(rounded)} ${pm ? 'PM' : 'AM'}` });
   }
   return out;
 }

@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest';
-import { HIDDEN_NAMED, MIN_CHIP_PX, MORE_GAP, MORE_MIN_PX, hiddenNames, allDayChips, allDayText, allDayWidth, chipLayout, chips, focusBars, isAllDay, isLate, needleTip, hourLabels, hourText, needle, RIBBON_WIDTH, RX, shortTime, skyGradient, sunLabels, ticks, wallHour } from './model';
+import { HIDDEN_NAMED, MIN_CHIP_PX, MORE_GAP, MORE_MIN_PX, hiddenNames, allDayChips, allDayText, allDayWidth, chipLayout, chips, focusBars, isAllDay, isLate, needleTip, hourLabels, hourText, needle, RIBBON_WIDTH, RX, shortTime, skyGradient, sunLabels, sunMarkerBox, RIBBON_LABEL_TOP, SUN_MARKER_W, ticks, wallHour } from './model';
 import { sunTimes } from './sun';
 import { useFixedClock, usePacificTime } from './testZone';
 
@@ -67,19 +67,73 @@ it('clips events to 6 AM to 12 AM and drops the rest', () => {
   ]);
 });
 
-it('hides hour labels within 70 px of the needle and sun labels within 90 px', () => {
+it('hides hour labels within 70 px of the needle', () => {
   const n = needle(t('10:24')).x; // RX(10.4) = 635.2
   const hours = hourLabels(n).map((l) => l.text);
   expect(hours).not.toContain('10 AM'); // 51 px away
   expect(hours).toContain('8 AM');
   expect(hours).toContain('12 PM'); // 154 px away
   expect(hours).toHaveLength(9);
+  expect(hourLabels(needle(t('16:36')).x).map((l) => l.text)).toContain('4 PM'); // 77 px away, shown as in f_home
+});
+
+const mk = (rise: string | null, set: string | null, day = '11') => ({ rise: rise === null ? null : t(rise, day), set: set === null ? null : t(set, day) });
+
+it('draws sunrise and sunset markers as short times on their own row, the needle or not', () => {
   const sun = sunTimes(t('10:24'));
-  expect(sunLabels(sun, t('10:24'), n).map((l) => l.text)).toEqual(['sunrise 7:09', 'sunset 4:37']);
-  // At 4:36 the sunset label (8 px from the needle) hides and sunrise stays.
-  const n2 = needle(t('16:36')).x;
-  expect(sunLabels(sun, t('16:36'), n2).map((l) => l.text)).toEqual(['sunrise 7:09']);
-  expect(hourLabels(n2).map((l) => l.text)).toContain('4 PM'); // 77 px away, shown as in f_home
+  const m = sunLabels(sun, t('10:24'));
+  expect(m.map((l) => [l.kind, l.text, l.tip])).toEqual([
+    ['rise', '7:09', 'Sunrise 7:09 AM'],
+    ['set', '4:37', 'Sunset 4:37 PM'],
+  ]);
+  expect(m[1]!.x).toBeCloseTo(RX(wallHour(sun.set!, t('10:24'))), 6);
+  // The needle sits 3 px from the sunset marker: the marker stays (the rows differ), the hour label near it hides.
+  const n = needle(t('16:37')).x;
+  expect(sunLabels(sun, t('16:37')).map((l) => l.text)).toEqual(['7:09', '4:37']);
+  expect(hourLabels(n).map((l) => l.text)).toContain('4 PM'); // 79 px away
+  expect(hourLabels(needle(t('16:05')).x).map((l) => l.text)).not.toContain('4 PM');
+  expect(sunLabels(mk('07:55', '16:05'), t('16:05')).map((l) => l.text)).toEqual(['7:55', '4:05']);
+});
+
+it('leaves out a sun time outside 6 AM to midnight', () => {
+  expect(sunLabels(mk('05:10', '21:10', '01'), t('12:00', '01')).map((l) => l.kind)).toEqual(['set']);
+  expect(sunLabels({ rise: null, set: null }, t('12:00'))).toEqual([]);
+});
+
+// The worst cases at this place (47.6 N): sunrise 7:55 AM, sunset 4:16 and 4:28 PM, 9:10 PM and the
+// made-up 4:05 PM, plus every minute within 10 minutes of each even hour.
+it('never lets a marker box touch an hour label or the needle pill, at any minute', () => {
+  const LABEL_HALF = 25;
+  const checked: string[] = [];
+  const minutes = new Set<number>();
+  for (let h = 6; h <= 23; h++) for (let m = 0; m < 60; m++) minutes.add(h * 60 + m);
+  for (const min of minutes) {
+    const hm = `${String(Math.floor(min / 60)).padStart(2, '0')}:${String(min % 60).padStart(2, '0')}`;
+    const m = sunLabels(mk(hm, hm), t('12:00'));
+    expect(m).toHaveLength(2);
+    const box = sunMarkerBox(m[0]!.x);
+    // Vertically: marker y -26 to -4, hour labels and needle pill inside y 6 to 28.
+    expect(box.bottom).toBeLessThanOrEqual(RIBBON_LABEL_TOP - 8);
+    expect(box.right - box.left).toBe(SUN_MARKER_W);
+    expect(box.left).toBeGreaterThanOrEqual(0);
+    expect(box.right).toBeLessThanOrEqual(RIBBON_WIDTH);
+    if (min % 120 <= 10 || min % 120 >= 110) checked.push(hm);
+  }
+  expect(checked.length).toBeGreaterThan(100);
+  // Even where the marker sits right over an even hour's label (x equal), the rows stay 14 px apart.
+  const over = sunMarkerBox(RX(16));
+  expect(over.left).toBeLessThan(RX(16) - LABEL_HALF);
+  expect(10 - over.bottom).toBe(14);
+});
+
+it('keeps sunrise and sunset markers at least 8 hours apart on the worst dates', () => {
+  for (const [rise, set] of [['07:55', '16:28'], ['07:57', '16:16'], ['05:15', '21:10'], ['07:55', '16:05']] as const) {
+    const m = sunLabels(mk(rise, set), t('12:00'));
+    if (m.length === 2) expect(m[1]!.x - m[0]!.x).toBeGreaterThanOrEqual(8 * 128 - 1);
+    for (const l of m) expect(l.text).toMatch(/^\d{1,2}:\d{2}$/);
+  }
+  expect(sunLabels(mk('07:55', '16:05'), t('12:00')).map((l) => l.tip)).toEqual(['Sunrise 7:55 AM', 'Sunset 4:05 PM']);
+  expect(sunLabels(mk(null, '21:10'), t('12:00')).map((l) => l.tip)).toEqual(['Sunset 9:10 PM']);
 });
 
 it('clamps the needle before 6 AM and still shows the real time', () => {
