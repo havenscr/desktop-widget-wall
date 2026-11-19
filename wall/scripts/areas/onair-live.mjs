@@ -1,9 +1,9 @@
-// The Live page of the new On Air frame (development only, behind `?onair=v2`): the show timer, the YouTube chips, the run of show line,
+// The Live page of the new On Air frame: the show timer, the YouTube chips, the run of show line,
 // the comments card with the channel field in it, the notes, the studio keys (row 2) and the lights. Gallery states, fit variants, the
 // `onairLive` measurement and its deliberate breaks live here. Every name and comment in the mocks is invented.
 
 const at = encodeURIComponent('2026-11-11T10:24:00-08:00');
-const HEAD = 'hz=onair&at=' + at + '&clock=review&weather=ok&screen=onair&onair=v2&oamode=live';
+const HEAD = 'hz=onair&at=' + at + '&clock=review&weather=ok&screen=onair&oamode=live';
 const full = (knobs) => `${HEAD}${/(^|&)show=/.test(knobs) ? '' : '&show=typical'}${/(^|&)marks=/.test(knobs) ? '' : '&marks=2'}${knobs ? '&' + knobs : ''}`;
 const state = (name, knobs, expect, actions) => ({ screen: 'onair', name: 'on air live: ' + name, query: full(knobs), custom: true, expect, actions });
 const checks = ['.oa2 .oa2-modes', '.oa2 .oa2-comments'];
@@ -19,7 +19,7 @@ function measureOnAirLive() {
   const fails = [];
   const root = document.querySelector('.oa2');
   const q = new URLSearchParams(location.search);
-  const want = q.get('onair') === 'v2' && q.get('screen') === 'onair' && q.get('oamode') === 'live';
+  const want = q.get('screen') === 'onair' && q.get('oamode') === 'live';
   if (!root || root.getAttribute('data-mode') !== 'live') return want ? ['on air live: the Live page did not open'] : [];
   const r1 = (n) => Math.round(n * 10) / 10;
   const visible = (e) => {
