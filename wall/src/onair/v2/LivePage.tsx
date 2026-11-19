@@ -11,9 +11,11 @@ import { useChatPolling, useYtLive } from '../ytliveStore';
 import { Comments } from './Comments';
 import { ExpandButton, SplitHandle, useSplit } from './SplitHandle';
 import { SPLIT_GAP, widths } from './splitModel';
-import { Head, LibTile, MarkTile, TileRow } from './Tiles';
 import { clockText } from './time';
-import { useDeckKeys } from './useDeckKeys';
+import { StudioKeys } from './StudioKeys';
+import { Head } from './Tiles';
+import { StudioStatus } from './StudioStatus';
+import { useStudioPolling } from './studioStore';
 
 /** The notes' size: one, the card is 436 wide and only Previous and Next sit under it. */
 const LIVE_NOTE_SIZES = [27] as const;
@@ -167,25 +169,6 @@ function RunLine({ now }: { now: number }) {
   );
 }
 
-/** The studio keys box: heading, row 1 empty until the studio keys pull request, row 2 the three keys that work now. */
-function StudioKeys() {
-  const keys = useDeckKeys();
-  const mark = useOnAirStore((s) => s.mark);
-  const marking = useOnAirStore((s) => s.marking);
-  return (
-    <div className="oa2-b oa2-studiokeys" role="group" aria-label="Studio keys">
-      <Head label="Studio keys" brief={keys.brief} />
-      <div className="oa2-skrow2">
-        <TileRow keys={keys} cols={3}>
-          <MarkTile mark={mark} showMs={undefined} marking={marking} />
-          <LibTile keys={keys} spec={{ id: 'snip' }} />
-          <LibTile keys={keys} spec={{ id: 'strip-dark' }} />
-        </TileRow>
-      </div>
-    </div>
-  );
-}
-
 /** Where the split area starts inside the frame. */
 const SPLIT_X = 676;
 
@@ -253,19 +236,19 @@ function SplitArea({ now }: { now: number }) {
 
 /**
  * The Live page: the show timer, the YouTube and camera chips, the run of show line, the comments (with the channel field in the
- * card), the notes, the studio keys (row 2 only) and the studio lights. The studio status box and the prompter's box stay empty
- * until their own pull requests.
+ * card), the notes, the studio keys, the studio status and the studio lights. The prompter's box stays empty until its own pull request.
  */
 export function LivePage({ now }: { now: number }) {
   useChatPolling();
+  useStudioPolling();
   return (
     <>
       <LiveTimer now={now} />
       <LiveChips now={now} />
-      <div className="oa2-b oa2-empty oa2-empty-status" aria-hidden="true" />
+      <StudioStatus now={now} />
       <RunLine now={now} />
       <SplitArea now={now} />
-      <StudioKeys />
+      <StudioKeys now={now} />
       <div className="oa2-b oa2-empty oa2-empty-prompter oa2-empty-live" aria-hidden="true" />
       <div className="oa2-b oa2-lights-live">
         <StudioBlock />

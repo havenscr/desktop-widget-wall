@@ -317,7 +317,7 @@
 /* ---- the boxes: Live ---- */
 .oa2-showtimer { left: 0; top: 56px; width: 640px; height: 166px; }
 .oa2-livechips { left: 0; top: 230px; width: 640px; height: 36px; }
-.oa2-empty-status { left: 0; top: 278px; width: 640px; height: 152px; }
+.oa2-studiostatus { left: 0; top: 278px; width: 640px; height: 152px; }
 .oa2-runline { left: 0; top: 438px; width: 640px; height: 46px; flex-direction: row; align-items: center; gap: 8px; }
 .oa2 .oa2-comments { left: 676px; top: 4px; width: 620px; height: 486px; }
 .oa2 .oa-card.oa2-livenotes { left: 1320px; top: 4px; width: 436px; height: 486px; }
@@ -343,6 +343,17 @@
 .oa2-empty-live { left: 1796px; top: 210px; width: 620px; height: 104px; }
 .oa2-lights-live { left: 1796px; top: 328px; width: 620px; height: 154px; }
 .oa2-lights-live > .st-block { height: 148px; }
+/* Row 1 of the studio keys box: the StreamYard keys, between the heading and row 2. */
+.oa2-skrow1 { position: absolute; left: 0; right: 0; top: 34px; height: 58px; }
+.oa2-skrow1 .oa2-tiles { margin-top: 0; }
+.oa2 .oa2-skrow1 .deck-tile.key-tile { height: 58px; grid-template-rows: 22px 20px; padding-top: 6px; }
+.oa2 .oa2-skrow1 .deck-tile.key-tile.off { border-style: dashed; opacity: 0.6; }
+.oa2 .oa2-skrow1 .deck-tile.key-tile[data-armed='true'] { border-color: rgba(255, 82, 82, 0.9); background: rgba(255, 82, 82, 0.16); }
+.oa2 .oa2-hdbtn { margin: 0 0 0 auto; height: 26px; border-radius: 9px; min-width: 0; padding: 0 12px; font-size: 16px; display: inline-flex; align-items: center; gap: 6px; flex: none; }
+.oa2-hd-r + .oa2-hdbtn { margin-left: 12px; }
+.oa2-st-l { margin-top: 8px; }
+.oa2-st-l[data-warn='true'] { color: #ffb74d; }
+.oa2-st-fine { margin-top: 10px; font: 400 16px/22px var(--body); color: var(--dim); }
 /* Row 2 of the studio keys box sits at its final place (box y 98 to 174); row 1 is empty sky until the studio keys pull request. */
 .oa2-skrow2 { position: absolute; left: 0; right: 0; top: 98px; height: 76px; }
 .oa2-skrow2 .oa2-tiles,
