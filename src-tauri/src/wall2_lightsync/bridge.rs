@@ -368,6 +368,21 @@ pub(crate) fn area_action(net: &dyn BridgeNet, key: &str, area_id: &str, action:
     }
 }
 
+/// Whether the area is streaming right now (`status` is `active`), from `GET .../entertainment_configuration/{id}`.
+pub(crate) fn area_active(net: &dyn BridgeNet, key: &str, area_id: &str) -> Result<bool, &'static str> {
+    if !valid_area_id(area_id) {
+        return Err(FAILED);
+    }
+    let path = format!("/clip/v2/resource/entertainment_configuration/{area_id}");
+    let reply = net.send("GET", &path, Some(key), None).map_err(word_for)?;
+    if !(200..300).contains(&reply.code) {
+        return Err(FAILED);
+    }
+    let v: Value = serde_json::from_slice(&reply.body).map_err(|_| FAILED)?;
+    let status = v.pointer("/data/0/status").and_then(Value::as_str).ok_or(FAILED)?;
+    Ok(status == "active")
+}
+
 // Section: facts from the home app
 
 /// What the home app says about the bridge: the address and the id (for the pin).
@@ -550,6 +565,27 @@ mod tests {
         assert_eq!(area_action(&FakeNet::default(), "k", area, "explode"), Err(FAILED));
         assert_eq!(area_action(&FakeNet::default(), "k", "../x", "stop"), Err(FAILED));
         assert_eq!(area_action(&FakeNet::with(vec![json_reply(404, "{}")]), "k", area, "stop"), Err(FAILED));
+    }
+
+    #[test]
+    fn area_status_reads_active_and_inactive() {
+        let area = "11111111-2222-3333-4444-555555555555";
+        let net = FakeNet::with(vec![
+            json_reply(200, r#"{"data":[{"status":"active"}]}"#),
+            json_reply(200, r#"{"data":[{"status":"inactive"}]}"#),
+            json_reply(200, r#"{"data":[]}"#),
+            json_reply(500, "{}"),
+            json_reply(200, "not json"),
+        ]);
+        assert_eq!(area_active(&net, "k", area), Ok(true));
+        assert_eq!(area_active(&net, "k", area), Ok(false));
+        assert_eq!(area_active(&net, "k", area), Err(FAILED));
+        assert_eq!(area_active(&net, "k", area), Err(FAILED));
+        assert_eq!(area_active(&net, "k", area), Err(FAILED));
+        assert_eq!(area_active(&net, "k", "../x"), Err(FAILED));
+        let sent = net.sent.borrow();
+        assert_eq!((sent[0].0.as_str(), sent[0].1.as_str(), sent[0].3.as_deref()), ("GET", "/clip/v2/resource/entertainment_configuration/11111111-2222-3333-4444-555555555555", None));
+        assert_eq!(area_active(&FakeNet::default(), "k", area), Err(UNREACHABLE));
     }
 
     #[test]

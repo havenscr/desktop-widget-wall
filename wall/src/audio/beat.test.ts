@@ -1,3 +1,5 @@
+// @ts-ignore node's own file calls; this test reads the shared fixture as text.
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { BEAT_BANDS, BEAT_GAP_TOLERANCE_MS, MIN_BEAT_GAP_MS, createBeatDetector } from './beat';
 import { createSourceClock } from './sourceTime';
@@ -310,4 +312,26 @@ describe('the ?audio=demo levels', () => {
     expect(beats.length).toBeGreaterThanOrEqual(Math.floor(10 * DEMO_KICK_HZ) - 2);
     for (let i = 1; i < beats.length; i++) expect(Math.abs(beats[i] - beats[i - 1] - period)).toBeLessThanOrEqual(SPACING_MS);
   });
+});
+
+describe('shared beat fixture', () => {
+  // The Rust detector (`src-tauri/src/wall2_lightsync/beat.rs`) reads the same file and must give the same beat indexes.
+  const text: string = readFileSync('../src-tauri/tests/fixtures/beat-frames.json', 'utf8');
+  const fixture = JSON.parse(text) as { bands: number; cases: { name: string; frameMs: number; frames: number[][]; beats: number[] }[] };
+
+  it('uses as many bands as the detector reads', () => {
+    expect(fixture.bands).toBe(BEAT_BANDS);
+    expect(fixture.cases.length).toBeGreaterThanOrEqual(5);
+  });
+
+  for (const c of fixture.cases) {
+    it(`finds the expected beat frames: ${c.name}`, () => {
+      const d = createBeatDetector();
+      const beats: number[] = [];
+      c.frames.forEach((f, i) => {
+        if (d.push(f, i * c.frameMs)) beats.push(i);
+      });
+      expect(beats).toEqual(c.beats);
+    });
+  }
 });
