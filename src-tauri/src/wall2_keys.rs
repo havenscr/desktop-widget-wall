@@ -593,6 +593,8 @@ pub(crate) enum Refusal {
     Unsupported,
     /// ShareX.exe was not found, or what was found failed the path checks.
     NotInstalled,
+    /// The picked browser window's active tab is not StreamYard.
+    NotStreamYard,
 }
 
 impl Refusal {
@@ -607,6 +609,7 @@ impl Refusal {
             Refusal::Failed => "failed",
             Refusal::Unsupported => "unsupported",
             Refusal::NotInstalled => "not installed",
+            Refusal::NotStreamYard => "not streamyard",
         }
     }
 }
@@ -1116,7 +1119,7 @@ pub(crate) mod win {
             // Before every send, the first and the repeat: the window is looked at again and must be in front.
             check_target(app, Some(rem), &look(rem))?;
             if !title_ok(rem.hwnd) {
-                return Err(Refusal::NoApp);
+                return Err(Refusal::NotStreamYard);
             }
             if !foreground_is(rem.hwnd) && !bring_forward(rem.hwnd) {
                 return Err(Refusal::NotForward);
@@ -1126,27 +1129,36 @@ pub(crate) mod win {
         Ok(())
     }
 
-    /// Deliver a plan one step at a time: the front window must still be the target before each
-    /// step, and anything held is released if a step fails.
+    /// Deliver a plan one step at a time: the front window must still be the target before EVERY
+    /// delivery, the first step included, and anything held is released if a step fails. A tiny race
+    /// remains between the check and the SendInput call, because SendInput goes to the global foreground.
     fn play(steps: &[Step], target: Option<isize>) -> Result<(), Refusal> {
+        play_with(steps, target, &foreground_is, &mut |step, sent| flush(step, sent))
+    }
+
+    /// `play` with the foreground reader and the delivery passed in, so a test can refuse before anything is sent.
+    pub(super) fn play_with(steps: &[Step], target: Option<isize>, is_front: &dyn Fn(isize) -> bool, flush: &mut dyn FnMut(&mut Vec<Event>, &mut usize) -> bool) -> Result<(), Refusal> {
         let events = plan_events(steps);
         let mut sent = 0usize;
         let mut step: Vec<Event> = Vec::new();
-        for (i, e) in events.iter().enumerate() {
+        for e in events.iter() {
             match e {
                 Event::Gap => {
+                    if target.is_some_and(|t| !is_front(t)) {
+                        return Err(Refusal::NotForward);
+                    }
                     if !flush(&mut step, &mut sent) {
                         release(&still_down(&events, sent));
                         return Err(Refusal::Failed);
                     }
                     std::thread::sleep(Duration::from_millis(STEP_GAP_MS));
-                    if target.is_some_and(|t| !foreground_is(t)) {
-                        return Err(Refusal::NotForward);
-                    }
                     sent += 1; // the gap itself
                 }
                 Event::Key { .. } => step.push(*e),
             }
+        }
+        if target.is_some_and(|t| !is_front(t)) {
+            return Err(Refusal::NotForward);
         }
         if !flush(&mut step, &mut sent) {
             release(&still_down(&events, sent));
@@ -1352,6 +1364,18 @@ mod tests {
             let got = read_keys_file(&std::env::temp_dir());
             assert!(got.is_err() && got != Err(std::io::ErrorKind::NotFound), "{got:?}");
         }
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn a_focus_change_before_the_first_step_refuses_and_sends_nothing() {
+        let delivered = std::cell::Cell::new(false);
+        let got = win::play_with(&chord("Alt+1"), Some(7), &|_| false, &mut |_, _| {
+            delivered.set(true);
+            true
+        });
+        assert_eq!(got, Err(Refusal::NotForward));
+        assert!(!delivered.get());
     }
 
     #[test]
@@ -1642,11 +1666,12 @@ mod tests {
 
     #[test]
     fn refusal_words_are_fixed_and_distinct() {
-        let all = [Refusal::Busy, Refusal::NoKey, Refusal::NoApp, Refusal::Gone, Refusal::Elevated, Refusal::NotForward, Refusal::Failed, Refusal::Unsupported, Refusal::NotInstalled];
+        let all = [Refusal::Busy, Refusal::NoKey, Refusal::NoApp, Refusal::Gone, Refusal::Elevated, Refusal::NotForward, Refusal::Failed, Refusal::Unsupported, Refusal::NotInstalled, Refusal::NotStreamYard];
         let words: HashSet<&str> = all.iter().map(|r| r.word()).collect();
         assert_eq!(words.len(), all.len());
         assert_eq!(Refusal::NotForward.word(), "not forward");
         assert_eq!(Refusal::NotInstalled.word(), "not installed");
+        assert_eq!(Refusal::NotStreamYard.word(), "not streamyard");
     }
 
     #[test]

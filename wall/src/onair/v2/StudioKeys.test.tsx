@@ -110,6 +110,7 @@ it('says each refusal in words and leaves the Sent line alone', async () => {
   await open();
   const cases: [string, RegExp][] = [
     ['no studio window', /Pick the StreamYard window first/],
+    ['not streamyard', /Switch that window to the StreamYard tab/],
     ['gone', /The studio window is gone/],
     ['not forward', /would not come forward/],
     ['busy', /still sending/],

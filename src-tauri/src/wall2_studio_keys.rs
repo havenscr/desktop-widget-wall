@@ -45,7 +45,7 @@ pub(crate) fn title_allows(title: &str) -> bool {
 
 /// StreamYard's own layout hotkeys (Shift+1 Solo, Shift+2 the second layout) and the two the owner sets in
 /// StreamYard Settings, Hotkeys (Shift+Z Go live, Shift+X End). Share has no default. Used only when
-/// `keys.json` has no `studio` entry at all.
+/// `keys.json` is missing or has no `studio` entry at all.
 const DEFAULTS: &str = r#"{ "studio": { "solo": "Shift+1", "two": "Shift+2", "golive": "Shift+Z", "end": "Shift+X" } }"#;
 
 /// How many times a key is pressed: StreamYard wants Go live and End show pressed twice to confirm.
@@ -57,16 +57,29 @@ pub(crate) fn presses(key: &str) -> u8 {
     }
 }
 
-/// The chords to use: the file's `studio` entry when it has one, otherwise the defaults.
-pub(crate) fn chords_for(file: Option<&str>) -> Vec<(&'static str, Vec<Step>)> {
-    match file {
-        Some(text) if has_studio(text) => studio_chords(text),
-        _ => studio_chords(DEFAULTS),
+/// The chords to use from the file's text: the defaults only when the text is valid JSON without a
+/// `studio` key; a `studio` value that is not an object, or text that is not JSON, gives none at all.
+pub(crate) fn chords_for(text: &str) -> Vec<(&'static str, Vec<Step>)> {
+    let Ok(root) = serde_json::from_str::<Value>(text) else { return Vec::new() };
+    match root.get("studio") {
+        None => studio_chords(DEFAULTS),
+        Some(v) if v.is_object() => studio_chords(text),
+        Some(_) => Vec::new(),
     }
 }
 
-fn has_studio(text: &str) -> bool {
-    serde_json::from_str::<Value>(text).ok().is_some_and(|v| v.get("studio").is_some())
+/// The chords to use from one read of `keys.json`: only a missing file gets the defaults. A read error,
+/// an oversized file, invalid UTF-8 or malformed JSON gives none, so every studio key is `not set up`.
+pub(crate) fn chords_from_read(read: Result<Vec<u8>, std::io::ErrorKind>) -> Vec<(&'static str, Vec<Step>)> {
+    match read {
+        Err(std::io::ErrorKind::NotFound) => studio_chords(DEFAULTS),
+        Err(_) => Vec::new(),
+        Ok(buf) if buf.len() > 32 * 1024 => Vec::new(),
+        Ok(buf) => match String::from_utf8(buf) {
+            Ok(text) => chords_for(&text),
+            Err(_) => Vec::new(),
+        },
+    }
 }
 
 /// The chords of `keys.json` key `studio`: each one that parses and is not a refused chord. A missing
@@ -99,6 +112,7 @@ pub(crate) fn plan(key: &str, confirm: bool, chords: &[(&'static str, Vec<Step>)
 pub(crate) fn refusal_word(r: Refusal) -> &'static str {
     match r {
         Refusal::NoApp => "no studio window",
+        Refusal::NotStreamYard => "not streamyard",
         Refusal::Gone => "gone",
         Refusal::Busy => "busy",
         Refusal::NoKey => "not set up",
@@ -142,17 +156,13 @@ pub struct Sent {
     at: u64,
 }
 
-/// The studio chords of the keys file, read fresh; the defaults when the file has no `studio` entry.
+/// The studio chords of the keys file, read fresh; the defaults only when the file is missing or has no `studio` entry.
 fn load_chords(app: &tauri::AppHandle) -> Vec<(&'static str, Vec<Step>)> {
     use tauri::Manager;
-    let text = app
-        .path()
-        .app_config_dir()
-        .ok()
-        .and_then(|dir| crate::wall2_keys::read_keys_file(&dir.join("keys.json")).ok())
-        .and_then(|buf| String::from_utf8(buf).ok())
-        .filter(|t| t.len() <= 32 * 1024);
-    chords_for(text.as_deref())
+    match app.path().app_config_dir() {
+        Ok(dir) => chords_from_read(crate::wall2_keys::read_keys_file(&dir.join("keys.json"))),
+        Err(_) => Vec::new(),
+    }
 }
 
 /// Wait for the owner to bring the studio window to the front. Answers at once; the pick runs for 10 seconds.
@@ -350,13 +360,25 @@ mod tests {
 
     #[test]
     fn with_no_studio_entry_the_defaults_apply_and_share_is_unset() {
-        for file in [None, Some(r#"{ "apps": [] }"#), Some("not json")] {
-            let names: Vec<&str> = chords_for(file).iter().map(|(n, _)| *n).collect();
-            assert_eq!(names, vec!["solo", "two", "golive", "end"]);
-        }
-        assert!(chords_for(Some(r#"{ "studio": {} }"#)).is_empty());
-        let names: Vec<&str> = chords_for(Some(FILE)).iter().map(|(n, _)| *n).collect();
-        assert_eq!(names, vec!["solo", "two", "share", "golive"]);
+        let names = |c: Vec<(&str, Vec<Step>)>| c.iter().map(|(n, _)| n.to_string()).collect::<Vec<_>>();
+        let defaults = vec!["solo", "two", "golive", "end"];
+        assert_eq!(names(chords_for(r#"{ "apps": [] }"#)), defaults);
+        assert_eq!(names(chords_from_read(Err(std::io::ErrorKind::NotFound))), defaults);
+        assert!(chords_for(r#"{ "studio": {} }"#).is_empty());
+        assert_eq!(names(chords_for(FILE)), vec!["solo", "two", "share", "golive"]);
+    }
+
+    #[test]
+    fn a_bad_file_never_falls_back_to_the_defaults() {
+        assert!(chords_for("not json").is_empty());
+        assert!(chords_for(r#"{ "studio": "Shift+1" }"#).is_empty());
+        assert!(chords_for(r#"{ "studio": null }"#).is_empty());
+        assert!(chords_from_read(Ok(b"not json".to_vec())).is_empty());
+        assert!(chords_from_read(Ok(vec![0xff, 0xfe])).is_empty());
+        assert!(chords_from_read(Ok(vec![b' '; 40_000])).is_empty());
+        assert!(chords_from_read(Err(std::io::ErrorKind::PermissionDenied)).is_empty());
+        assert!(chords_from_read(Err(std::io::ErrorKind::Other)).is_empty());
+        assert_eq!(chords_from_read(Ok(FILE.as_bytes().to_vec())).len(), 4);
     }
 
     #[test]
@@ -398,6 +420,7 @@ mod tests {
         assert_eq!(refusal_word(Refusal::NoApp), "no studio window");
         assert_eq!(refusal_word(Refusal::Gone), "gone");
         assert_eq!(refusal_word(Refusal::NotForward), "not forward");
+        assert_eq!(refusal_word(Refusal::NotStreamYard), "not streamyard");
         assert_eq!(refusal_word(Refusal::Busy), "busy");
     }
 
@@ -405,8 +428,10 @@ mod tests {
     fn each_command_checks_the_window_first() {
         assert_eq!(require_wall2("main"), Err("forbidden".to_string()));
         let src = include_str!("wall2_studio_keys.rs").replace("\r\n", "\n");
-        for name in ["pub async fn wall2_studio_pick_start(", "pub async fn wall2_studio_pick_status(", "pub async fn wall2_studio_key("] {
-            let at = src.find(name).expect("command");
+        let head = "pub async fn ";
+        for tail in ["wall2_studio_pick_start(", "wall2_studio_pick_status(", "wall2_studio_key("] {
+            let name = format!("{head}{tail}");
+            let at = src.find(&name).expect("command");
             let body = &src[at..];
             let open = body.find('{').expect("body");
             let first = body[open + 1..].trim_start();
@@ -417,15 +442,15 @@ mod tests {
     #[test]
     fn the_send_looks_at_the_window_again_and_the_page_never_gets_a_title() {
         let keys = include_str!("wall2_keys.rs").replace("\r\n", "\n");
-        let at = keys.find("pub fn send_studio(").expect("send");
+        let at = keys.find(&["pub fn send_", "studio("].concat()).expect("send");
         let body = &keys[at..];
-        let check = body.find("check_target(").expect("check");
-        let raise = body.find("bring_forward(").expect("raise");
-        let play = body.find("play(steps").expect("play");
+        let check = body.find(&["check_", "target("].concat()).expect("check");
+        let raise = body.find(&["bring_", "forward("].concat()).expect("raise");
+        let play = body.find(&["pl", "ay(steps"].concat()).expect("play");
         assert!(check < raise && raise < play);
         let me = include_str!("wall2_studio_keys.rs").replace("\r\n", "\n");
-        let sent = me.find("pub struct Sent").expect("sent");
-        let shape = &me[sent..sent + 120];
+        let sent = me.find(&["pub struct ", "Sent"].concat()).expect("sent");
+        let shape = &me[sent..sent + me[sent..].find('}').expect("end of shape")];
         assert!(!shape.contains("title") && !shape.contains("hwnd") && !shape.contains("pid"));
     }
 }

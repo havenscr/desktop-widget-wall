@@ -29,6 +29,8 @@ export function refusalText(e: unknown): string {
   switch (w) {
     case 'no studio window':
       return 'Pick the StreamYard window first';
+    case 'not streamyard':
+      return 'Switch that window to the StreamYard tab';
     case 'not set up':
       return 'No chord for that key in keys.json';
     case 'gone':
