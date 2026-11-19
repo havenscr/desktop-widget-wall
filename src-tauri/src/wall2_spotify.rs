@@ -403,6 +403,12 @@ fn status_answer(status: u16, playlist_items: bool) -> String {
         _ => format!("status-{status}"),
     }
 }
+/// The answer of a 400 whose message names the page limit; only `search_half` reads it, and it never leaves that function.
+const LIMIT_REFUSED: &str = "status-400-limit";
+/// True when Spotify's `{"error":{"status":400,"message":"..."}}` body names the limit (case-insensitive).
+fn refuses_limit(body: &[u8]) -> bool {
+    serde_json::from_slice::<Value>(body).ok().and_then(|v| v.pointer("/error/message").and_then(Value::as_str).map(|m| m.to_lowercase().contains("limit"))).unwrap_or(false)
+}
 fn read_with(cfg: &Config, path: &str, limit: u64, http: &dyn Http, creds: &dyn Creds) -> Result<ReadAnswer, String> {
     check_backoff()?;
     let started = Instant::now();
@@ -419,6 +425,7 @@ fn read_with(cfg: &Config, path: &str, limit: u64, http: &dyn Http, creds: &dyn 
                 if (400..500).contains(&resp.status) {
                     let (answer, reason) = refused_answer(resp.status, &resp.body);
                     crate::wall2_spotify_log::write(crate::wall2_spotify_log::Event::ApiFailed, reason.log_reason(), resp.status, started.elapsed().as_millis());
+                    if resp.status == 400 && refuses_limit(&resp.body) { return Err(LIMIT_REFUSED.into()) }
                     return Err(if resp.status == 403 && playlist_items { NOT_YOURS.into() } else if resp.status == 403 { answer } else { status_answer(resp.status, playlist_items) })
                 }
                 crate::wall2_spotify_log::write(crate::wall2_spotify_log::Event::ApiFailed, crate::wall2_spotify_log::Reason::Down, resp.status, started.elapsed().as_millis());
@@ -555,7 +562,8 @@ const SEARCH_SHELF: usize = 20;
 const SEARCH_SONGS: usize = 50;
 /// The page size the fallback uses when Spotify refuses the larger limit.
 const SEARCH_PAGE: usize = 10;
-static SEARCH_LIMIT_LOGGED: AtomicBool = AtomicBool::new(false);
+/// Set once Spotify has refused the larger limit: later searches start with pages of 10.
+static SEARCH_PAGED: AtomicBool = AtomicBool::new(false);
 fn search_path(query: &str, types: &str, limit: usize, offset: usize) -> String {
     let offset = if offset == 0 { String::new() } else { format!("&offset={offset}") };
     format!("/search?type={types}&limit={limit}{offset}&q={}", urlencoding::encode(query))
@@ -569,16 +577,17 @@ fn shape_search_tracks(v: &Value) -> Vec<Item> {
 /// One search read for `types` (comma separated) asking `target` items of each. When Spotify answers 400 to the
 /// larger limit, the same target is read in pages of `SEARCH_PAGE` with an offset; any failing page fails the read.
 fn search_half(cfg: &Config, query: &str, types: &str, target: usize, http: &dyn Http, creds: &dyn Creds) -> Result<Value, String> {
-    match get_json_with_limit(cfg, &search_path(query, types, target, 0), TRACK_BODY, http, creds) {
-        Err(answer) if answer == "status-400" => {}
-        other => return other,
+    if !SEARCH_PAGED.load(Ordering::SeqCst) {
+        match get_json_with_limit(cfg, &search_path(query, types, target, 0), TRACK_BODY, http, creds) {
+            Err(answer) if answer == LIMIT_REFUSED => SEARCH_PAGED.store(true, Ordering::SeqCst),
+            other => return other,
+        }
     }
-    if !SEARCH_LIMIT_LOGGED.swap(true, Ordering::SeqCst) { crate::wall2_spotify_log::write(crate::wall2_spotify_log::Event::ApiFailed, crate::wall2_spotify_log::Reason::BadRequest, 400, 0); }
     let keys: Vec<&str> = types.split(',').map(|t| match t { "track" => "tracks", "album" => "albums", _ => "playlists" }).collect();
     let mut merged: Vec<Vec<Value>> = keys.iter().map(|_| Vec::new()).collect();
     let mut offset = 0;
     while offset < target {
-        let page = get_json_with_limit(cfg, &search_path(query, types, SEARCH_PAGE, offset), TRACK_BODY, http, creds)?;
+        let page = get_json_with_limit(cfg, &search_path(query, types, SEARCH_PAGE, offset), TRACK_BODY, http, creds).map_err(|a| if a == LIMIT_REFUSED { "status-400".to_string() } else { a })?;
         let mut full = false;
         for (key, into) in keys.iter().zip(merged.iter_mut()) {
             let items = page.pointer(&format!("/{key}/items")).and_then(Value::as_array).cloned().unwrap_or_default();
@@ -1349,7 +1358,7 @@ mod tests {
     }
     fn hr(status:u16, body:&str) -> Result<HttpReply,()> { Ok(HttpReply{status,retry_after:None,body:body.as_bytes().to_vec()}) }
     fn token_ok(refresh: Option<&str>) -> Result<HttpReply,()> { hr(200, &format!(r#"{{"access_token":"access","expires_in":3600{}}}"#, refresh.map(|r| format!(r#", "refresh_token":"{r}""#)).unwrap_or_default())) }
-    fn reset_state() { *scopes().lock().unwrap()=None; *token().lock().unwrap()=None; *not_before().lock().unwrap()=None; *profile_cache().lock().unwrap()=None; CANCEL_SIGN_IN.store(false,Ordering::SeqCst); SIGNING_IN.store(false,Ordering::SeqCst); }
+    fn reset_state() { *scopes().lock().unwrap()=None; *token().lock().unwrap()=None; *not_before().lock().unwrap()=None; *profile_cache().lock().unwrap()=None; CANCEL_SIGN_IN.store(false,Ordering::SeqCst); SIGNING_IN.store(false,Ordering::SeqCst); SEARCH_PAGED.store(false,Ordering::SeqCst); }
     fn cfg() -> Config { Config { client_id:"a".repeat(32),redirect_port:8898 } }
 
     #[test]
@@ -1409,7 +1418,7 @@ mod tests {
     #[test]
     fn search_falls_back_to_pages_of_ten_when_the_limit_is_refused() {
         let _test_guard = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
-        let mut apis=vec![hr(400,""),shelves_reply(10,10,0),shelves_reply(10,10,10),hr(400,"")];
+        let mut apis=vec![hr(400,LIMIT_BODY),shelves_reply(10,10,0),shelves_reply(10,10,10),hr(400,LIMIT_BODY)];
         for page in 0..5 { apis.push(songs_reply(10,page*10)); }
         let (out,http)=run_search(apis);
         let found=out.unwrap();
@@ -1419,6 +1428,44 @@ mod tests {
         assert_eq!(paths.len(),9);
         let want=["type=album,playlist&limit=20&q=","type=album,playlist&limit=10&q=","type=album,playlist&limit=10&offset=10&q=","type=track&limit=50&q=","type=track&limit=10&q=","type=track&limit=10&offset=10&q=","type=track&limit=10&offset=20&q=","type=track&limit=10&offset=30&q=","type=track&limit=10&offset=40&q="];
         for (path,part) in paths.iter().zip(want) { assert!(path.starts_with(&format!("/search?{part}")),"{path} {part}"); }
+    }
+
+    const LIMIT_BODY: &str = r#"{"error":{"status":400,"message":"Invalid limit"}}"#;
+
+    #[test]
+    fn a_400_that_is_not_about_the_limit_surfaces_without_a_retry() {
+        let _test_guard = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        for body in ["", r#"{"error":{"status":400,"message":"Invalid market"}}"#, "not json"] {
+            let (out,http)=run_search(vec![hr(400,body)]);
+            assert_eq!(out.unwrap_err(),"status-400");
+            assert_eq!(http.paths().len(),1);
+        }
+        let (out,http)=run_search(vec![hr(400,r#"{"error":{"status":400,"message":"INVALID LIMIT"}}"#),hr(400,LIMIT_BODY)]);
+        assert_eq!(out.unwrap_err(),"status-400");
+        assert_eq!(http.paths().len(),2);
+        reset_state();
+    }
+
+    #[test]
+    fn after_a_limit_refusal_later_searches_start_with_pages_of_ten() {
+        let _test_guard = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let mut apis=vec![hr(400,LIMIT_BODY),shelves_reply(10,10,0),shelves_reply(10,10,10),hr(400,LIMIT_BODY)];
+        for page in 0..5 { apis.push(songs_reply(10,page*10)); }
+        let (out,_)=run_search(apis);
+        out.unwrap();
+        assert!(SEARCH_PAGED.load(Ordering::SeqCst));
+        let mut apis=vec![shelves_reply(10,10,0),shelves_reply(10,10,10)];
+        for page in 0..5 { apis.push(songs_reply(10,page*10)); }
+        *token().lock().unwrap()=Some(Token{access:"ok".into(),expires:Instant::now()+Duration::from_secs(3600)});
+        let http=FakeHttp::new(vec![],apis);
+        let creds=FakeCreds::new(Some("old"));
+        let found=search_with(&cfg(),"two words",&Profile{id:"me".into(),display_name:None},&http,&creds).unwrap();
+        assert_eq!((found.albums.len(),found.playlists.len(),found.tracks.len()),(20,20,50));
+        let paths=http.paths();
+        assert_eq!(paths.len(),7);
+        assert!(paths.iter().all(|p| p.contains("limit=10")),"{paths:?}");
+        reset_state();
+        assert!(!SEARCH_PAGED.load(Ordering::SeqCst));
     }
 
     #[test]
