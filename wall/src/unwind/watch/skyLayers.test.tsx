@@ -181,7 +181,7 @@ describe('the sky layers under each look', () => {
     }
   });
 
-  it('while the player waits for a click to start, the sun is not put behind the land (the click reaches it), and it still keeps the moon out', async () => {
+  it('while the player waits for a click to start, the sun stays behind the land (the ranges cover its lower part; the front canvas takes no pointer, so the click reaches it), and it still keeps the moon out', async () => {
     setup('sun');
     render(
       <>
@@ -190,16 +190,24 @@ describe('the sky layers under each look', () => {
       </>,
     );
     await flush();
-    expect(front()).not.toBeNull();
+    const before = front();
+    expect(before).not.toBeNull();
     act(() => useWatchStore.setState({ needsClick: true }));
     await flush();
-    expect(front()).toBeNull();
-    expect(document.querySelector('.w-stage')!.classList.contains('w-layered')).toBe(false);
+    const f = front() as HTMLCanvasElement | null;
+    expect(f).not.toBeNull();
+    expect(f!.style.pointerEvents).toBe('none');
+    const stage = document.querySelector('.w-stage')!;
+    expect(stage.classList.contains('w-layered')).toBe(true);
+    // The front canvas comes after the picture in the same stage, so the land is painted over it.
+    expect(f!.closest('.w-stage')).toBe(stage);
+    expect(stage.querySelector('.w-screen')!.compareDocumentPosition(f!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(claims().watch.boxes).toEqual(box('sun'));
     expect(moonFor(MOON_PLACES, claims())).toBeNull();
     act(() => useWatchStore.setState({ needsClick: false }));
     await flush();
     expect(front()).not.toBeNull();
+    expect(document.querySelector('.w-stage')!.classList.contains('w-layered')).toBe(true);
   });
 
   it('the whole sky stays behind the land while it waits for a click (the wall lets the pointer through to it, and the front canvas takes none)', async () => {

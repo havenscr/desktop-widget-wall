@@ -101,12 +101,12 @@ export function WatchSheet({ initial = 'looks' }: { initial?: 'looks' | 'lines' 
         </button>
       </div>
       {page === 'lines' ? <LinesPanel /> : <>
-      <div className="w-seg w-mode" role="radiogroup" aria-label="One look or one per kind">
-        <button type="button" role="radio" aria-checked={looks.mode === 'one'} className={looks.mode === 'one' ? 'on' : ''} title="Every video plays in the same look" onClick={() => set({ mode: 'one' })}>
-          One look for everything
+      <div className="w-seg w-mode" role="radiogroup" aria-label="The same look for all, or each source its own">
+        <button type="button" role="radio" aria-checked={looks.mode === 'one'} className={looks.mode === 'one' ? 'on' : ''} title="Every video, live stream and Twitch channel plays in the same look" onClick={() => set({ mode: 'one' })}>
+          Same for all
         </button>
-        <button type="button" role="radio" aria-checked={looks.mode === 'kind'} className={looks.mode === 'kind' ? 'on' : ''} title="Pick a look for each kind of video" onClick={() => set({ mode: 'kind' })}>
-          A look for each kind
+        <button type="button" role="radio" aria-checked={looks.mode === 'kind'} className={looks.mode === 'kind' ? 'on' : ''} title="Pick a look for each source: videos and playlists, live streams, Twitch" onClick={() => set({ mode: 'kind' })}>
+          Each source its own
         </button>
       </div>
       {looks.mode === 'one' ? (

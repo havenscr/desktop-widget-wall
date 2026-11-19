@@ -27,17 +27,17 @@ export function useStageShown(): boolean {
  * sky layers: what the look on screen asks of the horizon (`horizon/sky.ts`): its picture's box,
  * so the moon keeps clear of it (another of its places, or none); no moon at all for a look that
  * owns that sky (the sun, the drive-in); and, for a picture that sits behind the land (the whole
- * sky, the sun), the element the horizon mounts its front canvas in (`layeredNow`: the sun comes
- * forward while the player waits for a click). Nothing at all while the stage is out of sight
+ * sky, the sun), the element the horizon mounts its front canvas in (`layeredNow`, also while the
+ * player waits for a click). Nothing at all while the stage is out of sight
  * (`shown` false: another tab or place), and released when nothing is on.
  */
-export function useWatchSky(look: LookId, front: HTMLElement | null, needsClick: boolean, shown = true, tune: LookTune = DEFAULT_TUNE) {
+export function useWatchSky(look: LookId, front: HTMLElement | null, shown = true, tune: LookTune = DEFAULT_TUNE) {
   const b = lookBox(look, tune);
   useSkyClaim(
     'watch',
     shown
       ? {
-          front: layeredNow(look, needsClick) ? front : null,
+          front: layeredNow(look) ? front : null,
           boxes: [[b.x, b.y, b.w, b.h]],
           noMoon: ownsTheMoonSky(look),
         }
@@ -64,10 +64,10 @@ function VideoStage({ item, look, shown }: { item: WatchRef & { label: string };
   const clickHint = useWatchStore((s) => s.clickHint);
   const [front, setFront] = useState<HTMLDivElement | null>(null);
   const tune = useWatchStore((s) => s.tune);
-  useWatchSky(look, front, needsClick, shown, tune);
+  useWatchSky(look, front, shown, tune);
   // The look's own markup, one block per look (null while parked).
   const dress: LookId | null = shown ? look : null;
-  const layered = dress !== null && layeredNow(dress, needsClick);
+  const layered = dress !== null && layeredNow(dress);
   const b = lookBox(look, tune);
   const vars = dress ? tuneVars(dress, tune) : {};
   const style = Object.keys(vars).length ? (vars as CSSProperties) : undefined;

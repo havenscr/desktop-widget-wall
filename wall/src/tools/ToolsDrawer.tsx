@@ -103,7 +103,7 @@ function VideoLook() {
           );
         })}
       </div>
-      <div className="tools-hint">{perKind ? 'A look per kind is set on Watch. Pick one here to use it for everything.' : 'How video sits in the sky on Watch'}</div>
+      <div className="tools-hint">{perKind ? 'Each source has its own look on Watch. Pick one here to use it for everything.' : 'How video sits in the sky on Watch'}</div>
     </div>
   );
 }

@@ -313,7 +313,7 @@ it('sets the look in the settings sheet, one for everything or one per kind, and
   expect(sheet).toBeTruthy();
   await act(async () => within(sheet).getByRole('radio', { name: /Feathered/ }).click());
   expect(parseLooks(localStorage.getItem(LOOKS_KEY))).toMatchObject({ mode: 'one', all: 'feather' });
-  await act(async () => screen.getByRole('radio', { name: 'A look for each kind' }).click());
+  await act(async () => screen.getByRole('radio', { name: 'Each source its own' }).click());
   expect(screen.getByText('Videos and playlists')).toBeTruthy();
   const twitch = screen.getByRole('radiogroup', { name: 'Look for twitch' });
   await act(async () => (twitch.querySelector('[role=radio]:not(.on)') as HTMLElement).click());

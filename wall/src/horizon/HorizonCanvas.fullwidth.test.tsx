@@ -25,14 +25,14 @@ const BYTES = Array.from({ length: 32 }, (_, i) => (i < 4 ? 240 : 120));
 const NEW_TYPES: LineType[] = ['bars', 'ribbon', 'sparks', 'skyline'];
 /**
  * The real looks the Watch tab has, as the stage claims them: the look, whether the player is
- * waiting for a click (the sun then comes forward), and whether the horizon then mounts a front
- * canvas (`layeredNow`, the real function, asserted below against this table).
+ * waiting for a click (the sun stays behind the land then too), and whether the horizon then mounts
+ * a front canvas (`layeredNow`, the real function, asserted below against this table).
  */
 const LOOKS: { name: string; look: LookId; needsClick: boolean; layered: boolean }[] = [
   { name: 'Feathered', look: 'feather', needsClick: false, layered: false },
   { name: 'Whole sky', look: 'sky', needsClick: false, layered: true },
   { name: 'The sun, playing', look: 'sun', needsClick: false, layered: true },
-  { name: 'The sun, waiting for a click', look: 'sun', needsClick: true, layered: false },
+  { name: 'The sun, waiting for a click', look: 'sun', needsClick: true, layered: true },
   { name: 'Drive-in', look: 'drivein', needsClick: false, layered: false },
   { name: 'Hologram', look: 'holo', needsClick: false, layered: false },
 ];
@@ -64,10 +64,10 @@ function hitNow(level: number) {
 }
 
 /** A stand-in for the stage: it claims the look's real box, with a front host only when the look is layered now. */
-function Asker({ look, needsClick }: { look: LookId; needsClick: boolean }) {
+function Asker({ look }: { look: LookId; needsClick: boolean }) {
   const [host, setHost] = useState<HTMLElement | null>(null);
   const b = LOOK_BOXES[look];
-  const claim: SkyClaim = { boxes: [[b.x, b.y, b.w, b.h]], front: layeredNow(look, needsClick) ? host : null };
+  const claim: SkyClaim = { boxes: [[b.x, b.y, b.w, b.h]], front: layeredNow(look) ? host : null };
   useSkyClaim('test', claim);
   return <div className="asker-host" ref={setHost} />;
 }
@@ -148,7 +148,7 @@ function xs(log: string[]): number[] {
 describe('the real looks decide where the lines are mounted', () => {
   for (const l of LOOKS) {
     it(`${l.name}: layeredNow says ${l.layered}`, () => {
-      expect(layeredNow(l.look, l.needsClick)).toBe(l.layered);
+      expect(layeredNow(l.look)).toBe(l.layered);
     });
   }
 });
