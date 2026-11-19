@@ -20,6 +20,7 @@ import { registerToolsMocks } from './tools';
 import { registerWatchMocks } from './watch';
 import { registerWeatherMocks } from './weather';
 import { registerYoutubeMocks } from './youtube';
+import { registerYtLiveMocks } from './ytlive';
 
 /**
  * Realistic answers for the commands the Work and Home tabs call, so `npm run dev` in a
@@ -47,6 +48,7 @@ export function registerDevMocks(): void {
   registerLinesMocks();
   registerDaysMocks();
   registerOnAirMocks();
+  registerYtLiveMocks();
   registerStudioMocks();
   mocks.set('wall2_build_info', () => ({ commit: 'dev', builtAt: '2026-11-13T09:05Z' }));
   registerToolsMocks();
