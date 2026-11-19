@@ -421,12 +421,14 @@ pub(crate) enum Ending {
 pub(crate) struct Control {
     stop: AtomicBool,
     restore: AtomicBool,
+    /// Set when the command gave up waiting for the start: the thread's late ending must keep that error word.
+    timed_out: AtomicBool,
     tuning: Mutex<engine::Tuning>,
 }
 
 impl Control {
     pub(crate) fn new(t: engine::Tuning) -> Control {
-        Control { stop: AtomicBool::new(false), restore: AtomicBool::new(true), tuning: Mutex::new(t) }
+        Control { stop: AtomicBool::new(false), restore: AtomicBool::new(true), timed_out: AtomicBool::new(false), tuning: Mutex::new(t) }
     }
     fn tuning(&self) -> engine::Tuning {
         self.tuning.lock().unwrap_or_else(|e| e.into_inner()).clone()
@@ -554,6 +556,14 @@ impl Notes {
     fn on_ended(&mut self, ending: Ending) {
         *self = Notes { starting: false, last_error: (ending == Ending::LinkLost).then_some(stream::DTLS), stopped_hue_sync: false };
     }
+    /// The thread's own ending. When the start already timed out, `on_failed(UNREACHABLE)` stands.
+    fn on_thread_ended(&mut self, ending: Ending, ctl: &Control) {
+        if ctl.timed_out.load(Ordering::Acquire) {
+            self.on_failed(bridge::UNREACHABLE);
+        } else {
+            self.on_ended(ending);
+        }
+    }
 }
 
 /// The status answer with the live parts filled in.
@@ -587,7 +597,15 @@ struct Session {
     handle: std::thread::JoinHandle<()>,
 }
 
-static SESSION: Mutex<Option<Session>> = Mutex::new(None);
+/// The one live session. `session` is held only for a moment, never across a wait. `starting` is the
+/// Control of a start still waiting, so a stop can reach it. `gate` serialises the starts.
+struct Host {
+    session: Mutex<Option<Session>>,
+    starting: Mutex<Option<Arc<Control>>>,
+    gate: Mutex<()>,
+}
+
+static HOST: Host = Host { session: Mutex::new(None), starting: Mutex::new(None), gate: Mutex::new(()) };
 
 fn lock<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
     m.lock().unwrap_or_else(|e| e.into_inner())
@@ -622,13 +640,22 @@ fn os_locked() -> bool {
     }
 }
 
-struct StartGuard;
+struct StartGuard<'a>(&'a Mutex<Notes>);
 
-impl Drop for StartGuard {
+impl Drop for StartGuard<'_> {
     fn drop(&mut self) {
-        let mut n = lock(&NOTES);
-        n.starting = false;
+        lock(self.0).starting = false;
     }
+}
+
+/// Streams, and always cleans up: a panic in the loop is caught so `finish` runs and the sync flag
+/// resets (a lost link is the ending it reports).
+pub(crate) fn stream_and_finish(rig: &dyn Rig, mut live: Live<'_>, ctl: &Control, latest: Latest, now: &mut dyn FnMut() -> f64, locked: &dyn Fn() -> bool, sync: &AtomicBool) -> Ending {
+    sync.store(true, Ordering::Release);
+    let ending = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| run_stream(rig, &mut live, ctl, latest, now, locked))).unwrap_or(Ending::LinkLost);
+    sync.store(false, Ordering::Release);
+    finish(rig, live, ending, ctl);
+    ending
 }
 
 /// The thread: build the rig, run the start order, tell the command how it went, then stream until told to
@@ -641,20 +668,100 @@ fn session_thread(app: tauri::AppHandle, ctl: Arc<Control>, tx: std::sync::mpsc:
             return;
         }
     };
-    let mut live = match preflight(&rig) {
+    let live = match preflight(&rig) {
         Ok(l) => l,
         Err(e) => {
             let _ = tx.send(Err(e));
             return;
         }
     };
-    SYNC_ON.store(true, Ordering::Release);
     let _ = tx.send(Ok((live.stopped_hue_sync, live.panels_missing)));
     let clock = std::time::Instant::now();
-    let ending = run_stream(&rig, &mut live, &ctl, &latest_frame, &mut || clock.elapsed().as_secs_f64() * 1000.0, &os_locked);
-    SYNC_ON.store(false, Ordering::Release);
-    finish(&rig, live, ending, &ctl);
-    lock(&NOTES).on_ended(ending);
+    let ending = stream_and_finish(&rig, live, &ctl, &latest_frame, &mut || clock.elapsed().as_secs_f64() * 1000.0, &os_locked, &SYNC_ON);
+    lock(&NOTES).on_thread_ended(ending, &ctl);
+}
+
+type Started = Result<(bool, bool), &'static str>;
+
+enum Waited {
+    Got(Started),
+    Cancelled,
+    TimedOut,
+    Died,
+}
+
+/// The start, without the app: `spawn` runs the session thread. Holds no session lock while it waits,
+/// and a stop that reaches `starting` ends the wait within 50 ms.
+fn start_core(host: &Host, notes: &Mutex<Notes>, sync: &AtomicBool, tuning: engine::Tuning, wait: std::time::Duration, spawn: impl FnOnce(Arc<Control>, std::sync::mpsc::Sender<Started>) -> std::thread::JoinHandle<()>) -> Result<&'static str, &'static str> {
+    let _gate = lock(&host.gate);
+    if let Some(s) = lock(&host.session).as_ref() {
+        if sync.load(Ordering::Acquire) && !s.handle.is_finished() {
+            s.ctl.tune(tuning);
+            return Ok("running");
+        }
+    }
+    let old = lock(&host.session).take();
+    if let Some(old) = old {
+        let _ = old.handle.join();
+    }
+    lock(notes).on_starting();
+    let _guard = StartGuard(notes);
+    let ctl = Arc::new(Control::new(tuning));
+    *lock(&host.starting) = Some(ctl.clone());
+    let (tx, rx) = std::sync::mpsc::channel();
+    let handle = spawn(ctl.clone(), tx);
+    let deadline = std::time::Instant::now() + wait;
+    let waited = loop {
+        if ctl.stop.load(Ordering::Acquire) {
+            break Waited::Cancelled;
+        }
+        let left = deadline.saturating_duration_since(std::time::Instant::now());
+        if left.is_zero() {
+            break Waited::TimedOut;
+        }
+        match rx.recv_timeout(left.min(std::time::Duration::from_millis(50))) {
+            Ok(r) => break Waited::Got(r),
+            Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {}
+            Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => break Waited::Died,
+        }
+    };
+    *lock(&host.starting) = None;
+    match waited {
+        Waited::Got(Ok((stopped, panels_missing))) => {
+            if ctl.stop.load(Ordering::Acquire) {
+                // A stop landed as the start finished: the thread ends itself; keep it to be joined.
+                lock(notes).on_ended(Ending::Stopped);
+                *lock(&host.session) = Some(Session { ctl, handle });
+                return Ok("stopped");
+            }
+            lock(notes).on_started(stopped, panels_missing);
+            *lock(&host.session) = Some(Session { ctl, handle });
+            Ok("running")
+        }
+        Waited::Got(Err(word)) => {
+            let _ = handle.join();
+            lock(notes).on_failed(word);
+            Err(word)
+        }
+        Waited::Died => {
+            let _ = handle.join();
+            lock(notes).on_failed(bridge::UNREACHABLE);
+            Err(bridge::UNREACHABLE)
+        }
+        Waited::Cancelled => {
+            // The stop flag is set: the thread cleans up as soon as it gets past its start order.
+            lock(notes).on_ended(Ending::Stopped);
+            *lock(&host.session) = Some(Session { ctl, handle });
+            Ok("stopped")
+        }
+        Waited::TimedOut => {
+            ctl.timed_out.store(true, Ordering::Release);
+            ctl.stop.store(true, Ordering::Release);
+            lock(notes).on_failed(bridge::UNREACHABLE);
+            *lock(&host.session) = Some(Session { ctl, handle });
+            Err(bridge::UNREACHABLE)
+        }
+    }
 }
 
 fn start_session(app: &tauri::AppHandle, t: &engine::TuneIn) -> Result<&'static str, &'static str> {
@@ -662,67 +769,77 @@ fn start_session(app: &tauri::AppHandle, t: &engine::TuneIn) -> Result<&'static 
     if pairing().load(Ordering::Acquire) || testing().load(Ordering::Acquire) {
         return Err(bridge::BUSY);
     }
-    let mut session = lock(&SESSION);
-    if let Some(s) = session.as_ref() {
-        if sync_on() && !s.handle.is_finished() {
-            s.ctl.tune(tuning);
-            return Ok("running");
-        }
-    }
-    if let Some(old) = session.take() {
-        let _ = old.handle.join();
-    }
-    lock(&NOTES).on_starting();
-    let _guard = StartGuard;
-    let ctl = Arc::new(Control::new(tuning));
-    let (tx, rx) = std::sync::mpsc::channel();
-    let (app2, ctl2) = (app.clone(), ctl.clone());
-    let handle = std::thread::spawn(move || session_thread(app2, ctl2, tx));
-    match rx.recv_timeout(std::time::Duration::from_secs(30)) {
-        Ok(Ok((stopped, panels_missing))) => {
-            lock(&NOTES).on_started(stopped, panels_missing);
-            *session = Some(Session { ctl, handle });
-            Ok("running")
-        }
-        Ok(Err(word)) => {
-            let _ = handle.join();
-            lock(&NOTES).on_failed(word);
-            Err(word)
-        }
-        Err(_) => {
-            ctl.stop.store(true, Ordering::Release);
-            lock(&NOTES).on_failed(bridge::UNREACHABLE);
-            *session = Some(Session { ctl, handle });
-            Err(bridge::UNREACHABLE)
-        }
-    }
+    let app = app.clone();
+    start_core(&HOST, &NOTES, &SYNC_ON, tuning, std::time::Duration::from_secs(30), move |ctl, tx| std::thread::spawn(move || session_thread(app, ctl, tx)))
 }
 
 fn tune_session(t: &engine::TuneIn) -> Result<(), &'static str> {
     let tuning = engine::Tuning::from_in(t)?;
-    if let Some(s) = lock(&SESSION).as_ref() {
-        s.ctl.tune(tuning);
+    if let Some(s) = lock(&HOST.session).as_ref() {
+        s.ctl.tune(tuning.clone());
+    }
+    if let Some(c) = lock(&HOST.starting).as_ref() {
+        c.tune(tuning);
     }
     Ok(())
 }
 
-/// Ends the stream and waits for its cleanup. Safe when nothing runs.
+/// Ends the stream and waits for its cleanup. Safe when nothing runs. A start still waiting is told to
+/// stop and cleans up on its own thread; this does not wait for it.
 fn stop_session(restore_panels: bool) {
-    let taken = lock(&SESSION).take();
+    stop_in(&HOST, &NOTES, restore_panels);
+}
+
+fn stop_in(host: &Host, notes: &Mutex<Notes>, restore_panels: bool) {
+    if let Some(c) = lock(&host.starting).as_ref() {
+        c.restore.store(restore_panels, Ordering::Release);
+        c.stop.store(true, Ordering::Release);
+    }
+    let taken = lock(&host.session).take();
     if let Some(s) = taken {
         s.ctl.restore.store(restore_panels, Ordering::Release);
         s.ctl.stop.store(true, Ordering::Release);
         let _ = s.handle.join();
     }
-    lock(&NOTES).on_ended(Ending::Stopped);
+    lock(notes).on_ended(Ending::Stopped);
 }
 
-/// App exit, best effort: ask the stream to stop and give its cleanup three seconds.
+/// A lock that is only ever held for a moment: try for up to `max`, then give up.
+fn try_lock_for<'a, T>(m: &'a Mutex<T>, max: std::time::Duration) -> Option<std::sync::MutexGuard<'a, T>> {
+    let until = std::time::Instant::now() + max;
+    loop {
+        match m.try_lock() {
+            Ok(g) => return Some(g),
+            Err(std::sync::TryLockError::Poisoned(e)) => return Some(e.into_inner()),
+            Err(std::sync::TryLockError::WouldBlock) => {
+                if std::time::Instant::now() >= until {
+                    return None;
+                }
+                std::thread::sleep(std::time::Duration::from_millis(5));
+            }
+        }
+    }
+}
+
+/// App exit, best effort and never blocking on a lock: set the stop flags, then give the cleanup three seconds.
 pub(crate) fn shutdown() {
-    let taken = lock(&SESSION).take();
+    shutdown_in(&HOST, std::time::Duration::from_secs(3));
+}
+
+fn shutdown_in(host: &Host, grace: std::time::Duration) {
+    if let Some(g) = try_lock_for(&host.starting, std::time::Duration::from_millis(200)) {
+        if let Some(c) = g.as_ref() {
+            c.stop.store(true, Ordering::Release);
+        }
+    }
+    let Some(mut g) = try_lock_for(&host.session, std::time::Duration::from_millis(200)) else {
+        return;
+    };
+    let taken = g.take();
+    drop(g);
     if let Some(s) = taken {
         s.ctl.stop.store(true, Ordering::Release);
-        let until = std::time::Instant::now() + std::time::Duration::from_secs(3);
+        let until = std::time::Instant::now() + grace;
         while !s.handle.is_finished() && std::time::Instant::now() < until {
             std::thread::sleep(std::time::Duration::from_millis(50));
         }
@@ -1607,9 +1724,133 @@ mod tests {
             n.on_ended(ending);
             let text = serde_json::to_string(&with_live(base.clone(), false, &n)).unwrap();
             for s in secrets {
-                assert!(!text.to_lowercase().contains(s), "{text}");
+                assert!(!text.to_lowercase().contains(&s.to_lowercase()), "{text}");
             }
         }
+    }
+
+    fn local_host() -> Host {
+        Host { session: Mutex::new(None), starting: Mutex::new(None), gate: Mutex::new(()) }
+    }
+
+    /// A stand-in session thread: runs the fake rig's start order, takes `slow_ms` to report, then streams
+    /// (which ends at once when the stop flag is already set) and cleans up. Returns the rig's event log.
+    fn slow_session(ctl: Arc<Control>, tx: std::sync::mpsc::Sender<Started>, slow_ms: u64, sync: Arc<AtomicBool>, notes: Option<Arc<Mutex<Notes>>>, events: Arc<Mutex<Vec<String>>>) -> std::thread::JoinHandle<()> {
+        std::thread::spawn(move || {
+            let log = Log::default();
+            let rig = FakeRig::new(&log, true);
+            let live = preflight(&rig).unwrap();
+            std::thread::sleep(std::time::Duration::from_millis(slow_ms));
+            let _ = tx.send(Ok((live.stopped_hue_sync, live.panels_missing)));
+            let clock = std::time::Instant::now();
+            let ending = stream_and_finish(&rig, live, &ctl, &|| Some((0, Vec::new())), &mut || clock.elapsed().as_secs_f64() * 1000.0, &|| false, &sync);
+            if let Some(n) = notes {
+                lock(&n).on_thread_ended(ending, &ctl);
+            }
+            *lock(&events) = log.events.borrow().clone();
+        })
+    }
+
+    #[test]
+    fn a_stop_during_a_start_returns_promptly_and_the_start_ends_stopped_with_cleanup() {
+        let host = local_host();
+        let notes = Arc::new(Mutex::new(Notes::default()));
+        let sync = Arc::new(AtomicBool::new(false));
+        let events = Arc::new(Mutex::new(Vec::<String>::new()));
+        let began = std::time::Instant::now();
+        let result = std::thread::scope(|sc| {
+            let starter = sc.spawn(|| {
+                start_core(&host, &notes, &sync, tuning(), std::time::Duration::from_secs(30), |ctl, tx| slow_session(ctl, tx, 3000, sync.clone(), None, events.clone()))
+            });
+            while lock(&host.starting).is_none() {
+                std::thread::sleep(std::time::Duration::from_millis(5));
+            }
+            let stop_began = std::time::Instant::now();
+            stop_in(&host, &notes, true);
+            assert!(stop_began.elapsed() < std::time::Duration::from_millis(1500), "the stop does not wait for the start");
+            starter.join().unwrap()
+        });
+        assert_eq!(result, Ok("stopped"));
+        assert!(began.elapsed() < std::time::Duration::from_millis(2500), "the start gave up waiting as soon as the stop came");
+        let n = lock(&notes).clone();
+        assert!(!n.starting && n.last_error.is_none());
+        assert!(lock(&host.starting).is_none());
+        let late = lock(&host.session).take().expect("the late thread is kept to be joined");
+        late.handle.join().unwrap();
+        assert!(lock(&events).iter().any(|e| e == "area:stop"), "cleanup ran: {:?}", lock(&events));
+        assert!(!sync.load(Ordering::Acquire));
+    }
+
+    #[test]
+    fn a_start_that_times_out_keeps_its_error_word_after_the_late_thread_ends() {
+        let host = local_host();
+        let notes = Arc::new(Mutex::new(Notes::default()));
+        let sync = Arc::new(AtomicBool::new(false));
+        let events = Arc::new(Mutex::new(Vec::<String>::new()));
+        let n2 = notes.clone();
+        let result = start_core(&host, &notes, &sync, tuning(), std::time::Duration::from_millis(100), |ctl, tx| slow_session(ctl, tx, 600, sync.clone(), Some(n2), events.clone()));
+        assert_eq!(result, Err(bridge::UNREACHABLE));
+        let late = lock(&host.session).take().expect("the late thread is kept");
+        late.handle.join().unwrap();
+        let n = lock(&notes).clone();
+        assert_eq!((n.starting, n.last_error), (false, Some(bridge::UNREACHABLE)));
+        assert!(lock(&events).iter().any(|e| e == "area:stop"));
+    }
+
+    #[test]
+    fn a_thread_ending_by_itself_clears_the_error_word_only_when_the_start_did_not_time_out() {
+        let ctl = Control::new(tuning());
+        let mut n = Notes::default();
+        n.on_failed(bridge::UNREACHABLE);
+        n.on_thread_ended(Ending::Stopped, &ctl);
+        assert_eq!(n.last_error, None);
+        ctl.timed_out.store(true, Ordering::Release);
+        n.on_thread_ended(Ending::Stopped, &ctl);
+        assert_eq!(n.last_error, Some(bridge::UNREACHABLE));
+    }
+
+    #[test]
+    fn a_session_thread_that_dies_before_it_reports_fails_the_start_at_once() {
+        let host = local_host();
+        let notes = Mutex::new(Notes::default());
+        let sync = AtomicBool::new(false);
+        let result = start_core(&host, &notes, &sync, tuning(), std::time::Duration::from_secs(30), |_ctl, tx| std::thread::spawn(move || drop(tx)));
+        assert_eq!(result, Err(bridge::UNREACHABLE));
+        assert_eq!(lock(&notes).last_error, Some(bridge::UNREACHABLE));
+    }
+
+    #[test]
+    fn a_panic_in_the_stream_still_cleans_up_and_resets_the_sync_flag() {
+        let log = Log::default();
+        let rig = FakeRig::new(&log, true);
+        let live = preflight(&rig).unwrap();
+        let ctl = Control::new(tuning());
+        let sync = AtomicBool::new(false);
+        let was_on = std::cell::Cell::new(false);
+        let latest = || -> Option<(u64, Vec<u8>)> {
+            was_on.set(sync.load(Ordering::Acquire));
+            panic!("test panic in the stream");
+        };
+        let ending = stream_and_finish(&rig, live, &ctl, &latest, &mut || 0.0, &|| false, &sync);
+        assert!(was_on.get(), "the flag was on while it streamed");
+        assert_eq!(ending, Ending::LinkLost);
+        assert!(!sync.load(Ordering::Acquire), "the flag is reset");
+        let events = log.events.borrow().clone();
+        assert!(events.iter().any(|e| e == "area:stop"), "{events:?}");
+        assert!(events.iter().any(|e| e == "panels:off"), "{events:?}");
+    }
+
+    #[test]
+    fn shutdown_never_blocks_on_a_held_lock_and_still_flags_a_waiting_start() {
+        let host = local_host();
+        let ctl = Arc::new(Control::new(tuning()));
+        *lock(&host.starting) = Some(ctl.clone());
+        let held = lock(&host.session);
+        let began = std::time::Instant::now();
+        shutdown_in(&host, std::time::Duration::from_secs(3));
+        assert!(began.elapsed() < std::time::Duration::from_secs(2));
+        assert!(ctl.stop.load(Ordering::Acquire));
+        drop(held);
     }
 
     /// The capture loop analyses for the sync as well as the visualizer, publishes to the slot, and
