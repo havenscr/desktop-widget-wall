@@ -59,12 +59,14 @@ export const useYtLive = create<YtLiveState>((set, get) => ({
   readStatus: async (fresh) => {
     try {
       const status = await ytlive.status(fresh);
-      set((s) => ({ status, chat: status.state === 'live' ? s.chat : null }));
+      set((s) => ({ status, chat: status.state === 'live' && status.chat ? s.chat : null }));
     } catch {
       // The last good status stays and goes stale by its own read time.
     }
   },
   readChat: async () => {
+    const st = get().status;
+    if (!st || st.state !== 'live' || !st.chat) return;
     try {
       set({ chat: await ytlive.chat() });
     } catch {
@@ -91,10 +93,10 @@ export function useLivePolling(): void {
   }, [awake]);
 }
 
-/** Reads the chat every 10 seconds, only while the status says live, the Live page shows and the page is awake. */
+/** Reads the chat every 10 seconds, only while the status says live with a readable chat, the Live page shows and the page is awake. */
 export function useChatPolling(): void {
   const awake = useAwake();
-  const live = useYtLive((s) => s.status?.state === 'live');
+  const live = useYtLive((s) => s.status?.state === 'live' && s.status.chat);
   useEffect(() => {
     if (!awake || !live) return;
     void useYtLive.getState().readChat();

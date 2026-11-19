@@ -8,7 +8,7 @@ import { ChannelField, ChannelLine } from './ChannelField';
 import { Head } from './Tiles';
 import { clockText } from './time';
 
-type View = 'reading' | 'signed-out-card' | 'nochannel' | 'refused' | 'none' | 'scheduled' | 'live';
+type View = 'reading' | 'signed-out-card' | 'nochannel' | 'refused' | 'none' | 'scheduled' | 'chatoff' | 'live';
 
 function readAgo(readAt: number | null, now: number): string {
   if (readAt === null) return 'YouTube';
@@ -71,12 +71,13 @@ function Quiet({ icon, line, button }: { icon: React.ReactNode; line: string; bu
   );
 }
 
-function pick(channelSet: boolean | null, state: string | null, chat: LiveChat | null): View {
+function pick(channelSet: boolean | null, state: string | null, chat: LiveChat | null, chatOn: boolean): View {
   if (state === null) return 'reading';
   if (state === 'signed-out') return 'signed-out-card';
   if (state === 'not-set-up' || channelSet === false) return 'nochannel';
   if (state === 'none') return 'none';
   if (state === 'scheduled') return 'scheduled';
+  if (!chatOn) return 'chatoff';
   if (chat && chat.state === 'off' && chat.word !== null) return 'refused';
   return 'live';
 }
@@ -93,7 +94,7 @@ export function Comments({ now }: { now: number }) {
   const readStatus = useYtLive((s) => s.readStatus);
   const readChat = useYtLive((s) => s.readChat);
   const [editing, setEditing] = useState(false);
-  const view = pick(channel === null ? null : channel.set, status?.state ?? null, chat);
+  const view = pick(channel === null ? null : channel.set, status?.state ?? null, chat, status?.chat === true);
   const noShow = view !== 'live';
   const named = channel?.set === true;
 
@@ -145,6 +146,8 @@ export function Comments({ now }: { now: number }) {
   } else if (view === 'scheduled') {
     const at = status?.scheduledAt ?? null;
     body = <Quiet icon={<IconClock size={22} aria-hidden="true" />} line={`Chat opens with the broadcast.${at !== null ? ` Scheduled for ${clockText(at)} on YouTube.` : ''} Comments show here once it is live.`} />;
+  } else if (view === 'chatoff') {
+    body = <Quiet icon={<IconMessageCircle size={22} aria-hidden="true" />} line="Chat is off for this broadcast" />;
   } else {
     dashed = false;
     const messages = chat?.messages ?? [];

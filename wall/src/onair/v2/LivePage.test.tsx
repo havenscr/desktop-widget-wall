@@ -111,7 +111,7 @@ it('says so when the comments cannot be read: no channel, signed out, refused', 
   b.unmount();
   useYtLive.getState().reset();
   channelSet = true;
-  status = live({ chat: false });
+  status = live();
   chat = { state: 'off', messages: [], readAt: null, stale: false, stoppedAt: null, word: 'refused' };
   await open();
   await waitFor(() => expect(screen.getByText('YouTube would not let the wall read this chat.')).toBeTruthy());
@@ -276,4 +276,29 @@ it('writes no chat text, name or channel to storage or the console', async () =>
   log.mockRestore();
   warn.mockRestore();
   err.mockRestore();
+});
+
+it('live without a chat clears the old chat, reads no chat, and says the chat is off', async () => {
+  vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval', 'setTimeout', 'clearTimeout', 'Date'] });
+  localStorage.setItem(MODE_STORAGE_KEY, JSON.stringify({ held: 'live' }));
+  render(<OnAir2 />);
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(50);
+  });
+  expect(useYtLive.getState().chat).not.toBeNull();
+  expect(document.querySelectorAll('.oa2-cm').length).toBe(3);
+  const before = chatReads;
+  status = live({ chat: false });
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(STATUS_POLL_MS + 50);
+  });
+  expect(useYtLive.getState().chat).toBeNull();
+  expect(screen.getByText('Chat is off for this broadcast')).toBeTruthy();
+  expect(document.querySelectorAll('.oa2-cm').length).toBe(0);
+  const after = chatReads;
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(CHAT_POLL_MS * 6);
+  });
+  expect(chatReads).toBe(after);
+  expect(after).toBeGreaterThanOrEqual(before);
 });
