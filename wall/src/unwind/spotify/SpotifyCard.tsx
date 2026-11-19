@@ -106,6 +106,9 @@ const EMPTY_LINE: Record<BrowseTab, string> = {
   queue: 'Nothing is queued.',
 };
 
+/** Albums when the search found none. */
+const NO_ALBUM_HITS = 'No albums found. Try other words.';
+
 /** What a list says while its first read is on its way (it never shows blank). */
 export const LOADING_LINE: Record<BrowseTab, string> = {
   search: 'Searching Spotify.',
@@ -564,7 +567,9 @@ function Browser({ tall }: { tall: boolean }) {
   const playItem = (item: SpotifyItem) => playIt(item, false);
   const shuffleItem = (item: SpotifyItem) => playIt(item, true);
 
-  const cur = lists[tab];
+  // Albums with words in the search field shows the albums that search found; an empty field shows the saved ones.
+  const albumHits = tab === 'albums' && asked !== '' && query.trim() === asked;
+  const cur = albumHits ? { ...lists.search, items: lists.search.items.filter((i) => i.kind === 'album'), more: false } : lists[tab];
   const songsIn = cur.items.filter((i) => i.kind === 'track');
   const lists2 = cur.items.filter((i) => i.kind !== 'track');
   const scrolled = (e: UIEvent<HTMLElement>) => {
@@ -672,7 +677,7 @@ function Browser({ tall }: { tall: boolean }) {
             {LOADING_LINE[tab]}
           </div>
         ) : cur.loaded && cur.items.length === 0 ? (
-          <div className="sp-empty">{EMPTY_LINE[tab]}</div>
+          <div className="sp-empty">{albumHits ? NO_ALBUM_HITS : EMPTY_LINE[tab]}</div>
         ) : (
           list
         )}

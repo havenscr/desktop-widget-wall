@@ -428,6 +428,34 @@ it('searches after a pause of 400 ms with two letters, or on Enter, songs as row
   expect(document.querySelector('.sp-grid')?.textContent).toContain('Found List');
 });
 
+it('Albums shows the albums the search found while words are typed, and the saved ones once the field is empty', async () => {
+  signedIn();
+  mocks.set('wall2_spotify_playlists', () => []);
+  mocks.set('wall2_spotify_albums', () => [item(1, 'album', 'Saved Album')]);
+  mocks.set('wall2_spotify_search', () => ({ tracks: [item(7, 'track', 'Found Song')], albums: [item(9, 'album', 'Found Album')], playlists: [item(8, 'playlist', 'Found List')] }));
+  render(<SpotifyCard />);
+  await flush();
+  const box = screen.getByRole('searchbox');
+  fireEvent.change(box, { target: { value: 'synthwave' } });
+  await flush(500);
+  await act(async () => screen.getByRole('tab', { name: 'Albums' }).click());
+  await flush();
+  const grid = document.querySelector('.sp-grid')?.textContent ?? '';
+  expect(grid).toContain('Found Album');
+  expect(grid).not.toContain('Found List');
+  expect(grid).not.toContain('Saved Album');
+  expect(document.querySelector('.sp-list')).toBeNull();
+  fireEvent.change(box, { target: { value: '' } });
+  await flush();
+  expect(document.querySelector('.sp-grid')?.textContent).toContain('Saved Album');
+  mocks.set('wall2_spotify_search', () => ({ tracks: [], albums: [], playlists: [] }));
+  fireEvent.change(box, { target: { value: 'nothing here' } });
+  await flush(500);
+  await act(async () => screen.getByRole('tab', { name: 'Albums' }).click());
+  await flush();
+  expect(screen.getByText('No albums found. Try other words.')).toBeTruthy();
+});
+
 it('applies only the newest search: an older answer that lands last is dropped', async () => {
   signedIn();
   mocks.set('wall2_spotify_playlists', () => []);
