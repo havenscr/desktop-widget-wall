@@ -128,12 +128,16 @@ pub(crate) trait Rig {
     fn pause(&self, ms: u64);
 }
 
+/// The final area stop failed, so the Entertainment area may still be active.
+pub(crate) const STOP_FAILED: &str = "stop-failed";
+
 const TEST_SECONDS: u64 = 3;
 const TEST_HZ: u64 = 50;
 
 /// The test: stop any other streamer, start the area, connect, sweep for 3 s, stop. The Plays
-/// always get their sweep; panels that are listed but would not answer end the test with
-/// `panels-unavailable` after it.
+/// always get their sweep; cleanup always runs. When several things fail the word is, in order:
+/// `dtls` (a Hue frame did not go out), `stop-failed` (the area is still active), then
+/// `panels-unavailable` (a panel link would not open or a panel packet did not go out).
 pub(crate) fn run_test(rig: &dyn Rig) -> Result<&'static str, &'static str> {
     let saved = match rig.saved() {
         Loaded::Paired(s) => s,
@@ -146,13 +150,18 @@ pub(crate) fn run_test(rig: &dyn Rig) -> Result<&'static str, &'static str> {
     rig.pause(300);
     rig.area(&area_id, "start")?;
     let outcome = flash(rig, &saved, &layout);
-    let _ = rig.area(&area_id, "stop");
-    outcome
+    let stopped = rig.area(&area_id, "stop");
+    match outcome {
+        Err(stream::DTLS) => Err(stream::DTLS),
+        _ if stopped.is_err() => Err(STOP_FAILED),
+        other => other,
+    }
 }
 
 fn flash(rig: &dyn Rig, saved: &Saved, layout: &Layout) -> Result<&'static str, &'static str> {
     let mut hue = rig.open_hue(saved)?;
     let mut panels_down = false;
+    let mut hue_failed = false;
     let mut panels: Option<Box<dyn Frames + '_>> = None;
     if layout.panels.is_some() {
         match rig.panels_on() {
@@ -165,13 +174,16 @@ fn flash(rig: &dyn Rig, saved: &Saved, layout: &Layout) -> Result<&'static str, 
         let t = i as f64 / total as f64;
         let frame = stream::encode_frame((i % 256) as u8, &layout.area_id, &stream::sweep_frame(&layout.channels, t));
         if !frame.is_some_and(|f| hue.send(&f)) {
+            hue_failed = true;
             break;
         }
         // Panels at about 25 Hz: every other tick.
         if i % 2 == 0 {
             if let (Some(link), Some(ps)) = (panels.as_mut(), layout.panels.as_ref()) {
                 if let Some(pkt) = nanoleaf::encode_packet(&nanoleaf::ring_frame(ps, t)) {
-                    link.send(&pkt);
+                    if !link.send(&pkt) {
+                        panels_down = true;
+                    }
                 }
             }
         }
@@ -180,7 +192,9 @@ fn flash(rig: &dyn Rig, saved: &Saved, layout: &Layout) -> Result<&'static str, 
     if panels.is_some() || panels_down {
         rig.panels_off();
     }
-    if panels_down {
+    if hue_failed {
+        Err(stream::DTLS)
+    } else if panels_down {
         Err(nanoleaf::UNAVAILABLE)
     } else {
         Ok("ok")
@@ -273,9 +287,17 @@ fn testing() -> &'static AtomicBool {
 
 struct TestGuard;
 
+/// Takes the test slot unless a pairing runs or a test already does.
+fn test_slot(testing: &AtomicBool, pairing: &AtomicBool) -> bool {
+    if pairing.load(Ordering::Acquire) {
+        return false;
+    }
+    testing.compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire).is_ok()
+}
+
 impl TestGuard {
     fn take() -> Option<TestGuard> {
-        testing().compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire).ok().map(|_| TestGuard)
+        test_slot(testing(), pairing()).then_some(TestGuard)
     }
 }
 
@@ -472,10 +494,13 @@ mod tests {
         panel_frames: std::cell::RefCell<Vec<Vec<u8>>>,
     }
 
-    struct Sink<'a>(&'a Log, bool);
+    struct Sink<'a>(&'a Log, bool, bool);
 
     impl Frames for Sink<'_> {
         fn send(&mut self, bytes: &[u8]) -> bool {
+            if self.2 {
+                return false;
+            }
             if self.1 { self.0.hue_frames.borrow_mut().push(bytes.to_vec()) } else { self.0.panel_frames.borrow_mut().push(bytes.to_vec()) }
             true
         }
@@ -488,6 +513,9 @@ mod tests {
         start_fails: bool,
         dtls_fails: bool,
         panels_fail: bool,
+        hue_send_fails: bool,
+        panel_send_fails: bool,
+        stop_fails: bool,
     }
 
     impl<'a> FakeRig<'a> {
@@ -495,7 +523,7 @@ mod tests {
             let store = Fake::default();
             store::save_with(&store, &sample());
             let panels = with_panels.then(|| vec![nanoleaf::Panel { id: 5, x: 0.0, y: 0.0 }, nanoleaf::Panel { id: 6, x: 50.0, y: 0.0 }]);
-            FakeRig { log, store, layout: Ok(Layout { area_id: AREA.to_string(), channels: vec![3, 1, 2, 0], panels }), start_fails: false, dtls_fails: false, panels_fail: false }
+            FakeRig { log, store, layout: Ok(Layout { area_id: AREA.to_string(), channels: vec![3, 1, 2, 0], panels }), start_fails: false, dtls_fails: false, panels_fail: false, hue_send_fails: false, panel_send_fails: false, stop_fails: false }
         }
         fn note(&self, e: &str) {
             self.log.events.borrow_mut().push(e.to_string());
@@ -514,15 +542,15 @@ mod tests {
         }
         fn area(&self, _id: &str, action: &str) -> Result<(), &'static str> {
             self.note(&format!("area:{action}"));
-            if action == "start" && self.start_fails { Err(bridge::FAILED) } else { Ok(()) }
+            if (action == "start" && self.start_fails) || (action == "stop" && self.stop_fails) { Err(bridge::FAILED) } else { Ok(()) }
         }
         fn open_hue(&self, _s: &Saved) -> Result<Box<dyn Frames + '_>, &'static str> {
             self.note("hue:open");
-            if self.dtls_fails { Err(stream::DTLS) } else { Ok(Box::new(Sink(self.log, true))) }
+            if self.dtls_fails { Err(stream::DTLS) } else { Ok(Box::new(Sink(self.log, true, self.hue_send_fails))) }
         }
         fn panels_on(&self) -> Result<Box<dyn Frames + '_>, &'static str> {
             self.note("panels:on");
-            if self.panels_fail { Err(nanoleaf::UNAVAILABLE) } else { Ok(Box::new(Sink(self.log, false))) }
+            if self.panels_fail { Err(nanoleaf::UNAVAILABLE) } else { Ok(Box::new(Sink(self.log, false, self.panel_send_fails))) }
         }
         fn panels_off(&self) {
             self.note("panels:off");
@@ -602,6 +630,52 @@ mod tests {
     }
 
     #[test]
+    fn test_flash_reports_a_failed_hue_write_and_still_cleans_up() {
+        let log = Log::default();
+        let mut rig = FakeRig::new(&log, true);
+        rig.hue_send_fails = true;
+        assert_eq!(run_test(&rig), Err("dtls"));
+        let events = log.events.borrow();
+        assert!(events.iter().any(|e| e == "panels:off"));
+        assert_eq!(events.last().map(String::as_str), Some("area:stop"));
+    }
+
+    #[test]
+    fn test_flash_reports_a_failed_final_stop() {
+        let log = Log::default();
+        let mut rig = FakeRig::new(&log, true);
+        rig.stop_fails = true;
+        assert_eq!(run_test(&rig), Err(STOP_FAILED));
+        let events = log.events.borrow();
+        assert!(events.iter().any(|e| e == "panels:off"));
+        assert_eq!(events.last().map(String::as_str), Some("area:stop"));
+        assert_eq!(log.hue_frames.borrow().len(), 151);
+    }
+
+    #[test]
+    fn test_flash_reports_a_failed_panel_write_after_the_full_sweep() {
+        let log = Log::default();
+        let mut rig = FakeRig::new(&log, true);
+        rig.panel_send_fails = true;
+        assert_eq!(run_test(&rig), Err(nanoleaf::UNAVAILABLE));
+        assert_eq!(log.hue_frames.borrow().len(), 151);
+        let events = log.events.borrow();
+        assert!(events.iter().any(|e| e == "panels:off"));
+        assert_eq!(events.last().map(String::as_str), Some("area:stop"));
+    }
+
+    #[test]
+    fn test_flash_failure_words_rank_dtls_then_stop_then_panels() {
+        let log = Log::default();
+        let mut rig = FakeRig::new(&log, true);
+        rig.stop_fails = true;
+        rig.panel_send_fails = true;
+        assert_eq!(run_test(&rig), Err(STOP_FAILED));
+        rig.hue_send_fails = true;
+        assert_eq!(run_test(&rig), Err("dtls"));
+    }
+
+    #[test]
     fn layout_orders_channels_by_x_and_reads_panels() {
         let v = serde_json::json!({
             "ok": true,
@@ -629,12 +703,13 @@ mod tests {
     fn test_words_carry_no_secret() {
         let log = Log::default();
         let mut words = Vec::new();
-        for variant in 0..4 {
+        for variant in 0..5 {
             let mut rig = FakeRig::new(&log, true);
             match variant {
                 0 => rig.dtls_fails = true,
                 1 => rig.start_fails = true,
                 2 => rig.panels_fail = true,
+                3 => rig.stop_fails = true,
                 _ => rig.layout = Err("no-area"),
             }
             words.push(run_test(&rig).unwrap_err().to_string());
@@ -647,17 +722,31 @@ mod tests {
             }
             assert!(w.len() <= 20 && w.chars().all(|c| c.is_ascii_lowercase() || c == '-'), "{w}");
         }
-        for w in [bridge::FAILED, bridge::UNREACHABLE, bridge::CERT, bridge::BUSY, stream::DTLS, nanoleaf::UNAVAILABLE] {
+        for w in [bridge::FAILED, bridge::UNREACHABLE, bridge::CERT, bridge::BUSY, stream::DTLS, nanoleaf::UNAVAILABLE, STOP_FAILED] {
             assert!(w.chars().all(|c| c.is_ascii_lowercase() || c == '-'));
         }
     }
 
     #[test]
+    fn testing_refuses_while_pairing_runs() {
+        let testing = AtomicBool::new(false);
+        let pairing = AtomicBool::new(true);
+        assert!(!test_slot(&testing, &pairing));
+        assert!(!testing.load(Ordering::Acquire));
+        pairing.store(false, Ordering::Release);
+        assert!(test_slot(&testing, &pairing));
+        assert!(!test_slot(&testing, &pairing));
+    }
+
+    #[test]
     fn testing_runs_one_at_a_time() {
-        let first = TestGuard::take().expect("free");
-        assert!(TestGuard::take().is_none());
-        drop(first);
-        assert!(TestGuard::take().is_some());
+        // Local flags, so the pairing tests holding the global flag never race this one.
+        let testing = AtomicBool::new(false);
+        let pairing = AtomicBool::new(false);
+        assert!(test_slot(&testing, &pairing));
+        assert!(!test_slot(&testing, &pairing));
+        testing.store(false, Ordering::Release);
+        assert!(test_slot(&testing, &pairing));
     }
 
     /// Every command checks the window first: as many window checks as command attributes.

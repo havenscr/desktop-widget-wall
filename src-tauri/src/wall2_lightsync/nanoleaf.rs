@@ -79,7 +79,7 @@ pub(crate) fn shape_stream_answer(v: &Value) -> Option<(IpAddr, u16)> {
     (super::bridge::lan_address(&ip) && port != 0).then_some((ip, port))
 }
 
-/// Panels in order of their `x` then `y` (left to right).
+/// The panels as the home app lists them, in that order (not sorted here).
 pub(crate) fn shape_layout(v: &Value) -> Option<Vec<Panel>> {
     let list = v.as_array()?;
     let mut out = Vec::new();
