@@ -1,10 +1,30 @@
 import { describe, expect, it } from 'vitest';
 import { BRIEF_BUILDING, BRIEF_CLIENT, BRIEF_EMPTY, BRIEF_MANY, BRIEF_MIXED, BRIEF_NEW_CONTACT } from '../bridge/devMocks/meetBrief';
-import { BRIEF_ROWS, FAILED_LINE, FORBIDDEN_LINE, OFF_LINE, briefView, shortDate } from './briefModel';
+import { BRIEF_ROWS, FAILED_LINE, FORBIDDEN_LINE, GAVE_UP_LINE, OFF_LINE, ON_AIR_LINE, briefView, shortDate } from './briefModel';
 
 const NOW = Date.parse('2026-11-12T12:00:00Z');
 
 describe('briefView', () => {
+  it('a failed re-read with a ready brief keeps the feed and marks it stale', () => {
+    const v = briefView(BRIEF_CLIENT, 'failed', NOW);
+    expect(v.mode).toBe('feed');
+    expect(v.stale).toBe(true);
+    expect(v.rows).toHaveLength(3);
+    expect(briefView(BRIEF_CLIENT, null, NOW).stale).toBe(false);
+  });
+
+  it('building after the give-up is the off line with Retry', () => {
+    const v = briefView(BRIEF_BUILDING, null, NOW, { gaveUp: true });
+    expect(v).toMatchObject({ mode: 'off', line: GAVE_UP_LINE, retry: true });
+  });
+
+  it('on air the empty line carries no name and the strip is blank', () => {
+    const v = briefView(BRIEF_EMPTY, null, NOW, { onAir: true });
+    expect(v.line).toBe(ON_AIR_LINE);
+    expect(v.strip).toEqual({ who: null, company: null, deal: null, label: null });
+    expect(briefView(BRIEF_EMPTY, null, NOW).line).toContain('Northwind Outfitters');
+  });
+
   it('feed: strip from the first person, company and first deal; rows keep the helper order', () => {
     const v = briefView(BRIEF_CLIENT, null, NOW);
     expect(v.mode).toBe('feed');

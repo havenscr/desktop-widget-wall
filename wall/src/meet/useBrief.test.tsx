@@ -111,6 +111,44 @@ describe('useBrief', () => {
     expect(result.current.err).toBe('failed');
   });
 
+  it('a failed re-read keeps the last good brief of the same key and Retry brings it back', async () => {
+    const { result } = renderHook(() => useBrief('a'));
+    await flush();
+    expect(result.current.out).toBe(BRIEF_CLIENT);
+    answer = () => 'failed';
+    await tick(READY_REREAD_MS + 1000);
+    expect(result.current.err).toBe('failed');
+    expect(result.current.out).toBe(BRIEF_CLIENT);
+    answer = () => BRIEF_CLIENT;
+    act(() => result.current.retry());
+    await flush();
+    expect(result.current.err).toBeNull();
+    expect(result.current.out).toBe(BRIEF_CLIENT);
+  });
+
+  it('a refusal other than failed drops the old brief', async () => {
+    const { result } = renderHook(() => useBrief('a'));
+    await flush();
+    answer = () => 'forbidden';
+    await tick(READY_REREAD_MS + 1000);
+    expect(result.current.out).toBeNull();
+    expect(result.current.err).toBe('forbidden');
+  });
+
+  it('after the building give-up gaveUp is set, and Retry reads again', async () => {
+    answer = () => BRIEF_BUILDING;
+    const { result } = renderHook(() => useBrief('a'));
+    await flush();
+    expect(result.current.gaveUp).toBe(false);
+    await tick(BUILDING_GIVE_UP_MS + BUILDING_RETRY_MS);
+    expect(result.current.gaveUp).toBe(true);
+    const n = calls.length;
+    act(() => result.current.retry());
+    await flush();
+    expect(calls).toHaveLength(n + 1);
+    expect(result.current.gaveUp).toBe(false);
+  });
+
   it('writes nothing to storage', async () => {
     renderHook(() => useBrief('a'));
     await flush();

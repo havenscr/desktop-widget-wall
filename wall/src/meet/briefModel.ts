@@ -37,12 +37,16 @@ export interface BriefViewModel {
   sourceLines: string[];
   /** The error line offers a Retry button. */
   retry: boolean;
+  /** The last good brief is still drawn but the latest re-read failed: a quiet line and Retry go with it. */
+  stale: boolean;
 }
 
 export const OFF_LINE = 'Meeting brief not connected';
 export const FORBIDDEN_LINE = 'The box refused the brief key';
 export const FAILED_LINE = 'Meeting brief could not be read';
 export const BUILDING_LINE = 'Getting the brief ready';
+export const REFRESH_LINE = 'Could not refresh';
+export const GAVE_UP_LINE = 'The brief is not ready yet';
 export const NONE_LINE = 'No brief for this meeting';
 export const ON_AIR_LINE = 'Hidden while on air';
 export const NOT_CHECKED = 'Sender not checked';
@@ -104,29 +108,34 @@ export function notSetUpLines(sources: Record<string, SourceState>): string[] {
     .map((k) => SOURCE_NOT_SET_UP[k]);
 }
 
-const NONE: Omit<BriefViewModel, 'mode' | 'line' | 'retry'> = { strip: { who: null, company: null, deal: null, label: null }, rows: [], more: 0, sourceLines: [] };
+const NONE: Omit<BriefViewModel, 'mode' | 'line' | 'retry' | 'stale'> = { strip: { who: null, company: null, deal: null, label: null }, rows: [], more: 0, sourceLines: [] };
 
 /**
  * What the island does with the brief read: `out` is the last good answer for the meeting (or null), `err` the fixed word the
  * last read was refused with (or null). With neither, the island is exactly as it is without a brief.
  */
-export function briefView(out: BriefOut | null, err: BriefError | null, now: number = Date.now()): BriefViewModel {
-  if (err) {
-    if (err === 'forbidden') return { ...NONE, mode: 'error', line: FORBIDDEN_LINE, retry: false };
-    if (err === 'failed') return { ...NONE, mode: 'error', line: FAILED_LINE, retry: true };
-    if (err === 'gone') return { ...NONE, mode: 'off', line: null, retry: false };
-    return { ...NONE, mode: 'off', line: OFF_LINE, retry: false };
+export function briefView(out: BriefOut | null, err: BriefError | null, now: number = Date.now(), flags: { gaveUp?: boolean; onAir?: boolean } = {}): BriefViewModel {
+  const stale = err === 'failed' && !!out && out.state !== 'building';
+  if (err && !stale) {
+    if (err === 'forbidden') return { ...NONE, mode: 'error', line: FORBIDDEN_LINE, retry: false, stale: false };
+    if (err === 'failed') return { ...NONE, mode: 'error', line: FAILED_LINE, retry: true, stale: false };
+    if (err === 'gone') return { ...NONE, mode: 'off', line: null, retry: false, stale: false };
+    return { ...NONE, mode: 'off', line: OFF_LINE, retry: false, stale: false };
   }
-  if (!out) return { ...NONE, mode: 'off', line: null, retry: false };
-  if (out.state === 'building') return { ...NONE, mode: 'building', line: BUILDING_LINE, retry: false };
-  const strip = stripOf(out);
+  if (!out) return { ...NONE, mode: 'off', line: null, retry: false, stale: false };
+  if (out.state === 'building') {
+    if (flags.gaveUp) return { ...NONE, mode: 'off', line: GAVE_UP_LINE, retry: true, stale: false };
+    return { ...NONE, mode: 'building', line: BUILDING_LINE, retry: false, stale: false };
+  }
+  const strip = flags.onAir ? NONE.strip : stripOf(out);
   const sourceLines = notSetUpLines(out.sources as unknown as Record<string, SourceState>);
-  if (out.state === 'none') return { ...NONE, strip, sourceLines, mode: 'empty', line: NONE_LINE, retry: false };
+  if (out.state === 'none') return { ...NONE, strip, sourceLines, mode: 'empty', line: NONE_LINE, retry: false, stale };
   if (out.items.length === 0) {
-    return { ...NONE, strip, sourceLines, mode: 'empty', line: out.match.label ? `No history yet with ${out.match.label}` : 'No history yet', retry: false };
+    const line = flags.onAir ? ON_AIR_LINE : out.match.label ? `No history yet with ${out.match.label}` : 'No history yet';
+    return { ...NONE, strip, sourceLines, mode: 'empty', line, retry: false, stale };
   }
   const rows = out.items.slice(0, BRIEF_ROWS).map((i) => rowOf(i, now));
-  return { mode: 'feed', strip, rows, more: Math.max(0, out.items.length - rows.length), line: null, sourceLines: [], retry: false };
+  return { mode: 'feed', strip, rows, more: Math.max(0, out.items.length - rows.length), line: null, sourceLines: [], retry: false, stale };
 }
 
 /** The whole item for a row (the detail needs preview and actions the row does not carry). */

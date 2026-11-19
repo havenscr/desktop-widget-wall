@@ -4,7 +4,7 @@ import { invoke } from '../bridge/tauri';
 import { useOnAirLive } from '../onair/useOnAirLiveReport';
 import { tip } from '../ui/HoverTip';
 import { BriefFeed } from './BriefFeed';
-import { briefView } from './briefModel';
+import { REFRESH_LINE, briefView } from './briefModel';
 import { initials } from './heroModel';
 import { HOW_TO, indexName, inviteSize, islandKinds, stepKind, type IslandKind, type KindId } from './islandModel';
 import { type MeetingDetails, type Reply } from './model';
@@ -26,11 +26,12 @@ function KindIcon({ kind, size }: { kind: IslandKind['icon']; size: number }) {
 
 /** The brief's quiet line (and Retry) under the island's usual pages; nothing when the brief has nothing to say. */
 function BriefNote({ view, retry }: { view: ReturnType<typeof briefView>; retry: () => void }) {
-  if (!view.line) return null;
+  const line = view.stale ? REFRESH_LINE : view.line;
+  if (!line) return null;
   return (
     <>
-      <span className="meet-brief-note meet-xs meet-dimline ellipsis">{view.line}</span>
-      {view.retry && (
+      <span className="meet-brief-note meet-xs meet-dimline ellipsis">{line}</span>
+      {(view.retry || view.stale) && (
         <button type="button" className="meet-btn meet-retry" onClick={retry} {...tip('Read the brief again now')}>
           Retry
         </button>
@@ -137,7 +138,7 @@ function HowTo({ checklist, reloadSoon, note: brief, top }: { checklist: Checkli
 export function Island({ details, checklist, reloadSoon, meetingId, briefKey = null }: { details: MeetingDetails | null | undefined; checklist: ChecklistRead; reloadSoon: () => void; meetingId: string; briefKey?: string | null }) {
   const brief = useBrief(briefKey);
   const onAir = useOnAirLive();
-  const view = briefView(brief.out, brief.err);
+  const view = briefView(brief.out, brief.err, Date.now(), { gaveUp: brief.gaveUp, onAir });
   // Ticks and the chosen kind belong to the occurrence of the meeting, so a refresh of the calendar keeps them.
   const ticked = useMeetStore((s) => s.ticks[meetingId]) ?? [];
   const toggle = useMeetStore((s) => s.toggleTick);
@@ -145,9 +146,9 @@ export function Island({ details, checklist, reloadSoon, meetingId, briefKey = n
   const select = useMeetStore((s) => s.select);
   const setSel = (k: KindId) => select(meetingId, k);
   const kinds = islandKinds({ details, checklist: checklist.items });
-  if (view.mode === 'feed' && brief.out) return <BriefFeed out={brief.out} view={view} onAir={onAir} />;
+  if (view.mode === 'feed' && brief.out) return <BriefFeed out={brief.out} view={view} onAir={onAir} retry={brief.retry} />;
   const note = <BriefNote view={view} retry={brief.retry} />;
-  if (kinds.length === 0) return <HowTo checklist={checklist} reloadSoon={reloadSoon} note={view.mode === 'empty' ? null : note} top={view.mode === 'empty' ? [view.line, ...view.sourceLines].filter(Boolean).join(' · ') : null} />;
+  if (kinds.length === 0) return <HowTo checklist={checklist} reloadSoon={reloadSoon} note={view.mode === 'empty' && !view.stale ? null : note} top={view.mode === 'empty' ? [view.line, ...view.sourceLines].filter(Boolean).join(' · ') : null} />;
   const found = kinds.findIndex((k) => k.id === sel);
   const index = found < 0 ? 0 : found;
   const cur = kinds[index];
@@ -190,7 +191,7 @@ export function Island({ details, checklist, reloadSoon, meetingId, briefKey = n
         )}
       </div>
       <div className="meet-isl-foot">
-        {view.mode === 'empty' ? <span className="meet-isl-gap" aria-hidden="true" /> : view.line ? note : <span className="meet-isl-gap" aria-hidden="true" />}
+        {view.mode === 'empty' && !view.stale ? <span className="meet-isl-gap" aria-hidden="true" /> : view.line || view.stale ? note : <span className="meet-isl-gap" aria-hidden="true" />}
         {many && (
           <>
             <button type="button" className="meet-arrow" aria-label="Previous" onClick={() => go(-1)} {...tip('Show the previous kind')}>

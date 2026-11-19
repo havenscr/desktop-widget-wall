@@ -73,10 +73,20 @@ describe('BriefFeed', () => {
     fireEvent.click(screen.getByText('Re: renewal terms for next year'));
     rerender(<BriefFeed out={out} view={briefView(out, null)} onAir={true} />);
     expect(screen.getByText('Hidden while on air')).toBeTruthy();
+    expect(screen.queryByText(/Priya Calder|Northwind|Annual renewal|Proposal sent/)).toBeNull();
     expect(screen.queryByText('Re: renewal terms for next year')).toBeNull();
     expect(screen.queryByText(/Happy to go ahead/)).toBeNull();
     rerender(<BriefFeed out={out} view={briefView(out, null)} onAir={false} />);
     expect(screen.getByText('Quarterly check-in')).toBeTruthy();
+  });
+
+  it('a stale feed keeps its rows with a quiet line and Retry', () => {
+    const retry = vi.fn();
+    render(<BriefFeed out={BRIEF_CLIENT} view={briefView(BRIEF_CLIENT, 'failed')} onAir={false} retry={retry} />);
+    expect(screen.getByText('Re: renewal terms for next year')).toBeTruthy();
+    expect(screen.getByText('Could not refresh')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+    expect(retry).toHaveBeenCalled();
   });
 
   it('puts no brief text in any attribute or storage', () => {
