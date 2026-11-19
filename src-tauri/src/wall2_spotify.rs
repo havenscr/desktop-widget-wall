@@ -1418,15 +1418,16 @@ mod tests {
     #[test]
     fn search_falls_back_to_pages_of_ten_when_the_limit_is_refused() {
         let _test_guard = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
-        let mut apis=vec![hr(400,LIMIT_BODY),shelves_reply(10,10,0),shelves_reply(10,10,10),hr(400,LIMIT_BODY)];
+        let mut apis=vec![hr(400,LIMIT_BODY),shelves_reply(10,10,0),shelves_reply(10,10,10)];
         for page in 0..5 { apis.push(songs_reply(10,page*10)); }
         let (out,http)=run_search(apis);
         let found=out.unwrap();
         assert_eq!((found.albums.len(),found.playlists.len(),found.tracks.len()),(20,20,50));
         assert_eq!(found.tracks[49].id,search_id("T",49));
         let paths=http.paths();
-        assert_eq!(paths.len(),9);
-        let want=["type=album,playlist&limit=20&q=","type=album,playlist&limit=10&q=","type=album,playlist&limit=10&offset=10&q=","type=track&limit=50&q=","type=track&limit=10&q=","type=track&limit=10&offset=10&q=","type=track&limit=10&offset=20&q=","type=track&limit=10&offset=30&q=","type=track&limit=10&offset=40&q="];
+        // The shelves refusal sets the paged flag, so the songs half starts with pages of ten.
+        assert_eq!(paths.len(),8);
+        let want=["type=album,playlist&limit=20&q=","type=album,playlist&limit=10&q=","type=album,playlist&limit=10&offset=10&q=","type=track&limit=10&q=","type=track&limit=10&offset=10&q=","type=track&limit=10&offset=20&q=","type=track&limit=10&offset=30&q=","type=track&limit=10&offset=40&q="];
         for (path,part) in paths.iter().zip(want) { assert!(path.starts_with(&format!("/search?{part}")),"{path} {part}"); }
     }
 
@@ -1449,7 +1450,7 @@ mod tests {
     #[test]
     fn after_a_limit_refusal_later_searches_start_with_pages_of_ten() {
         let _test_guard = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
-        let mut apis=vec![hr(400,LIMIT_BODY),shelves_reply(10,10,0),shelves_reply(10,10,10),hr(400,LIMIT_BODY)];
+        let mut apis=vec![hr(400,LIMIT_BODY),shelves_reply(10,10,0),shelves_reply(10,10,10)];
         for page in 0..5 { apis.push(songs_reply(10,page*10)); }
         let (out,_)=run_search(apis);
         out.unwrap();
