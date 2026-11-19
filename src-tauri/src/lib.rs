@@ -62,6 +62,7 @@ mod wall2_home;
 mod wall2_desk;
 mod wall2_desk_token;
 mod wall2_studio;
+mod wall2_lightsync;
 mod wall2_meet;
 mod wall2_oauth;
 mod wall2_spotify;
@@ -4169,6 +4170,9 @@ pub fn run() {
             wall2_studio::wall2_studio_keys,
             wall2_studio::wall2_office_moods,
             wall2_studio::wall2_office_mood,
+            wall2_lightsync::wall2_lightsync_status,
+            wall2_lightsync::wall2_lightsync_pair,
+            wall2_lightsync::wall2_lightsync_forget,
             wall2_studio::wall2_office_off,
             wall2_onair::wall2_onair_show,
             wall2_onair::wall2_onair_mark,

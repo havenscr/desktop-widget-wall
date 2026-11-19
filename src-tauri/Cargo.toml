@@ -93,6 +93,8 @@ tiny_http = "0.12"
 
 # HTTP client for Google Maps API and Microsoft OAuth token endpoint
 ureq = "2.9"
+# Pinned TLS for the Hue bridge (wall2_lightsync): same rustls and ring as ureq in the lockfile.
+rustls = { version = "0.23.46", default-features = false, features = ["ring", "std", "tls12"] }
 urlencoding = "2.1"
 
 # Recent Files - directory operations

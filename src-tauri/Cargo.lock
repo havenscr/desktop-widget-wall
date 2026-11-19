@@ -5122,6 +5122,7 @@ dependencies = [
  "nvml-wrapper",
  "realfft",
  "rusqlite",
+ "rustls",
  "serde",
  "serde_json",
  "sha2",
