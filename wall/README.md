@@ -448,8 +448,11 @@ yet" in place of its line, and a tap sends nothing (the home app would answer 40
 without the flag counts as saved. The flag rides with the list in `wall2-moods-cache`, so
 the quiet card stays quiet while the home app is away. Applying Still Working takes about
 6 to 7 seconds in the home app (it waits before the Lutron levels), so `wall2_apply_mood`
-allows 20 seconds; a newer press that supersedes an older one answers `{ok:true,
-superseded:true}`, which counts as done.
+allows 20 seconds. A newer press that supersedes an older one makes the home app answer
+`{ok:true, superseded:true}`: the command returns `{superseded:true}` (only the exact
+boolean true counts) and the page then shows no check, no "On now" and does not save the
+mood as the last one, because that press did not run; the newer press's own answer marks
+its mood. The "On now" and "In N min" tags are 16 px.
 
 The commands are `wall2_moods` and `wall2_apply_mood` in
 `src-tauri/src/wall2_home.rs`. They read `homeBaseUrl` from `feeds.json` like the

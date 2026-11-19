@@ -42,6 +42,17 @@ function measureStill() {
     if (sub?.textContent !== 'bright and focused') out.push('still working: the card says "' + sub?.textContent + '", not "bright and focused"');
     if (getComputedStyle(first).borderTopStyle === 'dashed') out.push('still working: the saved card is dashed');
   }
+  // The "On now" and "In N min" tags are 16 px or more and never sit under the Back arrow.
+  const back = document.querySelector('.home .mood-row .mood-back');
+  for (const t of document.querySelectorAll('.home .mood-row .mood-tag')) {
+    const px = parseFloat(getComputedStyle(t).fontSize);
+    if (px < 16 - 0.01) out.push('still working: the tag "' + t.textContent + '" is ' + px + ' px (16 or more)');
+    if (back) {
+      const a = t.getBoundingClientRect();
+      const b = back.getBoundingClientRect();
+      if (Math.min(a.right, b.right) - Math.max(a.left, b.left) > 0 && Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top) > 0) out.push('still working: the tag "' + t.textContent + '" sits under the Back arrow');
+    }
+  }
   return out;
 }
 
@@ -71,6 +82,11 @@ export default {
         css: '.mood-btn.unsaved { border-style: solid !important; }',
         expect: /^ *FAIL still working: the quiet card is not dashed/m,
         appliesTo: (variantEntry) => variantEntry.name === 'Home, Still Working: not set up yet',
+      },
+      'still-tag': {
+        css: '.mood-tag { font-size: 14px !important; }',
+        expect: /^ *FAIL still working: the tag ".*" is 14 px/m,
+        appliesTo: (variantEntry) => variantEntry.name === 'Home, Still Working: saved, first of four',
       },
     },
   },

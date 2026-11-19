@@ -28,7 +28,7 @@ export const MOODS_PAGE = 4;
 /** One wheel step per gesture: further wheel events within this time are ignored. */
 export const WHEEL_MS = 450;
 
-/** The first mood shown on page `page`: steps of four, the last page showing the last three. */
+/** The first mood shown on page `page`: steps of four, the last page showing the last four. */
 export function pageStart(page: number, count: number): number {
   return Math.max(0, Math.min(page * MOODS_PAGE, count - MOODS_PAGE));
 }
@@ -183,8 +183,13 @@ export function Moods() {
     setError(null);
     setPhase({ id, kind: 'working' });
     try {
-      await invoke('wall2_apply_mood', { id });
+      const outcome = await invoke<{ superseded?: boolean } | null | undefined>('wall2_apply_mood', { id });
       if (!mounted.current) return;
+      // A newer press took over: this mood did not run, so it is not marked as set.
+      if (outcome?.superseded === true) {
+        setPhase(null);
+        return;
+      }
       writeLast(id);
       setLast(id);
       setPhase({ id, kind: 'done' });

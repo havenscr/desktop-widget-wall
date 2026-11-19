@@ -1,7 +1,7 @@
 import { act, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { mocks } from '../bridge/tauri';
-import { LAST_MOOD_KEY, MOODS_CACHE_KEY, MOODS_PAGE, pageStart, Moods, inText, moodLabel, moodNote } from './Moods';
+import { ERROR_MS, LAST_MOOD_KEY, MOODS_CACHE_KEY, MOODS_PAGE, MOODS_REFRESH_MS, pageStart, Moods, inText, moodLabel, moodNote } from './Moods';
 import { artKind } from './MoodArt';
 
 // Some tests step fake timers through minutes: a busy machine gets 20 seconds per test.
@@ -329,6 +329,68 @@ it('a saved Still Working applies like the others', async () => {
   const first = container.querySelector('.mood-btn') as HTMLElement;
   expect(first.classList.contains('unsaved')).toBe(false);
   expect(first.querySelector('.mood-sub')?.textContent).toBe('bright and focused');
+  fireEvent.click(first);
+  await flush();
+  expect(apply).toHaveBeenCalledWith({ id: 'stillWorking' });
+});
+
+it('a saved Still Working that the home app refuses shows the failure and is not marked as set', async () => {
+  const SW = { id: 'stillWorking', label: 'Still Working', saved: true };
+  mocks.set('wall2_moods', () => [SW, ...LIST]);
+  mocks.set('wall2_apply_mood', () => Promise.reject(new Error('Moods are not set up in the home app yet')));
+  const { container } = render(<Moods />);
+  await flush();
+  fireEvent.click(screen.getByText('Still Working'));
+  await flush();
+  expect(screen.getByText('Moods are not set up in the home app yet')).toBeTruthy();
+  expect(container.querySelector('.mood-btn.working, .mood-btn.done, .mood-btn.last')).toBeNull();
+  expect(localStorage.getItem(LAST_MOOD_KEY)).toBeNull();
+  await flush(ERROR_MS);
+  expect(screen.queryByText('Moods are not set up in the home app yet')).toBeNull();
+  mocks.set('wall2_apply_mood', () => Promise.reject(new Error('Could not set the mood')));
+  fireEvent.click(screen.getByText('Still Working'));
+  await flush();
+  expect(screen.getByText('Could not set the mood')).toBeTruthy();
+  expect(localStorage.getItem(LAST_MOOD_KEY)).toBeNull();
+});
+
+it('a superseded apply is not marked done or "On now", and a normal answer still is', async () => {
+  localStorage.setItem(LAST_MOOD_KEY, 'day');
+  mocks.set('wall2_moods', () => [{ id: 'stillWorking', label: 'Still Working', saved: true }, ...LIST]);
+  mocks.set('wall2_apply_mood', () => ({ superseded: true }));
+  const { container } = render(<Moods />);
+  await flush();
+  fireEvent.click(screen.getByText('Still Working'));
+  await flush();
+  expect(container.querySelector('.mood-btn.working, .mood-btn.done')).toBeNull();
+  expect(localStorage.getItem(LAST_MOOD_KEY)).toBe('day');
+  expect(container.querySelector('.mood-btn.last')?.getAttribute('data-mood')).toBe('day');
+  mocks.set('wall2_apply_mood', () => ({ superseded: false }));
+  fireEvent.click(screen.getByText('Still Working'));
+  await flush();
+  expect(container.querySelector('.mood-btn.done')).toBeTruthy();
+  expect(localStorage.getItem(LAST_MOOD_KEY)).toBe('stillWorking');
+});
+
+it('a cached unsaved Still Working turns into a saved one after the next refresh', async () => {
+  mocks.set('wall2_moods', () => [{ id: 'stillWorking', label: 'Still Working', saved: false }, ...LIST]);
+  const a = render(<Moods />);
+  await flush();
+  a.unmount();
+  // The home app is away: the cached card is still quiet.
+  mocks.set('wall2_moods', () => Promise.reject(new Error('Could not reach the service')));
+  const { container } = render(<Moods />);
+  await flush();
+  expect(container.querySelector('.mood-btn.unsaved')).toBeTruthy();
+  // It is saved in the home app; the next read draws it as a normal card that applies.
+  const apply = vi.fn();
+  mocks.set('wall2_moods', () => [{ id: 'stillWorking', label: 'Still Working', saved: true }, ...LIST]);
+  mocks.set('wall2_apply_mood', apply);
+  await flush(MOODS_REFRESH_MS);
+  const first = container.querySelector('.mood-btn') as HTMLElement;
+  expect(first.classList.contains('unsaved')).toBe(false);
+  expect(first.querySelector('.mood-sub')?.textContent).toBe('bright and focused');
+  expect(JSON.parse(localStorage.getItem(MOODS_CACHE_KEY) ?? '[]')[0]).toEqual({ id: 'stillWorking', label: 'Still Working' });
   fireEvent.click(first);
   await flush();
   expect(apply).toHaveBeenCalledWith({ id: 'stillWorking' });

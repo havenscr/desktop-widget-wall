@@ -70,15 +70,19 @@ export function MoodArt({ id }: { id: string }) {
       {(kind === 'night' || kind === 'goodnight' || kind === 'movie' || kind === 'bulb') && <Stars dim={kind === 'movie'} />}
       {kind === 'bulb' && (
         <>
-          <circle cx="206" cy="176" r="150" fill={`url(#${u}glow)`} />
-          <circle cx="206" cy="176" r="70" fill={`url(#${u}glow)`} />
-          <g stroke="#ffe9a8" strokeWidth="5" strokeLinecap="round" opacity="0.85">
-            <path d="M206 112v-16M160 130l-11 -11M252 130l11 -11M144 176h-16M268 176h16" />
+          <circle cx="300" cy="128" r="170" fill={`url(#${u}glow)`} />
+          <circle cx="300" cy="128" r="84" fill={`url(#${u}glow)`} />
+          <g stroke="#f3dc9a" strokeWidth="6" strokeLinecap="round" opacity="0.9">
+            {BULB_RAYS.map((a) => (
+              <line key={a} x1={300 + 64 * Math.cos(a)} y1={128 + 64 * Math.sin(a)} x2={300 + 92 * Math.cos(a)} y2={128 + 92 * Math.sin(a)} />
+            ))}
           </g>
-          <path d="M182 192q18 6 24 22q6 -16 24 -22z" fill="#fff6d2" />
-          <circle cx="206" cy="176" r="34" fill="#fff6d2" />
-          <path d="M194 182q6 -14 12 0t12 0" fill="none" stroke="#ff9c3d" strokeWidth="3" strokeLinecap="round" />
-          <rect x="192" y="204" width="28" height="18" rx="4" fill="#c9b79a" />
+          <circle cx="300" cy="128" r="52" fill="#ffd45e" />
+          <circle cx="300" cy="128" r="42" fill="#fff0b0" opacity="0.9" />
+          <path d="M282 150l6 -22l12 14l12 -14l6 22" fill="none" stroke="#d98a1f" strokeWidth="5" strokeLinecap="round" strokeLinejoin="round" />
+          <rect x="280" y="180" width="40" height="8" rx="4" fill="#a9b2dc" />
+          <rect x="284" y="191" width="32" height="8" rx="4" fill="#8f99c8" />
+          <rect x="289" y="202" width="22" height="8" rx="4" fill="#7a84b4" />
         </>
       )}
       {kind === 'night' && (
@@ -114,6 +118,9 @@ export function MoodArt({ id }: { id: string }) {
     </svg>
   );
 }
+
+/** The bulb's four rays, in radians: two above, one each side. */
+const BULB_RAYS = [-2.1, -1.05, 3.4, -0.25];
 
 type Kind = 'day' | 'evening' | 'night' | 'movie' | 'goodnight' | 'lamp' | 'bulb';
 
