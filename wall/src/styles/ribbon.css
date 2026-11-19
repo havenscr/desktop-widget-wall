@@ -41,11 +41,55 @@
   color: var(--dim);
   white-space: nowrap;
 }
-.rib .hl.sun {
+/* The sun row: sunrise and sunset on the horizon band above the ribbon (stage y 571 to 593; the ribbon's top edge is y 597),
+   clear of every hour label and the needle's pill (ribbon y 6 to 28). It is its own layer under Watt (who walks that band and
+   draws in front), so the ribbon keeps clipping its own content. Marker x is the ribbon x plus the ribbon's left edge (stage 125). */
+.sun-layer {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.sun-layer .sunm {
+  position: absolute;
+  top: 571px;
+  margin-left: 125px;
+  width: 0;
+  height: 27px;
+}
+.sun-layer .sunm-pill {
+  position: absolute;
+  left: 0;
+  top: 0;
+  transform: translateX(-50%);
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: 22px;
+  padding: 0 7px;
+  border-radius: 11px;
+  background: rgba(8, 6, 24, 0.66);
+  border: 1px solid var(--line);
   color: var(--amber);
-  font-size: 13px;
-  top: 10px;
-  opacity: 0.85;
+  font: 500 16px/1 var(--disp);
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+}
+.sun-layer .sunm-tick {
+  position: absolute;
+  left: 0;
+  top: 22px;
+  width: 1px;
+  height: 5px;
+  background: var(--amber);
+}
+/* The hover for a marker: an invisible box over it in the shell (the layer itself takes no pointer). Watt's hit area is above it. */
+.main > .sunm-hit {
+  position: absolute;
+  top: 551px;
+  width: 78px;
+  height: 22px;
+  margin-left: -38px;
 }
 .rib .tk {
   position: absolute;
