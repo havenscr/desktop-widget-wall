@@ -4,7 +4,7 @@ import type { PlaceId } from '../state/places';
 import { SPRITES, type Pose } from './sprites';
 
 /** The places Watt lives on. Zen has none (Dream draws its own sleeping Watt). */
-export type WattPlace = 'work' | 'home' | 'meet' | 'onair' | 'unwind';
+export type WattPlace = 'work' | 'home' | 'meet' | 'onair' | 'shelf' | 'unwind';
 
 /** Where Watt walks on one place, in design pixels on the stage. */
 export interface Walk {
@@ -45,6 +45,8 @@ export const WALKS: Readonly<Record<WattPlace, Walk>> = {
   meet: { min: 880, max: 1090, px: 4, ceiling: TOP_BAND_BOTTOM, right: 1820, bubbleLeft: 520, bubbleW: 340 },
   // On Air: all three columns end at the bottom of the top band, so the band under them is his, as on Work.
   onair: { min: 880, max: 1090, px: 4, ceiling: TOP_BAND_BOTTOM, right: 1820, bubbleLeft: 520, bubbleW: 340 },
+  // Shelf has the same band under its panels as Work.
+  shelf: { min: 880, max: 1090, px: 4, ceiling: TOP_BAND_BOTTOM, right: 1820, bubbleLeft: 520, bubbleW: 340 },
   home: { min: 1506, max: 1726, px: 5, ceiling: TOP_BAND_BOTTOM, right: 1930, bubbleLeft: 1100, bubbleW: 340 },
   // Unwind's bubble goes left of her, in the gap of the left wing between the wind down block and Tomorrow.
   unwind: { min: 430, max: 470, px: 6, ceiling: 420, right: UNWIND_ROW.left - 8, bubbleLeft: MAIN_LEFT + 8, bubbleW: 260 },

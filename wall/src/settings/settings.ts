@@ -8,9 +8,11 @@ export interface Settings {
   zenDimHour: number;
   /** Quiet minutes on the wall (1 to 60) before Zen dims by itself. */
   zenDimWaitMin: number;
+  /** Names of the task app lists the Shelf place offers (the wall has no route that lists them). */
+  shelfLists: string[];
 }
 
-export const DEFAULT_SETTINGS: Settings = { latitude: 47.68, longitude: -122.21, zenDimHour: 22, zenDimWaitMin: 10 };
+export const DEFAULT_SETTINGS: Settings = { latitude: 47.68, longitude: -122.21, zenDimHour: 22, zenDimWaitMin: 10, shelfLists: [] };
 
 function validInt(v: unknown, min: number, max: number): v is number {
   return validNumber(v, min, max) && Number.isInteger(v);
@@ -32,6 +34,15 @@ export function loadSettings(storage: Pick<Storage, 'getItem'> | null = safeStor
       if (validNumber(saved.longitude, -180, 180)) out.longitude = saved.longitude;
       if (validInt(saved.zenDimHour, 18, 23)) out.zenDimHour = saved.zenDimHour;
       if (validInt(saved.zenDimWaitMin, 1, 60)) out.zenDimWaitMin = saved.zenDimWaitMin;
+      if (Array.isArray(saved.shelfLists)) {
+        // The same rule as the native list-name check (`valid_list_name` in wall2_feeds.rs): 1 to 60 characters
+        // after trimming, no control characters. Duplicates are dropped after trimming.
+        const clean = saved.shelfLists
+          .filter((n): n is string => typeof n === 'string')
+          .map((n) => n.trim())
+          .filter((n) => n.length > 0 && [...n].length <= 60 && !/\p{Cc}/u.test(n));
+        out.shelfLists = [...new Set(clean)].slice(0, 8);
+      }
     }
   } catch {
     /* unreadable settings: use defaults */

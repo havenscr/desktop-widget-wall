@@ -26,8 +26,8 @@ const startFrom = (place: PlaceId, since = 1) => {
   return usePlaceStore.getState().active;
 };
 
-it('opens Meet when a call starts from Work, Home or Unwind', () => {
-  for (const place of ['work', 'home', 'unwind'] as const) {
+it('opens Meet when a call starts from Work, Home, Unwind or Shelf', () => {
+  for (const place of ['work', 'home', 'unwind', 'shelf'] as const) {
     useSignalStore.setState({ call: null });
     expect(startFrom(place, 100 + place.length)).toBe('meet');
   }

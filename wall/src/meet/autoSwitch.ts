@@ -2,10 +2,10 @@ import { usePlaceStore, type PlaceId } from '../state/places';
 import { useSignalStore } from '../signals/store';
 
 /** The places a call start may leave: never On Air (a show is running) or Zen (calm). */
-const FROM: ReadonlySet<PlaceId> = new Set<PlaceId>(['work', 'home', 'unwind', 'meet']);
+const FROM: ReadonlySet<PlaceId> = new Set<PlaceId>(['work', 'home', 'unwind', 'shelf', 'meet']);
 
 /**
- * Opens Meet by itself when a call starts: `call` goes from none to a call, the place is Work, Home, Unwind or
+ * Opens Meet by itself when a call starts: `call` goes from none to a call, the place is Work, Home, Unwind, Shelf or
  * Meet, and the page is visible. Once for each call (a later change of kind or camera inside the same call does
  * nothing), and it never switches back. A call that starts while the page is hidden opens Meet once, when the page
  * becomes visible while that same call is still on. Returns the stop function.
