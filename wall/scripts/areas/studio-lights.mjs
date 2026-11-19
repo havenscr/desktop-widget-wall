@@ -91,7 +91,7 @@ const inside = (b, l, r, t, bt) => b.l >= l - 2 && b.r <= r + 2 && b.t >= t - 2 
 
 const variant = (name, q, extra = {}) => ({ name, q, checks: BLOCK_CHECKS, ...extra });
 const workVariant = (name, q, extra = {}) => ({ name, q, checks: ['.lanes-hd', '.lanes-hd-l'], ...extra });
-const TOOLS_CHECKS = ['.tools-drawer', '.tools-drawer .tools-col', '.tools-drawer .tools-block', '.tools-drawer .tools-list', '.tools-drawer .tools-foot'];
+const TOOLS_CHECKS = ['.tools-drawer', '.tools-drawer .tools-rail', '.tools-drawer .tools-panel:not([hidden])', '.tools-drawer .tools-list'];
 const toolsVariant = (name, q, extra = {}) => ({ name, q, checks: TOOLS_CHECKS, viewportOnly: true, ...extra });
 
 const BLOCK_V = 'Studio lights, On Air, key lights live';
@@ -121,17 +121,17 @@ export default {
       state('work', 'studio lights: Work chip, lights off', workGallery('rec=1&keys2=off'), ['Lights off', 'Recording']),
       state('work', 'studio lights: Work chip hidden, not set up', workGallery('rec=1&keys2=none'), ['Recording', '!Lights:']),
       state('work', 'studio lights: Work chip opens the drawer', workGallery('rec=1&keys2=both'), ['Linked', 'Range 2900 K to 7000 K'], '.lights-chip'),
-      state('work', 'studio lights: Tools, Key lights empty', workGallery('tools=1&keys2=none'), ['Key lights', 'Not set up', 'Set up']),
-      state('work', 'studio lights: Tools, Key lights saved', workGallery('tools=1&keys2=both'), ['Key lights', 'Saved', 'Test', 'Change']),
-      state('work', 'studio lights: Tools, a Test result', workGallery('tools=1&keys2=left-silent'), ['Left key light: no answer', 'Right key light answered at'], '.kl-row[data-side="left"] .tools-btn:not(.cy) >> .kl-row[data-side="right"] .tools-btn:not(.cy)'),
+      state('work', 'studio lights: Tools, Key lights empty', workGallery('tools=lights&keys2=none'), ['Key lights', 'Not set up', 'Set up']),
+      state('work', 'studio lights: Tools, Key lights saved', workGallery('tools=lights&keys2=both'), ['Key lights', 'Saved', 'Test', 'Change']),
+      state('work', 'studio lights: Tools, a Test result', workGallery('tools=lights&keys2=left-silent'), ['Left key light: no answer', 'Right key light answered at'], '.kl-row[data-side="left"] .tools-btn:not(.cy) >> .kl-row[data-side="right"] .tools-btn:not(.cy)'),
       state('onair', 'studio lights: one light not set up', onAirGallery('keys2=right-unset'), ['The right key light is not set up. Add it in Tools.', 'Fine tune', 'Open Tools', '!not answering']),
       state('onair', 'studio lights: one light not set up, drawer', onAirGallery('keys2=right-unset'), ['The right key light is not set up.', 'Open Tools', '2900 K warm', '!Linked', '!Split'], FINE),
       state('onair', 'studio lights: one light set up and silent', onAirGallery('keys2=right-unset-silent'), ['The left key light is not answering. Check it is on and on this network.', 'Check again', '!Neither light']),
       state('onair', 'studio lights: a write the light accepted but did not take', onAirGallery('keys2=stuck'), ['The key lights did not take that change', 'Linked'], `${FINE} >> drag:.st-d-keys .st-sl@2300,150`),
-      state('work', 'studio lights: Tools, the saved addresses could not be read', workGallery('tools=1&keys2=unreadable'), ['The saved addresses could not be read. Type them again.', 'Not set up']),
+      state('work', 'studio lights: Tools, the saved addresses could not be read', workGallery('tools=lights&keys2=unreadable'), ['The saved addresses could not be read. Type them again.', 'Not set up']),
       state('work', 'studio lights: Work chip, a tight header', workGallery('agents=ask&long=1&rec=1&keys2=both'), ['Lights', 'Recording']),
-      state('work', 'studio lights: Tools, typing an address', workGallery('tools=1&keys2=none'), ['Save', 'Cancel'], '.kl-row[data-side="left"] .tools-btn'),
-      state('work', 'studio lights: Tools, a refused address', workGallery('tools=1&keys2=none'), ['That is not an address on your own network'], '.kl-row[data-side="left"] .tools-btn >> type:.kl-field=8.8.8.8 >> .kl-form .tools-btn.cy'),
+      state('work', 'studio lights: Tools, typing an address', workGallery('tools=lights&keys2=none'), ['Save', 'Cancel'], '.kl-row[data-side="left"] .tools-btn'),
+      state('work', 'studio lights: Tools, a refused address', workGallery('tools=lights&keys2=none'), ['That is not an address on your own network'], '.kl-row[data-side="left"] .tools-btn >> type:.kl-field=8.8.8.8 >> .kl-form .tools-btn.cy'),
     ],
   },
   fit: {
@@ -149,11 +149,11 @@ export default {
       variant('Studio lights, On Air, one light not set up', onAirFit('keys2=right-unset')),
       variant('Studio lights, On Air, one light set up and silent', onAirFit('keys2=right-unset-silent')),
       variant('Studio lights, drawer, one light not set up', onAirFit('keys2=right-unset'), { click: FINE, checks: ['.st-drawer', '.st-d-keys'] }),
-      toolsVariant(TOOLS_V, workFit('agents=3&tools=1&keys2=both')),
-      toolsVariant('Studio lights, Tools, the saved addresses could not be read', workFit('agents=3&tools=1&keys2=unreadable')),
-      toolsVariant('Studio lights, Tools, both tests fail, the longest words', workFit('agents=3&tools=1&keys2=other-model'), { click: '.kl-row[data-side="left"] .tools-btn:not(.cy) then .kl-row[data-side="right"] .tools-btn:not(.cy)' }),
-      toolsVariant('Studio lights, Tools, typing an address', workFit('agents=3&tools=1&keys2=none'), { click: '.kl-row[data-side="left"] .tools-btn then .kl-row[data-side="right"] .tools-btn >> type:.kl-field=192.168.100.200' }),
-      toolsVariant('Studio lights, Tools, test results', workFit('agents=3&tools=1&keys2=left-silent'), { click: '.kl-row[data-side="left"] .tools-btn:not(.cy) then .kl-row[data-side="right"] .tools-btn:not(.cy)' }),
+      toolsVariant(TOOLS_V, workFit('agents=3&tools=lights&keys2=both')),
+      toolsVariant('Studio lights, Tools, the saved addresses could not be read', workFit('agents=3&tools=lights&keys2=unreadable')),
+      toolsVariant('Studio lights, Tools, both tests fail, the longest words', workFit('agents=3&tools=lights&keys2=other-model'), { click: '.kl-row[data-side="left"] .tools-btn:not(.cy) then .kl-row[data-side="right"] .tools-btn:not(.cy)' }),
+      toolsVariant('Studio lights, Tools, typing an address', workFit('agents=3&tools=lights&keys2=none'), { click: '.kl-row[data-side="left"] .tools-btn then .kl-row[data-side="right"] .tools-btn >> type:.kl-field=192.168.100.200' }),
+      toolsVariant('Studio lights, Tools, test results', workFit('agents=3&tools=lights&keys2=left-silent'), { click: '.kl-row[data-side="left"] .tools-btn:not(.cy) then .kl-row[data-side="right"] .tools-btn:not(.cy)' }),
     ],
     measurements: { studio: measureStudio },
     rules: {

@@ -8,7 +8,7 @@ import { youtube, type YoutubeLink, type YoutubeStatus } from '../music/youtube'
 import { invoke } from '../bridge/tauri';
 import { hover as hoverCard } from './hover';
 import { PAIR_PROMPT, testLine, useLightSync } from './lightSync';
-import { useToolsStore } from './store';
+import { useRailStatus, useToolsStore } from './store';
 import { calendarName } from './trouble';
 
 type Tone = 'plain' | 'bad';
@@ -454,10 +454,8 @@ function LightSyncRow({ ls }: { ls: ReturnType<typeof useLightSync> }) {
   return row(testing ? 'Testing' : 'Paired', 'plain', undefined, <>{testBtn}{forgetBtn}</>, ls.notice ?? result);
 }
 
-/** The Light sync block under the key lights: its own heading and the one row. */
-export function LightSync() {
-  const opened = useToolsStore((st) => st.opened);
-  const ls = useLightSync(opened);
+/** The Light sync block under the key lights: its own heading and the one row. The state is held by the caller, so the rail can read it. */
+export function LightSyncBlock({ ls }: { ls: ReturnType<typeof useLightSync> }) {
   return (
     <div className="tools-block" data-section="lightsync">
       <div className="tools-k sm">Light sync</div>
@@ -466,6 +464,12 @@ export function LightSync() {
       </ul>
     </div>
   );
+}
+
+/** Light sync with its own state. */
+export function LightSync() {
+  const opened = useToolsStore((st) => st.opened);
+  return <LightSyncBlock ls={useLightSync(opened)} />;
 }
 
 /** Under the YouTube row: the two links YouTube API Services asks for. The page sends only a kind word. */
@@ -502,6 +506,9 @@ export function Accounts() {
     ? 'The wall could not ask Windows how meetings open. It will ask again when Tools opens.'
     : openStatus ? openWords[openStatus].hint : 'Checking how meetings open.';
   const blocked = m.signingIn !== null || sp.waiting || yt.waiting;
+  // The rail's line: how many accounts are set up but signed out.
+  const need = accounts.filter((a) => needsSignIn(a.state)).length + (sp.status?.setup && !sp.status.signedIn ? 1 : 0) + (yt.status?.setup && !yt.status.signedIn ? 1 : 0);
+  useRailStatus('accounts', need === 0 ? 'All signed in' : need === 1 ? '1 needs sign-in' : `${need} need sign-in`, need === 0 ? 'ok' : 'warn');
   const setWaiting = useToolsStore((s) => s.setWaiting);
   const note = useToolsStore((s) => s.note);
   const clearNote = useToolsStore((s) => s.clearNote);

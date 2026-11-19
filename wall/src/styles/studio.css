@@ -866,13 +866,7 @@ span.st-tg-sw {
   color: var(--tx);
 }
 
-/* ---- Tools: Key lights, under Sources in the right column (about 316 px wide) ---- */
-.kl-stack {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  min-width: 0;
-}
+/* ---- Tools: Key lights, in the Lights and home group ---- */
 .kl-top .tools-k {
   display: inline-flex;
   align-items: center;
@@ -932,9 +926,7 @@ span.st-tg-sw {
   line-height: 1.25;
 }
 
-/* ---- Tools: Home app (the desk token), the last section of the right column ----
-   The drawer had about 18 px of height to spare, so the section is one line (name, state, buttons) under its
-   heading, and the Sources rows above it are 34 px high instead of 44 (their text keeps its size; 34 px is still a mouse size). */
+/* ---- Tools: Home app (the desk token), the last section of the Lights and home group: one line (name, state, buttons) under its heading. ---- */
 .dt-row {
   display: flex;
   align-items: center;
@@ -956,9 +948,6 @@ span.st-tg-sw {
 }
 .dt-note {
   padding-top: 2px;
-}
-.kl-stack .tools-src {
-  height: 34px;
 }
 
 /* ---- the card on a group's name, and the Panels effect row and list ---- */

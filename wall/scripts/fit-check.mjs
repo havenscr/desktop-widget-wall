@@ -567,7 +567,7 @@ const QUIET = [
 // The Tools drawer over each place, and in each hard state: the drawer, its two columns and every
 // section stay inside the stage, right of the rail and the clock, with no cut text that has no tooltip.
 const YT_ROW = '.tools-list[aria-label="Accounts"] [data-account="youtube"]';
-const TOOLS = ['.tools-drawer', '.tools-drawer .tools-col', '.tools-drawer .tools-block', '.tools-drawer .tools-list', '.tools-drawer .tools-foot'];
+const TOOLS = ['.tools-drawer', '.tools-drawer .tools-rail', '.tools-drawer .tools-panel:not([hidden])', '.tools-drawer .tools-list'];
 const tools = (name, q) => ({ name: `Tools, ${name}`, q, checks: TOOLS, viewportOnly: true });
 const TOOLS_VARIANTS = [
   tools('over Work, typical', `${work('3')}&tools=1`),
@@ -575,10 +575,10 @@ const TOOLS_VARIANTS = [
   tools('over Home', `${home('moods=five')}&tools=1`),
   tools('over Unwind', `${query({ hz: 'unwind', agents: '3', extra: '' })}&tools=1`),
   tools('over Meet', `${query({ live: true, agents: '3', go: 'meet', extra: '' })}&tools=1`),
-  tools('every source failing or stale', `${work('down')}&weather=stale&tasks=down&home=down&box=none&sonos=down&tools=1`),
-  tools('every source not set up', `${work('off')}&tasks=off&home=off&sonos=off&meet=off&tools=1`),
-  tools('keys refused with a long reason', `${work('3')}&keys=refused&tools=1`),
-  tools('no keys file', `${work('3')}&source=default&tools=1`),
+  tools('every source failing or stale', `${work('down')}&weather=stale&tasks=down&home=down&box=none&sonos=down&tools=health`),
+  tools('every source not set up', `${work('off')}&tasks=off&home=off&sonos=off&meet=off&tools=health`),
+  tools('keys refused with a long reason', `${work('3')}&keys=refused&tools=health`),
+  tools('no keys file', `${work('3')}&source=default&tools=health`),
   tools('Spotify not set up, a sign-in waiting', `${work('3')}&spotify=off&meet=signedout&tools=1`),
   // The YouTube row in each state it can show, and the Set up form open from Set up and from Change setup.
   // A state that shows a (possibly two-line) Accounts note is held to the drawer itself: a note's fractional line boxes round to one pixel more than its box.
@@ -1228,8 +1228,19 @@ try {
       const rail = document.querySelector('.rail');
       if (dr.left < 1700 - 0.5 || dr.right > 2560 + 0.5 || dr.top < -0.5 || dr.bottom > 720 + 0.5) toolsOut.push('tools drawer: x ' + Math.round(dr.left) + ' to ' + Math.round(dr.right) + ', y ' + Math.round(dr.top) + ' to ' + Math.round(dr.bottom) + ' is outside x 1700 to 2560, y 0 to 720');
       if (rail && hit(dr, rail.getBoundingClientRect())) toolsOut.push('tools drawer: covers the rail');
-      // The Spotify public page switch lives in the Accounts row: with Spotify connected and the switch shown the drawer must not end lower than it did before the switch (y 697). A state with a text field open (a form that grows the drawer on purpose) is not held to it.
-      if (dr.bottom > 697 + 0.5 && drawer.querySelector('button[aria-label^="Public page reads"]') && !drawer.querySelector('input, textarea')) toolsOut.push('tools drawer: bottom edge y ' + (Math.round(dr.bottom * 10) / 10) + ' passes its old limit y 697 with Spotify connected and the public page switch shown');
+      // The drawer ends at or above y 697 in every state, and nothing inside it scrolls (the open panel, the rail, the drawer itself).
+      if (dr.bottom > 697 + 0.5) toolsOut.push('tools drawer: bottom edge y ' + (Math.round(dr.bottom * 10) / 10) + ', past y 697');
+      for (const box of [drawer, ...drawer.querySelectorAll('.tools-body, .tools-rail, .tools-panel:not([hidden])')]) {
+        if (box.scrollHeight > box.clientHeight + 1 || box.scrollWidth > box.clientWidth + 1) toolsOut.push('tools drawer: ' + (box.className || 'drawer') + ' scrolls (' + box.scrollHeight + ' of ' + box.clientHeight + ' px)');
+      }
+      // The rail: every group, its one-line status 16 px or more, controls 32 px or more.
+      for (const tab of drawer.querySelectorAll('.tools-tab')) {
+        const r = tab.getBoundingClientRect();
+        if (r.height < 32 - 0.01) toolsOut.push('tools rail: ' + tab.getAttribute('data-group') + ' is ' + Math.round(r.height) + ' px high');
+        const line = tab.querySelector('.tools-tabline');
+        if (!line || !(line.textContent || '').trim()) toolsOut.push('tools rail: ' + tab.getAttribute('data-group') + ' has no status line');
+        else if (parseFloat(getComputedStyle(line).fontSize) < 16 - 0.01) toolsOut.push('tools rail: status line under 16 px in ' + tab.getAttribute('data-group'));
+      }
       for (const e of drawer.querySelectorAll('.tools-name, .tools-srcname, .tools-line, .tools-hint, .tools-note, .tools-chip, .tools-btn, .tools-faint')) {
         if (e.scrollWidth > e.clientWidth + 1 && !e.closest('[data-tip]')) toolsOut.push('tools: "' + (e.textContent || '').trim().slice(0, 40) + '" is cut with no tooltip');
         // The row's hover card does not excuse a cut name or a cut read time: those cells must show whole.
@@ -1238,7 +1249,8 @@ try {
       // The YouTube row, its Set up form, its hint and its links line: inside the Accounts column, text 16 px or more,
       // controls 32 px or more, and a row built like Spotify's (same height, name, line and icon).
       const yt = drawer.querySelector('[data-account="youtube"]');
-      if (yt) {
+      // Only while the Accounts group is the open one: a hidden panel has no boxes to measure.
+      if (yt && yt.getClientRects().length > 0) {
         const column = drawer.querySelector('.tools-block[data-section="accounts"]').getBoundingClientRect();
         const name = (e) => (typeof e.className === 'string' && e.className ? '.' + e.className.split(' ')[0] : e.tagName.toLowerCase()) + ' "' + (e.textContent || '').trim().slice(0, 24) + '"';
         const parts = [yt, ...drawer.querySelectorAll('.tools-yt-form, .tools-yt-links')];
@@ -1269,7 +1281,7 @@ try {
           const look = (r) => { const n = getComputedStyle(r.querySelector('.tools-name')); const l = getComputedStyle(r.querySelector('.tools-line')); const i = r.querySelector('.tools-ico svg').getBoundingClientRect(); return [Math.round(r.getBoundingClientRect().height), n.fontSize, n.fontWeight, l.fontSize, Math.round(i.width)].join(' / '); };
           if (look(yt) !== look(spotifyRow)) toolsOut.push('youtube row: does not match the Spotify row (height / name size / name weight / line size / icon: ' + look(yt) + ' against ' + look(spotifyRow) + ')');
         }
-        for (const r of drawer.querySelectorAll('.tools-acct')) if (Math.round(r.getBoundingClientRect().height) !== 46) toolsOut.push('youtube row: an account row (' + name(r.querySelector('.tools-name')) + ') is ' + Math.round(r.getBoundingClientRect().height) + ' px tall, not 46');
+        for (const r of drawer.querySelectorAll('.tools-panel:not([hidden]) .tools-acct')) if (Math.round(r.getBoundingClientRect().height) !== 46) toolsOut.push('youtube row: an account row (' + name(r.querySelector('.tools-name')) + ') is ' + Math.round(r.getBoundingClientRect().height) + ' px tall, not 46');
       }
     }
     // Meet's upper right is never an empty gap: a card reaches the right edge of the stage.
