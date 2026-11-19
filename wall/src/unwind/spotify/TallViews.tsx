@@ -1,100 +1,15 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { spotify, type SpotifyItem, type SpotifyQueue } from '../../music/spotify';
+import { spotify, type SpotifyQueue } from '../../music/spotify';
 import { useNowPlayingStore } from '../../music/store';
 import { tip } from '../../ui/HoverTip';
 import { useVisible } from '../../ui/useVisible';
 import { Cover } from './Cover';
 import { problemLine, spotifyProblem, trackLength, useSpotifyNow, type SpotifyProblem } from './model';
-import { Tile, PlayingBars } from './Tile';
+import { PlayingBars } from './Tile';
 import { QUEUE_POLL_MS } from './UpNext';
-
-/** Tiles shown for each of albums and playlists in a grouped search. */
-export const GROUP_TILES = 3;
 
 /** The honest line Up next shows in the tall view (the Web API cannot reorder or remove). */
 export const QUEUE_NOTE = 'Spotify sets the order. A click skips ahead to that song.';
-
-/**
- * Search in groups (the tall view): songs on the left, albums and playlists, three tiles each, on the
- * right. A song plays on a click; an album or playlist opens its songs, with the same details card
- * the library tiles have.
- */
-export function SearchGroups({
-  items,
-  isNow,
-  onPlay,
-  onOpen,
-  onShuffle,
-}: {
-  items: SpotifyItem[];
-  isNow: (t: { id: string | null; name: string; artists?: string | null }) => boolean;
-  onPlay: (item: SpotifyItem) => void;
-  onOpen: (item: SpotifyItem) => void;
-  onShuffle: (item: SpotifyItem) => void;
-}) {
-  const tracks = items.filter((i) => i.kind === 'track');
-  // Albums and playlists show three tiles each, one whole row, so nothing is cut at the foot.
-  const albums = items.filter((i) => i.kind === 'album').slice(0, GROUP_TILES);
-  const playlists = items.filter((i) => i.kind === 'playlist').slice(0, GROUP_TILES);
-  const tiles = (list: SpotifyItem[], none: string) =>
-    list.length === 0 ? (
-      <div className="sp-gnone">{none}</div>
-    ) : (
-      <div className="sp-grid sp-grid3" role="list">
-        {list.map((item, i) => (
-          <Tile key={`${item.kind}-${item.id}-${i}`} item={item} kindWord={false} onOpen={() => onOpen(item)} onPlay={() => onPlay(item)} onShuffle={() => onShuffle(item)} />
-        ))}
-      </div>
-    );
-  return (
-    <div className="sp-groups">
-      <div className="sp-group songs">
-        <span className="sp-gk">Songs</span>
-        {tracks.length === 0 ? (
-          <div className="sp-gnone">No songs found.</div>
-        ) : (
-          <div className="sp-gscroll" role="list">
-            {tracks.map((item, i) => {
-              const on = isNow({ id: item.id, name: item.name, artists: item.subtitle });
-              return (
-                <button
-                  key={`${item.id}-${i}`}
-                  type="button"
-                  role="listitem"
-                  className={`sp-li${on ? ' on' : ''}`}
-                  aria-label={`Play ${item.name}${item.subtitle ? ` by ${item.subtitle}` : ''}`}
-                  {...tip(() => (
-                    <div className="sp-tipline">
-                      <b>{item.name}</b>
-                      <span>{item.subtitle ?? 'Song'}</span>
-                      <em>Click to play</em>
-                    </div>
-                  ))}
-                  onClick={() => onPlay(item)}
-                >
-                  <Cover src={item.thumbUrl ?? item.imageUrl} size={40} />
-                  <span className="sp-text">
-                    <span className="sp-li-n">{item.name}</span>
-                    <span className="sp-li-a">{on ? 'Playing now' : item.subtitle ?? ''}</span>
-                  </span>
-                  {typeof item.durationMs === 'number' ? <span className="sp-li-len">{trackLength(item.durationMs)}</span> : null}
-                </button>
-              );
-            })}
-          </div>
-        )}
-      </div>
-      <div className="sp-group side">
-        <div className="sp-gscroll">
-          <span className="sp-gk">Albums</span>
-          {tiles(albums, 'No albums found.')}
-          <span className="sp-gk second">Playlists</span>
-          {tiles(playlists, 'No playlists found.')}
-        </div>
-      </div>
-    </div>
-  );
-}
 
 /**
  * Up next as its own view: the song playing, then the songs that follow (the bridge gives at most

@@ -4347,3 +4347,148 @@ button.sp-qrow:hover {
     transition: none;
   }
 }
+
+/* Music card search (shared by Spotify and, later, YouTube Music): the Library row and the result chips under the field. */
+.mu-lib {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  min-width: 0;
+  border-bottom: 1px solid var(--line);
+}
+.mu-lib-word {
+  flex: none;
+  font: 600 16px/1 var(--disp);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--faint);
+}
+.mu-places {
+  display: flex;
+  gap: 4px;
+  min-width: 0;
+}
+.mu-places button {
+  height: 40px;
+  padding: 0 12px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: -1px;
+  border-bottom: 2px solid transparent;
+  font: 500 18px/1 var(--body);
+  color: var(--dim);
+  white-space: nowrap;
+}
+.mu-places button.on {
+  color: var(--tx);
+  border-bottom-color: var(--cyan);
+}
+.mu-places button.on svg {
+  color: var(--cyan);
+}
+.mu-places button:not(.on):hover {
+  color: var(--tx);
+}
+.mu-places button:focus-visible,
+.mu-chip:focus-visible,
+.mu-leave:focus-visible,
+.mu-see:focus-visible {
+  outline: 3px solid var(--cyan);
+  outline-offset: 2px;
+}
+.mu-chips {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 0;
+}
+.mu-chiplist {
+  display: flex;
+  gap: 8px;
+  min-width: 0;
+}
+.mu-chip {
+  height: 40px;
+  padding: 0 14px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  font: 600 18px/1 var(--body);
+  color: var(--tx);
+  white-space: nowrap;
+}
+.mu-chip.on {
+  background: var(--cyan);
+  border-color: var(--cyan);
+  color: #06121a;
+}
+.mu-chip:not(.on):hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+.mu-chip-n {
+  font-weight: 400;
+  color: var(--dim);
+}
+.mu-chip.on .mu-chip-n {
+  color: inherit;
+}
+.mu-leave {
+  height: 40px;
+  padding: 0 4px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font: 500 18px/1 var(--body);
+  color: var(--dim);
+  white-space: nowrap;
+}
+.mu-leave:hover {
+  color: var(--tx);
+}
+.mu-all {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.mu-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 32px;
+}
+.mu-head-w {
+  font: 600 16px/1 var(--disp);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--dim);
+}
+.mu-see {
+  min-height: 32px;
+  padding: 0 4px;
+  font: 600 17px/1 var(--body);
+  color: var(--cyan);
+  border-radius: 8px;
+}
+.mu-see:hover {
+  background: rgba(53, 230, 234, 0.12);
+}
+.sp-grid.mu-row {
+  column-gap: 16px;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+}
+.sp-grid.mu-row5 {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+}
+.sp-card.tall .sp-grid.mu-row {
+  column-gap: 18px;
+}
+.sp-songlist {
+  display: flex;
+  flex-direction: column;
+}
