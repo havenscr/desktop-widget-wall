@@ -2,6 +2,7 @@ import { IconHome } from '@tabler/icons-react';
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { tip } from '../ui/HoverTip';
 import { useRemeasure } from '../ui/useRemeasure';
+import { RoomLightsCard } from './RoomLightsCard';
 import { HOUSE_REFRESH_MS, maxAge, useDeskHouse, type DeskRooms, type FeedState, type House } from './useDesk';
 
 const WORDS = ['no', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten'];
@@ -173,7 +174,7 @@ export function HouseLine() {
       {(v.rooms.length > 0 || v.asOf) && (
         <div className="house-rooms" ref={rowRef}>
           {shown.map((r) => (
-            <span key={r.id} className={r.on ? 'house-room on' : 'house-room'} {...tip(`${r.name}: ${r.on ? 'lights on' : 'lights off'}${asOf}`)}>
+            <span key={r.id} className={r.on ? 'house-room on' : 'house-room'} {...tip(() => <RoomLightsCard roomId={r.id} fallback={{ name: r.name, on: r.on }} asOf={v.asOf ?? ''} />, { align: 'start' })}>
               <i aria-hidden="true" />
               <span className="house-room-name">{r.name}</span>
             </span>

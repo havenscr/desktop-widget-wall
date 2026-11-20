@@ -2441,3 +2441,64 @@
   flex: 1;
   justify-content: center;
 }
+
+/* The room dot's hover card: a list of the lights that are on (RoomLightsCard). 272 px inside the card's
+   padding, so the card is 300 wide and a long name ends in an ellipsis instead of widening it. */
+.rl-card {
+  width: 272px;
+}
+.rl-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 4px;
+}
+.rl-title,
+.rl-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.rl-count {
+  flex: none;
+  font: 600 16px/1.35 var(--disp);
+  color: #b7afd6;
+}
+.rl-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 26px;
+  font: 400 17px/1 var(--body);
+}
+.rl-row i {
+  flex: none;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--amber);
+  box-shadow: 0 0 6px rgba(255, 194, 77, 0.55);
+}
+.rl-row .rl-name {
+  flex: 1;
+}
+.rl-val {
+  min-width: 44px;
+  text-align: right;
+  font: 600 16px/1 var(--disp);
+  color: #b7afd6;
+}
+.rl-more,
+.rl-asof {
+  margin-top: 2px;
+  font: 400 16px/1.4 var(--body);
+  color: #a39bc6;
+}
+.rl-more {
+  padding-left: 19px;
+}
+.rl-asof {
+  font-size: 14px;
+}

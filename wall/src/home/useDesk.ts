@@ -22,10 +22,21 @@ export interface House {
   stale: boolean;
 }
 
+/** One light of a room, as the home app reports it; brightness is a whole percent, null when off or not dimmable. */
+export interface RoomLight {
+  id: string;
+  name: string;
+  on: boolean;
+  brightness: number | null;
+  reachable: boolean;
+}
+
 export interface Room {
   id: string;
   name: string;
   on: boolean;
+  /** Absent or null: the home app sent no light list (an older app, or its lights read failed). */
+  lights?: RoomLight[] | null;
 }
 
 export interface DeskRooms {

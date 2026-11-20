@@ -423,9 +423,13 @@ row (`home/Rooms.tsx`) and the House line render nothing until the home app read
     stays hidden while the home app's desk routes are absent; not live, it is dimmed and says "as of" at the
     right end of the dots row. The dots take up to two lines of 424 px: when the rooms do not all fit in two,
     the lit ones come first and the rest are counted as "+N more" at the end of the second line, only when both
-    lines are full (the hover card names them). Each dot's hover card says only the room and "lights on" or
-    "lights off": the rooms read carries no light names, so a card listing the lights waits on the home app
-    and a native change.
+    lines are full (the hover card names them). Each dot's hover card (`RoomLightsCard.tsx`, 300 px wide, its
+    left edge on the dot) lists the lights that are on and answering the bridge: the room name and "3 on", then
+    an amber dot, the name and the brightness ("80%", or "on" for a plug) per light, sorted by name, six rows at
+    most and then "+N more". An off room says "Lights off"; a lit room with no light listed says "Lights on,
+    none listed"; a stale read ends with "as of 9:41 AM". The card reads the shared rooms feed itself, so it
+    changes when a read lands. With an older home app, or when its lights read failed, the rooms carry no
+    `lights` and the card is the one line "Office: lights on". Dev knob `?lights=none|fail` leaves the field out.
   - Review script rules, gallery states and deliberate breaks live in `scripts/areas/left-third.mjs`.
 - **Columns** are fixed (`.home-wing` 1, `.home-centre` 2, `.home-right` 3), so a zone
   that renders nothing never shifts the others.
@@ -2708,7 +2712,7 @@ The home app's desk routes (`src-tauri/src/wall2_desk.rs`, base `homeBaseUrl` in
 the `wall2` window and run off the main thread: `wall2_desk_house`
 (`GET /api/desk/house`: inside temperature from -40 to 140 F, lit rooms, rooms, stale),
 `wall2_desk_rooms` (`GET /api/desk/rooms`: at most 24 rooms, ids of 1 to 16 safe
-characters, names of 40), `wall2_desk_security` (`GET /api/desk/security`: alerts with
+characters, names of 40, and each room's optional `lights` list: at most 32 lights with a safe id, a name of 40, `on`, a whole-percent `brightness` or none and `reachable`, kept only when the field is an array), `wall2_desk_security` (`GET /api/desk/security`: alerts with
 id, severity mapped to high, medium or low, text capped at 120, time and age; devices,
 blocked, unseen, available, stale) and `wall2_desk_clear_alerts`
 (`POST /api/desk/security/alerts/clear`, body exactly `{}`, header `X-Desk-Token`; a

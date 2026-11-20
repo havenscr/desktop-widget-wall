@@ -71,6 +71,12 @@ function measureLeftThird() {
     // Room names cut by an ellipsis (a name wider than its own item): none is expected with these room names.
     cutNames: [...document.querySelectorAll('.home .house-room-name')].filter((e) => e.scrollWidth > e.clientWidth + 1).map((e) => e.textContent),
     dotCount: [...document.querySelectorAll('.home .house-room:not(.more)')].filter((e) => getComputedStyle(e).display !== 'none').length,
+    // The room dot's hover card when one is open: its box, title, count, rows and the "+N more" line.
+    tip: (() => {
+      const t = document.querySelector('.hover-tip');
+      if (!t) return null;
+      return { ...box(t), plain: (t.textContent ?? '').trim(), list: !!t.querySelector('.rl-card'), title: t.querySelector('.rl-title')?.textContent ?? '', count: t.querySelector('.rl-count')?.textContent ?? '', rows: [...t.querySelectorAll('.rl-row')].filter((e) => e.offsetHeight > 0).length, more: [...t.querySelectorAll('.rl-more')].filter((e) => e.offsetHeight > 0).map((e) => e.textContent).join('') };
+    })(),
     asOfShown: (() => { const a = document.querySelector('.home .house-asof'); return !!a && getComputedStyle(a).visibility !== 'hidden'; })(),
     // Inside each row (and the dots row) the children, left to right: none may overlap the next.
     lines: [...document.querySelectorAll('.home .home-wing .lw-row, .home .home-wing .house-rooms')].map((row) => ({ row: box(row), kids: [...row.children].filter((c) => getComputedStyle(c).visibility !== 'hidden').map((c) => ({ name: (c.className || c.tagName).toString().split(' ')[0], ...box(c) })).filter((c) => c.r - c.x > 0) })),
@@ -89,13 +95,23 @@ const VARIANT_ONE = 'Home, left third: morning, one room';
 const VARIANT_SEVEN = 'Home, left third: morning, seven lit rooms';
 const VARIANT_TWELVE = 'Home, left third: morning, twelve rooms';
 const VARIANT_NONE = 'Home, left third: morning, no rooms';
+const VARIANT_CARD_OFFICE = 'Home, left third: room card, three lights';
+const VARIANT_CARD_LIVING = 'Home, left third: room card, eight lights, six rows and a count';
+const VARIANT_CARD_OFF = 'Home, left third: room card, room off';
+const VARIANT_CARD_OLD = 'Home, left third: room card, older home app';
+const CARDS = {
+  [VARIANT_CARD_OFFICE]: { dot: 0, list: true, title: 'Office', count: '3 on', rows: 3, more: '' },
+  [VARIANT_CARD_LIVING]: { dot: 1, list: true, title: 'Living room', count: '8 on', rows: 6, more: '+2 more' },
+  [VARIANT_CARD_OFF]: { dot: 2, list: true, title: 'Kitchen', count: 'Lights off', rows: 0, more: '' },
+  [VARIANT_CARD_OLD]: { dot: 0, list: false, plain: 'Office: lights on' },
+};
 const VARIANT_WINTER = 'Home, left third: short winter day, house live';
 const VARIANT_SUMMER = 'Home, left third: long summer day, house live';
 const CHECKS = ['.home .home-wing', '.home .lw-head', '.home .lw-curve', '.home .outside', '.home .house'];
 const NO_HOUSE = CHECKS.filter((c) => c !== '.home .house');
 const variant = (name, when, knobs) => ({ name, q: fitQuery(when, knobs), checks: knobs.includes('desk=') ? CHECKS : NO_HOUSE });
-const NAMES = new Set([VARIANT_HOUSE, VARIANT_LATE, VARIANT_NIGHT, VARIANT_ABSENT, VARIANT_STALE, VARIANT_STALE2, VARIANT_NOWX, VARIANT_ROOMS, VARIANT_ONE, VARIANT_SEVEN, VARIANT_TWELVE, VARIANT_NONE, VARIANT_WINTER, VARIANT_SUMMER]);
-const WITH_HOUSE = new Set([VARIANT_HOUSE, VARIANT_LATE, VARIANT_NIGHT, VARIANT_STALE, VARIANT_STALE2, VARIANT_ROOMS, VARIANT_ONE, VARIANT_SEVEN, VARIANT_TWELVE, VARIANT_NONE, VARIANT_WINTER, VARIANT_SUMMER]);
+const NAMES = new Set([VARIANT_HOUSE, VARIANT_LATE, VARIANT_NIGHT, VARIANT_ABSENT, VARIANT_STALE, VARIANT_STALE2, VARIANT_NOWX, VARIANT_ROOMS, VARIANT_ONE, VARIANT_SEVEN, VARIANT_TWELVE, VARIANT_NONE, VARIANT_WINTER, VARIANT_SUMMER, ...Object.keys(CARDS)]);
+const WITH_HOUSE = new Set([VARIANT_HOUSE, VARIANT_LATE, VARIANT_NIGHT, VARIANT_STALE, VARIANT_STALE2, VARIANT_ROOMS, VARIANT_ONE, VARIANT_SEVEN, VARIANT_TWELVE, VARIANT_NONE, VARIANT_WINTER, VARIANT_SUMMER, ...Object.keys(CARDS)]);
 const START_Y = 200;
 const END_Y = 470;
 
@@ -181,6 +197,24 @@ function ruleLeftThird(variantEntry, results, emit) {
   if (variantEntry.name === VARIANT_NIGHT && !(m.glyphTone === 'night' && /moon/.test(m.glyphIcon))) fails.push(`left third: at night the weather glyph is "${m.glyphIcon}" in tone "${m.glyphTone}" (a night moon glyph expected)`);
   if (variantEntry.name === VARIANT_ABSENT && m.house) fails.push('left third: the house row shows while the home app is absent');
   if (variantEntry.name === VARIANT_NOWX && !/weather unavailable/.test(m.weatherText ?? '')) fails.push('left third: with no weather reading the row does not say so');
+  // A room dot's hover card: 300 wide (a long name ellipsizes), its left edge on the dot's, inside the stage, clear of the dot, and the words of its state.
+  const want = CARDS[variantEntry.name];
+  if (want) {
+    const t = m.tip;
+    const dot = m.dots[want.dot];
+    if (!t) fails.push('left third: no room card is open on the dot');
+    else {
+      if (t.x < 11.5 || t.r > 2548.5 || t.y < 11.5 || t.b > 708.5) fails.push(`left third: the room card leaves the stage (x ${t.x.toFixed(0)} to ${t.r.toFixed(0)}, y ${t.y.toFixed(0)} to ${t.b.toFixed(0)}; 12 px inside 2560 by 720)`);
+      if (dot && Math.abs(t.x - dot.x) > 1.5) fails.push(`left third: the room card starts at x ${t.x.toFixed(0)} but its dot starts at x ${dot.x.toFixed(0)}`);
+      if (dot && t.x < dot.x - 1.5) fails.push('left third: the room card reaches over the rail');
+      if (dot && t.x < dot.r && dot.x < t.r && t.y < dot.b && dot.y < t.b) fails.push('left third: the room card covers its own dot');
+      if (want.list && Math.abs(t.r - t.x - 300) > 4) fails.push(`left third: the room card is ${(t.r - t.x).toFixed(0)} px wide, not 300`);
+      if (t.list !== want.list) fails.push(`left third: the room card is ${t.list ? 'a list' : 'plain text'}, expected ${want.list ? 'a list' : 'plain text'}`);
+      if (want.list && (t.title !== want.title || t.count !== want.count || t.rows !== want.rows || t.more !== want.more)) fails.push(`left third: the room card reads "${t.title}" / "${t.count}" / ${t.rows} rows / "${t.more}", expected "${want.title}" / "${want.count}" / ${want.rows} rows / "${want.more}"`);
+      if (!want.list && t.plain !== want.plain) fails.push(`left third: the plain room card reads "${t.plain}", expected "${want.plain}"`);
+      if (t.rows > 6) fails.push('left third: the room card lists more than six lights');
+    }
+  }
   for (const f of fails) emit(`  FAIL ${f}`);
   if (fails.length) return true;
   emit(`  ok   left third: starts at y 200, ends at y ${last.toFixed(0)} (above 470), clear of the clock, the date and the card to its right, text 16 px or more, the labels apart and inside the curve`);
@@ -209,6 +243,10 @@ export default {
       state('morning, seven lit rooms, two lines', MORNING, 'desk=typical&rooms=7', ['68° inside.', 'Office', 'Den']),
       state('morning, twelve rooms, two lines and a count', MORNING, 'desk=typical&rooms=12', ['68° inside.', 'Office', 'more']),
       state('morning, no rooms', MORNING, 'desk=typical&rooms=0', ['68° inside.', '!Guest room']),
+      { ...state('room card, three lights', MORNING, 'desk=typical', ['Office', '3 on', 'Desk lamp', 'Bookshelf strip', '80%']), actions: 'hover:.home .house-room:nth-child(1)' },
+      { ...state('room card, eight lights, six rows and a count', MORNING, 'desk=typical&rooms=8', ['Living room', '8 on', 'Salt lamp', 'on', '+2 more']), actions: 'hover:.home .house-room:nth-child(2)' },
+      { ...state('room card, room off', MORNING, 'desk=typical', ['Kitchen', 'Lights off']), actions: 'hover:.home .house-room:nth-child(3)' },
+      { ...state('room card, older home app', MORNING, 'desk=typical&lights=none', ['Office: lights on']), actions: 'hover:.home .house-room:nth-child(1)' },
     ].map((s) => (s.query.includes('weather=down') ? { ...s, query: s.query.replace('weather=ok&', '') } : s)),
   },
   fit: {
@@ -225,6 +263,10 @@ export default {
       variant(VARIANT_SEVEN, MORNING, 'desk=typical&rooms=7'),
       variant(VARIANT_TWELVE, MORNING, 'desk=typical&rooms=12'),
       variant(VARIANT_NONE, MORNING, 'desk=typical&rooms=0'),
+      { ...variant(VARIANT_CARD_OFFICE, MORNING, 'desk=typical'), click: 'tip:.home .house-room:nth-child(1)' },
+      { ...variant(VARIANT_CARD_LIVING, MORNING, 'desk=typical&rooms=8'), click: 'tip:.home .house-room:nth-child(2)' },
+      { ...variant(VARIANT_CARD_OFF, MORNING, 'desk=typical'), click: 'tip:.home .house-room:nth-child(3)' },
+      { ...variant(VARIANT_CARD_OLD, MORNING, 'desk=typical&lights=none'), click: 'tip:.home .house-room:nth-child(1)' },
       variant(VARIANT_WINTER, WINTER, 'desk=typical'),
       variant(VARIANT_SUMMER, SUMMER, 'desk=typical'),
     ],
@@ -246,6 +288,8 @@ export default {
       'left-more-sum': { css: '.house-rooms .house-room:nth-child(2):not(.more) { display: none !important; }', expect: /^ *FAIL left third: \d+ room dots plus "\+\d+ more" is not the 12 rooms/m, appliesTo: only(VARIANT_TWELVE) },
       // A room dot pushed out of its box: the row narrowed so twelve rooms need a third line, with the box no longer clipping it.
       'left-room-box': { css: '.house-rooms { width: 200px !important; max-height: none !important; overflow: visible !important; }', expect: /^ *FAIL left third: the room dots take \d+ lines|^ *FAIL left third: \d+ room dot\(s\) leave their box/m, appliesTo: only(VARIANT_TWELVE) },
+      'left-card-wide': { css: '.rl-card { width: 400px !important; }', expect: /^ *FAIL left third: the room card is \d+ px wide, not 300/m, appliesTo: only(VARIANT_CARD_OFFICE) },
+      'left-card-rows': { css: '.rl-more { display: none !important; }', expect: /^ *FAIL left third: the room card reads/m, appliesTo: only(VARIANT_CARD_LIVING) },
       'left-text': { css: '.lw-label, .lw-side { font-size: 12px !important; }', expect: /^ *FAIL left third: text under 16 px in /m, appliesTo: only(VARIANT_HOUSE) },
       // Both labels dragged to the middle of a long day, then the sunset label to the box's left edge.
       'left-labels': { css: '.lw-label.set { right: auto !important; left: 0 !important; }', expect: /^ *FAIL left third: the sunrise and sunset labels collide|^ *FAIL left third: the sunset label covers its own crossing/m, appliesTo: only(VARIANT_SUMMER) },
