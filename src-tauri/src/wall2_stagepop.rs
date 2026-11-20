@@ -417,20 +417,30 @@ impl Core {
         StatusView { state, feeds: s.feeds.clone(), mode: s.mode.clone(), window: s.window.clone(), placement, token: Self::token_state(&s, saved) }
     }
 
-    /// The saved pairing code, when there is a readable one.
-    pub(crate) fn token(&self) -> Option<String> {
+    /// The saved pairing code, when there is a readable one, with the generation read just before it. The
+    /// generation goes to `authenticate`, which refuses if a new code (or another client) moved it since.
+    pub(crate) fn token_at(&self) -> Option<(String, u64)> {
+        let generation = self.generation();
         match self.vault.load() {
-            Fetch::Found(t) => Some(t),
+            Fetch::Found(t) => Some((t, generation)),
             _ => None,
         }
     }
 
-    /// Takes the client in after a good hello. Under one lock: an origin that is not the pinned one is refused,
+    /// The saved pairing code alone.
+    pub(crate) fn token(&self) -> Option<String> {
+        self.token_at().map(|t| t.0)
+    }
+
+    /// Takes the client in after a good hello. Under one lock: a generation that moved since the token was read (a new code) is refused, an origin that is not the pinned one is refused,
     /// otherwise it is pinned (when none is) and any older client is replaced.
-    pub(crate) fn authenticate(&self, origin: &str) -> Result<(u64, Receiver<String>), &'static str> {
+    pub(crate) fn authenticate(&self, origin: &str, seen: u64) -> Result<(u64, Receiver<String>), &'static str> {
         let (tx, rx) = channel();
         let (generation, pinned) = {
             let mut s = self.lock();
+            if s.generation != seen {
+                return Err("changed");
+            }
             let mut pinned = None;
             match s.settings.origin.as_deref() {
                 Some(p) if p != origin => return Err("origin"),
@@ -687,11 +697,11 @@ pub(crate) fn serve(core: &Core, stream: TcpStream) {
                     Message::Text(t) => {
                         if session.is_none() {
                             let welcome = match parse_in(t.as_str()) {
-                                Some(In::Hello { v: 2, cnonce, mac }) => core.token().and_then(|token| {
+                                Some(In::Hello { v: 2, cnonce, mac }) => core.token_at().and_then(|(token, seen)| {
                                     if !hello_ok(&token, &nonce, &origin, &mac) {
                                         return None;
                                     }
-                                    let started = core.authenticate(&origin).ok()?;
+                                    let started = core.authenticate(&origin, seen).ok()?;
                                     Some((started, server_mac(&token, &cnonce, &nonce)))
                                 }),
                                 _ => None,
@@ -985,10 +995,10 @@ mod tests {
     #[test]
     fn a_newer_client_replaces_the_older_and_the_first_origin_is_pinned() {
         let c = core_with(Some("t"));
-        let (g1, _rx1) = c.authenticate(ORIGIN).unwrap();
+        let (g1, _rx1) = c.authenticate(ORIGIN, c.generation()).unwrap();
         assert_eq!(c.pin().as_deref(), Some(ORIGIN));
         assert_eq!(c.status(None).state, "connected");
-        let (g2, rx2) = c.authenticate(ORIGIN).unwrap();
+        let (g2, rx2) = c.authenticate(ORIGIN, c.generation()).unwrap();
         assert!(g2 > g1);
         assert_eq!(c.generation(), g2);
         // The old client's end changes nothing; the current one's end goes back to waiting.
@@ -1004,7 +1014,7 @@ mod tests {
     #[test]
     fn feeds_and_window_reach_the_status_and_a_new_code_drops_the_client() {
         let c = core_with(Some("t"));
-        let (_g, _rx) = c.authenticate(ORIGIN).unwrap();
+        let (_g, _rx) = c.authenticate(ORIGIN, c.generation()).unwrap();
         c.handle_text(&feeds_text("[{\"key\":\"stage\",\"name\":\"Stage\"},{\"key\":\"k1\",\"name\":\"Maya\"}]", "k1"));
         c.handle_text("{\"type\":\"window\",\"open\":true,\"fullscreen\":true}");
         let v = c.status(None);
@@ -1045,13 +1055,27 @@ mod tests {
     #[test]
     fn only_the_pinned_origin_authenticates_and_the_first_one_wins() {
         let c = core_with(Some(TOKEN));
-        assert!(c.authenticate(ORIGIN).is_ok());
-        assert_eq!(c.authenticate(ORIGIN_B).err(), Some("origin"));
+        assert!(c.authenticate(ORIGIN, c.generation()).is_ok());
+        assert_eq!(c.authenticate(ORIGIN_B, c.generation()).err(), Some("origin"));
         assert_eq!(c.pin().as_deref(), Some(ORIGIN));
         // The refused origin changed nothing: the first client is still the current one.
         assert_eq!(c.status(None).state, "connected");
         assert_eq!(c.generation(), 1);
-        assert!(c.authenticate(ORIGIN).is_ok());
+        assert!(c.authenticate(ORIGIN, c.generation()).is_ok());
+    }
+
+    #[test]
+    fn a_new_code_between_the_mac_check_and_authenticate_is_refused() {
+        let c = core_with(Some(TOKEN));
+        let (token, seen) = c.token_at().unwrap();
+        assert_eq!(token, TOKEN);
+        // The mac check passes, then a new code lands before authenticate runs.
+        c.token_action("new").unwrap();
+        assert_eq!(c.authenticate(ORIGIN, seen).err(), Some("changed"));
+        assert_ne!(c.status(None).state, "connected");
+        // A client that reads the new code and generation gets in.
+        let (_, fresh) = c.token_at().unwrap();
+        assert!(c.authenticate(ORIGIN, fresh).is_ok());
     }
 
     #[test]
