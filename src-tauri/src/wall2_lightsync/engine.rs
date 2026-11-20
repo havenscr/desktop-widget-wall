@@ -35,6 +35,12 @@ pub(crate) struct SettingsIn {
     pub plays: Option<bool>,
     pub panels: Option<bool>,
     pub send_hz: Option<f64>,
+    /// Bars between palette steps (1 to 8) when `beat_step` is on; absent keeps one step per beat.
+    pub colour_bars: Option<f64>,
+    /// `{ plays: [band; up to 4], panels: band }`, band "bass", "highs" or "both". Read leniently in `Follow::from_in`.
+    pub follow: Option<serde_json::Value>,
+    /// Panels ring out from the centre on a kick (default true); false pulses them whole.
+    pub ripple: Option<bool>,
 }
 
 /// What `start` and `tune` take.
@@ -53,6 +59,44 @@ pub(crate) struct Palette {
     pub rest: Rgb,
 }
 
+/// Which sound band a light follows.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) enum Band {
+    Bass,
+    Highs,
+    /// The louder of the two envelopes.
+    Both,
+}
+
+impl Band {
+    fn parse(v: &serde_json::Value) -> Option<Band> {
+        match v.as_str()? {
+            "bass" => Some(Band::Bass),
+            "highs" => Some(Band::Highs),
+            "both" => Some(Band::Both),
+            _ => None,
+        }
+    }
+}
+
+/// Who follows what. A light with no entry (`None`) keeps the default rule: the inner Plays follow the
+/// bass, the outer Plays the highs, the panels the mean of both.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub(crate) struct Follow {
+    /// Up to four, left to right.
+    pub plays: Vec<Option<Band>>,
+    pub panels: Option<Band>,
+}
+
+impl Follow {
+    /// Never fails: a missing, wrong-typed or oversized value, or an unknown band, leaves that light on the default.
+    pub(crate) fn from_in(v: Option<&serde_json::Value>) -> Follow {
+        let Some(obj) = v.and_then(|v| v.as_object()) else { return Follow::default() };
+        let plays = obj.get("plays").and_then(|p| p.as_array()).map(|a| a.iter().take(4).map(Band::parse).collect()).unwrap_or_default();
+        Follow { plays, panels: obj.get("panels").and_then(Band::parse) }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct Settings {
     pub brightness: f64,
@@ -67,6 +111,10 @@ pub(crate) struct Settings {
     pub plays: bool,
     pub panels: bool,
     pub send_hz: f64,
+    /// Beats between palette steps (`colourBars * 4`, rounded) with `beat_step` on; None is one per beat.
+    pub step_beats: Option<u32>,
+    pub follow: Follow,
+    pub ripple: bool,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -120,6 +168,9 @@ impl Settings {
             plays: s.plays.unwrap_or(true),
             panels: s.panels.unwrap_or(true),
             send_hz: clamp_or(s.send_hz, 25.0, 60.0, 50.0),
+            step_beats: s.colour_bars.filter(|b| b.is_finite()).map(|b| (b.clamp(1.0, 8.0) * 4.0).round() as u32),
+            follow: Follow::from_in(s.follow.as_ref()),
+            ripple: s.ripple.unwrap_or(true),
         }
     }
 }
@@ -162,6 +213,8 @@ pub(crate) struct Engine {
     kick_age_ms: f64,
     colour_pos: usize,
     drift_ms: f64,
+    /// Beats since the palette last stepped (only counted with `step_beats`).
+    beats: u32,
 }
 
 fn lerp(a: Rgb, b: Rgb, t: f64) -> Rgb {
@@ -179,7 +232,7 @@ fn unit(c: Rgb) -> Rgb {
 
 impl Engine {
     pub(crate) fn new(floor: f64) -> Engine {
-        Engine { bass_env: floor, high_env: floor, kick_age_ms: f64::INFINITY, colour_pos: 0, drift_ms: 0.0 }
+        Engine { bass_env: floor, high_env: floor, kick_age_ms: f64::INFINITY, colour_pos: 0, drift_ms: 0.0, beats: 0 }
     }
 
     /// A one-pole follower: fast up, slow down.
@@ -211,7 +264,11 @@ impl Engine {
         if input.beat {
             self.kick_age_ms = 0.0;
             if s.beat_step {
-                self.colour_pos = (self.colour_pos + 1) % colours;
+                self.beats += 1;
+                if self.beats >= s.step_beats.unwrap_or(1) {
+                    self.beats = 0;
+                    self.colour_pos = (self.colour_pos + 1) % colours;
+                }
             }
         }
         if !s.beat_step {
@@ -226,11 +283,19 @@ impl Engine {
         let ceiling = scale(t.palette.kick, s.brightness);
 
         let plays = if s.plays { self.plays(t, n_plays, kick_amt, span, ceiling) } else { vec![[0.0; 3]; n_plays] };
-        let panels = if s.panels { self.panels(t, panel_xy, span, ceiling) } else { Vec::new() };
+        let panels = if s.panels { self.panels(t, panel_xy, span, ceiling, kick_amt) } else { Vec::new() };
         if self.kick_age_ms.is_finite() {
             self.kick_age_ms += dt;
         }
         Output { plays, panels }
+    }
+
+    fn band_env(&self, b: Band) -> f64 {
+        match b {
+            Band::Bass => self.bass_env,
+            Band::Highs => self.high_env,
+            Band::Both => self.bass_env.max(self.high_env),
+        }
     }
 
     fn plays(&self, t: &Tuning, n: usize, kick_amt: f64, span: f64, ceiling: Rgb) -> Vec<Rgb> {
@@ -240,7 +305,11 @@ impl Engine {
             .map(|i| {
                 let d = (i as f64 - (n as f64 - 1.0) / 2.0).abs();
                 let inner = d < (n as f64 - 1.0) / 4.0 + 0.5;
-                let env = if inner { self.bass_env } else { self.high_env };
+                let env = match s.follow.plays.get(i).copied().flatten() {
+                    Some(b) => self.band_env(b),
+                    None if inner => self.bass_env,
+                    None => self.high_env,
+                };
                 let m = (env - s.floor) / span;
                 let rgb = scale(lerp(t.palette.rest, base, m), env);
                 unit(lerp(rgb, ceiling, kick_amt * if inner { 1.0 } else { 0.5 }))
@@ -248,7 +317,7 @@ impl Engine {
             .collect()
     }
 
-    fn panels(&self, t: &Tuning, xy: &[(f64, f64)], span: f64, ceiling: Rgb) -> Vec<[u8; 4]> {
+    fn panels(&self, t: &Tuning, xy: &[(f64, f64)], span: f64, ceiling: Rgb, kick_amt: f64) -> Vec<[u8; 4]> {
         if xy.is_empty() {
             return Vec::new();
         }
@@ -257,7 +326,10 @@ impl Engine {
         let (cx, cy) = (xy.iter().map(|p| p.0).sum::<f64>() / n, xy.iter().map(|p| p.1).sum::<f64>() / n);
         let dist: Vec<f64> = xy.iter().map(|p| ((p.0 - cx).powi(2) + (p.1 - cy).powi(2)).sqrt()).collect();
         let far = dist.iter().cloned().fold(0.0_f64, f64::max).max(1.0);
-        let env = (self.bass_env + self.high_env) / 2.0;
+        let env = match s.follow.panels {
+            None => (self.bass_env + self.high_env) / 2.0,
+            Some(b) => self.band_env(b),
+        };
         let m = (env - s.floor) / span;
         let front = self.ring_front(s);
         dist.iter()
@@ -265,7 +337,8 @@ impl Engine {
             .map(|(i, d)| {
                 let base = t.palette.colors[(self.colour_pos + i) % t.palette.colors.len()];
                 let rgb = scale(lerp(t.palette.rest, base, m), env);
-                let ring = front.map_or(0.0, |f| (-((d / far - f) / 0.2).powi(2)).exp() * s.kick_flash);
+                // Ripple off: the whole set pulses with the Plays' kick flash, no ring.
+                let ring = if s.ripple { front.map_or(0.0, |f| (-((d / far - f) / 0.2).powi(2)).exp() * s.kick_flash) } else { kick_amt };
                 let c = unit(lerp(rgb, ceiling, ring));
                 [(c[0] * 255.0).round() as u8, (c[1] * 255.0).round() as u8, (c[2] * 255.0).round() as u8, 0]
             })
@@ -422,6 +495,9 @@ mod tests {
             plays: Some(false),
             panels: None,
             send_hz: Some(1000.0),
+            colour_bars: Some(99.0),
+            follow: None,
+            ripple: None,
         });
         assert_eq!((s.brightness, s.floor, s.bass_gain, s.high_gain), (1.0, 0.0, 2.0, 1.0));
         assert_eq!((s.kick_flash, s.attack_ms, s.release_ms, s.ripple_ms, s.send_hz), (1.0, 20.0, 1500.0, 200.0, 60.0));
@@ -431,6 +507,145 @@ mod tests {
         assert!(low.floor <= low.brightness, "floor never above the ceiling");
         let d = Settings::from_in(&SettingsIn::default());
         assert_eq!((d.brightness, d.floor, d.attack_ms, d.release_ms, d.send_hz), (0.85, 0.06, 50.0, 380.0, 50.0));
+    }
+
+    fn lum(c: &Rgb) -> f64 {
+        c[0] + c[1] + c[2]
+    }
+
+    fn js(v: serde_json::Value) -> SettingsIn {
+        serde_json::from_value(v).unwrap()
+    }
+
+    /// Runs `n` ticks of constant input and returns the last frame.
+    fn run(t: &Tuning, bass: f64, high: f64, n: usize, plays: usize, xy: &[(f64, f64)]) -> Output {
+        let mut e = Engine::new(0.06);
+        let mut out = e.step(t, quiet(33.0), plays, xy);
+        for _ in 0..n {
+            out = e.step(t, Input { bass, high, beat: false, dt_ms: 33.0 }, plays, xy);
+        }
+        out
+    }
+
+    #[test]
+    fn an_old_payload_with_none_of_the_new_fields_gives_todays_frames() {
+        // Absent fields: one palette step per beat, the inner and outer rule, ripple on, panels the mean.
+        let old = Settings::from_in(&js(serde_json::json!({ "brightness": 0.9, "beatStep": true })));
+        assert_eq!((old.step_beats, old.follow.clone(), old.ripple), (None, Follow::default(), true));
+        let a = tuning(js(serde_json::json!({})));
+        let b = tuning(js(serde_json::json!({ "follow": null, "colourBars": null, "ripple": null })));
+        let (mut ea, mut eb) = (Engine::new(0.06), Engine::new(0.06));
+        for i in 0..40 {
+            let input = Input { bass: if i % 7 == 0 { 1.0 } else { 0.3 }, high: 0.5, beat: i % 5 == 0, dt_ms: 33.0 };
+            assert_eq!(ea.step(&a, input, 4, &XY), eb.step(&b, input, 4, &XY));
+        }
+    }
+
+    #[test]
+    fn colour_bars_steps_the_palette_every_four_beats_per_bar() {
+        let t = tuning(js(serde_json::json!({ "colourBars": 1 })));
+        assert_eq!(t.settings.step_beats, Some(4));
+        let beat = Input { bass: 0.0, high: 0.0, beat: true, dt_ms: 33.0 };
+        let mut e = Engine::new(0.06);
+        for _ in 0..3 {
+            e.step(&t, beat, 4, &[]);
+        }
+        assert_eq!(e.colour_pos, 0, "three beats: no step yet");
+        e.step(&t, beat, 4, &[]);
+        assert_eq!(e.colour_pos, 1, "the fourth beat steps once");
+        for _ in 0..4 {
+            e.step(&t, beat, 4, &[]);
+        }
+        assert_eq!(e.colour_pos, 2);
+        // Two bars is eight beats.
+        let two = tuning(js(serde_json::json!({ "colourBars": 2 })));
+        let mut e = Engine::new(0.06);
+        for _ in 0..7 {
+            e.step(&two, beat, 4, &[]);
+        }
+        assert_eq!(e.colour_pos, 0);
+        e.step(&two, beat, 4, &[]);
+        assert_eq!(e.colour_pos, 1);
+    }
+
+    #[test]
+    fn colour_bars_is_clamped_and_ignored_with_beat_step_off() {
+        assert_eq!(Settings::from_in(&js(serde_json::json!({ "colourBars": 0.0 }))).step_beats, Some(4), "1 bar at least");
+        assert_eq!(Settings::from_in(&js(serde_json::json!({ "colourBars": 50 }))).step_beats, Some(32), "8 bars at most");
+        let off = tuning(js(serde_json::json!({ "colourBars": 1, "beatStep": false })));
+        let beat = Input { bass: 1.0, high: 1.0, beat: true, dt_ms: 33.0 };
+        let mut e = Engine::new(0.06);
+        for _ in 0..8 {
+            e.step(&off, beat, 4, &[]);
+        }
+        assert_eq!(e.colour_pos, 0, "beatStep off keeps its meaning: only the drift steps it");
+    }
+
+    #[test]
+    fn follow_replaces_the_inner_outer_rule_for_the_lights_named() {
+        // Bass only sounding. Default: Plays 1 and 2 (inner) light, 0 and 3 stay at the floor.
+        let d = run(&tuning(SettingsIn::default()), 1.0, 0.0, 40, 4, &[]);
+        assert!(lum(&d.plays[1]) > lum(&d.plays[0]) * 2.0);
+        // Far Left set to bass, Left to highs: the pair swaps their roles.
+        let t = tuning(js(serde_json::json!({ "follow": { "plays": ["bass", "highs", "bass", "highs"], "panels": "bass" } })));
+        let f = run(&t, 1.0, 0.0, 40, 4, &[]);
+        assert!(lum(&f.plays[0]) > lum(&f.plays[1]) * 2.0, "far left follows the bass now: {:?}", f.plays);
+        assert!(lum(&f.plays[2]) > lum(&f.plays[3]) * 2.0);
+        // Both takes the louder envelope: highs only sounding still lights an inner Play.
+        let b = tuning(js(serde_json::json!({ "follow": { "plays": ["both", "both", "both", "both"] } })));
+        let hi = run(&b, 0.0, 1.0, 40, 4, &[]);
+        assert!(hi.plays.iter().all(|p| lum(p) > 1.0), "{:?}", hi.plays);
+    }
+
+    #[test]
+    fn follow_panels_band_picks_the_envelope_the_panels_use() {
+        let bass = tuning(js(serde_json::json!({ "follow": { "panels": "bass" }, "floor": 0.0, "kickFlash": 0.0 })));
+        let highs = tuning(js(serde_json::json!({ "follow": { "panels": "highs" }, "floor": 0.0, "kickFlash": 0.0 })));
+        let (pb, ph) = (run(&bass, 1.0, 0.0, 40, 0, &XY), run(&highs, 1.0, 0.0, 40, 0, &XY));
+        assert!(pb.panels[0][0] > ph.panels[0][0] + 20, "bass-following panels are brighter on bass: {:?} {:?}", pb.panels, ph.panels);
+    }
+
+    #[test]
+    fn follow_falls_back_per_light_and_never_fails_the_payload() {
+        // Too many entries are cut to four; an unknown band and a non-string leave that light on the default.
+        let f = Follow::from_in(Some(&serde_json::json!({ "plays": ["bass", "loud", 7, "highs", "both"], "panels": "nope" })));
+        assert_eq!(f.plays, vec![Some(Band::Bass), None, None, Some(Band::Highs)]);
+        assert_eq!(f.panels, None);
+        // Short list: the rest default. Wrong types anywhere: all default.
+        assert_eq!(Follow::from_in(Some(&serde_json::json!({ "plays": ["both"] }))).plays, vec![Some(Band::Both)]);
+        for odd in [serde_json::json!("bass"), serde_json::json!(5), serde_json::json!({ "plays": "bass" }), serde_json::json!([1, 2])] {
+            assert_eq!(Follow::from_in(Some(&odd)), Follow::default());
+        }
+        assert_eq!(Follow::from_in(None), Follow::default());
+        // The whole payload still parses with a bad follow, and the rest of the settings apply.
+        let v = serde_json::json!({
+            "palette": { "colors": ["#ff00aa", "#35e6ea"], "kick": "#ffffff", "rest": "#200040" },
+            "settings": { "brightness": 0.5, "follow": 12 }
+        });
+        let t = Tuning::from_in(&serde_json::from_value::<TuneIn>(v).unwrap()).unwrap();
+        assert_eq!((t.settings.brightness, t.settings.follow), (0.5, Follow::default()));
+    }
+
+    #[test]
+    fn ripple_off_pulses_the_panels_whole_with_no_ring() {
+        let off = tuning(js(serde_json::json!({ "ripple": false, "floor": 0.0, "kickFlash": 1.0 })));
+        assert!(!off.settings.ripple);
+        let mut e = Engine::new(0.0);
+        let first = e.step(&off, Input { bass: 0.0, high: 0.0, beat: true, dt_ms: 33.0 }, 0, &XY);
+        // Whole set at one level on the kick: every panel the same red channel (the colour step is per panel but the flash is shared).
+        let flash: Vec<u8> = first.panels.iter().map(|p| p[0]).collect();
+        assert!(flash.iter().all(|v| *v > 100), "every panel flashes at once: {flash:?}");
+        let mut late = first.clone();
+        for _ in 0..12 {
+            late = e.step(&off, quiet(33.0), 0, &XY);
+        }
+        assert!(late.panels.iter().all(|p| p[0] < 8), "flash gone after about 220 ms: {:?}", late.panels);
+        // Ripple on (the default) still rings: at the start only the centre panel is lit.
+        let on = tuning(js(serde_json::json!({ "floor": 0.0, "kickFlash": 1.0 })));
+        assert!(on.settings.ripple);
+        let mut e = Engine::new(0.0);
+        let ring = e.step(&on, Input { bass: 0.0, high: 0.0, beat: true, dt_ms: 33.0 }, 0, &XY);
+        assert!(ring.panels[0][0] > ring.panels[1][0], "{:?}", ring.panels);
     }
 
     #[test]

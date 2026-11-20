@@ -8,7 +8,7 @@ import { useWatchStore } from '../../unwind/watch/store';
 import { WatchSheet } from '../../unwind/watch/Sheet';
 import { resetHome } from '../homeStore';
 import { OfficeMoods } from '../OfficeMoods';
-import { DEFAULT_LIGHTS_UI, DEFAULT_LIGHT_SYNC, SWATCHES, resolvePalette } from './model';
+import { DEFAULT_LIGHTS_UI, DEFAULT_LIGHT_SYNC, SWATCHES, engineSettings, resolvePalette } from './model';
 import { LightsPanel, barsWords, brightWords, flashWords, smoothWords } from './LightsPanel';
 import { resetLightSync, useLightSync } from './store';
 
@@ -71,21 +71,21 @@ it('the Lights tab has every row, the preview and Your usual, with starting valu
 
 it('words read back the values', () => {
   expect(barsWords(1)).toBe('every bar');
-  expect(barsWords(0.5)).toBe('every half bar');
   expect(barsWords(8)).toBe('every 8 bars');
   expect(brightWords(0.2, 1)).toBe('20% to 100%');
   expect([flashWords(0.1), flashWords(0.5), flashWords(0.8), flashWords(1)]).toEqual(['soft', 'medium', 'strong', 'hard']);
   expect([smoothWords(0), smoothWords(20), smoothWords(50), smoothWords(90)]).toEqual(['snappy', 'a little smooth', 'smooth', 'very smooth']);
 });
 
-it('colour speed moves between slow and fast and is saved, not sent (the engine has no field)', async () => {
+it('colour speed moves between slow and fast, is saved, and is sent as colourBars', async () => {
   syncOn();
   const { container } = render(<LightsPanel />);
   fireEvent.change(slider('ls-speed'), { target: { value: '4' } });
   expect(useLightSync.getState().ui.colourBars).toBe(1);
   expect(container.textContent).toContain('every bar');
   expect(saved().ui.colourBars).toBe(1);
-  expect(tunes().length).toBe(0);
+  expect(tunes().length).toBe(1);
+  expect((tunes()[0].args as { settings: { colourBars: number } }).settings.colourBars).toBe(1);
 });
 
 it('brightness has a floor and a peak handle, held in order and inside the native ranges', async () => {
@@ -119,7 +119,8 @@ it('a settings change while sync runs is sent as a tune with the palette and the
   fireEvent.change(slider('ls-flash'), { target: { value: '40' } });
   const sent = tunes()[0].args as { palette: { colors: string[]; kick: string; rest: string }; settings: Record<string, unknown> };
   expect(sent.palette.colors).toEqual(resolvePalette('synthwave').colors);
-  expect(Object.keys(sent.settings).sort()).toEqual(Object.keys(DEFAULT_LIGHT_SYNC).sort());
+  expect(Object.keys(sent.settings).sort()).toEqual([...Object.keys(DEFAULT_LIGHT_SYNC), 'colourBars', 'follow', 'ripple'].sort());
+  expect(sent.settings).toMatchObject({ colourBars: 2, ripple: true, follow: { plays: ['highs', 'bass', 'bass', 'highs'], panels: 'both' } });
   expect(sent.settings.kickFlash).toBe(0.4);
   expect(saved().settings.kickFlash).toBe(0.4);
 });
@@ -144,6 +145,19 @@ it('Who follows: a click cycles bass, highs, both for that light only', () => {
   fireEvent.click(tile(4));
   expect(useLightSync.getState().ui.follow).toEqual(['highs', 'bass', 'bass', 'highs', 'bass']);
   expect(saved().ui.follow[4]).toBe('bass');
+});
+
+it('Who follows and Panel ripple are sent to a running sync as follow and ripple', () => {
+  syncOn();
+  const { container } = render(<LightsPanel />);
+  fireEvent.click(container.querySelectorAll('.ls-tile')[0]);
+  fireEvent.click(container.querySelectorAll('.ls-tile')[4]);
+  fireEvent.click(container.querySelector('[role="switch"]') as HTMLElement);
+  const last = tunes().at(-1)?.args as { settings: { follow: { plays: string[]; panels: string }; ripple: boolean } };
+  expect(last.settings.follow).toEqual({ plays: ['both', 'bass', 'bass', 'highs'], panels: 'bass' });
+  expect(last.settings.ripple).toBe(false);
+  expect(tunes().length).toBe(3);
+  expect(engineSettings(DEFAULT_LIGHT_SYNC, DEFAULT_LIGHTS_UI).follow).toEqual({ plays: ['highs', 'bass', 'bass', 'highs'], panels: 'both' });
 });
 
 it('Panel ripple switches off and on', () => {
@@ -171,8 +185,8 @@ it('Your usual puts every setting back, and keeps the palette and your colours',
   expect(s.ui).toEqual(DEFAULT_LIGHTS_UI);
   expect(s.palette).toBe('neon');
   expect(s.custom.length).toBe(3);
-  // The flash change and Your usual; colour speed, who follows and ripple are not sent.
-  expect(tunes().length).toBe(2);
+  // Flash, colour speed, who follows, ripple and Your usual each send one.
+  expect(tunes().length).toBe(5);
 });
 
 it('every control has a hover tip', async () => {

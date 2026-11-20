@@ -5,7 +5,7 @@ import { readCoverStrips, targetTint } from '../../music/coverTint';
 import { useNowPlayingStore } from '../../music/store';
 import { useHome } from '../homeStore';
 import { swatchFor } from '../moodRow';
-import { CUSTOM_MAX, CUSTOM_MIN, DEFAULT_LIGHT_SYNC, FOLLOWS, clampCustom, clampSettings, clampUi, resolvePalette, type LightSyncSettings, type LightSyncStatus, type LightsUi, type PaletteContext, type PaletteId } from './model';
+import { CUSTOM_MAX, CUSTOM_MIN, DEFAULT_LIGHT_SYNC, FOLLOWS, clampCustom, clampSettings, clampUi, engineSettings, resolvePalette, type LightSyncSettings, type LightSyncStatus, type LightsUi, type PaletteContext, type PaletteId } from './model';
 
 const hex = (c: number[]) => '#' + c.map((v) => Math.max(0, Math.min(255, Math.round(v))).toString(16).padStart(2, '0')).join('');
 
@@ -37,7 +37,7 @@ export interface LightSyncState {
   stripOpen: boolean;
   /** What the live palettes follow. */
   context: PaletteContext;
-  /** The Lights tab's page-only choices; the native engine has no field for them, so they are never sent. */
+  /** The Lights tab's colour speed, who follows and ripple; sent with the settings. */
   ui: LightsUi;
   /** Your own colours. */
   custom: string[];
@@ -125,7 +125,7 @@ function tuneNow(): void {
   const s = useLightSync.getState();
   if (!isOn(s) || s.starting) return;
   const mood = s.remembered === null ? null : swatchFor(s.remembered);
-  void lightSyncTune(resolvePalette(s.palette, { ...s.context, custom: s.custom, cover: coverNow(), mood }), s.settings).catch(() => undefined);
+  void lightSyncTune(resolvePalette(s.palette, { ...s.context, custom: s.custom, cover: coverNow(), mood }), engineSettings(s.settings, s.ui)).catch(() => undefined);
 }
 
 /** Your own colours changed: three or more make it the palette. */
@@ -153,7 +153,7 @@ export const useLightSync = create<LightSyncState>((set, get) => ({
     set({ starting: true, failure: null, hueNote: false, stripOpen: false, remembered: lit ? lit.id : null });
     try {
       const ctx: PaletteContext = { ...get().context, custom: get().custom, cover: coverNow(), mood: lit ? swatchFor(lit.id) : null };
-      await lightSyncStart(resolvePalette(get().palette, ctx), get().settings);
+      await lightSyncStart(resolvePalette(get().palette, ctx), engineSettings(get().settings, get().ui));
       let status: LightSyncStatus | null = null;
       try {
         status = await lightSyncStatus();
@@ -242,6 +242,7 @@ export const useLightSync = create<LightSyncState>((set, get) => ({
   setUi(next) {
     set({ ui: clampUi({ ...get().ui, ...next }) });
     persist();
+    tuneNow();
   },
   cycleFollow(i) {
     const follow = get().ui.follow.slice();
@@ -319,6 +320,6 @@ useNowPlayingStore.subscribe((n) => {
   setTimeout(() => {
     const s = useLightSync.getState();
     if (s.palette !== 'album' || !isOn(s) || s.starting) return;
-    void lightSyncTune(resolvePalette('album', { cover: coverNow() }), s.settings).catch(() => undefined);
+    void lightSyncTune(resolvePalette('album', { cover: coverNow() }), engineSettings(s.settings, s.ui)).catch(() => undefined);
   }, 1500);
 });

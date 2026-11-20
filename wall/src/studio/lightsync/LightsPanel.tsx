@@ -10,9 +10,9 @@ export const LIGHTS_TITLE = 'Light sync';
 
 const pct = (v: number) => Math.round(v * 100);
 
-/** "every 2 bars", "every bar", "every half bar". */
+/** "every 2 bars", "every bar", "every bar". */
 export function barsWords(bars: number): string {
-  return bars === 1 ? 'every bar' : bars === 0.5 ? 'every half bar' : `every ${bars} bars`;
+  return bars === 1 ? 'every bar' : `every ${bars} bars`;
 }
 /** "15% to 90%". */
 export function brightWords(floor: number, peak: number): string {

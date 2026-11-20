@@ -46,16 +46,15 @@ export const DEFAULT_LIGHT_SYNC: LightSyncSettings = {
 };
 
 /**
- * Settings the Lights tab keeps for the page only. The native engine has no field for them (it follows the beat
- * one colour at a time, its inner Plays follow the bass and its outer Plays the highs), so they are saved and
- * drawn but never sent to `wall2_lightsync_start` or `_tune`.
+ * The Lights tab's colour speed, who follows and ripple. The page keeps them beside the settings and sends them with
+ * every `start` and `tune` as `colourBars`, `follow` and `ripple` (`engine.rs`).
  */
 export type Follow = 'bass' | 'highs' | 'both';
 export const FOLLOWS: readonly Follow[] = ['bass', 'highs', 'both'];
 /** The lights, left to right: the four Plays, then the panels. */
 export const LIGHT_NAMES = ['Far Left', 'Left', 'Right', 'Far Right', 'Panels'] as const;
 /** Bars between colour changes, slow to fast. */
-export const COLOUR_BARS: readonly number[] = [8, 4, 3, 2, 1, 0.5];
+export const COLOUR_BARS: readonly number[] = [8, 6, 4, 2, 1];
 
 export interface LightsUi {
   /** Bars the lights stay on one colour. */
@@ -74,6 +73,11 @@ export function clampUi(raw: unknown): LightsUi {
     follow,
     ripple: typeof r.ripple === 'boolean' ? r.ripple : DEFAULT_LIGHTS_UI.ripple,
   };
+}
+
+/** The settings object the native side takes: the engine fields plus the Lights tab's three. */
+export function engineSettings(settings: LightSyncSettings, ui: LightsUi): Record<string, unknown> {
+  return { ...settings, colourBars: ui.colourBars, follow: { plays: ui.follow.slice(0, 4), panels: ui.follow[4] }, ripple: ui.ripple };
 }
 
 /** The native side's ranges (`Settings::from_in`). `floor` is also held under `brightness`. */

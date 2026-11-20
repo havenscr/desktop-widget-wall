@@ -11,7 +11,7 @@ import { SYNC_WIDTH, SYNC_WORD, fitMoodRow, syncChipModel } from '../moodRow';
 import { OfficeMoods } from '../OfficeMoods';
 import { SyncTip } from '../SyncChip';
 import { renderToString } from 'react-dom/server';
-import { DEFAULT_LIGHTS_UI, DEFAULT_LIGHT_SYNC, PALETTES, clampSettings, isHex, resolvePalette, type PaletteId } from './model';
+import { DEFAULT_LIGHTS_UI, DEFAULT_LIGHT_SYNC, PALETTES, engineSettings, clampSettings, isHex, resolvePalette, type PaletteId } from './model';
 import { attachPoll, resetLightSync, useLightSync } from './store';
 
 vi.setConfig({ testTimeout: 20_000 });
@@ -253,7 +253,7 @@ it.each(PALETTES.filter((p) => p.enabled).map((p) => p.id))('palette %s sends it
   expect(sent.palette.colors.length).toBeGreaterThanOrEqual(2);
   expect(sent.palette.colors.length).toBeLessThanOrEqual(6);
   for (const c of [...sent.palette.colors, sent.palette.kick, sent.palette.rest]) expect(isHex(c)).toBe(true);
-  expect(sent.settings).toEqual(DEFAULT_LIGHT_SYNC);
+  expect(sent.settings).toEqual(engineSettings(DEFAULT_LIGHT_SYNC, DEFAULT_LIGHTS_UI));
 });
 
 it('album art falls back to Synthwave without a cover, and uses the cover colours when it has them', () => {

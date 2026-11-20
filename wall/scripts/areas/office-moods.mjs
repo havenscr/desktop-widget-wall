@@ -180,6 +180,7 @@ const NAMES = {
   syncFail: 'music sync failed',
   syncUnpaired: 'music sync not paired',
   syncHue: 'music sync stopped Hue Sync',
+  review: 'six moods, the review clock and no long names',
 };
 
 const variants = [
@@ -205,6 +206,7 @@ const variants = [
   V(NAMES.syncFail, `${SIX}&lsync=fail`, { click: '[data-part="sync-main"]' }),
   V(NAMES.syncUnpaired, `${SIX}&lsync=unpaired`, { click: '[data-part="sync-main"]' }),
   V(NAMES.syncHue, `${SIX}&lsync=hue`, { click: '[data-part="sync-main"] >> hover:[data-part="sync-main"]' }),
+  { ...V(NAMES.review, SIX), q: `?hz=unwind&at=${encodeURIComponent(night)}&clock=review&weather=ok&audio=demo${SIX}` },
   V(NAMES.strip, SIX, { click: '[data-part="sync-dots"]' }),
   V(NAMES.strip + ', sync on', `${SIX}&lsync=on`, { click: '[data-part="sync-dots"]' }),
 ];
