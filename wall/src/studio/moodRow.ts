@@ -159,6 +159,12 @@ export function moodFailText(word: HomeWord): string {
       return TEXT.nothingToUndo;
     case 'on-air':
       return TEXT.onAir;
+    case 'no-mood':
+      return TEXT.noMood;
+    case 'at-floor':
+      return TEXT.atFloor;
+    case 'at-max':
+      return TEXT.atMax;
     case 'home-not-set-up':
       return TEXT.homeNotSetUp;
     case 'forbidden':

@@ -27,6 +27,7 @@ const moods = (active: string | null) => ({
     { id: 'unwind', label: 'Unwind', line: null, active: active === 'unwind' },
   ],
   off: null,
+  nudge: null,
   canWrite: true,
   writeBlock: null,
 });

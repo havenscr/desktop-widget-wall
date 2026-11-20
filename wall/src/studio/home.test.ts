@@ -1,6 +1,6 @@
 import { afterEach, expect, it } from 'vitest';
 import { mocks } from '../bridge/tauri';
-import { applyMood, applyOff, applyPreset, forgetToken, goNormal, HOME_WORDS, homeWordOf, moodsOf, readMoods, readTokenStatus, saveToken, setGroup, setHomeKeys, studioOf } from './home';
+import { applyMood, applyOff, nudgeMood, applyPreset, forgetToken, goNormal, HOME_WORDS, homeWordOf, moodsOf, readMoods, readTokenStatus, saveToken, setGroup, setHomeKeys, studioOf } from './home';
 import { studioAnswer } from './homeKit';
 
 afterEach(() => mocks.clear());
@@ -125,4 +125,43 @@ it('the moods answer carries off only as an object; applyOff calls its one comma
     throw 'on-air';
   });
   await expect(applyOff()).rejects.toBe('on-air');
+});
+
+it('the moods answer carries a nudge only for the active listed mood with percent numbers', () => {
+  const moods = [
+    { id: 'focus', label: 'Focus', active: true },
+    { id: 'gaming', label: 'Gaming', active: false },
+  ];
+  const n = (nudge: unknown) => moodsOf({ moods, nudge })!.nudge;
+  expect(n({ mood: 'focus', level: 62, floor: 45, step: 10 })).toEqual({ mood: 'focus', level: 62, floor: 45, step: 10 });
+  expect(moodsOf({ moods })!.nudge).toBeNull();
+  expect(n(null)).toBeNull();
+  expect(n([1])).toBeNull();
+  expect(n({ mood: 'gaming', level: 62, floor: 45, step: 10 })).toBeNull();
+  expect(n({ mood: 'missing', level: 62, floor: 45, step: 10 })).toBeNull();
+  expect(n({ mood: 'focus', level: 101, floor: 45, step: 10 })).toBeNull();
+  expect(n({ mood: 'focus', level: 61.5, floor: 45, step: 10 })).toBeNull();
+  expect(n({ mood: 'focus', level: '62', floor: 45, step: 10 })).toBeNull();
+  expect(n({ mood: 'focus', level: 62, floor: -1, step: 10 })).toBeNull();
+  expect(n({ mood: 'focus', level: 62, floor: 45 })).toBeNull();
+});
+
+it('nudgeMood calls its one command with only the direction and keeps the new words', async () => {
+  const mood = { id: 'focus', label: 'Focus', active: true };
+  let seen: unknown;
+  mocks.set('wall2_office_mood_nudge', (args) => {
+    seen = args;
+    return { stale: false, moods: [mood], nudge: { mood: 'focus', level: 72, floor: 45, step: 10 }, canWrite: true, writeBlock: null };
+  });
+  expect((await nudgeMood('up')).nudge?.level).toBe(72);
+  expect(seen).toEqual({ dir: 'up' });
+  mocks.set('wall2_office_mood_nudge', () => ({ nothing: 1 }));
+  await expect(nudgeMood('down')).rejects.toBe('failed');
+  for (const word of ['no-mood', 'at-floor', 'at-max']) {
+    mocks.set('wall2_office_mood_nudge', () => {
+      throw word;
+    });
+    await expect(nudgeMood('down')).rejects.toBe(word);
+    expect(homeWordOf(word)).toBe(word);
+  }
 });

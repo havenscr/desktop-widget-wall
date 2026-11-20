@@ -4,7 +4,7 @@ import { IDLE } from '../onair/model';
 import { useOnAirStore } from '../onair/store';
 import { useSignalStore } from '../signals/store';
 import { studioAnswer, studioWith } from './homeKit';
-import { canChange, HOME_READ_EVERY_MS, homePollChange, homeView, moodsPollChange, OFF_READ_DELAY_MS, OFFER_MS, OFFICE_OFF, resetHome, TEXT, useHome } from './homeStore';
+import { canChange, HOME_READ_EVERY_MS, homePollChange, homeView, moodsPollChange, OFF_READ_DELAY_MS, OFFER_MS, OFFICE_NUDGE, OFFICE_OFF, resetHome, TEXT, useHome } from './homeStore';
 import { NOTE_MS, resetKeyLights } from './store';
 
 vi.setConfig({ testTimeout: 20_000 });
@@ -853,4 +853,61 @@ it('a replaced slider write goes to the end of the queue: slider 1, preset, slid
   await Promise.all([running, one, preset, two]);
   expect(sent).toEqual(['look calm', 'preset onAir', 'slider 70']);
   expect(useHome.getState().writes).toBe(0);
+});
+
+const nudgeAnswer = (level: number) => ({
+  stale: false,
+  moods: [{ id: 'brightDesk', label: 'Bright desk', line: 'Room 70%', active: true }],
+  nudge: { mood: 'brightDesk', level, floor: 45, step: 10 },
+  canWrite: true,
+  writeBlock: null,
+});
+const nudgeCalls = () => calls.filter((c) => c.command === 'wall2_office_mood_nudge');
+
+it('nudgeMood: sends the direction, the answer replaces the moods, and no apply spinner key is used for a card', async () => {
+  record('wall2_office_moods', () => nudgeAnswer(62));
+  let release: (() => void) | undefined;
+  record('wall2_office_mood_nudge', () => new Promise((r) => (release = () => r(nudgeAnswer(72)))));
+  await useHome.getState().readMoods();
+  const n = calls.filter((c) => c.command === 'wall2_office_moods').length;
+  const done = useHome.getState().nudgeMood('up');
+  await flush();
+  expect(useHome.getState().applying).toBe(`${OFFICE_NUDGE}-up`);
+  release?.();
+  await done;
+  expect(nudgeCalls().map((c) => c.args)).toEqual([{ dir: 'up' }]);
+  expect(useHome.getState().moods?.nudge?.level).toBe(72);
+  expect(useHome.getState().applying).toBeNull();
+  expect(calls.filter((c) => c.command === 'wall2_office_moods')).toHaveLength(n);
+});
+
+it('nudgeMood: a click while a write is out is ignored', async () => {
+  record('wall2_office_moods', () => nudgeAnswer(62));
+  let release: (() => void) | undefined;
+  record('wall2_office_mood_nudge', () => new Promise((r) => (release = () => r(nudgeAnswer(72)))));
+  await useHome.getState().readMoods();
+  const first = useHome.getState().nudgeMood('up');
+  await flush();
+  void useHome.getState().nudgeMood('down');
+  void useHome.getState().nudgeMood('up');
+  await flush();
+  expect(nudgeCalls()).toHaveLength(1);
+  release?.();
+  await first;
+  expect(useHome.getState().applying).toBeNull();
+});
+
+it('nudgeMood: a refusal sets moodFail for 5 seconds, reads again, and keeps what the home app reports', async () => {
+  record('wall2_office_moods', () => nudgeAnswer(45));
+  record('wall2_office_mood_nudge', () => {
+    throw 'at-floor';
+  });
+  await useHome.getState().readMoods();
+  const n = calls.filter((c) => c.command === 'wall2_office_moods').length;
+  await useHome.getState().nudgeMood('down');
+  expect(useHome.getState().moodFail).toEqual({ id: `${OFFICE_NUDGE}-down`, word: 'at-floor' });
+  expect(calls.filter((c) => c.command === 'wall2_office_moods')).toHaveLength(n + 1);
+  expect(useHome.getState().moods?.nudge?.level).toBe(45);
+  await flush(NOTE_MS + 10);
+  expect(useHome.getState().moodFail).toBeNull();
 });

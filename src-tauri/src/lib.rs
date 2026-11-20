@@ -4195,6 +4195,7 @@ pub fn run() {
             wall2_lightsync::wall2_lightsync_stop_all,
             wall2_lightsync::wall2_huesync_open,
             wall2_studio::wall2_office_off,
+            wall2_studio::wall2_office_mood_nudge,
             wall2_onair::wall2_onair_show,
             wall2_stagepop_cmd::wall2_stagepop_status,
             wall2_stagepop_cmd::wall2_stagepop_send,

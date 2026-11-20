@@ -31,10 +31,18 @@ export const TEXT = {
   nothingToUndo: 'Nothing to go back from. This is what the home app reports now.',
   /** Off refused because the studio is on air (the home app's "Studio on air"). */
   onAir: 'The studio is on air. End it with As before on On Air first.',
+  /** A nudge with no mood on (the mood ended since the last read). */
+  noMood: 'No mood is on. This is what the home app reports now.',
+  /** A nudge down refused at the floor. */
+  atFloor: 'At the floor. Dimmer stops here so the room stays bright enough to work.',
+  /** A nudge up refused at full. */
+  atMax: 'Already at full brightness.',
 } as const;
 
 /** The office moods row's own key for the Off chip in `applying` and `moodFail`. A hyphen is never in a mood id, so a mood named Off cannot collide. */
 export const OFFICE_OFF = 'office-off';
+/** The sentinel family for the Office mood nudge in `applying` and `moodFail`: `office-nudge-up` and `office-nudge-down`. No card shows the apply spinner for it. */
+export const OFFICE_NUDGE = 'office-nudge';
 /** After an Off write the lights' own report trails the write: the read that follows waits this long. */
 export const OFF_READ_DELAY_MS = 1500;
 
@@ -84,6 +92,8 @@ export interface HomeState {
   applyMood: (id: string) => Promise<void>;
   /** Turns the office lights off (only when the last moods read offered Off). */
   applyOff: () => Promise<void>;
+  /** One brightness step for the mood that is on: only the live level changes, the mood stays. */
+  nudgeMood: (dir: 'up' | 'down') => Promise<void>;
   dismissOffer: () => void;
   refreshToken: () => Promise<void>;
   /** The token was saved or forgotten: the amber line goes and the studio is read again. */
@@ -290,6 +300,9 @@ export const useHome = create<HomeState>((set, get) => {
     },
     applyOff() {
       return moodWrite('office:off', OFFICE_OFF, () => api.applyOff(), true);
+    },
+    nudgeMood(dir) {
+      return moodWrite(`office:nudge:${dir}`, `${OFFICE_NUDGE}-${dir}`, () => api.nudgeMood(dir));
     },
     dismissOffer() {
       clearTimeout(offerTimer);
