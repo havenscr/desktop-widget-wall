@@ -11,7 +11,7 @@ import { SYNC_WIDTH, SYNC_WORD, fitMoodRow, syncChipModel } from '../moodRow';
 import { OfficeMoods } from '../OfficeMoods';
 import { SyncTip } from '../SyncChip';
 import { renderToString } from 'react-dom/server';
-import { DEFAULT_LIGHT_SYNC, PALETTES, clampSettings, isHex, resolvePalette, type PaletteId } from './model';
+import { DEFAULT_LIGHTS_UI, DEFAULT_LIGHT_SYNC, PALETTES, clampSettings, isHex, resolvePalette, type PaletteId } from './model';
 import { attachPoll, resetLightSync, useLightSync } from './store';
 
 vi.setConfig({ testTimeout: 20_000 });
@@ -229,7 +229,7 @@ it('a settings read survives a throwing localStorage, and bad saved values are i
       throw new Error('blocked');
     },
   };
-  expect(loadLightSync(boom)).toEqual({ palette: 'synthwave', settings: DEFAULT_LIGHT_SYNC });
+  expect(loadLightSync(boom)).toEqual({ palette: 'synthwave', settings: DEFAULT_LIGHT_SYNC, ui: DEFAULT_LIGHTS_UI, custom: [] });
   const odd = { getItem: () => JSON.stringify({ palette: 'custom', settings: { brightness: 9, floor: 'x', sendHz: 1 } }) };
   const got = loadLightSync(odd);
   expect(got.palette).toBe('synthwave');
@@ -261,14 +261,15 @@ it('album art falls back to Synthwave without a cover, and uses the cover colour
   expect(resolvePalette('album', { cover: ['#112233', '#445566'] }).colors).toEqual(['#112233', '#445566']);
 });
 
-it('the custom palette is shown but disabled, and never picked', async () => {
+it('the custom palette is enabled and opens the picker; with no colours kept the palette stays', async () => {
   await show();
   fireEvent.click(dots());
   const custom = slot().querySelector('[data-palette="custom"]') as HTMLElement;
-  expect(custom.getAttribute('aria-disabled')).toBe('true');
+  expect(custom.getAttribute('aria-disabled')).toBeNull();
   fireEvent.click(custom);
   expect(useLightSync.getState().palette).toBe('synthwave');
-  expect(useLightSync.getState().stripOpen).toBe(true);
+  expect(useLightSync.getState().stripOpen).toBe(false);
+  expect(slot().querySelector('[data-part="custom-picker"]')).not.toBeNull();
 });
 
 it('the strip opens and picks in two clicks, names in view, and the pick is remembered and tuned live', async () => {
@@ -276,7 +277,7 @@ it('the strip opens and picks in two clicks, names in view, and the pick is reme
   expect(slot().querySelector('[data-part="palette-strip"]')).toBeNull();
   fireEvent.click(dots());
   const strip = slot().querySelector('[data-part="palette-strip"]') as HTMLElement;
-  expect(within(strip).getAllByRole('button').map((b) => b.textContent)).toEqual(['Synthwave', 'Album art', 'Wall sky', 'Office mood', 'Electric Sheep', 'Neon City', 'Zen Tide', 'Your own']);
+  expect(Array.from(strip.querySelectorAll('.u-pal')).map((b) => b.textContent)).toEqual(['Synthwave', 'Album art', 'Wall sky', 'Office mood', 'Electric Sheep', 'Neon City', 'Zen Tide', 'Your own']);
   fireEvent.click(within(strip).getByText('Neon City'));
   await flush();
   expect(slot().querySelector('[data-part="palette-strip"]')).toBeNull();

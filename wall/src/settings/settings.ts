@@ -1,4 +1,4 @@
-import { DEFAULT_LIGHT_SYNC, DEFAULT_PALETTE, clampSettings, isPaletteId, type LightSyncSettings, type PaletteId } from '../studio/lightsync/model';
+import { CUSTOM_MIN, DEFAULT_LIGHT_SYNC, DEFAULT_PALETTE, clampCustom, clampSettings, clampUi, isPaletteId, type LightSyncSettings, type LightsUi, type PaletteId } from '../studio/lightsync/model';
 
 /** Wall 2 settings, read from localStorage. No settings screen yet. */
 export const SETTINGS_KEY = 'wall2-settings';
@@ -66,19 +66,25 @@ export const LIGHT_SYNC_KEY = 'wall2.lightsync';
 export interface LightSyncChoice {
   palette: PaletteId;
   settings: LightSyncSettings;
+  /** The Lights tab's page-only choices (colour speed, who follows, ripple). */
+  ui: LightsUi;
+  /** Your own colours (3 to 5 once used; fewer while being picked). */
+  custom: string[];
 }
 
 /** Saved values, each checked; a missing, odd or unreadable one (a throwing `localStorage` too) takes the default. */
 export function loadLightSync(storage: Pick<Storage, 'getItem'> | null = safeStorage()): LightSyncChoice {
-  const out: LightSyncChoice = { palette: DEFAULT_PALETTE, settings: { ...DEFAULT_LIGHT_SYNC } };
+  const out: LightSyncChoice = { palette: DEFAULT_PALETTE, settings: { ...DEFAULT_LIGHT_SYNC }, ui: clampUi(null), custom: [] };
   try {
     const raw = storage?.getItem(LIGHT_SYNC_KEY);
     if (!raw) return out;
     const saved = JSON.parse(raw) as Record<string, unknown> | null;
     if (saved && typeof saved === 'object') {
-      // The custom palette is not pickable yet, so it is never restored.
-      if (isPaletteId(saved.palette) && saved.palette !== 'custom') out.palette = saved.palette;
+      out.custom = clampCustom(saved.custom);
+      // Your own palette is restored only with its three colours at least.
+      if (isPaletteId(saved.palette) && (saved.palette !== 'custom' || out.custom.length >= CUSTOM_MIN)) out.palette = saved.palette;
       out.settings = clampSettings(saved.settings);
+      out.ui = clampUi(saved.ui);
     }
   } catch {
     /* unreadable: use the defaults */

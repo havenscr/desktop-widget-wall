@@ -1,11 +1,11 @@
 import { create } from 'zustand';
 import { lightSyncStart, lightSyncStatus, lightSyncStop, lightSyncTune } from '../../bridge/lightsync';
 import { loadLightSync, saveLightSync } from '../../settings/settings';
-import { targetTint } from '../../music/coverTint';
+import { readCoverStrips, targetTint } from '../../music/coverTint';
 import { useNowPlayingStore } from '../../music/store';
 import { useHome } from '../homeStore';
 import { swatchFor } from '../moodRow';
-import { resolvePalette, type LightSyncSettings, type LightSyncStatus, type PaletteContext, type PaletteId } from './model';
+import { CUSTOM_MAX, CUSTOM_MIN, DEFAULT_LIGHT_SYNC, FOLLOWS, clampCustom, clampSettings, clampUi, resolvePalette, type LightSyncSettings, type LightSyncStatus, type LightsUi, type PaletteContext, type PaletteId } from './model';
 
 const hex = (c: number[]) => '#' + c.map((v) => Math.max(0, Math.min(255, Math.round(v))).toString(16).padStart(2, '0')).join('');
 
@@ -37,6 +37,24 @@ export interface LightSyncState {
   stripOpen: boolean;
   /** What the live palettes follow. */
   context: PaletteContext;
+  /** The Lights tab's page-only choices; the native engine has no field for them, so they are never sent. */
+  ui: LightsUi;
+  /** Your own colours. */
+  custom: string[];
+  /** The Custom colours picker is open. */
+  customOpen: boolean;
+  /** One setting changed (clamped, saved, and sent to a running sync as a tune). */
+  setSettings: (s: Partial<LightSyncSettings>) => void;
+  setUi: (u: Partial<LightsUi>) => void;
+  /** One light's Who follows tile: bass, then highs, then both. */
+  cycleFollow: (i: number) => void;
+  /** Your usual: every Lights setting back (the palette and your colours stay). */
+  resetLights: () => void;
+  openCustom: (open: boolean) => void;
+  /** Saves the colours of the cover now playing as your own (up to five). Resolves false with no readable cover. */
+  keepCover: () => Promise<boolean>;
+  /** A swatch click: takes one of yours out (never below three), or adds it (never above five). */
+  toggleCustom: (hex: string) => void;
   start: () => Promise<void>;
   /** Ends sync and leaves the lights as the stop does (the Plays are restored by the bridge, the panels by the stop). */
   stop: () => Promise<void>;
@@ -94,8 +112,29 @@ function drainChoice(): Promise<void> {
 
 const fresh = () => {
   const saved = loadLightSync();
-  return { palette: saved.palette, settings: saved.settings };
+  return { palette: saved.palette, settings: saved.settings, ui: saved.ui, custom: saved.custom, customOpen: false };
 };
+
+function persist(): void {
+  const s = useLightSync.getState();
+  saveLightSync({ palette: s.palette, settings: s.settings, ui: s.ui, custom: s.custom });
+}
+
+/** A running sync takes the change on its next frame (`wall2_lightsync_tune`, the same shape `start` takes). */
+function tuneNow(): void {
+  const s = useLightSync.getState();
+  if (!isOn(s) || s.starting) return;
+  const mood = s.remembered === null ? null : swatchFor(s.remembered);
+  void lightSyncTune(resolvePalette(s.palette, { ...s.context, custom: s.custom, cover: coverNow(), mood }), s.settings).catch(() => undefined);
+}
+
+/** Your own colours changed: three or more make it the palette. */
+function setCustom(next: string[]): void {
+  const custom = clampCustom(next);
+  useLightSync.setState((s) => ({ custom, palette: custom.length >= CUSTOM_MIN ? 'custom' : s.palette }));
+  persist();
+  tuneNow();
+}
 
 export const useLightSync = create<LightSyncState>((set, get) => ({
   ...fresh(),
@@ -113,7 +152,7 @@ export const useLightSync = create<LightSyncState>((set, get) => ({
     const lit = useHome.getState().moods?.moods.find((m) => m.active) ?? null;
     set({ starting: true, failure: null, hueNote: false, stripOpen: false, remembered: lit ? lit.id : null });
     try {
-      const ctx: PaletteContext = { ...get().context, cover: coverNow(), mood: lit ? swatchFor(lit.id) : null };
+      const ctx: PaletteContext = { ...get().context, custom: get().custom, cover: coverNow(), mood: lit ? swatchFor(lit.id) : null };
       await lightSyncStart(resolvePalette(get().palette, ctx), get().settings);
       let status: LightSyncStatus | null = null;
       try {
@@ -186,17 +225,56 @@ export const useLightSync = create<LightSyncState>((set, get) => ({
     else await s.start();
   },
   setPalette(id) {
-    if (id === 'custom') return;
-    set({ palette: id, stripOpen: false });
-    saveLightSync({ palette: id, settings: get().settings });
-    const s = get();
-    if (isOn(s) && !s.starting) {
-      const mood = s.remembered === null ? null : swatchFor(s.remembered);
-      void lightSyncTune(resolvePalette(id, { ...s.context, cover: coverNow(), mood }), s.settings).catch(() => undefined);
+    if (id === 'custom') {
+      // Your own opens its picker; with three colours kept it is also the palette now.
+      set({ stripOpen: false, customOpen: true });
+      if (get().custom.length < CUSTOM_MIN) return;
     }
+    set({ palette: id, stripOpen: false });
+    persist();
+    tuneNow();
+  },
+  setSettings(next) {
+    set({ settings: clampSettings({ ...get().settings, ...next }) });
+    persist();
+    tuneNow();
+  },
+  setUi(next) {
+    set({ ui: clampUi({ ...get().ui, ...next }) });
+    persist();
+  },
+  cycleFollow(i) {
+    const follow = get().ui.follow.slice();
+    if (i < 0 || i >= follow.length) return;
+    follow[i] = FOLLOWS[(FOLLOWS.indexOf(follow[i]) + 1) % FOLLOWS.length];
+    get().setUi({ follow });
+  },
+  resetLights() {
+    set({ settings: { ...DEFAULT_LIGHT_SYNC }, ui: clampUi(null) });
+    persist();
+    tuneNow();
+  },
+  openCustom(open) {
+    set({ customOpen: open, stripOpen: false });
+  },
+  async keepCover() {
+    const art = useNowPlayingStore.getState().art;
+    if (!art) return false;
+    const strips = await readCoverStrips(art, CUSTOM_MAX);
+    if (!strips) return false;
+    setCustom(strips.map(hex));
+    return true;
+  },
+  toggleCustom(h) {
+    const c = get().custom;
+    const at = c.indexOf(h.toLowerCase());
+    if (at >= 0) {
+      if (c.length === CUSTOM_MIN) return;
+      setCustom(c.filter((_, i) => i !== at));
+    } else if (c.length < CUSTOM_MAX) setCustom([...c, h.toLowerCase()]);
   },
   openStrip(open) {
-    set({ stripOpen: open });
+    set(open ? { stripOpen: true, customOpen: false } : { stripOpen: false });
   },
   takeHueNote() {
     if (!get().hueNote) return false;

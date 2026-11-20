@@ -70,10 +70,16 @@ export function floorColour(c: Rgb): Rgb {
  * for nothing; a third with none gives the default teal.
  */
 export function coverColours(data: ArrayLike<number>, w: number, h: number): CoverTint {
+  const out = coverStrips(data, w, h, 3);
+  return { left: out[0], centre: out[1], right: out[2] };
+}
+
+/** The same reading in `n` vertical strips left to right (the lines use 3; "Your own" colours keep 5). */
+export function coverStrips(data: ArrayLike<number>, w: number, h: number, n: number): Rgb[] {
   const out: Rgb[] = [];
-  for (let part = 0; part < 3; part++) {
-    const x0 = Math.floor((part * w) / 3);
-    const x1 = Math.floor(((part + 1) * w) / 3);
+  for (let part = 0; part < n; part++) {
+    const x0 = Math.floor((part * w) / n);
+    const x1 = Math.floor(((part + 1) * w) / n);
     let r = 0;
     let g = 0;
     let b = 0;
@@ -92,11 +98,20 @@ export function coverColours(data: ArrayLike<number>, w: number, h: number): Cov
     }
     out.push(total > 0 ? floorColour([r / total, g / total, b / total]) : (PLAY_TINT.centre.slice() as Rgb));
   }
-  return { left: out[0], centre: out[1], right: out[2] };
+  return out;
 }
 
 /** Reads a cover (a data URL) on a small offscreen canvas; null when it cannot be decoded or read. */
 export function readCoverTint(src: string): Promise<CoverTint | null> {
+  return readCover(src, (d) => coverColours(d, TINT_SAMPLE, TINT_SAMPLE));
+}
+
+/** The cover's colours in `n` strips (default 5), the same picker as the lines; null when it cannot be read. */
+export function readCoverStrips(src: string, n = 5): Promise<Rgb[] | null> {
+  return readCover(src, (d) => coverStrips(d, TINT_SAMPLE, TINT_SAMPLE, n));
+}
+
+function readCover<T>(src: string, pick: (data: Uint8ClampedArray) => T): Promise<T | null> {
   return new Promise((resolve) => {
     if (typeof document === 'undefined') return resolve(null);
     const img = new Image();
@@ -108,7 +123,7 @@ export function readCoverTint(src: string): Promise<CoverTint | null> {
         const ctx = c.getContext('2d');
         if (!ctx) return resolve(null);
         ctx.drawImage(img, 0, 0, TINT_SAMPLE, TINT_SAMPLE);
-        resolve(coverColours(ctx.getImageData(0, 0, TINT_SAMPLE, TINT_SAMPLE).data, TINT_SAMPLE, TINT_SAMPLE));
+        resolve(pick(ctx.getImageData(0, 0, TINT_SAMPLE, TINT_SAMPLE).data));
       } catch {
         resolve(null);
       }

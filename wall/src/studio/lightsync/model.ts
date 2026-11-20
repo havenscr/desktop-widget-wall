@@ -31,8 +31,8 @@ export interface LightSyncSettings {
 }
 
 export const DEFAULT_LIGHT_SYNC: LightSyncSettings = {
-  brightness: 0.85,
-  floor: 0.06,
+  brightness: 0.9,
+  floor: 0.15,
   bassGain: 1,
   highGain: 1,
   kickFlash: 0.8,
@@ -44,6 +44,37 @@ export const DEFAULT_LIGHT_SYNC: LightSyncSettings = {
   panels: true,
   sendHz: 50,
 };
+
+/**
+ * Settings the Lights tab keeps for the page only. The native engine has no field for them (it follows the beat
+ * one colour at a time, its inner Plays follow the bass and its outer Plays the highs), so they are saved and
+ * drawn but never sent to `wall2_lightsync_start` or `_tune`.
+ */
+export type Follow = 'bass' | 'highs' | 'both';
+export const FOLLOWS: readonly Follow[] = ['bass', 'highs', 'both'];
+/** The lights, left to right: the four Plays, then the panels. */
+export const LIGHT_NAMES = ['Far Left', 'Left', 'Right', 'Far Right', 'Panels'] as const;
+/** Bars between colour changes, slow to fast. */
+export const COLOUR_BARS: readonly number[] = [8, 4, 3, 2, 1, 0.5];
+
+export interface LightsUi {
+  /** Bars the lights stay on one colour. */
+  colourBars: number;
+  follow: Follow[];
+  ripple: boolean;
+}
+
+export const DEFAULT_LIGHTS_UI: LightsUi = { colourBars: 2, follow: ['highs', 'bass', 'bass', 'highs', 'both'], ripple: true };
+
+export function clampUi(raw: unknown): LightsUi {
+  const r = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>;
+  const follow = Array.isArray(r.follow) && r.follow.length === 5 && r.follow.every((f) => FOLLOWS.includes(f as Follow)) ? (r.follow as Follow[]).slice() : DEFAULT_LIGHTS_UI.follow.slice();
+  return {
+    colourBars: typeof r.colourBars === 'number' && COLOUR_BARS.includes(r.colourBars) ? r.colourBars : DEFAULT_LIGHTS_UI.colourBars,
+    follow,
+    ripple: typeof r.ripple === 'boolean' ? r.ripple : DEFAULT_LIGHTS_UI.ripple,
+  };
+}
 
 /** The native side's ranges (`Settings::from_in`). `floor` is also held under `brightness`. */
 const RANGES: Record<Exclude<keyof LightSyncSettings, 'beatStep' | 'plays' | 'panels'>, [number, number]> = {
@@ -105,7 +136,7 @@ export interface PaletteEntry {
   swatch: string[];
   /** One line for the tip. */
   tip: string;
-  /** False: shown, greyed, never picked (the custom palette comes later). */
+  /** False: shown, greyed, never picked. */
   enabled: boolean;
 }
 
@@ -117,14 +148,33 @@ export const PALETTES: readonly PaletteEntry[] = [
   { id: 'sheep', name: 'Electric Sheep', swatch: ['#ff7a1a', '#ffc24d', '#9a7bff', '#4f6bff'], tip: 'Fire orange and gold curling into violet and electric blue.', enabled: true },
   { id: 'neon', name: 'Neon City', swatch: ['#ff2e93', '#35e6ea', '#ffe14d', '#5df2b6'], tip: 'Hot pink, cyan and sign yellow with a flash of green.', enabled: true },
   { id: 'zen', name: 'Zen Tide', swatch: ['#4fd1c5', '#6b8fb8', '#b9a8f0'], tip: 'Calm sea glass: teal, slate blue and lavender.', enabled: true },
-  { id: 'custom', name: 'Your own', swatch: [], tip: 'Your own colours. Coming in a later update.', enabled: false },
+  { id: 'custom', name: 'Your own', swatch: [], tip: 'Your own colours: keep the cover now playing, or pick from swatches. Click to choose them.', enabled: true },
 ];
 
 export const DEFAULT_PALETTE: PaletteId = 'synthwave';
 export const isPaletteId = (v: unknown): v is PaletteId => PALETTES.some((p) => p.id === v);
 
+/** Your own colours: 3 to 5. */
+export const CUSTOM_MIN = 3;
+export const CUSTOM_MAX = 5;
+
+/** The 24 swatches that suit the wall. */
+export const SWATCHES: readonly string[] = [
+  '#ff3d9a', '#ff7ac8', '#ff2e6e', '#ff7a1a', '#ffb975', '#ffc24d', '#ffe14d', '#5df2b6', '#00ff9d', '#2ec4b6', '#35e6ea', '#4fc3f7',
+  '#4f6bff', '#3b4cff', '#7a80ff', '#9a7bff', '#b9a8f0', '#c77dff', '#e040fb', '#8a2be2', '#ff6b6b', '#f4a261', '#a0e7e5', '#fdf0d5',
+];
+
+/** Saved custom colours, each checked, lower case, no repeats, at most five; fewer than three is kept as is (the picker is mid-way). */
+export function clampCustom(raw: unknown): string[] {
+  const out: string[] = [];
+  for (const c of Array.isArray(raw) ? raw : []) if (isHex(c) && !out.includes(c.toLowerCase())) out.push(c.toLowerCase());
+  return out.slice(0, CUSTOM_MAX);
+}
+
 /** What the live palettes follow. Any may be missing. */
 export interface PaletteContext {
+  /** Your own colours. */
+  custom?: readonly string[] | null;
   /** Colours read from the cover now playing (when a reader exists). */
   cover?: readonly string[] | null;
   /** The wall's own colours. */
@@ -161,6 +211,10 @@ export function resolvePalette(id: PaletteId, ctx: PaletteContext = {}): LightPa
     case 'mood': {
       const c = usable(ctx.mood);
       return c ? { id, name, colors: c, kick: '#ffffff', rest: '#1f1a30' } : { ...SYNTHWAVE, id, name };
+    }
+    case 'custom': {
+      const c = usable(ctx.custom);
+      return c && c.length >= CUSTOM_MIN ? { id, name, colors: c, kick: '#ffffff', rest: SYNTHWAVE.rest } : { ...SYNTHWAVE, id, name };
     }
     case 'sheep':
     case 'neon':
