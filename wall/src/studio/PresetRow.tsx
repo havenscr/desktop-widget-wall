@@ -2,7 +2,7 @@ import { IconCheck, IconRefresh, IconSettings } from '@tabler/icons-react';
 import type { ReactNode } from 'react';
 import { tip } from '../ui/HoverTip';
 import { useToolsStore } from '../tools/store';
-import { activePreset, presetChipLabel, PRIVATE_TIP } from './homeModel';
+import { activePreset, heldName, normalState, presetChipLabel, PRIVATE_TIP } from './homeModel';
 import { canChange, useHome } from './homeStore';
 
 /** At most this many preset chips sit on the page row (the sheet lists every one the home app offers). */
@@ -11,7 +11,7 @@ export const PAGE_PRESETS = 3;
 /** Opens Tools at the new Home app section, ringed for 2 seconds as Key lights is. */
 export const openHomeTools = () => useToolsStore.getState().openDrawer('desktoken');
 
-/** The 40 px line of preset chips, As before (or the action that replaces it), and what the page puts at the right end. */
+/** The 40 px line of preset chips, Normal (or the action that replaces it), and what the page puts at the right end. */
 export function PresetRow({ trailing, action }: { trailing: ReactNode; action: 'checkAgain' | 'tryAgain' | 'openTools' | null }) {
   const studio = useHome((s) => s.studio);
   const readWord = useHome((s) => s.readWord);
@@ -23,7 +23,8 @@ export function PresetRow({ trailing, action }: { trailing: ReactNode; action: '
   const refresh = () => void useHome.getState().readStudio();
   const blockedWhy = studio.writeBlock === 'not-set-up' ? "Add the home app's desk token in Tools to switch these from the wall" : studio.writeBlock === 'needs-private-address' ? PRIVATE_TIP : null;
 
-  let normal: ReactNode;
+  let normal: ReactNode = null;
+  let front: ReactNode = null;
   if (action === 'openTools') {
     normal = (
       <button type="button" className="st-chip" onClick={openHomeTools} {...tip('Opens Tools at Home app, where the desk token is typed once')}>
@@ -39,23 +40,29 @@ export function PresetRow({ trailing, action }: { trailing: ReactNode; action: '
       </button>
     );
   } else {
-    const can = may && studio.canNormal;
-    normal = (
+    const usable = readDone && readWord === null;
+    const ns = normalState(studio, usable, heldName(studio));
+    const can = may && !ns.lit;
+    normal = null;
+    front = (
       <button
         type="button"
-        className={`st-preset st-normal${can ? '' : ' dis'}`}
-        aria-disabled={can ? undefined : true}
+        className={`st-preset st-normal${ns.lit ? ' on' : ''}${!ns.lit && !may ? ' dis' : ''}`}
+        aria-pressed={ns.lit}
+        aria-disabled={ns.lit || !may ? true : undefined}
         aria-busy={applying === 'normal' || undefined}
         onClick={can ? () => void useHome.getState().goNormal() : undefined}
-        {...tip(!studio.canNormal ? 'Nothing to go back from' : !may ? blockedWhy ?? 'The home app is not answering' : studio.normalLine ?? 'Goes back to how the room was before')}
+        {...tip(!ns.lit && !may ? (blockedWhy ?? 'The home app is not answering') : ns.tip)}
       >
-        As before
+        {ns.lit && <IconCheck size={18} aria-hidden="true" />}
+        <span>Normal</span>
       </button>
     );
   }
 
   return (
     <div className="st-presets" role="group" aria-label="Presets">
+      {front}
       {presets.map((p) => {
         const label = presetChipLabel(p, studio.changed);
         const dis = !may;

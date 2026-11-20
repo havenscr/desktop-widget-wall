@@ -78,21 +78,87 @@ const tipOf = async (el: Element) => {
 
 // Section: the block
 
-it('ready, nothing on: the preset chips in the home app order, As before dashed, the key light words, four switches', async () => {
+it('ready, nothing on: Normal first and lit, then the preset chips in the home app order, the key light words, four switches', async () => {
   await showBlock();
   const row = within(screen.getByRole('group', { name: 'Presets' }));
-  expect(row.getAllByRole('button').map((b) => b.textContent)).toEqual(['On air', 'Recording', 'As before', 'Fine tune']);
-  expect(chipOf('As before').getAttribute('aria-disabled')).toBe('true');
-  expect(screen.getByText('No preset on.')).toBeTruthy();
+  expect(row.getAllByRole('button').map((b) => b.textContent)).toEqual(['Normal', 'On air', 'Recording', 'Fine tune']);
+  expect(chipOf('Normal').getAttribute('aria-pressed')).toBe('true');
+  expect(chipOf('Normal').classList.contains('on')).toBe(true);
+  expect(screen.getByText('Normal:')).toBeTruthy();
+  expect(screen.getByText(/regular routines\./)).toBeTruthy();
   expect(screen.getByText(/Key lights 60%, 4400 K/)).toBeTruthy();
   expect(screen.getAllByRole('switch').map((s) => s.getAttribute('aria-label'))).toEqual(['Key lights', 'Panels', 'Behind monitor', 'Overhead']);
   expect(screen.queryByText(/does not offer them here yet/)).toBeNull();
 });
 
-it('a preset chip tip is its line; As before says there is nothing to go back from', async () => {
+it('a preset chip tip is its line; lit Normal says the room is on its regular routines', async () => {
   await showBlock();
   expect(await tipOf(chipOf('On air'))).toContain('Key lights on, panels glow');
-  expect(await tipOf(chipOf('As before'))).toContain('Nothing to go back from');
+  expect(await tipOf(chipOf('Normal'))).toBe('Normal: the room is on its regular routines.');
+});
+
+it('a click on lit Normal sends nothing', async () => {
+  await showBlock();
+  fireEvent.click(chipOf('Normal'));
+  await flush();
+  expect(writes).toEqual([]);
+});
+
+it.each([
+  ['On air', 'onAir'],
+  ['Recording', 'recording'],
+])('%s held: Normal is not lit, its tip names it, and a click runs Back to normal', async (name, id) => {
+  answer = studioWith(id);
+  await showBlock();
+  expect(chipOf('Normal').getAttribute('aria-pressed')).toBe('false');
+  expect(chipOf('Normal').getAttribute('aria-disabled')).toBeNull();
+  expect(await tipOf(chipOf('Normal'))).toBe(`Normal: ends ${name}, and the room goes back to its regular routines.`);
+  answer = studioAnswer();
+  fireEvent.click(chipOf('Normal'));
+  await flush();
+  expect(writes.map((w) => w.command)).toEqual(['wall2_studio_normal']);
+});
+
+const GAMING = { canNormal: true, normalLine: 'Room back to how it was before Gaming, key lights off' };
+const GAMING_TIP = 'Normal: ends Gaming, and the room goes back to its regular routines.';
+
+it('Gaming held (a switch preset, none of the presets): Normal is not lit, says Gaming, the summary is not "regular routines", and a click runs Back to normal', async () => {
+  answer = studioAnswer(GAMING);
+  await showBlock();
+  expect(chipOf('Normal').getAttribute('aria-pressed')).toBe('false');
+  expect(screen.queryByText(/regular routines\./)).toBeNull();
+  expect(screen.getByText('Gaming.')).toBeTruthy();
+  expect(await tipOf(chipOf('Normal'))).toBe(GAMING_TIP);
+  fireEvent.click(chipOf('Normal'));
+  await flush();
+  expect(writes.map((w) => w.command)).toEqual(['wall2_studio_normal']);
+});
+
+it('a held preset with no name anywhere: the tip says the held preset', async () => {
+  answer = studioAnswer({ canNormal: true, normalLine: 'Room back to the daytime light, key lights off; panels stay as they are' });
+  await showBlock();
+  expect(await tipOf(chipOf('Normal'))).toBe('Normal: ends the held preset, and the room goes back to its regular routines.');
+  expect(screen.getByText('A preset is on.')).toBeTruthy();
+});
+
+it('the sheet with Gaming held: the Normal tile is not lit and carries the same wall tip', async () => {
+  answer = studioAnswer(GAMING);
+  await openSheet();
+  const tile = sheet().getByText('Normal').closest('button') as HTMLElement;
+  expect(tile.getAttribute('aria-pressed')).toBe('false');
+  expect(tile.querySelector('.st-pt-l')?.textContent).toBe('Ends Gaming, and the room goes back to its regular routines.');
+  expect(await tipOf(tile)).toBe(GAMING_TIP);
+});
+
+it('a failed read lights nothing: Normal is not lit, as the presets are not', async () => {
+  await showBlock();
+  mocks.set('wall2_studio', () => {
+    throw 'not-answering';
+  });
+  await act(async () => void useHome.getState().readStudio());
+  await flush();
+  expect(document.querySelector('.st-normal.on')).toBeNull();
+  expect(document.querySelector('.st-preset.on')).toBeNull();
 });
 
 it('a click applies the preset and the chip shows the read back, with the check and the summary', async () => {
@@ -104,8 +170,8 @@ it('a click applies the preset and the chip shows the read back, with the check 
   expect(chipOf('On air').getAttribute('aria-pressed')).toBe('true');
   expect(screen.getByText('On air:')).toBeTruthy();
   expect(screen.getByText(/Key lights on, panels glow/)).toBeTruthy();
-  expect(chipOf('As before').getAttribute('aria-disabled')).toBeNull();
-  fireEvent.click(chipOf('As before'));
+  expect(chipOf('Normal').getAttribute('aria-disabled')).toBeNull();
+  fireEvent.click(chipOf('Normal'));
   await flush();
   expect(writes[1].command).toBe('wall2_studio_normal');
 });
@@ -285,7 +351,7 @@ it('three presets: Fine tune is the icon alone', async () => {
   answer = studioAnswer({ presets: more });
   await showBlock();
   const row = within(screen.getByRole('group', { name: 'Presets' }));
-  expect(row.getAllByRole('button').map((b) => b.textContent)).toEqual(['On air', 'Recording', 'Night', 'As before', '']);
+  expect(row.getAllByRole('button').map((b) => b.textContent)).toEqual(['Normal', 'On air', 'Recording', 'Night', '']);
   expect(row.getByRole('button', { name: 'Fine tune' })).toBeTruthy();
 });
 
@@ -418,10 +484,10 @@ const openSheet = async () => {
 };
 const sheet = () => within(document.querySelector('.st-drawer') as HTMLElement);
 
-it('the sheet: preset tiles with each line, As before, then the key lights and the rooms with the floor', async () => {
+it('the sheet: Normal then preset tiles with each line, then the key lights and the rooms with the floor', async () => {
   await openSheet();
   const tiles = [...document.querySelectorAll('.st-pt')].map((t) => t.querySelector('.st-pt-n')?.textContent);
-  expect(tiles).toEqual(['On air', 'Recording', 'As before']);
+  expect(tiles).toEqual(['Normal', 'On air', 'Recording']);
   expect(sheet().getByText('Key lights on, panels glow')).toBeTruthy();
   expect(sheet().getByText('Linked')).toBeTruthy();
   // One Effect row with the current effect; the list is closed and adds nothing to the sheet.
@@ -528,8 +594,8 @@ it('a preset tile carries its whole line in its text and in its tip', async () =
   const presets = (answer.presets as Record<string, unknown>[]).map((p, i) => (i === 0 ? { ...p, line } : p));
   answer = studioAnswer({ presets });
   await openSheet();
-  expect(document.querySelector('.st-pt .st-pt-l')?.textContent).toBe(line);
-  expect(await tipOf(document.querySelector('.st-pt') as Element)).toContain(line);
+  expect(document.querySelector('.st-pt[data-preset="onAir"] .st-pt-l')?.textContent).toBe(line);
+  expect(await tipOf(document.querySelector('.st-pt[data-preset="onAir"]') as Element)).toContain(line);
 });
 
 it('a room slider with a floor fills from the floor, the part under it stays hatched', async () => {

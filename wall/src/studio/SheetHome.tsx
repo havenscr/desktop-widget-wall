@@ -1,7 +1,7 @@
 import { IconAlertTriangle, IconBrightnessUp, IconCheck, IconRefresh, IconSettings } from '@tabler/icons-react';
 import { tip } from '../ui/HoverTip';
 import { useToolsStore } from '../tools/store';
-import { DOWN_LINE, NEEDS_ZONE, needsZone, NOT_SET_UP_LINE, presetChipLabel, PRIVATE_LINE, PRIVATE_TIP, tileState, ZONE_TIP } from './homeModel';
+import { DOWN_LINE, NEEDS_ZONE, needsZone, heldName, normalState, NOT_SET_UP_LINE, presetChipLabel, PRIVATE_LINE, PRIVATE_TIP, tileState, ZONE_TIP } from './homeModel';
 import { canChange, homeView, useHome } from './homeStore';
 import type { Group, Studio } from './home';
 import { EffectRow } from './EffectPick';
@@ -47,13 +47,31 @@ export function SheetWhy({ studio, away }: { studio: Studio; away: boolean }) {
   );
 }
 
-/** The preset tiles at the top of the sheet: each preset's name and its line, then As before. */
+/** The preset tiles at the top of the sheet: Normal first, then each preset's name and its line. */
 export function SheetPresets({ studio, may }: { studio: Studio; may: boolean }) {
   const applying = useHome((s) => s.applying);
+  const readWord = useHome((s) => s.readWord);
+  const readDone = useHome((s) => s.readDone);
   const dis = !may;
+  const ns = normalState(studio, readDone && readWord === null, heldName(studio));
   return (
     <>
       <div className="st-d-presets" role="group" aria-label="Presets">
+        <button
+          type="button"
+          className={`st-pt st-pt-normal${ns.lit ? ' on' : ''}${!ns.lit && dis ? ' dis' : ''}`}
+          aria-pressed={ns.lit}
+          aria-disabled={ns.lit || dis ? true : undefined}
+          aria-busy={applying === 'normal' || undefined}
+          onClick={ns.lit || dis ? undefined : () => void useHome.getState().goNormal()}
+          {...tip(ns.tip)}
+        >
+          <span className="st-pt-n">
+            {ns.lit && <IconCheck size={18} aria-hidden="true" />}
+            Normal
+          </span>
+          <span className="st-pt-l">{ns.tip.replace(/^Normal: (.)/, (_, c: string) => c.toUpperCase())}</span>
+        </button>
         {studio.presets.map((p) => (
           <button
             key={p.id}
@@ -74,17 +92,6 @@ export function SheetPresets({ studio, may }: { studio: Studio; may: boolean }) 
             <span className="st-pt-l">{p.line ?? ''}</span>
           </button>
         ))}
-        <button
-          type="button"
-          className={`st-pt st-pt-normal${dis || !studio.canNormal ? ' dis' : ''}`}
-          aria-disabled={dis || !studio.canNormal ? true : undefined}
-          aria-busy={applying === 'normal' || undefined}
-          onClick={dis || !studio.canNormal ? undefined : () => void useHome.getState().goNormal()}
-          {...tip(!studio.canNormal ? 'Nothing to go back from' : (studio.normalLine ?? 'Goes back to how the room was before'))}
-        >
-          <span className="st-pt-n">As before</span>
-          <span className="st-pt-l">{studio.canNormal ? (studio.normalLine ?? '') : 'Nothing to go back from'}</span>
-        </button>
       </div>
     </>
   );

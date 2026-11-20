@@ -131,7 +131,7 @@ export default {
   name: 'studio-home',
   gallery: {
     states: [
-      state('onair', 'block, ready, nothing on', onAirGallery(READY), ['Studio lights', 'No preset on.', 'Key lights 60%, 4400 K', 'On air', 'Recording', 'As before', 'Panels', 'Behind monitor', 'Overhead', 'Fine tune']),
+      state('onair', 'block, ready, nothing on', onAirGallery(READY), ['Studio lights', 'Normal:', 'regular routines.', 'Key lights 60%, 4400 K', 'On air', 'Recording', 'Normal', 'Panels', 'Behind monitor', 'Overhead', 'Fine tune']),
       state('onair', 'block, On air is on', onAirGallery('keys2=both&studio=onair&desktoken=set'), ['On air:', 'Key lights on, panels glow, monitor and overhead white', 'Fine tune']),
       state('onair', 'block, Recording is on', onAirGallery('keys2=both&studio=recording&desktoken=set'), ['Recording:', 'Room 80%, panels calm, key lights on, overhead white']),
       state('onair', 'block, changed since it was set', onAirGallery('keys2=both&studio=changed&desktoken=set'), ['On air, changed', 'since it was set']),
@@ -146,17 +146,17 @@ export default {
       state('onair', 'block, the home app is busy', onAirGallery(`${READY}&studiowrite=busy`), ['The home app is busy with another light change. Try again in a moment.'], '[data-preset="onAir"]'),
       state('onair', 'block, a light did not answer', onAirGallery(`${READY}&studiowrite=lights`), ['A light did not answer the home app. This shows what it reports now.'], '[data-preset="onAir"]'),
       state('onair', 'block, the home app did not answer in time', onAirGallery(`${READY}&studiowrite=unreachable`), ['The home app did not answer in time. This is what it reports now.'], '[data-preset="onAir"]'),
-      state('onair', 'block, a click on On air applies it', onAirGallery(READY), ['On air:', 'Key lights on, panels glow, monitor and overhead white', 'As before'], '[data-preset="onAir"]'),
+      state('onair', 'block, a click on On air applies it', onAirGallery(READY), ['On air:', 'Key lights on, panels glow, monitor and overhead white', 'Normal'], '[data-preset="onAir"]'),
       state('onair', 'block, offer after the timer starts', onAirGallery(`${READY}`).replace('oatimer=run', 'oatimer=idle') + '&oamode=live', ['Studio lights are not set.', 'The timer started just now.', 'Set for the stream', 'Not now', 'Panels'], START),
       state('onair', 'block, offer after the timer stops', onAirGallery('keys2=both&studio=onair&desktoken=set') + '&oamode=live', ['The show timer stopped.', 'The room is still on On air.', 'As before', 'Keep'], STOP),
       state('onair', 'block, a click the token cannot be sent for', onAirGallery(`${READY}&studiowrite=private`), ['The desk token goes only to this PC or a tailnet address.'], '[data-preset="onAir"]'),
       state('onair', 'block, a refused click says why', onAirGallery(`${READY}&studiowrite=unknown`), ['The home app no longer lists that one. This is what it reports now.'], '[data-preset="onAir"]'),
       state('onair', 'sheet, six panel effects, the list open', onAirGallery('keys2=both&studio=sixlooks&desktoken=set'), ['Ocean waves', 'Aurora', 'Behind monitor'], `${FINE} >> .st-drawer .st-effect`),
       state('onair', 'block, a hover tip on a preset', onAirGallery(READY), ['Key lights on, panels glow, monitor and overhead white'], 'hover:[data-preset="onAir"]'),
-      state('onair', 'sheet, ready, linked', onAirGallery(READY), ['On air', 'Recording', 'As before', 'Linked', 'Panels', 'Effect', 'Behind monitor', 'Floor 45%', 'Overhead'], FINE),
+      state('onair', 'sheet, ready, linked', onAirGallery(READY), ['On air', 'Recording', 'Normal', 'Linked', 'Panels', 'Effect', 'Behind monitor', 'Floor 45%', 'Overhead'], FINE),
       state('onair', 'sheet, ready, split', onAirGallery(`${READY.replace('keys2=both', 'keys2=mismatch')}`), ['Split', 'Left', 'Right', '45%', '4700 K', 'Behind monitor'], `${FINE} >> ${LINKED}`),
-      state('onair', 'sheet, On air is on', onAirGallery('keys2=both&studio=onair&desktoken=set'), ['On air', 'Glow', 'As before', 'Goes back to how the room was before'], FINE),
-      state('onair', 'sheet, changed since it was set', onAirGallery('keys2=both&studio=changed&desktoken=set'), ['On air, changed', 'As before'], FINE),
+      state('onair', 'sheet, On air is on', onAirGallery('keys2=both&studio=onair&desktoken=set'), ['On air', 'Glow', 'Normal', 'Ends On air, and the room goes back to its regular routines.'], FINE),
+      state('onair', 'sheet, changed since it was set', onAirGallery('keys2=both&studio=changed&desktoken=set'), ['On air, changed', 'Normal'], FINE),
       state('onair', 'sheet, no desk token', onAirGallery('keys2=both&studio=ready&desktoken=unset'), ["These lights are view only here. To switch them from the wall, add the home app's desk token in Tools.", 'Open Tools', 'Behind monitor'], FINE),
       state('onair', 'sheet, Overhead needs a Hue zone', onAirGallery('keys2=both&studio=nozone&desktoken=set'), ['Needs a Hue zone', 'Behind monitor'], FINE),
       state('onair', 'sheet, the home app is away', onAirGallery(READY.replace('studio=ready', 'studio=lost')), ['The home app is not answering.', 'Try again', 'Behind monitor'], `${FINE} >> ${CLOSE} >> ${FINE}`),
@@ -165,7 +165,7 @@ export default {
       state('work', 'Work chip, key light words without a preset', workGallery('rec=1&keys2=both&studio=ready&desktoken=set'), ['Lights 60%', 'Recording']),
       state('work', 'Work chip, a tight header', workGallery('agents=ask&long=1&rec=1&keys2=both&studio=onair&desktoken=set'), ['Lights', 'Recording']),
       state('meet', 'Meet chip in a call', meetGallery('meet=known&call=teams&camera=1&rec=1&checklist=four&keys2=both&studio=onair&desktoken=set'), ['In call, Teams', 'Recording', 'Lights: On air']),
-      state('meet', 'Meet chip opens the sheet', meetGallery('meet=known&call=teams&camera=1&rec=1&checklist=four&keys2=both&studio=onair&desktoken=set'), ['Lights: On air', 'As before', 'Linked', 'Behind monitor'], '.lights-chip'),
+      state('meet', 'Meet chip opens the sheet', meetGallery('meet=known&call=teams&camera=1&rec=1&checklist=four&keys2=both&studio=onair&desktoken=set'), ['Lights: On air', 'Normal', 'Linked', 'Behind monitor'], '.lights-chip'),
       state('work', 'Tools, Home app, not set', workGallery('tools=lights&desktoken=unset'), ['Home app', 'Desk token', 'Not set', 'Set up']),
       state('work', 'Tools, Home app, typing the token', workGallery('tools=lights&desktoken=unset'), ['Save', 'Cancel'], '[data-section="desktoken"] .tools-btn'),
       state('work', 'Tools, Home app, set', workGallery('tools=lights&desktoken=set'), ['Home app', 'Set', 'Change', 'Forget']),
@@ -224,7 +224,7 @@ export default {
             if (b.b > 510) fails.push('studiohome: the block ends at y ' + r1(b.b) + ' (510 at most: Watt starts below it)');
             for (const k of s.blockKids) if (k.l < b.l - 2 || k.r > b.r + 2 || k.t < b.t - 2 || k.b > b.b + 2) fails.push('studiohome: block part "' + k.n.trim() + '" leaves the block (x ' + r1(k.l) + ' to ' + r1(k.r) + ', y ' + r1(k.t) + ' to ' + r1(k.b) + ')');
             if (s.presets.length) {
-              // The preset row: chips, As before and Fine tune on one 40 px line inside the block.
+              // The preset row: chips, Normal and Fine tune on one 40 px line inside the block.
               const top = s.presets[0].b.t;
               for (const p of s.presets) {
                 if (p.b.h < 39.5 || p.b.h > 40.5) fails.push('studiohome: preset row part "' + p.n + '" is ' + r1(p.b.h) + ' px high (40)');

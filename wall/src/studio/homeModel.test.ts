@@ -1,6 +1,6 @@
 import { expect, it } from 'vitest';
 import { studioAnswer, studioWith } from './homeKit';
-import { chipPresetWord, homeLine, presetChipLabel, summaryParts, tileState, wouldBeDark, ZONE_TIP } from './homeModel';
+import { chipPresetWord, homeLine, normalState, presetChipLabel, summaryParts, tileState, wouldBeDark, ZONE_TIP } from './homeModel';
 import { studioOf, type Group } from './home';
 import { TEXT } from './homeStore';
 
@@ -8,12 +8,24 @@ const studio = (over: Record<string, unknown> = {}) => studioOf(studioAnswer(ove
 const g = (s: ReturnType<typeof studio>, id: string): Group => s.groups.find((x) => x.id === id)!;
 
 it('the summary: label and line when a preset is on, the key light words when none is, only "changed" when it changed', () => {
-  expect(summaryParts(studio(), 'Key lights 60%, 4400 K')).toEqual({ lead: 'No preset on.', rest: ' Key lights 60%, 4400 K', full: 'No preset on. Key lights 60%, 4400 K' });
-  expect(summaryParts(studio(), '').rest).toBe('');
+  expect(summaryParts(studio(), 'Key lights 60%, 4400 K')).toEqual({ lead: 'Normal:', rest: ' regular routines. Key lights 60%, 4400 K', full: 'Normal: regular routines. Key lights 60%, 4400 K' });
+  expect(summaryParts(studio(), '').rest).toBe(' regular routines.');
   const on = studioOf(studioWith('onAir'))!;
   expect(summaryParts(on, 'ignored')).toEqual({ lead: 'On air:', rest: ' Key lights on, panels glow', full: 'On air: Key lights on, panels glow' });
   const changed = studioOf(studioWith('onAir', { changed: true }))!;
   expect(summaryParts(changed, '')).toEqual({ lead: 'On air, changed', rest: ' since it was set', full: 'On air, changed since it was set' });
+});
+
+it('the summary with a switch preset held names it, or says a preset is on, never "regular routines"', () => {
+  expect(summaryParts(studio({ canNormal: true, normalLine: 'Room back to how it was before Gaming, key lights off' }), 'Key lights 60%')).toEqual({ lead: 'Gaming.', rest: ' Key lights 60%', full: 'Gaming. Key lights 60%' });
+  expect(summaryParts(studio({ canNormal: true }), '').lead).toBe('A preset is on.');
+});
+
+it('the Normal chip is lit exactly when the home app has nothing to end, and a failed read lights nothing', () => {
+  expect(normalState(studio(), true, null)).toEqual({ lit: true, tip: 'Normal: the room is on its regular routines.' });
+  expect(normalState(studioOf(studioWith('onAir'))!, true, 'On air')).toEqual({ lit: false, tip: 'Normal: ends On air, and the room goes back to its regular routines.' });
+  expect(normalState(studio({ canNormal: true }), true, 'Gaming').lit).toBe(false);
+  expect(normalState(studio(), false, null).lit).toBe(false);
 });
 
 it('chip words: the preset, with ", changed" only on the one that is on', () => {
