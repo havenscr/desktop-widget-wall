@@ -7,15 +7,22 @@
 //! - The handshake needs an `Origin` of `moz-extension://<id>` (`origin_ok`); web pages send `http`,
 //!   `https` or `null` and get 403. After the first good hello the origin is pinned and kept in
 //!   `onair-stagepop.json`; any other origin is refused from then on.
-//! - The first frame must be `{type:"hello", token, v:1}` within 2 seconds. The pairing token (32 random
-//!   bytes, Credential Manager, `WidgetWall2/stagepop/token/0`) is compared with `ct_eq`. A wrong token closes
-//!   the socket with 1008.
-//! - Text frames only, 8 KiB per message and frame, at most 20 messages a second, ping every 30 s,
+//! - Right after the handshake the server sends `{type:"challenge", nonce, v:2}`. The client has 2 seconds to answer
+//!   `{type:"hello", v:2, cnonce, mac}` with `mac` = base64(HMAC-SHA256(token, "stagepop-client|nonce|origin")); the
+//!   server checks it with `ct_eq`, then answers `{type:"welcome", mac}` with base64(HMAC-SHA256(token,
+//!   "stagepop-server|cnonce|nonce")) so the add-on can verify the server before it sends anything. The token itself
+//!   never crosses the socket. A v1 hello (the raw token) is refused. The pairing token (32 random bytes, Credential
+//!   Manager, `WidgetWall2/stagepop/token/0`) is shown once in Tools. A wrong MAC closes the socket with 1008.
+//! - The pin is checked and set under the shared lock when a client authenticates (`authenticate`), so of two
+//!   origins that both passed the handshake only the first to authenticate is kept.
+//! - Text frames only, 8 KiB per message and frame, at most 20 inbound frames a second (pings and pongs count), ping every 30 s,
 //!   closed after 60 s of silence.
 //! The token is never logged (this module logs nothing) and never leaves Rust except as the answer to
 //! the one-time show (`token_action`). One client at a time: a newer authenticated client replaces the old.
 
 use crate::wall2_meet::store::{BlobStore, CredBlobs, Fetch};
+use base64::Engine;
+use hmac::{Hmac, Mac};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::net::{IpAddr, Ipv4Addr, SocketAddr, TcpListener, TcpStream};
@@ -23,6 +30,7 @@ use std::path::PathBuf;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::mpsc::{channel, Receiver, Sender};
 use std::sync::{Arc, Mutex, MutexGuard};
+use sha2::Sha256;
 use std::time::{Duration, Instant};
 use tungstenite::handshake::server::{ErrorResponse, Request, Response};
 use tungstenite::protocol::frame::coding::CloseCode;
@@ -39,6 +47,9 @@ const HELLO_MS: u64 = 2000;
 const PING_MS: u64 = 30_000;
 const IDLE_MS: u64 = 60_000;
 const POLL_MS: u64 = 200;
+const RETRY_BIND: Duration = Duration::from_secs(5);
+const ACCEPT_PAUSE: Duration = Duration::from_millis(50);
+const WIRE_MAX: usize = 128;
 const FEEDS_MAX: usize = 12;
 const KEY_MAX: usize = 128;
 const NAME_MAX: usize = 64;
@@ -116,9 +127,35 @@ pub struct Feed {
 /// A message from the add-on, validated. Unknown types and anything malformed are None.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) enum In {
-    Hello { token: String, v: u64 },
+    Hello { v: u64, cnonce: String, mac: String },
     Feeds { list: Vec<Feed>, mode: String },
     Window { open: bool, fullscreen: bool },
+}
+
+/// A nonce or MAC as it travels: 1 to 128 base64 characters (either alphabet, padding allowed).
+fn wire_ok(t: &str) -> bool {
+    !t.is_empty() && t.len() <= WIRE_MAX && t.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '+' | '/' | '=' | '-' | '_'))
+}
+
+fn mac_b64(token: &str, message: &str) -> String {
+    let Ok(mut m) = Hmac::<Sha256>::new_from_slice(token.as_bytes()) else { return String::new() };
+    m.update(message.as_bytes());
+    base64::engine::general_purpose::STANDARD.encode(m.finalize().into_bytes())
+}
+
+/// What the client must send as `mac`: HMAC-SHA256 keyed by the token over `stagepop-client|nonce|origin`.
+pub(crate) fn client_mac(token: &str, nonce: &str, origin: &str) -> String {
+    mac_b64(token, &format!("stagepop-client|{nonce}|{origin}"))
+}
+
+/// What the server answers in `welcome`: HMAC-SHA256 over `stagepop-server|cnonce|nonce`, so the add-on knows the
+/// server holds the token before it sends anything.
+pub(crate) fn server_mac(token: &str, cnonce: &str, nonce: &str) -> String {
+    mac_b64(token, &format!("stagepop-server|{cnonce}|{nonce}"))
+}
+
+pub(crate) fn hello_ok(token: &str, nonce: &str, origin: &str, mac: &str) -> bool {
+    ct_eq(&client_mac(token, nonce, origin), mac)
 }
 
 pub(crate) fn parse_in(text: &str) -> Option<In> {
@@ -127,7 +164,14 @@ pub(crate) fn parse_in(text: &str) -> Option<In> {
     }
     let v: Value = serde_json::from_str(text).ok()?;
     match v.get("type")?.as_str()? {
-        "hello" => Some(In::Hello { token: v.get("token")?.as_str()?.to_string(), v: v.get("v")?.as_u64()? }),
+        "hello" => {
+            let cnonce = v.get("cnonce")?.as_str()?;
+            let mac = v.get("mac")?.as_str()?;
+            if !wire_ok(cnonce) || !wire_ok(mac) {
+                return None;
+            }
+            Some(In::Hello { v: v.get("v")?.as_u64()?, cnonce: cnonce.to_string(), mac: mac.to_string() })
+        }
         "feeds" => {
             let arr = v.get("list")?.as_array()?;
             if arr.is_empty() || arr.len() > FEEDS_MAX {
@@ -326,11 +370,13 @@ impl Core {
         }
     }
 
-    /// Writes the settings; a failed write is ignored (the next change tries again).
-    fn persist(&self, s: &Settings) {
+    /// Writes the settings. False when the write failed; true when it worked or no file is configured.
+    fn persist(&self, s: &Settings) -> bool {
         let path = self.path.lock().unwrap_or_else(|e| e.into_inner()).clone();
-        if let (Some(p), Ok(text)) = (path, serde_json::to_string_pretty(s)) {
-            let _ = std::fs::write(p, text);
+        match (path, serde_json::to_string_pretty(s)) {
+            (Some(p), Ok(text)) => std::fs::write(p, text).is_ok(),
+            (Some(_), Err(_)) => false,
+            (None, _) => true,
         }
     }
 
@@ -347,21 +393,18 @@ impl Core {
         self.lock().generation
     }
 
-    fn token_state(s: &Shared, vault: &dyn Vault) -> &'static str {
-        match vault.load() {
-            Fetch::Found(_) => {
-                if s.settings.shown {
-                    "hidden"
-                } else {
-                    "ready"
-                }
-            }
-            _ => "none",
+    fn token_state(s: &Shared, saved: bool) -> &'static str {
+        match (saved, s.settings.shown) {
+            (false, _) => "none",
+            (true, true) => "hidden",
+            (true, false) => "ready",
         }
     }
 
     /// `elgato` is the left and top of the 1024 by 600 monitor when one is attached.
     pub(crate) fn status(&self, elgato: Option<(i32, i32)>) -> StatusView {
+        // Credential Manager is read before the shared lock is taken, never under it.
+        let saved = matches!(self.vault.load(), Fetch::Found(_));
         let s = self.lock();
         let state = match s.run {
             Run::Off => "off",
@@ -371,25 +414,31 @@ impl Core {
         };
         let place = place_of(&s.settings, elgato);
         let placement = PlacementView { left: place.map(|p| p.0), top: place.map(|p| p.1), source: source_of(&s.settings, elgato) };
-        StatusView { state, feeds: s.feeds.clone(), mode: s.mode.clone(), window: s.window.clone(), placement, token: Self::token_state(&s, self.vault.as_ref()) }
+        StatusView { state, feeds: s.feeds.clone(), mode: s.mode.clone(), window: s.window.clone(), placement, token: Self::token_state(&s, saved) }
     }
 
-    pub(crate) fn token_ok(&self, supplied: &str) -> bool {
+    /// The saved pairing code, when there is a readable one.
+    pub(crate) fn token(&self) -> Option<String> {
         match self.vault.load() {
-            Fetch::Found(t) => ct_eq(&t, supplied),
-            _ => false,
+            Fetch::Found(t) => Some(t),
+            _ => None,
         }
     }
 
-    /// Takes the client in after a good hello: pins the origin if none is pinned, replaces any older client.
-    pub(crate) fn authenticate(&self, origin: &str) -> (u64, Receiver<String>) {
+    /// Takes the client in after a good hello. Under one lock: an origin that is not the pinned one is refused,
+    /// otherwise it is pinned (when none is) and any older client is replaced.
+    pub(crate) fn authenticate(&self, origin: &str) -> Result<(u64, Receiver<String>), &'static str> {
         let (tx, rx) = channel();
         let (generation, pinned) = {
             let mut s = self.lock();
             let mut pinned = None;
-            if s.settings.origin.is_none() {
-                s.settings.origin = Some(origin.to_string());
-                pinned = Some(s.settings.clone());
+            match s.settings.origin.as_deref() {
+                Some(p) if p != origin => return Err("origin"),
+                Some(_) => {}
+                None => {
+                    s.settings.origin = Some(origin.to_string());
+                    pinned = Some(s.settings.clone());
+                }
             }
             s.generation += 1;
             s.tx = Some(tx);
@@ -400,10 +449,11 @@ impl Core {
             (s.generation, pinned)
         };
         if let Some(p) = pinned {
-            self.persist(&p);
+            // A failed write leaves the pin in memory for this run; the next change writes it again.
+            let _ = self.persist(&p);
         }
         self.notify();
-        (generation, rx)
+        Ok((generation, rx))
     }
 
     /// A connection ended. Only the current client's end changes the state.
@@ -471,34 +521,46 @@ impl Core {
     }
 
     /// "show": the code, once. A first show makes it. "new": a fresh code, shown now, and the add-on
-    /// that held the old one is dropped. A code already shown cannot be shown again.
+    /// that held the old one is dropped. A code already shown cannot be shown again. The check, the save, the
+    /// write of the shown flag and the change of state happen under one lock, so one caller gets the code; if
+    /// the flag cannot be written nothing is handed out.
     pub(crate) fn token_action(&self, action: &str) -> Result<String, &'static str> {
-        match action {
-            "show" => match self.vault.load() {
-                Fetch::Found(t) => {
-                    if self.lock().settings.shown {
+        let renew = match action {
+            "show" => false,
+            "new" => true,
+            _ => return Err("invalid"),
+        };
+        let token = {
+            let mut s = self.lock();
+            let existing = match self.vault.load() {
+                Fetch::Found(t) => Some(t),
+                Fetch::Missing => None,
+                Fetch::Failed => return Err("failed"),
+            };
+            let token = match existing {
+                Some(t) if !renew => {
+                    if s.settings.shown {
                         return Err("hidden");
                     }
-                    return self.mark_shown(t, false);
+                    t
                 }
-                Fetch::Missing => {}
-                Fetch::Failed => return Err("failed"),
-            },
-            "new" => {}
-            _ => return Err("invalid"),
-        }
-        let t = crate::wall2_oauth::random_b64(32).ok_or("failed")?;
-        if !self.vault.save(&t) {
-            return Err("failed");
-        }
-        self.mark_shown(t, action == "new")
-    }
-
-    fn mark_shown(&self, token: String, drop_client: bool) -> Result<String, &'static str> {
-        let snapshot = {
-            let mut s = self.lock();
-            s.settings.shown = true;
-            if drop_client {
+                _ => {
+                    let t = crate::wall2_oauth::random_b64(32).ok_or("failed")?;
+                    if !self.vault.save(&t) {
+                        return Err("failed");
+                    }
+                    // A new code has not been shown, whatever the last one was.
+                    s.settings.shown = false;
+                    t
+                }
+            };
+            let mut next = s.settings.clone();
+            next.shown = true;
+            if !self.persist(&next) {
+                return Err("failed");
+            }
+            s.settings = next;
+            if renew {
                 s.generation += 1;
                 if s.run == Run::Connected {
                     s.run = Run::Waiting;
@@ -508,9 +570,8 @@ impl Core {
                 s.mode = None;
                 s.window = WindowView { open: false, fullscreen: false };
             }
-            s.settings.clone()
+            token
         };
-        self.persist(&snapshot);
         self.notify();
         Ok(token)
     }
@@ -573,6 +634,11 @@ pub(crate) fn serve(core: &Core, stream: TcpStream) {
     let Some(origin) = origin else { return };
     let _ = ws.get_ref().set_read_timeout(Some(Duration::from_millis(POLL_MS)));
     let begin = Instant::now();
+    // The challenge starts the 2 s clock for the hello.
+    let Some(nonce) = crate::wall2_oauth::random_b64(32) else { return };
+    if ws.send(Message::text(json!({"type": "challenge", "nonce": nonce, "v": 2}).to_string())).is_err() {
+        return;
+    }
     let ms = |t: Instant| t.duration_since(begin).as_millis() as u64;
     let mut limiter = RateLimit::new();
     let mut last_rx = Instant::now();
@@ -609,32 +675,47 @@ pub(crate) fn serve(core: &Core, stream: TcpStream) {
             break;
         }
         match ws.read() {
-            Ok(Message::Text(t)) => {
+            Ok(Message::Close(_)) => break,
+            Ok(msg) => {
                 last_rx = Instant::now();
+                // Every inbound frame but Close counts, control frames too.
                 if !limiter.allow(ms(last_rx)) {
                     close(&mut ws, CloseCode::Policy);
                     break;
                 }
-                if session.is_none() {
-                    match parse_in(t.as_str()) {
-                        Some(In::Hello { token, v: 1 }) if core.token_ok(&token) => session = Some(core.authenticate(&origin)),
-                        _ => {
-                            close(&mut ws, CloseCode::Policy);
-                            break;
+                match msg {
+                    Message::Text(t) => {
+                        if session.is_none() {
+                            let welcome = match parse_in(t.as_str()) {
+                                Some(In::Hello { v: 2, cnonce, mac }) => core.token().and_then(|token| {
+                                    if !hello_ok(&token, &nonce, &origin, &mac) {
+                                        return None;
+                                    }
+                                    let started = core.authenticate(&origin).ok()?;
+                                    Some((started, server_mac(&token, &cnonce, &nonce)))
+                                }),
+                                _ => None,
+                            };
+                            let Some((started, answer)) = welcome else {
+                                close(&mut ws, CloseCode::Policy);
+                                break;
+                            };
+                            session = Some(started);
+                            if ws.send(Message::text(json!({"type": "welcome", "mac": answer}).to_string())).is_err() {
+                                break;
+                            }
+                        } else {
+                            core.handle_text(t.as_str());
                         }
                     }
-                } else {
-                    core.handle_text(t.as_str());
+                    Message::Ping(_) | Message::Pong(_) => {
+                        let _ = ws.flush();
+                    }
+                    _ => {
+                        close(&mut ws, CloseCode::Unsupported);
+                        break;
+                    }
                 }
-            }
-            Ok(Message::Ping(_)) | Ok(Message::Pong(_)) => {
-                last_rx = Instant::now();
-                let _ = ws.flush();
-            }
-            Ok(Message::Close(_)) => break,
-            Ok(_) => {
-                close(&mut ws, CloseCode::Unsupported);
-                break;
             }
             Err(e) if is_timeout(&e) => {}
             Err(_) => break,
@@ -647,25 +728,39 @@ pub(crate) fn serve(core: &Core, stream: TcpStream) {
 
 /// Binds `addr` (refused unless loopback) and serves until the process ends. Marks the state.
 pub(crate) fn run(core: Arc<Core>, addr: SocketAddr) {
+    run_with(core, addr, RETRY_BIND);
+}
+
+/// `run` with the pause between bind tries given: a busy port is the state `port busy` and is tried again.
+pub(crate) fn run_with(core: Arc<Core>, addr: SocketAddr, retry: Duration) {
     if !bind_ok(&addr) {
         core.set_run(Run::Off);
         return;
     }
-    let listener = match TcpListener::bind(addr) {
-        Ok(l) => l,
-        Err(_) => {
-            core.set_run(Run::PortBusy);
-            return;
+    loop {
+        match TcpListener::bind(addr) {
+            Ok(listener) => return serve_on(core, listener),
+            Err(_) => {
+                core.set_run(Run::PortBusy);
+                std::thread::sleep(retry);
+            }
         }
-    };
-    serve_on(core, listener);
+    }
 }
 
 /// The accept loop over an already bound listener.
 pub(crate) fn serve_on(core: Arc<Core>, listener: TcpListener) {
     core.set_run(Run::Waiting);
-    for stream in listener.incoming() {
-        let Ok(stream) = stream else { continue };
+    accept_loop(core, listener.incoming(), ACCEPT_PAUSE);
+}
+
+/// Serves each accepted stream on its own thread. An accept error waits `pause` so a failing listener cannot spin.
+pub(crate) fn accept_loop(core: Arc<Core>, incoming: impl Iterator<Item = std::io::Result<TcpStream>>, pause: Duration) {
+    for stream in incoming {
+        let Ok(stream) = stream else {
+            std::thread::sleep(pause);
+            continue;
+        };
         let local = stream.peer_addr().map(|a| a.ip().is_loopback()).unwrap_or(false);
         if !local || core.conns.load(Ordering::SeqCst) >= MAX_CONNS {
             continue;
@@ -774,8 +869,13 @@ mod tests {
 
     #[test]
     fn hello_and_window_parse() {
-        assert_eq!(parse_in("{\"type\":\"hello\",\"token\":\"t\",\"v\":1}"), Some(In::Hello { token: "t".into(), v: 1 }));
-        assert_eq!(parse_in("{\"type\":\"hello\",\"v\":1}"), None);
+        assert_eq!(parse_in("{\"type\":\"hello\",\"v\":2,\"cnonce\":\"abc\",\"mac\":\"d+e=\"}"), Some(In::Hello { v: 2, cnonce: "abc".into(), mac: "d+e=".into() }));
+        // A v1 hello (the raw token), a missing mac, a mac with odd characters and one that is too long are all dropped.
+        assert_eq!(parse_in("{\"type\":\"hello\",\"token\":\"t\",\"v\":1}"), None);
+        assert_eq!(parse_in("{\"type\":\"hello\",\"v\":2,\"cnonce\":\"abc\"}"), None);
+        assert_eq!(parse_in("{\"type\":\"hello\",\"v\":2,\"cnonce\":\"abc\",\"mac\":\"a b\"}"), None);
+        let long = "a".repeat(WIRE_MAX + 1);
+        assert_eq!(parse_in(&format!("{{\"type\":\"hello\",\"v\":2,\"cnonce\":\"abc\",\"mac\":\"{long}\"}}")), None);
         assert_eq!(parse_in("{\"type\":\"window\",\"open\":true,\"fullscreen\":false}"), Some(In::Window { open: true, fullscreen: false }));
         assert_eq!(parse_in("{\"type\":\"window\",\"open\":true}"), None);
         assert_eq!(parse_in("{\"type\":\"nope\"}"), None);
@@ -864,11 +964,10 @@ mod tests {
         assert!(!first.is_empty());
         assert_eq!(c.token_action("show"), Err("hidden"));
         assert_eq!(c.status(None).token, "hidden");
-        assert!(c.token_ok(&first));
+        assert_eq!(c.token().as_deref(), Some(first.as_str()));
         let second = c.token_action("new").unwrap();
         assert_ne!(first, second);
-        assert!(c.token_ok(&second));
-        assert!(!c.token_ok(&first));
+        assert_eq!(c.token().as_deref(), Some(second.as_str()));
         assert_eq!(c.token_action("peek"), Err("invalid"));
         // The status never carries the code.
         let shown = format!("{:?}", c.status(None));
@@ -886,10 +985,10 @@ mod tests {
     #[test]
     fn a_newer_client_replaces_the_older_and_the_first_origin_is_pinned() {
         let c = core_with(Some("t"));
-        let (g1, _rx1) = c.authenticate(ORIGIN);
+        let (g1, _rx1) = c.authenticate(ORIGIN).unwrap();
         assert_eq!(c.pin().as_deref(), Some(ORIGIN));
         assert_eq!(c.status(None).state, "connected");
-        let (g2, rx2) = c.authenticate(ORIGIN);
+        let (g2, rx2) = c.authenticate(ORIGIN).unwrap();
         assert!(g2 > g1);
         assert_eq!(c.generation(), g2);
         // The old client's end changes nothing; the current one's end goes back to waiting.
@@ -905,7 +1004,7 @@ mod tests {
     #[test]
     fn feeds_and_window_reach_the_status_and_a_new_code_drops_the_client() {
         let c = core_with(Some("t"));
-        let (_g, _rx) = c.authenticate(ORIGIN);
+        let (_g, _rx) = c.authenticate(ORIGIN).unwrap();
         c.handle_text(&feeds_text("[{\"key\":\"stage\",\"name\":\"Stage\"},{\"key\":\"k1\",\"name\":\"Maya\"}]", "k1"));
         c.handle_text("{\"type\":\"window\",\"open\":true,\"fullscreen\":true}");
         let v = c.status(None);
@@ -921,51 +1020,281 @@ mod tests {
         assert_eq!((v.state, v.feeds.len()), ("waiting", 0));
     }
 
-    /// A client over a real loopback socket: wrong origin, wrong token, then a good hello that is answered by a command.
+    const ORIGIN_B: &str = "moz-extension://99999999-0000-4111-8222-000000000000";
+    const TOKEN: &str = "pairing-token-for-tests";
+    const NONCE: &str = "AAECAwQFBgcICQoLDA0ODw";
+    const CNONCE: &str = "EBESExQVFhcYGRobHB0eHw";
+
     #[test]
-    fn a_real_handshake_over_loopback() {
+    fn the_macs_match_a_fixed_vector_and_refuse_a_wrong_origin_nonce_or_token() {
+        // Computed outside this code with HMAC-SHA256 over the strings in the plan, base64 with padding.
+        let client = "y+pbeX6jmmiTOBNe1dE9iTpvyDmS5J4hQvQNWfYOmz8=";
+        let server = "l5OOm0+vAr5y2yS2Pvl2QYGC9hQA7yIDsH0pYzdXB1w=";
+        assert_eq!(client_mac(TOKEN, NONCE, ORIGIN), client);
+        assert_eq!(server_mac(TOKEN, CNONCE, NONCE), server);
+        assert!(hello_ok(TOKEN, NONCE, ORIGIN, client));
+        // Another origin, another nonce (a replay of an earlier hello), another token, an empty mac.
+        assert!(!hello_ok(TOKEN, NONCE, "moz-extension://other", client));
+        assert!(!hello_ok(TOKEN, "AAECAwQFBgcICQoLDA0ODx", ORIGIN, client));
+        assert!(!hello_ok("another-token", NONCE, ORIGIN, client));
+        assert!(!hello_ok(TOKEN, NONCE, ORIGIN, ""));
+        // The two directions never produce the same MAC from the same inputs.
+        assert_ne!(client_mac(TOKEN, NONCE, ORIGIN), server_mac(TOKEN, NONCE, ORIGIN));
+    }
+
+    #[test]
+    fn only_the_pinned_origin_authenticates_and_the_first_one_wins() {
+        let c = core_with(Some(TOKEN));
+        assert!(c.authenticate(ORIGIN).is_ok());
+        assert_eq!(c.authenticate(ORIGIN_B).err(), Some("origin"));
+        assert_eq!(c.pin().as_deref(), Some(ORIGIN));
+        // The refused origin changed nothing: the first client is still the current one.
+        assert_eq!(c.status(None).state, "connected");
+        assert_eq!(c.generation(), 1);
+        assert!(c.authenticate(ORIGIN).is_ok());
+    }
+
+    #[test]
+    fn show_is_one_time_under_two_callers_on_one_instance() {
+        for _ in 0..20 {
+            let c = Arc::new(core_with(None));
+            let gate = Arc::new(std::sync::Barrier::new(2));
+            let hands: Vec<_> = (0..2)
+                .map(|_| {
+                    let (c, gate) = (Arc::clone(&c), Arc::clone(&gate));
+                    std::thread::spawn(move || {
+                        gate.wait();
+                        c.token_action("show")
+                    })
+                })
+                .collect();
+            let answers: Vec<_> = hands.into_iter().map(|h| h.join().unwrap()).collect();
+            assert_eq!(answers.iter().filter(|a| a.is_ok()).count(), 1);
+            assert_eq!(answers.iter().filter(|a| **a == Err("hidden")).count(), 1);
+        }
+    }
+
+    #[test]
+    fn a_failed_write_of_the_settings_hands_out_nothing_and_a_retry_works() {
+        let c = core_with(None);
+        let missing = std::env::temp_dir().join(format!("stagepop-no-such-dir-{}", std::process::id())).join(SETTINGS_FILE);
+        c.set_path(Some(missing));
+        assert_eq!(c.token_action("show"), Err("failed"));
+        // The code was made and kept, but not shown: it can still be shown once the write works.
+        assert_eq!(c.status(None).token, "ready");
+        let dir = std::env::temp_dir();
+        let file = dir.join(format!("stagepop-settings-{}.json", std::process::id()));
+        c.set_path(Some(file.clone()));
+        let shown = c.token_action("show").unwrap();
+        assert_eq!(c.token().as_deref(), Some(shown.as_str()));
+        assert_eq!(c.token_action("show"), Err("hidden"));
+        assert!(std::fs::read_to_string(&file).unwrap().contains("\"shown\": true"));
+        let _ = std::fs::remove_file(&file);
+        // New code with a failing write: nothing handed out, and the new code is not marked shown.
+        c.set_path(Some(std::env::temp_dir().join("stagepop-no-such-dir-2").join(SETTINGS_FILE)));
+        assert_eq!(c.token_action("new"), Err("failed"));
+        assert_eq!(c.status(None).token, "ready");
+    }
+
+    struct ProbeVault {
+        core: Mutex<Option<Arc<Core>>>,
+        held: Mutex<Vec<bool>>,
+    }
+    impl Vault for Arc<ProbeVault> {
+        fn load(&self) -> Fetch<String> {
+            if let Some(core) = self.core.lock().unwrap().as_ref() {
+                self.held.lock().unwrap().push(core.shared.try_lock().is_err());
+            }
+            Fetch::Found("t".to_string())
+        }
+        fn save(&self, _value: &str) -> bool {
+            true
+        }
+    }
+
+    #[test]
+    fn status_reads_the_vault_outside_the_shared_lock() {
+        let probe = Arc::new(ProbeVault { core: Mutex::new(None), held: Mutex::new(Vec::new()) });
+        let core = Arc::new(Core::new(Box::new(Arc::clone(&probe)), Settings::default()));
+        *probe.core.lock().unwrap() = Some(Arc::clone(&core));
+        assert_eq!(core.status(None).token, "ready");
+        let seen = probe.held.lock().unwrap().clone();
+        assert_eq!(seen, vec![false]);
+        *probe.core.lock().unwrap() = None;
+    }
+
+    #[test]
+    fn an_accept_error_waits_before_the_next_try() {
+        let core = Arc::new(core_with(None));
+        let errors = std::iter::repeat_with(|| Err(std::io::Error::other("accept failed"))).take(3);
+        let started = Instant::now();
+        accept_loop(core, errors, Duration::from_millis(30));
+        // Three errors, 30 ms each.
+        assert!(started.elapsed() >= Duration::from_millis(90));
+    }
+
+    #[test]
+    fn a_busy_port_is_tried_again_until_it_frees() {
+        let holder = TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = holder.local_addr().unwrap();
+        let core = Arc::new(core_with(None));
+        let c2 = Arc::clone(&core);
+        std::thread::spawn(move || run_with(c2, addr, Duration::from_millis(30)));
+        let until = |want: &str| {
+            let waited = Instant::now();
+            while core.status(None).state != want && waited.elapsed() < Duration::from_secs(5) {
+                std::thread::sleep(Duration::from_millis(10));
+            }
+            core.status(None).state == want
+        };
+        assert!(until("port busy"));
+        drop(holder);
+        assert!(until("waiting"));
+    }
+
+    type Client = tungstenite::WebSocket<TcpStream>;
+
+    fn serve_local(core: &Arc<Core>) -> SocketAddr {
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         let addr = listener.local_addr().unwrap();
-        assert!(bind_ok(&addr));
-        let core = Arc::new(core_with(Some("good-token")));
-        let c2 = Arc::clone(&core);
+        let c2 = Arc::clone(core);
         std::thread::spawn(move || serve_on(c2, listener));
-        let connect = |origin: Option<&str>| {
-            let mut req = tungstenite::http::Request::builder().uri(format!("ws://{addr}/")).header("Host", addr.to_string()).header("Connection", "Upgrade").header("Upgrade", "websocket").header("Sec-WebSocket-Version", "13").header("Sec-WebSocket-Key", tungstenite::handshake::client::generate_key());
-            if let Some(o) = origin {
-                req = req.header("Origin", o);
+        addr
+    }
+
+    fn connect(addr: SocketAddr, origin: Option<&str>) -> Result<Client, ()> {
+        let mut req = tungstenite::http::Request::builder().uri(format!("ws://{addr}/")).header("Host", addr.to_string()).header("Connection", "Upgrade").header("Upgrade", "websocket").header("Sec-WebSocket-Version", "13").header("Sec-WebSocket-Key", tungstenite::handshake::client::generate_key());
+        if let Some(o) = origin {
+            req = req.header("Origin", o);
+        }
+        let stream = TcpStream::connect(addr).unwrap();
+        stream.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
+        tungstenite::client(req.body(()).unwrap(), stream).map(|(ws, _)| ws).map_err(|_| ())
+    }
+
+    /// The text of the next frame, parsed.
+    fn next_json(ws: &mut Client) -> Value {
+        loop {
+            match ws.read().unwrap() {
+                Message::Text(t) => return serde_json::from_str(t.as_str()).unwrap(),
+                Message::Ping(_) | Message::Pong(_) => {}
+                other => panic!("unexpected frame {other:?}"),
             }
-            tungstenite::client(req.body(()).unwrap(), TcpStream::connect(addr).unwrap())
-        };
-        // Web page origins and a missing origin are refused at the handshake.
-        assert!(connect(Some("https://example.com")).is_err());
-        assert!(connect(None).is_err());
-        // A wrong token is closed.
-        let (mut bad, _) = connect(Some(ORIGIN)).unwrap();
-        bad.send(Message::text("{\"type\":\"hello\",\"token\":\"nope\",\"v\":1}")).unwrap();
-        let mut closed = false;
-        for _ in 0..5 {
-            match bad.read() {
-                Ok(Message::Close(_)) | Err(_) => {
-                    closed = true;
-                    break;
-                }
+        }
+    }
+
+    fn hello_text(token: &str, nonce: &str, origin: &str) -> String {
+        json!({"type": "hello", "v": 2, "cnonce": CNONCE, "mac": client_mac(token, nonce, origin)}).to_string()
+    }
+
+    /// The connection ends within a few reads.
+    fn ends(ws: &mut Client) -> bool {
+        for _ in 0..50 {
+            match ws.read() {
+                Ok(Message::Close(_)) | Err(_) => return true,
                 Ok(_) => {}
             }
         }
-        assert!(closed);
-        assert_eq!(core.status(None).state, "waiting");
-        // A good hello connects; a command sent from the wall arrives; the pinned origin refuses another.
-        let (mut ok, _) = connect(Some(ORIGIN)).unwrap();
-        ok.send(Message::text("{\"type\":\"hello\",\"token\":\"good-token\",\"v\":1}")).unwrap();
+        false
+    }
+
+    fn wait_for(core: &Core, state: &str) -> bool {
         let waited = Instant::now();
-        while core.status(None).state != "connected" && waited.elapsed() < Duration::from_secs(3) {
+        while core.status(None).state != state && waited.elapsed() < Duration::from_secs(3) {
             std::thread::sleep(Duration::from_millis(20));
         }
+        core.status(None).state == state
+    }
+
+    /// Connects, reads the challenge and answers it with the right MAC; the welcome is checked.
+    fn authed(addr: SocketAddr, origin: &str) -> Client {
+        let mut ws = connect(addr, Some(origin)).unwrap();
+        let ch = next_json(&mut ws);
+        assert_eq!((ch["type"].as_str(), ch["v"].as_u64()), (Some("challenge"), Some(2)));
+        let nonce = ch["nonce"].as_str().unwrap().to_string();
+        ws.send(Message::text(hello_text(TOKEN, &nonce, origin))).unwrap();
+        let welcome = next_json(&mut ws);
+        assert_eq!(welcome["type"], "welcome");
+        assert_eq!(welcome["mac"].as_str().unwrap(), server_mac(TOKEN, CNONCE, &nonce));
+        ws
+    }
+
+    #[test]
+    fn a_real_handshake_over_loopback() {
+        let core = Arc::new(core_with(Some(TOKEN)));
+        let addr = serve_local(&core);
+        // Web page origins and a missing origin are refused at the handshake.
+        assert!(connect(addr, Some("https://example.com")).is_err());
+        assert!(connect(addr, None).is_err());
+        // The old raw-token hello is refused.
+        let mut v1 = connect(addr, Some(ORIGIN)).unwrap();
+        next_json(&mut v1);
+        v1.send(Message::text(json!({"type": "hello", "v": 1, "token": TOKEN}).to_string())).unwrap();
+        assert!(ends(&mut v1));
+        // A MAC made for another origin is refused.
+        let mut wrong = connect(addr, Some(ORIGIN)).unwrap();
+        let nonce = next_json(&mut wrong)["nonce"].as_str().unwrap().to_string();
+        wrong.send(Message::text(hello_text(TOKEN, &nonce, ORIGIN_B))).unwrap();
+        assert!(ends(&mut wrong));
+        assert_eq!(core.status(None).state, "waiting");
+        // A good hello connects, the welcome proves the server, and a command from the wall arrives.
+        let mut ok = authed(addr, ORIGIN);
+        assert!(wait_for(&core, "connected"));
+        assert_eq!(core.send(&Cmd::Close, None), Ok(()));
+        assert_eq!(next_json(&mut ok)["type"], "close");
+        // The pinned origin refuses another at the handshake.
+        assert!(connect(addr, Some(ORIGIN_B)).is_err());
+    }
+
+    #[test]
+    fn a_hello_replayed_on_a_new_connection_is_refused() {
+        let core = Arc::new(core_with(Some(TOKEN)));
+        let addr = serve_local(&core);
+        let mut first = connect(addr, Some(ORIGIN)).unwrap();
+        let n1 = next_json(&mut first)["nonce"].as_str().unwrap().to_string();
+        let captured = hello_text(TOKEN, &n1, ORIGIN);
+        first.send(Message::text(captured.clone())).unwrap();
+        assert_eq!(next_json(&mut first)["type"], "welcome");
+        // A second connection gets its own nonce, so the captured hello does not fit it.
+        let mut second = connect(addr, Some(ORIGIN)).unwrap();
+        let n2 = next_json(&mut second)["nonce"].as_str().unwrap().to_string();
+        assert_ne!(n1, n2);
+        second.send(Message::text(captured)).unwrap();
+        assert!(ends(&mut second));
+    }
+
+    #[test]
+    fn two_origins_through_the_handshake_only_the_first_to_authenticate_wins() {
+        let core = Arc::new(core_with(Some(TOKEN)));
+        let addr = serve_local(&core);
+        // Both pass the handshake while no origin is pinned, and both hold a challenge.
+        let mut a = connect(addr, Some(ORIGIN)).unwrap();
+        let mut b = connect(addr, Some(ORIGIN_B)).unwrap();
+        let na = next_json(&mut a)["nonce"].as_str().unwrap().to_string();
+        let nb = next_json(&mut b)["nonce"].as_str().unwrap().to_string();
+        a.send(Message::text(hello_text(TOKEN, &na, ORIGIN))).unwrap();
+        assert_eq!(next_json(&mut a)["type"], "welcome");
+        // B's hello is correct for B, and still refused: A's origin is pinned now.
+        b.send(Message::text(hello_text(TOKEN, &nb, ORIGIN_B))).unwrap();
+        assert!(ends(&mut b));
+        assert_eq!(core.pin().as_deref(), Some(ORIGIN));
         assert_eq!(core.status(None).state, "connected");
         assert_eq!(core.send(&Cmd::Close, None), Ok(()));
-        let got = ok.read().unwrap();
-        assert_eq!(got, Message::text("{\"type\":\"close\"}"));
-        assert!(connect(Some("moz-extension://someone-else")).is_err());
+        assert_eq!(next_json(&mut a)["type"], "close");
+    }
+
+    #[test]
+    fn flooding_control_frames_closes_the_connection() {
+        let core = Arc::new(core_with(Some(TOKEN)));
+        let addr = serve_local(&core);
+        let mut ws = authed(addr, ORIGIN);
+        // The hello was one message; thirty pings in a burst pass the limit of 20 a second.
+        for _ in 0..30 {
+            if ws.send(Message::Ping(Vec::new().into())).is_err() {
+                break;
+            }
+        }
+        assert!(ends(&mut ws));
+        assert!(wait_for(&core, "waiting"));
     }
 }

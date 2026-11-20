@@ -109,13 +109,13 @@ export function StagePopTools({ ringed = false }: { ringed?: boolean }) {
       </div>
       {code !== null && (
         <div className="dt-row">
-          <input className="tools-input kl-field dt-field sp-code" readOnly aria-label="Pairing code" value={code} onClick={(e) => e.currentTarget.select()} {...hover('Paste this into the add-on options. It is not shown again')} />
+          <input className="tools-input kl-field dt-field oa2-spt-code" readOnly aria-label="Pairing code" value={code} onClick={(e) => e.currentTarget.select()} {...hover('Paste this into the add-on options. It is not shown again')} />
         </div>
       )}
       <div className="dt-row">
         <span className="kl-name dt-name">Opens at</span>
-        <input className="tools-input sp-num" inputMode="numeric" aria-label="Left in pixels" placeholder="Left" value={left} onChange={(e) => setLeft(e.target.value)} {...hover('Screen pixels from the left edge of the main display. A second monitor to the left is negative')} />
-        <input className="tools-input sp-num" inputMode="numeric" aria-label="Top in pixels" placeholder="Top" value={top} onChange={(e) => setTop(e.target.value)} {...hover('Screen pixels from the top edge of the main display')} />
+        <input className="tools-input oa2-spt-num" inputMode="numeric" aria-label="Left in pixels" placeholder="Left" value={left} onChange={(e) => setLeft(e.target.value)} {...hover('Screen pixels from the left edge of the main display. A second monitor to the left is negative')} />
+        <input className="tools-input oa2-spt-num" inputMode="numeric" aria-label="Top in pixels" placeholder="Top" value={top} onChange={(e) => setTop(e.target.value)} {...hover('Screen pixels from the top edge of the main display')} />
         <button type="button" className="tools-btn kl-btn" disabled={l === null || t === null} onClick={savePlace} {...hover('Saves where the pop-out window opens')}>
           Save
         </button>
