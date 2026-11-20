@@ -1,4 +1,4 @@
-import { IconBulbOff, IconCheck, IconChevronLeft, IconChevronRight, IconLoader2 } from '@tabler/icons-react';
+import { IconBulbOff, IconCheck, IconChevronLeft, IconChevronRight, IconLoader2, IconSun, IconSunLow } from '@tabler/icons-react';
 import { tip } from '../ui/HoverTip';
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { invoke } from '../bridge/tauri';
@@ -7,8 +7,9 @@ import { reviewNow } from '../ui/reviewClock';
 import { useVisible } from '../ui/useVisible';
 import { useCentreStatus } from './centreSources';
 import { MoodArt } from './MoodArt';
-import { useHome } from '../studio/homeStore';
-import { moodFailText } from '../studio/moodRow';
+import { OFFICE_NUDGE, useHome } from '../studio/homeStore';
+import { blockText, moodFailText } from '../studio/moodRow';
+import { attachPoll, isOn as lightSyncOn, SYNC_POLL_MS, useLightSync } from '../studio/lightsync/store';
 import { useMoodsPolling } from '../studio/useMoodsPolling';
 
 export interface Mood {
@@ -164,7 +165,91 @@ function MoodsSwitch({ which, pick }: { which: MoodsWhich; pick: (w: MoodsWhich)
 
 type Status = 'loading' | 'ready' | 'unconfigured' | 'error';
 
+/** Why the nudge buttons do nothing: the home app is away, this PC may not write, or music sync owns the lights. */
+export type NudgeMode = 'ready' | 'offline' | 'blocked' | 'sync';
+
+/** The level bar on the active Office card: the live room level, the floor, and the two step buttons. */
+export interface NudgeUi {
+  /** The card that carries the bar (the active mood). */
+  id: string;
+  level: number;
+  floor: number;
+  mode: NudgeMode;
+  /** The tip of a button that does nothing because of `mode`. */
+  modeTip: string | null;
+  /** The button whose write is out. */
+  busy: 'up' | 'down' | null;
+  onNudge: (dir: 'up' | 'down') => void;
+}
+
+export const NUDGE_TIPS = {
+  offline: 'The home app is not answering',
+  sync: 'Music sync is driving the lights',
+  up: 'One step brighter. Setting the mood again resets the level',
+} as const;
+
+export const floorTip = (floor: number): string => `Floor ${floor}%: dimmer stops here so the room stays bright enough to work`;
+
+function NudgeBar({ nudge }: { nudge: NudgeUi }) {
+  // The bar reads the music sync state, so it keeps that state fresh while mounted: an
+  // initial read, then a steady read (the store's own timer runs only while sync is on).
+  useEffect(() => {
+    const detach = attachPoll();
+    void useLightSync.getState().poll();
+    const id = setInterval(() => void useLightSync.getState().poll(), SYNC_POLL_MS);
+    return () => {
+      clearInterval(id);
+      detach();
+    };
+  }, []);
+  const { level, floor, mode, busy } = nudge;
+  const atFloor = level <= floor;
+  const atMax = level >= 100;
+  const live = mode === 'ready';
+  const downOff = !live || atFloor || busy !== null;
+  const upOff = !live || atMax || busy !== null;
+  const dim = mode === 'offline' || mode === 'blocked';
+  const downTip = !live ? nudge.modeTip : atFloor ? floorTip(floor) : `One step dimmer, never under ${floor}%. Setting the mood again resets the level`;
+  const upTip = !live ? nudge.modeTip : atMax ? 'Already at full brightness' : NUDGE_TIPS.up;
+  const word = atFloor && live ? 'Floor' : atMax && live ? 'Max' : `${level}%`;
+  const cls = (off: boolean, disabledLook: boolean) => `nudge-btn${disabledLook ? ' off' : off ? ' dis' : ''}`;
+  return (
+    <div className="mood-nudge" data-nudge="bar">
+      <button
+        type="button"
+        className={cls(downOff, dim)}
+        data-nudge-dir="down"
+        aria-label={downOff ? 'Dimmer (disabled)' : 'Dimmer'}
+        aria-disabled={downOff || undefined}
+        onClick={() => !downOff && nudge.onNudge('down')}
+        {...tip(downTip ?? '')}
+      >
+        {busy === 'down' ? <IconLoader2 className="nudge-spin" size={22} stroke={2} aria-hidden="true" /> : <IconSunLow size={22} stroke={2} aria-hidden="true" />}
+      </button>
+      <span className={dim ? 'nudge-track offt' : 'nudge-track'} role="img" aria-label={`Room at ${level}%, floor ${floor}%`}>
+        <span className="nudge-fz" style={{ width: `${floor}%` }} />
+        <span className="nudge-fill" style={{ left: `${floor}%`, width: `${Math.max(0, level - floor)}%` }} />
+        <span className="nudge-tick" style={{ left: `${floor}%` }} />
+      </span>
+      <span className={`nudge-lv${atFloor && live ? ' floorword' : ''}${mode === 'offline' ? ' faded' : ''}`}>{word}</span>
+      <button
+        type="button"
+        className={cls(upOff, dim)}
+        data-nudge-dir="up"
+        aria-label={upOff ? 'Brighter (disabled)' : 'Brighter'}
+        aria-disabled={upOff || undefined}
+        onClick={() => !upOff && nudge.onNudge('up')}
+        {...tip(upTip ?? '')}
+      >
+        {busy === 'up' ? <IconLoader2 className="nudge-spin" size={22} stroke={2} aria-hidden="true" /> : <IconSun size={22} stroke={2} aria-hidden="true" />}
+      </button>
+    </div>
+  );
+}
+
 interface SectionProps {
+  /** Office only: the level bar for the active card, or null when none shows. Undefined (Condo) wraps nothing and shows nothing. */
+  nudge?: NudgeUi | null;
   head: ReactNode;
   moods: Mood[];
   status: Status;
@@ -278,7 +363,7 @@ function useCondoMoods(): Omit<SectionProps, 'head'> {
 }
 
 /** The cards, one row of three with the More card past three. The same for either list. */
-function MoodSection({ head, moods, status, error, phase, onTap, isOn, subOf, now, visible }: SectionProps) {
+function MoodSection({ nudge, head, moods, status, error, phase, onTap, isOn, subOf, now, visible }: SectionProps) {
   const [page, setPage] = useState(0);
   const wheelAt = useRef(-Infinity);
   if (status === 'ready' && moods.length === 0) {
@@ -338,12 +423,15 @@ function MoodSection({ head, moods, status, error, phase, onTap, isOn, subOf, no
             const busyHere = phase?.id === m.id ? phase.kind : null;
             const on = isOn(m.id);
             const saved = m.saved !== false;
-            const sub = subOf(m);
+            const barHere = nudge != null && nudge.id === m.id && saved;
+            // The live level replaces the preset line on the card that carries the bar.
+            const sub = barHere ? null : subOf(m);
             const soon = on || !saved ? null : inText(m.nextAtMs, now);
-            const cls = ['mood-btn', busyHere ?? '', on ? 'last' : '', saved ? '' : 'unsaved'].filter(Boolean).join(' ');
-            return (
+            const cls = ['mood-btn', busyHere ?? '', on ? 'last' : '', saved ? '' : 'unsaved', barHere ? 'nudged' : ''].filter(Boolean).join(' ');
+            const rowKey = paged ? `${start}:${m.id}` : m.id;
+            const card = (
               <button
-                key={paged ? `${start}:${m.id}` : m.id}
+                key={nudge === undefined ? rowKey : undefined}
                 type="button"
                 className={cls}
                 data-mood={m.id}
@@ -366,6 +454,13 @@ function MoodSection({ head, moods, status, error, phase, onTap, isOn, subOf, no
                   {sub && <span className="mood-sub">{sub}</span>}
                 </span>
               </button>
+            );
+            if (nudge === undefined) return card;
+            return (
+              <div key={rowKey} className="mood-cell">
+                {card}
+                {barHere && nudge && <NudgeBar nudge={nudge} />}
+              </div>
             );
           })}
           {paged && start > 0 && (
@@ -411,12 +506,31 @@ function useOfficeMoods(): Omit<SectionProps, 'head'> {
   const applying = useHome((s) => s.applying);
   const fail = useHome((s) => s.moodFail);
   const visible = useVisible();
+  const syncing = useLightSync((st) => lightSyncOn(st));
   const list = m ? m.moods : [];
   const status: Status = word === 'not-set-up' || word === 'home-not-set-up' ? 'unconfigured' : word !== null ? 'error' : m ? 'ready' : 'loading';
   const blocked = m !== null && !m.canWrite;
   const phase: Phase = applying !== null && list.some((x) => x.id === applying) ? { id: applying, kind: 'working' } : null;
   const error = fail ? moodFailText(fail.word) : blocked ? (m.writeBlock === 'needs-private-address' ? moodFailText('needs-private-address') : moodFailText('not-set-up')) : null;
+  const n = m?.nudge ?? null;
+  const mode: NudgeMode = word !== null ? 'offline' : blocked ? 'blocked' : syncing ? 'sync' : 'ready';
+  const busy = applying === `${OFFICE_NUDGE}-up` ? 'up' : applying === `${OFFICE_NUDGE}-down` ? 'down' : null;
+  const nudge: NudgeUi | null = n
+    ? {
+        id: n.mood,
+        level: n.level,
+        floor: n.floor,
+        mode,
+        modeTip: mode === 'offline' ? NUDGE_TIPS.offline : mode === 'blocked' && m ? blockText(m) : mode === 'sync' ? NUDGE_TIPS.sync : null,
+        busy,
+        onNudge: (dir) => {
+          if (mode !== 'ready' || useHome.getState().applying !== null) return;
+          void useHome.getState().nudgeMood(dir);
+        },
+      }
+    : null;
   return {
+    nudge,
     moods: list.map((x) => ({ id: x.id, label: x.label })),
     status,
     error,

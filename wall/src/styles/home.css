@@ -589,6 +589,10 @@
   .mood-btn.working .mood-busy svg {
     animation: none;
   }
+  .nudge-spin,
+  .mood-row.paged > .mood-cell {
+    animation: none;
+  }
 }
 
 /* Sound: the Sonos block in the centre's lower band. The heading sits above the card like
@@ -1295,8 +1299,13 @@
 .mood-row.paged {
   grid-template-columns: repeat(4, minmax(0, 1fr)) 124px;
 }
-.mood-row.paged .mood-btn {
+.mood-row.paged .mood-btn,
+.mood-row.paged > .mood-cell {
   animation: mood-slide 500ms ease-out;
+}
+/* A cell slides as one piece with its bar, so the card inside does not slide a second time. */
+.mood-row.paged > .mood-cell > .mood-btn {
+  animation: none;
 }
 @keyframes mood-slide {
   from {
@@ -1354,6 +1363,121 @@
   align-items: center;
   justify-content: center;
 }
+/* Office cards sit in a cell so the level bar can be a sibling of the card button, never inside it. */
+.mood-cell {
+  position: relative;
+  min-width: 0;
+  min-height: 0;
+}
+.mood-cell > .mood-btn {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+/* The level bar on the active Office card: dimmer, a track with the floor drawn as a hatched zone, the live level, brighter. */
+.mood-btn.nudged .mood-lb {
+  padding: 30px 12px 62px 16px;
+}
+.mood-nudge {
+  position: absolute;
+  left: 16px;
+  right: 12px;
+  bottom: 10px;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 40px;
+}
+.nudge-btn {
+  flex: none;
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(6, 4, 22, 0.72);
+  border: 1px solid rgba(83, 230, 235, 0.55);
+  color: var(--cyan);
+  cursor: pointer;
+}
+.nudge-btn:active:not(.dis):not(.off) {
+  transform: scale(0.94);
+}
+.nudge-btn:focus-visible {
+  outline: 3px solid var(--cyan);
+  outline-offset: 2px;
+}
+.nudge-btn.dis {
+  opacity: 0.32;
+  cursor: default;
+}
+.nudge-btn.off {
+  border: 2px dashed rgba(255, 255, 255, 0.28);
+  color: var(--faint);
+  background: rgba(6, 4, 22, 0.6);
+  cursor: default;
+}
+.nudge-spin {
+  animation: mood-spin 900ms linear infinite;
+}
+.nudge-track {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  height: 8px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.16);
+}
+.nudge-fz {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  border-radius: 4px 0 0 4px;
+  background: repeating-linear-gradient(135deg, rgba(255, 255, 255, 0.28) 0 3px, rgba(255, 255, 255, 0.06) 3px 6px);
+}
+.nudge-fill {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  border-radius: 0 4px 4px 0;
+  background: linear-gradient(90deg, rgba(53, 230, 234, 0.55), var(--cyan));
+}
+.nudge-tick {
+  position: absolute;
+  top: -6px;
+  width: 3px;
+  height: 20px;
+  margin-left: -1px;
+  border-radius: 2px;
+  background: var(--tx);
+  box-shadow: 0 0 6px rgba(241, 236, 255, 0.7);
+}
+.nudge-track.offt .nudge-fill {
+  background: rgba(127, 119, 159, 0.6);
+}
+.nudge-track.offt .nudge-tick {
+  background: var(--faint);
+  box-shadow: none;
+}
+.nudge-lv {
+  flex: none;
+  width: 50px;
+  font: 600 18px/1 var(--body);
+  color: var(--tx);
+  text-align: center;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.nudge-lv.faded {
+  color: var(--faint);
+}
+.nudge-lv.floorword {
+  color: var(--cyan);
+}
 /* Past the first page, a Back arrow sits on the first card's top left, as drawn. */
 .mood-row.paged {
   position: relative;
@@ -1376,7 +1500,8 @@
   cursor: pointer;
 }
 /* The first card's tag steps right of the arrow. */
-.mood-row.has-back > .mood-btn:first-child .mood-tag {
+.mood-row.has-back > .mood-btn:first-child .mood-tag,
+.mood-row.has-back > .mood-cell:first-child .mood-tag {
   left: 64px;
 }
 .mood-back:hover {

@@ -105,6 +105,7 @@ const moods = (over: Partial<Moods> = {}): Moods => ({
     { id: 'eveningLamp', label: 'Evening lamp', line: null, active: false },
   ],
   off: null,
+  nudge: null,
   canWrite: true,
   writeBlock: null,
   ...over,
@@ -206,4 +207,11 @@ it('ROW_MAX, the floor and the row\'s right edge match the stylesheet, so the tw
   expect(block('.u-mood')).toContain(`min-width: ${CHIP_FIXED + NAME_MIN}px;`);
   expect(block('.u-mood.icon-only')).toContain(`min-width: ${ICON_CHIP}px;`);
   expect(css).toContain("[data-clip='true']");
+});
+
+it('the nudge words each have their own text, and no other word reuses them', () => {
+  expect(moodFailText('no-mood')).toBe(TEXT.noMood);
+  expect(moodFailText('at-floor')).toBe(TEXT.atFloor);
+  expect(moodFailText('at-max')).toBe(TEXT.atMax);
+  expect(new Set([TEXT.noMood, TEXT.atFloor, TEXT.atMax, TEXT.failed]).size).toBe(4);
 });

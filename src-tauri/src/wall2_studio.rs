@@ -2,8 +2,8 @@
 //!
 //! Reads are `GET {homeBaseUrl}/api/desk/studio` and `/api/desk/office/moods`; writes are
 //! POSTs under `/api/desk/studio/...`, `/api/desk/office/moods/:id/apply` and
-//! `/api/desk/office/off` (a constant path, no input from the page), each answering the
-//! fresh read shape of its family. The base is `feeds.json` key `homeBaseUrl`; the desk token
+//! `/api/desk/office/off` and `/api/desk/office/moods/nudge` (constant paths, the page only
+//! picks `up` or `down`), each answering the fresh read shape of its family. The base is `feeds.json` key `homeBaseUrl`; the desk token
 //! is the one typed in Tools and kept by `wall2_desk_token`. The token goes only to the
 //! configured base, only as the `X-Desk-Token` header, only on a POST to a path built here from
 //! constants and a checked id, and only where `wall2_desk::token_may_go_to` allows (loopback or
@@ -16,7 +16,7 @@
 //! page cannot name a preset, group, look or mood the home app did not offer. Numbers are range
 //! checked; bodies are built with `serde_json`. Words, all fixed: `not-configured`, `absent`,
 //! `not-set-up`, `needs-private-address`, `forbidden`, `studio-not-set-up`, `home-not-set-up`,
-//! `not-answering`, `room-dark`, `nothing-to-undo`, `on-air`, `busy`, `unknown`, `refused`,
+//! `not-answering`, `room-dark`, `nothing-to-undo`, `on-air`, `no-mood`, `at-floor`, `at-max`, `busy`, `unknown`, `refused`,
 //! `unreachable`, `failed`. Nothing here logs.
 
 use crate::wall2_desk::{base, clean_text, is_stale, off_thread, token_may_go_to, ABSENT, FAILED, FORBIDDEN, INSECURE, NO_TOKEN};
@@ -56,6 +56,9 @@ pub(crate) const NOT_ANSWERING: &str = "not-answering";
 pub(crate) const ROOM_DARK: &str = "room-dark";
 pub(crate) const NOTHING_TO_UNDO: &str = "nothing-to-undo";
 pub(crate) const ON_AIR: &str = "on-air";
+pub(crate) const NO_MOOD: &str = "no-mood";
+pub(crate) const AT_FLOOR: &str = "at-floor";
+pub(crate) const AT_MAX: &str = "at-max";
 
 // Section: shapes
 
@@ -137,6 +140,15 @@ pub struct OfficeOff {
     pub active: bool,
 }
 
+/// The office room level behind the active mood, with the floor and step the home app uses.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct Nudge {
+    pub mood: String,
+    pub level: u8,
+    pub floor: u8,
+    pub step: u8,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Moods {
@@ -144,6 +156,8 @@ pub struct Moods {
     pub moods: Vec<Mood>,
     /// `Some` only when the answer's `off` is an object whose `offered` is JSON `true`.
     pub off: Option<OfficeOff>,
+    /// `Some` only for an active mood in this list with every number 0 to 100.
+    pub nudge: Option<Nudge>,
     pub can_write: bool,
     pub write_block: Option<String>,
 }
@@ -276,7 +290,19 @@ pub(crate) fn shape_moods(body: &Value, can_write: bool, write_block: Option<&st
             break;
         }
     }
-    Some(Moods { stale: is_stale(body), moods, off: shape_off(body.get("off")), can_write, write_block: write_block.map(str::to_string) })
+    let nudge = shape_nudge(body.get("nudge"), &moods);
+    Some(Moods { stale: is_stale(body), moods, off: shape_off(body.get("off")), nudge, can_write, write_block: write_block.map(str::to_string) })
+}
+
+/// The nudge is kept only when its mood is a valid id, is in the list and is the active one, and
+/// level, floor and step are whole numbers 0 to 100. Anything else is no nudge.
+fn shape_nudge(v: Option<&Value>, moods: &[Mood]) -> Option<Nudge> {
+    let o = v?.as_object()?;
+    let mood = o.get("mood")?.as_str()?;
+    if !valid_id(mood) || !moods.iter().any(|m| m.id == mood && m.active) {
+        return None;
+    }
+    Some(Nudge { mood: mood.to_string(), level: percent(o.get("level"))?, floor: percent(o.get("floor"))?, step: percent(o.get("step"))? })
 }
 
 /// Off is offered only by `{"offered": true}` (the JSON boolean; the string "true", a number or
@@ -370,6 +396,9 @@ pub(crate) fn word_for(get: bool, code: u16, body: &[u8]) -> String {
         (409, Some("Nothing to go back from")) => NOTHING_TO_UNDO,
         (409, Some("Studio busy")) => BUSY,
         (409, Some("Studio on air")) => ON_AIR,
+        (409, Some("No mood on")) => NO_MOOD,
+        (409, Some("At the floor")) => AT_FLOOR,
+        (409, Some("At full")) => AT_MAX,
         (403, Some("Invalid desk token")) => FORBIDDEN,
         (503, Some("desk writes are not configured")) => HOME_NOT_SET_UP,
         (503, Some("Light not answering")) => NOT_ANSWERING,
@@ -426,9 +455,9 @@ fn ids_of(s: &Studio) -> StudioIds {
 #[derive(Default)]
 pub(crate) struct Seen {
     studio: Option<(Instant, StudioIds)>,
-    /// The ids of the last good moods read and whether it offered Off.
+    /// The ids of the last good moods read, whether it offered Off, and its nudge.
     /// The base the read came from (as `Env` holds it): an entry from another base counts as none.
-    moods: Option<(Instant, String, Vec<String>, bool)>,
+    moods: Option<(Instant, String, Vec<String>, bool, Option<Nudge>)>,
 }
 
 fn global_seen() -> &'static Mutex<Seen> {
@@ -492,7 +521,7 @@ pub(crate) fn read_moods(env: &Env) -> Result<Moods, String> {
 fn finish_moods(env: &Env, body: &Value) -> Result<Moods, String> {
     let (can_write, block) = env.write_state();
     let moods = shape_moods(body, can_write, block).ok_or_else(|| FAILED.to_string())?;
-    lock(env.seen).moods = Some((env.now, env.base.to_string(), moods.moods.iter().map(|m| m.id.clone()).collect(), moods.off.is_some()));
+    lock(env.seen).moods = Some((env.now, env.base.to_string(), moods.moods.iter().map(|m| m.id.clone()).collect(), moods.off.is_some(), moods.nudge.clone()));
     Ok(moods)
 }
 
@@ -508,15 +537,15 @@ fn studio_ids(env: &Env) -> Result<StudioIds, String> {
 
 /// The ids of the last good moods read and whether it offered Off, read again first when there
 /// is none or it is old.
-fn moods_seen(env: &Env) -> Result<(Vec<String>, bool), String> {
-    if let Some((at, base, ids, off)) = lock(env.seen).moods.clone() {
+fn moods_seen(env: &Env) -> Result<(Vec<String>, bool, Option<Nudge>), String> {
+    if let Some((at, base, ids, off, nudge)) = lock(env.seen).moods.clone() {
         // A read from another base (`homeBaseUrl` changed) says nothing about this one: read it first.
         if base == env.base && env.fresh(at) {
-            return Ok((ids, off));
+            return Ok((ids, off, nudge));
         }
     }
     let m = read_moods(env)?;
-    Ok((m.moods.into_iter().map(|m| m.id).collect(), m.off.is_some()))
+    Ok((m.moods.into_iter().map(|m| m.id).collect(), m.off.is_some(), m.nudge))
 }
 
 fn mood_ids(env: &Env) -> Result<Vec<String>, String> {
@@ -628,6 +657,24 @@ pub(crate) fn office_off(env: &Env) -> Result<Moods, String> {
     finish_moods(env, &body)
 }
 
+/// One brightness step for the active office mood. The path is constant and the body is built
+/// here from `up` or `down` only. Nothing is sent unless the last good moods read, two minutes
+/// at most, carried a nudge, and a `down` at or under its floor or an `up` at 100 is refused
+/// locally.
+pub(crate) fn office_nudge(env: &Env, dir: &str) -> Result<Moods, String> {
+    let token = env.gate()?;
+    if dir != "up" && dir != "down" {
+        return Err(REFUSED.to_string());
+    }
+    let Some(nudge) = moods_seen(env)?.2 else { return Err(REFUSED.to_string()) };
+    if (dir == "down" && nudge.level <= nudge.floor) || (dir == "up" && nudge.level >= 100) {
+        return Err(REFUSED.to_string());
+    }
+    let body = json!({ "dir": dir }).to_string();
+    let answer = post(env, token, "/api/desk/office/moods/nudge", &body)?;
+    finish_moods(env, &answer)
+}
+
 // Section: one home write at a time
 
 /// Held while a write is out; a second write from the page meanwhile is `busy` and sends nothing.
@@ -736,6 +783,12 @@ pub async fn wall2_office_mood(window: tauri::WebviewWindow, app: tauri::AppHand
 pub async fn wall2_office_off(window: tauri::WebviewWindow, app: tauri::AppHandle) -> Result<Moods, String> {
     crate::wall2_meet::require_wall2(window.label())?;
     run_write(app, |env| office_off(env)).await
+}
+
+#[tauri::command]
+pub async fn wall2_office_mood_nudge(window: tauri::WebviewWindow, app: tauri::AppHandle, dir: String) -> Result<Moods, String> {
+    crate::wall2_meet::require_wall2(window.label())?;
+    run_write(app, move |env| office_nudge(env, &dir)).await
 }
 
 #[cfg(test)]
@@ -1565,6 +1618,132 @@ mod tests {
         assert_eq!(office_off(&e).unwrap_err(), "failed");
         f.push_err(NetErr::Down);
         assert_eq!(office_off(&e).unwrap_err(), "unreachable");
+    }
+
+    fn nudge_body(level: Value) -> Value {
+        json!({"ok": true, "stale": false, "moods": [
+            {"id": "gaming", "label": "Gaming", "line": "Room 25%", "active": false},
+            {"id": "reading", "label": "Reading", "line": "Room 60%", "active": true}
+        ], "nudge": {"mood": "reading", "level": level, "floor": 45, "step": 10}})
+    }
+
+    #[test]
+    fn nudge_shape_keeps_only_a_valid_active_listed_mood_with_percent_numbers() {
+        let n = |b: &Value| shape_moods(b, true, None).unwrap().nudge;
+        assert_eq!(n(&nudge_body(json!(62))), Some(Nudge { mood: "reading".into(), level: 62, floor: 45, step: 10 }));
+        assert_eq!(n(&moods_body()), None, "no nudge key");
+        let mut b = nudge_body(json!(62));
+        b["nudge"]["mood"] = json!("gaming");
+        assert_eq!(n(&b), None, "mood not active");
+        b["nudge"]["mood"] = json!("missing");
+        assert_eq!(n(&b), None, "mood not listed");
+        b["nudge"]["mood"] = json!("bad id");
+        assert_eq!(n(&b), None, "mood not a valid id");
+        assert_eq!(n(&nudge_body(json!(101))), None, "level over 100");
+        assert_eq!(n(&nudge_body(json!(-1))), None, "negative level");
+        assert_eq!(n(&nudge_body(json!("62"))), None, "level as text");
+        assert_eq!(n(&nudge_body(json!(61.5))), None, "fractional level");
+        let mut b = nudge_body(json!(62));
+        b["nudge"]["step"] = json!(300);
+        assert_eq!(n(&b), None, "step over 100");
+        b["nudge"] = json!(null);
+        assert_eq!(n(&b), None, "null nudge");
+        b["nudge"] = json!([1]);
+        assert_eq!(n(&b), None, "array nudge");
+        let ser = serde_json::to_value(shape_moods(&nudge_body(json!(62)), true, None).unwrap()).unwrap();
+        assert_eq!(ser["nudge"], json!({"mood": "reading", "level": 62, "floor": 45, "step": 10}));
+    }
+
+    #[test]
+    fn nudge_is_refused_with_nothing_sent_without_a_nudge_or_with_a_bad_dir() {
+        let seen = Mutex::new(Seen::default());
+        let t0 = Instant::now();
+        let f = Fake::default();
+        // The seeded read has no nudge.
+        let e = seeded(&f, &seen, t0);
+        let n = f.calls().len();
+        assert_eq!(office_nudge(&e, "up").unwrap_err(), "refused");
+        assert_eq!(f.calls().len(), n, "nothing may be sent");
+        f.push(200, &nudge_body(json!(62)).to_string());
+        read_moods(&e).unwrap();
+        let n = f.calls().len();
+        for bad in ["", "UP", "left", "up ", "../x", "down\n"] {
+            assert_eq!(office_nudge(&e, bad).unwrap_err(), "refused", "{bad:?}");
+        }
+        assert_eq!(f.calls().len(), n);
+        // No token: not-set-up before anything else.
+        let none = env(&f, HTTPS, None, &seen, t0);
+        assert_eq!(office_nudge(&none, "up").unwrap_err(), "not-set-up");
+        let lan = env(&f, "http://203.0.113.50:5599", Some(TOKEN), &seen, t0);
+        assert_eq!(office_nudge(&lan, "up").unwrap_err(), "needs-private-address");
+        assert_eq!(f.calls().len(), n);
+    }
+
+    #[test]
+    fn nudge_down_at_the_floor_and_up_at_max_are_refused_locally() {
+        let seen = Mutex::new(Seen::default());
+        let t0 = Instant::now();
+        let f = Fake::default();
+        let e = env(&f, HTTPS, Some(TOKEN), &seen, t0);
+        f.push(200, &nudge_body(json!(45)).to_string());
+        read_moods(&e).unwrap();
+        let n = f.calls().len();
+        assert_eq!(office_nudge(&e, "down").unwrap_err(), "refused");
+        f.push(200, &nudge_body(json!(30)).to_string());
+        read_moods(&e).unwrap();
+        let n = n + 1;
+        assert_eq!(office_nudge(&e, "down").unwrap_err(), "refused", "under the floor");
+        f.push(200, &nudge_body(json!(100)).to_string());
+        read_moods(&e).unwrap();
+        let n = n + 1;
+        assert_eq!(office_nudge(&e, "up").unwrap_err(), "refused");
+        assert_eq!(f.calls().len(), n, "no POST was sent");
+    }
+
+    #[test]
+    fn nudge_sends_one_exact_post_and_keeps_the_new_level() {
+        let seen = Mutex::new(Seen::default());
+        let t0 = Instant::now();
+        let f = Fake::default();
+        let e = env(&f, HTTPS, Some(TOKEN), &seen, t0);
+        f.push(200, &nudge_body(json!(62)).to_string());
+        read_moods(&e).unwrap();
+        let n = f.calls().len();
+        f.push(200, &nudge_body(json!(72)).to_string());
+        let m = office_nudge(&e, "up").unwrap();
+        assert_eq!(m.nudge.as_ref().map(|x| x.level), Some(72));
+        let calls = f.calls();
+        assert_eq!(calls.len(), n + 1, "one request, no read first");
+        let c = &calls[n];
+        assert_eq!((c.method, c.url.as_str(), c.body.as_str()), ("POST", "https://box.tail1234.ts.net/api/desk/office/moods/nudge", r#"{"dir":"up"}"#));
+        assert!(c.headers.contains(&("X-Desk-Token".to_string(), TOKEN.to_string())));
+        // The answer is now the last good read: a down press uses level 72 and says down.
+        f.push(200, &nudge_body(json!(62)).to_string());
+        office_nudge(&e, "down").unwrap();
+        assert_eq!(f.calls()[n + 1].body, r#"{"dir":"down"}"#);
+    }
+
+    #[test]
+    fn nudge_keeps_the_words_of_a_failed_write() {
+        let seen = Mutex::new(Seen::default());
+        let t0 = Instant::now();
+        let f = Fake::default();
+        let e = env(&f, HTTPS, Some(TOKEN), &seen, t0);
+        f.push(200, &nudge_body(json!(62)).to_string());
+        read_moods(&e).unwrap();
+        for (code, text, word) in [
+            (409, "No mood on", "no-mood"),
+            (409, "At the floor", "at-floor"),
+            (409, "At full", "at-max"),
+            (409, "Studio on air", "on-air"),
+            (409, "Studio busy", "busy"),
+            (503, "Light not answering", "not-answering"),
+            (400, "Bad value", "failed"),
+        ] {
+            f.push(code, &format!(r#"{{"ok":false,"error":"{text}"}}"#));
+            assert_eq!(office_nudge(&e, "up").unwrap_err(), word, "{text}");
+        }
+        assert_eq!(word_for(false, 409, br#"{"error":"at the floor"}"#), "failed", "words match exactly");
     }
 
     #[test]

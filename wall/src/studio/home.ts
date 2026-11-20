@@ -19,6 +19,9 @@ export const HOME_WORDS = [
   'room-dark',
   'nothing-to-undo',
   'on-air',
+  'no-mood',
+  'at-floor',
+  'at-max',
   'busy',
   'unknown',
   'refused',
@@ -62,6 +65,13 @@ export interface Mood {
   line: string | null;
   active: boolean;
 }
+/** The live office level behind the active mood, with the floor and step the home app holds. */
+export interface Nudge {
+  mood: string;
+  level: number;
+  floor: number;
+  step: number;
+}
 /** What the home app says its key lights are, for the seam's `home` back end. */
 export interface HomeKeyLight {
   on: boolean;
@@ -92,6 +102,8 @@ export interface Moods {
   moods: Mood[];
   /** Present only when the home app offers Off (its `off.offered` is `true`); `active` is the office lights being off now. */
   off: { active: boolean } | null;
+  /** Present only while a mood is on and the office is lit; the nudge controls show only then. */
+  nudge: Nudge | null;
   canWrite: boolean;
   writeBlock: WriteBlock | null;
 }
@@ -187,7 +199,13 @@ export function moodsOf(raw: unknown): Moods | null {
     if (r && id && label) moods.push({ id, label, line: str(r.line), active: bool(r.active) });
   }
   const off = obj(o.off);
-  return { stale: o.stale !== false, moods, off: off ? { active: bool(off.active) } : null, canWrite: bool(o.canWrite), writeBlock: block(o.writeBlock) };
+  const n = obj(o.nudge);
+  const nm = str(n?.mood);
+  const level = pct(n?.level);
+  const floor = pct(n?.floor);
+  const step = pct(n?.step);
+  const nudge: Nudge | null = n && nm && level !== null && floor !== null && step !== null && moods.some((m) => m.id === nm && m.active) ? { mood: nm, level, floor, step } : null;
+  return { stale: o.stale !== false, moods, off: off ? { active: bool(off.active) } : null, nudge, canWrite: bool(o.canWrite), writeBlock: block(o.writeBlock) };
 }
 
 async function studio(command: string, args?: Record<string, unknown>): Promise<Studio> {
@@ -211,6 +229,7 @@ export const setHomeKeys = (which: 'left' | 'right' | 'both', patch: { on?: bool
 export const readMoods = () => moods('wall2_office_moods');
 export const applyMood = (id: string) => moods('wall2_office_mood', { id });
 export const applyOff = () => moods('wall2_office_off');
+export const nudgeMood = (dir: 'up' | 'down') => moods('wall2_office_mood_nudge', { dir });
 
 export async function readTokenStatus(): Promise<TokenStatus> {
   const o = obj(await invoke('wall2_desk_token_status'));

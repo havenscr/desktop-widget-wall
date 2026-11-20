@@ -287,6 +287,9 @@ function registerHomeHalf(keys: LightMock): void {
   let activeMood: string | null = initialMood && initialMood !== 'none' ? initialMood : null;
   let offActive = offKind === 'on';
   const slowWrites = knob('officeslow') === '1';
+  // The office room level behind the active mood (knob officelevel, default 62); officenudge=none sends no nudge.
+  const startLevel = Number(knob('officelevel') ?? '62');
+  let level = Number.isInteger(startLevel) && startLevel >= 0 && startLevel <= 100 ? startLevel : 62;
   const moodSet = (): readonly { id: string; label: string; line: string }[] =>
     officeKind === 'empty'
       ? []
@@ -319,10 +322,11 @@ function registerHomeHalf(keys: LightMock): void {
     stale: knob('officestale') === '1',
     moods: moodSet().map((m) => ({ ...m, active: activeMood === m.id })),
     ...(offKind === 'none' ? {} : { off: { offered: true, active: offActive && activeMood === null } }),
+    nudge: activeMood !== null && knob('officenudge') !== 'none' ? { mood: activeMood, level, floor: 45, step: 10 } : null,
     canWrite: block() === null,
     writeBlock: block(),
   });
-  const wordsFor: Record<string, string> = { forbidden: 'forbidden', homeunset: 'home-not-set-up', dark: 'room-dark', busy: 'busy', lights: 'not-answering', unknown: 'unknown', unreachable: 'unreachable', refused: 'refused', private: 'needs-private-address', notset: 'not-set-up', failed: 'failed', onair: 'on-air' };
+  const wordsFor: Record<string, string> = { forbidden: 'forbidden', homeunset: 'home-not-set-up', dark: 'room-dark', busy: 'busy', lights: 'not-answering', unknown: 'unknown', unreachable: 'unreachable', refused: 'refused', private: 'needs-private-address', notset: 'not-set-up', failed: 'failed', onair: 'on-air', nomood: 'no-mood', floor: 'at-floor', max: 'at-max' };
   /** A write: refused without a token or on an unsafe base (nothing sent), else the review knob's answer. */
   const gate = (): void => {
     const b = block();
@@ -414,7 +418,19 @@ function registerHomeHalf(keys: LightMock): void {
     if (!moodSet().some((m) => m.id === id)) throw 'refused';
     if (slowWrites) await new Promise<never>(() => undefined);
     activeMood = id;
+    level = Number.isInteger(startLevel) && startLevel >= 0 && startLevel <= 100 ? startLevel : 62;
     offActive = false;
+    return moods();
+  });
+  mocks.set('wall2_office_mood_nudge', async (args) => {
+    if (officeKind === 'absent') throw 'absent';
+    if (officeKind === 'down') throw 'unreachable';
+    gate();
+    const dir = args?.dir;
+    if ((dir !== 'up' && dir !== 'down') || activeMood === null || knob('officenudge') === 'none') throw 'refused';
+    if ((dir === 'down' && level <= 45) || (dir === 'up' && level >= 100)) throw 'refused';
+    if (slowWrites) await new Promise<never>(() => undefined);
+    level = dir === 'up' ? Math.min(100, level + 10) : Math.max(45, level - 10);
     return moods();
   });
   mocks.set('wall2_office_off', async () => {
