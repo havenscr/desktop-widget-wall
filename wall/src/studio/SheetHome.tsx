@@ -1,7 +1,7 @@
 import { IconAlertTriangle, IconBrightnessUp, IconCheck, IconRefresh, IconSettings } from '@tabler/icons-react';
 import { tip } from '../ui/HoverTip';
 import { useToolsStore } from '../tools/store';
-import { activePreset, DOWN_LINE, NEEDS_ZONE, needsZone, normalState, NOT_SET_UP_LINE, presetChipLabel, PRIVATE_LINE, PRIVATE_TIP, tileState, ZONE_TIP } from './homeModel';
+import { DOWN_LINE, NEEDS_ZONE, needsZone, heldName, normalState, NOT_SET_UP_LINE, presetChipLabel, PRIVATE_LINE, PRIVATE_TIP, tileState, ZONE_TIP } from './homeModel';
 import { canChange, homeView, useHome } from './homeStore';
 import type { Group, Studio } from './home';
 import { EffectRow } from './EffectPick';
@@ -52,16 +52,15 @@ export function SheetPresets({ studio, may }: { studio: Studio; may: boolean }) 
   const applying = useHome((s) => s.applying);
   const readWord = useHome((s) => s.readWord);
   const readDone = useHome((s) => s.readDone);
-  const moods = useHome((s) => s.moods);
   const dis = !may;
-  const ns = normalState(studio, readDone && readWord === null, activePreset(studio)?.label ?? moods?.moods.find((m) => m.active)?.label ?? null);
+  const ns = normalState(studio, readDone && readWord === null, heldName(studio));
   return (
     <>
       <div className="st-d-presets" role="group" aria-label="Presets">
         <button
           type="button"
           className={`st-pt st-pt-normal${ns.lit ? ' on' : ''}${!ns.lit && dis ? ' dis' : ''}`}
-            aria-pressed={ns.lit}
+          aria-pressed={ns.lit}
           aria-disabled={ns.lit || dis ? true : undefined}
           aria-busy={applying === 'normal' || undefined}
           onClick={ns.lit || dis ? undefined : () => void useHome.getState().goNormal()}
@@ -71,7 +70,7 @@ export function SheetPresets({ studio, may }: { studio: Studio; may: boolean }) 
             {ns.lit && <IconCheck size={18} aria-hidden="true" />}
             Normal
           </span>
-          <span className="st-pt-l">{ns.lit ? 'The room is on its regular routines.' : (studio.normalLine ?? '')}</span>
+          <span className="st-pt-l">{ns.tip.replace(/^Normal: (.)/, (_, c: string) => c.toUpperCase())}</span>
         </button>
         {studio.presets.map((p) => (
           <button

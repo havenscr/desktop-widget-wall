@@ -27,6 +27,17 @@ export const chipPresetWord = (p: Preset | null, changed: boolean): string | nul
 
 export const NORMAL_LIT_TIP = 'Normal: the room is on its regular routines.';
 
+/**
+ * The name of the preset that is held: the one the row shows as on, else the name the home app puts in its Back to
+ * normal line for a switch preset such as Gaming ("Room back to how it was before Gaming, key lights off"), else null.
+ */
+export function heldName(studio: Studio): string | null {
+  const p = activePreset(studio);
+  if (p) return p.label;
+  const m = /^Room back to how it was before (.+), key lights off$/.exec(studio.normalLine ?? '');
+  return m ? m[1]! : null;
+}
+
 /** The Normal chip: lit while nothing is held (the home app says there is nothing to end). A read that failed lights nothing. */
 export function normalState(studio: Studio, usable: boolean, heldName: string | null): { lit: boolean; tip: string } {
   const lit = usable && !studio.canNormal;
@@ -48,6 +59,11 @@ export interface SummaryParts {
  */
 export function summaryParts(studio: Studio, keyWords: string): SummaryParts {
   const p = activePreset(studio);
+  if (!p && studio.canNormal) {
+    const n = heldName(studio);
+    const lead = n ? `${n}.` : 'A preset is on.';
+    return { lead, rest: keyWords ? ` ${keyWords}` : '', full: `${lead}${keyWords ? ` ${keyWords}` : ''}` };
+  }
   if (!p) return { lead: 'Normal:', rest: ` regular routines.${keyWords ? ` ${keyWords}` : ''}`, full: `Normal: regular routines.${keyWords ? ` ${keyWords}` : ''}` };
   if (studio.changed) return { lead: `${p.label}, changed`, rest: ' since it was set', full: `${p.label}, changed since it was set` };
   return { lead: `${p.label}:`, rest: p.line ? ` ${p.line}` : '', full: `${p.label}${p.line ? `: ${p.line}` : ''}` };

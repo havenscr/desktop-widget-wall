@@ -2,7 +2,7 @@ import { IconCheck, IconRefresh, IconSettings } from '@tabler/icons-react';
 import type { ReactNode } from 'react';
 import { tip } from '../ui/HoverTip';
 import { useToolsStore } from '../tools/store';
-import { activePreset, normalState, presetChipLabel, PRIVATE_TIP } from './homeModel';
+import { activePreset, heldName, normalState, presetChipLabel, PRIVATE_TIP } from './homeModel';
 import { canChange, useHome } from './homeStore';
 
 /** At most this many preset chips sit on the page row (the sheet lists every one the home app offers). */
@@ -17,7 +17,6 @@ export function PresetRow({ trailing, action }: { trailing: ReactNode; action: '
   const readWord = useHome((s) => s.readWord);
   const readDone = useHome((s) => s.readDone);
   const applying = useHome((s) => s.applying);
-  const moods = useHome((s) => s.moods);
   const may = canChange({ studio, readWord, readDone });
   if (!studio) return null;
   const presets = studio.presets.slice(0, PAGE_PRESETS);
@@ -42,8 +41,7 @@ export function PresetRow({ trailing, action }: { trailing: ReactNode; action: '
     );
   } else {
     const usable = readDone && readWord === null;
-    const held = activePreset(studio)?.label ?? moods?.moods.find((m) => m.active)?.label ?? null;
-    const ns = normalState(studio, usable, held);
+    const ns = normalState(studio, usable, heldName(studio));
     const can = may && !ns.lit;
     normal = null;
     front = (

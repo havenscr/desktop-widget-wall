@@ -119,13 +119,35 @@ it.each([
   expect(writes.map((w) => w.command)).toEqual(['wall2_studio_normal']);
 });
 
-it('Gaming held (a switch preset, none of the presets): Normal is not lit and a click runs Back to normal', async () => {
-  answer = studioAnswer({ canNormal: true, normalLine: 'Goes back to how the room was before' });
+const GAMING = { canNormal: true, normalLine: 'Room back to how it was before Gaming, key lights off' };
+const GAMING_TIP = 'Normal: ends Gaming, and the room goes back to its regular routines.';
+
+it('Gaming held (a switch preset, none of the presets): Normal is not lit, says Gaming, the summary is not "regular routines", and a click runs Back to normal', async () => {
+  answer = studioAnswer(GAMING);
   await showBlock();
   expect(chipOf('Normal').getAttribute('aria-pressed')).toBe('false');
+  expect(screen.queryByText(/regular routines\./)).toBeNull();
+  expect(screen.getByText('Gaming.')).toBeTruthy();
+  expect(await tipOf(chipOf('Normal'))).toBe(GAMING_TIP);
   fireEvent.click(chipOf('Normal'));
   await flush();
   expect(writes.map((w) => w.command)).toEqual(['wall2_studio_normal']);
+});
+
+it('a held preset with no name anywhere: the tip says the held preset', async () => {
+  answer = studioAnswer({ canNormal: true, normalLine: 'Room back to the daytime light, key lights off; panels stay as they are' });
+  await showBlock();
+  expect(await tipOf(chipOf('Normal'))).toBe('Normal: ends the held preset, and the room goes back to its regular routines.');
+  expect(screen.getByText('A preset is on.')).toBeTruthy();
+});
+
+it('the sheet with Gaming held: the Normal tile is not lit and carries the same wall tip', async () => {
+  answer = studioAnswer(GAMING);
+  await openSheet();
+  const tile = sheet().getByText('Normal').closest('button') as HTMLElement;
+  expect(tile.getAttribute('aria-pressed')).toBe('false');
+  expect(tile.querySelector('.st-pt-l')?.textContent).toBe('Ends Gaming, and the room goes back to its regular routines.');
+  expect(await tipOf(tile)).toBe(GAMING_TIP);
 });
 
 it('a failed read lights nothing: Normal is not lit, as the presets are not', async () => {
