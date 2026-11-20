@@ -25,8 +25,17 @@ export const presetChipLabel = (p: Preset, changed: boolean): string => (p.activ
 /** The Work and Meet chip words for a preset that is on. */
 export const chipPresetWord = (p: Preset | null, changed: boolean): string | null => (p ? `Lights: ${presetChipLabel(p, changed)}` : null);
 
+export const NORMAL_LIT_TIP = 'Normal: the room is on its regular routines.';
+
+/** The Normal chip: lit while nothing is held (the home app says there is nothing to end). A read that failed lights nothing. */
+export function normalState(studio: Studio, usable: boolean, heldName: string | null): { lit: boolean; tip: string } {
+  const lit = usable && !studio.canNormal;
+  if (lit) return { lit, tip: NORMAL_LIT_TIP };
+  return { lit, tip: `Normal: ends ${heldName ?? 'the held preset'}, and the room goes back to its regular routines.` };
+}
+
 export interface SummaryParts {
-  /** Bold lead-in ("On air:", "No preset on."), then the plain rest. */
+  /** Bold lead-in ("On air:", "Normal:"), then the plain rest. */
   lead: string;
   rest: string;
   /** The whole line for a tip, since the line itself is one line and may be cut. */
@@ -34,12 +43,12 @@ export interface SummaryParts {
 }
 
 /**
- * The summary line when a preset is on ("<label>: <line>"), or when none is ("No preset on." then the key
+ * The summary line when a preset is on ("<label>: <line>"), or when none is ("Normal: regular routines." then the key
  * light words already built). `changed` says only that something changed since it was set.
  */
 export function summaryParts(studio: Studio, keyWords: string): SummaryParts {
   const p = activePreset(studio);
-  if (!p) return { lead: 'No preset on.', rest: keyWords ? ` ${keyWords}` : '', full: `No preset on.${keyWords ? ` ${keyWords}` : ''}` };
+  if (!p) return { lead: 'Normal:', rest: ` regular routines.${keyWords ? ` ${keyWords}` : ''}`, full: `Normal: regular routines.${keyWords ? ` ${keyWords}` : ''}` };
   if (studio.changed) return { lead: `${p.label}, changed`, rest: ' since it was set', full: `${p.label}, changed since it was set` };
   return { lead: `${p.label}:`, rest: p.line ? ` ${p.line}` : '', full: `${p.label}${p.line ? `: ${p.line}` : ''}` };
 }
