@@ -144,6 +144,11 @@ function Row({ side, saved, editing, setEditing, onChanged }: { side: Side; save
     <li className="kl-row" data-side={side} data-saved={saved ? '' : undefined} onKeyDown={editing ? escape : undefined}>
       <div className="kl-head">
         <span className="kl-name">{NAME[side]}</span>
+        {!editing && (
+          <div className={bad ? 'tools-line bad kl-state' : 'tools-line kl-state'} role="status" {...(saved && result === null ? hover(`The ${side} key light's address is saved on this PC. It is never shown again.`) : {})}>
+            {state}
+          </div>
+        )}
         {saved && !editing && (
           <button type="button" className="tools-btn kl-btn" disabled={busy} onClick={test} {...hover('Reads the light once and says whether it answered')}>
             Test
@@ -160,11 +165,6 @@ function Row({ side, saved, editing, setEditing, onChanged }: { side: Side; save
           </button>
         )}
       </div>
-      {!editing && (
-        <div className={bad ? 'tools-line bad kl-state' : 'tools-line kl-state'} role="status" {...(saved && result === null ? hover(`The ${side} key light's address is saved on this PC. It is never shown again.`) : {})}>
-          {state}
-        </div>
-      )}
       {editing && (
         <div className="kl-form">
           <input

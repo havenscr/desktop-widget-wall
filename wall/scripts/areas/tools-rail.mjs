@@ -61,6 +61,28 @@ function measureStagePopTools() {
   return { found: true, code: !!code, fails };
 }
 
+// Runs in the page. Each Key lights row keeps its status on the name's line, and the Stage pop-out place status sits on the
+// Save button's line; each status stays inside its row.
+function measureInlineStatus() {
+  const out = [];
+  const add = (label, lead, status, row) => {
+    if (!lead || !status || !row) { out.push({ label, missing: true }); return; }
+    const a = lead.getBoundingClientRect(), b = status.getBoundingClientRect(), r = row.getBoundingClientRect();
+    const after = [...row.querySelectorAll('button, input')].filter((c) => c.getBoundingClientRect().left >= b.left - 0.5 && c !== status);
+    const clear = after.every((c) => { const k = c.getBoundingClientRect(); return k.left >= b.right - 0.5 || k.bottom <= b.top || k.top >= b.bottom; });
+    out.push({ label, dy: Math.round(Math.abs((b.top + b.bottom) / 2 - (a.top + a.bottom) / 2) * 10) / 10, inside: b.top >= r.top - 0.5 && b.bottom <= r.bottom + 0.5 && b.right <= r.right + 0.5, width: Math.round(b.width), clear });
+  };
+  for (const row of document.querySelectorAll('.tools-drawer [data-section="keylights"] .kl-row'))
+    add('key light ' + row.getAttribute('data-side'), row.querySelector('.kl-name'), row.querySelector('.kl-state'), row);
+  const sp = document.querySelector('.tools-drawer [data-section="stagepop"]');
+  if (sp) {
+    const save = [...sp.querySelectorAll('.dt-row .tools-btn')].find((b) => (b.textContent || '').trim() === 'Save');
+    const row = save ? save.parentElement : null;
+    add('stage pop-out place', save, row && row.querySelector('.kl-state'), row);
+  }
+  return out;
+}
+
 const G = (name, knobs, expect, actions) => ({ screen: 'work', name: `tools rail: ${name}`, query: Q(knobs).slice(1), custom: true, expect, ...(actions ? { actions } : {}) });
 
 export default {
@@ -88,8 +110,23 @@ export default {
       v(SPV[0], Q(SP), { checks: [...RAIL, '.tools-drawer [data-section="stagepop"]'] }),
       v(SPV[1], Q(SP), { click: SP_BTN, checks: [...RAIL, '.tools-drawer [data-section="stagepop"]'] }),
     ],
-    measurements: { toolsRail: measureToolsRail, stagePopTools: measureStagePopTools },
+    measurements: { inlineStatus: measureInlineStatus, toolsRail: measureToolsRail, stagePopTools: measureStagePopTools },
     rules: {
+      inlineStatus: (variant, results, emit) => {
+        if (variant.name !== 'Tools rail, Lights and home' && variant.name !== SPV[0]) return false;
+        const rows = (results.inlineStatus || []).filter((m) => (variant.name === SPV[0]) === m.label.startsWith('stage'));
+        if (rows.length === 0) { emit('  FAIL inline status: no rows measured'); return true; }
+        let bad = false;
+        for (const m of rows) {
+          if (m.missing) { emit('  FAIL inline status: ' + m.label + ' is missing its status'); bad = true; }
+          else if (m.dy > 4) { emit('  FAIL inline status: ' + m.label + ' status is ' + m.dy + ' px below its line, not beside it'); bad = true; }
+          else if (!m.inside) { emit('  FAIL inline status: ' + m.label + ' status leaves its row'); bad = true; }
+          else if (m.width < 24) { emit('  FAIL inline status: ' + m.label + ' status is ' + m.width + ' px wide, too narrow to read'); bad = true; }
+          else if (!m.clear) { emit('  FAIL inline status: ' + m.label + ' status runs under a button'); bad = true; }
+        }
+        if (!bad) emit('  ok   inline status: ' + rows.map((m) => m.label).join(', ') + ' sit on their own line, inside the row');
+        return bad;
+      },
       stagePopTools: (variant, results, emit) => {
         if (!SPV.includes(variant.name)) return false;
         const m = results.stagePopTools;
@@ -117,6 +154,11 @@ export default {
       },
     },
     breaks: {
+      'inline-status-stacked': {
+        css: '.kl-head { flex-wrap: wrap !important; } .kl-head .kl-state { flex: 1 0 100% !important; } .dt-row .kl-state { flex: 1 0 100% !important; } .dt-row:has(.oa2-spt-num) { flex-wrap: wrap !important; }',
+        expect: /^ *FAIL inline status: .* not beside it/m,
+        appliesTo: (variant) => variant.name === 'Tools rail, Lights and home' || variant.name === SPV[0],
+      },
       'stagepop-code-overlap': {
         css: '.dt-row.dt-code { padding: 0 !important; margin: -8px 0 !important; }',
         expect: /^ *FAIL stage pop-out: the code field ring/m,
