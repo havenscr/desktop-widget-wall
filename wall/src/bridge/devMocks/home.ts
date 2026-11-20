@@ -91,7 +91,7 @@ const ALERTS = [
  * live, every route answers `absent`), `typical`, `stale` (old data, flagged stale) or
  * `down` (the routes fail). `?alerts=0|1|6|20` open alerts, `?rooms=0|1|2|4|7|8|12` rooms (two lit
  * in four, all lit in seven, every third lit in twelve), `?desktoken=none` no desk token on this PC (Clear all says not set up),
- * `?desktoken=lan` a token but a plain http home address on the network (Clear all says why).
+ * `?desktoken=lan` a token but a plain http home address on the network (Clear all says why). `?lights=none|fail` rooms carry no light list.
  */
 function registerDeskMocks(): void {
   const mode = () => knob('desk') ?? 'absent';
@@ -127,13 +127,23 @@ function registerDeskMocks(): void {
     return n;
   });
   const ROOMS = ['Office', 'Living room', 'Kitchen', 'Bedroom', 'Den', 'Hall', 'Guest room', 'Porch', 'Garage', 'Bathroom', 'Laundry', 'Attic'];
+  // Lights per room for the hover card: Office 3, Living room 8 (one plug), others 2. `?lights=none` (older home app) and
+  // `?lights=fail` (its lights read failed) leave the field out of every room.
+  const roomLights = (name: string, on: boolean) => {
+    const set: [string, number | null][] =
+      name === 'Office' ? [['Desk lamp', 80], ['Ceiling', 100], ['Bookshelf strip', 45]]
+      : name === 'Living room' ? [['Ceiling 1', 70], ['Ceiling 2', 70], ['Ceiling 3', 70], ['Floor lamp', 55], ['Reading lamp', 90], ['Salt lamp', null], ['Sofa lamp', 60], ['TV gradient strip', 35]]
+      : [['Ceiling', 60], ['Lamp', 40]];
+    return set.map(([n, bri], i) => ({ id: `${name}-${i}`.replace(/[^A-Za-z0-9_-]/g, ''), name: n, on, brightness: on ? bri : null, reachable: true }));
+  };
   const roomCount = () => Number(knob('rooms') ?? 4);
   const lit = (i: number, count: number) => count === 7 || (count === 12 ? i % 3 === 0 : count >= 4 ? i < 2 : i < 1) || (count === 8 && i === 5);
   mocks.set('wall2_desk_rooms', () => {
     const g = gate();
     if (g) return g;
     const count = roomCount();
-    return { rooms: ROOMS.slice(0, count).map((name, i) => ({ id: String(i + 1), name, on: lit(i, count) })), stale: stale() };
+    const withLights = knob('lights') !== 'none' && knob('lights') !== 'fail';
+    return { rooms: ROOMS.slice(0, count).map((name, i) => ({ id: String(i + 1), name, on: lit(i, count), ...(withLights ? { lights: roomLights(name, lit(i, count)) } : {}) })), stale: stale() };
   });
   mocks.set('wall2_desk_house', () => {
     const g = gate();

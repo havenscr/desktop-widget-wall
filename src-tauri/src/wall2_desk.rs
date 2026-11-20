@@ -19,6 +19,8 @@ use std::io::Read;
 
 const MAX_BODY: u64 = 64 * 1024;
 const MAX_ROOMS: usize = 24;
+/// Lights kept per room (the bridge holds about 63 in all).
+const MAX_ROOM_LIGHTS: usize = 32;
 const MAX_ROOM_NAME: usize = 40;
 const MAX_ALERTS: usize = 50;
 const MAX_ALERT_TEXT: usize = 120;
@@ -50,6 +52,20 @@ pub struct Room {
     pub id: String,
     pub name: String,
     pub on: bool,
+    /// Every light of the room with its state; None when the home app does not send the list (older app, or its lights read failed).
+    pub lights: Option<Vec<RoomLight>>,
+}
+
+/// One light of a room, as the home app reports it.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RoomLight {
+    pub id: String,
+    pub name: String,
+    pub on: bool,
+    /// Whole percent 0 to 100; None when off, not dimmable or out of range.
+    pub brightness: Option<u8>,
+    pub reachable: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -214,6 +230,25 @@ pub(crate) fn shape_house(body: &Value) -> House {
     House { observed_at: stamp(body.get("observed_at")), inside_f: inside, lit_rooms: lit, rooms, stale: is_stale(body) }
 }
 
+/// A room's light list: None when the field is absent or not an array; otherwise each light that checks out (a bad one is dropped).
+fn shape_room_lights(raw: Option<&Value>) -> Option<Vec<RoomLight>> {
+    let list = raw?.as_array()?;
+    Some(
+        list.iter()
+            .filter_map(|l| {
+                Some(RoomLight {
+                    id: safe_id(l.get("id"), 16)?,
+                    name: clean_text(l.get("name"), MAX_ROOM_NAME)?,
+                    on: l.get("on")?.as_bool()?,
+                    brightness: count(l.get("brightness"), 100).and_then(|n| u8::try_from(n).ok()),
+                    reachable: l.get("reachable").and_then(Value::as_bool).unwrap_or(true),
+                })
+            })
+            .take(MAX_ROOM_LIGHTS)
+            .collect(),
+    )
+}
+
 pub(crate) fn shape_rooms(body: &Value) -> DeskRooms {
     let rooms = body
         .get("rooms")
@@ -225,6 +260,7 @@ pub(crate) fn shape_rooms(body: &Value) -> DeskRooms {
                         id: safe_id(r.get("id"), 16)?,
                         name: clean_text(r.get("name"), MAX_ROOM_NAME)?,
                         on: r.get("on")?.as_bool()?,
+                        lights: shape_room_lights(r.get("lights")),
                     })
                 })
                 .take(MAX_ROOMS)
@@ -521,6 +557,45 @@ mod tests {
         assert_eq!(shape_rooms(&json!({"rooms": many, "stale": false})).rooms.len(), 24);
         assert!(shape_rooms(&json!({"rooms": "no"})).rooms.is_empty());
         assert!(shape_rooms(&json!({})).stale);
+    }
+
+    #[test]
+    fn room_lights_shape() {
+        let r = shape_rooms(&json!({"stale": false, "rooms": [
+            {"id": "1", "name": "Office", "on": true, "lights": [
+                {"id": "12", "name": "Desk lamp", "on": true, "brightness": 80, "reachable": true},
+                {"id": "14", "name": "Ceiling", "on": false, "brightness": null},
+                {"id": "15", "name": "Plug", "on": true, "reachable": false},
+                {"id": "bad id", "name": "Bad id", "on": true},
+                {"id": "16", "name": "", "on": true},
+                {"id": "17", "name": "No state"},
+                {"id": "18", "name": "Over", "on": true, "brightness": 101},
+                {"id": "19", "name": "Fraction", "on": true, "brightness": 50.5},
+                {"id": "20", "name": "Negative", "on": true, "brightness": -3}
+            ]},
+            {"id": "2", "name": "Den", "on": false},
+            {"id": "3", "name": "Hall", "on": false, "lights": "no"},
+            {"id": "4", "name": "Porch", "on": false, "lights": []}
+        ]}));
+        let office = r.rooms[0].lights.as_ref().unwrap();
+        let ids: Vec<&str> = office.iter().map(|l| l.id.as_str()).collect();
+        assert_eq!(ids, vec!["12", "14", "15", "18", "19", "20"]);
+        assert_eq!(office[0], RoomLight { id: "12".into(), name: "Desk lamp".into(), on: true, brightness: Some(80), reachable: true });
+        assert_eq!(office[1].brightness, None);
+        assert!(office[1].reachable);
+        assert!(!office[2].reachable);
+        assert_eq!(office[3].brightness, None);
+        assert_eq!(office[4].brightness, None);
+        assert_eq!(office[5].brightness, None);
+        assert_eq!(r.rooms[1].lights, None);
+        assert_eq!(r.rooms[2].lights, None);
+        assert_eq!(r.rooms[3].lights, Some(vec![]));
+        let many: Vec<Value> = (0..50).map(|i| json!({"id": format!("l{i}"), "name": "L".repeat(60), "on": true, "brightness": 100})).collect();
+        let capped = shape_rooms(&json!({"rooms": [{"id": "1", "name": "Big", "on": true, "lights": many}], "stale": false}));
+        let lights = capped.rooms[0].lights.as_ref().unwrap();
+        assert_eq!(lights.len(), 32);
+        assert_eq!(lights[0].name.chars().count(), 40);
+        assert_eq!(lights[0].brightness, Some(100));
     }
 
     #[test]
