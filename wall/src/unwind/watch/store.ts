@@ -110,6 +110,8 @@ export interface WatchState {
   /** The level the wall's own video plays at (0 to 100, whole numbers), kept across restarts. Twitch has no level to set. */
   volume: number;
   sheet: boolean;
+  /** The sheet tab asked for when it opened (the palette strip's Settings item asks for Lights); null: the screen's own. */
+  sheetTab: 'looks' | 'lines' | 'lights' | null;
   /** What the player has reported for the item now on. */
   report: PlayerReport;
   /** True while the pointer may reach the frame: YouTube until a refused autoplay plays; Twitch for one click or `TWITCH_CLICK_MS`. */
@@ -161,7 +163,7 @@ export interface WatchState {
   setReport: (r: Partial<PlayerReport>) => void;
   setNeedsClick: (on: boolean) => void;
   setClickHint: (on: boolean) => void;
-  setSheet: (open: boolean) => void;
+  setSheet: (open: boolean, tab?: 'looks' | 'lines' | 'lights') => void;
   setPeek: (on: boolean) => void;
 }
 
@@ -180,6 +182,7 @@ export const useWatchStore = create<WatchState>((set, get) => ({
   needsClick: false,
   clickHint: false,
   sheet: false,
+  sheetTab: null,
   stopped: null,
   editing: null,
   peek: false,
@@ -302,7 +305,7 @@ export const useWatchStore = create<WatchState>((set, get) => ({
   setClickHint: (clickHint) => {
     if (clickHint !== get().clickHint) set({ clickHint });
   },
-  setSheet: (sheet) => set({ sheet }),
+  setSheet: (sheet, tab) => set({ sheet, sheetTab: sheet ? tab ?? null : null }),
   setPeek: (peek) => {
     if (peek !== get().peek) set({ peek });
   },
@@ -399,7 +402,7 @@ if (typeof document !== 'undefined') {
 usePlaceStore.subscribe((s) => {
   if (s.active !== 'unwind') {
     const st = useWatchStore.getState();
-    if (st.sheet || st.peek) useWatchStore.setState({ sheet: false, peek: false });
+    if (st.sheet || st.peek) useWatchStore.setState({ sheet: false, sheetTab: null, peek: false });
   }
 });
 
@@ -416,5 +419,5 @@ useWatchStore.subscribe((s, prev) => {
 export function resetWatch(): void {
   cancelTuneWrite();
   waitingTitles.clear();
-  useWatchStore.setState({ tab: 'listen', saved: loadSaved(), looks: loadLooks(), tune: loadTune(), volume: loadVolume(), playing: null, source: 'watch', lastStopped: null, paused: false, muted: false, report: NO_REPORT, needsClick: false, clickHint: false, sheet: false, stopped: null, editing: null, peek: false });
+  useWatchStore.setState({ tab: 'listen', saved: loadSaved(), looks: loadLooks(), tune: loadTune(), volume: loadVolume(), playing: null, source: 'watch', lastStopped: null, paused: false, muted: false, report: NO_REPORT, needsClick: false, clickHint: false, sheet: false, sheetTab: null, stopped: null, editing: null, peek: false });
 }

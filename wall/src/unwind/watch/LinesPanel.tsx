@@ -211,7 +211,7 @@ export function LinesGear() {
       aria-label={LINES_TITLE}
       aria-expanded={open}
       aria-haspopup="dialog"
-      {...tip('How the music lines move: type, how lively, colours and more')}
+      {...tip('How the music shows: lines, and the lights (colour, brightness, flash) in Lights')}
       onClick={() => useWatchStore.getState().setSheet(!open)}
     >
       <IconSettings size={26} aria-hidden="true" />

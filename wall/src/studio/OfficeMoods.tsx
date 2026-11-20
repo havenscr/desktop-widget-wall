@@ -18,7 +18,7 @@ import {
   type RowModel,
 } from './moodRow';
 import { useMoodsPolling } from './useMoodsPolling';
-import { PaletteStrip, SyncChip } from './SyncChip';
+import { CustomPicker, PaletteStrip, SyncChip } from './SyncChip';
 import { useLightSync } from './lightsync/store';
 
 const LABEL_WORD = 'Office moods';
@@ -180,6 +180,7 @@ export function OfficeMoods() {
           </span>
         )}
         <PaletteStrip />
+        <CustomPicker />
         <SyncChip blocked={false} />
         <div className="u-mood-run" data-clip={fit.clip ? 'true' : undefined}>
         {row.chips.map((c) => (
