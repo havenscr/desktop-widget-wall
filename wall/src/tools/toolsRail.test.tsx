@@ -71,6 +71,7 @@ it('each link target opens its own group, and a ring target rings its block', as
     ['accounts', 'accounts', 'accounts'],
     ['keylights', 'lights', 'keylights'],
     ['desktoken', 'lights', 'desktoken'],
+    ['stagepop', 'lights', 'stagepop'],
     ['health', 'health', null],
     ['lights', 'lights', null],
     ['display', 'display', null],

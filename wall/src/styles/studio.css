@@ -949,6 +949,18 @@ span.st-tg-sw {
 .dt-note {
   padding-top: 2px;
 }
+/* Stage pop-out block in Tools: the pairing code and the two placement numbers. */
+.tools-input.oa2-spt-num {
+  flex: 0 0 96px;
+  width: 96px;
+  font-size: 16px;
+  font-variant-numeric: tabular-nums;
+}
+.tools-input.oa2-spt-code {
+  font-size: 16px;
+  font-family: var(--mono, ui-monospace, monospace);
+  letter-spacing: 0.02em;
+}
 
 /* ---- the card on a group's name, and the Panels effect row and list ---- */
 .st-gcard,

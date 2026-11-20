@@ -196,7 +196,7 @@ pub fn log_event(step: &str, data: &str) {
 }
 
 #[cfg(windows)]
-pub use win::{delayed_checks, follow_strip, install_guard, log_window_event, startup};
+pub use win::{delayed_checks, follow_strip, install_guard, log_window_event, monitor_rects, startup};
 
 #[cfg(windows)]
 mod win {
@@ -298,6 +298,11 @@ mod win {
             });
         }
         TRUE
+    }
+
+    /// Every attached monitor's rectangle in physical pixels.
+    pub fn monitor_rects() -> Vec<MonitorRect> {
+        displays().iter().map(|d| d.rect).collect()
     }
 
     fn displays() -> Vec<Display> {

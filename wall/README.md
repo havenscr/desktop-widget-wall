@@ -3238,6 +3238,18 @@ Both live in the app config folder, beside `feeds.json`. The page never sends a 
 ```text
 # Friday stream
 // Comments start with two slashes and are ignored.
+
+### Stage pop-out (the prompter box on Live)
+
+The Firefox add-on's pop-out window (the StreamYard stage on the Elgato monitor) is driven from the box under the studio keys: Open or Close, Full screen, the Tools link and one view button per view the add-on lists (Stage, Share, each camera). It replaces the wall's own prompter mirror for Live; the Presenting and Recording boxes stay empty.
+
+- **Server.** `src-tauri/src/wall2_stagepop.rs` runs a sync `tungstenite` server on `127.0.0.1:47231` (fixed; busy gives the state `port busy`, never another port). It accepts a handshake only from an `Origin` of `moz-extension://<id>`, pinned to the first one that says hello (kept in `onair-stagepop.json` in the config folder), and the v2 challenge-response below within 2 s. The pin is checked and set under one lock when a client authenticates, so of two origins that both passed the handshake only the first to authenticate is kept. Text frames only, 8 KiB, 20 inbound frames a second (pings and pongs count), ping every 30 s, closed after 60 s of silence. One client; a newer authenticated one replaces the old. The module logs nothing.
+- **Protocol v2 (the add-on follows this).** The raw token never crosses the socket. After the WebSocket handshake the server sends `{type:"challenge", nonce, v:2}`. The add-on answers within 2 s with `{type:"hello", v:2, cnonce, mac}`: `cnonce` is 32 random bytes in base64, `mac` is base64(HMAC-SHA256(key = the pairing code as typed, message = `"stagepop-client|" + nonce + "|" + origin`)), where `origin` is its own `moz-extension://<id>`. The server checks `mac` in constant time and replies `{type:"welcome", mac}` with base64(HMAC-SHA256(token, `"stagepop-server|" + cnonce + "|" + nonce`)). The add-on must verify that `welcome` MAC and send nothing else (no `feeds`, no `window`) until it matches; a mismatch means a different process holds the port, so it drops the socket. Base64 is the standard alphabet with padding; nonces are used as the exact strings sent. A v1 hello (raw token) is refused. A wrong MAC, origin or nonce closes with 1008.
+- **Pairing code.** 32 random bytes in Credential Manager (`WidgetWall2/stagepop/token/0`). The only way it reaches the page is the answer to `wall2_stagepop_token("show" | "new")` (shown once, in Tools, under one lock so one caller gets it; a second show says `hidden`; if the settings file cannot be written nothing is handed out; New code drops the connected add-on). A busy port is retried every 5 s. Status and the `stagepop-state` event never carry it.
+- **Messages in:** `feeds` (1 to 12 `{key, name}`, `mode` must be listed) and `window` (`open`, `fullscreen`). **Out:** `mode`, `open` (with `left` and `top` when a place is known), `close`, `fullscreen`. The wall shows what the add-on reports, never what it asked for.
+- **Commands** (wall2 window only): `wall2_stagepop_status`, `wall2_stagepop_send`, `wall2_stagepop_token`, `wall2_stagepop_placement_set`. Default place: the monitor that is exactly 1024 by 600.
+- **Page.** `src/onair/v2/StagePop.tsx`, `stagepopStore.ts`, `stagepopModel.ts`; the Tools block is `src/tools/StagePop.tsx` (under Lights and home). Dev knobs: `?sp=open|closed|waiting|full|busy|off`, `?spshare=none`, `?spcode=ready`, `?spplace=none` (`devMocks/stagepop.ts`). Area script: `scripts/areas/onair-stagepop.mjs` (`npm run fit-check -- --area=onair-stagepop`).
+
 ## Welcome | 5
 - Say hello and what today is about
 ## Product demo | 20

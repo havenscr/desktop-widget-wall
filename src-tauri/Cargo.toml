@@ -91,6 +91,9 @@ rusqlite = { version = "0.31", features = ["bundled"] }
 # OAuth callback server
 tiny_http = "0.12"
 
+# Stage pop-out channel (wall2_stagepop): sync WebSocket server on 127.0.0.1 only, no TLS, no async runtime.
+tungstenite = { version = "=0.26.2", default-features = false, features = ["handshake"] }
+
 # HTTP client for Google Maps API and Microsoft OAuth token endpoint
 ureq = "2.9"
 # Pinned TLS for the Hue bridge (wall2_lightsync): same rustls and ring as ureq in the lockfile.
