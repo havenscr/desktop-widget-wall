@@ -51,6 +51,14 @@ pub(crate) enum WallAction {
     EventOpenNext,
     Zen,
     Dream,
+    /// Music sync on, or off with Lights back (the Music sync store).
+    LightSyncToggle,
+    /// Stops every light sync, Hue Sync included (`wall2_lightsync_stop_all`).
+    LightSyncStopAll,
+    /// Opens the Hue Sync app (`wall2_huesync_open`).
+    HueSyncOpen,
+    /// Stops Music sync and puts the remembered mood back.
+    LightsBack,
 }
 
 /// The longest mood id a key may name.
@@ -88,6 +96,10 @@ pub(crate) fn parse_action(name: &str) -> Option<WallAction> {
         "event:open-next" => WallAction::EventOpenNext,
         "zen" => WallAction::Zen,
         "dream" => WallAction::Dream,
+        "lightsync:toggle" => WallAction::LightSyncToggle,
+        "lightsync:stop-all" => WallAction::LightSyncStopAll,
+        "huesync:open" => WallAction::HueSyncOpen,
+        "lights:back" => WallAction::LightsBack,
         _ => return None,
     })
 }
@@ -121,6 +133,10 @@ impl WallAction {
             WallAction::EventOpenNext => "event:open-next".into(),
             WallAction::Zen => "zen".into(),
             WallAction::Dream => "dream".into(),
+            WallAction::LightSyncToggle => "lightsync:toggle".into(),
+            WallAction::LightSyncStopAll => "lightsync:stop-all".into(),
+            WallAction::HueSyncOpen => "huesync:open".into(),
+            WallAction::LightsBack => "lights:back".into(),
         }
     }
 
@@ -298,6 +314,10 @@ pub(crate) const LIBRARY: &[LibEntry] = &[
     LibEntry { id: "tv-off", label: "TV off", icon: "tv", group: "house", kind: LibKind::Soon, how: "needs the home app draft merged", spec: "soon" },
     LibEntry { id: "alarms-seen", label: "Mark network alarms seen", icon: "shield", group: "house", kind: LibKind::Soon, how: "needs the home app draft merged", spec: "soon" },
     LibEntry { id: "dream", label: "Dream", icon: "moon", group: "house", kind: LibKind::Wall, how: "dark, slow screen", spec: "dream" },
+    LibEntry { id: "sync-toggle", label: "Music sync", icon: "bulb", group: "house", kind: LibKind::Wall, how: "lights follow the music, press again to stop and put the mood back", spec: "lightsync:toggle" },
+    LibEntry { id: "sync-stop-all", label: "Stop all sync", icon: "timer-off", group: "house", kind: LibKind::Wall, how: "stops Music sync and Hue Sync", spec: "lightsync:stop-all" },
+    LibEntry { id: "huesync-open", label: "Hue Sync app", icon: "desktop", group: "house", kind: LibKind::Wall, how: "opens the Hue Sync app", spec: "huesync:open" },
+    LibEntry { id: "lights-back", label: "Lights back", icon: "undo", group: "house", kind: LibKind::Wall, how: "stops sync and puts your mood back", spec: "lights:back" },
     LibEntry { id: "pt-run", label: "PowerToys Run", icon: "search", group: "powertoys", kind: LibKind::Check, how: "Alt+Space", spec: "Alt+Space" },
     LibEntry { id: "pt-color", label: "Color picker", icon: "brush", group: "powertoys", kind: LibKind::Check, how: "Win+Shift+C", spec: "Win+Shift+C" },
     LibEntry { id: "pt-ocr", label: "Copy text from the screen", icon: "copy", group: "powertoys", kind: LibKind::Check, how: "Win+Shift+T", spec: "Win+Shift+T" },
@@ -497,8 +517,8 @@ mod tests {
         ["refresh", "screenshot", "camera", "clipboard", "desktop", "brush", "gauge", "code", "copy", "save", "undo", "search", "lock", "mic", "play", "window", "keyboard"];
 
     #[test]
-    fn the_library_has_120_keys_in_17_groups_with_unique_stable_ids() {
-        assert_eq!(LIBRARY.len(), 120);
+    fn the_library_has_124_keys_in_17_groups_with_unique_stable_ids() {
+        assert_eq!(LIBRARY.len(), 124);
         assert_eq!(GROUPS.len(), 17);
         let ids: HashSet<&str> = LIBRARY.iter().map(|e| e.id).collect();
         assert_eq!(ids.len(), LIBRARY.len(), "ids are unique");
@@ -621,6 +641,10 @@ mod tests {
             "event:open-next",
             "zen",
             "dream",
+            "lightsync:toggle",
+            "lightsync:stop-all",
+            "huesync:open",
+            "lights:back",
         ];
         for n in all {
             let a = parse_action(n).unwrap_or_else(|| panic!("{n}"));
@@ -659,6 +683,11 @@ mod tests {
             "run:calc",
             "open:https://x",
             "shell:cmd",
+            "lightsync",
+            "lightsync:start",
+            "lightsync:Toggle",
+            "huesync:close",
+            "lights:back ",
         ] {
             assert!(parse_action(bad).is_none(), "{bad:?}");
         }
@@ -669,7 +698,7 @@ mod tests {
         for n in ["lock", "displays:off", "sharex:region", "sharex:folder"] {
             assert!(parse_action(n).unwrap().runs_in_rust(), "{n}");
         }
-        for n in ["layout:thirds", "screens-off", "focus:25", "mixer", "sonos:pause-all", "mood:x", "tasks:open", "zen"] {
+        for n in ["layout:thirds", "screens-off", "focus:25", "mixer", "sonos:pause-all", "mood:x", "tasks:open", "zen", "lightsync:toggle", "lightsync:stop-all", "huesync:open", "lights:back"] {
             assert!(!parse_action(n).unwrap().runs_in_rust(), "{n}");
         }
     }

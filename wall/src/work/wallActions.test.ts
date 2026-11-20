@@ -8,6 +8,7 @@ import { NEEDS_CONFIRM } from '../home/soundModel';
 import { usePlaceStore } from '../state/places';
 import { useDeckStore } from './deckStore';
 import { useMeetingFeed } from './useNextMeeting';
+import { resetLightSync, useLightSync } from '../studio/lightsync/store';
 import { ActionError, runWallAction } from './wallActions';
 
 const NOW = new Date(2026, 10, 12, 9, 0).getTime();
@@ -237,6 +238,33 @@ it('zen and dream change the place', async () => {
   usePlaceStore.setState({ active: 'work', from: 'work', zenDream: false });
   expect(await runWallAction('dream')).toBe('Dream opened');
   expect(usePlaceStore.getState()).toMatchObject({ active: 'zen', zenDream: true });
+});
+
+it('the sync keys run the store and the two native commands, each with a fixed line', async () => {
+  resetLightSync();
+  track('wall2_lightsync_stop_all');
+  track('wall2_huesync_open', 'opened');
+  expect(await runWallAction('lightsync:stop-all')).toBe('All light sync stopped');
+  expect(await runWallAction('huesync:open')).toBe('Hue Sync opened');
+  expect(calls.map((c) => c[0])).toEqual(['wall2_lightsync_stop_all', 'wall2_huesync_open']);
+  fails('wall2_lightsync_stop_all');
+  fails('wall2_huesync_open');
+  expect(await refusal('lightsync:stop-all')).toBe('Could not stop the sync');
+  expect(await refusal('huesync:open')).toBe('Could not open Hue Sync');
+  resetLightSync();
+});
+
+it('Music sync refuses while a start is out, and Lights back with no sync running only answers', async () => {
+  resetLightSync();
+  useLightSync.setState({ starting: true });
+  expect(await refusal('lightsync:toggle')).toBe('Music sync is busy');
+  resetLightSync();
+  track('wall2_lightsync_stop');
+  expect(await runWallAction('lights:back')).toBe('Lights back');
+  expect(calls.map((c) => c[0])).toEqual(['wall2_lightsync_stop']);
+  fails('wall2_lightsync_stop');
+  expect(await refusal('lights:back')).toBe('Could not put the lights back');
+  resetLightSync();
 });
 
 it('a name outside the list does nothing', async () => {

@@ -24,6 +24,17 @@ it('every wall action in the library and in the fixed list maps to one kind', ()
   expect(actionKind('nothing:here')).toBeNull();
 });
 
+it('the four light sync keys are system keys in the House group, with a hover line each', () => {
+  const house = LIBRARY_DATA.find((g) => g.id === 'house')!;
+  for (const [id, action] of [['sync-toggle', 'lightsync:toggle'], ['sync-stop-all', 'lightsync:stop-all'], ['huesync-open', 'huesync:open'], ['lights-back', 'lights:back']]) {
+    const k = house.keys.find((x) => x.id === id);
+    expect(k?.action, id).toBe(action);
+    expect(k?.how.length, id).toBeGreaterThan(0);
+    expect(actionKind(action), action).toBe('system');
+    expect(libKeyKind('house', id, action), id).toBe('system');
+  }
+});
+
 it('Record 16:9 and the other capture keys are capture, whatever group they sit in', () => {
   expect(actionKind('layout:record169')).toBe('capture');
   expect(libKeyKind('windows', 'record-169', 'layout:record169')).toBe('capture');

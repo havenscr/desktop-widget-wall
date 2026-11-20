@@ -9,6 +9,7 @@ import { usePlaceStore } from '../state/places';
 import { useMeetingFeed } from './useNextMeeting';
 import { arrangedText, arrangeReason, errorText, windowsText } from './deckModel';
 import { useDeckStore } from './deckStore';
+import { isOn, useLightSync } from '../studio/lightsync/store';
 
 /** A wall action that cannot run now. `message` is one short fixed line for the row. */
 export class ActionError extends Error {}
@@ -166,6 +167,21 @@ export async function runWallAction(name: string, now: number = Date.now()): Pro
     case 'event:open-next': {
       const m = nextJoinable(now);
       return viaCommand('wall2_open_event', { key: m.key }, 'Opened the event', 'Could not open the event');
+    }
+    case 'lightsync:toggle': {
+      const was = isOn(useLightSync.getState());
+      const before = useLightSync.getState();
+      if (before.starting || before.stopping) return refuse('Music sync is busy');
+      await useLightSync.getState().toggle();
+      return useLightSync.getState().failure !== null ? refuse(was ? 'Could not stop Music sync' : 'Could not start Music sync') : was ? 'Music sync off, lights back' : 'Music sync on';
+    }
+    case 'lightsync:stop-all':
+      return viaCommand('wall2_lightsync_stop_all', undefined, 'All light sync stopped', 'Could not stop the sync');
+    case 'huesync:open':
+      return viaCommand('wall2_huesync_open', undefined, 'Hue Sync opened', 'Could not open Hue Sync');
+    case 'lights:back': {
+      await useLightSync.getState().lightsBack();
+      return useLightSync.getState().failure !== null ? refuse('Could not put the lights back') : 'Lights back';
     }
     case 'zen':
       usePlaceStore.getState().setActive('zen');

@@ -1021,6 +1021,42 @@ export const LIBRARY_DATA: LibGroup[] = [
     "how": "dark, slow screen",
     "action": "dream",
     "runnable": true
+   },
+   {
+    "id": "sync-toggle",
+    "label": "Music sync",
+    "icon": "bulb",
+    "kind": "wall",
+    "how": "lights follow the music, press again to stop and put the mood back",
+    "action": "lightsync:toggle",
+    "runnable": true
+   },
+   {
+    "id": "sync-stop-all",
+    "label": "Stop all sync",
+    "icon": "timer-off",
+    "kind": "wall",
+    "how": "stops Music sync and Hue Sync",
+    "action": "lightsync:stop-all",
+    "runnable": true
+   },
+   {
+    "id": "huesync-open",
+    "label": "Hue Sync app",
+    "icon": "desktop",
+    "kind": "wall",
+    "how": "opens the Hue Sync app",
+    "action": "huesync:open",
+    "runnable": true
+   },
+   {
+    "id": "lights-back",
+    "label": "Lights back",
+    "icon": "undo",
+    "kind": "wall",
+    "how": "stops sync and puts your mood back",
+    "action": "lights:back",
+    "runnable": true
    }
   ]
  },
