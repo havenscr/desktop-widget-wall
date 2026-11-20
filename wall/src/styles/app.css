@@ -78,7 +78,7 @@ button,
 .rb {
   flex-shrink: 0;
   width: 72px;
-  height: 74px;
+  height: 66px;
   border-radius: 18px;
   display: flex;
   flex-direction: column;
@@ -135,7 +135,7 @@ button,
   margin: 6px 0;
 }
 .rb.rb-fs {
-  height: 72px;
+  height: 64px;
   flex-shrink: 0;
 }
 .rail-spacer {
