@@ -5,7 +5,7 @@ import { LIBRARY_DATA } from '../bridge/devMocks/libraryData';
 import { isMouseOnly, keyboardOnMouseKey } from './keyPress';
 import { ACTION_KIND, actionKind, GENERAL_SET, GROUP_KIND, KEY_KINDS, KIND_TOKEN, libIndex, libKeyKind, matchLibrary, normChord, pinKind, setKeyKind } from './keyKind';
 
-const rust: string = readFileSync('../src-tauri/src/wall2_keylib.rs', 'utf8');
+const rust: string = readFileSync('../src-tauri/src/wall2_keylib.rs', 'utf8').replace(/\r\n/g, '\n');
 
 it('every library group maps to exactly one kind, and no kind is left over', () => {
   for (const g of LIBRARY_DATA) expect(KEY_KINDS, g.id).toContain(GROUP_KIND[g.id]);

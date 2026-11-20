@@ -8,7 +8,7 @@ import { NEEDS_CONFIRM } from '../home/soundModel';
 import { usePlaceStore } from '../state/places';
 import { useDeckStore } from './deckStore';
 import { useMeetingFeed } from './useNextMeeting';
-import { resetLightSync, useLightSync } from '../studio/lightsync/store';
+import { isOn, resetLightSync, useLightSync } from '../studio/lightsync/store';
 import { ActionError, runWallAction } from './wallActions';
 
 const NOW = new Date(2026, 10, 12, 9, 0).getTime();
@@ -251,6 +251,19 @@ it('the sync keys run the store and the two native commands, each with a fixed l
   fails('wall2_huesync_open');
   expect(await refusal('lightsync:stop-all')).toBe('Could not stop the sync');
   expect(await refusal('huesync:open')).toBe('Could not open Hue Sync');
+  resetLightSync();
+});
+
+it('stop all and Hue Sync clear a running store, so the next Music sync key starts', async () => {
+  for (const key of ['lightsync:stop-all', 'huesync:open']) {
+    resetLightSync();
+    track('wall2_lightsync_stop_all');
+    track('wall2_huesync_open', 'opened');
+    useLightSync.setState({ status: { running: true, starting: false } as never, remembered: 'evening' });
+    await runWallAction(key);
+    expect(isOn(useLightSync.getState()), key).toBe(false);
+    expect(useLightSync.getState().remembered, key).toBeNull();
+  }
   resetLightSync();
 });
 

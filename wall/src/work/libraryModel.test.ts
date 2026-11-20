@@ -5,7 +5,7 @@ import { LIBRARY_DATA } from '../bridge/devMocks/libraryData';
 import { KEY_ICONS } from './keyIcons';
 import { FALLBACK_PINS, MAX_PINS, parsePins, PINS_KEY, removePin, resolvePin, searchLibrary, serializePins, swapPin, type LibGroup, type LibKey } from './libraryModel';
 
-const rust: string = readFileSync('../src-tauri/src/wall2_keylib.rs', 'utf8');
+const rust: string = readFileSync('../src-tauri/src/wall2_keylib.rs', 'utf8').replace(/\r\n/g, '\n');
 const filePins = [{ label: 'Mine', icon: 'window', action: 'zen' }];
 const lib = LIBRARY_DATA;
 
@@ -81,7 +81,7 @@ describe('the library the page and the mocks hold equals the Rust one', () => {
   });
 
   it('the ShareX group is exactly the 16 tasks of the Rust table, all runnable wall keys, and never an upload or an active-window task', () => {
-    const sharex: string = readFileSync('../src-tauri/src/wall2_sharex.rs', 'utf8');
+    const sharex: string = readFileSync('../src-tauri/src/wall2_sharex.rs', 'utf8').replace(/\r\n/g, '\n');
     const table = [...sharex.matchAll(/Row \{ spec: "([a-z-]+)", arg: "(-[A-Za-z]+)" \}/g)].map((m) => ({ spec: m[1], arg: m[2] }));
     expect(table.length).toBe(16);
     const group = lib.find((g) => g.id === 'sharex')!;
