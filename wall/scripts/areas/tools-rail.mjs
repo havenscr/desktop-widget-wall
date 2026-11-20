@@ -18,6 +18,9 @@ const EXPECT = {
   'Tools rail, a Key lights link opens Lights and home': 'lights',
   'Tools rail, a Home app link opens Lights and home': 'lights',
 };
+const SP_BTN = '.tools-drawer [data-section="stagepop"] .tools-btn.cy';
+const SP = 'tools=lights&keys2=none&lightsync=paired&desktoken=set&sp=waiting&spcode=ready';
+const SPV = ['Tools, Stage pop-out, code hidden', 'Tools, Stage pop-out, code shown'];
 const v = (name, q, extra = {}) => ({ name, q, checks: RAIL, viewportOnly: true, ...extra });
 
 // Runs in the page.
@@ -28,6 +31,34 @@ function measureToolsRail() {
   const panels = [...drawer.querySelectorAll('.tools-panel:not([hidden])')];
   const tabs = [...drawer.querySelectorAll('.tools-tab')].map((t) => ({ group: t.getAttribute('data-group'), line: (t.querySelector('.tools-tabline')?.textContent || '').trim() }));
   return { found: true, active: open ? open.getAttribute('data-group') : null, panels: panels.length, tabs, bottom: Math.round(drawer.getBoundingClientRect().bottom * 10) / 10 };
+}
+
+// Runs in the page. The Stage pop-out block in Tools: the code field with its focus ring (3 px outline at 2 px offset, so 5 px
+// out) must touch no other control, no two controls overlap, and no text is under 16 px.
+function measureStagePopTools() {
+  const box = document.querySelector('.tools-drawer [data-section="stagepop"]');
+  if (!box) return { found: false, fails: [] };
+  const fails = [];
+  const r1 = (n) => Math.round(n * 10) / 10;
+  const RING = 5;
+  const code = box.querySelector('.oa2-spt-code');
+  const controls = [...box.querySelectorAll('button, input:not(.oa2-spt-code)')];
+  const named = (e) => e.getAttribute('aria-label') || (e.textContent || '').trim().slice(0, 20) || e.tagName;
+  const hit = (a, b, m) => a.left < b.right - 0.5 + m && a.right > b.left + 0.5 - m && a.top < b.bottom - 0.5 + m && a.bottom > b.top + 0.5 - m;
+  if (code) {
+    const c = code.getBoundingClientRect();
+    const ring = { left: c.left - RING, right: c.right + RING, top: c.top - RING, bottom: c.bottom + RING };
+    for (const e of controls) if (hit(ring, e.getBoundingClientRect(), 0)) fails.push('stage pop-out: the code field ring (' + r1(ring.top) + ' to ' + r1(ring.bottom) + ') overlaps "' + named(e) + '" (' + r1(e.getBoundingClientRect().top) + ' to ' + r1(e.getBoundingClientRect().bottom) + ')');
+    const row = code.parentElement.getBoundingClientRect();
+    if (ring.top < row.top - 0.5 || ring.bottom > row.bottom + 0.5) fails.push('stage pop-out: the code field ring leaves its own row');
+  }
+  for (let i = 0; i < controls.length; i++) for (let j = i + 1; j < controls.length; j++) if (hit(controls[i].getBoundingClientRect(), controls[j].getBoundingClientRect(), 0)) fails.push('stage pop-out: "' + named(controls[i]) + '" overlaps "' + named(controls[j]) + '"');
+  for (const el of [box, ...box.querySelectorAll('*')]) {
+    const own = [...el.childNodes].some((n) => n.nodeType === 3 && n.textContent.trim() !== '');
+    const px = parseFloat(getComputedStyle(el).fontSize);
+    if ((own || el === code) && px < 15.99) fails.push('stage pop-out: "' + (el.textContent.trim() || named(el)).slice(0, 30) + '" is ' + px + ' px, under 16');
+  }
+  return { found: true, code: !!code, fails };
 }
 
 const G = (name, knobs, expect, actions) => ({ screen: 'work', name: `tools rail: ${name}`, query: Q(knobs).slice(1), custom: true, expect, ...(actions ? { actions } : {}) });
@@ -54,9 +85,20 @@ export default {
       v('Tools rail, YouTube setup form open (tallest)', Q('youtube=off&meet=signedout&tools=1'), { click: YT_ROW + ' .tools-btn' }),
       v('Tools rail, a Key lights link opens Lights and home', Q('tools=keylights&keys2=none')),
       v('Tools rail, a Home app link opens Lights and home', Q('tools=desktoken&desktoken=unset')),
+      v(SPV[0], Q(SP), { checks: [...RAIL, '.tools-drawer [data-section="stagepop"]'] }),
+      v(SPV[1], Q(SP), { click: SP_BTN, checks: [...RAIL, '.tools-drawer [data-section="stagepop"]'] }),
     ],
-    measurements: { toolsRail: measureToolsRail },
+    measurements: { toolsRail: measureToolsRail, stagePopTools: measureStagePopTools },
     rules: {
+      stagePopTools: (variant, results, emit) => {
+        if (!SPV.includes(variant.name)) return false;
+        const m = results.stagePopTools;
+        if (!m || !m.found) { emit('  FAIL stage pop-out: the block is not shown in Tools'); return true; }
+        if ((variant.name === SPV[1]) !== m.code) { emit('  FAIL stage pop-out: the code field is ' + (m.code ? 'shown' : 'missing') + ' in the wrong variant'); return true; }
+        for (const f of m.fails) emit('  FAIL ' + f);
+        if (!m.fails.length) emit('  ok   stage pop-out in Tools: the code field and its ring touch no other control, text at least 16 px');
+        return m.fails.length > 0;
+      },
       toolsRail: (variant, results, emit) => {
         const want = EXPECT[variant.name];
         if (!want) return false;
@@ -75,6 +117,11 @@ export default {
       },
     },
     breaks: {
+      'stagepop-code-overlap': {
+        css: '.dt-row.dt-code { padding: 0 !important; margin: -8px 0 !important; }',
+        expect: /^ *FAIL stage pop-out: the code field ring/m,
+        appliesTo: (variant) => variant.name === SPV[1],
+      },
       'tools-rail-tall': {
         css: '.tools-panel { min-height: 700px !important; }',
         expect: /^ *FAIL tools drawer: bottom edge y [\d.]+, past y 697/m,
