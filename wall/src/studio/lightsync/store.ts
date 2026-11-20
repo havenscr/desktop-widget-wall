@@ -5,7 +5,7 @@ import { readCoverStrips, targetTint } from '../../music/coverTint';
 import { useNowPlayingStore } from '../../music/store';
 import { useHome } from '../homeStore';
 import { swatchFor } from '../moodRow';
-import { CUSTOM_MAX, CUSTOM_MIN, DEFAULT_LIGHT_SYNC, FOLLOWS, clampCustom, clampSettings, clampUi, engineSettings, resolvePalette, type LightSyncSettings, type LightSyncStatus, type LightsUi, type PaletteContext, type PaletteId } from './model';
+import { CUSTOM_MAX, CUSTOM_MIN, DEFAULT_LIGHT_SYNC, FOLLOWS, clampCustom, clampSettings, clampUi, engineSettings, padToMinimum, resolvePalette, type LightSyncSettings, type LightSyncStatus, type LightsUi, type PaletteContext, type PaletteId } from './model';
 
 const hex = (c: number[]) => '#' + c.map((v) => Math.max(0, Math.min(255, Math.round(v))).toString(16).padStart(2, '0')).join('');
 
@@ -263,7 +263,8 @@ export const useLightSync = create<LightSyncState>((set, get) => ({
     if (!art) return false;
     const strips = await readCoverStrips(art, CUSTOM_MAX);
     if (!strips) return false;
-    setCustom(strips.map(hex));
+    // A flat cover gives fewer than three different colours: the nearest swatches fill it up.
+    setCustom(padToMinimum(clampCustom(strips.map(hex))));
     return true;
   },
   toggleCustom(h) {

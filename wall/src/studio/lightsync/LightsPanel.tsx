@@ -1,8 +1,9 @@
-import type { CSSProperties, ReactNode } from 'react';
+import { useEffect, useRef, type CSSProperties, type ReactNode } from 'react';
 import { IconRestore } from '@tabler/icons-react';
 import { tip } from '../../ui/HoverTip';
-import { useAudioStore } from '../../audio/store';
+import { audioBeats, useAudioStore } from '../../audio/store';
 import { COLOUR_BARS, DEFAULT_LIGHTS_UI, DEFAULT_LIGHT_SYNC, LIGHT_NAMES, resolvePalette, type Follow } from './model';
+import { newPreview, stepPreview } from './preview';
 import { coverNow, useLightSync } from './store';
 
 /** The sheet heading on the Lights side. */
@@ -58,32 +59,51 @@ function One({ id, min, max, value, usual, words, note, onChange }: { id: string
   );
 }
 
-/** The Preview: the four Plays and the panels, drawn from the wall's sound right now with the chosen settings. */
+/** The Preview: the four Plays and the panels, drawn from the wall's sound right now by the engine's own maths (`preview.ts`). */
 function Preview() {
-  const settings = useLightSync((s) => s.settings);
-  const ui = useLightSync((s) => s.ui);
   const palette = useLightSync((s) => s.palette);
   const custom = useLightSync((s) => s.custom);
-  const bass = useAudioStore((s) => s.bass);
-  const high = useAudioStore((s) => s.high);
   const colours = resolvePalette(palette, { custom, cover: coverNow() }).colors;
-  const amount = (f: Follow) => {
-    const level = f === 'bass' ? bass : f === 'highs' ? high : (bass + high) / 2;
-    const shaped = Math.min(1, Math.max(0, (level - 0.2) / 0.7));
-    return Math.max(0.2, settings.floor + (settings.brightness - settings.floor) * shaped);
-  };
-  const fade = `opacity ${Math.round(settings.releaseMs)}ms`;
+  const root = useRef<HTMLDivElement>(null);
+  const live = useRef({ colours });
+  live.current.colours = colours;
+  useEffect(() => {
+    let state = newPreview(useLightSync.getState().settings.floor, audioBeats().count);
+    let last = performance.now();
+    let raf = 0;
+    const tick = (now: number) => {
+      const { settings, ui } = useLightSync.getState();
+      const a = useAudioStore.getState();
+      const cs = live.current.colours;
+      const f = stepPreview(state, settings, ui, cs.length, { bass: a.bass, high: a.high, beatCount: audioBeats().count, dtMs: now - last });
+      last = now;
+      const el = root.current;
+      if (el) {
+        el.querySelectorAll<HTMLElement>('.ls-play').forEach((e, i) => {
+          e.style.background = cs[f.colour % cs.length];
+          e.style.opacity = String(Math.max(0.2, f.plays[i]));
+        });
+        el.querySelectorAll<SVGElement>('polygon').forEach((e, i) => {
+          e.setAttribute('fill', cs[(f.colour + i) % cs.length]);
+          e.style.opacity = String(Math.max(0.2, f.panels[i]));
+        });
+      }
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, []);
   return (
-    <div className="ls-preview" role="img" aria-label="Preview of the lights, live" data-part="lights-preview">
+    <div className="ls-preview" role="img" aria-label="Preview of the lights, live" data-part="lights-preview" ref={root}>
       <svg className="ls-panels" viewBox="0 0 80 40" aria-hidden="true">
         {[0, 1, 2, 3, 4].map((i) => (
-          <polygon key={i} points={`${8 + i * 14},34 ${15 + i * 14},6 ${22 + i * 14},34`} fill={colours[i % colours.length]} style={{ opacity: amount(ui.follow[4]), transition: fade }} />
+          <polygon key={i} points={`${8 + i * 14},34 ${15 + i * 14},6 ${22 + i * 14},34`} fill={colours[i % colours.length]} style={{ opacity: 0.2 }} />
         ))}
       </svg>
       <span className="ls-bar" aria-hidden="true" />
       <span className="ls-plays" aria-hidden="true">
         {[0, 1, 2, 3].map((i) => (
-          <i key={i} className="ls-play" style={{ background: colours[(i + 1) % colours.length], opacity: amount(ui.follow[i]), transition: fade }} />
+          <i key={i} className="ls-play" style={{ background: colours[0], opacity: 0.2 }} />
         ))}
       </span>
     </div>

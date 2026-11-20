@@ -8,6 +8,7 @@ import { useWatchStore } from '../../unwind/watch/store';
 import { WatchSheet } from '../../unwind/watch/Sheet';
 import { resetHome } from '../homeStore';
 import { OfficeMoods } from '../OfficeMoods';
+import { newPreview, stepPreview } from './preview';
 import { DEFAULT_LIGHTS_UI, DEFAULT_LIGHT_SYNC, SWATCHES, engineSettings, resolvePalette } from './model';
 import { LightsPanel, barsWords, brightWords, flashWords, smoothWords } from './LightsPanel';
 import { resetLightSync, useLightSync } from './store';
@@ -331,3 +332,58 @@ function OfficeMoodsPicker() {
     </>
   );
 }
+
+it('a flat cover (one colour) is filled up to three with the nearest swatches', async () => {
+  useNowPlayingStore.setState({ art: 'cover.jpg' });
+  const coverTint = await import('../../music/coverTint');
+  const spy = vi.spyOn(coverTint, 'readCoverStrips').mockResolvedValue([[255, 61, 154], [255, 61, 154], [255, 61, 154], [255, 61, 154], [255, 61, 154]]);
+  try {
+    expect(await useLightSync.getState().keepCover()).toBe(true);
+    const c = useLightSync.getState().custom;
+    expect(c.length).toBe(3);
+    expect(c[0]).toBe('#ff3d9a');
+    expect(c.slice(1).every((x) => SWATCHES.includes(x))).toBe(true);
+    expect(useLightSync.getState().palette).toBe('custom');
+  } finally {
+    spy.mockRestore();
+  }
+});
+
+const frame = (st: ReturnType<typeof newPreview>, over: Partial<typeof DEFAULT_LIGHT_SYNC> = {}, ui = DEFAULT_LIGHTS_UI, beatCount = 0, bass = 0, high = 0, dtMs = 33) =>
+  stepPreview(st, { ...DEFAULT_LIGHT_SYNC, ...over }, ui, 3, { bass, high, beatCount, dtMs });
+
+it('the preview steps colours every colourBars times four beats', () => {
+  const st = newPreview(0.15);
+  let beats = 0;
+  const ui = { ...DEFAULT_LIGHTS_UI, colourBars: 1 };
+  for (let i = 0; i < 3; i++) frame(st, {}, ui, ++beats);
+  expect(st.colourPos).toBe(0);
+  expect(frame(st, {}, ui, ++beats).colour).toBe(1);
+  const two = newPreview(0.15);
+  beats = 0;
+  for (let i = 0; i < 7; i++) frame(two, {}, DEFAULT_LIGHTS_UI, ++beats);
+  expect(two.colourPos).toBe(0);
+  expect(frame(two, {}, DEFAULT_LIGHTS_UI, ++beats).colour).toBe(1);
+});
+
+it('the preview kick flash follows Kick flash, and Panel ripple off pulses the panels whole', () => {
+  const hit = (flash: number, ripple: boolean) => {
+    const st = newPreview(0);
+    return frame(st, { floor: 0, kickFlash: flash }, { ...DEFAULT_LIGHTS_UI, ripple }, 1);
+  };
+  expect(hit(1, true).plays[1]).toBeGreaterThan(hit(0.2, true).plays[1] + 0.4);
+  // Ripple on: the ring starts at the centre panel only. Off: every panel flashes together.
+  const on = hit(1, true).panels;
+  expect(on[2]).toBeGreaterThan(on[0]);
+  const off = hit(1, false).panels;
+  expect(new Set(off.map((v) => v.toFixed(3))).size).toBe(1);
+  expect(off[0]).toBeGreaterThan(0.9);
+});
+
+it('the preview takes "both" as the mean, as the engine does', () => {
+  const st = newPreview(0.15);
+  let f = frame(st);
+  for (let i = 0; i < 60; i++) f = frame(st, { floor: 0.0 }, { ...DEFAULT_LIGHTS_UI, follow: ['both', 'bass', 'highs', 'both', 'both'] }, 0, 1, 0);
+  expect(f.plays[0]).toBeCloseTo((st.bassEnv + st.highEnv) / 2, 5);
+  expect(f.panels[0]).toBeCloseTo((st.bassEnv + st.highEnv) / 2, 5);
+});

@@ -35,12 +35,12 @@ pub(crate) struct SettingsIn {
     pub plays: Option<bool>,
     pub panels: Option<bool>,
     pub send_hz: Option<f64>,
-    /// Bars between palette steps (1 to 8) when `beat_step` is on; absent keeps one step per beat.
-    pub colour_bars: Option<f64>,
+    /// Bars between palette steps (1 to 8) when `beat_step` is on; absent keeps one step per beat. Read leniently: a wrong type is the same as absent.
+    pub colour_bars: Option<serde_json::Value>,
     /// `{ plays: [band; up to 4], panels: band }`, band "bass", "highs" or "both". Read leniently in `Follow::from_in`.
     pub follow: Option<serde_json::Value>,
-    /// Panels ring out from the centre on a kick (default true); false pulses them whole.
-    pub ripple: Option<bool>,
+    /// Panels ring out from the centre on a kick (default true); false pulses them whole. Read leniently: a wrong type is the default.
+    pub ripple: Option<serde_json::Value>,
 }
 
 /// What `start` and `tune` take.
@@ -64,7 +64,7 @@ pub(crate) struct Palette {
 pub(crate) enum Band {
     Bass,
     Highs,
-    /// The louder of the two envelopes.
+    /// The mean of the two envelopes (what the panels always followed).
     Both,
 }
 
@@ -168,9 +168,9 @@ impl Settings {
             plays: s.plays.unwrap_or(true),
             panels: s.panels.unwrap_or(true),
             send_hz: clamp_or(s.send_hz, 25.0, 60.0, 50.0),
-            step_beats: s.colour_bars.filter(|b| b.is_finite()).map(|b| (b.clamp(1.0, 8.0) * 4.0).round() as u32),
+            step_beats: s.colour_bars.as_ref().and_then(|v| v.as_f64()).filter(|b| b.is_finite()).map(|b| (b.clamp(1.0, 8.0) * 4.0).round() as u32),
             follow: Follow::from_in(s.follow.as_ref()),
-            ripple: s.ripple.unwrap_or(true),
+            ripple: s.ripple.as_ref().and_then(|v| v.as_bool()).unwrap_or(true),
         }
     }
 }
@@ -294,7 +294,7 @@ impl Engine {
         match b {
             Band::Bass => self.bass_env,
             Band::Highs => self.high_env,
-            Band::Both => self.bass_env.max(self.high_env),
+            Band::Both => (self.bass_env + self.high_env) / 2.0,
         }
     }
 
@@ -495,7 +495,7 @@ mod tests {
             plays: Some(false),
             panels: None,
             send_hz: Some(1000.0),
-            colour_bars: Some(99.0),
+            colour_bars: Some(serde_json::json!(99.0)),
             follow: None,
             ripple: None,
         });
@@ -591,10 +591,43 @@ mod tests {
         let f = run(&t, 1.0, 0.0, 40, 4, &[]);
         assert!(lum(&f.plays[0]) > lum(&f.plays[1]) * 2.0, "far left follows the bass now: {:?}", f.plays);
         assert!(lum(&f.plays[2]) > lum(&f.plays[3]) * 2.0);
-        // Both takes the louder envelope: highs only sounding still lights an inner Play.
-        let b = tuning(js(serde_json::json!({ "follow": { "plays": ["both", "both", "both", "both"] } })));
-        let hi = run(&b, 0.0, 1.0, 40, 4, &[]);
-        assert!(hi.plays.iter().all(|p| lum(p) > 1.0), "{:?}", hi.plays);
+        // Both is the mean of the two envelopes: with highs only sounding it lights a bass-following Play less than
+        // a highs-following one, and more than a bass-following one.
+        let m = tuning(js(serde_json::json!({ "follow": { "plays": ["both", "highs", "bass", "both"] } })));
+        let hi = run(&m, 0.0, 1.0, 40, 4, &[]);
+        assert!(lum(&hi.plays[0]) > lum(&hi.plays[2]), "both beats bass-only when highs sound: {:?}", hi.plays);
+        assert!(lum(&hi.plays[0]) < lum(&hi.plays[1]), "both is the mean, not the louder: {:?}", hi.plays);
+    }
+
+    #[test]
+    fn panels_both_is_the_mean_the_default_always_was() {
+        // Bass loud, highs quiet. The default panels (no follow) and panels set to "both" are the same frame.
+        let d = tuning(SettingsIn::default());
+        let b = tuning(js(serde_json::json!({ "follow": { "panels": "both" } })));
+        let (pd, pb) = (run(&d, 1.0, 0.2, 40, 0, &XY), run(&b, 1.0, 0.2, 40, 0, &XY));
+        assert_eq!(pd.panels, pb.panels);
+        // And the mean sits between the bass-only and highs-only panels.
+        let lo = tuning(js(serde_json::json!({ "follow": { "panels": "highs" } })));
+        let hi = tuning(js(serde_json::json!({ "follow": { "panels": "bass" } })));
+        let (pl, ph) = (run(&lo, 1.0, 0.2, 40, 0, &XY), run(&hi, 1.0, 0.2, 40, 0, &XY));
+        assert!(pl.panels[0][0] < pd.panels[0][0] && pd.panels[0][0] < ph.panels[0][0], "{:?} {:?} {:?}", pl.panels, pd.panels, ph.panels);
+    }
+
+    #[test]
+    fn wrong_typed_colour_bars_and_ripple_fall_back_and_keep_the_rest() {
+        for odd in [serde_json::json!("x"), serde_json::json!(true), serde_json::json!([1, 2]), serde_json::json!({ "a": 1 }), serde_json::json!(null)] {
+            let v = serde_json::json!({
+                "palette": { "colors": ["#ff00aa", "#35e6ea"], "kick": "#ffffff", "rest": "#200040" },
+                "settings": { "brightness": 0.5, "colourBars": odd.clone(), "ripple": odd.clone() }
+            });
+            let t = Tuning::from_in(&serde_json::from_value::<TuneIn>(v).unwrap()).unwrap();
+            assert_eq!((t.settings.brightness, t.settings.step_beats, t.settings.ripple), (0.5, None, true), "{odd}");
+        }
+        // A number for ripple and a string for bars are wrong too; a right one still applies beside a wrong one.
+        let s = Settings::from_in(&js(serde_json::json!({ "colourBars": 2, "ripple": 1 })));
+        assert_eq!((s.step_beats, s.ripple), (Some(8), true));
+        let s = Settings::from_in(&js(serde_json::json!({ "colourBars": "2", "ripple": false })));
+        assert_eq!((s.step_beats, s.ripple), (None, false));
     }
 
     #[test]

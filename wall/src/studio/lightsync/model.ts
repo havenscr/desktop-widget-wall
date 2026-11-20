@@ -175,6 +175,19 @@ export function clampCustom(raw: unknown): string[] {
   return out.slice(0, CUSTOM_MAX);
 }
 
+const rgbOf = (h: string): number[] => [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16));
+
+/** Fewer than `CUSTOM_MIN` colours (a flat cover) are filled up with the swatches nearest to the ones kept, nearest first. */
+export function padToMinimum(colours: readonly string[]): string[] {
+  const out = clampCustom(colours);
+  const dist = (a: string, b: string) => rgbOf(a).reduce((t, v, i) => t + (v - rgbOf(b)[i]) ** 2, 0);
+  while (out.length < CUSTOM_MIN && out.length > 0) {
+    const next = SWATCHES.filter((w) => !out.includes(w)).sort((x, y) => Math.min(...out.map((o) => dist(x, o))) - Math.min(...out.map((o) => dist(y, o))))[0];
+    out.push(next);
+  }
+  return out;
+}
+
 /** What the live palettes follow. Any may be missing. */
 export interface PaletteContext {
   /** Your own colours. */
