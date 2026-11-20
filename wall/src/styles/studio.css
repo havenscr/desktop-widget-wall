@@ -896,13 +896,15 @@ span.st-tg-sw {
   flex: none;
   font: 600 18px/1.2 var(--body);
 }
-.kl-head .kl-name {
-  flex: 1;
-}
 .kl-state {
-  white-space: normal;
-  overflow: visible;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
   line-height: 1.25;
+}
+.kl-head .kl-state {
+  flex: 1;
+  min-width: 0;
 }
 .kl-unreadable {
   padding-bottom: 6px;

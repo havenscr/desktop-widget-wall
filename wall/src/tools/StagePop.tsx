@@ -119,8 +119,10 @@ export function StagePopTools({ ringed = false }: { ringed?: boolean }) {
         <button type="button" className="tools-btn kl-btn" disabled={l === null || t === null} onClick={savePlace} {...hover('Saves where the pop-out window opens')}>
           Save
         </button>
+        <span className="tools-line kl-state dt-state" aria-live="polite">
+          {where}
+        </span>
       </div>
-      <div className="tools-note kl-note dt-note">{where}</div>
       {error && (
         <div className="tools-note bad kl-note dt-note" role="alert">
           {error}
