@@ -68,6 +68,10 @@ export const ACTION_KIND: Record<string, KeyKind> = {
   'displays:off': 'system',
   'screens-off': 'system',
   dream: 'system',
+  'lightsync:toggle': 'system',
+  'lightsync:stop-all': 'system',
+  'huesync:open': 'system',
+  'lights:back': 'system',
 };
 
 /** The kind of a wall action, or null when the page does not know it. Every `mood:` action is a house key and every `sharex:` action a capture key. */

@@ -5,7 +5,7 @@ import { LIBRARY_DATA } from '../bridge/devMocks/libraryData';
 import { isMouseOnly, keyboardOnMouseKey } from './keyPress';
 import { ACTION_KIND, actionKind, GENERAL_SET, GROUP_KIND, KEY_KINDS, KIND_TOKEN, libIndex, libKeyKind, matchLibrary, normChord, pinKind, setKeyKind } from './keyKind';
 
-const rust: string = readFileSync('../src-tauri/src/wall2_keylib.rs', 'utf8');
+const rust: string = readFileSync('../src-tauri/src/wall2_keylib.rs', 'utf8').replace(/\r\n/g, '\n');
 
 it('every library group maps to exactly one kind, and no kind is left over', () => {
   for (const g of LIBRARY_DATA) expect(KEY_KINDS, g.id).toContain(GROUP_KIND[g.id]);
@@ -22,6 +22,17 @@ it('every wall action in the library and in the fixed list maps to one kind', ()
   for (const [a, kind] of Object.entries(ACTION_KIND)) expect(KEY_KINDS, a).toContain(kind);
   expect(actionKind('mood:evening')).toBe('system');
   expect(actionKind('nothing:here')).toBeNull();
+});
+
+it('the four light sync keys are system keys in the House group, with a hover line each', () => {
+  const house = LIBRARY_DATA.find((g) => g.id === 'house')!;
+  for (const [id, action] of [['sync-toggle', 'lightsync:toggle'], ['sync-stop-all', 'lightsync:stop-all'], ['huesync-open', 'huesync:open'], ['lights-back', 'lights:back']]) {
+    const k = house.keys.find((x) => x.id === id);
+    expect(k?.action, id).toBe(action);
+    expect(k?.how.length, id).toBeGreaterThan(0);
+    expect(actionKind(action), action).toBe('system');
+    expect(libKeyKind('house', id, action), id).toBe('system');
+  }
 });
 
 it('Record 16:9 and the other capture keys are capture, whatever group they sit in', () => {

@@ -5,7 +5,7 @@ import { LIBRARY_DATA } from '../bridge/devMocks/libraryData';
 import { KEY_ICONS } from './keyIcons';
 import { FALLBACK_PINS, MAX_PINS, parsePins, PINS_KEY, removePin, resolvePin, searchLibrary, serializePins, swapPin, type LibGroup, type LibKey } from './libraryModel';
 
-const rust: string = readFileSync('../src-tauri/src/wall2_keylib.rs', 'utf8');
+const rust: string = readFileSync('../src-tauri/src/wall2_keylib.rs', 'utf8').replace(/\r\n/g, '\n');
 const filePins = [{ label: 'Mine', icon: 'window', action: 'zen' }];
 const lib = LIBRARY_DATA;
 
@@ -30,11 +30,11 @@ function rustLibrary(): LibGroup[] {
 describe('the library the page and the mocks hold equals the Rust one', () => {
   const flat = lib.flatMap((g) => g.keys.map((k) => ({ ...k, group: g.id })));
 
-  it('has 120 keys in 17 groups, equal field by field to what library_info returns: ids, labels, icons, kinds, how, action, runnable and each group exes', () => {
+  it('has 124 keys in 17 groups, equal field by field to what library_info returns: ids, labels, icons, kinds, how, action, runnable and each group exes', () => {
     const fromRust = rustLibrary();
-    expect(fromRust.flatMap((g) => g.keys).length).toBe(120);
+    expect(fromRust.flatMap((g) => g.keys).length).toBe(124);
     expect(fromRust.length).toBe(17);
-    expect(new Set(flat.map((k) => k.id)).size).toBe(120);
+    expect(new Set(flat.map((k) => k.id)).size).toBe(124);
     expect(LIBRARY_DATA).toEqual(fromRust);
   });
 
@@ -76,12 +76,12 @@ describe('the library the page and the mocks hold equals the Rust one', () => {
 
   it('every action name is in the fixed list Rust parses', () => {
     const names = new Set([...rust.matchAll(/^\s+"([a-z0-9:-]+)" => WallAction::\w+,/gm)].map((m) => m[1]));
-    expect(names.size).toBe(23);
+    expect(names.size).toBe(27);
     for (const k of flat) if (k.action) expect(names.has(k.action) || /^mood:[a-z0-9-]+$/.test(k.action) || /^sharex:[a-z-]+$/.test(k.action), `${k.id}: ${k.action}`).toBe(true);
   });
 
   it('the ShareX group is exactly the 16 tasks of the Rust table, all runnable wall keys, and never an upload or an active-window task', () => {
-    const sharex: string = readFileSync('../src-tauri/src/wall2_sharex.rs', 'utf8');
+    const sharex: string = readFileSync('../src-tauri/src/wall2_sharex.rs', 'utf8').replace(/\r\n/g, '\n');
     const table = [...sharex.matchAll(/Row \{ spec: "([a-z-]+)", arg: "(-[A-Za-z]+)" \}/g)].map((m) => ({ spec: m[1], arg: m[2] }));
     expect(table.length).toBe(16);
     const group = lib.find((g) => g.id === 'sharex')!;
