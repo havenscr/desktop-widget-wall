@@ -956,6 +956,10 @@ span.st-tg-sw {
   font-size: 16px;
   font-variant-numeric: tabular-nums;
 }
+/* The code row: padded by more than the 5 px focus ring (3 px outline, 2 px offset) so the field and its ring stay inside it. */
+.dt-row.dt-code {
+  padding: 8px 0;
+}
 .tools-input.oa2-spt-code {
   font-size: 16px;
   font-family: var(--mono, ui-monospace, monospace);

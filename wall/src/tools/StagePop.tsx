@@ -108,7 +108,7 @@ export function StagePopTools({ ringed = false }: { ringed?: boolean }) {
         </button>
       </div>
       {code !== null && (
-        <div className="dt-row">
+        <div className="dt-row dt-code">
           <input className="tools-input kl-field dt-field oa2-spt-code" readOnly aria-label="Pairing code" value={code} onClick={(e) => e.currentTarget.select()} {...hover('Paste this into the add-on options. It is not shown again')} />
         </div>
       )}
