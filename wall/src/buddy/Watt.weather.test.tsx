@@ -249,15 +249,20 @@ describe('Watt in the wind', () => {
 });
 
 describe('the shake he starts on his own', () => {
-  /** Run 200 s in the rain (the first shake is due by 75 s) and report what was seen. */
-  function watch(container: HTMLElement) {
+  /**
+   * Step the frame clock in the rain and report what was seen. The first shake is due by 75 s, so `seconds`
+   * (default 90) covers it; `untilShake` stops early at the first shake, so the work stays small on a loaded machine.
+   */
+  function watch(container: HTMLElement, seconds = 90, untilShake = false) {
     const seen = { droplets: 0, fluffy: 0, drips: 0 };
-    runFor(200, () => {
+    for (let i = 0; i < Math.round(seconds / 0.05); i++) {
+      tick();
       const w = water(container);
       if (w.length >= 3) seen.droplets++;
       if (w.length > 0) seen.drips++;
       if (fills(container).has('#f6f2ff') && !fills(container).has('#a79bdc')) seen.fluffy++;
-    });
+      if (untilShake && seen.droplets + seen.fluffy > 0) break;
+    }
     return seen;
   }
 
@@ -282,7 +287,7 @@ describe('the shake he starts on his own', () => {
     ms += 31 * 60_000;
     setReading(reading({ fetchedAt: ms }));
     rerender(<Watt now={() => ms} />);
-    const after = watch(container);
+    const after = watch(container, 90, true);
     expect(after.droplets + after.fluffy).toBeGreaterThan(0);
   });
 
