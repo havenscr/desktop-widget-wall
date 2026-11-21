@@ -623,7 +623,7 @@ fn find_bucket(body: &Value, want: &str) -> Option<String> {
 
 /// Most list names `wall2_tasks_lists` returns.
 const MAX_LISTS: usize = 24;
-/// Longest list name kept, in characters (the same cap as a task title is far wider than a chip).
+/// Longest list name kept, in characters; anything longer is dropped, as it would be far wider than a chip.
 const MAX_LIST_CHARS: usize = 60;
 
 /// The bucket names of an `/api/buckets` answer, in the app's order: each trimmed, empty ones and

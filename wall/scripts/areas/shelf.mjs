@@ -59,7 +59,7 @@ export default {
   gallery: { states: [
     state('shelf: three lists, first picked', LISTS, ['Captures', 'Region', 'Screen', 'GIF', 'Record', 'Text (OCR)', 'History', 'Tasks (To-Do)', 'Tax / Business', 'House, garden', 'Always here']),
     state('shelf: lists from the task app', 'x=1', ['Tasks (To-Do)', 'Tax / Business', 'House, garden', 'Region']),
-    state('shelf: second list picked', LISTS, ['Tax / Business', 'Nothing open'], 'click:.shelf-list:nth-child(2)'),
+    state('shelf: second list picked', LISTS, ['Tax / Business', 'File the quarterly return'], ['.shelf-list:nth-child(2)']),
   ] },
   fit: {
     variants: [
