@@ -84,7 +84,7 @@ export function StudioKeys({ now }: { now: number }) {
       type="button"
       className="oa-btn oa2-hdbtn"
       onClick={() => (picked ? void invoke('wall2_open_keys_file').catch(() => keys.showBrief('Could not open the keys file')) : void pick())}
-      {...tip(picked ? 'Open keys.json to add the StreamYard hotkeys under "studio".' : 'Then click the StreamYard browser window within 10 seconds.')}
+      {...tip(picked ? 'Open your keys file to add the StreamYard hotkeys under "studio".' : 'Then click the StreamYard browser window within 10 seconds.')}
     >
       {picked ? <IconFileText size={20} aria-hidden="true" /> : <IconAppWindow size={20} aria-hidden="true" />}
       {picked ? 'Open keys file' : 'Pick window'}

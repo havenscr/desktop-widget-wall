@@ -553,7 +553,11 @@
   background: rgba(10, 7, 28, 0.66);
   border: 1px solid var(--line);
   white-space: nowrap;
-  cursor: default;
+  cursor: pointer;
+}
+.yt-chip[aria-pressed='true'] {
+  color: var(--tx);
+  border-color: var(--cyan);
 }
 .yt-chip:focus-visible,
 .yt-seeall:focus-visible {

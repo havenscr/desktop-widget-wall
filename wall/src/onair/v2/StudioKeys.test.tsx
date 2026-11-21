@@ -114,7 +114,7 @@ it('says each refusal in words and leaves the Sent line alone', async () => {
     ['gone', /The studio window is gone/],
     ['not forward', /would not come forward/],
     ['busy', /still sending/],
-    ['not set up', /No chord for that key/],
+    ['not set up', /No chord set for that key/],
   ];
   for (const [word, text] of cases) {
     refuse = word;

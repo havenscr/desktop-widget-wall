@@ -212,6 +212,7 @@ pub(crate) const GROUPS: &[LibGroup] = &[
     LibGroup { id: "house", title: "House", exes: &[] },
     LibGroup { id: "powertoys", title: "PowerToys (not installed on this PC)", exes: &[] },
     LibGroup { id: "sharex", title: "ShareX", exes: &[] },
+    LibGroup { id: "wispr", title: "Wispr Flow", exes: &["wispr flow.exe"] },
 ];
 
 pub(crate) const LIBRARY: &[LibEntry] = &[
@@ -339,6 +340,7 @@ pub(crate) const LIBRARY: &[LibEntry] = &[
     LibEntry { id: "sx-highlighter", label: "Mouse highlighter", icon: "hand", group: "sharex", kind: LibKind::Wall, how: "ShareX: highlights the mouse pointer", spec: "sharex:highlighter" },
     LibEntry { id: "sx-history", label: "Image history", icon: "camera", group: "sharex", kind: LibKind::Wall, how: "ShareX: opens ShareX image history", spec: "sharex:history" },
     LibEntry { id: "sx-folder", label: "Screenshots folder", icon: "folder", group: "sharex", kind: LibKind::Wall, how: "ShareX: opens the screenshots folder", spec: "sharex:folder" },
+    LibEntry { id: "wispr-dictate", label: "Hands-free dictation", icon: "mic", group: "wispr", kind: LibKind::Key, how: "Ctrl+Win+Space (turns Wispr Flow dictation on or off)", spec: "Ctrl+Win+Space" },
 ];
 
 /// The keys "Always here" shows when `keys.json` names none, by library id.
@@ -517,9 +519,9 @@ mod tests {
         ["refresh", "screenshot", "camera", "clipboard", "desktop", "brush", "gauge", "code", "copy", "save", "undo", "search", "lock", "mic", "play", "window", "keyboard"];
 
     #[test]
-    fn the_library_has_124_keys_in_17_groups_with_unique_stable_ids() {
-        assert_eq!(LIBRARY.len(), 124);
-        assert_eq!(GROUPS.len(), 17);
+    fn the_library_has_125_keys_in_18_groups_with_unique_stable_ids() {
+        assert_eq!(LIBRARY.len(), 125);
+        assert_eq!(GROUPS.len(), 18);
         let ids: HashSet<&str> = LIBRARY.iter().map(|e| e.id).collect();
         assert_eq!(ids.len(), LIBRARY.len(), "ids are unique");
         for e in LIBRARY {
@@ -529,6 +531,18 @@ mod tests {
         }
         let titles: HashSet<&str> = GROUPS.iter().map(|g| g.title).collect();
         assert_eq!(titles.len(), GROUPS.len());
+    }
+
+    #[test]
+    fn wispr_flow_has_its_group_and_one_chord_key() {
+        let g = group("wispr").expect("the Wispr Flow group");
+        assert_eq!((g.title, g.exes), ("Wispr Flow", &["wispr flow.exe"][..]));
+        let keys: Vec<&LibEntry> = LIBRARY.iter().filter(|e| e.group == "wispr").collect();
+        assert_eq!(keys.len(), 1, "push to talk is a held chord a click cannot make, so it is not here");
+        let k = keys[0];
+        assert_eq!((k.id, k.label, k.icon, k.kind, k.spec), ("wispr-dictate", "Hands-free dictation", "mic", LibKind::Key, "Ctrl+Win+Space"));
+        assert!(matches!(action_of(k), Some(LibAction::Chord(_))));
+        assert!(!k.how.is_empty());
     }
 
     #[test]
@@ -738,7 +752,7 @@ mod tests {
     #[test]
     fn the_page_catalogue_carries_no_chord() {
         let info = library_info(false);
-        assert_eq!(info.iter().map(|g| g.keys.len()).sum::<usize>(), 124);
+        assert_eq!(info.iter().map(|g| g.keys.len()).sum::<usize>(), 125);
         let text = serde_json::to_string(&info).unwrap();
         assert!(!text.contains("\"spec\""));
         let thirds = info.iter().flat_map(|g| &g.keys).find(|k| k.id == "thirds").unwrap();

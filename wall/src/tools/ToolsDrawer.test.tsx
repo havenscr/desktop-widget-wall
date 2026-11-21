@@ -42,8 +42,6 @@ const summary = (over: Partial<KeysSummary> = {}): KeysSummary => ({
 });
 
 let keysAnswer: () => unknown;
-let opened: ReturnType<typeof vi.fn<(a?: unknown) => unknown>>;
-const openedHandler = (a?: unknown) => opened(a);
 beforeEach(() => {
   vi.useFakeTimers();
   localStorage.removeItem(GROUP_KEY);
@@ -56,9 +54,7 @@ beforeEach(() => {
   useWatchStore.setState({ looks: { ...DEFAULT_LOOKS } });
   usePlaceStore.setState({ active: 'work' });
   keysAnswer = () => summary();
-  opened = vi.fn();
   mocks.set('wall2_keys_summary', () => keysAnswer());
-  mocks.set('wall2_open_keys_file', openedHandler);
   mocks.set('wall2_build_info', () => ({ commit: '7c9f442', builtAt: '2026-11-13T16:17Z' }));
   mocks.set('wall2_meet_next', () => ({ accounts: [{ id: 'work', label: 'Work', state: 'ok' }, { id: 'second', label: 'Second', state: 'signed-out' }], meetings: [] }));
   mocks.set('wall2_spotify_status', () => ({ setup: false, signedIn: false }));
@@ -98,7 +94,7 @@ it('draws nothing until it is opened, then the rail of four groups, the build st
   expect(screen.getByRole('list', { name: 'Accounts' })).toBeTruthy();
   await pick('Health');
   expect(screen.getByRole('list', { name: 'Sources' })).toBeTruthy();
-  expect(drawer.textContent).toContain('Keys file');
+  expect(drawer.textContent).toContain('Keys');
   expect(screen.getAllByRole('button', { name: /^Retry / })).toHaveLength(8);
   await pick('Lights and home');
   expect(screen.getByRole('list', { name: 'Key lights' })).toBeTruthy();
@@ -206,13 +202,11 @@ it('Video look: chips from the Watch looks, the active one lit, a click uses the
   expect([...feathered.closest('.tools-chips')!.querySelectorAll('button')].map((b) => b.textContent)).not.toContain('Off');
 });
 
-it('Keys file: count and read time, Open calls the fixed command, Reload reads again', async () => {
+it('Keys: count and read time, Reload reads again', async () => {
   await openIt(null, 'Health');
   await flush();
-  expect(screen.getByText(/^keys\.json, 4 keys, read /)).toBeTruthy();
-  fireEvent.click(screen.getByRole('button', { name: 'Open' }));
-  expect(opened).toHaveBeenCalledTimes(1);
-  expect(opened.mock.calls[0]).toEqual([undefined]);
+  expect(screen.getByText(/^Your keys, 4 keys, read /)).toBeTruthy();
+  expect(screen.queryByRole('button', { name: 'Open' })).toBeNull();
   let reads = 0;
   keysAnswer = () => {
     reads += 1;
@@ -221,15 +215,16 @@ it('Keys file: count and read time, Open calls the fixed command, Reload reads a
   fireEvent.click(screen.getByRole('button', { name: 'Reload' }));
   await flush();
   expect(reads).toBe(1);
-  expect(screen.getByText(/^keys\.json, 1 key, read /)).toBeTruthy();
+  expect(screen.getByText(/^Your keys, 1 key, read /)).toBeTruthy();
 });
 
-it('Keys file: no file says defaults, and a refusal shows amber with the whole reason on hover', async () => {
+it('Keys: no file says defaults, and a refusal shows amber with the whole reason on hover', async () => {
   keysAnswer = () => summary({ source: 'default' });
   await openIt(null, 'Health');
   await flush();
-  expect(screen.getByText('No keys.json. Defaults in use')).toBeTruthy();
-  expect(screen.getByRole('button', { name: 'Open' })).toBeTruthy();
+  expect(screen.getByText('Using the default keys')).toBeTruthy();
+  const needle = ['keys', 'json'].join('.');
+  expect(document.body.textContent).not.toContain(needle);
   act(() => useToolsStore.getState().close());
   resetKeysFeed();
   keysAnswer = () => {
@@ -237,23 +232,15 @@ it('Keys file: no file says defaults, and a refusal shows amber with the whole r
   };
   act(() => useToolsStore.getState().openDrawer());
   await flush();
-  const line = screen.getByText(/^keys\.json refused: app 3, key 7/);
+  const line = screen.getByText(/^Your keys were refused: app 3, key 7/);
   expect(line.className).toContain('bad');
-});
-
-it('an Open that fails says so', async () => {
-  mocks.set('wall2_open_keys_file', () => Promise.reject('failed'));
-  await openIt(null, 'Health');
-  fireEvent.click(screen.getByRole('button', { name: 'Open' }));
-  await flush();
-  expect(screen.getByText('Could not open the file')).toBeTruthy();
 });
 
 it('keysLine and fileKeyCount', () => {
   expect(fileKeyCount(summary())).toBe(4);
-  expect(keysLine({ status: 'loading' }, null).text).toBe('Reading keys.json');
-  expect(keysLine({ status: 'problem', text: 'bad chord' }, null)).toMatchObject({ bad: true, text: 'keys.json refused: bad chord' });
-  expect(keysLine({ status: 'ready', summary: summary({ source: 'default' }) }, null).text).toBe('No keys.json. Defaults in use');
+  expect(keysLine({ status: 'loading' }, null).text).toBe('Reading your keys');
+  expect(keysLine({ status: 'problem', text: 'bad chord' }, null)).toMatchObject({ bad: true, text: 'Your keys were refused: bad chord' });
+  expect(keysLine({ status: 'ready', summary: summary({ source: 'default' }) }, null).text).toBe('Using the default keys');
 });
 
 it('Retry reads exactly once however it is clicked while the read is slow (clicks at 0.5, 1.5 and 3 seconds)', async () => {
@@ -340,30 +327,13 @@ it('closing on purpose during a Spotify sign-in cancels it too', async () => {
   expect(useToolsStore.getState().note).toBe('Sign-in cancelled');
 });
 
-it('the could not open note clears on the next success and on Reload', async () => {
-  mocks.set('wall2_open_keys_file', () => Promise.reject('failed'));
-  await openIt(null, 'Health');
-  fireEvent.click(screen.getByRole('button', { name: 'Open' }));
-  await flush();
-  expect(screen.getByText('Could not open the file')).toBeTruthy();
-  mocks.set('wall2_open_keys_file', () => undefined);
-  fireEvent.click(screen.getByRole('button', { name: 'Open' }));
-  await flush();
-  expect(screen.queryByText('Could not open the file')).toBeNull();
-  mocks.set('wall2_open_keys_file', () => Promise.reject('failed'));
-  fireEvent.click(screen.getByRole('button', { name: 'Open' }));
-  await flush();
-  fireEvent.click(screen.getByRole('button', { name: 'Reload' }));
-  expect(screen.queryByText('Could not open the file')).toBeNull();
-});
-
 it('Reload keeps the last good read for the deck and marks only the drawer line as reading', async () => {
   await openIt(null, 'Health');
   await flush();
   keysAnswer = () => new Promise(() => undefined);
   fireEvent.click(screen.getByRole('button', { name: 'Reload' }));
   expect(useKeysFeedStore.getState().read.status).toBe('ready');
-  expect(screen.getByText('Reading keys.json')).toBeTruthy();
+  expect(screen.getByText('Reading your keys')).toBeTruthy();
 });
 
 // A sign-in that Rust is already running cannot be read from the status commands (neither the

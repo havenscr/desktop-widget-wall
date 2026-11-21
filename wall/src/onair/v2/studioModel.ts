@@ -32,7 +32,7 @@ export function refusalText(e: unknown): string {
     case 'not streamyard':
       return 'Switch that window to the StreamYard tab';
     case 'not set up':
-      return 'No chord for that key in keys.json';
+      return 'No chord set for that key';
     case 'gone':
       return 'The studio window is gone. Pick it again';
     case 'not forward':

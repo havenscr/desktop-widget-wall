@@ -30,11 +30,11 @@ function rustLibrary(): LibGroup[] {
 describe('the library the page and the mocks hold equals the Rust one', () => {
   const flat = lib.flatMap((g) => g.keys.map((k) => ({ ...k, group: g.id })));
 
-  it('has 124 keys in 17 groups, equal field by field to what library_info returns: ids, labels, icons, kinds, how, action, runnable and each group exes', () => {
+  it('has 125 keys in 18 groups, equal field by field to what library_info returns: ids, labels, icons, kinds, how, action, runnable and each group exes', () => {
     const fromRust = rustLibrary();
-    expect(fromRust.flatMap((g) => g.keys).length).toBe(124);
-    expect(fromRust.length).toBe(17);
-    expect(new Set(flat.map((k) => k.id)).size).toBe(124);
+    expect(fromRust.flatMap((g) => g.keys).length).toBe(125);
+    expect(fromRust.length).toBe(18);
+    expect(new Set(flat.map((k) => k.id)).size).toBe(125);
     expect(LIBRARY_DATA).toEqual(fromRust);
   });
 
@@ -165,7 +165,7 @@ describe('pins on this display', () => {
   });
 
   it('searches label, group and what a key does; empty groups drop out', () => {
-    expect(searchLibrary(lib, '')).toHaveLength(17);
+    expect(searchLibrary(lib, '')).toHaveLength(18);
     expect(searchLibrary(lib, 'volume').flatMap((g) => g.keys.map((k) => k.id))).toEqual(expect.arrayContaining(['volume-up', 'volume-down', 'mixer']));
     expect(searchLibrary(lib, 'ZOOM').map((g) => g.id)).toEqual(['zoom']);
     expect(searchLibrary(lib, 'zzzzzz')).toEqual([]);

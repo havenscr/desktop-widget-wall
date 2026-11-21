@@ -1,5 +1,5 @@
 import { mocks } from '../tauri';
-import type { YtDetail, YtPage, YtPlaylistSearch, YtPlayable, YtPlaylist, YtVideo } from '../../music/youtube';
+import type { YtDetail, YtMoodAnswer, YtPage, YtPlaylistSearch, YtPlayable, YtPlaylist, YtVideo } from '../../music/youtube';
 import { FIVE_LINE, playFrom, setNote } from '../../unwind/ytmusic/queue';
 import { useWatchStore } from '../../unwind/watch/store';
 
@@ -19,6 +19,9 @@ import { useWatchStore } from '../../unwind/watch/store';
  * `ytscroll=<px>` scrolls every list of rows to that many pixels once it has more rows than it shows (a still of the menu on a
  * row near the foot of the list). Names are invented; pictures are drawn motifs, never an address.
  * `ytplayed=` seeds the play record the For you tab reads (`none`, or a count up to 12, default 6) and `ytfy=down` makes that read fail.
+ * `ytmood=` picks the mood chips: `ok` (default: each mood answers twelve videos; the first click spends one of ten
+ * searches a week, a mood opened again is kept and spends none), `spent` (no search left: the calm "Out of mood searches" line),
+ * `down` or `empty`.
  * `ytdetails=` picks own-playlist details: `ok` (default), `none`, `down` or `slow`.
  *
  * `ytplay=` (with `youtube=in` and the mock frame, `watch=mock`: it never loads a real player, and without it nothing
@@ -108,6 +111,22 @@ export function registerYoutubeMocks(): void {
     const m = lib();
     const n = m === 'empty' ? 0 : m === 'few' ? 3 : 30;
     return paged(Array.from({ length: n }, (_, i) => video(100 + i, i === 6 ? 'embed' : 'yes', SONGS[(i + 5) % SONGS.length])), args?.pageToken);
+  });
+  // The mood chips: ten searches a week, a mood kept after its first answer (the week itself is not simulated).
+  const moodKept = new Map<string, YtVideo[]>();
+  let moodSpent = 0;
+  mocks.set('wall2_youtube_mood', (args): YtMoodAnswer => {
+    const knob = new URLSearchParams(window.location.search).get('ytmood') ?? 'ok';
+    if (knob === 'down') throw new Error('down');
+    const name = String(args?.mood ?? '').trim().toLowerCase();
+    const kept = moodKept.get(name);
+    if (kept) return { items: kept, cached: true, searchesLeft: 10 - moodSpent, backAt: null };
+    if (knob === 'spent' || moodSpent >= 10) return { items: [], cached: false, searchesLeft: 0, backAt: Math.floor(Date.now() / 1000) + 3 * 86400 };
+    moodSpent += 1;
+    const seed = 300 + [...name].reduce((n, c) => n + c.charCodeAt(0), 0) % 40;
+    const items = knob === 'empty' ? [] : Array.from({ length: 12 }, (_, i) => video(seed + i, 'yes', SONGS[(seed + i) % SONGS.length]));
+    moodKept.set(name, items);
+    return { items, cached: false, searchesLeft: 10 - moodSpent, backAt: null };
   });
   mocks.set('wall2_youtube_search', (args) => {
     failing();

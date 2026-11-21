@@ -38,6 +38,7 @@ export const GROUP_KIND: Record<string, KeyKind> = {
   house: 'system',
   powertoys: 'system',
   sharex: 'capture',
+  wispr: 'app',
 };
 
 /** Library keys that capture the screen, coloured as capture whatever group they sit in. */
