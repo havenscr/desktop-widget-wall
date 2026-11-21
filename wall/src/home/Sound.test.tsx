@@ -111,13 +111,9 @@ it('shows the five quick plays in the owner\'s order with More, and nothing is w
   expect(writes).toEqual([]);
   const evening = screen.getByText('Evening').closest('button')!;
   expect(evening.className).toContain('sug');
-  expect(evening.className).toContain('has-tag');
+  expect(evening.className).not.toContain('has-tag');
   expect(screen.getByText('Day').closest('button')!.className).not.toContain('has-tag');
-  const mark = within(evening).getByRole('img', { name: 'Suggested' });
-  expect(mark.getAttribute('title')).toBe('Suggested');
-  expect(mark.querySelector('svg')).toBeTruthy();
-  expect(Number(mark.querySelector('svg')!.getAttribute('width'))).toBeGreaterThanOrEqual(16);
-  expect(screen.getByRole('button', { name: /Suggested/ })).toBe(evening);
+  expect(within(evening).queryByRole('img', { name: 'Suggested' })).toBeNull();
   expect(evening.getAttribute('title')).toContain('Play Evening Music');
   expect(evening.getAttribute('title')).toContain('Suggested for this hour');
 });

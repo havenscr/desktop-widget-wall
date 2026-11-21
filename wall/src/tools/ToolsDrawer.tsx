@@ -12,6 +12,7 @@ import { joinKeys, reloadKeys, useKeysFeedStore, type Read } from '../work/keysF
 import type { KeysSummary } from '../work/keysModel';
 import { Accounts, LightSyncBlock } from './accounts';
 import { useLightSync } from './lightSync';
+import { BriefKeyRow } from './BriefKeyRow';
 import { DeskToken } from './DeskToken';
 import { StagePopTools } from './StagePop';
 import { KeyLights } from './KeyLights';
@@ -221,6 +222,7 @@ function AccountsPanel({ ringed }: PanelProps) {
   return (
     <div className={ringed('accounts') ? 'tools-block tools-ringed' : 'tools-block'} data-section="accounts">
       <Accounts />
+      <BriefKeyRow />
     </div>
   );
 }

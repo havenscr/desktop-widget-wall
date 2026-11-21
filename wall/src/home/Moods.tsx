@@ -21,6 +21,11 @@ export interface Mood {
   /** When the home app's schedule next runs this mood, epoch ms. The home app does not send
    * it yet; when it does, the card says "In N min" within the hour ahead. */
   nextAtMs?: number | null;
+  /** "scene" for the three routine cards the wall adds after the home app's moods; a tap starts
+   * that routine. Missing counts as a mood. */
+  kind?: 'mood' | 'scene';
+  /** The line under a scene's name, the routine's description. */
+  line?: string;
 }
 
 /**
@@ -91,7 +96,7 @@ function readCache(): Mood[] {
 
 function writeCache(list: Mood[]): void {
   try {
-    localStorage.setItem(MOODS_CACHE_KEY, JSON.stringify(list.map((m) => ({ id: m.id, label: m.label, ...(m.saved === false ? { saved: false } : {}) }))));
+    localStorage.setItem(MOODS_CACHE_KEY, JSON.stringify(list.map((m) => ({ id: m.id, label: m.label, ...(m.saved === false ? { saved: false } : {}), ...(m.kind === 'scene' ? { kind: 'scene' as const } : {}), ...(m.line ? { line: m.line } : {}) }))));
   } catch {
     /* storage can be blocked; the cache is a convenience */
   }
@@ -359,7 +364,7 @@ function useCondoMoods(): Omit<SectionProps, 'head'> {
     publish('moods', { state: centreState, okAt, check: () => void load() });
   }, [publish, centreState, okAt, load]);
 
-  return { moods, status, error, phase, onTap: (id) => void tap(id, moods.find((x) => x.id === id)?.saved !== false), isOn: (id) => last === id, subOf: (m) => (m.saved === false ? UNSAVED_NOTE : moodNote(m.id)), now, visible };
+  return { moods, status, error, phase, onTap: (id) => void tap(id, moods.find((x) => x.id === id)?.saved !== false), isOn: (id) => last === id, subOf: (m) => (m.saved === false ? UNSAVED_NOTE : (m.line ?? moodNote(m.id))), now, visible };
 }
 
 /** The cards, one row of three with the More card past three. The same for either list. */

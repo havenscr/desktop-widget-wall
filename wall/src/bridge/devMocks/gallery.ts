@@ -17,7 +17,7 @@ import { MOCK_DETAILS } from './meet';
  *                              failing, one failing; `failing` here makes the read itself error)
  *   ?home=quiet|many|off|down   (the network card; `?net=1|2|3` shows that many numbers, the alarm count first)
  *   ?day=empty                (the helper's day timeline has no runs)
- *   ?moods=six|nine|none|down
+ *   ?moods=six|nine|none|down|scenes
  *   ?media=none|paused|long|off
  *   ?box=max|stale|none|down   (machine numbers; `?pc=down` for the PC side)
  *   ?usage=high|none|old      (the usage meters; old: fresh, idle and reset-week meters)

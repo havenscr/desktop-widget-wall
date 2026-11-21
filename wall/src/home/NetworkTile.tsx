@@ -200,7 +200,7 @@ export function NetworkTile() {
         </span>
         {!busy && doors && (
           <span className="shield-doors">
-            {avail.security && door('security', <IconShield size={24} stroke={1.7} aria-hidden="true" />, 'Home security', securityDoorLine(s), SECURITY_TIP)}
+            {avail.security && door('security', <IconShield size={24} stroke={1.7} aria-hidden="true" />, 'Home Security', securityDoorLine(s), SECURITY_TIP)}
             {avail.portal && door('portal', <IconWorld size={24} stroke={1.7} aria-hidden="true" />, 'Firewalla', PORTAL_REST, PORTAL_TIP)}
           </span>
         )}
@@ -214,7 +214,7 @@ export function NetworkTile() {
             {avail.security && (
               <button type="button" className="shield-btn" onClick={() => openLink('security')} {...tip(SECURITY_TIP)}>
                 <IconShield size={20} stroke={1.8} aria-hidden="true" />
-                Home security
+                Home Security
               </button>
             )}
             {avail.portal && (

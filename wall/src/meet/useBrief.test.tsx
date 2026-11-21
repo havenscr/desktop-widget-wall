@@ -2,6 +2,7 @@ import { act, renderHook } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { BRIEF_BUILDING, BRIEF_CLIENT } from '../bridge/devMocks/meetBrief';
 import { mocks } from '../bridge/tauri';
+import { briefKeyChanged, useBriefKeySignal } from './briefKeySignal';
 import { usePlaceStore } from '../state/places';
 import { BUILDING_GIVE_UP_MS, BUILDING_RETRY_MS, READY_REREAD_MS, useBrief } from './useBrief';
 
@@ -27,6 +28,7 @@ afterEach(() => {
   vi.useRealTimers();
   mocks.clear();
   usePlaceStore.setState({ active: 'work' });
+  useBriefKeySignal.setState({ n: 0 });
 });
 
 describe('useBrief', () => {
@@ -40,6 +42,15 @@ describe('useBrief', () => {
     await flush();
     expect(calls).toEqual(['a', 'b']);
     expect(result.current.out).toBe(BRIEF_CLIENT);
+  });
+
+  it('reads again when the brief key is saved or forgotten elsewhere', async () => {
+    renderHook(() => useBrief('a'));
+    await flush();
+    expect(calls).toEqual(['a']);
+    act(() => briefKeyChanged());
+    await flush();
+    expect(calls).toEqual(['a', 'a']);
   });
 
   it('does not read without a key', async () => {
