@@ -113,7 +113,7 @@ export function sendReason(e: unknown, set: Pick<SetInfo, 'name' | 'general'>, h
     case 'busy':
       return 'Still sending the last key';
     case 'no key':
-      return 'That key is not in keys.json any more';
+      return 'That key is not in your keys any more';
     case 'no app':
       return hold ? `Wrong app in front for ${set.name}` : `${set.name} is not in front any more`;
     case 'gone':

@@ -156,7 +156,7 @@ export function KeyPicker({
         ))}
         {groups.length === 0 && <div className="pk-none">No key matches that search</div>}
       </div>
-      <button type="button" className="pk-reset" {...tip('Go back to the keys that come with the wall (or the ones keys.json names)')} onClick={onReset}>
+      <button type="button" className="pk-reset" {...tip('Go back to the keys that come with the wall (or the ones you set up)')} onClick={onReset}>
         Reset to defaults
       </button>
     </div>

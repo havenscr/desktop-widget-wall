@@ -1262,5 +1262,23 @@ export const LIBRARY_DATA: LibGroup[] = [
     "runnable": true
    }
   ]
+ },
+ {
+  "id": "wispr",
+  "title": "Wispr Flow",
+  "exes": [
+   "wispr flow.exe"
+  ],
+  "keys": [
+   {
+    "id": "wispr-dictate",
+    "label": "Hands-free dictation",
+    "icon": "mic",
+    "kind": "key",
+    "how": "Ctrl+Win+Space (turns Wispr Flow dictation on or off)",
+    "action": null,
+    "runnable": true
+   }
+  ]
  }
 ];

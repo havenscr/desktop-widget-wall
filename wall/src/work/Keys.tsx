@@ -366,7 +366,7 @@ export function Keys() {
   // The offer is the icon alone when the heading is tight: the chip shows, "+N more" is on the name, or the measuring above ran out of room.
   const offerIcon = resume !== null && (showChip || more !== '' || fit >= 1);
   const partText = paged ? `${chunkAt + 1}/${chunks.length}` : null;
-  const where = sum.source === 'default' ? 'You are using the built-in keys. To change them put keys.json in the app\'s config folder; the wall never writes it.' : 'Keys come from keys.json and the built-in library.';
+  const where = sum.source === 'default' ? 'You are using the built-in keys. To change them put keys.json in the app\'s config folder; the wall never writes it.' : 'Your keys and the built-in library.';
 
   const controls = (
     <span className="deck-hd-r">
@@ -490,7 +490,7 @@ export function Keys() {
           className="s deck-quiet"
           {...tip(
             idle
-              ? 'Click into a program and its keys show here. Sets come from keys.json and the built-in library.'
+              ? 'Click into a program and its keys show here. Sets come from your keys and the built-in library.'
               : `Add a set for ${sum.exe ?? 'this app'} to keys.json (match it by its .exe file name), or a general set with "match": "*" for every app.`,
           )}
         >
@@ -523,7 +523,7 @@ export function Keys() {
           const pinActions: KeyMenuAction[] = alreadyPinned
             ? [{ id: 'pin', label: 'Already in Always here', disabled: true }]
             : pinRef === null
-              ? [{ id: 'pin', label: 'This key lives in keys.json', disabled: true }]
+              ? [{ id: 'pin', label: 'This key is one of your own keys', disabled: true }]
               : full
                 ? pinRefs.map((ref, slot) => ({ id: 'swap' as const, slot, heading: slot === 0 ? 'Put in Always here, in place of' : undefined, label: (library && resolvePin(ref, library, sum.filePins)?.label) ?? ref }))
                 : [{ id: 'pin', label: 'Pin to Always here', note: `${pinRefs.length} of ${MAX_PINS}` }];

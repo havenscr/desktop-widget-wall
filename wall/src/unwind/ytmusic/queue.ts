@@ -35,7 +35,7 @@ export interface QueueEntry {
   at: number;
 }
 
-export type QueueFrom = { list: 'songs'; playlistId: string } | { list: 'liked' } | { list: 'found'; query: string } | { list: 'played' };
+export type QueueFrom = { list: 'songs'; playlistId: string } | { list: 'liked' } | { list: 'found'; query: string } | { list: 'played' } | { list: 'mood'; mood: string };
 
 export type FailedWhy = 'embed' | 'removed';
 
@@ -114,6 +114,7 @@ export function sameList(a: QueueFrom | null, b: QueueFrom | null): boolean {
   if (!a || !b || a.list !== b.list) return false;
   if (a.list === 'songs' && b.list === 'songs') return a.playlistId === b.playlistId;
   if (a.list === 'found' && b.list === 'found') return a.query === b.query;
+  if (a.list === 'mood' && b.list === 'mood') return a.mood === b.mood;
   return true;
 }
 
@@ -346,8 +347,8 @@ function listOf(from: QueueFrom): { items: YtVideo[]; next: string | null; loadi
   const lib = useYtLibrary.getState();
   if (from.list === 'songs') return lib.opened?.id === from.playlistId ? { ...lib.songs, key: 'songs' } : null;
   if (from.list === 'liked') return { ...lib.liked, key: 'liked' };
-  // The For you shelf is a fixed list: the queue ends where its rows end.
-  if (from.list === 'played') return null;
+  // The For you shelves are fixed lists: the queue ends where its rows end.
+  if (from.list === 'played' || from.list === 'mood') return null;
   return lib.found && lib.query === from.query ? { ...lib.found, key: null } : null;
 }
 

@@ -19,6 +19,12 @@ export interface YtDetail { id: string; title: string | null; channel: string | 
 export interface YtPlayed { id: string; at: number }
 /** The answer of a playlist search: the playlists and what is left of the day's search budget. */
 export interface YtPlaylistSearch { playlists: YtPlaylist[]; searchesLeft: number }
+/**
+ * A mood chip's answer: the videos, whether they were kept from an earlier click (no search spent), the mood
+ * searches left in the rolling 7 days, and, only when the budget is spent and nothing is kept, the time (seconds
+ * since 1970) the oldest search leaves the window.
+ */
+export interface YtMoodAnswer { items: YtVideo[]; cached: boolean; searchesLeft: number; backAt: number | null }
 /** A page of answers and the token of the next page (null at the end). */
 export interface YtPage<T> { items: T[]; next: string | null }
 
@@ -54,6 +60,8 @@ export const youtube = {
   search: (query: string): Promise<YtPage<YtVideo>> => invoke<YtPage<YtVideo>>('wall2_youtube_search', { query }),
   /** A playlist search, run only when asked (one search call of the day's budget; the same words again are free). */
   searchPlaylists: (query: string): Promise<YtPlaylistSearch> => invoke<YtPlaylistSearch>('wall2_youtube_search_playlists', { query }),
+  /** One mood's music (Focus, Energize, ...): kept 7 days in Rust, at most 10 searches in any 7 days across all moods. */
+  mood: (mood: string): Promise<YtMoodAnswer> => invoke<YtMoodAnswer>('wall2_youtube_mood', { mood }),
   /** Title, channel and length for 1 to 50 video ids from an own playlist. */
   videos: (ids: readonly string[]): Promise<YtDetail[]> =>
     ids.length >= 1 && ids.length <= 50 && ids.every((id) => VIDEO_ID.test(id)) ? invoke<YtDetail[]>('wall2_youtube_videos', { ids: [...ids] }) : refuse(),

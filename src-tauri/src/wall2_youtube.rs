@@ -16,6 +16,7 @@ use std::sync::{Mutex, MutexGuard};
 use std::time::{Duration, Instant};
 
 pub mod live;
+pub mod mood;
 
 const NOT_SETUP: &str = "not set up";
 const SIGN_AGAIN: &str = "sign in again";

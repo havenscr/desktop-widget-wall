@@ -42,10 +42,21 @@ export function setForYouView(showing: boolean, all: boolean): void {
   view.showing = showing;
   view.all = all;
 }
+/**
+ * The mood chips. A click shows that mood's shelf: Rust answers from its 7-day keep (no search) or spends one of
+ * the week's ten searches. The page keeps each answer only for the session, so clicking a chip again asks nothing.
+ * `backAt` is set when the budget is spent and the mood is not kept (the shelf then says which day it comes back).
+ */
+export interface MoodShelf { loading: boolean; rows: YtVideo[]; problem: YtProblem | null; backAt: number | null; cached: boolean }
+export const useMoods = create<{ open: string | null; byMood: Record<string, MoodShelf> }>(() => ({ open: null, byMood: {} }));
+let moodEpoch = 0;
+
 onLibraryReset(() => {
   epoch += 1;
   again = false;
   useForYou.setState(blank());
+  moodEpoch += 1;
+  useMoods.setState({ open: null, byMood: {} });
 });
 
 /** A video as the queue and the tiles take it. Only the picture host's own address is built. */
@@ -137,4 +148,35 @@ export function whenWords(at: number | undefined, now = Date.now()): string {
   if (days < 14) return 'Last week';
   if (days < 30) return `${Math.floor(days / 7)} weeks ago`;
   return 'Last month';
+}
+
+/** Open a mood's shelf (a second click on the open chip closes it). A mood that ended in a problem asks again. */
+export async function pickMood(mood: string): Promise<void> {
+  const cur = useMoods.getState();
+  if (cur.open === mood && !cur.byMood[mood]?.problem) {
+    useMoods.setState({ open: null });
+    return;
+  }
+  useMoods.setState({ open: mood });
+  const have = cur.byMood[mood];
+  // Loading, answered or spent: nothing more to ask. Only a problem asks again (Retry).
+  if (have && (have.loading || !have.problem)) return;
+  const mine = moodEpoch;
+  const put = (shelf: MoodShelf) => useMoods.setState((s) => ({ byMood: { ...s.byMood, [mood]: shelf } }));
+  put({ loading: true, rows: [], problem: null, backAt: null, cached: false });
+  try {
+    const a = await youtube.mood(mood);
+    if (mine !== moodEpoch) return;
+    const rows = (Array.isArray(a?.items) ? a.items : []).filter((v) => typeof v?.id === 'string' && typeof v?.title === 'string').map((v) => ({ ...v, thumb: safeThumb(v.thumb) ?? `https://i.ytimg.com/vi/${v.id}/mqdefault.jpg` }));
+    put({ loading: false, rows, problem: null, backAt: typeof a?.backAt === 'number' ? a.backAt : null, cached: a?.cached === true });
+  } catch (e) {
+    if (mine !== moodEpoch) return;
+    put({ loading: false, rows: [], problem: ytProblem(e), backAt: null, cached: false });
+  }
+}
+
+/** The calm line a spent budget shows, with the weekday the oldest search frees up in the viewer's own time zone. */
+export function moodBudgetLine(backAt: number): string {
+  const day = new Date(backAt * 1000).toLocaleDateString('en-US', { weekday: 'long' });
+  return `Out of mood searches this week. Back on ${day}.`;
 }

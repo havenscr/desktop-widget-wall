@@ -2,7 +2,7 @@ import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { mocks } from '../../bridge/tauri';
 import { resetNowPlaying } from '../../music/store';
-import type { YoutubeStatus, YtDetail, YtPage, YtPlayed, YtPlaylist } from '../../music/youtube';
+import type { YoutubeStatus, YtDetail, YtMoodAnswer, YtPage, YtPlayed, YtPlaylist } from '../../music/youtube';
 import { usePlaceStore } from '../../state/places';
 import { HoverTipLayer, hideTip } from '../../ui/HoverTip';
 import { resetLastPlayed } from '../lastPlayed';
@@ -10,8 +10,8 @@ import { resetListenSource } from '../spotify/model';
 import { resetSpotifyStatus } from '../spotify/status';
 import { playerLink } from '../watch/PlayerFrame';
 import { resetWatch, useWatchStore } from '../watch/store';
-import { MOODS, SHELF } from './ForYou';
-import { FIRST, afterPlay, loadForYou, useForYou, whenWords } from './forYouStore';
+import { MOODS, MOOD_TIP, SHELF } from './ForYou';
+import { FIRST, afterPlay, loadForYou, moodBudgetLine, useForYou, whenWords } from './forYouStore';
 import { resetQueue, useYtQueue } from './queue';
 import { resetYoutubeStatus } from './status';
 import { resetLibrary } from './store';
@@ -98,8 +98,102 @@ describe('the For you tab', () => {
     expect(screen.getByRole('tab', { name: 'For you' }).getAttribute('aria-selected')).toBe('true');
     expect([...document.querySelectorAll('.yt-chip')].map((c) => c.textContent)).toEqual([...MOODS]);
     expect(MOODS).toHaveLength(8);
-    // The chips do nothing yet, so the keyboard skips them.
-    expect([...document.querySelectorAll('.yt-chip')].every((c) => c.getAttribute('tabindex') === '-1')).toBe(true);
+    // The chips work, so the keyboard reaches them and each says what a click does.
+    expect([...document.querySelectorAll('.yt-chip')].every((c) => c.getAttribute('tabindex') !== '-1' && c.getAttribute('aria-disabled') === null)).toBe(true);
+  });
+
+  describe('the mood chips', () => {
+    const chip = (m: string) => screen.getByRole('button', { name: m });
+    const moodVideos = (n: number): YtMoodAnswer['items'] => Array.from({ length: n }, (_, i) => ({ id: id(500 + i), title: `Mood song ${i}`, channel: 'Some Channel', seconds: 180, thumb: null, playable: 'yes' as const }));
+    const asks: string[] = [];
+    function serveMoods(answer: (mood: string) => YtMoodAnswer | Error) {
+      serve(3);
+      asks.length = 0;
+      mocks.set('wall2_youtube_mood', (args) => {
+        const mood = String(args?.mood);
+        asks.push(mood);
+        const a = answer(mood);
+        if (a instanceof Error) throw a;
+        return a;
+      });
+    }
+
+    it('shows what a click does in the tip', async () => {
+      serveMoods(() => ({ items: [], cached: false, searchesLeft: 10, backAt: null }));
+      await openForYou();
+      fireEvent.mouseEnter(chip('Focus'));
+      await flush(700);
+      expect(document.body.textContent).toContain(MOOD_TIP);
+      expect(MOOD_TIP).not.toMatch(/later update/);
+    });
+
+    it('a click shows that mood as a shelf in the same tile grid, and a second click closes it', async () => {
+      serveMoods(() => ({ items: moodVideos(6), cached: false, searchesLeft: 9, backAt: null }));
+      await openForYou();
+      fireEvent.click(chip('Focus'));
+      await flush(10);
+      expect(asks).toEqual(['Focus']);
+      const shelf = document.querySelector('section[aria-label="Focus"]');
+      expect(shelf).toBeTruthy();
+      expect([...shelf!.querySelectorAll('.yt-tile .sp-tname2')].map((t) => t.textContent)).toEqual(['Mood song 0', 'Mood song 1', 'Mood song 2', 'Mood song 3']);
+      expect(chip('Focus').getAttribute('aria-pressed')).toBe('true');
+      fireEvent.click(shelf!.querySelector('.yt-seeall')!);
+      expect(shelf!.querySelectorAll('.yt-tile')).toHaveLength(6);
+      fireEvent.click(chip('Focus'));
+      expect(document.querySelector('section[aria-label="Focus"]')).toBeNull();
+      // Opening it again asks nothing more: the answer is kept for the session.
+      fireEvent.click(chip('Focus'));
+      await flush(10);
+      expect(asks).toEqual(['Focus']);
+      expect(document.querySelector('section[aria-label="Focus"]')).toBeTruthy();
+    });
+
+    it('a kept mood (Rust says cached) shows its videos the same way', async () => {
+      serveMoods(() => ({ items: moodVideos(2), cached: true, searchesLeft: 4, backAt: null }));
+      await openForYou();
+      fireEvent.click(chip('Sleep'));
+      await flush(10);
+      expect(document.querySelectorAll('section[aria-label="Sleep"] .yt-tile')).toHaveLength(2);
+    });
+
+    it('with the budget spent and the mood not kept, the chip shelf says which day it comes back', async () => {
+      const back = Math.floor(new Date('2026-11-17T12:00:00-08:00').getTime() / 1000);
+      serveMoods(() => ({ items: [], cached: false, searchesLeft: 0, backAt: back }));
+      await openForYou();
+      fireEvent.click(chip('Party'));
+      await flush(10);
+      expect(document.querySelector('section[aria-label="Party"] .yt-tile')).toBeNull();
+      expect(document.querySelector('section[aria-label="Party"] .yt-state')?.textContent).toBe(moodBudgetLine(back));
+      expect(moodBudgetLine(back)).toMatch(/^Out of mood searches this week\. Back on (Sunday|Monday|Tuesday|Wednesday|Thursday|Friday|Saturday)\.$/);
+    });
+
+    it('a failed search shows the usual YouTube line with Retry, and Retry asks again', async () => {
+      let n = 0;
+      serveMoods(() => (n++ === 0 ? new Error('quota') : { items: moodVideos(1), cached: false, searchesLeft: 8, backAt: null }));
+      await openForYou();
+      fireEvent.click(chip('Chill'));
+      await flush(10);
+      expect(screen.getByText('Searches are used up until midnight Pacific.')).toBeTruthy();
+      expect(document.querySelector('section[aria-label="Chill"] .sp-btn')).toBeNull();
+      n = 0;
+      serveMoods(() => new Error('down'));
+      fireEvent.click(chip('Relax'));
+      await flush(10);
+      mocks.set('wall2_youtube_mood', () => ({ items: moodVideos(1), cached: false, searchesLeft: 8, backAt: null }));
+      fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+      await flush(10);
+      expect(document.querySelectorAll('section[aria-label="Relax"] .yt-tile')).toHaveLength(1);
+    });
+
+    it('a tile plays that video on the wall', async () => {
+      serveMoods(() => ({ items: moodVideos(3), cached: false, searchesLeft: 9, backAt: null }));
+      await openForYou();
+      fireEvent.click(chip('Workout'));
+      await flush(10);
+      fireEvent.click(document.querySelectorAll<HTMLButtonElement>('section[aria-label="Workout"] .yt-tile')[1]);
+      await flush(10);
+      expect(useYtQueue.getState().entries[useYtQueue.getState().pos]?.id).toBe(id(501));
+    });
   });
 
   it('shows the Back to shelf: four tiles with their words for when, and See all', async () => {
