@@ -14,6 +14,8 @@ const VARIANTS = [
   ['Meet layout, heavy day: long title, 14 people, back to back', atLate, 'meet=heavy&call=teams&long=1&checklist=long'],
   ['Meet layout, bare meeting: the island shows how the list works', at, 'meet=bare&call=teams&checklist=none'],
   ['Meet layout, nothing scheduled', at, 'meet=none'],
+  ['Meet layout, nothing scheduled and no brief key: Connect under the headline', at, 'meet=none&token=off'],
+  ['Meet layout, nothing scheduled, the brief key field open', at, 'meet=none&token=off', '.meet-brief-setup .meet-retry'],
   ['Meet layout, a very long title ends in an ellipsis', at, 'meet=known&call=teams&mtitle=long&checklist=four'],
   ['Meet layout, eight checklist items', at, 'meet=bare&call=teams&checklist=long'],
   ['Meet layout, a plain call with no meeting', at, 'meet=none&call=teams&rec=1'],
@@ -151,7 +153,9 @@ export default {
       state('browser call: the keys are disabled', 'meet=known&call=browser', ['In call, browser', 'Mute', 'Camera', 'Share', 'Leave', 'Open in browser'], 'hover:.meet-key'),
       state('camera off', 'meet=known&call=teams&checklist=four', ['Camera off', '!Camera on']),
       state('recording', 'meet=known&call=teams&camera=1&rec=1&checklist=four', ['Recording00:']),
-      state('nothing scheduled', 'meet=none', ['Nothing scheduled in the next 24 hours', 'Nothing else today', 'Your first-meeting list', 'Open file']),
+      state('nothing scheduled', 'meet=none', ['Nothing scheduled in the next 24 hours', 'Nothing else today', 'Your first-meeting list', 'Open file', 'Connected', 'Forget']),
+      state('nothing scheduled, no brief key: Connect under the headline', 'meet=none&token=off', ['Nothing scheduled in the next 24 hours', 'Meeting brief not connected', 'Connect']),
+      state('nothing scheduled, Connect opens the key field', 'meet=none&token=off', ['Nothing scheduled in the next 24 hours', 'Save', 'Cancel', '!Meeting brief not connected'], '.meet-brief-setup .meet-retry'),
       state('calendar not set up', 'meet=off', ['Calendar is not connected yet.', 'No calendar can be read.', 'Open file']),
       state('no account readable', 'meet=down', ['Calendar not available', 'No good read yet', 'No calendar can be read.']),
       state('no account readable, the last meeting kept (dimmed, as of)', 'meet=stale', ['Last known meeting', 'Design review with the platform team', 'as of', 'Calendar not read', '!Join', '!min left']),
@@ -172,7 +176,7 @@ export default {
     ],
   },
   fit: {
-    variants: VARIANTS.map(([name, when, knobs]) => ({ name, q: fitBase(when, knobs), checks: ['.meet .meet-hero', '.meet .meet-island', '.meet .meet-later'] })),
+    variants: VARIANTS.map(([name, when, knobs, click]) => ({ name, q: fitBase(when, knobs), checks: ['.meet .meet-hero', '.meet .meet-island', '.meet .meet-later', ...(click ? ['.meet .meet-brief-setup', '.meet .meet-keyfield'] : [])], ...(click ? { click } : {}) })),
     measurements: { meetLayout: measureMeet },
     rules: {
       meetLayout: (variant, results, emit) => {

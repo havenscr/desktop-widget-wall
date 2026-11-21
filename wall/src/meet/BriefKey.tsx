@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
+import { useCallback, useEffect, useRef, useState, type KeyboardEvent } from 'react';
 import { briefTokenStatus, clearBriefToken, setBriefToken } from '../bridge/meetBrief';
 import { tip } from '../ui/HoverTip';
 import { OFF_LINE } from './briefModel';
@@ -61,7 +61,7 @@ export function BriefConnect({ onChanged }: { onChanged?: () => void }) {
     );
   }
   return (
-    <div className="meet-key">
+    <div className="meet-keyfield">
       <input
         ref={field}
         className="tools-input meet-key-in"
@@ -93,10 +93,11 @@ export function BriefConnect({ onChanged }: { onChanged?: () => void }) {
 }
 
 /** "Connected" with Forget, under the feed when no meeting is on. Draws nothing until the key is known to be set. */
-export function BriefConnected({ onChanged }: { onChanged?: () => void }) {
-  const [set, setSet] = useState(false);
+export function BriefConnected({ onChanged, known = false }: { onChanged?: () => void; known?: boolean }) {
+  const [set, setSet] = useState(known);
   const [fail, setFail] = useState(false);
   useEffect(() => {
+    if (known) return;
     let dead = false;
     briefTokenStatus().then(
       (s) => !dead && setSet(s.set),
@@ -105,7 +106,7 @@ export function BriefConnected({ onChanged }: { onChanged?: () => void }) {
     return () => {
       dead = true;
     };
-  }, []);
+  }, [known]);
   if (!set) return null;
   const forget = () => {
     setFail(false);
@@ -126,4 +127,28 @@ export function BriefConnected({ onChanged }: { onChanged?: () => void }) {
       {fail && <span className="meet-notice meet-xs" role="alert">Could not forget the key</span>}
     </>
   );
+}
+
+/**
+ * Connect (or Connected with Forget) under the empty Meet hero, so the key can be saved when no meeting is coming up. Draws nothing
+ * until the key's status is read.
+ */
+export function BriefSetup() {
+  const [set, setSet] = useState<boolean | null>(null);
+  const alive = useRef(true);
+  const read = useCallback(() => {
+    briefTokenStatus().then(
+      (s) => alive.current && setSet(s.set),
+      () => alive.current && setSet(null),
+    );
+  }, []);
+  useEffect(() => {
+    alive.current = true;
+    read();
+    return () => {
+      alive.current = false;
+    };
+  }, [read]);
+  if (set === null) return null;
+  return <div className="meet-brief-setup">{set ? <BriefConnected known onChanged={read} /> : <BriefConnect onChanged={read} />}</div>;
 }
