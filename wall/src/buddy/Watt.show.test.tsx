@@ -76,6 +76,15 @@ function tick() {
 const runFor = (s: number) => {
   for (let i = 0; i < Math.round(s / 0.05); i++) tick();
 };
+/**
+ * Like `runFor`, but every frame in the slice runs inside one `act`, so React renders once per slice instead of once
+ * per frame. His walk is drawn straight onto the sprite's style, so the long walks lose nothing by it, and a loaded
+ * machine is not left re-rendering a thousand times.
+ */
+const walkFor = (s: number) =>
+  act(() => {
+    for (let i = 0; i < Math.round(s / 0.05); i++) tick();
+  });
 let reduceOn = false;
 function reduced(on: boolean) {
   reduceOn = on;
@@ -172,7 +181,7 @@ const start = (now: () => number = day) => {
 };
 /** Run until he sits in his seat (or the limit), seconds. */
 const untilSeated = (c: HTMLElement, limit = 70) => {
-  for (let t = 0; t < limit && showOf(c) !== 'seated'; t += 0.5) runFor(0.5);
+  for (let t = 0; t < limit && showOf(c) !== 'seated'; t += 0.5) walkFor(0.5);
 };
 
 describe('the drive-in', () => {
@@ -194,9 +203,12 @@ describe('the drive-in', () => {
     runFor(3);
     expect(showOf(container)).toBe('');
     expect(xOf(container)).toBeLessThan(seat);
-    runFor(60);
+    // Walk home a half second at a time and stop once he is back (a minute at most), so a loaded machine renders only what it needs.
+    for (let t = 0; t < 60 && Math.abs(xOf(container) - home) > 60; t += 0.5) walkFor(0.5);
     expect(Math.abs(xOf(container) - home)).toBeLessThanOrEqual(60);
-  });
+    // A minute and a half of his walk, there and back, is about a thousand frames: 2 s on a quiet machine, 16 s with the
+    // whole suite on a loaded one. The distance is the point of the test, so it gets its own longer limit.
+  }, 60_000);
 
   it('the seat follows the rectangle the selector gives, also when it changes during a show', () => {
     const { container } = start();
