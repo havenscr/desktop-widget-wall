@@ -6,6 +6,7 @@ import { useSignalStore } from '../signals/store';
 import { troubleLine } from '../tools/trouble';
 import { tip } from '../ui/HoverTip';
 import { useVisible } from '../ui/useVisible';
+import { BriefSetup } from './BriefKey';
 import { Hero } from './Hero';
 import { Island } from './Island';
 import { NextCard, type NextCardProps } from './NextCard';
@@ -79,6 +80,7 @@ function EmptyHero({ m }: { m: MeetState }) {
   return (
     <HeroNote headline={headline} lines={[sub]}>
       {trouble && <TroubleLine text={trouble} />}
+      {!checking && <BriefSetup />}
     </HeroNote>
   );
 }

@@ -133,8 +133,17 @@ const briefMode = (): string => {
   }
 };
 
+/** `?token=off` starts with no brief key saved; the default is a saved key. */
+const tokenOff = (): boolean => {
+  try {
+    return new URLSearchParams(globalThis.location?.search ?? '').get('token') === 'off';
+  } catch {
+    return false;
+  }
+};
+
 export function registerMeetBriefMocks(): void {
-  let token: BriefTokenStatus = { set: true, unreadable: false };
+  let token: BriefTokenStatus = { set: !tokenOff(), unreadable: false };
   mocks.set('wall2_meet_brief_token_status', () => ({ ...token }));
   mocks.set('wall2_meet_brief_token_set', (args) => {
     const value = typeof args?.value === 'string' ? args.value.trim() : '';

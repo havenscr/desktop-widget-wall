@@ -1,7 +1,7 @@
 import { act, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { mocks } from '../bridge/tauri';
-import { BriefConnect, BriefConnected, KEY_FAILED, KEY_INVALID, KEY_TIP } from './BriefKey';
+import { BriefConnect, BriefConnected, BriefSetup, KEY_FAILED, KEY_INVALID, KEY_TIP } from './BriefKey';
 
 const flush = () => act(async () => {});
 afterEach(() => mocks.clear());
@@ -87,6 +87,43 @@ describe('BriefConnected', () => {
   it('draws nothing when no key is set', async () => {
     mocks.set('wall2_meet_brief_token_status', () => ({ set: false, unreadable: false }));
     const { container } = render(<BriefConnected />);
+    await flush();
+    expect(container.innerHTML).toBe('');
+  });
+});
+
+describe('BriefSetup (under the empty hero)', () => {
+  it('draws nothing until the status is read, then Connect when no key is saved', async () => {
+    mocks.set('wall2_meet_brief_token_status', () => ({ set: false, unreadable: false }));
+    const { container } = render(<BriefSetup />);
+    expect(container.innerHTML).toBe('');
+    await flush();
+    expect(screen.getByRole('button', { name: 'Connect' })).toBeTruthy();
+  });
+
+  it('shows Connected with Forget once a key is saved', async () => {
+    let saved = false;
+    mocks.set('wall2_meet_brief_token_status', () => ({ set: saved, unreadable: false }));
+    mocks.set('wall2_meet_brief_token_set', () => {
+      saved = true;
+    });
+    render(<BriefSetup />);
+    await flush();
+    fireEvent.click(screen.getByRole('button', { name: 'Connect' }));
+    fireEvent.change(screen.getByLabelText('Brief key'), { target: { value: 'k-123' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    await flush();
+    await flush();
+    expect(screen.getByText('Connected')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Forget' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Connect' })).toBeNull();
+  });
+
+  it('draws nothing when the status cannot be read', async () => {
+    mocks.set('wall2_meet_brief_token_status', () => {
+      throw 'failed';
+    });
+    const { container } = render(<BriefSetup />);
     await flush();
     expect(container.innerHTML).toBe('');
   });

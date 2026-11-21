@@ -1362,7 +1362,25 @@
   align-items: center;
   gap: 10px;
 }
+.meet-keyfield {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
 .meet-key-in {
   flex: 1;
   min-width: 0;
+}
+/* Connect under the empty hero: one row, as wide as the hero text. */
+.meet-brief-setup {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  height: 48px;
+  max-width: 640px;
+}
+.meet-brief-setup .meet-retry {
+  margin-top: 0;
 }
