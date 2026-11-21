@@ -10,6 +10,22 @@ import { useTasks, type TasksQuery } from './useTasks';
 /** Work's list: the tasks without the home tag that are due today or overdue (the next three when none is). */
 const WORK_QUERY: TasksQuery = { notTag: 'home', due: 'today' };
 
+const OVERDUE_KEY = 'wall.tasks.showOverdue';
+const readShowOverdue = (): boolean => {
+  try {
+    return localStorage.getItem(OVERDUE_KEY) !== '0';
+  } catch {
+    return true;
+  }
+};
+const writeShowOverdue = (on: boolean) => {
+  try {
+    localStorage.setItem(OVERDUE_KEY, on ? '1' : '0');
+  } catch {
+    /* storage unavailable: the choice lasts until the page closes */
+  }
+};
+
 /** Rows in view in the block, and a row's pitch: 70 px and its 1 px rule (the block keeps the height three rows gave it). */
 export const WORK_ROWS = 3;
 export const WORK_ROW_PX = 71;
@@ -269,12 +285,16 @@ export function TaskCard({ query = WORK_QUERY, title }: { query?: TasksQuery; ti
   const ticks = usePendingTicks(t.complete);
   const focusStatus = useFocusStore((s) => s.state.status);
   const canFocus = focusStatus === 'idle' || focusStatus === 'finished';
-  const rows = visibleRows(t.tasks, t.hidden);
+  const [showOverdue, setShowOverdue] = useState(readShowOverdue);
+  const allRows = visibleRows(t.tasks, t.hidden);
+  const hasSwitch = !title && query.due === 'today' && !(t.nextUp && allRows.length > 0) && t.lastOk !== null;
+  const hideOverdue = hasSwitch && !showOverdue;
+  const rows = hideOverdue ? allRows.filter((r) => dueLine(r, new Date(t.now)) !== 'overdue') : allRows;
   const stale = t.status === 'error' && t.lastOk !== null ? updatedText(t.lastOk, t.now) : null;
   const nextUp = t.nextUp && rows.length > 0;
   const overdue = nextUp ? 0 : rows.filter((r) => dueLine(r, new Date(t.now)) === 'overdue').length;
-  const count = rows.length + (t.remaining ?? 0);
-  const side = stale ?? (nextUp ? 'Nothing due today' : rows.length > 0 ? (overdue > 0 ? `${count}, ${overdue} overdue` : `${count}`) : null);
+  const count = rows.length + (hideOverdue ? 0 : (t.remaining ?? 0));
+  const side = stale ?? (nextUp ? 'Nothing due today' : hideOverdue ? (rows.length > 0 ? `${count} today` : null) : rows.length > 0 ? (overdue > 0 ? `${count}, ${overdue} overdue` : `${count}`) : null);
 
   let body;
   if (t.status === 'unconfigured') {
@@ -309,7 +329,30 @@ export function TaskCard({ query = WORK_QUERY, title }: { query?: TasksQuery; ti
     <section className="tasks" aria-label="Tasks">
       <div className="row sb tasks-hd">
         <span className="k">{title ?? (nextUp ? 'Next up' : 'Due today')}</span>
-        {side && <span className="xs">{side}</span>}
+        {(side || hasSwitch) && (
+          <span className="tasks-hd-r">
+            {side && <span className="xs">{side}</span>}
+            {hasSwitch && (
+              <button
+                type="button"
+                role="switch"
+                aria-checked={showOverdue}
+                className={`od-sw${showOverdue ? ' on' : ''}`}
+                onClick={() => {
+                  const next = !showOverdue;
+                  setShowOverdue(next);
+                  writeShowOverdue(next);
+                }}
+                {...tip(showOverdue ? 'Showing overdue tasks. Click to hide them.' : 'Hiding overdue tasks. Click to show them.')}
+              >
+                Overdue
+                <span className="od-sw-t" aria-hidden="true">
+                  <i />
+                </span>
+              </button>
+            )}
+          </span>
+        )}
       </div>
       <div className="tasks-body">{body}</div>
     </section>

@@ -666,3 +666,73 @@ it('the tags card opens when the row\'s main button takes keyboard focus, with n
   await flush(10);
   expect(document.querySelector('.t-tip')).toBeNull();
 });
+
+const lateRow = (id: string, title: string): TaskItem => ({ ...task(id, title), due_at: '2026-11-09', due_is_all_day: true });
+
+it('the Overdue switch is on by default and shows every row', async () => {
+  setList(() => [lateRow('o', 'Late one'), task('b', 'Today one')]);
+  render(<TaskCard />);
+  await flush();
+  const sw = screen.getByRole('switch', { name: /overdue/i });
+  expect(sw.getAttribute('aria-checked')).toBe('true');
+  expect(screen.getByText('2, 1 overdue')).toBeTruthy();
+  expect(screen.getByText('Late one')).toBeTruthy();
+});
+
+it('turning Overdue off hides the overdue rows and reads "N today"', async () => {
+  setList(() => [lateRow('o', 'Late one'), task('b', 'Today one')]);
+  render(<TaskCard />);
+  await flush();
+  fireEvent.click(screen.getByRole('switch'));
+  expect(screen.getByRole('switch').getAttribute('aria-checked')).toBe('false');
+  expect(screen.queryByText('Late one')).toBeNull();
+  expect(screen.getByText('Today one')).toBeTruthy();
+  expect(screen.getByText('1 today')).toBeTruthy();
+  fireEvent.click(screen.getByRole('switch'));
+  expect(screen.getByText('Late one')).toBeTruthy();
+});
+
+it('when Overdue off hides every row the body reads Nothing due today and the switch stays', async () => {
+  setList(() => [lateRow('o', 'Late one')]);
+  render(<TaskCard />);
+  await flush();
+  fireEvent.click(screen.getByRole('switch'));
+  expect(screen.getByText('Nothing due today')).toBeTruthy();
+  expect(screen.getByRole('switch')).toBeTruthy();
+});
+
+it('the Overdue choice survives a remount', async () => {
+  setList(() => [lateRow('o', 'Late one'), task('b', 'Today one')]);
+  const first = render(<TaskCard />);
+  await flush();
+  fireEvent.click(screen.getByRole('switch'));
+  first.unmount();
+  render(<TaskCard />);
+  await flush();
+  expect(screen.getByRole('switch').getAttribute('aria-checked')).toBe('false');
+  expect(screen.queryByText('Late one')).toBeNull();
+});
+
+it('the Overdue switch still works when storage throws', async () => {
+  setList(() => [lateRow('o', 'Late one'), task('b', 'Today one')]);
+  const get = vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
+    throw new Error('blocked');
+  });
+  const set = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+    throw new Error('blocked');
+  });
+  render(<TaskCard />);
+  await flush();
+  expect(screen.getByRole('switch').getAttribute('aria-checked')).toBe('true');
+  fireEvent.click(screen.getByRole('switch'));
+  expect(screen.queryByText('Late one')).toBeNull();
+  get.mockRestore();
+  set.mockRestore();
+});
+
+it('a titled card gets no Overdue switch', async () => {
+  setList(() => [task('b', 'Today one')]);
+  render(<TaskCard title="Anything" />);
+  await flush();
+  expect(screen.queryByRole('switch')).toBeNull();
+});
