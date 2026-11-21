@@ -7,9 +7,10 @@
 //!   folder, and it never sends one: `open` and `folder` take only an id.
 //! - The reader is the old app's (`read_recent_files`: the Recent folder's shortcuts, resolved).
 //!   A target must be an absolute local `X:\...` path (see `plain_local_path`), a regular file
-//!   that still exists, and not a program or script: the kinds Windows runs when opened are
-//!   never listed and never acted on. The check is made again, after links are followed, at
-//!   the moment of an `open` or a `folder`.
+//!   that still exists, and a listed kind of file: documents, images, audio and video (the
+//!   `ALLOWED` extensions; archives, programs, scripts and disk images are never listed and
+//!   never acted on). The check is made on the target after links are followed, both when
+//!   the list is built and again at the moment of an `open` or a `folder`.
 //! - `open` is the default app (the opener plugin, no shell, no arguments); `folder` is
 //!   `explorer.exe /select,` and the quoted path (the captures module's helper).
 //! - At most 5 files are returned. Nothing is logged: no path, no name.
@@ -27,8 +28,9 @@ use tauri_plugin_opener::OpenerExt;
 
 /// Files returned to the page.
 const SHOWN: usize = 5;
-/// Shortcuts asked of the reader: more than `SHOWN`, because some targets are filtered out.
-const READ: usize = 30;
+/// Shortcuts asked of the reader: well over `SHOWN`, because every target not on the allowlist
+/// is filtered out afterwards and must not starve the card. The reader caches each shortcut.
+const READ: usize = 200;
 /// The most ids kept across reads.
 const MAX_HELD: usize = 64;
 const NAME_CHARS: usize = 120;
@@ -51,10 +53,13 @@ pub struct RecentEntry {
     pub kind: &'static str,
 }
 
-/// Extensions Windows runs, installs or hands to a script host when opened. Never listed, never opened.
-const RUNNABLE: &[&str] = &[
-    "exe", "com", "scr", "pif", "bat", "cmd", "msi", "msp", "msc", "lnk", "url", "hta", "cpl", "reg", "inf", "ps1", "psm1", "vbs", "vbe", "js", "jse", "wsf", "wsh", "jar",
-    "appx", "msix", "appinstaller", "application", "gadget", "dll", "sys", "scf", "settingcontent-ms", "library-ms", "search-ms",
+/// The only extensions listed or opened: documents, images, audio and video. Macro Office files
+/// stay on purpose (the Office apps apply their own macro protection). Everything else, such as
+/// programs, scripts, help files, add-ins, disk images and archives, is refused.
+const ALLOWED: &[&str] = &[
+    "pdf", "txt", "md", "rtf", "csv", "json", "xml", "log", "doc", "docx", "docm", "dot", "dotx", "xls", "xlsx", "xlsm", "xlsb", "xltx", "ppt", "pptx", "pptm", "potx",
+    "odt", "ods", "odp", "one", "vsdx", "pbix", "pbip", "pbit", "png", "jpg", "jpeg", "gif", "webp", "bmp", "tif", "tiff", "svg", "heic", "mp3", "wav", "m4a", "flac",
+    "mp4", "mov", "mkv", "webm", "avi",
 ];
 
 /// The lower-case extension of a file name, or "".
@@ -65,9 +70,21 @@ fn ext_of(name: &str) -> String {
     }
 }
 
-/// Whether the text of a path may be listed or acted on: a plain local path whose extension is not a runnable one.
+/// Whether the text of a path may be listed or acted on: a plain local path whose extension is on the allowlist.
 pub(crate) fn allowed_text(p: &str) -> bool {
-    plain_local_path(p) && !RUNNABLE.contains(&ext_of(p).as_str())
+    plain_local_path(p) && ALLOWED.contains(&ext_of(p).as_str())
+}
+
+/// The pure part of the target check: a canonical path (as `canonicalize` gives it, maybe with
+/// the `\\?\` prefix) turned into plain text that still passes `allowed_text`. None otherwise,
+/// so an allowed name behind a link to a runnable file is refused.
+pub(crate) fn checked_target(canonical: &str) -> Option<String> {
+    let text = crate::wall2_sharex::strip_verbatim(canonical)?;
+    if allowed_text(&text) {
+        Some(text)
+    } else {
+        None
+    }
 }
 
 /// The last part of a path.
@@ -75,24 +92,22 @@ fn file_name(p: &str) -> &str {
     p.rsplit('\\').next().unwrap_or(p)
 }
 
-/// A coarse kind for the page, from the extension.
+/// A coarse kind for the page, from the extension. Only allowlisted types reach it.
 fn kind_of(name: &str) -> &'static str {
     match ext_of(name).as_str() {
-        "doc" | "docx" | "odt" | "rtf" | "txt" | "md" | "pdf" => "document",
-        "xls" | "xlsx" | "xlsm" | "csv" | "ods" | "pbix" | "pbip" => "sheet",
-        "ppt" | "pptx" | "odp" => "slides",
-        "png" | "jpg" | "jpeg" | "gif" | "webp" | "bmp" | "svg" => "image",
+        "doc" | "docx" | "docm" | "dot" | "dotx" | "odt" | "rtf" | "txt" | "md" | "pdf" | "log" | "json" | "xml" | "one" | "vsdx" => "document",
+        "xls" | "xlsx" | "xlsm" | "xlsb" | "xltx" | "csv" | "ods" | "pbix" | "pbip" | "pbit" => "sheet",
+        "ppt" | "pptx" | "pptm" | "potx" | "odp" => "slides",
+        "png" | "jpg" | "jpeg" | "gif" | "webp" | "bmp" | "tif" | "tiff" | "svg" | "heic" => "image",
         "mp4" | "webm" | "mkv" | "mov" | "avi" => "video",
-        "mp3" | "wav" | "flac" | "m4a" | "ogg" => "audio",
-        "zip" | "7z" | "rar" | "gz" | "tar" => "archive",
-        "json" | "yml" | "yaml" | "xml" | "html" | "css" | "ts" | "tsx" | "py" | "rs" | "sql" | "dax" | "tmdl" => "code",
+        "mp3" | "wav" | "flac" | "m4a" => "audio",
         _ => "other",
     }
 }
 
 /// The files to show, newest first, at most `SHOWN`: each path must pass `allowed_text`, appear
 /// once (the first, newest, time wins) and still be a regular file (`stat` gives its size, None
-/// when it is not one). Returns the entry and the path behind its id.
+/// when it is not one or its resolved target does not pass). Returns the entry and the path behind its id.
 pub(crate) fn shape(files: &[RecentFileInfo], stat: &dyn Fn(&str) -> Option<u64>) -> Vec<(RecentEntry, String)> {
     let mut rows: Vec<(i64, &RecentFileInfo)> = files.iter().map(|f| (parse_time_ms(&f.modified).unwrap_or(0), f)).collect();
     rows.sort_by(|a, b| b.0.cmp(&a.0));
@@ -127,17 +142,14 @@ fn resolve(path: &str) -> Result<String, &'static str> {
         return Err(REFUSED);
     }
     let resolved = std::fs::canonicalize(path).map_err(|_| MISSING)?;
-    let text = crate::wall2_sharex::strip_verbatim(resolved.to_str().ok_or(REFUSED)?).ok_or(REFUSED)?;
-    if !allowed_text(&text) {
-        return Err(REFUSED);
-    }
+    let text = checked_target(resolved.to_str().ok_or(REFUSED)?).ok_or(REFUSED)?;
     regular_size(Path::new(&text)).ok_or(MISSING)?;
     Ok(text)
 }
 
 fn list_now() -> Result<Vec<RecentEntry>, String> {
     let files = crate::read_recent_files(READ);
-    let shaped = shape(&files, &|p| regular_size(Path::new(p)));
+    let shaped = shape(&files, &|p| resolve(p).ok().and_then(|t| regular_size(Path::new(&t))));
     let fresh: Vec<(String, String)> = shaped.iter().map(|(e, p)| (e.id.clone(), p.clone())).collect();
     let mut held = HELD.lock().map_err(|_| FAILED.to_string())?;
     remember(&mut held, fresh, MAX_HELD);
@@ -210,9 +222,58 @@ mod tests {
         assert!(!allowed_text(r"C:\Tools\RUN.BAT"));
         assert!(!allowed_text(r"C:\Tools\link.lnk"));
         assert!(!allowed_text(r"C:\Tools\x.Ps1"));
+        assert!(!allowed_text(r"C:\Tools\x.py"));
         assert!(!allowed_text(r"\\server\share\alpha.docx"));
         assert!(!allowed_text("https://example.com/a.docx"));
         assert!(!allowed_text(r"alpha.docx"));
+    }
+
+    const REFUSED_EXTS: &[&str] = &["py", "pyw", "pyc", "chm", "xll", "iso", "img", "vhd", "vhdx", "rdp", "appref-ms", "msu", "diagcab", "jnlp", "exe", "zip", "bat", "ps1", "js", "lnk"];
+
+    #[test]
+    fn only_the_allowlist_is_listed_or_resolved() {
+        for ext in REFUSED_EXTS {
+            let p = format!(r"C:\Docs\thing.{ext}");
+            assert!(!allowed_text(&p), "{ext} listed");
+            assert_eq!(resolve(&p), Err(REFUSED), "{ext} resolved");
+            assert_eq!(kind_of(&p), "other", "{ext} kind");
+        }
+        for ext in ["xlsm", "docx", "pdf", "png", "XLSX", "Mp4"] {
+            assert!(allowed_text(&format!(r"C:\Docs\thing.{ext}")), "{ext}");
+        }
+        for ext in ALLOWED {
+            assert_ne!(kind_of(&format!("a.{ext}")), "other", "{ext}");
+        }
+        assert!(!allowed_text(r"C:\Docs\noextension"));
+    }
+
+    #[test]
+    fn a_resolved_target_that_is_not_allowed_is_refused_behind_an_allowed_name() {
+        assert_eq!(checked_target(r"\\?\C:\Docs\report.txt"), Some(r"C:\Docs\report.txt".to_string()));
+        assert_eq!(checked_target(r"C:\Docs\report.pdf"), Some(r"C:\Docs\report.pdf".to_string()));
+        assert_eq!(checked_target(r"\\?\C:\Tools\setup.exe"), None);
+        assert_eq!(checked_target(r"C:\Tools\run.py"), None);
+        assert_eq!(checked_target(r"\\?\UNC\server\share\report.txt"), None);
+    }
+
+    #[test]
+    fn the_listing_drops_a_file_whose_target_does_not_stat() {
+        let files = vec![info(r"C:\Docs\link.txt", "2026-11-11T10:05:00Z"), info(A, "2026-11-11T10:01:00Z")];
+        let stat = |p: &str| if p.contains("link") { None } else { Some(1) };
+        let out = shape(&files, &stat);
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0].0.name, "alpha.docx");
+    }
+
+    #[test]
+    fn five_allowed_files_are_found_behind_forty_refused_ones() {
+        let mut files: Vec<RecentFileInfo> = (0..40)
+            .map(|i| info(&format!(r"C:\Docs\x{i}.{}", REFUSED_EXTS[i % REFUSED_EXTS.len()]), &format!("2026-11-20T10:{:02}:00Z", i + 10)))
+            .collect();
+        files.extend((0..5).map(|i| info(&format!(r"C:\Docs\ok{i}.pdf"), &format!("2026-11-10T10:0{i}:00Z"))));
+        let out = shape(&files, &exists);
+        assert_eq!(out.len(), 5);
+        assert!(out.iter().all(|(e, _)| e.name.starts_with("ok")));
     }
 
     #[test]
