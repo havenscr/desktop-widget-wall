@@ -752,7 +752,7 @@ mod tests {
     #[test]
     fn the_page_catalogue_carries_no_chord() {
         let info = library_info(false);
-        assert_eq!(info.iter().map(|g| g.keys.len()).sum::<usize>(), 124);
+        assert_eq!(info.iter().map(|g| g.keys.len()).sum::<usize>(), 125);
         let text = serde_json::to_string(&info).unwrap();
         assert!(!text.contains("\"spec\""));
         let thirds = info.iter().flat_map(|g| &g.keys).find(|k| k.id == "thirds").unwrap();
