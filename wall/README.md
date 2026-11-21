@@ -1507,8 +1507,8 @@ the centre card; the date line takes it through the frame's `ClockSlot` portal.
 - **Settings** (`wall/src/settings/`). `localStorage` key `wall2-settings`, JSON
   with optional `latitude` and `longitude` (defaults 47.68, -122.21), `zenDimHour` (whole
   hour 18 to 23, default 22) and `zenDimWaitMin` (whole minutes 1 to 60, default 10). No settings
-  screen yet; Zen shows the two Zen values as a quiet line in the evening. `shelfLists` is an array of
-  task app list names for the Shelf place (at most 8; each trimmed, 1 to 60 characters, no control
+  screen yet; Zen shows the two Zen values as a quiet line in the evening. `shelfLists` is an optional override: an array of
+  task app list names for the Shelf place (the Shelf reads the lists from the task app when it is empty) (at most 8; each trimmed, 1 to 60 characters, no control
   characters, the same rule as the native list check; duplicates dropped after trimming). With no
   settings screen, set it in the browser console or by editing the stored JSON, for example
   `localStorage.setItem('wall2-settings', JSON.stringify({ shelfLists: ['Tasks (To-Do)', 'House'] }))`.
@@ -1517,9 +1517,10 @@ the centre card; the date line takes it through the frame's `ClockSlot` portal.
   side card with six ShareX keys (Region, Screen, GIF, Record, Text (OCR), History; they use the same press
   path as a pinned key, and a keyboard press never fires a ShareX task) and the Lists chips, and the task
   column on the right showing the picked list with the Always here deck under it. The chips come from the
-  `shelfLists` setting (no list names set shows a hint); a chip never grows past the side card and long
+  task app (`wall2_tasks_lists` reads its list names; "Loading lists", "Lists unavailable" and "No lists in the task app" are the
+  other states), and the first list is picked until a pick is remembered. A non-empty `shelfLists` setting overrides them; a chip never grows past the side card and long
   names end in an ellipsis. The picked list is remembered per viewer under `wall2-shelf-list`. Dev knobs:
-  `?screen=shelf` opens the place and `?shelflists=Tasks (To-Do);House, garden` seeds the list names.
+  `?screen=shelf` opens the place and `?shelflists=Tasks (To-Do);House, garden` seeds the override list names (without it the mock task app's three lists show).
   Check: `npm run fit-check -- --area=shelf`.
 - **Captures** (`shelf/CapturesCard.tsx`, `shelf/captures.ts`, `src-tauri/src/wall2_captures.rs`). The card on the left of the Shelf
   shows the newest ShareX captures, newest first: the newest large (a 392 by 220 picture, its window title, "app, time, size", and

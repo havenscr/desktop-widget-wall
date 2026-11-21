@@ -140,6 +140,7 @@ export function registerTaskMocks(): void {
   if (chores === 'timed') {
     tasks = [{ id: 'tt1', title: 'Pick up the dry cleaning', due: 0, allDay: false, hour: 16, minute: 30, estimate: '15', tags: ['home', 'errands'], bucket: 2 }, ...tasks];
   }
+  mocks.set('wall2_tasks_lists', () => BUCKETS.map((b) => b.name));
   mocks.set('wall2_tasks_next', () => tasks.slice(0, 3).map((t) => toItem(t)));
   mocks.set('wall2_open_task', () => undefined);
   mocks.set('wall2_task_done', (args) => {
