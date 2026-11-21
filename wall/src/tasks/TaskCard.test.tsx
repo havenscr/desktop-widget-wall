@@ -680,7 +680,7 @@ it('the Later today switch is off by default: later timed rows hide, every other
   expect(screen.getByText('Late one')).toBeTruthy();
   expect(screen.getByText('Bare one')).toBeTruthy();
   expect(screen.queryByText('Later one')).toBeNull();
-  expect(screen.getByText('2, 1 overdue')).toBeTruthy();
+  expect(screen.getByText('2, 1 overdue \u00b7 1 later')).toBeTruthy();
 });
 
 it('a timed row earlier today always shows', async () => {
@@ -751,9 +751,34 @@ it('a later row appears once the clock passes its time', async () => {
   render(<TaskCard />);
   await flush();
   expect(screen.queryByText('Three o\'clock')).toBeNull();
-  expect(screen.getByText('Nothing due today')).toBeTruthy();
+  expect(screen.getByText('Nothing due yet. 1 later today')).toBeTruthy();
   await flush(5 * 3_600_000 + 60_000);
   expect(screen.getByText('Three o\'clock')).toBeTruthy();
+});
+
+it('only later-today tasks with the switch off: empty text and header hint count them', async () => {
+  setList(() => [timedRow('a', 'Three one', 15), timedRow('b', 'Four one', 16)]);
+  render(<TaskCard />);
+  await flush();
+  expect(screen.getByText('Nothing due yet. 2 later today')).toBeTruthy();
+  expect(screen.getByText('2 later')).toBeTruthy();
+});
+
+it('with the switch on there is no later hint', async () => {
+  setList(() => [timedRow('a', 'Three one', 15)]);
+  render(<TaskCard />);
+  await flush();
+  fireEvent.click(screen.getByRole('switch'));
+  expect(screen.getByText('Three one')).toBeTruthy();
+  expect(screen.queryByText(/later\b(?! today)/)).toBeNull();
+  expect(screen.queryByText(/Nothing due yet/)).toBeNull();
+});
+
+it('a mix shows the visible count plus how many are held back', async () => {
+  setList(() => [timedRow('e', 'Earlier one', 9), timedRow('l', 'Later one', 15), timedRow('m', 'Later two', 17)]);
+  render(<TaskCard />);
+  await flush();
+  expect(screen.getByText('1 \u00b7 2 later')).toBeTruthy();
 });
 
 it('the Later today switch still works when storage throws', async () => {

@@ -295,7 +295,9 @@ export function TaskCard({ query = WORK_QUERY, title }: { query?: TasksQuery; ti
   const nextUp = t.nextUp && rows.length > 0;
   const overdue = nextUp ? 0 : rows.filter((r) => dueLine(r, new Date(t.now)) === 'overdue').length;
   const count = rows.length + (t.remaining ?? 0);
-  const side = stale ?? (nextUp ? 'Nothing due today' : rows.length > 0 ? (overdue > 0 ? `${count}, ${overdue} overdue` : `${count}`) : null);
+  const later = allRows.length - rows.length;
+  const baseSide = stale ?? (nextUp ? 'Nothing due today' : rows.length > 0 ? (overdue > 0 ? `${count}, ${overdue} overdue` : `${count}`) : null);
+  const side = later > 0 ? (baseSide ? `${baseSide} \u00b7 ${later} later` : `${later} later`) : baseSide;
 
   let body;
   if (t.status === 'unconfigured') {
@@ -306,7 +308,7 @@ export function TaskCard({ query = WORK_QUERY, title }: { query?: TasksQuery; ti
     body = <div className="s">Tasks unavailable</div>;
   } else if (rows.length === 0) {
     // No open task at all: the heading stays "Due today" (Next up is only ever the next tasks).
-    body = <div className="s">{title ? 'Nothing open' : 'Nothing due today'}</div>;
+    body = <div className="s">{title ? 'Nothing open' : later > 0 ? `Nothing due yet. ${later} later today` : 'Nothing due today'}</div>;
   } else {
     body = (
       <TaskList rows={rows.length}>
