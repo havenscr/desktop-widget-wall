@@ -279,3 +279,88 @@ button.cap-pic:focus-visible {
   overflow: hidden;
   text-overflow: ellipsis;
 }
+
+/* Recent files card (shelf/RecentCard.tsx): the last five files opened, in the left wing under the clock and date line. */
+.work .shelf-left {
+  padding-top: 172px;
+  min-height: 0;
+}
+.rf-card {
+  gap: 10px;
+  padding: 16px 22px;
+}
+.rf-rows {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.rf-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 44px;
+  border-top: 1px solid var(--line);
+}
+.rf-row:first-child {
+  border-top: 0;
+}
+.rf-open {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex: 1 1 0;
+  min-width: 0;
+  height: 100%;
+  padding: 0 6px;
+  border: 0;
+  border-radius: 10px;
+  background: none;
+  color: inherit;
+  text-align: left;
+}
+.rf-open:hover {
+  background: rgba(53, 230, 234, 0.1);
+}
+.rf-open:active {
+  transform: scale(0.98);
+}
+.rf-open:focus-visible,
+.rf-folder:focus-visible {
+  outline: 3px solid var(--cyan);
+  outline-offset: 2px;
+}
+.rf-name {
+  flex: 1 1 0;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font: 600 20px/1.2 var(--body);
+}
+.rf-when {
+  flex: 0 0 auto;
+  font: 400 18px/1 var(--body);
+  color: var(--dim);
+}
+.rf-folder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 40px;
+  height: 40px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--dim);
+}
+.rf-folder:hover {
+  background: rgba(53, 230, 234, 0.12);
+  color: inherit;
+}
+.rf-folder:active {
+  transform: scale(0.94);
+}

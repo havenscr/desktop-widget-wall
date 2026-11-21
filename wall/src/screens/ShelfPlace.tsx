@@ -5,6 +5,7 @@ import type { TasksQuery } from '../tasks/useTasks';
 import { useTaskLists } from '../tasks/useTaskLists';
 import { loadSettings } from '../settings/settings';
 import { CapturesCard } from '../shelf/CapturesCard';
+import { RecentCard } from '../shelf/RecentCard';
 import { tip } from '../ui/HoverTip';
 import { useBrief } from '../work/useBrief';
 import { useKeyPress } from '../work/keyPress';
@@ -38,7 +39,7 @@ const NO_TIDY = (): void => undefined;
 
 /**
  * The Shelf place (concept 3A): captures on the left (the ShareX history, `shelf/CapturesCard.tsx`), the ShareX keys and the task app's lists in
- * the middle, and the picked list in the task column with the Always here deck under it.
+ * the middle, and the picked list in the task column with the Always here deck under it. The left wing keeps the clock and, under it, the Recent files card (`shelf/RecentCard.tsx`).
  * List names come from the task app (`wall2_tasks_lists`); a non-empty `shelfLists` setting overrides them.
  */
 export function ShelfPlace() {
@@ -61,7 +62,9 @@ export function ShelfPlace() {
   const query: TasksQuery | null = picked ? { list: picked } : null;
   return (
     <section className="work shelf-place zones" data-place="shelf" aria-label="Shelf">
-      <div className="wing" />
+      <div className="wing shelf-left">
+        <RecentCard />
+      </div>
       <div className="shelf-centre">
         <CapturesCard />
         <section className="shelf-card shelf-side" aria-label="Capture keys and lists">

@@ -6,7 +6,7 @@ const LISTS = 'shelflists=' + encodeURIComponent('Tasks (To-Do);Tax / Business;H
 const MANY = 'shelflists=' + encodeURIComponent(['Tasks (To-Do)', 'Tax / Business', 'House, garden', 'Errands', 'Reading list', 'Someday maybe', 'Waiting on others', 'W'.repeat(60)].join(';'));
 const galleryQuery = (knobs) => `hz=work&at=${at}&clock=review&weather=ok&screen=shelf&${knobs}`;
 const fitQuery = (knobs) => `?hz=work&at=${at}&clock=review&weather=ok&screen=shelf&${knobs}`;
-const checks = ['.shelf-place .shelf-captures', '.shelf-place .shelf-side', '.shelf-place .right-wing'];
+const checks = ['.shelf-place .rf-card', '.shelf-place .shelf-captures', '.shelf-place .shelf-side', '.shelf-place .right-wing'];
 const state = (name, knobs, expect, actions) => ({ screen: 'shelf', name, query: galleryQuery(knobs), custom: true, expect, actions });
 const variant = (name, knobs, extra = {}) => ({ name, q: fitQuery(knobs), checks, ...extra });
 
@@ -18,7 +18,7 @@ function measureShelf() {
   const rib = document.querySelector('.rib');
   const floor = Math.min(510, rib ? rib.getBoundingClientRect().top : 720);
   const r1 = (n) => Math.round(n * 10) / 10;
-  for (const sel of ['.shelf-captures', '.shelf-side', '.right-wing']) {
+  for (const sel of ['.rf-card', '.shelf-captures', '.shelf-side', '.right-wing']) {
     const col = root.querySelector(sel);
     if (!col) { fails.push('shelf: ' + sel + ' is missing'); continue; }
     const cb = col.getBoundingClientRect();
@@ -32,8 +32,17 @@ function measureShelf() {
       if (b.left < cb.left - 0.5 || b.right > cb.right + 0.5 || b.bottom > cb.bottom + 0.5) { fails.push('shelf: ' + sel + ' ' + (e.className || e.tagName) + ' sticks out of its card'); break; }
     }
   }
+  // The Recent files card sits under the clock and date line and keeps five rows.
+  const rf = root.querySelector('.rf-card');
+  const clk = document.querySelector('.clk-date');
+  if (rf && clk) {
+    const cr = clk.getBoundingClientRect();
+    if (rf.getBoundingClientRect().top < cr.bottom - 0.5) fails.push('shelf: the Recent files card at y ' + r1(rf.getBoundingClientRect().top) + ' overlaps the date line under the clock (ends y ' + r1(cr.bottom) + ')');
+  }
+  const rfRows = root.querySelectorAll('.rf-card .rf-row').length;
+  if (rf && rfRows !== 5 && rfRows !== 0) fails.push('shelf: ' + rfRows + ' recent file rows, expected 5');
   const small = [];
-  for (const el of root.querySelectorAll('.shelf-centre *, .right-wing .tasks *')) {
+  for (const el of root.querySelectorAll('.shelf-centre *, .right-wing .tasks *, .rf-card *')) {
     const own = [...el.childNodes].some((n) => n.nodeType === 3 && n.textContent.trim());
     if (own && parseFloat(getComputedStyle(el).fontSize) < 16 - 0.01) small.push(el.className || el.tagName);
   }
@@ -57,8 +66,10 @@ function measureShelf() {
 export default {
   name: 'shelf',
   gallery: { states: [
-    state('shelf: three lists, first picked', LISTS, ['Captures', 'Region', 'Screen', 'GIF', 'Record', 'Text (OCR)', 'History', 'Tasks (To-Do)', 'Tax / Business', 'House, garden', 'Always here']),
+    state('shelf: three lists, first picked', LISTS, ['Captures', 'Region', 'Screen', 'GIF', 'Record', 'Text (OCR)', 'History', 'Tasks (To-Do)', 'Tax / Business', 'House, garden', 'Always here', 'Recent files', 'Quarterly review.pptx', 'Budget 2027.xlsx', 'Meeting notes.docx', 'Yesterday']),
     state('shelf: lists from the task app', 'x=1', ['Tasks (To-Do)', 'Tax / Business', 'House, garden', 'Region']),
+    state('shelf: recent files empty', LISTS + '&recent=empty', ['Recent files', 'No recent files']),
+    state('shelf: recent files unavailable', LISTS + '&recent=down', ['Recent files', 'Recent files unavailable']),
     state('shelf: second list picked', LISTS, ['Tax / Business', 'File the quarterly return'], ['.shelf-list:nth-child(2)']),
   ] },
   fit: {
@@ -66,6 +77,7 @@ export default {
       variant('Shelf, three lists', LISTS),
       variant('Shelf, eight lists with a 60 character name', MANY),
       variant('Shelf, lists from the task app', 'x=1'),
+      variant('Shelf, a very long recent file name', LISTS + '&recent=long'),
       variant('Shelf, Watt set down at the far right', LISTS + '&wattspot=2300'),
     ],
     measurements: { shelf: measureShelf },

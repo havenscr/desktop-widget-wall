@@ -22,7 +22,7 @@ A personal dashboard application built with Tauri for ultra-wide monitors (32:9 
   - Now Playing (media session)
   - Audio mixer control
   - System stats (CPU, RAM, GPU, disk)
-  - Recent files access
+  - Recent files access (Shelf card: only documents, images, audio and video are listed or opened, from an allowlist of extensions; programs, scripts, archives and disk images are refused, checked on the file a shortcut or link really points to)
 - **Widget collection**:
   - Clock with date
   - Weather (Open-Meteo)
