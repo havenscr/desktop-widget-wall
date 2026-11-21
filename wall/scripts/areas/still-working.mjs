@@ -1,4 +1,4 @@
-// Home's Still Working mood card, the leftmost of the moods row: saved (bright and focused) and not saved yet (dashed, quiet,
+// Home's Still Working mood card, the leftmost of the moods row: saved (Bright and focused) and not saved yet (dashed, quiet,
 // "Not set up yet"). Gallery states, fit variants, one browser measurement, its rule and a deliberate break, all in this file.
 // The `?moods=` knob of the development mocks sends Still Working first; `moods=unsaved` sends it with saved: false.
 
@@ -39,7 +39,7 @@ function measureStill() {
     if (first.querySelector('.mood-tag')) out.push('still working: the quiet card carries a tag');
   } else if (want === 'saved') {
     if (unsaved) out.push('still working: the saved card is drawn quiet');
-    if (sub?.textContent !== 'bright and focused') out.push('still working: the card says "' + sub?.textContent + '", not "bright and focused"');
+    if (sub?.textContent !== 'Bright and focused') out.push('still working: the card says "' + sub?.textContent + '", not "Bright and focused"');
     if (getComputedStyle(first).borderTopStyle === 'dashed') out.push('still working: the saved card is dashed');
   }
   // The "On now" and "In N min" tags are 16 px or more and never sit under the Back arrow.
@@ -59,7 +59,7 @@ function measureStill() {
 export default {
   name: 'still-working',
   gallery: { states: [
-    state('still working: saved, first of four', 'moods=five', ['Still Working', 'bright and focused']),
+    state('still working: saved, first of four', 'moods=five', ['Still Working', 'Bright and focused']),
     state('still working: not set up yet', 'moods=unsaved', ['Still Working', 'Not set up yet']),
   ] },
   fit: {

@@ -190,12 +190,12 @@ it('Condo shows today\'s moods; Office shows the office moods; the pick is remem
   expect(screen.getByText('Condo').getAttribute('aria-pressed')).toBe('true');
   fireEvent.click(screen.getByText('Office'));
   await flush(50);
-  expect(names()).toEqual(['Relax', 'Gaming', 'Recording']);
+  expect(names()).toEqual(['Relax', 'Gaming', 'Recording', 'Normal']);
   expect(screen.getByText('Office').getAttribute('aria-pressed')).toBe('true');
   expect(localStorage.getItem(MOODS_WHICH_KEY)).toBe('office');
   first.unmount();
   await showMoods();
-  expect(names()).toEqual(['Relax', 'Gaming', 'Recording']);
+  expect(names()).toEqual(['Relax', 'Gaming', 'Recording', 'Normal']);
   fireEvent.click(screen.getByText('Condo'));
   await flush(50);
   expect(names()).toEqual(['Day', 'Evening', 'Late Night']);
@@ -231,7 +231,7 @@ it('a blocked local storage still works: the condo shows, and the pick works for
   expect(names()).toEqual(['Day', 'Evening', 'Late Night']);
   fireEvent.click(screen.getByText('Office'));
   await flush(50);
-  expect(names()).toEqual(['Relax', 'Gaming', 'Recording']);
+  expect(names()).toEqual(['Relax', 'Gaming', 'Recording', 'Normal']);
   vi.restoreAllMocks();
 });
 

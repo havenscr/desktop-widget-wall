@@ -1,4 +1,5 @@
 import { useId } from 'react';
+import { MOOD_BACK_ID } from '../studio/homeStore';
 
 /**
  * Painted art for a mood card, after the concept's mood cards (v3 `.mood`): a sky
@@ -6,7 +7,7 @@ import { useId } from 'react';
  * sun and a few rounded cumulus clouds lit along their top edge; Evening a striped sun
  * with clean, even slats sinking behind the ridges; Late Night a calm starfield and a
  * moon in a soft glow; Still Working a lit bulb rising from the far ridge on a bright blue night.
- * Four moods are small scenes in the hills: Gaming a striped synthwave sun over a neon grid
+ * Normal (the Office's back-to-before card) is a plain daylight sky with a soft white sun. Four moods are small scenes in the hills: Gaming a striped synthwave sun over a neon grid
  * floor (in place of the near ridge), Recording a lit ON AIR sign over a sound meter, Romantic
  * a pink moon with hearts, Fireplace a campfire with sparks. Movie keeps its screen, drawn low
  * enough to show whole on a 150 px card. Goodnight and any other mood keep their simpler lights.
@@ -106,6 +107,13 @@ export function MoodArt({ id }: { id: string }) {
           <Heart x={300} y={204} s={0.3} fill="#ffc2da" opacity={0.5} />
         </>
       )}
+      {kind === 'normal' && (
+        <>
+          <circle cx="200" cy="196" r="150" fill={`url(#${u}glow)`} />
+          <circle cx="200" cy="196" r="34" fill="#fffaf0" />
+          <circle cx="200" cy="196" r="46" fill="none" stroke="#fffaf0" strokeWidth="2" opacity="0.35" />
+        </>
+      )}
       {kind === 'fireplace' && (
         <>
           <circle cx="200" cy="214" r="140" fill={`url(#${u}glow)`} />
@@ -175,7 +183,7 @@ export function MoodArt({ id }: { id: string }) {
 /** The bulb's four rays, in radians: two above, one each side. */
 const BULB_RAYS = [-2.1, -1.05, 3.4, -0.25];
 
-type Kind = 'day' | 'evening' | 'night' | 'movie' | 'goodnight' | 'lamp' | 'bulb' | 'gaming' | 'recording' | 'romantic' | 'fireplace';
+type Kind = 'day' | 'evening' | 'night' | 'movie' | 'goodnight' | 'lamp' | 'bulb' | 'normal' | 'gaming' | 'recording' | 'romantic' | 'fireplace';
 
 /** The art for a mood id; any mood the concept did not draw gets a warm lamp glow. */
 export function artKind(id: string): Kind {
@@ -184,6 +192,7 @@ export function artKind(id: string): Kind {
   if (key === 'evening' || key === 'sunset') return 'evening';
   if (key === 'latenight' || key === 'night') return 'night';
   if (key === 'movie' || key === 'tv' || key === 'movie_mode') return 'movie';
+  if (id === MOOD_BACK_ID) return 'normal';
   if (key === 'gaming') return 'gaming';
   if (key === 'recording' || key === 'office_recording') return 'recording';
   if (key === 'romantic' || key === 'romantic_mode') return 'romantic';
@@ -242,6 +251,11 @@ const SKY: Record<Kind, [string, string][]> = {
     ['0.6', '#5a1450'],
     ['1', '#c23c78'],
   ],
+  normal: [
+    ['0', '#0c2a4e'],
+    ['0.65', '#2a6a8e'],
+    ['1', '#8fc8d8'],
+  ],
   fireplace: [
     ['0', '#140806'],
     ['0.6', '#3e1608'],
@@ -260,6 +274,7 @@ const GLOW: Record<Kind, string> = {
   gaming: '#35e6ea',
   recording: '#ff4a5c',
   romantic: '#ff8ab8',
+  normal: '#fff3d6',
   fireplace: '#ffa040',
 };
 
@@ -275,6 +290,7 @@ const RIDGE: Record<Kind, [string, string, string]> = {
   gaming: ['#3a1670', '#24104e', '#10072a'],
   recording: ['#4a1238', '#2e0a26', '#160512'],
   romantic: ['#5a1a52', '#3a103c', '#1c0820'],
+  normal: ['#2f6a86', '#1f5170', '#0f3452'],
   fireplace: ['#4a2010', '#30140a', '#160804'],
 };
 
@@ -290,6 +306,7 @@ const HAZE: Record<Kind, string> = {
   gaming: '#ff3d9a',
   recording: '#ff6a6a',
   romantic: '#ff9ac0',
+  normal: '#cfeaf0',
   fireplace: '#ff9a4a',
 };
 

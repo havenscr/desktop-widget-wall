@@ -131,6 +131,9 @@ pub struct Mood {
     pub id: String,
     pub label: String,
     pub line: Option<String>,
+    /// A shorter line that fits a card on one line; sent only when the home app has one.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub short: Option<String>,
     pub active: bool,
 }
 
@@ -285,7 +288,7 @@ pub(crate) fn shape_moods(body: &Value, can_write: bool, write_block: Option<&st
         if moods.iter().any(|x| x.id == id) {
             continue;
         }
-        moods.push(Mood { id, label, line: clean_text(m.get("line"), MAX_LINE), active: flag(m, "active") });
+        moods.push(Mood { id, label, line: clean_text(m.get("line"), MAX_LINE), short: clean_text(m.get("short"), MAX_LINE), active: flag(m, "active") });
         if moods.len() == MAX_MOODS {
             break;
         }
