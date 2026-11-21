@@ -229,7 +229,10 @@ it('a parent that closes is read from the record at once, and a helper id is rea
   await flush(60 * 60_000);
   expect(dayReads).toBe(2);
   r.unmount();
-});
+  // Four simulated hours of the helper's poll is about a thousand renders (2 s on a quiet machine, 12 s with the
+  // whole suite on a loaded one), and shortening it would stop proving "never on a timer all afternoon". So it
+  // gets its own longer limit.
+}, 60_000);
 
 it('the activity row says what its colours mean, with and without a limit', async () => {
   answer = () =>
