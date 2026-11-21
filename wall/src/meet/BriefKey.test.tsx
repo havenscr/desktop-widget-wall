@@ -107,7 +107,7 @@ describe('BriefSetup (under the empty hero)', () => {
     mocks.set('wall2_meet_brief_token_set', () => {
       saved = true;
     });
-    render(<BriefSetup />);
+    const { container } = render(<BriefSetup />);
     await flush();
     fireEvent.click(screen.getByRole('button', { name: 'Connect' }));
     fireEvent.change(screen.getByLabelText('Brief key'), { target: { value: 'k-123' } });
@@ -117,6 +117,40 @@ describe('BriefSetup (under the empty hero)', () => {
     expect(screen.getByText('Connected')).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Forget' })).toBeTruthy();
     expect(screen.queryByRole('button', { name: 'Connect' })).toBeNull();
+    expect(container.innerHTML).not.toContain('k-123');
+  });
+
+  it('goes back to Connect after Forget', async () => {
+    let saved = true;
+    mocks.set('wall2_meet_brief_token_status', () => ({ set: saved, unreadable: false }));
+    mocks.set('wall2_meet_brief_token_clear', () => {
+      saved = false;
+    });
+    render(<BriefSetup />);
+    await flush();
+    fireEvent.click(screen.getByRole('button', { name: 'Forget' }));
+    await flush();
+    await flush();
+    expect(screen.getByRole('button', { name: 'Connect' })).toBeTruthy();
+    expect(screen.queryByText('Connected')).toBeNull();
+  });
+
+  it('draws nothing when the status read after a save fails, so Connect does not stay up', async () => {
+    let reads = 0;
+    mocks.set('wall2_meet_brief_token_status', () => {
+      reads += 1;
+      if (reads > 1) throw 'failed';
+      return { set: false, unreadable: false };
+    });
+    mocks.set('wall2_meet_brief_token_set', () => undefined);
+    const { container } = render(<BriefSetup />);
+    await flush();
+    fireEvent.click(screen.getByRole('button', { name: 'Connect' }));
+    fireEvent.change(screen.getByLabelText('Brief key'), { target: { value: 'k-456' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    await flush();
+    await flush();
+    expect(container.innerHTML).toBe('');
   });
 
   it('draws nothing when the status cannot be read', async () => {

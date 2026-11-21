@@ -1384,3 +1384,6 @@
 .meet-brief-setup .meet-retry {
   margin-top: 0;
 }
+.meet-brief-setup .meet-brief-note {
+  flex: none;
+}

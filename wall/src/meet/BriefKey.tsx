@@ -93,10 +93,11 @@ export function BriefConnect({ onChanged }: { onChanged?: () => void }) {
 }
 
 /** "Connected" with Forget, under the feed when no meeting is on. Draws nothing until the key is known to be set. */
-export function BriefConnected({ onChanged }: { onChanged?: () => void }) {
-  const [set, setSet] = useState(false);
+export function BriefConnected({ onChanged, known = false }: { onChanged?: () => void; known?: boolean }) {
+  const [set, setSet] = useState(known);
   const [fail, setFail] = useState(false);
   useEffect(() => {
+    if (known) return;
     let dead = false;
     briefTokenStatus().then(
       (s) => !dead && setSet(s.set),
@@ -105,7 +106,7 @@ export function BriefConnected({ onChanged }: { onChanged?: () => void }) {
     return () => {
       dead = true;
     };
-  }, []);
+  }, [known]);
   if (!set) return null;
   const forget = () => {
     setFail(false);
@@ -138,7 +139,7 @@ export function BriefSetup() {
   const read = useCallback(() => {
     briefTokenStatus().then(
       (s) => alive.current && setSet(s.set),
-      () => undefined,
+      () => alive.current && setSet(null),
     );
   }, []);
   useEffect(() => {
@@ -149,5 +150,5 @@ export function BriefSetup() {
     };
   }, [read]);
   if (set === null) return null;
-  return <div className="meet-brief-setup">{set ? <BriefConnected onChanged={read} /> : <BriefConnect onChanged={read} />}</div>;
+  return <div className="meet-brief-setup">{set ? <BriefConnected known onChanged={read} /> : <BriefConnect onChanged={read} />}</div>;
 }
