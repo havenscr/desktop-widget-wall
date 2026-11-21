@@ -29,9 +29,9 @@ export interface Mood {
 }
 
 /**
- * Four mood cards share the row. With more, a narrow More card follows them (the next
- * mood peeking, "N more", dots), and a click or the wheel slides by four; at the end it
- * reads Back and slides to the start.
+ * Four mood cards share the row. With more, the heading carries page dots and an "N more"
+ * pill, and a click or the wheel slides by four; at the end the pill reads Back and slides
+ * to the start.
  */
 export const MOODS_PAGE = 4;
 /** One wheel step per gesture: further wheel events within this time are ignored. */
@@ -69,10 +69,10 @@ export const MOODS_CACHE_KEY = 'wall2-moods-cache';
 
 /** The line under each mood the concept drew, and Still Working's; other moods have none. */
 const NOTES: Record<string, string> = {
-  stillWorking: 'bright and focused',
-  day: 'bright and cool',
-  evening: 'warm and golden',
-  lateNight: 'dim and violet',
+  stillWorking: 'Bright and focused',
+  day: 'Bright and cool',
+  evening: 'Warm and golden',
+  lateNight: 'Dim and violet',
   movie: 'TV on, lights low',
   goodnight: 'everything off',
 };
@@ -80,6 +80,17 @@ const NOTES: Record<string, string> = {
 export function moodNote(id: string): string | null {
   return NOTES[id] ?? null;
 }
+
+/** Upper-cases the first letter: the routine descriptions the home app sends start lower case. */
+export function capFirst(s: string): string {
+  return s.replace(/^\p{Ll}/u, (c) => c.toUpperCase());
+}
+
+/** The Office's back-to-before card: its id, label, line and the tip it carries. */
+export const NORMAL_ID = 'normal';
+export const NORMAL_LINE = 'Room back to before · Key lights off';
+export const NORMAL_TIP = 'Puts the office back how it was before Gaming or Recording, key lights off';
+export const NORMAL_OFF_TIP = 'Nothing to go back from: neither Gaming nor Recording is on';
 
 /** What an unsaved mood's card says in place of its line. */
 export const UNSAVED_NOTE = 'Not set up yet';
@@ -263,6 +274,8 @@ interface SectionProps {
   onTap: (id: string) => void;
   isOn: (id: string) => boolean;
   subOf: (m: Mood) => string | null;
+  /** Office only: a card that is greyed and does nothing, with the tip that says why. */
+  offOf?: (id: string) => { off: boolean; tip: string } | null;
   now: number;
   visible: boolean;
 }
@@ -364,11 +377,11 @@ function useCondoMoods(): Omit<SectionProps, 'head'> {
     publish('moods', { state: centreState, okAt, check: () => void load() });
   }, [publish, centreState, okAt, load]);
 
-  return { moods, status, error, phase, onTap: (id) => void tap(id, moods.find((x) => x.id === id)?.saved !== false), isOn: (id) => last === id, subOf: (m) => (m.saved === false ? UNSAVED_NOTE : (m.line ?? moodNote(m.id))), now, visible };
+  return { moods, status, error, phase, onTap: (id) => void tap(id, moods.find((x) => x.id === id)?.saved !== false), isOn: (id) => last === id, subOf: (m) => { if (m.saved === false) return UNSAVED_NOTE; const t = m.line ?? moodNote(m.id); return t ? capFirst(t) : null; }, now, visible };
 }
 
 /** The cards, one row of three with the More card past three. The same for either list. */
-function MoodSection({ nudge, head, moods, status, error, phase, onTap, isOn, subOf, now, visible }: SectionProps) {
+function MoodSection({ nudge, head, moods, status, error, phase, onTap, isOn, subOf, offOf, now, visible }: SectionProps) {
   const [page, setPage] = useState(0);
   const wheelAt = useRef(-Infinity);
   if (status === 'ready' && moods.length === 0) {
@@ -395,11 +408,9 @@ function MoodSection({ nudge, head, moods, status, error, phase, onTap, isOn, su
   const start = paged ? pageStart(p, moods.length) : 0;
   const shown = paged ? moods.slice(start, start + MOODS_PAGE) : moods;
   const atEnd = start + MOODS_PAGE >= moods.length;
-  const peek = paged ? (atEnd ? moods[0] : moods[start + MOODS_PAGE]) : null;
   const left = moods.length - (start + MOODS_PAGE);
   const step = (dir: 1 | -1) => setPage((cur) => Math.max(0, Math.min(pages - 1, Math.min(cur, pages - 1) + dir)));
   const rowStyle = paged ? undefined : { gridTemplateColumns: `repeat(${Math.max(moods.length, 1)}, minmax(0, 1fr))` };
-  if (!note && !error && paged) note = `${moods.length} moods`;
   return (
     <section className={showCards ? 'moods' : 'moods bare'} aria-label="Moods">
       <div className="moods-head">
@@ -407,6 +418,26 @@ function MoodSection({ nudge, head, moods, status, error, phase, onTap, isOn, su
         <span className={error || status === 'error' ? 's warn-text' : 's'} role="alert">
           {error ?? note}
         </span>
+        {paged && (
+          <span className="mood-pager">
+            <span className="mood-dots" aria-hidden="true">
+              {Array.from({ length: pages }, (_, i) => (
+                <i key={i} className={i === p ? 'on' : ''} />
+              ))}
+            </span>
+            <button
+              type="button"
+              className={atEnd ? 'mood-more back' : 'mood-more'}
+              aria-label={atEnd ? 'Back to the first moods' : `${left} more moods`}
+              onClick={() => (atEnd ? setPage(0) : step(1))}
+              {...tip(atEnd ? 'Back to the first moods' : `Next: ${moods.slice(start + MOODS_PAGE, start + MOODS_PAGE * 2).map(moodLabel).join(', ')}`)}
+            >
+              {atEnd && <IconChevronLeft size={18} stroke={2.4} aria-hidden="true" />}
+              <b>{atEnd ? 'Back' : `${left} more`}</b>
+              {!atEnd && <IconChevronRight size={18} stroke={2.4} aria-hidden="true" />}
+            </button>
+          </span>
+        )}
       </div>
       {!showCards && status === 'loading' && <div className="mood-skel" aria-hidden="true" />}
       {showCards && (
@@ -431,8 +462,10 @@ function MoodSection({ nudge, head, moods, status, error, phase, onTap, isOn, su
             const barHere = nudge != null && nudge.id === m.id && saved;
             // The live level replaces the preset line on the card that carries the bar.
             const sub = barHere ? null : subOf(m);
+            const own = offOf?.(m.id) ?? null;
+            const offTip = own?.off ? own.tip : null;
             const soon = on || !saved ? null : inText(m.nextAtMs, now);
-            const cls = ['mood-btn', busyHere ?? '', on ? 'last' : '', saved ? '' : 'unsaved', barHere ? 'nudged' : ''].filter(Boolean).join(' ');
+            const cls = ['mood-btn', busyHere ?? '', on ? 'last' : '', saved ? '' : 'unsaved', offTip ? 'off' : '', barHere ? 'nudged' : ''].filter(Boolean).join(' ');
             const rowKey = paged ? `${start}:${m.id}` : m.id;
             const card = (
               <button
@@ -442,9 +475,10 @@ function MoodSection({ nudge, head, moods, status, error, phase, onTap, isOn, su
                 data-mood={m.id}
                 disabled={phase?.kind === 'working'}
                 aria-label={!saved ? `${moodLabel(m)}, not set up yet` : on ? `${moodLabel(m)}, on now` : soon ? `${moodLabel(m)}, ${soon.toLowerCase()}` : moodLabel(m)}
-                aria-disabled={saved ? undefined : true}
-                title={saved ? `Set the ${moodLabel(m)} mood${sub ? `: ${sub}` : ''}${on ? '. Last set from this wall' : ''}` : `${moodLabel(m)} is not set up in the home app yet`}
-                onClick={() => onTap(m.id)}
+                aria-disabled={saved && !offTip ? undefined : true}
+                {...(own ? tip(own.tip) : {})}
+                title={own ? undefined : saved ? `Set the ${moodLabel(m)} mood${sub ? `: ${sub}` : ''}${on ? '. Last set from this wall' : ''}` : `${moodLabel(m)} is not set up in the home app yet`}
+                onClick={() => !offTip && onTap(m.id)}
               >
                 <MoodArt id={m.id} />
                 {on && <u className="mood-tag">On now</u>}
@@ -473,30 +507,6 @@ function MoodSection({ nudge, head, moods, status, error, phase, onTap, isOn, su
               <IconChevronLeft size={22} stroke={2.2} aria-hidden="true" />
             </button>
           )}
-          {paged && peek && (
-            <button
-              type="button"
-              className={atEnd ? 'mood-more back' : 'mood-more'}
-              aria-label={atEnd ? 'Back to the first moods' : `${left} more moods`}
-              onClick={() => (atEnd ? setPage(0) : step(1))}
-              {...tip(atEnd ? 'Back to the first moods' : `Next: ${moods.slice(start + MOODS_PAGE, start + MOODS_PAGE * 2).map(moodLabel).join(', ')}`)}
-            >
-              <span className="mood-peek" aria-hidden="true">
-                <MoodArt id={peek.id} />
-              </span>
-              <span className="mood-more-in">
-                <span className="mood-arrow" aria-hidden="true">
-                  {atEnd ? <IconChevronLeft size={22} stroke={2.2} /> : <IconChevronRight size={22} stroke={2.2} />}
-                </span>
-                <b>{atEnd ? 'Back' : `${left} more`}</b>
-                <span className="mood-dots" aria-hidden="true">
-                  {Array.from({ length: pages }, (_, i) => (
-                    <i key={i} className={i === p ? 'on' : ''} />
-                  ))}
-                </span>
-              </span>
-            </button>
-          )}
         </div>
       )}
     </section>
@@ -515,7 +525,8 @@ function useOfficeMoods(): Omit<SectionProps, 'head'> {
   const list = m ? m.moods : [];
   const status: Status = word === 'not-set-up' || word === 'home-not-set-up' ? 'unconfigured' : word !== null ? 'error' : m ? 'ready' : 'loading';
   const blocked = m !== null && !m.canWrite;
-  const phase: Phase = applying !== null && list.some((x) => x.id === applying) ? { id: applying, kind: 'working' } : null;
+  const canBack = list.some((x) => x.active);
+  const phase: Phase = applying !== null && (list.some((x) => x.id === applying) || applying === NORMAL_ID) ? { id: applying, kind: 'working' } : null;
   const error = fail ? moodFailText(fail.word) : blocked ? (m.writeBlock === 'needs-private-address' ? moodFailText('needs-private-address') : moodFailText('not-set-up')) : null;
   const n = m?.nudge ?? null;
   const mode: NudgeMode = word !== null ? 'offline' : blocked ? 'blocked' : syncing ? 'sync' : 'ready';
@@ -536,16 +547,25 @@ function useOfficeMoods(): Omit<SectionProps, 'head'> {
     : null;
   return {
     nudge,
-    moods: list.map((x) => ({ id: x.id, label: x.label })),
+    moods: [...list.map((x) => ({ id: x.id, label: x.label })), ...(m && !list.some((x) => x.id === NORMAL_ID) ? [{ id: NORMAL_ID, label: 'Normal' }] : [])],
     status,
     error,
     phase,
     onTap: (id) => {
       if (blocked || applying !== null) return;
+      if (id === NORMAL_ID) {
+        if (canBack) void useHome.getState().goBackFromMood();
+        return;
+      }
       void useHome.getState().applyMood(id);
     },
     isOn: (id) => list.some((x) => x.id === id && x.active),
-    subOf: (x) => list.find((y) => y.id === x.id)?.line ?? null,
+    subOf: (x) => {
+      if (x.id === NORMAL_ID) return NORMAL_LINE;
+      const y = list.find((z) => z.id === x.id);
+      return y?.short ?? y?.line ?? null;
+    },
+    offOf: (id) => (id === NORMAL_ID ? { off: !canBack, tip: canBack ? NORMAL_TIP : NORMAL_OFF_TIP } : null),
     now: 0,
     visible,
   };

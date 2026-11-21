@@ -63,6 +63,8 @@ export interface Mood {
   id: string;
   label: string;
   line: string | null;
+  /** A shorter line ("Room 25% · Panels 10% · Candles") that fits a card on one line; absent from older home apps. */
+  short?: string | null;
   active: boolean;
 }
 /** The live office level behind the active mood, with the floor and step the home app holds. */
@@ -196,7 +198,7 @@ export function moodsOf(raw: unknown): Moods | null {
     const r = obj(m);
     const id = str(r?.id);
     const label = str(r?.label);
-    if (r && id && label) moods.push({ id, label, line: str(r.line), active: bool(r.active) });
+    if (r && id && label) moods.push({ id, label, line: str(r.line), ...(str(r.short) ? { short: str(r.short) } : {}), active: bool(r.active) });
   }
   const off = obj(o.off);
   const n = obj(o.nudge);

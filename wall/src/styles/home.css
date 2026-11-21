@@ -1289,9 +1289,9 @@
   color: var(--lw-soft);
 }
 
-/* Moods: four large and a narrow More card; the cards slide in slowly. */
+/* Moods: four equal cards (the pager is in the heading); the cards fade in slowly. Faded, not slid, so the last card never pokes past the row. */
 .mood-row.paged {
-  grid-template-columns: repeat(4, minmax(0, 1fr)) 124px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
 }
 .mood-row.paged .mood-btn,
 .mood-row.paged > .mood-cell {
@@ -1304,58 +1304,43 @@
 @keyframes mood-slide {
   from {
     opacity: 0.2;
-    transform: translateX(28px);
   }
   to {
     opacity: 1;
-    transform: none;
   }
 }
-.mood-more {
-  position: relative;
-  overflow: hidden;
-  min-width: 0;
-  padding: 0;
-  border-radius: 20px;
-  border: 1px solid var(--line);
-  background: #07051a;
-  color: var(--tx);
-  cursor: pointer;
-}
-.mood-peek {
-  position: absolute;
-  inset: 0;
-  opacity: 0.4;
-  transform: translateX(62%);
-}
-.mood-more::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-  background: linear-gradient(90deg, rgba(7, 5, 26, 0.95) 30%, rgba(7, 5, 26, 0.55));
-}
-.mood-more-in {
-  position: relative;
-  z-index: 1;
-  height: 100%;
-  display: flex;
-  flex-direction: column;
+/* The pager at the right of the heading: page dots and a pill that pages on. */
+.mood-pager {
+  display: inline-flex;
   align-items: center;
-  justify-content: center;
-  gap: 10px;
+  gap: 12px;
+  margin: -1px 0;
 }
-.mood-more-in b {
-  font: 600 20px/1 var(--body);
-}
-.mood-arrow {
-  width: 40px;
-  height: 40px;
-  border-radius: 50%;
+.mood-more {
+  height: 24px;
+  padding: 0 8px 0 12px;
+  border-radius: 999px;
   border: 1px solid rgba(53, 230, 234, 0.45);
+  background: rgba(53, 230, 234, 0.08);
   color: var(--cyan);
   display: inline-flex;
   align-items: center;
-  justify-content: center;
+  gap: 4px;
+  cursor: pointer;
+}
+.mood-more.back {
+  padding: 0 12px 0 8px;
+}
+.mood-more b {
+  font: 600 16px/1 var(--body);
+}
+/* A greyed Office card (Normal with neither Gaming nor Recording on): dim, never lifts on press. */
+.mood-btn.off {
+  opacity: 0.45;
+  cursor: default;
+}
+.mood-btn.off:enabled:active {
+  transform: none;
 }
 /* Office cards sit in a cell so the level bar can be a sibling of the card button, never inside it. */
 .mood-cell {
@@ -1505,8 +1490,8 @@
   outline: 3px solid var(--cyan);
   outline-offset: 2px;
 }
-.mood-more:hover .mood-arrow {
-  background: rgba(53, 230, 234, 0.14);
+.mood-more:hover {
+  background: rgba(53, 230, 234, 0.18);
 }
 .mood-more:focus-visible {
   outline: 3px solid var(--cyan);

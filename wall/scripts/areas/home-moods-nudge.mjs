@@ -106,7 +106,7 @@ function rule(v, results, emit) {
     if (v.name === V_FOUR || v.name === V_TALL) {
       if (Math.abs(c.w - 312) > 1.5) fails.push('home nudge: the card is ' + r1(c.w) + ' px wide (312)');
     }
-    if (v.name === V_PAGED && Math.abs(c.w - 278) > 2) fails.push('home nudge: the paged card is ' + r1(c.w) + ' px wide (about 278)');
+    if (v.name === V_PAGED && Math.abs(c.w - 312) > 2) fails.push('home nudge: the paged card is ' + r1(c.w) + ' px wide (312, the pager is in the heading)');
     const wantH = v.name === V_TALL ? 300 : 150;
     if (Math.abs(c.h - wantH) > 1.5) fails.push('home nudge: the card is ' + r1(c.h) + ' px tall (' + wantH + ')');
     if (v.name === V_FLOOR && (m.lvText !== 'Floor' || !m.downDisabled || m.upDisabled)) fails.push('home nudge: at the floor the word is "' + m.lvText + '" and dimmer disabled is ' + m.downDisabled + ' (Floor, disabled; brighter live)');

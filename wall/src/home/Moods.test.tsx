@@ -31,12 +31,22 @@ afterEach(() => {
 it('maps ids to labels, notes and art', () => {
   expect(moodLabel({ id: 'lateNight', label: '' })).toBe('Late Night');
   expect(moodLabel({ id: 'day', label: 'Day' })).toBe('Day');
-  expect(moodNote('day')).toBe('bright and cool');
+  expect(moodNote('day')).toBe('Bright and cool');
   expect(moodNote('reading')).toBeNull();
   expect(artKind('day')).toBe('day');
   expect(artKind('evening')).toBe('evening');
   expect(artKind('lateNight')).toBe('night');
   expect(artKind('reading')).toBe('lamp');
+});
+
+it('every condo card line starts with a capital, scene lines included', async () => {
+  mocks.set('wall2_moods', () => [
+    { id: 'day', label: 'Day' },
+    { id: 'scene1', label: 'Wind down', kind: 'scene', line: 'dims the living room' },
+  ]);
+  const { container } = render(<Moods />);
+  await flush();
+  expect([...container.querySelectorAll('.mood-sub')].map((n) => n.textContent)).toEqual(['Bright and cool', 'Dims the living room']);
 });
 
 it('lists the moods in order and never applies one without a tap', async () => {
@@ -296,7 +306,7 @@ it('the last page keeps a full row of four, as the drawn carousel stops at its e
 });
 
 it('Still Working leads with its line and art, and an unsaved one is quiet and sends nothing', async () => {
-  expect(moodNote('stillWorking')).toBe('bright and focused');
+  expect(moodNote('stillWorking')).toBe('Bright and focused');
   expect(artKind('stillWorking')).toBe('bulb');
   const apply = vi.fn();
   mocks.set('wall2_moods', () => [{ id: 'stillWorking', label: 'Still Working', saved: false }, ...LIST]);
@@ -330,7 +340,7 @@ it('a saved Still Working applies like the others', async () => {
   await flush();
   const first = container.querySelector('.mood-btn') as HTMLElement;
   expect(first.classList.contains('unsaved')).toBe(false);
-  expect(first.querySelector('.mood-sub')?.textContent).toBe('bright and focused');
+  expect(first.querySelector('.mood-sub')?.textContent).toBe('Bright and focused');
   fireEvent.click(first);
   await flush();
   expect(apply).toHaveBeenCalledWith({ id: 'stillWorking' });
@@ -391,7 +401,7 @@ it('a cached unsaved Still Working turns into a saved one after the next refresh
   await flush(MOODS_REFRESH_MS);
   const first = container.querySelector('.mood-btn') as HTMLElement;
   expect(first.classList.contains('unsaved')).toBe(false);
-  expect(first.querySelector('.mood-sub')?.textContent).toBe('bright and focused');
+  expect(first.querySelector('.mood-sub')?.textContent).toBe('Bright and focused');
   expect(JSON.parse(localStorage.getItem(MOODS_CACHE_KEY) ?? '[]')[0]).toEqual({ id: 'stillWorking', label: 'Still Working' });
   fireEvent.click(first);
   await flush();
