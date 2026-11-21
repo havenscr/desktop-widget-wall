@@ -194,7 +194,12 @@ pub(crate) fn describe(err: ureq::Error) -> String {
 }
 
 pub(crate) fn get_json(url: &str) -> Result<Value, String> {
-    let resp = agent().get(url).set("Accept", "application/json").call().map_err(describe)?;
+    get_json_with_timeout(url, TIMEOUT)
+}
+
+/// `get_json` with its own whole-request timeout, for reads that are optional and must not hold up the rest.
+pub(crate) fn get_json_with_timeout(url: &str, timeout: Duration) -> Result<Value, String> {
+    let resp = agent().get(url).set("Accept", "application/json").timeout(timeout).call().map_err(describe)?;
     let resp = require_ok(resp)?;
     serde_json::from_slice(&read_body(resp)?).map_err(|_| "The answer was not JSON".to_string())
 }

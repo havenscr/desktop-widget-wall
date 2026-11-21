@@ -5,11 +5,13 @@
 //! `wall2_feeds.rs` and is never put in an error message. Nothing here runs unless the
 //! front end calls it, and the front end calls `wall2_apply_mood` only on a tap.
 
-use crate::wall2_feeds::{agent, describe, get_json, read_base, read_body, require_ok};
+use crate::wall2_feeds::{agent, describe, get_json, get_json_with_timeout, read_base, read_body, require_ok};
 use serde::Serialize;
 use serde_json::Value;
 
 const MAX_MOODS: usize = 12;
+/// The scenes are optional, so their read gets a short wait: a hanging routines route must not hold the moods back.
+const ROUTINES_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(2);
 /// Applying a mood can wait inside the home app (Still Working pauses before its Lutron
 /// levels, about 6 to 7 seconds in all), so it gets longer than the shared agent's timeout.
 const APPLY_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(20);
@@ -138,7 +140,14 @@ fn apply_outcome(body: &Value) -> ApplyOutcome {
 }
 
 fn apply_error(code: u16) -> &'static str {
+    apply_error_for(false, code)
+}
+
+/// The words for a failed start. A scene card gets scene wording for the two statuses that mean
+/// "not there"; everything else keeps the mood words.
+fn apply_error_for(scene: bool, code: u16) -> &'static str {
     match code {
+        404 | 409 if scene => "That scene is not available in the home app",
         409 => "Moods are not set up in the home app yet",
         404 => "Unknown mood",
         _ => "Could not set the mood",
@@ -151,7 +160,7 @@ pub async fn wall2_moods(app: tauri::AppHandle) -> Result<Vec<Mood>, String> {
     tauri::async_runtime::spawn_blocking(move || {
         let body = get_json(&format!("{base}/api/moods"))?;
         // The scenes are extra: when the routines cannot be read the moods still come back.
-        let routines = get_json(&format!("{base}/api/routines")).ok();
+        let routines = get_json_with_timeout(&format!("{base}/api/routines"), ROUTINES_TIMEOUT).ok();
         Ok(merge_moods(pick_moods(&body), routines.as_ref()))
     })
     .await
@@ -168,6 +177,7 @@ pub async fn wall2_apply_mood(app: tauri::AppHandle, id: String) -> Result<Apply
     let Some(url) = apply_url(&base, &id) else {
         return Err("Unknown mood".to_string());
     };
+    let scene = is_scene(&id);
     tauri::async_runtime::spawn_blocking(move || {
         let result = agent()
             .post(&url)
@@ -181,7 +191,7 @@ pub async fn wall2_apply_mood(app: tauri::AppHandle, id: String) -> Result<Apply
                 let body = read_body(resp).ok().and_then(|b| serde_json::from_slice::<Value>(&b).ok()).unwrap_or(Value::Null);
                 Ok(apply_outcome(&body))
             }
-            Err(ureq::Error::Status(code, _)) => Err(apply_error(code).to_string()),
+            Err(ureq::Error::Status(code, _)) => Err(apply_error_for(scene, code).to_string()),
             Err(e) => {
                 let _ = describe(e);
                 Err(apply_error(0).to_string())
@@ -317,5 +327,25 @@ mod tests {
         assert_eq!(apply_error(404), "Unknown mood");
         assert_eq!(apply_error(500), "Could not set the mood");
         assert_eq!(apply_error(0), "Could not set the mood");
+    }
+
+    #[test]
+    fn scene_cards_get_scene_wording() {
+        assert_eq!(apply_error_for(true, 404), "That scene is not available in the home app");
+        assert_eq!(apply_error_for(true, 409), "That scene is not available in the home app");
+        assert_eq!(apply_error_for(true, 500), "Could not set the mood");
+        assert_eq!(apply_error_for(false, 404), "Unknown mood");
+        assert_eq!(apply_error_for(false, 409), "Moods are not set up in the home app yet");
+    }
+
+    #[test]
+    fn scene_text_trims_truncates_and_skips_blank() {
+        let long = "x".repeat(80);
+        let r = json!({"name": long, "description": "   "});
+        assert_eq!(scene_text(&r, "name").map(|t| t.chars().count()), Some(MAX_SCENE_TEXT));
+        assert_eq!(scene_text(&r, "description"), None);
+        let body = json!([{"id": "movie_mode", "name": "   "}]);
+        assert_eq!(pick_scenes(&body)[0].label, "Movie Mode");
+        assert!(pick_scenes(&json!({"routines": "x"})).is_empty());
     }
 }

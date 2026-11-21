@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type KeyboardEvent } from 'react';
 import { briefTokenStatus, setBriefToken } from '../bridge/meetBrief';
+import { briefKeyChanged, useBriefKeySignal } from './briefKeySignal';
 import { tip } from '../ui/HoverTip';
 import { OFF_LINE } from './briefModel';
 
@@ -28,12 +29,16 @@ export function BriefConnect({ onChanged }: { onChanged?: () => void }) {
   const ready = value.trim().length > 0 && !busy;
   const save = () => {
     if (!ready) return;
+    // The typed key leaves the field before the command runs, so it is not held in state while the call is out.
+    const typed = value.trim();
+    setValue('');
     setBusy(true);
     setError(null);
-    setBriefToken(value.trim()).then(
+    setBriefToken(typed).then(
       () => {
         setBusy(false);
         close();
+        briefKeyChanged();
         onChanged?.();
       },
       (e) => {
@@ -99,6 +104,7 @@ export function BriefConnect({ onChanged }: { onChanged?: () => void }) {
 export function BriefSetup() {
   const [set, setSet] = useState<boolean | null>(null);
   const alive = useRef(true);
+  const changes = useBriefKeySignal((x) => x.n);
   const read = useCallback(() => {
     briefTokenStatus().then(
       (s) => alive.current && setSet(s.set),
@@ -111,11 +117,11 @@ export function BriefSetup() {
     return () => {
       alive.current = false;
     };
-  }, [read]);
+  }, [read, changes]);
   if (set === null || set) return null;
   return (
     <div className="meet-brief-setup">
-      <BriefConnect onChanged={read} />
+      <BriefConnect />
     </div>
   );
 }

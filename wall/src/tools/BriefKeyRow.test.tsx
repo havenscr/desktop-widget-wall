@@ -2,6 +2,8 @@ import { act, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { mocks } from '../bridge/tauri';
 import { HoverTipLayer, resetTip } from '../ui/HoverTip';
+import { BriefSetup } from '../meet/BriefKey';
+import { useBriefKeySignal } from '../meet/briefKeySignal';
 import { BRIEF_KEY_ERRORS, BriefKeyRow } from './BriefKeyRow';
 
 vi.setConfig({ testTimeout: 20_000 });
@@ -33,7 +35,10 @@ beforeEach(() => {
     status = { set: false, unreadable: false };
   });
 });
-afterEach(() => mocks.clear());
+afterEach(() => {
+  mocks.clear();
+  useBriefKeySignal.setState({ n: 0 });
+});
 
 const show = async () => {
   render(
@@ -147,4 +152,48 @@ it('an unreadable key offers Change and Forget with a note', async () => {
   expect(screen.getByText('The saved key could not be read. Type it again.')).toBeTruthy();
   expect(screen.getByText('Change')).toBeTruthy();
   expect(screen.getByText('Forget')).toBeTruthy();
+});
+
+it('empties the field before the command answers and keeps it open and empty on an error', async () => {
+  let release: () => void = () => {};
+  mocks.set('wall2_meet_brief_token_set', () => new Promise<void>((r) => (release = r)));
+  await show();
+  fireEvent.click(screen.getByText('Set up'));
+  type(KEY);
+  fireEvent.click(screen.getByText('Save'));
+  expect(field().value).toBe('');
+  expect(document.body.innerHTML).not.toContain(KEY);
+  await act(async () => release());
+  mocks.set('wall2_meet_brief_token_set', () => {
+    throw 'invalid';
+  });
+  await flush();
+  fireEvent.click(screen.getByText('Set up'));
+  type(KEY);
+  fireEvent.click(screen.getByText('Save'));
+  await flush();
+  expect(field().value).toBe('');
+  expect(screen.getByText(BRIEF_KEY_ERRORS.invalid)).toBeTruthy();
+});
+
+it('a Forget here shows Connect on a mounted Meet setup, and a Save here takes it away', async () => {
+  status = { set: true, unreadable: false };
+  render(
+    <>
+      <BriefSetup />
+      <BriefKeyRow />
+    </>,
+  );
+  await flush();
+  expect(screen.queryByRole('button', { name: 'Connect' })).toBeNull();
+  fireEvent.click(screen.getByText('Forget'));
+  await flush();
+  await flush();
+  expect(screen.getByRole('button', { name: 'Connect' })).toBeTruthy();
+  fireEvent.click(screen.getByText('Set up'));
+  type(KEY);
+  fireEvent.click(screen.getByText('Save'));
+  await flush();
+  await flush();
+  expect(screen.queryByRole('button', { name: 'Connect' })).toBeNull();
 });

@@ -1,10 +1,14 @@
 import { act, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { mocks } from '../bridge/tauri';
+import { useBriefKeySignal } from './briefKeySignal';
 import { BriefConnect, BriefSetup, KEY_FAILED, KEY_INVALID, KEY_TIP } from './BriefKey';
 
 const flush = () => act(async () => {});
-afterEach(() => mocks.clear());
+afterEach(() => {
+  mocks.clear();
+  useBriefKeySignal.setState({ n: 0 });
+});
 
 describe('BriefConnect', () => {
   it('shows the off line with Connect and the helper text on hover', () => {
@@ -46,6 +50,8 @@ describe('BriefConnect', () => {
     mocks.set('wall2_meet_brief_token_set', () => {
       throw 'failed';
     });
+    expect((screen.getByLabelText('Brief key') as HTMLInputElement).value).toBe('');
+    fireEvent.change(screen.getByLabelText('Brief key'), { target: { value: 'x y' } });
     fireEvent.click(screen.getByRole('button', { name: 'Save' }));
     await flush();
     expect(screen.getByRole('alert').textContent).toBe(KEY_FAILED);

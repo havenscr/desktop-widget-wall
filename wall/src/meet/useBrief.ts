@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { readBrief, type BriefError, type BriefOut } from '../bridge/meetBrief';
 import { useAwake } from '../onair/useNow';
+import { useBriefKeySignal } from './briefKeySignal';
 import { usePlaceStore } from '../state/places';
 
 /** While the box is still building the brief: how often to ask again, and for how long. */
@@ -30,6 +31,7 @@ export function useBrief(key: string | null): BriefRead {
   const onMeet = usePlaceStore((s) => s.active === 'meet');
   const [state, setState] = useState<{ key: string | null; out: BriefOut | null; err: BriefError | null; gaveUp: boolean }>({ key, out: null, err: null, gaveUp: false });
   const [again, setAgain] = useState(0);
+  const keyChanges = useBriefKeySignal((x) => x.n);
   const retry = useCallback(() => setAgain((n) => n + 1), []);
   const firstAt = useRef<{ key: string | null; at: number }>({ key: null, at: 0 });
   const live = awake && onMeet;
@@ -38,7 +40,7 @@ export function useBrief(key: string | null): BriefRead {
     if (!key || !live) return;
     let dead = false;
     let timer: ReturnType<typeof setTimeout> | null = null;
-    if (firstAt.current.key !== key || again > 0) firstAt.current = { key, at: Date.now() };
+    if (firstAt.current.key !== key || again > 0 || keyChanges > 0) firstAt.current = { key, at: Date.now() };
     const run = () => {
       readBrief(key).then(
         (out) => {
@@ -65,7 +67,7 @@ export function useBrief(key: string | null): BriefRead {
       dead = true;
       if (timer) clearTimeout(timer);
     };
-  }, [key, live, again]);
+  }, [key, live, again, keyChanges]);
 
   // An answer belongs to its key; a new key starts empty.
   if (state.key !== key) return { out: null, err: null, gaveUp: false, retry };

@@ -1,6 +1,7 @@
 import { IconCalendarEvent } from '@tabler/icons-react';
 import { useCallback, useEffect, useRef, useState, type KeyboardEvent } from 'react';
 import { briefTokenStatus, clearBriefToken, setBriefToken, type BriefTokenStatus } from '../bridge/meetBrief';
+import { briefKeyChanged } from '../meet/briefKeySignal';
 import { hover } from './hover';
 
 /** The fixed lines for a key that could not be saved or forgotten. */
@@ -52,18 +53,19 @@ export function BriefKeyRow() {
     if (!ready || busy) return;
     setBusy(true);
     setError(null);
-    // The field is emptied from state as soon as the command answers, whatever the answer.
-    setBriefToken(value.trim()).then(
+    // The field is emptied from state before the command runs, so the key is not held while the call is out.
+    const typed = value.trim();
+    setValue('');
+    setBriefToken(typed).then(
       () => {
+        briefKeyChanged();
         if (!mounted.current) return;
-        setValue('');
         setBusy(false);
         close();
         read();
       },
       (e) => {
         if (!mounted.current) return;
-        setValue('');
         setBusy(false);
         setError(e === 'invalid' ? BRIEF_KEY_ERRORS.invalid : BRIEF_KEY_ERRORS.failed);
       },
@@ -75,6 +77,7 @@ export function BriefKeyRow() {
     setError(null);
     clearBriefToken().then(
       () => {
+        briefKeyChanged();
         if (!mounted.current) return;
         setBusy(false);
         close();
