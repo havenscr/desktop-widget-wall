@@ -115,7 +115,7 @@ it('opens a key menu without sending and pins a library key to Always here', asy
   await flush();
   expect(sent).toEqual([]);
   expect(screen.getByRole('menu')).toBeTruthy();
-  fireEvent.click(screen.getByRole('menuitem', { name: /Pin to Always here/ }));
+  fireEvent.click(screen.getByRole('menuitem', { name: /Put in Always here/ }));
   await flush();
   expect(JSON.parse(localStorage.getItem('wall2-keys-pins') ?? '')).toEqual(['lib:snip']);
   expect(sent).toEqual([]);
@@ -793,7 +793,22 @@ it('closes the menu when the feed brings another set under it', async () => {
   expect(menuUp()).toBeNull();
 });
 
-it('offers which of the five gives way when Always here is full, and disables Pin when the key is already there', async () => {
+it('with free places the menu is Run it now and Put in Always here, each with helper text, and no Edit keys file', async () => {
+  libraryMocks();
+  localStorage.setItem(PINS_KEY, JSON.stringify(['lib:thirds', 'lib:focus']));
+  answer = front('general', 'notepad.exe');
+  render(<Keys />);
+  await flush();
+  fireEvent.contextMenu(screen.getByRole('button', { name: 'Snip' }));
+  await flush();
+  const rows = screen.getAllByRole('menuitem');
+  expect(rows.map((m) => m.querySelector('span')?.textContent)).toEqual(['Run it now', 'Put in Always here']);
+  expect(rows[1].textContent).toContain('2 of 5');
+  for (const row of rows) expect((row.getAttribute('title') ?? '').length).toBeGreaterThan(10);
+  expect(screen.queryByRole('menuitem', { name: /Edit keys file/ })).toBeNull();
+});
+
+it('with Always here full, Put in Always here opens a second step listing the five, and a choice swaps that one out', async () => {
   libraryMocks();
   localStorage.setItem(PINS_KEY, JSON.stringify(['lib:thirds', 'lib:focus', 'lib:mute', 'lib:mixer', 'lib:zen']));
   answer = front('general', 'notepad.exe');
@@ -801,20 +816,74 @@ it('offers which of the five gives way when Always here is full, and disables Pi
   await flush();
   fireEvent.contextMenu(screen.getByRole('button', { name: 'Snip' }));
   await flush();
-  expect(screen.getAllByRole('menuitem').map((m) => m.querySelector('span')?.textContent)).toEqual([
-    'Run it now',
-    'Thirds',
-    'Focus',
-    'Mute sound',
-    'Volume mixer',
-    'Zen',
-  ]);
-  expect(screen.queryByRole('menuitem', { name: /Edit keys file/ })).toBeNull();
+  expect(screen.getAllByRole('menuitem').map((m) => m.querySelector('span')?.textContent)).toEqual(['Run it now', 'Put in Always here']);
+  fireEvent.click(screen.getByRole('menuitem', { name: /Put in Always here/ }));
+  expect(screen.getByRole('menu')).toBeTruthy();
+  expect(screen.getAllByRole('menuitem').map((m) => m.querySelector('span')?.textContent)).toEqual(['Thirds', 'Focus', 'Mute sound', 'Volume mixer', 'Zen']);
+  expect(localStorage.getItem(PINS_KEY)).toContain('lib:zen');
   fireEvent.click(screen.getByRole('menuitem', { name: /Mute sound/ }));
   expect(JSON.parse(localStorage.getItem(PINS_KEY) ?? '')).toEqual(['lib:thirds', 'lib:focus', 'lib:snip', 'lib:mixer', 'lib:zen']);
-  fireEvent.pointerDown(document.body);
+  expect(menuUp()).toBeNull();
+});
+
+it('a pinned PowerToys key that is off keeps its place and its real name in the replace step', async () => {
+  const off = LIBRARY_DATA.map((g) => ({ ...g, keys: g.keys.map((k) => (k.id === 'pt-color' ? { ...k, kind: 'off' as const, runnable: false, how: 'Off in PowerToys' } : k)) }));
+  mocks.set('wall2_keys_library', () => off);
+  localStorage.setItem(PINS_KEY, JSON.stringify(['lib:thirds', 'lib:focus', 'lib:pt-color', 'lib:mixer', 'lib:zen']));
+  answer = front('general', 'notepad.exe');
+  render(<Keys />);
+  await flush();
+  fireEvent.contextMenu(screen.getByRole('button', { name: 'Snip' }));
+  await flush();
+  expect(screen.getByRole('menuitem', { name: /Put in Always here/ }).textContent).toContain('5 of 5');
+  fireEvent.click(screen.getByRole('menuitem', { name: /Put in Always here/ }));
+  const names = screen.getAllByRole('menuitem').map((m) => m.querySelector('span')?.textContent);
+  expect(names).toEqual(['Thirds', 'Focus', 'Color picker', 'Volume mixer', 'Zen']);
+  expect(names.some((n) => n?.startsWith('lib:'))).toBe(false);
+});
+
+it('Escape in the second step goes back to the first, and a second Escape closes the menu', async () => {
+  libraryMocks();
+  localStorage.setItem(PINS_KEY, JSON.stringify(['lib:thirds', 'lib:focus', 'lib:mute', 'lib:mixer', 'lib:zen']));
+  answer = front('general', 'notepad.exe');
+  render(<Keys />);
+  await flush();
+  fireEvent.contextMenu(screen.getByRole('button', { name: 'Snip' }));
+  await flush();
+  fireEvent.click(screen.getByRole('menuitem', { name: /Put in Always here/ }));
+  expect(document.activeElement).toBe(screen.getByRole('menuitem', { name: /Thirds/ }));
+  fireEvent.keyDown(document.body, { key: 'Escape' });
+  expect(screen.getAllByRole('menuitem').map((m) => m.querySelector('span')?.textContent)).toEqual(['Run it now', 'Put in Always here']);
+  expect(document.activeElement).toBe(screen.getByRole('menuitem', { name: /Put in Always here/ }));
+  fireEvent.keyDown(document.body, { key: 'Escape' });
+  expect(menuUp()).toBeNull();
+  expect(localStorage.getItem(PINS_KEY)).not.toContain('lib:snip');
+});
+
+it('the arrow keys move through the second step and the left arrow goes back', async () => {
+  libraryMocks();
+  localStorage.setItem(PINS_KEY, JSON.stringify(['lib:thirds', 'lib:focus', 'lib:mute', 'lib:mixer', 'lib:zen']));
+  answer = front('general', 'notepad.exe');
+  render(<Keys />);
+  await flush();
+  fireEvent.contextMenu(screen.getByRole('button', { name: 'Snip' }));
+  await flush();
+  fireEvent.click(screen.getByRole('menuitem', { name: /Put in Always here/ }));
+  fireEvent.keyDown(document.activeElement as HTMLElement, { key: 'ArrowDown' });
+  expect(document.activeElement).toBe(screen.getByRole('menuitem', { name: /Focus/ }));
+  fireEvent.keyDown(document.activeElement as HTMLElement, { key: 'ArrowUp' });
+  fireEvent.keyDown(document.activeElement as HTMLElement, { key: 'ArrowUp' });
+  expect(document.activeElement).toBe(screen.getByRole('menuitem', { name: /Zen/ }));
+  fireEvent.keyDown(document.activeElement as HTMLElement, { key: 'ArrowLeft' });
+  expect(screen.getAllByRole('menuitem')).toHaveLength(2);
+});
+
+it('a key already in Always here shows a disabled Already in Always here', async () => {
+  libraryMocks();
   localStorage.setItem(PINS_KEY, JSON.stringify(['lib:snip']));
-  act(() => window.dispatchEvent(new Event(PINS_CHANGED_EVENT)));
+  answer = front('general', 'notepad.exe');
+  render(<Keys />);
+  await flush();
   fireEvent.contextMenu(screen.getByRole('button', { name: 'Snip' }));
   await flush();
   expect((screen.getByRole('menuitem', { name: /Already in Always here/ }) as HTMLButtonElement).disabled).toBe(true);
@@ -830,7 +899,7 @@ it('a blocked store does not throw into the Pin click', async () => {
   vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
     throw new Error('blocked');
   });
-  expect(() => fireEvent.click(screen.getByRole('menuitem', { name: /Pin to Always here/ }))).not.toThrow();
+  expect(() => fireEvent.click(screen.getByRole('menuitem', { name: /Put in Always here/ }))).not.toThrow();
   expect(menuUp()).toBeNull();
 });
 
@@ -841,11 +910,11 @@ it("updates the menu's pin count when a pin is made elsewhere", async () => {
   await flush();
   fireEvent.contextMenu(screen.getByRole('button', { name: 'Snip' }));
   await flush();
-  expect(screen.getByRole('menuitem', { name: /Pin to Always here/ }).textContent).toContain('0 of 5');
+  expect(screen.getByRole('menuitem', { name: /Put in Always here/ }).textContent).toContain('0 of 5');
   // A pin made through the Add tile of the Always here row.
   localStorage.setItem(PINS_KEY, JSON.stringify(['lib:thirds', 'lib:focus', 'lib:mute']));
   act(() => window.dispatchEvent(new Event(PINS_CHANGED_EVENT)));
-  expect(screen.getByRole('menuitem', { name: /Pin to Always here/ }).textContent).toContain('3 of 5');
+  expect(screen.getByRole('menuitem', { name: /Put in Always here/ }).textContent).toContain('3 of 5');
 });
 
 it('every enabled Now key says the menu exists in its tooltip, and a disabled key keeps its reason', async () => {

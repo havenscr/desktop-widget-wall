@@ -520,14 +520,21 @@ export function Keys() {
           const alreadyPinned = pinRef !== null && pinRefs.includes(pinRef);
           const full = pinRefs.length >= MAX_PINS;
           const runKey = (detail: number) => void press(`${set.id}:${i}`, detail, { command: 'wall2_keys_send', args: { setId: set.id, index: i } }, k.label, k.action, set, hold);
+          const swaps: KeyMenuAction[] = pinRefs.map((ref, slot) => ({
+            id: 'swap' as const,
+            slot,
+            heading: slot === 0 ? 'Put in Always here, in place of' : undefined,
+            label: (library && resolvePin(ref, library, sum.filePins)?.label) ?? ref,
+            help: `Takes ${k.label} into this place and drops the key that is there from Always here.`,
+          }));
           const pinActions: KeyMenuAction[] = alreadyPinned
-            ? [{ id: 'pin', label: 'Already in Always here', disabled: true }]
+            ? [{ id: 'pin', label: 'Already in Always here', disabled: true, help: `${k.label} is one of the keys in Always here already.` }]
             : pinRef === null
-              ? [{ id: 'pin', label: 'This key is one of your own keys', disabled: true }]
+              ? [{ id: 'pin', label: 'This key is one of your own keys', disabled: true, help: 'Only library keys can go in Always here.' }]
               : full
-                ? pinRefs.map((ref, slot) => ({ id: 'swap' as const, slot, heading: slot === 0 ? 'Put in Always here, in place of' : undefined, label: (library && resolvePin(ref, library, sum.filePins)?.label) ?? ref }))
-                : [{ id: 'pin', label: 'Pin to Always here', note: `${pinRefs.length} of ${MAX_PINS}` }];
-          const actions: KeyMenuAction[] = [{ id: 'run', label: 'Run it now', disabled: layoutOff || wrongApp }, ...pinActions];
+                ? [{ id: 'replace', label: 'Put in Always here', note: `${MAX_PINS} of ${MAX_PINS}`, sub: swaps, help: 'Always here is full. Choose which of the five keys gives way.' }]
+                : [{ id: 'pin', label: 'Put in Always here', note: `${pinRefs.length} of ${MAX_PINS}`, help: `Adds ${k.label} to the Always here row, which is always on the strip.` }];
+          const actions: KeyMenuAction[] = [{ id: 'run', label: 'Run it now', disabled: layoutOff || wrongApp, help: `Sends ${k.label} once, right now.` }, ...pinActions];
           const openMenu = (byKey: boolean) => {
             if (!overlayOwnsPointer() && shown !== null) setMenu({ at: i, shown, byKey });
           };

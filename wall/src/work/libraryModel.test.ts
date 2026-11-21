@@ -44,8 +44,8 @@ describe('the library the page and the mocks hold equals the Rust one', () => {
     expect(pt.keys.length).toBe(5);
     expect(pt.keys.every((k) => k.kind === 'check')).toBe(true);
     // Rust's found state, as text: the plain title and the check-to-key swap for this group only.
-    expect(rust).toContain('if g.id == "powertoys" && powertoys { "PowerToys".to_string() }');
-    expect(rust).toContain('if powertoys && e.group == "powertoys" && e.kind == LibKind::Check { LibKind::Key.word() }');
+    expect(rust).toContain('if g.id == "powertoys" && installed { "PowerToys".to_string() }');
+    expect(rust).toContain('_ if installed && e.group == "powertoys" && e.kind == LibKind::Check => (LibKind::Key.word(), e.how.to_string())');
     const found = { ...pt, title: 'PowerToys', keys: pt.keys.map((k) => ({ ...k, kind: 'key' as const })) };
     expect(found.keys.every((k) => k.kind === 'key') && found.title === 'PowerToys').toBe(true);
     expect(found.keys.map((k) => k.id)).toEqual(pt.keys.map((k) => k.id));
@@ -114,6 +114,19 @@ describe('pins on this display', () => {
     for (const bad of ['', 'lib:', 'lib:nope', 'lib:new-chat', 'lib:pbi-refresh', 'file:1', 'file:x', 'x:thirds', 'lib:Thirds', 'lib:../x', 'file:0 ']) {
       expect(resolvePin(bad, lib, filePins), bad).toBeNull();
     }
+  });
+
+  it('a PowerToys pin whose module is off stays resolvable as a disabled key, and runs again when it is back on', () => {
+    const withColor = (patch: Partial<LibKey>): LibGroup[] => lib.map((g) => ({ ...g, keys: g.keys.map((k) => (k.id === 'pt-color' ? { ...k, ...patch } : k)) }));
+    const off = withColor({ kind: 'off', runnable: false, how: 'Off in PowerToys' });
+    expect(resolvePin('lib:pt-color', off, [])).toMatchObject({ label: 'Color picker', kind: 'off', runnable: false, how: 'Off in PowerToys' });
+    // The pin keeps its slot in a saved list while the module is off.
+    const saved = JSON.stringify(['lib:snip', 'lib:pt-color']);
+    expect(parsePins(saved, off, [])).toEqual(['lib:snip', 'lib:pt-color']);
+    // Back on: the same pin is a runnable key again.
+    expect(resolvePin('lib:pt-color', withColor({ kind: 'key', runnable: true }), [])).toMatchObject({ kind: 'key', runnable: true });
+    // A key that is merely coming (soon) is still not drawable.
+    expect(resolvePin('lib:new-chat', withColor({}), [])).toBeNull();
   });
 
   it('reads a saved list only when every entry is valid, at most five, without repeats', () => {

@@ -7,6 +7,7 @@ import { overlayOwnsPointer } from '../ribbon/DrawerScrim';
 
 /** Why a library row cannot be pinned, or null when it can. */
 export function rowBlock(k: LibKey): string | null {
+  if (k.kind === 'off') return 'Off in PowerToys: turn this module on in PowerToys settings and the key works here';
   if (k.kind === 'soon') return 'Coming: this key needs a change that is not in yet';
   if (!k.runnable) return 'This shortcut still has to be worked out on your PC';
   return null;
@@ -145,7 +146,7 @@ export function KeyPicker({
                 label={k.label}
                 icon={k.icon}
                 how={k.how}
-                badge={k.kind === 'check' ? 'check' : k.kind === 'soon' ? 'coming' : null}
+                badge={k.kind === 'check' ? 'check' : k.kind === 'soon' ? 'coming' : k.kind === 'off' ? 'Off in PowerToys' : null}
                 block={rowBlock(k)}
                 pinned={pins.includes(`lib:${k.id}`)}
                 here={current === `lib:${k.id}`}

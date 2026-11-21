@@ -207,22 +207,25 @@ it('still shows the default keys when keys.json is invalid, since the library do
 // Section: the picker
 
 const openPicker = async (name: string) => {
+  // The menu of a pinned key has no Replace step: take the key off, then use the Add tile.
   fireEvent.contextMenu(screen.getByRole('button', { name }));
   await flush(801);
-  fireEvent.click(screen.getByRole('menuitem', { name: 'Replace with another key' }));
+  fireEvent.click(screen.getByRole('menuitem', { name: /Remove from Always here/ }));
+  await flush();
+  fireEvent.click(screen.getByRole('button', { name: 'Add a key' }));
   await flush();
   return screen.getByRole('dialog');
 };
 
-it('right-click opens the key menu and Replace opens the picker with the library by group', async () => {
+it('right-click opens the key menu and Remove then the Add tile opens the picker with the library by group', async () => {
   render(<PinnedRow />);
   await flush();
   const dlg = await openPicker('Snip');
   expect(within(dlg).getByRole('searchbox', { name: 'Search keys' })).toBeTruthy();
   expect(document.activeElement).toBe(within(dlg).getByRole('searchbox'));
   for (const g of LIBRARY_DATA) expect(within(dlg).getByText(g.title)).toBeTruthy();
-  expect(within(dlg).getAllByText('pinned').length + within(dlg).getAllByText('this slot').length).toBe(5);
-  expect(within(dlg).getByRole('button', { name: 'Snip, pinned' }).textContent).toContain('this slot');
+  expect(within(dlg).getAllByText('pinned').length).toBe(4);
+  expect(within(dlg).queryByRole('button', { name: 'Snip, pinned' })).toBeNull();
   expect(within(dlg).getByRole('button', { name: 'Reset to defaults' })).toBeTruthy();
 });
 
@@ -330,28 +333,28 @@ it('a keys.json pin is never given up while keys.json is still loading; an Add t
   expect(labels()).toEqual(['Thirds', 'Snip', 'Focus', 'Volume up']);
 });
 
-it('clicking a row swaps that key into the slot and keeps it in storage; the others stay', async () => {
+it('clicking a row adds that key into the free slot and keeps it in storage; the others stay', async () => {
   render(<PinnedRow />);
   await flush();
   const dlg = await openPicker('Snip');
   fireEvent.click(within(dlg).getByRole('button', { name: 'Volume up' }));
   await flush();
   expect(screen.queryByRole('dialog')).toBeNull();
-  expect(labels()).toEqual(['Thirds', 'Focus', 'Record 16:9', 'Volume up', 'Hide screen']);
-  expect(JSON.parse(localStorage.getItem(PINS_KEY) ?? '')).toEqual(['lib:thirds', 'lib:focus', 'lib:record-169', 'lib:volume-up', 'lib:strip-dark']);
+  expect(labels()).toEqual(['Thirds', 'Focus', 'Record 16:9', 'Hide screen', 'Volume up']);
+  expect(JSON.parse(localStorage.getItem(PINS_KEY) ?? '')).toEqual(['lib:thirds', 'lib:focus', 'lib:record-169', 'lib:strip-dark', 'lib:volume-up']);
   // The choice is kept for the next start.
   const again = render(<PinnedRow />);
   await flush();
   expect(again.container.querySelectorAll('.pin-tile').length).toBeGreaterThanOrEqual(5);
 });
 
-it('choosing a key that is already pinned swaps the two', async () => {
+it('choosing a key that is already pinned in the Add step does not pin it twice', async () => {
   render(<PinnedRow />);
   await flush();
   const dlg = await openPicker('Thirds');
   fireEvent.click(within(dlg).getByRole('button', { name: 'Snip, pinned' }));
   await flush();
-  expect(labels()).toEqual(['Snip', 'Focus', 'Record 16:9', 'Thirds', 'Hide screen']);
+  expect(labels()).toEqual(['Focus', 'Record 16:9', 'Snip', 'Hide screen']);
 });
 
 it('Reset to defaults clears the choice', async () => {
@@ -400,7 +403,7 @@ it('search narrows the library; coming and unfinished keys are listed but cannot
   expect(newChat.getAttribute('aria-disabled')).toBe('true');
   fireEvent.click(newChat);
   expect(screen.getByRole('dialog')).toBeTruthy();
-  expect(labels()).toEqual(['Thirds', 'Focus', 'Record 16:9', 'Snip', 'Hide screen']);
+  expect(labels()).toEqual(['Thirds', 'Focus', 'Record 16:9', 'Hide screen']);
   fireEvent.change(within(dlg).getByRole('searchbox'), { target: { value: 'power bi: refresh' } });
   expect(within(dlg).getByRole('button', { name: 'Power BI: refresh, check' }).getAttribute('aria-disabled')).toBe('true');
   fireEvent.change(within(dlg).getByRole('searchbox'), { target: { value: 'zzzz' } });
@@ -435,7 +438,7 @@ it('closes on Escape and on a click outside, and the arrow keys move through the
   expect(document.activeElement).toBe(first);
   fireEvent.keyDown(first, { key: 'Escape' });
   expect(screen.queryByRole('dialog')).toBeNull();
-  dlg = await openPicker('Snip');
+  dlg = await openPicker('Focus');
   fireEvent.pointerDown(screen.getByRole('button', { name: 'outside' }));
   expect(screen.queryByRole('dialog')).toBeNull();
   expect(container.querySelector('.pk')).toBeNull();
@@ -471,10 +474,7 @@ it('the click that closes the picker is not also delivered to what was under the
   await flush();
   // The previous test closed a picker by an outside press, which leaves its one-click swallow on the document; spend it.
   fireEvent.click(document.body);
-  fireEvent.contextMenu(screen.getByRole('button', { name: 'Snip' }));
-  await flush();
-  fireEvent.click(screen.getByRole('menuitem', { name: 'Replace with another key' }));
-  await flush();
+  await openPicker('Snip');
   expect(screen.getByRole('dialog')).toBeTruthy();
   fireEvent.pointerDown(screen.getByRole('button', { name: 'task row' }));
   fireEvent.click(screen.getByRole('button', { name: 'task row' }), { detail: 1 });
@@ -482,10 +482,7 @@ it('the click that closes the picker is not also delivered to what was under the
   expect(task).not.toHaveBeenCalled();
   fireEvent.click(screen.getByRole('button', { name: 'task row' }), { detail: 1 });
   expect(task).toHaveBeenCalledTimes(1);
-  fireEvent.contextMenu(screen.getByRole('button', { name: 'Snip' }));
-  await flush();
-  fireEvent.click(screen.getByRole('menuitem', { name: 'Replace with another key' }));
-  await flush();
+  await openPicker('Focus');
   fireEvent.pointerDown(screen.getByRole('button', { name: 'Later' }));
   fireEvent.click(screen.getByRole('button', { name: 'Later' }), { detail: 1 });
   expect(later).not.toHaveBeenCalled();
@@ -594,7 +591,8 @@ it('the open picker runs down to just above the timeline, never over it', async 
     expect(bottom).toBe(pickerBottomY());
     expect(timelineTop - bottom).toBe(MAIN_GAP);
     // Search at the top, Reset at the bottom, the list between them the one part that scrolls.
-    expect(dlg.firstElementChild!.className).toBe('pk-top');
+    expect(dlg.firstElementChild!.className).toBe('pk-purpose');
+    expect(dlg.children[1].className).toBe('pk-top');
     expect(dlg.lastElementChild!.className).toBe('pk-reset');
   } finally {
     rect.mockRestore();
@@ -685,32 +683,30 @@ it('no key has a corner button: not at rest, hovered or focused', async () => {
   none();
 });
 
-it('a pinned key menu lists Replace, Add a key and Remove in that order', async () => {
+it('a pinned key menu is Run it now and Remove from Always here, each with helper text, and no Edit keys file', async () => {
   localStorage.setItem(PINS_KEY, JSON.stringify(['lib:thirds', 'lib:snip']));
   render(<PinnedRow />);
   await flush();
   fireEvent.contextMenu(screen.getByRole('button', { name: 'Snip' }));
   await flush();
-  expect(screen.getAllByRole('menuitem').map((m) => m.querySelector('span')?.textContent)).toEqual(['Replace with another key', 'Add a key', 'Remove from Always here']);
-  fireEvent.click(screen.getByRole('menuitem', { name: /Add a key/ }));
+  const rows = screen.getAllByRole('menuitem');
+  expect(rows.map((m) => m.querySelector('span')?.textContent)).toEqual(['Run it now', 'Remove from Always here']);
+  for (const row of rows) expect((row.getAttribute('title') ?? '').length).toBeGreaterThan(10);
+  expect(screen.queryByRole('menuitem', { name: /Edit keys file/ })).toBeNull();
+  fireEvent.click(screen.getByRole('menuitem', { name: /Remove from Always here/ }));
   await flush();
-  const dialog = screen.getByRole('dialog', { name: 'Add a key to Always here' });
-  expect(dialog).toBeTruthy();
-  fireEvent.click(screen.getByRole('button', { name: 'Focus' }));
-  await flush();
-  expect(labels()).toEqual(['Thirds', 'Snip', 'Focus']);
+  expect(labels()).toEqual(['Thirds']);
 });
 
-it('Add a key in the menu is disabled with its reason when all five places are taken', async () => {
-  localStorage.setItem(PINS_KEY, JSON.stringify(['lib:thirds', 'lib:focus', 'lib:snip', 'lib:mute', 'lib:mixer']));
+it('Run it now in a pinned key menu sends that key once', async () => {
+  localStorage.setItem(PINS_KEY, JSON.stringify(['lib:thirds', 'lib:snip']));
   render(<PinnedRow />);
   await flush();
   fireEvent.contextMenu(screen.getByRole('button', { name: 'Snip' }));
   await flush();
-  const item = screen.getByRole('menuitem', { name: /Always here is full/ }) as HTMLButtonElement;
-  expect(item.disabled).toBe(true);
-  expect(item.textContent).toContain('5 of 5');
-  expect(screen.queryByRole('menuitem', { name: /^Add a key/ })).toBeNull();
+  fireEvent.click(screen.getByRole('menuitem', { name: /Run it now/ }), { detail: 1 });
+  await flush();
+  expect(libCalls).toEqual([{ id: 'snip' }]);
 });
 
 it('every pinned key tooltip ends with the right-click line', async () => {
@@ -758,4 +754,38 @@ it('draws the row at the size and column count for 1 to 5 tiles, the Add tile co
     expect(row.style.gridTemplateColumns).toBe(`repeat(${tilesDrawn}, minmax(0px, 1fr))`);
     unmount();
   }
+});
+
+it('a pinned PowerToys key that is off stays in its slot, greyed with the reason and never sent, and runs again once the module is back on', async () => {
+  const withColor = (patch: Record<string, unknown>) => LIBRARY_DATA.map((g) => ({ ...g, keys: g.keys.map((k) => (k.id === 'pt-color' ? { ...k, ...patch } : k)) }));
+  localStorage.setItem(PINS_KEY, JSON.stringify(['lib:snip', 'lib:pt-color', 'lib:thirds', 'lib:focus', 'lib:strip-dark']));
+  mocks.set('wall2_keys_library', () => withColor({ kind: 'off', runnable: false, how: 'Off in PowerToys' }));
+  const first = render(<PinnedRow />);
+  await flush();
+  expect(labels()).toEqual(['Snip', 'Color picker', 'Thirds', 'Focus', 'Hide screen']);
+  const tile = screen.getByRole('button', { name: 'Color picker' });
+  expect(tile.getAttribute('aria-disabled')).toBe('true');
+  expect(tile.className).toContain('off');
+  fireEvent.click(tile, { detail: 1 });
+  await flush();
+  expect(libCalls).toEqual([]);
+  fireEvent.mouseEnter(tile);
+  fireEvent.pointerEnter(tile);
+  await flush(TIP_DELAY_MS + 50);
+  // Its menu cannot run it either.
+  fireEvent.contextMenu(tile);
+  await flush();
+  expect((screen.getByRole('menuitem', { name: /Run it now/ }) as HTMLButtonElement).disabled).toBe(true);
+  first.unmount();
+  resetKeysFeed();
+  mocks.set('wall2_keys_library', () => withColor({ kind: 'key', runnable: true, how: 'Win+Shift+C' }));
+  render(<PinnedRow />);
+  await flush();
+  expect(labels()).toEqual(['Snip', 'Color picker', 'Thirds', 'Focus', 'Hide screen']);
+  const back = screen.getByRole('button', { name: 'Color picker' });
+  expect(back.getAttribute('aria-disabled')).toBeNull();
+  answerFor = () => null;
+  fireEvent.click(back, { detail: 1 });
+  await flush();
+  expect(libCalls).toEqual([{ id: 'pt-color' }]);
 });

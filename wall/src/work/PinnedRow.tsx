@@ -284,36 +284,36 @@ export function PinnedRow() {
             const layoutOff = isLayoutAction(p.action) && arrange !== true;
             const sel = undoShown && applied?.action === p.action && p.action !== null;
             const where = { name: p.group ?? 'the app in front', general: p.group === null };
+            const runPin = (detail: number) => {
+              if (layoutOff || !p.runnable || keyboardOnMouseKey(p.action, detail)) return;
+              const [kind, id] = [p.ref.slice(0, 4), p.ref.slice(4)];
+              const call = kind === 'lib:' ? ({ command: 'wall2_keys_send_library', args: { id } } as const) : ({ command: 'wall2_keys_send', args: { setId: 'pinned', index: Number(p.ref.slice(5)) } } as const);
+              void press(`pin:${p.ref}`, detail, call, p.label, p.action, where, false);
+            };
             const actions: KeyMenuAction[] = [
-              { id: 'replace', label: 'Replace with another key' },
-              pins.length >= MAX_PINS
-                ? { id: 'add', label: 'Always here is full', note: `${MAX_PINS} of ${MAX_PINS}`, disabled: true }
-                : { id: 'add', label: 'Add a key', note: `${pins.length} of ${MAX_PINS}` },
-              { id: 'remove', label: 'Remove from Always here' },
+              { id: 'run', label: 'Run it now', disabled: layoutOff || !p.runnable, help: p.runnable ? `Sends ${p.label} once, right now.` : `${p.label} cannot run: ${p.how}.` },
+              { id: 'remove', label: 'Remove from Always here', help: `Takes ${p.label} off the Always here row. It stays in the key library.` },
             ];
             return (
               <div className="key-tile-wrap" key={p.ref}>
               <button
                 type="button"
-                className={`deck-tile key-tile pin-tile${layoutOff ? ' off' : ''}${sel ? ' sel' : ''}`}
+                className={`deck-tile key-tile pin-tile${layoutOff || !p.runnable ? ' off' : ''}${sel ? ' sel' : ''}`}
                 aria-label={p.label}
-                data-kind={layoutOff ? undefined : kindOf(p)}
-                aria-disabled={layoutOff || undefined}
+                data-kind={layoutOff || !p.runnable ? undefined : kindOf(p)}
+                aria-disabled={layoutOff || !p.runnable || undefined}
                 {...previewTip(
                   p.action,
                   layoutOff,
                   layoutOff
                     ? layoutOffReason(arrange)
-                    : `${p.label}${p.group ? ` (${p.group})` : ''}${p.kind === 'check' ? ', a shortcut to check on your PC' : ''}.${p.how ? ` ${p.how}.` : ''} Right-click for more.`,
+                    : !p.runnable
+                      ? `${p.label}: ${p.how}. Right-click to take it out of Always here.`
+                      : `${p.label}${p.group ? ` (${p.group})` : ''}${p.kind === 'check' ? ', a shortcut to check on your PC' : ''}.${p.how ? ` ${p.how}.` : ''} Right-click for more.`,
                 )}
                 onContextMenu={onContext(i)}
                 onKeyDown={onKey(i, p.action)}
-                onClick={(e) => {
-                  if (layoutOff || keyboardOnMouseKey(p.action, e.detail)) return;
-                  const [kind, id] = [p.ref.slice(0, 4), p.ref.slice(4)];
-                  const call = kind === 'lib:' ? ({ command: 'wall2_keys_send_library', args: { id } } as const) : ({ command: 'wall2_keys_send', args: { setId: 'pinned', index: Number(p.ref.slice(5)) } } as const);
-                  void press(`pin:${p.ref}`, e.detail, call, p.label, p.action, where, false);
-                }}
+                onClick={(e) => runPin(e.detail)}
               >
                 <KeyIcon name={p.icon} size={20} />
                 <span className="deck-lbl">{p.label}</span>
@@ -324,9 +324,8 @@ export function PinnedRow() {
                   actions={actions}
                   byKeyboard={menuByKey.current}
                   onClose={() => setMenu(null)}
-                  onChoose={(id) => {
-                    if (id === 'replace') openPicker(i);
-                    if (id === 'add') openPicker(pins.length);
+                  onChoose={(id, _action, detail) => {
+                    if (id === 'run') runPin(detail);
                     if (id === 'remove') removeSlot(i);
                   }}
                 />
