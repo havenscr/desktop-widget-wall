@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest';
-import { dueLine, estTipText, overdueText, updatedText } from './model';
+import { dueLaterToday, dueLine, estTipText, overdueText, updatedText } from './model';
 
 // Wed 11 Nov 2026, 10:00 local.
 const NOW = new Date(2026, 10, 11, 10, 0, 0);
@@ -74,4 +74,17 @@ it('the estimate chip tip never reads "Due overdue"', () => {
   expect(estTipText('tomorrow')).toBe('Estimate. Due tomorrow');
   expect(estTipText('overdue')).toBe('Estimate');
   expect(estTipText(null)).toBe('Estimate');
+});
+
+it('dueLaterToday is true only for a timed task due today after now', () => {
+  const t = (due_at: string | null, due_is_all_day = false) => ({ due_at, due_is_all_day });
+  expect(dueLaterToday(t(local(2026, 11, 11, 15)), NOW)).toBe(true);
+  expect(dueLaterToday(t(local(2026, 11, 11, 10)), NOW)).toBe(false);
+  expect(dueLaterToday(t(local(2026, 11, 11, 9)), NOW)).toBe(false);
+  expect(dueLaterToday(t('2026-11-11'), NOW)).toBe(false);
+  expect(dueLaterToday(t(local(2026, 11, 11, 15), true), NOW)).toBe(false);
+  expect(dueLaterToday(t(local(2026, 11, 12, 15)), NOW)).toBe(false);
+  expect(dueLaterToday(t(local(2026, 11, 9, 15)), NOW)).toBe(false);
+  expect(dueLaterToday(t(null), NOW)).toBe(false);
+  expect(dueLaterToday(t('soon'), NOW)).toBe(false);
 });
