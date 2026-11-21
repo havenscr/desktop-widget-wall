@@ -46,7 +46,7 @@ const EXT: Record<Capture['kind'], string> = { image: 'png', gif: 'gif', video: 
 function build(mode: string | null): Capture[] {
   const base = clock();
   const out: Capture[] = SEEDS.map((s, i) => ({
-    id: i,
+    id: `cap${i}`,
     fileName: `capture-${String(i + 1).padStart(2, '0')}.${EXT[s.kind]}`,
     title: s.title,
     app: s.app,
@@ -83,7 +83,7 @@ export function registerCapturesMocks(): void {
     return build(mode);
   });
   mocks.set('wall2_captures_thumb', (args) => {
-    const id = Number((args as { id?: number } | undefined)?.id ?? -1);
+    const id = Number(String((args as { id?: string } | undefined)?.id ?? '').replace('cap', ''));
     const c = build(mode)[id];
     if (!c || !c.exists) throw 'missing';
     if (c.kind === 'video') throw 'not-image';

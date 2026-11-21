@@ -1803,7 +1803,7 @@ pub(crate) fn copy_path_hdrop(path: &str) -> Result<(), String> {
     use windows::Win32::System::DataExchange::{
         CloseClipboard, EmptyClipboard, OpenClipboard, SetClipboardData,
     };
-    use windows::Win32::System::Memory::{GlobalAlloc, GlobalLock, GlobalUnlock, GMEM_MOVEABLE};
+    use windows::Win32::System::Memory::{GlobalAlloc, GlobalFree, GlobalLock, GlobalUnlock, GMEM_MOVEABLE};
     use windows::Win32::System::Ole::CF_HDROP;
 
     unsafe {
@@ -1820,6 +1820,7 @@ pub(crate) fn copy_path_hdrop(path: &str) -> Result<(), String> {
 
         let ptr = GlobalLock(hglobal) as *mut u8;
         if ptr.is_null() {
+            let _ = GlobalFree(hglobal);
             return Err("GlobalLock failed".to_string());
         }
 
@@ -1845,6 +1846,7 @@ pub(crate) fn copy_path_hdrop(path: &str) -> Result<(), String> {
 
         // Open clipboard and set data
         if OpenClipboard(None).is_err() {
+            let _ = GlobalFree(hglobal);
             return Err("Failed to open clipboard".to_string());
         }
 
@@ -1858,6 +1860,8 @@ pub(crate) fn copy_path_hdrop(path: &str) -> Result<(), String> {
         let _ = CloseClipboard();
 
         if result.is_err() {
+            // The system took no ownership, so the block is still ours to free.
+            let _ = GlobalFree(hglobal);
             return Err("Failed to set clipboard data".to_string());
         }
 

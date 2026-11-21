@@ -3,9 +3,9 @@ import { invoke } from '../bridge/tauri';
 import { reviewNow } from '../ui/reviewClock';
 import { useVisible } from '../ui/useVisible';
 
-/** One ShareX capture as Rust describes it. The page never gets a path: `id` is all it can name a capture by. */
+/** One ShareX capture as Rust describes it. The page never gets a path: `id`, an opaque string that stays the same for the same file across reads, is all it can name a capture by. */
 export interface Capture {
-  id: number;
+  id: string;
   fileName: string;
   title: string;
   app: string;
@@ -30,9 +30,6 @@ export const POLL_MS = 10_000;
 export const SHOWN = 6;
 
 const clock = reviewNow ?? (() => Date.now());
-
-/** A stable name for a capture across reads (ids are positions and shift when a new capture lands). */
-export const captureKey = (c: Capture): string => `${c.time}:${c.fileName}:${c.size}`;
 
 /** The Captures list, read now, every 10 seconds while the page is visible, and when the window gets focus. */
 export function useCaptures(): CapturesState {
@@ -68,26 +65,59 @@ export function useCaptures(): CapturesState {
   return state;
 }
 
-const THUMB_CACHE_MAX = 24;
-const thumbs = new Map<string, Promise<string>>();
+/** The most data-URL text the picture cache holds (about the bytes of memory it costs). */
+export const THUMB_BYTES_MAX = 48 * 1024 * 1024;
+/** Pictures kept beyond those on the card. */
+export const THUMB_EXTRA = 6;
 
-/** The picture of a capture as a data URL, cached by id, time and size. Rejects with Rust's word (for example `too-big`). */
-export function loadThumb(c: Capture): Promise<string> {
-  const key = `${c.id}:${captureKey(c)}`;
-  const held = thumbs.get(key);
-  if (held) return held;
-  const p = invoke<string>('wall2_captures_thumb', { id: c.id }).catch((e: unknown) => {
-    // A picture over the limit stays over it; any other failure may pass next time.
-    if ((e instanceof Error ? e.message : String(e)) !== 'too-big') thumbs.delete(key);
-    throw e;
-  });
-  thumbs.set(key, p);
-  while (thumbs.size > THUMB_CACHE_MAX) {
-    const oldest = thumbs.keys().next().value;
-    if (oldest === undefined) break;
-    thumbs.delete(oldest);
+interface Held {
+  p: Promise<string>;
+  bytes: number;
+}
+const thumbs = new Map<string, Held>();
+
+/** The bytes the cache holds now (pictures still loading count as 0). */
+export const thumbBytes = (): number => [...thumbs.values()].reduce((n, h) => n + h.bytes, 0);
+
+/** Drop the oldest pictures until the cache is within its byte budget; the newest is always kept. */
+function evict(): void {
+  let total = thumbBytes();
+  for (const key of [...thumbs.keys()]) {
+    if (total <= THUMB_BYTES_MAX || thumbs.size <= 1) break;
+    total -= thumbs.get(key)?.bytes ?? 0;
+    thumbs.delete(key);
   }
-  return p;
+}
+
+/** Keep every picture of the ids shown and at most `THUMB_EXTRA` others (the newest of them). */
+export function trimThumbs(shown: string[]): void {
+  const on = new Set(shown);
+  const others = [...thumbs.keys()].filter((k) => !on.has(k));
+  for (const key of others.slice(0, Math.max(0, others.length - THUMB_EXTRA))) thumbs.delete(key);
+}
+
+/** The picture of a capture as a data URL, cached by its id. Rejects with Rust's word (for example `too-big`). */
+export function loadThumb(c: Capture): Promise<string> {
+  const key = c.id;
+  const held = thumbs.get(key);
+  if (held) return held.p;
+  const entry: Held = { p: Promise.resolve(''), bytes: 0 };
+  entry.p = invoke<string>('wall2_captures_thumb', { id: c.id }).then(
+    (src) => {
+      if (thumbs.get(key) === entry) {
+        entry.bytes = src.length;
+        evict();
+      }
+      return src;
+    },
+    (e: unknown) => {
+      // A picture over the limit stays over it; any other failure may pass next time.
+      if ((e instanceof Error ? e.message : String(e)) !== 'too-big' && thumbs.get(key) === entry) thumbs.delete(key);
+      throw e;
+    },
+  );
+  thumbs.set(key, entry);
+  return entry.p;
 }
 
 /** Forget every cached picture (tests). */
@@ -100,7 +130,7 @@ export type Thumb = { state: 'none' } | { state: 'loading' } | { state: 'ready';
 /** The picture for a capture: none for a video or a missing file, `big` when Rust says `too-big`. */
 export function useThumb(c: Capture): Thumb {
   const wants = c.exists && (c.kind === 'image' || c.kind === 'gif');
-  const key = `${c.id}:${captureKey(c)}`;
+  const key = c.id;
   const [got, setGot] = useState<{ key: string; thumb: Thumb } | null>(null);
   useEffect(() => {
     if (!wants) return;
@@ -112,7 +142,7 @@ export function useThumb(c: Capture): Thumb {
     return () => {
       alive = false;
     };
-    // The key names the capture; the object itself changes on every read.
+    // The id names the capture; the object itself changes on every read.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [key, wants]);
   if (!wants) return { state: 'none' };

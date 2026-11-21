@@ -1,9 +1,9 @@
 import { IconCamera, IconCopy, IconExternalLink, IconFolder, IconPhoto, IconVideo } from '@tabler/icons-react';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { invoke } from '../bridge/tauri';
 import { hover } from '../tools/hover';
 import { useBrief } from '../work/useBrief';
-import { captureKey, formatSize, formatWhen, kindWord, SHOWN, useCaptures, useThumb, type Capture, type CaptureAction } from './captures';
+import { formatSize, formatWhen, kindWord, SHOWN, trimThumbs, useCaptures, useThumb, type Capture, type CaptureAction } from './captures';
 
 const GONE = 'File moved or deleted';
 
@@ -44,8 +44,9 @@ export function CapturesCard() {
   const [picked, setPicked] = useState<string | null>(null);
   const [brief, show] = useBrief();
   const shown = items.slice(0, SHOWN);
-  const big = shown.find((c) => captureKey(c) === picked) ?? shown[0];
+  const big = shown.find((c) => c.id === picked) ?? shown[0];
   const rows = shown.filter((c) => c !== big);
+  useEffect(() => trimThumbs(shown.map((c) => c.id)), [items]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const act = (c: Capture, action: CaptureAction) => {
     invoke('wall2_captures_act', { id: c.id, action }).then(
@@ -110,10 +111,10 @@ export function CapturesCard() {
             const label = c.app || c.title || c.fileName;
             return (
               <button
-                key={captureKey(c)}
+                key={c.id}
                 type="button"
                 className={`cap-row${c.exists ? '' : ' gone'}`}
-                onClick={() => setPicked(captureKey(c))}
+                onClick={() => setPicked(c.id)}
                 {...hover(c.exists ? `Show "${c.title || c.fileName}" large` : `${GONE}. Show it large.`)}
               >
                 <Pic c={c} w={96} h={54} large={false} />

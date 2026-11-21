@@ -1,8 +1,8 @@
 //! Wall 2 Shelf captures: the newest ShareX captures, read from ShareX's own history file.
 //!
 //! What the page can and cannot do:
-//! - The page asks for a list and gets, per capture, an opaque id (a position in a list Rust
-//!   keeps and replaces on every read), the file name, the window title and app name (capped),
+//! - The page asks for a list and gets, per capture, an opaque id (a hash of its path, modified
+//!   time and size; Rust keeps a bounded map of id to path across reads), the file name, the window title and app name (capped),
 //!   the kind, the time, the size and whether the file still exists. It never gets a path or a
 //!   folder, and it never sends one: `thumb` and `act` take only an id.
 //! - Every path acted on comes from the parsed history, must be an absolute local `X:\...`
@@ -10,7 +10,7 @@
 //!   and is checked again after links are followed (see `resolve`).
 //! - `act` is exactly `open` (the default app, through the opener plugin, no shell, no
 //!   arguments), `copy` (the file goes on the clipboard as a file, like Copy in Explorer) or
-//!   `folder` (`explorer.exe /select,` and the path).
+//!   `folder` (`explorer.exe /select,` and the quoted path).
 //! - The history read is capped at 8 MB (the newest end of the file) and at most 12 captures
 //!   are returned. Nothing is logged: no path, no title.
 //!
@@ -22,6 +22,7 @@
 use base64::Engine as _;
 use serde::Serialize;
 use serde_json::Value;
+use sha2::{Digest, Sha256};
 use std::io::{Read, Seek, SeekFrom};
 use std::path::Path;
 use std::sync::Mutex;
@@ -345,19 +346,46 @@ pub(crate) struct Held {
     kind: Kind,
 }
 
-/// The list the last read made, replaced on every read; an id is a position in it.
-static HELD: Mutex<Vec<Held>> = Mutex::new(Vec::new());
+/// The most ids kept across reads.
+const MAX_HELD: usize = 64;
+
+/// Id to capture, oldest first, merged across reads and bounded to `MAX_HELD`.
+static HELD: Mutex<Vec<(String, Held)>> = Mutex::new(Vec::new());
+
+/// A stable opaque id: 16 hex characters of a SHA-256 of the path, modified time and size. The
+/// same file in the same state has the same id on every read, whichever read the page holds.
+pub(crate) fn id_for(path: &str, modified_ms: i64, size: u64) -> String {
+    let mut h = Sha256::new();
+    h.update(path.as_bytes());
+    h.update([0u8]);
+    h.update(modified_ms.to_le_bytes());
+    h.update(size.to_le_bytes());
+    h.finalize().iter().take(8).map(|b| format!("{b:02x}")).collect()
+}
+
+/// Add a read's captures to the map. An id already there moves to the newest end; the oldest
+/// beyond `max` are dropped.
+pub(crate) fn remember(map: &mut Vec<(String, Held)>, fresh: Vec<(String, Held)>, max: usize) {
+    for (id, held) in fresh {
+        map.retain(|(k, _)| *k != id);
+        map.push((id, held));
+    }
+    if map.len() > max {
+        let extra = map.len() - max;
+        map.drain(..extra);
+    }
+}
 
 /// A held capture by id.
-pub(crate) fn pick(list: &[Held], id: u32) -> Option<&Held> {
-    list.get(id as usize)
+pub(crate) fn pick<'a>(map: &'a [(String, Held)], id: &str) -> Option<&'a Held> {
+    map.iter().find(|(k, _)| k == id).map(|(_, h)| h)
 }
 
 /// One capture as the page sees it.
 #[derive(Serialize, Clone, Debug, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct CaptureEntry {
-    pub id: u32,
+    pub id: String,
     pub file_name: String,
     pub title: String,
     pub app: String,
@@ -368,7 +396,7 @@ pub struct CaptureEntry {
 }
 
 /// The entry the page sees for a parsed capture; `size` and `exists` come from the file.
-pub(crate) fn entry_for(id: u32, p: &Parsed, kind: Kind, size: Option<u64>) -> CaptureEntry {
+pub(crate) fn entry_for(id: String, p: &Parsed, kind: Kind, size: Option<u64>) -> CaptureEntry {
     CaptureEntry {
         id,
         file_name: p.file_name.clone(),
@@ -385,6 +413,17 @@ pub(crate) fn entry_for(id: u32, p: &Parsed, kind: Kind, size: Option<u64>) -> C
 /// is not).
 fn regular_size(path: &Path) -> Option<u64> {
     std::fs::metadata(path).ok().filter(|m| m.is_file()).map(|m| m.len())
+}
+
+/// Size and modified time (epoch milliseconds, 0 when unknown) of a regular file.
+fn regular_stat(path: &Path) -> Option<(u64, i64)> {
+    let m = std::fs::metadata(path).ok().filter(|m| m.is_file())?;
+    let ms = m
+        .modified()
+        .ok()
+        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+        .map_or(0, |d| d.as_millis() as i64);
+    Some((m.len(), ms))
 }
 
 /// The path to act on: the held path checked as text, resolved through links, and checked as
@@ -458,12 +497,14 @@ fn list_now() -> Result<Vec<CaptureEntry>, String> {
     let shown = newest(parse_history(&text), MAX_ENTRIES);
     let mut held = Vec::with_capacity(shown.len());
     let mut out = Vec::with_capacity(shown.len());
-    for (i, p) in shown.iter().enumerate() {
+    for p in shown.iter() {
         let kind = kind_of(&p.path);
-        out.push(entry_for(i as u32, p, kind, regular_size(Path::new(&p.path))));
-        held.push(Held { path: p.path.clone(), kind });
+        let stat = regular_stat(Path::new(&p.path));
+        let id = id_for(&p.path, stat.map_or(0, |s| s.1), stat.map_or(0, |s| s.0));
+        out.push(entry_for(id.clone(), p, kind, stat.map(|s| s.0)));
+        held.push((id, Held { path: p.path.clone(), kind }));
     }
-    *HELD.lock().map_err(|_| FAILED.to_string())? = held;
+    remember(&mut HELD.lock().map_err(|_| FAILED.to_string())?, held, MAX_HELD);
     Ok(out)
 }
 
@@ -503,7 +544,7 @@ pub(crate) fn data_url(name: &str, bytes: &[u8]) -> Result<String, &'static str>
     Ok(format!("data:{mime};base64,{}", base64::engine::general_purpose::STANDARD.encode(bytes)))
 }
 
-fn thumb_now(id: u32) -> Result<String, String> {
+fn thumb_now(id: &str) -> Result<String, String> {
     let held = {
         let list = HELD.lock().map_err(|_| FAILED.to_string())?;
         pick(&list, id).cloned().ok_or_else(|| MISSING.to_string())?
@@ -539,7 +580,7 @@ impl Action {
     }
 }
 
-fn act_now(app: &tauri::AppHandle, id: u32, action: Action) -> Result<(), String> {
+fn act_now(app: &tauri::AppHandle, id: &str, action: Action) -> Result<(), String> {
     let held = {
         let list = HELD.lock().map_err(|_| FAILED.to_string())?;
         pick(&list, id).cloned().ok_or_else(|| MISSING.to_string())?
@@ -547,12 +588,27 @@ fn act_now(app: &tauri::AppHandle, id: u32, action: Action) -> Result<(), String
     let path = resolve(&held).map_err(str::to_string)?;
     match action {
         Action::Open => app.opener().open_path(path, None::<&str>).map_err(|_| FAILED.to_string()),
-        Action::Folder => std::process::Command::new("explorer.exe")
-            .args(["/select,", &path])
+        Action::Folder => show_in_folder(&path),
+        Action::Copy => copy_file(&path),
+    }
+}
+
+/// Explorer with the file selected. The path is always quoted (it was refused earlier if it
+/// held a quote), so a space or a comma in it cannot split the argument.
+fn show_in_folder(path: &str) -> Result<(), String> {
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        std::process::Command::new("explorer.exe")
+            .raw_arg(format!("/select,\"{path}\""))
             .spawn()
             .map(|_| ())
-            .map_err(|_| FAILED.to_string()),
-        Action::Copy => copy_file(&path),
+            .map_err(|_| FAILED.to_string())
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = path;
+        Err(FAILED.to_string())
     }
 }
 
@@ -583,17 +639,17 @@ pub async fn wall2_captures_list(window: tauri::WebviewWindow) -> Result<Vec<Cap
 
 /// A picture or GIF as a data URL (at most 6 MB), by id.
 #[tauri::command]
-pub async fn wall2_captures_thumb(window: tauri::WebviewWindow, id: u32) -> Result<String, String> {
+pub async fn wall2_captures_thumb(window: tauri::WebviewWindow, id: String) -> Result<String, String> {
     check(window.label())?;
-    tauri::async_runtime::spawn_blocking(move || thumb_now(id)).await.map_err(|_| FAILED.to_string())?
+    tauri::async_runtime::spawn_blocking(move || thumb_now(&id)).await.map_err(|_| FAILED.to_string())?
 }
 
 /// `open`, `copy` or `folder` for a capture, by id.
 #[tauri::command]
-pub async fn wall2_captures_act(window: tauri::WebviewWindow, app: tauri::AppHandle, id: u32, action: String) -> Result<(), String> {
+pub async fn wall2_captures_act(window: tauri::WebviewWindow, app: tauri::AppHandle, id: String, action: String) -> Result<(), String> {
     check(window.label())?;
     let action = Action::parse(&action).ok_or_else(|| REFUSED.to_string())?;
-    tauri::async_runtime::spawn_blocking(move || act_now(&app, id, action)).await.map_err(|_| FAILED.to_string())?
+    tauri::async_runtime::spawn_blocking(move || act_now(&app, &id, action)).await.map_err(|_| FAILED.to_string())?
 }
 
 #[cfg(test)]
@@ -833,22 +889,101 @@ mod tests {
         }
     }
 
+    fn held(path: &str) -> Held {
+        Held { path: path.into(), kind: kind_of(path) }
+    }
+
     #[test]
-    fn an_id_outside_the_list_picks_nothing() {
-        let list = vec![Held { path: A.into(), kind: Kind::Image }];
-        assert!(pick(&list, 0).is_some());
-        assert!(pick(&list, 1).is_none());
-        assert!(pick(&[], 0).is_none());
+    fn an_unknown_id_picks_nothing() {
+        let map = vec![("aaaa".to_string(), held(A))];
+        assert!(pick(&map, "aaaa").is_some());
+        assert!(pick(&map, "bbbb").is_none());
+        assert!(pick(&[], "aaaa").is_none());
+    }
+
+    #[test]
+    fn an_id_is_stable_and_names_the_path_time_and_size() {
+        let id = id_for(A, 100, 5);
+        assert_eq!(id.len(), 16);
+        assert!(id.bytes().all(|b| b.is_ascii_hexdigit()));
+        assert_eq!(id, id_for(A, 100, 5));
+        assert_ne!(id, id_for(B, 100, 5));
+        assert_ne!(id, id_for(A, 101, 5));
+        assert_ne!(id, id_for(A, 100, 6));
+    }
+
+    #[test]
+    fn reads_that_land_out_of_order_still_resolve_each_id_to_its_own_path() {
+        let (ia, ib, ic) = (id_for(A, 1, 1), id_for(B, 2, 2), id_for(C, 3, 3));
+        let mut map = Vec::new();
+        // The newer read (B, C) lands first, then the older read (A, B).
+        remember(&mut map, vec![(ib.clone(), held(B)), (ic.clone(), held(C))], MAX_HELD);
+        remember(&mut map, vec![(ia.clone(), held(A)), (ib.clone(), held(B))], MAX_HELD);
+        assert_eq!(pick(&map, &ia).unwrap().path, A);
+        assert_eq!(pick(&map, &ib).unwrap().path, B);
+        assert_eq!(pick(&map, &ic).unwrap().path, C);
+        assert_eq!(map.len(), 3);
+    }
+
+    #[test]
+    fn the_map_keeps_only_the_newest_ids() {
+        let mut map = Vec::new();
+        for i in 0..100u64 {
+            remember(&mut map, vec![(id_for(A, i as i64, i), held(A))], MAX_HELD);
+        }
+        assert_eq!(map.len(), MAX_HELD);
+        assert!(pick(&map, &id_for(A, 99, 99)).is_some());
+        assert!(pick(&map, &id_for(A, 0, 0)).is_none());
+    }
+
+    #[test]
+    fn an_entry_with_an_unparseable_time_gets_zero_and_sorts_last() {
+        let text = format!(
+            "[{},{},{}]",
+            entry(A, "not a date", "", ""),
+            entry(B, "2026-11-11T10:24:00Z", "", ""),
+            entry(C, "2026-11-11T09:00:00Z", "", "")
+        );
+        let got = parse_history(&text);
+        assert_eq!(got[0].time, 0);
+        let top = newest(got, 5);
+        assert_eq!(top.iter().map(|p| p.path.as_str()).collect::<Vec<_>>(), vec![B, C, A]);
+        assert_eq!(top[2].time, 0);
+    }
+
+    #[test]
+    fn a_history_over_the_cap_reads_only_its_tail() {
+        let pad = "x".repeat(1000);
+        let row = |path: &str| format!("  {{\n    \"FilePath\": \"{}\",\n    \"Pad\": \"{pad}\"\n  }}", path.replace('\\', "\\\\"));
+        let mut text = String::from("[\n");
+        text.push_str(&row(r"C:\Users\example\oldest.png"));
+        for _ in 0..9000 {
+            text.push_str(",\n");
+            text.push_str(&row(A));
+        }
+        text.push_str(",\n");
+        text.push_str(&row(r"C:\Users\example\newest.png"));
+        text.push_str("\n]");
+        assert!(text.len() as u64 > MAX_HISTORY);
+        let file = std::env::temp_dir().join(format!("wall2-captures-tail-{}.json", std::process::id()));
+        std::fs::write(&file, &text).unwrap();
+        let got = read_tail(file.to_str().unwrap());
+        let _ = std::fs::remove_file(&file);
+        let got = got.unwrap();
+        assert!(got.len() as u64 <= MAX_HISTORY);
+        let parsed = parse_history(&got);
+        assert!(parsed.iter().any(|p| p.path.ends_with("newest.png")));
+        assert!(!parsed.iter().any(|p| p.path.ends_with("oldest.png")));
     }
 
     #[test]
     fn the_page_entry_carries_no_path() {
         let p = Parsed { path: A.into(), file_name: "shot-a.png".into(), title: "Report".into(), app: "app".into(), time: 7 };
-        let e = entry_for(3, &p, Kind::Image, Some(42));
+        let e = entry_for("abcd".to_string(), &p, Kind::Image, Some(42));
         let json = serde_json::to_string(&e).unwrap();
         assert!(!json.contains("Users") && !json.contains("ShareX") && !json.contains('\\'), "{json}");
         assert!(json.contains("\"fileName\":\"shot-a.png\"") && json.contains("\"exists\":true") && json.contains("\"size\":42"));
-        assert!(!entry_for(0, &p, Kind::Image, None).exists);
+        assert!(!entry_for("abcd".to_string(), &p, Kind::Image, None).exists);
     }
 
     #[test]
