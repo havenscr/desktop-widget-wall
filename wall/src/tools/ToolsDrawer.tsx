@@ -7,7 +7,7 @@ import { hover } from './hover';
 import { LOOKS } from '../unwind/watch/looks';
 import { useWatchStore } from '../unwind/watch/store';
 import { useSceneWeather } from '../weather/sceneSetting';
-import { errorText, isAbsent } from '../work/deckModel';
+import { isAbsent } from '../work/deckModel';
 import { joinKeys, reloadKeys, useKeysFeedStore, type Read } from '../work/keysFeed';
 import type { KeysSummary } from '../work/keysModel';
 import { Accounts, LightSyncBlock } from './accounts';
@@ -142,18 +142,17 @@ export function fileKeyCount(s: KeysSummary): number {
 
 /** The keys file's one line, and whether it is a problem. */
 export function keysLine(read: Read, at: number | null, reading = false): { text: string; bad: boolean; full?: string } {
-  if (reading || read.status === 'loading') return { text: 'Reading keys.json', bad: false };
+  if (reading || read.status === 'loading') return { text: 'Reading your keys', bad: false };
   if (read.status === 'absent') return { text: 'Keys are not available in this build', bad: false };
-  if (read.status === 'problem') return { text: `keys.json refused: ${read.text}`, bad: true, full: `keys.json was refused, so the defaults are in use.\n${read.text}` };
-  if (read.summary.source === 'default') return { text: 'No keys.json. Defaults in use', bad: false };
+  if (read.status === 'problem') return { text: `Your keys were refused: ${read.text}`, bad: true, full: `Your keys were refused, so the default keys are in use.\n${read.text}` };
+  if (read.summary.source === 'default') return { text: 'Using the default keys', bad: false };
   const n = fileKeyCount(read.summary);
-  return { text: `keys.json, ${n} ${n === 1 ? 'key' : 'keys'}${at !== null ? `, read ${clockText(at)}` : ''}`, bad: false };
+  return { text: `Your keys, ${n} ${n === 1 ? 'key' : 'keys'}${at !== null ? `, read ${clockText(at)}` : ''}`, bad: false };
 }
 
 function KeysFile() {
   const read = useKeysFeedStore((s) => s.read);
   const [at, setAt] = useState<number | null>(null);
-  const [note, setNote] = useState<string | null>(null);
   const [reading, setReading] = useState(false);
   // The shared read runs while the drawer is open, so the line is current.
   useEffect(() => joinKeys(), []);
@@ -162,15 +161,7 @@ function KeysFile() {
     setReading(false);
   }, [read]);
   const line = keysLine(read, at, reading);
-  // The note clears on the next success and on Reload; closing the drawer drops it with the section.
-  const open = () => {
-    invoke('wall2_open_keys_file').then(
-      () => setNote(null),
-      (e) => setNote(errorText(e) === 'not-configured' ? 'No config folder on this PC' : 'Could not open the file'),
-    );
-  };
   const reload = () => {
-    setNote(null);
     setReading(true);
     reloadKeys();
   };
@@ -178,13 +169,10 @@ function KeysFile() {
   return (
     <div>
       <div className="tools-head">
-        <span className="tools-k sm">Keys file</span>
+        <span className="tools-k sm">Keys</span>
         {!absent && (
           <span className="tools-pair">
-            <button type="button" className="tools-btn" {...hover(read.status === 'ready' && read.summary.source === 'default' ? 'Opens the folder where keys.json goes' : 'Opens keys.json in your editor')} onClick={open}>
-              Open
-            </button>
-            <button type="button" className="tools-btn" {...hover('Read keys.json again now')} onClick={reload}>
+            <button type="button" className="tools-btn" {...hover('Read your keys again now')} onClick={reload}>
               Reload
             </button>
           </span>
@@ -193,7 +181,6 @@ function KeysFile() {
       <div className={line.bad ? 'tools-line bad one' : 'tools-line one'} {...(line.full ? hover(line.full) : {})}>
         {line.text}
       </div>
-      {note && <div className="tools-note bad">{note}</div>}
     </div>
   );
 }

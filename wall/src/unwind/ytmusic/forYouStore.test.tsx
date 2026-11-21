@@ -11,7 +11,7 @@ import { resetSpotifyStatus } from '../spotify/status';
 import { playerLink } from '../watch/PlayerFrame';
 import { resetWatch, useWatchStore } from '../watch/store';
 import { MOODS, MOOD_TIP, SHELF } from './ForYou';
-import { FIRST, afterPlay, loadForYou, moodBudgetLine, useForYou, whenWords } from './forYouStore';
+import { FIRST, MOOD_KEEP_MS, afterPlay, loadForYou, moodBudgetLine, pickMood, useForYou, useMoods, whenWords } from './forYouStore';
 import { resetQueue, useYtQueue } from './queue';
 import { resetYoutubeStatus } from './status';
 import { resetLibrary } from './store';
@@ -183,6 +183,54 @@ describe('the For you tab', () => {
       fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
       await flush(10);
       expect(document.querySelectorAll('section[aria-label="Relax"] .yt-tile')).toHaveLength(1);
+    });
+
+    it('reuses an answer for 7 days only, then asks Rust again', async () => {
+      serveMoods(() => ({ items: moodVideos(2), cached: false, searchesLeft: 9, backAt: null }));
+      await openForYou();
+      await act(async () => { await pickMood('Focus'); });
+      await act(async () => { await pickMood('Focus'); });
+      await act(async () => { await pickMood('Focus'); });
+      expect(asks).toEqual(['Focus']);
+      await flush(MOOD_KEEP_MS - 1000);
+      await act(async () => { await pickMood('Focus'); await pickMood('Focus'); });
+      expect(asks).toEqual(['Focus']);
+      await flush(2000);
+      await act(async () => { await pickMood('Focus'); await pickMood('Focus'); await pickMood('Focus'); });
+      expect(asks).toEqual(['Focus', 'Focus']);
+    });
+
+    it('a spent shelf asks Rust again once its back-at time has come', async () => {
+      const back = nowS() + 3600;
+      serveMoods(() => ({ items: [], cached: false, searchesLeft: 0, backAt: back }));
+      await openForYou();
+      await act(async () => { await pickMood('Party'); await pickMood('Party'); await pickMood('Party'); });
+      expect(asks).toEqual(['Party']);
+      await flush(3_599_000);
+      await act(async () => { await pickMood('Party'); await pickMood('Party'); });
+      expect(asks).toEqual(['Party']);
+      await flush(2000);
+      await act(async () => { await pickMood('Party'); await pickMood('Party'); await pickMood('Party'); });
+      expect(asks).toEqual(['Party', 'Party']);
+    });
+
+    it('a second click on an open chip closes it even when the shelf failed', async () => {
+      serveMoods(() => new Error('down'));
+      await openForYou();
+      fireEvent.click(chip('Chill'));
+      await flush(10);
+      expect(useMoods.getState().byMood.Chill?.problem).toBeTruthy();
+      fireEvent.click(chip('Chill'));
+      await flush(10);
+      expect(useMoods.getState().open).toBeNull();
+      expect(document.querySelector('section[aria-label="Chill"]')).toBeNull();
+      expect(asks).toEqual(['Chill']);
+    });
+
+    it('says Back later today when the back-at time is today', () => {
+      const today = Math.floor(Date.now() / 1000) + 600;
+      expect(moodBudgetLine(today)).toBe('Out of mood searches this week. Back later today.');
+      expect(moodBudgetLine(today + 3 * 86400)).toMatch(/Back on [A-Z][a-z]+day\.$/);
     });
 
     it('a tile plays that video on the wall', async () => {

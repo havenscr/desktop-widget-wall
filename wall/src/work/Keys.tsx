@@ -292,8 +292,8 @@ export function Keys() {
         <div className="row sb deck-hd">
           <span className="k">Now</span>
         </div>
-        <div className="s deck-quiet" {...tip(`${read.text}. Fix keys.json in the app's config folder; the wall never writes it.`)}>
-          keys.json has a problem
+        <div className="s deck-quiet" {...tip(`${read.text}. The built-in keys are in use.`)}>
+          Your keys have a problem
         </div>
       </section>
     );
@@ -366,7 +366,7 @@ export function Keys() {
   // The offer is the icon alone when the heading is tight: the chip shows, "+N more" is on the name, or the measuring above ran out of room.
   const offerIcon = resume !== null && (showChip || more !== '' || fit >= 1);
   const partText = paged ? `${chunkAt + 1}/${chunks.length}` : null;
-  const where = sum.source === 'default' ? 'You are using the built-in keys. To change them put keys.json in the app\'s config folder; the wall never writes it.' : 'Your keys and the built-in library.';
+  const where = sum.source === 'default' ? 'You are using the built-in keys.' : 'Your keys and the built-in library.';
 
   const controls = (
     <span className="deck-hd-r">
@@ -491,7 +491,7 @@ export function Keys() {
           {...tip(
             idle
               ? 'Click into a program and its keys show here. Sets come from your keys and the built-in library.'
-              : `Add a set for ${sum.exe ?? 'this app'} to keys.json (match it by its .exe file name), or a general set with "match": "*" for every app.`,
+              : `No keys are set for ${sum.exe ?? 'this app'} yet.`,
           )}
         >
           {idle ? 'Work in another app and its keys show here' : 'No keys for this app'}

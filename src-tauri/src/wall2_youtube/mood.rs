@@ -60,15 +60,16 @@ pub fn query_for(key: &str) -> String { format!("{key} music playlist") }
 
 fn clean_video(v: MoodVideo) -> Option<MoodVideo> {
     let text_ok = |s: &str, max: usize| !s.is_empty() && s.chars().count() <= max && !s.chars().any(unsafe_char);
-    let thumb_ok = v.thumb.as_deref().map_or(true, |t| t.starts_with(THUMB_PREFIX) && t.len() <= 200 && !t.chars().any(|c| c.is_control() || c.is_whitespace()));
+    let thumb_ok = v.thumb.as_deref().is_none_or(|t| t.starts_with(THUMB_PREFIX) && t.len() <= 200 && !t.chars().any(|c| c.is_control() || c.is_whitespace()));
     (valid_video_id(&v.id) && text_ok(&v.title, 300) && v.channel.chars().count() <= 200 && !v.channel.chars().any(unsafe_char)
         && thumb_ok && PLAYABLE.contains(&v.playable.as_str())).then_some(v)
 }
 
-/// The store as it may be kept: spends inside the window and not in the future, sorted; only the eight
+/// The store as it may be kept: spends inside the window, sorted (a spend in the future is kept, so a clock that
+/// jumped back cannot reset the budget); only the eight
 /// moods, each younger than the window, with valid videos, at most `MAX_ITEMS`.
 fn clean(mut store: Store, now: u64) -> Store {
-    store.spends.retain(|&t| t <= now.saturating_add(FUTURE_S) && now.saturating_sub(t) < WINDOW_S);
+    store.spends.retain(|&t| now.saturating_sub(t) < WINDOW_S);
     store.spends.sort_unstable();
     store.moods.retain(|k, kept| MOODS.contains(&k.as_str()) && kept.at <= now.saturating_add(FUTURE_S) && now.saturating_sub(kept.at) < WINDOW_S);
     for kept in store.moods.values_mut() {
@@ -101,7 +102,7 @@ fn locked() -> std::sync::MutexGuard<'static, ()> { LOCK.lock().unwrap_or_else(|
 
 /// The answer for `mood`: its kept results while younger than 7 days (no search, nothing spent); otherwise,
 /// if fewer than `MAX_SPENDS` searches were made in the last 7 days, one search through `search`, counted
-/// only when it succeeds, kept and answered; otherwise the time the budget frees up. A failed search spends
+/// only when it succeeds, kept and answered; otherwise the time the budget frees up. A search that finds nothing valid is kept as an empty answer. A failed search spends
 /// nothing and keeps nothing.
 fn mood_in(dir: &Path, mood: &str, now: u64, search: impl FnOnce(&str) -> Result<Vec<MoodVideo>, &'static str>) -> Result<MoodAnswer, &'static str> {
     let key = mood_key(mood).ok_or(INVALID)?;
@@ -110,7 +111,8 @@ fn mood_in(dir: &Path, mood: &str, now: u64, search: impl FnOnce(&str) -> Result
     let path = dir.join(FILE_NAME);
     let mut store = read_store(&path, now);
     if let Some(kept) = store.moods.get(&key) {
-        if !kept.items.is_empty() { return Ok(MoodAnswer { items: kept.items.clone(), cached: true, searches_left: left_of(&store), back_at: None }) }
+        // An empty kept answer (a search that found nothing valid) is kept too, so a click does not spend again.
+        return Ok(MoodAnswer { items: kept.items.clone(), cached: true, searches_left: left_of(&store), back_at: None });
     }
     if store.spends.len() >= MAX_SPENDS {
         let back_at = store.spends.first().map(|t| t.saturating_add(WINDOW_S));
@@ -118,14 +120,15 @@ fn mood_in(dir: &Path, mood: &str, now: u64, search: impl FnOnce(&str) -> Result
     }
     let items: Vec<MoodVideo> = search(&query_for(&key))?.into_iter().filter_map(clean_video).take(MAX_ITEMS).collect();
     store.spends.push(now);
-    if !items.is_empty() { store.moods.insert(key, Kept { at: now, items: items.clone() }); }
+    store.moods.insert(key, Kept { at: now, items: items.clone() });
     write_store(&path, &store)?;
     Ok(MoodAnswer { items, cached: false, searches_left: left_of(&store), back_at: None })
 }
 
 /// `mood_in` with a clock that may have failed: no time, no read and no write.
 fn mood_clocked(dir: &Path, mood: &str, now: Option<u64>, search: impl FnOnce(&str) -> Result<Vec<MoodVideo>, &'static str>) -> Result<MoodAnswer, &'static str> {
-    mood_in(dir, mood, now.ok_or(FAILED)?, search)
+    // 0 is what `unix_now` gives when the clock cannot be read: unknown, the same as no time.
+    mood_in(dir, mood, now.filter(|&n| n != 0).ok_or(FAILED)?, search)
 }
 
 fn video_of(v: &YtVideo) -> MoodVideo {
@@ -258,9 +261,42 @@ mod tests {
         moods.insert("jazz".to_string(), Kept { at: T0, items: vec![video(0)] });
         moods.insert("sleep".to_string(), Kept { at: T0 + 2 * FUTURE_S, items: vec![video(0)] });
         let cleaned = clean(Store { spends: vec![T0, T0 + 2 * FUTURE_S, T0 - WINDOW_S - 1], moods }, T0);
-        assert_eq!(cleaned.spends, vec![T0]);
+        assert_eq!(cleaned.spends, vec![T0, T0 + 2 * FUTURE_S]);
         assert_eq!(cleaned.moods.keys().cloned().collect::<Vec<_>>(), vec!["focus".to_string()]);
         assert_eq!(cleaned.moods["focus"].items, vec![video(0)]);
+    }
+
+    #[test]
+    fn an_empty_result_is_kept_and_answered_as_cached_without_spending_again() {
+        let dir = temp("empty");
+        let mut bad = video(1);
+        bad.playable = "maybe".into();
+        let a = mood_in(&dir, "focus", T0, |_| Ok(vec![bad])).unwrap();
+        assert_eq!((a.items.len(), a.cached, a.searches_left), (0, false, 9));
+        let asked = Cell::new(0);
+        let b = mood_in(&dir, "focus", T0 + DAY, |_| { asked.set(1); found(3) }).unwrap();
+        assert_eq!((asked.get(), b.items.len(), b.cached, b.searches_left, b.back_at), (0, 0, true, 9, None));
+        // After 7 days it searches again.
+        let c = mood_in(&dir, "focus", T0 + 7 * DAY, |_| found(2)).unwrap();
+        assert_eq!((c.items.len(), c.cached), (2, false));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_clock_jump_back_keeps_the_spends_and_a_zero_clock_is_unknown() {
+        let dir = temp("jump");
+        std::fs::create_dir_all(&dir).unwrap();
+        let spends: Vec<u64> = vec![T0 + 5 * DAY; 10];
+        write_store(&dir.join(FILE_NAME), &Store { spends: spends.clone(), moods: BTreeMap::new() }).unwrap();
+        // The clock reads 5 days behind every spend: they stay, so the budget is still spent.
+        let asked = Cell::new(0);
+        let a = mood_in(&dir, "relax", T0, |_| { asked.set(1); found(1) }).unwrap();
+        assert_eq!((asked.get(), a.searches_left), (0, 0));
+        assert_eq!(read_store(&dir.join(FILE_NAME), T0).spends, spends);
+        // A clock that reads 0 is unknown: no search, and the file is left alone.
+        assert_eq!(mood_clocked(&dir, "relax", Some(0), |_| found(1)).err(), Some(FAILED));
+        assert_eq!(read_store(&dir.join(FILE_NAME), T0).spends, spends);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
@@ -288,6 +324,9 @@ mod tests {
 use tauri::Manager;
 use tauri::WebviewWindow;
 
+/// A clock read that gave 0 failed: no time.
+fn clock(t: u64) -> Option<u64> { (t != 0).then_some(t) }
+
 /// A mood's results: kept ones for free, otherwise one search from the week's ten.
 #[tauri::command]
 pub async fn wall2_youtube_mood(window: WebviewWindow, mood: String) -> Result<MoodAnswer, String> {
@@ -296,10 +335,10 @@ pub async fn wall2_youtube_mood(window: WebviewWindow, mood: String) -> Result<M
     tauri::async_runtime::spawn_blocking(move || {
         let dir = app.path().app_config_dir().map_err(|_| FAILED.to_string())?;
         // A kept mood answers without the sign-in or the network: only a search needs the client.
-        match mood_clocked(&dir, &mood, Some(super::unix_now()), |_| Err("search")) {
+        match mood_clocked(&dir, &mood, clock(super::unix_now()), |_| Err("search")) {
             Err("search") => {}
             other => return other.map_err(str::to_string),
         }
-        super::read_with_app(&app, |ctx| mood_clocked(&dir, &mood, Some((ctx.now)()), |words| search_videos(ctx, words)))
+        super::read_with_app(&app, |ctx| mood_clocked(&dir, &mood, clock((ctx.now)()), |words| search_videos(ctx, words)))
     }).await.map_err(|_| FAILED.to_string())?
 }

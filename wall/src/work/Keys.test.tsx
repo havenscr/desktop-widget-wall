@@ -124,12 +124,21 @@ it('opens a key menu without sending and pins a library key to Always here', asy
 
 it('says "No keys for this app" when there is no set and no general set', async () => {
   answer = front(null, 'notepad.exe', [sales]);
-  render(<Keys />);
+  render(
+    <>
+      <Keys />
+      <HoverTipLayer />
+    </>,
+  );
   await flush();
   expect(screen.getByText('No keys for this app')).toBeTruthy();
+  fireEvent.mouseEnter(screen.getByText('No keys for this app'));
+  await flush(400);
+  expect(document.body.textContent).toContain('No keys are set for notepad.exe yet.');
+  expect(document.body.textContent).not.toContain(['keys', 'json'].join('.'));
 });
 
-it('says where keys.json goes when the built-in keys are in use', async () => {
+it('says the built-in keys are in use, never naming the file', async () => {
   answer = { ...front('sales'), source: 'default' };
   render(
     <>
@@ -140,7 +149,8 @@ it('says where keys.json goes when the built-in keys are in use', async () => {
   await flush();
   fireEvent.mouseEnter(screen.getByText('Now · Sales app'));
   await flush(400);
-  expect(document.body.textContent).toContain("put keys.json in the app's config folder");
+  expect(document.body.textContent).toContain('You are using the built-in keys.');
+  expect(document.body.textContent).not.toContain(['keys', 'json'].join('.'));
 });
 
 it('Auto follows a change of app', async () => {
@@ -233,7 +243,7 @@ it('shows each refusal as one fixed line and ignores a click while one is sendin
   await flush();
 });
 
-it('draws nothing where the commands do not exist, and a quiet line when keys.json is bad', async () => {
+it('draws nothing where the commands do not exist, and a quiet line when the keys are bad', async () => {
   mocks.set('wall2_keys_summary', () => {
     throw 'unsupported';
   });
@@ -247,7 +257,7 @@ it('draws nothing where the commands do not exist, and a quiet line when keys.js
   });
   render(<Keys />);
   await flush();
-  expect(screen.getByText('keys.json has a problem')).toBeTruthy();
+  expect(screen.getByText('Your keys have a problem')).toBeTruthy();
 });
 
 it('shows up to eight keys, five at a time when a second row does not fit, the arrows stepping through them', async () => {

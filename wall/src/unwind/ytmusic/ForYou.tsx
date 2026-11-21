@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { IconChevronRight } from '@tabler/icons-react';
 import type { YtVideo } from '../../music/youtube';
 import { tip } from '../../ui/HoverTip';
-import { loadAllForYou, loadForYou, moodBudgetLine, pickMood, setForYouView, useForYou, useMoods, whenWords } from './forYouStore';
+import { fetchMood, loadAllForYou, loadForYou, moodBudgetLine, pickMood, setForYouView, useForYou, useMoods, whenWords } from './forYouStore';
 import { useVisible } from '../../ui/useVisible';
 import { lengthText } from './model';
 import { playFrom } from './queue';
@@ -47,7 +47,7 @@ function MoodShelfView({ mood }: { mood: string }) {
   );
   const shown = all ? shelf.rows : shelf.rows.slice(0, SHELF);
   const body = shelf.problem ? (
-    <YtState problem={shelf.problem} onRetry={() => void pickMood(mood)} />
+    <YtState problem={shelf.problem} onRetry={() => void fetchMood(mood)} />
   ) : shelf.backAt !== null && shelf.rows.length === 0 ? (
     <YtEmpty text={moodBudgetLine(shelf.backAt)} />
   ) : shelf.rows.length === 0 ? (
