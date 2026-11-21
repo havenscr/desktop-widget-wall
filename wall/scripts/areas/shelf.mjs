@@ -58,14 +58,14 @@ export default {
   name: 'shelf',
   gallery: { states: [
     state('shelf: three lists, first picked', LISTS, ['Captures', 'Region', 'Screen', 'GIF', 'Record', 'Text (OCR)', 'History', 'Tasks (To-Do)', 'Tax / Business', 'House, garden', 'Always here']),
-    state('shelf: no list names set', 'x=1', ['Add list names as shelfLists', 'Pick a list', 'Region']),
+    state('shelf: lists from the task app', 'x=1', ['Tasks (To-Do)', 'Tax / Business', 'House, garden', 'Region']),
     state('shelf: second list picked', LISTS, ['Tax / Business', 'Nothing open'], 'click:.shelf-list:nth-child(2)'),
   ] },
   fit: {
     variants: [
       variant('Shelf, three lists', LISTS),
       variant('Shelf, eight lists with a 60 character name', MANY),
-      variant('Shelf, no list names set', 'x=1'),
+      variant('Shelf, lists from the task app', 'x=1'),
       variant('Shelf, Watt set down at the far right', LISTS + '&wattspot=2300'),
     ],
     measurements: { shelf: measureShelf },

@@ -621,6 +621,35 @@ fn find_bucket(body: &Value, want: &str) -> Option<String> {
         .and_then(|b| as_id(b.get("id")?))
 }
 
+/// Most list names `wall2_tasks_lists` returns.
+const MAX_LISTS: usize = 24;
+/// Longest list name kept, in characters (the same cap as a task title is far wider than a chip).
+const MAX_LIST_CHARS: usize = 60;
+
+/// The bucket names of an `/api/buckets` answer, in the app's order: each trimmed, empty ones and
+/// ones with a control or invisible format character or over 60 characters dropped, duplicates
+/// dropped after lower-casing, at most 24.
+fn bucket_names(body: &Value) -> Vec<String> {
+    let Some(list) = body.get("buckets").and_then(Value::as_array) else {
+        return Vec::new();
+    };
+    let mut out: Vec<String> = Vec::new();
+    for name in list.iter().filter_map(|b| b.get("name").and_then(Value::as_str)) {
+        let name = name.trim();
+        if name.is_empty() || name.chars().count() > MAX_LIST_CHARS || name.chars().any(is_unsafe_char) {
+            continue;
+        }
+        if out.iter().any(|n| n.to_lowercase() == name.to_lowercase()) {
+            continue;
+        }
+        out.push(name.to_string());
+        if out.len() == MAX_LISTS {
+            break;
+        }
+    }
+    out
+}
+
 /// Whether a task is due on the local day that starts at `tomorrow` (epoch seconds) and
 /// ends at `after`. A timed task is compared by instant; an all-day one by its date text.
 fn due_tomorrow(t: &TaskItem, tomorrow: i64, after: i64, tomorrow_date: &str) -> bool {
@@ -782,6 +811,19 @@ pub async fn wall2_tasks_summary(
         join_tag_meta(&mut summary.next, &meta);
         remember_shown_n(&read_key(&tag, &notTag, &list, due), &summary.next, limit);
         Ok(summary)
+    })
+    .await
+    .map_err(|_| "The request did not finish".to_string())?
+}
+
+/// The names of the task app's lists (its buckets), for the Shelf's chips.
+#[tauri::command]
+pub async fn wall2_tasks_lists(window: tauri::WebviewWindow, app: tauri::AppHandle) -> Result<Vec<String>, String> {
+    crate::wall2_meet::require_wall2(window.label())?;
+    let base = read_base(&app, "tasksBaseUrl", true)?;
+    tauri::async_runtime::spawn_blocking(move || {
+        let body = get_json(&format!("{base}/api/buckets"))?;
+        Ok(bucket_names(&body))
     })
     .await
     .map_err(|_| "The request did not finish".to_string())?
@@ -1391,6 +1433,7 @@ mod tests {
             ("pub fn wall2_open_link(", "crate::wall2_meet::require_wall2(window.label())?;"),
             ("pub fn wall2_open_camera(", "crate::wall2_meet::require_wall2(window.label())?;"),
             ("pub async fn wall2_tasks_summary(", "crate::wall2_meet::require_wall2(window.label())?;"),
+            ("pub async fn wall2_tasks_lists(", "crate::wall2_meet::require_wall2(window.label())?;"),
             ("pub async fn wall2_tasks_next(", "crate::wall2_meet::require_wall2(window.label())?;"),
             ("pub async fn wall2_task_done(", "crate::wall2_meet::require_wall2(window.label())?;"),
             ("pub async fn wall2_home_security(", "crate::wall2_meet::require_wall2(window.label())?;"),
@@ -1400,6 +1443,30 @@ mod tests {
             let first = body[body.find('{').expect("body") + 1..].trim_start();
             assert!(first.starts_with(check), "{command}");
         }
+    }
+
+    #[test]
+    fn bucket_names_keep_the_apps_order_and_clean_each_name() {
+        let body = json!({"buckets": [
+            {"id": "1", "name": "  Inbox "},
+            {"id": "2", "name": ""},
+            {"id": "3", "name": "inbox"},
+            {"id": "4", "name": "Bad\u{200b}name"},
+            {"id": "5"},
+            {"id": "6", "name": "House, garden"},
+            {"id": "7", "name": "x".repeat(61)},
+        ]});
+        assert_eq!(bucket_names(&body), vec!["Inbox".to_string(), "House, garden".to_string()]);
+        assert!(bucket_names(&json!({})).is_empty());
+        assert!(bucket_names(&json!({"buckets": "no"})).is_empty());
+    }
+
+    #[test]
+    fn bucket_names_stop_at_the_cap() {
+        let rows: Vec<Value> = (0..40).map(|i| json!({"name": format!("List {i}")})).collect();
+        let names = bucket_names(&json!({ "buckets": rows }));
+        assert_eq!(names.len(), MAX_LISTS);
+        assert_eq!(names[0], "List 0");
     }
 
     #[test]

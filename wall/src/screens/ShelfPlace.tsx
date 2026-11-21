@@ -2,6 +2,7 @@ import { IconHistory, IconDeviceDesktop, IconGif, IconScan, IconTextRecognition,
 import { useEffect, useState } from 'react';
 import { TaskCard } from '../tasks/TaskCard';
 import type { TasksQuery } from '../tasks/useTasks';
+import { useTaskLists } from '../tasks/useTaskLists';
 import { loadSettings } from '../settings/settings';
 import { CapturesCard } from '../shelf/CapturesCard';
 import { tip } from '../ui/HoverTip';
@@ -38,11 +39,15 @@ const NO_TIDY = (): void => undefined;
 /**
  * The Shelf place (concept 3A): captures on the left (the ShareX history, `shelf/CapturesCard.tsx`), the ShareX keys and the task app's lists in
  * the middle, and the picked list in the task column with the Always here deck under it.
- * List names come from the `shelfLists` setting: the wall has no route that lists them.
+ * List names come from the task app (`wall2_tasks_lists`); a non-empty `shelfLists` setting overrides them.
  */
 export function ShelfPlace() {
-  const names = loadSettings().shelfLists;
-  const [picked, setPicked] = useState<string | null>(() => readPicked(names));
+  const override = loadSettings().shelfLists;
+  const lists = useTaskLists(override.length === 0);
+  const names = override.length > 0 ? override : lists.status === 'ready' ? lists.names : [];
+  const [choice, setPicked] = useState<string | null>(null);
+  // The remembered pick wins when it is still a list; otherwise the first list is picked.
+  const picked = choice !== null && names.includes(choice) ? choice : readPicked(names);
   const [brief, show] = useBrief();
   const { press } = useKeyPress(show, NO_TIDY);
   useEffect(() => {
@@ -88,7 +93,9 @@ export function ShelfPlace() {
             Lists <span className="shelf-sub">your task app</span>
           </div>
           {names.length === 0 ? (
-            <p className="shelf-note">Add list names as shelfLists in the wall settings and they show here.</p>
+            <p className="shelf-note" role="status">
+              {override.length > 0 || lists.status === 'ready' ? 'No lists in the task app' : lists.status === 'error' ? 'Lists unavailable' : 'Loading lists'}
+            </p>
           ) : (
             <div className="shelf-lists" role="group" aria-label="Task lists">
               {names.map((n) => (

@@ -4013,6 +4013,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             wall2_window::wall2_build_info,
             wall2_feeds::wall2_tasks_next,
+            wall2_feeds::wall2_tasks_lists,
             wall2_weather::wall2_weather,
             wall2_feeds::wall2_task_done,
             wall2_feeds::wall2_tasks_summary,
