@@ -736,3 +736,24 @@ it('a titled card gets no Overdue switch', async () => {
   await flush();
   expect(screen.queryByRole('switch')).toBeNull();
 });
+
+it('with Overdue off the count keeps the unloaded tail, which is today tasks', async () => {
+  setList(() => [lateRow('o', 'Late one'), task('b', 'Today one')], 5);
+  render(<TaskCard />);
+  await flush();
+  fireEvent.click(screen.getByRole('switch'));
+  expect(screen.queryByText('Late one')).toBeNull();
+  expect(screen.getByText('6 today')).toBeTruthy();
+});
+
+it('Next up mode shows no Overdue switch, even with no rows at all', async () => {
+  mocks.set('wall2_tasks_summary', async (args) =>
+    args?.due
+      ? { next: [], remaining: 0, dueTomorrow: { count: 0, estMinutes: 0 }, dueToday: 0 }
+      : { next: [], remaining: 0, dueTomorrow: { count: 0, estMinutes: 0 } },
+  );
+  render(<TaskCard />);
+  await flush();
+  expect(screen.getByText('Nothing due today')).toBeTruthy();
+  expect(screen.queryByRole('switch')).toBeNull();
+});

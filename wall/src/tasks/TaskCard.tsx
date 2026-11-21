@@ -287,13 +287,13 @@ export function TaskCard({ query = WORK_QUERY, title }: { query?: TasksQuery; ti
   const canFocus = focusStatus === 'idle' || focusStatus === 'finished';
   const [showOverdue, setShowOverdue] = useState(readShowOverdue);
   const allRows = visibleRows(t.tasks, t.hidden);
-  const hasSwitch = !title && query.due === 'today' && !(t.nextUp && allRows.length > 0) && t.lastOk !== null;
+  const hasSwitch = !title && query.due === 'today' && !t.nextUp && t.lastOk !== null;
   const hideOverdue = hasSwitch && !showOverdue;
   const rows = hideOverdue ? allRows.filter((r) => dueLine(r, new Date(t.now)) !== 'overdue') : allRows;
   const stale = t.status === 'error' && t.lastOk !== null ? updatedText(t.lastOk, t.now) : null;
   const nextUp = t.nextUp && rows.length > 0;
   const overdue = nextUp ? 0 : rows.filter((r) => dueLine(r, new Date(t.now)) === 'overdue').length;
-  const count = rows.length + (hideOverdue ? 0 : (t.remaining ?? 0));
+  const count = rows.length + (t.remaining ?? 0);
   const side = stale ?? (nextUp ? 'Nothing due today' : hideOverdue ? (rows.length > 0 ? `${count} today` : null) : rows.length > 0 ? (overdue > 0 ? `${count}, ${overdue} overdue` : `${count}`) : null);
 
   let body;
