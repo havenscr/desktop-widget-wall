@@ -1,4 +1,5 @@
-//! Wall 2 Home tab moods: lists the home app's moods and applies one on request.
+//! Wall 2 Home tab moods: lists the home app's moods (plus three scene cards from its routines)
+//! and applies one on request.
 //!
 //! The address comes from `feeds.json` (`homeBaseUrl`) through the helpers in
 //! `wall2_feeds.rs` and is never put in an error message. Nothing here runs unless the
@@ -20,7 +21,18 @@ pub struct Mood {
     /// False only when the home app says the mood was never saved (`saved: false`); a card
     /// for it is drawn quiet and applying it sends nothing. Anything else counts as saved.
     pub saved: bool,
+    /// "mood" for the home app's moods, "scene" for the three routine cards added after them.
+    pub kind: &'static str,
+    /// The routine's description for a scene card; none for a mood and none when the home app has no text.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub line: Option<String>,
 }
+
+/// The scene cards, in this order, as (routine id, label when the home app sends no name). Only these
+/// routine ids can be started from the wall: `wall2_apply_mood` checks an id against this list before
+/// it picks the start route, so the page cannot start any other routine.
+const SCENES: [(&str, &str); 3] = [("romantic_mode", "Romantic Mode"), ("movie_mode", "Movie Mode"), ("fireplace_cozy", "Fireplace Cozy")];
+const MAX_SCENE_TEXT: usize = 60;
 
 /// `^[A-Za-z][A-Za-z0-9]{0,31}$`
 fn valid_mood_id(id: &str) -> bool {
@@ -59,8 +71,57 @@ fn pick_moods(body: &Value) -> Vec<Mood> {
     map.keys()
         .filter(|k| valid_mood_id(k))
         .take(MAX_MOODS)
-        .map(|k| Mood { id: k.clone(), label: mood_label(k), saved: map.get(k).and_then(|m| m.get("saved")) != Some(&Value::Bool(false)) })
+        .map(|k| Mood { id: k.clone(), label: mood_label(k), saved: map.get(k).and_then(|m| m.get("saved")) != Some(&Value::Bool(false)), kind: "mood", line: None })
         .collect()
+}
+
+fn is_scene(id: &str) -> bool {
+    SCENES.iter().any(|(s, _)| *s == id)
+}
+
+fn scene_text(r: &Value, key: &str) -> Option<String> {
+    let t = r.get(key).and_then(Value::as_str)?.trim();
+    if t.is_empty() {
+        None
+    } else {
+        Some(t.chars().take(MAX_SCENE_TEXT).collect())
+    }
+}
+
+/// The scene cards from `GET /api/routines`, which answers a list or `{routines: [...]}`: only the
+/// ids in `SCENES`, in that fixed order, each labelled with the routine's name; a missing one is skipped.
+fn pick_scenes(body: &Value) -> Vec<Mood> {
+    let Some(list) = body.as_array().or_else(|| body.get("routines").and_then(Value::as_array)) else {
+        return Vec::new();
+    };
+    SCENES
+        .iter()
+        .filter_map(|(id, fallback)| {
+            let r = list.iter().find(|r| r.get("id").and_then(Value::as_str) == Some(*id))?;
+            let label = scene_text(r, "name").unwrap_or_else(|| (*fallback).to_string());
+            Some(Mood { id: (*id).to_string(), label, saved: true, kind: "scene", line: scene_text(r, "description") })
+        })
+        .collect()
+}
+
+/// The moods, then the scenes. A routines read that failed (`None`) leaves the moods alone.
+fn merge_moods(mut moods: Vec<Mood>, routines: Option<&Value>) -> Vec<Mood> {
+    if let Some(body) = routines {
+        moods.extend(pick_scenes(body));
+    }
+    moods
+}
+
+/// The route a tap calls: a scene id starts its routine, any other valid id applies a mood, and
+/// everything else gets no route at all.
+fn apply_url(base: &str, id: &str) -> Option<String> {
+    if is_scene(id) {
+        Some(format!("{base}/api/routines/{id}/start"))
+    } else if valid_mood_id(id) {
+        Some(format!("{base}/api/moods/{id}/apply"))
+    } else {
+        None
+    }
 }
 
 /// What a successful apply tells the page. `superseded` is true when the home app answered
@@ -89,7 +150,9 @@ pub async fn wall2_moods(app: tauri::AppHandle) -> Result<Vec<Mood>, String> {
     let base = read_base(&app, "homeBaseUrl", false)?;
     tauri::async_runtime::spawn_blocking(move || {
         let body = get_json(&format!("{base}/api/moods"))?;
-        Ok(pick_moods(&body))
+        // The scenes are extra: when the routines cannot be read the moods still come back.
+        let routines = get_json(&format!("{base}/api/routines")).ok();
+        Ok(merge_moods(pick_moods(&body), routines.as_ref()))
     })
     .await
     .map_err(|_| "The request did not finish".to_string())?
@@ -97,13 +160,17 @@ pub async fn wall2_moods(app: tauri::AppHandle) -> Result<Vec<Mood>, String> {
 
 #[tauri::command]
 pub async fn wall2_apply_mood(app: tauri::AppHandle, id: String) -> Result<ApplyOutcome, String> {
-    if !valid_mood_id(&id) {
+    // A scene id starts its routine; the same no-auth route the home app's Scenes tab uses.
+    if apply_url("", &id).is_none() {
         return Err("Unknown mood".to_string());
     }
     let base = read_base(&app, "homeBaseUrl", false)?;
+    let Some(url) = apply_url(&base, &id) else {
+        return Err("Unknown mood".to_string());
+    };
     tauri::async_runtime::spawn_blocking(move || {
         let result = agent()
-            .post(&format!("{base}/api/moods/{id}/apply"))
+            .post(&url)
             .set("Accept", "application/json")
             .timeout(APPLY_TIMEOUT)
             .call();
@@ -191,6 +258,57 @@ mod tests {
         assert_eq!(pick_moods(&json!({ "moods": map })).len(), 12);
         assert!(pick_moods(&json!({"ok": true})).is_empty());
         assert!(pick_moods(&json!({"moods": []})).is_empty());
+    }
+
+    fn routines() -> Value {
+        json!([
+            {"id": "fireplace_cozy", "name": "Fireplace Cozy", "active": false, "description": "Warm amber and jazz"},
+            {"id": "other", "name": "Other"},
+            {"id": "romantic_mode", "name": "Romantic Mode", "active": true},
+            {"id": "movie_mode", "name": "Movie Night"}
+        ])
+    }
+
+    #[test]
+    fn scenes_follow_the_moods_in_a_fixed_order() {
+        let moods = pick_moods(&json!({"moods": {"day": {}, "evening": {}}}));
+        let all = merge_moods(moods, Some(&routines()));
+        let ids: Vec<&str> = all.iter().map(|m| m.id.as_str()).collect();
+        assert_eq!(ids, vec!["day", "evening", "romantic_mode", "movie_mode", "fireplace_cozy"]);
+        let kinds: Vec<&str> = all.iter().map(|m| m.kind).collect();
+        assert_eq!(kinds, vec!["mood", "mood", "scene", "scene", "scene"]);
+        assert_eq!(all[3].label, "Movie Night");
+        assert_eq!(all[4].line.as_deref(), Some("Warm amber and jazz"));
+        assert_eq!(all[2].line, None);
+        // The wrapped shape reads the same.
+        let wrapped = json!({"routines": routines()});
+        assert_eq!(pick_scenes(&wrapped), pick_scenes(&routines()));
+    }
+
+    #[test]
+    fn a_missing_routine_is_skipped() {
+        let body = json!([{"id": "movie_mode", "name": "Movie Mode"}, {"id": "nope"}]);
+        let ids: Vec<String> = pick_scenes(&body).into_iter().map(|m| m.id).collect();
+        assert_eq!(ids, vec!["movie_mode"]);
+        assert!(pick_scenes(&json!({"ok": true})).is_empty());
+        assert!(pick_scenes(&json!([])).is_empty());
+    }
+
+    #[test]
+    fn a_failed_routines_read_keeps_the_moods() {
+        let moods = pick_moods(&json!({"moods": {"day": {}, "evening": {}}}));
+        let all = merge_moods(moods.clone(), None);
+        assert_eq!(all, moods);
+        assert_eq!(all.len(), 2);
+    }
+
+    #[test]
+    fn only_listed_scenes_can_be_started() {
+        assert_eq!(apply_url("http://h", "movie_mode").as_deref(), Some("http://h/api/routines/movie_mode/start"));
+        assert_eq!(apply_url("http://h", "day").as_deref(), Some("http://h/api/moods/day/apply"));
+        assert_eq!(apply_url("http://h", "other_routine"), None);
+        assert_eq!(apply_url("http://h", "movie_mode/../x"), None);
+        assert_eq!(apply_url("http://h", ""), None);
     }
 
     #[test]

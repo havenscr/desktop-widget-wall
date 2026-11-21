@@ -5,13 +5,18 @@ import { useId } from 'react';
  * gradient, its light, and three smooth ridges with soft haze between them. Day has a
  * sun and a few rounded cumulus clouds lit along their top edge; Evening a striped sun
  * with clean, even slats sinking behind the ridges; Late Night a calm starfield and a
- * moon in a soft glow; Still Working a lit bulb rising from the far ridge on a bright blue night. Movie, Goodnight and any other mood keep their simpler lights.
+ * moon in a soft glow; Still Working a lit bulb rising from the far ridge on a bright blue night.
+ * Four moods are small scenes in the hills: Gaming a striped synthwave sun over a neon grid
+ * floor (in place of the near ridge), Recording a lit ON AIR sign over a sound meter, Romantic
+ * a pink moon with hearts, Fireplace a campfire with sparks. Movie keeps its screen, drawn low
+ * enough to show whole on a 150 px card. Goodnight and any other mood keep their simpler lights.
  * One SVG that covers the card at any size.
  */
 export function MoodArt({ id }: { id: string }) {
   const u = useId().replace(/:/g, '');
   const kind = artKind(id);
   const [far, mid, near] = RIDGE[kind];
+  const slats = kind === 'gaming' ? GAMING_SLATS : SLATS;
   return (
     <svg className="mood-art" viewBox="0 0 400 400" preserveAspectRatio="xMidYMid slice" aria-hidden="true">
       <defs>
@@ -46,7 +51,7 @@ export function MoodArt({ id }: { id: string }) {
         </linearGradient>
         <mask id={`${u}slats`}>
           <rect width="400" height="400" fill="#fff" />
-          {SLATS.map(([y, h]) => (
+          {slats.map(([y, h]) => (
             <rect key={y} x="0" y={y} width="400" height={h} fill="#000" />
           ))}
         </mask>
@@ -68,6 +73,54 @@ export function MoodArt({ id }: { id: string }) {
         </>
       )}
       {(kind === 'night' || kind === 'goodnight' || kind === 'movie' || kind === 'bulb') && <Stars dim={kind === 'movie'} />}
+      {kind === 'gaming' && (
+        <>
+          <Sprinkle spec={SPRINKLE.gaming} />
+          <circle cx="200" cy="200" r="130" fill={`url(#${u}glow)`} />
+          <circle cx="200" cy="200" r="40" fill={`url(#${u}sun)`} mask={`url(#${u}slats)`} />
+        </>
+      )}
+      {kind === 'recording' && (
+        <>
+          <Sprinkle spec={SPRINKLE.recording} />
+          <circle cx="200" cy="178" r="120" fill={`url(#${u}glow)`} />
+          <rect x="156" y="164" width="88" height="32" rx="7" fill="#2a0612" stroke="#ff4a5c" strokeWidth="3" />
+          <text x="200" y="186" textAnchor="middle" style={{ fontFamily: "var(--disp, 'Oxanium', sans-serif)" }} fontWeight="700" fontSize="17" letterSpacing="2" fill="#ff6a78">
+            ON AIR
+          </text>
+          <g fill="#ff6a78" opacity="0.75">
+            {METER.map((h, i) => (
+              <rect key={i} x={118 + i * 16} y={226 - h} width="8" height={h} rx="3" />
+            ))}
+          </g>
+        </>
+      )}
+      {kind === 'romantic' && (
+        <>
+          <Sprinkle spec={SPRINKLE.romantic} />
+          <circle cx="200" cy="176" r="120" fill={`url(#${u}glow)`} />
+          <circle cx="200" cy="176" r="30" fill="#ffd6e6" />
+          <circle cx="200" cy="176" r="30" fill={`url(#${u}glow)`} opacity="0.6" />
+          <Heart x={128} y={190} s={0.5} fill="#ff8ab8" opacity={0.7} />
+          <Heart x={272} y={170} s={0.4} fill="#ff8ab8" opacity={0.55} />
+          <Heart x={300} y={204} s={0.3} fill="#ffc2da" opacity={0.5} />
+        </>
+      )}
+      {kind === 'fireplace' && (
+        <>
+          <circle cx="200" cy="214" r="140" fill={`url(#${u}glow)`} />
+          {SPARKS.map(([x, y, r, o], i) => (
+            <circle key={i} cx={x} cy={y} r={r} fill="#ffc26a" opacity={o} />
+          ))}
+          <Flame x={200} y={206} s={1} outer="#ff7a2a" inner="#ffd45e" />
+          <Flame x={184} y={214} s={0.6} outer="#ff5a1a" inner="#ffb040" />
+          <Flame x={218} y={214} s={0.65} outer="#ff5a1a" inner="#ffb040" />
+          <g stroke="#3a1a0a" strokeWidth="8" strokeLinecap="round">
+            <line x1="170" y1="232" x2="230" y2="220" />
+            <line x1="170" y1="220" x2="230" y2="232" />
+          </g>
+        </>
+      )}
       {kind === 'bulb' && (
         <>
           <circle cx="300" cy="128" r="170" fill={`url(#${u}glow)`} />
@@ -100,8 +153,8 @@ export function MoodArt({ id }: { id: string }) {
       {kind === 'goodnight' && <path d="M300 92a34 34 0 1 0 26 56 28 28 0 1 1 -26 -56z" fill="#cfd6ff" opacity="0.8" />}
       {kind === 'movie' && (
         <>
-          <ellipse cx="200" cy="150" rx="170" ry="110" fill={`url(#${u}glow)`} />
-          <rect x="110" y="96" width="180" height="104" rx="8" fill={`url(#${u}scr)`} opacity="0.88" />
+          <ellipse cx="200" cy="190" rx="170" ry="100" fill={`url(#${u}glow)`} />
+          <rect x="146" y="160" width="108" height="62" rx="6" fill={`url(#${u}scr)`} opacity="0.88" />
         </>
       )}
       {kind === 'lamp' && (
@@ -114,7 +167,7 @@ export function MoodArt({ id }: { id: string }) {
       <rect x="0" y="230" width="400" height="58" fill={`url(#${u}haze)`} />
       <path d={MID} fill={mid} />
       <rect x="0" y="270" width="400" height="46" fill={`url(#${u}haze)`} opacity="0.75" />
-      <path d={NEAR} fill={near} />
+      {kind === 'gaming' ? <GridFloor /> : <path d={NEAR} fill={near} />}
     </svg>
   );
 }
@@ -122,7 +175,7 @@ export function MoodArt({ id }: { id: string }) {
 /** The bulb's four rays, in radians: two above, one each side. */
 const BULB_RAYS = [-2.1, -1.05, 3.4, -0.25];
 
-type Kind = 'day' | 'evening' | 'night' | 'movie' | 'goodnight' | 'lamp' | 'bulb';
+type Kind = 'day' | 'evening' | 'night' | 'movie' | 'goodnight' | 'lamp' | 'bulb' | 'gaming' | 'recording' | 'romantic' | 'fireplace';
 
 /** The art for a mood id; any mood the concept did not draw gets a warm lamp glow. */
 export function artKind(id: string): Kind {
@@ -130,7 +183,11 @@ export function artKind(id: string): Kind {
   if (key === 'day' || key === 'morning') return 'day';
   if (key === 'evening' || key === 'sunset') return 'evening';
   if (key === 'latenight' || key === 'night') return 'night';
-  if (key === 'movie' || key === 'tv') return 'movie';
+  if (key === 'movie' || key === 'tv' || key === 'movie_mode') return 'movie';
+  if (key === 'gaming') return 'gaming';
+  if (key === 'recording' || key === 'office_recording') return 'recording';
+  if (key === 'romantic' || key === 'romantic_mode') return 'romantic';
+  if (key === 'fireplace' || key === 'fireplace_cozy') return 'fireplace';
   if (key === 'stillworking') return 'bulb';
   if (key === 'goodnight' || key === 'sleep' || key === 'off') return 'goodnight';
   return 'lamp';
@@ -170,6 +227,26 @@ const SKY: Record<Kind, [string, string][]> = {
     ['0.62', '#1d62b4'],
     ['1', '#4aa8e0'],
   ],
+  gaming: [
+    ['0', '#12062e'],
+    ['0.6', '#3a0f6e'],
+    ['1', '#7a1fa0'],
+  ],
+  recording: [
+    ['0', '#14051c'],
+    ['0.65', '#4a0c36'],
+    ['1', '#9a1c3e'],
+  ],
+  romantic: [
+    ['0', '#1c0626'],
+    ['0.6', '#5a1450'],
+    ['1', '#c23c78'],
+  ],
+  fireplace: [
+    ['0', '#140806'],
+    ['0.6', '#3e1608'],
+    ['1', '#8a3a10'],
+  ],
 };
 
 const GLOW: Record<Kind, string> = {
@@ -180,6 +257,10 @@ const GLOW: Record<Kind, string> = {
   goodnight: '#9fb6ff',
   lamp: '#ffc24d',
   bulb: '#ffe9a8',
+  gaming: '#35e6ea',
+  recording: '#ff4a5c',
+  romantic: '#ff8ab8',
+  fireplace: '#ffa040',
 };
 
 /** Far, middle and near ridge, lighter to darker, in each card's palette. */
@@ -191,6 +272,10 @@ const RIDGE: Record<Kind, [string, string, string]> = {
   goodnight: ['#100d24', '#0a0818', '#040309'],
   lamp: ['#3a2050', '#2a1640', '#140a22'],
   bulb: ['#2a63a4', '#1a4a86', '#0d2f5c'],
+  gaming: ['#3a1670', '#24104e', '#10072a'],
+  recording: ['#4a1238', '#2e0a26', '#160512'],
+  romantic: ['#5a1a52', '#3a103c', '#1c0820'],
+  fireplace: ['#4a2010', '#30140a', '#160804'],
 };
 
 /** The haze between the ridges: the sky's light near the horizon. */
@@ -202,6 +287,10 @@ const HAZE: Record<Kind, string> = {
   goodnight: '#2a2a60',
   lamp: '#a06a5a',
   bulb: '#9ad4f0',
+  gaming: '#ff3d9a',
+  recording: '#ff6a6a',
+  romantic: '#ff9ac0',
+  fireplace: '#ff9a4a',
 };
 
 /**
@@ -265,6 +354,86 @@ const SLATS: readonly (readonly [number, number])[] = [
   [226, 7.5],
   [240, 9],
 ];
+
+/** The gaming sun's slats: thin, evenly stepped gaps (y, height). */
+const GAMING_SLATS: readonly (readonly [number, number])[] = [
+  [196, 3],
+  [204, 4],
+  [212, 5],
+];
+
+/** The recording card's sound meter: bar heights, left to right. */
+const METER = [6, 12, 20, 30, 18, 26, 10, 16, 24, 8, 14];
+
+/** A small seeded random run, so each scene's stars and sparks are fixed. */
+function seeded(seed: number): () => number {
+  let s = seed;
+  return () => {
+    s = (s * 9301 + 49297) % 233280;
+    return s / 233280;
+  };
+}
+
+/** Small stars over the sky band (y 110 to 220): x, y, radius, opacity. */
+function sprinkleStars(seed: number, count: number, op: number): readonly (readonly [number, number, number, number])[] {
+  const r = seeded(seed);
+  const out: [number, number, number, number][] = [];
+  for (let i = 0; i < count; i++) out.push([Math.round(r() * 4000) / 10, Math.round((110 + r() * 110) * 10) / 10, Math.round((0.8 + r() * 1.4) * 10) / 10, Math.round((0.3 + r() * op) * 100) / 100]);
+  return out;
+}
+
+const SPRINKLE = {
+  gaming: { color: '#cfe9ff', dots: sprinkleStars(7, 22, 0.7) },
+  recording: { color: '#ffd6dc', dots: sprinkleStars(3, 16, 0.4) },
+  romantic: { color: '#ffe0ee', dots: sprinkleStars(11, 18, 0.5) },
+} as const;
+
+function Sprinkle({ spec }: { spec: { color: string; dots: readonly (readonly [number, number, number, number])[] } }) {
+  return (
+    <g fill={spec.color}>
+      {spec.dots.map(([x, y, r, o], i) => (
+        <circle key={i} cx={x} cy={y} r={r} opacity={o} />
+      ))}
+    </g>
+  );
+}
+
+/** Sparks rising from the campfire: x, y, radius, opacity. */
+const SPARKS: readonly (readonly [number, number, number, number])[] = (() => {
+  const r = seeded(5);
+  const out: [number, number, number, number][] = [];
+  for (let i = 0; i < 16; i++) out.push([Math.round((170 + r() * 60) * 10) / 10, Math.round((140 + r() * 60) * 10) / 10, Math.round((1 + r() * 1.8) * 10) / 10, Math.round((0.4 + r() * 0.6) * 100) / 100]);
+  return out;
+})();
+
+function Heart({ x, y, s, fill, opacity }: { x: number; y: number; s: number; fill: string; opacity: number }) {
+  return <path transform={`translate(${x} ${y}) scale(${s})`} d="M0 6 C-2 -2 -14 -2 -14 8 C-14 16 -4 22 0 28 C4 22 14 16 14 8 C14 -2 2 -2 0 6Z" fill={fill} opacity={opacity} />;
+}
+
+function Flame({ x, y, s, outer, inner }: { x: number; y: number; s: number; outer: string; inner: string }) {
+  return (
+    <g transform={`translate(${x} ${y}) scale(${s})`}>
+      <path d="M0 -40 C10 -24 22 -16 20 4 C18 20 8 28 0 28 C-8 28 -20 20 -20 4 C-20 -10 -8 -14 -6 -26 C-2 -18 0 -14 0 -40Z" fill={outer} />
+      <path d="M0 -14 C6 -4 11 2 10 12 C9 21 4 24 0 24 C-4 24 -10 20 -10 12 C-10 4 -4 2 0 -14Z" fill={inner} />
+    </g>
+  );
+}
+
+/** Gaming's neon grid floor from y 218, drawn instead of the near ridge. */
+function GridFloor() {
+  return (
+    <g>
+      <rect x="-10" y="218" width="420" height="180" fill="#160830" />
+      {Array.from({ length: 21 }, (_, k) => k - 10).map((i) => (
+        <line key={i} x1={200 + i * 12} y1="218" x2={200 + i * 60} y2="410" stroke="#35e6ea" strokeWidth="1.4" opacity="0.6" />
+      ))}
+      {[222, 228, 236, 248, 266, 292, 330].map((y) => (
+        <line key={y} x1="-10" y1={y} x2="410" y2={y} stroke="#ff3d9a" strokeWidth="1.4" opacity="0.6" />
+      ))}
+      <line x1="-10" y1="218" x2="410" y2="218" stroke="#ff8ad0" strokeWidth="2" opacity="0.8" />
+    </g>
+  );
+}
 
 /**
  * A rounded cumulus at (x, y) scaled by s: a flat base with domes on top. The whole shape

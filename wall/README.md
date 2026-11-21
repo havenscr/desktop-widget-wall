@@ -474,6 +474,18 @@ boolean true counts) and the page then shows no check, no "On now" and does not 
 mood as the last one, because that press did not run; the newer press's own answer marks
 its mood. The Unwind room chips skip their mark the same way, and a mood key says "A newer mood took over" instead of "Lights set". The "On now" and "In N min" tags are 16 px.
 
+The Condo cards also carry three scenes after the home app's moods: Romantic Mode, Movie Mode
+and Fireplace Cozy. `wall2_moods` reads the home app's routines (`GET /api/routines`, a list or
+`{routines: [...]}`), keeps only the ids `romantic_mode`, `movie_mode` and `fireplace_cozy` in that fixed
+order, labels each with the routine's name and puts its description under the name when there is one. A
+routine the home app does not have is skipped, and if the routines cannot be read the moods still come
+back without the scenes. A scene item carries `kind: "scene"`. Tapping one makes `wall2_apply_mood` send
+`POST /api/routines/<id>/start` with no body (the route the home app's Scenes tab uses); the native side
+starts only those three ids, so the page cannot start any other routine. The mood art draws Gaming (a
+synthwave sun over a neon grid), Recording (an ON AIR sign over a sound meter), Romantic (a pink moon with
+hearts), Fireplace (a campfire with sparks) and Movie (the screen drawn low so it shows whole) as small
+scenes in the hills. The suggested music chip has no icon; its tooltip still says it is suggested.
+
 The commands are `wall2_moods` and `wall2_apply_mood` in
 `src-tauri/src/wall2_home.rs`. They read `homeBaseUrl` from `feeds.json` like the
 network tile and call two home app routes: `GET /api/moods` (the keys of `moods`
@@ -2775,7 +2787,7 @@ column, the drawer, the house area and the mood card widths (`--self-test` break
 
 `home/NetworkTile.tsx`, `home/shieldModel.ts` (`shieldFacts`, `severityCounts`, `alertHint`), the card's rules in `styles/home.css`. The card keeps its sizes: 596 by 166 when quiet, not live or not set up, 596 by 250 with alerts open (so Around the house keeps five rows, and three with alerts).
 
-- **Quiet.** The ring (112), the title, "Nothing is open." and two fact lines (16 px, a glyph each) at the left; at the right two doors, 206 wide and 61 high with 12 between: Home security (opens the home app's alarms page; its second line is "N alarms in 24 h" when the live read has one or more, else "Network alarms") and Firewalla (opens its portal; "Devices and rules"). A count that is not live is never shown: the plain words stand then. The busy card's buttons say Home security and Firewalla. Each door shows only when the wall has its address (`wall2_links`), the same rule and the same click as before; one door takes the full height. With no door and at least one fact, the facts move to a quiet box at the right, one row each (scan, devices, blocked, alarms); with no door and no fact the text takes the whole width.
+- **Quiet.** The ring (112), the title, "Nothing is open." and two fact lines (16 px, a glyph each) at the left; at the right two doors, 206 wide and 61 high with 12 between: Home security (opens the home app's alarms page; its second line is "N alarms in 24 h" when the live read has one or more, else "Network alarms") and Firewalla (opens its portal; "Devices and rules"). A count that is not live is never shown: the plain words stand then. The busy card's buttons say Home Security and Firewalla. Each door shows only when the wall has its address (`wall2_links`), the same rule and the same click as before; one door takes the full height. With no door and at least one fact, the facts move to a quiet box at the right, one row each (scan, devices, blocked, alarms); with no door and no fact the text takes the whole width.
 - **The fact lines** are drawn only from numbers the home app sent: line one is "Scan 10:24 AM"; line two is "31 devices, 412 blocked" (or whichever of the two exists), or, when it sent neither, "3 alarms in 24 h"; with none of them there is no second line. A fact with no number is never drawn. Hovering a fact says what it is, and "Not live, as of ..." while stale.
 - **Alerts open.** The ring (140) with one arc per alert and the count, the title, "3 alerts open, 31 devices at home", the newest alert on one line (its line opens the drawer; long text ends in an ellipsis, the full text and "Show all N open alerts" on hover), the age and the counts by severity ("12 min ago. 1 high, 2 medium."; the age reads "just now", "12 min ago", "3 h ago" or "2 days ago", while the drawer keeps its short "12m"; the counts show only when every open alert is listed and has a severity, so no count is ever short), and a row of equal 50 px buttons: Show all N (filled), Security, Firewalla (the last two only with an address; with neither, Show all stands alone).
 - **The title** is one line at 27 px; when it does not fit its column ("Firewall box offline", "Firewall status unknown", "Home app not reachable") it takes two lines at 22 px, the card's box unchanged, and the full title is on hover. The ring's arcs take the alert's severity colour (amber high, violet medium, grey low); an alert whose severity the wall was never told, and every alert past the three the read lists, is a neutral grey, never amber.

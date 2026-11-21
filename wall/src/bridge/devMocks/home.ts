@@ -46,7 +46,7 @@ export function registerHomeMocks(): void {
   mocks.set('wall2_open_camera', () => (knob('camcheck') === 'missing' ? Promise.reject(new Error('failed')) : undefined));
   // Still Working comes first, as the home app sends it. `?moods=five` gives five, `?moods=many`
   // nine (More card), `?moods=none` an empty list, `?moods=off` not set up, `?moods=down` not
-  // reachable, `?moods=unsaved` the four with Still Working not saved yet; with a review time,
+  // reachable, `?moods=unsaved` the four with Still Working not saved yet, `?moods=scenes` the four and three scene cards; with a review time,
   // Evening is "In 4 min" in five.
   mocks.set('wall2_moods', () => {
     const k = knob('moods');
@@ -69,12 +69,20 @@ export function registerHomeMocks(): void {
       if (k === 'five') return five;
       return [...five, { id: 'goodnight', label: 'Goodnight' }, { id: 'reading', label: 'Reading' }, { id: 'dinner', label: 'Dinner' }, { id: 'focusTime', label: 'Focus Time' }, { id: 'partyNight', label: 'Party Night' }];
     }
+    // `?moods=scenes`: the four and the three scene cards the wall adds from the home app's routines.
+    if (k === 'scenes') return [...four, ...SCENE_CARDS];
     return four;
   });
   mocks.set('wall2_apply_mood', async () => {
     await new Promise((resolve) => setTimeout(resolve, 400));
   });
 }
+
+const SCENE_CARDS = [
+  { id: 'romantic_mode', label: 'Romantic Mode', kind: 'scene', line: 'Rose light and candles' },
+  { id: 'movie_mode', label: 'Movie Mode', kind: 'scene', line: 'Lights low, TV on' },
+  { id: 'fireplace_cozy', label: 'Fireplace Cozy', kind: 'scene', line: 'Warm amber and jazz' },
+];
 
 /** Invented alerts, newest first, for the desk security mock. */
 const ALERTS = [

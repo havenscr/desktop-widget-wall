@@ -9,7 +9,6 @@ import {
   IconLamp,
   IconMoonStars,
   IconSofa,
-  IconSparkles,
   IconPlayerPauseFilled,
   IconPlayerPlayFilled,
   IconVolume,
@@ -540,11 +539,7 @@ function Live({
             const r = t.routine;
             const isStarted = mark?.key === r.key && mark.seen;
             const isSug = !isStarted && r.key === suggestion;
-            const tag = isStarted ? <u className="sound-tag on">{startedText(mark.at, now)}</u> : isSug ? (
-              <u className="sound-tag sug" role="img" aria-label="Suggested" title="Suggested">
-                <IconSparkles size={18} stroke={2} aria-hidden="true" />
-              </u>
-            ) : null;
+            const tag = isStarted ? <u className="sound-tag on">{startedText(mark.at, now)}</u> : null;
             const cls = ['sound-chip', isStarted ? 'on' : '', isSug ? 'sug' : '', tag ? 'has-tag' : '', busy === `play:${r.key}` ? 'working' : ''].filter(Boolean).join(' ');
             const tip = [`Play ${r.name}`, r.favorite ? `(${r.favorite})` : '', typeof r.volume === 'number' ? `at Vol. ${r.volume}` : 'at a volume the service sets', isSug ? '. Suggested for this hour' : '']
               .filter(Boolean)

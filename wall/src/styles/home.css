@@ -761,12 +761,6 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.sound-tag.sug {
-  display: flex;
-  padding: 4px;
-  color: var(--cyan);
-  box-shadow: inset 0 0 0 1px rgba(53, 230, 234, 0.5);
-}
 .sound-tag.on {
   background: var(--cyan);
   color: #06041a;

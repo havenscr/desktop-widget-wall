@@ -170,6 +170,8 @@ state('home', 'desk stale', 'desk=stale&alerts=1');
 state('home', 'house line', 'desk=typical&rooms=8');
 state('home', 'seven moods', 'moods=7');
 add('home', 'moods slid', url('home', TYPICAL_AT, 'moods=7'), true, '.mood-more');
+state('home', 'moods with scenes', 'moods=scenes');
+add('home', 'moods with scenes slid', url('home', TYPICAL_AT, 'moods=scenes'), true, '.mood-more');
 state('home', 'chores five', 'desk=typical&alerts=0&chores=many');
 state('home', 'chores with alerts', 'desk=typical&alerts=6&chores=many');
 state('home', 'sound playing on a speaker', 'spotifyplay=speaker');
@@ -646,7 +648,7 @@ const EXPECT = [
   ['home', 'morning camera, sparse', ['No moods set up', 'No meetings today']],
   ['home', 'typical', ['Evening', 'Show all 4']],
   // home round two
-  ['home', 'quiet', ['All quiet', 'Home security', 'Firewalla', '8 more can wait', '68° inside. Lights on in two rooms.']],
+  ['home', 'quiet', ['All quiet', 'Home Security', 'Firewalla', '8 more can wait', '68° inside. Lights on in two rooms.']],
   ['home', 'six alerts', ['6 alerts open, 31 devices at home', 'Show all 6', '!Clear all']],
   ['home', 'shield drawer', ['6 open alerts', 'Clear all', 'Printer asked for an update']],
   ['home', 'twenty alerts', ['12+', '20 alerts open']],
@@ -655,6 +657,8 @@ const EXPECT = [
   ['home', 'house line', ['Lights on in three rooms', 'Hall']],
   ['home', 'seven moods', ['7 moods', '4 more']],
   ['home', 'moods slid', ['Movie', '1 more']],
+  ['home', 'moods with scenes', ['7 moods', '3 more']],
+  ['home', 'moods with scenes slid', ['Romantic Mode', 'Fireplace Cozy']],
   ['home', 'chores five', ['Sort the recycling', '8 more can wait']],
   ['home', 'chores with alerts', ['10 more can wait', 'Show all 6']],
   ['home', 'sound playing on a speaker', ['Now playing', 'Lantern Song 1', 'Living room, 4 speakers', 'All Speakers', 'Common Areas']],
