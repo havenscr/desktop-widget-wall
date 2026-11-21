@@ -504,7 +504,8 @@ fn list_now() -> Result<Vec<CaptureEntry>, String> {
         out.push(entry_for(id.clone(), p, kind, stat.map(|s| s.0)));
         held.push((id, Held { path: p.path.clone(), kind }));
     }
-    remember(&mut HELD.lock().map_err(|_| FAILED.to_string())?, held, MAX_HELD);
+    let mut list = HELD.lock().map_err(|_| FAILED.to_string())?;
+    remember(&mut list, held, MAX_HELD);
     Ok(out)
 }
 
