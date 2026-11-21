@@ -79,3 +79,31 @@ it('waits while the page is hidden and reads again when it shows', async () => {
   expect(calls).toBe(2);
   vis.mockRestore();
 });
+
+it('never starts a second read while one is in flight, so a late failure cannot follow a success', async () => {
+  let calls = 0;
+  let release: ((v: string[]) => void) | undefined;
+  mocks.set('wall2_tasks_lists', () => {
+    calls += 1;
+    if (calls === 1) throw new Error('down');
+    return new Promise<string[]>((res) => {
+      release = res;
+    });
+  });
+  const { result } = renderHook(() => useTaskLists());
+  await flush();
+  expect(result.current.status).toBe('error');
+  await flush(15_000);
+  expect(calls).toBe(2);
+  const vis = vi.spyOn(document, 'visibilityState', 'get');
+  vis.mockReturnValue('hidden');
+  document.dispatchEvent(new Event('visibilitychange'));
+  vis.mockReturnValue('visible');
+  document.dispatchEvent(new Event('visibilitychange'));
+  await flush();
+  expect(calls).toBe(2);
+  release?.(['Work']);
+  await flush();
+  expect(result.current).toEqual({ status: 'ready', names: ['Work'] });
+  vis.mockRestore();
+});

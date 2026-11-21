@@ -17,6 +17,7 @@ export function useTaskLists(enabled = true): TaskListsState {
     let live = true;
     let timer: ReturnType<typeof setTimeout> | undefined;
     let failures = 0;
+    let inflight = false;
     const clear = () => {
       if (timer !== undefined) clearTimeout(timer);
       timer = undefined;
@@ -31,14 +32,18 @@ export function useTaskLists(enabled = true): TaskListsState {
       }, wait);
     };
     const load = () => {
+      if (inflight) return; // one read at a time, so a late failure never follows a success
+      inflight = true;
       invoke<unknown>('wall2_tasks_lists')
         .then((r) => {
+          inflight = false;
           if (!live) return;
           if (!Array.isArray(r)) throw new Error('bad answer');
           document.removeEventListener('visibilitychange', onVisible);
           setState({ status: 'ready', names: r.filter((n): n is string => typeof n === 'string' && n.trim() !== '') });
         })
         .catch(() => {
+          inflight = false;
           if (!live) return;
           failures += 1;
           setState({ status: 'error' });
