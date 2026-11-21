@@ -81,6 +81,7 @@ mod wall2_sonos_log;
 mod wall2_sonos_read;
 mod wall2_watch;
 mod wall2_tools;
+mod wall2_captures;
 mod wall2_onair;
 mod wall2_stagepop;
 mod wall2_stagepop_cmd;
@@ -1790,74 +1791,83 @@ async fn open_file(window: tauri::WebviewWindow, path: String) -> Result<(), Str
 #[tauri::command]
 async fn copy_file_to_clipboard(window: tauri::WebviewWindow, path: String) -> Result<(), String> {
     old_window_only(window.label())?;
+    tauri::async_runtime::spawn_blocking(move || copy_path_hdrop(&path))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+/// Put one file on the clipboard as a file (CF_HDROP). Shared by the old app's command above
+/// and the Wall 2 captures copy, which passes only a path it took from ShareX's history.
+pub(crate) fn copy_path_hdrop(path: &str) -> Result<(), String> {
     use std::ptr;
     use windows::Win32::System::DataExchange::{
         CloseClipboard, EmptyClipboard, OpenClipboard, SetClipboardData,
     };
+    use windows::Win32::Foundation::GlobalFree;
     use windows::Win32::System::Memory::{GlobalAlloc, GlobalLock, GlobalUnlock, GMEM_MOVEABLE};
     use windows::Win32::System::Ole::CF_HDROP;
 
-    tauri::async_runtime::spawn_blocking(move || {
-        unsafe {
-            // DROPFILES structure header (20 bytes) + file path (wide) + double null terminator
-            let wide_path: Vec<u16> = path.encode_utf16().chain(std::iter::once(0)).collect();
-            let path_bytes = wide_path.len() * 2;
+    unsafe {
+        // DROPFILES structure header (20 bytes) + file path (wide) + double null terminator
+        let wide_path: Vec<u16> = path.encode_utf16().chain(std::iter::once(0)).collect();
+        let path_bytes = wide_path.len() * 2;
 
-            // DROPFILES structure: 20 bytes header + path + null terminator
-            let total_size = 20 + path_bytes + 2; // +2 for final null terminator
+        // DROPFILES structure: 20 bytes header + path + null terminator
+        let total_size = 20 + path_bytes + 2; // +2 for final null terminator
 
-            // Allocate global memory
-            let hglobal = GlobalAlloc(GMEM_MOVEABLE, total_size)
-                .map_err(|e| format!("GlobalAlloc failed: {}", e))?;
+        // Allocate global memory
+        let hglobal = GlobalAlloc(GMEM_MOVEABLE, total_size)
+            .map_err(|e| format!("GlobalAlloc failed: {}", e))?;
 
-            let ptr = GlobalLock(hglobal) as *mut u8;
-            if ptr.is_null() {
-                return Err("GlobalLock failed".to_string());
-            }
-
-            // Fill DROPFILES structure
-            // pFiles offset (4 bytes) - offset to file list
-            *(ptr as *mut u32) = 20;
-            // pt.x (4 bytes)
-            *(ptr.add(4) as *mut i32) = 0;
-            // pt.y (4 bytes)
-            *(ptr.add(8) as *mut i32) = 0;
-            // fNC (4 bytes)
-            *(ptr.add(12) as *mut u32) = 0;
-            // fWide (4 bytes) - TRUE for Unicode
-            *(ptr.add(16) as *mut u32) = 1;
-
-            // Copy wide string path after header
-            ptr::copy_nonoverlapping(wide_path.as_ptr() as *const u8, ptr.add(20), path_bytes);
-
-            // Double null terminator at end
-            *(ptr.add(20 + path_bytes) as *mut u16) = 0;
-
-            GlobalUnlock(hglobal).ok();
-
-            // Open clipboard and set data
-            if OpenClipboard(None).is_err() {
-                return Err("Failed to open clipboard".to_string());
-            }
-
-            let _ = EmptyClipboard();
-
-            let result = SetClipboardData(
-                CF_HDROP.0 as u32,
-                windows::Win32::Foundation::HANDLE(hglobal.0),
-            );
-
-            let _ = CloseClipboard();
-
-            if result.is_err() {
-                return Err("Failed to set clipboard data".to_string());
-            }
-
-            Ok(())
+        let ptr = GlobalLock(hglobal) as *mut u8;
+        if ptr.is_null() {
+            let _ = GlobalFree(hglobal);
+            return Err("GlobalLock failed".to_string());
         }
-    })
-    .await
-    .map_err(|e| e.to_string())?
+
+        // Fill DROPFILES structure
+        // pFiles offset (4 bytes) - offset to file list
+        *(ptr as *mut u32) = 20;
+        // pt.x (4 bytes)
+        *(ptr.add(4) as *mut i32) = 0;
+        // pt.y (4 bytes)
+        *(ptr.add(8) as *mut i32) = 0;
+        // fNC (4 bytes)
+        *(ptr.add(12) as *mut u32) = 0;
+        // fWide (4 bytes) - TRUE for Unicode
+        *(ptr.add(16) as *mut u32) = 1;
+
+        // Copy wide string path after header
+        ptr::copy_nonoverlapping(wide_path.as_ptr() as *const u8, ptr.add(20), path_bytes);
+
+        // Double null terminator at end
+        *(ptr.add(20 + path_bytes) as *mut u16) = 0;
+
+        GlobalUnlock(hglobal).ok();
+
+        // Open clipboard and set data
+        if OpenClipboard(None).is_err() {
+            let _ = GlobalFree(hglobal);
+            return Err("Failed to open clipboard".to_string());
+        }
+
+        let _ = EmptyClipboard();
+
+        let result = SetClipboardData(
+            CF_HDROP.0 as u32,
+            windows::Win32::Foundation::HANDLE(hglobal.0),
+        );
+
+        let _ = CloseClipboard();
+
+        if result.is_err() {
+            // The system took no ownership, so the block is still ours to free.
+            let _ = GlobalFree(hglobal);
+            return Err("Failed to set clipboard data".to_string());
+        }
+
+        Ok(())
+    }
 }
 
 /// Open File Explorer showing the folder containing a file, centered on main monitor
@@ -4105,6 +4115,9 @@ pub fn run() {
             wall2_studio_keys::wall2_studio_pick_status,
             wall2_studio_keys::wall2_studio_key,
             wall2_tools::wall2_open_keys_file,
+            wall2_captures::wall2_captures_list,
+            wall2_captures::wall2_captures_thumb,
+            wall2_captures::wall2_captures_act,
             list_audio_devices,
             start_audio_capture,
             stop_audio_capture,

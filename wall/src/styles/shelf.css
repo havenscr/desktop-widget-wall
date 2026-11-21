@@ -92,3 +92,190 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
+
+/* Captures card (shelf/CapturesCard.tsx), look B: the picked capture large on the left, the others as rows. */
+.cap-hero {
+  display: grid;
+  grid-template-columns: 392px minmax(0, 1fr);
+  gap: 20px;
+  min-width: 0;
+  min-height: 0;
+}
+.cap-big {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.cap-pic-wrap {
+  position: relative;
+  width: 392px;
+  height: 220px;
+}
+.cap-pic {
+  display: block;
+  width: 392px;
+  height: 220px;
+  padding: 0;
+  border: 0;
+  border-radius: 12px;
+  overflow: hidden;
+  background: none;
+  color: inherit;
+}
+button.cap-pic:hover {
+  outline: 3px solid var(--cyan);
+}
+button.cap-pic:focus-visible {
+  outline: 3px solid var(--cyan);
+  outline-offset: 2px;
+}
+.cap-pic.gone {
+  opacity: 0.55;
+}
+.cap-img {
+  display: block;
+  object-fit: cover;
+}
+.cap-tile {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  box-sizing: border-box;
+  border-radius: inherit;
+  background: linear-gradient(135deg, rgba(154, 123, 255, 0.28), rgba(7, 5, 26, 0.9));
+  color: var(--dim);
+}
+.cap-tile.video {
+  background: linear-gradient(135deg, rgba(255, 74, 106, 0.26), rgba(7, 5, 26, 0.9));
+}
+.cap-tile-note {
+  font: 400 18px/1.2 var(--body);
+  color: var(--dim);
+}
+.cap-badge {
+  position: absolute;
+  left: 8px;
+  top: 8px;
+  padding: 3px 8px;
+  border-radius: 6px;
+  font: 600 16px/1.2 var(--body);
+  pointer-events: none;
+}
+.cap-badge.gif {
+  background: var(--cyan);
+  color: var(--page);
+}
+.cap-badge.video {
+  background: #ff4a6a;
+  color: #fff;
+}
+.cap-bt {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  margin-top: 10px;
+}
+.cap-bt b {
+  font: 600 19px/1.25 var(--body);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.cap-bt span {
+  font: 400 16px/1.3 var(--body);
+  color: var(--faint);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.cap-acts {
+  display: flex;
+  gap: 10px;
+  margin-top: 12px;
+}
+.cap-act {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  height: 44px;
+  padding: 0 16px;
+  border-radius: 12px;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.06);
+  color: inherit;
+  font: 600 18px/1 var(--body);
+}
+.cap-act:hover {
+  background: rgba(53, 230, 234, 0.12);
+}
+.cap-act:active {
+  transform: scale(0.96);
+}
+.cap-act:focus-visible {
+  outline: 3px solid var(--cyan);
+  outline-offset: 2px;
+}
+.cap-brief {
+  margin: 8px 0 0;
+  min-height: 22px;
+  font: 400 18px/1.2 var(--body);
+  color: var(--dim);
+}
+.cap-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+  min-height: 0;
+}
+.cap-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  box-sizing: border-box;
+  height: 64px;
+  padding: 5px 6px;
+  border: 0;
+  border-radius: 12px;
+  background: none;
+  color: inherit;
+  text-align: left;
+}
+.cap-row:hover {
+  background: rgba(53, 230, 234, 0.08);
+}
+.cap-row:focus-visible {
+  outline: 3px solid var(--cyan);
+  outline-offset: 2px;
+}
+.cap-row.gone {
+  opacity: 0.55;
+}
+.cap-row > .cap-img,
+.cap-row > .cap-tile {
+  flex: none;
+  border-radius: 8px;
+}
+.cap-rt {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.cap-rt b {
+  font: 600 17px/1.2 var(--body);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.cap-rt span {
+  font: 400 16px/1.2 var(--body);
+  color: var(--faint);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}

@@ -1,8 +1,9 @@
-import { IconCamera, IconHistory, IconDeviceDesktop, IconGif, IconScan, IconTextRecognition, IconVideo, type Icon } from '@tabler/icons-react';
+import { IconHistory, IconDeviceDesktop, IconGif, IconScan, IconTextRecognition, IconVideo, type Icon } from '@tabler/icons-react';
 import { useEffect, useState } from 'react';
 import { TaskCard } from '../tasks/TaskCard';
 import type { TasksQuery } from '../tasks/useTasks';
 import { loadSettings } from '../settings/settings';
+import { CapturesCard } from '../shelf/CapturesCard';
 import { tip } from '../ui/HoverTip';
 import { useBrief } from '../work/useBrief';
 import { useKeyPress } from '../work/keyPress';
@@ -35,8 +36,7 @@ function readPicked(names: readonly string[]): string | null {
 const NO_TIDY = (): void => undefined;
 
 /**
- * The Shelf place (concept 3A): captures on the left (their history arrives with the ShareX
- * history read; until then the panel says so), the ShareX keys and the task app's lists in
+ * The Shelf place (concept 3A): captures on the left (the ShareX history, `shelf/CapturesCard.tsx`), the ShareX keys and the task app's lists in
  * the middle, and the picked list in the task column with the Always here deck under it.
  * List names come from the `shelfLists` setting: the wall has no route that lists them.
  */
@@ -58,12 +58,7 @@ export function ShelfPlace() {
     <section className="work shelf-place zones" data-place="shelf" aria-label="Shelf">
       <div className="wing" />
       <div className="shelf-centre">
-        <section className="shelf-card shelf-captures" aria-label="Captures">
-          <div className="k">
-            <IconCamera size={22} stroke={1.8} aria-hidden="true" /> Captures <span className="shelf-sub">ShareX, newest first</span>
-          </div>
-          <p className="shelf-note">Your ShareX history shows here soon. The keys beside it work now.</p>
-        </section>
+        <CapturesCard />
         <section className="shelf-card shelf-side" aria-label="Capture keys and lists">
           <div className="k">
             Capture <span className="shelf-sub">ShareX keys</span>

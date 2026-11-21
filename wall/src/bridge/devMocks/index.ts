@@ -1,5 +1,6 @@
 import { isTauri, mocks } from '../tauri';
 import { registerAudioMocks } from './audio';
+import { registerCapturesMocks } from './captures';
 import { registerDaysMocks } from './days';
 import { registerDeckMocks } from './deck';
 import { registerGalleryMocks } from './gallery';
@@ -59,4 +60,5 @@ export function registerDevMocks(): void {
   mocks.set('wall2_build_info', () => ({ commit: 'dev', builtAt: '2026-11-13T09:05Z' }));
   registerLightSyncMocks();
   registerToolsMocks();
+  registerCapturesMocks();
 }
