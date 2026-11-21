@@ -1,7 +1,7 @@
 import { IconCheck, IconClockExclamation } from '@tabler/icons-react';
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 import { useFocusStore } from '../focus/store';
-import { dueLine, estText, estTipText, HOLD_SLOP_PX, LONG_PRESS_MS, openTask, overdueText, updatedText, visibleRows, type TaskItem } from './model';
+import { dueLaterToday, dueLine, estText, estTipText, HOLD_SLOP_PX, LONG_PRESS_MS, openTask, overdueText, updatedText, visibleRows, type TaskItem } from './model';
 import { tip } from '../ui/HoverTip';
 import { usePendingTicks } from './pendingTick';
 import { TaskTags, tagsFocus } from './TaskTags';
@@ -10,17 +10,17 @@ import { useTasks, type TasksQuery } from './useTasks';
 /** Work's list: the tasks without the home tag that are due today or overdue (the next three when none is). */
 const WORK_QUERY: TasksQuery = { notTag: 'home', due: 'today' };
 
-const OVERDUE_KEY = 'wall.tasks.showOverdue';
-const readShowOverdue = (): boolean => {
+const LATER_KEY = 'wall.tasks.showLater';
+const readShowLater = (): boolean => {
   try {
-    return localStorage.getItem(OVERDUE_KEY) !== '0';
+    return localStorage.getItem(LATER_KEY) === '1';
   } catch {
-    return true;
+    return false;
   }
 };
-const writeShowOverdue = (on: boolean) => {
+const writeShowLater = (on: boolean) => {
   try {
-    localStorage.setItem(OVERDUE_KEY, on ? '1' : '0');
+    localStorage.setItem(LATER_KEY, on ? '1' : '0');
   } catch {
     /* storage unavailable: the choice lasts until the page closes */
   }
@@ -276,7 +276,8 @@ function TaskList({ children, rows }: { children: ReactNode; rows: number }) {
 
 /**
  * "Due today": every open task due today or overdue (without the home tag), overdue first, as
- * a small scrolling list with each task's tags. When nothing is due the block reads "Next up"
+ * a small scrolling list with each task's tags. Timed tasks due later today are hidden until
+ * the "Later today" switch is on (or their time arrives). When nothing is due the block reads "Next up"
  * and shows the next three tasks. Click the circle to finish one, the title to open it, hold
  * a row to focus on it.
  */
@@ -285,16 +286,18 @@ export function TaskCard({ query = WORK_QUERY, title }: { query?: TasksQuery; ti
   const ticks = usePendingTicks(t.complete);
   const focusStatus = useFocusStore((s) => s.state.status);
   const canFocus = focusStatus === 'idle' || focusStatus === 'finished';
-  const [showOverdue, setShowOverdue] = useState(readShowOverdue);
+  const [showLater, setShowLater] = useState(readShowLater);
   const allRows = visibleRows(t.tasks, t.hidden);
   const hasSwitch = !title && query.due === 'today' && !t.nextUp && t.lastOk !== null;
-  const hideOverdue = hasSwitch && !showOverdue;
-  const rows = hideOverdue ? allRows.filter((r) => dueLine(r, new Date(t.now)) !== 'overdue') : allRows;
+  const hideLater = hasSwitch && !showLater;
+  const rows = hideLater ? allRows.filter((r) => !dueLaterToday(r, new Date(t.now))) : allRows;
   const stale = t.status === 'error' && t.lastOk !== null ? updatedText(t.lastOk, t.now) : null;
   const nextUp = t.nextUp && rows.length > 0;
   const overdue = nextUp ? 0 : rows.filter((r) => dueLine(r, new Date(t.now)) === 'overdue').length;
   const count = rows.length + (t.remaining ?? 0);
-  const side = stale ?? (nextUp ? 'Nothing due today' : hideOverdue ? (rows.length > 0 ? `${count} today` : null) : rows.length > 0 ? (overdue > 0 ? `${count}, ${overdue} overdue` : `${count}`) : null);
+  const later = allRows.length - rows.length;
+  const baseSide = stale ?? (nextUp ? 'Nothing due today' : rows.length > 0 ? (overdue > 0 ? `${count}, ${overdue} overdue` : `${count}`) : null);
+  const side = later > 0 ? (baseSide ? `${baseSide} \u00b7 ${later} later` : `${later} later`) : baseSide;
 
   let body;
   if (t.status === 'unconfigured') {
@@ -305,7 +308,7 @@ export function TaskCard({ query = WORK_QUERY, title }: { query?: TasksQuery; ti
     body = <div className="s">Tasks unavailable</div>;
   } else if (rows.length === 0) {
     // No open task at all: the heading stays "Due today" (Next up is only ever the next tasks).
-    body = <div className="s">{title ? 'Nothing open' : 'Nothing due today'}</div>;
+    body = <div className="s">{title ? 'Nothing open' : later > 0 ? `Nothing due yet. ${later} later today` : 'Nothing due today'}</div>;
   } else {
     body = (
       <TaskList rows={rows.length}>
@@ -336,16 +339,16 @@ export function TaskCard({ query = WORK_QUERY, title }: { query?: TasksQuery; ti
               <button
                 type="button"
                 role="switch"
-                aria-checked={showOverdue}
-                className={`od-sw${showOverdue ? ' on' : ''}`}
+                aria-checked={showLater}
+                className={`od-sw${showLater ? ' on' : ''}`}
                 onClick={() => {
-                  const next = !showOverdue;
-                  setShowOverdue(next);
-                  writeShowOverdue(next);
+                  const next = !showLater;
+                  setShowLater(next);
+                  writeShowLater(next);
                 }}
-                {...tip(showOverdue ? 'Showing overdue tasks. Click to hide them.' : 'Hiding overdue tasks. Click to show them.')}
+                {...tip(showLater ? 'Showing tasks due later today. Click to hide them.' : 'Hiding tasks due later today. Click to show them.')}
               >
-                Overdue
+                Later today
                 <span className="od-sw-t" aria-hidden="true">
                   <i />
                 </span>

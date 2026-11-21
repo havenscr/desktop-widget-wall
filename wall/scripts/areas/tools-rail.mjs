@@ -92,7 +92,7 @@ export default {
   gallery: {
     states: [
       G('Accounts', 'tools=1&meet=signedout', ['Accounts', 'need sign-in', 'Weather on', 'Meeting brief', 'Brief key']),
-      G('Health, two failing', 'weather=stale&tasks=down&tools=health', ['Health', 'Sources', 'Keys file']),
+      G('Health, two failing', 'weather=stale&tasks=down&tools=health', ['Health', 'Sources', 'Reload']),
       G('Lights and home', 'tools=lights&keys2=none&lightsync=paired&desktoken=set', ['Key lights', 'Light sync', 'Home app']),
       G('Light sync pairing', 'tools=lights&keys2=none&lightsync=unpaired&desktoken=set', ['Press the link button on the Hue bridge'], LS_ROW + ' .tools-btn.cy'),
       G('Display', 'tools=display', ['Weather in the scene', 'Video look']),

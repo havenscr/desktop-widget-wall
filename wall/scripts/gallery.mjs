@@ -400,11 +400,11 @@ state('work', 'tools: open', 'tools=1');
 state('work', 'tools: ringed accounts', 'tools=accounts');
 state('work', 'tools: account signed out', 'meet=signedout&tools=1');
 state('work', 'tools: sources failing', 'agents=down&weather=stale&tools=1');
-state('work', 'tools: keys refused', 'keys=refused&tools=1');
-state('work', 'tools: no keys file', 'source=default&tools=1');
+state('work', 'tools: keys refused', 'keys=refused&tools=health');
+state('work', 'tools: no keys file', 'source=default&tools=health');
 state('work', 'tools: Spotify not set up', 'spotify=off&tools=1');
 add('work', 'tools: calendar sign-in fault', url('work', TYPICAL_AT, 'meet=signin-fault&tools=1'), true, '.tools-list[aria-label="Accounts"] .tools-row:nth-child(2) button');
-add('work', 'tools: Sources weather failure hover', url('work', TYPICAL_AT, 'weather=stale&tools=1'), true, 'hover:.tools-src[data-source="weather"]');
+add('work', 'tools: Sources weather failure hover', url('work', TYPICAL_AT, 'weather=stale&tools=health'), true, 'hover:.tools-src[data-source="weather"]');
 state('work', 'tools: Spotify saved sign-in unreadable', 'spotify=statusfail&tools=1');
 // The YouTube row in Accounts: each state it can show, and the Set up form open from Set up and from Change setup.
 const YT_ROW = '.tools-list[aria-label="Accounts"] [data-account="youtube"]';
@@ -623,8 +623,8 @@ const EXPECT = [
   ['work', 'deck pins: Add hovered', 'Add a key'],
   ['work', 'deck pins: picker opened by Add', ['Add a key to Always here', 'Reset to defaults']],
   ['work', 'deck pins: pinned key hovered, nothing on it', 'Add a key'],
-  ['work', 'deck pins: pinned key menu', ['Replace with another key', 'Add a key', 'Remove from Always here']],
-  ['work', 'deck pins: Now key menu', ['Run it now', 'Pin to Always here']],
+  ['work', 'deck pins: pinned key menu', ['Run it now', 'Remove from Always here']],
+  ['work', 'deck pins: Now key menu', ['Run it now', 'Put in Always here']],
   ['work', 'agents header: twelve sessions', 'One thing for you'],
   // Home
   ['home', 'sparse', ['No moods set up', 'No meetings today']],
@@ -766,14 +766,14 @@ const EXPECT = [
   ['meet', 'broken: calendar not set up', 'Calendar is not connected yet'],
   ['meet', 'broken: calendar read fails', 'Calendar unavailable'],
   ['meet', 'typical', ['Design review with the platform team', 'Second calendar signed out.', 'Open Tools', 'Weekly planning']],
-  ['meet', 'tools: open', ['Open Tools', 'Keys file', 'Second calendar']],
+  ['meet', 'tools: open', ['Open Tools', 'Health', 'Second calendar']],
   // The Tools drawer, over each place and in each hard state
-  ['work', 'tools: open', ['Accounts', 'Sources', 'Video look', 'Keys file', 'Build 7c9f442']],
-  ['work', 'tools: ringed accounts', ['Accounts', 'Sources', 'Video look', 'Keys file']],
+  ['work', 'tools: open', ['Accounts', 'Health', 'Display', 'Build 7c9f442']],
+  ['work', 'tools: ringed accounts', ['Accounts', 'Health', 'Display']],
   ['work', 'tools: account signed out', ['Work calendar', 'Second calendar', 'Signed out', 'Sign in']],
   ['work', 'tools: sources failing', ['Sources', 'never']],
-  ['work', 'tools: keys refused', 'keys.json refused: app 3, key 7'],
-  ['work', 'tools: no keys file', 'No keys.json. Defaults in use'],
+  ['work', 'tools: keys refused', 'Your keys were refused: app 3, key 7'],
+  ['work', 'tools: no keys file', 'Using the default keys'],
   ['work', 'tools: Spotify not set up', ['Spotify', 'Not set up']],
   ['work', 'tools: calendar sign-in fault', ['The browser part worked.', 'wall2-meet.log']],
   ['work', 'tools: Sources weather failure hover', ['Last try failed', 'Showing the reading from']],
@@ -792,8 +792,8 @@ const EXPECT = [
   ['work', 'tools: YouTube waiting after a reload', ['YouTube', 'Waiting for the browser', 'Cancel']],
   ['work', 'tools: YouTube refused setup, form open', ['Client ID', 'Client secret', 'Save', '!Google refused this setup']],
   ['work', 'tools: YouTube sign-in refused note', ['YouTube sign-in was refused']],
-  ['home', 'tools: open', ['Accounts', 'Keys file']],
-  ['unwind', 'tools: open', ['Accounts', 'Keys file']],
+  ['home', 'tools: open', ['Accounts', 'Health']],
+  ['unwind', 'tools: open', ['Accounts', 'Health']],
   // Zen and Dream
   ['zen', 'sparse', ['Breathe in', '!things are waiting']],
   ['zen', 'heavy', 'After this: 3 or more things are waiting'],

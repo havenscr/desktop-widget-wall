@@ -668,53 +668,121 @@ it('the tags card opens when the row\'s main button takes keyboard focus, with n
 });
 
 const lateRow = (id: string, title: string): TaskItem => ({ ...task(id, title), due_at: '2026-11-09', due_is_all_day: true });
+const timedRow = (id: string, title: string, hour: number): TaskItem => ({ ...task(id, title), due_at: new Date(2026, 10, 11, hour, 0).toISOString() });
+const MIX = () => [lateRow('o', 'Late one'), task('b', 'Bare one'), timedRow('l', 'Later one', 15)];
 
-it('the Overdue switch is on by default and shows every row', async () => {
-  setList(() => [lateRow('o', 'Late one'), task('b', 'Today one')]);
+it('the Later today switch is off by default: later timed rows hide, every other row shows', async () => {
+  setList(MIX);
   render(<TaskCard />);
   await flush();
-  const sw = screen.getByRole('switch', { name: /overdue/i });
-  expect(sw.getAttribute('aria-checked')).toBe('true');
-  expect(screen.getByText('2, 1 overdue')).toBeTruthy();
+  const sw = screen.getByRole('switch', { name: /later today/i });
+  expect(sw.getAttribute('aria-checked')).toBe('false');
   expect(screen.getByText('Late one')).toBeTruthy();
+  expect(screen.getByText('Bare one')).toBeTruthy();
+  expect(screen.queryByText('Later one')).toBeNull();
+  expect(screen.getByText('2, 1 overdue \u00b7 1 later')).toBeTruthy();
 });
 
-it('turning Overdue off hides the overdue rows and reads "N today"', async () => {
-  setList(() => [lateRow('o', 'Late one'), task('b', 'Today one')]);
+it('a timed row earlier today always shows', async () => {
+  setList(() => [timedRow('e', 'Earlier one', 9), timedRow('l', 'Later one', 15)]);
+  render(<TaskCard />);
+  await flush();
+  expect(screen.getByText('Earlier one')).toBeTruthy();
+  expect(screen.queryByText('Later one')).toBeNull();
+});
+
+it('turning Later today on shows the later timed rows', async () => {
+  setList(MIX);
   render(<TaskCard />);
   await flush();
   fireEvent.click(screen.getByRole('switch'));
-  expect(screen.getByRole('switch').getAttribute('aria-checked')).toBe('false');
-  expect(screen.queryByText('Late one')).toBeNull();
-  expect(screen.getByText('Today one')).toBeTruthy();
-  expect(screen.getByText('1 today')).toBeTruthy();
+  expect(screen.getByRole('switch').getAttribute('aria-checked')).toBe('true');
+  expect(screen.getByText('Later one')).toBeTruthy();
+  expect(screen.getByText('3, 1 overdue')).toBeTruthy();
   fireEvent.click(screen.getByRole('switch'));
-  expect(screen.getByText('Late one')).toBeTruthy();
+  expect(screen.queryByText('Later one')).toBeNull();
 });
 
-it('when Overdue off hides every row the body reads Nothing due today and the switch stays', async () => {
-  setList(() => [lateRow('o', 'Late one')]);
-  render(<TaskCard />);
+it('the switch tip says what it does in each state', async () => {
+  resetTip();
+  setList(MIX);
+  render(
+    <>
+      <TaskCard />
+      <HoverTipLayer />
+    </>,
+  );
   await flush();
-  fireEvent.click(screen.getByRole('switch'));
-  expect(screen.getByText('Nothing due today')).toBeTruthy();
-  expect(screen.getByRole('switch')).toBeTruthy();
+  const sw = screen.getByRole('switch');
+  fireEvent.mouseEnter(sw);
+  await flush(1500);
+  expect(document.querySelector('.hover-tip')?.textContent ?? '').toContain('Hiding tasks due later today. Click to show them.');
+  fireEvent.mouseLeave(sw);
+  fireEvent.click(sw);
+  fireEvent.mouseEnter(screen.getByRole('switch'));
+  await flush(1500);
+  expect(document.querySelector('.hover-tip')?.textContent ?? '').toContain('Showing tasks due later today. Click to hide them.');
 });
 
-it('the Overdue choice survives a remount', async () => {
-  setList(() => [lateRow('o', 'Late one'), task('b', 'Today one')]);
+it('the choice is stored under wall.tasks.showLater and survives a remount', async () => {
+  setList(MIX);
   const first = render(<TaskCard />);
   await flush();
   fireEvent.click(screen.getByRole('switch'));
+  expect(localStorage.getItem('wall.tasks.showLater')).toBe('1');
   first.unmount();
   render(<TaskCard />);
   await flush();
-  expect(screen.getByRole('switch').getAttribute('aria-checked')).toBe('false');
-  expect(screen.queryByText('Late one')).toBeNull();
+  expect(screen.getByRole('switch').getAttribute('aria-checked')).toBe('true');
+  expect(screen.getByText('Later one')).toBeTruthy();
 });
 
-it('the Overdue switch still works when storage throws', async () => {
-  setList(() => [lateRow('o', 'Late one'), task('b', 'Today one')]);
+it('the old overdue key is ignored', async () => {
+  localStorage.setItem('wall.tasks.showOverdue', '0');
+  setList(MIX);
+  render(<TaskCard />);
+  await flush();
+  expect(screen.getByText('Late one')).toBeTruthy();
+  expect(screen.getByRole('switch').getAttribute('aria-checked')).toBe('false');
+});
+
+it('a later row appears once the clock passes its time', async () => {
+  setList(() => [timedRow('l', 'Three o\'clock', 15)]);
+  render(<TaskCard />);
+  await flush();
+  expect(screen.queryByText('Three o\'clock')).toBeNull();
+  expect(screen.getByText('Nothing due yet. 1 later today')).toBeTruthy();
+  await flush(5 * 3_600_000 + 60_000);
+  expect(screen.getByText('Three o\'clock')).toBeTruthy();
+});
+
+it('only later-today tasks with the switch off: empty text and header hint count them', async () => {
+  setList(() => [timedRow('a', 'Three one', 15), timedRow('b', 'Four one', 16)]);
+  render(<TaskCard />);
+  await flush();
+  expect(screen.getByText('Nothing due yet. 2 later today')).toBeTruthy();
+  expect(screen.getByText('2 later')).toBeTruthy();
+});
+
+it('with the switch on there is no later hint', async () => {
+  setList(() => [timedRow('a', 'Three one', 15)]);
+  render(<TaskCard />);
+  await flush();
+  fireEvent.click(screen.getByRole('switch'));
+  expect(screen.getByText('Three one')).toBeTruthy();
+  expect(screen.queryByText(/later\b(?! today)/)).toBeNull();
+  expect(screen.queryByText(/Nothing due yet/)).toBeNull();
+});
+
+it('a mix shows the visible count plus how many are held back', async () => {
+  setList(() => [timedRow('e', 'Earlier one', 9), timedRow('l', 'Later one', 15), timedRow('m', 'Later two', 17)]);
+  render(<TaskCard />);
+  await flush();
+  expect(screen.getByText('1 \u00b7 2 later')).toBeTruthy();
+});
+
+it('the Later today switch still works when storage throws', async () => {
+  setList(MIX);
   const get = vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
     throw new Error('blocked');
   });
@@ -723,30 +791,21 @@ it('the Overdue switch still works when storage throws', async () => {
   });
   render(<TaskCard />);
   await flush();
-  expect(screen.getByRole('switch').getAttribute('aria-checked')).toBe('true');
+  expect(screen.getByRole('switch').getAttribute('aria-checked')).toBe('false');
   fireEvent.click(screen.getByRole('switch'));
-  expect(screen.queryByText('Late one')).toBeNull();
+  expect(screen.getByText('Later one')).toBeTruthy();
   get.mockRestore();
   set.mockRestore();
 });
 
-it('a titled card gets no Overdue switch', async () => {
+it('a titled card gets no Later today switch', async () => {
   setList(() => [task('b', 'Today one')]);
   render(<TaskCard title="Anything" />);
   await flush();
   expect(screen.queryByRole('switch')).toBeNull();
 });
 
-it('with Overdue off the count keeps the unloaded tail, which is today tasks', async () => {
-  setList(() => [lateRow('o', 'Late one'), task('b', 'Today one')], 5);
-  render(<TaskCard />);
-  await flush();
-  fireEvent.click(screen.getByRole('switch'));
-  expect(screen.queryByText('Late one')).toBeNull();
-  expect(screen.getByText('6 today')).toBeTruthy();
-});
-
-it('Next up mode shows no Overdue switch, even with no rows at all', async () => {
+it('Next up mode shows no Later today switch, even with no rows at all', async () => {
   mocks.set('wall2_tasks_summary', async (args) =>
     args?.due
       ? { next: [], remaining: 0, dueTomorrow: { count: 0, estMinutes: 0 }, dueToday: 0 }

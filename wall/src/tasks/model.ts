@@ -70,6 +70,12 @@ function dueWhen(task: Pick<TaskItem, 'due_at' | 'due_is_all_day'>, now: Date): 
   return { when, days: Math.round((startOfDay(when) - startOfDay(now)) / DAY_MS), dateOnly };
 }
 
+/** True for a task due today at a clock time that is still ahead of `now` (an all-day task never is). */
+export function dueLaterToday(task: Pick<TaskItem, 'due_at' | 'due_is_all_day'>, now: Date): boolean {
+  const due = dueWhen(task, now);
+  return !!due && !due.dateOnly && due.days === 0 && due.when.getTime() > now.getTime();
+}
+
 /**
  * The small due line under a task title: "today 3 PM", "today", "tomorrow",
  * "Fri" (within the next six days), "Nov 20" (later), "overdue", or null.
