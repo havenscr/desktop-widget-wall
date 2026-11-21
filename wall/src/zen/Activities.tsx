@@ -88,6 +88,7 @@ export function IntentionField({ value, onChange, onEnter }: { value: string; on
     e.stopPropagation();
     if (e.key === 'Enter') {
       e.preventDefault();
+      if (e.repeat || e.nativeEvent.isComposing) return;
       onEnter();
     }
   };

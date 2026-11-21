@@ -4,6 +4,7 @@ import { usePlaceStore } from '../state/places';
 import { SETTINGS_KEY } from '../settings/settings';
 import { FLAMES, Flames, flameLoop } from './Flames';
 import { Zen } from './Zen';
+import { HoverTipLayer, resetTip } from '../ui/HoverTip';
 import zenSource from './Zen.tsx?raw';
 import activitiesSource from './Activities.tsx?raw';
 // @ts-ignore node's own file call; this test reads the stylesheet as text.
@@ -848,6 +849,7 @@ it('the running label follows the activity', () => {
   for (const [chip, label] of cases) {
     const { unmount } = render(<Zen nowMs={clockAt(DAY)} />);
     pick(chip);
+    if (chip === 'Intention') fireEvent.change(screen.getByRole('textbox'), { target: { value: 'Focus' } });
     start();
     ticks(100);
     expect(screen.getByText(label)).toBeTruthy();
@@ -966,6 +968,7 @@ it('Intention: typing does not end the session, wake it or reach key handlers ou
   expect(screen.queryByRole('button', { name: 'End session early' })).toBeNull();
   expect(usePlaceStore.getState().active).toBe('zen');
   // A running session still ends on a click anywhere.
+  fireEvent.change(field, { target: { value: 'Write' } });
   start();
   ticks(100);
   fireEvent.click(screen.getByRole('button', { name: 'End session early' }));
@@ -984,6 +987,66 @@ it('Intention: the line is kept for the day and prefilled; another day starts em
   cleanup();
   render(<Zen nowMs={clockAt(DAY + 24 * 3_600_000)} />);
   expect((screen.getByRole('textbox') as HTMLInputElement).value).toBe('');
+});
+
+it('Intention: an empty or blank field cannot start; Start is disabled with a tip, Enter does nothing', () => {
+  resetTip();
+  render(
+    <>
+      <Zen nowMs={clockAt(DAY)} />
+      <HoverTipLayer />
+    </>,
+  );
+  pick('Intention');
+  const field = screen.getByRole('textbox') as HTMLInputElement;
+  const go = screen.getByRole('button', { name: /Start/ });
+  expect(go.getAttribute('aria-disabled')).toBe('true');
+  fireEvent.change(field, { target: { value: '   ' } });
+  expect(go.getAttribute('aria-disabled')).toBe('true');
+  fireEvent.click(go);
+  fireEvent.keyDown(field, { key: 'Enter' });
+  ticks(100);
+  expect(screen.queryByRole('button', { name: 'End session early' })).toBeNull();
+  expect(localStorage.getItem(INTENTION_KEY)).toBeNull();
+  fireEvent.mouseEnter(go);
+  ticks(1000);
+  expect(document.body.textContent).toContain('Type what matters first');
+  fireEvent.change(field, { target: { value: 'Focus' } });
+  expect(screen.getByRole('button', { name: /Start/ }).getAttribute('aria-disabled')).toBeNull();
+});
+
+it('Intention: a held Enter or an IME composition does not start; a held Enter does not end the session', () => {
+  render(<Zen nowMs={clockAt(DAY)} />);
+  pick('Intention');
+  const field = screen.getByRole('textbox') as HTMLInputElement;
+  fireEvent.change(field, { target: { value: 'Focus' } });
+  fireEvent.keyDown(field, { key: 'Enter', repeat: true });
+  fireEvent.keyDown(field, { key: 'Enter', isComposing: true });
+  ticks(100);
+  expect(screen.queryByRole('button', { name: 'End session early' })).toBeNull();
+  fireEvent.keyDown(field, { key: 'Enter' });
+  ticks(100);
+  const tap = screen.getByRole('button', { name: 'End session early' });
+  fireEvent.keyDown(tap, { key: 'Enter', repeat: true });
+  expect(screen.getByRole('button', { name: 'End session early' })).toBeTruthy();
+  fireEvent.keyDown(tap, { key: 'Enter' });
+  expect(screen.getByRole('button', { name: /Start/ })).toBeTruthy();
+});
+
+it('Intention: yesterday text is dropped when the day turns while the picker shows, and on return to the picker', () => {
+  localStorage.setItem(INTENTION_KEY, JSON.stringify({ day: dayKey(new Date(2026, 10, 11)), text: 'Old plan' }));
+  const base = new Date(2026, 10, 11, 23, 59, 0).getTime();
+  render(<Zen nowMs={clockAt(base)} />);
+  pick('Intention');
+  expect((screen.getByRole('textbox') as HTMLInputElement).value).toBe('Old plan');
+  ticks(120_000);
+  expect((screen.getByRole('textbox') as HTMLInputElement).value).toBe('');
+  // Start, stop: the picker reloads today's saved line.
+  fireEvent.change(screen.getByRole('textbox'), { target: { value: 'New day' } });
+  start();
+  ticks(100);
+  fireEvent.click(screen.getByRole('button', { name: 'End session early' }));
+  expect((screen.getByRole('textbox') as HTMLInputElement).value).toBe('New day');
 });
 
 it('every new control has a tooltip handler', () => {

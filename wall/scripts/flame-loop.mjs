@@ -4,11 +4,11 @@
 //
 // Reproduce the clip (1280 x 360, 3600 frames = 150 s at 24 fps, 6e6 points per frame, supersample 2):
 //   node wall/scripts/flame-loop.mjs 192 3600 1280 360 6e6 /tmp/flame-frames
-//   for f in /tmp/flame-frames/f*.ppm; do magick "$f" -blur 0x0.7 -quality 94 "${f%.ppm}.jpg"; done
-//   cat /tmp/flame-frames/f*.jpg | ffmpeg -f image2pipe -framerate 24 -c:v mjpeg -i - \
+//   for f in /tmp/flame-frames/f*.ppm; do python3 -c "import sys;from PIL import Image,ImageFilter as F;Image.open(sys.argv[1]).filter(F.GaussianBlur(0.7)).save(sys.stdout.buffer,'JPEG',quality=94)" "$f"; done | \
+//     ffmpeg -f image2pipe -c:v mjpeg -framerate 24 -i pipe:0 \
 //     -c:v libvpx-vp9 -b:v 550k -maxrate 900k -crf 45 -row-mt 1 -deadline good -cpu-used 2 -pix_fmt yuv420p -an \
 //     wall/src/assets/flames/flame-loop.webm
-// (each frame gets a Gaussian blur of radius 0.7 and is saved as JPEG quality 94 before the VP9 encode.)
+// (each frame gets a Gaussian blur of radius 0.7 and is saved as JPEG quality 94 (PIL) and piped into ffmpeg before the VP9 encode.)
 // Arguments: seed frames width height points outDir [fromFrame [toFrame]]; the last two split a render across processes.
 import { writeFileSync, mkdirSync } from 'node:fs';
 

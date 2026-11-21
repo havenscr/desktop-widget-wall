@@ -431,6 +431,10 @@
   background: rgba(154, 123, 255, 0.28);
   border-color: rgba(154, 123, 255, 0.55);
 }
+.zbtn[aria-disabled='true'] {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
 .zbtn:active {
   transform: scale(0.94);
 }

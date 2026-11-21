@@ -19,6 +19,7 @@ import {
   ZEN_VEIL_CANDLE,
   bodyScanAt,
   loadChoice,
+  dayKey,
   loadIntention,
   saveChoice,
   saveIntention,
@@ -109,11 +110,24 @@ export function Zen({ nowMs = Date.now }: ZenProps) {
   const left = useLeft(startedAt, minutes, nowMs);
   const scan = bodyScanAt(running ? minutes * 60 - left : 0, minutes);
 
+  const canStart = activity !== 'intention' || intention.trim() !== '';
   const start = useCallback(() => {
+    if (!canStart) return;
     if (activity === 'intention') saveIntention(new Date(nowMs()), intention.trim());
     setStartedAt(nowMs());
-  }, [nowMs, activity, intention]);
+  }, [nowMs, activity, intention, canStart]);
   const stop = useCallback(() => setStartedAt(null), []);
+
+  // The saved line is for today: reload it whenever the picker shows again (a session ended or was stopped,
+  // Dream was left) and when the local day turns while the picker is up (checked on the dim tick below).
+  const pickerShown = !dream && startedAt === null;
+  const intentionDay = useRef(dayKey(new Date(nowMs())));
+  useEffect(() => {
+    if (!pickerShown) return;
+    const now = new Date(nowMs());
+    intentionDay.current = dayKey(now);
+    setIntention(loadIntention(now));
+  }, [pickerShown, nowMs]);
   const wake = useCallback(() => {
     lastInput.current = nowMs();
     setEnding(false);
@@ -162,6 +176,13 @@ export function Zen({ nowMs = Date.now }: ZenProps) {
     let live = true;
     let busy = false;
     const id = window.setInterval(() => {
+      if (!dream && startedAt === null) {
+        const now = new Date(nowMs());
+        if (dayKey(now) !== intentionDay.current) {
+          intentionDay.current = dayKey(now);
+          setIntention(loadIntention(now));
+        }
+      }
       if (dream || startedAt !== null || ending || busy || document.hidden) return;
       if (!isDimHour(new Date(nowMs()), dimHour)) return;
       busy = true;
@@ -224,6 +245,7 @@ export function Zen({ nowMs = Date.now }: ZenProps) {
               onKeyDown={(e) => {
                 if (e.key === 'Enter' || e.key === ' ') {
                   e.preventDefault();
+                  if (e.repeat && e.key === 'Enter') return;
                   stop();
                 }
               }}
@@ -264,7 +286,7 @@ export function Zen({ nowMs = Date.now }: ZenProps) {
                       </button>
                     ))}
                   </div>
-                  <button type="button" className="zbtn go" onClick={start}>
+                  <button type="button" className="zbtn go" onClick={start} aria-disabled={canStart ? undefined : true} {...(canStart ? {} : tip('Type what matters first'))}>
                     <IconPlayerPlayFilled size={28} aria-hidden="true" />
                     Start
                   </button>
