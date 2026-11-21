@@ -161,6 +161,7 @@ it('Test reads the light and the row itself says it answered at the time', async
   expect(calls).toEqual([{ command: 'test', args: { side: 'left' } }]);
   expect(row('left').querySelector('.kl-state')?.textContent).toBe('Left key light answered at 9:42 AM');
   expect(await tipOf(btn('left', 'Test'))).toBe('Reads the light once and says whether it answered');
+  expect(await tipOf(row('left').querySelector('.kl-state') as Element)).toBe('Left key light answered at 9:42 AM');
 });
 
 it('a Test that fails says the fixed words in the row itself', async () => {

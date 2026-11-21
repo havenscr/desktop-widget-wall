@@ -91,7 +91,7 @@ export function StagePopTools({ ringed = false }: { ringed?: boolean }) {
       </div>
       <div className="dt-row">
         <span className="kl-name dt-name">Add-on</span>
-        <span className="tools-line kl-state dt-state" role="status">
+        <span className="tools-line kl-state dt-state" role="status" {...hover(spWord(status))}>
           {spWord(status)}
         </span>
         {code === null ? (
@@ -119,7 +119,7 @@ export function StagePopTools({ ringed = false }: { ringed?: boolean }) {
         <button type="button" className="tools-btn kl-btn" disabled={l === null || t === null} onClick={savePlace} {...hover('Saves where the pop-out window opens')}>
           Save
         </button>
-        <span className="tools-line kl-state dt-state" aria-live="polite">
+        <span className="tools-line kl-state dt-state" aria-live="polite" {...hover(where)}>
           {where}
         </span>
       </div>
