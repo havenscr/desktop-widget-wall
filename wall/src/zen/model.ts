@@ -1,11 +1,11 @@
 import { cards, laneWorks, type OmniSummary } from '../agents/model';
 
-/** One breath: 4 s in, 2 s hold, 6 s out. */
+/** The default breath: 4 s in, 2 s hold, 6 s out. */
 export const CYCLE_SECONDS = 12;
 export const SESSION_MINUTES = [3, 5, 10] as const;
 export type SessionMinutes = (typeof SESSION_MINUTES)[number];
 
-const WORDS = ['Breathe in', 'Hold', 'Breathe out'] as const;
+const WORDS = ['Breathe in', 'Hold', 'Breathe out', 'Hold'] as const;
 export const SCALE_MIN = 0.8;
 export const SCALE_SPAN = 0.26;
 
@@ -37,6 +37,114 @@ export function minRingDiameter(): number {
 /** Share of today's flame brightness that stays behind the veil (0 to 1). The veil itself is the rest. */
 export const ZEN_BRIGHTNESS = 0.45;
 export const ZEN_VEIL = 1 - ZEN_BRIGHTNESS;
+/** The Candle activity darkens the flames further. */
+export const ZEN_VEIL_CANDLE = 0.65;
+
+export type Activity = 'breathe' | 'scan' | 'candle' | 'intention';
+export const ACTIVITIES: ReadonlyArray<{ id: Activity; label: string; of: string; tip: string }> = [
+  { id: 'breathe', label: 'Breathe', of: 'ZEN', tip: 'A ring that grows and shrinks to pace your breathing' },
+  { id: 'scan', label: 'Body scan', of: 'BODY SCAN', tip: 'A figure and one calm line at a time, from your jaw down to your feet' },
+  { id: 'candle', label: 'Candle', of: 'CANDLE', tip: 'The room dims and one candle flickers. Rest your eyes on it' },
+  { id: 'intention', label: 'Intention', of: 'INTENTION', tip: 'Write what matters for the next hour; it stays faintly behind the session' },
+];
+
+/** A breathing pattern: seconds in, hold, out, hold (a zero phase is skipped). */
+export interface BreathPattern {
+  id: string;
+  label: string;
+  phases: readonly [number, number, number, number];
+  tip: string;
+}
+export const BREATH_PATTERNS: ReadonlyArray<BreathPattern> = [
+  { id: 'calm', label: 'Calm 4-2-6', phases: [4, 2, 6, 0], tip: 'In for 4, hold 2, out for 6. A long, slow out-breath' },
+  { id: 'box', label: 'Box 4-4-4-4', phases: [4, 4, 4, 4], tip: 'In, hold, out, hold, 4 seconds each' },
+  { id: 'relax', label: '4-7-8', phases: [4, 7, 8, 0], tip: 'In for 4, hold 7, out for 8' },
+  { id: 'even', label: 'Even 5-5', phases: [5, 0, 5, 0], tip: 'In for 5, out for 5, no hold' },
+];
+export const DEFAULT_PATTERN: BreathPattern = BREATH_PATTERNS[0];
+
+export function patternById(id: unknown): BreathPattern {
+  return BREATH_PATTERNS.find((p) => p.id === id) ?? DEFAULT_PATTERN;
+}
+
+/** Seconds in one full breath of the pattern. */
+export function patternSeconds(p: BreathPattern): number {
+  return p.phases.reduce((a, b) => a + b, 0);
+}
+
+export const ACTIVITY_KEY = 'wall2-zen-activity';
+export const INTENTION_KEY = 'wall2-zen-intention';
+
+/** The remembered activity and breath pattern. Anything unreadable gives Breathe with the calm pattern. */
+export function loadChoice(): { activity: Activity; pattern: BreathPattern } {
+  try {
+    const o = JSON.parse(localStorage.getItem(ACTIVITY_KEY) ?? '{}') as { activity?: unknown; pattern?: unknown };
+    const activity = ACTIVITIES.find((a) => a.id === o.activity)?.id ?? 'breathe';
+    return { activity, pattern: patternById(o.pattern) };
+  } catch {
+    return { activity: 'breathe', pattern: DEFAULT_PATTERN };
+  }
+}
+
+export function saveChoice(activity: Activity, pattern: BreathPattern): void {
+  try {
+    localStorage.setItem(ACTIVITY_KEY, JSON.stringify({ activity, pattern: pattern.id }));
+  } catch {
+    // Storage blocked: the choice is simply not remembered.
+  }
+}
+
+/** Local calendar day as YYYY-MM-DD. */
+export function dayKey(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+/** Today's intention line, or an empty string when none is saved for today. */
+export function loadIntention(now: Date): string {
+  try {
+    const o = JSON.parse(localStorage.getItem(INTENTION_KEY) ?? 'null') as { day?: unknown; text?: unknown } | null;
+    return o && o.day === dayKey(now) && typeof o.text === 'string' ? o.text : '';
+  } catch {
+    return '';
+  }
+}
+
+export function saveIntention(now: Date, text: string): void {
+  try {
+    localStorage.setItem(INTENTION_KEY, JSON.stringify({ day: dayKey(now), text }));
+  } catch {
+    // Storage blocked: the line is kept for this session only.
+  }
+}
+
+/** The Body scan steps, top to bottom, ending on the whole body. */
+export const BODY_STEPS: ReadonlyArray<{ caption: string; x: number; y: number; r: number }> = [
+  { caption: 'Let your jaw soften.', x: 60, y: 26, r: 12 },
+  { caption: 'Smooth your forehead.', x: 60, y: 16, r: 12 },
+  { caption: 'Rest your eyes.', x: 60, y: 22, r: 10 },
+  { caption: 'Let your shoulders drop.', x: 60, y: 52, r: 30 },
+  { caption: 'Feel the weight of your arms.', x: 60, y: 68, r: 40 },
+  { caption: 'Let your hands open.', x: 60, y: 90, r: 40 },
+  { caption: 'Notice your chest rise and fall.', x: 60, y: 62, r: 20 },
+  { caption: 'Let your belly be soft.', x: 60, y: 82, r: 16 },
+  { caption: 'Feel your back against the chair.', x: 60, y: 66, r: 28 },
+  { caption: 'Release your legs.', x: 60, y: 114, r: 30 },
+  { caption: 'Feel your feet on the floor.', x: 60, y: 140, r: 16 },
+  { caption: 'Rest in your whole body.', x: 60, y: 76, r: 62 },
+];
+
+/** Which Body scan step shows `elapsedSeconds` into a session of `minutes`, and how far through the session it is (0 to 1). */
+export function bodyScanAt(elapsedSeconds: number, minutes: number): { step: number; progress: number } {
+  const total = minutes * 60;
+  const e = Math.min(total, Math.max(0, elapsedSeconds));
+  const stepSeconds = total / BODY_STEPS.length;
+  return { step: Math.min(BODY_STEPS.length - 1, Math.floor(e / stepSeconds + 1e-9)), progress: total > 0 ? e / total : 0 };
+}
+
+/** The Candle line shows this long after a session starts, then fades. */
+export const CANDLE_LINE_MS = 10_000;
+export const CANDLE_LINE = 'Rest your eyes here. When the mind wanders, come back.';
+export const INTENTION_QUESTION = 'What matters for the next hour?';
 
 /** Working parents and standalone sessions, from the same full card list as Work. */
 export function dreamWorkingCount(summary: Pick<OmniSummary, 'lanes' | 'sessionsList'>): number {
@@ -44,9 +152,10 @@ export function dreamWorkingCount(summary: Pick<OmniSummary, 'lanes' | 'sessions
 }
 
 const COUNT_WORDS: Record<number, string> = { 3: 'THREE', 5: 'FIVE', 10: 'TEN' };
-/** "FIVE MINUTES OF ZEN" */
-export function sessionLabel(minutes: number): string {
-  return `${COUNT_WORDS[minutes] ?? String(minutes)} MINUTES OF ZEN`;
+/** "FIVE MINUTES OF ZEN", or "... OF BODY SCAN", "... OF CANDLE", "... OF INTENTION". */
+export function sessionLabel(minutes: number, activity: Activity = 'breathe'): string {
+  const of = ACTIVITIES.find((a) => a.id === activity)?.of ?? 'ZEN';
+  return `${COUNT_WORDS[minutes] ?? String(minutes)} MINUTES OF ${of}`;
 }
 
 /** Quadrants that are not urgent (important only, neither). Hotfix and admin are urgent. */
@@ -76,22 +185,33 @@ export function ease(t: number): number {
 }
 
 export interface Breath {
-  /** 0 in, 1 hold, 2 out. */
-  phase: 0 | 1 | 2;
+  /** 0 in, 1 hold (full), 2 out, 3 hold (empty). */
+  phase: 0 | 1 | 2 | 3;
   word: (typeof WORDS)[number];
-  /** Whole seconds left in the phase (counts down from 4, 2 or 6). */
+  /** Whole seconds left in the phase. */
   left: number;
   /** Circle scale, 0.8 (empty) to 1.06 (full). */
   scale: number;
 }
 
-/** The breathing guide `seconds` into the guide's run. */
-export function breathAt(seconds: number): Breath {
-  const c = ((Math.max(0, seconds) % CYCLE_SECONDS) + CYCLE_SECONDS) % CYCLE_SECONDS;
-  const phase = c < 4 ? 0 : c < 6 ? 1 : 2;
-  const k = phase === 0 ? ease(c / 4) : phase === 1 ? 1 : 1 - ease((c - 6) / 6);
-  const left = Math.ceil(phase === 0 ? 4 - c : phase === 1 ? 6 - c : 12 - c);
-  return { phase, word: WORDS[phase], left, scale: SCALE_MIN + SCALE_SPAN * k };
+/** The breathing guide `seconds` into the guide's run, for a pattern (default: calm 4-2-6). Zero-length phases are skipped. */
+export function breathAt(seconds: number, pattern: BreathPattern = DEFAULT_PATTERN): Breath {
+  const total = patternSeconds(pattern);
+  const c = ((Math.max(0, seconds) % total) + total) % total;
+  let start = 0;
+  let phase = 0;
+  for (let i = 0; i < 4; i++) {
+    const len = pattern.phases[i];
+    if (len > 0 && c < start + len) {
+      phase = i;
+      break;
+    }
+    start += len;
+  }
+  const len = pattern.phases[phase];
+  const into = c - start;
+  const k = phase === 0 ? ease(into / len) : phase === 1 ? 1 : phase === 2 ? 1 - ease(into / len) : 0;
+  return { phase: phase as Breath['phase'], word: WORDS[phase], left: Math.ceil(len - into), scale: SCALE_MIN + SCALE_SPAN * k };
 }
 
 /** Whole seconds left in a session that started at `startMs`, never below 0. */

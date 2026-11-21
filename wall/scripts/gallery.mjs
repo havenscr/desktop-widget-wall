@@ -445,6 +445,12 @@ state('zen', 'focus running, long title', 'focus=long');
 // Zen in the evening with the dim hint, and late at night but not yet quiet (so still bright).
 state('zen', 'evening hint', '', '2026-11-11T20:15:00-08:00');
 state('zen', 'late, not yet quiet', '', '2026-11-11T23:40:00-08:00');
+// Zen's activities before Start: the chip under the pointer is clicked, then the middle previews it.
+const ACT_CHIP = (n) => `[role="radiogroup"][aria-label="Activity"] [role="radio"]:nth-child(${n})`;
+add('zen', 'activity: body scan', url('zen', TYPICAL_AT, ''), true, ACT_CHIP(2));
+add('zen', 'activity: candle', url('zen', TYPICAL_AT, ''), true, ACT_CHIP(3));
+add('zen', 'activity: intention', url('zen', TYPICAL_AT, ''), true, [ACT_CHIP(4), 'type:.zen-field=Finish the dashboard draft']);
+add('zen', 'activity: breathe, box pattern', url('zen', TYPICAL_AT, ''), true, '[role="radiogroup"][aria-label="Breathing pattern"] [role="radio"]:nth-child(2)');
 state('dimmed', 'night with audio demo', 'audio=demo', TIMES.night);
 
 // keys style: keys tinted by kind by day and night, keys that cannot be sent, For you as two
@@ -792,6 +798,10 @@ const EXPECT = [
   ['zen', 'sparse', ['Breathe in', '!things are waiting']],
   ['zen', 'heavy', 'After this: 3 or more things are waiting'],
   ['zen', 'typical', 'Start', true],
+  ['zen', 'activity: body scan', ['Let your jaw soften.', 'Start']],
+  ['zen', 'activity: candle', ['Rest your eyes here.', 'Start']],
+  ['zen', 'activity: intention', ['What matters for the next hour?', 'Start']],
+  ['zen', 'activity: breathe, box pattern', ['Breathe in', 'Box 4-4-4-4']],
   ['zen', 'evening hint', ['Breathe in', 'Dims by itself after 10 PM and 10 quiet minutes']],
   ['zen', 'late, not yet quiet', ['Breathe in', 'Dims by itself after 10 PM and 10 quiet minutes']],
   ['zen', 'dimmed: sparse', '!Breathe in'],

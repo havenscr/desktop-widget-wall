@@ -7,7 +7,21 @@
   overflow: hidden;
 }
 
-/* Flames: two drifting layers, the upper one screen-blended. */
+/* Flames: a looping video; reduced motion gets one still, and a video that cannot play falls back to two drifting layers. */
+.flame-video,
+.fl-still {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  background-size: cover;
+  background-position: center;
+}
+.flame-video {
+  background: #04020e;
+}
+/* The fallback layers: two drifting images, the upper one screen-blended. */
 .flames {
   position: absolute;
   inset: 0;
@@ -185,12 +199,174 @@
 }
 .zen-start {
   display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 14px;
+}
+.zen-lenrow {
+  display: flex;
   align-items: center;
   gap: 22px;
 }
 .breath-picker {
   display: flex;
   gap: 12px;
+}
+/* The breathing patterns are a smaller row under the activities. */
+.zbtn.sm {
+  min-width: 0;
+  height: 56px;
+  padding: 0 22px;
+  font-size: 18px;
+}
+
+/* The middle of the stage: the chosen activity, centred where the ring sits. */
+.zen-mid {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  height: 680px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 18px;
+  pointer-events: none;
+}
+.zen-figure {
+  overflow: visible;
+}
+.zen-figure-hl {
+  transition: cx 900ms ease, cy 900ms ease, r 900ms ease;
+}
+.zen-scan-cap {
+  position: relative;
+  width: 1100px;
+  height: 40px;
+}
+.zen-scan-cap p {
+  position: absolute;
+  inset: 0;
+  margin: 0;
+  text-align: center;
+  font: 400 28px/40px var(--disp);
+  letter-spacing: 0.02em;
+  color: var(--tx);
+}
+.zen-scan-cap p.cur {
+  animation: zen-in 900ms ease both;
+}
+.zen-scan-cap p.out {
+  animation: zen-out 900ms ease both;
+}
+.zen-scan-bar {
+  width: 480px;
+  height: 2px;
+  background: rgba(241, 236, 255, 0.16);
+}
+.zen-scan-bar i {
+  display: block;
+  height: 100%;
+  background: var(--cyan);
+  transition: width 600ms linear;
+}
+.zen-candle-line {
+  margin: 0;
+  max-width: 900px;
+  text-align: center;
+  font: 400 26px/1.3 var(--body);
+  color: #cfc6ee;
+  transition: opacity 2500ms ease;
+}
+.zen-candle-line.gone {
+  opacity: 0;
+}
+/* The flicker moves only by transform and opacity, and runs under reduced motion too (it is the one thing on the page). */
+.zen-candle-flame {
+  transform-box: fill-box;
+  transform-origin: 50% 100%;
+  animation: zen-flicker 3.1s ease-in-out infinite;
+}
+.zen-candle-glow {
+  transform-box: fill-box;
+  transform-origin: 50% 50%;
+  animation: zen-glow 4.3s ease-in-out infinite;
+}
+@keyframes zen-flicker {
+  0%,
+  100% {
+    transform: scale(1, 1) rotate(0deg);
+  }
+  22% {
+    transform: scale(0.97, 1.04) rotate(-1.2deg);
+  }
+  47% {
+    transform: scale(1.02, 0.96) rotate(0.8deg);
+  }
+  71% {
+    transform: scale(0.98, 1.03) rotate(1.4deg);
+  }
+}
+@keyframes zen-glow {
+  0%,
+  100% {
+    opacity: 0.85;
+    transform: scale(1);
+  }
+  40% {
+    opacity: 1;
+    transform: scale(1.04);
+  }
+  70% {
+    opacity: 0.75;
+    transform: scale(0.97);
+  }
+}
+@keyframes zen-in {
+  from {
+    opacity: 0;
+  }
+}
+@keyframes zen-out {
+  to {
+    opacity: 0;
+  }
+}
+.zen-q {
+  margin: 0;
+  font: 400 40px/1.2 var(--disp);
+  color: var(--tx);
+}
+.zen-intent-pick {
+  pointer-events: none;
+}
+.zen-field {
+  pointer-events: auto;
+  box-sizing: border-box;
+  width: 900px;
+  height: 76px;
+  padding: 0 28px;
+  border: 0;
+  border-radius: 20px;
+  background: rgba(10, 8, 30, 0.7);
+  box-shadow: inset 0 0 0 2px rgba(53, 230, 234, 0.6);
+  font: 400 32px/1 var(--body);
+  color: var(--tx);
+  outline: none;
+}
+.zen-field::placeholder {
+  color: rgba(241, 236, 255, 0.35);
+}
+.zen-field:focus-visible {
+  box-shadow: inset 0 0 0 3px var(--cyan);
+}
+.zen-intent-line p {
+  margin: 0;
+  max-width: 1500px;
+  text-align: center;
+  font: 300 84px/1.15 var(--disp);
+  color: rgba(241, 236, 255, 0.16);
 }
 .zen-hint {
   position: absolute;
@@ -433,8 +609,17 @@
   .flames,
   .zen-veil,
   .zen-guide,
-  .zbtn {
+  .zbtn,
+  .zen-scan-bar i,
+  .zen-candle-line {
     transition: none;
+  }
+  .zen-scan-cap p.cur,
+  .zen-scan-cap p.out {
+    animation: none;
+  }
+  .zen-scan-cap p.out {
+    display: none;
   }
   .fl-pair:nth-child(2),
   .dream,

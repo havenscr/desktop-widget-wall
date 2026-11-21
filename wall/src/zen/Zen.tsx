@@ -1,17 +1,29 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { IconPlayerPlayFilled, IconX } from '@tabler/icons-react';
 import { Clock } from '../clock/Clock';
+import { tip } from '../ui/HoverTip';
 import { invoke } from '../bridge/tauri';
 import { loadSettings } from '../settings/settings';
 import { usePlaceStore } from '../state/places';
 import { visibleRows } from '../tasks/model';
 import { useTasks } from '../tasks/useTasks';
+import { BodyScan, Candle, IntentionField, IntentionLine } from './Activities';
 import { Breath } from './Breath';
 import { Dream } from './Dream';
 import { Flames } from './Flames';
 import {
+  ACTIVITIES,
+  BREATH_PATTERNS,
   SESSION_MINUTES,
   ZEN_VEIL,
+  ZEN_VEIL_CANDLE,
+  bodyScanAt,
+  loadChoice,
+  loadIntention,
+  saveChoice,
+  saveIntention,
+  type Activity,
+  type BreathPattern,
   formatLeft,
   dimDue,
   isDimHour,
@@ -76,15 +88,31 @@ export function Zen({ nowMs = Date.now }: ZenProps) {
     usePlaceStore.getState().takeZenDream();
   }, []);
   const [minutes, setMinutes] = useState<SessionMinutes>(5);
+  const [choice] = useState(loadChoice);
+  const [activity, setActivityState] = useState<Activity>(choice.activity);
+  const [pattern, setPatternState] = useState<BreathPattern>(choice.pattern);
+  const [intention, setIntention] = useState(() => loadIntention(new Date(nowMs())));
   const [startedAt, setStartedAt] = useState<number | null>(null);
+  const setActivity = (a: Activity) => {
+    setActivityState(a);
+    saveChoice(a, pattern);
+  };
+  const setPattern = (p: BreathPattern) => {
+    setPatternState(p);
+    saveChoice(activity, p);
+  };
   // The last input on the wall (pointer, wheel or keys); the quiet wait counts from here.
   const lastInput = useRef(nowMs());
   const [ending, setEnding] = useState(false);
   const clockNow = useCallback(() => new Date(nowMs()), [nowMs]);
   const running = startedAt !== null;
   const left = useLeft(startedAt, minutes, nowMs);
+  const scan = bodyScanAt(running ? minutes * 60 - left : 0, minutes);
 
-  const start = useCallback(() => setStartedAt(nowMs()), [nowMs]);
+  const start = useCallback(() => {
+    if (activity === 'intention') saveIntention(new Date(nowMs()), intention.trim());
+    setStartedAt(nowMs());
+  }, [nowMs, activity, intention]);
   const stop = useCallback(() => setStartedAt(null), []);
   const wake = useCallback(() => {
     lastInput.current = nowMs();
@@ -167,7 +195,7 @@ export function Zen({ nowMs = Date.now }: ZenProps) {
     if (!r) return;
     const running = startedAt !== null && !ending;
     // The chosen length first, so the ring and the fill sit on the same chip at rest.
-    const first = () => r.querySelector<HTMLElement>('[role="radio"][aria-checked="true"]:not(:disabled)') ?? r.querySelector<HTMLElement>('button:not(:disabled), [role="button"]');
+    const first = () => r.querySelector<HTMLElement>('[aria-label="Session length"] [role="radio"][aria-checked="true"]:not(:disabled)') ?? r.querySelector<HTMLElement>('button:not(:disabled), [role="button"]');
     if (!dream && running && !wasRunning.current) (r.querySelector<HTMLElement>('.zen-tap') ?? first())?.focus();
     else if (!dream && !running && wasRunning.current && startedAt === null) (r.querySelector<HTMLElement>('.zbtn.go') ?? first())?.focus();
     else if (!wasRunning.current && !running) first()?.focus();
@@ -177,12 +205,15 @@ export function Zen({ nowMs = Date.now }: ZenProps) {
   return (
     <section ref={root} className={`zen${dream ? ' is-dream' : ''}`} data-place="zen" aria-label="Zen">
       <Flames dim={dream} />
-      <div className="zen-veil" style={{ opacity: dream ? 0 : ZEN_VEIL }} aria-hidden="true" />
+      <div className="zen-veil" style={{ opacity: dream ? 0 : activity === 'candle' ? ZEN_VEIL_CANDLE : ZEN_VEIL }} aria-hidden="true" />
       {dream ? (
         <Dream onWake={wake} now={clockNow} />
       ) : (
         <div className={`zen-guide${ending ? ' ending' : ''}`}>
-          <Breath startedAt={startedAt} now={nowMs} />
+          {activity === 'breathe' && <Breath key={pattern.id} startedAt={startedAt} now={nowMs} pattern={pattern} />}
+          {activity === 'scan' && <BodyScan {...scan} />}
+          {activity === 'candle' && <Candle running={running} />}
+          {activity === 'intention' && (running ? <IntentionLine text={intention} /> : <IntentionField value={intention} onChange={setIntention} onEnter={start} />)}
           {running && !ending && (
             <div
               className="zen-tap"
@@ -204,22 +235,40 @@ export function Zen({ nowMs = Date.now }: ZenProps) {
           <div className="zen-bl">
             {running ? (
               <>
-                <div className="zen-cap">{sessionLabel(minutes)}</div>
+                <div className="zen-cap">{sessionLabel(minutes, activity)}</div>
                 <div className="zen-left">{formatLeft(left)}.</div>
               </>
             ) : (
               <div className="zen-start">
-                <div className="breath-picker" role="radiogroup" aria-label="Session length">
-                  {SESSION_MINUTES.map((m) => (
-                    <button key={m} type="button" role="radio" aria-checked={m === minutes} className="zbtn" onClick={() => setMinutes(m)}>
-                      {m} min
+                <div className="breath-picker" role="radiogroup" aria-label="Activity">
+                  {ACTIVITIES.map((a) => (
+                    <button key={a.id} type="button" role="radio" aria-checked={a.id === activity} className="zbtn" onClick={() => setActivity(a.id)} {...tip(a.tip, { align: 'start' })}>
+                      {a.label}
                     </button>
                   ))}
                 </div>
-                <button type="button" className="zbtn go" onClick={start}>
-                  <IconPlayerPlayFilled size={28} aria-hidden="true" />
-                  Start
-                </button>
+                {activity === 'breathe' && (
+                  <div className="breath-picker" role="radiogroup" aria-label="Breathing pattern">
+                    {BREATH_PATTERNS.map((p) => (
+                      <button key={p.id} type="button" role="radio" aria-checked={p.id === pattern.id} className="zbtn sm" onClick={() => setPattern(p)} {...tip(p.tip, { align: 'start' })}>
+                        {p.label}
+                      </button>
+                    ))}
+                  </div>
+                )}
+                <div className="zen-lenrow">
+                  <div className="breath-picker" role="radiogroup" aria-label="Session length">
+                    {SESSION_MINUTES.map((m) => (
+                      <button key={m} type="button" role="radio" aria-checked={m === minutes} className="zbtn" onClick={() => setMinutes(m)}>
+                        {m} min
+                      </button>
+                    ))}
+                  </div>
+                  <button type="button" className="zbtn go" onClick={start}>
+                    <IconPlayerPlayFilled size={28} aria-hidden="true" />
+                    Start
+                  </button>
+                </div>
               </div>
             )}
             {!running && showDimHint(clockNow()) && <div className="zen-dimhint">{dimHint(dimHour, dimWaitMin)}</div>}

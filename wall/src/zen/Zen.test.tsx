@@ -1,10 +1,13 @@
-import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { usePlaceStore } from '../state/places';
 import { SETTINGS_KEY } from '../settings/settings';
-import { FLAMES, Flames } from './Flames';
+import { FLAMES, Flames, flameLoop } from './Flames';
 import { Zen } from './Zen';
 import zenSource from './Zen.tsx?raw';
+import activitiesSource from './Activities.tsx?raw';
+// @ts-ignore node's own file call; this test reads the stylesheet as text.
+import { readFileSync } from 'node:fs';
 import { Dream } from './Dream';
 
 // These tests step fake timers through whole quiet stretches (a ten second check each step), which is
@@ -17,8 +20,16 @@ import { usePacificTime } from '../ribbon/testZone';
 import { LAST_MOOD_AT_KEY } from '../unwind/RoomCard';
 import { LAST_MOOD_KEY, MOODS_CACHE_KEY } from '../home/Moods';
 import {
+  ACTIVITY_KEY,
+  BODY_STEPS,
+  CANDLE_LINE,
+  CANDLE_LINE_MS,
   FLAME_ROTATE_MS,
+  INTENTION_KEY,
   LONGEST_WORD,
+  ZEN_VEIL,
+  ZEN_VEIL_CANDLE,
+  dayKey,
   NUM_FONT_PX,
   RING_BASE_PX,
   RING_PAD_PX,
@@ -60,8 +71,24 @@ beforeEach(() => {
   vi.useFakeTimers();
   usePlaceStore.setState({ active: 'zen', zenDream: false });
   localStorage.removeItem(SETTINGS_KEY);
+  localStorage.removeItem(ACTIVITY_KEY);
+  localStorage.removeItem(INTENTION_KEY);
+  play.mockClear();
+  pause.mockClear();
 });
-afterEach(() => vi.useRealTimers());
+afterEach(() => {
+  vi.useRealTimers();
+  setHidden(false);
+});
+
+// jsdom has no media playback: stand in for play and pause.
+const play = vi.fn(() => Promise.resolve());
+const pause = vi.fn();
+HTMLMediaElement.prototype.play = play;
+HTMLMediaElement.prototype.pause = pause;
+function setHidden(hidden: boolean) {
+  Object.defineProperty(document, 'hidden', { configurable: true, get: () => hidden });
+}
 
 it('shows the guide by day with 3, 5 and 10 minute choices', () => {
   render(<Zen nowMs={clockAt(DAY)} />);
@@ -95,7 +122,7 @@ it('a session counts down, then fades the guide and falls into Dream; a tap wake
   expect(document.querySelector('.zen-guide')).toBeNull();
   expect(document.querySelector('.flames')!.getAttribute('data-dim')).toBe('true');
   fireEvent.click(screen.getByLabelText('Wake'));
-  expect(screen.getByText(/Breathe|Hold/)).toBeTruthy();
+  expect(document.querySelector('.breath-word')!.textContent).toMatch(/Breathe|Hold/);
   expect(document.querySelector('.flames')!.getAttribute('data-dim')).toBe('false');
 });
 
@@ -130,30 +157,54 @@ it('Leave returns to Work', () => {
   expect(usePlaceStore.getState().active).toBe('work');
 });
 
-it('flames: two layers, rotating pair with a cross-fade, dimmed to 35 percent in Dream', () => {
+it('flames: a muted looping video under the veil, dimmed to 35 percent in Dream', () => {
   const { container, rerender } = render(<Flames />);
-  expect(container.querySelectorAll('.fl-pair')).toHaveLength(1);
-  expect(container.querySelectorAll('.fl')).toHaveLength(2);
-  expect(container.querySelector('.fl.b')).not.toBeNull();
-  const bg = () => Array.from(container.querySelectorAll<HTMLElement>('.fl')).map((e) => e.style.backgroundImage.replace(/"/g, ''));
-  expect(bg()).toEqual([`url(${FLAMES[0]})`, `url(${FLAMES[1]})`]);
-  act(() => void vi.advanceTimersByTime(FLAME_ROTATE_MS));
-  expect(container.querySelectorAll('.fl-pair')).toHaveLength(2); // old pair stays while fading
-  expect(container.querySelector('.fl-pair:nth-child(2)')!.querySelector<HTMLElement>('.fl')!.style.backgroundImage).toBe(
-    `url("${FLAMES[1]}")`,
-  );
-  act(() => void vi.advanceTimersByTime(31_000));
-  expect(container.querySelectorAll('.fl-pair')).toHaveLength(1);
+  const v = container.querySelector('video')!;
+  expect(v.getAttribute('src')).toBe(flameLoop);
+  expect(v.loop).toBe(true);
+  expect(v.muted).toBe(true);
+  expect(v.hasAttribute('playsinline')).toBe(true);
+  expect(container.querySelector('.fl-pair')).toBeNull();
   expect((container.firstElementChild as HTMLElement).style.opacity).toBe('1');
   rerender(<Flames dim />);
   expect((container.firstElementChild as HTMLElement).style.opacity).toBe('0.35');
 });
 
-it('reduced motion: flames are still and change without a cross-fade', () => {
+it('flames: the video is paused while the page is hidden and plays again after', () => {
+  const { container } = render(<Flames />);
+  expect(play).toHaveBeenCalled();
+  pause.mockClear();
+  act(() => {
+    setHidden(true);
+    document.dispatchEvent(new Event('visibilitychange'));
+  });
+  expect(pause).toHaveBeenCalled();
+  play.mockClear();
+  act(() => {
+    setHidden(false);
+    document.dispatchEvent(new Event('visibilitychange'));
+  });
+  expect(play).toHaveBeenCalled();
+  expect(container.querySelector('video')).not.toBeNull();
+});
+
+it('reduced motion: the still flame, no video element', () => {
   setReducedMotion(true);
   const { container } = render(<Flames />);
   expect(container.querySelector('.flames')!.classList.contains('still')).toBe(true);
+  expect(container.querySelector('video')).toBeNull();
+  expect(container.querySelector<HTMLElement>('.fl-still')!.style.backgroundImage).toContain(FLAMES[0]);
+});
+
+it('flames: a video that errors falls back to the drifting still layers, which still rotate', () => {
+  const { container } = render(<Flames />);
+  act(() => void fireEvent.error(container.querySelector('video')!));
+  expect(container.querySelector('video')).toBeNull();
+  expect(container.querySelectorAll('.fl-pair')).toHaveLength(1);
+  expect(container.querySelectorAll('.fl')).toHaveLength(2);
   act(() => void vi.advanceTimersByTime(FLAME_ROTATE_MS));
+  expect(container.querySelectorAll('.fl-pair')).toHaveLength(2);
+  act(() => void vi.advanceTimersByTime(31_000));
   expect(container.querySelectorAll('.fl-pair')).toHaveLength(1);
 });
 
@@ -723,12 +774,12 @@ it('Dream: the Tomorrow card shows the first meeting, says so when the calendar 
   mocks.clear();
 });
 
-it('the chosen session length is the one filled chip', () => {
+it('the chosen session length is the one filled chip in its row', () => {
   render(<Zen nowMs={clockAt(DAY)} />);
-  expect(screen.getAllByRole('radio').filter((r) => r.getAttribute('aria-checked') === 'true')).toHaveLength(1);
+  const lengths = () => within(screen.getByRole('radiogroup', { name: 'Session length' })).getAllByRole('radio').filter((r) => r.getAttribute('aria-checked') === 'true');
+  expect(lengths()).toHaveLength(1);
   fireEvent.click(screen.getByRole('radio', { name: '10 min' }));
-  const on = screen.getAllByRole('radio').filter((r) => r.getAttribute('aria-checked') === 'true');
-  expect(on.map((r) => r.textContent)).toEqual(['10 min']);
+  expect(lengths().map((r) => r.textContent)).toEqual(['10 min']);
 });
 
 it('Dream status: a lane that waits on the owner is not counted as working, like Work', async () => {
@@ -759,4 +810,184 @@ it('Dream status: counts helper work outside the three glance lanes', async () =
   expect(document.querySelector('.dream-status')!.textContent).toMatch(/^1 agent still working/);
   resetAgents();
   mocks.clear();
+});
+
+const pick = (name: string) => fireEvent.click(screen.getByRole('radio', { name }));
+const start = () => fireEvent.click(screen.getByRole('button', { name: /Start/ }));
+const ticks = (ms: number) => act(() => void vi.advanceTimersByTime(ms));
+
+it('activity picker: four chips above the length chips, Breathe chosen and remembered', () => {
+  const { unmount } = render(<Zen nowMs={clockAt(DAY)} />);
+  const group = screen.getByRole('radiogroup', { name: 'Activity' });
+  expect(within(group).getAllByRole('radio').map((r) => r.textContent)).toEqual(['Breathe', 'Body scan', 'Candle', 'Intention']);
+  expect(screen.getByRole('radio', { name: 'Breathe' }).getAttribute('aria-checked')).toBe('true');
+  expect(group.compareDocumentPosition(screen.getByRole('radiogroup', { name: 'Session length' })) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  pick('Candle');
+  expect(JSON.parse(localStorage.getItem(ACTIVITY_KEY)!).activity).toBe('candle');
+  unmount();
+  render(<Zen nowMs={clockAt(DAY)} />);
+  expect(screen.getByRole('radio', { name: 'Candle' }).getAttribute('aria-checked')).toBe('true');
+  expect(document.querySelector('.zen-candle')).not.toBeNull();
+  expect(document.querySelector('.breath')).toBeNull();
+});
+
+it('activity picker: a broken or blocked store gives Breathe', () => {
+  localStorage.setItem(ACTIVITY_KEY, '{nope');
+  render(<Zen nowMs={clockAt(DAY)} />);
+  expect(screen.getByRole('radio', { name: 'Breathe' }).getAttribute('aria-checked')).toBe('true');
+  expect(screen.getByRole('radio', { name: 'Calm 4-2-6' }).getAttribute('aria-checked')).toBe('true');
+});
+
+it('the running label follows the activity', () => {
+  const cases: [string, string][] = [
+    ['Breathe', 'FIVE MINUTES OF ZEN'],
+    ['Body scan', 'FIVE MINUTES OF BODY SCAN'],
+    ['Candle', 'FIVE MINUTES OF CANDLE'],
+    ['Intention', 'FIVE MINUTES OF INTENTION'],
+  ];
+  for (const [chip, label] of cases) {
+    const { unmount } = render(<Zen nowMs={clockAt(DAY)} />);
+    pick(chip);
+    start();
+    ticks(100);
+    expect(screen.getByText(label)).toBeTruthy();
+    expect(screen.getByText('5:00 left.')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'End session early' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Leave Zen' })).toBeTruthy();
+    unmount();
+  }
+  expect(sessionLabel(10, 'scan')).toBe('TEN MINUTES OF BODY SCAN');
+});
+
+it('Box 4-4-4-4: pattern chips only for Breathe, remembered, and the ring holds after the out-breath too', () => {
+  render(<Zen nowMs={clockAt(DAY)} />);
+  const pats = screen.getByRole('radiogroup', { name: 'Breathing pattern' });
+  expect(within(pats).getAllByRole('radio').map((r) => r.textContent)).toEqual(['Calm 4-2-6', 'Box 4-4-4-4', '4-7-8', 'Even 5-5']);
+  fireEvent.click(within(pats).getByRole('radio', { name: 'Box 4-4-4-4' }));
+  expect(JSON.parse(localStorage.getItem(ACTIVITY_KEY)!).pattern).toBe('box');
+  const word = () => document.querySelector('.breath-word')!.textContent;
+  expect(word()).toBe('Breathe in');
+  ticks(4500);
+  expect(word()).toBe('Hold');
+  ticks(4000);
+  expect(word()).toBe('Breathe out');
+  ticks(4000);
+  expect(word()).toBe('Hold');
+  ticks(4000);
+  expect(word()).toBe('Breathe in');
+  pick('Candle');
+  expect(screen.queryByRole('radiogroup', { name: 'Breathing pattern' })).toBeNull();
+});
+
+it('Body scan: the figure, one caption, and the step follows the session length', () => {
+  render(<Zen nowMs={clockAt(DAY)} />);
+  pick('Body scan');
+  expect(document.querySelector('.zen-figure')).not.toBeNull();
+  expect(screen.getByText(BODY_STEPS[0].caption)).toBeTruthy();
+  start();
+  ticks(100);
+  expect(document.querySelector('.zen-scan')!.getAttribute('data-step')).toBe('0');
+  // 5 minutes over 12 steps: 25 seconds a step.
+  ticks(26_000);
+  expect(document.querySelector('.zen-scan')!.getAttribute('data-step')).toBe('1');
+  expect(screen.getByText(BODY_STEPS[1].caption)).toBeTruthy();
+  // The old line fades out while the new one fades in, then only the new one is left.
+  expect(document.querySelectorAll('.zen-scan-cap p')).toHaveLength(2);
+  ticks(1000);
+  expect(document.querySelectorAll('.zen-scan-cap p')).toHaveLength(1);
+  const bar = document.querySelector<HTMLElement>('.zen-scan-bar i')!;
+  expect(parseFloat(bar.style.width)).toBeGreaterThan(0);
+});
+
+it('Body scan under reduced motion swaps the caption without a crossfade', () => {
+  setReducedMotion(true);
+  render(<Zen nowMs={clockAt(DAY)} />);
+  pick('Body scan');
+  start();
+  ticks(26_100);
+  expect(screen.getByText(BODY_STEPS[1].caption)).toBeTruthy();
+  expect(document.querySelectorAll('.zen-scan-cap p')).toHaveLength(1);
+});
+
+it('Candle: a darker veil, the line for 10 seconds and then it fades; the flicker keeps running under reduced motion', () => {
+  const veil = () => (document.querySelector('.zen-veil') as HTMLElement).style.opacity;
+  render(<Zen nowMs={clockAt(DAY)} />);
+  expect(veil()).toBe(String(ZEN_VEIL));
+  pick('Candle');
+  expect(veil()).toBe(String(ZEN_VEIL_CANDLE));
+  expect(ZEN_VEIL_CANDLE).toBeGreaterThan(ZEN_VEIL);
+  const line = () => screen.getByText(CANDLE_LINE);
+  start();
+  ticks(CANDLE_LINE_MS - 500);
+  expect(line().getAttribute('data-shown')).toBe('true');
+  ticks(600);
+  expect(line().getAttribute('data-shown')).toBe('false');
+  expect(line().classList.contains('gone')).toBe(true);
+  expect(document.querySelector('.zen-candle-flame')).not.toBeNull();
+});
+
+const zenCss: string = readFileSync('src/styles/zen.css', 'utf8');
+
+it('Candle flicker stays animated with reduced motion (transform and opacity only)', () => {
+  expect(zenCss).toMatch(/\.zen-candle-flame\s*{[^}]*animation: zen-flicker/);
+  const reduced = zenCss.slice(zenCss.indexOf('prefers-reduced-motion'));
+  expect(reduced).not.toMatch(/zen-candle-(flame|glow)|zen-flicker|zen-glow/);
+  const frames = zenCss.match(/@keyframes zen-(flicker|glow)\s*{[\s\S]*?\n}\n/g)!.join('');
+  const props = new Set([...frames.matchAll(/^\s+([a-z-]+):/gm)].map((m) => m[1]));
+  expect([...props].sort()).toEqual(['opacity', 'transform']);
+});
+
+it('Intention: the question and a field before Start; Enter begins; the line shows faint during the run', () => {
+  render(<Zen nowMs={clockAt(DAY)} />);
+  pick('Intention');
+  expect(screen.getByText('What matters for the next hour?')).toBeTruthy();
+  const field = screen.getByRole('textbox') as HTMLInputElement;
+  fireEvent.change(field, { target: { value: 'Finish the dashboard draft' } });
+  fireEvent.keyDown(field, { key: 'Enter' });
+  ticks(100);
+  expect(screen.getByText('FIVE MINUTES OF INTENTION')).toBeTruthy();
+  expect(screen.queryByRole('textbox')).toBeNull();
+  expect(document.querySelector('.zen-intent-line')!.textContent).toBe('Finish the dashboard draft');
+});
+
+it('Intention: typing does not end the session, wake it or reach key handlers outside the field', () => {
+  render(<Zen nowMs={clockAt(DAY)} />);
+  pick('Intention');
+  const field = screen.getByRole('textbox') as HTMLInputElement;
+  const outside = vi.fn();
+  document.addEventListener('keydown', outside);
+  field.focus();
+  fireEvent.keyDown(field, { key: 'a' });
+  fireEvent.keyDown(field, { key: ' ' });
+  fireEvent.click(field);
+  document.removeEventListener('keydown', outside);
+  expect(outside).not.toHaveBeenCalled();
+  expect(screen.getByRole('button', { name: /Start/ })).toBeTruthy();
+  expect(screen.queryByRole('button', { name: 'End session early' })).toBeNull();
+  expect(usePlaceStore.getState().active).toBe('zen');
+  // A running session still ends on a click anywhere.
+  start();
+  ticks(100);
+  fireEvent.click(screen.getByRole('button', { name: 'End session early' }));
+  expect(screen.getByRole('button', { name: /Start/ })).toBeTruthy();
+});
+
+it('Intention: the line is kept for the day and prefilled; another day starts empty', () => {
+  const { unmount } = render(<Zen nowMs={clockAt(DAY)} />);
+  pick('Intention');
+  fireEvent.change(screen.getByRole('textbox'), { target: { value: 'Ship the report' } });
+  start();
+  expect(JSON.parse(localStorage.getItem(INTENTION_KEY)!)).toEqual({ day: dayKey(new Date(DAY)), text: 'Ship the report' });
+  unmount();
+  render(<Zen nowMs={clockAt(DAY + 3_600_000)} />);
+  expect((screen.getByRole('textbox') as HTMLInputElement).value).toBe('Ship the report');
+  cleanup();
+  render(<Zen nowMs={clockAt(DAY + 24 * 3_600_000)} />);
+  expect((screen.getByRole('textbox') as HTMLInputElement).value).toBe('');
+});
+
+it('every new control has a tooltip handler', () => {
+  render(<Zen nowMs={clockAt(DAY)} />);
+  expect(zenSource.match(/\{\.\.\.tip\(/g)!.length).toBeGreaterThanOrEqual(2);
+  expect(activitiesSource.match(/\{\.\.\.tip\(/g)!.length).toBeGreaterThanOrEqual(1);
 });

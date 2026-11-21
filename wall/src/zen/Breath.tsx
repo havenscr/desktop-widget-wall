@@ -1,28 +1,34 @@
 import { useEffect, useRef, useState } from 'react';
 import { useReducedMotion } from '../ui/useReducedMotion';
-import { NUM_FONT_PX, RING_BASE_PX, SCALE_MIN, SCALE_SPAN, WORD_FONT_PX, WORD_NUM_GAP_PX, breathAt } from './model';
+import { DEFAULT_PATTERN, NUM_FONT_PX, RING_BASE_PX, SCALE_MIN, SCALE_SPAN, WORD_FONT_PX, WORD_NUM_GAP_PX, breathAt, type BreathPattern } from './model';
 
 export interface BreathProps {
   /** Start time (ms) of the running session, or null when none runs. The cycle restarts at "Breathe in" on a new start. */
   startedAt: number | null;
   now?: () => number;
+  /** Phase lengths (in, hold, out, hold); default calm 4-2-6. A new pattern restarts the cycle. */
+  pattern?: BreathPattern;
 }
 
 /**
- * The breathing guide on a 12 second cycle: a thin gradient ring that grows and shrinks, a faint fixed
+ * The breathing guide on the pattern's cycle (12 seconds for the calm default): a thin gradient ring that grows and shrinks, a faint fixed
  * guide ring at the full inhale size, a soft glow (a sibling of the masked ring, scaled with it) that brightens on the inhale, and the phase
  * word with the seconds left in the centre. The words keep one fixed size, small enough to sit inside
  * the ring at its smallest (see `minRingDiameter`).
  */
-export function Breath({ startedAt, now = Date.now }: BreathProps) {
+export function Breath({ startedAt, now = Date.now, pattern = DEFAULT_PATTERN }: BreathProps) {
   const circle = useRef<HTMLDivElement>(null);
   const glow = useRef<HTMLDivElement>(null);
   const [origin] = useState(() => ({ ms: startedAt ?? now() }));
-  const [view, setView] = useState(() => breathAt(0));
+  const [view, setView] = useState(() => breathAt(0, pattern));
 
   useEffect(() => {
     if (startedAt !== null) origin.ms = startedAt;
   }, [startedAt, origin]);
+  // Another pattern starts its own cycle from "Breathe in" (only before a session runs; a running one keeps its start).
+  useEffect(() => {
+    if (startedAt === null) origin.ms = now();
+  }, [pattern, startedAt, now, origin]);
 
   const reduced = useReducedMotion();
 
@@ -35,7 +41,7 @@ export function Breath({ startedAt, now = Date.now }: BreathProps) {
         glow.current.style.opacity = glowOpacity.toFixed(3);
       }
     };
-    const phase = () => breathAt((now() - origin.ms) / 1000);
+    const phase = () => breathAt((now() - origin.ms) / 1000, pattern);
     const show = (b: ReturnType<typeof breathAt>) => setView((prev) => (prev.word === b.word && prev.left === b.left ? prev : b));
     if (reduced) {
       // Reduced motion: the ring and glow hold a steady mid state; only the word and seconds change, once a second.
@@ -53,7 +59,7 @@ export function Breath({ startedAt, now = Date.now }: BreathProps) {
     };
     tick();
     return () => cancelAnimationFrame(raf);
-  }, [now, origin, reduced]);
+  }, [now, origin, reduced, pattern]);
 
   const size = { width: RING_BASE_PX, height: RING_BASE_PX, margin: `${-RING_BASE_PX / 2}px 0 0 ${-RING_BASE_PX / 2}px` };
   return (
