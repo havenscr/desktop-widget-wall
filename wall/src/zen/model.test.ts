@@ -1,7 +1,12 @@
 import { expect, it } from 'vitest';
 import {
+  BODY_STEPS,
+  BREATH_PATTERNS,
   FLAME_ROTATE_MS,
+  bodyScanAt,
   breathAt,
+  patternById,
+  patternSeconds,
   ease,
   flamePair,
   formatLeft,
@@ -88,4 +93,53 @@ it('flame rotation: the pair advances every few minutes round the list', () => {
   expect(flamePair(FLAME_ROTATE_MS, 3)).toEqual({ step: 1, base: 1, top: 2 });
   expect(flamePair(2 * FLAME_ROTATE_MS, 3)).toEqual({ step: 2, base: 2, top: 0 });
   expect(flamePair(3 * FLAME_ROTATE_MS, 3)).toEqual({ step: 3, base: 0, top: 1 });
+});
+
+it('Box 4-4-4-4: in, hold full, out, hold empty', () => {
+  const box = patternById('box');
+  expect(patternSeconds(box)).toBe(16);
+  expect(breathAt(0, box)).toMatchObject({ phase: 0, word: 'Breathe in', left: 4 });
+  expect(breathAt(4, box)).toMatchObject({ phase: 1, word: 'Hold', left: 4 });
+  expect(breathAt(4, box).scale).toBeCloseTo(1.06, 6);
+  expect(breathAt(8, box)).toMatchObject({ phase: 2, word: 'Breathe out', left: 4 });
+  expect(breathAt(12, box)).toMatchObject({ phase: 3, word: 'Hold', left: 4 });
+  expect(breathAt(12, box).scale).toBeCloseTo(0.8, 6);
+  expect(breathAt(15.5, box)).toMatchObject({ phase: 3, left: 1 });
+  expect(breathAt(16, box)).toMatchObject({ phase: 0, left: 4 });
+});
+
+it('4-7-8 and Even 5-5 phases; zero-length holds are skipped', () => {
+  const relax = patternById('relax');
+  expect(breathAt(4, relax)).toMatchObject({ phase: 1, left: 7 });
+  expect(breathAt(11, relax)).toMatchObject({ phase: 2, left: 8 });
+  expect(breathAt(19, relax)).toMatchObject({ phase: 0 });
+  const even = patternById('even');
+  expect(patternSeconds(even)).toBe(10);
+  expect(breathAt(4.9, even)).toMatchObject({ phase: 0, left: 1 });
+  expect(breathAt(5, even)).toMatchObject({ phase: 2, word: 'Breathe out', left: 5 });
+  expect(breathAt(10, even)).toMatchObject({ phase: 0 });
+  for (const p of BREATH_PATTERNS) for (let t = 0; t < 40; t += 0.37) expect(breathAt(t, p).left).toBeGreaterThanOrEqual(1);
+});
+
+it('an unknown pattern id is the calm one', () => {
+  expect(patternById('nope').id).toBe('calm');
+  expect(patternById(undefined).phases).toEqual([4, 2, 6, 0]);
+});
+
+it('Body scan: twelve steps, each session length / 12 long', () => {
+  expect(BODY_STEPS).toHaveLength(12);
+  expect(BODY_STEPS[0].caption).toMatch(/jaw/i);
+  expect(BODY_STEPS[11].caption).toMatch(/whole body/i);
+  // 5 minutes: 25 s a step.
+  expect(bodyScanAt(0, 5)).toEqual({ step: 0, progress: 0 });
+  expect(bodyScanAt(24.9, 5).step).toBe(0);
+  expect(bodyScanAt(25, 5).step).toBe(1);
+  expect(bodyScanAt(299, 5).step).toBe(11);
+  expect(bodyScanAt(300, 5)).toEqual({ step: 11, progress: 1 });
+  expect(bodyScanAt(9999, 5).step).toBe(11);
+  // 3 minutes: 15 s a step; 10 minutes: 50 s a step.
+  expect(bodyScanAt(15, 3).step).toBe(1);
+  expect(bodyScanAt(49, 10).step).toBe(0);
+  expect(bodyScanAt(50, 10).step).toBe(1);
+  expect(bodyScanAt(150, 5).progress).toBeCloseTo(0.5, 6);
 });

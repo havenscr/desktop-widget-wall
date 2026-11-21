@@ -3597,14 +3597,24 @@ of a set never gets one; Win+L and Ctrl+Alt+Delete stay refused. The page sends 
 else (the rail and clock are hidden under it). It is front end only: it does not change
 the system volume, Do Not Disturb or the focus timer.
 
-- **Flames** (`Flames.tsx`). Two stacked full-stage layers of slowly drifting fractal
-  flames: the lower layer plain, the upper one screen-blended, drifting the other way
-  and fading in and out. Every 4 minutes the pair moves to the next flames with a 30
-  second cross-fade. Under reduced motion the layers are still and the pair changes
-  without a fade. The three images are in `wall/src/assets/flames/`; they were rendered
-  for this project with a fractal flame renderer (see the README there).
-- **Breathing guide** (`Breath.tsx`, maths in `model.ts`). A 12 second cycle: 4 s in,
-  2 s hold, 6 s out. A thin cyan to pink ring scales from 0.8 to 1.06 of 370 px with a
+- **Flames** (`Flames.tsx`). A muted, looping video (`wall/src/assets/flames/flame-loop.webm`,
+  1280 by 360, a seamless 150 second loop of the same flame as `flame-192.webp`, rendered offline by
+  `wall/scripts/flame-loop.mjs`) covers the stage under the veil. It is paused while the page is hidden or
+  the display is off, and plays again after. Under reduced motion there is no video, only the still
+  `flame-192.webp`. If the video errors, the old two drifting still layers (rotating every 4 minutes with a 30 second
+  cross-fade) take over.
+- **Activities** (`Activities.tsx`, `model.ts`). Chosen before Start with a row of four chips above the length
+  chips: Breathe, Body scan, Candle, Intention. The middle previews the choice; the choice (and the breath pattern) is
+  remembered in `localStorage`. The running label reads "FIVE MINUTES OF ZEN", "... OF BODY SCAN", "... OF CANDLE" or
+  "... OF INTENTION". All keep the clock, Leave, "After this" and click anywhere to end early.
+  Breathe has a second chip row: Calm 4-2-6 (default), Box 4-4-4-4, 4-7-8, Even 5-5 (in, hold, out, hold; a zero hold is skipped).
+  Body scan draws an outline figure with 12 captions (jaw to whole body), one at a time, each session length / 12 long, with a thin
+  progress line; captions crossfade (no crossfade under reduced motion). Candle darkens the veil to 0.65 and flickers one
+  SVG candle (transform and opacity only, also under reduced motion); its line shows for 10 seconds, then fades.
+  Intention shows "What matters for the next hour?" and one text field before Start (Enter or Start begins); the line then
+  shows faint and large for the whole run and is kept in `localStorage` for the day, prefilled if from today.
+- **Breathing guide** (`Breath.tsx`, maths in `model.ts`). By default a 12 second cycle: 4 s in,
+  2 s hold, 6 s out (the pattern is chosen above). A thin cyan to pink ring scales from 0.8 to 1.06 of 370 px with a
   cubic ease, inside a faint fixed ring at the full inhale size, with a glow (a sibling of the masked ring) that
   brightens on the inhale. The phase word and the seconds left sit in the centre at a
   fixed size; `minRingDiameter` checks that the longest word clears the smallest ring by
