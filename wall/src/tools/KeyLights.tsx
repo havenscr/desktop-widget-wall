@@ -145,7 +145,7 @@ function Row({ side, saved, editing, setEditing, onChanged }: { side: Side; save
       <div className="kl-head">
         <span className="kl-name">{NAME[side]}</span>
         {!editing && (
-          <div className={bad ? 'tools-line bad kl-state' : 'tools-line kl-state'} role="status" {...(saved && result === null ? hover(`The ${side} key light's address is saved on this PC. It is never shown again.`) : {})}>
+          <div className={bad ? 'tools-line bad kl-state' : 'tools-line kl-state'} role="status" {...hover(saved && result === null ? `The ${side} key light's address is saved on this PC. It is never shown again.` : state)}>
             {state}
           </div>
         )}
