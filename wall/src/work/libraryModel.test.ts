@@ -44,8 +44,8 @@ describe('the library the page and the mocks hold equals the Rust one', () => {
     expect(pt.keys.length).toBe(5);
     expect(pt.keys.every((k) => k.kind === 'check')).toBe(true);
     // Rust's found state, as text: the plain title and the check-to-key swap for this group only.
-    expect(rust).toContain('if g.id == "powertoys" && powertoys { "PowerToys".to_string() }');
-    expect(rust).toContain('if powertoys && e.group == "powertoys" && e.kind == LibKind::Check { LibKind::Key.word() }');
+    expect(rust).toContain('if g.id == "powertoys" && installed { "PowerToys".to_string() }');
+    expect(rust).toContain('_ if installed && e.group == "powertoys" && e.kind == LibKind::Check => (LibKind::Key.word(), e.how.to_string())');
     const found = { ...pt, title: 'PowerToys', keys: pt.keys.map((k) => ({ ...k, kind: 'key' as const })) };
     expect(found.keys.every((k) => k.kind === 'key') && found.title === 'PowerToys').toBe(true);
     expect(found.keys.map((k) => k.id)).toEqual(pt.keys.map((k) => k.id));

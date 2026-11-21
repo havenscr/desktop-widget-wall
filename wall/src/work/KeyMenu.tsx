@@ -1,5 +1,5 @@
 import { IconArrowsExchange, IconPin, IconPinnedOff, IconPlayerPlay, IconPlus } from '@tabler/icons-react';
-import { Fragment, useEffect, useRef, type KeyboardEvent } from 'react';
+import { Fragment, useEffect, useRef, useState, type KeyboardEvent } from 'react';
 import { overlayOwnsPointer } from '../ribbon/DrawerScrim';
 
 export interface KeyMenuAction {
@@ -11,6 +11,10 @@ export interface KeyMenuAction {
   label: string;
   note?: string;
   disabled?: boolean;
+  /** One plain sentence on what the row does, shown on hover and read out by a screen reader. */
+  help?: string;
+  /** A second step: choosing this row opens these rows in the same menu instead of choosing anything. */
+  sub?: KeyMenuAction[];
 }
 
 const icons = { pin: IconPin, replace: IconArrowsExchange, add: IconPlus, remove: IconPinnedOff, run: IconPlayerPlay, swap: IconArrowsExchange };
@@ -31,6 +35,10 @@ export function KeyMenu({ title, actions, onChoose, onClose, byKeyboard = false 
   const closeRef = useRef(onClose);
   closeRef.current = onClose;
   const byKeyboardRef = useRef(byKeyboard);
+  // The second step, when one is open. Escape and the left arrow go back one level before the menu closes.
+  const [sub, setSub] = useState<KeyMenuAction[] | null>(null);
+  const subRef = useRef<KeyMenuAction[] | null>(null);
+  subRef.current = sub;
   useEffect(() => {
     const el = menu.current;
     if (!el) return;
@@ -80,6 +88,10 @@ export function KeyMenu({ title, actions, onChoose, onClose, byKeyboard = false 
     const escape = (event: globalThis.KeyboardEvent) => {
       if (event.key !== 'Escape' || overlayOwnsPointer()) return;
       event.preventDefault();
+      if (subRef.current) {
+        setSub(null);
+        return;
+      }
       close(true);
     };
     el.addEventListener('pointerenter', enter);
@@ -103,7 +115,25 @@ export function KeyMenu({ title, actions, onChoose, onClose, byKeyboard = false 
     };
   }, []);
 
+  // Focus follows the level: the first row of a second step, and the row that opened it on the way back.
+  const first = useRef(true);
+  useEffect(() => {
+    if (first.current) {
+      first.current = false;
+      return;
+    }
+    const el = menu.current;
+    if (!el) return;
+    const target = sub ? el.querySelector<HTMLButtonElement>('button:not(:disabled)') : el.querySelector<HTMLButtonElement>('button[data-sub]');
+    (target ?? el.querySelector<HTMLButtonElement>('button:not(:disabled)'))?.focus();
+  }, [sub]);
+
   const onKeyDown = (event: KeyboardEvent) => {
+    if (event.key === 'ArrowLeft' && sub) {
+      event.preventDefault();
+      setSub(null);
+      return;
+    }
     if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') return;
     const rows = [...(menu.current?.querySelectorAll<HTMLButtonElement>('button:not(:disabled)') ?? [])];
     if (!rows.length) return;
@@ -115,7 +145,7 @@ export function KeyMenu({ title, actions, onChoose, onClose, byKeyboard = false 
   return (
     <div ref={menu} className="key-menu" role="menu" aria-label={`Options for ${title}`} onKeyDown={onKeyDown}>
       <div className="key-menu-title">{title}</div>
-      {actions.map((action) => {
+      {(sub ?? actions).map((action) => {
         const Icon = icons[action.id];
         return (
           <Fragment key={`${action.id}${action.slot ?? ''}`}>
@@ -124,7 +154,15 @@ export function KeyMenu({ title, actions, onChoose, onClose, byKeyboard = false 
             type="button"
             role="menuitem"
             disabled={action.disabled}
+            title={action.help}
+            aria-description={action.help}
+            data-sub={action.sub ? '' : undefined}
+            aria-haspopup={action.sub ? 'menu' : undefined}
             onClick={(e) => {
+              if (action.sub) {
+                setSub(action.sub);
+                return;
+              }
               onChoose(action.id, action, e.detail);
               menu.current?.closest('.key-tile-wrap')?.querySelector<HTMLElement>('.key-tile')?.focus();
               onClose();

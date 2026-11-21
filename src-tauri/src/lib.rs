@@ -53,6 +53,7 @@ mod wall2_winutil;
 mod wall2_arrange;
 mod wall2_zones;
 mod wall2_keylib;
+mod wall2_powertoys;
 mod wall2_sharex;
 mod wall2_keys;
 #[cfg(windows)]

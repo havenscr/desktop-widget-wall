@@ -154,7 +154,7 @@ On first launch, configure the following in the Settings panel (gear icon):
 | `Escape` | Exit fullscreen |
 
 ### PowerToys keys
-The key library's PowerToys group checks, read only, whether PowerToys is on the PC: the process `PowerToys.exe` is running, or the folder `%LOCALAPPDATA%\PowerToys` or `Program Files\PowerToys` exists. If so, its keys are plain keys. If not, the group is titled "PowerToys (not installed on this PC)" and its keys keep the "check" tag. Nothing is launched.
+The key library's PowerToys group reads PowerToys' own settings, read only, so you do not have to check anything. `%LOCALAPPDATA%\Microsoft\PowerToys\settings.json` says which modules are on, and each module's own `settings.json` in its folder holds its shortcut. A key whose module is off shows "Off in PowerToys" and cannot be picked or pinned. A key whose shortcut was found sends that shortcut instead of the default one (the page only ever sees whether a key is on, never the shortcut). If a module's file is missing or unreadable, the key keeps its default shortcut. Each file is read up to 256 KB; a file that is too big or is not valid JSON counts as not found, and nothing is logged. If the main settings file is not found, the old check still applies: the process `PowerToys.exe` running, or the folder `%LOCALAPPDATA%\PowerToys` or `Program Files\PowerToys` existing, makes the keys plain keys; if neither, the group is titled "PowerToys (not installed on this PC)" and its keys keep the "check" tag. Nothing is launched.
 
 ### System Tray
 - **Left-click**: Show/restore window

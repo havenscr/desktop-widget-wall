@@ -530,7 +530,12 @@ pub(crate) fn auto_set<'a>(config: &'a Config, image_path: &str) -> Option<&'a A
 
 /// A key of a built-in set or a pin, from a library entry.
 fn lib_key_def(e: &wall2_keylib::LibEntry) -> Option<KeyDef> {
-    let action = match wall2_keylib::action_of(e)? {
+    key_def_of(e, wall2_keylib::action_of(e)?)
+}
+
+/// A key from a library entry and the action it should carry.
+fn key_def_of(e: &wall2_keylib::LibEntry, action: LibAction) -> Option<KeyDef> {
+    let action = match action {
         LibAction::Wall(a) => KeyAction::Wall(a),
         LibAction::Chord(c) => KeyAction::Chord(c),
     };
@@ -807,7 +812,9 @@ pub(crate) fn resolve(config: &Config, set_id: &str, index: usize) -> Result<(Ap
 /// library, a "coming" key, or a shortcut still to be worked out.
 pub(crate) fn resolve_library(id: &str) -> Result<(AppDef, KeyDef), Refusal> {
     let entry = wall2_keylib::find(id).ok_or(Refusal::NoKey)?;
-    let key = lib_key_def(entry).ok_or(Refusal::NoKey)?;
+    // A PowerToys key follows PowerToys' own settings: off sends nothing, a set shortcut replaces the default.
+    let action = wall2_keylib::action_live(entry, crate::wall2_powertoys::current().as_ref()).ok_or(Refusal::NoKey)?;
+    let key = key_def_of(entry, action).ok_or(Refusal::NoKey)?;
     let mut set = anywhere("library", "Library");
     set.matcher = wall2_keylib::matcher_of(entry);
     Ok((set, key))
@@ -848,7 +855,7 @@ pub async fn wall2_keys_summary(window: tauri::WebviewWindow, app: tauri::AppHan
 #[tauri::command]
 pub async fn wall2_keys_library(window: tauri::WebviewWindow) -> Result<Vec<wall2_keylib::LibGroupInfo>, String> {
     require_wall2(window.label())?;
-    Ok(wall2_keylib::library_info(wall2_keylib::powertoys_detected()))
+    Ok(wall2_keylib::library_info_with(wall2_keylib::powertoys_detected(), crate::wall2_powertoys::current().as_ref()))
 }
 
 /// Run one key of a set. Ok(None) when it is done (a chord was delivered, or Rust ran the

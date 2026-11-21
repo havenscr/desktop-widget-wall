@@ -13,6 +13,7 @@
 #![cfg_attr(not(windows), allow(dead_code))]
 
 use crate::wall2_keys::{parse_chord, valid_id, Matcher, Step};
+use crate::wall2_powertoys::PtState;
 use crate::wall2_sharex::ShareXTask;
 use serde::Serialize;
 
@@ -433,12 +434,12 @@ pub struct LibKeyInfo {
     pub id: String,
     pub label: String,
     pub icon: String,
-    /// `key`, `wall`, `check` or `soon`.
+    /// `key`, `wall`, `check`, `soon`, or `off` (a PowerToys key whose module is off in PowerToys).
     pub kind: &'static str,
     pub how: String,
     /// The wall action name, for the keys that carry one; never a chord.
     pub action: Option<String>,
-    /// Whether a click can do anything: false for `soon` and for a shortcut not worked out.
+    /// Whether a click can do anything: false for `soon`, for `off` and for a shortcut not worked out.
     pub runnable: bool,
 }
 
@@ -477,26 +478,58 @@ pub(crate) fn powertoys_found(running: bool, local_app_data: Option<&std::path::
     running || [local_app_data, program_files].into_iter().flatten().any(|d| d.join("PowerToys").is_dir())
 }
 
+/// The action of a library entry as this PC has it. A PowerToys key follows what PowerToys itself
+/// says: None while its module is off, and the shortcut the owner set in place of the default
+/// when one was read. Every other entry is `action_of`.
+pub(crate) fn action_live(e: &LibEntry, powertoys: Option<&PtState>) -> Option<LibAction> {
+    if e.group == "powertoys" {
+        if let Some(k) = powertoys.and_then(|s| s.get(e.id)) {
+            if !k.on {
+                return None;
+            }
+            if let Some(steps) = k.chord.as_deref().and_then(parse_chord) {
+                return Some(LibAction::Chord(steps));
+            }
+        }
+    }
+    action_of(e)
+}
+
 /// The whole catalogue for the picker. Pure; no chord in it. With PowerToys found its keys are
 /// plain keys; without it the group says so and its keys keep the check tag.
 pub(crate) fn library_info(powertoys: bool) -> Vec<LibGroupInfo> {
+    library_info_with(powertoys, None)
+}
+
+/// The catalogue with what PowerToys' own settings say (`state`, None when its settings file was
+/// not found). A key whose module is off is `off` and cannot be clicked; one whose shortcut was
+/// read says so in `how` and never shows the chord.
+pub(crate) fn library_info_with(powertoys: bool, state: Option<&PtState>) -> Vec<LibGroupInfo> {
+    let installed = powertoys || state.is_some();
     GROUPS
         .iter()
         .map(|g| LibGroupInfo {
             id: g.id.to_string(),
-            title: if g.id == "powertoys" && powertoys { "PowerToys".to_string() } else { g.title.to_string() },
+            title: if g.id == "powertoys" && installed { "PowerToys".to_string() } else { g.title.to_string() },
             exes: g.exes.iter().map(|s| s.to_string()).collect(),
             keys: LIBRARY
                 .iter()
                 .filter(|e| e.group == g.id)
                 .map(|e| {
-                    let act = action_of(e);
+                    let read = if e.group == "powertoys" { state.and_then(|s| s.get(e.id)) } else { None };
+                    let act = action_live(e, state);
+                    let (kind, how) = match read {
+                        Some(k) if !k.on => ("off", "Off in PowerToys".to_string()),
+                        Some(k) if k.chord.is_some() => (LibKind::Key.word(), "the shortcut set in PowerToys".to_string()),
+                        _ if installed && e.group == "powertoys" && e.kind == LibKind::Check => (LibKind::Key.word(), e.how.to_string()),
+                        _ => (e.kind.word(), e.how.to_string()),
+                    };
                     LibKeyInfo {
                         id: e.id.to_string(),
                         label: e.label.to_string(),
                         icon: e.icon.to_string(),
-                        kind: if powertoys && e.group == "powertoys" && e.kind == LibKind::Check { LibKind::Key.word() } else { e.kind.word() },
-                        how: e.how.to_string(),
+                        kind,
+                        how,
                         action: match &act {
                             Some(LibAction::Wall(a)) => Some(a.name()),
                             _ => None,
@@ -747,6 +780,42 @@ mod tests {
         assert!(pt(true).keys.iter().all(|k| k.kind == "key") && !pt(true).title.contains("not installed"));
         let other = |on: bool| library_info(on).into_iter().find(|g| g.id == "mail").unwrap().keys[0].kind;
         assert_eq!(other(true), other(false), "other groups are unaffected");
+    }
+
+    #[test]
+    fn powertoys_settings_turn_a_module_off_or_change_its_shortcut() {
+        use serde_json::json;
+        let global = json!({ "enabled": { "PowerToys Run": true, "ColorPicker": false, "TextExtractor": true, "AlwaysOnTop": true } });
+        let module = |dir: &str| match dir {
+            "PowerToys Run" => Some(json!({ "properties": { "open_powerlauncher": { "win": false, "ctrl": true, "alt": true, "shift": false, "code": 32 } } })),
+            _ => None,
+        };
+        let state = crate::wall2_powertoys::state_from(&global, &module);
+        let info = library_info_with(false, Some(&state));
+        let pt = info.iter().find(|g| g.id == "powertoys").unwrap();
+        assert_eq!(pt.title, "PowerToys");
+        let key = |id: &str| pt.keys.iter().find(|k| k.id == id).unwrap();
+        // Off: not clickable, and says so.
+        assert_eq!((key("pt-color").kind, key("pt-color").runnable), ("off", false));
+        assert_eq!(key("pt-color").how, "Off in PowerToys");
+        // A shortcut that was read: a plain key, with no chord in what the page gets.
+        assert_eq!((key("pt-run").kind, key("pt-run").runnable), ("key", true));
+        assert!(!serde_json::to_string(&info).unwrap().contains("Ctrl+Alt+Space"));
+        // On with no module file: a plain key with the default shortcut.
+        assert_eq!((key("pt-ocr").kind, key("pt-ocr").runnable), ("key", true));
+        assert_eq!(key("pt-ocr").how, "Win+Shift+T");
+        // The key sends the chord PowerToys has, not the default; an off key sends nothing.
+        let run = find("pt-run").unwrap();
+        assert!(matches!(action_live(run, Some(&state)), Some(LibAction::Chord(c)) if c == parse_chord("Ctrl+Alt+Space").unwrap()));
+        assert!(matches!(action_live(run, None), Some(LibAction::Chord(c)) if c == parse_chord("Alt+Space").unwrap()));
+        assert!(action_live(find("pt-color").unwrap(), Some(&state)).is_none());
+        // Other groups are not touched by the PowerToys state.
+        let other = |s: Option<&PtState>| library_info_with(false, s).into_iter().find(|g| g.id == "mail").unwrap().keys[0].kind;
+        assert_eq!(other(Some(&state)), other(None));
+        // No settings file: today's behaviour, the group is not installed and keeps the check tag.
+        let none = library_info_with(false, None);
+        let pt = none.iter().find(|g| g.id == "powertoys").unwrap();
+        assert!(pt.title.contains("not installed") && pt.keys.iter().all(|k| k.kind == "check"));
     }
 
     #[test]
