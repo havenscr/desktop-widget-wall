@@ -166,7 +166,7 @@ pub(crate) fn under_profile(path: &str, profile: &str) -> bool {
 }
 
 #[cfg(windows)]
-pub(crate) use win::launch;
+pub(crate) use win::{install_dir, launch};
 
 #[cfg(windows)]
 mod win {
@@ -215,6 +215,12 @@ mod win {
                 Err(Refusal::Failed)
             }
         }
+    }
+
+    /// The folder ShareX.exe sits in, as text, when ShareX is installed and found.
+    pub(crate) fn install_dir() -> Option<String> {
+        let exe = find_exe()?;
+        exe.parent().and_then(|d| d.to_str()).map(str::to_string)
     }
 
     /// The path of ShareX.exe: the one found before when it still passes, else the first

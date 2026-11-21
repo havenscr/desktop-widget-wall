@@ -1512,7 +1512,7 @@ the centre card; the date line takes it through the frame's `ClockSlot` portal.
   settings screen, set it in the browser console or by editing the stored JSON, for example
   `localStorage.setItem('wall2-settings', JSON.stringify({ shelfLists: ['Tasks (To-Do)', 'House'] }))`.
 - **Shelf place** (`screens/ShelfPlace.tsx`, `styles/shelf.css`). A rail button between On air and Zen.
-  Three parts: a Captures card on the left (it waits for the ShareX history PR, until then it says so), a
+  Three parts: a Captures card on the left (see Captures below), a
   side card with six ShareX keys (Region, Screen, GIF, Record, Text (OCR), History; they use the same press
   path as a pinned key, and a keyboard press never fires a ShareX task) and the Lists chips, and the task
   column on the right showing the picked list with the Always here deck under it. The chips come from the
@@ -1520,6 +1520,20 @@ the centre card; the date line takes it through the frame's `ClockSlot` portal.
   names end in an ellipsis. The picked list is remembered per viewer under `wall2-shelf-list`. Dev knobs:
   `?screen=shelf` opens the place and `?shelflists=Tasks (To-Do);House, garden` seeds the list names.
   Check: `npm run fit-check -- --area=shelf`.
+- **Captures** (`shelf/CapturesCard.tsx`, `shelf/captures.ts`, `src-tauri/src/wall2_captures.rs`). The card on the left of the Shelf
+  shows the newest ShareX captures, newest first: the newest large (a 392 by 220 picture, its window title, "app, time, size", and
+  Copy, Open and Folder), the five before it as rows (a 96 by 54 picture, the app, the time, and " · GIF" or " · Video"). A row click
+  shows that capture large instead; a click on the large picture opens it. Rust reads ShareX's `History.json` (by default in
+  Documents\ShareX, or the personal folder a `PersonalPath.cfg` names), tolerates a file that is still being written or has no
+  brackets, reads at most the newest 8 MB and returns at most 12 captures. The page never sees a path or a folder: each capture
+  has an opaque id, and thumbnails, Open, Copy and Folder take only that id. Rust acts only on a path from the history that is an
+  absolute local path (no network path, no `\\?\` path, no URL), a regular file, with an image, GIF, mp4, webm, mkv or mov
+  extension. Pictures and GIFs up to 6 MB get a thumbnail (the file type is checked by extension and by its first bytes); a video
+  gets a tile. Copy puts the file itself on the clipboard (the same file copy as Explorer's), so it pastes into chats, mail and
+  folders. A file that is gone shows a dimmed row, "File moved or deleted", and no buttons; no history file says "ShareX history not
+  found on this PC"; an empty history says to use the keys beside the card. The list is read every 10 seconds while the page is
+  visible and when the window gets focus. Dev knobs: `?captures=empty|nohistory|gone|gonebig|video|long|big`. Check:
+  `npm run fit-check -- --area=captures`.
 - **Browser dev.** `npm run dev` registers mocks for the commands Work calls
   (`src/bridge/devMocks/`, dev server only); in a review still (`?hz=&at=`) the
   meeting and task mocks follow the review's time. Review knobs: `?meet=none` (no
