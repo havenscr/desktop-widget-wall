@@ -10,8 +10,8 @@
 }
 
 /* Left wing: the third under the clock and the date. Everything starts 23 px under the date
-   (wall y 200) and ends above y 440: the headline, the day as a low curve, the weather row, the
-   house row with its room dots (see "Home left third" below). */
+   (wall y 200) and ends by y 470: the headline, the day as a low curve, the weather row, the
+   house row with its room dots on up to two lines (see "Home left third" below). */
 .home-wing {
   grid-column: 1;
   min-width: 0;
