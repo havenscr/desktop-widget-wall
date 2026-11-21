@@ -20,6 +20,8 @@ it('maps each scene id to its kind', () => {
   for (const [id, kind] of SCENES) expect(artKind(id)).toBe(kind);
   expect(artKind('Gaming')).toBe('gaming');
   expect(artKind('reading')).toBe('lamp');
+  expect(artKind('_normal')).toBe('normal');
+  expect(artKind('normal')).toBe('lamp');
 });
 
 it('renders an svg for each scene id with its own gradient ids', () => {

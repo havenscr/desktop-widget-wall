@@ -1,4 +1,5 @@
 import { useId } from 'react';
+import { MOOD_BACK_ID } from '../studio/homeStore';
 
 /**
  * Painted art for a mood card, after the concept's mood cards (v3 `.mood`): a sky
@@ -191,7 +192,7 @@ export function artKind(id: string): Kind {
   if (key === 'evening' || key === 'sunset') return 'evening';
   if (key === 'latenight' || key === 'night') return 'night';
   if (key === 'movie' || key === 'tv' || key === 'movie_mode') return 'movie';
-  if (key === 'normal') return 'normal';
+  if (id === MOOD_BACK_ID) return 'normal';
   if (key === 'gaming') return 'gaming';
   if (key === 'recording' || key === 'office_recording') return 'recording';
   if (key === 'romantic' || key === 'romantic_mode') return 'romantic';

@@ -43,6 +43,8 @@ export const TEXT = {
 export const OFFICE_OFF = 'office-off';
 /** The sentinel family for the Office mood nudge in `applying` and `moodFail`: `office-nudge-up` and `office-nudge-down`. No card shows the apply spinner for it. */
 export const OFFICE_NUDGE = 'office-nudge';
+/** Id of the Office row's injected Normal card. The home app's ids are letters and digits only, so a mood called Normal can never collide with it. */
+export const MOOD_BACK_ID = '_normal';
 /** After an Off write the lights' own report trails the write: the read that follows waits this long. */
 export const OFF_READ_DELAY_MS = 1500;
 
@@ -274,7 +276,7 @@ export const useHome = create<HomeState>((set, get) => {
     goBackFromMood() {
       if (get().applying !== null) return Promise.resolve();
       return enqueue('normal', async () => {
-        set({ applying: 'normal' });
+        set({ applying: MOOD_BACK_ID });
         try {
           applyStudio(await api.goNormal());
           set({ sticky: null });

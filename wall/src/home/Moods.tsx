@@ -7,7 +7,7 @@ import { reviewNow } from '../ui/reviewClock';
 import { useVisible } from '../ui/useVisible';
 import { useCentreStatus } from './centreSources';
 import { MoodArt } from './MoodArt';
-import { OFFICE_NUDGE, useHome } from '../studio/homeStore';
+import { MOOD_BACK_ID, OFFICE_NUDGE, useHome } from '../studio/homeStore';
 import { blockText, moodFailText } from '../studio/moodRow';
 import { attachPoll, isOn as lightSyncOn, SYNC_POLL_MS, useLightSync } from '../studio/lightsync/store';
 import { useMoodsPolling } from '../studio/useMoodsPolling';
@@ -87,7 +87,7 @@ export function capFirst(s: string): string {
 }
 
 /** The Office's back-to-before card: its id, label, line and the tip it carries. */
-export const NORMAL_ID = 'normal';
+export const NORMAL_ID = MOOD_BACK_ID;
 export const NORMAL_LINE = 'Room back to before · Key lights off';
 export const NORMAL_TIP = 'Puts the office back how it was before Gaming or Recording, key lights off';
 export const NORMAL_OFF_TIP = 'Nothing to go back from: neither Gaming nor Recording is on';
@@ -547,7 +547,7 @@ function useOfficeMoods(): Omit<SectionProps, 'head'> {
     : null;
   return {
     nudge,
-    moods: [...list.map((x) => ({ id: x.id, label: x.label })), ...(m && !list.some((x) => x.id === NORMAL_ID) ? [{ id: NORMAL_ID, label: 'Normal' }] : [])],
+    moods: [...list.map((x) => ({ id: x.id, label: x.label })), ...(list.length > 0 ? [{ id: NORMAL_ID, label: 'Normal' }] : [])],
     status,
     error,
     phase,

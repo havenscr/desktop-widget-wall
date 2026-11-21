@@ -55,7 +55,7 @@ const show = async () => {
   await flush();
   return view;
 };
-const normal = () => document.querySelector('[data-mood="normal"]') as HTMLElement;
+const normal = () => document.querySelector('[data-mood="_normal"]') as HTMLElement;
 
 it('capFirst upper-cases only the first letter', () => {
   expect(capFirst('bright and cool')).toBe('Bright and cool');
@@ -101,4 +101,33 @@ it('Normal calls the As before action when a mood is on', async () => {
   fireEvent.click(normal());
   await flush();
   expect(go).toHaveBeenCalledTimes(1);
+});
+
+it('an empty Office list shows the empty message and no lone Normal card', async () => {
+  mocks.set('wall2_office_moods', () => ({ stale: false, moods: [], nudge: null, canWrite: true, writeBlock: null }));
+  await show();
+  expect(document.querySelectorAll('.mood-btn')).toHaveLength(0);
+  expect(normal()).toBeNull();
+  expect(document.body.textContent).toContain('No moods set up in the home app yet');
+});
+
+it('an Office preset named Normal applies like any other mood and keeps the injected card too', async () => {
+  const applied: string[] = [];
+  mocks.set('wall2_office_moods', () => ({
+    stale: false,
+    moods: [{ id: 'normal', label: 'Normal', line: 'Room 40%', short: 'Room 40%', active: false }],
+    nudge: null,
+    canWrite: true,
+    writeBlock: null,
+  }));
+  const go = vi.fn(() => Promise.resolve());
+  await show();
+  useHome.setState({ goBackFromMood: go, applyMood: (id: string) => { applied.push(id); return Promise.resolve(); } } as never);
+  const real = document.querySelector('[data-mood="normal"]') as HTMLElement;
+  expect(real.querySelector('.mood-sub')?.textContent).toBe('Room 40%');
+  expect(normal()).not.toBeNull();
+  fireEvent.click(real);
+  await flush();
+  expect(applied).toEqual(['normal']);
+  expect(go).not.toHaveBeenCalled();
 });
