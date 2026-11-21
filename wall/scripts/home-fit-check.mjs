@@ -13,7 +13,7 @@
 //     quiet and three while alerts are open;
 //   drawer: the alert drawer stays inside the stage and below the top of the band (under
 //     the clock line);
-//   house: the house line fits the 458 by 215 area under the date and cuts no room name;
+//   house: the house line fits the 458 by 236 area under the date and cuts no room name;
 //   moods: with a More card, each of the four large mood cards is at least 270 px wide.
 // Prints what it measured and exits 1 on any failure. `--break=<name>` adds a stylesheet
 // that breaks one rule on purpose; `--self-test` runs every break and exits 0 only if each
@@ -39,6 +39,7 @@ const BREAKS = {
   rows: { css: '.home .chore-rows.fit3 { max-height: 200px !important; }', state: 'alerts', expect: /^FAIL chores: \d+ rows in view/m },
   drawer: { css: '.shield-drawer { top: -400px !important; bottom: auto !important; }', state: 'drawer', expect: /^FAIL drawer: /m },
   house: { css: '.home .house .house-line, .home .house .house-room { font-size: 30px !important; }', state: 'house', expect: /^FAIL house: /m },
+  'house-floor': { css: '.home .house { margin-top: 12px !important; }', state: 'house', expect: /^FAIL house: ends at y [\d.]+, past the area floor/m },
   moods: { css: '.mood-row.paged { grid-template-columns: repeat(5, minmax(0, 1fr)) 124px !important; }', state: 'moods', expect: /^FAIL moods: /m },
 };
 
@@ -178,8 +179,9 @@ setTimeout(() => {
         const b = box(h);
         const wb = box(wing);
         const date = box(document.querySelector('.home .home-blk'));
-        // The area under the date: 458 wide from the wing's left, ending 215 px below the sun block.
-        const floor = date.y + date.h + 215;
+        // The area under the date: 458 wide from the wing's left, ending 236 px below the sun block (wall y 470,
+        // the same end the left-third area holds: the room dots take two lines, the third is kept for the Next line).
+        const floor = date.y + date.h + 236;
         if (b.x + b.w > wb.x + 458 + 0.5 + 12) fail.push('house: ' + (b.x + b.w - wb.x).toFixed(1) + ' px wide, past the 458 px area');
         if (b.y + b.h > floor + 0.5) fail.push('house: ends at y ' + (b.y + b.h).toFixed(1) + ', past the area floor at ' + floor.toFixed(1));
         const rooms = h.querySelector('.house-rooms');
