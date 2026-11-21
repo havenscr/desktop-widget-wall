@@ -116,6 +116,19 @@ describe('pins on this display', () => {
     }
   });
 
+  it('a PowerToys pin whose module is off stays resolvable as a disabled key, and runs again when it is back on', () => {
+    const withColor = (patch: Partial<LibKey>): LibGroup[] => lib.map((g) => ({ ...g, keys: g.keys.map((k) => (k.id === 'pt-color' ? { ...k, ...patch } : k)) }));
+    const off = withColor({ kind: 'off', runnable: false, how: 'Off in PowerToys' });
+    expect(resolvePin('lib:pt-color', off, [])).toMatchObject({ label: 'Color picker', kind: 'off', runnable: false, how: 'Off in PowerToys' });
+    // The pin keeps its slot in a saved list while the module is off.
+    const saved = JSON.stringify(['lib:snip', 'lib:pt-color']);
+    expect(parsePins(saved, off, [])).toEqual(['lib:snip', 'lib:pt-color']);
+    // Back on: the same pin is a runnable key again.
+    expect(resolvePin('lib:pt-color', withColor({ kind: 'key', runnable: true }), [])).toMatchObject({ kind: 'key', runnable: true });
+    // A key that is merely coming (soon) is still not drawable.
+    expect(resolvePin('lib:new-chat', withColor({}), [])).toBeNull();
+  });
+
   it('reads a saved list only when every entry is valid, at most five, without repeats', () => {
     expect(PINS_KEY).toBe('wall2-keys-pins');
     const ok = ['lib:snip', 'lib:thirds', 'file:0'];

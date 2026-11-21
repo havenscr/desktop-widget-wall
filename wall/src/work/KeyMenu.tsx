@@ -101,7 +101,7 @@ export function KeyMenu({ title, actions, onChoose, onClose, byKeyboard = false 
     el.addEventListener('keydown', keyInside);
     document.addEventListener('pointerdown', away, true);
     document.addEventListener('keydown', escape);
-    el.querySelector<HTMLButtonElement>('button:not(:disabled)')?.focus();
+    (el.querySelector<HTMLButtonElement>('button:not(:disabled)') ?? el).focus();
     schedule();
     return () => {
       el.removeEventListener('pointerenter', enter);
@@ -125,7 +125,7 @@ export function KeyMenu({ title, actions, onChoose, onClose, byKeyboard = false 
     const el = menu.current;
     if (!el) return;
     const target = sub ? el.querySelector<HTMLButtonElement>('button:not(:disabled)') : el.querySelector<HTMLButtonElement>('button[data-sub]');
-    (target ?? el.querySelector<HTMLButtonElement>('button:not(:disabled)'))?.focus();
+    (target ?? el.querySelector<HTMLButtonElement>('button:not(:disabled)') ?? el).focus();
   }, [sub]);
 
   const onKeyDown = (event: KeyboardEvent) => {
@@ -143,7 +143,7 @@ export function KeyMenu({ title, actions, onChoose, onClose, byKeyboard = false 
   };
 
   return (
-    <div ref={menu} className="key-menu" role="menu" aria-label={`Options for ${title}`} onKeyDown={onKeyDown}>
+    <div ref={menu} className="key-menu" role="menu" tabIndex={-1} aria-label={`Options for ${title}`} onKeyDown={onKeyDown}>
       <div className="key-menu-title">{title}</div>
       {(sub ?? actions).map((action) => {
         const Icon = icons[action.id];

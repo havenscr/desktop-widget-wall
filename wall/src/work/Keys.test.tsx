@@ -826,6 +826,22 @@ it('with Always here full, Put in Always here opens a second step listing the fi
   expect(menuUp()).toBeNull();
 });
 
+it('a pinned PowerToys key that is off keeps its place and its real name in the replace step', async () => {
+  const off = LIBRARY_DATA.map((g) => ({ ...g, keys: g.keys.map((k) => (k.id === 'pt-color' ? { ...k, kind: 'off' as const, runnable: false, how: 'Off in PowerToys' } : k)) }));
+  mocks.set('wall2_keys_library', () => off);
+  localStorage.setItem(PINS_KEY, JSON.stringify(['lib:thirds', 'lib:focus', 'lib:pt-color', 'lib:mixer', 'lib:zen']));
+  answer = front('general', 'notepad.exe');
+  render(<Keys />);
+  await flush();
+  fireEvent.contextMenu(screen.getByRole('button', { name: 'Snip' }));
+  await flush();
+  expect(screen.getByRole('menuitem', { name: /Put in Always here/ }).textContent).toContain('5 of 5');
+  fireEvent.click(screen.getByRole('menuitem', { name: /Put in Always here/ }));
+  const names = screen.getAllByRole('menuitem').map((m) => m.querySelector('span')?.textContent);
+  expect(names).toEqual(['Thirds', 'Focus', 'Color picker', 'Volume mixer', 'Zen']);
+  expect(names.some((n) => n?.startsWith('lib:'))).toBe(false);
+});
+
 it('Escape in the second step goes back to the first, and a second Escape closes the menu', async () => {
   libraryMocks();
   localStorage.setItem(PINS_KEY, JSON.stringify(['lib:thirds', 'lib:focus', 'lib:mute', 'lib:mixer', 'lib:zen']));

@@ -144,3 +144,26 @@ it('does not run its timer after it is gone', async () => {
   await flush(MENU_CLOSE_MS * 2);
   expect(closed).toBe(0);
 });
+
+it('with every item disabled the menu itself takes focus, so Escape and the arrows act on it, not the tile under it', async () => {
+  const disabled: KeyMenuAction[] = [
+    { id: 'run', label: 'Run it now', disabled: true, help: 'Cannot run here.' },
+    { id: 'pin', label: 'Already in Always here', disabled: true, help: 'Already pinned.' },
+  ];
+  const { container } = render(
+    <div className="key-tile-wrap">
+      <button type="button" className="key-tile">
+        Tile
+      </button>
+      <KeyMenu title="Tile" actions={disabled} byKeyboard onChoose={() => {}} onClose={() => (closed += 1)} />
+    </div>,
+  );
+  const m = menu() as HTMLElement;
+  expect(m.getAttribute('tabindex')).toBe('-1');
+  expect(document.activeElement).toBe(m);
+  expect(container.querySelector('.key-tile')).not.toBe(document.activeElement);
+  fireEvent.keyDown(m, { key: 'ArrowDown' });
+  expect(document.activeElement).toBe(m);
+  fireEvent.keyDown(document.activeElement as HTMLElement, { key: 'Escape' });
+  expect(closed).toBe(1);
+});

@@ -285,29 +285,31 @@ export function PinnedRow() {
             const sel = undoShown && applied?.action === p.action && p.action !== null;
             const where = { name: p.group ?? 'the app in front', general: p.group === null };
             const runPin = (detail: number) => {
-              if (layoutOff || keyboardOnMouseKey(p.action, detail)) return;
+              if (layoutOff || !p.runnable || keyboardOnMouseKey(p.action, detail)) return;
               const [kind, id] = [p.ref.slice(0, 4), p.ref.slice(4)];
               const call = kind === 'lib:' ? ({ command: 'wall2_keys_send_library', args: { id } } as const) : ({ command: 'wall2_keys_send', args: { setId: 'pinned', index: Number(p.ref.slice(5)) } } as const);
               void press(`pin:${p.ref}`, detail, call, p.label, p.action, where, false);
             };
             const actions: KeyMenuAction[] = [
-              { id: 'run', label: 'Run it now', disabled: layoutOff, help: `Sends ${p.label} once, right now.` },
+              { id: 'run', label: 'Run it now', disabled: layoutOff || !p.runnable, help: p.runnable ? `Sends ${p.label} once, right now.` : `${p.label} cannot run: ${p.how}.` },
               { id: 'remove', label: 'Remove from Always here', help: `Takes ${p.label} off the Always here row. It stays in the key library.` },
             ];
             return (
               <div className="key-tile-wrap" key={p.ref}>
               <button
                 type="button"
-                className={`deck-tile key-tile pin-tile${layoutOff ? ' off' : ''}${sel ? ' sel' : ''}`}
+                className={`deck-tile key-tile pin-tile${layoutOff || !p.runnable ? ' off' : ''}${sel ? ' sel' : ''}`}
                 aria-label={p.label}
-                data-kind={layoutOff ? undefined : kindOf(p)}
-                aria-disabled={layoutOff || undefined}
+                data-kind={layoutOff || !p.runnable ? undefined : kindOf(p)}
+                aria-disabled={layoutOff || !p.runnable || undefined}
                 {...previewTip(
                   p.action,
                   layoutOff,
                   layoutOff
                     ? layoutOffReason(arrange)
-                    : `${p.label}${p.group ? ` (${p.group})` : ''}${p.kind === 'check' ? ', a shortcut to check on your PC' : ''}.${p.how ? ` ${p.how}.` : ''} Right-click for more.`,
+                    : !p.runnable
+                      ? `${p.label}: ${p.how}. Right-click to take it out of Always here.`
+                      : `${p.label}${p.group ? ` (${p.group})` : ''}${p.kind === 'check' ? ', a shortcut to check on your PC' : ''}.${p.how ? ` ${p.how}.` : ''} Right-click for more.`,
                 )}
                 onContextMenu={onContext(i)}
                 onKeyDown={onKey(i, p.action)}

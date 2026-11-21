@@ -30,15 +30,18 @@ const MODULES: [Module; 5] = [
     Module { id: "pt-color", enabled_name: "ColorPicker", dir: "ColorPicker", shortcut: "ActivationShortcut" },
     Module { id: "pt-ocr", enabled_name: "TextExtractor", dir: "TextExtractor", shortcut: "ActivationShortcut" },
     Module { id: "pt-top", enabled_name: "AlwaysOnTop", dir: "AlwaysOnTop", shortcut: "hotkey" },
-    Module { id: "pt-plain", enabled_name: "AdvancedPaste", dir: "AdvancedPaste", shortcut: "" },
+    Module { id: "pt-plain", enabled_name: "AdvancedPaste", dir: "AdvancedPaste", shortcut: "paste-as-plain-hotkey" },
 ];
 
 /// What PowerToys says about one key: whether its module is on, and the chord it was set to,
-/// when one could be read and mapped.
+/// when one could be read and mapped. `blocked` means a shortcut is set in PowerToys but cannot
+/// be turned into a chord the wall can send (an unsupported key): the key must not run, and
+/// must never fall back to the default chord.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct KeyState {
     pub on: bool,
     pub chord: Option<String>,
+    pub blocked: bool,
 }
 
 /// The state of every PowerToys library key, from PowerToys' own files.
@@ -124,7 +127,8 @@ pub(crate) fn chord_from(shortcut: &Value) -> Option<String> {
 
 /// The state of every PowerToys key from the main settings and a way to read a module's own
 /// settings by its folder name. A module the main file does not list counts as on; a module
-/// file that is not found keeps the default shortcut.
+/// file that is not found, or has no shortcut set, keeps the default shortcut; a shortcut that
+/// is set but cannot be mapped blocks the key.
 pub(crate) fn state_from(global: &Value, module_file: &dyn Fn(&str) -> Option<Value>) -> PtState {
     let enabled = global.get("enabled").and_then(Value::as_object);
     let mut keys = HashMap::new();
@@ -133,12 +137,16 @@ pub(crate) fn state_from(global: &Value, module_file: &dyn Fn(&str) -> Option<Va
             .and_then(|list| list.iter().find(|(name, _)| norm(name) == norm(m.enabled_name)))
             .and_then(|(_, v)| v.as_bool())
             .unwrap_or(true);
-        let chord = if on && !m.shortcut.is_empty() {
-            module_file(m.dir).and_then(|file| file.get("properties").and_then(|p| p.get(m.shortcut)).and_then(chord_from))
+        // A missing file, property or null value means no shortcut set: the default stays. A
+        // value that is there but cannot be mapped blocks the key.
+        let configured = if on && !m.shortcut.is_empty() {
+            module_file(m.dir).and_then(|file| file.get("properties").and_then(|p| p.get(m.shortcut)).filter(|v| !v.is_null()).cloned())
         } else {
             None
         };
-        keys.insert(m.id, KeyState { on, chord });
+        let chord = configured.as_ref().and_then(chord_from);
+        let blocked = configured.is_some() && chord.is_none();
+        keys.insert(m.id, KeyState { on, chord, blocked });
     }
     PtState { keys }
 }
@@ -182,7 +190,7 @@ mod tests {
         assert!(state.get("pt-ocr").unwrap().on);
         assert!(!state.get("pt-top").unwrap().on);
         // Not listed: counts as on, with no chord read.
-        assert_eq!(state.get("pt-plain"), Some(&KeyState { on: true, chord: None }));
+        assert_eq!(state.get("pt-plain"), Some(&KeyState { on: true, chord: None, blocked: false }));
         assert_eq!(state.get("pt-nope"), None);
     }
 
@@ -216,11 +224,11 @@ mod tests {
     fn a_disabled_module_reads_no_shortcut() {
         let global = json!({ "enabled": { "ColorPicker": false } });
         let module = |_: &str| Some(json!({ "properties": { "ActivationShortcut": { "win": true, "code": 81 } } }));
-        assert_eq!(state_from(&global, &module).get("pt-color"), Some(&KeyState { on: false, chord: None }));
+        assert_eq!(state_from(&global, &module).get("pt-color"), Some(&KeyState { on: false, chord: None, blocked: false }));
     }
 
     #[test]
-    fn a_shortcut_that_cannot_be_mapped_keeps_the_default() {
+    fn a_shortcut_that_cannot_be_mapped_has_no_chord() {
         for bad in [
             json!({ "win": true, "code": 0xE8 }),
             json!({ "win": false, "ctrl": false, "alt": false, "shift": false, "code": 65 }),
@@ -262,12 +270,47 @@ mod tests {
         std::fs::write(root.join("TextExtractor").join("settings.json"), "{ not json").unwrap();
         let state = read_state(&root).expect("read");
         assert_eq!(state.get("pt-color").unwrap().chord.as_deref(), Some("Win+Shift+C"));
-        assert_eq!(state.get("pt-ocr"), Some(&KeyState { on: true, chord: None }), "bad JSON keeps the default");
+        assert_eq!(state.get("pt-ocr"), Some(&KeyState { on: true, chord: None, blocked: false }), "bad JSON keeps the default");
         // Bad main file, and a main file over the cap, are both not found.
         std::fs::write(root.join("settings.json"), "[").unwrap();
         assert_eq!(read_state(&root), None);
         std::fs::write(root.join("settings.json"), format!("{{ \"pad\": \"{}\" }}", "x".repeat(MAX_BYTES as usize))).unwrap();
         assert_eq!(read_state(&root), None);
         std::fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn advanced_paste_reads_the_plain_text_shortcut() {
+        let global = json!({ "enabled": { "AdvancedPaste": true } });
+        let module = |dir: &str| match dir {
+            "AdvancedPaste" => Some(json!({ "properties": {
+                "paste-as-plain-hotkey": { "win": true, "ctrl": true, "alt": false, "shift": false, "code": 86 },
+                "advanced-paste-ui-hotkey": { "win": true, "ctrl": false, "alt": false, "shift": true, "code": 86 }
+            } })),
+            _ => None,
+        };
+        let state = state_from(&global, &module);
+        assert_eq!(state.get("pt-plain").unwrap().chord.as_deref(), Some("Win+Ctrl+V"));
+        assert!(!state.get("pt-plain").unwrap().blocked);
+    }
+
+    #[test]
+    fn a_set_shortcut_that_cannot_be_mapped_blocks_the_key_but_an_unset_one_does_not() {
+        let global = json!({ "enabled": { "ColorPicker": true, "TextExtractor": true, "AlwaysOnTop": true } });
+        let module = |dir: &str| match dir {
+            // An OEM key the vocabulary has no name for.
+            "ColorPicker" => Some(json!({ "properties": { "ActivationShortcut": { "win": true, "code": 0xE8 } } })),
+            // The property is null: nothing set.
+            "TextExtractor" => Some(json!({ "properties": { "ActivationShortcut": null } })),
+            // The module file has no such property.
+            "AlwaysOnTop" => Some(json!({ "properties": {} })),
+            _ => None,
+        };
+        let state = state_from(&global, &module);
+        assert_eq!(state.get("pt-color"), Some(&KeyState { on: true, chord: None, blocked: true }));
+        assert_eq!(state.get("pt-ocr"), Some(&KeyState { on: true, chord: None, blocked: false }));
+        assert_eq!(state.get("pt-top"), Some(&KeyState { on: true, chord: None, blocked: false }));
+        // No module file at all: the default stays.
+        assert_eq!(state.get("pt-run"), Some(&KeyState { on: true, chord: None, blocked: false }));
     }
 }

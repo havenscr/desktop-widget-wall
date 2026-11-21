@@ -52,7 +52,11 @@ export function allKeys(lib: readonly LibGroup[]): Map<string, { key: LibKey; gr
   return m;
 }
 
-/** A pin reference as something drawable, or null when it names nothing that exists and can run. */
+/**
+ * A pin reference as something drawable, or null when it names nothing that exists and can run.
+ * A PowerToys key that is off (or whose shortcut cannot be sent) still resolves, as a disabled
+ * entry (`runnable` false, kind `off`, `how` saying why), so the pin keeps its slot and its name.
+ */
 export function resolvePin(ref: string, lib: readonly LibGroup[], filePins: readonly KeyInfo[]): PinView | null {
   if (!REF_RE.test(ref)) return null;
   if (ref.startsWith('file:')) {
@@ -60,9 +64,9 @@ export function resolvePin(ref: string, lib: readonly LibGroup[], filePins: read
     return k ? { ref, label: k.label, icon: k.icon, action: k.action, kind: 'file', how: '', group: null, runnable: true } : null;
   }
   const hit = allKeys(lib).get(ref.slice(4));
-  if (!hit || !hit.key.runnable || hit.key.kind === 'soon' || hit.key.kind === 'off') return null;
+  if (!hit || hit.key.kind === 'soon' || (!hit.key.runnable && hit.key.kind !== 'off')) return null;
   const { key, group } = hit;
-  return { ref, label: key.label, icon: key.icon, action: key.action, kind: key.kind, how: key.how, group: group.exes.length > 0 ? group.title : null, runnable: true };
+  return { ref, label: key.label, icon: key.icon, action: key.action, kind: key.kind, how: key.how, group: group.exes.length > 0 ? group.title : null, runnable: key.runnable };
 }
 
 /**

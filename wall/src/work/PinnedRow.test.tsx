@@ -755,3 +755,37 @@ it('draws the row at the size and column count for 1 to 5 tiles, the Add tile co
     unmount();
   }
 });
+
+it('a pinned PowerToys key that is off stays in its slot, greyed with the reason and never sent, and runs again once the module is back on', async () => {
+  const withColor = (patch: Record<string, unknown>) => LIBRARY_DATA.map((g) => ({ ...g, keys: g.keys.map((k) => (k.id === 'pt-color' ? { ...k, ...patch } : k)) }));
+  localStorage.setItem(PINS_KEY, JSON.stringify(['lib:snip', 'lib:pt-color', 'lib:thirds', 'lib:focus', 'lib:strip-dark']));
+  mocks.set('wall2_keys_library', () => withColor({ kind: 'off', runnable: false, how: 'Off in PowerToys' }));
+  const first = render(<PinnedRow />);
+  await flush();
+  expect(labels()).toEqual(['Snip', 'Color picker', 'Thirds', 'Focus', 'Hide screen']);
+  const tile = screen.getByRole('button', { name: 'Color picker' });
+  expect(tile.getAttribute('aria-disabled')).toBe('true');
+  expect(tile.className).toContain('off');
+  fireEvent.click(tile, { detail: 1 });
+  await flush();
+  expect(libCalls).toEqual([]);
+  fireEvent.mouseEnter(tile);
+  fireEvent.pointerEnter(tile);
+  await flush(TIP_DELAY_MS + 50);
+  // Its menu cannot run it either.
+  fireEvent.contextMenu(tile);
+  await flush();
+  expect((screen.getByRole('menuitem', { name: /Run it now/ }) as HTMLButtonElement).disabled).toBe(true);
+  first.unmount();
+  resetKeysFeed();
+  mocks.set('wall2_keys_library', () => withColor({ kind: 'key', runnable: true, how: 'Win+Shift+C' }));
+  render(<PinnedRow />);
+  await flush();
+  expect(labels()).toEqual(['Snip', 'Color picker', 'Thirds', 'Focus', 'Hide screen']);
+  const back = screen.getByRole('button', { name: 'Color picker' });
+  expect(back.getAttribute('aria-disabled')).toBeNull();
+  answerFor = () => null;
+  fireEvent.click(back, { detail: 1 });
+  await flush();
+  expect(libCalls).toEqual([{ id: 'pt-color' }]);
+});

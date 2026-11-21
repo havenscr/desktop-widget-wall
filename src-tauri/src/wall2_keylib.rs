@@ -479,12 +479,13 @@ pub(crate) fn powertoys_found(running: bool, local_app_data: Option<&std::path::
 }
 
 /// The action of a library entry as this PC has it. A PowerToys key follows what PowerToys itself
-/// says: None while its module is off, and the shortcut the owner set in place of the default
+/// says: None while its module is off or its set shortcut cannot be sent (never the default
+/// chord then), and the shortcut the owner set in place of the default
 /// when one was read. Every other entry is `action_of`.
 pub(crate) fn action_live(e: &LibEntry, powertoys: Option<&PtState>) -> Option<LibAction> {
     if e.group == "powertoys" {
         if let Some(k) = powertoys.and_then(|s| s.get(e.id)) {
-            if !k.on {
+            if !k.on || k.blocked {
                 return None;
             }
             if let Some(steps) = k.chord.as_deref().and_then(parse_chord) {
@@ -520,6 +521,7 @@ pub(crate) fn library_info_with(powertoys: bool, state: Option<&PtState>) -> Vec
                     let act = action_live(e, state);
                     let (kind, how) = match read {
                         Some(k) if !k.on => ("off", "Off in PowerToys".to_string()),
+                        Some(k) if k.blocked => ("off", "Its PowerToys shortcut can't be sent from here".to_string()),
                         Some(k) if k.chord.is_some() => (LibKind::Key.word(), "the shortcut set in PowerToys".to_string()),
                         _ if installed && e.group == "powertoys" && e.kind == LibKind::Check => (LibKind::Key.word(), e.how.to_string()),
                         _ => (e.kind.word(), e.how.to_string()),
@@ -809,6 +811,18 @@ mod tests {
         assert!(matches!(action_live(run, Some(&state)), Some(LibAction::Chord(c)) if c == parse_chord("Ctrl+Alt+Space").unwrap()));
         assert!(matches!(action_live(run, None), Some(LibAction::Chord(c)) if c == parse_chord("Alt+Space").unwrap()));
         assert!(action_live(find("pt-color").unwrap(), Some(&state)).is_none());
+        // A shortcut that is set but cannot be sent blocks the key; it never sends the default chord.
+        let global = json!({ "enabled": { "ColorPicker": true } });
+        let odd = |dir: &str| match dir {
+            "ColorPicker" => Some(json!({ "properties": { "ActivationShortcut": { "win": true, "code": 232 } } })),
+            _ => None,
+        };
+        let blocked = crate::wall2_powertoys::state_from(&global, &odd);
+        assert!(action_live(find("pt-color").unwrap(), Some(&blocked)).is_none());
+        let info = library_info_with(false, Some(&blocked));
+        let color = info.iter().find(|g| g.id == "powertoys").unwrap().keys.iter().find(|k| k.id == "pt-color").unwrap().clone();
+        assert_eq!((color.kind, color.runnable), ("off", false));
+        assert_eq!(color.how, "Its PowerToys shortcut can't be sent from here");
         // Other groups are not touched by the PowerToys state.
         let other = |s: Option<&PtState>| library_info_with(false, s).into_iter().find(|g| g.id == "mail").unwrap().keys[0].kind;
         assert_eq!(other(Some(&state)), other(None));
