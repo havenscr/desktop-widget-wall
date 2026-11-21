@@ -365,7 +365,7 @@ pub(crate) fn id_for(path: &str, modified_ms: i64, size: u64) -> String {
 
 /// Add a read's captures to the map. An id already there moves to the newest end; the oldest
 /// beyond `max` are dropped.
-pub(crate) fn remember(map: &mut Vec<(String, Held)>, fresh: Vec<(String, Held)>, max: usize) {
+pub(crate) fn remember<T>(map: &mut Vec<(String, T)>, fresh: Vec<(String, T)>, max: usize) {
     for (id, held) in fresh {
         map.retain(|(k, _)| *k != id);
         map.push((id, held));
@@ -377,7 +377,7 @@ pub(crate) fn remember(map: &mut Vec<(String, Held)>, fresh: Vec<(String, Held)>
 }
 
 /// A held capture by id.
-pub(crate) fn pick<'a>(map: &'a [(String, Held)], id: &str) -> Option<&'a Held> {
+pub(crate) fn pick<'a, T>(map: &'a [(String, T)], id: &str) -> Option<&'a T> {
     map.iter().find(|(k, _)| k == id).map(|(_, h)| h)
 }
 
@@ -596,7 +596,7 @@ fn act_now(app: &tauri::AppHandle, id: &str, action: Action) -> Result<(), Strin
 
 /// Explorer with the file selected. The path is always quoted (it was refused earlier if it
 /// held a quote), so a space or a comma in it cannot split the argument.
-fn show_in_folder(path: &str) -> Result<(), String> {
+pub(crate) fn show_in_folder(path: &str) -> Result<(), String> {
     #[cfg(windows)]
     {
         use std::os::windows::process::CommandExt;
@@ -899,7 +899,7 @@ mod tests {
         let map = vec![("aaaa".to_string(), held(A))];
         assert!(pick(&map, "aaaa").is_some());
         assert!(pick(&map, "bbbb").is_none());
-        assert!(pick(&[], "aaaa").is_none());
+        assert!(pick::<Held>(&[], "aaaa").is_none());
     }
 
     #[test]

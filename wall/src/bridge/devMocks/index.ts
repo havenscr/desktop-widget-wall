@@ -1,6 +1,7 @@
 import { isTauri, mocks } from '../tauri';
 import { registerAudioMocks } from './audio';
 import { registerCapturesMocks } from './captures';
+import { registerRecentMocks } from './recent';
 import { registerDaysMocks } from './days';
 import { registerDeckMocks } from './deck';
 import { registerGalleryMocks } from './gallery';
@@ -61,4 +62,5 @@ export function registerDevMocks(): void {
   registerLightSyncMocks();
   registerToolsMocks();
   registerCapturesMocks();
+  registerRecentMocks();
 }

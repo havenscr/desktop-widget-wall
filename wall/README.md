@@ -1513,7 +1513,7 @@ the centre card; the date line takes it through the frame's `ClockSlot` portal.
   settings screen, set it in the browser console or by editing the stored JSON, for example
   `localStorage.setItem('wall2-settings', JSON.stringify({ shelfLists: ['Tasks (To-Do)', 'House'] }))`.
 - **Shelf place** (`screens/ShelfPlace.tsx`, `styles/shelf.css`). A rail button between On air and Zen.
-  Three parts: a Captures card on the left (see Captures below), a
+  Four parts: a Recent files card in the left wing under the clock (see Recent files below), a Captures card (see Captures below), a
   side card with six ShareX keys (Region, Screen, GIF, Record, Text (OCR), History; they use the same press
   path as a pinned key, and a keyboard press never fires a ShareX task) and the Lists chips, and the task
   column on the right showing the picked list with the Always here deck under it. The chips come from the
@@ -1522,6 +1522,17 @@ the centre card; the date line takes it through the frame's `ClockSlot` portal.
   names end in an ellipsis. The picked list is remembered per viewer under `wall2-shelf-list`. Dev knobs:
   `?screen=shelf` opens the place and `?shelflists=Tasks (To-Do);House, garden` seeds the override list names (without it the mock task app's three lists show).
   Check: `npm run fit-check -- --area=shelf`.
+- **Recent files** (`shelf/RecentCard.tsx`, `shelf/recent.ts`, `src-tauri/src/wall2_recent.rs`). The card in the Shelf's left wing, under the
+  clock and date line: the last five files the user opened, newest first, each a file name (ellipsis) and a time ("9:40 AM" today,
+  "Yesterday", a weekday within the week, then "Nov 3"), with a small Folder button. A row click opens the file in its default app; Folder
+  shows it selected in File Explorer; a failed action says so in the card's heading line ("File moved or deleted", "Could not do that").
+  Rust reuses the old app's Windows Recent reader (`read_recent_files`); the time is when the file was last opened. `wall2_recent_files`
+  returns `{ id, name, modified, kind }` (id: an opaque hash of path, time and size; Rust keeps the last 64 ids), and `wall2_recent_open` and
+  `wall2_recent_folder` take only an id. Every call is refused unless it comes from the Wall 2 window. Rust acts only on an absolute
+  local path that is a regular file and is not a program or script (exe, bat, cmd, lnk, ps1, js, msi and the like are never listed or
+  opened); an unknown id or a file that is gone answers `missing`. The page never sees a path. Read every 60 seconds while the page is
+  visible and when the window gets focus. Empty: "No recent files"; a failed read: "Recent files unavailable". Dev knobs:
+  `?recent=empty|down|long`. Check: `npm run fit-check -- --area=shelf`.
 - **Captures** (`shelf/CapturesCard.tsx`, `shelf/captures.ts`, `src-tauri/src/wall2_captures.rs`). The card on the left of the Shelf
   shows the newest ShareX captures, newest first: the newest large (a 392 by 220 picture, its window title, "app, time, size", and
   Copy, Open and Folder), the five before it as rows (a 96 by 54 picture, the app, the time, and " · GIF" or " · Video"). A row click

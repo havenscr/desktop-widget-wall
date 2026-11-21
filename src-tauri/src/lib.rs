@@ -83,6 +83,7 @@ mod wall2_sonos_read;
 mod wall2_watch;
 mod wall2_tools;
 mod wall2_captures;
+mod wall2_recent;
 mod wall2_onair;
 mod wall2_stagepop;
 mod wall2_stagepop_cmd;
@@ -1639,7 +1640,15 @@ fn resolve_shortcut(lnk_path: &std::path::Path) -> Option<PathBuf> {
 async fn get_recent_files(limit: Option<usize>) -> Vec<RecentFileInfo> {
     let limit = limit.unwrap_or(15);
 
-    tauri::async_runtime::spawn_blocking(move || {
+    tauri::async_runtime::spawn_blocking(move || read_recent_files(limit))
+        .await
+        .unwrap_or_default()
+}
+
+/// The Recent folder's shortcuts resolved to existing files, newest first, at most `limit`.
+/// Shared by the old app's `get_recent_files` and the Wall 2 Shelf's `wall2_recent_files`.
+pub(crate) fn read_recent_files(limit: usize) -> Vec<RecentFileInfo> {
+    {
         let mut files = Vec::new();
 
         // Get Recent folder path
@@ -1727,9 +1736,7 @@ async fn get_recent_files(limit: Option<usize>) -> Vec<RecentFileInfo> {
         }
 
         files
-    })
-    .await
-    .unwrap_or_default()
+    }
 }
 
 /// Simple date formatting without external crate
@@ -4120,6 +4127,9 @@ pub fn run() {
             wall2_captures::wall2_captures_list,
             wall2_captures::wall2_captures_thumb,
             wall2_captures::wall2_captures_act,
+            wall2_recent::wall2_recent_files,
+            wall2_recent::wall2_recent_open,
+            wall2_recent::wall2_recent_folder,
             list_audio_devices,
             start_audio_capture,
             stop_audio_capture,
