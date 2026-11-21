@@ -123,6 +123,14 @@ export function registerTaskMocks(): void {
   else if (dueMode === 'three') tasks = [...tasks.filter((t) => !inDue(t) || t.id === 't1'), ...dueToday.slice(1, 3)];
   else if (dueMode === 'twelve') tasks = [...tasks, ...dueToday.slice(0, 11)];
   else tasks = [...tasks, ...dueToday.slice(0, 5)];
+  // `?later=1` turns on the Later today switch, so timed tasks due later today show.
+  if (knob('later') === '1') {
+    try {
+      localStorage.setItem('wall.tasks.showLater', '1');
+    } catch {
+      /* storage can be blocked */
+    }
+  }
   // `?chores=many`: thirteen home chores; `?chores=timed` adds one due this afternoon at 4:30 PM beside the estimate pills (Home shows five rows that scroll, and "8 more").
   const chores = knob('chores');
   // Around the house starts with Today only on; the chore states below list undated chores, so they turn it off unless `?todayonly=on`.
