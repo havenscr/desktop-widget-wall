@@ -153,7 +153,7 @@ export default {
       state('browser call: the keys are disabled', 'meet=known&call=browser', ['In call, browser', 'Mute', 'Camera', 'Share', 'Leave', 'Open in browser'], 'hover:.meet-key'),
       state('camera off', 'meet=known&call=teams&checklist=four', ['Camera off', '!Camera on']),
       state('recording', 'meet=known&call=teams&camera=1&rec=1&checklist=four', ['Recording00:']),
-      state('nothing scheduled', 'meet=none', ['Nothing scheduled in the next 24 hours', 'Nothing else today', 'Your first-meeting list', 'Open file', 'Connected', 'Forget']),
+      state('nothing scheduled', 'meet=none', ['Nothing scheduled in the next 24 hours', 'Nothing else today', 'Your first-meeting list', 'Open file']),
       state('nothing scheduled, no brief key: Connect under the headline', 'meet=none&token=off', ['Nothing scheduled in the next 24 hours', 'Meeting brief not connected', 'Connect']),
       state('nothing scheduled, Connect opens the key field', 'meet=none&token=off', ['Nothing scheduled in the next 24 hours', 'Save', 'Cancel', '!Meeting brief not connected'], '.meet-brief-setup .meet-retry'),
       state('calendar not set up', 'meet=off', ['Calendar is not connected yet.', 'No calendar can be read.', 'Open file']),

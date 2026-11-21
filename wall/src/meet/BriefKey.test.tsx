@@ -1,7 +1,7 @@
 import { act, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { mocks } from '../bridge/tauri';
-import { BriefConnect, BriefConnected, BriefSetup, KEY_FAILED, KEY_INVALID, KEY_TIP } from './BriefKey';
+import { BriefConnect, BriefSetup, KEY_FAILED, KEY_INVALID, KEY_TIP } from './BriefKey';
 
 const flush = () => act(async () => {});
 afterEach(() => mocks.clear());
@@ -68,30 +68,6 @@ describe('BriefConnect', () => {
   });
 });
 
-describe('BriefConnected', () => {
-  it('shows Connected and Forget when the key is set, and Forget clears it', async () => {
-    const clear = vi.fn(() => undefined);
-    mocks.set('wall2_meet_brief_token_status', () => ({ set: true, unreadable: false }));
-    mocks.set('wall2_meet_brief_token_clear', clear);
-    const changed = vi.fn();
-    render(<BriefConnected onChanged={changed} />);
-    await flush();
-    expect(screen.getByText('Connected')).toBeTruthy();
-    fireEvent.click(screen.getByRole('button', { name: 'Forget' }));
-    await flush();
-    expect(clear).toHaveBeenCalled();
-    expect(changed).toHaveBeenCalled();
-    expect(screen.queryByText('Connected')).toBeNull();
-  });
-
-  it('draws nothing when no key is set', async () => {
-    mocks.set('wall2_meet_brief_token_status', () => ({ set: false, unreadable: false }));
-    const { container } = render(<BriefConnected />);
-    await flush();
-    expect(container.innerHTML).toBe('');
-  });
-});
-
 describe('BriefSetup (under the empty hero)', () => {
   it('draws nothing until the status is read, then Connect when no key is saved', async () => {
     mocks.set('wall2_meet_brief_token_status', () => ({ set: false, unreadable: false }));
@@ -101,7 +77,7 @@ describe('BriefSetup (under the empty hero)', () => {
     expect(screen.getByRole('button', { name: 'Connect' })).toBeTruthy();
   });
 
-  it('shows Connected with Forget once a key is saved', async () => {
+  it('draws nothing once a key is saved: no Connected, no Forget', async () => {
     let saved = false;
     mocks.set('wall2_meet_brief_token_status', () => ({ set: saved, unreadable: false }));
     mocks.set('wall2_meet_brief_token_set', () => {
@@ -114,25 +90,16 @@ describe('BriefSetup (under the empty hero)', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Save' }));
     await flush();
     await flush();
-    expect(screen.getByText('Connected')).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'Forget' })).toBeTruthy();
-    expect(screen.queryByRole('button', { name: 'Connect' })).toBeNull();
-    expect(container.innerHTML).not.toContain('k-123');
+    expect(container.innerHTML).toBe('');
+    expect(screen.queryByText('Connected')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Forget' })).toBeNull();
   });
 
-  it('goes back to Connect after Forget', async () => {
-    let saved = true;
-    mocks.set('wall2_meet_brief_token_status', () => ({ set: saved, unreadable: false }));
-    mocks.set('wall2_meet_brief_token_clear', () => {
-      saved = false;
-    });
-    render(<BriefSetup />);
+  it('draws nothing at all when a key is already saved', async () => {
+    mocks.set('wall2_meet_brief_token_status', () => ({ set: true, unreadable: false }));
+    const { container } = render(<BriefSetup />);
     await flush();
-    fireEvent.click(screen.getByRole('button', { name: 'Forget' }));
-    await flush();
-    await flush();
-    expect(screen.getByRole('button', { name: 'Connect' })).toBeTruthy();
-    expect(screen.queryByText('Connected')).toBeNull();
+    expect(container.innerHTML).toBe('');
   });
 
   it('draws nothing when the status read after a save fails, so Connect does not stay up', async () => {

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type KeyboardEvent } from 'react';
-import { briefTokenStatus, clearBriefToken, setBriefToken } from '../bridge/meetBrief';
+import { briefTokenStatus, setBriefToken } from '../bridge/meetBrief';
 import { tip } from '../ui/HoverTip';
 import { OFF_LINE } from './briefModel';
 
@@ -92,46 +92,9 @@ export function BriefConnect({ onChanged }: { onChanged?: () => void }) {
   );
 }
 
-/** "Connected" with Forget, under the feed when no meeting is on. Draws nothing until the key is known to be set. */
-export function BriefConnected({ onChanged, known = false }: { onChanged?: () => void; known?: boolean }) {
-  const [set, setSet] = useState(known);
-  const [fail, setFail] = useState(false);
-  useEffect(() => {
-    if (known) return;
-    let dead = false;
-    briefTokenStatus().then(
-      (s) => !dead && setSet(s.set),
-      () => undefined,
-    );
-    return () => {
-      dead = true;
-    };
-  }, [known]);
-  if (!set) return null;
-  const forget = () => {
-    setFail(false);
-    clearBriefToken().then(
-      () => {
-        setSet(false);
-        onChanged?.();
-      },
-      () => setFail(true),
-    );
-  };
-  return (
-    <>
-      <span className="meet-xs meet-dimline">Connected</span>
-      <button type="button" className="meet-btn" onClick={forget} {...tip('Remove the brief key from this PC')}>
-        Forget
-      </button>
-      {fail && <span className="meet-notice meet-xs" role="alert">Could not forget the key</span>}
-    </>
-  );
-}
-
 /**
- * Connect (or Connected with Forget) under the empty Meet hero, so the key can be saved when no meeting is coming up. Draws nothing
- * until the key's status is read.
+ * Connect under the empty Meet hero, so the key can be saved when no meeting is coming up. Draws nothing until the key's status
+ * is read, and nothing once a key is saved (the key is forgotten from Tools).
  */
 export function BriefSetup() {
   const [set, setSet] = useState<boolean | null>(null);
@@ -149,6 +112,10 @@ export function BriefSetup() {
       alive.current = false;
     };
   }, [read]);
-  if (set === null) return null;
-  return <div className="meet-brief-setup">{set ? <BriefConnected known onChanged={read} /> : <BriefConnect onChanged={read} />}</div>;
+  if (set === null || set) return null;
+  return (
+    <div className="meet-brief-setup">
+      <BriefConnect onChanged={read} />
+    </div>
+  );
 }

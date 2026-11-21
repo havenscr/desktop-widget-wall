@@ -78,7 +78,8 @@ export function RoomCard() {
     try {
       const list = await invoke<Mood[]>('wall2_moods');
       if (!mounted.current) return;
-      setMoods(Array.isArray(list) ? list : []);
+      // Scene cards belong to the Home page; this row has room for the time moods only.
+      setMoods(Array.isArray(list) ? list.filter((m) => m.kind !== 'scene') : []);
       setStatus('ready');
     } catch (e) {
       if (!mounted.current) return;

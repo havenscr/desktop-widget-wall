@@ -1,7 +1,6 @@
 import { IconAddressBook, IconBrandTeams, IconChevronLeft, IconFile, IconFileText, IconFolder, IconMail, IconMessage } from '@tabler/icons-react';
 import { useEffect, useState } from 'react';
 import { openBriefItem, type BriefOut } from '../bridge/meetBrief';
-import { BriefConnected } from './BriefKey';
 import { tip } from '../ui/HoverTip';
 import { NOT_CHECKED, ON_AIR_LINE, REFRESH_LINE, itemById, type BriefViewModel, type RowIcon } from './briefModel';
 
@@ -119,7 +118,6 @@ export function BriefFeed({ out, view, onAir, retry }: { out: BriefOut; view: Br
             )}
           </>
         )}
-        {!onAir && <BriefConnected onChanged={retry} />}
         <AskBox />
       </div>
     </section>

@@ -225,6 +225,22 @@ it('shows the slider for the player the session id names (a packaged Spotify id 
   expect((screen.getByLabelText('Spotify volume') as HTMLInputElement).value).toBe('0.7');
 });
 
+it('leaves the scene cards off the room chips and keeps the four moods in one row', async () => {
+  mocks.set('wall2_moods', () => [
+    { id: 'stillWorking', label: 'Still Working' },
+    { id: 'day', label: 'Day' },
+    { id: 'evening', label: 'Evening' },
+    { id: 'lateNight', label: 'Late Night' },
+    { id: 'romantic_mode', label: 'Romantic', kind: 'scene' },
+    { id: 'movie_mode', label: 'Movie', kind: 'scene' },
+    { id: 'fireplace_cozy', label: 'Fireplace Cozy', kind: 'scene' },
+  ]);
+  const { container } = render(<RoomCard />);
+  await flush();
+  expect([...container.querySelectorAll('[data-mood]')].map((b) => b.getAttribute('data-mood'))).toEqual(['stillWorking', 'day', 'evening', 'lateNight']);
+  expect(container.querySelector('.u-more')).toBeNull();
+});
+
 it('marks a mood applied on Home on the room chips', async () => {
   const { Moods } = await import('../home/Moods');
   mocks.set('wall2_moods', () => [

@@ -5,6 +5,7 @@ const at = encodeURIComponent('2026-11-11T10:24:00-08:00');
 const Q = (knobs) => `?hz=work&at=${at}&clock=review&weather=ok&agents=3&${knobs}`;
 const LS_ROW = '.tools-list[aria-label="Light sync"] [data-account="lightsync"]';
 const YT_ROW = '.tools-list[aria-label="Accounts"] [data-account="youtube"]';
+const BK = '.tools-drawer [data-section="briefkey"]';
 const RAIL = ['.tools-drawer', '.tools-drawer .tools-rail', '.tools-drawer .tools-panel:not([hidden])'];
 
 // The group each variant must show open.
@@ -15,6 +16,7 @@ const EXPECT = {
   'Tools rail, Light sync pairing': 'lights',
   'Tools rail, Display': 'display',
   'Tools rail, YouTube setup form open (tallest)': 'accounts',
+  'Tools rail, Meeting brief key field open': 'accounts',
   'Tools rail, a Key lights link opens Lights and home': 'lights',
   'Tools rail, a Home app link opens Lights and home': 'lights',
 };
@@ -89,7 +91,7 @@ export default {
   name: 'tools-rail',
   gallery: {
     states: [
-      G('Accounts', 'tools=1&meet=signedout', ['Accounts', 'need sign-in', 'Weather on']),
+      G('Accounts', 'tools=1&meet=signedout', ['Accounts', 'need sign-in', 'Weather on', 'Meeting brief', 'Brief key']),
       G('Health, two failing', 'weather=stale&tasks=down&tools=health', ['Health', 'Sources', 'Keys file']),
       G('Lights and home', 'tools=lights&keys2=none&lightsync=paired&desktoken=set', ['Key lights', 'Light sync', 'Home app']),
       G('Light sync pairing', 'tools=lights&keys2=none&lightsync=unpaired&desktoken=set', ['Press the link button on the Hue bridge'], LS_ROW + ' .tools-btn.cy'),
@@ -99,7 +101,8 @@ export default {
   },
   fit: {
     variants: [
-      v('Tools rail, Accounts (the default)', Q('tools=1&meet=signedout')),
+      v('Tools rail, Accounts (the default)', Q('tools=1&meet=signedout'), { checks: [...RAIL, BK] }),
+      v('Tools rail, Meeting brief key field open', Q('tools=1&meet=signedout'), { click: BK + ' .tools-btn', checks: [...RAIL, BK, BK + ' .tools-input'] }),
       v('Tools rail, Health with two sources failing', Q('weather=stale&tasks=down&tools=health')),
       v('Tools rail, Lights and home', Q('tools=lights&keys2=both&lightsync=paired&desktoken=set')),
       v('Tools rail, Light sync pairing', Q('tools=lights&keys2=none&lightsync=unpaired&desktoken=set'), { click: LS_ROW + ' .tools-btn.cy', checks: [...RAIL, LS_ROW, '[data-lightsync-note]'] }),
