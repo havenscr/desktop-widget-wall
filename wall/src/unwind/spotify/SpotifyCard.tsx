@@ -220,9 +220,10 @@ export function SpotifyCard() {
   }, [clearOpen, card]);
   const close = useCallback(() => {
     clearClose();
+    clearOpen();
     setChooser(false);
     setTall(false);
-  }, [clearClose]);
+  }, [clearClose, clearOpen]);
   useEffect(
     () => () => {
       clearClose();
@@ -236,10 +237,12 @@ export function SpotifyCard() {
   }, [source, ready]);
   // Without the tall view there is nothing to wait for; with it, the timer is armed by the pointer leaving.
   useEffect(() => {
+    // Whichever way the view opened or closed, a pending rest-to-open timer is stale.
+    clearOpen();
     if (!tall) clearClose();
     // Opened with neither the pointer nor the focus on it (the card has no way to know the pointer is elsewhere): the 1 second starts.
     else armClose();
-  }, [tall, clearClose, armClose]);
+  }, [tall, clearClose, clearOpen, armClose]);
 
   // Escape closes the innermost thing: the chooser, then a playlist's Back (the songs view does it),
   // then the tall view. Captured, so the chooser's Escape does not also reach the songs view.
@@ -262,6 +265,11 @@ export function SpotifyCard() {
       if (card?.querySelector('.sp-songs')) return;
       if (at instanceof HTMLInputElement && at.type === 'search' && at.value) return;
       e.stopPropagation();
+      // Focus inside the card moves to a top-row control that stays, so the next Tab does not land below it and reopen.
+      if (card && at && card.contains(at)) {
+        quietFocus();
+        (chip.current ?? card.querySelector<HTMLElement>('.sp-top [role="radio"]'))?.focus();
+      }
       close();
     };
     document.addEventListener('keydown', key, true);
@@ -352,7 +360,10 @@ export function SpotifyCard() {
         className="sp-top"
         onClick={(e) => {
           // The empty part of the top row opens it too (not the buttons, and not once it is open).
-          if (!tall && !(e.target as Element).closest('button, [role="radiogroup"], input')) setTall(true);
+          if (!tall && !(e.target as Element).closest('button, [role="radiogroup"], input')) {
+            clearOpen();
+            setTall(true);
+          }
         }}
       >
         <SourceSwitch source={source} onPick={setSource} />

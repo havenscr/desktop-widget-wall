@@ -214,6 +214,40 @@ describe('opening and closing the tall view', () => {
     expect(isTall()).toBe(false);
   });
 
+  it('a stale rest timer never reopens it: enter, click the top row, Escape, and 1.5 s later it is still closed until a new enter', async () => {
+    await setup();
+    fireEvent.pointerEnter(card());
+    await flush(500);
+    await act(async () => fireEvent.click(document.querySelector('.sp-top') as HTMLElement));
+    expect(isTall()).toBe(true);
+    await flush(500);
+    key('Escape');
+    expect(isTall()).toBe(false);
+    await flush(TALL_OPEN_MS * 3);
+    expect(isTall()).toBe(false);
+    expect(vi.getTimerCount()).toBe(0);
+    fireEvent.pointerLeave(card());
+    fireEvent.pointerEnter(card());
+    await flush(TALL_OPEN_MS);
+    expect(isTall()).toBe(true);
+  });
+
+  it('Escape with focus inside the card moves focus to the top row, and the next Tab there does not reopen it', async () => {
+    await setup();
+    await open();
+    await act(async () => (document.querySelector('.sp-card button:not(.sp-top button)') as HTMLElement).focus());
+    expect(card().contains(document.activeElement)).toBe(true);
+    expect((document.activeElement as Element).closest('.sp-top')).toBeNull();
+    fireEvent.pointerLeave(card());
+    key('Escape');
+    await flush();
+    expect(isTall()).toBe(false);
+    expect((document.activeElement as Element).closest('.sp-top')).not.toBeNull();
+    await act(async () => screen.getByRole('radio', { name: 'Spotify' }).focus());
+    await act(async () => chip().focus());
+    expect(isTall()).toBe(false);
+  });
+
   it('Escape closes the chooser first, then a playlist goes Back, then the view closes', async () => {
     await setup();
     await open();

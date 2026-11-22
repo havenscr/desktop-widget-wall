@@ -1193,7 +1193,11 @@ async function render(cdp, base, s, file, ctl) {
         await to('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 2500, y: 40 });
       } else if (step === 'grow') {
         // The music card grows when the pointer rests on it: here the pointer is put on it (it stays there) and the empty part of the top row, the instant way in, is pressed.
-        await to('Runtime.evaluate', { expression: `(() => { const c = document.querySelector('.sp-card'); c?.dispatchEvent(new PointerEvent('pointerover', { bubbles: true })); c?.querySelector('.sp-top')?.click(); })()` });
+        const grown = await to('Runtime.evaluate', { expression: `(() => { const c = document.querySelector('.sp-card'); const t = c && c.querySelector('.sp-top'); if (!t) return false; c.dispatchEvent(new PointerEvent('pointerover', { bubbles: true })); t.click(); return true; })()`, returnByValue: true });
+        if (!grown.result.value) throw new Error('grow: .sp-card or .sp-top is missing');
+      } else if (step.startsWith('wait:')) {
+        // wait:<ms> pauses (a timer the page runs on its own, such as the music card's 1.5 s rest).
+        await new Promise((r) => setTimeout(r, Number(step.slice(5))));
       } else if (step.startsWith('kbd:')) {
         await to('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Tab', code: 'Tab', windowsVirtualKeyCode: 9 });
         await to('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Tab', code: 'Tab', windowsVirtualKeyCode: 9 });

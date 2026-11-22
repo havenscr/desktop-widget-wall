@@ -880,7 +880,9 @@ try {
     }
     else if (click === 'grow') {
       // The music card grows when the pointer rests on it: the pointer is put on it (it stays there) and the empty part of the top row is pressed.
-      const c = document.querySelector('.sp-card'); c?.dispatchEvent(new PointerEvent('pointerover', { bubbles: true })); c?.querySelector('.sp-top')?.click();
+      const c = document.querySelector('.sp-card'); const t = c && c.querySelector('.sp-top');
+      if (!t) throw new Error('grow: .sp-card or .sp-top is missing');
+      c.dispatchEvent(new PointerEvent('pointerover', { bubbles: true })); t.click();
     }
     else if (click.startsWith('hover:')) {
       // Headless --dump-dom has no pointer: every top-level :hover rule is copied for a class that stands in for it.
