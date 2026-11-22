@@ -67,6 +67,33 @@ impl ShareXTask {
     }
 }
 
+/// The three tasks that take one file: ShareX starts them on a file given as the argument after
+/// the task (`ShareX.exe -silent -ImageEditor <file>`, and the same for `-PinToScreen` and `-OCR`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum FileTask {
+    Edit,
+    Pin,
+    Ocr,
+}
+
+impl FileTask {
+    pub(crate) fn arg(self) -> &'static str {
+        match self {
+            FileTask::Edit => "-ImageEditor",
+            FileTask::Pin => "-PinToScreen",
+            FileTask::Ocr => "-OCR",
+        }
+    }
+
+    /// The whole argument list: `-silent`, the task, then the file as its own argument. None
+    /// unless the file is an absolute `X:\...` path (so it can never be read as a switch).
+    pub(crate) fn args<'a>(self, file: &'a str) -> Option<[&'a str; 3]> {
+        let b = file.as_bytes();
+        let drive = b.len() >= 4 && b[0].is_ascii_alphabetic() && b[1] == b':' && b[2] == b'\\';
+        (drive && !file.chars().any(|c| c.is_control() || c == '"')).then(|| ["-silent", self.arg(), file])
+    }
+}
+
 /// The file name the program must have.
 const EXE_NAME: &str = "ShareX.exe";
 
@@ -166,7 +193,7 @@ pub(crate) fn under_profile(path: &str, profile: &str) -> bool {
 }
 
 #[cfg(windows)]
-pub(crate) use win::{install_dir, launch};
+pub(crate) use win::{install_dir, launch, launch_file};
 
 #[cfg(windows)]
 mod win {
@@ -215,6 +242,24 @@ mod win {
                 Err(Refusal::Failed)
             }
         }
+    }
+
+    /// Start ShareX on one file for one of the three file tasks. The file must be a path the
+    /// caller already checked; it goes as a separate argument of a direct start, never a shell.
+    pub(crate) fn launch_file(task: FileTask, file: &str) -> Result<(), Refusal> {
+        let args = task.args(file).ok_or(Refusal::Failed)?;
+        let exe = find_exe().ok_or(Refusal::NotInstalled)?;
+        let mut cmd = Command::new(&exe);
+        cmd.args(args).stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null());
+        if let Some(dir) = exe.parent() {
+            cmd.current_dir(dir);
+        }
+        cmd.spawn().map(|_| ()).map_err(|_| {
+            if let Ok(mut f) = FOUND.lock() {
+                *f = None;
+            }
+            Refusal::Failed
+        })
     }
 
     /// The folder ShareX.exe sits in, as text, when ShareX is installed and found.
@@ -388,6 +433,17 @@ mod tests {
         assert_eq!(t.args(), ["-silent", "-RectangleRegion"]);
         let o = ShareXTask::from_spec("folder").unwrap();
         assert_eq!(o.args(), ["-silent", "-OpenScreenshotsFolder"]);
+    }
+
+    #[test]
+    fn a_file_launch_passes_silent_the_task_and_the_file_as_separate_arguments() {
+        let f = r"C:\Users\example\Documents\ShareX\Screenshots\a b.png";
+        assert_eq!(FileTask::Edit.args(f), Some(["-silent", "-ImageEditor", f]));
+        assert_eq!(FileTask::Pin.args(f), Some(["-silent", "-PinToScreen", f]));
+        assert_eq!(FileTask::Ocr.args(f), Some(["-silent", "-OCR", f]));
+        for bad in ["", "-workflow", "a.png", r"\\server\s\a.png", "C:a.png", "C:\\a\"x.png", "C:\\a\n.png"] {
+            assert_eq!(FileTask::Edit.args(bad), None, "{bad:?}");
+        }
     }
 
     #[test]

@@ -8,11 +8,14 @@
 //! - Every path acted on comes from the parsed history, must be an absolute local `X:\...`
 //!   path (no `\\server`, no `\\?\`, no URL), must be a regular file with an allowed extension,
 //!   and is checked again after links are followed (see `resolve`).
-//! - `act` is exactly `open` (the default app, through the opener plugin, no shell, no
-//!   arguments), `copy` (the file goes on the clipboard as a file, like Copy in Explorer) or
-//!   `folder` (`explorer.exe /select,` and the quoted path).
+//! - `act` is exactly one of eight fixed words: `open` (the default app, through the opener
+//!   plugin, no shell, no arguments; the new window is then moved to the lower right quarter of
+//!   the primary monitor), `copy` (the file goes on the clipboard as a file, like Copy in
+//!   Explorer), `folder` (`explorer.exe /select,` and the quoted path), `path` (the file's path
+//!   as text on the clipboard), `edit`, `pin` and `ocr` (ShareX started on this one file, see
+//!   `wall2_sharex::FileTask`, pictures only) and `trash` (the Windows Recycle Bin, with undo).
 //! - A `History.json` read is capped at 8 MB (the newest end of the file); `History.db` is opened
-//!   read-only and only its newest 200 rows are read. At most 12 captures are returned. A busy
+//!   read-only and only its newest 200 rows are read. At most 30 captures are returned. A busy
 //!   database gives an empty list for that poll. Nothing is logged: no path, no title.
 //!
 //! Errors are fixed words: `not-found` (no ShareX history file or database), `failed`, `missing` (the id
@@ -27,6 +30,7 @@ use rusqlite::types::Value as SqlValue;
 use rusqlite::{Connection, OpenFlags};
 use sha2::{Digest, Sha256};
 use std::io::{Read, Seek, SeekFrom};
+use crate::wall2_winutil::Rect;
 use std::path::Path;
 use std::sync::Mutex;
 use tauri_plugin_opener::OpenerExt;
@@ -34,7 +38,7 @@ use tauri_plugin_opener::OpenerExt;
 /// The most of the history file read, from its newest (last) end.
 const MAX_HISTORY: u64 = 8 * 1024 * 1024;
 /// The most captures returned.
-const MAX_ENTRIES: usize = 12;
+const MAX_ENTRIES: usize = 30;
 /// The biggest file a thumbnail is made from.
 const MAX_THUMB: u64 = 6 * 1024 * 1024;
 const TITLE_CHARS: usize = 120;
@@ -76,7 +80,7 @@ pub(crate) fn kind_of(name: &str) -> Kind {
     match ext.as_str() {
         "png" | "jpg" | "jpeg" | "webp" | "bmp" => Kind::Image,
         "gif" => Kind::Gif,
-        "mp4" | "webm" | "mkv" | "mov" => Kind::Video,
+        "mp4" | "webm" | "mkv" | "mov" | "avi" => Kind::Video,
         _ => Kind::Other,
     }
 }
@@ -658,18 +662,46 @@ pub(crate) enum Action {
     Open,
     Copy,
     Folder,
+    CopyPath,
+    Edit,
+    Pin,
+    Ocr,
+    Trash,
 }
 
 impl Action {
-    /// Exactly `open`, `copy` or `folder`; anything else is None.
+    /// Exactly one of the eight words below; anything else is None.
     pub(crate) fn parse(s: &str) -> Option<Action> {
         match s {
             "open" => Some(Action::Open),
             "copy" => Some(Action::Copy),
             "folder" => Some(Action::Folder),
+            "path" => Some(Action::CopyPath),
+            "edit" => Some(Action::Edit),
+            "pin" => Some(Action::Pin),
+            "ocr" => Some(Action::Ocr),
+            "trash" => Some(Action::Trash),
             _ => None,
         }
     }
+
+    /// The ShareX task for the three file actions.
+    fn sharex(self) -> Option<crate::wall2_sharex::FileTask> {
+        use crate::wall2_sharex::FileTask;
+        match self {
+            Action::Edit => Some(FileTask::Edit),
+            Action::Pin => Some(FileTask::Pin),
+            Action::Ocr => Some(FileTask::Ocr),
+            _ => None,
+        }
+    }
+}
+
+/// The lower right quarter of a work area: the right half of its width and the bottom half of its
+/// height. An odd size gives the extra pixel to the left and top parts, so the quarter always
+/// ends on the work area's right and bottom edges.
+pub(crate) fn lower_right_quarter(work: Rect) -> Rect {
+    Rect { left: work.left + work.width() / 2, top: work.top + work.height() / 2, right: work.right, bottom: work.bottom }
 }
 
 fn act_now(app: &tauri::AppHandle, id: &str, action: Action) -> Result<(), String> {
@@ -679,9 +711,200 @@ fn act_now(app: &tauri::AppHandle, id: &str, action: Action) -> Result<(), Strin
     };
     let path = resolve(&held).map_err(str::to_string)?;
     match action {
-        Action::Open => app.opener().open_path(path, None::<&str>).map_err(|_| FAILED.to_string()),
+        Action::Open => open_and_place(app, path),
         Action::Folder => show_in_folder(&path),
         Action::Copy => copy_file(&path),
+        Action::CopyPath => copy_text(&path),
+        Action::Trash => recycle(&path),
+        Action::Edit | Action::Pin | Action::Ocr => {
+            // Pictures only: ShareX cannot edit, pin or read a recording.
+            if held.kind != Kind::Image {
+                return Err(REFUSED.to_string());
+            }
+            launch_sharex(action, &path)
+        }
+    }
+}
+
+fn launch_sharex(action: Action, path: &str) -> Result<(), String> {
+    let task = action.sharex().ok_or_else(|| REFUSED.to_string())?;
+    #[cfg(windows)]
+    {
+        crate::wall2_sharex::launch_file(task, path).map_err(|_| FAILED.to_string())
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = (task, path);
+        Err(FAILED.to_string())
+    }
+}
+
+/// Open with the default app, then (on Windows) move the app's new window to the lower right
+/// quarter of the primary monitor. The move runs on its own thread and gives up after about three
+/// seconds; a window that never shows is left where it opened.
+fn open_and_place(app: &tauri::AppHandle, path: String) -> Result<(), String> {
+    #[cfg(windows)]
+    let before = place::snapshot();
+    app.opener().open_path(path, None::<&str>).map_err(|_| FAILED.to_string())?;
+    #[cfg(windows)]
+    {
+        let _ = std::thread::Builder::new().name("wall2-cap-place".into()).spawn(move || place::after_open(&before));
+    }
+    Ok(())
+}
+
+/// The file's path text on the clipboard.
+fn copy_text(text: &str) -> Result<(), String> {
+    #[cfg(windows)]
+    {
+        place::set_clipboard_text(text).map_err(|_| FAILED.to_string())
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = text;
+        Err(FAILED.to_string())
+    }
+}
+
+/// Move the file to the Recycle Bin (with undo), no dialogs.
+fn recycle(path: &str) -> Result<(), String> {
+    #[cfg(windows)]
+    {
+        place::recycle(path).map_err(|_| FAILED.to_string())
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = path;
+        Err(FAILED.to_string())
+    }
+}
+
+#[cfg(windows)]
+mod place {
+    use super::lower_right_quarter;
+    use crate::wall2_winutil::sys;
+    use std::collections::HashSet;
+    use std::time::{Duration, Instant};
+    use windows::Win32::Foundation::{BOOL, HANDLE};
+    use windows::Win32::Graphics::Dwm::{DwmGetWindowAttribute, DWMWA_CLOAKED};
+    use windows::Win32::System::DataExchange::{CloseClipboard, EmptyClipboard, OpenClipboard, SetClipboardData};
+    use windows::Win32::System::Memory::{GlobalAlloc, GlobalLock, GlobalUnlock, GMEM_MOVEABLE};
+    use windows::Win32::UI::Shell::{SHFileOperationW, FOF_ALLOWUNDO, FOF_NOCONFIRMATION, FOF_NOERRORUI, FOF_SILENT, FO_DELETE, SHFILEOPSTRUCTW};
+    use windows::Win32::UI::WindowsAndMessaging::{GetForegroundWindow, GetWindow, GetWindowLongW, IsWindowVisible, GWL_EXSTYLE, GW_OWNER, WS_EX_TOOLWINDOW};
+
+    /// The windows and the front window as they were just before the open.
+    pub struct Before {
+        windows: HashSet<isize>,
+        front: isize,
+    }
+
+    pub fn snapshot() -> Before {
+        Before { windows: sys::top_level_windows().into_iter().collect(), front: unsafe { GetForegroundWindow().0 as isize } }
+    }
+
+    /// A window the open could have made: ordinary, visible, shown, titled, in no shell or own
+    /// process, and one this app is allowed to move.
+    fn movable(h: isize, self_elevated: bool) -> bool {
+        let hw = sys::hwnd(h);
+        let pid = sys::pid_of(h);
+        unsafe {
+            if !IsWindowVisible(hw).as_bool() {
+                return false;
+            }
+            let mut cloaked = 0u32;
+            let _ = DwmGetWindowAttribute(hw, DWMWA_CLOAKED, &mut cloaked as *mut u32 as *mut std::ffi::c_void, 4);
+            let owned = GetWindow(hw, GW_OWNER).map(|o| !o.0.is_null()).unwrap_or(false);
+            let tool = GetWindowLongW(hw, GWL_EXSTYLE) as u32 & WS_EX_TOOLWINDOW.0 != 0;
+            cloaked == 0
+                && !owned
+                && !tool
+                && sys::has_title(h)
+                && pid != std::process::id()
+                && !crate::wall2_winutil::is_shell_class(&sys::class_name(h))
+                && !sys::out_of_reach(pid, self_elevated)
+        }
+    }
+
+    /// The new window: one that was not there before, else a changed front window (an app that
+    /// shows the picture in a window it already had).
+    fn find(before: &Before, self_elevated: bool) -> Option<isize> {
+        let fresh = sys::top_level_windows().into_iter().find(|h| !before.windows.contains(h) && movable(*h, self_elevated));
+        if fresh.is_some() {
+            return fresh;
+        }
+        let front = unsafe { GetForegroundWindow().0 as isize };
+        (front != 0 && front != before.front && movable(front, self_elevated)).then_some(front)
+    }
+
+    /// Wait up to about three seconds for the window, then move it twice (an app often resizes
+    /// itself once it has loaded the picture).
+    pub fn after_open(before: &Before) {
+        let self_elevated = sys::self_elevated();
+        let until = Instant::now() + Duration::from_millis(3_000);
+        while Instant::now() < until {
+            std::thread::sleep(Duration::from_millis(100));
+            let Some(h) = find(before, self_elevated) else { continue };
+            let Some(work) = crate::wall2_arrange::primary_work_area() else { return };
+            let target = lower_right_quarter(work);
+            if crate::wall2_arrange::move_outer(h, target) {
+                std::thread::sleep(Duration::from_millis(500));
+                let _ = crate::wall2_arrange::move_outer(h, target);
+            }
+            return;
+        }
+    }
+
+    /// Text on the clipboard (CF_UNICODETEXT).
+    pub fn set_clipboard_text(text: &str) -> Result<(), ()> {
+        const CF_UNICODETEXT: u32 = 13;
+        let wide: Vec<u16> = text.encode_utf16().chain(std::iter::once(0)).collect();
+        let bytes = wide.len() * 2;
+        unsafe {
+            let hglobal = GlobalAlloc(GMEM_MOVEABLE, bytes).map_err(|_| ())?;
+            let ptr = GlobalLock(hglobal) as *mut u8;
+            if ptr.is_null() {
+                let _ = windows::Win32::Foundation::GlobalFree(hglobal);
+                return Err(());
+            }
+            std::ptr::copy_nonoverlapping(wide.as_ptr() as *const u8, ptr, bytes);
+            let _ = GlobalUnlock(hglobal);
+            if OpenClipboard(None).is_err() {
+                let _ = windows::Win32::Foundation::GlobalFree(hglobal);
+                return Err(());
+            }
+            let _ = EmptyClipboard();
+            let set = SetClipboardData(CF_UNICODETEXT, HANDLE(hglobal.0));
+            let _ = CloseClipboard();
+            if set.is_err() {
+                let _ = windows::Win32::Foundation::GlobalFree(hglobal);
+                return Err(());
+            }
+        }
+        Ok(())
+    }
+
+    /// One file to the Recycle Bin: `FOF_ALLOWUNDO` is what makes it a move to the bin, not a delete.
+    pub fn recycle(path: &str) -> Result<(), ()> {
+        // The list ends with two NULs; a single path needs no more than that.
+        let from: Vec<u16> = path.encode_utf16().chain([0u16, 0u16]).collect();
+        let flags = (FOF_ALLOWUNDO | FOF_NOCONFIRMATION | FOF_SILENT | FOF_NOERRORUI).0 as u16;
+        let mut op = SHFILEOPSTRUCTW {
+            hwnd: Default::default(),
+            wFunc: FO_DELETE,
+            pFrom: windows::core::PCWSTR(from.as_ptr()),
+            pTo: windows::core::PCWSTR::null(),
+            fFlags: flags,
+            fAnyOperationsAborted: BOOL(0),
+            hNameMappings: std::ptr::null_mut(),
+            lpszProgressTitle: windows::core::PCWSTR::null(),
+        };
+        let code = unsafe { SHFileOperationW(&mut op) };
+        let aborted = op.fAnyOperationsAborted;
+        if code == 0 && !aborted.as_bool() {
+            Ok(())
+        } else {
+            Err(())
+        }
     }
 }
 
@@ -722,7 +945,7 @@ fn check(label: &str) -> Result<(), String> {
     crate::wall2_meet::require_wall2(label)
 }
 
-/// The newest captures from ShareX's history, newest first, at most 12.
+/// The newest captures from ShareX's history, newest first, at most 30.
 #[tauri::command]
 pub async fn wall2_captures_list(window: tauri::WebviewWindow) -> Result<Vec<CaptureEntry>, String> {
     check(window.label())?;
@@ -736,7 +959,7 @@ pub async fn wall2_captures_thumb(window: tauri::WebviewWindow, id: String) -> R
     tauri::async_runtime::spawn_blocking(move || thumb_now(&id)).await.map_err(|_| FAILED.to_string())?
 }
 
-/// `open`, `copy` or `folder` for a capture, by id.
+/// One of the eight fixed action words for a capture, by id.
 #[tauri::command]
 pub async fn wall2_captures_act(window: tauri::WebviewWindow, app: tauri::AppHandle, id: String, action: String) -> Result<(), String> {
     check(window.label())?;
@@ -835,7 +1058,8 @@ mod tests {
         for i in 0..40 {
             many.push(Parsed { path: A.into(), file_name: "a".into(), title: "".into(), app: "".into(), time: i });
         }
-        assert_eq!(newest(many, MAX_ENTRIES).len(), 12);
+        assert_eq!(newest(many, MAX_ENTRIES).len(), 30);
+        assert_eq!(MAX_ENTRIES, 30);
     }
 
     #[test]
@@ -886,6 +1110,7 @@ mod tests {
         assert_eq!(kind_of("a.gif"), Kind::Gif);
         assert_eq!(kind_of("a.mkv"), Kind::Video);
         assert_eq!(kind_of("a.MOV"), Kind::Video);
+        assert_eq!(kind_of("a.avi"), Kind::Video);
         assert_eq!(kind_of("a.exe"), Kind::Other);
         assert_eq!(kind_of("a.png.exe"), Kind::Other);
         assert_eq!(kind_of("png"), Kind::Other);
@@ -1079,12 +1304,45 @@ mod tests {
     }
 
     #[test]
-    fn actions_are_exactly_three_words() {
+    fn actions_are_exactly_eight_words() {
         assert_eq!(Action::parse("open"), Some(Action::Open));
         assert_eq!(Action::parse("copy"), Some(Action::Copy));
         assert_eq!(Action::parse("folder"), Some(Action::Folder));
-        for bad in ["", "Open", "open ", "delete", "open,copy", "../x"] {
+        assert_eq!(Action::parse("path"), Some(Action::CopyPath));
+        assert_eq!(Action::parse("edit"), Some(Action::Edit));
+        assert_eq!(Action::parse("pin"), Some(Action::Pin));
+        assert_eq!(Action::parse("ocr"), Some(Action::Ocr));
+        assert_eq!(Action::parse("trash"), Some(Action::Trash));
+        for bad in ["", "Open", "open ", "delete", "open,copy", "../x", "Trash", "trash ", "recycle", "image", "-ImageEditor", "ocr -x"] {
             assert_eq!(Action::parse(bad), None, "{bad}");
+        }
+    }
+
+    fn r(left: i32, top: i32, right: i32, bottom: i32) -> Rect {
+        Rect { left, top, right, bottom }
+    }
+
+    #[test]
+    fn the_open_window_goes_to_the_lower_right_quarter_of_the_work_area() {
+        assert_eq!(lower_right_quarter(r(0, 0, 2560, 1400)), r(1280, 700, 2560, 1400));
+        // A work area that does not start at the origin (a taskbar on the left, a monitor to the left).
+        assert_eq!(lower_right_quarter(r(60, 0, 1980, 1040)), r(1020, 520, 1980, 1040));
+        assert_eq!(lower_right_quarter(r(-1920, 30, 0, 1050)), r(-960, 540, 0, 1050));
+        // Odd sizes end on the right and bottom edges, and the quarter is never wider than half plus one.
+        let q = lower_right_quarter(r(0, 0, 1921, 1081));
+        assert_eq!((q.right, q.bottom), (1921, 1081));
+        assert_eq!((q.left, q.top), (960, 540));
+        assert!(q.width() >= 960 && q.height() >= 540);
+    }
+
+    #[test]
+    fn only_pictures_get_the_sharex_file_actions() {
+        use crate::wall2_sharex::FileTask;
+        assert_eq!(Action::Edit.sharex(), Some(FileTask::Edit));
+        assert_eq!(Action::Pin.sharex(), Some(FileTask::Pin));
+        assert_eq!(Action::Ocr.sharex(), Some(FileTask::Ocr));
+        for a in [Action::Open, Action::Copy, Action::Folder, Action::CopyPath, Action::Trash] {
+            assert_eq!(a.sharex(), None);
         }
     }
 
