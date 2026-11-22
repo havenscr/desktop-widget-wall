@@ -349,7 +349,8 @@ button.cap-pic:focus-visible {
 .rf-open:focus-visible,
 .rf-folder:focus-visible {
   outline: 3px solid var(--cyan);
-  outline-offset: 2px;
+  /* Inset: the row list scrolls now, so an outside ring would be clipped. */
+  outline-offset: -3px;
 }
 .rf-icon {
   display: flex;

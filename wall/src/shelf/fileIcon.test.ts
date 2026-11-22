@@ -5,6 +5,7 @@ import { fileLook } from './fileIcon';
 it('picks a glyph and tint by extension', () => {
   expect(fileLook('a.pdf')).toEqual({ Icon: IconFileDescription, color: '#ff6b6b' });
   for (const n of ['a.doc', 'a.docx', 'a.rtf', 'a.odt']) expect(fileLook(n)).toEqual({ Icon: IconFileText, color: '#5aa8ff' });
+  for (const n of ['a.docm', 'a.xlsm', 'a.pbix', 'a.pptm']) expect(fileLook(n).color).not.toBe('#c9c3e6');
   for (const n of ['a.xls', 'a.xlsx', 'a.csv', 'a.ods']) expect(fileLook(n)).toEqual({ Icon: IconFileSpreadsheet, color: '#3ddc84' });
   for (const n of ['a.ppt', 'a.pptx', 'a.odp']) expect(fileLook(n)).toEqual({ Icon: IconPresentation, color: '#ff9f43' });
   for (const n of ['a.png', 'a.jpg', 'a.jpeg', 'a.gif', 'a.webp', 'a.bmp', 'a.svg', 'a.heic', 'a.tif', 'a.tiff']) expect(fileLook(n)).toEqual({ Icon: IconPhoto, color: '#b48cff' });

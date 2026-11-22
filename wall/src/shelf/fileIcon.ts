@@ -9,9 +9,9 @@ export interface FileLook {
 const PINK = '#ff6fb5';
 const LOOKS: { exts: string[]; look: FileLook }[] = [
   { exts: ['pdf'], look: { Icon: IconFileDescription, color: '#ff6b6b' } },
-  { exts: ['doc', 'docx', 'rtf', 'odt'], look: { Icon: IconFileText, color: '#5aa8ff' } },
-  { exts: ['xls', 'xlsx', 'csv', 'ods'], look: { Icon: IconFileSpreadsheet, color: '#3ddc84' } },
-  { exts: ['ppt', 'pptx', 'odp'], look: { Icon: IconPresentation, color: '#ff9f43' } },
+  { exts: ['doc', 'docx', 'docm', 'dot', 'dotx', 'rtf', 'odt'], look: { Icon: IconFileText, color: '#5aa8ff' } },
+  { exts: ['xls', 'xlsx', 'xlsm', 'xlsb', 'xltx', 'csv', 'ods', 'pbix', 'pbip', 'pbit'], look: { Icon: IconFileSpreadsheet, color: '#3ddc84' } },
+  { exts: ['ppt', 'pptx', 'pptm', 'potx', 'odp'], look: { Icon: IconPresentation, color: '#ff9f43' } },
   { exts: ['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'svg', 'heic', 'tif', 'tiff'], look: { Icon: IconPhoto, color: '#b48cff' } },
   { exts: ['mp4', 'mov', 'mkv', 'avi', 'webm', 'wmv'], look: { Icon: IconMovie, color: PINK } },
   { exts: ['mp3', 'wav', 'flac', 'm4a', 'ogg', 'aac'], look: { Icon: IconFileMusic, color: PINK } },
