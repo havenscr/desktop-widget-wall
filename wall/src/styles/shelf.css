@@ -70,27 +70,18 @@
   font: 400 18px/1.2 var(--body);
   color: var(--dim);
 }
-.shelf-lists {
-  display: flex;
-  flex-wrap: wrap;
-  align-content: flex-start;
+.shelf-more {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 10px;
-  flex: 1 1 0;
-  min-height: 74px;
-  overflow-y: auto;
-  /* Room for the chip focus ring (3px outline, 2px offset) inside the scroller. */
-  padding: 6px;
-  margin: -6px;
 }
-.shelf-list {
-  flex: 0 0 auto;
-  height: 52px;
-  min-width: 0;
-  max-width: 100%;
-  padding: 0 20px;
-  font-size: 20px;
-  overflow: hidden;
-  text-overflow: ellipsis;
+.shelf-key-sm {
+  height: 64px;
+  gap: 4px;
+  border-radius: 14px;
+  font-size: 18px;
+}
+.shelf-key-sm:hover {
+  background: rgba(53, 230, 234, 0.12);
 }
 
 /* Captures card (shelf/CapturesCard.tsx), look B: the picked capture large on the left, the others as rows. */

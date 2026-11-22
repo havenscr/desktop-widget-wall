@@ -1,4 +1,4 @@
-import { IconHistory, IconDeviceDesktop, IconGif, IconScan, IconTextRecognition, IconVideo, type Icon } from '@tabler/icons-react';
+import { IconColorPicker, IconHistory, IconRuler2, IconArrowAutofitHeight, IconRefresh,  IconDeviceDesktop, IconGif, IconScan, IconTextRecognition, IconVideo, type Icon } from '@tabler/icons-react';
 import { useEffect, useState } from 'react';
 import { TaskCard } from '../tasks/TaskCard';
 import type { TasksQuery } from '../tasks/useTasks';
@@ -20,6 +20,14 @@ export const SHELF_KEYS: readonly { id: string; label: string; action: string; G
   { id: 'sx-record', label: 'Record', action: 'sharex:record', Glyph: IconVideo },
   { id: 'sx-ocr', label: 'Text (OCR)', action: 'sharex:ocr', Glyph: IconTextRecognition },
   { id: 'sx-history', label: 'History', action: 'sharex:history', Glyph: IconHistory },
+];
+
+/** Less used ShareX keys, a second smaller block. Only specs the native allowed table already holds (wall2_sharex.rs). */
+export const MORE_KEYS: readonly { id: string; label: string; action: string; Glyph: Icon; help: string }[] = [
+  { id: 'sx-scrolling', label: 'Scroll', action: 'sharex:scrolling', Glyph: IconArrowAutofitHeight, help: 'ShareX: Scrolling capture' },
+  { id: 'sx-color', label: 'Color', action: 'sharex:color', Glyph: IconColorPicker, help: 'ShareX: Color picker' },
+  { id: 'sx-last-region', label: 'Last', action: 'sharex:last-region', Glyph: IconRefresh, help: 'ShareX: Capture the last region again' },
+  { id: 'sx-ruler', label: 'Ruler', action: 'sharex:ruler', Glyph: IconRuler2, help: 'ShareX: Ruler' },
 ];
 
 /** The picked list is remembered per viewer. */
@@ -67,7 +75,7 @@ export function ShelfPlace() {
       </div>
       <div className="shelf-centre">
         <CapturesCard />
-        <section className="shelf-card shelf-side" aria-label="Capture keys and lists">
+        <section className="shelf-card shelf-side" aria-label="Capture keys">
           <div className="k">
             Capture <span className="shelf-sub">ShareX keys</span>
           </div>
@@ -93,25 +101,29 @@ export function ShelfPlace() {
             {brief ?? ''}
           </p>
           <div className="k">
-            Lists <span className="shelf-sub">your task app</span>
+            More ShareX <span className="shelf-sub">less used</span>
           </div>
-          {names.length === 0 ? (
-            <p className="shelf-note" role="status">
-              {override.length > 0 || lists.status === 'ready' ? 'No lists in the task app' : lists.status === 'error' ? 'Lists unavailable' : 'Loading lists'}
-            </p>
-          ) : (
-            <div className="shelf-lists" role="group" aria-label="Task lists">
-              {names.map((n) => (
-                <button key={n} type="button" className={`chip shelf-list${n === picked ? ' on' : ''}`} aria-pressed={n === picked} onClick={() => setPicked(n)}>
-                  {n}
-                </button>
-              ))}
-            </div>
-          )}
+          <div className="shelf-keys shelf-more" role="group" aria-label="More ShareX keys">
+            {MORE_KEYS.map(({ id, label, action, Glyph, help }) => (
+              <button
+                key={id}
+                type="button"
+                className="shelf-key shelf-key-sm"
+                onClick={(e) => {
+                  if (e.detail === 0) return;
+                  void press(id, e.detail, { command: 'wall2_keys_send_library', args: { id } }, label, action, { name: 'ShareX', general: true }, false);
+                }}
+                {...tip(help)}
+              >
+                <Glyph size={22} stroke={1.8} aria-hidden="true" />
+                {label}
+              </button>
+            ))}
+          </div>
         </section>
       </div>
       <div className="wing wr right-wing">
-        {query && picked ? <TaskCard key={picked} query={query} title={picked} /> : <section className="tasks" aria-label="Tasks"><div className="row sb tasks-hd"><span className="k">Tasks</span></div><div className="tasks-body"><div className="s">Pick a list</div></div></section>}
+        {query && picked ? <TaskCard key={picked} query={query} title={picked} lists={{ names, onPick: setPicked }} /> : <section className="tasks" aria-label="Tasks"><div className="row sb tasks-hd"><span className="k">Tasks</span></div><div className="tasks-body"><div className="s">{override.length > 0 || lists.status === 'ready' ? 'No lists in the task app' : lists.status === 'error' ? 'Lists unavailable' : 'Loading lists'}</div></div></section>}
         <div className="deck">
           <PinnedRow />
           <Keys />

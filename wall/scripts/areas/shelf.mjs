@@ -27,8 +27,6 @@ function measureShelf() {
     for (const e of col.querySelectorAll('*')) {
       const b = e.getBoundingClientRect();
       if (b.width === 0 && b.height === 0) continue;
-      // Chips past the row's box are scrolled out of sight (the row scrolls); the row itself and the sideways check below hold them.
-      if (e.closest('.shelf-lists') && !e.classList.contains('shelf-lists')) continue;
       if (b.left < cb.left - 0.5 || b.right > cb.right + 0.5 || b.bottom > cb.bottom + 0.5) { fails.push('shelf: ' + sel + ' ' + (e.className || e.tagName) + ' sticks out of its card'); break; }
     }
   }
@@ -70,17 +68,31 @@ function measureShelf() {
   }
   if (small.length) fails.push('shelf: ' + small.length + ' texts under 16 px (' + small.slice(0, 3).join(', ') + ')');
   const keys = [...root.querySelectorAll('.shelf-key')];
-  if (keys.length !== 6) fails.push('shelf: ' + keys.length + ' ShareX keys, expected 6');
+  if (keys.length !== 10) fails.push('shelf: ' + keys.length + ' ShareX keys, expected 10 (six and four more)');
+  const more = [...root.querySelectorAll('.shelf-more .shelf-key')];
+  if (more.length !== 4) fails.push('shelf: ' + more.length + ' more ShareX keys, expected 4');
+  else {
+    const tops = new Set(more.map((k) => Math.round(k.getBoundingClientRect().top)));
+    if (tops.size !== 1) fails.push('shelf: the four more keys are not in one row');
+  }
+  if (root.querySelector('.shelf-lists, .shelf-list')) fails.push('shelf: the list chips are still under the keys');
+  const pickBtn = root.querySelector('.right-wing .tasks-hd .lp-btn');
+  if (hd && !pickBtn) fails.push('shelf: the list name in the heading is not a button');
+  if (pickBtn && (pickBtn.getAttribute('aria-haspopup') !== 'listbox' || pickBtn.getBoundingClientRect().height < 20)) fails.push('shelf: the list button has no listbox popup or is too small');
+  const menu = root.querySelector('.lp-menu');
+  if (menu) {
+    const mb = menu.getBoundingClientRect();
+    if (mb.top < 19.5 || mb.bottom > 720 + 0.5 || mb.right > 2540 + 0.5) fails.push('shelf: the list menu at y ' + r1(mb.top) + ' to ' + r1(mb.bottom) + ' is outside the strip');
+    const hb = hd.getBoundingClientRect();
+    if (mb.top < hb.bottom - 0.5) fails.push('shelf: the list menu overlaps the heading');
+    for (const o of menu.querySelectorAll('[role=option]')) {
+      if (Math.abs(o.getBoundingClientRect().height - 44) > 0.6) { fails.push('shelf: a list menu row is not 44 px tall'); break; }
+    }
+    if (hd.getBoundingClientRect().height > 36) fails.push('shelf: the heading grew while the menu is open');
+  }
   for (const k of keys) {
     const b = k.getBoundingClientRect();
     if (b.height < 39.5 || b.width < 39.5) fails.push('shelf: key "' + k.getAttribute('aria-label') + '" is ' + Math.round(b.width) + ' x ' + Math.round(b.height) + ' px (at least 40 by 40)');
-  }
-  const lists = root.querySelector('.shelf-lists');
-  if (lists && lists.scrollWidth > lists.clientWidth + 1) fails.push('shelf: the list chips run sideways out of their row');
-  const side = root.querySelector('.shelf-side');
-  if (side) for (const c of side.querySelectorAll('.shelf-list')) {
-    const b = c.getBoundingClientRect(), sb = side.getBoundingClientRect();
-    if (b.right > sb.right + 0.5 || b.left < sb.left - 0.5) { fails.push('shelf: list chip "' + c.textContent.slice(0, 20) + '" is outside the side card'); break; }
   }
   return fails;
 }
@@ -88,13 +100,16 @@ function measureShelf() {
 export default {
   name: 'shelf',
   gallery: { states: [
-    state('shelf: three lists, first picked', LISTS, ['Captures', 'Region', 'Screen', 'GIF', 'Record', 'Text (OCR)', 'History', 'Tasks (To-Do)', 'Tax / Business', 'House, garden', 'Later today', 'Always here', 'Recent files', 'Quarterly review.pptx', 'Budget 2027.xlsx', 'Meeting notes.docx', 'Yesterday']),
+    state('shelf: three lists, first picked', LISTS, ['Captures', 'Region', 'Screen', 'GIF', 'Record', 'Text (OCR)', 'History', 'Tasks (To-Do)', 'Tax / Business', 'House, garden', 'Later today', 'Always here', 'Recent files', 'Quarterly review.pptx', 'Budget 2027.xlsx', 'Meeting notes.docx', 'Yesterday'], ['.lp-btn']),
     state('shelf: recent files with icons', LISTS, ['Recent files', 'newest first', 'Launch teaser.mp4', 'Podcast intro.mp3'], ['.rf-card']),
-    state('shelf: lists from the task app', 'x=1', ['Tasks (To-Do)', 'Tax / Business', 'House, garden', 'Region']),
+    state('shelf: lists from the task app', 'x=1', ['Tasks (To-Do)', 'Tax / Business', 'House, garden', 'Region'], ['.lp-btn']),
     state('shelf: recent files empty', LISTS + '&recent=empty', ['Recent files', 'No recent files']),
     state('shelf: recent files unavailable', LISTS + '&recent=down', ['Recent files', 'Recent files unavailable']),
-    state('shelf: second list picked', LISTS, ['Tax / Business', 'File the quarterly return'], ['.shelf-list:nth-child(2)']),
-    state('shelf: a 60 character list name stays on one line beside the switch', MANY, ['Later today', 'Always here'], ['.shelf-list:nth-child(8)']),
+    state('shelf: second list picked', LISTS, ['Tax / Business', 'File the quarterly return'], ['.lp-btn', '.lp-menu [role=option]:nth-child(2)']),
+    state('shelf: a 60 character list name stays on one line beside the switch', MANY, ['Later today', 'Always here'], ['.lp-btn', '.lp-menu [role=option]:nth-child(8)']),
+    state('shelf: the list menu open', LISTS, ['Tasks (To-Do)', 'Tax / Business', 'House, garden', 'Later today'], ['.lp-btn']),
+    state('shelf: the list menu open with eight lists', MANY, ['Errands', 'Reading list', 'Later today'], ['.lp-btn']),
+    state('shelf: more ShareX keys', LISTS, ['More ShareX', 'Scroll', 'Color', 'Last', 'Ruler'], ['.shelf-more']),
   ] },
   fit: {
     variants: [
@@ -109,7 +124,7 @@ export default {
       shelf: (variantEntry, results, emit) => {
         for (const failure of results.shelf) emit(`  FAIL ${failure}`);
         if (results.shelf.length) return true;
-        if (variantEntry.name.startsWith('Shelf,')) emit('  ok   shelf: cards inside the band, text 16 px or larger, six keys at least 40 px');
+        if (variantEntry.name.startsWith('Shelf,')) emit('  ok   shelf: cards inside the band, text 16 px or larger, ten keys at least 40 px');
         return false;
       },
     },

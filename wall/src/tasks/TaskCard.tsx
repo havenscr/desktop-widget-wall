@@ -6,6 +6,7 @@ import { tip } from '../ui/HoverTip';
 import { LaterSwitch, useShowLater } from './showLater';
 import { UNDO_TIP, undoClick, usePendingTicks } from './pendingTick';
 import { TaskTags, tagsFocus } from './TaskTags';
+import { ListPicker } from './ListPicker';
 import { useTasks, type TasksQuery } from './useTasks';
 
 /** Work's list: the tasks without the home tag that are due today or overdue (the next three when none is). */
@@ -267,7 +268,7 @@ function TaskList({ children, rows }: { children: ReactNode; rows: number }) {
  * and shows the next three tasks. Click the circle to finish one, the title to open it, hold
  * a row to focus on it.
  */
-export function TaskCard({ query = WORK_QUERY, title }: { query?: TasksQuery; title?: string } = {}) {
+export function TaskCard({ query = WORK_QUERY, title, lists }: { query?: TasksQuery; title?: string; lists?: { names: readonly string[]; onPick: (name: string) => void } } = {}) {
   const t = useTasks(query);
   const ticks = usePendingTicks(t.complete);
   const focusStatus = useFocusStore((s) => s.state.status);
@@ -317,7 +318,7 @@ export function TaskCard({ query = WORK_QUERY, title }: { query?: TasksQuery; ti
   return (
     <section className="tasks" aria-label="Tasks">
       <div className="row sb tasks-hd">
-        <span className="k">{title ?? (nextUp ? 'Next up' : 'Due today')}</span>
+        {title && lists ? <ListPicker current={title} names={lists.names} onPick={lists.onPick} /> : <span className="k">{title ?? (nextUp ? 'Next up' : 'Due today')}</span>}
         {(side || hasSwitch) && (
           <span className="tasks-hd-r">
             {side && <span className="xs">{side}</span>}
