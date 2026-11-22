@@ -4130,6 +4130,7 @@ pub fn run() {
             wall2_recent::wall2_recent_files,
             wall2_recent::wall2_recent_open,
             wall2_recent::wall2_recent_folder,
+            wall2_recent::wall2_recent_preview,
             list_audio_devices,
             start_audio_capture,
             stop_audio_capture,
