@@ -23,6 +23,7 @@
 use base64::Engine as _;
 use serde::Serialize;
 use serde_json::Value;
+use rusqlite::types::Value as SqlValue;
 use rusqlite::{Connection, OpenFlags};
 use sha2::{Digest, Sha256};
 use std::io::{Read, Seek, SeekFrom};
@@ -365,15 +366,27 @@ pub(crate) fn read_db(path: &Path) -> Result<Vec<Parsed>, ()> {
         ))?;
         let rows = stmt.query_map([], |r| {
             Ok((
-                r.get::<_, Option<String>>(0)?,
-                r.get::<_, Option<String>>(1)?,
-                r.get::<_, Option<String>>(2)?,
-                r.get::<_, Option<String>>(3)?,
+                r.get::<_, SqlValue>(0)?,
+                r.get::<_, SqlValue>(1)?,
+                r.get::<_, SqlValue>(2)?,
+                r.get::<_, SqlValue>(3)?,
             ))
         })?;
+        // Text stays text and NULL is empty; a cell of any other type skips its row, not the read.
+        let text = |v: SqlValue| -> Option<Option<String>> {
+            match v {
+                SqlValue::Text(t) => Some(Some(t)),
+                SqlValue::Null => Some(None),
+                _ => None,
+            }
+        };
         let mut out = Vec::new();
         for row in rows {
             let (name, file, when, tags) = row?;
+            let (Some(name), Some(file), Some(when)) = (text(name), text(file), text(when)) else {
+                continue;
+            };
+            let tags = text(tags).flatten();
             let mut obj = serde_json::Map::new();
             obj.insert("FileName".into(), Value::String(name.unwrap_or_default()));
             obj.insert("FilePath".into(), Value::String(file.unwrap_or_default()));
@@ -400,6 +413,17 @@ fn read_history(file: &str) -> Result<Vec<Parsed>, ()> {
     } else {
         Ok(parse_history(&read_tail(file)?))
     }
+}
+
+/// The first file that reads, trying each in order. A file that errors falls through to the next
+/// one; if none reads, the first error is returned. An empty list is an error.
+fn read_first(files: &[String], reader: &dyn Fn(&str) -> Result<Vec<Parsed>, ()>) -> Result<Vec<Parsed>, ()> {
+    for f in files {
+        if let Ok(v) = reader(f) {
+            return Ok(v);
+        }
+    }
+    Err(())
 }
 
 /// What the wall keeps per listed capture. The path never leaves Rust.
@@ -536,7 +560,7 @@ fn install_dir() -> Option<String> {
     }
 }
 
-fn history_file() -> Option<String> {
+fn history_files() -> Vec<String> {
     let docs = documents_dir();
     let install = install_dir();
     let read = |p: &str| -> Option<String> {
@@ -551,12 +575,16 @@ fn history_file() -> Option<String> {
     let env = |k: &str| std::env::var(k).ok();
     history_candidates(docs.as_deref(), install.as_deref(), &read, &env)
         .into_iter()
-        .find(|p| plain_local_path(p) && regular_size(Path::new(p)).is_some())
+        .filter(|p| plain_local_path(p) && regular_size(Path::new(p)).is_some())
+        .collect()
 }
 
 fn list_now() -> Result<Vec<CaptureEntry>, String> {
-    let file = history_file().ok_or_else(|| NOT_FOUND.to_string())?;
-    let all = read_history(&file).map_err(|_| FAILED.to_string())?;
+    let files = history_files();
+    if files.is_empty() {
+        return Err(NOT_FOUND.to_string());
+    }
+    let all = read_first(&files, &read_history).map_err(|_| FAILED.to_string())?;
     let shown = newest(all, MAX_ENTRIES);
     let mut held = Vec::with_capacity(shown.len());
     let mut out = Vec::with_capacity(shown.len());
@@ -935,7 +963,11 @@ mod tests {
 
     fn temp_db(setup: &str) -> std::path::PathBuf {
         let n = DB_N.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-        let dir = std::env::temp_dir().join(format!("wall2-db-test-{}-{n}", std::process::id()));
+        let stamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_or(0, |d| d.as_nanos());
+        let dir = std::env::temp_dir().join(format!("wall2-db-test-{}-{stamp}-{n}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         let path = dir.join("History.db");
         let conn = Connection::open(&path).unwrap();
@@ -1001,6 +1033,29 @@ mod tests {
         std::fs::write(&json, format!("[{}]", entry(B, "2026-11-01T10:00:00.0000000-05:00", "", ""))).unwrap();
         assert_eq!(read_history(db.to_str().unwrap()).unwrap()[0].file_name, "a.png");
         assert_eq!(read_history(json.to_str().unwrap()).unwrap()[0].file_name, "clip-b.gif");
+    }
+
+    #[test]
+    fn an_unreadable_history_file_falls_through_to_the_next() {
+        let files = vec!["a.db".to_string(), "b.json".to_string()];
+        let first_bad = |f: &str| if f == "a.db" { Err(()) } else { Ok(Vec::new()) };
+        assert!(read_first(&files, &first_bad).is_ok());
+        let all_bad = |_: &str| Err(());
+        assert!(read_first(&files, &all_bad).is_err());
+        let busy = |f: &str| if f == "a.db" { Ok(Vec::new()) } else { panic!("busy db must not fall back") };
+        assert!(read_first(&files, &busy).is_ok());
+        assert!(read_first(&[], &busy).is_err());
+    }
+
+    #[test]
+    fn a_non_text_cell_skips_its_row_only() {
+        let sql = format!(
+            "{SCHEMA} INSERT INTO History VALUES (1,'a.png','C:\\x\\a.png','2026-11-01T10:00:00.0000000-05:00',5);
+             INSERT INTO History VALUES (2,7,'C:\\x\\b.png','2026-11-02T10:00:00.0000000-05:00',NULL);"
+        );
+        let got = read_db(&temp_db(&sql)).unwrap();
+        assert_eq!(got.len(), 1);
+        assert_eq!(got[0].file_name, "a.png");
     }
 
     #[test]
