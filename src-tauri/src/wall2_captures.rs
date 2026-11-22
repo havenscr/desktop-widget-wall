@@ -1,4 +1,4 @@
-//! Wall 2 Shelf captures: the newest ShareX captures, read from ShareX's own history file.
+//! Wall 2 Shelf captures: the newest ShareX captures, read from ShareX's own history (`History.db`, or `History.json` in older ShareX).
 //!
 //! What the page can and cannot do:
 //! - The page asks for a list and gets, per capture, an opaque id (a hash of its path, modified
@@ -11,10 +11,11 @@
 //! - `act` is exactly `open` (the default app, through the opener plugin, no shell, no
 //!   arguments), `copy` (the file goes on the clipboard as a file, like Copy in Explorer) or
 //!   `folder` (`explorer.exe /select,` and the quoted path).
-//! - The history read is capped at 8 MB (the newest end of the file) and at most 12 captures
-//!   are returned. Nothing is logged: no path, no title.
+//! - A `History.json` read is capped at 8 MB (the newest end of the file); `History.db` is opened
+//!   read-only and only its newest 200 rows are read. At most 12 captures are returned. A busy
+//!   database gives an empty list for that poll. Nothing is logged: no path, no title.
 //!
-//! Errors are fixed words: `not-found` (no ShareX history file), `failed`, `missing` (the id
+//! Errors are fixed words: `not-found` (no ShareX history file or database), `failed`, `missing` (the id
 //! or the file is gone), `refused` (a path or extension that does not pass), `too-big` and
 //! `not-image` (thumbnails), `forbidden` (the wrong window).
 #![cfg_attr(not(windows), allow(dead_code))]
@@ -22,6 +23,8 @@
 use base64::Engine as _;
 use serde::Serialize;
 use serde_json::Value;
+use rusqlite::types::Value as SqlValue;
+use rusqlite::{Connection, OpenFlags};
 use sha2::{Digest, Sha256};
 use std::io::{Read, Seek, SeekFrom};
 use std::path::Path;
@@ -302,7 +305,7 @@ pub(crate) fn personal_folder(cfg: &str, env: &dyn Fn(&str) -> Option<String>) -
 
 /// The history files to try, in order: the personal folder named by a `PersonalPath.cfg` in
 /// the Documents ShareX folder, then one beside the install, then the default Documents
-/// ShareX folder.
+/// ShareX folder. In each folder `History.db` (ShareX 18 and later) comes before `History.json`.
 pub(crate) fn history_candidates(
     documents: Option<&str>,
     install: Option<&str>,
@@ -319,9 +322,11 @@ pub(crate) fn history_candidates(
     folders.extend(default);
     let mut out: Vec<String> = Vec::new();
     for f in folders {
-        let file = format!("{f}\\History.json");
-        if !out.iter().any(|o| o.eq_ignore_ascii_case(&file)) {
-            out.push(file);
+        for name in ["History.db", "History.json"] {
+            let file = format!("{f}\\{name}");
+            if !out.iter().any(|o| o.eq_ignore_ascii_case(&file)) {
+                out.push(file);
+            }
         }
     }
     out
@@ -337,6 +342,88 @@ fn read_tail(path: &str) -> Result<String, ()> {
     f.take(MAX_HISTORY).read_to_end(&mut buf).map_err(|_| ())?;
     let text = String::from_utf8_lossy(&buf).into_owned();
     Ok(if start > 0 { from_first_entry(&text).to_string() } else { text })
+}
+
+/// The most rows read from `History.db`.
+const DB_ROWS: u32 = 200;
+
+fn is_busy(e: &rusqlite::Error) -> bool {
+    matches!(
+        e,
+        rusqlite::Error::SqliteFailure(f, _)
+            if f.code == rusqlite::ErrorCode::DatabaseBusy || f.code == rusqlite::ErrorCode::DatabaseLocked
+    )
+}
+
+/// The newest rows of a ShareX `History.db`, oldest first (file order, like the JSON path). A
+/// busy or locked database is an empty list; any other problem (no table, no column) is an error.
+pub(crate) fn read_db(path: &Path) -> Result<Vec<Parsed>, ()> {
+    let run = || -> Result<Vec<Parsed>, rusqlite::Error> {
+        let conn = Connection::open_with_flags(path, OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX)?;
+        conn.busy_timeout(std::time::Duration::from_millis(250))?;
+        let mut stmt = conn.prepare(&format!(
+            "SELECT FileName, FilePath, DateTime, Tags FROM History ORDER BY Id DESC LIMIT {DB_ROWS}"
+        ))?;
+        let rows = stmt.query_map([], |r| {
+            Ok((
+                r.get::<_, SqlValue>(0)?,
+                r.get::<_, SqlValue>(1)?,
+                r.get::<_, SqlValue>(2)?,
+                r.get::<_, SqlValue>(3)?,
+            ))
+        })?;
+        // Text stays text and NULL is empty; a cell of any other type skips its row, not the read.
+        let text = |v: SqlValue| -> Option<Option<String>> {
+            match v {
+                SqlValue::Text(t) => Some(Some(t)),
+                SqlValue::Null => Some(None),
+                _ => None,
+            }
+        };
+        let mut out = Vec::new();
+        for row in rows {
+            let (name, file, when, tags) = row?;
+            let (Some(name), Some(file), Some(when)) = (text(name), text(file), text(when)) else {
+                continue;
+            };
+            let tags = text(tags).flatten();
+            let mut obj = serde_json::Map::new();
+            obj.insert("FileName".into(), Value::String(name.unwrap_or_default()));
+            obj.insert("FilePath".into(), Value::String(file.unwrap_or_default()));
+            obj.insert("DateTime".into(), Value::String(when.unwrap_or_default()));
+            let tags = tags.and_then(|t| serde_json::from_str::<Value>(&t).ok()).unwrap_or(Value::Null);
+            obj.insert("Tags".into(), tags);
+            out.extend(entry_of(&Value::Object(obj)));
+        }
+        out.reverse();
+        Ok(out)
+    };
+    match run() {
+        Ok(v) => Ok(v),
+        Err(e) if is_busy(&e) => Ok(Vec::new()),
+        Err(_) => Err(()),
+    }
+}
+
+/// Every entry of a history file, in file order: `History.db` through SQLite, anything else as
+/// JSON text.
+fn read_history(file: &str) -> Result<Vec<Parsed>, ()> {
+    if file.to_ascii_lowercase().ends_with(".db") {
+        read_db(Path::new(file))
+    } else {
+        Ok(parse_history(&read_tail(file)?))
+    }
+}
+
+/// The first file that reads, trying each in order. A file that errors falls through to the next
+/// one; if none reads, the first error is returned. An empty list is an error.
+fn read_first(files: &[String], reader: &dyn Fn(&str) -> Result<Vec<Parsed>, ()>) -> Result<Vec<Parsed>, ()> {
+    for f in files {
+        if let Ok(v) = reader(f) {
+            return Ok(v);
+        }
+    }
+    Err(())
 }
 
 /// What the wall keeps per listed capture. The path never leaves Rust.
@@ -473,7 +560,7 @@ fn install_dir() -> Option<String> {
     }
 }
 
-fn history_file() -> Option<String> {
+fn history_files() -> Vec<String> {
     let docs = documents_dir();
     let install = install_dir();
     let read = |p: &str| -> Option<String> {
@@ -488,13 +575,17 @@ fn history_file() -> Option<String> {
     let env = |k: &str| std::env::var(k).ok();
     history_candidates(docs.as_deref(), install.as_deref(), &read, &env)
         .into_iter()
-        .find(|p| plain_local_path(p) && regular_size(Path::new(p)).is_some())
+        .filter(|p| plain_local_path(p) && regular_size(Path::new(p)).is_some())
+        .collect()
 }
 
 fn list_now() -> Result<Vec<CaptureEntry>, String> {
-    let file = history_file().ok_or_else(|| NOT_FOUND.to_string())?;
-    let text = read_tail(&file).map_err(|_| FAILED.to_string())?;
-    let shown = newest(parse_history(&text), MAX_ENTRIES);
+    let files = history_files();
+    if files.is_empty() {
+        return Err(NOT_FOUND.to_string());
+    }
+    let all = read_first(&files, &read_history).map_err(|_| FAILED.to_string())?;
+    let shown = newest(all, MAX_ENTRIES);
     let mut held = Vec::with_capacity(shown.len());
     let mut out = Vec::with_capacity(shown.len());
     for p in shown.iter() {
@@ -847,9 +938,17 @@ mod tests {
     fn candidates_put_a_personal_folder_first_and_the_default_last() {
         let read = |p: &str| (p == r"C:\Users\example\Documents\ShareX\PersonalPath.cfg").then(|| r"D:\Captures".to_string());
         let got = history_candidates(Some(r"C:\Users\example\Documents"), Some(r"C:\Tools\ShareX"), &read, &env);
-        assert_eq!(got, vec![r"D:\Captures\History.json".to_string(), r"C:\Users\example\Documents\ShareX\History.json".to_string()]);
+        assert_eq!(
+            got,
+            vec![
+                r"D:\Captures\History.db".to_string(),
+                r"D:\Captures\History.json".to_string(),
+                r"C:\Users\example\Documents\ShareX\History.db".to_string(),
+                r"C:\Users\example\Documents\ShareX\History.json".to_string()
+            ]
+        );
         let none = |_: &str| None;
-        assert_eq!(history_candidates(Some(r"C:\Users\example\Documents"), None, &none, &env), vec![r"C:\Users\example\Documents\ShareX\History.json".to_string()]);
+        assert_eq!(history_candidates(Some(r"C:\Users\example\Documents"), None, &none, &env), vec![r"C:\Users\example\Documents\ShareX\History.db".to_string(), r"C:\Users\example\Documents\ShareX\History.json".to_string()]);
         assert!(history_candidates(None, None, &none, &env).is_empty());
     }
 
@@ -857,7 +956,106 @@ mod tests {
     fn an_install_folder_config_is_followed() {
         let read = |p: &str| (p == r"C:\Tools\ShareX\PersonalPath.cfg").then(|| r"E:\Portable".to_string());
         let got = history_candidates(Some(r"C:\Users\example\Documents"), Some(r"C:\Tools\ShareX\"), &read, &env);
-        assert_eq!(got[0], r"E:\Portable\History.json");
+        assert_eq!(got[0], r"E:\Portable\History.db");
+    }
+
+    static DB_N: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+
+    fn temp_db(setup: &str) -> std::path::PathBuf {
+        let n = DB_N.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        let stamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_or(0, |d| d.as_nanos());
+        let dir = std::env::temp_dir().join(format!("wall2-db-test-{}-{stamp}-{n}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("History.db");
+        let conn = Connection::open(&path).unwrap();
+        conn.execute_batch(setup).unwrap();
+        path
+    }
+
+    const SCHEMA: &str = "CREATE TABLE History (Id INTEGER PRIMARY KEY, FileName TEXT, FilePath TEXT, DateTime TEXT, Tags TEXT);";
+
+    #[test]
+    fn a_history_db_reads_oldest_first_with_tags() {
+        let sql = format!(
+            "{SCHEMA} INSERT INTO History VALUES (1,'a.png','C:\\x\\a.png','2026-11-01T10:00:00.0000000-05:00','{{\"WindowTitle\":\"Win\",\"ProcessName\":\"app\"}}');
+             INSERT INTO History VALUES (2,'b.png','C:\\x\\b.png','2026-11-02T10:00:00.0000000-05:00',NULL);
+             INSERT INTO History VALUES (3,'','','2026-11-03T10:00:00.0000000-05:00',NULL);"
+        );
+        let got = read_db(&temp_db(&sql)).unwrap();
+        assert_eq!(got.len(), 2);
+        assert_eq!(got[0].file_name, "a.png");
+        assert_eq!(got[0].title, "Win");
+        assert_eq!(got[0].app, "app");
+        assert_eq!(got[0].path, r"C:\x\a.png");
+        assert!(got[0].time > 0 && got[0].time < got[1].time);
+        assert_eq!(got[1].file_name, "b.png");
+        assert_eq!(got[1].title, "");
+        let shown = newest(got, 12);
+        assert_eq!(shown[0].file_name, "b.png");
+    }
+
+    #[test]
+    fn a_history_db_reads_only_its_newest_rows() {
+        let mut sql = SCHEMA.to_string();
+        for i in 1..=250 {
+            sql.push_str(&format!("INSERT INTO History VALUES ({i},'f{i}.png','C:\\x\\f{i}.png','2026-11-01T10:00:00.0000000-05:00',NULL);"));
+        }
+        let got = read_db(&temp_db(&sql)).unwrap();
+        assert_eq!(got.len(), 200);
+        assert_eq!(got[199].file_name, "f250.png");
+    }
+
+    #[test]
+    fn a_db_without_the_history_table_is_an_error_not_a_panic() {
+        assert!(read_db(&temp_db("CREATE TABLE Other (Id INTEGER);")).is_err());
+        assert!(read_db(&temp_db("CREATE TABLE History (Id INTEGER, FileName TEXT);")).is_err());
+        assert!(read_db(Path::new("no-such-dir-wall2/History.db")).is_err());
+    }
+
+    #[test]
+    fn history_db_is_tried_before_history_json_in_a_folder() {
+        let none = |_: &str| None;
+        let cands = history_candidates(Some(r"C:\Users\example\Documents"), None, &none, &env);
+        let both = |_: &str| true;
+        assert_eq!(cands.iter().find(|p| both(p)).unwrap(), r"C:\Users\example\Documents\ShareX\History.db");
+        let json_only = |p: &str| p.ends_with("History.json");
+        assert_eq!(cands.iter().find(|p| json_only(p)).unwrap(), r"C:\Users\example\Documents\ShareX\History.json");
+    }
+
+    #[test]
+    fn read_history_picks_the_reader_by_extension() {
+        let db = temp_db(&format!("{SCHEMA} INSERT INTO History VALUES (1,'a.png','C:\\x\\a.png','2026-11-01T10:00:00.0000000-05:00',NULL);"));
+        let dir = db.parent().unwrap();
+        let json = dir.join("History.json");
+        std::fs::write(&json, format!("[{}]", entry(B, "2026-11-01T10:00:00.0000000-05:00", "", ""))).unwrap();
+        assert_eq!(read_history(db.to_str().unwrap()).unwrap()[0].file_name, "a.png");
+        assert_eq!(read_history(json.to_str().unwrap()).unwrap()[0].file_name, "clip-b.gif");
+    }
+
+    #[test]
+    fn an_unreadable_history_file_falls_through_to_the_next() {
+        let files = vec!["a.db".to_string(), "b.json".to_string()];
+        let first_bad = |f: &str| if f == "a.db" { Err(()) } else { Ok(Vec::new()) };
+        assert!(read_first(&files, &first_bad).is_ok());
+        let all_bad = |_: &str| Err(());
+        assert!(read_first(&files, &all_bad).is_err());
+        let busy = |f: &str| if f == "a.db" { Ok(Vec::new()) } else { panic!("busy db must not fall back") };
+        assert!(read_first(&files, &busy).is_ok());
+        assert!(read_first(&[], &busy).is_err());
+    }
+
+    #[test]
+    fn a_non_text_cell_skips_its_row_only() {
+        let sql = format!(
+            "{SCHEMA} INSERT INTO History VALUES (1,'a.png','C:\\x\\a.png','2026-11-01T10:00:00.0000000-05:00',5);
+             INSERT INTO History VALUES (2,X'07','C:\\x\\b.png','2026-11-02T10:00:00.0000000-05:00',NULL);"
+        );
+        let got = read_db(&temp_db(&sql)).unwrap();
+        assert_eq!(got.len(), 1);
+        assert_eq!(got[0].file_name, "a.png");
     }
 
     #[test]
