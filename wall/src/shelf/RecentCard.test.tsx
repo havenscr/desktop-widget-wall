@@ -31,7 +31,7 @@ it('shows the files newest first, with a time on each', async () => {
   expect(rows).toHaveLength(5);
   expect(rows.map((r) => within(r).getByText(/^Document/).textContent)).toEqual(['Document 0.docx', 'Document 1.docx', 'Document 2.docx', 'Document 3.docx', 'Document 4.docx']);
   for (const r of rows) expect(r.querySelector('.rf-when')!.textContent).not.toBe('');
-  expect(screen.getByText('last 5 opened')).toBeTruthy();
+  expect(screen.getByText('newest first')).toBeTruthy();
 });
 
 it('a click on the row opens the file by id', async () => {
@@ -83,4 +83,15 @@ it('times read as a clock time today, Yesterday, a weekday, then a date', () => 
   expect(recentWhen(NOW - 3 * day, NOW)).toMatch(/^[A-Z][a-z]{2}$/);
   expect(recentWhen(NOW - 10 * day, NOW)).toBe('Nov 1');
   expect(recentWhen(0, NOW)).toBe('');
+});
+
+it('draws up to 20 rows, each with a decorative icon tinted by kind', async () => {
+  const many = Array.from({ length: 20 }, (_, i) => file(i, { name: i === 0 ? 'Chart.pdf' : `Item ${i}.docx` }));
+  mocks.set('wall2_recent_files', () => many);
+  render(<RecentCard />);
+  await screen.findByText('Chart.pdf');
+  expect(screen.getAllByRole('listitem')).toHaveLength(20);
+  const icon = screen.getAllByRole('listitem')[0].querySelector('.rf-icon') as HTMLElement;
+  expect(icon.style.color).toBe('rgb(255, 107, 107)');
+  expect(icon.querySelector('svg')!.getAttribute('aria-hidden')).toBe('true');
 });

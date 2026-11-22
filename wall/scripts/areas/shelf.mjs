@@ -32,15 +32,22 @@ function measureShelf() {
       if (b.left < cb.left - 0.5 || b.right > cb.right + 0.5 || b.bottom > cb.bottom + 0.5) { fails.push('shelf: ' + sel + ' ' + (e.className || e.tagName) + ' sticks out of its card'); break; }
     }
   }
-  // The Recent files card sits under the clock and date line and keeps five rows.
+  // The Recent files card sits under the clock and date line, shows five rows in view and scrolls for the rest.
   const rf = root.querySelector('.rf-card');
   const clk = document.querySelector('.clk-date');
   if (rf && clk) {
     const cr = clk.getBoundingClientRect();
     if (rf.getBoundingClientRect().top < cr.bottom - 0.5) fails.push('shelf: the Recent files card at y ' + r1(rf.getBoundingClientRect().top) + ' overlaps the date line under the clock (ends y ' + r1(cr.bottom) + ')');
   }
-  const rfRows = root.querySelectorAll('.rf-card .rf-row').length;
-  if (rf && rfRows !== 5 && rfRows !== 0) fails.push('shelf: ' + rfRows + ' recent file rows, expected 5');
+  const rfList = root.querySelector('.rf-card .rf-rows');
+  if (rf && rfList) {
+    const lb = rfList.getBoundingClientRect();
+    const inView = [...rfList.querySelectorAll('.rf-row')].filter((r) => { const b = r.getBoundingClientRect(); return b.top >= lb.top - 0.5 && b.bottom <= lb.bottom + 0.5; }).length;
+    const total = rfList.querySelectorAll('.rf-row').length;
+    if (inView !== Math.min(5, total)) fails.push('shelf: ' + inView + ' recent file rows in view, expected ' + Math.min(5, total));
+    const cb = rf.getBoundingClientRect();
+    if (cb.bottom > floor + 0.5) fails.push('shelf: the Recent files card ends at y ' + r1(cb.bottom) + ', below the band (y ' + r1(floor) + ')');
+  }
   // The picked list uses Home's 40 px rows and carries the shared Later today switch in its heading.
   const taskRows = [...root.querySelectorAll('.right-wing .tasks .tk3')];
   if (taskRows.length) {
@@ -82,6 +89,7 @@ export default {
   name: 'shelf',
   gallery: { states: [
     state('shelf: three lists, first picked', LISTS, ['Captures', 'Region', 'Screen', 'GIF', 'Record', 'Text (OCR)', 'History', 'Tasks (To-Do)', 'Tax / Business', 'House, garden', 'Later today', 'Always here', 'Recent files', 'Quarterly review.pptx', 'Budget 2027.xlsx', 'Meeting notes.docx', 'Yesterday']),
+    state('shelf: recent files with icons', LISTS, ['Recent files', 'newest first', 'Launch teaser.mp4', 'Podcast intro.mp3'], ['.rf-card']),
     state('shelf: lists from the task app', 'x=1', ['Tasks (To-Do)', 'Tax / Business', 'House, garden', 'Region']),
     state('shelf: recent files empty', LISTS + '&recent=empty', ['Recent files', 'No recent files']),
     state('shelf: recent files unavailable', LISTS + '&recent=down', ['Recent files', 'Recent files unavailable']),
