@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, type MouseEvent } from 'react';
 
 /** How long a ticked task waits, showing "Done" and Undo, before it is really completed. */
 export const TICK_UNDO_MS = 5000;
@@ -78,3 +78,12 @@ export function usePendingTicks(commit: (id: string) => void): PendingTicks {
 
   return { pending, tick, undo };
 }
+
+/** The hover text of a ticked circle inside its undo window. */
+export const UNDO_TIP = 'Put it back; nothing is saved yet';
+
+/** Click handler for a ticked circle: takes the tick back. A fast second click of a double click does nothing. */
+export const undoClick = (undo: () => void) => (e: MouseEvent) => {
+  if (e.detail > 1) return;
+  undo();
+};

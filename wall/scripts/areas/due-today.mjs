@@ -18,7 +18,7 @@ const THREE = 'Work, Due today: three due';
 const TWELVE = 'Work, Due today: twelve due, two overdue';
 const LONG = 'Work, Due today: twelve due with the longest titles';
 const HOME_QUIET = 'Home, Around the house: tags, five rows in view';
-const HOME_TODAY = 'Home, Around the house: Today only on';
+const HOME_LATER = 'Home, Around the house: Later today switch on';
 const HOME_ALERTS = 'Home, Around the house: tags, three rows in view';
 const HOME_TIMED = 'Home, Around the house: a timed chore beside estimate pills';
 const EMPTY = 'Work, no task at all';
@@ -47,17 +47,22 @@ function measureTasks() {
   if (!rows.length && want) return [mode + ': no task rows were drawn'];
   if (rows.length !== want) fails.push(mode + ': ' + rows.length + ' rows drawn, expected ' + want);
   if (mode === 'home') {
-    // The Today only chip sits in the heading row, inside the card, on the right of the heading, text 16 px or more.
-    const chip = document.querySelector('.home .chores .chores-today');
+    // The Later today switch sits in the heading row, inside the card, on the right of the heading, text 16 px or more.
+    const sw = document.querySelector('.home .chores .od-sw');
     const card = document.querySelector('.home .chores');
     const head = document.querySelector('.home .chores .k');
-    if (!chip || !card || !head) fails.push('home: the Today only chip or the heading is missing');
+    if (!sw || !card || !head) fails.push('home: the Later today switch or the heading is missing');
     else {
-      const cb = box(chip);
+      const cb = box(sw);
       const kb = box(head);
-      if (cb.left < kb.right + 8 || cb.right > box(card).right + 0.5 || cb.top < box(card).top - 8) fails.push('home: the Today only chip is not beside the heading inside the card');
-      if (parseFloat(getComputedStyle(chip).fontSize) < 16) fails.push('home: the Today only chip text is under 16 px');
+      if (cb.left < kb.right + 8 || cb.right > box(card).right + 0.5 || cb.top < box(card).top - 8) fails.push('home: the Later today switch is not beside the heading inside the card');
+      if (parseFloat(getComputedStyle(sw).fontSize) < 16) fails.push('home: the Later today switch text is under 16 px');
     }
+    if (document.querySelector('.home .chores .chores-today')) fails.push('home: the Today only chip is still drawn');
+  }
+  // Every list's rows are Home's size: 40 px.
+  for (const li of rows) {
+    if (Math.abs(box(li).height - 40) > 0.6) { fails.push(mode + ': a row is ' + r1(box(li).height) + ' px tall (40)'); break; }
   }
   const titleSel = mode === 'work' ? '.task-title' : '.chore-open';
   const where = mode === 'work' ? 'tasks' : 'home';
@@ -80,15 +85,15 @@ function measureTasks() {
     const lb = box(list);
     if (lb.bottom > db.top + 0.5) fails.push('tasks: the list ends at y ' + r1(lb.bottom) + ', over Always here which starts at y ' + r1(db.top));
     const seen = rows.filter((li) => { const b = box(li); return b.top >= lb.top - 1 && b.bottom <= lb.bottom + 1; }).length;
-    const expectSeen = Math.min(rows.length, 3);
+    const expectSeen = Math.min(rows.length, 5);
     if (seen !== expectSeen) fails.push('tasks: ' + seen + ' rows visible, expected ' + expectSeen);
     if (rows.length && Math.abs(box(rows[0]).top - lb.top) > 0.6) fails.push('tasks: the first row is not at the top of the list');
     if (!inside(lb, bb, 0.5)) fails.push('tasks: the list (x ' + r1(lb.left) + ' to ' + r1(lb.right) + ', y ' + r1(lb.top) + ' to ' + r1(lb.bottom) + ') sticks out of its block');
     const bar = list.offsetWidth - list.clientWidth;
-    const wantBar = rows.length > 3 ? 6 : 0;
+    const wantBar = rows.length > 5 ? 6 : 0;
     if (bar !== wantBar) fails.push('tasks: the scroll bar is ' + bar + ' px wide, expected ' + wantBar + ' with ' + rows.length + ' rows');
     const mask = getComputedStyle(list).maskImage || getComputedStyle(list).webkitMaskImage;
-    if (rows.length > 3) {
+    if (rows.length > 5) {
       if (!list.classList.contains('fade-bottom') || mask === 'none') fails.push('tasks: no fade at the foot while more rows wait below');
       if (list.classList.contains('fade-top')) fails.push('tasks: a fade at the head before any scrolling');
     } else if (list.classList.contains('fade-bottom') || list.classList.contains('fade-top') || mask !== 'none') {
@@ -192,37 +197,40 @@ function measureTasks() {
 export default {
   name: 'due-today',
   gallery: { states: [
-    workState('due today: typical, six due with one overdue', 'due=typical', ['Due today', '4, 1 overdue · 2 later', 'Send the signed engagement letter', '!more can wait', '!Next up']),
-    workState('due today: nothing due, Next up', 'due=none', ['Next up', 'Nothing due today', 'Review the dashboard draft', '!Due today']),
-    workState('due today: one due', 'due=one', ['Due today1', 'Send the project proposal', '!overdue', '!more can wait']),
-    workState('due today: two due, one overdue', 'due=two', ['Due today1, 1 overdue · 1 later', 'Send the signed engagement letter', '!more can wait']),
-    workState('due today: the overdue mark says how late', 'due=typical', ['Due Monday, 2 days ago', 'Send the signed engagement letter'], 'hover:.tasks .od-mark'),
-    workState('due today: no task at all', 'tasks=none', ['Due today', 'Nothing due today', '!Next up']),
+    workState('due today: typical, six due with one overdue', 'due=typical&later=0', ['Due today', '4, 1 overdue · 2 later', 'Send the signed engagement letter', '!more can wait', '!Next up']),
+    workState('due today: nothing due, Next up', 'due=none&later=0', ['Next up', 'Nothing due today', 'Review the dashboard draft', '!Due today']),
+    workState('due today: one due', 'due=one&later=0', ['Due today1', 'Send the project proposal', '!overdue', '!more can wait']),
+    workState('due today: two due, one overdue', 'due=two&later=0', ['Due today1, 1 overdue · 1 later', 'Send the signed engagement letter', '!more can wait']),
+    workState('due today: the overdue mark says how late', 'due=typical&later=0', ['Due Monday, 2 days ago', 'Send the signed engagement letter'], 'hover:.tasks .od-mark'),
+    workState('due today: no task at all', 'tasks=none&later=0', ['Due today', 'Nothing due today', '!Next up']),
     workState('due today: three due', 'due=three&later=1', ['Due today3', 'Send the project proposal', 'Confirm the venue for the spring workshop']),
     workState('due today: twelve due, two overdue', 'due=twelve&later=1', ['Due today12, 2 overdue', 'Send the signed engagement letter', '!more can wait']),
     workState('due today: twelve due with the longest titles', 'due=twelve&long=1&later=1', ['Due today12, 2 overdue', 'Send the project proposal with the revised budget and the new timeline']),
-    workState('due today: row ticked, Done with Undo', 'due=three', ['Done.', 'Undo'], '.tasks .task-check'),
-    homeState('home tags: five rows, round tag pills, icon only', 'desk=typical&alerts=0&chores=many', ['Order printer paper', 'Sort the recycling']),
-    homeState('home chores: a timed chore beside estimate pills', 'desk=typical&alerts=0&chores=timed', ['Pick up the dry cleaning', '4:30 PM', '15 m']),
-    homeState('home chores: Today only on, one chore due this afternoon', 'desk=typical&alerts=0&chores=timed&todayonly=on', ['Today only', 'Pick up the dry cleaning', '4:30 PM', '!Change the furnace filter']),
-    homeState('home tags: three rows while alerts are open', 'desk=typical&alerts=6&chores=many', ['Order printer paper']),
+    workState('due today: row ticked, Done with Undo', 'due=three&later=0', ['Done.', 'Undo'], '.tasks .task-check'),
+    workState('due today: tick then click the circle, the row is back', 'due=three&later=0', ['Send the project proposal', '!Done.', '!Undo'], '.tasks .task-check >> .tasks .task-check'),
+    workState('due today: Later today switch on shows the timed task', 'due=typical&later=1', ['Due today', 'Confirm the venue for the spring workshop', 'Later today']),
+    homeState('home tags: five rows, round tag pills, icon only', 'desk=typical&alerts=0&chores=many&later=0', ['Order printer paper', 'Sort the recycling']),
+    homeState('home chores: a timed chore beside estimate pills', 'desk=typical&alerts=0&chores=timed&later=1', ['Pick up the dry cleaning', '4:30 PM', '15 m']),
+    homeState('home chores: Later today switch off hides the chore due this afternoon', 'desk=typical&alerts=0&chores=timed&later=0', ['Around the house', 'Later today', 'Change the furnace filter']),
+    homeState('home chores: tick then click the circle, the row is back', 'desk=typical&alerts=0&chores=many&later=0', ['Order printer paper', '!Done.', '!Undo'], '.home .chore-rows .ck >> .home .chore-rows .ck'),
+    homeState('home tags: three rows while alerts are open', 'desk=typical&alerts=6&chores=many&later=0', ['Order printer paper']),
   ] },
   fit: {
     variants: [
-      { name: TYPICAL, q: fitWork('due=typical', 6, 1), checks: ['.work .tasks'] },
-      { name: NONE, q: fitWork('due=none', 3), checks: ['.work .tasks'] },
-      { name: ONE, q: fitWork('due=one', 1), checks: ['.work .tasks'] },
-      { name: TWO, q: fitWork('due=two', 2, 1), checks: ['.work .tasks'] },
-      { name: THREE, q: fitWork('due=three', 3), checks: ['.work .tasks'] },
-      { name: EMPTY, q: fitWork('tasks=none', 0), checks: ['.work .tasks'] },
-      { name: OFF, q: fitWork('tasks=off', 0), checks: ['.work .tasks'] },
-      { name: DOWN, q: fitWork('tasks=down', 0), checks: ['.work .tasks'] },
-      { name: TWELVE, q: fitWork('due=twelve', 12, 2), checks: ['.work .tasks'] },
-      { name: LONG, q: fitWork('due=twelve&long=1', 12, 2), checks: ['.work .tasks'] },
-      { name: HOME_QUIET, q: fitHome('desk=typical&alerts=0&chores=many', 13), checks: ['.home .chores'] },
-      { name: HOME_TIMED, q: fitHome('desk=typical&alerts=0&chores=timed', 14), checks: ['.home .chores'] },
-      { name: HOME_TODAY, q: fitHome('desk=typical&alerts=0&chores=timed&todayonly=on', 1), checks: ['.home .chores'] },
-      { name: HOME_ALERTS, q: fitHome('desk=typical&alerts=6&chores=many', 13), checks: ['.home .chores'] },
+      { name: TYPICAL, q: fitWork('due=typical&later=1', 6, 1), checks: ['.work .tasks'] },
+      { name: NONE, q: fitWork('due=none&later=0', 3), checks: ['.work .tasks'] },
+      { name: ONE, q: fitWork('due=one&later=1', 1), checks: ['.work .tasks'] },
+      { name: TWO, q: fitWork('due=two&later=1', 2, 1), checks: ['.work .tasks'] },
+      { name: THREE, q: fitWork('due=three&later=1', 3), checks: ['.work .tasks'] },
+      { name: EMPTY, q: fitWork('tasks=none&later=0', 0), checks: ['.work .tasks'] },
+      { name: OFF, q: fitWork('tasks=off&later=0', 0), checks: ['.work .tasks'] },
+      { name: DOWN, q: fitWork('tasks=down&later=0', 0), checks: ['.work .tasks'] },
+      { name: TWELVE, q: fitWork('due=twelve&later=1', 12, 2), checks: ['.work .tasks'] },
+      { name: LONG, q: fitWork('due=twelve&long=1&later=1', 12, 2), checks: ['.work .tasks'] },
+      { name: HOME_QUIET, q: fitHome('desk=typical&alerts=0&chores=many&later=0', 13), checks: ['.home .chores'] },
+      { name: HOME_TIMED, q: fitHome('desk=typical&alerts=0&chores=timed&later=1', 14), checks: ['.home .chores'] },
+      { name: HOME_LATER, q: fitHome('desk=typical&alerts=0&chores=timed&later=1', 14), checks: ['.home .chores'] },
+      { name: HOME_ALERTS, q: fitHome('desk=typical&alerts=6&chores=many&later=0', 13), checks: ['.home .chores'] },
     ],
     measurements: { tasks: measureTasks },
     rules: {
@@ -232,7 +240,7 @@ export default {
         for (const failure of results.tasks) emit(`  FAIL ${failure}`);
         if (results.tasks.length) return true;
         emit(mode === 'work'
-          ? '  ok   tasks: the block is main\'s box and Always here has not moved, three rows in view from the top, the 6 px bar and fades inside it, no title under 180 px or clipped without an ellipsis, overdue marks 18 px amber in their slot, tags 26 px round with a 16 px icon inside their rows and in line'
+          ? '  ok   tasks: the block is main\'s box and Always here has not moved, five rows in view from the top, the 6 px bar and fades inside it, no title under 180 px or clipped without an ellipsis, overdue marks 18 px amber in their slot, tags 26 px round with a 16 px icon inside their rows and in line'
           : '  ok   home tasks: one pill column as wide as the widest pill and in line, the pill text inside it, tags clear of it, tags 26 px round with a 16 px icon inside their rows, no title under 180 px or clipped without an ellipsis');
         return false;
       },
@@ -243,7 +251,7 @@ export default {
       'mark-missing': { css: '.work .od-mark { display: none !important; }', expect: /^ *FAIL tasks: 0 overdue marks, expected 1/m, appliesTo: (v) => v.name === TWO },
       'mark-over': { css: '.work .od-mark { position: relative !important; left: 60px !important; }', expect: /^ *FAIL tasks: the overdue mark of ".*" is not inside its row, clear of the tags and the time column/m, appliesTo: (v) => v.name === TYPICAL },
       'mark-colour': { css: '.work .od-mark { color: #ffffff !important; }', expect: /^ *FAIL tasks: the overdue mark of ".*" is rgb\(255, 255, 255\), not the wall's amber/m, appliesTo: (v) => v.name === TYPICAL },
-      'tasks-rows': { css: '.work .tasks-list { max-height: 142px !important; }', expect: /^ *FAIL tasks: \d+ rows visible, expected 3/m, appliesTo: (v) => v.name === TWELVE },
+      'tasks-rows': { css: '.work .tasks-list { max-height: 142px !important; }', expect: /^ *FAIL tasks: \d+ rows visible, expected 5/m, appliesTo: (v) => v.name === TWELVE },
       'tasks-collapse': { css: '.work .tasks-body { height: auto !important; }', expect: /^ *FAIL tasks: the block is x [\d.]+, y [\d.]+, [\d.]+ by [\d.]+ with 1 rows \(main: 1944, 24, 596 by 243.7\)/m, appliesTo: (v) => v.name === ONE },
       'tasks-deck-moved': { css: '.work .tasks-body { height: auto !important; }', expect: /^ *FAIL tasks: Always here starts at y [\d.]+ with 2 rows \(main: 267.7\)/m, appliesTo: (v) => v.name === TWO },
       'tasks-empty-collapse': { css: '.work .tasks-body { height: auto !important; }', expect: /^ *FAIL tasks: Always here starts at y [\d.]+ with 0 rows \(main: 267.7\)/m, appliesTo: (v) => v.name === EMPTY },
@@ -266,7 +274,7 @@ export default {
       'home-pill-text': { css: '.home .chore-rows .est { min-width: 0 !important; width: 40px !important; }', expect: /^ *FAIL home: the pill text ".*" is [\d.]+ px in a pill [\d.]+ px wide/m, appliesTo: (v) => v.name === HOME_TIMED },
       'home-pill-equal': { css: '.home .chore-rows .est { min-width: 0 !important; }', expect: /^ *FAIL home: the pill column is not the same width on every row \([\d.]+ to [\d.]+ px\)/m, appliesTo: (v) => v.name === HOME_TIMED },
       'home-pill-min': { css: '.home .chore-rows .est, .home .chore-rows .pill-ph { min-width: 0 !important; width: 50px !important; }', expect: /^ *FAIL home: the pill column is [\d.]+ px wide \(at least 62\)/m, appliesTo: (v) => v.name === HOME_QUIET },
-      'home-chip-away': { css: '.home .chores-today { position: relative !important; left: -400px !important; }', expect: /^ *FAIL home: the Today only chip is not beside the heading inside the card/m, appliesTo: (v) => v.name === HOME_QUIET },
+      'home-switch-away': { css: '.home .chores .od-sw { position: relative !important; left: -400px !important; }', expect: /^ *FAIL home: the Later today switch is not beside the heading inside the card/m, appliesTo: (v) => v.name === HOME_QUIET },
       'home-touch': { css: '.home .chore-rows .t-tags { margin-right: -14px !important; }', expect: /^ *FAIL home: tags touch the pill/m, appliesTo: (v) => v.name === HOME_QUIET },
     },
   },

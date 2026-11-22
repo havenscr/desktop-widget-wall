@@ -3,32 +3,17 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState, type Keyboar
 import { useFocusStore } from '../focus/store';
 import { dueLaterToday, dueLine, estText, estTipText, HOLD_SLOP_PX, LONG_PRESS_MS, openTask, overdueText, updatedText, visibleRows, type TaskItem } from './model';
 import { tip } from '../ui/HoverTip';
-import { usePendingTicks } from './pendingTick';
+import { LaterSwitch, useShowLater } from './showLater';
+import { UNDO_TIP, undoClick, usePendingTicks } from './pendingTick';
 import { TaskTags, tagsFocus } from './TaskTags';
 import { useTasks, type TasksQuery } from './useTasks';
 
 /** Work's list: the tasks without the home tag that are due today or overdue (the next three when none is). */
 const WORK_QUERY: TasksQuery = { notTag: 'home', due: 'today' };
 
-const LATER_KEY = 'wall.tasks.showLater';
-const readShowLater = (): boolean => {
-  try {
-    return localStorage.getItem(LATER_KEY) === '1';
-  } catch {
-    return false;
-  }
-};
-const writeShowLater = (on: boolean) => {
-  try {
-    localStorage.setItem(LATER_KEY, on ? '1' : '0');
-  } catch {
-    /* storage unavailable: the choice lasts until the page closes */
-  }
-};
-
-/** Rows in view in the block, and a row's pitch: 70 px and its 1 px rule (the block keeps the height three rows gave it). */
-export const WORK_ROWS = 3;
-export const WORK_ROW_PX = 71;
+/** Rows in view in the block, and a row's pitch: 40 px with its rule inside, as on Home (the block keeps its old height). */
+export const WORK_ROWS = 5;
+export const WORK_ROW_PX = 40;
 /** A key step still counts as under way this long, so a held key keeps adding rows. */
 const KEY_SCROLL_MS = 400;
 /** Smooth key scrolling is for people who have not asked for reduced motion (and for browsers that can). */
@@ -90,9 +75,10 @@ function TaskRow({
       <button
         type="button"
         className={`task-check${ticked ? ' on' : ''}`}
-        aria-label={`Mark done: ${task.title}`}
-        disabled={ticked}
-        onClick={onDone}
+        aria-label={pending ? `Undo: ${task.title}` : `Mark done: ${task.title}`}
+        disabled={ticked && !pending}
+        onClick={pending ? undoClick(onUndo) : onDone}
+        {...(pending ? tip(UNDO_TIP) : {})}
       >
         <i className="ck" aria-hidden="true">
           {ticked && <IconCheck size={20} stroke={3} />}
@@ -188,7 +174,7 @@ export function TickWait({ title, onUndo }: { title: string; onUndo: () => void 
       <span className="n tick-text">
         <span className="tick-done">Done.</span> <s>{title}</s>
       </span>
-      <button type="button" className="tick-act" onClick={onUndo} aria-label={`Undo: ${title}`} title="Put it back; nothing is saved yet">
+      <button type="button" className="tick-act" onClick={onUndo} aria-label={`Undo: ${title}`} title={UNDO_TIP}>
         Undo
       </button>
       <i className="tick-bar" aria-hidden="true" />
@@ -277,7 +263,7 @@ function TaskList({ children, rows }: { children: ReactNode; rows: number }) {
 /**
  * "Due today": every open task due today or overdue (without the home tag), overdue first, as
  * a small scrolling list with each task's tags. Timed tasks due later today are hidden until
- * the "Later today" switch is on (or their time arrives). When nothing is due the block reads "Next up"
+ * the "Later today" switch is on (or their time arrives); a ticked row inside its undo window stays. When nothing is due the block reads "Next up"
  * and shows the next three tasks. Click the circle to finish one, the title to open it, hold
  * a row to focus on it.
  */
@@ -286,11 +272,11 @@ export function TaskCard({ query = WORK_QUERY, title }: { query?: TasksQuery; ti
   const ticks = usePendingTicks(t.complete);
   const focusStatus = useFocusStore((s) => s.state.status);
   const canFocus = focusStatus === 'idle' || focusStatus === 'finished';
-  const [showLater, setShowLater] = useState(readShowLater);
+  const [showLater] = useShowLater();
   const allRows = visibleRows(t.tasks, t.hidden);
-  const hasSwitch = !title && query.due === 'today' && !t.nextUp && t.lastOk !== null;
+  const hasSwitch = !t.nextUp && t.lastOk !== null;
   const hideLater = hasSwitch && !showLater;
-  const rows = hideLater ? allRows.filter((r) => !dueLaterToday(r, new Date(t.now))) : allRows;
+  const rows = hideLater ? allRows.filter((r) => ticks.pending.has(r.id) || !dueLaterToday(r, new Date(t.now))) : allRows;
   const stale = t.status === 'error' && t.lastOk !== null ? updatedText(t.lastOk, t.now) : null;
   const nextUp = t.nextUp && rows.length > 0;
   const overdue = nextUp ? 0 : rows.filter((r) => dueLine(r, new Date(t.now)) === 'overdue').length;
@@ -308,7 +294,7 @@ export function TaskCard({ query = WORK_QUERY, title }: { query?: TasksQuery; ti
     body = <div className="s">Tasks unavailable</div>;
   } else if (rows.length === 0) {
     // No open task at all: the heading stays "Due today" (Next up is only ever the next tasks).
-    body = <div className="s">{title ? 'Nothing open' : later > 0 ? `Nothing due yet. ${later} later today` : 'Nothing due today'}</div>;
+    body = <div className="s">{title ? (later > 0 ? `${later} later today` : 'Nothing open') : later > 0 ? `Nothing due yet. ${later} later today` : 'Nothing due today'}</div>;
   } else {
     body = (
       <TaskList rows={rows.length}>
@@ -335,25 +321,7 @@ export function TaskCard({ query = WORK_QUERY, title }: { query?: TasksQuery; ti
         {(side || hasSwitch) && (
           <span className="tasks-hd-r">
             {side && <span className="xs">{side}</span>}
-            {hasSwitch && (
-              <button
-                type="button"
-                role="switch"
-                aria-checked={showLater}
-                className={`od-sw${showLater ? ' on' : ''}`}
-                onClick={() => {
-                  const next = !showLater;
-                  setShowLater(next);
-                  writeShowLater(next);
-                }}
-                {...tip(showLater ? 'Showing tasks due later today. Click to hide them.' : 'Hiding tasks due later today. Click to show them.')}
-              >
-                Later today
-                <span className="od-sw-t" aria-hidden="true">
-                  <i />
-                </span>
-              </button>
-            )}
+            {hasSwitch && <LaterSwitch />}
           </span>
         )}
       </div>
