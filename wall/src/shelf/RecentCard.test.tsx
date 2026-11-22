@@ -1,5 +1,5 @@
-import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
-import { afterEach, beforeEach, expect, it } from 'vitest';
+import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { mocks } from '../bridge/tauri';
 import { RecentCard } from './RecentCard';
 import { recentWhen, type RecentFile } from './recent';
@@ -94,4 +94,91 @@ it('draws up to 20 rows, each with a decorative icon tinted by kind', async () =
   const icon = screen.getAllByRole('listitem')[0].querySelector('.rf-icon') as HTMLElement;
   expect(icon.style.color).toBe('rgb(255, 107, 107)');
   expect(icon.querySelector('svg')!.getAttribute('aria-hidden')).toBe('true');
+});
+
+const PIC = 'data:image/png;base64,AAAA';
+
+describe('preview', () => {
+  let asked: string[];
+  beforeEach(() => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    asked = [];
+    mocks.set('wall2_recent_files', () => [file(0), file(1, { name: 'Notes 1.txt', kind: 'other' })]);
+    mocks.set('wall2_recent_preview', (args) => {
+      asked.push((args as { id: string }).id);
+      return PIC;
+    });
+  });
+  afterEach(() => vi.useRealTimers());
+
+  it('appears after the pointer rests 500 ms on a row that can have one', async () => {
+    render(<RecentCard />);
+    await screen.findByText('Document 0.docx');
+    const row = screen.getAllByRole('listitem')[0];
+    fireEvent.pointerEnter(row);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(300);
+    });
+    expect(document.querySelector('.rf-preview')).toBeNull();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(300);
+    });
+    const img = document.querySelector('.rf-preview img') as HTMLImageElement;
+    expect(img.getAttribute('src')).toBe(PIC);
+    expect(document.querySelector('.rf-preview-name')!.textContent).toBe('Document 0.docx');
+    fireEvent.pointerLeave(row);
+    expect(document.querySelector('.rf-preview')).toBeNull();
+  });
+
+  it('never asks for a text file', async () => {
+    render(<RecentCard />);
+    await screen.findByText('Notes 1.txt');
+    fireEvent.pointerEnter(screen.getAllByRole('listitem')[1]);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(900);
+    });
+    expect(asked).toEqual([]);
+    expect(document.querySelector('.rf-preview')).toBeNull();
+  });
+
+  it('shows nothing for none', async () => {
+    mocks.set('wall2_recent_preview', () => 'none');
+    render(<RecentCard />);
+    await screen.findByText('Document 0.docx');
+    fireEvent.pointerEnter(screen.getAllByRole('listitem')[0]);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(900);
+    });
+    expect(document.querySelector('.rf-preview')).toBeNull();
+  });
+
+  it('ignores a slow answer once the pointer has left', async () => {
+    let release: (v: string) => void = () => undefined;
+    mocks.set('wall2_recent_preview', () => new Promise<string>((r) => (release = r)));
+    render(<RecentCard />);
+    await screen.findByText('Document 0.docx');
+    const row = screen.getAllByRole('listitem')[0];
+    fireEvent.pointerEnter(row);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(600);
+    });
+    fireEvent.pointerLeave(row);
+    await act(async () => {
+      release(PIC);
+      await vi.advanceTimersByTimeAsync(50);
+    });
+    expect(document.querySelector('.rf-preview')).toBeNull();
+  });
+
+  it('goes when the list scrolls', async () => {
+    render(<RecentCard />);
+    await screen.findByText('Document 0.docx');
+    fireEvent.pointerEnter(screen.getAllByRole('listitem')[0]);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(700);
+    });
+    expect(document.querySelector('.rf-preview')).not.toBeNull();
+    fireEvent.scroll(document.querySelector('.rf-rows')!);
+    expect(document.querySelector('.rf-preview')).toBeNull();
+  });
 });

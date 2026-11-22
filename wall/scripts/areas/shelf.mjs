@@ -75,6 +75,7 @@ export default {
   gallery: { states: [
     state('shelf: three lists, first picked', LISTS, ['Captures', 'Region', 'Screen', 'GIF', 'Record', 'Text (OCR)', 'History', 'Tasks (To-Do)', 'Tax / Business', 'House, garden', 'Always here', 'Recent files', 'Quarterly review.pptx', 'Budget 2027.xlsx', 'Meeting notes.docx', 'Yesterday']),
     state('shelf: recent files with icons', LISTS, ['Recent files', 'newest first', 'Launch teaser.mp4', 'Podcast intro.mp3'], ['.rf-card']),
+    state('shelf: recent files: hover preview', LISTS, ['Recent files', 'Budget 2027.xlsx'], ['hover:.rf-row:nth-child(2) .rf-open >> wait:700 >> is:.rf-preview']),
     state('shelf: lists from the task app', 'x=1', ['Tasks (To-Do)', 'Tax / Business', 'House, garden', 'Region']),
     state('shelf: recent files empty', LISTS + '&recent=empty', ['Recent files', 'No recent files']),
     state('shelf: recent files unavailable', LISTS + '&recent=down', ['Recent files', 'Recent files unavailable']),

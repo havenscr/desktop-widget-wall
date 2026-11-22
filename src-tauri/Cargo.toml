@@ -77,6 +77,8 @@ windows = { version = "0.58", features = [
     "Win32_System_Shutdown"
 ] }
 base64 = "0.22"
+# Recent files preview (wall2_recent.rs): the shell thumbnail encoded as PNG. Already in the lockfile through tauri.
+png = "0.17"
 
 # Meeting brief key: sha256 of the brief token and HMAC-SHA256 of the iCalUId (wall2_meet/brief.rs).
 sha2 = "0.10"

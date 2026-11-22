@@ -15,6 +15,10 @@
 //!   `explorer.exe /select,` and the quoted path (the captures module's helper).
 //! - At most 20 files are returned. Nothing is logged: no path, no name.
 //!
+//! - `preview` asks the Windows shell for a thumbnail of a held file (the same one File Explorer
+//!   draws), after the same `resolve` check, and returns it as a PNG data URL, or the word `none`
+//!   when there is no thumbnail, it takes over 2.5 seconds or it is over 2 MB.
+//!
 //! Errors are fixed words: `failed`, `missing` (the id or the file is gone), `refused` (a path
 //! that does not pass), `forbidden` (the wrong window).
 #![cfg_attr(not(windows), allow(dead_code))]
@@ -24,6 +28,7 @@ use crate::RecentFileInfo;
 use serde::Serialize;
 use std::path::Path;
 use std::sync::Mutex;
+use std::time::Duration;
 use tauri_plugin_opener::OpenerExt;
 
 /// Files returned to the page.
@@ -174,6 +179,178 @@ fn act_now(app: &tauri::AppHandle, id: &str, act: Act) -> Result<(), String> {
     }
 }
 
+
+/// The word the page gets when a file has no thumbnail, it took too long or it was too big.
+const NONE: &str = "none";
+/// Longest the shell may take to draw a thumbnail.
+const PREVIEW_WAIT: Duration = Duration::from_millis(2500);
+/// Largest PNG returned.
+const PREVIEW_MAX_BYTES: usize = 2 * 1024 * 1024;
+/// Side of the square the thumbnail is fitted to.
+const PREVIEW_SIDE: i32 = 480;
+/// Thumbnails kept.
+const PREVIEW_KEPT: usize = 20;
+
+/// A small cache of finished answers, least recently used out first, keyed by id and the file's modified time.
+pub(crate) struct PreviewCache {
+    max: usize,
+    /// Oldest use first.
+    rows: Vec<((String, i64), String)>,
+}
+
+impl PreviewCache {
+    pub(crate) const fn new(max: usize) -> Self {
+        PreviewCache { max, rows: Vec::new() }
+    }
+
+    pub(crate) fn get(&mut self, id: &str, modified: i64) -> Option<String> {
+        let at = self.rows.iter().position(|((i, m), _)| i == id && *m == modified)?;
+        let row = self.rows.remove(at);
+        let value = row.1.clone();
+        self.rows.push(row);
+        Some(value)
+    }
+
+    pub(crate) fn put(&mut self, id: &str, modified: i64, value: String) {
+        self.rows.retain(|((i, m), _)| !(i == id && *m == modified));
+        self.rows.push(((id.to_string(), modified), value));
+        while self.rows.len() > self.max {
+            self.rows.remove(0);
+        }
+    }
+
+    pub(crate) fn len(&self) -> usize {
+        self.rows.len()
+    }
+}
+
+static PREVIEWS: Mutex<PreviewCache> = Mutex::new(PreviewCache::new(PREVIEW_KEPT));
+
+/// Blue, green, red, alpha (as Windows bitmaps hold pixels) to red, green, blue, alpha. A bitmap
+/// whose alpha is zero everywhere has no alpha channel, so it is drawn opaque.
+pub(crate) fn bgra_to_rgba(px: &[u8]) -> Vec<u8> {
+    let opaque = px.chunks_exact(4).all(|p| p[3] == 0);
+    let mut out = Vec::with_capacity(px.len());
+    for p in px.chunks_exact(4) {
+        out.extend_from_slice(&[p[2], p[1], p[0], if opaque { 255 } else { p[3] }]);
+    }
+    out
+}
+
+/// RGBA pixels as a PNG, None when it fails or is over `PREVIEW_MAX_BYTES`.
+pub(crate) fn encode_png(rgba: &[u8], width: u32, height: u32) -> Option<Vec<u8>> {
+    if width == 0 || height == 0 || rgba.len() != (width as usize) * (height as usize) * 4 {
+        return None;
+    }
+    let mut out: Vec<u8> = Vec::new();
+    {
+        let mut enc = png::Encoder::new(&mut out, width, height);
+        enc.set_color(png::ColorType::Rgba);
+        enc.set_depth(png::BitDepth::Eight);
+        let mut writer = enc.write_header().ok()?;
+        writer.write_image_data(rgba).ok()?;
+    }
+    if out.len() > PREVIEW_MAX_BYTES {
+        None
+    } else {
+        Some(out)
+    }
+}
+
+/// The file's modified time in epoch milliseconds, 0 when not known.
+fn modified_ms(path: &str) -> i64 {
+    std::fs::metadata(path)
+        .ok()
+        .and_then(|m| m.modified().ok())
+        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+        .map(|d| d.as_millis() as i64)
+        .unwrap_or(0)
+}
+
+/// The shell's thumbnail of a file as PNG bytes. None when there is no thumbnail handler.
+#[cfg(windows)]
+fn shell_thumbnail(path: &str) -> Option<Vec<u8>> {
+    use windows::core::HSTRING;
+    use windows::Win32::Foundation::SIZE;
+    use windows::Win32::Graphics::Gdi::{
+        DeleteObject, GetDC, GetDIBits, GetObjectW, ReleaseDC, BITMAP, BITMAPINFO, BITMAPINFOHEADER, BI_RGB, DIB_RGB_COLORS, HGDIOBJ,
+    };
+    use windows::Win32::System::Com::{IBindCtx, CoInitializeEx, CoUninitialize, COINIT_APARTMENTTHREADED};
+    use windows::Win32::UI::Shell::{IShellItemImageFactory, SHCreateItemFromParsingName, SIIGBF_BIGGERSIZEOK, SIIGBF_THUMBNAILONLY};
+
+    unsafe {
+        let inited = CoInitializeEx(None, COINIT_APARTMENTTHREADED).is_ok();
+        let out = (|| {
+            let factory: IShellItemImageFactory = SHCreateItemFromParsingName(&HSTRING::from(path), None::<&IBindCtx>).ok()?;
+            let bitmap = factory.GetImage(SIZE { cx: PREVIEW_SIDE, cy: PREVIEW_SIDE }, SIIGBF_THUMBNAILONLY | SIIGBF_BIGGERSIZEOK).ok()?;
+            let mut info = BITMAP::default();
+            let got = GetObjectW(HGDIOBJ(bitmap.0), std::mem::size_of::<BITMAP>() as i32, Some(&mut info as *mut BITMAP as *mut _));
+            let (w, h) = (info.bmWidth, info.bmHeight);
+            let mut png = None;
+            if got != 0 && w > 0 && h > 0 && w <= 4096 && h <= 4096 {
+                let mut header = BITMAPINFO::default();
+                header.bmiHeader = BITMAPINFOHEADER {
+                    biSize: std::mem::size_of::<BITMAPINFOHEADER>() as u32,
+                    biWidth: w,
+                    biHeight: -h,
+                    biPlanes: 1,
+                    biBitCount: 32,
+                    biCompression: BI_RGB.0,
+                    ..Default::default()
+                };
+                let mut pixels = vec![0u8; (w as usize) * (h as usize) * 4];
+                let dc = GetDC(None);
+                let lines = GetDIBits(dc, bitmap, 0, h as u32, Some(pixels.as_mut_ptr() as *mut _), &mut header, DIB_RGB_COLORS);
+                ReleaseDC(None, dc);
+                if lines != 0 {
+                    png = encode_png(&bgra_to_rgba(&pixels), w as u32, h as u32);
+                }
+            }
+            let _ = DeleteObject(HGDIOBJ(bitmap.0));
+            png
+        })();
+        if inited {
+            CoUninitialize();
+        }
+        out
+    }
+}
+
+#[cfg(not(windows))]
+fn shell_thumbnail(_path: &str) -> Option<Vec<u8>> {
+    None
+}
+
+/// Run `work` on its own thread and wait at most `wait` for the answer; a late thread is left to finish alone.
+pub(crate) fn within<T: Send + 'static>(wait: Duration, work: impl FnOnce() -> T + Send + 'static) -> Option<T> {
+    let (tx, rx) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let _ = tx.send(work());
+    });
+    rx.recv_timeout(wait).ok()
+}
+
+fn preview_now(id: &str) -> Result<String, String> {
+    let held = {
+        let list = HELD.lock().map_err(|_| FAILED.to_string())?;
+        pick(&list, id).cloned().ok_or_else(|| MISSING.to_string())?
+    };
+    let path = resolve(&held).map_err(str::to_string)?;
+    let modified = modified_ms(&path);
+    if let Some(hit) = PREVIEWS.lock().map_err(|_| FAILED.to_string())?.get(id, modified) {
+        return Ok(hit);
+    }
+    let answer = within(PREVIEW_WAIT, move || shell_thumbnail(&path))
+        .flatten()
+        .map(|png| {
+            use base64::Engine as _;
+            format!("data:image/png;base64,{}", base64::engine::general_purpose::STANDARD.encode(png))
+        });
+    let Some(url) = answer else { return Ok(NONE.to_string()) };
+    PREVIEWS.lock().map_err(|_| FAILED.to_string())?.put(id, modified, url.clone());
+    Ok(url)
+}
+
 /// The calling window first.
 fn check(label: &str) -> Result<(), String> {
     crate::wall2_meet::require_wall2(label)
@@ -198,6 +375,13 @@ pub async fn wall2_recent_open(window: tauri::WebviewWindow, app: tauri::AppHand
 pub async fn wall2_recent_folder(window: tauri::WebviewWindow, app: tauri::AppHandle, id: String) -> Result<(), String> {
     check(window.label())?;
     tauri::async_runtime::spawn_blocking(move || act_now(&app, &id, Act::Folder)).await.map_err(|_| FAILED.to_string())?
+}
+
+/// A thumbnail of a listed file as a PNG data URL, or `none`, by id.
+#[tauri::command]
+pub async fn wall2_recent_preview(window: tauri::WebviewWindow, id: String) -> Result<String, String> {
+    check(window.label())?;
+    tauri::async_runtime::spawn_blocking(move || preview_now(&id)).await.map_err(|_| FAILED.to_string())?
 }
 
 #[cfg(test)]
@@ -358,7 +542,7 @@ mod tests {
     #[test]
     fn the_window_check_is_the_first_statement_of_every_command() {
         let src = include_str!("wall2_recent.rs").replace("\r\n", "\n");
-        for name in ["wall2_recent_files", "wall2_recent_open", "wall2_recent_folder"] {
+        for name in ["wall2_recent_files", "wall2_recent_open", "wall2_recent_folder", "wall2_recent_preview"] {
             let needle = format!("pub async fn {}(", name);
             let at = src.find(&needle).expect("command");
             let body = &src[at..];
@@ -375,5 +559,55 @@ mod tests {
         for m in macros {
             assert!(!src.contains(&format!("{m}!(")), "{m}");
         }
+    }
+
+    #[test]
+    fn bgra_becomes_rgba() {
+        assert_eq!(bgra_to_rgba(&[1, 2, 3, 200, 10, 20, 30, 255]), vec![3, 2, 1, 200, 30, 20, 10, 255]);
+    }
+
+    #[test]
+    fn a_bitmap_with_no_alpha_is_drawn_opaque() {
+        assert_eq!(bgra_to_rgba(&[1, 2, 3, 0, 4, 5, 6, 0]), vec![3, 2, 1, 255, 6, 5, 4, 255]);
+    }
+
+    #[test]
+    fn a_png_is_made_from_pixels_and_a_wrong_size_is_refused() {
+        let png = encode_png(&[255, 0, 0, 255, 0, 255, 0, 255], 2, 1).expect("png");
+        assert_eq!(&png[..8], &[0x89, b'P', b'N', b'G', 0x0D, 0x0A, 0x1A, 0x0A]);
+        assert!(encode_png(&[0; 4], 2, 1).is_none());
+        assert!(encode_png(&[], 0, 0).is_none());
+    }
+
+    #[test]
+    fn the_cache_keeps_the_newest_used_and_keys_on_the_modified_time() {
+        let mut c = PreviewCache::new(3);
+        c.put("a", 1, "A".into());
+        c.put("b", 1, "B".into());
+        c.put("c", 1, "C".into());
+        assert_eq!(c.get("a", 1).as_deref(), Some("A"));
+        c.put("d", 1, "D".into());
+        assert_eq!(c.len(), 3);
+        assert!(c.get("b", 1).is_none());
+        assert!(c.get("a", 1).is_some());
+        assert!(c.get("a", 2).is_none());
+        c.put("a", 2, "A2".into());
+        assert_eq!(c.get("a", 2).as_deref(), Some("A2"));
+    }
+
+    #[test]
+    fn a_slow_job_gives_up_and_a_quick_one_answers() {
+        assert_eq!(within(Duration::from_millis(500), || 7), Some(7));
+        let slow = within(Duration::from_millis(20), || {
+            std::thread::sleep(Duration::from_millis(400));
+            1
+        });
+        assert_eq!(slow, None);
+    }
+
+    #[test]
+    fn the_preview_refuses_a_path_that_does_not_pass() {
+        assert_eq!(resolve(r"C:\Tools\setup.exe"), Err(REFUSED));
+        assert_eq!(PREVIEW_KEPT, 20);
     }
 }

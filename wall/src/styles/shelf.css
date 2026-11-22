@@ -393,3 +393,39 @@ button.cap-pic:focus-visible {
 .rf-folder:active {
   transform: scale(0.94);
 }
+
+/* Recent files preview (shelf/RecentCard.tsx): a thumbnail card to the right of the Recent files card, over the empty centre. */
+.rf-preview {
+  position: absolute;
+  z-index: 40;
+  width: 340px;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 12px;
+  border: 1px solid var(--cyan);
+  border-radius: 16px;
+  background: rgba(15, 11, 42, 0.92);
+  backdrop-filter: blur(14px);
+  box-shadow: 0 14px 36px rgba(0, 0, 0, 0.55);
+  pointer-events: none;
+}
+.rf-preview-img {
+  width: 100%;
+  max-height: 240px;
+  object-fit: contain;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.04);
+}
+.rf-preview-name {
+  margin-top: 6px;
+  font: 600 17px/1.2 var(--body);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.rf-preview-when {
+  font: 400 16px/1.2 var(--body);
+  color: var(--faint);
+}

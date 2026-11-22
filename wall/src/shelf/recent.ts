@@ -67,3 +67,21 @@ export function recentWhen(ms: number, now: number = clock()): string {
   if (days < 7) return d.toLocaleDateString('en-US', { weekday: 'short' });
   return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 }
+
+/** How long the pointer rests on a row before its preview is asked for. */
+export const PREVIEW_DELAY_MS = 500;
+
+const PREVIEW_EXTS = new Set([
+  'png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'tif', 'tiff', 'heic',
+  'pdf',
+  'doc', 'docx', 'docm', 'dot', 'dotx',
+  'xls', 'xlsx', 'xlsm', 'xlsb', 'xltx',
+  'ppt', 'pptx', 'pptm', 'potx',
+  'mp4', 'mov', 'mkv', 'avi', 'webm', 'wmv',
+]);
+
+/** Whether a file of this name can have a thumbnail: pictures, PDF, Word, Excel, PowerPoint and video. */
+export function canPreview(name: string): boolean {
+  const dot = name.lastIndexOf('.');
+  return dot >= 0 && PREVIEW_EXTS.has(name.slice(dot + 1).toLowerCase());
+}
