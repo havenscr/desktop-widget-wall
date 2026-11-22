@@ -6,7 +6,7 @@ import { knob } from './long';
 /**
  * Dev only: the Shelf Recent files card's answers, with invented file names.
  *
- *   (no knob)        five files, newest first: three today, then Yesterday and a weekday
+ *   (no knob)        14 files covering every kind, newest first: three today, then Yesterday, weekdays and dates
  *   ?recent=empty    no recent files
  *   ?recent=down     the read fails
  *   ?recent=long     the newest file has a very long name
@@ -23,6 +23,15 @@ const SEEDS: { name: string; kind: string; agoMin: number }[] = [
   { name: 'Meeting notes.docx', kind: 'document', agoMin: 215 },
   { name: 'Site photo.png', kind: 'image', agoMin: 1700 },
   { name: 'Project plan.pdf', kind: 'document', agoMin: 3600 },
+  { name: 'Launch teaser.mp4', kind: 'video', agoMin: 4300 },
+  { name: 'Podcast intro.mp3', kind: 'audio', agoMin: 5200 },
+  { name: 'Customer list.csv', kind: 'sheet', agoMin: 6100 },
+  { name: 'Release notes.txt', kind: 'other', agoMin: 7400 },
+  { name: 'Contract draft.rtf', kind: 'document', agoMin: 9800 },
+  { name: 'Logo sketch.svg', kind: 'image', agoMin: 14000 },
+  { name: 'Config.json', kind: 'other', agoMin: 20000 },
+  { name: 'Workshop recording.mov', kind: 'video', agoMin: 26000 },
+  { name: 'Readme.md', kind: 'other', agoMin: 33000 },
 ];
 
 export function registerRecentMocks(): void {

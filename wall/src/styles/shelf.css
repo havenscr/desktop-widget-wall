@@ -280,7 +280,7 @@ button.cap-pic:focus-visible {
   text-overflow: ellipsis;
 }
 
-/* Recent files card (shelf/RecentCard.tsx): the last five files opened, in the left wing under the clock and date line. */
+/* Recent files card (shelf/RecentCard.tsx): the last 20 files opened, five rows in view, in the left wing under the clock and date line. */
 .work .shelf-left {
   padding-top: 172px;
   min-height: 0;
@@ -295,8 +295,27 @@ button.cap-pic:focus-visible {
   margin: 0;
   padding: 0;
   list-style: none;
+  /* Five rows (44 px each and four 1 px rules) in view, the rest a scroll away; the page never scrolls with it. */
+  max-height: 224px;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.rf-rows::-webkit-scrollbar {
+  width: 6px;
+}
+.rf-rows::-webkit-scrollbar-track {
+  background: transparent;
+}
+.rf-rows::-webkit-scrollbar-thumb {
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.28);
+}
+.rf-rows::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.42);
 }
 .rf-row {
+  flex: none;
   display: flex;
   align-items: center;
   gap: 8px;
@@ -331,6 +350,15 @@ button.cap-pic:focus-visible {
 .rf-folder:focus-visible {
   outline: 3px solid var(--cyan);
   outline-offset: 2px;
+}
+.rf-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 30px;
+  margin-right: -6px;
+  width: 30px;
+  height: 30px;
 }
 .rf-name {
   flex: 1 1 0;
