@@ -5,7 +5,7 @@
 const night = encodeURIComponent('2026-11-11T22:30:00-08:00');
 const day = '2026-11-11T10:24:00-08:00';
 const SWITCH = '.sp-switch button:nth-child(2)';
-const TALL = '.sp-grow';
+const TALL = 'grow';
 const FORYOU = '.sp-tabs button:nth-child(1)';
 const SEEALL = '.yt-seeall';
 const steps = (...s) => s.join(' >> ');

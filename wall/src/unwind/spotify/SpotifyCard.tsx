@@ -1,8 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type UIEvent } from 'react';
 import {
   IconArrowLeft,
-  IconArrowsMaximize,
-  IconArrowsMinimize,
   IconArrowsShuffle,
   IconBrandSpotify,
   IconBrandYoutube,
@@ -59,6 +57,7 @@ import {
   spotifyRetryable,
   STARTING_NOTE,
   TALL_CLOSE_MS,
+  TALL_OPEN_MS,
   useListenSource,
   usePublicPage,
   useSpotifyNow,
@@ -147,11 +146,14 @@ const nearEnd = (e: UIEvent<HTMLElement>) => {
  * songs, and a click on a song plays it (from that song on, in its list). YouTube Music: what
  * Windows says is playing, its buttons and "Open YouTube Music". The card never controls a room.
  *
- * One round button at the top right (or a click on the empty part of the top row) opens the tall
- * view: the right third of the wall, two rows of covers and a player row. It closes on the same
- * button, on Escape (the chooser first, a playlist's Back next), on a click anywhere outside it (that
- * click is swallowed, so it presses nothing behind), and by itself 15 seconds after the pointer has
- * left it, never while the pointer is on it or the search field has focus. The open state is not stored.
+ * The card grows by itself: the pointer resting on it for 1.5 seconds opens the tall view (the right
+ * third of the wall, two rows of covers and a player row), never while the chooser or a library menu is
+ * open or the search field has focus. A click on the empty part of the top row opens it at once, and so
+ * does keyboard focus (focus-visible) landing on a control below the top row. It shrinks by itself 1
+ * second after the pointer has left it, never while the pointer is on it, the search field has focus, the
+ * chooser or a library menu is open, or the pointer is on a details card; and on Escape (the chooser first,
+ * a playlist's Back next) and on a click anywhere outside it (that click is swallowed, so it presses
+ * nothing behind). The open state is not stored.
  */
 export function SpotifyCard() {
   const source = useListenSource((s) => s.source);
@@ -163,9 +165,11 @@ export function SpotifyCard() {
   useSkyKeepClear('listen-card', card);
   const [tall, setTall] = useState(false);
   const [chooser, setChooser] = useState(false);
-  const openBtn = useRef<HTMLButtonElement | null>(null);
   const chip = useRef<HTMLButtonElement | null>(null);
   const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const openTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const chooserOpen = useRef(false);
+  chooserOpen.current = chooser;
   const pointerIn = useRef(false);
   const swallowOff = useRef<(() => void) | null>(null);
 
@@ -173,39 +177,59 @@ export function SpotifyCard() {
     if (closeTimer.current) clearTimeout(closeTimer.current);
     closeTimer.current = null;
   }, []);
-  // Keyboard focus inside the card counts like the pointer inside (the search field included): the 15 seconds start only when
+  const clearOpen = useCallback(() => {
+    if (openTimer.current) clearTimeout(openTimer.current);
+    openTimer.current = null;
+  }, []);
+  // A chooser or library menu is open, or the pointer is on a details card (drawn elsewhere in the page): the card stays as it is.
+  const popupHolds = () => chooserOpen.current || !!document.querySelector('.u-lib-menu, .hover-tip:hover');
+  // Keyboard focus inside the card counts like the pointer inside (the search field included): the 1 second starts only when
   // neither is there. `focusTo` is where focus went when this follows a blur (null: nowhere), else the focused element.
   const armClose = useCallback(
     (focusTo?: Element | null) => {
       clearClose();
       const f = focusTo === undefined ? document.activeElement : focusTo;
       if (pointerIn.current || (card && f && f !== document.body && card.contains(f))) return;
-      closeTimer.current = setTimeout(() => {
+      const fire = () => {
+        // A popup that belongs to the card is up: look again a moment later instead of closing under it.
+        if (popupHolds()) {
+          closeTimer.current = setTimeout(fire, TALL_CLOSE_MS);
+          return;
+        }
         closeTimer.current = null;
         setChooser(false);
         setTall(false);
-      }, TALL_CLOSE_MS);
+      };
+      closeTimer.current = setTimeout(fire, TALL_CLOSE_MS);
     },
     [clearClose, card],
   );
-  const close = useCallback(
-    (giveFocusBack: boolean) => {
-      clearClose();
-      setChooser(false);
-      setTall(false);
-      if (giveFocusBack) {
-        quietFocus();
-        openBtn.current?.focus();
+  // The pointer resting on the card opens it after TALL_OPEN_MS; not while a popup is open or the search field has focus.
+  const armOpen = useCallback(() => {
+    clearOpen();
+    const fire = () => {
+      const at = document.activeElement;
+      if (popupHolds() || (at instanceof HTMLInputElement && card?.contains(at))) {
+        openTimer.current = setTimeout(fire, TALL_OPEN_MS);
+        return;
       }
-    },
-    [clearClose],
-  );
+      openTimer.current = null;
+      setTall(true);
+    };
+    openTimer.current = setTimeout(fire, TALL_OPEN_MS);
+  }, [clearOpen, card]);
+  const close = useCallback(() => {
+    clearClose();
+    setChooser(false);
+    setTall(false);
+  }, [clearClose]);
   useEffect(
     () => () => {
       clearClose();
+      clearOpen();
       swallowOff.current?.();
     },
-    [clearClose],
+    [clearClose, clearOpen],
   );
   useEffect(() => {
     if (source !== 'spotify' || !ready) setChooser(false);
@@ -213,7 +237,7 @@ export function SpotifyCard() {
   // Without the tall view there is nothing to wait for; with it, the timer is armed by the pointer leaving.
   useEffect(() => {
     if (!tall) clearClose();
-    // Opened with neither the pointer nor the focus on it (the card has no way to know the pointer is elsewhere): the 15 seconds start.
+    // Opened with neither the pointer nor the focus on it (the card has no way to know the pointer is elsewhere): the 1 second starts.
     else armClose();
   }, [tall, clearClose, armClose]);
 
@@ -238,7 +262,7 @@ export function SpotifyCard() {
       if (card?.querySelector('.sp-songs')) return;
       if (at instanceof HTMLInputElement && at.type === 'search' && at.value) return;
       e.stopPropagation();
-      close(true);
+      close();
     };
     document.addEventListener('keydown', key, true);
     return () => document.removeEventListener('keydown', key, true);
@@ -289,7 +313,7 @@ export function SpotifyCard() {
       cancels.forEach((k) => document.addEventListener(k, off, true));
       window.addEventListener('blur', off);
       swallowOff.current = off;
-      close(false);
+      close();
     };
     document.addEventListener('pointerdown', away, true);
     return () => document.removeEventListener('pointerdown', away, true);
@@ -304,12 +328,22 @@ export function SpotifyCard() {
       onPointerEnter={() => {
         pointerIn.current = true;
         clearClose();
+        if (!tall) armOpen();
       }}
       onPointerLeave={() => {
         pointerIn.current = false;
+        clearOpen();
         if (tall) armClose();
       }}
-      onFocusCapture={() => clearClose()}
+      onFocusCapture={(e) => {
+        clearClose();
+        // Keyboard way in: focus-visible landing on a control below the top row (not a text field) opens it.
+        const t = e.target as Element;
+        if (!tall && !(t instanceof HTMLInputElement) && !t.closest('.sp-top') && t.matches(':focus-visible')) {
+          clearOpen();
+          setTall(true);
+        }
+      }}
       onBlurCapture={(e) => {
         if (tall && !pointerIn.current) armClose(e.relatedTarget as Element | null);
       }}
@@ -325,22 +359,6 @@ export function SpotifyCard() {
         {source === 'spotify' && ready ? null : <span className="sp-hint">Which player the wall follows</span>}
         <div className="sp-hx">
           {source === 'spotify' && ready ? <PlayOn open={chooser} onOpen={setChooser} chipRef={chip} /> : null}
-          <button
-            ref={openBtn}
-            type="button"
-            className="sp-grow"
-            aria-label={tall ? 'Close the tall music view' : 'Open the tall music view'}
-            aria-expanded={tall}
-            {...tip(() => (
-              <div className="sp-tipline">
-                <b>{tall ? 'Close the tall view' : 'Open the tall view'}</b>
-                <span>{tall ? 'It also closes by itself 15 seconds after the pointer leaves, and on Escape.' : 'More covers, your queue and a player row.'}</span>
-              </div>
-            ))}
-            onClick={() => (tall ? close(false) : setTall(true))}
-          >
-            {tall ? <IconArrowsMinimize size={20} stroke={1.8} aria-hidden="true" /> : <IconArrowsMaximize size={20} stroke={1.8} aria-hidden="true" />}
-          </button>
         </div>
       </div>
       {source === 'youtube' ? <YtMusicSide tall={tall} remote={<YouTubeSide />} /> : <SpotifyBrowse tall={tall} />}

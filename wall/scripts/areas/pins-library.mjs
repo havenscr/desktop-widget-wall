@@ -5,7 +5,7 @@
 const BASE = 'hz=unwind&at=2026-11-11T21%3A24%3A00-08%3A00&watch=mock&wlist=three&wtab=listen&wrows=shown&media=none&spotify=picture&youtube=in&ytlib=full';
 const FIT = '?hz=unwind&at=2026-11-11T21:24:00-08:00&long=1&agents=3&watch=mock&wlist=three&wtab=listen&wrows=shown&media=none&spotify=picture&youtube=in&ytlib=full';
 const SWITCH = '.sp-switch button:nth-child(2)';
-const TALL = '.sp-grow';
+const TALL = 'grow';
 const TILE = '.yt-tile';
 const PIN_ROW = '.u-lib-pinrow';
 const steps = (...s) => s.join(' >> ');

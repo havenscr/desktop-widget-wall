@@ -1015,7 +1015,7 @@ describe('the card heading is a way home, and Open in YouTube', () => {
 
   it('the parent crumb of a tall playlist goes to the first page too', async () => {
     await card();
-    fireEvent.click(heading().closest('.sp-card')!.querySelector('.sp-grow')!);
+    fireEvent.click(heading().closest('.sp-card')!.querySelector('.sp-top')!);
     fireEvent.click(tile('Long id mix'));
     await screen.findByText('Clip 1');
     fireEvent.click(screen.getByRole('button', { name: 'Playlists' }));

@@ -1177,7 +1177,7 @@ async function render(cdp, base, s, file, ctl) {
     for (const step of [s.click ?? []].flat().flatMap((c) => c.split(' >> '))) {
       // A state shown just after a click (a task tick's Undo window). A string may chain steps with ` >> `.
       // `ctx:<selector>` right-clicks (opens the key picker), `hover:` moves the real pointer onto
-      // the element, `press:` also holds the button down there, `focus:` focuses it, `kbd:` presses
+      // the element, `press:` also holds the button down there, `focus:` focuses it, `grow` opens the music card's tall view, `kbd:` presses
       // Tab (so focus-visible applies) and then focuses it, anything else clicks.
       const pointer = /^(hover|press):/.exec(step);
       // watt drive-in: `drag:<selector>@x,y` presses on the element, carries it to (x, y) and lets go.
@@ -1191,6 +1191,9 @@ async function render(cdp, base, s, file, ctl) {
         for (let i = 1; i <= 8; i++) await to('Input.dispatchMouseEvent', { type: 'mouseMoved', x: x0 + ((x1 - x0) * i) / 8, y: y0 + ((y1 - y0) * i) / 8, button: 'left', buttons: 1 });
         await to('Input.dispatchMouseEvent', { type: 'mouseReleased', x: x1, y: y1, button: 'left', buttons: 0, clickCount: 1 });
         await to('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 2500, y: 40 });
+      } else if (step === 'grow') {
+        // The music card grows when the pointer rests on it: here the pointer is put on it (it stays there) and the empty part of the top row, the instant way in, is pressed.
+        await to('Runtime.evaluate', { expression: `(() => { const c = document.querySelector('.sp-card'); c?.dispatchEvent(new PointerEvent('pointerover', { bubbles: true })); c?.querySelector('.sp-top')?.click(); })()` });
       } else if (step.startsWith('kbd:')) {
         await to('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Tab', code: 'Tab', windowsVirtualKeyCode: 9 });
         await to('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Tab', code: 'Tab', windowsVirtualKeyCode: 9 });

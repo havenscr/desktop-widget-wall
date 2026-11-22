@@ -8,7 +8,7 @@ import { hideTip, resetTip } from '../../ui/HoverTip';
 import { closeLibraryMenu, useLibraryMenu } from '../watch/libraryMenuModel';
 import { LibraryMenuLayer } from '../watch/LibraryMenu';
 import { resetPins, usePins } from '../watch/pins';
-import { deviceKindWord, GONE_LINE, LOCKED_LINE, NOT_YOURS_LINE, PAGE_OFF_LINE, resetPublicPage, usePublicPage, WHILE_PLAYS, WHILE_HEADINGS, playDeviceId, resetSpotifyTarget, resetListenSource, seekPosition, SEARCH_WAIT_MS, TALL_CLOSE_MS, useListenSource, useSpotifyDevices, useSpotifyNow, useSpotifyStart, useSpotifyTarget } from './model';
+import { deviceKindWord, GONE_LINE, LOCKED_LINE, NOT_YOURS_LINE, PAGE_OFF_LINE, resetPublicPage, usePublicPage, WHILE_PLAYS, WHILE_HEADINGS, playDeviceId, resetSpotifyTarget, resetListenSource, seekPosition, SEARCH_WAIT_MS, TALL_CLOSE_MS, TALL_OPEN_MS, useListenSource, useSpotifyDevices, useSpotifyNow, useSpotifyStart, useSpotifyTarget } from './model';
 import { deviceRows, DEVICES_FOOT, STALE_NOTE } from './PlayOn';
 import { PLAYBACK_POLL_MS, SEEK_KEY_GAP_MS, SEEK_STEP_MS } from './PlayerRow';
 import { SpotifyCard } from './SpotifyCard';
@@ -79,12 +79,10 @@ async function setup(over: { devices?: SpotifyDevice[]; playing?: boolean } = {}
 }
 const card = () => document.querySelector('.sp-card') as HTMLElement;
 const isTall = () => card().getAttribute('data-tall') === 'true';
-const openButton = () => screen.getByRole('button', { name: /the tall music view/ });
 const open = async () => {
-  // A click on the button has the pointer on the card.
+  // The pointer rests on the card until it grows; it stays there.
   fireEvent.pointerEnter(card());
-  await act(async () => openButton().click());
-  await flush();
+  await flush(TALL_OPEN_MS);
 };
 const chip = () => screen.getByRole('button', { name: /^Play on/ });
 const key = (k: string) => fireEvent.keyDown(document.body, { key: k });
@@ -133,17 +131,63 @@ describe('helpers', () => {
 });
 
 describe('opening and closing the tall view', () => {
-  it('starts closed with one round button, and opens on it and on the empty part of the top row', async () => {
+  it('starts closed with no round button, and opens when the pointer has rested 1.5 s, or on the empty part of the top row', async () => {
     await setup();
     expect(isTall()).toBe(false);
+    expect(document.querySelector('.sp-grow')).toBeNull();
     expect(document.querySelector('.sp-player')).toBeNull();
     await open();
     expect(isTall()).toBe(true);
     expect(document.querySelector('.sp-player')).not.toBeNull();
-    // Closed again through the same button, then the top row.
-    await act(async () => openButton().click());
+    fireEvent.pointerLeave(card());
+    await flush(TALL_CLOSE_MS);
     expect(isTall()).toBe(false);
     await act(async () => fireEvent.click(document.querySelector('.sp-top') as HTMLElement));
+    expect(isTall()).toBe(true);
+  });
+
+  it('1.4 s of rest stays short, 1.5 s grows; leaving before then cancels', async () => {
+    await setup();
+    fireEvent.pointerEnter(card());
+    await flush(TALL_OPEN_MS - 100);
+    expect(isTall()).toBe(false);
+    await flush(100);
+    expect(isTall()).toBe(true);
+    fireEvent.pointerLeave(card());
+    await flush(TALL_CLOSE_MS);
+    expect(isTall()).toBe(false);
+    fireEvent.pointerEnter(card());
+    await flush(TALL_OPEN_MS - 100);
+    fireEvent.pointerLeave(card());
+    await flush(TALL_OPEN_MS * 3);
+    expect(isTall()).toBe(false);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('does not grow while the chooser is open or the search field has focus; grows once they are gone', async () => {
+    await setup();
+    await act(async () => chip().click());
+    fireEvent.pointerEnter(card());
+    await flush(TALL_OPEN_MS * 3);
+    expect(isTall()).toBe(false);
+    await act(async () => chip().click());
+    await flush(TALL_OPEN_MS);
+    expect(isTall()).toBe(true);
+    fireEvent.pointerLeave(card());
+    await flush(TALL_CLOSE_MS);
+    expect(isTall()).toBe(false);
+    await act(async () => screen.getByRole('searchbox').focus());
+    fireEvent.pointerEnter(card());
+    await flush(TALL_OPEN_MS * 3);
+    expect(isTall()).toBe(false);
+  });
+
+  it('keyboard focus landing on a control below the top row opens it; the search field and the switch do not', async () => {
+    await setup();
+    await act(async () => screen.getByRole('searchbox').focus());
+    await act(async () => screen.getByRole('radio', { name: 'Spotify' }).focus());
+    expect(isTall()).toBe(false);
+    await act(async () => (document.querySelector('.sp-card button:not(.sp-top button)') as HTMLElement).focus());
     expect(isTall()).toBe(true);
   });
 
@@ -163,12 +207,11 @@ describe('opening and closing the tall view', () => {
     expect(isTall()).toBe(false);
   });
 
-  it('closes on Escape and gives the focus back to the button', async () => {
+  it('closes on Escape', async () => {
     await setup();
     await open();
     key('Escape');
     expect(isTall()).toBe(false);
-    expect(document.activeElement).toBe(openButton());
   });
 
   it('Escape closes the chooser first, then a playlist goes Back, then the view closes', async () => {
@@ -319,12 +362,11 @@ describe('opening and closing the tall view', () => {
     tipCard.remove();
   });
 
-  describe('by itself, 15 seconds after the pointer has left', () => {
-    it('never while the pointer is on it; closes 15 s after it leaves; a re-entry starts over', async () => {
+  describe('by itself, 1 second after the pointer has left', () => {
+    it('never while the pointer is on it; closes 1 s after it leaves; a re-entry within that keeps it', async () => {
       await setup();
       await open();
       const c = card();
-      fireEvent.pointerEnter(c);
       await flush(TALL_CLOSE_MS * 3);
       expect(isTall()).toBe(true);
       fireEvent.pointerLeave(c);
@@ -340,12 +382,11 @@ describe('opening and closing the tall view', () => {
       expect(isTall()).toBe(false);
     });
 
-    it('never while the search box has focus; the 15 s start when it loses it with the pointer away', async () => {
+    it('never while the search box has focus; the 1 s starts when it loses it with the pointer away', async () => {
       await setup();
       await open();
       const c = card();
       const field = screen.getByRole('searchbox');
-      fireEvent.pointerEnter(c);
       await act(async () => field.focus());
       fireEvent.pointerLeave(c);
       await flush(TALL_CLOSE_MS * 3);
@@ -357,15 +398,27 @@ describe('opening and closing the tall view', () => {
       expect(isTall()).toBe(false);
     });
 
-    it('closes the chooser with it', async () => {
+    it('waits while the chooser or a library menu is open, and closes the chooser with it after', async () => {
       await setup();
       await open();
       await act(async () => chip().click());
-      fireEvent.pointerEnter(card());
       fireEvent.pointerLeave(card());
+      await flush(TALL_CLOSE_MS * 3);
+      expect(isTall()).toBe(true);
+      expect(document.querySelector('.sp-devices')).not.toBeNull();
+      await act(async () => chip().click());
       await flush(TALL_CLOSE_MS);
       expect(isTall()).toBe(false);
-      expect(document.querySelector('.sp-devices')).toBeNull();
+      await open();
+      const menu = document.createElement('div');
+      menu.className = 'u-lib-menu';
+      document.body.appendChild(menu);
+      fireEvent.pointerLeave(card());
+      await flush(TALL_CLOSE_MS * 3);
+      expect(isTall()).toBe(true);
+      menu.remove();
+      await flush(TALL_CLOSE_MS);
+      expect(isTall()).toBe(false);
     });
   });
 
@@ -416,7 +469,6 @@ describe('inside the tall view', () => {
     await act(async () => (document.querySelectorAll('.mu-places button')[4] as HTMLButtonElement).click());
     await flush();
     expect(screen.getByText('Playing now')).toBeTruthy();
-    await act(async () => openButton().click());
     expect(document.querySelectorAll('.mu-places button')[4].getAttribute('aria-selected')).toBe('true');
   });
 
@@ -433,14 +485,13 @@ describe('inside the tall view', () => {
     expect(document.activeElement).toBe(tabs[0]);
   });
 
-  it('reaches the button, the tabs, the search, the lists, the player and then the chooser in order', async () => {
+  it('reaches the chip, the tabs, the search, the lists, the player and then the chooser in order', async () => {
     await setup();
     await open();
     const order = (a: Element, b: Element) => expect(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     const slider = screen.getByRole('slider');
     const tab = document.querySelector('.mu-places button[tabindex="0"]') as Element;
-    order(chip(), openButton());
-    order(openButton(), screen.getByRole('searchbox'));
+    order(chip(), screen.getByRole('searchbox'));
     order(screen.getByRole('searchbox'), tab);
     order(tab, document.querySelector('.sp-tile') as Element);
     order(document.querySelector('.sp-tile') as Element, document.querySelector('.sp-pl-btn') as Element);
@@ -449,7 +500,7 @@ describe('inside the tall view', () => {
     await act(async () => chip().click());
     await flush();
     order(chip(), document.querySelector('.sp-device') as Element);
-    order(document.querySelector('.sp-device') as Element, openButton());
+    order(document.querySelector('.sp-device') as Element, screen.getByRole('searchbox'));
   });
 
   it('shows two rows of covers: ten tiles at five a row, the rest scrolling', async () => {
@@ -1390,11 +1441,11 @@ describe('search songs show their length', () => {
 });
 
 describe('closing by itself follows the keyboard focus too', () => {
-  it('opened by keyboard with the pointer elsewhere it stays open while the focus is inside, then closes 15 s after the focus leaves', async () => {
+  const inside = () => document.querySelector('.sp-card .sp-tabs button, .sp-card .mu-chip, .sp-card .sp-tile') as HTMLElement;
+  it('opened by keyboard with the pointer elsewhere it stays open while the focus is inside, then closes 1 s after the focus leaves', async () => {
     await setup();
-    const b = openButton();
-    await act(async () => b.focus());
-    await act(async () => b.click());
+    await act(async () => inside().focus());
+    expect(isTall()).toBe(true);
     await flush(TALL_CLOSE_MS * 3);
     expect(isTall()).toBe(true);
     await act(async () => screen.getByText('Behind').focus());
@@ -1406,16 +1457,15 @@ describe('closing by itself follows the keyboard focus too', () => {
 
   it('focus moving between parts of the view does not start it', async () => {
     await setup();
-    await act(async () => openButton().focus());
-    await act(async () => openButton().click());
+    await act(async () => inside().focus());
     await act(async () => screen.getByRole('searchbox').focus());
     await flush(TALL_CLOSE_MS * 2);
     expect(isTall()).toBe(true);
   });
 
-  it('opened with neither the pointer nor the focus on it, the 15 seconds start at once', async () => {
+  it('opened with neither the pointer nor the focus on it, the 1 second starts at once', async () => {
     await setup();
-    await act(async () => openButton().click());
+    await act(async () => fireEvent.click(document.querySelector('.sp-top') as HTMLElement));
     await flush(TALL_CLOSE_MS - 1);
     expect(isTall()).toBe(true);
     await flush(1);
@@ -1428,7 +1478,7 @@ describe('closing by itself follows the keyboard focus too', () => {
     const c = card();
     await act(async () => screen.getByRole('searchbox').focus());
     // Closing and opening again rebuilds the field; nothing is focused afterwards.
-    await act(async () => openButton().click());
+    key('Escape');
     expect(isTall()).toBe(false);
     await open();
     await act(async () => (document.activeElement as HTMLElement).blur());

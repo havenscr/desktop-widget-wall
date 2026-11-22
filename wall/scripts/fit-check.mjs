@@ -878,6 +878,10 @@ try {
       // Opens the element's hover card the way keyboard focus does (the shared card shows at once on focus). A focusin event, since headless --dump-dom has no focused page.
       document.querySelector(click.slice(4))?.dispatchEvent(new FocusEvent('focusin', { bubbles: true }));
     }
+    else if (click === 'grow') {
+      // The music card grows when the pointer rests on it: the pointer is put on it (it stays there) and the empty part of the top row is pressed.
+      const c = document.querySelector('.sp-card'); c?.dispatchEvent(new PointerEvent('pointerover', { bubbles: true })); c?.querySelector('.sp-top')?.click();
+    }
     else if (click.startsWith('hover:')) {
       // Headless --dump-dom has no pointer: every top-level :hover rule is copied for a class that stands in for it.
       const extra = [];

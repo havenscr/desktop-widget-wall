@@ -1,11 +1,11 @@
-// The music card's tall view (the round button opens it into the right third of the wall) and "Play on": its gallery
+// The music card's tall view (the pointer resting on the card opens it into the right third of the wall) and "Play on": its gallery
 // states, fit variants, one browser measurement with its rule, and the deliberate breaks. Moved here from the two big
 // review scripts; nothing is registered there for it.
 
 /**
  * Runs in the page (it references nothing outside its own body). The tall view: 833 by 624 at wall 1707, 24, above the bottom
  * row, no text under 16 px, every control 32 px or more, nothing cut or out of the card, Play and Shuffle inside their column.
- * At rest (on a Listen state that asks for it): 800 by 462, the Play on chip and the round button on one line, the chooser
+ * At rest (on a Listen state that asks for it): 800 by 462, the Play on chip at the right end of the top row, the chooser
  * inside the wall and the card. Transitions are switched off first, so the box measured is the one the card settles on.
  */
 function measureTallMusic() {
@@ -93,20 +93,10 @@ function measureTallMusic() {
   if (body && first && first.left - 5 < body.left - 0.5) fails.push('listen: the focus ring of the first chip is cut at the left by ' + Math.round(body.left - (first.left - 5)) + ' px');
   if (body && leave && leave.right + 5 > body.right + 0.5) fails.push('listen: the focus ring of the Library button is cut at the right by ' + Math.round(leave.right + 5 - body.right) + ' px');
   // YouTube Music search shows its results region (the search ran on Enter).
-  // At rest the card is today's 800 by 462 (YouTube Music's own height aside), with the Play on chip and the round button on one line.
+  // At rest the card is today's 800 by 462 (YouTube Music's own height aside), with the Play on chip at the right end of the top row.
   if (card && !tall && !cardEl.classList.contains('yt') && (Math.abs(card.width - 800) > 1.5 || Math.abs(card.height - 462) > 1.5)) fails.push('listen: the resting card is ' + Math.round(card.width) + ' by ' + Math.round(card.height) + ' (800 by 462)');
   const chipEl = cardEl?.querySelector('.sp-dev');
-  const growEl = cardEl?.querySelector('.sp-grow');
-  if (cardEl && !growEl) fails.push('listen: the round button that opens the tall view is not there');
-  if (chipEl && growEl) {
-    const a = chipEl.getBoundingClientRect(), b = growEl.getBoundingClientRect();
-    if (Math.abs(a.top + a.height / 2 - (b.top + b.height / 2)) > 2 || a.right > b.left - 4) fails.push('listen: the Play on chip and the round button are not on one line, apart');
-  }
-  if (chipEl && growEl) {
-    const a = chipEl.getBoundingClientRect(), b = growEl.getBoundingClientRect();
-    if (Math.abs(a.width - b.width) > 1 || Math.abs(a.height - b.height) > 1) fails.push('listen: the Play on button is ' + Math.round(a.width) + ' by ' + Math.round(a.height) + ', not the size of the round expand button (' + Math.round(b.width) + ' by ' + Math.round(b.height) + ')');
-    if (b.left - a.right > 12) fails.push('listen: the Play on button is ' + Math.round(b.left - a.right) + ' px from the round expand button (12 or less)');
-  }
+  if (cardEl && cardEl.querySelector('.sp-grow')) fails.push('listen: the round button that opened the tall view is still there');
   const pop = cardEl?.querySelector('.sp-devices')?.getBoundingClientRect();
   if (pop && card && (pop.left < 0 || pop.top < 0 || pop.right > 2560 || pop.bottom > 720 || pop.left < card.left - 0.5 || pop.right > card.right + 0.5 || pop.bottom > card.bottom + 0.5 || pop.top < card.top - 0.5)) fails.push('listen: the Play on list is at x ' + Math.round(pop.left) + ' to ' + Math.round(pop.right) + ', y ' + Math.round(pop.top) + ' to ' + Math.round(pop.bottom) + ', outside the wall or the card');
   return { card: true, tall, fails, ytRegion: (cardEl.querySelector('[aria-label="Search results"]')?.getBoundingClientRect().width ?? 0) > 0 };
@@ -124,61 +114,61 @@ export default {
   name: 'music-card',
   gallery: {
     states: [
-    state('tall music: button under the pointer', 'hz=unwind&at=2026-11-11T22%3A30%3A00-08%3A00&clock=review&weather=ok&audio=demo', ['!Which player the wall follows', 'Road Trip 1'], 'hover:.sp-grow'),
-    state('tall music: open on Playlists', 'hz=unwind&at=2026-11-11T22%3A30%3A00-08%3A00&clock=review&weather=ok&audio=demo', ['!Which player the wall follows', 'Up next', 'Road Trip 8'], '.sp-grow'),
-    state('tall music: a playlist opened', 'hz=unwind&at=2026-11-11T22%3A30%3A00-08%3A00&clock=review&weather=ok&audio=demo', ['Lantern Song 9', 'Shuffle', '58 songs', 'Playlists'], '.sp-grow >> .sp-tile'),
-    state('tall music: search in groups', 'hz=unwind&at=2026-11-11T22%3A30%3A00-08%3A00&clock=review&weather=ok&audio=demo', ['Songs', 'Albums', 'Playlists', 'Track 1', 'Album 1', 'Playlist 1'], '.sp-grow >> type:.sp-search input=road'),
-    state('tall music: Up next', 'hz=unwind&at=2026-11-11T22%3A30%3A00-08%3A00&clock=review&weather=ok&audio=demo', ['Playing now', 'Spotify sets the order. A click skips ahead to that song.', 'Lantern Song 2'], '.sp-grow >> .mu-places button:nth-child(5)'),
-    state('tall music: time bar dragged', 'hz=unwind&at=2026-11-11T22%3A30%3A00-08%3A00&clock=review&weather=ok&audio=demo', ['Lantern Song 1', '3:01', '!1:05'], '.sp-grow >> drag:.sp-seek@2250,606'),
-    state('tall music: Play on open', 'hz=unwind&at=2026-11-11T22%3A30%3A00-08%3A00&clock=review&weather=ok&audio=demo', ['Kitchen speaker', 'Phone', 'Computer, playing now', 'A phone or speaker shows here only while its Spotify is awake.'], '.sp-grow >> .sp-dev'),
-    state('tall music: Play on, music on a speaker', 'hz=unwind&at=2026-11-11T22%3A30%3A00-08%3A00&clock=review&weather=ok&spotifyplay=speaker', ['Speaker, playing now', 'Play on'], '.sp-grow >> .sp-dev'),
-    state('tall music: Play on, nothing awake', 'hz=unwind&at=2026-11-11T22%3A30%3A00-08%3A00&clock=review&weather=ok&spotify=nodevices&spotifyplay=none&media=none', ['Spotify is closed. The wall starts it.', 'This PC'], '.sp-grow >> .sp-dev'),
-    state('tall music: starting Spotify', 'hz=unwind&at=2026-11-11T22%3A30%3A00-08%3A00&clock=review&weather=ok&spotify=starting', ['Starting Spotify on this PC', 'plays as soon as it is ready'], '.sp-grow >> .sp-tile >> .sp-shbtns .sp-btn.fill'),
-    state('tall music: YouTube Music', 'hz=unwind&at=2026-11-11T22%3A30%3A00-08%3A00&clock=review&weather=ok&audio=demo', ['Open YouTube Music', '!Search Spotify'], '.sp-switch button:nth-child(2) >> .sp-grow'),
-    state('tall music: long names', 'hz=unwind&at=2026-11-11T10%3A24%3A00-08%3A00&clock=review&weather=ok&long=1&media=long&spotify=long', ['Road Trip 1, an extremely long name', 'Up next'], '.sp-grow'),
-    state('tall music: long names, a playlist opened', 'hz=unwind&at=2026-11-11T10%3A24%3A00-08%3A00&clock=review&weather=ok&long=1&media=long&spotify=long', ['240 songs', 'Lantern Song 9, an extremely long name'], '.sp-grow >> .sp-tile'),
-    state('tall music pictures: open on Playlists', 'hz=unwind&at=2026-11-11T22%3A30%3A00-08%3A00&clock=review&weather=ok&audio=demo&spotify=picture', ['Road Trip 10', '!Which player the wall follows'], '.sp-grow'),
-    state('tall music pictures: a playlist opened', 'hz=unwind&at=2026-11-11T22%3A30%3A00-08%3A00&clock=review&weather=ok&audio=demo&spotify=picture', ['Lantern Song 9', 'Shuffle', 'Playlists'], '.sp-grow >> .sp-tile'),
-    state('tall music pictures: search, chips and the All view', 'hz=unwind&at=2026-11-11T22%3A30%3A00-08%3A00&clock=review&weather=ok&audio=demo&spotify=picture', ['Track 6', 'Album 3', 'Playlist 3', '3:00'], '.sp-grow >> type:.sp-search input=night'),
+    state('tall music: button under the pointer', 'hz=unwind&at=2026-11-11T22%3A30%3A00-08%3A00&clock=review&weather=ok&audio=demo', ['!Which player the wall follows', 'Road Trip 1'], 'hover:grow'),
+    state('tall music: open on Playlists', 'hz=unwind&at=2026-11-11T22%3A30%3A00-08%3A00&clock=review&weather=ok&audio=demo', ['!Which player the wall follows', 'Up next', 'Road Trip 8'], 'grow'),
+    state('tall music: a playlist opened', 'hz=unwind&at=2026-11-11T22%3A30%3A00-08%3A00&clock=review&weather=ok&audio=demo', ['Lantern Song 9', 'Shuffle', '58 songs', 'Playlists'], 'grow >> .sp-tile'),
+    state('tall music: search in groups', 'hz=unwind&at=2026-11-11T22%3A30%3A00-08%3A00&clock=review&weather=ok&audio=demo', ['Songs', 'Albums', 'Playlists', 'Track 1', 'Album 1', 'Playlist 1'], 'grow >> type:.sp-search input=road'),
+    state('tall music: Up next', 'hz=unwind&at=2026-11-11T22%3A30%3A00-08%3A00&clock=review&weather=ok&audio=demo', ['Playing now', 'Spotify sets the order. A click skips ahead to that song.', 'Lantern Song 2'], 'grow >> .mu-places button:nth-child(5)'),
+    state('tall music: time bar dragged', 'hz=unwind&at=2026-11-11T22%3A30%3A00-08%3A00&clock=review&weather=ok&audio=demo', ['Lantern Song 1', '3:01', '!1:05'], 'grow >> drag:.sp-seek@2250,606'),
+    state('tall music: Play on open', 'hz=unwind&at=2026-11-11T22%3A30%3A00-08%3A00&clock=review&weather=ok&audio=demo', ['Kitchen speaker', 'Phone', 'Computer, playing now', 'A phone or speaker shows here only while its Spotify is awake.'], 'grow >> .sp-dev'),
+    state('tall music: Play on, music on a speaker', 'hz=unwind&at=2026-11-11T22%3A30%3A00-08%3A00&clock=review&weather=ok&spotifyplay=speaker', ['Speaker, playing now', 'Play on'], 'grow >> .sp-dev'),
+    state('tall music: Play on, nothing awake', 'hz=unwind&at=2026-11-11T22%3A30%3A00-08%3A00&clock=review&weather=ok&spotify=nodevices&spotifyplay=none&media=none', ['Spotify is closed. The wall starts it.', 'This PC'], 'grow >> .sp-dev'),
+    state('tall music: starting Spotify', 'hz=unwind&at=2026-11-11T22%3A30%3A00-08%3A00&clock=review&weather=ok&spotify=starting', ['Starting Spotify on this PC', 'plays as soon as it is ready'], 'grow >> .sp-tile >> .sp-shbtns .sp-btn.fill'),
+    state('tall music: YouTube Music', 'hz=unwind&at=2026-11-11T22%3A30%3A00-08%3A00&clock=review&weather=ok&audio=demo', ['Open YouTube Music', '!Search Spotify'], '.sp-switch button:nth-child(2) >> grow'),
+    state('tall music: long names', 'hz=unwind&at=2026-11-11T10%3A24%3A00-08%3A00&clock=review&weather=ok&long=1&media=long&spotify=long', ['Road Trip 1, an extremely long name', 'Up next'], 'grow'),
+    state('tall music: long names, a playlist opened', 'hz=unwind&at=2026-11-11T10%3A24%3A00-08%3A00&clock=review&weather=ok&long=1&media=long&spotify=long', ['240 songs', 'Lantern Song 9, an extremely long name'], 'grow >> .sp-tile'),
+    state('tall music pictures: open on Playlists', 'hz=unwind&at=2026-11-11T22%3A30%3A00-08%3A00&clock=review&weather=ok&audio=demo&spotify=picture', ['Road Trip 10', '!Which player the wall follows'], 'grow'),
+    state('tall music pictures: a playlist opened', 'hz=unwind&at=2026-11-11T22%3A30%3A00-08%3A00&clock=review&weather=ok&audio=demo&spotify=picture', ['Lantern Song 9', 'Shuffle', 'Playlists'], 'grow >> .sp-tile'),
+    state('tall music pictures: search, chips and the All view', 'hz=unwind&at=2026-11-11T22%3A30%3A00-08%3A00&clock=review&weather=ok&audio=demo&spotify=picture', ['Track 6', 'Album 3', 'Playlist 3', '3:00'], 'grow >> type:.sp-search input=night'),
     state('music pictures: search at rest, the All view', 'hz=unwind&at=2026-11-11T22%3A30%3A00-08%3A00&clock=review&weather=ok&audio=demo&spotify=picture', ['Playlist 3', 'See all'], 'type:.sp-search input=night'),
-    state('tall music pictures: Up next', 'hz=unwind&at=2026-11-11T22%3A30%3A00-08%3A00&clock=review&weather=ok&audio=demo&spotify=picture', ['Playing now', 'Lantern Song 2'], '.sp-grow >> .mu-places button:nth-child(5)'),
-    state('tall music pictures: Play on open', 'hz=unwind&at=2026-11-11T22%3A30%3A00-08%3A00&clock=review&weather=ok&audio=demo&spotify=picture', ['Kitchen speaker', 'Phone'], '.sp-grow >> .sp-dev'),
-    state('tall music: Spotify not answering', 'hz=unwind&at=2026-11-11T22%3A30%3A00-08%3A00&clock=review&weather=ok&spotify=down', 'Spotify is not answering right now.', '.sp-grow'),
-    state('tall music: nothing playing', 'hz=unwind&at=2026-11-11T22%3A30%3A00-08%3A00&clock=review&weather=ok&media=none&spotifyplay=none', ['Nothing playing', 'Road Trip 1'], '.sp-grow'),
-    state('tall music: a playlist that is not his, tall', 'hz=unwind&at=2026-11-11T22%3A30%3A00-08%3A00&clock=review&weather=ok&audio=demo&spotify=notyours', ["Spotify's public page does not list this playlist. It may be private.", 'Press Play or Shuffle', 'Shuffle', '!Retry'], '.sp-grow >> .sp-tile'),
+    state('tall music pictures: Up next', 'hz=unwind&at=2026-11-11T22%3A30%3A00-08%3A00&clock=review&weather=ok&audio=demo&spotify=picture', ['Playing now', 'Lantern Song 2'], 'grow >> .mu-places button:nth-child(5)'),
+    state('tall music pictures: Play on open', 'hz=unwind&at=2026-11-11T22%3A30%3A00-08%3A00&clock=review&weather=ok&audio=demo&spotify=picture', ['Kitchen speaker', 'Phone'], 'grow >> .sp-dev'),
+    state('tall music: Spotify not answering', 'hz=unwind&at=2026-11-11T22%3A30%3A00-08%3A00&clock=review&weather=ok&spotify=down', 'Spotify is not answering right now.', 'grow'),
+    state('tall music: nothing playing', 'hz=unwind&at=2026-11-11T22%3A30%3A00-08%3A00&clock=review&weather=ok&media=none&spotifyplay=none', ['Nothing playing', 'Road Trip 1'], 'grow'),
+    state('tall music: a playlist that is not his, tall', 'hz=unwind&at=2026-11-11T22%3A30%3A00-08%3A00&clock=review&weather=ok&audio=demo&spotify=notyours', ["Spotify's public page does not list this playlist. It may be private.", 'Press Play or Shuffle', 'Shuffle', '!Retry'], 'grow >> .sp-tile'),
     state('tall music: a playlist that is not his, at rest', 'hz=unwind&at=2026-11-11T22%3A30%3A00-08%3A00&clock=review&weather=ok&audio=demo&spotify=notyours', ["Spotify's public page does not list this playlist. It may be private.", 'Shuffle', '!Retry', '!While it plays'], '.sp-tile'),
     ],
   },
   fit: {
     variants: [
-    { name: TALL_OPEN, q: fitQuery('&audio=demo'), checks: ['.sp-card'], click: '.sp-grow' },
-    tallVariant('heavy library', '&spotify=heavy', '.sp-grow'),
-    tallVariant('a playlist opened', '&audio=demo', '.sp-grow >> .sp-tile'),
-    tallVariant('the songs of a 2000 song playlist', '&spotify=heavy', '.sp-grow >> .sp-tile'),
-    tallVariant('search in groups', '&audio=demo', '.sp-grow >> type:.sp-search input=road'),
-    tallVariant('YouTube Music, search in groups', '&audio=demo&youtube=in', '.sp-switch button:nth-child(2) >> .sp-grow >> type:.sp-search input=road >> key:.yt-search input=Enter'),
-    tallVariant('YouTube Music, search, the Playlists chip', '&audio=demo&youtube=in', '.sp-switch button:nth-child(2) >> .sp-grow >> type:.sp-search input=road >> key:.yt-search input=Enter >> .mu-chip:nth-child(2)'),
+    { name: TALL_OPEN, q: fitQuery('&audio=demo'), checks: ['.sp-card'], click: 'grow' },
+    tallVariant('heavy library', '&spotify=heavy', 'grow'),
+    tallVariant('a playlist opened', '&audio=demo', 'grow >> .sp-tile'),
+    tallVariant('the songs of a 2000 song playlist', '&spotify=heavy', 'grow >> .sp-tile'),
+    tallVariant('search in groups', '&audio=demo', 'grow >> type:.sp-search input=road'),
+    tallVariant('YouTube Music, search in groups', '&audio=demo&youtube=in', '.sp-switch button:nth-child(2) >> grow >> type:.sp-search input=road >> key:.yt-search input=Enter'),
+    tallVariant('YouTube Music, search, the Playlists chip', '&audio=demo&youtube=in', '.sp-switch button:nth-child(2) >> grow >> type:.sp-search input=road >> key:.yt-search input=Enter >> .mu-chip:nth-child(2)'),
     { name: 'Listen, the resting card, YouTube Music', q: fitQuery('&audio=demo&youtube=in'), checks: ['.sp-card'], click: '.sp-switch button:nth-child(2)', listen: true },
     { name: 'Listen, the resting card, YouTube Music, search', q: fitQuery('&audio=demo&youtube=in'), checks: ['.sp-card'], click: '.sp-switch button:nth-child(2) >> type:.sp-search input=road >> key:.yt-search input=Enter', listen: true },
     { name: 'Listen, the resting card, YouTube Music, search, the Playlists chip', q: fitQuery('&audio=demo&youtube=in'), checks: ['.sp-card'], click: '.sp-switch button:nth-child(2) >> type:.sp-search input=road >> key:.yt-search input=Enter >> .mu-chip:nth-child(2)', listen: true },
-    tallVariant('Up next', '&audio=demo', '.sp-grow >> .mu-places button:nth-child(5)'),
-    tallVariant('Play on open', '&audio=demo', '.sp-grow >> .sp-dev'),
-    tallVariant('Play on, nothing awake', '&spotify=nodevices&spotifyplay=none&media=none', '.sp-grow >> .sp-dev'),
-    tallVariant('starting Spotify', '&spotify=starting', '.sp-grow >> .sp-tile >> .sp-shbtns .sp-btn.fill'),
-    tallVariant('YouTube Music chosen', '', '.sp-switch button:nth-child(2) >> .sp-grow'),
-    tallVariant('long names', '&spotify=long&media=long', '.sp-grow'),
-    tallVariant('long names, a playlist opened', '&spotify=long&media=long', '.sp-grow >> .sp-tile'),
-    tallVariant('nothing playing', '&media=none&spotifyplay=none', '.sp-grow'),
-    tallVariant('Spotify not answering', '&spotify=down', '.sp-grow'),
-    tallVariant('signed out', '&spotify=signedout', '.sp-grow'),
+    tallVariant('Up next', '&audio=demo', 'grow >> .mu-places button:nth-child(5)'),
+    tallVariant('Play on open', '&audio=demo', 'grow >> .sp-dev'),
+    tallVariant('Play on, nothing awake', '&spotify=nodevices&spotifyplay=none&media=none', 'grow >> .sp-dev'),
+    tallVariant('starting Spotify', '&spotify=starting', 'grow >> .sp-tile >> .sp-shbtns .sp-btn.fill'),
+    tallVariant('YouTube Music chosen', '', '.sp-switch button:nth-child(2) >> grow'),
+    tallVariant('long names', '&spotify=long&media=long', 'grow'),
+    tallVariant('long names, a playlist opened', '&spotify=long&media=long', 'grow >> .sp-tile'),
+    tallVariant('nothing playing', '&media=none&spotifyplay=none', 'grow'),
+    tallVariant('Spotify not answering', '&spotify=down', 'grow'),
+    tallVariant('signed out', '&spotify=signedout', 'grow'),
     { name: REST, q: fitQuery('&audio=demo'), checks: ['.sp-card'], listen: true },
     { name: 'Listen, the resting card, a search: chip row and the All view', q: fitQuery('&audio=demo&spotify=picture'), checks: ['.sp-card'], click: 'type:.sp-search input=night', listen: true },
     { name: 'Listen, the resting card, a search: the Albums chip', q: fitQuery('&audio=demo&spotify=picture'), checks: ['.sp-card'], click: 'type:.sp-search input=night >> .mu-chip:nth-child(3)', listen: true },
-    tallVariant('a search: chip row and the All view', '&audio=demo&spotify=picture', '.sp-grow >> type:.sp-search input=night'),
-    tallVariant('a search: the Songs chip', '&audio=demo&spotify=picture', '.sp-grow >> type:.sp-search input=night >> .mu-chip:nth-child(4)'),
-    { name: 'Listen, the tall view, a playlist that is not his', q: fitQuery('&audio=demo&spotify=notyours'), checks: ['.sp-card'], click: '.sp-grow >> .sp-tile' },
+    tallVariant('a search: chip row and the All view', '&audio=demo&spotify=picture', 'grow >> type:.sp-search input=night'),
+    tallVariant('a search: the Songs chip', '&audio=demo&spotify=picture', 'grow >> type:.sp-search input=night >> .mu-chip:nth-child(4)'),
+    { name: 'Listen, the tall view, a playlist that is not his', q: fitQuery('&audio=demo&spotify=notyours'), checks: ['.sp-card'], click: 'grow >> .sp-tile' },
     { name: 'Listen, the resting card, a playlist that is not his', q: fitQuery('&audio=demo&spotify=notyours'), checks: ['.sp-card'], click: '.sp-tile', listen: true },
-    { name: 'Sky layers, Listen at night, the tall view open, the moon in open sky', q: fitQuery('&audio=demo', night), checks: ['.sp-card'], click: '.sp-grow', sky: 'moon', moonAt: '760,352,44' },
+    { name: 'Sky layers, Listen at night, the tall view open, the moon in open sky', q: fitQuery('&audio=demo', night), checks: ['.sp-card'], click: 'grow', sky: 'moon', moonAt: '760,352,44' },
     ],
     measurements: { tallMusic: measureTallMusic },
     rules: {
@@ -190,7 +180,7 @@ export default {
         if (m.fails.length) return true;
         emit(m.tall
           ? '  ok   listen tall: the card is 833 by 624 at 1707, 24 above the bottom row, no text under 16 px, every control 32 px or more, nothing cut or out of the card, the Play on list inside the card'
-          : '  ok   listen: the resting card is 800 by 462 with the Play on chip and the round button on one line, the Play on list inside the card');
+          : '  ok   listen: the resting card is 800 by 462 with the Play on chip at the right end of the top row, the Play on list inside the card');
         return false;
       },
     },

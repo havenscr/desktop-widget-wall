@@ -69,7 +69,7 @@ const base = `hz=unwind&at=${night}&clock=review&weather=ok&audio=demo&spotify=n
 // stood in for first instead (it turns the card's transitions off), then the card is opened.
 const fitQuery = (extra, tall) => `?hz=unwind&at=${at}&long=1&agents=3&audio=demo${tall ? '' : '&listen=1'}&spotify=notyours${extra}`;
 const SMALL_CLICK = '.sp-tile';
-const TALL_CLICK = '.sp-grow >> .sp-tile';
+const TALL_CLICK = 'grow >> .sp-tile';
 
 const state = (name, extra, expect, actions) => ({ screen: 'unwind', name: `saved playlists: ${name}`, query: `${base}${extra}`, custom: true, expect, actions });
 

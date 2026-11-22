@@ -78,8 +78,7 @@ async function setup(over: { canSave?: Capability; saved?: boolean; track?: Spot
   await flush();
   const card = document.querySelector('.sp-card') as HTMLElement;
   fireEvent.pointerEnter(card);
-  await act(async () => (screen.getByRole('button', { name: /the tall music view/ }) as HTMLElement).click());
-  await flush();
+  await flush(1500);
   return view;
 }
 const heart = () => document.querySelector('[data-control="heart"]') as HTMLButtonElement | null;
@@ -511,16 +510,15 @@ describe('the heart without the permission to save', () => {
     await setup({ canSave: 'no' });
     await click();
     expect(screen.getByText(NEEDS_PERMISSION_LINE)).toBeTruthy();
-    // The round button closes the tall view; the player row and its note are gone.
-    await act(async () => (document.querySelector('.sp-grow') as HTMLElement).click());
-    await flush(500);
+    // The pointer leaving closes the tall view after a second; the player row and its note are gone.
+    fireEvent.pointerLeave(document.querySelector('.sp-card') as HTMLElement);
+    await flush(1000);
     expect(document.querySelector('.sp-card')?.getAttribute('data-tall')).not.toBe('true');
     expect(screen.queryByText(NEEDS_PERMISSION_LINE)).toBeNull();
     expect(heart()).toBeNull();
     // Opening it again shows no stale note, and Escape with it open closes the view as usual.
     fireEvent.pointerEnter(document.querySelector('.sp-card') as HTMLElement);
-    await act(async () => (screen.getByRole('button', { name: /the tall music view/ }) as HTMLElement).click());
-    await flush();
+    await flush(1500);
     expect(screen.queryByText(NEEDS_PERMISSION_LINE)).toBeNull();
     await act(async () => {
       fireEvent.keyDown(document.body, { key: 'Escape' });

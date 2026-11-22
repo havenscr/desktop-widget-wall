@@ -639,8 +639,7 @@ describe('fix round 1: the rest', () => {
     await setup({ playlistId: id(SAVED), heard: [], queue: Array.from({ length: 20 }, (_, n) => track(100 + n)) });
     failPage();
     fireEvent.pointerEnter(document.querySelector('.sp-card') as HTMLElement);
-    await act(async () => (screen.getByRole('button', { name: /the tall music view/ }) as HTMLButtonElement).click());
-    await flush();
+    await flush(1500);
     await openList(SAVED);
     await act(async () => screen.getByRole('button', { name: '12 more in Up next' }).click());
     await flush();
