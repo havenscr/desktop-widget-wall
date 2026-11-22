@@ -6,7 +6,8 @@ import { useVisible } from '../ui/useVisible';
 /** Around the house is the task app's `home` tag, not a list. */
 /** Home lists up to twenty chores (five rows in view, the rest a scroll away). */
 export const CHORES_LIMIT = 20;
-export const CHORES_ARGS = { tag: 'home', limit: CHORES_LIMIT } as const;
+/** Home always reads what is due today or overdue (overdue first), like Work's Due Today. */
+export const CHORES_TODAY_ARGS = { tag: 'home', due: 'today', limit: CHORES_LIMIT } as const;
 export interface ChoresState {
   status: 'loading' | 'ready' | 'unconfigured' | 'error';
   tasks: TaskItem[];
@@ -61,7 +62,7 @@ export function useChores(): ChoresState {
   const read = useCallback(async () => {
     const mine = ++started.current;
     try {
-      const r = await invoke<Summary>('wall2_tasks_summary', { ...CHORES_ARGS });
+      const r = await invoke<Summary>('wall2_tasks_summary', { ...CHORES_TODAY_ARGS });
       if (!mounted.current) return;
       const fresh = Array.isArray(r?.next) ? r.next.slice(0, CHORES_LIMIT) : [];
       const settled: string[] = [];

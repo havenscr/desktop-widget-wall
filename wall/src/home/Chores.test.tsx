@@ -4,6 +4,7 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { mocks } from '../bridge/tauri';
 import { usePacificTime } from '../ribbon/testZone';
 import { HoverTipLayer, resetTip } from '../ui/HoverTip';
+import { resetShowLaterOverride } from '../tasks/showLater';
 import { Chores, chorePill } from './Chores';
 
 usePacificTime();
@@ -14,6 +15,7 @@ const flush = async (ms = 0) => {
   });
 };
 beforeEach(() => {
+  resetShowLaterOverride();
   vi.useFakeTimers();
   vi.setSystemTime(new Date('2026-11-11T16:36:00-08:00'));
 });
@@ -33,7 +35,7 @@ const task = (id: string, title: string, over: Record<string, unknown> = {}) => 
   ...over,
 });
 
-it('asks for the home tag, with room for twenty and shows "N more can wait" under the rows', async () => {
+it('asks for the home tag due today or overdue, with room for twenty and shows "N more can wait" under the rows', async () => {
   localStorage.setItem('wall.tasks.showLater', '1');
   const args: unknown[] = [];
   mocks.set('wall2_tasks_summary', (a) => {
@@ -45,7 +47,7 @@ it('asks for the home tag, with room for twenty and shows "N more can wait" unde
   });
   const { container } = render(<Chores />);
   await flush();
-  expect(args).toEqual([{ tag: 'home', limit: 20 }]);
+  expect(args).toEqual([{ tag: 'home', due: 'today', limit: 20 }]);
   expect([...container.querySelectorAll('.tk3 .n')].map((n) => n.textContent)).toEqual(['Bins out tonight', 'Order the furnace filter', 'Call the sweep']);
   expect([...container.querySelectorAll('.est')].map((n) => n.textContent)).toEqual(['7 PM', '15 m']);
   expect(screen.getByText('5 more can wait')).toBeTruthy();
@@ -105,7 +107,7 @@ it('a failed save brings the row back marked not saved', async () => {
   expect(screen.getByText('Could not complete.')).toBeTruthy();
 });
 
-it('says Not set up, task app not reachable, or nothing waiting', async () => {
+it('says Not set up, task app not reachable, or nothing due', async () => {
   mocks.set('wall2_tasks_summary', () => Promise.reject(new Error('not-configured')));
   const a = render(<Chores />);
   await flush();
@@ -117,10 +119,9 @@ it('says Not set up, task app not reachable, or nothing waiting', async () => {
   expect(screen.getByText('Task app not reachable')).toBeTruthy();
   b.unmount();
   mocks.set('wall2_tasks_summary', () => ({ next: [], remaining: 0 }));
-  localStorage.setItem('wall2-chores-today-only', 'off');
   render(<Chores />);
   await flush();
-  expect(screen.getByText('Nothing waiting around the house')).toBeTruthy();
+  expect(screen.getByText('Nothing due today')).toBeTruthy();
 });
 
 it('keeps the last good list when a later read fails', async () => {
@@ -203,11 +204,11 @@ it('when every shown chore is ticked it says Loading the next ones, never Nothin
   await flush(TICK_UNDO_MS);
   await flush(2000);
   expect(screen.getByText('Loading the next ones')).toBeTruthy();
-  expect(screen.queryByText('Nothing waiting around the house')).toBeNull();
+  expect(screen.queryByText('Nothing due today')).toBeNull();
   reads[1].reject(new Error('x'));
   await flush();
   expect(screen.getByText('Could not load the next ones')).toBeTruthy();
-  expect(screen.queryByText('Nothing waiting around the house')).toBeNull();
+  expect(screen.queryByText('Nothing due today')).toBeNull();
 });
 
 it('a chore tick waits five seconds with Undo; Undo completes nothing', async () => {
@@ -382,4 +383,21 @@ it('clicking the ticked circle puts the chore back; a second click of a double c
   await flush(TICK_UNDO_MS);
   expect(done).toHaveBeenCalledWith({ id: 'w' });
   expect((screen.queryByRole('button', { name: 'Done: Water the plants' }) as HTMLButtonElement | null)?.disabled ?? true).toBe(true);
+});
+
+it('a ticked chore stays visible through its undo window even when Later today would hide it', async () => {
+  localStorage.setItem('wall.tasks.showLater', '1');
+  mocks.set('wall2_tasks_summary', () => ({ next: [task('1', 'Bins out tonight', { due_at: '2026-11-12T03:00:00Z' }), task('2', 'Sort the recycling')], remaining: 0 }));
+  const done = vi.fn();
+  mocks.set('wall2_task_done', done);
+  render(<Chores />);
+  await flush();
+  fireEvent.click(screen.getByRole('button', { name: 'Done: Bins out tonight' }));
+  fireEvent.click(screen.getByRole('switch', { name: /later today/i }));
+  expect(screen.getByRole('switch', { name: /later today/i }).getAttribute('aria-checked')).toBe('false');
+  expect(screen.getAllByRole('button', { name: 'Undo: Bins out tonight' }).length).toBeGreaterThan(0);
+  fireEvent.click(screen.getAllByRole('button', { name: 'Undo: Bins out tonight' }).find((b) => b.classList.contains('ck'))!);
+  expect(screen.queryByText('Bins out tonight')).toBeNull();
+  await flush(TICK_UNDO_MS);
+  expect(done).not.toHaveBeenCalled();
 });

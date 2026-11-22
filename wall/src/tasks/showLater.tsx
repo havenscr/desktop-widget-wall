@@ -6,24 +6,31 @@ export const LATER_KEY = 'wall.tasks.showLater';
 
 const listeners = new Set<() => void>();
 
-// Storage can be blocked: the choice then lasts until the page closes.
-let fallback = false;
+// Storage can be blocked, or accept reads but refuse writes: after a failed write this in-memory value
+// is the truth until the page closes.
+let override: boolean | null = null;
 function snapshot(): boolean {
+  if (override !== null) return override;
   try {
     return localStorage.getItem(LATER_KEY) === '1';
   } catch {
-    return fallback;
+    return false;
   }
 }
 
 function write(on: boolean): void {
   try {
     localStorage.setItem(LATER_KEY, on ? '1' : '0');
-    fallback = false;
+    override = null;
   } catch {
-    fallback = on;
+    override = on;
   }
   listeners.forEach((l) => l());
+}
+
+/** Test hook: forget a remembered in-memory choice. */
+export function resetShowLaterOverride(): void {
+  override = null;
 }
 
 function subscribe(l: () => void): () => void {

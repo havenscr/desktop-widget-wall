@@ -47,6 +47,15 @@ function measureShelf() {
     if (taskRows.some((li) => Math.abs(li.getBoundingClientRect().height - 40) > 0.6)) fails.push('shelf: the task rows are not 40 px tall');
     if (!root.querySelector('.right-wing .tasks .od-sw')) fails.push('shelf: the Later today switch is missing from the picked list');
   }
+  // A long list name stays on one line beside the switch: the heading is one line tall and the name does not push the switch out.
+  const hd = root.querySelector('.right-wing .tasks-hd');
+  const hdName = hd && hd.querySelector('.k');
+  if (hd && hdName) {
+    if (hdName.getBoundingClientRect().height > 36) fails.push('shelf: the list name in the task heading wraps onto more than one line');
+    if (hd.getBoundingClientRect().height > 36) fails.push('shelf: the task heading is ' + Math.round(hd.getBoundingClientRect().height) + ' px tall (one line)');
+    const swEl = hd.querySelector('.od-sw');
+    if (swEl && swEl.getBoundingClientRect().right > hd.getBoundingClientRect().right + 0.5) fails.push('shelf: the Later today switch is pushed out of the heading by the list name');
+  }
   const small = [];
   for (const el of root.querySelectorAll('.shelf-centre *, .right-wing .tasks *, .rf-card *')) {
     const own = [...el.childNodes].some((n) => n.nodeType === 3 && n.textContent.trim());
@@ -77,6 +86,7 @@ export default {
     state('shelf: recent files empty', LISTS + '&recent=empty', ['Recent files', 'No recent files']),
     state('shelf: recent files unavailable', LISTS + '&recent=down', ['Recent files', 'Recent files unavailable']),
     state('shelf: second list picked', LISTS, ['Tax / Business', 'File the quarterly return'], ['.shelf-list:nth-child(2)']),
+    state('shelf: a 60 character list name stays on one line beside the switch', MANY, ['Later today', 'Always here'], ['.shelf-list:nth-child(8)']),
   ] },
   fit: {
     variants: [

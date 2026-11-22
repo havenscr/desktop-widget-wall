@@ -263,7 +263,7 @@ function TaskList({ children, rows }: { children: ReactNode; rows: number }) {
 /**
  * "Due today": every open task due today or overdue (without the home tag), overdue first, as
  * a small scrolling list with each task's tags. Timed tasks due later today are hidden until
- * the "Later today" switch is on (or their time arrives). When nothing is due the block reads "Next up"
+ * the "Later today" switch is on (or their time arrives); a ticked row inside its undo window stays. When nothing is due the block reads "Next up"
  * and shows the next three tasks. Click the circle to finish one, the title to open it, hold
  * a row to focus on it.
  */
@@ -276,7 +276,7 @@ export function TaskCard({ query = WORK_QUERY, title }: { query?: TasksQuery; ti
   const allRows = visibleRows(t.tasks, t.hidden);
   const hasSwitch = !t.nextUp && t.lastOk !== null;
   const hideLater = hasSwitch && !showLater;
-  const rows = hideLater ? allRows.filter((r) => !dueLaterToday(r, new Date(t.now))) : allRows;
+  const rows = hideLater ? allRows.filter((r) => ticks.pending.has(r.id) || !dueLaterToday(r, new Date(t.now))) : allRows;
   const stale = t.status === 'error' && t.lastOk !== null ? updatedText(t.lastOk, t.now) : null;
   const nextUp = t.nextUp && rows.length > 0;
   const overdue = nextUp ? 0 : rows.filter((r) => dueLine(r, new Date(t.now)) === 'overdue').length;

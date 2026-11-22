@@ -4,6 +4,7 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { mocks } from '../bridge/tauri';
 import { useFocusStore } from '../focus/store';
 import { HoverTipLayer, resetTip } from '../ui/HoverTip';
+import { resetShowLaterOverride } from './showLater';
 import { TaskCard } from './TaskCard';
 import { REFRESH_MS, type TaskItem } from './model';
 
@@ -26,6 +27,7 @@ const setList = (fn: () => TaskItem[] | Promise<TaskItem[]>, remaining = 0) =>
 
 beforeEach(() => {
   summaryArgs = [];
+  resetShowLaterOverride();
   useFocusStore.getState().dispose();
   localStorage.clear();
   vi.useFakeTimers();
@@ -796,6 +798,23 @@ it('the Later today switch still works when storage throws', async () => {
   expect(screen.getByText('Later one')).toBeTruthy();
   get.mockRestore();
   set.mockRestore();
+});
+
+it('a ticked row stays visible through its undo window even when Later today would hide it', async () => {
+  setList(() => [task('b', 'Today one'), timedRow('l', 'Later one', 15)]);
+  const done = vi.fn();
+  mocks.set('wall2_task_done', done);
+  render(<TaskCard />);
+  await flush();
+  fireEvent.click(screen.getByRole('switch'));
+  fireEvent.click(screen.getByLabelText('Mark done: Later one'));
+  fireEvent.click(screen.getByRole('switch'));
+  expect(screen.getByRole('switch').getAttribute('aria-checked')).toBe('false');
+  expect(screen.getByText('Later one').closest('li')!.className).toContain('pending');
+  fireEvent.click(screen.getByLabelText('Undo: Later one', { selector: '.task-check' }));
+  expect(screen.queryByText('Later one')).toBeNull();
+  await flush(TICK_UNDO_MS);
+  expect(done).not.toHaveBeenCalled();
 });
 
 it('a titled card (the Shelf) gets the Later today switch too, and it hides rows timed later today', async () => {

@@ -759,7 +759,15 @@
   /* The height the heading has with its right-hand text, so the block is the same with none. */
   min-height: 24.7px;
 }
+.tasks-hd > .k {
+  /* A long list name stays on one line with an ellipsis, so the block never grows taller. */
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .tasks-hd-r {
+  flex: none;
   display: inline-flex;
   align-items: center;
   gap: 14px;

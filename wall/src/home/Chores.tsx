@@ -42,7 +42,7 @@ export function chorePill(task: Pick<TaskItem, 'due_at' | 'due_is_all_day' | 'es
 }
 
 /**
- * Around the house: the next tasks tagged `home`, five rows in view (three while network
+ * Around the house: the tasks tagged `home` that are due today or overdue, five rows in view (three while network
  * alerts are open and the shield card is tall), the rest a scroll away (a slim scrollbar
  * and the wheel, with the pointer over the list), and "N more can wait" under them. The
  * tick circle finishes a chore after a five second undo window; a click on its title opens
@@ -57,7 +57,7 @@ export function Chores() {
   const now = reviewNow ? reviewNow() : Date.now();
   const shown = tasks.filter((t) => !hidden.has(t.id));
   // Chores timed later today stay out of the list until the Later today switch is on (or their time comes).
-  const rows = showLater ? shown : shown.filter((t) => !dueLaterToday(t, new Date(now)));
+  const rows = showLater ? shown : shown.filter((t) => ticks.pending.has(t.id) || !dueLaterToday(t, new Date(now)));
   // The pill column: as wide as the widest pill (never under 62 px), measured with every pill at its natural
   // width, then set on the list as `--pill-w` for every pill and every empty column.
   const listRef = useRef<HTMLDivElement>(null);
@@ -91,7 +91,7 @@ export function Chores() {
     body = (
       <div className="tk3 clear">
         <IconCheck size={28} stroke={2} aria-hidden="true" />
-        <span className="n">{shown.length > 0 ? `Nothing due yet. ${shown.length} later today` : 'Nothing waiting around the house'}</span>
+        <span className="n">{shown.length > 0 ? `Nothing due yet. ${shown.length} later today` : 'Nothing due today'}</span>
       </div>
     );
   } else {
