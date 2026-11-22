@@ -20,7 +20,7 @@ export interface RecentState {
 /** How often the list is read while the Shelf is visible, and on window focus. */
 export const RECENT_POLL_MS = 60_000;
 /** Files drawn. */
-export const RECENT_SHOWN = 5;
+export const RECENT_SHOWN = 20;
 
 const clock = reviewNow ?? (() => Date.now());
 

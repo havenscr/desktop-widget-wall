@@ -1,4 +1,4 @@
-//! Wall 2 Shelf recent files: the last five files the user opened, from the Windows Recent folder.
+//! Wall 2 Shelf recent files: the last 20 files the user opened, from the Windows Recent folder.
 //!
 //! What the page can and cannot do:
 //! - The page asks for a list and gets, per file, an opaque id (a hash of its path, the time it
@@ -13,7 +13,7 @@
 //!   the list is built and again at the moment of an `open` or a `folder`.
 //! - `open` is the default app (the opener plugin, no shell, no arguments); `folder` is
 //!   `explorer.exe /select,` and the quoted path (the captures module's helper).
-//! - At most 5 files are returned. Nothing is logged: no path, no name.
+//! - At most 20 files are returned. Nothing is logged: no path, no name.
 //!
 //! Errors are fixed words: `failed`, `missing` (the id or the file is gone), `refused` (a path
 //! that does not pass), `forbidden` (the wrong window).
@@ -27,7 +27,7 @@ use std::sync::Mutex;
 use tauri_plugin_opener::OpenerExt;
 
 /// Files returned to the page.
-const SHOWN: usize = 5;
+const SHOWN: usize = 20;
 /// Shortcuts asked of the reader: well over `SHOWN`, because every target not on the allowlist
 /// is filtered out afterwards and must not starve the card. The reader caches each shortcut.
 const READ: usize = 200;
@@ -179,7 +179,7 @@ fn check(label: &str) -> Result<(), String> {
     crate::wall2_meet::require_wall2(label)
 }
 
-/// The last five files opened, newest first.
+/// The last 20 files opened, newest first.
 #[tauri::command]
 pub async fn wall2_recent_files(window: tauri::WebviewWindow) -> Result<Vec<RecentEntry>, String> {
     check(window.label())?;
@@ -266,22 +266,24 @@ mod tests {
     }
 
     #[test]
-    fn five_allowed_files_are_found_behind_forty_refused_ones() {
+    fn twenty_allowed_files_are_found_behind_forty_refused_ones() {
         let mut files: Vec<RecentFileInfo> = (0..40)
             .map(|i| info(&format!(r"C:\Docs\x{i}.{}", REFUSED_EXTS[i % REFUSED_EXTS.len()]), &format!("2026-11-20T10:{:02}:00Z", i + 10)))
             .collect();
-        files.extend((0..5).map(|i| info(&format!(r"C:\Docs\ok{i}.pdf"), &format!("2026-11-10T10:0{i}:00Z"))));
+        files.extend((0..20).map(|i| info(&format!(r"C:\Docs\ok{i}.pdf"), &format!("2026-11-10T10:{:02}:00Z", i))));
         let out = shape(&files, &exists);
-        assert_eq!(out.len(), 5);
+        assert_eq!(out.len(), 20);
         assert!(out.iter().all(|(e, _)| e.name.starts_with("ok")));
     }
 
     #[test]
-    fn the_newest_five_come_back_newest_first() {
-        let files: Vec<RecentFileInfo> = (1..=8).map(|i| info(&format!(r"C:\Docs\f{i}.txt"), &format!("2026-11-1{i}T10:00:00Z"))).collect();
+    fn the_newest_twenty_come_back_newest_first() {
+        let files: Vec<RecentFileInfo> = (1..=25).map(|i| info(&format!(r"C:\Docs\f{i}.txt"), &format!("2026-10-{:02}T10:00:00Z", i))).collect();
         let out = shape(&files, &exists);
         let names: Vec<&str> = out.iter().map(|(e, _)| e.name.as_str()).collect();
-        assert_eq!(names, ["f8.txt", "f7.txt", "f6.txt", "f5.txt", "f4.txt"]);
+        assert_eq!(out.len(), 20);
+        assert_eq!(names[..3], ["f25.txt", "f24.txt", "f23.txt"]);
+        assert_eq!(names[19], "f6.txt");
         assert!(out[0].0.modified > out[1].0.modified);
     }
 
