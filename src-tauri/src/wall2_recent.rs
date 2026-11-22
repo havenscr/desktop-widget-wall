@@ -226,13 +226,27 @@ impl PreviewCache {
 
 static PREVIEWS: Mutex<PreviewCache> = Mutex::new(PreviewCache::new(PREVIEW_KEPT));
 
-/// Blue, green, red, alpha (as Windows bitmaps hold pixels) to red, green, blue, alpha. A bitmap
+/// Blue, green, red, alpha (as Windows bitmaps hold pixels) to red, green, blue, alpha. Shell
+/// thumbnails can be premultiplied, so a colour under partial alpha is divided back out. A bitmap
 /// whose alpha is zero everywhere has no alpha channel, so it is drawn opaque.
 pub(crate) fn bgra_to_rgba(px: &[u8]) -> Vec<u8> {
     let opaque = px.chunks_exact(4).all(|p| p[3] == 0);
     let mut out = Vec::with_capacity(px.len());
+    let un = |c: u8, a: u8| -> u8 {
+        if a == 0 || a == 255 {
+            c
+        } else {
+            ((c as u32 * 255 + a as u32 / 2) / a as u32).min(255) as u8
+        }
+    };
     for p in px.chunks_exact(4) {
-        out.extend_from_slice(&[p[2], p[1], p[0], if opaque { 255 } else { p[3] }]);
+        if opaque {
+            out.extend_from_slice(&[p[2], p[1], p[0], 255]);
+        } else if p[3] == 0 {
+            out.extend_from_slice(&[0, 0, 0, 0]);
+        } else {
+            out.extend_from_slice(&[un(p[2], p[3]), un(p[1], p[3]), un(p[0], p[3]), p[3]]);
+        }
     }
     out
 }
@@ -563,7 +577,22 @@ mod tests {
 
     #[test]
     fn bgra_becomes_rgba() {
-        assert_eq!(bgra_to_rgba(&[1, 2, 3, 200, 10, 20, 30, 255]), vec![3, 2, 1, 200, 30, 20, 10, 255]);
+        assert_eq!(bgra_to_rgba(&[10, 20, 30, 255]), vec![30, 20, 10, 255]);
+    }
+
+    #[test]
+    fn partial_alpha_is_unpremultiplied() {
+        // half alpha: 64 over 128 is 127.5, rounds to 128
+        assert_eq!(bgra_to_rgba(&[0, 32, 64, 128, 9, 9, 9, 255]), vec![128, 64, 0, 128, 9, 9, 9, 255]);
+        // alpha 1: colour clamps at 255
+        assert_eq!(bgra_to_rgba(&[5, 1, 0, 1, 9, 9, 9, 255]), vec![0, 255, 255, 1, 9, 9, 9, 255]);
+        // alpha 254
+        assert_eq!(bgra_to_rgba(&[254, 0, 0, 254, 9, 9, 9, 255]), vec![0, 0, 255, 254, 9, 9, 9, 255]);
+    }
+
+    #[test]
+    fn zero_alpha_pixel_keeps_colour_zero_beside_a_visible_one() {
+        assert_eq!(bgra_to_rgba(&[7, 8, 9, 0, 1, 2, 3, 255]), vec![0, 0, 0, 0, 3, 2, 1, 255]);
     }
 
     #[test]

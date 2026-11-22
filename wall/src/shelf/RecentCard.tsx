@@ -36,6 +36,7 @@ interface Want {
 const STAGE_H = 720;
 const PREVIEW_GAP = 16;
 const PREVIEW_BOX_H = 360;
+const NONE_MS = 30_000;
 
 /** The row's place for its preview, from the real boxes, undone from the stage's scale. */
 function placeFor(row: HTMLElement): { left: number; top: number; host: Element | null } {
@@ -65,6 +66,7 @@ export function RecentCard() {
 
   const [shown, setShown] = useState<Shown | null>(null);
   const cache = useRef(new Map<string, string>());
+  const noneUntil = useRef(new Map<string, number>());
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const wanted = useRef<Want | null>(null);
   const busy = useRef(false);
@@ -89,6 +91,7 @@ export function RecentCard() {
         reveal(w, known);
         return;
       }
+      if ((noneUntil.current.get(w.file.id) ?? 0) > Date.now()) return;
       if (busy.current) return;
       busy.current = true;
       invoke<string>('wall2_recent_preview', { id: w.file.id }).then(
@@ -96,7 +99,8 @@ export function RecentCard() {
         () => 'none',
       ).then((url) => {
         busy.current = false;
-        cache.current.set(w.file.id, typeof url === 'string' ? url : 'none');
+        if (typeof url === 'string' && url.startsWith('data:image/')) cache.current.set(w.file.id, url);
+        else noneUntil.current.set(w.file.id, Date.now() + NONE_MS);
         if (!alive.current) return;
         const now = wanted.current;
         if (now) fetchFor(now);
@@ -111,6 +115,11 @@ export function RecentCard() {
     wanted.current = null;
     setShown(null);
   }, []);
+
+  const shownId = shown?.id;
+  useEffect(() => {
+    if (shownId !== undefined && !items.some((f) => f.id === shownId)) hide();
+  }, [items, shownId, hide]);
 
   const rest = (f: RecentFile, row: HTMLElement, delay: number) => {
     hide();
