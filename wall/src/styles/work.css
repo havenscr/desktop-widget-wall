@@ -748,7 +748,7 @@
   font-size: 27px;
 }
 
-/* Right wing: Due today, as the concept's .tk3 rows (70 px tall: 2 px each, 6 in all, go to the deck's taller keys). */
+/* Right wing: Due today, as .tk3 rows on Home's 40 px pitch (rule inside), five in view. */
 .tasks {
   display: flex;
   flex-direction: column;
@@ -818,13 +818,13 @@
   display: flex;
   flex-direction: column;
   position: relative;
-  /* Three rows (70 px and a 1 px rule each) in view, the rest a scroll away; the page never scrolls with it. */
-  max-height: 213px;
+  /* Five rows (40 px each, rule inside) in view, the rest a scroll away; the page never scrolls with it. */
+  max-height: 200px;
   overflow-x: hidden;
   overflow-y: hidden;
   overscroll-behavior: contain;
 }
-/* More than three rows: the wheel scrolls the block and a calm 6 px bar shows (it takes the 6 px the padding held). */
+/* More than five rows: the wheel scrolls the block and a calm 6 px bar shows (it takes the 6 px the padding held). */
 .tasks-list.scrolls {
   overflow-y: scroll;
   padding-right: 0;
@@ -919,25 +919,24 @@
   flex: none;
 }
 .tk3 {
+  box-sizing: border-box;
   display: flex;
   align-items: center;
-  height: 70px;
+  gap: 12px;
+  height: 40px;
   border-bottom: 1px solid var(--line);
   transition: opacity 600ms ease;
 }
-.tk3.done {
-  opacity: 0.35;
-}
 .tk3.done .n {
   text-decoration: line-through;
+  color: var(--faint);
 }
 .task-check {
-  width: 72px;
-  height: 72px;
-  margin-left: -22px;
+  width: 52px;
+  height: 40px;
   flex: none;
   display: grid;
-  place-items: center;
+  place-items: center start;
 }
 .task-check:focus-visible,
 .tk-main:focus-visible {
@@ -970,9 +969,9 @@
   height: 100%;
   display: flex;
   align-items: center;
-  gap: 16px;
+  gap: 12px;
   text-align: left;
-  font: 400 25px/1.2 var(--body);
+  font: 400 22px/1.2 var(--body);
   -webkit-touch-callout: none;
   overflow: hidden;
 }
@@ -1793,7 +1792,7 @@
   gap: 16px;
 }
 .tasks .tick-wait {
-  font: 400 25px/1.2 var(--body);
+  font: 400 22px/1.2 var(--body);
 }
 .tk3.pending .n {
   text-decoration: none;

@@ -33,7 +33,8 @@ const task = (id: string, title: string, over: Record<string, unknown> = {}) => 
   ...over,
 });
 
-it('asks for the home tag, due today, with room for twenty and shows "N more can wait" under the rows', async () => {
+it('asks for the home tag, with room for twenty and shows "N more can wait" under the rows', async () => {
+  localStorage.setItem('wall.tasks.showLater', '1');
   const args: unknown[] = [];
   mocks.set('wall2_tasks_summary', (a) => {
     args.push(a);
@@ -44,7 +45,7 @@ it('asks for the home tag, due today, with room for twenty and shows "N more can
   });
   const { container } = render(<Chores />);
   await flush();
-  expect(args).toEqual([{ tag: 'home', due: 'today', limit: 20 }]);
+  expect(args).toEqual([{ tag: 'home', limit: 20 }]);
   expect([...container.querySelectorAll('.tk3 .n')].map((n) => n.textContent)).toEqual(['Bins out tonight', 'Order the furnace filter', 'Call the sweep']);
   expect([...container.querySelectorAll('.est')].map((n) => n.textContent)).toEqual(['7 PM', '15 m']);
   expect(screen.getByText('5 more can wait')).toBeTruthy();
@@ -216,9 +217,9 @@ it('a chore tick waits five seconds with Undo; Undo completes nothing', async ()
   render(<Chores />);
   await flush();
   fireEvent.click(screen.getByRole('button', { name: 'Done: Water the plants' }));
-  expect(screen.getByRole('button', { name: 'Undo: Water the plants' })).toBeTruthy();
+  expect(screen.getAllByRole('button', { name: 'Undo: Water the plants' }).length).toBe(2);
   await flush(2000);
-  fireEvent.click(screen.getByRole('button', { name: 'Undo: Water the plants' }));
+  fireEvent.click(screen.getAllByRole('button', { name: 'Undo: Water the plants' }).find((b) => b.classList.contains('tick-act'))!);
   await flush(TICK_UNDO_MS);
   expect(done).not.toHaveBeenCalled();
   expect(screen.getByRole('button', { name: 'Open Water the plants' })).toBeTruthy();
@@ -285,6 +286,7 @@ it('shows each chore\'s tags after the title and keeps the 62 px pill column on 
 });
 
 it('sets the pill column on the list: never under 62 px, and as wide as the widest pill', async () => {
+  localStorage.setItem('wall.tasks.showLater', '1');
   mocks.set('wall2_tasks_summary', () => ({
     next: [task('1', 'Pick up the dry cleaning', { due_at: '2026-11-12T03:30:00Z', est: '15' }), task('2', 'Sort the recycling', { est: null }), task('3', 'Water the plants')],
     remaining: 0,
@@ -328,89 +330,56 @@ it('the tags card opens when the row\'s title or tick takes keyboard focus, with
   }
 });
 
-it('Today only is on by default, shows "Nothing for today" when empty, and off reads everything', async () => {
-  const args: unknown[] = [];
-  mocks.set('wall2_tasks_summary', (a) => {
-    args.push(a);
-    return (a as { due?: string }).due ? { next: [], remaining: 0 } : { next: [task('1', 'Sort the recycling')], remaining: 0 };
-  });
+it('the Later today switch is off by default: a chore timed later today hides, and the switch shows it', async () => {
+  mocks.set('wall2_tasks_summary', () => ({ next: [task('1', 'Bins out tonight', { due_at: '2026-11-12T03:00:00Z' }), task('2', 'Sort the recycling')], remaining: 0 }));
   render(<Chores />);
   await flush();
-  const toggle = screen.getByRole('button', { name: 'Today only' });
-  expect(toggle.getAttribute('aria-pressed')).toBe('true');
-  expect(screen.getByText('Nothing for today')).toBeTruthy();
-  fireEvent.click(toggle);
-  await flush();
-  expect(toggle.getAttribute('aria-pressed')).toBe('false');
-  expect(args[args.length - 1]).toEqual({ tag: 'home', limit: 20 });
+  const sw = screen.getByRole('switch', { name: /later today/i });
+  expect(sw.getAttribute('aria-checked')).toBe('false');
+  expect(screen.queryByText('Today only')).toBeNull();
+  expect(screen.queryByText('Bins out tonight')).toBeNull();
   expect(screen.getByText('Sort the recycling')).toBeTruthy();
+  fireEvent.click(sw);
+  expect(sw.getAttribute('aria-checked')).toBe('true');
+  expect(localStorage.getItem('wall.tasks.showLater')).toBe('1');
+  expect(screen.getByText('Bins out tonight')).toBeTruthy();
 });
 
-it('remembers the Today only choice per viewer', async () => {
-  mocks.set('wall2_tasks_summary', () => ({ next: [], remaining: 0 }));
-  const first = render(<Chores />);
-  await flush();
-  fireEvent.click(screen.getByRole('button', { name: 'Today only' }));
-  first.unmount();
+it('says what waits when every chore is timed later today', async () => {
+  mocks.set('wall2_tasks_summary', () => ({ next: [task('1', 'Bins out tonight', { due_at: '2026-11-12T03:00:00Z' })], remaining: 0 }));
   render(<Chores />);
   await flush();
-  expect(screen.getByRole('button', { name: 'Today only' }).getAttribute('aria-pressed')).toBe('false');
-  expect(screen.getByText('Nothing waiting around the house')).toBeTruthy();
+  expect(screen.getByText('Nothing due yet. 1 later today')).toBeTruthy();
 });
 
-it('flipping Today only clears the old rows while the new read is out', async () => {
-  let release: (v: unknown) => void = () => {};
-  mocks.set('wall2_tasks_summary', (a) =>
-    (a as { due?: string }).due
-      ? { next: [task('1', 'Due today chore')], remaining: 2 }
-      : new Promise((res) => {
-          release = res;
-        }),
-  );
+it('the switch and its setting are shared: another list flipping it updates Home', async () => {
+  mocks.set('wall2_tasks_summary', () => ({ next: [task('1', 'Bins out tonight', { due_at: '2026-11-12T03:00:00Z' }), task('2', 'Sort the recycling')], remaining: 0 }));
   render(<Chores />);
   await flush();
-  expect(screen.getByText('Due today chore')).toBeTruthy();
-  fireEvent.click(screen.getByRole('button', { name: 'Today only' }));
-  await flush();
-  expect(screen.queryByText('Due today chore')).toBeNull();
-  expect(screen.queryByText('2 more can wait')).toBeNull();
-  expect(screen.getByText('Loading')).toBeTruthy();
-  await act(async () => {
-    release({ next: [task('2', 'Any day chore')], remaining: 0 });
-  });
-  await flush();
-  expect(screen.getByText('Any day chore')).toBeTruthy();
+  expect(screen.queryByText('Bins out tonight')).toBeNull();
+  const { useShowLater } = await import('../tasks/showLater');
+  const { result } = (await import('@testing-library/react')).renderHook(() => useShowLater());
+  act(() => result.current[1](true));
+  expect(screen.getByText('Bins out tonight')).toBeTruthy();
 });
 
-it('a read for the old mode that lands late is ignored', async () => {
-  let releaseOld: (v: unknown) => void = () => {};
-  mocks.set('wall2_tasks_summary', (a) =>
-    (a as { due?: string }).due
-      ? new Promise((res) => {
-          releaseOld = res;
-        })
-      : { next: [task('2', 'Any day chore')], remaining: 0 },
-  );
+it('clicking the ticked circle puts the chore back; a second click of a double click does nothing', async () => {
+  mocks.set('wall2_tasks_summary', () => ({ next: [task('w', 'Water the plants')], remaining: 0 }));
+  const done = vi.fn();
+  mocks.set('wall2_task_done', done);
   render(<Chores />);
   await flush();
-  fireEvent.click(screen.getByRole('button', { name: 'Today only' }));
-  await flush();
-  expect(screen.getByText('Any day chore')).toBeTruthy();
-  await act(async () => {
-    releaseOld({ next: [task('1', 'Due today chore')], remaining: 0 });
-  });
-  await flush();
-  expect(screen.queryByText('Due today chore')).toBeNull();
-  expect(screen.getByText('Any day chore')).toBeTruthy();
-});
-
-it('a failed read in the new mode shows the error state, never the old rows', async () => {
-  mocks.set('wall2_tasks_summary', (a) => ((a as { due?: string }).due ? { next: [task('1', 'Due today chore')], remaining: 0 } : Promise.reject(new Error('x'))));
-  render(<Chores />);
-  await flush();
-  expect(screen.getByText('Due today chore')).toBeTruthy();
-  fireEvent.click(screen.getByRole('button', { name: 'Today only' }));
-  await flush();
-  expect(screen.queryByText('Due today chore')).toBeNull();
-  expect(screen.queryByText('Loading')).toBeNull();
+  fireEvent.click(screen.getByRole('button', { name: 'Done: Water the plants' }), { detail: 1 });
+  const circle = () => screen.getAllByRole('button', { name: 'Undo: Water the plants' }).find((b) => b.classList.contains('ck')) as HTMLButtonElement;
+  expect(circle().disabled).toBe(false);
+  fireEvent.click(circle(), { detail: 2 });
+  expect(screen.queryByRole('button', { name: 'Open Water the plants' })).toBeNull();
+  fireEvent.click(circle(), { detail: 1 });
+  expect(screen.getByRole('button', { name: 'Open Water the plants' })).toBeTruthy();
+  await flush(TICK_UNDO_MS);
+  expect(done).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole('button', { name: 'Done: Water the plants' }));
+  await flush(TICK_UNDO_MS);
+  expect(done).toHaveBeenCalledWith({ id: 'w' });
+  expect((screen.queryByRole('button', { name: 'Done: Water the plants' }) as HTMLButtonElement | null)?.disabled ?? true).toBe(true);
 });

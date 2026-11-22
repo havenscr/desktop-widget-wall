@@ -1,16 +1,17 @@
 import { IconCheck } from '@tabler/icons-react';
-import { useLayoutEffect, useRef, useState } from 'react';
+import { useLayoutEffect, useRef } from 'react';
 import { tip } from '../ui/HoverTip';
 import { reviewNow } from '../ui/reviewClock';
 import { useRemeasure } from '../ui/useRemeasure';
-import { openTask, type TaskItem } from '../tasks/model';
-import { usePendingTicks } from '../tasks/pendingTick';
+import { dueLaterToday, openTask, type TaskItem } from '../tasks/model';
+import { UNDO_TIP, undoClick, usePendingTicks } from '../tasks/pendingTick';
+import { LaterSwitch, useShowLater } from '../tasks/showLater';
 import { TaskTags, tagsFocus } from '../tasks/TaskTags';
 import { TickWait } from '../tasks/TaskCard';
 import { clockText } from './sunLine';
 import { useShield } from './NetworkTile';
 import { alertsOpen } from './shieldModel';
-import { readTodayOnly, useChores, writeTodayOnly } from './useChores';
+import { useChores } from './useChores';
 
 /** Rows in view: five, or three while the network card is tall with open alerts. */
 export const ROWS_QUIET = 5;
@@ -49,12 +50,14 @@ export function chorePill(task: Pick<TaskItem, 'due_at' | 'due_is_all_day' | 'es
  * rest as icon dots) and keeps a fixed 62 px column at the right for its pill.
  */
 export function Chores() {
-  const [todayOnly, setTodayOnly] = useState(readTodayOnly);
-  const { status, tasks, remaining, marks, hidden, complete } = useChores(todayOnly);
+  const [showLater] = useShowLater();
+  const { status, tasks, remaining, marks, hidden, complete } = useChores();
   const fit = alertsOpen(useShield()) ? ROWS_ALERTS : ROWS_QUIET;
   const ticks = usePendingTicks(complete);
   const now = reviewNow ? reviewNow() : Date.now();
-  const rows = tasks.filter((t) => !hidden.has(t.id));
+  const shown = tasks.filter((t) => !hidden.has(t.id));
+  // Chores timed later today stay out of the list until the Later today switch is on (or their time comes).
+  const rows = showLater ? shown : shown.filter((t) => !dueLaterToday(t, new Date(now)));
   // The pill column: as wide as the widest pill (never under 62 px), measured with every pill at its natural
   // width, then set on the list as `--pill-w` for every pill and every empty column.
   const listRef = useRef<HTMLDivElement>(null);
@@ -81,14 +84,14 @@ export function Chores() {
     body = <div className="s">Loading</div>;
   } else if (status === 'error' && tasks.length === 0) {
     body = <div className="s warn-text">Task app not reachable</div>;
-  } else if (rows.length === 0 && tasks.length > 0) {
+  } else if (shown.length === 0 && tasks.length > 0) {
     // Every shown chore is ticked: the next ones arrive with the refresh.
     body = <div className="s">{stale ? 'Could not load the next ones' : 'Loading the next ones'}</div>;
   } else if (rows.length === 0) {
     body = (
       <div className="tk3 clear">
         <IconCheck size={28} stroke={2} aria-hidden="true" />
-        <span className="n">{todayOnly ? 'Nothing for today' : 'Nothing waiting around the house'}</span>
+        <span className="n">{shown.length > 0 ? `Nothing due yet. ${shown.length} later today` : 'Nothing waiting around the house'}</span>
       </div>
     );
   } else {
@@ -105,10 +108,10 @@ export function Chores() {
               <button
                 type="button"
                 className="ck"
-                aria-label={`Done: ${t.title}`}
-                disabled={ticked}
-                {...tagsFocus(t.tags)}
-                onClick={() => (mark === 'failed' ? complete(t.id) : ticks.tick(t.id))}
+                aria-label={pending ? `Undo: ${t.title}` : `Done: ${t.title}`}
+                disabled={ticked && !pending}
+                {...(pending ? tip(UNDO_TIP) : tagsFocus(t.tags))}
+                onClick={pending ? undoClick(() => ticks.undo(t.id)) : () => (mark === 'failed' ? complete(t.id) : ticks.tick(t.id))}
               >
                 <span className="ck-ring" aria-hidden="true">
                   {ticked && <IconCheck size={20} stroke={2.4} />}
@@ -148,18 +151,7 @@ export function Chores() {
         <span className="k">Around the house</span>
         <span className="chores-side">
           {stale && <span className="xs warn-text">Task app not reachable</span>}
-          <button
-            type="button"
-            className={todayOnly ? 'chores-today on' : 'chores-today'}
-            aria-pressed={todayOnly}
-            onClick={() => {
-              writeTodayOnly(!todayOnly);
-              setTodayOnly(!todayOnly);
-            }}
-            {...tip(todayOnly ? 'Showing what is due today or overdue. Click to show everything.' : 'Showing everything. Click to show only what is due today or overdue.')}
-          >
-            Today only
-          </button>
+          {status !== 'unconfigured' && status !== 'loading' && <LaterSwitch />}
         </span>
       </div>
       {body}

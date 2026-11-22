@@ -41,6 +41,12 @@ function measureShelf() {
   }
   const rfRows = root.querySelectorAll('.rf-card .rf-row').length;
   if (rf && rfRows !== 5 && rfRows !== 0) fails.push('shelf: ' + rfRows + ' recent file rows, expected 5');
+  // The picked list uses Home's 40 px rows and carries the shared Later today switch in its heading.
+  const taskRows = [...root.querySelectorAll('.right-wing .tasks .tk3')];
+  if (taskRows.length) {
+    if (taskRows.some((li) => Math.abs(li.getBoundingClientRect().height - 40) > 0.6)) fails.push('shelf: the task rows are not 40 px tall');
+    if (!root.querySelector('.right-wing .tasks .od-sw')) fails.push('shelf: the Later today switch is missing from the picked list');
+  }
   const small = [];
   for (const el of root.querySelectorAll('.shelf-centre *, .right-wing .tasks *, .rf-card *')) {
     const own = [...el.childNodes].some((n) => n.nodeType === 3 && n.textContent.trim());
@@ -66,7 +72,7 @@ function measureShelf() {
 export default {
   name: 'shelf',
   gallery: { states: [
-    state('shelf: three lists, first picked', LISTS, ['Captures', 'Region', 'Screen', 'GIF', 'Record', 'Text (OCR)', 'History', 'Tasks (To-Do)', 'Tax / Business', 'House, garden', 'Always here', 'Recent files', 'Quarterly review.pptx', 'Budget 2027.xlsx', 'Meeting notes.docx', 'Yesterday']),
+    state('shelf: three lists, first picked', LISTS, ['Captures', 'Region', 'Screen', 'GIF', 'Record', 'Text (OCR)', 'History', 'Tasks (To-Do)', 'Tax / Business', 'House, garden', 'Later today', 'Always here', 'Recent files', 'Quarterly review.pptx', 'Budget 2027.xlsx', 'Meeting notes.docx', 'Yesterday']),
     state('shelf: lists from the task app', 'x=1', ['Tasks (To-Do)', 'Tax / Business', 'House, garden', 'Region']),
     state('shelf: recent files empty', LISTS + '&recent=empty', ['Recent files', 'No recent files']),
     state('shelf: recent files unavailable', LISTS + '&recent=down', ['Recent files', 'Recent files unavailable']),

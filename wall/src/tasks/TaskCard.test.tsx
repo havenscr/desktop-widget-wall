@@ -285,7 +285,7 @@ it('Next up with no tasks at all reads Due today with Nothing due', async () => 
   expect(screen.getByText('Nothing due today')).toBeTruthy();
 });
 
-it('the list scrolls only with more than three rows, and the arrow keys and Page keys move it by rows', async () => {
+it('the list scrolls only with more than five rows, and the arrow keys and Page keys move it by rows', async () => {
   const many = Array.from({ length: 12 }, (_, i) => task(`r${i}`, `Row ${i}`));
   mocks.set('wall2_tasks_summary', async () => ({ next: many, remaining: 0, dueTomorrow: { count: 0, estMinutes: 0 }, dueToday: 12 }));
   const r = render(<TaskCard />);
@@ -293,23 +293,23 @@ it('the list scrolls only with more than three rows, and the arrow keys and Page
   const list = r.container.querySelector('.tasks-list') as HTMLUListElement;
   expect(list.classList.contains('scrolls')).toBe(true);
   expect(r.container.querySelectorAll('.tk3').length).toBe(12);
-  // jsdom has no layout: 12 rows of 71 px in a 213 px view.
-  Object.defineProperty(list, 'clientHeight', { value: 213, configurable: true });
-  Object.defineProperty(list, 'scrollHeight', { value: 852, configurable: true });
+  // jsdom has no layout: 12 rows of 40 px in a 200 px view.
+  Object.defineProperty(list, 'clientHeight', { value: 200, configurable: true });
+  Object.defineProperty(list, 'scrollHeight', { value: 480, configurable: true });
   fireEvent.keyDown(list, { key: 'ArrowDown' });
-  expect(list.scrollTop).toBe(71);
+  expect(list.scrollTop).toBe(40);
   fireEvent.keyDown(list, { key: 'PageDown' });
-  expect(list.scrollTop).toBe(71 + 213);
+  expect(list.scrollTop).toBe(40 + 200);
   fireEvent.keyDown(list, { key: 'ArrowUp' });
-  expect(list.scrollTop).toBe(71 + 213 - 71);
+  expect(list.scrollTop).toBe(40 + 200 - 40);
   fireEvent.keyDown(list, { key: 'a' });
-  expect(list.scrollTop).toBe(71 + 213 - 71);
+  expect(list.scrollTop).toBe(40 + 200 - 40);
   // Never past the ends.
   fireEvent.keyDown(list, { key: 'PageUp' });
   fireEvent.keyDown(list, { key: 'PageUp' });
   expect(list.scrollTop).toBe(0);
   for (let i = 0; i < 12; i++) fireEvent.keyDown(list, { key: 'PageDown' });
-  expect(list.scrollTop).toBe(852 - 213);
+  expect(list.scrollTop).toBe(480 - 200);
 });
 
 it('a held arrow key adds to where the last step is heading, not to a half-finished smooth scroll', async () => {
@@ -318,8 +318,8 @@ it('a held arrow key adds to where the last step is heading, not to a half-finis
   const r = render(<TaskCard />);
   await flush();
   const list = r.container.querySelector('.tasks-list') as HTMLUListElement;
-  Object.defineProperty(list, 'clientHeight', { value: 213, configurable: true });
-  Object.defineProperty(list, 'scrollHeight', { value: 852, configurable: true });
+  Object.defineProperty(list, 'clientHeight', { value: 200, configurable: true });
+  Object.defineProperty(list, 'scrollHeight', { value: 480, configurable: true });
   // A smooth scroll that has not moved yet: scrollTop stays 0 while the key repeats.
   const targets: number[] = [];
   (list as unknown as { scrollTo: (o: { top: number; behavior: string }) => void }).scrollTo = (o) => {
@@ -327,12 +327,12 @@ it('a held arrow key adds to where the last step is heading, not to a half-finis
     expect(o.behavior).toBe('smooth');
   };
   for (let i = 0; i < 4; i++) fireEvent.keyDown(list, { key: 'ArrowDown' });
-  expect(targets).toEqual([71, 142, 213, 284]);
+  expect(targets).toEqual([40, 80, 120, 160]);
   expect(list.scrollTop).toBe(0);
 });
 
-it('three rows or fewer do not scroll', async () => {
-  setList(() => [task('a', 'One'), task('b', 'Two'), task('c', 'Three')]);
+it('five rows or fewer do not scroll', async () => {
+  setList(() => ['a', 'b', 'c', 'd', 'e'].map((id) => task(id, id)));
   const r = render(<TaskCard />);
   await flush();
   expect(r.container.querySelector('.tasks-list')?.classList.contains('scrolls')).toBe(false);
@@ -403,24 +403,24 @@ it('a refresh in the middle of a key scroll carries the scroll on to the moved t
   const el = r.container.querySelector('.tasks-list') as HTMLUListElement;
   const pos = (li: Element) => [...(li.parentElement?.children ?? [])].indexOf(li);
   vi.spyOn(HTMLElement.prototype, 'offsetTop', 'get').mockImplementation(function (this: HTMLElement) {
-    return this.classList.contains('tk3') ? pos(this) * 71 : 0;
+    return this.classList.contains('tk3') ? pos(this) * 40 : 0;
   });
   vi.spyOn(HTMLElement.prototype, 'offsetHeight', 'get').mockImplementation(function (this: HTMLElement) {
-    return this.classList.contains('tk3') ? 71 : 0;
+    return this.classList.contains('tk3') ? 40 : 0;
   });
-  Object.defineProperty(el, 'clientHeight', { value: 213, configurable: true });
+  Object.defineProperty(el, 'clientHeight', { value: 200, configurable: true });
   Object.defineProperty(el, 'scrollHeight', { value: 1000, configurable: true });
   const calls: { top: number; behavior: string }[] = [];
   (el as unknown as { scrollTo: (o: { top: number; behavior: string }) => void }).scrollTo = (o) => calls.push(o);
-  el.scrollTop = 142;
+  el.scrollTop = 80;
   fireEvent.scroll(el);
   await flush(REFRESH_MS - 100);
   fireEvent.keyDown(el, { key: 'ArrowDown' });
-  expect(calls).toEqual([{ top: 213, behavior: 'smooth' }]);
+  expect(calls).toEqual([{ top: 120, behavior: 'smooth' }]);
   // A refresh puts a row above the view while the smooth scroll is on its way.
   list = [task('new', 'New overdue'), ...list];
   await flush(150);
-  expect(calls).toEqual([{ top: 213, behavior: 'smooth' }, { top: 284, behavior: 'smooth' }]);
+  expect(calls).toEqual([{ top: 120, behavior: 'smooth' }, { top: 160, behavior: 'smooth' }]);
   expect(el.style.scrollBehavior).toBe('');
 });
 
@@ -549,9 +549,9 @@ it('a tick waits five seconds with Done and Undo before completing', async () =>
   expect(row.className).toContain('pending');
   expect(row.textContent).toContain('Done.');
   expect(row.querySelector('.tick-bar')).not.toBeNull();
-  expect(screen.getByRole('button', { name: 'Undo: First' })).toBeTruthy();
-  // One pending tick per row: the circle is off while it waits.
-  expect((screen.getByLabelText('Mark done: First') as HTMLButtonElement).disabled).toBe(true);
+  // The circle turns into an Undo while it waits, beside the Undo text button.
+  expect(screen.getAllByRole('button', { name: 'Undo: First' }).length).toBe(2);
+  expect((screen.getByLabelText('Mark done: Second') as HTMLButtonElement).disabled).toBe(false);
   await flush(TICK_UNDO_MS - 100);
   expect(done).not.toHaveBeenCalled();
   await flush(100);
@@ -567,7 +567,7 @@ it('Undo puts the row back and completes nothing', async () => {
   await flush();
   fireEvent.click(screen.getByLabelText('Mark done: First'));
   await flush(3000);
-  fireEvent.click(screen.getByRole('button', { name: 'Undo: First' }));
+  fireEvent.click(screen.getAllByRole('button', { name: 'Undo: First' }).find((b) => b.classList.contains('tick-act'))!);
   const row = screen.getByText('First').closest('li')!;
   expect(row.className).not.toContain('pending');
   expect(row.textContent).not.toContain('Done.');
@@ -629,13 +629,13 @@ it('the page going hidden (a screen lock) does not cut the undo window short; th
   await flush();
   fireEvent.click(screen.getByLabelText('Mark done: First'));
   fireEvent.click(screen.getByLabelText('Mark done: Second'));
-  fireEvent.click(screen.getByRole('button', { name: 'Undo: Second' }));
+  fireEvent.click(screen.getAllByRole('button', { name: 'Undo: Second' })[0]!);
   Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'hidden' });
   try {
     document.dispatchEvent(new Event('visibilitychange'));
     await flush(TICK_UNDO_MS - 1000);
     expect(done).not.toHaveBeenCalled();
-    expect(screen.getByRole('button', { name: 'Undo: First' })).toBeTruthy();
+    expect(screen.getAllByRole('button', { name: 'Undo: First' }).length).toBe(2);
     await flush(TICK_UNDO_MS);
   } finally {
     Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'visible' });
@@ -798,11 +798,58 @@ it('the Later today switch still works when storage throws', async () => {
   set.mockRestore();
 });
 
-it('a titled card gets no Later today switch', async () => {
-  setList(() => [task('b', 'Today one')]);
+it('a titled card (the Shelf) gets the Later today switch too, and it hides rows timed later today', async () => {
+  setList(() => [task('b', 'Today one'), { ...task('c', 'Later one'), due_at: new Date(2026, 10, 11, 15, 0, 0).toISOString() }]);
   render(<TaskCard title="Anything" />);
   await flush();
-  expect(screen.queryByRole('switch')).toBeNull();
+  expect(screen.getByRole('switch')).toBeTruthy();
+  expect(screen.queryByText('Later one')).toBeNull();
+  fireEvent.click(screen.getByRole('switch'));
+  expect(screen.getByText('Later one')).toBeTruthy();
+});
+
+it('clicking the ticked circle takes the tick back; a double click does not tick then undo; after the commit the circle is off', async () => {
+  setList(() => [task('a', 'First'), task('b', 'Second')]);
+  const done = vi.fn();
+  mocks.set('wall2_task_done', done);
+  render(<TaskCard />);
+  await flush();
+  // A fast double click: the second click (detail 2) is ignored, so the row stays ticked.
+  fireEvent.click(screen.getByLabelText('Mark done: First'), { detail: 1 });
+  fireEvent.click(screen.getByLabelText('Undo: First', { selector: '.task-check' }), { detail: 2 });
+  expect(screen.getByText('First').closest('li')!.className).toContain('pending');
+  // A later single click puts it back.
+  fireEvent.click(screen.getByLabelText('Undo: First', { selector: '.task-check' }), { detail: 1 });
+  expect(screen.getByText('First').closest('li')!.className).not.toContain('pending');
+  expect((screen.getByLabelText('Mark done: First') as HTMLButtonElement).disabled).toBe(false);
+  await flush(TICK_UNDO_MS * 2);
+  expect(done).not.toHaveBeenCalled();
+  // Ticked and left alone: committed, and the circle is off.
+  fireEvent.click(screen.getByLabelText('Mark done: Second'));
+  await flush(TICK_UNDO_MS);
+  expect(done).toHaveBeenCalledWith({ id: 'b' });
+  expect((screen.getByLabelText('Mark done: Second') as HTMLButtonElement).disabled).toBe(true);
+});
+
+it('the ticked circle has a hover tip saying what a click does', async () => {
+  setList(() => [task('a', 'First')]);
+  render(
+    <>
+      <TaskCard />
+      <HoverTipLayer />
+    </>,
+  );
+  await flush();
+  fireEvent.click(screen.getByLabelText('Mark done: First'));
+  fireEvent.mouseEnter(screen.getByLabelText('Undo: First', { selector: '.task-check' }));
+  await flush(1000);
+  expect(screen.getByText('Put it back; nothing is saved yet')).toBeTruthy();
+});
+
+it('Work and Shelf rows are Home-sized: five rows in view', async () => {
+  const { WORK_ROWS, WORK_ROW_PX } = await import('./TaskCard');
+  expect(WORK_ROWS).toBe(5);
+  expect(WORK_ROW_PX).toBe(40);
 });
 
 it('Next up mode shows no Later today switch, even with no rows at all', async () => {

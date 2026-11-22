@@ -7,26 +7,6 @@ import { useVisible } from '../ui/useVisible';
 /** Home lists up to twenty chores (five rows in view, the rest a scroll away). */
 export const CHORES_LIMIT = 20;
 export const CHORES_ARGS = { tag: 'home', limit: CHORES_LIMIT } as const;
-/** With "Today only" on: the same read plus the task app's due filter (due today or overdue; undated tasks are never in it). */
-export const CHORES_TODAY_ARGS = { tag: 'home', due: 'today', limit: CHORES_LIMIT } as const;
-
-/** "Today only" on Around the house is remembered per viewer; on unless stored as off. */
-export const TODAY_ONLY_KEY = 'wall2-chores-today-only';
-export function readTodayOnly(): boolean {
-  try {
-    return localStorage.getItem(TODAY_ONLY_KEY) !== 'off';
-  } catch {
-    return true;
-  }
-}
-export function writeTodayOnly(on: boolean): void {
-  try {
-    localStorage.setItem(TODAY_ONLY_KEY, on ? 'on' : 'off');
-  } catch {
-    /* storage can be blocked; the choice is a convenience */
-  }
-}
-
 export interface ChoresState {
   status: 'loading' | 'ready' | 'unconfigured' | 'error';
   tasks: TaskItem[];
@@ -50,7 +30,7 @@ interface Summary {
  * the save settled may bring a ticked row back. A failed save brings the row back
  * marked "failed".
  */
-export function useChores(todayOnly = false): ChoresState {
+export function useChores(): ChoresState {
   const visible = useVisible();
   const [status, setStatus] = useState<ChoresState['status']>('loading');
   const [tasks, setTasks] = useState<TaskItem[]>([]);
@@ -58,8 +38,6 @@ export function useChores(todayOnly = false): ChoresState {
   const [marks, setMarks] = useState<Record<string, RowMark>>({});
   const [hidden, setHidden] = useState<ReadonlySet<string>>(new Set());
   const mounted = useRef(false);
-  const todayRef = useRef(todayOnly);
-  todayRef.current = todayOnly;
   const inFlight = useRef(false);
   const queued = useRef(false);
   const timers = useRef(new Set<ReturnType<typeof setTimeout>>());
@@ -82,11 +60,9 @@ export function useChores(todayOnly = false): ChoresState {
 
   const read = useCallback(async () => {
     const mine = ++started.current;
-    const mode = todayRef.current;
     try {
-      const r = await invoke<Summary>('wall2_tasks_summary', { ...(mode ? CHORES_TODAY_ARGS : CHORES_ARGS) });
-      // A read for the other mode (the toggle flipped while it ran) is dropped.
-      if (!mounted.current || mode !== todayRef.current) return;
+      const r = await invoke<Summary>('wall2_tasks_summary', { ...CHORES_ARGS });
+      if (!mounted.current) return;
       const fresh = Array.isArray(r?.next) ? r.next.slice(0, CHORES_LIMIT) : [];
       const settled: string[] = [];
       for (const [id, c] of completed.current) {
@@ -105,7 +81,7 @@ export function useChores(todayOnly = false): ChoresState {
       setMarks((m) => Object.fromEntries(Object.entries(m).filter(([id]) => ids.has(id) && !settled.includes(id))));
       setStatus('ready');
     } catch (e) {
-      if (!mounted.current || mode !== todayRef.current) return;
+      if (!mounted.current) return;
       const text = e instanceof Error ? e.message : String(e);
       setStatus(text === NOT_CONFIGURED ? 'unconfigured' : 'error');
     }
@@ -128,25 +104,12 @@ export function useChores(todayOnly = false): ChoresState {
     }
   }, [read]);
 
-  // A flipped toggle clears the other mode's rows at once: the card shows its loading state until the new read lands.
-  const shownMode = useRef(todayOnly);
-  useEffect(() => {
-    if (shownMode.current === todayOnly) return;
-    shownMode.current = todayOnly;
-    // The new mode's read must not wait behind an older read of the other mode.
-    inFlight.current = false;
-    queued.current = false;
-    setTasks([]);
-    setRemaining(0);
-    setStatus('loading');
-  }, [todayOnly]);
-
   useEffect(() => {
     if (!visible) return;
     void refresh();
     const id = setInterval(() => void refresh(), REFRESH_MS);
     return () => clearInterval(id);
-  }, [visible, refresh, todayOnly]);
+  }, [visible, refresh]);
 
   const complete = useCallback(
     (id: string) => {
