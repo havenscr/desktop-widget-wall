@@ -313,8 +313,11 @@ export function tileLine(item: SpotifyItem): string {
   return kindLine(item);
 }
 
+/** The tall view opens by itself after the pointer has rested on the card this long. */
+export const TALL_OPEN_MS = 1500;
+
 /** The tall view closes by itself this long after the pointer has left the card. */
-export const TALL_CLOSE_MS = 15_000;
+export const TALL_CLOSE_MS = 1000;
 
 /** A player the owner picked in "Play on": the next Play goes there. An empty id is "this PC" (Spotify is started there). */
 export interface SpotifyTarget {

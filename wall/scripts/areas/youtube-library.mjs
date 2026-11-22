@@ -5,7 +5,7 @@
 const night = encodeURIComponent('2026-11-11T22:30:00-08:00');
 const day = '2026-11-11T10:24:00-08:00';
 const SWITCH = '.sp-switch button:nth-child(2)';
-const TALL = '.sp-grow';
+const TALL = 'grow';
 const TILE = '.yt-tile';
 const LIKED = '.sp-tabs button:nth-child(3)';
 const base = (extra) => `hz=unwind&at=${night}&clock=review&weather=ok&audio=demo&${extra}`;

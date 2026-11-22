@@ -1177,7 +1177,7 @@ async function render(cdp, base, s, file, ctl) {
     for (const step of [s.click ?? []].flat().flatMap((c) => c.split(' >> '))) {
       // A state shown just after a click (a task tick's Undo window). A string may chain steps with ` >> `.
       // `ctx:<selector>` right-clicks (opens the key picker), `hover:` moves the real pointer onto
-      // the element, `press:` also holds the button down there, `focus:` focuses it, `kbd:` presses
+      // the element, `press:` also holds the button down there, `focus:` focuses it, `grow` opens the music card's tall view, `kbd:` presses
       // Tab (so focus-visible applies) and then focuses it, anything else clicks.
       const pointer = /^(hover|press):/.exec(step);
       // watt drive-in: `drag:<selector>@x,y` presses on the element, carries it to (x, y) and lets go.
@@ -1191,6 +1191,17 @@ async function render(cdp, base, s, file, ctl) {
         for (let i = 1; i <= 8; i++) await to('Input.dispatchMouseEvent', { type: 'mouseMoved', x: x0 + ((x1 - x0) * i) / 8, y: y0 + ((y1 - y0) * i) / 8, button: 'left', buttons: 1 });
         await to('Input.dispatchMouseEvent', { type: 'mouseReleased', x: x1, y: y1, button: 'left', buttons: 0, clickCount: 1 });
         await to('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 2500, y: 40 });
+      } else if (step === 'grow') {
+        // The music card grows when the pointer rests on it: here the pointer is put on it (it stays there) and the empty part of the top row, the instant way in, is pressed.
+        const grown = await to('Runtime.evaluate', { expression: `(() => { const c = document.querySelector('.sp-card'); const t = c && c.querySelector('.sp-top'); if (!t) return false; c.dispatchEvent(new PointerEvent('pointerover', { bubbles: true })); t.click(); return true; })()`, returnByValue: true });
+        if (!grown.result.value) throw new Error('grow: .sp-card or .sp-top is missing');
+      } else if (step.startsWith('is:')) {
+        // is:<selector> fails the state unless that element is on the page (a state that page text cannot tell apart, such as the tall music card).
+        const found = await to('Runtime.evaluate', { expression: `!!document.querySelector(${JSON.stringify(step.slice(3))})`, returnByValue: true });
+        if (!found.result.value) throw new Error(`is: ${step.slice(3)} is not on the page`);
+      } else if (step.startsWith('wait:')) {
+        // wait:<ms> pauses (a timer the page runs on its own, such as the music card's 1.5 s rest).
+        await new Promise((r) => setTimeout(r, Number(step.slice(5))));
       } else if (step.startsWith('kbd:')) {
         await to('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Tab', code: 'Tab', windowsVirtualKeyCode: 9 });
         await to('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Tab', code: 'Tab', windowsVirtualKeyCode: 9 });
