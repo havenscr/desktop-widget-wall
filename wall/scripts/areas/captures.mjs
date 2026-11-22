@@ -98,6 +98,7 @@ export default {
       state('list', 'list', ['Captures', 'Sales overview, region slicer', 'Copy', 'Open', 'Folder', 'Microsoft Edge', 'Outlook']),
       state('a row picked, the list stays put', 'list', ['Inbox, flagged for today', 'Power BI Desktop'], '.cap-row:nth-child(3) >> is:.cap-row:nth-child(1):not(.sel) >> is:.cap-row.sel:nth-child(3)'),
       state('click the picture, Copied', 'list', ['Copied'], '.cap-pic'),
+      state('click a recording, Copied as a file', 'video', ['Copied'], '.cap-pic'),
       state('sort and filter buttons shown', 'list', ['Captures'], 'hover:.cap-tools >> is:.cap-tool'),
       state('filter menu open', 'list', ['Images', 'Video', 'GIF', 'All'], 'hover:.cap-tools >> .cap-tool:nth-child(2) >> is:.cap-menu'),
       state('filter: video only', 'list', ['Agent review walkthrough'], 'hover:.cap-tools >> .cap-tool:nth-child(2) >> .cap-menu .cap-menu-item:nth-child(3) button >> is:.cap-row'),

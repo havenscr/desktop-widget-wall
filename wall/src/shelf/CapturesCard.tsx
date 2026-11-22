@@ -39,12 +39,15 @@ import {
 } from './captures';
 
 const GONE = 'File moved or deleted';
+/** How long a trashed row stays hidden while the list still holds it; a file back in place after this is a restored one. */
+export const BIN_HIDE_MS = 10_000;
 
 /** Words for a failed action, by Rust's answer. */
 function failure(e: unknown): string {
   const word = e instanceof Error ? e.message : String(e);
   if (word === 'missing') return GONE;
   if (word === 'not-installed') return 'ShareX is not installed';
+  if (word === 'recycle-failed') return 'Could not move to the Recycle Bin';
   return 'Could not do that';
 }
 
@@ -57,7 +60,7 @@ const DONE: Record<CaptureAction | 'image', string> = {
   pin: 'Pinned to the screen',
   ocr: 'Reading the text',
   trash: 'Moved to the Recycle Bin',
-  image: 'Image copied',
+  image: 'Copied',
 };
 
 /** A capture's picture, or a tile that says why there is none. `w` and `h` are the box in design pixels; a large one fills its box instead. */
@@ -153,15 +156,35 @@ export function CapturesCard() {
   const [sort, setSort] = usePref('wall.captures.sort', SORTS, 'newest');
   const [filter, setFilter] = usePref<KindFilter>('wall.captures.filter', FILTERS, 'all');
   const [menu, setMenu] = useState<MenuState | null>(null);
-  const [binned, setBinned] = useState<string[]>([]);
+  // Rows hidden after a trash, by id and the time they were hidden.
+  const [binned, setBinned] = useState<Record<string, number>>({});
+  const funnelWasOpen = useRef(false);
   const [brief, show] = useBrief();
   const card = useRef<HTMLElement | null>(null);
   const list = useRef<HTMLDivElement | null>(null);
   const [atEnd, setAtEnd] = useState(false);
 
-  const kept = items.filter((c) => !binned.includes(c.id));
+  const kept = items.filter((c) => !(c.id in binned));
   const shown = arrange(kept, sort, filter);
   const big = shown.find((c) => c.id === picked) ?? shown[0];
+  // A pick that is not in the shown list (filtered away, gone from the list) is dropped, so the big one
+  // falls to the first row and coming back to All does not jump to the old pick.
+  useEffect(() => {
+    if (status === 'ready' && picked !== null && !shown.some((c) => c.id === picked)) setPicked(null);
+  }, [items, sort, filter, binned, status]); // eslint-disable-line react-hooks/exhaustive-deps
+  // A hidden row is shown again once a refresh no longer lists it (forget it) or lists it back in place
+  // after BIN_HIDE_MS (it was restored).
+  useEffect(() => {
+    setBinned((b) => {
+      const now = Date.now();
+      const next: Record<string, number> = {};
+      for (const [id, at] of Object.entries(b)) {
+        const c = items.find((x) => x.id === id);
+        if (c && !(c.exists && now - at >= BIN_HIDE_MS)) next[id] = at;
+      }
+      return Object.keys(next).length === Object.keys(b).length ? b : next;
+    });
+  }, [items]);
   useEffect(() => trimThumbs(shown.map((c) => c.id)), [items, sort, filter]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const checkEnd = () => {
@@ -175,7 +198,7 @@ export function CapturesCard() {
       () => {
         show(DONE[action]);
         if (action === 'trash') {
-          setBinned((b) => [...b, c.id]);
+          setBinned((b) => ({ ...b, [c.id]: Date.now() }));
           reload();
         }
       },
@@ -207,7 +230,7 @@ export function CapturesCard() {
     if (id === 'image') {
       copyBitmap(c).then(
         () => show(DONE.image),
-        (e: unknown) => show(failure(e)),
+        () => show('Could not copy'),
       );
       return;
     }
@@ -229,7 +252,13 @@ export function CapturesCard() {
         <div className="cap-big">
           <div className="cap-pic-wrap">
             {big.exists ? (
-              <button type="button" className="cap-pic" onClick={() => act(big, 'copy')} onContextMenu={openCaptureMenu(big)} {...hover(`Copy "${name}" to the clipboard as a file. Right-click for more.`)}>
+              <button
+                type="button"
+                className="cap-pic"
+                onClick={() => (big.kind === 'image' ? choose(big, 'image') : act(big, 'copy'))}
+                onContextMenu={openCaptureMenu(big)}
+                {...hover(big.kind === 'image' ? `Copy the picture "${name}" to the clipboard. Right-click for more.` : `Copy "${name}" to the clipboard as a file. Right-click for more.`)}
+              >
                 <Pic c={big} large />
               </button>
             ) : (
@@ -296,7 +325,16 @@ export function CapturesCard() {
             className={`cap-tool${filter === 'all' ? '' : ' on'}`}
             aria-label={`Show: ${FILTER_WORDS[filter]}. Press to choose.`}
             aria-haspopup="menu"
-            onClick={openFilterMenu}
+            onPointerDown={() => {
+              // The menu's own outside-press close runs first; remember it was open so the click that follows closes, not reopens.
+              funnelWasOpen.current = menu?.kind === 'filter';
+            }}
+            onClick={(e) => {
+              const was = funnelWasOpen.current;
+              funnelWasOpen.current = false;
+              if (was) setMenu(null);
+              else openFilterMenu(e);
+            }}
             {...hover(`Showing: ${FILTER_WORDS[filter]}. Click to show all, images, video or GIFs.`)}
           >
             <IconFilter size={22} stroke={1.8} aria-hidden="true" />
@@ -306,6 +344,7 @@ export function CapturesCard() {
       {body}
       {menu?.kind === 'filter' ? (
         <CapMenu
+          key="filter"
           label="Show captures"
           items={filterItems}
           x={menu.x}
@@ -316,7 +355,7 @@ export function CapturesCard() {
         />
       ) : null}
       {menu?.kind === 'capture' && menuCapture ? (
-        <CapMenu label="Capture options" items={captureItems(menuCapture)} x={menu.x} y={menu.y} onChoose={(id) => choose(menuCapture, id)} onClose={() => setMenu(null)} />
+        <CapMenu key={menu.id} label="Capture options" items={captureItems(menuCapture)} x={menu.x} y={menu.y} onChoose={(id) => choose(menuCapture, id)} onClose={() => setMenu(null)} />
       ) : null}
     </section>
   );

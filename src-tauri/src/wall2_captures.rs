@@ -31,6 +31,7 @@ use rusqlite::{Connection, OpenFlags};
 use sha2::{Digest, Sha256};
 use std::io::{Read, Seek, SeekFrom};
 use crate::wall2_winutil::Rect;
+use std::collections::HashSet;
 use std::path::Path;
 use std::sync::Mutex;
 use tauri_plugin_opener::OpenerExt;
@@ -50,6 +51,10 @@ const MISSING: &str = "missing";
 const REFUSED: &str = "refused";
 const TOO_BIG: &str = "too-big";
 const NOT_IMAGE: &str = "not-image";
+/// ShareX is not on this PC (edit, pin and read text need it). The page words it.
+const NOT_INSTALLED: &str = "not-installed";
+/// The Recycle Bin could not take the file; nothing was deleted.
+const NOT_RECYCLED: &str = "recycle-failed";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Kind {
@@ -715,7 +720,7 @@ fn act_now(app: &tauri::AppHandle, id: &str, action: Action) -> Result<(), Strin
         Action::Folder => show_in_folder(&path),
         Action::Copy => copy_file(&path),
         Action::CopyPath => copy_text(&path),
-        Action::Trash => recycle(&path),
+        Action::Trash => recycle(&path).map_err(|_| NOT_RECYCLED.to_string()),
         Action::Edit | Action::Pin | Action::Ocr => {
             // Pictures only: ShareX cannot edit, pin or read a recording.
             if held.kind != Kind::Image {
@@ -730,7 +735,8 @@ fn launch_sharex(action: Action, path: &str) -> Result<(), String> {
     let task = action.sharex().ok_or_else(|| REFUSED.to_string())?;
     #[cfg(windows)]
     {
-        crate::wall2_sharex::launch_file(task, path).map_err(|_| FAILED.to_string())
+        use crate::wall2_keys::Refusal;
+        crate::wall2_sharex::launch_file(task, path).map_err(|r| (if r == Refusal::NotInstalled { NOT_INSTALLED } else { FAILED }).to_string())
     }
     #[cfg(not(windows))]
     {
@@ -741,14 +747,14 @@ fn launch_sharex(action: Action, path: &str) -> Result<(), String> {
 
 /// Open with the default app, then (on Windows) move the app's new window to the lower right
 /// quarter of the primary monitor. The move runs on its own thread and gives up after about three
-/// seconds; a window that never shows is left where it opened.
+/// seconds. Only a new window titled with the file's name is moved; if none shows, nothing is.
 fn open_and_place(app: &tauri::AppHandle, path: String) -> Result<(), String> {
     #[cfg(windows)]
-    let before = place::snapshot();
+    let (before, stem) = (place::snapshot(), file_stem_of(&path));
     app.opener().open_path(path, None::<&str>).map_err(|_| FAILED.to_string())?;
     #[cfg(windows)]
     {
-        let _ = std::thread::Builder::new().name("wall2-cap-place".into()).spawn(move || place::after_open(&before));
+        let _ = std::thread::Builder::new().name("wall2-cap-place".into()).spawn(move || place::after_open(&before, &stem));
     }
     Ok(())
 }
@@ -766,40 +772,64 @@ fn copy_text(text: &str) -> Result<(), String> {
     }
 }
 
-/// Move the file to the Recycle Bin (with undo), no dialogs.
-fn recycle(path: &str) -> Result<(), String> {
+/// Move the file to the Recycle Bin (with undo), no dialogs. Never a permanent delete: when the bin
+/// cannot take the file the answer is an error and the file stays.
+fn recycle(path: &str) -> Result<(), ()> {
     #[cfg(windows)]
     {
-        place::recycle(path).map_err(|_| FAILED.to_string())
+        place::recycle(path)
     }
     #[cfg(not(windows))]
     {
         let _ = path;
-        Err(FAILED.to_string())
+        Err(())
     }
+}
+
+/// The new window an open made: one that was not in the snapshot and whose title holds the opened
+/// file's name (its stem, any case). Nothing else is ever moved: a changed front window or a
+/// window with another title is left alone.
+pub(crate) fn pick_new_window(windows: &[(isize, String)], before: &HashSet<isize>, stem: &str) -> Option<isize> {
+    let stem = stem.trim().to_lowercase();
+    if stem.is_empty() {
+        return None;
+    }
+    windows.iter().find(|(h, title)| !before.contains(h) && title.to_lowercase().contains(&stem)).map(|(h, _)| *h)
+}
+
+/// The file name without its extension, for matching a window title.
+fn file_stem_of(path: &str) -> String {
+    Path::new(path).file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default()
 }
 
 #[cfg(windows)]
 mod place {
-    use super::lower_right_quarter;
+    use super::{lower_right_quarter, pick_new_window};
     use crate::wall2_winutil::sys;
     use std::collections::HashSet;
     use std::time::{Duration, Instant};
-    use windows::Win32::Foundation::{BOOL, HANDLE};
+    use windows::Win32::Foundation::HANDLE;
     use windows::Win32::Graphics::Dwm::{DwmGetWindowAttribute, DWMWA_CLOAKED};
     use windows::Win32::System::DataExchange::{CloseClipboard, EmptyClipboard, OpenClipboard, SetClipboardData};
     use windows::Win32::System::Memory::{GlobalAlloc, GlobalLock, GlobalUnlock, GMEM_MOVEABLE};
-    use windows::Win32::UI::Shell::{SHFileOperationW, FOF_ALLOWUNDO, FOF_NOCONFIRMATION, FOF_NOERRORUI, FOF_SILENT, FO_DELETE, SHFILEOPSTRUCTW};
-    use windows::Win32::UI::WindowsAndMessaging::{GetForegroundWindow, GetWindow, GetWindowLongW, IsWindowVisible, GWL_EXSTYLE, GW_OWNER, WS_EX_TOOLWINDOW};
+    use windows::Win32::Storage::FileSystem::GetDriveTypeW;
+    use windows::Win32::System::Com::{CoCreateInstance, CoInitializeEx, IBindCtx, CoUninitialize, CLSCTX_ALL, COINIT_APARTMENTTHREADED};
+    use windows::Win32::UI::Shell::{FileOperation, IFileOperation, IFileOperationProgressSink, IShellItem, SHCreateItemFromParsingName, FOFX_EARLYFAILURE, FOFX_RECYCLEONDELETE, FOF_NOCONFIRMATION, FOF_NOERRORUI, FOF_SILENT};
+    use windows::Win32::UI::WindowsAndMessaging::{GetWindow, GetWindowLongW, InternalGetWindowText, IsWindowVisible, GWL_EXSTYLE, GW_OWNER, WS_EX_TOOLWINDOW};
 
-    /// The windows and the front window as they were just before the open.
+    /// The windows as they were just before the open.
     pub struct Before {
         windows: HashSet<isize>,
-        front: isize,
     }
 
     pub fn snapshot() -> Before {
-        Before { windows: sys::top_level_windows().into_iter().collect(), front: unsafe { GetForegroundWindow().0 as isize } }
+        Before { windows: sys::top_level_windows().into_iter().collect() }
+    }
+
+    fn title_of(h: isize) -> String {
+        let mut buf = [0u16; 256];
+        let n = unsafe { InternalGetWindowText(sys::hwnd(h), &mut buf) };
+        String::from_utf16_lossy(&buf[..(n.max(0) as usize).min(buf.len())])
     }
 
     /// A window the open could have made: ordinary, visible, shown, titled, in no shell or own
@@ -825,25 +855,20 @@ mod place {
         }
     }
 
-    /// The new window: one that was not there before, else a changed front window (an app that
-    /// shows the picture in a window it already had).
-    fn find(before: &Before, self_elevated: bool) -> Option<isize> {
-        let fresh = sys::top_level_windows().into_iter().find(|h| !before.windows.contains(h) && movable(*h, self_elevated));
-        if fresh.is_some() {
-            return fresh;
-        }
-        let front = unsafe { GetForegroundWindow().0 as isize };
-        (front != 0 && front != before.front && movable(front, self_elevated)).then_some(front)
+    /// The new window: one that was not there before, is movable and is titled with the file's name.
+    fn find(before: &Before, stem: &str, self_elevated: bool) -> Option<isize> {
+        let fresh: Vec<(isize, String)> = sys::top_level_windows().into_iter().filter(|h| !before.windows.contains(h) && movable(*h, self_elevated)).map(|h| (h, title_of(h))).collect();
+        pick_new_window(&fresh, &before.windows, stem)
     }
 
     /// Wait up to about three seconds for the window, then move it twice (an app often resizes
     /// itself once it has loaded the picture).
-    pub fn after_open(before: &Before) {
+    pub fn after_open(before: &Before, stem: &str) {
         let self_elevated = sys::self_elevated();
         let until = Instant::now() + Duration::from_millis(3_000);
         while Instant::now() < until {
             std::thread::sleep(Duration::from_millis(100));
-            let Some(h) = find(before, self_elevated) else { continue };
+            let Some(h) = find(before, stem, self_elevated) else { continue };
             let Some(work) = crate::wall2_arrange::primary_work_area() else { return };
             let target = lower_right_quarter(work);
             if crate::wall2_arrange::move_outer(h, target) {
@@ -883,28 +908,43 @@ mod place {
         Ok(())
     }
 
-    /// One file to the Recycle Bin: `FOF_ALLOWUNDO` is what makes it a move to the bin, not a delete.
+    /// One file to the Recycle Bin, never a permanent delete. `FOFX_RECYCLEONDELETE` makes the operation
+    /// fail (rather than delete for good) when the bin cannot take the file; a path that is not on a
+    /// fixed local drive is refused before anything runs. Runs on a COM thread of its own.
     pub fn recycle(path: &str) -> Result<(), ()> {
-        // The list ends with two NULs; a single path needs no more than that.
-        let from: Vec<u16> = path.encode_utf16().chain([0u16, 0u16]).collect();
-        let flags = (FOF_ALLOWUNDO | FOF_NOCONFIRMATION | FOF_SILENT | FOF_NOERRORUI).0 as u16;
-        let mut op = SHFILEOPSTRUCTW {
-            hwnd: Default::default(),
-            wFunc: FO_DELETE,
-            pFrom: windows::core::PCWSTR(from.as_ptr()),
-            pTo: windows::core::PCWSTR::null(),
-            fFlags: flags,
-            fAnyOperationsAborted: BOOL(0),
-            hNameMappings: std::ptr::null_mut(),
-            lpszProgressTitle: windows::core::PCWSTR::null(),
-        };
-        let code = unsafe { SHFileOperationW(&mut op) };
-        let aborted = op.fAnyOperationsAborted;
-        if code == 0 && !aborted.as_bool() {
-            Ok(())
-        } else {
-            Err(())
+        const DRIVE_FIXED: u32 = 3;
+        let wide: Vec<u16> = path.encode_utf16().chain(std::iter::once(0)).collect();
+        let bytes = path.as_bytes();
+        // "C:\..." only: a drive letter, a colon and a backslash (no UNC, no device path).
+        if bytes.len() < 4 || !bytes[0].is_ascii_alphabetic() || bytes[1] != b':' || bytes[2] != b'\\' {
+            return Err(());
         }
+        let root: Vec<u16> = [bytes[0] as u16, b':' as u16, b'\\' as u16, 0].to_vec();
+        if unsafe { GetDriveTypeW(windows::core::PCWSTR(root.as_ptr())) } != DRIVE_FIXED {
+            return Err(());
+        }
+        let work = move || -> Result<(), ()> {
+            unsafe {
+                let init = CoInitializeEx(None, COINIT_APARTMENTTHREADED);
+                if init.is_err() {
+                    return Err(());
+                }
+                let result = (|| -> windows::core::Result<bool> {
+                    let op: IFileOperation = CoCreateInstance(&FileOperation, None, CLSCTX_ALL)?;
+                    op.SetOperationFlags(FOFX_RECYCLEONDELETE | FOFX_EARLYFAILURE | FOF_NOCONFIRMATION | FOF_SILENT | FOF_NOERRORUI)?;
+                    let item: IShellItem = SHCreateItemFromParsingName(windows::core::PCWSTR(wide.as_ptr()), None::<&IBindCtx>)?;
+                    op.DeleteItem(&item, None::<&IFileOperationProgressSink>)?;
+                    op.PerformOperations()?;
+                    Ok(op.GetAnyOperationsAborted()?.as_bool())
+                })();
+                CoUninitialize();
+                match result {
+                    Ok(false) => Ok(()),
+                    _ => Err(()),
+                }
+            }
+        };
+        std::thread::Builder::new().name("wall2-cap-recycle".into()).spawn(work).map_err(|_| ())?.join().map_err(|_| ())?
     }
 }
 
@@ -1483,5 +1523,47 @@ mod tests {
         for m in macros {
             assert!(!src.contains(&format!("{m}!(")), "{m}");
         }
+    }
+
+    fn titled(list: &[(isize, &str)]) -> Vec<(isize, String)> {
+        list.iter().map(|(h, t)| (*h, t.to_string())).collect()
+    }
+
+    #[test]
+    fn a_new_window_titled_with_the_file_name_is_the_one() {
+        let before: HashSet<isize> = [1, 2].into_iter().collect();
+        let windows = titled(&[(1, "Chat"), (5, "Notes"), (7, "SHOT-A.png - Photos")]);
+        assert_eq!(pick_new_window(&windows, &before, "shot-a"), Some(7));
+    }
+
+    #[test]
+    fn a_window_that_was_already_there_is_ignored_even_with_the_name() {
+        let before: HashSet<isize> = [1, 7].into_iter().collect();
+        let windows = titled(&[(7, "shot-a.png - Photos")]);
+        assert_eq!(pick_new_window(&windows, &before, "shot-a"), None);
+    }
+
+    #[test]
+    fn no_title_match_returns_none() {
+        let before: HashSet<isize> = HashSet::new();
+        let windows = titled(&[(3, "Inbox"), (4, "Settings")]);
+        assert_eq!(pick_new_window(&windows, &before, "shot-a"), None);
+        assert_eq!(pick_new_window(&windows, &before, ""), None);
+        assert_eq!(pick_new_window(&[], &before, "shot-a"), None);
+    }
+
+    #[test]
+    fn the_file_stem_drops_the_folder_and_extension() {
+        assert_eq!(file_stem_of(A), "shot-a");
+        assert_eq!(file_stem_of(""), "");
+    }
+
+    #[test]
+    fn the_bin_never_falls_back_to_a_permanent_delete() {
+        let src = include_str!("wall2_captures.rs").replace("\r\n", "\n");
+        let old = ["SHFile", "OperationW"].concat();
+        let flag = ["FOF_", "ALLOWUNDO"].concat();
+        assert!(!src.contains(&old));
+        assert!(!src.contains(&flag));
     }
 }
