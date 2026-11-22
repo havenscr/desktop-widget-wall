@@ -600,6 +600,9 @@ pub async fn wall2_arrange_undo(window: tauri::WebviewWindow) -> Result<u32, Str
 // Section: Windows
 
 #[cfg(windows)]
+pub(crate) use win::{move_outer, primary_work_area};
+
+#[cfg(windows)]
 mod win {
     use super::*;
     use crate::wall2_winutil::{sys, try_begin};
@@ -607,11 +610,11 @@ mod win {
     use std::sync::atomic::AtomicBool;
     use std::sync::Mutex;
     use windows::core::PCWSTR;
-    use windows::Win32::Foundation::{BOOL, HWND, LPARAM, RECT, TRUE};
+    use windows::Win32::Foundation::{BOOL, HWND, LPARAM, POINT, RECT, TRUE};
     use windows::Win32::Graphics::Dwm::{DwmGetWindowAttribute, DWMWA_CLOAKED, DWMWA_EXTENDED_FRAME_BOUNDS};
     use windows::Win32::Graphics::Gdi::{
-        EnumDisplayDevicesW, EnumDisplayMonitors, GetMonitorInfoW, MonitorFromWindow, DISPLAY_DEVICEW, DISPLAY_DEVICE_ACTIVE,
-        DISPLAY_DEVICE_MIRRORING_DRIVER, HDC, HMONITOR, MONITORINFO, MONITORINFOEXW, MONITOR_DEFAULTTONEAREST,
+        EnumDisplayDevicesW, EnumDisplayMonitors, GetMonitorInfoW, MonitorFromPoint, MonitorFromWindow, DISPLAY_DEVICEW, DISPLAY_DEVICE_ACTIVE,
+        DISPLAY_DEVICE_MIRRORING_DRIVER, HDC, HMONITOR, MONITORINFO, MONITORINFOEXW, MONITOR_DEFAULTTONEAREST, MONITOR_DEFAULTTOPRIMARY,
     };
     use windows::Win32::UI::WindowsAndMessaging::{
         GetWindow, GetWindowLongW, GetWindowPlacement, GetWindowRect, IsHungAppWindow, IsIconic, IsWindow,
@@ -728,6 +731,35 @@ mod win {
         let wall = monitor_of(wall?);
         let list = monitors();
         choose_monitor(&list, wall).map(|i| (list[i], monitor_identity(list[i].id)))
+    }
+
+    /// The work area (the screen less the taskbar) of the primary monitor.
+    pub(crate) fn primary_work_area() -> Option<Rect> {
+        unsafe {
+            let m = MonitorFromPoint(POINT { x: 0, y: 0 }, MONITOR_DEFAULTTOPRIMARY);
+            let mut info = MONITORINFO { cbSize: std::mem::size_of::<MONITORINFO>() as u32, ..Default::default() };
+            GetMonitorInfoW(m, &mut info).as_bool().then(|| to_rect(info.rcWork))
+        }
+    }
+
+    /// Move one window so its visible edges land on `target` (a maximised window is restored first).
+    /// False when the window is gone or the move call failed.
+    pub(crate) fn move_outer(h: isize, target: Rect) -> bool {
+        let hw = sys::hwnd(h);
+        unsafe {
+            if !IsWindow(hw).as_bool() {
+                return false;
+            }
+            if IsZoomed(hw).as_bool() {
+                let _ = ShowWindowAsync(hw, SW_RESTORE);
+                std::thread::sleep(RESTORE_WAIT);
+            }
+            let outer = match frame_of(h) {
+                Some((win, frame)) => outer_target(target, win, frame),
+                None => target,
+            };
+            SetWindowPos(hw, HWND::default(), outer.left, outer.top, outer.width(), outer.height(), SWP_NOZORDER | SWP_NOACTIVATE | SWP_ASYNCWINDOWPOS).is_ok()
+        }
     }
 
     pub fn big_screen_available(wall: Option<isize>) -> bool {

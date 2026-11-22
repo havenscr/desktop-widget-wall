@@ -91,4 +91,19 @@ export function registerCapturesMocks(): void {
     return art(id);
   });
   mocks.set('wall2_captures_act', () => undefined);
+  stubClipboard();
+}
+
+/** The gallery's browser may have no clipboard (or refuse it): Copy image then just succeeds, as the native copy does here. */
+function stubClipboard(): void {
+  try {
+    Object.defineProperty(navigator, 'clipboard', { value: { write: async () => undefined }, configurable: true });
+    if (typeof (globalThis as { ClipboardItem?: unknown }).ClipboardItem === 'undefined') {
+      (globalThis as { ClipboardItem?: unknown }).ClipboardItem = class {
+        constructor(public items: Record<string, Blob>) {}
+      };
+    }
+  } catch {
+    /* the page's own clipboard is used */
+  }
 }
