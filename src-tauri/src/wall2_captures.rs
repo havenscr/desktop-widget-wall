@@ -1051,7 +1051,7 @@ mod tests {
     fn a_non_text_cell_skips_its_row_only() {
         let sql = format!(
             "{SCHEMA} INSERT INTO History VALUES (1,'a.png','C:\\x\\a.png','2026-11-01T10:00:00.0000000-05:00',5);
-             INSERT INTO History VALUES (2,7,'C:\\x\\b.png','2026-11-02T10:00:00.0000000-05:00',NULL);"
+             INSERT INTO History VALUES (2,X'07','C:\\x\\b.png','2026-11-02T10:00:00.0000000-05:00',NULL);"
         );
         let got = read_db(&temp_db(&sql)).unwrap();
         assert_eq!(got.len(), 1);
