@@ -1266,6 +1266,26 @@
 .house-room.more {
   color: var(--lw-soft);
 }
+/* The Next line under the dots: the routine's icon, its name in bold and "in 42 min" or "at 10:30 PM". Amber in the last 15 minutes. */
+.lw-house .house-next {
+  margin: 6px 0 0;
+  cursor: default;
+}
+.house-next .lw-glyph {
+  color: var(--lw-soft);
+}
+.house-next .lw-text {
+  color: var(--lw-soft);
+  font-size: 19px;
+}
+.house-next .lw-text b {
+  color: var(--tx);
+}
+.house-next.soon .lw-glyph,
+.house-next.soon .lw-text,
+.house-next.soon .lw-text b {
+  color: var(--amber);
+}
 
 /* Moods: four equal cards (the pager is in the heading); the cards fade in slowly. Faded, not slid, so the last card never pokes past the row. */
 .mood-row.paged {

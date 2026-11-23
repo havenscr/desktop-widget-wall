@@ -14,12 +14,23 @@ export const ABSENT = 'absent';
 /** No desk token typed in Tools, Home app, on this PC (or the home app has none): Clear all says "not set up". */
 export const NOT_SET_UP = 'not-set-up';
 
+/** The next lighting routine the home app expects (Apple Home runs it); the label is already the slot's. */
+export interface NextChange {
+  slot: 'day' | 'evening' | 'late-night';
+  label: string;
+  /** RFC 3339 UTC. */
+  at: string;
+  basis: 'sunrise' | 'sunset' | 'clock';
+}
+
 export interface House {
   observedAt: string | null;
   insideF: number | null;
   litRooms: number | null;
   rooms: number | null;
   stale: boolean;
+  /** Absent or null: nothing to show (an older home app, or no confident prediction). */
+  next?: NextChange | null;
 }
 
 /** One light of a room, as the home app reports it; brightness is a whole percent, null when off or not dimmable. */

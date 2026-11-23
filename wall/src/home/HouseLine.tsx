@@ -1,9 +1,9 @@
-import { IconHome } from '@tabler/icons-react';
+import { IconHome, IconMoon, IconSun, IconSunset2 } from '@tabler/icons-react';
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { tip } from '../ui/HoverTip';
 import { useRemeasure } from '../ui/useRemeasure';
 import { RoomLightsCard } from './RoomLightsCard';
-import { HOUSE_REFRESH_MS, maxAge, useDeskHouse, type DeskRooms, type FeedState, type House } from './useDesk';
+import { HOUSE_REFRESH_MS, maxAge, useDeskHouse, type DeskRooms, type FeedState, type House, type NextChange } from './useDesk';
 
 const WORDS = ['no', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten'];
 const word = (n: number) => WORDS[n] ?? String(n);
@@ -20,11 +20,53 @@ function timeText(ms: number): string {
   return new Date(ms).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
 }
 
+/** The Next line shows from this long before the change, and no further out than a day and a bit. */
+export const NEXT_MAX_MS = 26 * 3_600_000;
+/** "in N min" up to here; "at 10:30 PM" beyond. */
+export const NEXT_COUNTDOWN_MIN = 60;
+/** Amber in the last stretch before the change. */
+export const NEXT_SOON_MIN = 15;
+const NEXT_LABELS: Record<NextChange['slot'], string> = { day: 'Day', evening: 'Evening', 'late-night': 'Late night' };
+
+export interface NextView {
+  slot: NextChange['slot'];
+  label: string;
+  /** "in 42 min" or "at 10:30 PM". */
+  when: string;
+  soon: boolean;
+  tip: string;
+}
+
+/**
+ * The Next line from the house read, or null to hide it: no `next` (an older home app, or the home app has no
+ * confident prediction), a time that is unreadable, already past, or more than 26 hours off. The label is the slot's
+ * own. Within the hour it counts down in whole minutes rounded up (never "in 0 min" for a change not yet made);
+ * later it gives the clock time. The caller hides it when the house read is stale.
+ */
+export function nextView(next: NextChange | null | undefined, now: number): NextView | null {
+  if (!next || typeof next !== 'object') return null;
+  const label = NEXT_LABELS[next.slot];
+  const at = Date.parse(next.at);
+  if (!label || !Number.isFinite(at)) return null;
+  const left = at - now;
+  if (left <= 0 || left > NEXT_MAX_MS) return null;
+  const mins = Math.ceil(left / 60_000);
+  const when = mins <= NEXT_COUNTDOWN_MIN ? `in ${mins} min` : `at ${timeText(at)}`;
+  return {
+    slot: next.slot,
+    label,
+    when,
+    soon: mins <= NEXT_SOON_MIN,
+    tip: `${label} runs at ${timeText(at)} (Apple Home). Hidden while a mood is held, On Air is on, or nobody is home.`,
+  };
+}
+
 export interface HouseView {
   text: string;
   rooms: { id: string; name: string; on: boolean }[];
   stale: boolean;
   asOf: string | null;
+  next: NextView | null;
 }
 
 /**
@@ -42,7 +84,7 @@ export function houseView(house: FeedState<House>, rooms: FeedState<DeskRooms>):
   const stale = house.status === 'error' || h.stale || old || (rooms.data !== null && (rooms.data.stale || rooms.status === 'error'));
   const at = h.observedAt ? Date.parse(h.observedAt) : NaN;
   const asOfMs = Number.isFinite(at) ? at : house.readAt;
-  return { text, rooms: roomList, stale, asOf: stale && asOfMs !== null ? `as of ${timeText(asOfMs)}` : null };
+  return { text, rooms: roomList, stale, asOf: stale && asOfMs !== null ? `as of ${timeText(asOfMs)}` : null, next: stale ? null : nextView(h.next, house.now) };
 }
 
 /** The room dots' lines: indented to the text, 424 px wide. */
@@ -56,7 +98,7 @@ const ASOF_GAP_PX = 18;
 
 type RoomDot = { id: string; name: string; on: boolean };
 
-/** The room dots take up to two lines under the weather row (the third line is kept for the planned Next line). */
+/** The room dots take up to two lines under the weather row (the third line is the Next line). */
 export const ROOM_LINES = 2;
 
 /**
@@ -109,7 +151,7 @@ function Lead({ text }: { text: string }) {
 }
 
 /**
- * Home's house row under the weather row: the temperature and lit rooms, then a dot per room.
+ * Home's house row under the weather row: the temperature and lit rooms, then a dot per room, then (when the home app predicts one) the Next line: the routine about to run and when.
  * Hidden while the home app's desk routes are absent; dimmed when not live. Every dot that fits
  * the two lines shows; "as of 9:41 AM" sits at the right end of the last line only when the measured
  * dots leave room for it, otherwise it is in the hover card of the house row (and of each dot).
@@ -191,8 +233,14 @@ export function HouseLine() {
           )}
         </div>
       )}
-      {/* The "Next" automation line goes here once the home app has a routine schedule:
-          `/api/desk/schedule/today` answers `source: "none"` today, and the wall never guesses one. */}
+      {v.next && (
+        <div className={v.next.soon ? 'lw-row house-next soon' : 'lw-row house-next'} {...tip(v.next.tip)}>
+          <span className="lw-glyph">{v.next.slot === 'day' ? <IconSun size={22} stroke={1.7} aria-hidden="true" /> : v.next.slot === 'evening' ? <IconSunset2 size={22} stroke={1.7} aria-hidden="true" /> : <IconMoon size={22} stroke={1.7} aria-hidden="true" />}</span>
+          <span className="lw-text house-next-text">
+            <b>{v.next.label}</b> {v.next.when}
+          </span>
+        </div>
+      )}
     </div>
   );
 }

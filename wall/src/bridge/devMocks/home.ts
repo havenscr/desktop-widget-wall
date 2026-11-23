@@ -100,6 +100,7 @@ const ALERTS = [
  * `down` (the routes fail). `?alerts=0|1|6|20` open alerts, `?rooms=0|1|2|4|7|8|12` rooms (two lit
  * in four, all lit in seven, every third lit in twelve), `?desktoken=none` no desk token on this PC (Clear all says not set up),
  * `?desktoken=lan` a token but a plain http home address on the network (Clear all says why). `?lights=none|fail` rooms carry no light list.
+ * `?next=far|soon|day|late|none|past` the house read's Next line (no knob: the field is absent, as from an older home app).
  */
 function registerDeskMocks(): void {
   const mode = () => knob('desk') ?? 'absent';
@@ -153,11 +154,28 @@ function registerDeskMocks(): void {
     const withLights = knob('lights') !== 'none' && knob('lights') !== 'fail';
     return { rooms: ROOMS.slice(0, count).map((name, i) => ({ id: String(i + 1), name, on: lit(i, count), ...(withLights ? { lights: roomLights(name, lit(i, count)) } : {}) })), stale: stale() };
   });
+  // `?next=far|soon|day|late|none|past`: the Next line. Left out without the knob (an older home app), `none` is null.
+  const nextField = (): { next?: unknown } => {
+    const k = knob('next');
+    if (!k) return {};
+    if (k === 'none') return { next: null };
+    const t = now();
+    const plan: Record<string, [string, number]> = {
+      far: ['evening', 3 * 3_600_000],
+      soon: ['evening', 9 * 60_000],
+      day: ['day', 42 * 60_000],
+      late: ['late-night', 5 * 3_600_000],
+      past: ['evening', -60_000],
+    };
+    const [slot, ms] = plan[k] ?? plan.far;
+    const label = slot === 'day' ? 'Day' : slot === 'evening' ? 'Evening' : 'Late night';
+    return { next: { slot, label, at: new Date(t + ms).toISOString(), basis: slot === 'day' ? 'sunrise' : slot === 'evening' ? 'sunset' : 'clock' } };
+  };
   mocks.set('wall2_desk_house', () => {
     const g = gate();
     if (g) return g;
     const count = roomCount();
     const on = ROOMS.slice(0, count).filter((_, i) => lit(i, count)).length;
-    return { observedAt: observed(), insideF: knob('inside') === 'none' ? null : 68, litRooms: on, rooms: count, stale: stale() };
+    return { observedAt: observed(), insideF: knob('inside') === 'none' ? null : 68, litRooms: on, rooms: count, stale: stale(), ...nextField() };
   });
 }
