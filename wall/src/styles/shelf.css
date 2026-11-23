@@ -537,3 +537,207 @@ button.cap-pic:focus-visible {
   font: 400 16px/1.2 var(--body);
   color: var(--faint);
 }
+
+/* The switch at the top of the Recent files card (shelf/RecentCard.tsx): Recent files or Dictations. */
+.rf-card .k {
+  flex: none;
+  min-width: 0;
+}
+.rf-card .k .shelf-sub {
+  flex: 1 1 0;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  text-align: right;
+}
+.rf-switch {
+  display: flex;
+  flex: none;
+  height: 40px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: rgba(14, 10, 36, 0.78);
+  overflow: hidden;
+}
+.rf-opt {
+  display: flex;
+  align-items: center;
+  height: 100%;
+  padding: 0 12px;
+  border: 0;
+  border-right: 1px solid var(--line);
+  background: none;
+  color: var(--dim);
+  font: 600 18px/1 var(--body);
+  letter-spacing: 0;
+  text-transform: none;
+  white-space: nowrap;
+  transition: background 160ms ease, color 160ms ease;
+}
+.rf-opt:last-child {
+  border-right: 0;
+}
+.rf-opt:hover:not([aria-checked='true']) {
+  background: rgba(255, 255, 255, 0.06);
+  color: inherit;
+}
+.rf-opt[aria-checked='true'] {
+  background: rgba(53, 230, 234, 0.14);
+  color: var(--cyan);
+}
+.rf-opt:focus-visible {
+  outline: 3px solid var(--cyan);
+  outline-offset: -3px;
+}
+
+/* Dictations (shelf/Dictations.tsx): the newest Wispr Flow dictations, each with Copy and Raw, in the same card. */
+.dc-rows {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  flex: 1 1 0;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.dc-row {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 64px;
+  border-top: 1px solid var(--line);
+}
+.dc-row:first-child {
+  border-top: 0;
+}
+.dc-row:hover {
+  background: rgba(53, 230, 234, 0.06);
+  border-radius: 10px;
+}
+.dc-text {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex: 1 1 0;
+  min-width: 0;
+  padding-left: 6px;
+}
+.dc-line {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font: 600 20px/1.2 var(--body);
+}
+.dc-meta {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font: 400 16px/1.2 var(--body);
+  color: var(--dim);
+}
+.dc-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  flex: none;
+  height: 40px;
+  padding: 0 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.06);
+  color: inherit;
+  font: 600 18px/1 var(--body);
+  white-space: nowrap;
+}
+.dc-btn:hover {
+  background: rgba(53, 230, 234, 0.12);
+}
+.dc-btn:active {
+  transform: scale(0.96);
+}
+.dc-btn:focus-visible {
+  outline: 3px solid var(--cyan);
+  outline-offset: 2px;
+}
+.dc-raw {
+  background: none;
+  color: var(--dim);
+}
+.dc-raw:hover {
+  color: inherit;
+}
+.dc-btn[aria-disabled='true'] {
+  opacity: 0.45;
+  cursor: default;
+}
+.dc-btn[aria-disabled='true']:hover {
+  background: none;
+}
+.dc-btn[aria-disabled='true']:active {
+  transform: none;
+}
+.dc-btn-text {
+  display: inline-block;
+}
+.dc-row .dc-btn-text {
+  min-width: 3.4em;
+  text-align: center;
+}
+.dc-state {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+/* The hover card: both versions in full, right of the Recent files card, over the empty centre. It takes the pointer so its buttons work. */
+.dc-card {
+  position: absolute;
+  z-index: 40;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 16px 18px;
+  border: 1px solid var(--cyan);
+  border-radius: 16px;
+  background: rgba(15, 11, 42, 0.96);
+  backdrop-filter: blur(14px);
+  box-shadow: 0 14px 36px rgba(0, 0, 0, 0.55);
+  overflow: hidden;
+}
+.dc-card-meta {
+  font: 400 16px/1.2 var(--body);
+  color: var(--faint);
+}
+.dc-card-key {
+  margin-top: 6px;
+  font: 600 16px/1.2 var(--body);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--cyan);
+}
+.dc-card-text {
+  min-height: 0;
+  max-height: 150px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font: 400 18px/1.4 var(--body);
+}
+.dc-card-raw {
+  color: var(--dim);
+  font-style: italic;
+}
+.dc-card-acts {
+  display: flex;
+  gap: 10px;
+  margin-top: 10px;
+}

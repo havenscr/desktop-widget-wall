@@ -67,3 +67,12 @@ YouTube's own picture host and player for the small pictures and for playback.
 The app uses YouTube API Services. By using the YouTube part of the app you agree to the
 [YouTube Terms of Service](https://www.youtube.com/t/terms). Google's own handling of your
 data is described in the [Google Privacy Policy](https://policies.google.com/privacy).
+
+## Wispr Flow dictations (Shelf)
+
+If Wispr Flow is installed, the Shelf's Dictations list reads its history from the local file `%APPDATA%\Wispr Flow\flow.sqlite`.
+
+- **Read:** only the text of the newest dictations (the cleaned text, any edit you made, the raw words before Flow's AI pass), the time, the app and the word count. The file is opened read only and the wall never changes Flow's history; while reading, SQLite may create its shared-memory file (`flow.sqlite-shm`) beside it, as any reader does.
+- **Never read:** the audio recordings and the screenshots Flow keeps, and any other column.
+- **Kept and sent:** nothing. The text is held in memory while the Shelf shows it and is never written to disk, logged or sent anywhere. Copy puts one text on the clipboard when you press a button.
+- If Flow keeps no history (its own privacy setting), the card says so.

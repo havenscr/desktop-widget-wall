@@ -1533,6 +1533,19 @@ the centre card; the date line takes it through the frame's `ClockSlot` portal.
   opened); an unknown id or a file that is gone answers `missing`. The page never sees a path. Read every 60 seconds while the page is
   visible and when the window gets focus. Empty: "No recent files"; a failed read: "Recent files unavailable". Dev knobs:
   `?recent=empty|down|long`. Check: `npm run fit-check -- --area=shelf`.
+- **Dictations** (`shelf/Dictations.tsx`, `bridge/dictations.ts`, `src-tauri/src/wall2_dictations.rs`). The Recent files card has a two-way switch at its top,
+  Recent files or Dictations; the choice is kept per viewer under `wall.shelf.recent` and defaults to Recent files. Dictations lists the newest 30 dictations
+  from Wispr Flow's own history: the text on one line (ellipsis), the time and app under it, and two buttons, Copy (the cleaned text, or the user's own edit) and
+  Raw (what was said, before the AI pass). Resting 0.5 s on a row opens a hover card right of the card with both versions in full and Copy cleaned and Copy raw;
+  it closes when the pointer leaves, the list scrolls or the entry goes. Rust opens `%APPDATA%\Wispr Flow\flow.sqlite` read only (never `immutable`, so rows
+  still in Flow's write-ahead log show; the wall never changes Flow's history, though SQLite may create `flow.sqlite-shm` beside it while reading, as any reader does; a file it cannot open or read right now answers `busy`), waits at most 1 s, checks the History table has the columns it needs, and reads only the entry id, time, app, the
+  three text columns and the word count from the newest 200 rows by row number, skipping archived entries, entries with no text and ids outside letters, digits, `_` and `-` (an id seen twice keeps its newest row),
+  then sorts them by time and keeps 30. Text has control and
+  direction characters stripped and is cut to 2000 characters in the list; a copy takes the whole text (a 200,000 character safety cap). Impossible dates and zones read as no time and sort last. `wall2_dictations` also sends `hasRaw`; with none, Raw is disabled and says "Wispr Flow kept no raw text for this one." `wall2_dictations` returns `{ id, at, app, clean, raw, hasRaw, words }`; `wall2_dictation_copy` takes only
+  an id and `clean` or `raw`, re-reads that row and puts the text on the clipboard (the page never sends text). Both are refused unless they come from the
+  Wall 2 window. Errors are fixed words shown as plain lines: `not-installed`, `no-history`, `changed` (a column is missing), `busy` and `failed` (with
+  Try again). Read when shown and every 30 s while the page is visible. Dev knobs: `?dict=not-installed|no-history|changed|busy|failed|empty` and
+  `?shelfmode=dictations|files`. Check: `npm run fit-check -- --area=shelf`.
 - **Captures** (`shelf/CapturesCard.tsx`, `shelf/captures.ts`, `src-tauri/src/wall2_captures.rs`). The card on the left of the Shelf
   shows the newest ShareX captures, newest first: the newest large (a 392 by 220 picture, its window title, "app, time, size", and
   Copy, Open and Folder), the five before it as rows (a 96 by 54 picture, the app, the time, and " · GIF" or " · Video"). A row click

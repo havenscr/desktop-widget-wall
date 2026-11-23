@@ -84,6 +84,7 @@ mod wall2_watch;
 mod wall2_tools;
 mod wall2_captures;
 mod wall2_recent;
+mod wall2_dictations;
 mod wall2_onair;
 mod wall2_stagepop;
 mod wall2_stagepop_cmd;
@@ -4147,6 +4148,8 @@ pub fn run() {
             wall2_recent::wall2_recent_open,
             wall2_recent::wall2_recent_folder,
             wall2_recent::wall2_recent_preview,
+            wall2_dictations::wall2_dictations,
+            wall2_dictations::wall2_dictation_copy,
             list_audio_devices,
             start_audio_capture,
             stop_audio_capture,

@@ -1,12 +1,14 @@
 import { IconFolder } from '@tabler/icons-react';
-import { useCallback, useEffect, useRef, useState, type FocusEvent, type PointerEvent } from 'react';
+import { useCallback, useEffect, useRef, useState, type FocusEvent, type KeyboardEvent, type PointerEvent } from 'react';
 import { createPortal } from 'react-dom';
 import { invoke } from '../bridge/tauri';
 import { hover } from '../tools/hover';
 import { tip } from '../ui/HoverTip';
 import { useListEdge } from '../ui/useListEdge';
 import { useBrief } from '../work/useBrief';
+import { Dictations } from './Dictations';
 import { fileLook } from './fileIcon';
+import { usePref } from './captures';
 import { canPreview, PREVIEW_DELAY_MS, recentWhen, useRecentFiles, type RecentFile } from './recent';
 
 /** Words for a failed Open or Folder, by Rust's answer. */
@@ -38,6 +40,10 @@ const STAGE_H = 720;
 const PREVIEW_GAP = 16;
 const PREVIEW_BOX_H = 360;
 const NONE_MS = 30_000;
+const MODES = ['files', 'dictations'] as const;
+type Mode = (typeof MODES)[number];
+/** The remembered side of the card. */
+const MODE_KEY = 'wall.shelf.recent';
 
 /** The row's place for its preview, from the real boxes, undone from the stage's scale. */
 function placeFor(row: HTMLElement): { left: number; top: number; host: Element | null } {
@@ -54,9 +60,33 @@ function placeFor(row: HTMLElement): { left: number; top: number; host: Element 
   };
 }
 
+/** The two-way switch at the top of the card: Recent files or Dictations. Arrow keys move between the two. */
+function Switch({ mode, set }: { mode: Mode; set: (m: Mode) => void }) {
+  const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
+    const dir = e.key === 'ArrowRight' || e.key === 'ArrowDown' ? 1 : e.key === 'ArrowLeft' || e.key === 'ArrowUp' ? -1 : 0;
+    if (!dir) return;
+    e.preventDefault();
+    const next = MODES[(MODES.indexOf(mode) + dir + MODES.length) % MODES.length];
+    set(next);
+    e.currentTarget.querySelector<HTMLElement>(`[data-mode="${next}"]`)?.focus();
+  };
+  const opt = (m: Mode, text: string, help: string) => (
+    <button type="button" role="radio" className="rf-opt" data-mode={m} aria-checked={mode === m} tabIndex={mode === m ? 0 : -1} onClick={() => set(m)} {...tip(help)}>
+      {text}
+    </button>
+  );
+  return (
+    <div className="rf-switch" role="radiogroup" aria-label="Show" onKeyDown={onKeyDown}>
+      {opt('files', 'Recent files', 'The files you opened lately')}
+      {opt('dictations', 'Dictations', 'Your newest Wispr Flow dictations')}
+    </div>
+  );
+}
+
 /** The Shelf's Recent files card: the last 20 files opened, newest first, as many rows in view as the card has room for, the rest a scroll away (the foot fades while more is below). A row opens the file; its Folder button shows it in File Explorer. */
 export function RecentCard() {
   const { status, items } = useRecentFiles();
+  const [mode, setMode] = usePref<Mode>(MODE_KEY, MODES, 'files');
   const [brief, show] = useBrief();
   const act = (command: 'wall2_recent_open' | 'wall2_recent_folder', id: string, done: string) => {
     invoke(command, { id }).then(
@@ -135,8 +165,13 @@ export function RecentCard() {
     }, delay);
   };
 
+  useEffect(() => {
+    if (mode !== 'files') hide();
+  }, [mode, hide]);
+
   let body;
-  if (status === 'error') body = <p className="shelf-note">Recent files unavailable</p>;
+  if (mode === 'dictations') body = <Dictations />;
+  else if (status === 'error') body = <p className="shelf-note">Recent files unavailable</p>;
   else if (status === 'ready' && items.length === 0) body = <p className="shelf-note">No recent files</p>;
   else if (status === 'loading') body = null;
   else {
@@ -184,9 +219,9 @@ export function RecentCard() {
   return (
     <section className="shelf-card rf-card" aria-label="Recent files">
       <div className="k">
-        Recent files{' '}
+        <Switch mode={mode} set={setMode} />
         <span className="shelf-sub" role="status">
-          {brief ?? (status === 'ready' && items.length > 0 ? 'newest first' : 'last opened')}
+          {mode === 'dictations' ? 'newest first' : (brief ?? (status === 'ready' && items.length > 0 ? 'newest first' : 'last opened'))}
         </span>
       </div>
       {body}

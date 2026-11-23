@@ -4,8 +4,11 @@
 const at = encodeURIComponent('2026-11-11T10:24:00-08:00');
 const LISTS = 'shelflists=' + encodeURIComponent('Tasks (To-Do);Tax / Business;House, garden');
 const MANY = 'shelflists=' + encodeURIComponent(['Tasks (To-Do)', 'Tax / Business', 'House, garden', 'Errands', 'Reading list', 'Someday maybe', 'Waiting on others', 'W'.repeat(60)].join(';'));
-const galleryQuery = (knobs) => `hz=work&at=${at}&clock=review&weather=ok&screen=shelf&${knobs}`;
-const fitQuery = (knobs) => `?hz=work&at=${at}&clock=review&weather=ok&screen=shelf&${knobs}`;
+// Every state starts on Recent files unless it asks for Dictations, whatever an earlier state left in the browser.
+const mode = (knobs) => (knobs.includes('shelfmode=') ? knobs : `${knobs}&shelfmode=files`);
+const galleryQuery = (knobs) => `hz=work&at=${at}&clock=review&weather=ok&screen=shelf&${mode(knobs)}`;
+const fitQuery = (knobs) => `?hz=work&at=${at}&clock=review&weather=ok&screen=shelf&${mode(knobs)}`;
+const DICT = 'shelfmode=dictations';
 const checks = ['.shelf-place .rf-card', '.shelf-place .shelf-captures', '.shelf-place .shelf-side', '.shelf-place .right-wing'];
 const state = (name, knobs, expect, actions) => ({ screen: 'shelf', name, query: galleryQuery(knobs), custom: true, expect, actions });
 const variant = (name, knobs, extra = {}) => ({ name, q: fitQuery(knobs), checks, ...extra });
@@ -28,7 +31,7 @@ function measureShelf() {
       const b = e.getBoundingClientRect();
       if (b.width === 0 && b.height === 0) continue;
       // A row a scroll away sits past its list's clip on purpose; the list itself is still checked.
-      if (e !== col && e.parentElement && e.closest('.rf-rows, .cap-rows') && e.closest('.rf-rows, .cap-rows') !== e) { const sc = e.closest('.rf-rows, .cap-rows'); const sb = sc.getBoundingClientRect(); if (b.bottom > sb.bottom + 0.5 || b.top < sb.top - 0.5) continue; }
+      if (e !== col && e.parentElement && e.closest('.rf-rows, .cap-rows, .dc-rows') && e.closest('.rf-rows, .cap-rows, .dc-rows') !== e) { const sc = e.closest('.rf-rows, .cap-rows, .dc-rows'); const sb = sc.getBoundingClientRect(); if (b.bottom > sb.bottom + 0.5 || b.top < sb.top - 0.5) continue; }
       if (b.left < cb.left - 0.5 || b.right > cb.right + 0.5 || b.bottom > cb.bottom + 0.5) { fails.push('shelf: ' + sel + ' ' + (e.className || e.tagName) + ' sticks out of its card'); break; }
     }
   }
@@ -53,6 +56,57 @@ function measureShelf() {
       if (barWide < 20 - 0.5) fails.push('shelf: the Recent files scrollbar takes ' + r1(barWide) + ' px, expected 14 px of gap and 6 px of bar');
       const edge = lb.left + rfList.clientWidth;
       for (const r of rows) { const b = r.getBoundingClientRect(); if (b.right > edge + 0.5) { fails.push('shelf: a recent file row ends at x ' + r1(b.right) + ', less than 14 px clear of the scrollbar (x ' + r1(edge + 14) + ')'); break; } }
+    }
+  }
+  // Dictations: rows clear of the bar, Copy and Raw labels 10 px from their button edges, the hover card inside the band.
+  const dcList = root.querySelector('.rf-card .dc-rows');
+  if (dcList) {
+    const lb = dcList.getBoundingClientRect();
+    const rows = [...dcList.querySelectorAll('.dc-row')];
+    const inView = rows.filter((r) => { const b = r.getBoundingClientRect(); return b.top >= lb.top - 0.5 && b.bottom <= lb.bottom + 0.5; }).length;
+    if (inView < Math.min(3, rows.length)) fails.push('shelf: ' + inView + ' dictation rows in view, expected at least ' + Math.min(3, rows.length));
+    const edge = lb.left + dcList.clientWidth;
+    for (const r of rows) { const b = r.getBoundingClientRect(); if (b.right > edge + 0.5) { fails.push('shelf: a dictation row ends at x ' + r1(b.right) + ', past the list edge (x ' + r1(edge) + ')'); break; } }
+    if (dcList.scrollHeight > dcList.clientHeight + 1) {
+      const barWide = dcList.offsetWidth - dcList.clientWidth - 2 * (parseFloat(getComputedStyle(dcList).borderLeftWidth) || 0);
+      if (barWide < 20 - 0.5) fails.push('shelf: the dictations scrollbar takes ' + r1(barWide) + ' px, expected 14 px of gap and 6 px of bar');
+    }
+    const textBox = rows[0] && rows[0].querySelector('.dc-text');
+    const btns = rows[0] ? [...rows[0].querySelectorAll('.dc-btn')] : [];
+    if (textBox && btns.length) {
+      const tb = textBox.getBoundingClientRect();
+      for (const k of btns) if (k.getBoundingClientRect().left < tb.right - 0.5) { fails.push('shelf: a dictation button overlaps the text'); break; }
+      if (tb.width < 120) fails.push('shelf: the dictation text is only ' + r1(tb.width) + ' px wide');
+    }
+  }
+  for (const k of root.querySelectorAll('.dc-btn, .rf-opt')) {
+    const b = k.getBoundingClientRect();
+    if (b.width === 0) continue;
+    if (b.height < 39.5) fails.push('shelf: the button "' + k.textContent.trim() + '" is ' + r1(b.height) + ' px tall (at least 40)');
+    // The label never touches its button's edge: at least 10 px of room on each side of its text.
+    const range = document.createRange();
+    const walker = document.createTreeWalker(k, NodeFilter.SHOW_TEXT);
+    for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+      if (!n.textContent.trim()) continue;
+      range.selectNodeContents(n);
+      const t = range.getBoundingClientRect();
+      const room = Math.min(t.left - b.left, b.right - t.right);
+      if (room < 10 - 0.01) fails.push('shelf: the label "' + n.textContent.trim() + '" is ' + r1(room) + ' px from its button edge (at least 10)');
+    }
+  }
+  const qs = new URLSearchParams(location.search);
+  if (qs.get('shelfmode') === 'dictations' && !qs.get('dict') && !root.querySelector('.dc-row')) fails.push('shelf: Dictations is on but no dictation row is drawn');
+  const dcard = document.querySelector('.dc-card');
+  if ((qs.get('click') || '').startsWith('rest:') && !dcard) fails.push('shelf: the dictation hover card did not open');
+  if (dcard) {
+    const cb = dcard.getBoundingClientRect();
+    if (cb.left < 124 - 0.5 || cb.right > 2540 + 0.5 || cb.top < 19.5 || cb.bottom > floor + 0.5) fails.push('shelf: the dictation hover card at x ' + r1(cb.left) + ' to ' + r1(cb.right) + ', y ' + r1(cb.top) + ' to ' + r1(cb.bottom) + ' is outside the band (y 20 to ' + r1(floor) + ')');
+    if (rf && cb.left < rf.getBoundingClientRect().right - 0.5) fails.push('shelf: the dictation hover card covers the Recent files card');
+    for (const e of dcard.querySelectorAll('*')) {
+      if (e.closest('.dc-card-text') && e.closest('.dc-card-text') !== e) continue;
+      const b = e.getBoundingClientRect();
+      if (b.width === 0 && b.height === 0) continue;
+      if (b.left < cb.left - 0.5 || b.right > cb.right + 0.5 || b.bottom > cb.bottom + 0.5) { fails.push('shelf: the dictation hover card ' + (e.className || e.tagName) + ' sticks out of the card'); break; }
     }
   }
   // The three Shelf cards share one bottom edge.
@@ -128,6 +182,11 @@ export default {
     state('shelf: three lists, first picked', LISTS, ['Captures', 'Region', 'Screen', 'GIF', 'Record', 'Text (OCR)', 'History', 'Tasks (To-Do)', 'Tax / Business', 'House, garden', 'Later today', 'Always here', 'Recent files', 'Quarterly review.pptx', 'Budget 2027.xlsx', 'Meeting notes.docx', 'Yesterday'], ['.lp-btn']),
     state('shelf: recent files with icons', LISTS, ['Recent files', 'newest first', 'Launch teaser.mp4', 'Podcast intro.mp3'], ['.rf-card']),
     state('shelf: recent files: hover preview', LISTS, ['Recent files', 'Budget 2027.xlsx'], ['hover:.rf-row:nth-child(2) .rf-open >> wait:700 >> is:.rf-preview']),
+    state('shelf: dictations showing', LISTS + '&' + DICT, ['Dictations', 'Recent files', 'newest first', 'Thanks for the notes', 'Copy', 'Raw', 'Outlook'], ['.rf-card']),
+    state('shelf: dictations: hover card open', LISTS + '&' + DICT, ['Dictations', 'Cleaned', 'What you said', 'Copy cleaned', 'Copy raw'], ['hover:.dc-row:nth-child(1) .dc-text >> wait:900 >> is:.dc-card']),
+    state('shelf: dictations: hover card on a long text', LISTS + '&' + DICT, ['Cleaned', 'What you said', 'Copy cleaned'], ['hover:.dc-row:nth-child(4) .dc-text >> wait:900 >> is:.dc-card']),
+    state('shelf: dictations: Wispr Flow changed its format', LISTS + '&' + DICT + '&dict=changed', ['Dictations', 'Wispr Flow changed its history format. The wall cannot read it yet.']),
+    state('shelf: dictations: the read is busy', LISTS + '&' + DICT + '&dict=busy', ['Could not read the Wispr Flow history.', 'Try again']),
     state('shelf: lists from the task app', 'x=1', ['Tasks (To-Do)', 'Tax / Business', 'House, garden', 'Region'], ['.lp-btn']),
     state('shelf: recent files empty', LISTS + '&recent=empty', ['Recent files', 'No recent files']),
     state('shelf: recent files unavailable', LISTS + '&recent=down', ['Recent files', 'Recent files unavailable']),
@@ -146,6 +205,9 @@ export default {
       variant('Shelf, eight lists with a 60 character name', MANY),
       variant('Shelf, lists from the task app', 'x=1'),
       variant('Shelf, a very long recent file name', LISTS + '&recent=long'),
+      variant('Shelf, Dictations', LISTS + '&' + DICT),
+      variant('Shelf, Dictations with the details card open', LISTS + '&' + DICT, { click: 'rest:.dc-row:nth-child(4)' }),
+      variant('Shelf, Dictations, Wispr Flow not installed', LISTS + '&' + DICT + '&dict=not-installed'),
       variant('Shelf, Watt set down at the far right', LISTS + '&wattspot=2300'),
     ],
     measurements: { shelf: measureShelf },
@@ -160,6 +222,7 @@ export default {
     breaks: {
       'shelf-edge': { css: '.shelf-place .rf-card { flex: 0 0 auto !important; max-height: 200px !important; }', expect: /^ *FAIL shelf: the Recent files, Captures and Capture keys cards end at/m, appliesTo: (v) => v.name === 'Shelf, three lists' },
       'shelf-label-pad': { css: '.shelf-place .shelf-key { padding: 0 !important; width: 100% !important; min-width: 0 !important; } .shelf-place .shelf-more { grid-template-columns: repeat(8, minmax(0, 1fr)) !important; }', expect: /^ *FAIL shelf: the label ".*" is [\d.-]+ px from its key edge/m, appliesTo: (v) => v.name === 'Shelf, three lists' },
+      'shelf-dict-pad': { css: '.shelf-place .dc-btn { padding: 0 !important; } .shelf-place .dc-btn-text { min-width: 0 !important; }', expect: /^ *FAIL shelf: the label "(Copy|Raw)" is [\d.-]+ px from its button edge/m, appliesTo: (v) => v.name === 'Shelf, Dictations' },
       'shelf-keys': { css: '.shelf-place .shelf-key { height: 20px !important; }', expect: /^ *FAIL shelf: key ".*" is \d+ x \d+ px/m, appliesTo: (v) => v.name === 'Shelf, three lists' },
     },
   },
