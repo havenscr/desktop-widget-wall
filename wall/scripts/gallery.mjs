@@ -623,7 +623,7 @@ const EXPECT = [
   ['work', 'deck pins: Add hovered', 'Add a key'],
   ['work', 'deck pins: picker opened by Add', ['Add a key to Always here', 'Reset to defaults']],
   ['work', 'deck pins: pinned key hovered, nothing on it', 'Add a key'],
-  ['work', 'deck pins: pinned key menu', ['Run it now', 'Remove from Always here']],
+  ['work', 'deck pins: pinned key menu', ['Run it now', 'Move right', 'Replace with another key', 'Remove from Always here']],
   ['work', 'deck pins: Now key menu', ['Run it now', 'Put in Always here']],
   ['work', 'agents header: twelve sessions', 'One thing for you'],
   // Home

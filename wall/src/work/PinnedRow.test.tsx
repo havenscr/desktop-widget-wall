@@ -683,19 +683,176 @@ it('no key has a corner button: not at rest, hovered or focused', async () => {
   none();
 });
 
-it('a pinned key menu is Run it now and Remove from Always here, each with helper text, and no Edit keys file', async () => {
+it('a pinned key menu lists Run it now, Move left, Move right, Replace with another key and Remove from Always here, each with helper text, and no Edit keys file', async () => {
   localStorage.setItem(PINS_KEY, JSON.stringify(['lib:thirds', 'lib:snip']));
   render(<PinnedRow />);
   await flush();
   fireEvent.contextMenu(screen.getByRole('button', { name: 'Snip' }));
   await flush();
   const rows = screen.getAllByRole('menuitem');
-  expect(rows.map((m) => m.querySelector('span')?.textContent)).toEqual(['Run it now', 'Remove from Always here']);
+  expect(rows.map((m) => m.querySelector('span')?.textContent)).toEqual(['Run it now', 'Move left', 'Move right', 'Replace with another key', 'Remove from Always here']);
   for (const row of rows) expect((row.getAttribute('title') ?? '').length).toBeGreaterThan(10);
   expect(screen.queryByRole('menuitem', { name: /Edit keys file/ })).toBeNull();
   fireEvent.click(screen.getByRole('menuitem', { name: /Remove from Always here/ }));
   await flush();
   expect(labels()).toEqual(['Thirds']);
+});
+
+const stored = () => JSON.parse(localStorage.getItem(PINS_KEY) ?? 'null');
+
+it('Move left and Move right swap a pin with its neighbour and save the order', async () => {
+  localStorage.setItem(PINS_KEY, JSON.stringify(['lib:thirds', 'lib:snip', 'lib:focus']));
+  render(<PinnedRow />);
+  await flush();
+  fireEvent.contextMenu(screen.getByRole('button', { name: 'Snip' }));
+  await flush();
+  fireEvent.click(screen.getByRole('menuitem', { name: /Move left/ }));
+  await flush();
+  expect(labels()).toEqual(['Snip', 'Thirds', 'Focus']);
+  expect(stored()).toEqual(['lib:snip', 'lib:thirds', 'lib:focus']);
+  fireEvent.contextMenu(screen.getByRole('button', { name: 'Snip' }));
+  await flush();
+  fireEvent.click(screen.getByRole('menuitem', { name: /Move right/ }));
+  await flush();
+  expect(labels()).toEqual(['Thirds', 'Snip', 'Focus']);
+  expect(stored()).toEqual(['lib:thirds', 'lib:snip', 'lib:focus']);
+});
+
+it('Move left is off on the first pin and Move right on the last, each saying why', async () => {
+  localStorage.setItem(PINS_KEY, JSON.stringify(['lib:thirds', 'lib:snip']));
+  render(<PinnedRow />);
+  await flush();
+  fireEvent.contextMenu(screen.getByRole('button', { name: 'Thirds' }));
+  await flush();
+  const left = screen.getByRole('menuitem', { name: /Move left/ }) as HTMLButtonElement;
+  expect(left.disabled).toBe(true);
+  expect(left.getAttribute('title')).toBe('Already first.');
+  expect((screen.getByRole('menuitem', { name: /Move right/ }) as HTMLButtonElement).disabled).toBe(false);
+  fireEvent.keyDown(document, { key: 'Escape' });
+  await flush();
+  fireEvent.contextMenu(screen.getByRole('button', { name: 'Snip' }));
+  await flush();
+  const right = screen.getByRole('menuitem', { name: /Move right/ }) as HTMLButtonElement;
+  expect(right.disabled).toBe(true);
+  expect(right.getAttribute('title')).toBe('Already last.');
+});
+
+it('a move from the keyboard menu keeps focus on the moved tile', async () => {
+  localStorage.setItem(PINS_KEY, JSON.stringify(['lib:thirds', 'lib:snip', 'lib:focus']));
+  render(<PinnedRow />);
+  await flush();
+  const snip = screen.getByRole('button', { name: 'Snip' });
+  snip.focus();
+  fireEvent.keyDown(snip, { key: 'ContextMenu' });
+  await flush();
+  fireEvent.click(screen.getByRole('menuitem', { name: /Move right/ }));
+  await flush();
+  expect(labels()).toEqual(['Thirds', 'Focus', 'Snip']);
+  expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Snip' }));
+});
+
+it('Replace with another key opens the picker for that slot and a choice changes only that slot', async () => {
+  localStorage.setItem(PINS_KEY, JSON.stringify(['lib:thirds', 'lib:snip', 'lib:focus']));
+  render(<PinnedRow />);
+  await flush();
+  fireEvent.contextMenu(screen.getByRole('button', { name: 'Snip' }));
+  await flush();
+  const item = screen.getByRole('menuitem', { name: /Replace with another key/ });
+  expect(item.getAttribute('title')).toBe("Pick a key from the library to take Snip's place. A key already in Always here swaps places with it.");
+  fireEvent.click(item);
+  await flush();
+  expect(screen.getByText('Reset to defaults')).toBeTruthy();
+  const hide = LIBRARY_DATA.flatMap((g) => g.keys).find((k) => k.id === 'strip-dark')!;
+  fireEvent.click(screen.getAllByRole('button').find((b) => b.textContent?.includes(hide.label) && !b.classList.contains('pin-tile'))!);
+  await flush();
+  expect(labels()).toEqual(['Thirds', hide.label, 'Focus']);
+  expect(stored()).toEqual(['lib:thirds', 'lib:strip-dark', 'lib:focus']);
+});
+
+const pickKey = async (id: string) => {
+  const k = LIBRARY_DATA.flatMap((g) => g.keys).find((x) => x.id === id)!;
+  fireEvent.click(screen.getAllByRole('button').find((b) => b.textContent?.includes(k.label) && !b.classList.contains('pin-tile'))!);
+  await flush();
+  return k.label;
+};
+
+it('a move from a mouse-opened menu keeps focus on the moved key', async () => {
+  localStorage.setItem(PINS_KEY, JSON.stringify(['lib:thirds', 'lib:snip', 'lib:focus']));
+  render(<PinnedRow />);
+  await flush();
+  fireEvent.contextMenu(screen.getByRole('button', { name: 'Snip' }));
+  await flush();
+  fireEvent.click(screen.getByRole('menuitem', { name: /Move right/ }));
+  await flush();
+  expect(labels()).toEqual(['Thirds', 'Focus', 'Snip']);
+  expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Snip' }));
+});
+
+it('moves and a replace keep an unresolved stored entry in place, dropping and duplicating nothing', async () => {
+  localStorage.setItem(PINS_KEY, JSON.stringify(['lib:thirds', 'lib:gone', 'lib:snip']));
+  render(<PinnedRow />);
+  await flush();
+  expect(labels()).toEqual(['Thirds', 'Snip']);
+  fireEvent.contextMenu(screen.getByRole('button', { name: 'Snip' }));
+  await flush();
+  fireEvent.click(screen.getByRole('menuitem', { name: /Move left/ }));
+  await flush();
+  expect(labels()).toEqual(['Snip', 'Thirds']);
+  expect(stored()).toEqual(['lib:snip', 'lib:gone', 'lib:thirds']);
+  fireEvent.contextMenu(screen.getByRole('button', { name: 'Thirds' }));
+  await flush();
+  fireEvent.click(screen.getByRole('menuitem', { name: /Replace with another key/ }));
+  await flush();
+  await pickKey('strip-dark');
+  expect(stored()).toEqual(['lib:snip', 'lib:gone', 'lib:strip-dark']);
+});
+
+it('moves and a replace with nothing stored save the fallback pins whole', async () => {
+  render(<PinnedRow />);
+  await flush();
+  fireEvent.contextMenu(screen.getByRole('button', { name: 'Thirds' }));
+  await flush();
+  fireEvent.click(screen.getByRole('menuitem', { name: /Move right/ }));
+  await flush();
+  expect(stored()).toEqual(['lib:focus', 'lib:thirds', 'lib:record-169', 'lib:snip', 'lib:strip-dark']);
+  fireEvent.contextMenu(screen.getByRole('button', { name: 'Snip' }));
+  await flush();
+  fireEvent.click(screen.getByRole('menuitem', { name: /Replace with another key/ }));
+  await flush();
+  await pickKey('volume-up');
+  expect(stored()).toEqual(['lib:focus', 'lib:thirds', 'lib:record-169', 'lib:volume-up', 'lib:strip-dark']);
+});
+
+it('moves and a replace keep a keys.json pin as one entry with its label and action', async () => {
+  summary = { ...summary, defaultPins: ['file:0', 'lib:snip'], filePins: [{ label: 'Mine', icon: 'window', action: null }] };
+  localStorage.setItem(PINS_KEY, JSON.stringify([{ ref: 'file:0', label: 'Mine', action: null }, 'lib:snip', 'lib:focus']));
+  render(<PinnedRow />);
+  await flush();
+  fireEvent.contextMenu(screen.getByRole('button', { name: 'Mine' }));
+  await flush();
+  fireEvent.click(screen.getByRole('menuitem', { name: /Move right/ }));
+  await flush();
+  expect(labels()).toEqual(['Snip', 'Mine', 'Focus']);
+  expect(stored()).toEqual(['lib:snip', { ref: 'file:0', label: 'Mine', action: null }, 'lib:focus']);
+  fireEvent.contextMenu(screen.getByRole('button', { name: 'Focus' }));
+  await flush();
+  fireEvent.click(screen.getByRole('menuitem', { name: /Replace with another key/ }));
+  await flush();
+  await pickKey('strip-dark');
+  expect(stored()).toEqual(['lib:snip', { ref: 'file:0', label: 'Mine', action: null }, 'lib:strip-dark']);
+});
+
+it('Replace with a key already in Always here swaps the two places', async () => {
+  localStorage.setItem(PINS_KEY, JSON.stringify(['lib:thirds', 'lib:snip', 'lib:focus']));
+  render(<PinnedRow />);
+  await flush();
+  fireEvent.contextMenu(screen.getByRole('button', { name: 'Thirds' }));
+  await flush();
+  fireEvent.click(screen.getByRole('menuitem', { name: /Replace with another key/ }));
+  await flush();
+  await pickKey('focus');
+  expect(labels()).toEqual(['Focus', 'Snip', 'Thirds']);
+  expect(stored()).toEqual(['lib:focus', 'lib:snip', 'lib:thirds']);
 });
 
 it('Run it now in a pinned key menu sends that key once', async () => {
