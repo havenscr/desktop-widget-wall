@@ -10,6 +10,8 @@ export interface Dictation {
   clean: string;
   /** What was said, before the AI pass. */
   raw: string;
+  /** False when Wispr Flow kept no raw text for this one. */
+  hasRaw: boolean;
   words: number;
 }
 

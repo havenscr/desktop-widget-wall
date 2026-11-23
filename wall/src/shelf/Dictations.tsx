@@ -13,6 +13,8 @@ export const DICTATIONS_POLL_MS = 30_000;
 export const COPIED_MS = 1400;
 /** The pointer leaving a row has this long to reach the hover card before the card closes. */
 const LEAVE_MS = 150;
+/** What the Raw button says when Wispr Flow kept no raw text. */
+export const NO_RAW = 'Wispr Flow kept no raw text for this one.';
 
 const STAGE_W = 2560;
 const STAGE_H = 720;
@@ -116,6 +118,7 @@ export function Dictations() {
   const [shown, setShown] = useState<{ id: string; place: Place } | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const alive = useRef(true);
+  const shownRef = useRef<string | undefined>(undefined);
   useEffect(() => {
     alive.current = true;
     return () => {
@@ -138,6 +141,12 @@ export function Dictations() {
   }, [hide]);
 
   const rest = (d: Dictation, row: HTMLElement) => {
+    // Back onto the row whose card is open: keep the card, only cancel a pending close.
+    if (shownRef.current === d.id) {
+      if (timer.current) clearTimeout(timer.current);
+      timer.current = null;
+      return;
+    }
     hide();
     timer.current = setTimeout(() => {
       timer.current = null;
@@ -146,6 +155,7 @@ export function Dictations() {
   };
 
   const shownId = shown?.id;
+  shownRef.current = shownId;
   useEffect(() => {
     if (shownId !== undefined && !items.some((d) => d.id === shownId)) hide();
   }, [items, shownId, hide]);
@@ -159,6 +169,7 @@ export function Dictations() {
   }, [shownId, hide]);
 
   const copy = (d: Dictation, which: DictationText) => {
+    if (which === 'raw' ? !d.hasRaw : d.clean === '') return;
     const key = `${d.id}:${which}`;
     const say = (word: string) => {
       if (!alive.current) return;
@@ -207,10 +218,10 @@ export function Dictations() {
               <span className="dc-line">{d.clean.replace(/\s+/g, ' ')}</span>
               <span className="dc-meta">{metaOf(d)}</span>
             </div>
-            <button type="button" className="dc-btn" aria-label={`Copy the cleaned text, ${metaOf(d) || 'dictation'}`} onClick={() => copy(d, 'clean')} {...tip('Copies the cleaned text')}>
+            <button type="button" className="dc-btn" aria-label={`Copy the cleaned text, ${metaOf(d) || 'dictation'}`} onClick={() => copy(d, 'clean')} aria-disabled={d.clean === '' || undefined} {...tip('Copies the cleaned text')}>
               <span className="dc-btn-text">{label(d, 'clean', 'Copy')}</span>
             </button>
-            <button type="button" className="dc-btn dc-raw" aria-label={`Raw: copy what you said, ${metaOf(d) || 'dictation'}`} onClick={() => copy(d, 'raw')} {...tip("Copies what you said, before Wispr Flow's AI pass")}>
+            <button type="button" className="dc-btn dc-raw" aria-label={d.hasRaw ? `Raw: copy what you said, ${metaOf(d) || 'dictation'}` : `Raw is not available. ${NO_RAW}`} aria-disabled={!d.hasRaw || undefined} onClick={() => copy(d, 'raw')} {...tip(d.hasRaw ? "Copies what you said, before Wispr Flow's AI pass" : NO_RAW)}>
               <span className="dc-btn-text">{label(d, 'raw', 'Raw')}</span>
             </button>
           </li>
@@ -262,13 +273,13 @@ function HoverCard({
       <b className="dc-card-key">Cleaned</b>
       <div className="dc-card-text">{item.clean}</div>
       <b className="dc-card-key">What you said</b>
-      <div className="dc-card-text dc-card-raw">{item.raw}</div>
+      <div className="dc-card-text dc-card-raw">{item.hasRaw ? item.raw : NO_RAW}</div>
       <div className="dc-card-acts">
-        <button type="button" className="dc-btn" onClick={() => copy(item, 'clean')} {...tip('Copies the cleaned text')}>
+        <button type="button" className="dc-btn" onClick={() => copy(item, 'clean')} aria-disabled={item.clean === '' || undefined} {...tip('Copies the cleaned text')}>
           <IconCopy size={20} stroke={1.8} aria-hidden="true" />
           <span className="dc-btn-text">{label(item, 'clean', 'Copy cleaned')}</span>
         </button>
-        <button type="button" className="dc-btn dc-raw" onClick={() => copy(item, 'raw')} {...tip("Copies what you said, before Wispr Flow's AI pass")}>
+        <button type="button" className="dc-btn dc-raw" onClick={() => copy(item, 'raw')} aria-disabled={!item.hasRaw || undefined} {...tip(item.hasRaw ? "Copies what you said, before Wispr Flow's AI pass" : NO_RAW)}>
           <IconMicrophone size={20} stroke={1.8} aria-hidden="true" />
           <span className="dc-btn-text">{label(item, 'raw', 'Copy raw')}</span>
         </button>

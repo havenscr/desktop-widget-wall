@@ -2,6 +2,7 @@ import { act, cleanup, fireEvent, render, screen, within } from '@testing-librar
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Dictation } from '../bridge/dictations';
 import { mocks } from '../bridge/tauri';
+import { NO_RAW } from './Dictations';
 import { RecentCard } from './RecentCard';
 
 const row = (i: number, over: Partial<Dictation> = {}): Dictation => ({
@@ -10,6 +11,7 @@ const row = (i: number, over: Partial<Dictation> = {}): Dictation => ({
   app: i === 1 ? 'Notes' : 'Mail',
   clean: `Cleaned sentence ${i}.`,
   raw: `um raw sentence ${i}`,
+  hasRaw: true,
   words: 3,
   ...over,
 });
@@ -181,5 +183,95 @@ describe('the hover card', () => {
     fireEvent.click(within(document.querySelector('.dc-card') as HTMLElement).getByText('Copy raw'));
     await act(async () => undefined);
     expect(copies).toEqual([{ id: 'd-0', which: 'raw' }]);
+  });
+});
+
+describe('the hover card does not flicker', () => {
+  it('moving from the card back onto the same row keeps the card open the whole time', async () => {
+    render(<RecentCard />);
+    open();
+    await screen.findByText('Cleaned sentence 0.');
+    vi.useFakeTimers();
+    const first = document.querySelector('.dc-row') as HTMLElement;
+    fireEvent.pointerEnter(first);
+    act(() => void vi.advanceTimersByTime(600));
+    const card = document.querySelector('.dc-card') as HTMLElement;
+    expect(card).toBeTruthy();
+    fireEvent.pointerLeave(first);
+    fireEvent.pointerEnter(card);
+    fireEvent.pointerLeave(card);
+    act(() => void vi.advanceTimersByTime(100));
+    fireEvent.pointerEnter(first);
+    // Not hidden for even an instant, and the same element stays.
+    expect(document.querySelector('.dc-card')).toBe(card);
+    act(() => void vi.advanceTimersByTime(1000));
+    expect(document.querySelector('.dc-card')).toBe(card);
+  });
+
+  it('a pointer that left the row and came back inside the grace keeps the card', async () => {
+    render(<RecentCard />);
+    open();
+    await screen.findByText('Cleaned sentence 0.');
+    vi.useFakeTimers();
+    const first = document.querySelector('.dc-row') as HTMLElement;
+    fireEvent.pointerEnter(first);
+    act(() => void vi.advanceTimersByTime(600));
+    fireEvent.pointerLeave(first);
+    act(() => void vi.advanceTimersByTime(100));
+    fireEvent.pointerEnter(first);
+    act(() => void vi.advanceTimersByTime(1000));
+    expect(document.querySelector('.dc-card')).toBeTruthy();
+  });
+
+  it('another row still swaps the card', async () => {
+    render(<RecentCard />);
+    open();
+    await screen.findByText('Cleaned sentence 0.');
+    vi.useFakeTimers();
+    const rows = document.querySelectorAll('.dc-row');
+    fireEvent.pointerEnter(rows[0] as HTMLElement);
+    act(() => void vi.advanceTimersByTime(600));
+    fireEvent.pointerLeave(rows[0] as HTMLElement);
+    fireEvent.pointerEnter(rows[1] as HTMLElement);
+    expect(document.querySelector('.dc-card')).toBeNull();
+    act(() => void vi.advanceTimersByTime(600));
+    expect(within(document.querySelector('.dc-card') as HTMLElement).getByText('Cleaned sentence 1.')).toBeTruthy();
+  });
+});
+
+describe('a dictation with no raw text', () => {
+  it('disables Raw with the helper text and never asks to copy it', async () => {
+    mocks.set('wall2_dictations', () => [row(0, { raw: '', hasRaw: false })]);
+    render(<RecentCard />);
+    open();
+    await screen.findByText('Cleaned sentence 0.');
+    const rowEl = document.querySelector('.dc-row') as HTMLElement;
+    const raw = within(rowEl).getByText('Raw').closest('button') as HTMLButtonElement;
+    expect(raw.getAttribute('aria-disabled')).toBe('true');
+    expect(raw.getAttribute('aria-label')).toContain(NO_RAW);
+    fireEvent.click(raw);
+    await act(async () => undefined);
+    expect(copies).toEqual([]);
+    expect(within(rowEl).getByText('Copy').closest('button')?.getAttribute('aria-disabled')).toBeNull();
+    fireEvent.click(within(rowEl).getByText('Copy'));
+    await within(rowEl).findByText('Copied');
+    expect(copies).toEqual([{ id: 'd-0', which: 'clean' }]);
+  });
+
+  it('the hover card says so and its Copy raw is disabled', async () => {
+    mocks.set('wall2_dictations', () => [row(0, { raw: '', hasRaw: false })]);
+    render(<RecentCard />);
+    open();
+    await screen.findByText('Cleaned sentence 0.');
+    vi.useFakeTimers();
+    fireEvent.pointerEnter(document.querySelector('.dc-row') as HTMLElement);
+    act(() => void vi.advanceTimersByTime(600));
+    const card = document.querySelector('.dc-card') as HTMLElement;
+    expect(within(card).getByText(NO_RAW)).toBeTruthy();
+    const raw = within(card).getByText('Copy raw').closest('button') as HTMLButtonElement;
+    expect(raw.getAttribute('aria-disabled')).toBe('true');
+    fireEvent.click(raw);
+    await act(async () => undefined);
+    expect(copies).toEqual([]);
   });
 });

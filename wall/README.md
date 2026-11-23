@@ -1538,9 +1538,10 @@ the centre card; the date line takes it through the frame's `ClockSlot` portal.
   from Wispr Flow's own history: the text on one line (ellipsis), the time and app under it, and two buttons, Copy (the cleaned text, or the user's own edit) and
   Raw (what was said, before the AI pass). Resting 0.5 s on a row opens a hover card right of the card with both versions in full and Copy cleaned and Copy raw;
   it closes when the pointer leaves, the list scrolls or the entry goes. Rust opens `%APPDATA%\Wispr Flow\flow.sqlite` read only (never `immutable`, so rows
-  still in Flow's write-ahead log show), waits at most 1 s, checks the History table has the columns it needs, and reads only the entry id, time, app, the
-  three text columns and the word count from the newest 60 rows by row number, skipping archived entries and entries with no text. Text has control and
-  direction characters stripped and is cut to 2000 characters. `wall2_dictations` returns `{ id, at, app, clean, raw, words }`; `wall2_dictation_copy` takes only
+  still in Flow's write-ahead log show; the wall never changes Flow's history, though SQLite may create `flow.sqlite-shm` beside it while reading, as any reader does; a file it cannot open or read right now answers `busy`), waits at most 1 s, checks the History table has the columns it needs, and reads only the entry id, time, app, the
+  three text columns and the word count from the newest 200 rows by row number, skipping archived entries, entries with no text and ids outside letters, digits, `_` and `-` (an id seen twice keeps its newest row),
+  then sorts them by time and keeps 30. Text has control and
+  direction characters stripped and is cut to 2000 characters in the list; a copy takes the whole text (a 200,000 character safety cap). Impossible dates and zones read as no time and sort last. `wall2_dictations` also sends `hasRaw`; with none, Raw is disabled and says "Wispr Flow kept no raw text for this one." `wall2_dictations` returns `{ id, at, app, clean, raw, hasRaw, words }`; `wall2_dictation_copy` takes only
   an id and `clean` or `raw`, re-reads that row and puts the text on the clipboard (the page never sends text). Both are refused unless they come from the
   Wall 2 window. Errors are fixed words shown as plain lines: `not-installed`, `no-history`, `changed` (a column is missing), `busy` and `failed` (with
   Try again). Read when shown and every 30 s while the page is visible. Dev knobs: `?dict=not-installed|no-history|changed|busy|failed|empty` and

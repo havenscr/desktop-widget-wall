@@ -672,6 +672,16 @@ button.cap-pic:focus-visible {
 .dc-raw:hover {
   color: inherit;
 }
+.dc-btn[aria-disabled='true'] {
+  opacity: 0.45;
+  cursor: default;
+}
+.dc-btn[aria-disabled='true']:hover {
+  background: none;
+}
+.dc-btn[aria-disabled='true']:active {
+  transform: none;
+}
 .dc-btn-text {
   display: inline-block;
 }

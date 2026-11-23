@@ -6,7 +6,7 @@ import { knob } from './long';
 /**
  * Dev only: the Shelf Dictations list's answers, with invented sentences.
  *
- *   (no knob)              eight dictations, newest first, one with a long text and one with no app
+ *   (no knob)              eight dictations, newest first, one with a long text and one with no app, the last with no raw text
  *   ?dict=not-installed    Wispr Flow is not installed
  *   ?dict=no-history       Wispr Flow has no history
  *   ?dict=changed          Wispr Flow changed its history format
@@ -31,7 +31,7 @@ const SEEDS: { agoMin: number; app: string; clean: string; raw: string }[] = [
   { agoMin: 255, app: '', clean: 'Ideas for the workshop opener: start with the before and after, then the three steps.', raw: 'ideas for the workshop opener start with the before and after then the three steps' },
   { agoMin: 1700, app: 'Chrome', clean: 'Search for a standing desk mat that fits under a sixty inch desk.', raw: 'search for a standing desk mat that fits under a sixty inch desk' },
   { agoMin: 1750, app: 'Outlook', clean: 'Hi, following up on the invoice from last week. Let me know if anything is missing.', raw: 'hi following up on the invoice from last week let me know if anything is missing' },
-  { agoMin: 4000, app: 'Notes', clean: 'Pick up the printer paper and the spare cables on the way in.', raw: 'pick up the printer paper and the spare cables on the way in' },
+  { agoMin: 4000, app: 'Notes', clean: 'Pick up the printer paper and the spare cables on the way in.', raw: '' },
 ];
 
 export function registerDictationMocks(): void {
@@ -54,6 +54,7 @@ export function registerDictationMocks(): void {
       app: s.app,
       clean: s.clean,
       raw: s.raw,
+      hasRaw: s.raw !== '',
       words: s.clean.split(/\s+/).length,
     }));
   });

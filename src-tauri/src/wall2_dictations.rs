@@ -3,30 +3,43 @@
 //! What the page can and cannot do:
 //! - The page asks for a list and gets, per dictation, Flow's own entry id, the time (RFC 3339, UTC),
 //!   the app it was dictated into, the cleaned text, the raw text (what was said, before the AI pass)
-//!   and the word count. At most 30 come back, newest first.
+//!   and the word count, and whether Flow kept any raw text. At most 30 come back, newest first by time.
 //! - Rust opens `%APPDATA%\Wispr Flow\flow.sqlite` read only, through SQLite itself (never `immutable`,
-//!   so rows still in Flow's write-ahead log are seen), with a one second busy wait.
+//!   so rows still in Flow's write-ahead log are seen), with a one second busy wait. The wall never changes
+//!   Flow's history. While reading a write-ahead database, SQLite may create or touch the shared-memory
+//!   file `flow.sqlite-shm` beside it, as any reader does.
 //! - Only seven columns are named in a query: the entry id, the time, the app and the three text
 //!   columns, plus the word count. Nothing else in the file is read: no recordings, no screenshots.
 //! - `copy` takes only an id and which text; Rust re-reads that one row and puts its text on the
 //!   clipboard. The page never sends text to copy.
-//! - Archived entries and entries with no text at all are skipped. Each text is cut to 2000 characters.
+//! - The newest 200 rows by row number are read (archived ones left out), sorted by time, and 30 kept.
+//!   Entries with no text at all, or an id outside letters, digits, `_` and `-` (1 to 64), are skipped, and
+//!   an id seen twice keeps its newest row. In the list each text is cut to 2000 characters; a copy takes
+//!   the whole text (only a 200,000 character safety cap).
 //! - Nothing is logged: no text, no id, no path.
 //!
 //! Errors are fixed words: `not-installed` (no Wispr Flow folder), `no-history` (no file, or no
 //! History table), `changed` (a column the wall needs is gone), `busy` (the file is locked),
-//! `missing` (the id is not in the newest entries), `forbidden` (the wrong window), `failed`.
+//! `missing` (the id is not in the newest entries), `forbidden` (the wrong window), `failed`. A file SQLite
+//! cannot open, or may not read right now (cannot open, permission, read only), answers `busy`, so the page
+//! offers Try again.
 #![cfg_attr(not(windows), allow(dead_code))]
 
 use rusqlite::types::Value as SqlValue;
 use rusqlite::{Connection, OpenFlags};
 use serde::Serialize;
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 /// Dictations returned to the page.
 const SHOWN: usize = 30;
+/// Rows read from the newest end of the table before sorting by time.
+const WINDOW: usize = 200;
+/// Characters of each text in the list.
 const TEXT_CHARS: usize = 2000;
+/// Characters of a text that is copied: only a safety cap.
+const COPY_CHARS: usize = 200_000;
 const APP_CHARS: usize = 40;
 
 const NOT_INSTALLED: &str = "not-installed";
@@ -39,14 +52,14 @@ const FAILED: &str = "failed";
 /// The columns the wall needs to exist. The query below names only some of them.
 const NEEDED: [&str; 8] = ["transcriptEntityId", "timestamp", "app", "formattedText", "editedText", "asrText", "isArchived", "numWords"];
 
-/// The newest 60 rows by row number (archived ones left out), of which at most 30 are kept. Not ordered by time: the table is large and has no index on it.
+/// The newest 200 rows by row number (archived ones left out); the caller sorts them by time and keeps 30. A row Flow rewrote has a new row number, so row order alone is not time order.
 const LIST_SQL: &str = "SELECT transcriptEntityId, timestamp, app, editedText, formattedText, asrText, numWords \
-    FROM History WHERE COALESCE(isArchived, 0) != 1 ORDER BY rowid DESC LIMIT 60";
+    FROM History WHERE COALESCE(isArchived, 0) != 1 ORDER BY rowid DESC LIMIT 200";
 
-/// One row by Flow's entry id, among the newest 200 rows only: a little more than the list shows, so a row the list showed is found.
+/// One row by Flow's entry id, among the same newest 200 rows the list reads, so a row the list showed is found. The newest row wins when an id repeats.
 const ONE_SQL: &str = "SELECT transcriptEntityId, timestamp, app, editedText, formattedText, asrText, numWords \
     FROM History WHERE rowid IN (SELECT rowid FROM History WHERE COALESCE(isArchived, 0) != 1 ORDER BY rowid DESC LIMIT 200) \
-    AND transcriptEntityId = ?1 LIMIT 1";
+    AND transcriptEntityId = ?1 ORDER BY rowid DESC LIMIT 1";
 
 /// One dictation as the page sees it.
 #[derive(Serialize, Clone, Debug, PartialEq, Eq)]
@@ -58,6 +71,8 @@ pub struct Dictation {
     pub app: String,
     pub clean: String,
     pub raw: String,
+    /// False when Flow kept no raw text for this one (the page disables Raw).
+    pub has_raw: bool,
     pub words: i64,
 }
 
@@ -116,6 +131,15 @@ fn civil_from_days(z: i64) -> (i64, i64, i64) {
     (if m <= 2 { y + 1 } else { y }, m, d)
 }
 
+fn days_in_month(y: i64, m: i64) -> i64 {
+    match m {
+        2 if (y % 4 == 0 && y % 100 != 0) || y % 400 == 0 => 29,
+        2 => 28,
+        4 | 6 | 9 | 11 => 30,
+        _ => 31,
+    }
+}
+
 fn digits(s: &str, at: usize, n: usize) -> Option<i64> {
     let part = s.get(at..at + n)?;
     if !part.bytes().all(|c| c.is_ascii_digit()) {
@@ -134,7 +158,7 @@ fn parse_stored(text: &str) -> Option<i64> {
     }
     let (y, mo, d) = (digits(s, 0, 4)?, digits(s, 5, 2)?, digits(s, 8, 2)?);
     let (h, mi, sec) = (digits(s, 11, 2)?, digits(s, 14, 2)?, digits(s, 17, 2)?);
-    if !(1..=12).contains(&mo) || !(1..=31).contains(&d) || h > 23 || mi > 59 || sec > 60 {
+    if !(1..=12).contains(&mo) || !(1..=days_in_month(y, mo)).contains(&d) || h > 23 || mi > 59 || sec > 59 {
         return None;
     }
     // After the seconds: an optional fraction, optional spaces, then Z, +hh[:mm] or -hh[:mm], or nothing.
@@ -151,12 +175,20 @@ fn parse_stored(text: &str) -> Option<i64> {
             b'-' => -1,
             _ => return None,
         };
-        let zone = &rest[1..];
+        let zone = rest.get(1..)?;
         let oh = digits(zone, 0, 2)?;
-        let om = if zone.len() > 2 { digits(zone, if zone.as_bytes()[2] == b':' { 3 } else { 2 }, 2)? } else { 0 };
+        let om = match zone.len() {
+            2 => 0,
+            4 => digits(zone, 2, 2)?,
+            5 if zone.as_bytes()[2] == b':' => digits(zone, 3, 2)?,
+            _ => return None,
+        };
+        if om > 59 || oh * 60 + om > 14 * 60 {
+            return None;
+        }
         sign * (oh * 60 + om)
     };
-    Some(days_from_civil(y, mo, d) * 86_400 + h * 3600 + mi * 60 + sec.min(59) - offset_min * 60)
+    Some(days_from_civil(y, mo, d) * 86_400 + h * 3600 + mi * 60 + sec - offset_min * 60)
 }
 
 /// `2026-11-23T14:41:05Z` for epoch seconds.
@@ -196,9 +228,19 @@ fn history_path() -> Result<PathBuf, &'static str> {
     Ok(file)
 }
 
+/// The word for a SQLite result code. Busy, locked, cannot open, permission and read only are all
+/// "not right now" (Flow holds the file, or the shared-memory file cannot be made yet): the page retries.
+fn word_of_code(code: rusqlite::ErrorCode) -> &'static str {
+    use rusqlite::ErrorCode as C;
+    match code {
+        C::DatabaseBusy | C::DatabaseLocked | C::CannotOpen | C::PermissionDenied | C::ReadOnly => BUSY,
+        _ => FAILED,
+    }
+}
+
 fn word_of(e: &rusqlite::Error) -> &'static str {
     match e {
-        rusqlite::Error::SqliteFailure(f, _) if f.code == rusqlite::ErrorCode::DatabaseBusy || f.code == rusqlite::ErrorCode::DatabaseLocked => BUSY,
+        rusqlite::Error::SqliteFailure(f, _) => word_of_code(f.code),
         _ => FAILED,
     }
 }
@@ -211,14 +253,15 @@ fn text_cell(v: SqlValue) -> String {
     }
 }
 
-/// One row, mapped, or None when it is to be skipped (no text at all).
-fn entry_of(cells: [SqlValue; 7]) -> Option<(Dictation, Option<String>)> {
+/// One row, mapped with each text cut to `cap` characters, or None when it is to be skipped (no text
+/// at all, or an id that cannot be looked up again).
+fn entry_of(cells: [SqlValue; 7], cap: usize) -> Option<(Dictation, Option<String>)> {
     let [id, when, app, edited, formatted, asr, words] = cells;
     let id = text_cell(id);
-    if id.is_empty() {
+    if !valid_id(&id) {
         return None;
     }
-    let (edited, formatted, raw) = (clean_body(&text_cell(edited), TEXT_CHARS), clean_body(&text_cell(formatted), TEXT_CHARS), clean_body(&text_cell(asr), TEXT_CHARS));
+    let (edited, formatted, raw) = (clean_body(&text_cell(edited), cap), clean_body(&text_cell(formatted), cap), clean_body(&text_cell(asr), cap));
     let mut clean = if edited.is_empty() { formatted } else { edited };
     if clean.is_empty() && raw.is_empty() {
         return None;
@@ -231,7 +274,8 @@ fn entry_of(cells: [SqlValue; 7]) -> Option<(Dictation, Option<String>)> {
         SqlValue::Integer(n) => n.max(0),
         _ => 0,
     };
-    let dictation = Dictation { id: one_line(&id, 64), at: at.clone(), app: one_line(&text_cell(app), APP_CHARS), clean, raw, words };
+    let has_raw = !raw.is_empty();
+    let dictation = Dictation { id, at: at.clone(), app: one_line(&text_cell(app), APP_CHARS), clean, raw, has_raw, words };
     Some((dictation, at))
 }
 
@@ -265,32 +309,36 @@ fn read_list(path: &Path) -> Result<Vec<Dictation>, &'static str> {
     let mut stmt = conn.prepare(LIST_SQL).map_err(|e| word_of(&e))?;
     let rows = stmt.query_map([], cells_of).map_err(|e| word_of(&e))?;
     let mut out: Vec<(Dictation, Option<String>)> = Vec::new();
+    let mut seen: HashSet<String> = HashSet::new();
     for row in rows {
         let cells = row.map_err(|e| word_of(&e))?;
-        out.extend(entry_of(cells));
-        if out.len() >= SHOWN {
-            break;
+        if let Some((d, at)) = entry_of(cells, TEXT_CHARS) {
+            // The newest row number wins when an id repeats, as in the copy lookup.
+            if seen.insert(d.id.clone()) {
+                out.push((d, at));
+            }
         }
     }
-    // Newest first by time; rows with no readable time keep their place at the end, in row order.
+    // Newest first by time; rows with no readable time go last, in row order (the sort is stable).
     out.sort_by(|a, b| b.1.cmp(&a.1));
+    out.truncate(SHOWN);
     Ok(out.into_iter().map(|(d, _)| d).collect())
 }
 
-/// One dictation by Flow's entry id, among the newest rows.
+/// One dictation by Flow's entry id, among the newest rows, with its whole text.
 fn read_one(path: &Path, id: &str) -> Result<Dictation, &'static str> {
     let conn = open_checked(path)?;
     let mut stmt = conn.prepare(ONE_SQL).map_err(|e| word_of(&e))?;
     let mut rows = stmt.query_map([id], cells_of).map_err(|e| word_of(&e))?;
     match rows.next() {
-        Some(row) => entry_of(row.map_err(|e| word_of(&e))?).map(|(d, _)| d).ok_or(MISSING),
+        Some(row) => entry_of(row.map_err(|e| word_of(&e))?, COPY_CHARS).map(|(d, _)| d).ok_or(MISSING),
         None => Err(MISSING),
     }
 }
 
-/// Whether an id may be looked up: 1 to 64 of letters, digits and hyphens.
+/// Whether an id may be listed and looked up: 1 to 64 of letters, digits, `_` and `-`.
 fn valid_id(id: &str) -> bool {
-    !id.is_empty() && id.len() <= 64 && id.chars().all(|c| c.is_ascii_alphanumeric() || c == '-')
+    !id.is_empty() && id.len() <= 64 && id.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
 }
 
 fn list_now() -> Result<Vec<Dictation>, String> {
@@ -409,16 +457,80 @@ mod tests {
     }
 
     #[test]
-    fn newest_row_numbers_only_and_at_most_thirty() {
+    fn the_window_is_the_newest_200_rows_then_time_decides_the_thirty() {
+        assert!(LIST_SQL.ends_with(&format!("LIMIT {WINDOW}")));
+        assert!(ONE_SQL.contains(&format!("LIMIT {WINDOW})")));
         let t = Temp::new();
         let c = Connection::open(&t.0).unwrap();
         c.execute(FULL, []).unwrap();
-        for i in 0..100 {
-            add(&c, &format!("r-{i}"), "2026-11-23 10:00:00", "Notes", Some(format!("Text {i}").as_str()), None, Some("x"), 0, 1);
+        // 250 rows. Row number i has time minute i, except row 100 (old row number), rewritten with the newest time.
+        for i in 0..250 {
+            let ts = if i == 100 { "2026-11-23 23:00:00".to_string() } else { format!("2026-11-23 {:02}:{:02}:00", i / 60, i % 60) };
+            add(&c, &format!("r-{i}"), &ts, "Notes", Some(format!("Text {i}").as_str()), None, Some("x"), 0, 1);
         }
         let list = read_list(&t.0).unwrap();
         assert_eq!(list.len(), SHOWN);
-        assert!(list.iter().all(|d| d.clean.trim_start_matches("Text ").parse::<i32>().unwrap() >= 40));
+        // Rows 0..50 are outside the 200 newest row numbers and never appear.
+        assert!(list.iter().all(|d| d.id != "r-0" && d.id != "r-49"));
+        // The row with an older row number (100) but the newest time is kept, and first.
+        assert_eq!(list[0].id, "r-100");
+        // Row 100 is inside the window (rows 50..250). The rest are the newest by time: 249 down.
+        assert_eq!(list[1].id, "r-249");
+        assert_eq!(list[SHOWN - 1].id, format!("r-{}", 249 - (SHOWN - 2)));
+        // Only the window's rows can be looked up.
+        assert!(read_one(&t.0, "r-50").is_ok());
+        assert_eq!(read_one(&t.0, "r-49").unwrap_err(), MISSING);
+    }
+
+    #[test]
+    fn a_whole_long_text_copies_while_the_list_is_cut() {
+        let t = Temp::new();
+        let c = Connection::open(&t.0).unwrap();
+        c.execute(FULL, []).unwrap();
+        let long = "word ".repeat(1000);
+        add(&c, "long-1", "2026-11-23 09:00:00", "Notes", Some(long.as_str()), None, Some(long.as_str()), 0, 1000);
+        let listed = read_list(&t.0).unwrap();
+        assert_eq!(listed[0].clean.chars().count(), TEXT_CHARS);
+        assert_eq!(listed[0].raw.chars().count(), TEXT_CHARS);
+        let one = read_one(&t.0, "long-1").unwrap();
+        assert_eq!(one.clean, long.trim());
+        assert_eq!(one.raw, long.trim());
+        assert_eq!(one.clean.chars().count(), 4999);
+    }
+
+    #[test]
+    fn ids_must_be_lookup_safe_and_repeats_keep_the_newest_row() {
+        let t = Temp::new();
+        let c = Connection::open(&t.0).unwrap();
+        c.execute(FULL, []).unwrap();
+        add(&c, "good_id-1", "2026-11-23 09:00:00", "Notes", Some("kept"), None, None, 0, 1);
+        add(&c, "bad id", "2026-11-23 09:01:00", "Notes", Some("space"), None, None, 0, 1);
+        add(&c, "bad.id", "2026-11-23 09:02:00", "Notes", Some("dot"), None, None, 0, 1);
+        add(&c, &"a".repeat(65), "2026-11-23 09:03:00", "Notes", Some("long id"), None, None, 0, 1);
+        add(&c, "dup", "2026-11-23 09:04:00", "Notes", Some("old dup"), None, None, 0, 1);
+        add(&c, "dup", "2026-11-23 09:05:00", "Notes", Some("new dup"), None, None, 0, 1);
+        let list = read_list(&t.0).unwrap();
+        let ids: Vec<&str> = list.iter().map(|d| d.id.as_str()).collect();
+        assert_eq!(ids, vec!["dup", "good_id-1"]);
+        assert_eq!(list[0].clean, "new dup");
+        // Every listed id finds the same row again.
+        for d in &list {
+            assert_eq!(read_one(&t.0, &d.id).unwrap().clean, d.clean);
+        }
+    }
+
+    #[test]
+    fn no_raw_text_means_no_raw_flag() {
+        let t = Temp::new();
+        let c = Connection::open(&t.0).unwrap();
+        c.execute(FULL, []).unwrap();
+        add(&c, "n-1", "2026-11-23 09:00:00", "Notes", Some("Clean only."), None, Some(""), 0, 2);
+        add(&c, "n-2", "2026-11-23 08:00:00", "Notes", Some("Clean too."), None, None, 0, 2);
+        add(&c, "n-3", "2026-11-23 07:00:00", "Notes", Some("Has raw."), None, Some("has raw"), 0, 2);
+        let list = read_list(&t.0).unwrap();
+        assert_eq!(list.iter().map(|d| d.has_raw).collect::<Vec<_>>(), vec![false, false, true]);
+        assert!(!read_one(&t.0, "n-1").unwrap().has_raw);
+        assert!(read_one(&t.0, "n-3").unwrap().has_raw);
     }
 
     #[test]
@@ -455,7 +567,9 @@ mod tests {
         assert!(!valid_id(""));
         assert!(!valid_id("a b"));
         assert!(!valid_id("a'b"));
-        assert!(!valid_id("a_b"));
+        assert!(valid_id("a_b-9"));
+        assert!(!valid_id("a.b"));
+        assert!(!valid_id("a\u{e9}"));
         assert_eq!(copy_now("bad id", "clean").unwrap_err(), FAILED);
         assert_eq!(copy_now("ok-id", "other").unwrap_err(), FAILED);
     }
@@ -483,12 +597,69 @@ mod tests {
     }
 
     #[test]
-    fn the_queries_name_only_the_text_columns() {
+    fn impossible_dates_and_zones_are_rejected() {
+        for bad in [
+            "2026-02-30 10:00:00",
+            "2026-02-29 10:00:00",
+            "1900-02-29 10:00:00",
+            "2026-04-31 10:00:00",
+            "2026-00-10 10:00:00",
+            "2026-13-10 10:00:00",
+            "2026-11-00 10:00:00",
+            "2026-11-23 24:00:00",
+            "2026-11-23 10:60:00",
+            "2026-11-23 10:00:60",
+            "2026-11-23 10:00:00+14:01",
+            "2026-11-23 10:00:00+15:00",
+            "2026-11-23 10:00:00-23:00",
+            "2026-11-23 10:00:00+05:60",
+            "2026-11-23 10:00:00+0560",
+            "2026-11-23 10:00:00+053",
+        ] {
+            assert_eq!(parse_stored(bad), None, "{bad}");
+        }
+        for good in ["2028-02-29 10:00:00", "2000-02-29 10:00:00", "2026-11-23 10:00:59", "2026-11-23 10:00:00+14:00", "2026-11-23 10:00:00-12:00", "2026-11-23 10:00:00+05"] {
+            assert!(parse_stored(good).is_some(), "{good}");
+        }
+        assert_eq!(parse_stored("2028-02-29 10:00:00").map(rfc3339_utc).as_deref(), Some("2028-02-29T10:00:00Z"));
+    }
+
+    #[test]
+    fn a_row_with_an_impossible_time_has_no_time_and_sorts_last() {
+        let t = Temp::new();
+        let c = Connection::open(&t.0).unwrap();
+        c.execute(FULL, []).unwrap();
+        add(&c, "t-1", "2026-02-30 10:00:00", "Notes", Some("Bad day."), None, None, 0, 2);
+        add(&c, "t-2", "2026-11-23 09:00:00", "Notes", Some("Fine."), None, None, 0, 1);
+        add(&c, "t-3", "2026-11-23 09:00:00+16:00", "Notes", Some("Bad zone."), None, None, 0, 2);
+        let list = read_list(&t.0).unwrap();
+        let ids: Vec<&str> = list.iter().map(|d| d.id.as_str()).collect();
+        assert_eq!(ids, vec!["t-2", "t-3", "t-1"]);
+        assert_eq!(list[1].at, None);
+        assert_eq!(list[2].at, None);
+    }
+
+    #[test]
+    fn locked_and_unopenable_files_ask_for_a_retry() {
+        use rusqlite::ffi;
+        for code in [ffi::SQLITE_BUSY, ffi::SQLITE_LOCKED, ffi::SQLITE_CANTOPEN, ffi::SQLITE_PERM, ffi::SQLITE_READONLY] {
+            let e = rusqlite::Error::SqliteFailure(ffi::Error::new(code), None);
+            assert_eq!(word_of(&e), BUSY, "{code}");
+        }
+        let corrupt = rusqlite::Error::SqliteFailure(ffi::Error::new(ffi::SQLITE_CORRUPT), None);
+        assert_eq!(word_of(&corrupt), FAILED);
+        assert_eq!(word_of(&rusqlite::Error::InvalidQuery), FAILED);
+    }
+
+    #[test]
+    fn the_queries_name_exactly_the_text_columns() {
         for sql in [LIST_SQL, ONE_SQL] {
-            let low = sql.to_lowercase();
-            for banned in ["audio", "screenshot", "select *"] {
-                assert!(!low.contains(banned), "{banned}");
-            }
+            let from = sql.find(" FROM ").expect("from");
+            let cols: Vec<&str> = sql["SELECT ".len()..from].split(',').map(str::trim).collect();
+            assert!(sql.starts_with("SELECT "));
+            assert_eq!(cols, vec!["transcriptEntityId", "timestamp", "app", "editedText", "formattedText", "asrText", "numWords"]);
+            // The inner window query names only the row number and the archived flag.
+            assert!(!sql.contains('*'));
         }
     }
 
@@ -521,9 +692,15 @@ mod tests {
     #[test]
     fn the_source_never_logs() {
         let src = include_str!("wall2_dictations.rs").replace("\r\n", "\n");
-        let macros = ["print", "eprint", "dbg", "log", "info", "warn", "debug"];
+        // Needles are built here, so this test's own text never matches.
+        let macros = ["print", "println", "eprint", "eprintln", "dbg", "log", "trace", "debug", "info", "warn", "error"];
         for m in macros {
-            assert!(!src.contains(&format!("{m}!(")), "{m}");
+            for gap in ["", " "] {
+                let needle = format!("{m}!{gap}(");
+                assert!(!src.contains(&needle), "{m}");
+            }
         }
+        assert!(!src.contains(&format!("{}::", "log")), "log crate path");
+        assert!(!src.contains(&format!("{}::", "tracing")), "tracing crate path");
     }
 }
