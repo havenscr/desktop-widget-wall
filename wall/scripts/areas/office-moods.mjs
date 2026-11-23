@@ -58,7 +58,7 @@ function measureMoods() {
     out.syncKnob = box(slot.querySelector('.u-sync-knob'));
   }
   out.strip = box(strip);
-  out.pals = strip ? [...strip.querySelectorAll('.u-pal')].map((c) => { const n = c.querySelector('.u-mood-name'); return { text: n.textContent.trim(), ...box(c), cut: n.scrollWidth > n.clientWidth + 1 }; }) : [];
+  out.pals = strip ? [...strip.querySelectorAll('.u-pal')].map((c) => { const n = c.querySelector('.u-mood-name'); const rg = document.createRange(); rg.selectNodeContents(n); const tr = box(rg); return { text: n.textContent.trim(), ...box(c), cut: n.scrollWidth > n.clientWidth + 1, pad: Math.min(tr.l - c.getBoundingClientRect().left, c.getBoundingClientRect().right - tr.r) }; }) : [];
   out.lineCut = !!line && line.scrollWidth > line.clientWidth + 1;
   out.lineCs = line ? { ws: getComputedStyle(line).whiteSpace, ov: getComputedStyle(line).textOverflow } : null;
   // What else draws inside either box: images, svgs, buttons, inputs, canvases, or own text, cut by every ancestor that clips.
@@ -138,6 +138,7 @@ const rule = (variant, results, emit) => {
       for (const p of m.pals) {
         if (p.cut) fails.push('officemoods: palette name "' + p.text + '" is cut');
         if (p.h < 33 || p.h > 35) fails.push('officemoods: palette "' + p.text + '" is ' + r1(p.h) + ' px tall (34)');
+        if (p.pad < 9.5) fails.push('officemoods: palette "' + p.text + '" text is ' + r1(p.pad) + ' px from its button edge (10 at least)');
       }
     }
     if (m.label && m.chips.length && m.label.r > m.chips[0].l + 0.5) fails.push('officemoods: the label overlaps the first chip');
@@ -284,6 +285,7 @@ export default {
       'moods-line': { css: '.u-office-line { right: 780px !important; }', expect: /^ *FAIL officemoods: the line ends at x /m, appliesTo: on('token') },
       'moods-small': { css: '.u-mood { height: 30px !important; }', expect: /^ *FAIL officemoods: chip ".*" is [\d.]+ px tall/m, appliesTo: on('six') },
       'moods-sync': { css: '.u-mood.u-sync { width: 180px !important; min-width: 180px !important; }', expect: /^ *FAIL officemoods: the Music sync chip is [\d.]+ px wide/m, appliesTo: on('six') },
+      'moods-pal-pad': { css: '.u-pal { padding: 0 2px !important; }', expect: /^ *FAIL officemoods: palette ".*" text is [\d.]+ px from its button edge/m, appliesTo: on('strip') },
       'moods-text': { css: '.u-mood { font-size: 14px !important; }', expect: /^ *FAIL officemoods: text under 16 px/m, appliesTo: on('six') },
     },
   },

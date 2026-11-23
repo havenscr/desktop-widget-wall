@@ -4045,7 +4045,7 @@ button.sp-qrow:hover {
   right: 0;
   bottom: calc(100% + 10px);
   display: flex;
-  gap: 4px;
+  gap: 3px;
   padding: 6px;
   border-radius: 25px;
   border: 1px solid var(--line);
@@ -4059,9 +4059,9 @@ button.sp-qrow:hover {
   pointer-events: auto;
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 3px;
   height: 34px;
-  padding: 0 8px;
+  padding: 0 9px 0 6px;
   border-radius: 17px;
   border: 1px solid var(--line);
   background: rgba(10, 7, 28, 0.9);
@@ -4090,9 +4090,9 @@ button.sp-qrow:hover {
 }
 .u-pal-sw {
   flex: none;
-  width: 28px;
-  height: 18px;
-  border-radius: 9px;
+  width: 26px;
+  height: 17px;
+  border-radius: 8.5px;
   border: 1px dashed rgba(183, 175, 214, 0.4);
 }
 .u-pal:not(.dis) .u-pal-sw {
