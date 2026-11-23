@@ -101,8 +101,10 @@ const show = async () => {
 };
 const slot = () => document.querySelector('[data-slot="office-lights"]') as HTMLElement;
 const syncChip = () => slot().querySelector('[data-mood="sync"]') as HTMLElement;
-const main = () => syncChip().querySelector('[data-part="sync-main"]') as HTMLElement;
-const dots = () => syncChip().querySelector('[data-part="sync-dots"]') as HTMLElement;
+/** The switch at the chip's right end: it turns sync on and off. */
+const main = () => syncChip().querySelector('[data-part="sync-switch"]') as HTMLElement;
+/** The label side of the chip: a click anywhere on it opens the menu. */
+const dots = () => syncChip().querySelector('[data-part="sync-main"]') as HTMLElement;
 const mood = (id: string) => slot().querySelector(`[data-mood="${id}"]`) as HTMLElement;
 const tipOf = async (el: Element) => {
   fireEvent.mouseEnter(el);
@@ -132,7 +134,7 @@ it('states: idle, starting (spinner), on (lit), failed (warning icon)', async ()
   startHold = true;
   await show();
   expect(syncChip().getAttribute('data-state')).toBe('off');
-  expect(main().getAttribute('aria-pressed')).toBe('false');
+  expect(main().getAttribute('aria-checked')).toBe('false');
   fireEvent.click(main());
   await flush();
   expect(syncChip().getAttribute('data-state')).toBe('starting');
@@ -144,7 +146,7 @@ it('states: idle, starting (spinner), on (lit), failed (warning icon)', async ()
   await flush();
   expect(syncChip().getAttribute('data-state')).toBe('on');
   expect(syncChip().className).toContain('lit');
-  expect(main().getAttribute('aria-pressed')).toBe('true');
+  expect(main().getAttribute('aria-checked')).toBe('true');
   // A failure: warning icon and a tip.
   fireEvent.click(main());
   await flush();
@@ -154,6 +156,40 @@ it('states: idle, starting (spinner), on (lit), failed (warning icon)', async ()
   expect(syncChip().getAttribute('data-state')).toBe('failed');
   expect(syncChip().querySelector('.u-mood-ico.warn')).not.toBeNull();
   expect(await tipOf(main())).toContain('The Hue bridge did not answer.');
+});
+
+it('Button A: the label opens the menu and never toggles; the switch toggles and never opens it; aria-checked follows the state', async () => {
+  await show();
+  const sw = main();
+  expect(sw.getAttribute('role')).toBe('switch');
+  expect(sw.getAttribute('aria-checked')).toBe('false');
+  // A click on the label opens the menu and sends nothing to the bridge.
+  fireEvent.click(dots());
+  await flush();
+  expect(slot().querySelector('[data-part="palette-strip"]')).not.toBeNull();
+  expect(dots().getAttribute('aria-expanded')).toBe('true');
+  expect(count('wall2_lightsync_start')).toBe(0);
+  expect(sw.getAttribute('aria-checked')).toBe('false');
+  // A click on the padding of the chip (the chip itself) closes it again.
+  fireEvent.click(syncChip());
+  expect(slot().querySelector('[data-part="palette-strip"]')).toBeNull();
+  // The switch turns sync on without opening the menu.
+  fireEvent.click(sw);
+  await flush();
+  expect(count('wall2_lightsync_start')).toBe(1);
+  expect(slot().querySelector('[data-part="palette-strip"]')).toBeNull();
+  expect(main().getAttribute('aria-checked')).toBe('true');
+  fireEvent.click(main());
+  await flush();
+  expect(main().getAttribute('aria-checked')).toBe('false');
+  expect(slot().querySelector('[data-part="palette-strip"]')).toBeNull();
+  // The colour dots left the chip.
+  expect(syncChip().querySelector('.u-sync-dot')).toBeNull();
+  // Both are real buttons in the tab order; each has its own tip.
+  expect(dots().tagName).toBe('BUTTON');
+  expect(sw.tagName).toBe('BUTTON');
+  expect(await tipOf(dots())).toBe('Opens Music sync: colours and settings');
+  expect(await tipOf(sw)).toContain('Turns Music sync on or off');
 });
 
 it('not paired: the tip points at Tools, and never shows a key or an address', async () => {

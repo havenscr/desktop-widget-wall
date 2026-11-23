@@ -2,7 +2,7 @@
 // text is 16 px or more, nothing is cut, and the 24 swatches, the five slots and the cover button keep a usable size.
 const at = '2026-11-11T10:24:00-08:00';
 const Q = (extra = '') => `?hz=unwind&at=${encodeURIComponent(at)}&long=1&agents=3&audio=demo&desktoken=set&office=six&officeoff=offered&officemood=relax${extra}`;
-const OPEN = '[data-part="sync-dots"] >> [data-palette="custom"]';
+const OPEN = '[data-part="sync-main"] >> [data-palette="custom"]';
 
 // Runs in the page.
 function measureCustom() {
@@ -25,7 +25,7 @@ export default {
   name: 'custom-colours',
   gallery: {
     states: [
-      { screen: 'unwind', name: 'custom colours: the picker open', query: `hz=unwind&at=${encodeURIComponent(at)}&clock=review&weather=ok&audio=demo&desktoken=set&office=six&officeoff=offered&officemood=relax`, custom: true, expect: ['Custom colours', 'Your colours', "Keep this cover's colours"], actions: '[data-part="sync-dots"] >> [data-palette="custom"]' },
+      { screen: 'unwind', name: 'custom colours: the picker open', query: `hz=unwind&at=${encodeURIComponent(at)}&clock=review&weather=ok&audio=demo&desktoken=set&office=six&officeoff=offered&officemood=relax`, custom: true, expect: ['Custom colours', 'Your colours', "Keep this cover's colours"], actions: '[data-part="sync-main"] >> [data-palette="custom"]' },
     ],
   },
   fit: {

@@ -157,7 +157,7 @@ it('shown: a group named Office moods, the label, one chip per mood in the home 
   expect(slot().getAttribute('data-moods')).toBe('shown');
   expect(screen.getByText('Office moods')).toBeTruthy();
   expect(names()).toEqual(['Bright desk', 'Evening lamp', 'Gaming', BACK_WORD]);
-  expect(within(slot()).getAllByRole('button').filter((b) => b.dataset.mood !== 'back' && b.dataset.part !== 'sync-dots').every((b) => b.getAttribute('aria-pressed') === 'false')).toBe(true);
+  expect(within(slot()).getAllByRole('button').filter((b) => b.dataset.mood !== 'back' && b.dataset.part !== 'sync-main').every((b) => b.getAttribute('aria-pressed') === 'false')).toBe(true);
   expect(status()?.textContent).toBe('No mood on.');
   expect(line()).toBeNull();
   // Every chip is a native button reached by Tab in this order.
@@ -449,8 +449,10 @@ it('every chip is a real button in the tab order, and focusing one shows its car
   off = { active: false };
   await show();
   const buttons = within(slot()).getAllByRole('button');
-  expect(buttons.map((b) => b.textContent)).toEqual(['Music sync', '', 'Bright desk', 'Evening lamp', 'Gaming', 'Off', BACK_WORD]);
-  for (const b of buttons) {
+  expect(buttons.map((b) => b.textContent)).toEqual(['Music sync', 'Bright desk', 'Evening lamp', 'Gaming', 'Off', BACK_WORD]);
+  const sw = within(slot()).getByRole('switch');
+  expect(sw.getAttribute('aria-checked')).toBe('false');
+  for (const b of [...buttons, sw]) {
     expect(b.tagName).toBe('BUTTON');
     expect(b.tabIndex).toBe(0);
   }

@@ -60,6 +60,12 @@ it('the Lights tab has every row, the preview and Your usual, with starting valu
   for (const label of ['Colour speed', 'Brightness', 'Kick flash', 'Smoothness', 'Who follows', 'Panel ripple']) expect(container.textContent).toContain(label);
   expect(container.textContent).toContain('Preview, live');
   expect(container.querySelector('[data-part="lights-preview"]')).not.toBeNull();
+  // Preview B: two labelled strips. Five panel tiles (the engine's count), four named Plays; no monitor bar.
+  const rows = Array.from(container.querySelectorAll('.ls-strip'));
+  expect(rows.map((r) => r.querySelector('b')?.textContent)).toEqual(['Panels', 'Plays']);
+  expect(container.querySelectorAll('.ls-pn')).toHaveLength(5);
+  expect(Array.from(container.querySelectorAll('.ls-play em')).map((e) => e.textContent)).toEqual(['Far Left', 'Left', 'Right', 'Far Right']);
+  expect(container.querySelector('.ls-bar')).toBeNull();
   expect(container.textContent).toContain('every 2 bars');
   expect(container.textContent).toContain('15% to 90%');
   expect(container.textContent).toContain('strong');

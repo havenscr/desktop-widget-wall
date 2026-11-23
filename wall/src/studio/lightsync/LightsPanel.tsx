@@ -59,7 +59,9 @@ function One({ id, min, max, value, usual, words, note, onChange }: { id: string
   );
 }
 
-/** The Preview: the four Plays and the panels, drawn from the wall's sound right now by the engine's own maths (`preview.ts`). */
+const PANEL_COUNT = [0, 1, 2, 3, 4];
+
+/** The Preview: two labelled strips, the panels and the four Plays, drawn from the wall's sound right now by the engine's own maths (`preview.ts`). */
 function Preview() {
   const palette = useLightSync((s) => s.palette);
   const custom = useLightSync((s) => s.custom);
@@ -79,12 +81,12 @@ function Preview() {
       last = now;
       const el = root.current;
       if (el) {
-        el.querySelectorAll<HTMLElement>('.ls-play').forEach((e, i) => {
+        el.querySelectorAll<HTMLElement>('.ls-play i').forEach((e, i) => {
           e.style.background = cs[f.colour % cs.length];
           e.style.opacity = String(Math.max(0.2, f.plays[i]));
         });
-        el.querySelectorAll<SVGElement>('polygon').forEach((e, i) => {
-          e.setAttribute('fill', cs[(f.colour + i) % cs.length]);
+        el.querySelectorAll<HTMLElement>('.ls-pn').forEach((e, i) => {
+          e.style.background = cs[(f.colour + i) % cs.length];
           e.style.opacity = String(Math.max(0.2, f.panels[i]));
         });
       }
@@ -95,17 +97,25 @@ function Preview() {
   }, []);
   return (
     <div className="ls-preview" role="img" aria-label="Preview of the lights, live" data-part="lights-preview" ref={root}>
-      <svg className="ls-panels" viewBox="0 0 80 40" aria-hidden="true">
-        {[0, 1, 2, 3, 4].map((i) => (
-          <polygon key={i} points={`${8 + i * 14},34 ${15 + i * 14},6 ${22 + i * 14},34`} fill={colours[i % colours.length]} style={{ opacity: 0.2 }} />
-        ))}
-      </svg>
-      <span className="ls-bar" aria-hidden="true" />
-      <span className="ls-plays" aria-hidden="true">
-        {[0, 1, 2, 3].map((i) => (
-          <i key={i} className="ls-play" style={{ background: colours[0], opacity: 0.2 }} />
-        ))}
-      </span>
+      <div className="ls-strip" data-row="panels" {...tip('Panels: the Nanoleaf panels on the wall, each lit as it would be right now.')}>
+        <b>Panels</b>
+        <span className="ls-pns">
+          {PANEL_COUNT.map((i) => (
+            <i key={i} className="ls-pn" style={{ background: colours[i % colours.length], opacity: 0.2 }} />
+          ))}
+        </span>
+      </div>
+      <div className="ls-strip" data-row="plays" {...tip('Plays: the four Play bars, left to right, each lit as it would be right now.')}>
+        <b>Plays</b>
+        <span className="ls-plays">
+          {LIGHT_NAMES.slice(0, 4).map((name) => (
+            <span key={name} className="ls-play">
+              <i style={{ background: colours[0], opacity: 0.2 }} />
+              <em>{name}</em>
+            </span>
+          ))}
+        </span>
+      </div>
     </div>
   );
 }
