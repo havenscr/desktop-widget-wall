@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { LIBRARY_DATA } from '../bridge/devMocks/libraryData';
 import { KEY_ICONS } from './keyIcons';
-import { FALLBACK_PINS, MAX_PINS, parsePins, PINS_KEY, removePin, resolvePin, searchLibrary, serializePins, swapPin, type LibGroup, type LibKey } from './libraryModel';
+import { FALLBACK_PINS, MAX_PINS, movePin, parsePins, PINS_KEY, removePin, resolvePin, searchLibrary, serializePins, swapPin, type LibGroup, type LibKey } from './libraryModel';
 
 const rust: string = readFileSync('../src-tauri/src/wall2_keylib.rs', 'utf8').replace(/\r\n/g, '\n');
 const filePins = [{ label: 'Mine', icon: 'window', action: 'zen' }];
@@ -183,5 +183,20 @@ describe('pins on this display', () => {
     expect(searchLibrary(lib, 'ZOOM').map((g) => g.id)).toEqual(['zoom']);
     expect(searchLibrary(lib, 'zzzzzz')).toEqual([]);
     expect(searchLibrary(lib, '  task manager ')[0].keys.map((k) => k.id)).toEqual(['task-manager']);
+  });
+});
+
+describe('movePin', () => {
+  it('moves one pin and shifts the ones between', () => {
+    expect(movePin(['a', 'b', 'c'], 0, 1)).toEqual(['b', 'a', 'c']);
+    expect(movePin(['a', 'b', 'c'], 2, 0)).toEqual(['c', 'a', 'b']);
+  });
+  it('leaves the list alone for no move or a place that does not exist', () => {
+    const refs = ['a', 'b'];
+    expect(movePin(refs, 1, 1)).toEqual(['a', 'b']);
+    expect(movePin(refs, 0, -1)).toEqual(['a', 'b']);
+    expect(movePin(refs, 1, 2)).toEqual(['a', 'b']);
+    expect(movePin(refs, 0, 1)).not.toBe(refs);
+    expect(refs).toEqual(['a', 'b']);
   });
 });

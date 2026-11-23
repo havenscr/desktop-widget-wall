@@ -14,7 +14,7 @@ import { joinKeys, loadKeys, useKeysFeedStore } from './keysFeed';
 import { KeyPicker } from './KeyPicker';
 import { KeyMenu, type KeyMenuAction } from './KeyMenu';
 import { keyboardOnMouseKey, useKeyPress } from './keyPress';
-import { allKeys, FALLBACK_PINS, MAX_PINS, parsePins, PINS_CHANGED_EVENT, PINS_KEY, readPinsRaw, removePin, resolvePin, savePins, serializePins, swapPin, type LibGroup, type PinView } from './libraryModel';
+import { allKeys, FALLBACK_PINS, MAX_PINS, movePin, parsePins, PINS_CHANGED_EVENT, PINS_KEY, readPinsRaw, removePin, resolvePin, savePins, serializePins, swapPin, type LibGroup, type PinView } from './libraryModel';
 import { tileSizeClass, type KeyInfo } from './keysModel';
 import { useBrief } from './useBrief';
 import { runWallAction } from './wallActions';
@@ -141,11 +141,20 @@ export function PinnedRow() {
   /** Whether the open menu came from the keyboard (the ContextMenu key or Shift+F10). */
   const menuByKey = useRef(false);
   const [busy, setBusy] = useState(false);
+  /** The pin that was just moved, so focus can follow it to its new place. */
+  const movedRef = useRef<string | null>(null);
   useEffect(() => {
     const changed = () => setRaw(readPinsRaw());
     window.addEventListener(PINS_CHANGED_EVENT, changed);
     return () => window.removeEventListener(PINS_CHANGED_EVENT, changed);
   }, []);
+
+  useEffect(() => {
+    const ref = movedRef.current;
+    if (ref === null) return;
+    movedRef.current = null;
+    document.querySelector<HTMLElement>(`.pin-tiles .key-tile-wrap[data-ref="${CSS.escape(ref)}"] .key-tile`)?.focus();
+  }, [raw]);
 
   // Hide Undo when its minute is up.
   useEffect(() => {
@@ -185,13 +194,19 @@ export function PinnedRow() {
   // does not resolve right now (a file list still loading, a key the library lacks today) is kept, not dropped.
   const stored = lib && kept !== null ? storedEntries(raw) : null;
   const rawSlots = lib && stored ? resolvedSlots(stored, lib, filePins) : null;
-  const choose = (slot: number, ref: string) => {
-    const next = swapPin(pins.map((p) => p.ref), slot, ref);
+  const commit = (next: string[]) => {
     if (stored && rawSlots) {
       const text = replaceResolved(stored, rawSlots, next, filePins, read.status === 'loading');
       if (text) keepText(JSON.stringify(text));
     } else keep(next);
+  };
+  const choose = (slot: number, ref: string) => {
+    commit(swapPin(pins.map((p) => p.ref), slot, ref));
     setPicker(null);
+  };
+  const moveSlot = (slot: number, to: number) => {
+    movedRef.current = menuByKey.current ? (pins[slot]?.ref ?? null) : null;
+    commit(movePin(pins.map((p) => p.ref), slot, to));
   };
   const removeSlot = (slot: number) => {
     if (stored && rawSlots && slot < rawSlots.length) keepText(JSON.stringify(stored.filter((_e, i) => i !== rawSlots[slot])));
@@ -292,10 +307,13 @@ export function PinnedRow() {
             };
             const actions: KeyMenuAction[] = [
               { id: 'run', label: 'Run it now', disabled: layoutOff || !p.runnable, help: p.runnable ? `Sends ${p.label} once, right now.` : `${p.label} cannot run: ${p.how}.` },
+              { id: 'left', label: 'Move left', disabled: i === 0, help: i === 0 ? 'Already first.' : `Swaps ${p.label} with the key on its left.` },
+              { id: 'right', label: 'Move right', disabled: i === pins.length - 1, help: i === pins.length - 1 ? 'Already last.' : `Swaps ${p.label} with the key on its right.` },
+              { id: 'replace', label: 'Replace with another key', help: `Pick a key from the library to take ${p.label}'s place.` },
               { id: 'remove', label: 'Remove from Always here', help: `Takes ${p.label} off the Always here row. It stays in the key library.` },
             ];
             return (
-              <div className="key-tile-wrap" key={p.ref}>
+              <div className="key-tile-wrap" key={p.ref} data-ref={p.ref}>
               <button
                 type="button"
                 className={`deck-tile key-tile pin-tile${layoutOff || !p.runnable ? ' off' : ''}${sel ? ' sel' : ''}`}
@@ -326,6 +344,9 @@ export function PinnedRow() {
                   onClose={() => setMenu(null)}
                   onChoose={(id, _action, detail) => {
                     if (id === 'run') runPin(detail);
+                    if (id === 'left') moveSlot(i, i - 1);
+                    if (id === 'right') moveSlot(i, i + 1);
+                    if (id === 'replace') openPicker(i);
                     if (id === 'remove') removeSlot(i);
                   }}
                 />

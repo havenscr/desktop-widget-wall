@@ -155,6 +155,15 @@ export function swapPin(pins: readonly string[], slot: number, ref: string): str
   return out;
 }
 
+/** Move one pin from a place to another, shifting those between. Out of range or no move returns the list unchanged. */
+export function movePin(refs: readonly string[], from: number, to: number): string[] {
+  const out = [...refs];
+  if (from === to || from < 0 || to < 0 || from >= out.length || to >= out.length) return out;
+  const [ref] = out.splice(from, 1);
+  out.splice(to, 0, ref);
+  return out;
+}
+
 /** Remove one pin without changing the order of the others. The last pin may be removed. */
 export function removePin(pins: readonly string[], slot: number): string[] {
   return pins.filter((_ref, index) => index !== slot);

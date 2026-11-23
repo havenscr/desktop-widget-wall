@@ -1,9 +1,9 @@
-import { IconArrowsExchange, IconPin, IconPinnedOff, IconPlayerPlay, IconPlus } from '@tabler/icons-react';
+import { IconArrowLeft, IconArrowRight, IconArrowsExchange, IconPin, IconPinnedOff, IconPlayerPlay, IconPlus } from '@tabler/icons-react';
 import { Fragment, useEffect, useRef, useState, type KeyboardEvent } from 'react';
 import { overlayOwnsPointer } from '../ribbon/DrawerScrim';
 
 export interface KeyMenuAction {
-  id: 'pin' | 'replace' | 'add' | 'remove' | 'run' | 'swap';
+  id: 'pin' | 'replace' | 'add' | 'remove' | 'run' | 'swap' | 'left' | 'right';
   /** For `swap`: the place in Always here that gives way. */
   slot?: number;
   /** A line drawn above this row. */
@@ -17,7 +17,7 @@ export interface KeyMenuAction {
   sub?: KeyMenuAction[];
 }
 
-const icons = { pin: IconPin, replace: IconArrowsExchange, add: IconPlus, remove: IconPinnedOff, run: IconPlayerPlay, swap: IconArrowsExchange };
+const icons = { pin: IconPin, replace: IconArrowsExchange, add: IconPlus, remove: IconPinnedOff, run: IconPlayerPlay, swap: IconArrowsExchange, left: IconArrowLeft, right: IconArrowRight };
 
 /** How long a menu stays once the pointer rests elsewhere (and focus is not being used by keyboard). */
 export const MENU_CLOSE_MS = 5_000;
