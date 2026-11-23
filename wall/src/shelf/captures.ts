@@ -16,7 +16,8 @@ export interface Capture {
   exists: boolean;
 }
 
-export type CaptureAction = 'open' | 'copy' | 'folder';
+/** The fixed words Rust accepts for `wall2_captures_act` (see `Action::parse`). Copy image is made in the page and is not one of them. */
+export type CaptureAction = 'open' | 'copy' | 'folder' | 'path' | 'edit' | 'pin' | 'ocr' | 'trash';
 
 /** `notfound`: ShareX has no history file on this PC. `error`: the read failed and nothing older is held. */
 export interface CapturesState {
@@ -24,18 +25,71 @@ export interface CapturesState {
   items: Capture[];
 }
 
+export type CapturesFeed = CapturesState & { reload: () => void };
+
 /** How often the list is read while the Shelf is visible, and on window focus. */
 export const POLL_MS = 10_000;
-/** Captures drawn: the large one and the five before it. */
-export const SHOWN = 6;
+/** Captures drawn: the large one and the list beside it (Rust sends at most 30). */
+export const SHOWN = 30;
+
+export type SortOrder = 'newest' | 'oldest';
+export type KindFilter = 'all' | 'image' | 'video' | 'gif';
+export const SORTS: readonly SortOrder[] = ['newest', 'oldest'];
+export const FILTERS: readonly KindFilter[] = ['all', 'image', 'video', 'gif'];
+export const FILTER_WORDS: Record<KindFilter, string> = { all: 'All', image: 'Images', video: 'Video', gif: 'GIF' };
+
+/** The captures to draw: Rust's list is newest first; `kind` comes from the file extension. */
+export function arrange(items: Capture[], sort: SortOrder, filter: KindFilter): Capture[] {
+  const kept = filter === 'all' ? items.slice() : items.filter((c) => c.kind === filter);
+  return (sort === 'oldest' ? kept.reverse() : kept).slice(0, SHOWN);
+}
+
+/** One remembered choice. A stored word that is not one of `allowed` is ignored; storage that throws is ignored. */
+export function usePref<T extends string>(key: string, allowed: readonly T[], fallback: T): [T, (v: T) => void] {
+  const [value, setValue] = useState<T>(() => {
+    try {
+      const got = localStorage.getItem(key);
+      return allowed.find((a) => a === got) ?? fallback;
+    } catch {
+      return fallback;
+    }
+  });
+  const set = (v: T) => {
+    setValue(v);
+    try {
+      localStorage.setItem(key, v);
+    } catch {
+      /* the choice just is not remembered */
+    }
+  };
+  return [value, set];
+}
+
+/** The picture of an image capture on the clipboard as a bitmap (PNG), made here from the picture the card already holds. Rejects when it cannot. */
+export async function copyBitmap(c: Capture): Promise<void> {
+  if (c.kind !== 'image' || !c.exists) throw new Error('not-image');
+  const src = await loadThumb(c);
+  const img = new Image();
+  img.src = src;
+  await img.decode();
+  if (img.naturalWidth * img.naturalHeight > 40_000_000) throw new Error('too-big');
+  const canvas = document.createElement('canvas');
+  canvas.width = img.naturalWidth;
+  canvas.height = img.naturalHeight;
+  canvas.getContext('2d')?.drawImage(img, 0, 0);
+  const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/png'));
+  if (!blob) throw new Error('failed');
+  await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
+}
 
 const clock = reviewNow ?? (() => Date.now());
 
 /** The Captures list, read now, every 10 seconds while the page is visible, and when the window gets focus. */
-export function useCaptures(): CapturesState {
+export function useCaptures(): CapturesFeed {
   const visible = useVisible();
   const [state, setState] = useState<CapturesState>({ status: 'loading', items: [] });
   const seq = useRef(0);
+  const again = useRef<() => void>(() => undefined);
   useEffect(() => {
     if (!visible) return;
     let alive = true;
@@ -53,6 +107,7 @@ export function useCaptures(): CapturesState {
         },
       );
     };
+    again.current = read;
     read();
     const timer = setInterval(read, POLL_MS);
     window.addEventListener('focus', read);
@@ -62,7 +117,7 @@ export function useCaptures(): CapturesState {
       window.removeEventListener('focus', read);
     };
   }, [visible]);
-  return state;
+  return { ...state, reload: () => again.current() };
 }
 
 /** The most data-URL text the picture cache holds (about the bytes of memory it costs). */
@@ -128,8 +183,8 @@ export function clearThumbs(): void {
 export type Thumb = { state: 'none' } | { state: 'loading' } | { state: 'ready'; src: string } | { state: 'big' } | { state: 'failed' };
 
 /** The picture for a capture: none for a video or a missing file, `big` when Rust says `too-big`. */
-export function useThumb(c: Capture): Thumb {
-  const wants = c.exists && (c.kind === 'image' || c.kind === 'gif');
+export function useThumb(c: Capture, enabled = true): Thumb {
+  const wants = enabled && c.exists && (c.kind === 'image' || c.kind === 'gif');
   const key = c.id;
   const [got, setGot] = useState<{ key: string; thumb: Thumb } | null>(null);
   useEffect(() => {
