@@ -270,13 +270,32 @@ describe('the For you tab', () => {
       expect(document.querySelector('section[aria-label="Played on the wall"]')).toBeTruthy();
     });
 
-    it('a Focus shelf kept from this week makes no new search', async () => {
-      serveDefault(() => ({ items: items(5), cached: true, searchesLeft: 4, backAt: null }));
-      // The page already holds a fresh answer from earlier in the session.
+    it('a Focus shelf the page already holds from this week asks nothing', async () => {
+      serveDefault(ok);
       useMoods.setState({ byMood: { Focus: { loading: false, rows: items(5).map((v) => ({ ...v })), problem: null, backAt: null, cached: true, fetchedAt: Date.now() } } });
       await openForYou();
       expect(asks).toEqual([]);
       expect(document.querySelectorAll('section[aria-label="Focus"] .yt-tile')).toHaveLength(SHELF);
+    });
+
+    it('a Focus shelf Rust kept from this week is asked once and served from its weekly cache', async () => {
+      serveDefault(() => ({ items: items(5), cached: true, searchesLeft: 4, backAt: null }));
+      await openForYou();
+      expect(asks).toEqual(['Focus']);
+      expect(useMoods.getState().byMood.Focus?.cached).toBe(true);
+      expect(document.querySelectorAll('section[aria-label="Focus"] .yt-tile')).toHaveLength(SHELF);
+    });
+
+    it('a closed Focus stays closed after a sign-out and back in', async () => {
+      serveDefault(ok);
+      await openForYou();
+      fireEvent.click(chip('Focus'));
+      await flush(10);
+      cleanup();
+      resetLibrary();
+      await openForYou();
+      expect(useMoods.getState().open).toBeNull();
+      expect(asks).toEqual(['Focus']);
     });
 
     it('closing the chip keeps it closed when the tab is shown again', async () => {
@@ -306,13 +325,48 @@ describe('the For you tab', () => {
       expect(asks).toEqual(['Focus', 'Sleep']);
     });
 
-    it('asks once per mount, not on each render', async () => {
+    it('asks once per mount: a hide and show with no mood open does not ask again', async () => {
       serveDefault(ok);
       await openForYou();
-      await flush(100);
-      useForYou.setState({ stale: true });
-      await flush(100);
       expect(asks).toEqual(['Focus']);
+      // No mood open and not closed by the user, so only the mount guard stops a second ask.
+      act(() => useMoods.setState({ open: null, byMood: {}, closedByUser: false }));
+      const hidden = Object.getOwnPropertyDescriptor(Document.prototype, 'hidden');
+      try {
+        Object.defineProperty(document, 'hidden', { configurable: true, get: () => true });
+        act(() => { document.dispatchEvent(new Event('visibilitychange')); });
+        await flush(10);
+        Object.defineProperty(document, 'hidden', { configurable: true, get: () => false });
+        act(() => { document.dispatchEvent(new Event('visibilitychange')); });
+        await flush(10);
+      } finally {
+        delete (document as { hidden?: boolean }).hidden;
+        if (hidden) Object.defineProperty(Document.prototype, 'hidden', hidden);
+      }
+      expect(asks).toEqual(['Focus']);
+    });
+
+    it('a For you mounted while the page is hidden waits, and opens the default once it shows', async () => {
+      serveDefault(ok);
+      await openForYou();
+      fireEvent.click(screen.getByRole('tab', { name: 'Playlists' }));
+      await flush(10);
+      act(() => useMoods.setState({ open: null, byMood: {}, closedByUser: false }));
+      Object.defineProperty(document, 'hidden', { configurable: true, get: () => true });
+      try {
+        act(() => { document.dispatchEvent(new Event('visibilitychange')); });
+        fireEvent.click(screen.getByRole('tab', { name: 'For you' }));
+        await flush(10);
+        expect(asks).toEqual(['Focus']);
+        expect(useMoods.getState().open).toBeNull();
+        Object.defineProperty(document, 'hidden', { configurable: true, get: () => false });
+        act(() => { document.dispatchEvent(new Event('visibilitychange')); });
+        await flush(10);
+        await flush(10);
+        expect(asks).toEqual(['Focus', 'Focus']);
+      } finally {
+        delete (document as { hidden?: boolean }).hidden;
+      }
     });
 
     it('with the budget spent and Focus not kept, shows the calm budget line, not an error', async () => {

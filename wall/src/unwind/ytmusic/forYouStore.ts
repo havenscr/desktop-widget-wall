@@ -60,7 +60,8 @@ onLibraryReset(() => {
   again = false;
   useForYou.setState(blank());
   moodEpoch += 1;
-  useMoods.setState({ open: null, byMood: {}, closedByUser: false });
+  // closedByUser is kept: a sign-out and back in is the same session, so a closed Focus stays closed.
+  useMoods.setState({ open: null, byMood: {} });
 });
 
 /** A video as the queue and the tiles take it. Only the picture host's own address is built. */
