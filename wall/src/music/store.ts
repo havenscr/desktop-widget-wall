@@ -209,6 +209,43 @@ export function sendMediaCommand(name: MediaCommand): void {
     });
 }
 
+/**
+ * Move the local progress clock to `seconds` (clamped to the track) so the bar jumps at once, without waiting for
+ * the next poll. Dropped (false) when the anchor's track is not `onlyKey`, so a seek pressed on one track never
+ * lands on the next.
+ */
+export function reanchorNowPlaying(seconds: number, onlyKey?: string): boolean {
+  const a = useNowPlayingStore.getState().anchor;
+  if (!a || !Number.isFinite(seconds) || (onlyKey !== undefined && a.key !== onlyKey)) return false;
+  useNowPlayingStore.setState({ anchor: { ...a, position: Math.min(a.duration, Math.max(0, seconds)), at: Date.now() } });
+  return true;
+}
+
+/**
+ * Seek the outside app's session to `seconds` (the native `media_seek`, aimed at the session the player shows), and
+ * move the bar there at once; one poll follows so a refusal puts the bar back. Dropped when the track changed since
+ * `onlyKey` (the anchor key at the press).
+ */
+export function seekMedia(seconds: number, onlyKey?: string): boolean {
+  if (!reanchorNowPlaying(seconds, onlyKey)) return false;
+  const at = Math.max(0, seconds);
+  const target = mediaTarget();
+  const key = useNowPlayingStore.getState().anchor?.key;
+  invoke<boolean>('media_seek', { positionSeconds: at, ...target })
+    .then((ok) => ok !== false, () => false)
+    .then((ok) => {
+      // A refused seek (false or an error): forget the position the last poll reported, so the next poll counts as news
+      // and puts the bar back where the session really is.
+      const a = useNowPlayingStore.getState().anchor;
+      if (!ok && a && a.key === key) useNowPlayingStore.setState({ anchor: { ...a, reported: Number.NaN } });
+    })
+    .finally(() => {
+      if (document.hidden || !active || consumers === 0) return;
+      void run();
+    });
+  return true;
+}
+
 /** Drop the shared state and the loop's bookkeeping, including a call that never settled (tests). */
 export function resetNowPlaying(): void {
   clearTimeout(timer);

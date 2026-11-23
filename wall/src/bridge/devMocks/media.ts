@@ -8,6 +8,7 @@ const ART = 'iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAIAAAD8GO2jAAAJ20lEQVR42g3NvaqCYAA
 export function registerMediaMocks(): void {
   let playing = true;
   let dnd = false;
+  let seeked: number | null = null;
   mocks.set('get_now_playing', () => ({
     title: longOr('Tokyo Burnout', 'An Extremely Long Song Title That Goes On And On Forever (Extended Remix)'),
     artist: longOr('Tokyo Rose', 'A Very Long Artist Name Featuring Several Other Artists'),
@@ -19,14 +20,20 @@ export function registerMediaMocks(): void {
     source_app_id: 'SpotifyAB.SpotifyMusic_zpdnekdrzrea0!Spotify',
     session_key: 'SpotifyAB.SpotifyMusic_zpdnekdrzrea0!Spotify#0',
     art_key: 'Tokyo Burnout|Tokyo Rose|Night Drive|Spotify',
-    position_seconds: 63,
+    position_seconds: seeked ?? 63,
     duration_seconds: 214,
     shuffle_active: false,
     repeat_mode: 'none',
     art_unchanged: false,
+    can_seek: true,
   }));
   mocks.set('media_play_pause', () => {
     playing = !playing;
+  });
+  // A seek is remembered, so the next read of now playing shows where the bar was left.
+  mocks.set('media_seek', (args) => {
+    seeked = Number(args?.positionSeconds ?? 0);
+    return true;
   });
   mocks.set('media_next', () => undefined);
   mocks.set('media_previous', () => undefined);

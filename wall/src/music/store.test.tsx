@@ -3,7 +3,7 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { mocks } from '../bridge/tauri';
 import { Unwind } from '../screens/Unwind';
 import { MusicBar } from './MusicBar';
-import { ART_RETRY_MS, POLL_MS, acquireNowPlaying, mediaTarget, rejectArt, resetNowPlaying, sendMediaCommand, useNowPlayingStore } from './store';
+import { ART_RETRY_MS, POLL_MS, acquireNowPlaying, mediaTarget, rejectArt, resetNowPlaying, seekMedia, sendMediaCommand, useNowPlayingStore } from './store';
 
 beforeEach(() => vi.useFakeTimers());
 afterEach(() => {
@@ -165,4 +165,29 @@ it('aims a command by the key when there is one, by the id for an older reply, a
   expect(mediaTarget({ session_key: 'a#0' })).toEqual({ sessionKey: 'a#0' });
   expect(mediaTarget({ title: 'x' })).toBeUndefined();
   expect(mediaTarget(null)).toBeUndefined();
+});
+
+it('a refused seek puts the bar back to where the session is on the follow-up poll', async () => {
+  const track = { title: 'Held', artist: 'Band', playback_status: 'paused', session_key: 'k1', source_app_id: 'Spotify.exe', duration_seconds: 200, position_seconds: 40, can_seek: true };
+  mocks.set('get_now_playing', () => track);
+  mocks.set('media_seek', () => false);
+  acquireNowPlaying();
+  await flush();
+  const key = useNowPlayingStore.getState().anchor!.key;
+  expect(seekMedia(150, key)).toBe(true);
+  expect(useNowPlayingStore.getState().anchor!.position).toBe(150);
+  await flush(10);
+  expect(useNowPlayingStore.getState().anchor!.position).toBe(40);
+});
+
+it('a seek that errors also puts the bar back', async () => {
+  mocks.set('get_now_playing', () => ({ title: 'Held', artist: 'Band', playback_status: 'paused', session_key: 'k1', duration_seconds: 200, position_seconds: 40, can_seek: true }));
+  mocks.set('media_seek', () => {
+    throw new Error('no session');
+  });
+  acquireNowPlaying();
+  await flush();
+  expect(seekMedia(150, useNowPlayingStore.getState().anchor!.key)).toBe(true);
+  await flush(10);
+  expect(useNowPlayingStore.getState().anchor!.position).toBe(40);
 });

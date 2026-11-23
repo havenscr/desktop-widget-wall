@@ -9,7 +9,7 @@ import {
 } from '@tabler/icons-react';
 import { anchorProgress, formatTime, isPlaying, isQuiet, type NowPlayingInfo, type ProgressAnchor } from '../music/model';
 import { isKnownPlayer, playerName, sourceKey } from '../music/players';
-import { rejectArt } from '../music/store';
+import { reanchorNowPlaying, rejectArt, seekMedia } from '../music/store';
 import { useSkyKeepClear } from '../horizon/sky';
 import { useNowPlaying } from '../music/useNowPlaying';
 import { useVisible } from '../ui/useVisible';
@@ -20,6 +20,7 @@ import { useOwnView } from './watch/ownPlay';
 import { useWatchStore } from './watch/store';
 import { AUTOPLAY_LINE, musicControls, next as queueNext, playAgain, previous as queuePrevious, useMusicView, type MusicView } from './ytmusic/queue';
 import { StartOnWatch } from './ytmusic/YtFoot';
+import { SeekBar } from './SeekBar';
 import { safeThumb } from './ytmusic/model';
 import { savedVideoMatch, watchTitle } from './videoMatch';
 
@@ -77,11 +78,11 @@ export function Player() {
   const playing = isPlaying(info);
   // A media session exists (stopped or paused counts); with none, play and pause do nothing.
   const hasSession = !!info && !!info.playback_status && info.playback_status !== 'unknown';
-  const pct = progress ? (progress.position / progress.duration) * 100 : 0;
   const source = sourceKey(info);
   const rawSourceLabel = playerName(source);
   const watchPlaying = useWatchStore((s) => s.playing);
   const watchStopped = useWatchStore((s) => s.lastStopped);
+  const watchLength = useWatchStore((s) => s.report.duration);
   const webView = isWallPlayer(rawSourceLabel);
   const savedItems = useWatchStore((s) => s.saved);
   const sessionTitle = watchTitle(info?.title);
@@ -149,19 +150,23 @@ export function Player() {
   const ownMusic = music !== null && (music.state === 'playing' || music.state === 'paused' ? quiet || watchMatch : quiet && lastOwn);
   if (ownMusic && music) return <MusicPlayer music={music} setBox={setBox} />;
 
+  // A jump: the wall's own video takes it over the player link (always possible once its length is known); an outside
+  // app takes it through its media session, and only when that session says it allows one.
+  // Only when the shown session is the wall's own video (the web view, or a session titled as the Watch item), never
+  // an unknown app that merely has no known name.
+  const ownSeek = (webView || watchMatch) && !!watchPlaying && !!watchLength && watchLength > 0;
+  const canSeek = ownSeek || !!info?.can_seek;
+  // What a press is aimed at: the Watch item too for its own video, so a seek is dropped when Watch moved on to another one.
+  const seekGuard = ownSeek ? `${anchor?.key ?? ''}#${watchPlaying.kind}:${watchPlaying.id}` : (anchor?.key ?? '');
+  const jump = (seconds: number, guard: string) => {
+    if (ownSeek) {
+      if (guard === seekGuard && anchor && musicControls.seek(seconds)) reanchorNowPlaying(seconds, anchor.key);
+    } else seekMedia(seconds, guard);
+  };
   const progressBar = progress ? (
     <div className="u-progress">
       <span className="u-t">{formatTime(progress.position)}</span>
-      <div
-        className="u-bar"
-        role="progressbar"
-        aria-label="Track position"
-        aria-valuemin={0}
-        aria-valuemax={Math.round(progress.duration)}
-        aria-valuenow={Math.round(progress.position)}
-      >
-        <i style={{ width: `${pct.toFixed(2)}%` }} />
-      </div>
+      <SeekBar position={progress.position} duration={progress.duration} guard={seekGuard} onSeek={jump} enabled={canSeek} />
       <span className="u-t">{formatTime(progress.duration)}</span>
     </div>
   ) : null;
@@ -284,9 +289,7 @@ function MusicPlayer({ music, setBox }: { music: MusicView; setBox: (el: HTMLDiv
     live && dur > 0 ? (
       <div className="u-progress">
         <span className="u-t">{formatTime(pos)}</span>
-        <div className="u-bar" role="progressbar" aria-label="Track position" aria-valuemin={0} aria-valuemax={Math.round(dur)} aria-valuenow={Math.round(pos)}>
-          <i style={{ width: `${((pos / dur) * 100).toFixed(2)}%` }} />
-        </div>
+        <SeekBar position={pos} duration={dur} guard={music.entry.id} onSeek={(s, g) => g === music.entry.id && musicControls.seek(s)} enabled />
         <span className="u-t">{formatTime(dur)}</span>
       </div>
     ) : null;

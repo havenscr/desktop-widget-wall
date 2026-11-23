@@ -20,6 +20,8 @@ export interface NowPlayingInfo {
   ended?: boolean;
   /** The shown session's key (its app id and its place among sessions of that app); sent back with every command. */
   session_key?: string | null;
+  /** The session accepts a position change (its own seek switch); the time bar is clickable only then. */
+  can_seek?: boolean;
 }
 
 export const ALLOWED_ART_MIMES = ['image/png', 'image/jpeg', 'image/webp', 'image/gif'] as const;
@@ -92,7 +94,8 @@ export interface ProgressAnchor {
   reported: number;
 }
 
-const trackKey = (info: NowPlayingInfo) => `${info.title ?? ''}|${info.artist ?? ''}|${info.album ?? ''}`;
+// The session goes into the key too, so another session with the same metadata is a new track for the bar.
+const trackKey = (info: NowPlayingInfo) => `${info.title ?? ''}|${info.artist ?? ''}|${info.album ?? ''}|${info.session_key ?? ''}|${info.source_app_id ?? ''}`;
 
 /**
  * The anchor after a poll that arrived at `at`. A reported position replaces the local one

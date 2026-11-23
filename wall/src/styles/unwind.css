@@ -1762,15 +1762,33 @@
 }
 /* The switch sits in the heading row, left of the close cross, so the Looks side keeps main's layout. */
 .w-seg.ln-pages {
-  position: absolute;
-  top: 14px;
-  right: 70px;
+  flex: none;
   width: 184px;
   padding: 3px;
 }
+/* The heading row: the title takes what the switch leaves (two lines at most, the full title in its tip), the
+   switch keeps its width, and 44 px on the right leave the close cross (absolute, 18 px in) its own room. */
+.w-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex: none;
+  margin: -10px 44px -12px 0;
+  min-height: 40px;
+}
+.w-head > .u-k {
+  flex: 1;
+  min-width: 0;
+  line-height: 1.15;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+}
 .w-seg.ln-pages button {
   height: 32px;
-  padding: 0 8px;
+  padding: 0 10px;
   font-size: 16px;
 }
 .w-sheet.ln-sheet {
@@ -2005,13 +2023,11 @@
   padding: 16px 26px 12px;
 }
 /* The heading row on the Looks side is as tall as the "Looks | Lines" switch beside it (wall y 14
-   to 54, absolute, left of the close cross), with the title centred on the switch, so the "Same
+   to 54, in the row, left of the close cross), with the title centred on the switch, so the "Same
    for all | Each source its own" choice under it starts 8 px below the switch, never under it. */
-.w-sheet.w-tune > .u-k {
-  display: flex;
-  align-items: center;
+.w-sheet.w-tune > .w-head {
   min-height: 42px;
-  margin-top: -2px;
+  margin: -2px 44px 0 0;
 }
 .w-sheet.w-tune .w-srow {
   gap: 2px;
@@ -2389,6 +2405,27 @@
 }
 .u-listen .u-bar {
   flex: 1;
+}
+/* The Listen time bar: the Watch bar's 32 px hit area, with the old 8 px line kept. */
+.u-seek {
+  min-width: 0;
+  touch-action: none;
+}
+.u-seek::before {
+  top: 12px;
+  height: 8px;
+  border-radius: 8px;
+}
+.u-seek b {
+  height: 8px;
+  border-radius: 8px;
+}
+.u-seek.off {
+  cursor: default;
+}
+.u-seek.off::before,
+.u-seek.off:hover::before {
+  background: rgba(255, 255, 255, 0.13);
 }
 .u-t {
   font-size: 19px;
@@ -4935,4 +4972,12 @@ button.sp-qrow:hover {
   color: var(--faint);
   font-size: 16px;
   line-height: 22px;
+}
+
+/* While the settings sheet is open, the music card and the Watch card behind it take no pointer: a tile left of the
+   sheet would otherwise open its hover card (drawn above every panel) over the sheet. A click on them still reaches
+   the page, so the sheet's click outside still closes it. */
+.unwind:has(> .w-sheet) :is(.sp-card, .u-right),
+.unwind:has(> .w-sheet) :is(.sp-card, .u-right) * {
+  pointer-events: none;
 }

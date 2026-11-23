@@ -91,6 +91,12 @@ describe('progress anchor', () => {
     expect(nextAnchor(a, { ...info, playback_status: 'paused' }, 2000)!).toMatchObject({ at: 2000, status: 'paused' });
     expect(nextAnchor(a, { ...info, duration_seconds: 300 }, 2000)!.at).toBe(2000);
   });
+  it('takes the report when another session carries the same title, artist and album', () => {
+    const a = nextAnchor(null, { ...info, session_key: 'k1', source_app_id: 'a.exe' }, 0)!;
+    expect(nextAnchor(a, { ...info, session_key: 'k2', source_app_id: 'a.exe' }, 2000)!.at).toBe(2000);
+    expect(nextAnchor(a, { ...info, session_key: 'k1', source_app_id: 'b.exe' }, 2000)!.at).toBe(2000);
+    expect(nextAnchor(a, { ...info, session_key: 'k1', source_app_id: 'a.exe' }, 2000)).toBe(a);
+  });
   it('never passes the duration', () => {
     const a = nextAnchor(null, { ...info, position_seconds: 199 }, 0)!;
     expect(anchorProgress(a, 60_000)!.position).toBe(200);

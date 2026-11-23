@@ -31,17 +31,21 @@ const measureSunRidge = () => {
       const pages = sheet && sheet.querySelector('.ln-pages');
       const x = sheet && sheet.querySelector('.w-x');
       const pick = sheet && sheet.querySelector('.w-mode');
-      const title = sheet && sheet.querySelector(':scope > .u-k');
+      const title = sheet && sheet.querySelector(':scope > .w-head > .u-k');
       if (!sheet || !pages || !x || !pick || !title) return { mode, fails: ['sun ridge: the Looks sheet has no switch, cross, title or Same for all choice'] };
       const s = R(sheet), p = R(pages), c = R(x), m = R(pick);
       const tr = document.createRange(); tr.selectNodeContents(title); const tb = tr.getBoundingClientRect();
-      const t = { l: tb.left, t: tb.top, r: tb.right, b: tb.bottom };
+      // The title's drawn text, or its box when that is wider (a title that shrinks keeps its box inside the row).
+      const tbox = R(title);
+      const t = { l: tb.left, t: tb.top, r: Math.max(tb.right, tbox.r), b: tb.bottom };
+      if (title.scrollHeight > title.clientHeight + 1) fails.push('sun ridge: the sheet title is cut ("' + title.textContent.trim() + '")');
+      if (p.l - t.r < 11.5) fails.push('sun ridge: the sheet title ends ' + Math.round((p.l - t.r) * 10) / 10 + ' px from the Looks | Lines switch (12 at least)');
       if (meet(p, m) || m.t - p.b < 5.5) fails.push('sun ridge: the Same for all choice starts ' + Math.round((m.t - p.b) * 10) / 10 + ' px under the Looks | Lines switch (6 at least, no overlap)');
       if (meet(c, m)) fails.push('sun ridge: the close cross overlaps the Same for all choice');
       if (meet(p, c)) fails.push('sun ridge: the Looks | Lines switch overlaps the close cross');
       if (meet(p, t)) fails.push('sun ridge: the Looks | Lines switch overlaps the title');
-      const pt = p.t - s.t, pr = s.r - p.r, ct = c.t - s.t, cr = s.r - c.r;
-      if (Math.abs(pt - 14) > 1.5 || Math.abs(pr - 70) > 1.5) fails.push('sun ridge: the Looks | Lines switch moved to ' + Math.round(pt) + ' px down, ' + Math.round(pr) + ' px in (14 and 70)');
+      const pr = s.r - p.r, ct = c.t - s.t, cr = s.r - c.r;
+      if (Math.abs(pr - 70) > 1.5 || Math.abs((p.t + p.b) / 2 - (c.t + c.b) / 2) > 3) fails.push('sun ridge: the Looks | Lines switch moved to ' + Math.round(pr) + ' px in (70), or is not level with the close cross');
       if (Math.abs(ct - 14) > 1.5 || Math.abs(cr - 18) > 1.5) fails.push('sun ridge: the close cross moved to ' + Math.round(ct) + ' px down, ' + Math.round(cr) + ' px in (14 and 18)');
       const words = [...pick.querySelectorAll('button')].map((b) => b.textContent.trim()).join(' | ');
       if (words !== 'Same for all | Each source its own') fails.push('sun ridge: the choice reads "' + words + '"');
@@ -142,7 +146,7 @@ export default {
     breaks: {
       'sunridge-lifted': { css: '.w-sun .w-screen { z-index: 2 !important; }', expect: /^ *FAIL sun ridge: the picture is lifted above the front canvas/m, appliesTo: (v) => v.name === 'Sun ridge, the sun waiting for a click' },
       'sunridge-click': { css: '.top:has(.w-sun .w-take) .unwind .u-centre { pointer-events: auto !important; }', expect: /^ *FAIL sun ridge: a click at \d+,\d+ on the waiting sun reaches /m, appliesTo: (v) => v.name === 'Sun ridge, the sun waiting for a click' },
-      'sunridge-sheet': { css: '.w-sheet.w-tune > .u-k { min-height: 0 !important; margin-top: 0 !important; }', expect: /^ *FAIL sun ridge: the Same for all choice starts -?[\d.]+ px under the Looks \| Lines switch/m, appliesTo: (v) => v.name === 'Sun ridge, sheet heading, one look' },
+      'sunridge-sheet': { css: '.w-sheet.w-tune > .w-head { margin-bottom: -20px !important; }', expect: /^ *FAIL sun ridge: the Same for all choice starts -?[\d.]+ px under the Looks \| Lines switch/m, appliesTo: (v) => v.name === 'Sun ridge, sheet heading, one look' },
     },
   },
 };
