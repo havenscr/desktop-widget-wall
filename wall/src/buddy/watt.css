@@ -331,6 +331,7 @@
 }
 .wm-seg {
   display: inline-flex;
+  flex-wrap: wrap;
   box-shadow: 0 0 0 2px rgba(26, 18, 56, 0.25) inset;
 }
 .wm-seg .wm-sb {

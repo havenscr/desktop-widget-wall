@@ -14,7 +14,7 @@ const CHATTY_HINT: Readonly<Record<Chatty, string>> = {
   sometimes: 'A short line at most every six minutes',
   chatty: 'A short line at most every three minutes',
 };
-const COSMETIC_WORD: Readonly<Record<Cosmetic, string>> = { none: 'None', bow: 'Bow', star: 'Star', cape: 'Cape' };
+const COSMETIC_WORD: Readonly<Record<Cosmetic, string>> = { none: 'None', bow: 'Bow', star: 'Star', cape: 'Cape', bolt: 'Bolt', flower: 'Flower', backpack: 'Backpack', wings: 'Wings' };
 
 const ITEM_STYLE = { minHeight: ITEM_H } as const;
 const SEG_STYLE = { minHeight: SEG_H } as const;

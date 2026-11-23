@@ -293,8 +293,8 @@ export function canBlink(pose: Pose): boolean {
  * True when `prop` can be drawn on `pose`: it rises at most `PROP_RISE_MAX` sprite pixels above the
  * sprite, never hangs below her feet, and sticks out at most two pixels on either side. The headphones
  * (a cup on one ear) are not drawn on the poses seen from the front or the back. The star is a patch on the
- * wool: it never rises above the sprite, so this rule never drops it. `worn` is the day prop on him (the bow sits
- * further back with the headphones).
+ * wool: it never rises above the sprite, so this rule never drops it. `worn` is the day prop on him; no
+ * cosmetic moves for it.
  */
 export function propFits(prop: Prop, pose: Pose, worn: Prop | null = null): boolean {
   if (prop === 'headphones' && NO_HEADPHONES.has(pose)) return false;

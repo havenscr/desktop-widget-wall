@@ -72,6 +72,12 @@ describe('her stored life', () => {
     expect(parsePet(JSON.stringify({ days: 2, cosmetic: 'cape' }), at(11)).cosmetic).toBe('none');
     expect(parsePet(JSON.stringify({ today: { date: '11/11/2026', pets: 3 } }), at(11)).today.pets).toBe(0);
   });
+  it('unlocks the bolt on day ten, the flower on 14, the backpack on 21, the wings on 30; an unknown or locked one falls back to none', () => {
+    expect([unlocked('bolt', 9), unlocked('bolt', 10), unlocked('flower', 13), unlocked('flower', 14), unlocked('backpack', 20), unlocked('backpack', 21), unlocked('wings', 29), unlocked('wings', 30)]).toEqual([false, true, false, true, false, true, false, true]);
+    expect(parsePet(JSON.stringify({ days: 29, cosmetic: 'wings' }), at(11)).cosmetic).toBe('none');
+    expect(parsePet(JSON.stringify({ days: 30, cosmetic: 'wings' }), at(11)).cosmetic).toBe('wings');
+    expect(parsePet(JSON.stringify({ days: 99, cosmetic: 'tiara' }), at(11)).cosmetic).toBe('none');
+  });
   it('unlocks the bow on day one, the star on day three, the cape on day seven', () => {
     expect([unlocked('bow', 1), unlocked('star', 2), unlocked('star', 3), unlocked('cape', 6), unlocked('cape', 7), unlocked('none', 0)]).toEqual([true, false, true, false, true, true]);
   });

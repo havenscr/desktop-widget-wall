@@ -2,7 +2,7 @@
 // the headphones. The unit tests hold every pose; these states and rules hold the drawn wall: the star is drawn
 // whatever he is doing (standing, his menu open and he looks up, asleep, lying down, seated at the drive-in,
 // with the headphones, with a scarf), inside his sprite's box, and a cup that is drawn sits on his head.
-// The cape, the star and the bow are cosmetics he wears one at a time, so there is no star-and-cape state.
+// The cape, the star, the bow, the bolt, the flower, the backpack and the wings are cosmetics he wears one at a time, so there is no star-and-cape state.
 const TYPICAL = encodeURIComponent('2026-11-11T10:24:00-08:00');
 const NIGHT = encodeURIComponent('2026-11-11T22:30:00-08:00');
 const DRIVE_IN = 'watch=mock&wlist=three&wlook=drivein&wplay=0';
@@ -17,7 +17,7 @@ const SHEEP = ['.watt-sheep > svg'];
 // Runs in the page: with the star chosen (?wattwear=star) it is drawn whatever he is doing (his menu open
 // included), and every pixel of it lies inside his sprite's box; a headphone cup that is drawn sits on his
 // head (inside his sprite's box but for the two sprite rows the band may rise above it); a bow worn with the
-// headphones shows whole (its box is inside his sprite's box, clear of the cup).
+// headphones shows whole (its box is clear of the cup).
 function measureWear() {
   const wantStar = new URLSearchParams(location.search).get('wattwear') === 'star';
   const sheep = document.querySelector('.watt-sheep > svg');
@@ -47,12 +47,14 @@ function measureWear() {
     if (b) {
       const q = b.getBoundingClientRect();
       bow = at(q);
-      // The bow is drawn before the cup, so the cup is over it: none of the bow may lie under the cup or the band. The
+      // The bow is tied on his tail, up to one sprite pixel past his back end, and the cup is over anything under it: none of the bow may lie under the cup or the band. The
       // cup's box has empty corners, so the two boxes may share at most one sprite pixel's width.
       const u = r.width / 5;
       const wide = Math.min(q.right, r.right) - Math.max(q.left, r.left);
       const under = wide > u + 0.5 && q.top < r.bottom - 0.5 && r.top < q.bottom - 0.5;
-      if (!inside(q, 0) || under) fails.push('watt wear: the bow at ' + at(q) + ' is hidden by or off his head, with the headphones at ' + at(r));
+      const sprite = me.width / 18;
+      const near = q.left >= me.left - sprite - 0.5 && q.right <= me.right + sprite + 0.5 && q.top >= me.top - 0.5 && q.bottom <= me.bottom + 0.5;
+      if (!near || under) fails.push('watt wear: the bow at ' + at(q) + ' is hidden by or off his head, with the headphones at ' + at(r));
     }
   }
   return { fails, star, cup: !!cup, bow, menu };
@@ -73,6 +75,11 @@ export default {
     state('Watt wears: the cape instead of the star', gallery('wattwear=cape')),
     state('Watt wears: the bow and the headphones', gallery('wattwear=bow&audio=demo')),
     state('Watt wears: the bow alone', gallery('wattwear=bow')),
+    state('Watt wears: the bolt', gallery('wattwear=bolt')),
+    state('Watt wears: the flower', gallery('wattwear=flower')),
+    state('Watt wears: the backpack', gallery('wattwear=backpack')),
+    state('Watt wears: the wings', gallery('wattwear=wings')),
+    state('Watt wears: the wings and the headphones', gallery('wattwear=wings&audio=demo')),
   ] },
   fit: {
     variants: [
@@ -98,11 +105,11 @@ export default {
     },
     breaks: {
       // The star moved 300 px off him; the star hidden while his menu is open; the cup lifted 200 px off his head; the bow
-      // drawn over the cup's place (moved back onto it).
+      // moved 300 px off him.
       'watt-star': { css: '.watt-prop-star { translate: 300px 0 !important; }', expect: /^ *FAIL watt wear: the star at .* is not inside his sprite/m, appliesTo: (v) => v.name === 'Watt wears the star, standing' },
       'watt-star-menu': { css: '.watt-prop-star { display: none !important; }', expect: /^ *FAIL watt wear: the star is not drawn while his menu is open/m, appliesTo: (v) => v.name === 'Watt wears the star, menu open' },
       'watt-cup': { css: '.watt-prop-headphones { translate: 0 -200px !important; }', expect: /^ *FAIL watt wear: the headphones at .* are not on his head/m, appliesTo: (v) => v.name === 'Watt wears the star and the headphones' },
-      'watt-bow': { css: '.watt-prop-bow { translate: 24px 0 !important; }', expect: /^ *FAIL watt wear: the bow at .* is hidden by or off his head/m, appliesTo: (v) => v.name === 'Watt wears the bow and the headphones' },
+      'watt-bow': { css: '.watt-prop-bow { translate: 300px 0 !important; }', expect: /^ *FAIL watt wear: the bow at .* is hidden by or off his head/m, appliesTo: (v) => v.name === 'Watt wears the bow and the headphones' },
     },
   },
 };
