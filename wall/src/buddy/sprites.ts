@@ -252,9 +252,9 @@ export const EAR: Readonly<Record<Pose, readonly [number, number]>> = {
   front: [8, 3],
 };
 
-/** Things she wears or holds. `book` to `nightcap` follow the day; `bow`, `star` and `cape` are cosmetics. */
-export type Prop = 'book' | 'headphones' | 'sunglasses' | 'scarf' | 'nightcap' | 'bow' | 'star' | 'cape';
-export const PROPS: readonly Prop[] = ['book', 'headphones', 'sunglasses', 'scarf', 'nightcap', 'bow', 'star', 'cape'];
+/** Things she wears or holds. `book` to `nightcap` follow the day; the rest are cosmetics. */
+export type Prop = 'book' | 'headphones' | 'sunglasses' | 'scarf' | 'nightcap' | 'bow' | 'star' | 'cape' | 'bolt' | 'flower' | 'backpack' | 'wings';
+export const PROPS: readonly Prop[] = ['book', 'headphones', 'sunglasses', 'scarf', 'nightcap', 'bow', 'star', 'cape', 'bolt', 'flower', 'backpack', 'wings'];
 
 /**
  * A prop's map and where it goes, in sprite pixels: from the pose's ear pixel (`ear`) or from the
@@ -276,10 +276,16 @@ export const PROP_SPRITES: Readonly<Record<Prop, PropSprite>> = {
   sunglasses: { map: ['ggghg'], dx: -1, dy: 2, anchor: 'ear' },
   scarf: { map: ['rRrRr', '.r...', '.R...'], dx: -2, dy: 4, anchor: 'ear' },
   nightcap: { map: ['....nN', '..nnn.', '.nnnn.'], dx: -1, dy: -3, anchor: 'ear' },
-  bow: { map: ['xx.xx', '.xxx.'], dx: -3, dy: -1, anchor: 'ear' },
+  // Tied on his tail, at the rear end; `dx`, `dy` are the standing pose's place, `BODY_AT.bow` the rest.
+  bow: { map: ['xx.xx', 'xxQxx', '.x.x.'], dx: -1, dy: 3, anchor: 'body' },
   // A five-point star patch on his wool; `dx`, `dy` are the standing pose's place, `STAR_AT` the rest.
   star: { map: STAR_MAP, dx: 5, dy: 3, anchor: 'body' },
   cape: { map: ['qqqqq.', 'qQqqqq', 'qqQqq.', 'qqqQ..', 'qq....'], dx: -1, dy: 3, anchor: 'body' },
+  // Each of these has one fixed place per pose (`BODY_AT`), whatever day prop is on him.
+  bolt: { map: ['..ss', '.ss.', 'ssss', '.ss.', 'ss..'], dx: 5, dy: 3, anchor: 'body' },
+  flower: { map: ['.v.', 'vtv', '.vo'], dx: 3, dy: -1, anchor: 'body' },
+  backpack: { map: ['.TTT.', 'TbbbT', 'TbBbT', 'TTTTT'], dx: 3, dy: 2, anchor: 'body' },
+  wings: { map: ['BB....', 'kkB...', '.kkkB.', '..kkkk'], dx: 2, dy: -2, anchor: 'body' },
 };
 
 /**
@@ -313,6 +319,15 @@ export const STAR_AT: Readonly<Record<Pose, readonly [number, number]>> = {
   front: [2, 3],
 };
 
+/** A place for every pose: `base`, with `over` for the poses that differ. */
+const ALL = (base: readonly [number, number], over: Partial<Record<Pose, readonly [number, number]>> = {}): Readonly<Record<Pose, readonly [number, number]>> =>
+  Object.fromEntries(POSES.map((q) => [q, over[q] ?? base])) as unknown as Record<Pose, readonly [number, number]>;
+const BOW_AT = ALL([-1, 3], { sleep: [-1, 2], land: [-1, 2], hop: [-1, 2], lie: [-1, 2] });
+const BOLT_AT = ALL([5, 3], { sleep: [5, 2], land: [5, 2], hop: [5, 2], lie: [5, 2], spin1: [2, 3], spin2: [2, 3], front: [2, 3] });
+const FLOWER_AT = ALL([3, -1], { land: [3, -2] });
+const BACKPACK_AT = ALL([3, 2], { sleep: [3, 1], land: [3, 1], hop: [3, 1], lie: [3, 1], spin1: [2, 3], spin2: [2, 3], front: [2, 3] });
+const WINGS_AT = ALL([2, -2]);
+
 /** Poses seen from the front or the back: a side-on cup on the ear cannot be drawn on them. */
 export const NO_HEADPHONES: ReadonlySet<Pose> = new Set<Pose>(['spin1', 'spin2', 'front']);
 
@@ -320,24 +335,32 @@ export const NO_HEADPHONES: ReadonlySet<Pose> = new Set<Pose>(['spin1', 'spin2',
 export const SPARKLE: readonly string[] = ['.s.', 'sss', '.s.'];
 
 /**
- * The bow moves back along his head while the headphones are worn, so that the cup and the band (drawn over it)
- * hide none of it: three pixels left of its usual place, and on the raised head (`look`, `watch`, `watchEar`)
- * five left and one down, onto the wool of the crown. A unit test checks that no pixel of it is under a headphone pixel.
+ * Where each body-anchored cosmetic goes on each pose: its top left in sprite pixels from the sheep's
+ * top left. Day props never move it. Every pixel of it lies on wool of that pose, or outside the sheep
+ * (a wing tip, a flower, the bow's tails), and clear of what can be worn with it (headphones, scarf,
+ * sunglasses, nightcap, book); the sprite tests check both. Poses whose body is shorter (sleeping,
+ * lying, landing, hopping) take it one row higher; the front and back views, which show no flank,
+ * take it on the nearest wool.
  */
-export const BOW_WITH_HEADPHONES: Readonly<Record<Pose, readonly [number, number]>> = Object.fromEntries(
-  POSES.map((p) => [p, p === 'look' || p === 'watch' || p === 'watchEar' ? [-5, 1] : [-3, 0]]),
-) as unknown as Record<Pose, readonly [number, number]>;
+export const BODY_AT: Readonly<Record<'bow' | 'bolt' | 'flower' | 'backpack' | 'wings', Readonly<Record<Pose, readonly [number, number]>>>> = {
+  bow: BOW_AT,
+  bolt: BOLT_AT,
+  flower: FLOWER_AT,
+  backpack: BACKPACK_AT,
+  wings: WINGS_AT,
+};
 
 /**
  * Top left of a prop on `pose`, in sprite pixels from the sheep's top left (may be negative). `worn` is the day
- * prop on him: with the headphones the bow sits further back (`BOW_WITH_HEADPHONES`); alone it is where it always was.
+ * prop on him; no cosmetic depends on it, and only the ear-anchored day props are placed from the ear.
  */
 export function propOrigin(prop: Prop, pose: Pose, worn: Prop | null = null): [number, number] {
+  void worn;
   if (prop === 'star') return [STAR_AT[pose][0], STAR_AT[pose][1]];
+  if (prop === 'bow' || prop === 'bolt' || prop === 'flower' || prop === 'backpack' || prop === 'wings') return [BODY_AT[prop][pose][0], BODY_AT[prop][pose][1]];
   const s = PROP_SPRITES[prop];
   if (s.anchor === 'body') return [s.dx, s.dy];
   const [ex, ey] = EAR[pose];
-  if (prop === 'bow' && worn === 'headphones') return [ex + s.dx + BOW_WITH_HEADPHONES[pose][0], ey + s.dy + BOW_WITH_HEADPHONES[pose][1]];
   return [ex + s.dx, ey + s.dy];
 }
 
@@ -374,6 +397,7 @@ export const PROP_COLORS: Readonly<Record<string, string>> = {
   C: '#ff7ab8',
   q: '#ff3d9a',
   Q: '#c42a78',
+  T: '#2aa9ad',
   v: '#ff3d9a',
   o: '#5df2b6',
   O: '#2fb184',

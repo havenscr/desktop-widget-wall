@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { bodyBox, createBox, propFits, propRise } from './petFrame';
 import { sheepRects } from './Pixels';
-import { BLINKS, BOW_WITH_HEADPHONES, EAR, NO_HEADPHONES, POSES, PROPS, PROP_COLORS, PROP_SPRITES, ROW_DX, SPARKLE, SPRITES, SPRITE_COLORS, STAR_AT, STRANDS, WET_STRAND, WET_WOOL, earShift, pixelColor, pixelColorWet, propColor, propOrigin, type Pose, type Prop, type RowShift } from './sprites';
+import { BLINKS, BODY_AT, EAR, NO_HEADPHONES, POSES, PROPS, PROP_COLORS, PROP_SPRITES, ROW_DX, SPARKLE, SPRITES, SPRITE_COLORS, STAR_AT, STRANDS, WET_STRAND, WET_WOOL, earShift, pixelColor, pixelColorWet, propColor, propOrigin, type Pose, type Prop, type RowShift } from './sprites';
 
 /** Every pixel (x, y) of `map` that is drawn, placed at (ox, oy). */
 function pixels(map: readonly string[], ox: number, oy: number): { x: number; y: number; ch: string }[] {
@@ -137,42 +137,63 @@ describe('every prop and pose', () => {
   });
 });
 
-describe('the bow with the headphones', () => {
-  const wearing = POSES.filter((p) => propFits('headphones', p));
-  const keyOf = (p: { x: number; y: number }) => key(p.x, p.y);
-  it('alone it is where it always was: from the ear at (-3, -1)', () => {
-    expect(PROP_SPRITES.bow).toEqual({ map: ['xx.xx', '.xxx.'], dx: -3, dy: -1, anchor: 'ear' });
+describe('the bow on his tail', () => {
+  it('is the new shape with a dark knot, tied at the rear end at (-1, 3) when he stands', () => {
+    expect(PROP_SPRITES.bow).toEqual({ map: ['xx.xx', 'xxQxx', '.x.x.'], dx: -1, dy: 3, anchor: 'body' });
+    expect(BODY_AT.bow.idle).toEqual([-1, 3]);
+    expect(PROP_COLORS.x).toBe('#ff7ab8');
+    expect(PROP_COLORS.Q).toBe('#c42a78');
+  });
+  it('is in the same place with or without any day prop, on every pose', () => {
+    for (const pose of POSES) for (const prop of PROPS) expect(propOrigin('bow', pose, prop)).toEqual(propOrigin('bow', pose));
+    for (const pose of POSES) expect(propOrigin('bow', pose, 'headphones')).toEqual(propOrigin('bow', pose, null));
+  });
+  it('has no special case left for the headphones', async () => {
+    const mod = await import('./sprites');
+    expect(Object.keys(mod)).not.toContain('BOW_WITH_HEADPHONES');
+  });
+});
+
+/**
+ * The rule for what he wears on his body: every pixel of it either lies on wool, or is outside the sheep
+ * (a wing tip, the flower, the bow's tails: the sprite has no pixel there), and it never overlaps a pixel of
+ * the headphones, scarf, sunglasses, nightcap or book on that pose. It never lies on his face, ear or legs.
+ */
+describe('the new wearables on every pose', () => {
+  const day: Prop[] = ['headphones', 'scarf', 'sunglasses', 'nightcap', 'book'];
+  const wearables = ['bow', 'bolt', 'flower', 'backpack', 'wings'] as const;
+  it('every pose has a place for each: the tables are whole', () => {
+    for (const w of wearables) expect(Object.keys(BODY_AT[w]).sort(), w).toEqual([...POSES].sort());
+  });
+  it('the mockup places for the standing pose', () => {
+    expect(PROP_SPRITES.bolt).toEqual({ map: ['..ss', '.ss.', 'ssss', '.ss.', 'ss..'], dx: 5, dy: 3, anchor: 'body' });
+    expect(PROP_SPRITES.flower).toEqual({ map: ['.v.', 'vtv', '.vo'], dx: 3, dy: -1, anchor: 'body' });
+    expect(PROP_SPRITES.backpack).toEqual({ map: ['.TTT.', 'TbbbT', 'TbBbT', 'TTTTT'], dx: 3, dy: 2, anchor: 'body' });
+    expect(PROP_SPRITES.wings).toEqual({ map: ['BB....', 'kkB...', '.kkkB.', '..kkkk'], dx: 2, dy: -2, anchor: 'body' });
+    for (const w of wearables) expect(BODY_AT[w].idle).toEqual([PROP_SPRITES[w].dx, PROP_SPRITES[w].dy]);
+  });
+  for (const w of wearables)
     for (const pose of POSES) {
-      const [ex, ey] = EAR[pose];
-      expect(propOrigin('bow', pose)).toEqual([ex - 3, ey - 1]);
-      expect(propOrigin('bow', pose, null)).toEqual([ex - 3, ey - 1]);
-      expect(propOrigin('bow', pose, 'scarf')).toEqual([ex - 3, ey - 1]);
+      it(`${w} on ${pose}: on wool or outside the sheep, never on face, ear or legs, never under another prop, whatever is worn`, () => {
+        expect(propFits(w, pose), `${w} is dropped on ${pose}`).toBe(true);
+        const px = placed(w, pose);
+        expect(px.length).toBeGreaterThan(0);
+        for (const p of px) {
+          const under = at(pose, p.x, p.y);
+          expect(under === 'w' || under === '.', `${pose}: ${w} pixel at ${p.x},${p.y} is on '${under}', not wool or empty`).toBe(true);
+          expect(propColor(PROP_SPRITES[w].map, p.x - BODY_AT[w][pose][0], p.y - BODY_AT[w][pose][1])).not.toBeNull();
+        }
+        for (const other of day) {
+          const taken = new Set(placed(other, pose).map((q) => key(q.x, q.y)));
+          for (const p of px) expect(taken.has(key(p.x, p.y)), `${pose}: ${w} pixel at ${p.x},${p.y} overlaps the ${other}`).toBe(false);
+        }
+        // Whatever the day prop, it is in the same place.
+        for (const other of day) expect(propOrigin(w, pose, other)).toEqual(propOrigin(w, pose));
+      });
     }
-  });
-  it('the moves are pinned: three pixels back, five back and one down on the raised head', () => {
-    for (const pose of POSES) expect(BOW_WITH_HEADPHONES[pose]).toEqual(pose === 'look' || pose === 'watch' || pose === 'watchEar' ? [-5, 1] : [-3, 0]);
-  });
-  for (const pose of wearing) {
-    it(`${pose}: the cup and the band hide none of the bow (all 7 of its pixels show), the bow is on his wool, and the headphones show whole`, () => {
-      const hp = placed('headphones', pose);
-      const hpKeys = new Set(hp.map(keyOf));
-      const [bx, by] = propOrigin('bow', pose, 'headphones');
-      const bow = pixels(PROP_SPRITES.bow.map, bx, by);
-      expect(bow).toHaveLength(7);
-      // The headphones are drawn over the bow: the bow pixels that show are the ones not under a headphone pixel.
-      expect(bow.filter((b) => !hpKeys.has(keyOf(b)))).toHaveLength(7);
-      for (const b of bow) expect(at(pose, b.x, b.y), `${pose}: bow pixel at ${b.x},${b.y} is not on wool`).toBe('w');
-      // The headphones draw over the bow, so every one of their pixels shows.
-      expect(hp).toHaveLength(12);
-      expect(propFits('bow', pose, 'headphones')).toBe(true);
-      // Where the bow sat before the fix, it would have lost pixels under the cup and the band.
-      const [ox, oy] = propOrigin('bow', pose);
-      const old = pixels(PROP_SPRITES.bow.map, ox, oy).filter((b) => hpKeys.has(keyOf(b)));
-      expect(old.length).toBeGreaterThan(0);
-    });
-  }
-  it('the bow alone is not moved by any other prop', () => {
-    for (const pose of POSES) for (const prop of PROPS) if (prop !== 'headphones') expect(propOrigin('bow', pose, prop)).toEqual(propOrigin('bow', pose));
+  it('the wings stand two rows above the sprite, the most any prop may rise, so the wall keeps his headroom', () => {
+    expect(propOrigin('wings', 'idle')[1]).toBe(-2);
+    expect(propRise({ pose: 'idle', prop: null, scarf: false, cosmetic: 'wings' })).toBe(2);
   });
 });
 
@@ -185,7 +206,7 @@ describe('the umbrella is gone', () => {
     for (const p of PROPS) for (const row of PROP_SPRITES[p].map) for (const ch of row) if (ch !== '.') used.add(ch);
     for (const ch of used) expect(PROP_COLORS[ch], `prop letter ${ch}`).toBeDefined();
     for (const k of Object.keys(PROP_COLORS)) {
-      const live = used.has(k) || ['W', 'd', 'S', 'y', 'Y', 'o', 'O', 'a', 'v', 'r', 'R'].includes(k) || 'bBkcghnNxstCqQ'.includes(k);
+      const live = used.has(k) || ['W', 'd', 'S', 'y', 'Y', 'o', 'O', 'a', 'v', 'r', 'R'].includes(k) || 'bBkcghnNxstCqQT'.includes(k);
       expect(live, `colour ${k} is used by some map`).toBe(true);
     }
   });

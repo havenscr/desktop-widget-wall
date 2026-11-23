@@ -8,10 +8,10 @@ import type { Chatty } from './chatter';
 export type Mood = 'content' | 'happy' | 'sleepy' | 'curious';
 
 /** Cosmetics, unlocked by days together. `none` is always there. */
-export type Cosmetic = 'none' | 'bow' | 'star' | 'cape';
-export const COSMETICS: readonly Cosmetic[] = ['none', 'bow', 'star', 'cape'];
+export type Cosmetic = 'none' | 'bow' | 'star' | 'cape' | 'bolt' | 'flower' | 'backpack' | 'wings';
+export const COSMETICS: readonly Cosmetic[] = ['none', 'bow', 'star', 'cape', 'bolt', 'flower', 'backpack', 'wings'];
 /** Days together each cosmetic needs. */
-export const UNLOCK_DAYS: Readonly<Record<Cosmetic, number>> = { none: 0, bow: 1, star: 3, cape: 7 };
+export const UNLOCK_DAYS: Readonly<Record<Cosmetic, number>> = { none: 0, bow: 1, star: 3, cape: 7, bolt: 10, flower: 14, backpack: 21, wings: 30 };
 
 export interface Today {
   /** Local date, `YYYY-MM-DD`. */

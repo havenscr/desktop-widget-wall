@@ -28,7 +28,7 @@ import { MOCK_DETAILS } from './meet';
  *   ?focus=long               (a focus session running under a long title); `?focus=run` a session on, `?focus=done` finished
  *   ?alarmcount=N             (the home app's open alarm count, 0 to 999; the default is 4, `?net=calm` is 0)
  *   ?wattspot=<x>             (Watt was set down at that x on every place, On Air included: his stored spot, before he loads)
- *   ?wattwear=star|bow|cape   (Watt has been a friend for 7 days and wears that, before he loads)
+ *   ?wattwear=star|bow|cape|bolt|flower|backpack|wings   (Watt has been a friend for 30 days and wears that, before he loads)
  */
 
 const now = () => (reviewNow ? reviewNow() : Date.now());
@@ -345,11 +345,11 @@ const LONG_FOCUS = 'Draft the workshop outline for the spring conference and cir
 export function registerGalleryMocks(): void {
   const spot = Number(knob('wattspot'));
   const wear = knob('wattwear');
-  const worn = wear === 'star' || wear === 'bow' || wear === 'cape' ? wear : null;
+  const worn = wear && (['star', 'bow', 'cape', 'bolt', 'flower', 'backpack', 'wings'] as const).includes(wear as 'star') ? wear : null;
   if ((knob('wattspot') && Number.isFinite(spot)) || worn) {
     const stored: Record<string, unknown> = {};
     if (knob('wattspot') && Number.isFinite(spot)) stored.spots = { work: spot, home: spot, meet: spot, onair: spot, unwind: spot };
-    if (worn) Object.assign(stored, { cosmetic: worn, days: 7 });
+    if (worn) Object.assign(stored, { cosmetic: worn, days: 30 });
     try {
       window.localStorage.setItem('wall2.watt', JSON.stringify(stored));
     } catch {
