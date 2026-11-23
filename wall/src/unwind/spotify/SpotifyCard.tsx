@@ -183,7 +183,7 @@ export function SpotifyCard() {
   }, []);
   // A chooser or library menu is open, or the pointer is on a details card (drawn elsewhere in the page): the card stays as it is.
   const popupHolds = () => chooserOpen.current || !!document.querySelector('.u-lib-menu, .hover-tip:hover');
-  // Keyboard focus inside the card counts like the pointer inside (the search field included): the 1 second starts only when
+  // Keyboard focus inside the card counts like the pointer inside (the search field included): the 0.5 second starts only when
   // neither is there. `focusTo` is where focus went when this follows a blur (null: nowhere), else the focused element.
   const armClose = useCallback(
     (focusTo?: Element | null) => {
@@ -240,7 +240,7 @@ export function SpotifyCard() {
     // Whichever way the view opened or closed, a pending rest-to-open timer is stale.
     clearOpen();
     if (!tall) clearClose();
-    // Opened with neither the pointer nor the focus on it (the card has no way to know the pointer is elsewhere): the 1 second starts.
+    // Opened with neither the pointer nor the focus on it (the card has no way to know the pointer is elsewhere): the 0.5 second starts.
     else armClose();
   }, [tall, clearClose, clearOpen, armClose]);
 

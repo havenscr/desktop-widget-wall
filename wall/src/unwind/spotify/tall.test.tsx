@@ -217,10 +217,11 @@ describe('opening and closing the tall view', () => {
   it('a stale rest timer never reopens it: enter, click the top row, Escape, and 0.75 s later it is still closed until a new enter', async () => {
     await setup();
     fireEvent.pointerEnter(card());
-    await flush(500);
+    // Both waits come from TALL_OPEN_MS, so Escape lands while a leaked rest timer would still be pending.
+    await flush(TALL_OPEN_MS / 3);
     await act(async () => fireEvent.click(document.querySelector('.sp-top') as HTMLElement));
     expect(isTall()).toBe(true);
-    await flush(500);
+    await flush(TALL_OPEN_MS / 3);
     key('Escape');
     expect(isTall()).toBe(false);
     await flush(TALL_OPEN_MS * 3);
@@ -396,7 +397,7 @@ describe('opening and closing the tall view', () => {
     tipCard.remove();
   });
 
-  describe('by itself, 1 second after the pointer has left', () => {
+  describe('by itself, 0.5 second after the pointer has left', () => {
     it('never while the pointer is on it; closes 0.5 s after it leaves; a re-entry within that keeps it', async () => {
       await setup();
       await open();
@@ -416,7 +417,7 @@ describe('opening and closing the tall view', () => {
       expect(isTall()).toBe(false);
     });
 
-    it('never while the search box has focus; the 1 s starts when it loses it with the pointer away', async () => {
+    it('never while the search box has focus; the 0.5 s starts when it loses it with the pointer away', async () => {
       await setup();
       await open();
       const c = card();
@@ -1497,7 +1498,7 @@ describe('closing by itself follows the keyboard focus too', () => {
     expect(isTall()).toBe(true);
   });
 
-  it('opened with neither the pointer nor the focus on it, the 1 second starts at once', async () => {
+  it('opened with neither the pointer nor the focus on it, the 0.5 second starts at once', async () => {
     await setup();
     await act(async () => fireEvent.click(document.querySelector('.sp-top') as HTMLElement));
     await flush(TALL_CLOSE_MS - 1);
