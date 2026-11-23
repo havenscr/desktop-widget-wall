@@ -776,7 +776,7 @@ const pickKey = async (id: string) => {
   return k.label;
 };
 
-it('a move from a mouse-opened menu keeps focus off the page body', async () => {
+it('a move from a mouse-opened menu keeps focus on the moved key', async () => {
   localStorage.setItem(PINS_KEY, JSON.stringify(['lib:thirds', 'lib:snip', 'lib:focus']));
   render(<PinnedRow />);
   await flush();
@@ -785,7 +785,7 @@ it('a move from a mouse-opened menu keeps focus off the page body', async () => 
   fireEvent.click(screen.getByRole('menuitem', { name: /Move right/ }));
   await flush();
   expect(labels()).toEqual(['Thirds', 'Focus', 'Snip']);
-  expect(document.activeElement).not.toBe(document.body);
+  expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Snip' }));
 });
 
 it('moves and a replace keep an unresolved stored entry in place, dropping and duplicating nothing', async () => {
