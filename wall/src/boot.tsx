@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client';
 import { App } from './App';
 import { usePlaceStore } from './state/places';
 import { installFullscreenKeys } from './ui/fullscreen';
+import { installScrollReveal } from './ui/scrollbar';
 import { reviewFrame } from './ui/reviewClock';
 
 // Loaded by `main.tsx` only when the page is the top window: nothing here (listeners,
@@ -23,6 +24,7 @@ if (import.meta.env.DEV) {
   }
 }
 installFullscreenKeys();
+installScrollReveal();
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

@@ -4,6 +4,7 @@ import { createPortal } from 'react-dom';
 import { invoke } from '../bridge/tauri';
 import { hover } from '../tools/hover';
 import { tip } from '../ui/HoverTip';
+import { useListEdge } from '../ui/useListEdge';
 import { useBrief } from '../work/useBrief';
 import { fileLook } from './fileIcon';
 import { canPreview, PREVIEW_DELAY_MS, recentWhen, useRecentFiles, type RecentFile } from './recent';
@@ -53,7 +54,7 @@ function placeFor(row: HTMLElement): { left: number; top: number; host: Element 
   };
 }
 
-/** The Shelf's Recent files card: the last 20 files opened, newest first, five rows in view and the rest a scroll away. A row opens the file; its Folder button shows it in File Explorer. */
+/** The Shelf's Recent files card: the last 20 files opened, newest first, as many rows in view as the card has room for, the rest a scroll away (the foot fades while more is below). A row opens the file; its Folder button shows it in File Explorer. */
 export function RecentCard() {
   const { status, items } = useRecentFiles();
   const [brief, show] = useBrief();
@@ -64,6 +65,7 @@ export function RecentCard() {
     );
   };
 
+  const edge = useListEdge([items.length, status]);
   const [shown, setShown] = useState<Shown | null>(null);
   const cache = useRef(new Map<string, string>());
   const noneUntil = useRef(new Map<string, number>());
@@ -139,7 +141,10 @@ export function RecentCard() {
   else if (status === 'loading') body = null;
   else {
     body = (
-      <ul className="rf-rows" onScroll={hide}>
+      <ul ref={edge.ref} className={`rf-rows ${edge.className}`} onScroll={() => {
+        hide();
+        edge.onScroll();
+      }}>
         {items.map((f) => {
           const { Icon, color } = fileLook(f.name);
           const tp = hover(`Open "${f.name}" in its default app`);

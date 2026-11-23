@@ -912,19 +912,6 @@
   overflow-y: scroll;
   padding-right: 0;
 }
-.tasks-list::-webkit-scrollbar {
-  width: 6px;
-}
-.tasks-list::-webkit-scrollbar-track {
-  background: transparent;
-}
-.tasks-list::-webkit-scrollbar-thumb {
-  border-radius: 3px;
-  background: rgba(255, 255, 255, 0.28);
-}
-.tasks-list::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.42);
-}
 /* A soft fade at an edge while rows wait beyond it: at the foot until the end, at the head once scrolled. */
 .tasks-list.fade-bottom {
   mask-image: linear-gradient(to top, transparent 0, #000 22px);
@@ -1760,16 +1747,12 @@
   min-height: 0;
   overflow-y: auto;
   overscroll-behavior: contain;
-  /* The wall's slim scrollbar, and a fade at the foot so no row is ever seen cut mid-text;
+  /* The shared scrollbar, and a fade at the foot so no row is ever seen cut mid-text;
      the padding lets the last row scroll clear of the fade. */
-  scrollbar-width: thin;
-  scrollbar-color: rgba(255, 255, 255, 0.24) transparent;
   padding-bottom: 28px;
-  -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 28px), transparent);
-  mask-image: linear-gradient(to bottom, #000 calc(100% - 28px), transparent);
 }
-.pk-list:hover {
-  scrollbar-color: rgba(255, 255, 255, 0.36) transparent;
+.pk-list.sb-fade-bottom.over:not(.end) {
+  --sb-fade: 28px;
 }
 .pk-group {
   display: grid;

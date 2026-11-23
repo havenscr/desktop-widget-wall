@@ -113,7 +113,12 @@
 /* With the Sound block reduced to its one line (Sonos not set up, down, or silent for 2.5
    seconds), the cards take the room it leaves. The height changes in one slow fade. */
 .mood-row {
-  transition: height 600ms ease;
+  /* Its own transition replaces the shared scrollbar fade (ui/scrollbar.css), so the row lists --sb-a too. */
+  transition: height 600ms ease, --sb-a 0.3s ease 0.9s;
+}
+.mood-row[data-sb-live],
+.mood-row[data-sb-hover] {
+  transition: height 600ms ease, --sb-a 0.15s ease 0s;
 }
 .home-centre.tall .mood-row {
   height: 300px;
@@ -139,8 +144,6 @@
   grid-auto-columns: calc((100% - 5 * 14px) / 6);
   overflow-x: auto;
   overflow-y: hidden;
-  scrollbar-width: thin;
-  scrollbar-color: rgba(255, 255, 255, 0.2) transparent;
 }
 .mood-btn {
   position: relative;
@@ -1487,13 +1490,12 @@
 }
 
 /* Chores: five rows on a 40 px pitch (three while network alerts are open), the rest a
-   scroll away; the slim scrollbar shows with the pointer over the list. 16 px stay free on
-   the right so nothing moves when it shows. */
+   scroll away; the shared scrollbar shows with the pointer over the list. 16 px stay free on
+   the right until it scrolls, then the bar's own 20 px (a 14 px gap and the bar) take its place. */
 .home .chore-rows {
   overflow-y: auto;
   overflow-x: hidden;
   padding-right: 16px;
-  scrollbar-width: none;
   overscroll-behavior: contain;
 }
 .home .chore-rows.fit5 {
@@ -1502,10 +1504,8 @@
 .home .chore-rows.fit3 {
   max-height: 120px;
 }
-.home .chore-rows.scrolls:hover {
-  scrollbar-width: thin;
-  scrollbar-color: rgba(255, 255, 255, 0.3) transparent;
-  padding-right: 8px;
+.home .chore-rows.scrolls {
+  padding-right: 0;
 }
 .home .chore-rows .tk3 {
   box-sizing: border-box;
@@ -1925,8 +1925,6 @@
 .sd-list {
   min-height: 0;
   overflow-y: auto;
-  scrollbar-width: thin;
-  scrollbar-color: rgba(255, 255, 255, 0.3) transparent;
   overscroll-behavior: contain;
 }
 .sd-row {

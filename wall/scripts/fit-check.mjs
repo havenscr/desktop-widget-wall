@@ -1077,7 +1077,7 @@ try {
         if (pb > rt - 16 + 0.5) deck.push('deck: the key picker reaches y ' + Math.round(pb) + ', over the timeline gap (the timeline starts at ' + Math.round(rt) + ')');
         else if (pb < rt - 16 - 2) deck.push('deck: the key picker stops at y ' + Math.round(pb) + ', short of the timeline gap at ' + Math.round(rt - 16));
         const list = pk.querySelector('.pk-list');
-        if (list && getComputedStyle(list).scrollbarWidth !== 'thin') deck.push('deck: the key picker list has the native scrollbar');
+        if (list && list.scrollHeight > list.clientHeight + 1 && list.offsetWidth - list.clientWidth < 20 - 0.5) deck.push('deck: the key picker list does not carry the shared 20 px scrollbar');
       }
       const name = document.querySelector('.work .right-wing .keys .deck-hd .k');
       const ctl = document.querySelector('.work .right-wing .keys .deck-hd-r');

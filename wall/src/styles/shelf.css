@@ -53,6 +53,8 @@
   background: rgba(255, 255, 255, 0.06);
   color: inherit;
   font: 600 20px/1 var(--body);
+  /* The label never touches the key's edge: at least 10 px each side at the longest label. */
+  padding: 0 10px;
 }
 .shelf-key:hover {
   background: rgba(53, 230, 234, 0.12);
@@ -292,16 +294,7 @@ button.cap-pic:focus-visible {
   gap: 6px;
   min-width: 0;
   min-height: 0;
-  padding-right: 8px;
   overflow-y: auto;
-  scrollbar-width: thin;
-  scrollbar-color: rgba(154, 123, 255, 0.75) rgba(255, 255, 255, 0.05);
-  -webkit-mask-image: linear-gradient(#000 calc(100% - 64px), transparent);
-  mask-image: linear-gradient(#000 calc(100% - 64px), transparent);
-}
-.cap-rows.end {
-  -webkit-mask-image: none;
-  mask-image: none;
 }
 .cap-row {
   flex: none;
@@ -412,6 +405,7 @@ button.cap-pic:focus-visible {
   min-height: 0;
 }
 .rf-card {
+  flex: 1 1 0;
   gap: 10px;
   padding: 16px 22px;
 }
@@ -421,24 +415,12 @@ button.cap-pic:focus-visible {
   margin: 0;
   padding: 0;
   list-style: none;
-  /* Five rows (44 px each and four 1 px rules) in view, the rest a scroll away; the page never scrolls with it. */
-  max-height: 224px;
+  /* The card grows down to the shared bottom edge of the Shelf cards; the rows fill it and the rest are a scroll away, the page never scrolls with it. */
+  flex: 1 1 0;
+  min-height: 0;
   overflow-x: hidden;
   overflow-y: auto;
   overscroll-behavior: contain;
-}
-.rf-rows::-webkit-scrollbar {
-  width: 6px;
-}
-.rf-rows::-webkit-scrollbar-track {
-  background: transparent;
-}
-.rf-rows::-webkit-scrollbar-thumb {
-  border-radius: 3px;
-  background: rgba(255, 255, 255, 0.28);
-}
-.rf-rows::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.42);
 }
 .rf-row {
   flex: none;

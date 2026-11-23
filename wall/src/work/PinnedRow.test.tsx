@@ -600,11 +600,11 @@ it('the open picker runs down to just above the timeline, never over it', async 
   }
 });
 
-it('the picker list has the slim scrollbar and a fade at its foot', () => {
+it('the picker list uses the shared scrollbar fade at its foot, clear of the bar', () => {
   const css: string = readFileSync('src/styles/work.css', 'utf8');
-  const list = /\.pk-list \{[^}]*\}/.exec(css)?.[0] ?? '';
-  expect(list).toContain('scrollbar-width: thin');
-  expect(list).toContain('mask-image: linear-gradient');
+  expect(/\.pk-list \{[^}]*\}/.exec(css)?.[0] ?? '').not.toContain('scrollbar-');
+  expect(css).toContain('.pk-list.sb-fade-bottom');
+  expect(readFileSync('src/ui/scrollbar.css', 'utf8')).toContain('.sb-fade-bottom');
 });
 
 it('each pin carries its kind from the library group: Record 16:9 and Snip as capture, Hide screen as system', async () => {

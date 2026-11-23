@@ -231,3 +231,62 @@ describe('preview', () => {
     expect(document.querySelector('.rf-preview')).toBeNull();
   });
 });
+
+describe('the list foot', () => {
+  const size = (el: HTMLElement, scrollHeight: number, clientHeight: number) => {
+    Object.defineProperty(el, 'scrollHeight', { value: scrollHeight, configurable: true });
+    Object.defineProperty(el, 'clientHeight', { value: clientHeight, configurable: true });
+  };
+
+  it('masks the foot while rows wait below, and drops the mask once the list is at its end', async () => {
+    render(<RecentCard />);
+    await screen.findByText('Document 0.docx');
+    const rows = document.querySelector('.rf-rows') as HTMLElement;
+    expect(rows.classList.contains('sb-fade-bottom')).toBe(true);
+    size(rows, 500, 200);
+    rows.scrollTop = 0;
+    fireEvent.scroll(rows);
+    expect(rows.classList.contains('over')).toBe(true);
+    expect(rows.classList.contains('end')).toBe(false);
+    rows.scrollTop = 300;
+    fireEvent.scroll(rows);
+    expect(rows.classList.contains('end')).toBe(true);
+    rows.scrollTop = 0;
+    fireEvent.scroll(rows);
+    expect(rows.classList.contains('end')).toBe(false);
+  });
+
+  it('follows a resize: rows that now all fit drop the mask, and an overflow brings it back', async () => {
+    const watchers: ResizeObserverCallback[] = [];
+    vi.stubGlobal(
+      'ResizeObserver',
+      class {
+        constructor(cb: ResizeObserverCallback) {
+          watchers.push(cb);
+        }
+        observe() {}
+        disconnect() {}
+      },
+    );
+    try {
+      render(<RecentCard />);
+      await screen.findByText('Document 0.docx');
+      const rows = document.querySelector('.rf-rows') as HTMLElement;
+      const resized = () => act(() => watchers.forEach((cb) => cb([], {} as ResizeObserver)));
+      size(rows, 500, 200);
+      resized();
+      expect(rows.classList.contains('over')).toBe(true);
+      size(rows, 200, 200);
+      resized();
+      expect(rows.classList.contains('over')).toBe(false);
+      expect(rows.classList.contains('end')).toBe(true);
+      size(rows, 600, 200);
+      resized();
+      expect(rows.classList.contains('over')).toBe(true);
+      expect(rows.classList.contains('end')).toBe(false);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+});
+
