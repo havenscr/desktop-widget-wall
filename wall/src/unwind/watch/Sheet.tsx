@@ -96,7 +96,10 @@ export function WatchSheet({ initial = 'looks' }: { initial?: 'looks' | 'lines' 
       <button type="button" className="w-x" aria-label="Close" title="Close" onClick={close}>
         <IconX size={22} aria-hidden="true" />
       </button>
-      <div className="u-k">{title}</div>
+      <div className="w-head">
+      <div className="u-k" {...tip(title)}>
+        {title}
+      </div>
       <div className="w-seg ln-pages" role="tablist" aria-label="Looks, lines or lights">
         <button type="button" role="tab" aria-selected={page === 'looks'} className={page === 'looks' ? 'on' : ''} {...tip('How a video is shown on the wall')} onClick={() => setPage('looks')}>
           Looks
@@ -107,6 +110,7 @@ export function WatchSheet({ initial = 'looks' }: { initial?: 'looks' | 'lines' 
         <button type="button" role="tab" aria-selected={page === 'lights'} className={page === 'lights' ? 'on' : ''} {...tip('How the lights follow the music: colour, brightness, flash and more')} onClick={() => setPage('lights')}>
           Lights
         </button>
+      </div>
       </div>
       {page === 'lines' ? <LinesPanel /> : page === 'lights' ? <LightsPanel /> : <>
       <div className="w-seg w-mode" role="radiogroup" aria-label="The same look for all, or each source its own">

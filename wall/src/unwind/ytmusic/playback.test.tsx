@@ -2,7 +2,7 @@ import { act, cleanup, fireEvent, render, screen, within } from '@testing-librar
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { mocks } from '../../bridge/tauri';
 import { wallVideoControls, wallVideoView } from '../../home/wallVideo';
-import { resetNowPlaying } from '../../music/store';
+import { resetNowPlaying, seekMedia } from '../../music/store';
 import { type YoutubeStatus, type YtPage, type YtPlayable, type YtPlaylist, type YtVideo } from '../../music/youtube';
 import { Rail } from '../../rail/Rail';
 import { usePlaceStore } from '../../state/places';
@@ -512,6 +512,91 @@ describe('the top player on Listen', () => {
     await flush(10);
     expect(screen.queryByText('YouTube, on the wall')).toBeNull();
     expect(document.querySelector('[data-wall-music]')).toBeNull();
+  });
+
+  describe('the time bar seeks', () => {
+    let rect: ReturnType<typeof vi.spyOn>;
+    const calls: Record<string, unknown>[] = [];
+    const outside = (extra: Record<string, unknown> = {}) =>
+      mocks.set('get_now_playing', () => ({ title: 'Other song', artist: 'Band', playback_status: 'paused', source_app: 'Spotify', source_app_id: 'Spotify.exe', session_key: 'k1', duration_seconds: 200, position_seconds: 40, can_seek: true, ...extra }));
+    beforeEach(() => {
+      calls.length = 0;
+      mocks.set('media_seek', (args) => {
+        calls.push(args as Record<string, unknown>);
+        return true;
+      });
+      rect = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue({ left: 0, top: 0, right: 100, bottom: 32, width: 100, height: 32, x: 0, y: 0, toJSON: () => ({}) });
+    });
+    afterEach(() => rect.mockRestore());
+
+    it('a click on the wall\'s own music sends seekTo over the player link, and a key steps 5 seconds', async () => {
+      serve();
+      playAll([video(1), video(3)], false, LIST);
+      act(() => w().setReport({ started: true, time: 66, duration: 200, title: 'Clip 1', channel: 'Channel 1' }));
+      render(<Player />);
+      await flush(10);
+      const bar = screen.getByRole('slider', { name: 'Track position' });
+      sent.length = 0;
+      fireEvent.click(bar, { clientX: 25 });
+      expect(sent).toEqual([['seekTo', [50, true]]]);
+      expect(w().report.time).toBe(50);
+      fireEvent.keyDown(bar, { key: 'ArrowRight' });
+      expect(sent[1]).toEqual(['seekTo', [55, true]]);
+      fireEvent.keyDown(bar, { key: 'End' });
+      expect(sent[2]).toEqual(['seekTo', [200, true]]);
+      fireEvent.keyDown(bar, { key: 'Home' });
+      expect(sent[3]).toEqual(['seekTo', [0, true]]);
+      expect(calls).toEqual([]);
+    });
+
+    it('an outside app is sought through its media session, aimed at the shown session, and the bar jumps at once', async () => {
+      outside();
+      render(<Player />);
+      await flush(10);
+      const bar = screen.getByRole('slider', { name: 'Track position' });
+      expect(bar.getAttribute('aria-valuenow')).toBe('40');
+      fireEvent.click(bar, { clientX: 50 });
+      expect(calls).toEqual([{ positionSeconds: 100, sessionKey: 'k1', sourceId: 'Spotify.exe' }]);
+      expect(screen.getByRole('slider', { name: 'Track position' }).getAttribute('aria-valuenow')).toBe('100');
+      fireEvent.keyDown(bar, { key: 'ArrowLeft' });
+      expect(calls[1]).toMatchObject({ positionSeconds: 95 });
+      expect(sent).toEqual([]);
+    });
+
+    it('is inert, with no handler, when the session does not allow a seek', async () => {
+      outside({ can_seek: false });
+      render(<Player />);
+      await flush(10);
+      expect(screen.queryByRole('slider')).toBeNull();
+      const bar = screen.getByRole('progressbar', { name: 'Track position' });
+      expect(bar.getAttribute('aria-disabled')).toBe('true');
+      expect(bar.getAttribute('tabindex')).toBeNull();
+      fireEvent.click(bar, { clientX: 50 });
+      fireEvent.keyDown(bar, { key: 'ArrowRight' });
+      expect(calls).toEqual([]);
+    });
+
+    it('drops a seek whose track has changed since the press', async () => {
+      outside();
+      render(<Player />);
+      await flush(10);
+      expect(seekMedia(10, 'some other track|x|y')).toBe(false);
+      expect(calls).toEqual([]);
+    });
+
+    it('the wall\'s own Watch video seeks over the player link when a length is known', async () => {
+      localStorage.setItem(SAVED_KEY, JSON.stringify([{ kind: 'video', id: WATCH_ID, label: 'Night drive mix' }]));
+      w().load();
+      act(() => w().play({ kind: 'video', id: WATCH_ID }));
+      act(() => w().setReport({ started: true, time: 10, duration: 300 }));
+      outside({ title: 'Night drive mix', source_app_id: 'someplayer.exe', session_key: 'k9', can_seek: false, duration_seconds: 300, playback_status: 'playing' });
+      render(<Player />);
+      await flush(10);
+      sent.length = 0;
+      fireEvent.click(screen.getByRole('slider', { name: 'Track position' }), { clientX: 10 });
+      expect(sent).toEqual([['seekTo', [30, true]]]);
+      expect(calls).toEqual([]);
+    });
   });
 
   it('keeps today\'s rule when another app plays at the same time', async () => {

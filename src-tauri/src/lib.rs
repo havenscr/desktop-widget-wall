@@ -209,6 +209,10 @@ pub struct NowPlayingInfo {
     /// command so the command lands on that session even when two sessions share an app id.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub session_key: Option<String>,
+    /// The session lets the wall move its playback position (the session's own seek switch), so the
+    /// Listen time bar is clickable only when this is true. False when it cannot be read.
+    #[serde(default)]
+    pub can_seek: bool,
 }
 
 impl Default for NowPlayingInfo {
@@ -230,6 +234,7 @@ impl Default for NowPlayingInfo {
             art_key: None,
             ended: false,
             session_key: None,
+            can_seek: false,
         }
     }
 }
@@ -1249,6 +1254,11 @@ fn read_now_playing_sync(wall2: bool) -> NowPlayingInfo {
             if let Ok(status) = playback_info.PlaybackStatus() {
                 info.playback_status = convert_playback_status(status);
             }
+            // Whether the session accepts a position change (false when unreadable)
+            info.can_seek = playback_info
+                .Controls()
+                .and_then(|c| c.IsPlaybackPositionEnabled())
+                .unwrap_or(false);
             // Get shuffle state
             if let Ok(shuffle_result) = playback_info.IsShuffleActive() {
                 if let Ok(shuffle) = shuffle_result.Value() {
@@ -1398,9 +1408,17 @@ async fn media_previous(window: tauri::WebviewWindow, session_key: Option<String
     .map_err(|e| e.to_string())?
 }
 
+/// A seek position in 100-nanosecond ticks: a NaN or negative position becomes zero.
+fn seek_ticks(position_seconds: f64) -> i64 {
+    if !position_seconds.is_finite() || position_seconds < 0.0 {
+        return 0;
+    }
+    (position_seconds * 10_000_000.0) as i64
+}
+
 /// Seek to a specific position in seconds (async to avoid blocking main thread)
 #[tauri::command]
-async fn media_seek(window: tauri::WebviewWindow, position_seconds: f64, session_key: Option<String>, source_id: Option<String>) -> Result<(), String> {
+async fn media_seek(window: tauri::WebviewWindow, position_seconds: f64, session_key: Option<String>, source_id: Option<String>) -> Result<bool, String> {
     let label = window.label().to_string();
     tauri::async_runtime::spawn_blocking(move || {
         let manager = GlobalSystemMediaTransportControlsSessionManager::RequestAsync()
@@ -1411,16 +1429,14 @@ async fn media_seek(window: tauri::WebviewWindow, position_seconds: f64, session
         let session = session_for(&manager, &label, session_key.as_deref(), source_id.as_deref())?;
 
         // Convert seconds to 100-nanosecond intervals (TimeSpan duration)
-        let ticks = (position_seconds * 10_000_000.0) as i64;
-        let position = TimeSpan { Duration: ticks };
+        let position = TimeSpan { Duration: seek_ticks(position_seconds) };
 
+        // Whether the session took the new position (some players refuse)
         session
             .TryChangePlaybackPositionAsync(position.Duration)
             .map_err(|e| e.to_string())?
             .get()
-            .map_err(|e| e.to_string())?;
-
-        Ok(())
+            .map_err(|e| e.to_string())
     })
     .await
     .map_err(|e| e.to_string())?
@@ -4457,7 +4473,16 @@ pub fn run() {
 
 #[cfg(test)]
 mod tests {
-    use super::{extract_app_name, fallback_app_name, old_window_only, parse_dnd_mode, widget_config_gate, widget_config_key_ok};
+    use super::{extract_app_name, fallback_app_name, old_window_only, seek_ticks, parse_dnd_mode, widget_config_gate, widget_config_key_ok};
+
+    #[test]
+    fn seek_ticks_clamps_bad_positions() {
+        assert_eq!(seek_ticks(f64::NAN), 0);
+        assert_eq!(seek_ticks(-5.0), 0);
+        assert_eq!(seek_ticks(f64::INFINITY), 0);
+        assert_eq!(seek_ticks(0.0), 0);
+        assert_eq!(seek_ticks(1.5), 15_000_000);
+    }
 
     #[test]
     fn widget_config_keys_never_leave_the_config_folder() {

@@ -20,6 +20,8 @@ export interface NowPlayingInfo {
   ended?: boolean;
   /** The shown session's key (its app id and its place among sessions of that app); sent back with every command. */
   session_key?: string | null;
+  /** The session accepts a position change (its own seek switch); the time bar is clickable only then. */
+  can_seek?: boolean;
 }
 
 export const ALLOWED_ART_MIMES = ['image/png', 'image/jpeg', 'image/webp', 'image/gif'] as const;
