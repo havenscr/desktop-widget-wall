@@ -35,6 +35,7 @@ use std::time::Duration;
 /// Dictations returned to the page.
 const SHOWN: usize = 30;
 /// Rows read from the newest end of the table before sorting by time.
+#[cfg(test)]
 const WINDOW: usize = 200;
 /// Characters of each text in the list.
 const TEXT_CHARS: usize = 2000;
