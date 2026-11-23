@@ -26,8 +26,8 @@ function measureLights() {
   return { found: true, top: sr.top, bottom: sr.bottom, left: sr.left, right: sr.right, vh: window.innerHeight, vw: window.innerWidth, small, cut, outside, overlap, tinyControl, heads, titleTabs: title && tabs ? title.right - tabs.left : -999, tiles: sheet.querySelectorAll('.ls-tile').length, rowCount: sheet.querySelectorAll('.ls-row').length };
 }
 
-// Runs in the page: the heading row of whichever tab of the sheet is open (Looks, Lines or Lights). The title's drawn text and
-// its box both end at least 12 px before the tabs, the whole title shows (no line cut), and the tabs end before the cross.
+// Runs in the page: the heading row of whichever tab of the sheet is open (Looks, Lines or Lights). The title's drawn text ends
+// at least 12 px before the tabs, each tab's text sits 10 px or more from its button's edges, the whole title shows (no line cut), and the tabs end before the cross.
 function measureSheetHead() {
   const sheet = document.querySelector('.w-sheet');
   const head = sheet && sheet.querySelector(':scope > .w-head');
@@ -38,10 +38,16 @@ function measureSheetHead() {
   const tr = document.createRange();
   tr.selectNodeContents(title);
   const text = tr.getBoundingClientRect();
-  const box = title.getBoundingClientRect();
   const tb = tabs.getBoundingClientRect();
   const xb = x.getBoundingClientRect();
-  return { found: true, words: title.textContent.trim(), gap: tb.left - Math.max(text.right, box.right), cut: title.scrollHeight > title.clientHeight + 1, crossGap: xb.left - tb.right, fontsReady: document.fonts ? document.fonts.status : 'unknown' };
+  return { found: true, words: title.textContent.trim(), gap: tb.left - text.right,
+    tabPad: [...tabs.querySelectorAll('button')].map((b) => {
+      const r = document.createRange();
+      r.selectNodeContents(b);
+      const t = r.getBoundingClientRect();
+      const bb = b.getBoundingClientRect();
+      return { words: b.textContent.trim(), pad: Math.min(t.left - bb.left, bb.right - t.right) };
+    }), cut: title.scrollHeight > title.clientHeight + 1, crossGap: xb.left - tb.right, fontsReady: document.fonts ? document.fonts.status : 'unknown' };
 }
 
 export default {
@@ -68,6 +74,8 @@ export default {
         const fail = (t) => { emit('  FAIL sheet heading: ' + t); bad = true; };
         if (!m || !m.found) { fail('the sheet has no heading row'); return true; }
         if (m.gap < 11.5) fail(`"${m.words}" ends ${Math.round(m.gap * 10) / 10} px from the tabs (12 at least)`);
+        const tight = (m.tabPad || []).filter((b) => b.pad < 9.5);
+        if (tight.length) fail('tab text under 10 px from its button edge: ' + tight.map((b) => `${b.words} ${Math.round(b.pad * 10) / 10}`).join(', '));
         if (m.cut) fail(`"${m.words}" is cut`);
         if (m.crossGap < 7.5) fail(`the tabs end ${Math.round(m.crossGap * 10) / 10} px from the close cross (8 at least)`);
         if (!bad) emit(`  ok   sheet heading: "${m.words}" ends ${Math.round(m.gap)} px before the tabs, whole, and the tabs clear the cross (fonts ${m.fontsReady})`);
@@ -94,6 +102,7 @@ export default {
     },
     breaks: {
       'sheet-head-run': { css: '.w-head > .ln-pages { position: absolute !important; top: 14px; right: 70px; }', expect: /^ *FAIL sheet heading: .* px from the tabs/m, appliesTo: (v) => v.name === 'Sheet heading, Looks tab' },
+      'tab-pad': { css: '.w-head > .w-seg.ln-pages { width: 190px !important; }', expect: /^ *FAIL sheet heading: tab text under 10 px/m, appliesTo: (v) => v.name === 'Sheet heading, Lights tab' },
       'lights-small': { css: '.ls-help { font-size: 12px !important; }', expect: /^ *FAIL lights tab: text under 16 px/m, appliesTo: (v) => v.name === 'Lights tab, open on Listen' },
     },
   },

@@ -1771,7 +1771,7 @@
 .w-head {
   display: flex;
   align-items: center;
-  gap: 14px;
+  gap: 12px;
   flex: none;
   margin: -10px 44px -12px 0;
   min-height: 40px;
@@ -1788,7 +1788,7 @@
 }
 .w-seg.ln-pages button {
   height: 32px;
-  padding: 0 8px;
+  padding: 0 10px;
   font-size: 16px;
 }
 .w-sheet.ln-sheet {

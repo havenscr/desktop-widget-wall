@@ -42,7 +42,7 @@ export function SeekBar({ position, duration, guard, onSeek, enabled }: Props) {
         aria-valuenow={Math.round(position)}
         aria-valuetext={text}
         style={fill}
-        {...tip('This app does not let the wall jump to a point in the video.')}
+        {...tip('This app does not let the wall jump to a point.')}
       >
         <b style={{ width: `${(frac * 100).toFixed(2)}%` }} />
       </div>
@@ -115,7 +115,7 @@ export function SeekBar({ position, duration, guard, onSeek, enabled }: Props) {
       aria-valuenow={Math.round(shown)}
       aria-valuetext={text}
       style={fill}
-      {...tip('Click or drag to jump to a point in the video. Arrow keys move 5 seconds.')}
+      {...tip('Click or drag to jump to a point. Arrow keys move 5 seconds.')}
       onPointerDown={down}
       onPointerMove={move}
       onPointerUp={up}

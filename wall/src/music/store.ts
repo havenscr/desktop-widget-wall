@@ -229,8 +229,16 @@ export function reanchorNowPlaying(seconds: number, onlyKey?: string): boolean {
 export function seekMedia(seconds: number, onlyKey?: string): boolean {
   if (!reanchorNowPlaying(seconds, onlyKey)) return false;
   const at = Math.max(0, seconds);
-  invoke('media_seek', { positionSeconds: at, ...mediaTarget() })
-    .catch(() => {})
+  const target = mediaTarget();
+  const key = useNowPlayingStore.getState().anchor?.key;
+  invoke<boolean>('media_seek', { positionSeconds: at, ...target })
+    .then((ok) => ok !== false, () => false)
+    .then((ok) => {
+      // A refused seek (false or an error): forget the position the last poll reported, so the next poll counts as news
+      // and puts the bar back where the session really is.
+      const a = useNowPlayingStore.getState().anchor;
+      if (!ok && a && a.key === key) useNowPlayingStore.setState({ anchor: { ...a, reported: Number.NaN } });
+    })
     .finally(() => {
       if (document.hidden || !active || consumers === 0) return;
       void run();

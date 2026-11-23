@@ -152,17 +152,21 @@ export function Player() {
 
   // A jump: the wall's own video takes it over the player link (always possible once its length is known); an outside
   // app takes it through its media session, and only when that session says it allows one.
-  const ownSeek = ownVideo && !!watchPlaying && !!watchLength && watchLength > 0;
+  // Only when the shown session is the wall's own video (the web view, or a session titled as the Watch item), never
+  // an unknown app that merely has no known name.
+  const ownSeek = (webView || watchMatch) && !!watchPlaying && !!watchLength && watchLength > 0;
   const canSeek = ownSeek || !!info?.can_seek;
+  // What a press is aimed at: the Watch item too for its own video, so a seek is dropped when Watch moved on to another one.
+  const seekGuard = ownSeek ? `${anchor?.key ?? ''}#${watchPlaying.kind}:${watchPlaying.id}` : (anchor?.key ?? '');
   const jump = (seconds: number, guard: string) => {
     if (ownSeek) {
-      if (guard === anchor?.key && musicControls.seek(seconds)) reanchorNowPlaying(seconds, guard);
+      if (guard === seekGuard && anchor && musicControls.seek(seconds)) reanchorNowPlaying(seconds, anchor.key);
     } else seekMedia(seconds, guard);
   };
   const progressBar = progress ? (
     <div className="u-progress">
       <span className="u-t">{formatTime(progress.position)}</span>
-      <SeekBar position={progress.position} duration={progress.duration} guard={anchor?.key ?? ''} onSeek={jump} enabled={canSeek} />
+      <SeekBar position={progress.position} duration={progress.duration} guard={seekGuard} onSeek={jump} enabled={canSeek} />
       <span className="u-t">{formatTime(progress.duration)}</span>
     </div>
   ) : null;

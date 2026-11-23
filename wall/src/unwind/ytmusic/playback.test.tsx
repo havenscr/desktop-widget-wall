@@ -597,6 +597,39 @@ describe('the top player on Listen', () => {
       expect(sent).toEqual([['seekTo', [30, true]]]);
       expect(calls).toEqual([]);
     });
+
+    it('a Watch video playing while an unknown app is the shown session never takes the seek over the player link', async () => {
+      localStorage.setItem(SAVED_KEY, JSON.stringify([{ kind: 'video', id: WATCH_ID, label: 'Night drive mix' }]));
+      w().load();
+      act(() => w().play({ kind: 'video', id: WATCH_ID }));
+      act(() => w().setReport({ started: true, time: 10, duration: 300 }));
+      outside({ title: 'Some other thing', source_app_id: 'someplayer.exe', session_key: 'k9', can_seek: true, duration_seconds: 300, playback_status: 'playing' });
+      render(<Player />);
+      await flush(10);
+      sent.length = 0;
+      fireEvent.click(screen.getByRole('slider', { name: 'Track position' }), { clientX: 10 });
+      expect(sent.filter(([f]) => f === 'seekTo')).toEqual([]);
+      expect(calls).toEqual([{ positionSeconds: 30, sessionKey: 'k9', sourceId: 'someplayer.exe' }]);
+    });
+
+    it('drops an own-video seek when Watch moved to another video between the press and the release', async () => {
+      const OTHER_ID = 'Zz9yXwVuT8s';
+      localStorage.setItem(SAVED_KEY, JSON.stringify([{ kind: 'video', id: WATCH_ID, label: 'Night drive mix' }, { kind: 'video', id: OTHER_ID, label: 'Night drive mix' }]));
+      w().load();
+      act(() => w().play({ kind: 'video', id: WATCH_ID }));
+      act(() => w().setReport({ started: true, time: 10, duration: 300 }));
+      outside({ title: 'Night drive mix', source_app_id: 'someplayer.exe', session_key: 'k9', can_seek: false, duration_seconds: 300, playback_status: 'playing' });
+      render(<Player />);
+      await flush(10);
+      const bar = screen.getByRole('slider', { name: 'Track position' });
+      fireEvent.pointerDown(bar, { clientX: 10, pointerId: 1, button: 0 });
+      fireEvent.pointerMove(bar, { clientX: 20, pointerId: 1, buttons: 1 });
+      act(() => w().play({ kind: 'video', id: OTHER_ID }));
+      act(() => w().setReport({ started: true, time: 10, duration: 300 }));
+      sent.length = 0;
+      fireEvent.pointerUp(bar, { clientX: 20, pointerId: 1, button: 0 });
+      expect(sent.filter(([f]) => f === 'seekTo')).toEqual([]);
+    });
   });
 
   it('keeps today\'s rule when another app plays at the same time', async () => {
