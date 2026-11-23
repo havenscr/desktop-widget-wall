@@ -7,6 +7,7 @@ import { tip } from '../ui/HoverTip';
 import { CUSTOM_MAX, CUSTOM_MIN, PALETTES, SWATCHES, type PaletteEntry } from './lightsync/model';
 import { attachPoll, isOn, useLightSync } from './lightsync/store';
 import { SYNC_WORD, syncChipModel, syncTip, type SyncChipInput } from './moodRow';
+import { failText } from './lightsync/model';
 
 const gradient = (c: readonly string[]): string => (c.length === 0 ? 'transparent' : c.length === 1 ? c[0] : `linear-gradient(135deg, ${c.join(', ')})`);
 
@@ -51,6 +52,8 @@ export function SyncChip({ blocked }: { blocked: boolean }) {
   }, []);
   const m = syncChipModel(input);
   const entry = PALETTES.find((p) => p.id === palette) ?? PALETTES[0];
+  // The failure is also said in words: the switch's description carries it for a screen reader.
+  const failNote = m.failed && input.failure !== null ? `Music sync failed: ${failText(input.failure)} Press the switch to try again.` : null;
   return (
     // A click anywhere on the chip opens the menu (the label button's Enter reaches here as a click); the switch alone turns sync on or off.
     <div
@@ -78,8 +81,10 @@ export function SyncChip({ blocked }: { blocked: boolean }) {
         aria-checked={m.lit}
         aria-label="Music sync on or off"
         aria-disabled={blocked ? 'true' : undefined}
+        aria-describedby={failNote ? 'u-sync-fail' : undefined}
         onClick={(e) => {
           e.stopPropagation();
+          if (blocked) return;
           void useLightSync.getState().toggle();
         }}
         {...tip(() => (
@@ -91,6 +96,11 @@ export function SyncChip({ blocked }: { blocked: boolean }) {
       >
         <span className="u-sync-knob" aria-hidden="true" />
       </button>
+      {failNote && (
+        <span id="u-sync-fail" className="u-sr-only" data-part="sync-fail">
+          {failNote}
+        </span>
+      )}
     </div>
   );
 }

@@ -9,7 +9,7 @@ import { useNowPlayingStore } from '../../music/store';
 import { resetHome, useHome } from '../homeStore';
 import { SYNC_WIDTH, SYNC_WORD, fitMoodRow, syncChipModel } from '../moodRow';
 import { OfficeMoods } from '../OfficeMoods';
-import { SyncTip } from '../SyncChip';
+import { SyncChip, SyncTip } from '../SyncChip';
 import { renderToString } from 'react-dom/server';
 import { DEFAULT_LIGHTS_UI, DEFAULT_LIGHT_SYNC, PALETTES, engineSettings, clampSettings, isHex, resolvePalette, type PaletteId } from './model';
 import { attachPoll, resetLightSync, useLightSync } from './store';
@@ -102,9 +102,9 @@ const show = async () => {
 const slot = () => document.querySelector('[data-slot="office-lights"]') as HTMLElement;
 const syncChip = () => slot().querySelector('[data-mood="sync"]') as HTMLElement;
 /** The switch at the chip's right end: it turns sync on and off. */
-const main = () => syncChip().querySelector('[data-part="sync-switch"]') as HTMLElement;
+const toggleSwitch = () => syncChip().querySelector('[data-part="sync-switch"]') as HTMLElement;
 /** The label side of the chip: a click anywhere on it opens the menu. */
-const dots = () => syncChip().querySelector('[data-part="sync-main"]') as HTMLElement;
+const label = () => syncChip().querySelector('[data-part="sync-main"]') as HTMLElement;
 const mood = (id: string) => slot().querySelector(`[data-mood="${id}"]`) as HTMLElement;
 const tipOf = async (el: Element) => {
   fireEvent.mouseEnter(el);
@@ -134,40 +134,40 @@ it('states: idle, starting (spinner), on (lit), failed (warning icon)', async ()
   startHold = true;
   await show();
   expect(syncChip().getAttribute('data-state')).toBe('off');
-  expect(main().getAttribute('aria-checked')).toBe('false');
-  fireEvent.click(main());
+  expect(toggleSwitch().getAttribute('aria-checked')).toBe('false');
+  fireEvent.click(toggleSwitch());
   await flush();
   expect(syncChip().getAttribute('data-state')).toBe('starting');
   expect(syncChip().querySelector('.u-spin')).not.toBeNull();
   resetLightSync();
   startHold = false;
   await flush();
-  fireEvent.click(main());
+  fireEvent.click(toggleSwitch());
   await flush();
   expect(syncChip().getAttribute('data-state')).toBe('on');
   expect(syncChip().className).toContain('lit');
-  expect(main().getAttribute('aria-checked')).toBe('true');
+  expect(toggleSwitch().getAttribute('aria-checked')).toBe('true');
   // A failure: warning icon and a tip.
-  fireEvent.click(main());
+  fireEvent.click(toggleSwitch());
   await flush();
   startWord = 'bridge-unreachable';
-  fireEvent.click(main());
+  fireEvent.click(toggleSwitch());
   await flush();
   expect(syncChip().getAttribute('data-state')).toBe('failed');
   expect(syncChip().querySelector('.u-mood-ico.warn')).not.toBeNull();
-  expect(await tipOf(main())).toContain('The Hue bridge did not answer.');
+  expect(await tipOf(toggleSwitch())).toContain('The Hue bridge did not answer.');
 });
 
 it('Button A: the label opens the menu and never toggles; the switch toggles and never opens it; aria-checked follows the state', async () => {
   await show();
-  const sw = main();
+  const sw = toggleSwitch();
   expect(sw.getAttribute('role')).toBe('switch');
   expect(sw.getAttribute('aria-checked')).toBe('false');
   // A click on the label opens the menu and sends nothing to the bridge.
-  fireEvent.click(dots());
+  fireEvent.click(label());
   await flush();
   expect(slot().querySelector('[data-part="palette-strip"]')).not.toBeNull();
-  expect(dots().getAttribute('aria-expanded')).toBe('true');
+  expect(label().getAttribute('aria-expanded')).toBe('true');
   expect(count('wall2_lightsync_start')).toBe(0);
   expect(sw.getAttribute('aria-checked')).toBe('false');
   // A click on the padding of the chip (the chip itself) closes it again.
@@ -178,40 +178,101 @@ it('Button A: the label opens the menu and never toggles; the switch toggles and
   await flush();
   expect(count('wall2_lightsync_start')).toBe(1);
   expect(slot().querySelector('[data-part="palette-strip"]')).toBeNull();
-  expect(main().getAttribute('aria-checked')).toBe('true');
-  fireEvent.click(main());
+  expect(toggleSwitch().getAttribute('aria-checked')).toBe('true');
+  fireEvent.click(toggleSwitch());
   await flush();
-  expect(main().getAttribute('aria-checked')).toBe('false');
+  expect(toggleSwitch().getAttribute('aria-checked')).toBe('false');
   expect(slot().querySelector('[data-part="palette-strip"]')).toBeNull();
   // The colour dots left the chip.
   expect(syncChip().querySelector('.u-sync-dot')).toBeNull();
   // Both are real buttons in the tab order; each has its own tip.
-  expect(dots().tagName).toBe('BUTTON');
+  expect(label().tagName).toBe('BUTTON');
   expect(sw.tagName).toBe('BUTTON');
-  expect(await tipOf(dots())).toBe('Opens Music sync: colours and settings');
+  expect(await tipOf(label())).toBe('Opens Music sync: colours and settings');
   expect(await tipOf(sw)).toContain('Turns Music sync on or off');
+});
+
+/** What a browser does for a key on a button (jsdom does not): Enter clicks on keydown, Space clicks on keyup. */
+const press = (el: HTMLElement, key: 'Enter' | ' ') => {
+  const down = fireEvent.keyDown(el, { key });
+  if (key === 'Enter' && down) fireEvent.click(el);
+  const up = fireEvent.keyUp(el, { key });
+  if (key === ' ' && up && down) fireEvent.click(el);
+};
+const tabOrder = () => Array.from(slot().querySelectorAll<HTMLElement>('button, [role="switch"]'));
+
+it('Button A by keyboard: Enter on the label opens the menu, Space on the switch toggles and leaves the menu closed, and Tab reaches the menu after the switch', async () => {
+  await show();
+  press(label(), 'Enter');
+  await flush();
+  expect(slot().querySelector('[data-part="palette-strip"]')).not.toBeNull();
+  expect(count('wall2_lightsync_start')).toBe(0);
+  // Tab order is DOM order: label, switch, then the menu it opened, then the moods.
+  const order2 = tabOrder();
+  const at = (e: Element | null) => order2.indexOf(e as HTMLElement);
+  const firstPal = slot().querySelector('[data-part="palette-strip"] button');
+  expect(at(label())).toBeLessThan(at(toggleSwitch()));
+  expect(at(toggleSwitch())).toBeLessThan(at(firstPal));
+  expect(at(firstPal)).toBeLessThan(at(mood('brightDesk')));
+  // Close it, then Space on the switch: sync starts, the menu stays closed.
+  press(label(), 'Enter');
+  await flush();
+  expect(slot().querySelector('[data-part="palette-strip"]')).toBeNull();
+  press(toggleSwitch(), ' ');
+  await flush();
+  expect(count('wall2_lightsync_start')).toBe(1);
+  expect(toggleSwitch().getAttribute('aria-checked')).toBe('true');
+  expect(slot().querySelector('[data-part="palette-strip"]')).toBeNull();
+  press(toggleSwitch(), ' ');
+  await flush();
+  expect(toggleSwitch().getAttribute('aria-checked')).toBe('false');
+  expect(slot().querySelector('[data-part="palette-strip"]')).toBeNull();
+});
+
+it('a failed start is said in words: the switch is described by the failure and the way to retry', async () => {
+  await show();
+  expect(toggleSwitch().getAttribute('aria-describedby')).toBeNull();
+  useLightSync.setState({ failure: 'bridge-unreachable' });
+  await flush();
+  const id = toggleSwitch().getAttribute('aria-describedby');
+  expect(id).toBeTruthy();
+  const note = document.getElementById(id as string);
+  expect(note?.textContent).toContain('Music sync failed');
+  expect(note?.textContent).toContain('did not answer');
+  expect(note?.textContent).toContain('try again');
+});
+
+it('a blocked switch does nothing when pressed', async () => {
+  const view = render(<SyncChip blocked />);
+  await flush();
+  const sw = view.container.querySelector('[data-part="sync-switch"]') as HTMLElement;
+  expect(sw.getAttribute('aria-disabled')).toBe('true');
+  fireEvent.click(sw);
+  await flush();
+  expect(count('wall2_lightsync_start')).toBe(0);
+  expect(count('wall2_lightsync_stop')).toBe(0);
 });
 
 it('not paired: the tip points at Tools, and never shows a key or an address', async () => {
   startWord = 'not-paired';
   await show();
-  fireEvent.click(main());
+  fireEvent.click(toggleSwitch());
   await flush();
-  const t = await tipOf(main());
+  const t = await tipOf(toggleSwitch());
   expect(t).toContain('Pair it in Tools');
   expect(t).not.toMatch(/\d+\.\d+\.\d+\.\d+|key/i);
 });
 
 it('the chip starts sync, and clicking it again stops sync then puts the lights back (the remembered mood)', async () => {
   await show();
-  fireEvent.click(main());
+  fireEvent.click(toggleSwitch());
   await flush();
   expect(count('wall2_lightsync_start')).toBe(1);
   expect(useLightSync.getState().remembered).toBe('brightDesk');
   // The home app now reads no mood lit while the Plays stream.
   list = list.map((m) => ({ ...m, active: false }));
   calls.length = 0;
-  fireEvent.click(main());
+  fireEvent.click(toggleSwitch());
   await flush();
   expect(order()).toEqual(['wall2_lightsync_stop', 'wall2_office_mood']);
   expect(calls[1].args).toEqual({ id: 'brightDesk' });
@@ -221,17 +282,17 @@ it('the chip starts sync, and clicking it again stops sync then puts the lights 
 it('lights back with no remembered mood is the stop alone', async () => {
   list = list.map((m) => ({ ...m, active: false }));
   await show();
-  fireEvent.click(main());
+  fireEvent.click(toggleSwitch());
   await flush();
   calls.length = 0;
-  fireEvent.click(main());
+  fireEvent.click(toggleSwitch());
   await flush();
   expect(order()).toEqual(['wall2_lightsync_stop']);
 });
 
 it('a mood chip while sync runs stops sync first (no lights back), then applies that mood', async () => {
   await show();
-  fireEvent.click(main());
+  fireEvent.click(toggleSwitch());
   await flush();
   calls.length = 0;
   fireEvent.click(mood('gaming'));
@@ -242,7 +303,7 @@ it('a mood chip while sync runs stops sync first (no lights back), then applies 
 
 it('the Off chip stops sync, then turns the office off', async () => {
   await show();
-  fireEvent.click(main());
+  fireEvent.click(toggleSwitch());
   await flush();
   calls.length = 0;
   fireEvent.click(mood('off'));
@@ -253,10 +314,10 @@ it('the Off chip stops sync, then turns the office off', async () => {
 it('"Stopped Hue Sync" shows once in the chip tip', async () => {
   hue = true;
   await show();
-  fireEvent.click(main());
+  fireEvent.click(toggleSwitch());
   await flush();
-  expect(await tipOf(main())).toContain('Stopped Hue Sync');
-  expect(await tipOf(main())).not.toContain('Stopped Hue Sync');
+  expect(await tipOf(toggleSwitch())).toContain('Stopped Hue Sync');
+  expect(await tipOf(toggleSwitch())).not.toContain('Stopped Hue Sync');
 });
 
 it('a settings read survives a throwing localStorage, and bad saved values are ignored', () => {
@@ -283,7 +344,7 @@ it('clamps mirror the native ranges, with the floor held under the brightness', 
 it.each(PALETTES.filter((p) => p.enabled).map((p) => p.id))('palette %s sends its colours on start', async (id) => {
   useLightSync.setState({ palette: id as PaletteId });
   await show();
-  fireEvent.click(main());
+  fireEvent.click(toggleSwitch());
   await flush();
   const sent = calls.find((c) => c.command === 'wall2_lightsync_start')?.args as { palette: { colors: string[]; kick: string; rest: string }; settings: unknown };
   expect(sent.palette.colors.length).toBeGreaterThanOrEqual(2);
@@ -299,7 +360,7 @@ it('album art falls back to Synthwave without a cover, and uses the cover colour
 
 it('the custom palette is enabled and opens the picker; with no colours kept the palette stays', async () => {
   await show();
-  fireEvent.click(dots());
+  fireEvent.click(label());
   const custom = slot().querySelector('[data-palette="custom"]') as HTMLElement;
   expect(custom.getAttribute('aria-disabled')).toBeNull();
   fireEvent.click(custom);
@@ -311,7 +372,7 @@ it('the custom palette is enabled and opens the picker; with no colours kept the
 it('the strip opens and picks in two clicks, names in view, and the pick is remembered and tuned live', async () => {
   await show();
   expect(slot().querySelector('[data-part="palette-strip"]')).toBeNull();
-  fireEvent.click(dots());
+  fireEvent.click(label());
   const strip = slot().querySelector('[data-part="palette-strip"]') as HTMLElement;
   expect(Array.from(strip.querySelectorAll('.u-pal')).map((b) => b.textContent)).toEqual(['Synthwave', 'Album art', 'Wall sky', 'Office mood', 'Electric Sheep', 'Neon City', 'Zen Tide', 'Your own']);
   fireEvent.click(within(strip).getByText('Neon City'));
@@ -320,9 +381,9 @@ it('the strip opens and picks in two clicks, names in view, and the pick is reme
   expect(useLightSync.getState().palette).toBe('neon');
   expect(JSON.parse(localStorage.getItem(LIGHT_SYNC_KEY) ?? '{}').palette).toBe('neon');
   // While sync runs a pick tunes it.
-  fireEvent.click(main());
+  fireEvent.click(toggleSwitch());
   await flush();
-  fireEvent.click(dots());
+  fireEvent.click(label());
   fireEvent.click(within(slot().querySelector('[data-part="palette-strip"]') as HTMLElement).getByText('Zen Tide'));
   await flush();
   expect(count('wall2_lightsync_tune')).toBe(1);
@@ -335,7 +396,7 @@ it('Album art sends the colours of the cover now playing, read from the lines fo
   setCoverTint({ left: [255, 0, 0], centre: [0, 255, 0], right: [0, 0, 255] }, 0, true);
   useLightSync.setState({ palette: 'album' });
   await show();
-  fireEvent.click(main());
+  fireEvent.click(toggleSwitch());
   await flush();
   const sent = calls.find((c) => c.command === 'wall2_lightsync_start')?.args as { palette: { colors: string[] } };
   expect(sent.palette.colors).toEqual(['#ff0000', '#00ff00', '#0000ff']);
@@ -352,7 +413,7 @@ const deferStart = () => {
 it('a mood clicked while the start is out wins: sync stops without lights back, then that mood applies', async () => {
   const open = deferStart();
   await show();
-  fireEvent.click(main());
+  fireEvent.click(toggleSwitch());
   await flush();
   fireEvent.click(mood('gaming'));
   await flush();
@@ -368,7 +429,7 @@ it('a mood clicked while the start is out wins: sync stops without lights back, 
 it('Off clicked while the start is out wins, and the last click of two wins', async () => {
   const open = deferStart();
   await show();
-  fireEvent.click(main());
+  fireEvent.click(toggleSwitch());
   await flush();
   fireEvent.click(mood('gaming'));
   fireEvent.click(mood('off'));
@@ -420,7 +481,7 @@ it('a failed stop keeps polling', async () => {
 
 it('a mood then Off clicked during a stop: the last choice is applied, and Lights back is skipped', async () => {
   await show();
-  fireEvent.click(main());
+  fireEvent.click(toggleSwitch());
   await flush();
   let release!: () => void;
   const gate = new Promise<void>((r) => (release = r));
@@ -430,7 +491,7 @@ it('a mood then Off clicked during a stop: the last choice is applied, and Light
     running = false;
   });
   calls.length = 0;
-  fireEvent.click(main());
+  fireEvent.click(toggleSwitch());
   await flush();
   expect(useLightSync.getState().stopping).toBe(true);
   fireEvent.click(mood('gaming'));
@@ -517,10 +578,10 @@ it('the Hue note is taken in an effect: a double render under StrictMode still s
     </StrictMode>,
   );
   await flush();
-  fireEvent.click(main());
+  fireEvent.click(toggleSwitch());
   await flush();
-  expect(await tipOf(main())).toContain('Stopped Hue Sync');
-  expect(await tipOf(main())).not.toContain('Stopped Hue Sync');
+  expect(await tipOf(toggleSwitch())).toContain('Stopped Hue Sync');
+  expect(await tipOf(toggleSwitch())).not.toContain('Stopped Hue Sync');
 });
 
 it('rendering the tip without committing it (no effects) does not consume the Hue note', () => {

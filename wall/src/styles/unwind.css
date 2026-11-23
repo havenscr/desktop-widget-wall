@@ -4007,13 +4007,24 @@ button.sp-qrow:hover {
   opacity: 0.6;
   cursor: default;
 }
-.u-sync button:focus-visible {
+.u-sync-main:focus-visible {
+  /* Inside the chip (it clips): a ring drawn outward would be cut top and bottom. */
   outline: 3px solid var(--cyan);
-  outline-offset: 2px;
+  outline-offset: -3px;
   border-radius: 17px;
 }
 .u-sync .u-sync-switch:focus-visible {
+  outline: 3px solid var(--cyan);
+  outline-offset: 2px;
   border-radius: 11px;
+}
+.u-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
 }
 .u-mood.u-sync.lit {
   background: linear-gradient(rgba(255, 61, 154, 0.14), rgba(255, 61, 154, 0.14)), rgba(10, 7, 28, 0.9);
@@ -4705,7 +4716,7 @@ button.sp-qrow:hover {
 }
 .ls-strip b {
   flex: none;
-  width: 60px;
+  width: 76px;
   color: var(--dim);
   font: 600 16px/1 var(--body);
   letter-spacing: 0.06em;

@@ -179,9 +179,10 @@ export function OfficeMoods() {
             <span>{LABEL_WORD}</span>
           </span>
         )}
+        <SyncChip blocked={false} />
+        {/* After the chip in DOM order, so Tab goes from the label and the switch into the menu it opened. */}
         <PaletteStrip />
         <CustomPicker />
-        <SyncChip blocked={false} />
         <div className="u-mood-run" data-clip={fit.clip ? 'true' : undefined}>
         {row.chips.map((c) => (
           <Chip key={c.id ?? 'office-off'} chip={c} row={row} cap={fit.cap} iconOnly={c.id === null && fit.offIcon} onClick={() => click(c)} />
