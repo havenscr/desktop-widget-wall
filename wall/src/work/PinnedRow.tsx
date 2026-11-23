@@ -141,20 +141,11 @@ export function PinnedRow() {
   /** Whether the open menu came from the keyboard (the ContextMenu key or Shift+F10). */
   const menuByKey = useRef(false);
   const [busy, setBusy] = useState(false);
-  /** The pin that was just moved, so focus can follow it to its new place. */
-  const movedRef = useRef<string | null>(null);
   useEffect(() => {
     const changed = () => setRaw(readPinsRaw());
     window.addEventListener(PINS_CHANGED_EVENT, changed);
     return () => window.removeEventListener(PINS_CHANGED_EVENT, changed);
   }, []);
-
-  useEffect(() => {
-    const ref = movedRef.current;
-    if (ref === null) return;
-    movedRef.current = null;
-    document.querySelector<HTMLElement>(`.pin-tiles .key-tile-wrap[data-ref="${CSS.escape(ref)}"] .key-tile`)?.focus();
-  }, [raw]);
 
   // Hide Undo when its minute is up.
   useEffect(() => {
@@ -205,7 +196,6 @@ export function PinnedRow() {
     setPicker(null);
   };
   const moveSlot = (slot: number, to: number) => {
-    movedRef.current = menuByKey.current ? (pins[slot]?.ref ?? null) : null;
     commit(movePin(pins.map((p) => p.ref), slot, to));
   };
   const removeSlot = (slot: number) => {
@@ -309,7 +299,7 @@ export function PinnedRow() {
               { id: 'run', label: 'Run it now', disabled: layoutOff || !p.runnable, help: p.runnable ? `Sends ${p.label} once, right now.` : `${p.label} cannot run: ${p.how}.` },
               { id: 'left', label: 'Move left', disabled: i === 0, help: i === 0 ? 'Already first.' : `Swaps ${p.label} with the key on its left.` },
               { id: 'right', label: 'Move right', disabled: i === pins.length - 1, help: i === pins.length - 1 ? 'Already last.' : `Swaps ${p.label} with the key on its right.` },
-              { id: 'replace', label: 'Replace with another key', help: `Pick a key from the library to take ${p.label}'s place.` },
+              { id: 'replace', label: 'Replace with another key', help: `Pick a key from the library to take ${p.label}'s place. A key already in Always here swaps places with it.` },
               { id: 'remove', label: 'Remove from Always here', help: `Takes ${p.label} off the Always here row. It stays in the key library.` },
             ];
             return (
