@@ -1200,7 +1200,7 @@ async function render(cdp, base, s, file, ctl) {
         const found = await to('Runtime.evaluate', { expression: `!!document.querySelector(${JSON.stringify(step.slice(3))})`, returnByValue: true });
         if (!found.result.value) throw new Error(`is: ${step.slice(3)} is not on the page`);
       } else if (step.startsWith('wait:')) {
-        // wait:<ms> pauses (a timer the page runs on its own, such as the music card's 1.5 s rest).
+        // wait:<ms> pauses (a timer the page runs on its own, such as the music card's 0.75 s rest).
         await new Promise((r) => setTimeout(r, Number(step.slice(5))));
       } else if (step.startsWith('kbd:')) {
         await to('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Tab', code: 'Tab', windowsVirtualKeyCode: 9 });

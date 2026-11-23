@@ -131,7 +131,7 @@ describe('helpers', () => {
 });
 
 describe('opening and closing the tall view', () => {
-  it('starts closed with no round button, and opens when the pointer has rested 1.5 s, or on the empty part of the top row', async () => {
+  it('starts closed with no round button, and opens when the pointer has rested 0.75 s, or on the empty part of the top row', async () => {
     await setup();
     expect(isTall()).toBe(false);
     expect(document.querySelector('.sp-grow')).toBeNull();
@@ -146,7 +146,7 @@ describe('opening and closing the tall view', () => {
     expect(isTall()).toBe(true);
   });
 
-  it('1.4 s of rest stays short, 1.5 s grows; leaving before then cancels', async () => {
+  it('0.65 s of rest stays short, 0.75 s grows; leaving before then cancels', async () => {
     await setup();
     fireEvent.pointerEnter(card());
     await flush(TALL_OPEN_MS - 100);
@@ -214,13 +214,14 @@ describe('opening and closing the tall view', () => {
     expect(isTall()).toBe(false);
   });
 
-  it('a stale rest timer never reopens it: enter, click the top row, Escape, and 1.5 s later it is still closed until a new enter', async () => {
+  it('a stale rest timer never reopens it: enter, click the top row, Escape, and 0.75 s later it is still closed until a new enter', async () => {
     await setup();
     fireEvent.pointerEnter(card());
-    await flush(500);
+    // Both waits come from TALL_OPEN_MS, so Escape lands while a leaked rest timer would still be pending.
+    await flush(TALL_OPEN_MS / 3);
     await act(async () => fireEvent.click(document.querySelector('.sp-top') as HTMLElement));
     expect(isTall()).toBe(true);
-    await flush(500);
+    await flush(TALL_OPEN_MS / 3);
     key('Escape');
     expect(isTall()).toBe(false);
     await flush(TALL_OPEN_MS * 3);
@@ -396,8 +397,8 @@ describe('opening and closing the tall view', () => {
     tipCard.remove();
   });
 
-  describe('by itself, 1 second after the pointer has left', () => {
-    it('never while the pointer is on it; closes 1 s after it leaves; a re-entry within that keeps it', async () => {
+  describe('by itself, 0.5 second after the pointer has left', () => {
+    it('never while the pointer is on it; closes 0.5 s after it leaves; a re-entry within that keeps it', async () => {
       await setup();
       await open();
       const c = card();
@@ -416,7 +417,7 @@ describe('opening and closing the tall view', () => {
       expect(isTall()).toBe(false);
     });
 
-    it('never while the search box has focus; the 1 s starts when it loses it with the pointer away', async () => {
+    it('never while the search box has focus; the 0.5 s starts when it loses it with the pointer away', async () => {
       await setup();
       await open();
       const c = card();
@@ -1476,7 +1477,7 @@ describe('search songs show their length', () => {
 
 describe('closing by itself follows the keyboard focus too', () => {
   const inside = () => document.querySelector('.sp-card .sp-tabs button, .sp-card .mu-chip, .sp-card .sp-tile') as HTMLElement;
-  it('opened by keyboard with the pointer elsewhere it stays open while the focus is inside, then closes 1 s after the focus leaves', async () => {
+  it('opened by keyboard with the pointer elsewhere it stays open while the focus is inside, then closes 0.5 s after the focus leaves', async () => {
     await setup();
     await act(async () => inside().focus());
     expect(isTall()).toBe(true);
@@ -1497,7 +1498,7 @@ describe('closing by itself follows the keyboard focus too', () => {
     expect(isTall()).toBe(true);
   });
 
-  it('opened with neither the pointer nor the focus on it, the 1 second starts at once', async () => {
+  it('opened with neither the pointer nor the focus on it, the 0.5 second starts at once', async () => {
     await setup();
     await act(async () => fireEvent.click(document.querySelector('.sp-top') as HTMLElement));
     await flush(TALL_CLOSE_MS - 1);

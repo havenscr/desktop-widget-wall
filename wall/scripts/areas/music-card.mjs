@@ -114,7 +114,7 @@ export default {
   name: 'music-card',
   gallery: {
     states: [
-    state('tall music: opens after the pointer rests 1.5 s', 'hz=unwind&at=2026-11-11T22%3A30%3A00-08%3A00&clock=review&weather=ok&audio=demo', ['!Which player the wall follows', 'Road Trip 1', 'Up next'], 'hover:.sp-card >> wait:1000 >> is:.sp-card.tall'),
+    state('tall music: opens after the pointer rests on it (the timing is proven in tall.test.tsx)', 'hz=unwind&at=2026-11-11T22%3A30%3A00-08%3A00&clock=review&weather=ok&audio=demo', ['!Which player the wall follows', 'Road Trip 1', 'Up next'], 'hover:.sp-card >> is:.sp-card.tall'),
     state('tall music: open on Playlists', 'hz=unwind&at=2026-11-11T22%3A30%3A00-08%3A00&clock=review&weather=ok&audio=demo', ['!Which player the wall follows', 'Up next', 'Road Trip 8'], 'grow'),
     state('tall music: a playlist opened', 'hz=unwind&at=2026-11-11T22%3A30%3A00-08%3A00&clock=review&weather=ok&audio=demo', ['Lantern Song 9', 'Shuffle', '58 songs', 'Playlists'], 'grow >> .sp-tile'),
     state('tall music: search in groups', 'hz=unwind&at=2026-11-11T22%3A30%3A00-08%3A00&clock=review&weather=ok&audio=demo', ['Songs', 'Albums', 'Playlists', 'Track 1', 'Album 1', 'Playlist 1'], 'grow >> type:.sp-search input=road'),
