@@ -251,13 +251,7 @@
   overflow-y: auto;
   overscroll-behavior: contain;
   scroll-snap-type: y mandatory;
-  scrollbar-width: thin;
-  scrollbar-color: transparent transparent;
   padding-right: 6px;
-  transition: scrollbar-color 300ms ease;
-}
-.lanes-list.scrolls:hover {
-  scrollbar-color: rgba(255, 255, 255, 0.28) transparent;
 }
 .lanes-list.scrolls > .lane {
   /* Border included, so three cards and two gaps fill the list exactly (none clipped). */

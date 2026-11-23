@@ -833,7 +833,6 @@ button.dd-k.link:hover {
   width: 836px;
   flex: none;
   overflow-y: auto;
-  scrollbar-width: thin;
   padding-top: 10px;
 }
 .dd-grid {
@@ -1005,7 +1004,7 @@ button.dd-k.link:hover {
   gap: 16px;
   height: 34px;
   flex: none;
-  /* The same right room as the rows, with the list's 6 px scrollbar gutter as plain padding, so the hour labels stay over the bars. */
+  /* The same right room as the rows, with 6 px of padding beside the list's 20 px scrollbar, so the hour labels stay over the bars. */
   padding-right: 26px;
 }
 .dd-counts {
@@ -1040,25 +1039,12 @@ button.dd-k.link:hover {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  /* The bar looks like the Work lists' (6 px, soft thumb); its 6 px gutter is always reserved. */
+  /* The shared scrollbar (ui/scrollbar.css); its 20 px are always reserved. */
   scrollbar-gutter: stable;
-  padding-right: 20px;
+  padding-right: 6px;
   /* The rows share the list's height: it divided by the row count (--dd-n), never under 32 px and
      never over 56 px; more rows than fit scroll. */
   container-type: size;
-}
-.dd-rows::-webkit-scrollbar {
-  width: 6px;
-}
-.dd-rows::-webkit-scrollbar-track {
-  background: transparent;
-}
-.dd-rows::-webkit-scrollbar-thumb {
-  border-radius: 3px;
-  background: rgba(255, 255, 255, 0.28);
-}
-.dd-rows::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.42);
 }
 .dd-row {
   display: flex;
@@ -1446,8 +1432,6 @@ button.dd-k.link:hover {
   overflow-y: auto;
   /* The wall's thin scrollbar (as the lists of the YouTube library); its gutter is always reserved
      so the right column never sits under it. */
-  scrollbar-width: thin;
-  scrollbar-color: rgba(154, 123, 255, 0.75) rgba(255, 255, 255, 0.05);
   scrollbar-gutter: stable;
 }
 .at-grid {

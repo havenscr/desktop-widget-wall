@@ -135,7 +135,7 @@ function measureLibraryAdd() {
         if (n > cap) {
           if (list.clientHeight > cap * 40 + 0.5) fails.push('the list part is ' + r1(list.clientHeight) + ' high with ' + n + ' playlists (' + cap * 40 + ' at most)');
           if (list.scrollHeight <= list.clientHeight + 0.5) fails.push('the list part does not scroll inside itself');
-          if (getComputedStyle(list).scrollbarWidth !== 'thin') fails.push('the list part does not use the app\'s scrollbar look');
+          if (list.offsetWidth - list.clientWidth < 20 - 0.5) fails.push('the list part does not carry the shared scrollbar');
         } else if (n > 0 && list.clientHeight < n * 40 - 0.5) fails.push('the list part is cut at ' + r1(list.clientHeight) + ' with only ' + n + ' playlists');
         if (want === 'cap' && n <= cap) fails.push('only ' + n + ' playlists: nothing to cap');
         const check = menu.querySelector('.w-pop-row.has .w-pop-check');

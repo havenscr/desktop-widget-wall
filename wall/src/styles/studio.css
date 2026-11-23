@@ -700,8 +700,6 @@ span.st-tg-sw {
   margin-inline: -4px;
   overscroll-behavior: contain;
   /* The wall's one scrollbar look: thin, pale, always there when the body scrolls. */
-  scrollbar-width: thin;
-  scrollbar-color: rgba(255, 255, 255, 0.3) transparent;
 }
 /* The home sheet gives back what the three-line preset tiles take: tighter gaps. */
 .st-drawer[data-home] {

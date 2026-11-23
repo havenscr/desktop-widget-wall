@@ -93,11 +93,10 @@ it('the popover has one fixed height, not a content height, so a 4 row day does 
   expect(rule('.at-rows')).toMatch(/overflow-y: auto;/);
 });
 
-it('the rows reserve the scrollbar gutter and use the wall thin scrollbar', () => {
+it('the rows reserve the scrollbar gutter and leave the look to the shared scrollbar', () => {
   const rows = rule('.at-rows');
   expect(rows).toMatch(/scrollbar-gutter: stable;/);
-  expect(rows).toMatch(/scrollbar-width: thin;/);
-  expect(rows).toContain('scrollbar-color: rgba(154, 123, 255, 0.75) rgba(255, 255, 255, 0.05);');
+  expect(rows).not.toMatch(/scrollbar-(width|color)/);
 });
 
 it('every text in the popover is 16 px or larger', () => {

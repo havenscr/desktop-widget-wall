@@ -139,8 +139,6 @@
   grid-auto-columns: calc((100% - 5 * 14px) / 6);
   overflow-x: auto;
   overflow-y: hidden;
-  scrollbar-width: thin;
-  scrollbar-color: rgba(255, 255, 255, 0.2) transparent;
 }
 .mood-btn {
   position: relative;
@@ -1487,13 +1485,12 @@
 }
 
 /* Chores: five rows on a 40 px pitch (three while network alerts are open), the rest a
-   scroll away; the slim scrollbar shows with the pointer over the list. 16 px stay free on
-   the right so nothing moves when it shows. */
+   scroll away; the shared scrollbar shows with the pointer over the list. 16 px stay free on
+   the right until it scrolls, then the bar's own 20 px (a 14 px gap and the bar) take its place. */
 .home .chore-rows {
   overflow-y: auto;
   overflow-x: hidden;
   padding-right: 16px;
-  scrollbar-width: none;
   overscroll-behavior: contain;
 }
 .home .chore-rows.fit5 {
@@ -1502,10 +1499,8 @@
 .home .chore-rows.fit3 {
   max-height: 120px;
 }
-.home .chore-rows.scrolls:hover {
-  scrollbar-width: thin;
-  scrollbar-color: rgba(255, 255, 255, 0.3) transparent;
-  padding-right: 8px;
+.home .chore-rows.scrolls {
+  padding-right: 0;
 }
 .home .chore-rows .tk3 {
   box-sizing: border-box;
@@ -1925,8 +1920,6 @@
 .sd-list {
   min-height: 0;
   overflow-y: auto;
-  scrollbar-width: thin;
-  scrollbar-color: rgba(255, 255, 255, 0.3) transparent;
   overscroll-behavior: contain;
 }
 .sd-row {

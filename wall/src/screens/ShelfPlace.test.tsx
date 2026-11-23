@@ -1,8 +1,8 @@
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { mocks } from '../bridge/tauri';
 import { SETTINGS_KEY } from '../settings/settings';
-import { LIST_KEY, ShelfPlace } from './ShelfPlace';
+import { LIST_KEY, MORE_KEYS, ShelfPlace } from './ShelfPlace';
 
 vi.mock('../work/Keys', () => ({ Keys: () => null }));
 vi.mock('../work/PinnedRow', () => ({ PinnedRow: () => null }));
@@ -14,10 +14,32 @@ beforeEach(() => {
 });
 afterEach(cleanup);
 
-it('shows the six ShareX keys and the four more keys', () => {
+it('shows the six ShareX keys and the eight more keys in two rows of four', () => {
   render(<ShelfPlace />);
-  for (const n of ['Region', 'Screen', 'GIF', 'Record', 'Text (OCR)', 'History', 'Scroll', 'Color', 'Last', 'Ruler']) expect(screen.getByRole('button', { name: n })).toBeTruthy();
+  for (const n of ['Region', 'Screen', 'GIF', 'Record', 'Text (OCR)', 'History']) expect(screen.getByRole('button', { name: n })).toBeTruthy();
+  const more = within(screen.getByRole('group', { name: 'More ShareX keys' }));
+  for (const n of ['Scroll', 'Color', 'Last', 'Ruler', 'Pin', 'Highlight', 'Folder', 'Stop rec']) expect(more.getByRole('button', { name: n })).toBeTruthy();
+  expect(more.getAllByRole('button')).toHaveLength(8);
   expect(screen.getByText('More ShareX')).toBeTruthy();
+});
+
+it.each([
+  ['Pin', 'sx-pin', 'ShareX: Pin a box of the screen on top of everything'],
+  ['Highlight', 'sx-highlighter', 'ShareX: Ring the mouse pointer, for demos'],
+  ['Folder', 'sx-folder', 'ShareX: Open the screenshots folder'],
+  ['Stop rec', 'sx-stop-record', 'ShareX: Stop the screen recording and save it'],
+])('the %s key sends %s and carries its helper text', async (label, id, help) => {
+  const sent: unknown[] = [];
+  mocks.set('wall2_keys_send_library', (args) => {
+    sent.push(args);
+    return null;
+  });
+  render(<ShelfPlace />);
+  const key = within(screen.getByRole('group', { name: 'More ShareX keys' })).getByRole('button', { name: label });
+  expect(MORE_KEYS.find((k) => k.id === id)?.help).toBe(help);
+  fireEvent.click(key, { detail: 1 });
+  await screen.findByText(`ShareX: ${label}`);
+  expect(sent).toEqual([{ id }]);
 });
 
 it('a more key sends its library id', async () => {

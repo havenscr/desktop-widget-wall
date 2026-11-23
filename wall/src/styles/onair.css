@@ -150,8 +150,6 @@
   min-height: 0;
   overflow-y: auto;
   overflow-x: hidden;
-  scrollbar-width: thin;
-  scrollbar-color: rgba(183, 175, 214, 0.4) transparent;
 }
 .oa-row {
   width: 100%;

@@ -1,0 +1,69 @@
+/* The wall's one scrollbar, for every list that scrolls. 6 px wide, rounded, a cyan thumb on a faint track, no arrows
+   and no end caps. Hidden at rest; shown while the pointer is over the list, while it scrolls (ui/scrollbar.ts sets
+   data-sb-live) and while keyboard focus is inside; it fades out 1 s after (a 0.3 s fade). The bar is 20 px wide: its
+   left 14 px are a transparent border, a gap kept even while the bar is hidden, so nothing shifts when it appears. */
+::-webkit-scrollbar {
+  width: 20px;
+  height: 20px;
+  background: transparent;
+}
+::-webkit-scrollbar-button {
+  display: none;
+  width: 0;
+  height: 0;
+}
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+::-webkit-scrollbar-track {
+  background-color: rgba(255, 255, 255, 0);
+  background-clip: padding-box;
+  border-left: 14px solid transparent;
+  border-radius: 17px 3px 3px 17px / 3px 3px 3px 3px;
+  transition: background-color 0.3s ease 1s;
+}
+::-webkit-scrollbar-thumb {
+  background-color: rgba(53, 230, 234, 0);
+  background-clip: padding-box;
+  border-left: 14px solid transparent;
+  border-radius: 17px 3px 3px 17px / 3px 3px 3px 3px;
+  transition: background-color 0.3s ease 1s;
+}
+::-webkit-scrollbar-track:horizontal,
+::-webkit-scrollbar-thumb:horizontal {
+  border-left: 0;
+  border-top: 14px solid transparent;
+  border-radius: 3px 3px 3px 3px / 17px 17px 3px 3px;
+}
+:hover::-webkit-scrollbar-track,
+:focus-within::-webkit-scrollbar-track,
+[data-sb-live]::-webkit-scrollbar-track {
+  background-color: rgba(255, 255, 255, 0.07);
+  transition-delay: 0s;
+  transition-duration: 0.15s;
+}
+:hover::-webkit-scrollbar-thumb,
+:focus-within::-webkit-scrollbar-thumb,
+[data-sb-live]::-webkit-scrollbar-thumb {
+  background-color: rgba(53, 230, 234, 0.6);
+  transition-delay: 0s;
+  transition-duration: 0.15s;
+}
+
+/* A fade along the foot of a list while more rows wait below (add `end` once scrolled to the end). The second mask layer
+   keeps the scrollbar's own 20 px solid, so only the rows fade and the bar never does. */
+.sb-fade-bottom {
+  --sb-fade: 64px;
+  -webkit-mask-image: linear-gradient(#000 calc(100% - var(--sb-fade)), transparent), linear-gradient(#000, #000);
+  mask-image: linear-gradient(#000 calc(100% - var(--sb-fade)), transparent), linear-gradient(#000, #000);
+  -webkit-mask-size: calc(100% - 20px) 100%, 20px 100%;
+  mask-size: calc(100% - 20px) 100%, 20px 100%;
+  -webkit-mask-position: 0 0, 100% 0;
+  mask-position: 0 0, 100% 0;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+}
+.sb-fade-bottom.end {
+  -webkit-mask-image: none;
+  mask-image: none;
+}

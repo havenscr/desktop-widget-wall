@@ -231,3 +231,21 @@ describe('preview', () => {
     expect(document.querySelector('.rf-preview')).toBeNull();
   });
 });
+
+describe('the list foot', () => {
+  it('uses the shared scrollbar fade, and drops it once the list is at its end', async () => {
+    render(<RecentCard />);
+    await screen.findByText('Document 0.docx');
+    const rows = document.querySelector('.rf-rows') as HTMLElement;
+    expect(rows.classList.contains('sb-fade-bottom')).toBe(true);
+    Object.defineProperty(rows, 'scrollHeight', { value: 500, configurable: true });
+    Object.defineProperty(rows, 'clientHeight', { value: 200, configurable: true });
+    rows.scrollTop = 0;
+    fireEvent.scroll(rows);
+    expect(rows.classList.contains('end')).toBe(false);
+    rows.scrollTop = 300;
+    fireEvent.scroll(rows);
+    expect(rows.classList.contains('end')).toBe(true);
+  });
+});
+

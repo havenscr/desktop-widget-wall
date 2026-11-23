@@ -15,7 +15,7 @@
 }
 
 .yt-lib {
-  --yt-sb: 10px;
+  --yt-sb: 20px;
   flex: 1;
   min-height: 0;
   min-width: 0;
@@ -91,8 +91,6 @@
   min-width: 0;
   overflow-y: auto;
   overscroll-behavior: contain;
-  scrollbar-width: thin;
-  scrollbar-color: rgba(154, 123, 255, 0.75) rgba(255, 255, 255, 0.05);
   scrollbar-gutter: stable;
   margin: -5px calc(-5px - var(--yt-sb)) 0 -5px;
   padding: 5px 5px 0 5px;

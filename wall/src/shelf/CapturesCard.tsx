@@ -292,7 +292,7 @@ export function CapturesCard() {
             </div>
           ) : null}
         </div>
-        <div ref={list} className={`cap-rows${atEnd ? ' end' : ''}`} role="group" aria-label="Captures" onScroll={checkEnd}>
+        <div ref={list} className={`cap-rows sb-fade-bottom${atEnd ? ' end' : ''}`} role="group" aria-label="Captures" onScroll={checkEnd}>
           {shown.map((c) => (
             <Row key={c.id} c={c} selected={c.id === big.id} onPick={() => setPicked(c.id)} onMenu={openCaptureMenu(c)} />
           ))}

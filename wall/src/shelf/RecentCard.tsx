@@ -53,7 +53,7 @@ function placeFor(row: HTMLElement): { left: number; top: number; host: Element 
   };
 }
 
-/** The Shelf's Recent files card: the last 20 files opened, newest first, five rows in view and the rest a scroll away. A row opens the file; its Folder button shows it in File Explorer. */
+/** The Shelf's Recent files card: the last 20 files opened, newest first, as many rows in view as the card has room for, the rest a scroll away (the foot fades while more is below). A row opens the file; its Folder button shows it in File Explorer. */
 export function RecentCard() {
   const { status, items } = useRecentFiles();
   const [brief, show] = useBrief();
@@ -64,6 +64,12 @@ export function RecentCard() {
     );
   };
 
+  const rows = useRef<HTMLUListElement | null>(null);
+  const [atEnd, setAtEnd] = useState(false);
+  const checkEnd = useCallback(() => {
+    const el = rows.current;
+    if (el) setAtEnd(el.scrollHeight - el.scrollTop - el.clientHeight < 4);
+  }, []);
   const [shown, setShown] = useState<Shown | null>(null);
   const cache = useRef(new Map<string, string>());
   const noneUntil = useRef(new Map<string, number>());
@@ -133,13 +139,18 @@ export function RecentCard() {
     }, delay);
   };
 
+  useEffect(checkEnd, [items.length, status, checkEnd]);
+
   let body;
   if (status === 'error') body = <p className="shelf-note">Recent files unavailable</p>;
   else if (status === 'ready' && items.length === 0) body = <p className="shelf-note">No recent files</p>;
   else if (status === 'loading') body = null;
   else {
     body = (
-      <ul className="rf-rows" onScroll={hide}>
+      <ul ref={rows} className={`rf-rows sb-fade-bottom${atEnd ? ' end' : ''}`} onScroll={() => {
+        hide();
+        checkEnd();
+      }}>
         {items.map((f) => {
           const { Icon, color } = fileLook(f.name);
           const tp = hover(`Open "${f.name}" in its default app`);

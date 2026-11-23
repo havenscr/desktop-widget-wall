@@ -128,7 +128,7 @@ export function KeyPicker({
           Close
         </button>
       </div>
-      <div className="pk-list">
+      <div className="pk-list sb-fade-bottom">
         {filePins.length > 0 && query.trim() === '' && (
           <div className="pk-group">
             <div className="pk-gh">Your keys</div>

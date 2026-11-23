@@ -1013,8 +1013,6 @@
   padding: 0 8px;
   list-style: none;
   scroll-snap-type: y mandatory;
-  scrollbar-width: thin;
-  scrollbar-color: rgba(255, 255, 255, 0.42) rgba(255, 255, 255, 0.07);
 }
 .w-list > li {
   scroll-snap-align: start;
@@ -2041,8 +2039,6 @@
   gap: 2px;
   min-height: 0;
   overflow-y: auto;
-  scrollbar-width: thin;
-  scrollbar-color: rgba(170, 160, 230, 0.6) transparent;
 }
 /* When the rows scroll (`data-more` is set by LookTunePanel: below, above or both) the edge that has more
    fades over 28 px, and 12 px of padding keeps a row at rest clear of the fade's end. With nothing more
@@ -2560,8 +2556,6 @@
   margin: 0;
   padding: 0 6px 0 0;
   /* The thin violet bar of the owner's pictures (R1, R3), so the wheel is invited. */
-  scrollbar-width: thin;
-  scrollbar-color: rgba(154, 123, 255, 0.75) rgba(255, 255, 255, 0.05);
 }
 /* The library scrolls inside the card, fading at its foot while more is below. */
 .sp-scroll {
@@ -3105,8 +3099,6 @@
   background: rgba(14, 9, 32, 0.985);
   border: 1px solid rgba(150, 130, 255, 0.3);
   box-shadow: 0 18px 60px rgba(4, 2, 12, 0.7);
-  scrollbar-width: thin;
-  scrollbar-color: rgba(154, 123, 255, 0.75) rgba(255, 255, 255, 0.05);
 }
 .sp-dev.locked {
   border-color: rgba(255, 194, 77, 0.45);
@@ -3394,8 +3386,6 @@
   min-height: 0;
   overflow-y: auto;
   overscroll-behavior: contain;
-  scrollbar-width: thin;
-  scrollbar-color: rgba(154, 123, 255, 0.75) rgba(255, 255, 255, 0.05);
 }
 .sp-grid3 {
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -3498,8 +3488,6 @@
   min-height: 0;
   overflow-y: auto;
   overscroll-behavior: contain;
-  scrollbar-width: thin;
-  scrollbar-color: rgba(154, 123, 255, 0.75) rgba(255, 255, 255, 0.05);
   -webkit-mask-image: linear-gradient(180deg, #000 calc(100% - 34px), rgba(0, 0, 0, 0.25));
   mask-image: linear-gradient(180deg, #000 calc(100% - 34px), rgba(0, 0, 0, 0.25));
 }

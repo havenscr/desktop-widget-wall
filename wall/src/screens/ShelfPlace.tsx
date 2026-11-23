@@ -1,4 +1,4 @@
-import { IconColorPicker, IconHistory, IconRuler2, IconArrowAutofitHeight, IconRefresh,  IconDeviceDesktop, IconGif, IconScan, IconTextRecognition, IconVideo, type Icon } from '@tabler/icons-react';
+import { IconColorPicker, IconHistory, IconRuler2, IconArrowAutofitHeight, IconRefresh, IconDeviceDesktop, IconFolder, IconGif, IconPinned, IconPlayerStop, IconPointer, IconScan, IconTextRecognition, IconVideo, type Icon } from '@tabler/icons-react';
 import { useEffect, useState } from 'react';
 import { TaskCard } from '../tasks/TaskCard';
 import type { TasksQuery } from '../tasks/useTasks';
@@ -22,12 +22,16 @@ export const SHELF_KEYS: readonly { id: string; label: string; action: string; G
   { id: 'sx-history', label: 'History', action: 'sharex:history', Glyph: IconHistory },
 ];
 
-/** Less used ShareX keys, a second smaller block. Only specs the native allowed table already holds (wall2_sharex.rs). */
+/** Less used ShareX keys, a second smaller block of two rows of four. Only specs the native allowed table already holds (wall2_sharex.rs). */
 export const MORE_KEYS: readonly { id: string; label: string; action: string; Glyph: Icon; help: string }[] = [
   { id: 'sx-scrolling', label: 'Scroll', action: 'sharex:scrolling', Glyph: IconArrowAutofitHeight, help: 'ShareX: Scrolling capture' },
   { id: 'sx-color', label: 'Color', action: 'sharex:color', Glyph: IconColorPicker, help: 'ShareX: Color picker' },
   { id: 'sx-last-region', label: 'Last', action: 'sharex:last-region', Glyph: IconRefresh, help: 'ShareX: Capture the last region again' },
   { id: 'sx-ruler', label: 'Ruler', action: 'sharex:ruler', Glyph: IconRuler2, help: 'ShareX: Ruler' },
+  { id: 'sx-pin', label: 'Pin', action: 'sharex:pin', Glyph: IconPinned, help: 'ShareX: Pin a box of the screen on top of everything' },
+  { id: 'sx-highlighter', label: 'Highlight', action: 'sharex:highlighter', Glyph: IconPointer, help: 'ShareX: Ring the mouse pointer, for demos' },
+  { id: 'sx-folder', label: 'Folder', action: 'sharex:folder', Glyph: IconFolder, help: 'ShareX: Open the screenshots folder' },
+  { id: 'sx-stop-record', label: 'Stop rec', action: 'sharex:stop-record', Glyph: IconPlayerStop, help: 'ShareX: Stop the screen recording and save it' },
 ];
 
 /** The picked list is remembered per viewer. */

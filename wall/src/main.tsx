@@ -17,6 +17,7 @@ import './styles/tools.css';
 import './styles/onair.css';
 import './styles/onair2.css';
 import './styles/studio.css';
+import './ui/scrollbar.css';
 import { startIfTop } from './ui/topWindow';
 
 // The wall never runs inside a frame (content in a player frame could otherwise load it there
