@@ -270,14 +270,39 @@ it('next: no line when the field is absent or null, or the read is not live', as
   }
 });
 
-it('next: moves on with the clock, and goes when the time passes', async () => {
+it('next: moves on with the wall clock, and goes when the time passes', async () => {
   mocks.set('wall2_desk_house', () => house({ next: change('evening', 5 * MIN + 1000) }));
   mocks.set('wall2_desk_rooms', () => rooms);
-  const { container } = render(<LeftWing now={() => NOW} />);
+  const { container } = render(<LeftWing now={Date.now} />);
   await flush();
   expect(container.querySelector('.house-next')?.textContent).toBe('Evening in 6 min');
   await flush(60_000);
   expect(container.querySelector('.house-next')?.textContent).toBe('Evening in 5 min');
   await flush(5 * MIN);
   expect(container.querySelector('.house-next')).toBeNull();
+});
+
+it('next: counts down on the wall minute tick, not the house read, in 30 s steps', async () => {
+  // The house read lands once; only the wall tick moves after that.
+  mocks.set('wall2_desk_house', () => house({ next: change('evening', 2 * MIN) }));
+  mocks.set('wall2_desk_rooms', () => rooms);
+  const { container } = render(<LeftWing now={Date.now} />);
+  await flush();
+  const text = () => container.querySelector('.house-next')?.textContent ?? null;
+  expect(text()).toBe('Evening in 2 min');
+  await flush(30_000);
+  await flush(30_000);
+  expect(text()).toBe('Evening in 1 min');
+  await flush(30_000);
+  await flush(30_000);
+  expect(text()).toBeNull();
+});
+
+it('next: shows when the temperature and lit rooms are both unknown', async () => {
+  mocks.set('wall2_desk_house', () => house({ insideF: null, litRooms: null, next: change('evening', 42 * MIN) }));
+  mocks.set('wall2_desk_rooms', () => Promise.reject(new Error('absent')));
+  const { container } = render(<LeftWing now={Date.now} />);
+  await flush();
+  expect(container.querySelector('.house-line')).toBeNull();
+  expect(container.querySelector('.house-next')?.textContent).toBe('Evening in 42 min');
 });

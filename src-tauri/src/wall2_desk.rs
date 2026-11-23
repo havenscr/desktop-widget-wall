@@ -259,6 +259,23 @@ pub(crate) fn shape_house(body: &Value) -> House {
     House { observed_at: stamp(body.get("observed_at")), inside_f: inside, lit_rooms: lit, rooms, stale: is_stale(body), next: shape_next(body.get("next")) }
 }
 
+/// RFC 3339 with seconds and a zone (`Z`, `+hh:mm` or `-hh:mm`). `parse_iso` also takes a time with no seconds,
+/// which the countdown must not guess at.
+fn strict_rfc3339(s: &str) -> bool {
+    let b = s.as_bytes();
+    if b.len() < 20 || b[16] != b':' || !b[17].is_ascii_digit() || !b[18].is_ascii_digit() {
+        return false;
+    }
+    let zone_ok = match s.rfind(|c| c == 'Z' || c == '+' || c == '-') {
+        Some(i) if i > 18 => {
+            let z = &s[i..];
+            z == "Z" || (z.len() == 6 && z.as_bytes()[3] == b':')
+        }
+        _ => false,
+    };
+    zone_ok && crate::wall2_feeds::parse_iso(s).is_some()
+}
+
 /// `next` strictly: an object with a known slot, a known basis and an RFC 3339 time; anything else is None.
 fn shape_next(raw: Option<&Value>) -> Option<NextChange> {
     let o = raw?.as_object()?;
@@ -275,6 +292,9 @@ fn shape_next(raw: Option<&Value>) -> Option<NextChange> {
         _ => return None,
     };
     let at = stamp(o.get("at"))?;
+    if !strict_rfc3339(&at) {
+        return None;
+    }
     Some(NextChange { slot, label, at, basis })
 }
 
@@ -584,6 +604,12 @@ mod tests {
         assert_eq!(next(json!({"slot": "evening", "at": "soon", "basis": "sunset"})), None);
         assert_eq!(next(json!({"slot": "evening", "at": 5, "basis": "sunset"})), None);
         assert_eq!(next(json!({"slot": 3, "at": "2026-11-23T23:10:00Z", "basis": "sunset"})), None);
+        // A time with no zone, or with no seconds, is not RFC 3339 here: None.
+        assert_eq!(next(json!({"slot": "evening", "at": "2026-11-23T23:10:00", "basis": "sunset"})), None);
+        assert_eq!(next(json!({"slot": "evening", "at": "2026-11-23T23:10:00.000", "basis": "sunset"})), None);
+        assert_eq!(next(json!({"slot": "evening", "at": "2026-11-23T23:10Z", "basis": "sunset"})), None);
+        assert_eq!(next(json!({"slot": "evening", "at": "2026-11-23T23:10-08:00", "basis": "sunset"})), None);
+        assert!(next(json!({"slot": "evening", "at": "2026-11-23T23:10:00-08:00", "basis": "sunset"})).is_some());
         // A bad `next` never costs the rest of the house read.
         let h = shape_house(&json!({"inside_temperature_f": 68, "next": {"slot": "x"}}));
         assert_eq!(h.inside_f, Some(68));

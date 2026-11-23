@@ -171,7 +171,7 @@ function ruleLeftThird(variantEntry, results, emit) {
     if (m.roomsBox && m.nextLine.y < m.roomsBox.b - 0.5) fails.push(`left third: the Next line starts at y ${m.nextLine.y.toFixed(1)}, inside the room dots (they end at y ${m.roomsBox.b.toFixed(1)})`);
     for (const d of dotBoxes) if (d.b > m.nextLine.y + 0.5 && d.y < m.nextLine.b - 0.5) fails.push('left third: the Next line overlaps a room dot');
     if (m.nextLine.r > 458 + 136 + 0.5) fails.push(`left third: the Next line reaches x ${m.nextLine.r.toFixed(1)}, past the wing's 458 px`);
-    if (!/^(Day|Evening|Late night) (in \d+ min|at \d{1,2}:\d\d [AP]M)$/.test(m.nextText)) fails.push(`left third: the Next line reads "${m.nextText}"`);
+    if (!/^(Day|Evening|Late night) (in \d+ min|at \d{1,2}:\d\d[\s ][AP]M)$/.test(m.nextText)) fails.push(`left third: the Next line reads "${m.nextText}"`);
     const amber = m.nextColor === 'rgb(255, 194, 77)';
     if (variantEntry.name === VARIANT_NEXT_SOON && !amber) fails.push(`left third: the Next line is "${m.nextColor}" with minutes to go (amber expected)`);
     if (variantEntry.name !== VARIANT_NEXT_SOON && amber) fails.push('left third: the Next line is amber with the change hours away');

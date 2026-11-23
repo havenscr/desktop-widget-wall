@@ -31,7 +31,7 @@ export function LeftWing({ now = reviewNow ?? Date.now }: { now?: () => number }
     return () => clearInterval(id);
   }, [now, visible]);
   const { house, rooms } = useDeskHouse();
-  const withHouse = houseView(house, rooms) !== null;
+  const withHouse = houseView(house, rooms, ms) !== null;
   const head = sunHeadline(ms);
   const curve = dayCurve(ms);
   const outside = outsideState(useWeather(), ms);
@@ -46,7 +46,7 @@ export function LeftWing({ now = reviewNow ?? Date.now }: { now?: () => number }
       )}
       {curve && <SunCurve curve={curve} />}
       <OutsideRow state={outside} />
-      <HouseLine />
+      <HouseLine now={ms} />
     </div>
   );
 }

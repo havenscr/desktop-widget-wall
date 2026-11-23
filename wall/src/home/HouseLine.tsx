@@ -62,7 +62,8 @@ export function nextView(next: NextChange | null | undefined, now: number): Next
 }
 
 export interface HouseView {
-  text: string;
+  /** The temperature and lit-room sentence; null when neither is known (the Next line can still show). */
+  text: string | null;
   rooms: { id: string; name: string; on: boolean }[];
   stale: boolean;
   asOf: string | null;
@@ -73,18 +74,19 @@ export interface HouseView {
  * The house line from the two desk reads, or null to hide it: while the routes are absent
  * (the home app's change is not live), not set up, loading, or failed with nothing read.
  */
-export function houseView(house: FeedState<House>, rooms: FeedState<DeskRooms>): HouseView | null {
+export function houseView(house: FeedState<House>, rooms: FeedState<DeskRooms>, nowMs?: number): HouseView | null {
   const h = house.data;
   if (!h) return null;
   const roomList = rooms.data?.rooms ?? [];
   const lit = h.litRooms ?? (rooms.data ? roomList.filter((r) => r.on).length : null);
   const text = houseText(h.insideF, lit);
-  if (!text) return null;
   const old = house.readAt === null || house.now - house.readAt > maxAge(HOUSE_REFRESH_MS);
   const stale = house.status === 'error' || h.stale || old || (rooms.data !== null && (rooms.data.stale || rooms.status === 'error'));
   const at = h.observedAt ? Date.parse(h.observedAt) : NaN;
   const asOfMs = Number.isFinite(at) ? at : house.readAt;
-  return { text, rooms: roomList, stale, asOf: stale && asOfMs !== null ? `as of ${timeText(asOfMs)}` : null, next: stale ? null : nextView(h.next, house.now) };
+  const next = stale ? null : nextView(h.next, nowMs ?? house.now);
+  if (!text && !next) return null;
+  return { text, rooms: roomList, stale, asOf: stale && asOfMs !== null ? `as of ${timeText(asOfMs)}` : null, next };
 }
 
 /** The room dots' lines: indented to the text, 424 px wide. */
@@ -156,9 +158,9 @@ function Lead({ text }: { text: string }) {
  * the two lines shows; "as of 9:41 AM" sits at the right end of the last line only when the measured
  * dots leave room for it, otherwise it is in the hover card of the house row (and of each dot).
  */
-export function HouseLine() {
+export function HouseLine({ now }: { now?: number }) {
   const { house, rooms } = useDeskHouse();
-  const v = houseView(house, rooms);
+  const v = houseView(house, rooms, now);
   const rowRef = useRef<HTMLDivElement>(null);
   const [asOfFits, setAsOfFits] = useState(true);
   const asOfKey = v?.asOf ?? '';
@@ -205,14 +207,16 @@ export function HouseLine() {
   const asOf = v.asOf ? `, ${v.asOf}` : '';
   return (
     <div className={v.stale ? 'lw-house house stale' : 'lw-house house'} aria-label="House">
-      <div className="lw-row" {...tip(`Inside temperature and lit rooms from the home app${asOf}.`)}>
-        <span className="lw-glyph dim">
-          <IconHome size={22} stroke={1.7} aria-hidden="true" />
-        </span>
-        <span className="lw-text house-line">
-          <Lead text={v.text} />
-        </span>
-      </div>
+      {v.text && (
+        <div className="lw-row" {...tip(`Inside temperature and lit rooms from the home app${asOf}.`)}>
+          <span className="lw-glyph dim">
+            <IconHome size={22} stroke={1.7} aria-hidden="true" />
+          </span>
+          <span className="lw-text house-line">
+            <Lead text={v.text} />
+          </span>
+        </div>
+      )}
       {(v.rooms.length > 0 || v.asOf) && (
         <div className="house-rooms" ref={rowRef}>
           {shown.map((r) => (
