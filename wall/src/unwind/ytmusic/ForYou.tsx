@@ -1,8 +1,8 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { IconChevronRight } from '@tabler/icons-react';
 import type { YtVideo } from '../../music/youtube';
 import { tip } from '../../ui/HoverTip';
-import { fetchMood, loadAllForYou, loadForYou, moodBudgetLine, pickMood, setForYouView, useForYou, useMoods, whenWords } from './forYouStore';
+import { fetchMood, openDefaultMood, loadAllForYou, loadForYou, moodBudgetLine, pickMood, setForYouView, useForYou, useMoods, whenWords } from './forYouStore';
 import { useVisible } from '../../ui/useVisible';
 import { lengthText } from './model';
 import { playFrom } from './queue';
@@ -78,7 +78,7 @@ function MoodShelfView({ mood }: { mood: string }) {
 /**
  * The For you tab: the mood chip row on top, then shelves, each a heading with a grey line saying where it comes
  * from, one row of four tiles and "See all", which shows the whole shelf in the library's own grid. Under the chips a
- * clicked mood shows its own shelf (`pickMood`); the one that is always there is "Back to": what the wall itself played (see `forYouStore.ts`). A tile plays that video, and the ones
+ * clicked mood shows its own shelf (`pickMood`); the one that is always there is "Played on the wall" (last 30 days): what the wall itself played (see `forYouStore.ts`). A tile plays that video, and the ones
  * after it in the shelf, on the wall.
  */
 export function ForYou({ tall }: { tall: boolean }) {
@@ -86,6 +86,13 @@ export function ForYou({ tall }: { tall: boolean }) {
   const openMood = useMoods((m) => m.open);
   const [all, setAll] = useState(false);
   const visible = useVisible();
+  // With no mood open the tab opens the default one, once per mount and only while it is on screen.
+  const asked = useRef(false);
+  useEffect(() => {
+    if (!visible || asked.current) return;
+    asked.current = true;
+    openDefaultMood();
+  }, [visible]);
   // The shelf tells the store when it is on screen, so a play written meanwhile reads again only then.
   useEffect(() => {
     setForYouView(visible, all);
@@ -127,10 +134,10 @@ export function ForYou({ tall }: { tall: boolean }) {
       </div>
       <div className="yt-scroll" data-tall={tall ? 'true' : 'false'}>
         {openMood ? <MoodShelfView mood={openMood} /> : null}
-        <section className="yt-shelf" aria-label="Back to">
+        <section className="yt-shelf" aria-label="Played on the wall">
           <div className="yt-shelfhead">
-            <span className="yt-shelfname">Back to</span>
-            <span className="yt-shelfsub">what the wall played</span>
+            <span className="yt-shelfname">Played on the wall</span>
+            <span className="yt-shelfsub">last 30 days</span>
             {all ? (
               <button type="button" className="yt-seeall" onClick={() => {
                   setAll(false);

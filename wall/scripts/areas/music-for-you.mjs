@@ -1,4 +1,4 @@
-// The For you tab of the YouTube side (vote 1A): the mood chip row and the Back to shelf of four tiles with
+// The For you tab of the YouTube side (vote 1A): the mood chip row, the Focus shelf the tab opens on, and the Played on the wall shelf of four tiles with
 // See all. Gallery states, fit variants with one browser measurement and its rule, and a deliberate break
 // for each rule. Everything this area needs lives here; nothing is registered in the two big review scripts.
 
@@ -6,8 +6,10 @@ const night = encodeURIComponent('2026-11-11T22:30:00-08:00');
 const day = '2026-11-11T10:24:00-08:00';
 const SWITCH = '.sp-switch button:nth-child(2)';
 const TALL = 'grow';
-const FORYOU = '.sp-tabs button:nth-child(1)';
-const SEEALL = '.yt-seeall';
+const FORYOU = '.mu-places button:nth-child(1)';
+const SEEALL = 'section[aria-label="Played on the wall"] .yt-seeall';
+// The Focus chip: the tab opens on Focus, so one click on it closes the shelf (the user closing the chip).
+const CLOSEFOCUS = '.yt-chip:nth-child(1)';
 const steps = (...s) => s.join(' >> ');
 const base = (extra) => `hz=unwind&at=${night}&clock=review&weather=ok&audio=demo&youtube=in&ytlib=full&${extra}`;
 const state = (name, query, expect, actions) => ({ screen: 'unwind', name: `for you: ${name}`, query, custom: true, expect, actions });
@@ -113,22 +115,26 @@ export default {
   name: 'music-for-you',
   gallery: {
     states: [
-      state('rest, six played', base('ytplayed=6'), ['For you', 'Playlists', 'Liked', 'Focus', 'Romance', 'Back to', 'what the wall played', 'Yesterday', 'See all'], steps(SWITCH, FORYOU)),
-      state('rest, two played', base('ytplayed=2'), ['Back to', 'Today', 'Yesterday', '!See all'], steps(SWITCH, FORYOU)),
-      state('rest, nothing played', base('ytplayed=none'), ['Nothing played here yet', 'Focus', '!See all'], steps(SWITCH, FORYOU)),
-      state('rest, See all', base('ytplayed=12'), ['Back to the shelf', 'Last month', '2 weeks ago'], steps(SWITCH, FORYOU, SEEALL)),
+      state('rest, opens on Focus', base('ytplayed=6'), ['Focus', 'music from YouTube', 'Played on the wall', 'last 30 days'], steps(SWITCH, FORYOU)),
+      state('rest, Focus closed, six played', base('ytplayed=6'), ['Played on the wall', 'last 30 days', 'Yesterday', 'See all', '!music from YouTube'], steps(SWITCH, FORYOU, CLOSEFOCUS)),
+      state('rest, Focus closed, two played', base('ytplayed=2'), ['Played on the wall', 'Today', 'Yesterday', '!See all'], steps(SWITCH, FORYOU, CLOSEFOCUS)),
+      state('rest, Focus closed, nothing played', base('ytplayed=none'), ['Nothing played here yet', 'Focus', '!See all'], steps(SWITCH, FORYOU, CLOSEFOCUS)),
+      state('rest, nothing played, Focus open', base('ytplayed=none'), ['Nothing played here yet', 'music from YouTube'], steps(SWITCH, FORYOU)),
+      state('rest, mood searches spent', base('ytplayed=6&ytmood=spent'), ['Out of mood searches this week', 'Played on the wall'], steps(SWITCH, FORYOU)),
+      state('rest, See all', base('ytplayed=12'), ['Back to the shelf', '4 weeks ago', '2 weeks ago'], steps(SWITCH, FORYOU, CLOSEFOCUS, SEEALL)),
       state('rest, not answering', base('ytplayed=6&ytfy=down'), ['YouTube is not answering.', 'Retry', 'Focus'], steps(SWITCH, FORYOU)),
-      state('tall, six played', base('ytplayed=6'), ['Back to', 'Focus', 'Yesterday'], steps(SWITCH, TALL, FORYOU)),
+      state('tall, six played', base('ytplayed=6'), ['Focus', 'Played on the wall'], steps(SWITCH, TALL, FORYOU)),
     ],
   },
   fit: {
     variants: [
-      variant('at rest, six played', 'ytplayed=6', steps(SWITCH, FORYOU), { listen: true }),
-      variant('at rest, two played', 'ytplayed=2', steps(SWITCH, FORYOU), { listen: true }),
-      variant('at rest, nothing played', 'ytplayed=none', steps(SWITCH, FORYOU), { listen: true }),
-      variant('at rest, See all', 'ytplayed=12', steps(SWITCH, FORYOU, SEEALL), { listen: true }),
-      variant('at rest, not answering', 'ytplayed=6&ytfy=down', steps(SWITCH, FORYOU), { listen: true }),
-      variant('tall, six played', 'ytplayed=6', steps(SWITCH, TALL, FORYOU)),
+      variant('at rest, six played', 'ytplayed=6', steps(SWITCH, FORYOU, CLOSEFOCUS), { listen: true }),
+      variant('at rest, two played', 'ytplayed=2', steps(SWITCH, FORYOU, CLOSEFOCUS), { listen: true }),
+      variant('at rest, nothing played', 'ytplayed=none', steps(SWITCH, FORYOU, CLOSEFOCUS), { listen: true }),
+      variant('at rest, See all', 'ytplayed=12', steps(SWITCH, FORYOU, CLOSEFOCUS, SEEALL), { listen: true }),
+      variant('at rest, not answering', 'ytplayed=6&ytfy=down', steps(SWITCH, FORYOU, CLOSEFOCUS), { listen: true }),
+      variant('opens on Focus', 'ytplayed=6', steps(SWITCH, FORYOU), { listen: true }),
+      variant('tall, six played', 'ytplayed=6', steps(SWITCH, TALL, FORYOU, CLOSEFOCUS)),
     ],
     measurements: { musicForYou: measureForYou },
     rules: {

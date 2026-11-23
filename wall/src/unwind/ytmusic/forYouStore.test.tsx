@@ -11,7 +11,7 @@ import { resetSpotifyStatus } from '../spotify/status';
 import { playerLink } from '../watch/PlayerFrame';
 import { resetWatch, useWatchStore } from '../watch/store';
 import { MOODS, MOOD_TIP, SHELF } from './ForYou';
-import { FIRST, MOOD_KEEP_MS, afterPlay, loadForYou, moodBudgetLine, pickMood, useForYou, useMoods, whenWords } from './forYouStore';
+import { DEFAULT_MOOD, FIRST, MOOD_KEEP_MS, afterPlay, loadForYou, moodBudgetLine, pickMood, useForYou, useMoods, whenWords } from './forYouStore';
 import { resetQueue, useYtQueue } from './queue';
 import { resetYoutubeStatus } from './status';
 import { resetLibrary } from './store';
@@ -34,7 +34,9 @@ const noted: string[] = [];
 const asked: string[][] = [];
 
 /** `count` plays, newest first, a day apart; `gone` ids have no details (YouTube no longer answers for them). */
-function serve(count: number, gone: number[] = []) {
+function serve(count: number, gone: number[] = [], closedByUser = true) {
+  // The tab opens on Focus by default; most tests are about something else, so they start with that chip closed.
+  useMoods.setState({ closedByUser });
   const record: YtPlayed[] = Array.from({ length: count }, (_, i) => ({ id: id(i), at: nowS() - i * 86400 }));
   mocks.set('wall2_youtube_status', () => signedIn);
   mocks.set('wall2_youtube_playlists', () => page([playlist(1)]));
@@ -244,11 +246,89 @@ describe('the For you tab', () => {
     });
   });
 
-  it('shows the Back to shelf: four tiles with their words for when, and See all', async () => {
+  describe('the default mood', () => {
+    const chip = (m: string) => screen.getByRole('button', { name: m });
+    const items = (n: number): YtMoodAnswer['items'] => Array.from({ length: n }, (_, i) => ({ id: id(700 + i), title: `Focus song ${i}`, channel: 'Some Channel', seconds: 180, thumb: null, playable: 'yes' as const }));
+    const asks: string[] = [];
+    function serveDefault(answer: () => YtMoodAnswer) {
+      serve(3, [], false);
+      asks.length = 0;
+      mocks.set('wall2_youtube_mood', (args) => {
+        asks.push(String(args?.mood));
+        return answer();
+      });
+    }
+    const ok = (): YtMoodAnswer => ({ items: items(5), cached: false, searchesLeft: 9, backAt: null });
+
+    it('is Focus, and the tab opens it on first show with one search', async () => {
+      expect(DEFAULT_MOOD).toBe('Focus');
+      serveDefault(ok);
+      await openForYou();
+      expect(asks).toEqual(['Focus']);
+      expect(chip('Focus').getAttribute('aria-pressed')).toBe('true');
+      expect(document.querySelectorAll('section[aria-label="Focus"] .yt-tile')).toHaveLength(SHELF);
+      expect(document.querySelector('section[aria-label="Played on the wall"]')).toBeTruthy();
+    });
+
+    it('a Focus shelf kept from this week makes no new search', async () => {
+      serveDefault(() => ({ items: items(5), cached: true, searchesLeft: 4, backAt: null }));
+      // The page already holds a fresh answer from earlier in the session.
+      useMoods.setState({ byMood: { Focus: { loading: false, rows: items(5).map((v) => ({ ...v })), problem: null, backAt: null, cached: true, fetchedAt: Date.now() } } });
+      await openForYou();
+      expect(asks).toEqual([]);
+      expect(document.querySelectorAll('section[aria-label="Focus"] .yt-tile')).toHaveLength(SHELF);
+    });
+
+    it('closing the chip keeps it closed when the tab is shown again', async () => {
+      serveDefault(ok);
+      await openForYou();
+      fireEvent.click(chip('Focus'));
+      await flush(10);
+      expect(useMoods.getState().open).toBeNull();
+      expect(useMoods.getState().closedByUser).toBe(true);
+      cleanup();
+      await openForYou();
+      expect(useMoods.getState().open).toBeNull();
+      expect(document.querySelector('section[aria-label="Focus"]')).toBeNull();
+      expect(asks).toEqual(['Focus']);
+    });
+
+    it('a mood already open is left alone, and another mood still opens with a click', async () => {
+      serveDefault(ok);
+      await openForYou();
+      fireEvent.click(chip('Sleep'));
+      await flush(10);
+      expect(useMoods.getState().open).toBe('Sleep');
+      expect(asks).toEqual(['Focus', 'Sleep']);
+      cleanup();
+      await openForYou();
+      expect(useMoods.getState().open).toBe('Sleep');
+      expect(asks).toEqual(['Focus', 'Sleep']);
+    });
+
+    it('asks once per mount, not on each render', async () => {
+      serveDefault(ok);
+      await openForYou();
+      await flush(100);
+      useForYou.setState({ stale: true });
+      await flush(100);
+      expect(asks).toEqual(['Focus']);
+    });
+
+    it('with the budget spent and Focus not kept, shows the calm budget line, not an error', async () => {
+      const back = Math.floor(new Date('2026-11-17T12:00:00-08:00').getTime() / 1000);
+      serveDefault(() => ({ items: [], cached: false, searchesLeft: 0, backAt: back }));
+      await openForYou();
+      expect(document.querySelector('section[aria-label="Focus"] .yt-state')?.textContent).toBe(moodBudgetLine(back));
+      expect(document.querySelector('section[aria-label="Focus"] .sp-btn')).toBeNull();
+    });
+  });
+
+  it('shows the Played on the wall shelf: four tiles with their words for when, and See all', async () => {
     serve(6);
     await openForYou();
-    expect(screen.getByText('Back to')).toBeTruthy();
-    expect(screen.getByText('what the wall played')).toBeTruthy();
+    expect(screen.getByText('Played on the wall')).toBeTruthy();
+    expect(screen.getByText('last 30 days')).toBeTruthy();
     expect(tiles().map((t) => t.querySelector('.sp-tname2')?.textContent)).toEqual(['Played 0', 'Played 1', 'Played 2', 'Played 3']);
     expect(tiles().map((t) => t.querySelector('.yt-count')?.textContent)).toEqual(['Today', 'Yesterday', '2 days ago', '3 days ago']);
     expect(tiles()).toHaveLength(SHELF);
@@ -338,7 +418,7 @@ describe('the play record', () => {
     expect(noted).toEqual([id(0)]);
   });
 
-  it('reads the record again after a play is written, so Back to shows the video just played', async () => {
+  it('reads the record again after a play is written, so Played on the wall shows the video just played', async () => {
     serve(3);
     const record: YtPlayed[] = [{ id: id(0), at: nowS() }];
     mocks.set('wall2_youtube_played', () => record.slice());
