@@ -72,6 +72,17 @@ export function registerYoutubeMocks(): void {
     seconds: playable === 'removed' || playable === 'private' ? 0 : n === 0 ? 214 : 150 + ((n * 37) % 240),
     thumb: motif(n),
     playable,
+    ...(playable === 'yes' || playable === 'embed' || playable === 'region' ? extras(n) : {}),
+  });
+  /** Views, likes, upload day and description of a mock video: invented, the same for the same number. */
+  const VIEWS = [2_400_000, 1_100_000, 312_000, 4_800_000, 87_000, 9_600_000, 640_000, 22_000, 900, 15_300, 2_000_000, 48_000];
+  const LIKES = [58_000, 24_000, 6_000, 61_000, 2_000, 140_000, null, 900, 41, 480, 39_000, 1_200];
+  const WORDS = 'Two hours of slow synth and city pop for late night drives and focus. Tracklist in the comments. Artwork by the channel, all music licensed for this mix. Thanks for listening, and see you in the next one.';
+  const extras = (n: number): Pick<YtVideo, 'views' | 'likes' | 'published' | 'description'> => ({
+    views: VIEWS[n % VIEWS.length]!,
+    likes: LIKES[n % LIKES.length]!,
+    published: `${2019 + (n % 6)}-${String(1 + ((n * 5) % 12)).padStart(2, '0')}-14`,
+    description: n % 7 === 6 ? null : WORDS,
   });
   const failing = () => {
     const m = lib();

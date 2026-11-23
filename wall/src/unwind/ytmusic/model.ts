@@ -1,5 +1,5 @@
 import type { UIEvent } from 'react';
-import type { YoutubeStatus, YtPlayable, YtVideo } from '../../music/youtube';
+import { VIDEO_ID, type YoutubeStatus, type YtPlayable, type YtVideo } from '../../music/youtube';
 
 /** Within this many pixels of the end of a scrolled list, the next page is read. */
 export const MORE_AT_PX = 160;
@@ -206,4 +206,120 @@ export function searchWords(text: string): string | null {
 /** Development builds only: `ytsearch=<words>` in the address runs that search when the library opens (the review pages have no Enter key). */
 export function devSearchKnob(): string | null {
   return import.meta.env.DEV ? new URLSearchParams(window.location.search).get('ytsearch') : null;
+}
+
+/** The ways a search answer can be ordered. `best` is YouTube's own order and comes back with every new search. */
+export type YtSort = 'best' | 'views' | 'longest' | 'shortest' | 'channel' | 'title';
+export const DEFAULT_SORT: YtSort = 'best';
+/** The sort menu's choices: the words in the menu, the short name the button shows once one is picked, and what the hover card says. */
+export const SORT_CHOICES: readonly { id: YtSort; label: string; short: string }[] = [
+  { id: 'best', label: 'Best match', short: 'Best match' },
+  { id: 'views', label: 'Most viewed', short: 'Views' },
+  { id: 'longest', label: 'Longest first', short: 'Longest' },
+  { id: 'shortest', label: 'Shortest first', short: 'Shortest' },
+  { id: 'channel', label: 'Channel, A to Z', short: 'Channel' },
+  { id: 'title', label: 'Title, A to Z', short: 'Title' },
+];
+export const SORT_TIP = 'Sort the results already found. It never searches again.';
+
+const countOf = (n: number | null | undefined): number | null => (typeof n === 'number' && Number.isFinite(n) && n >= 0 ? n : null);
+const same = (a: string, b: string) => a.localeCompare(b, 'en', { sensitivity: 'base', numeric: true });
+
+/**
+ * The answer in the order picked, as a new list (the answer itself is never changed, and `best` returns it as it is).
+ * Under the numeric sorts a row with no length or no views goes last; ties keep YouTube's order.
+ */
+export function sortVideos(items: readonly YtVideo[], sort: YtSort): YtVideo[] {
+  if (sort === 'best') return items.slice();
+  const rows = items.map((v, i) => ({ v, i }));
+  // A row without the number the sort reads (a playlist, a live video) sorts after every row that has it.
+  const by = (read: (v: YtVideo) => number | null, sign: 1 | -1) => (a: { v: YtVideo; i: number }, b: { v: YtVideo; i: number }) => {
+    const x = read(a.v);
+    const y = read(b.v);
+    if (x === null && y === null) return a.i - b.i;
+    if (x === null) return 1;
+    if (y === null) return -1;
+    return (x - y) * sign || a.i - b.i;
+  };
+  const text = (read: (v: YtVideo) => string) => (a: { v: YtVideo; i: number }, b: { v: YtVideo; i: number }) => {
+    const x = read(a.v);
+    const y = read(b.v);
+    if (!x && !y) return a.i - b.i;
+    if (!x) return 1;
+    if (!y) return -1;
+    return same(x, y) || a.i - b.i;
+  };
+  const length = (v: YtVideo) => (v.seconds > 0 ? v.seconds : null);
+  switch (sort) {
+    case 'views':
+      rows.sort(by((v) => countOf(v.views), -1));
+      break;
+    case 'longest':
+      rows.sort(by(length, -1));
+      break;
+    case 'shortest':
+      rows.sort(by(length, 1));
+      break;
+    case 'channel':
+      rows.sort(text((v) => v.channel));
+      break;
+    case 'title':
+      rows.sort(text((v) => v.title));
+      break;
+  }
+  return rows.map((r) => r.v);
+}
+
+/** "900", "87K", "2.4M": a count in at most four characters (cut, not rounded up, so 999,999 is 999K). Empty for no count. */
+export function compactCount(n: number | null | undefined): string {
+  const count = countOf(n);
+  if (count === null) return '';
+  if (count < 1000) return String(Math.floor(count));
+  const units = ['K', 'M', 'B', 'T'];
+  let value = count;
+  let at = -1;
+  while (value >= 1000 && at < units.length - 1) {
+    value /= 1000;
+    at += 1;
+  }
+  const shown = value < 10 ? String(Math.floor(value * 10) / 10) : String(Math.floor(value));
+  return `${shown}${units[at]}`;
+}
+
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+/** "Mar 2023" from an upload day `2023-03-14`; empty for anything else. */
+export function uploadMonth(day: string | null | undefined): string {
+  const m = typeof day === 'string' ? /^(\d{4})-(\d{2})-\d{2}/.exec(day) : null;
+  const month = m ? Number(m[2]) : 0;
+  return m && month >= 1 && month <= 12 ? `${MONTHS[month - 1]} ${m[1]}` : '';
+}
+
+/** How long the pointer rests on a result row before its details card shows. */
+export const DETAIL_CARD_MS = 500;
+/** The most description characters the card holds (Rust sends 600 at most). */
+const DESCRIPTION_SHOWN = 600;
+
+/** The words of a row's details card, or null when the row has nothing beyond what its row shows. */
+export interface DetailWords { views: string; likes: string; length: string; month: string; description: string }
+export function detailWords(v: YtVideo): DetailWords | null {
+  const words: DetailWords = {
+    views: compactCount(v.views),
+    likes: compactCount(v.likes),
+    length: lengthText(v.seconds),
+    month: uploadMonth(v.published),
+    description: typeof v.description === 'string' ? v.description.slice(0, DESCRIPTION_SHOWN).trim() : '',
+  };
+  return words.views || words.likes || words.month || words.description ? words : null;
+}
+
+/** A result row's picture: the one Rust sent, from YouTube's picture host only, else the address built from a checked video id, else none. */
+export function rowThumb(v: Pick<YtVideo, 'id' | 'thumb'>): string | null {
+  return safeThumb(v.thumb) ?? (VIDEO_ID.test(v.id) ? `https://i.ytimg.com/vi/${v.id}/mqdefault.jpg` : null);
+}
+
+/** Development builds only: `ytcard=<row>` (counting from 0) opens the details card of that search row once the results show (the review pages have no resting pointer). */
+export function devCardKnob(): number | null {
+  if (!import.meta.env.DEV) return null;
+  const n = Number(new URLSearchParams(window.location.search).get('ytcard'));
+  return Number.isInteger(n) && n >= 0 && new URLSearchParams(window.location.search).has('ytcard') ? n : null;
 }

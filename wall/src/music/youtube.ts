@@ -11,8 +11,12 @@ export interface YoutubeStatus { setup: boolean; signedIn: boolean; reason: stri
 export interface YtPlaylist { id: string; title: string; count: number; thumb: string | null }
 /** Whether a video can play outside YouTube: `embed` and `region` only on YouTube, `private`, or `removed`. */
 export type YtPlayable = 'yes' | 'embed' | 'private' | 'removed' | 'region';
-/** One video. `seconds` is 0 when YouTube gives no length. */
-export interface YtVideo { id: string; title: string; channel: string; seconds: number; thumb: string | null; playable: YtPlayable }
+/**
+ * One video. `seconds` is 0 when YouTube gives no length. The rest comes with the same details read and is absent or null
+ * when YouTube gave none (a hidden like count): `views` and `likes` are counts, `published` is the upload day as
+ * `YYYY-MM-DD`, `description` is one line of at most 600 characters.
+ */
+export interface YtVideo { id: string; title: string; channel: string; seconds: number; thumb: string | null; playable: YtPlayable; views?: number | null; likes?: number | null; published?: string | null; description?: string | null }
 /** What YouTube says about one video of an own playlist. `seconds` is null for a live video or when no length came back. */
 export interface YtDetail { id: string; title: string | null; channel: string | null; seconds: number | null; /** Development mocks only (a drawn motif, so no picture is fetched); Rust sends none. */ thumb?: string | null }
 /** One play the wall made: a video id and when it started (seconds since 1970). Nothing else is kept. */

@@ -506,9 +506,16 @@ const QUOTA: &str = "quota";
 const QUOTA_ALL: &str = "quota-all";
 const NOT_FOUND: &str = "not found";
 
-/// The fields mask of every `videos.list` call: titles, the channel's name, the length, the
-/// embed and privacy flags and any region rule. Never the description or the tags.
-const VIDEO_FIELDS: &str = "items(id,snippet(title,channelTitle),contentDetails(duration,regionRestriction),status(embeddable,privacyStatus))";
+/// The parts of every `videos.list` call. `videos.list` costs the same quota whatever parts it names.
+const VIDEO_PARTS: &str = "snippet,contentDetails,status,statistics";
+
+/// The fields mask of every `videos.list` call: titles, the channel's name, the upload date, the first
+/// part of the description, the length, the embed and privacy flags, any region rule, and the view and
+/// like counts. Never the tags or the comments.
+const VIDEO_FIELDS: &str = "items(id,snippet(title,channelTitle,publishedAt,description),contentDetails(duration,regionRestriction),status(embeddable,privacyStatus),statistics(viewCount,likeCount))";
+
+/// The most characters of a description kept.
+const DESCRIPTION_MAX: usize = 600;
 
 /// One of the owner's playlists, as the page sees it.
 #[derive(Debug, Serialize, Clone, PartialEq)]
@@ -516,7 +523,7 @@ pub struct YtPlaylist { id: String, title: String, count: u64, thumb: Option<Str
 
 /// One video, as the page sees it. `playable` is one of `yes`, `embed`, `private`, `removed`, `region`.
 #[derive(Debug, Serialize, Clone, PartialEq)]
-pub struct YtVideo { id: String, title: String, channel: String, seconds: u64, thumb: Option<String>, playable: &'static str }
+pub struct YtVideo { id: String, title: String, channel: String, seconds: u64, thumb: Option<String>, playable: &'static str, views: Option<u64>, likes: Option<u64>, published: Option<String>, description: Option<String> }
 
 /// What `videos.list` told us about one video an own playlist holds. Each field is absent when Google gave none.
 #[derive(Debug, Serialize, Clone, PartialEq)]
@@ -655,7 +662,7 @@ impl<V: Clone> Cache<V> {
 
 /// What `videos.list` told us about one video.
 #[derive(Clone)]
-struct Detail { title: Option<String>, channel: Option<String>, seconds: u64, playable: &'static str }
+struct Detail { title: Option<String>, channel: Option<String>, seconds: u64, playable: &'static str, views: Option<u64>, likes: Option<u64>, published: Option<String>, description: Option<String> }
 
 struct Library {
     playlists: Cache<Page<YtPlaylist>>,
@@ -806,7 +813,36 @@ fn detail_of(video: &Value) -> Option<(String, Detail)> {
         channel: clean_text(snippet.and_then(|s| s.get("channelTitle")), 100),
         seconds,
         playable: playable_of(video),
+        views: count_of(video.pointer("/statistics/viewCount")),
+        likes: count_of(video.pointer("/statistics/likeCount")),
+        published: date_of(snippet.and_then(|s| s.get("publishedAt"))),
+        description: description_of(snippet.and_then(|s| s.get("description"))),
     }))
+}
+
+/// A count from `statistics`: Google sends digits in a string (a number is tolerated too). Anything else, or a
+/// count of 16 digits or more, is `None` (a hidden like count is simply absent).
+fn count_of(value: Option<&Value>) -> Option<u64> {
+    match value? {
+        Value::String(s) if !s.is_empty() && s.len() <= 15 && s.bytes().all(|b| b.is_ascii_digit()) => s.parse().ok(),
+        Value::Number(n) => n.as_u64().filter(|&n| n < 1_000_000_000_000_000),
+        _ => None,
+    }
+}
+
+/// The day of an upload as `YYYY-MM-DD` from Google's `publishedAt`, or `None` when it does not start that way.
+fn date_of(value: Option<&Value>) -> Option<String> {
+    let day = value?.as_str()?.get(..10)?;
+    let b = day.as_bytes();
+    let digits = [0, 1, 2, 3, 5, 6, 8, 9].iter().all(|&i| b[i].is_ascii_digit());
+    let month: u32 = day.get(5..7)?.parse().ok()?;
+    (digits && b[4] == b'-' && b[7] == b'-' && (1..=12).contains(&month)).then(|| day.to_string())
+}
+
+/// A description on one line (every run of white space is one space), cleaned and capped.
+fn description_of(value: Option<&Value>) -> Option<String> {
+    let flat = value?.as_str()?.split_whitespace().collect::<Vec<_>>().join(" ");
+    clean_text(Some(&Value::String(flat)), DESCRIPTION_MAX)
 }
 
 fn video_row(id: &str, detail: Option<&Detail>, title: Option<String>, channel: Option<String>, item_private: bool) -> YtVideo {
@@ -818,6 +854,10 @@ fn video_row(id: &str, detail: Option<&Detail>, title: Option<String>, channel: 
         seconds: detail.map_or(0, |d| d.seconds),
         thumb: Some(video_thumb(id)),
         playable,
+        views: detail.and_then(|d| d.views),
+        likes: detail.and_then(|d| d.likes),
+        published: detail.and_then(|d| d.published.clone()),
+        description: detail.and_then(|d| d.description.clone()),
     }
 }
 
@@ -837,7 +877,7 @@ fn details_for(ctx: &Ctx, gen: u64, ids: &[String], fresh: bool) -> Result<std::
     });
     for chunk in missing.chunks(50) {
         let joined = chunk.join(",");
-        let answer = api_get(ctx, EP_VIDEOS, &[("part", "snippet,contentDetails,status"), ("id", &joined), ("fields", VIDEO_FIELDS)], false)?;
+        let answer = api_get(ctx, EP_VIDEOS, &[("part", VIDEO_PARTS), ("id", &joined), ("fields", VIDEO_FIELDS)], false)?;
         let got: Vec<(String, Detail)> = answer.get("items").and_then(Value::as_array).map(|a| a.iter().filter_map(detail_of).collect()).unwrap_or_default();
         put_lib(gen, |l| for (id, d) in &got { l.details.put(id.clone(), now, d.clone()); });
         for (id, d) in got { if chunk.contains(&id.as_str()) { found.insert(id, d); } }
@@ -875,7 +915,7 @@ fn video_details_with(ctx: &Ctx, ids: &[String]) -> Result<Vec<YtDetail>, &'stat
         }
         let joined = missing.join(",");
         let sent = std::cell::Cell::new(false);
-        let answer = match api_get_sent(ctx, EP_VIDEOS, &[("part", "snippet,contentDetails,status"), ("id", &joined), ("fields", VIDEO_FIELDS)], false, &sent) {
+        let answer = match api_get_sent(ctx, EP_VIDEOS, &[("part", VIDEO_PARTS), ("id", &joined), ("fields", VIDEO_FIELDS)], false, &sent) {
             Ok(answer) => answer,
             Err(word) => {
                 put_lib(gen, |l| {
@@ -982,7 +1022,7 @@ fn liked_with(ctx: &Ctx, page_token: Option<&str>, fresh: bool) -> Result<Page<Y
     page_check("l", token, now)?;
     if !fresh { if let Some(page) = with_lib(|l| l.videos.get(&key, now, LIKED_TTL)) { page_served(gen, "l", token, &page.next, now); return Ok(page) } }
     let fields = format!("nextPageToken,{VIDEO_FIELDS}");
-    let mut params = vec![("part", "snippet,contentDetails,status"), ("myRating", "like"), ("maxResults", PAGE_SIZE), ("fields", fields.as_str())];
+    let mut params = vec![("part", VIDEO_PARTS), ("myRating", "like"), ("maxResults", PAGE_SIZE), ("fields", fields.as_str())];
     if let Some(t) = token { params.push(("pageToken", t)); }
     let answer = api_get(ctx, EP_VIDEOS, &params, false)?;
     let got: Vec<(String, Detail)> = answer.get("items").and_then(Value::as_array).map(|a| a.iter().filter_map(detail_of).collect()).unwrap_or_default();
@@ -1945,7 +1985,7 @@ mod tests {
         let calls = lock(&http.get_calls).clone();
         assert_eq!(calls.len(), 1);
         assert_eq!(calls[0].1, "access-one");
-        let expected = api_url(EP_VIDEOS, &[("part", "snippet,contentDetails,status"), ("id", &ids[..7].join(",")), ("fields", VIDEO_FIELDS)]);
+        let expected = api_url(EP_VIDEOS, &[("part", "snippet,contentDetails,status,statistics"), ("id", &ids[..7].join(",")), ("fields", VIDEO_FIELDS)]);
         assert_eq!(calls[0].0, expected);
         let before = crate::wall2_youtube_log::test_lines().len();
         assert!(run(&http, &FakeCreds::new(Some("stored-refresh")), &clock(T0 + 1), |c| video_details_with(c, &[VID_A.into(), VID_B.into()])).is_ok());
@@ -1953,6 +1993,55 @@ mod tests {
         let lines = crate::wall2_youtube_log::test_lines();
         assert!(lines[..before].iter().any(|line| line.starts_with("read-ok none 200 ")));
         assert!(!lines.iter().any(|line| line.contains(VID_A) || line.contains("Second") || line.contains("Channel")));
+    }
+
+    #[test]
+    fn counts_dates_and_descriptions_are_read_tolerantly() {
+        assert_eq!(count_of(Some(&json!("2400000"))), Some(2_400_000));
+        assert_eq!(count_of(Some(&json!("0"))), Some(0));
+        assert_eq!(count_of(Some(&json!(87000))), Some(87_000));
+        for bad in [json!(""), json!("12x"), json!("-5"), json!("1234567890123456"), json!(1.5), json!(-3), json!(null), json!(true), json!([1])] {
+            assert_eq!(count_of(Some(&bad)), None, "{bad}");
+        }
+        assert_eq!(count_of(None), None);
+        assert_eq!(date_of(Some(&json!("2023-03-14T09:30:00Z"))).as_deref(), Some("2023-03-14"));
+        for bad in [json!("2023-13-01"), json!("2023-00-01"), json!("garbage"), json!("2023/03/14"), json!("2023-03-1\u{e9}"), json!(20230314), json!("")] {
+            assert_eq!(date_of(Some(&bad)), None, "{bad}");
+        }
+        assert_eq!(date_of(None), None);
+        assert_eq!(description_of(Some(&json!("Line one\n\nLine   two\u{202e}\ttab"))).as_deref(), Some("Line one Line two tab"));
+        assert_eq!(description_of(Some(&json!("x".repeat(5000)))).unwrap().chars().count(), DESCRIPTION_MAX);
+        assert_eq!(description_of(Some(&json!("  \n "))), None);
+        assert_eq!(description_of(Some(&json!(7))), None);
+    }
+
+    #[test]
+    fn a_video_row_carries_views_likes_date_and_description_when_google_sends_them() {
+        let full = json!({
+            "id": VID_A,
+            "snippet": { "title": "T", "channelTitle": "C", "publishedAt": "2023-03-14T09:30:00Z", "description": "First\nSecond" },
+            "contentDetails": { "duration": "PT1M" },
+            "status": { "embeddable": true, "privacyStatus": "public" },
+            "statistics": { "viewCount": "2400000", "likeCount": "61000" }
+        });
+        let (id, detail) = detail_of(&full).unwrap();
+        let row = video_row(&id, Some(&detail), None, None, false);
+        assert_eq!((row.views, row.likes, row.published.as_deref(), row.description.as_deref()), (Some(2_400_000), Some(61_000), Some("2023-03-14"), Some("First Second")));
+        let text = serde_json::to_string(&row).unwrap();
+        assert!(text.contains(r#""views":2400000"#) && text.contains(r#""likes":61000"#) && text.contains(r#""published":"2023-03-14""#), "{text}");
+
+        let mut hidden = full.clone();
+        hidden["statistics"] = json!({ "viewCount": "5" });
+        let (_, detail) = detail_of(&hidden).unwrap();
+        let row = video_row(&id, Some(&detail), None, None, false);
+        assert_eq!((row.views, row.likes), (Some(5), None));
+
+        let bare = video(VID_B, "Bare", "PT1M", json!({}));
+        let (id, detail) = detail_of(&bare).unwrap();
+        let row = video_row(&id, Some(&detail), None, None, false);
+        assert_eq!((row.views, row.likes, row.published, row.description), (None, None, None, None));
+        let none = video_row(VID_C, None, Some("Gone".into()), None, false);
+        assert_eq!((none.views, none.likes, none.published, none.description), (None, None, None, None));
     }
 
     #[test]
