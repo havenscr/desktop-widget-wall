@@ -146,10 +146,10 @@ const nearEnd = (e: UIEvent<HTMLElement>) => {
  * songs, and a click on a song plays it (from that song on, in its list). YouTube Music: what
  * Windows says is playing, its buttons and "Open YouTube Music". The card never controls a room.
  *
- * The card grows by itself: the pointer resting on it for 1.5 seconds opens the tall view (the right
+ * The card grows by itself: the pointer resting on it for 0.75 seconds opens the tall view (the right
  * third of the wall, two rows of covers and a player row), never while the chooser or a library menu is
  * open or the search field has focus. A click on the empty part of the top row opens it at once, and so
- * does keyboard focus (focus-visible) landing on a control below the top row. It shrinks by itself 1
+ * does keyboard focus (focus-visible) landing on a control below the top row. It shrinks by itself 0.5
  * second after the pointer has left it, never while the pointer is on it, the search field has focus, the
  * chooser or a library menu is open, or the pointer is on a details card; and on Escape (the chooser first,
  * a playlist's Back next) and on a click anywhere outside it (that click is swallowed, so it presses

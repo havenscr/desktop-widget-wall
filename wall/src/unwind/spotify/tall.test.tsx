@@ -131,7 +131,7 @@ describe('helpers', () => {
 });
 
 describe('opening and closing the tall view', () => {
-  it('starts closed with no round button, and opens when the pointer has rested 1.5 s, or on the empty part of the top row', async () => {
+  it('starts closed with no round button, and opens when the pointer has rested 0.75 s, or on the empty part of the top row', async () => {
     await setup();
     expect(isTall()).toBe(false);
     expect(document.querySelector('.sp-grow')).toBeNull();
@@ -146,7 +146,7 @@ describe('opening and closing the tall view', () => {
     expect(isTall()).toBe(true);
   });
 
-  it('1.4 s of rest stays short, 1.5 s grows; leaving before then cancels', async () => {
+  it('0.65 s of rest stays short, 0.75 s grows; leaving before then cancels', async () => {
     await setup();
     fireEvent.pointerEnter(card());
     await flush(TALL_OPEN_MS - 100);
@@ -214,7 +214,7 @@ describe('opening and closing the tall view', () => {
     expect(isTall()).toBe(false);
   });
 
-  it('a stale rest timer never reopens it: enter, click the top row, Escape, and 1.5 s later it is still closed until a new enter', async () => {
+  it('a stale rest timer never reopens it: enter, click the top row, Escape, and 0.75 s later it is still closed until a new enter', async () => {
     await setup();
     fireEvent.pointerEnter(card());
     await flush(500);
@@ -397,7 +397,7 @@ describe('opening and closing the tall view', () => {
   });
 
   describe('by itself, 1 second after the pointer has left', () => {
-    it('never while the pointer is on it; closes 1 s after it leaves; a re-entry within that keeps it', async () => {
+    it('never while the pointer is on it; closes 0.5 s after it leaves; a re-entry within that keeps it', async () => {
       await setup();
       await open();
       const c = card();
@@ -1476,7 +1476,7 @@ describe('search songs show their length', () => {
 
 describe('closing by itself follows the keyboard focus too', () => {
   const inside = () => document.querySelector('.sp-card .sp-tabs button, .sp-card .mu-chip, .sp-card .sp-tile') as HTMLElement;
-  it('opened by keyboard with the pointer elsewhere it stays open while the focus is inside, then closes 1 s after the focus leaves', async () => {
+  it('opened by keyboard with the pointer elsewhere it stays open while the focus is inside, then closes 0.5 s after the focus leaves', async () => {
     await setup();
     await act(async () => inside().focus());
     expect(isTall()).toBe(true);
