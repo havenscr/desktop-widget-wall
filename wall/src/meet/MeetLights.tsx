@@ -7,6 +7,7 @@ import { NameButton, TileSwitch } from '../studio/GroupTile';
 import { PresetRow } from '../studio/PresetRow';
 import { AwayTile, RoomTile } from '../studio/RoomTiles';
 import { StudioDrawer } from '../studio/StudioDrawer';
+import { isFailedRead } from '../studio/homeModel';
 import { canChange, useHome } from '../studio/homeStore';
 import { moodFailText, rowModel, type RowModel } from '../studio/moodRow';
 import { anyOn, kelvinColour, savedDown, viewOf, working, type Snapshot } from '../studio/model';
@@ -196,7 +197,7 @@ export function MeetLights() {
       </div>
       <div className="meet-lights-row st-switches" data-row="switches">
         <KeyTile snap={snap} />
-        {studio && panels && (readWord !== null ? <AwayTile g={panels} word={readWord} /> : <RoomTile studio={studio} g={panels} canWrite={may} />)}
+        {studio && panels && (isFailedRead(readWord) ? <AwayTile g={panels} word={readWord} /> : <RoomTile studio={studio} g={panels} canWrite={may} />)}
         <OfficeChip />
       </div>
       {drawer && <StudioDrawer />}

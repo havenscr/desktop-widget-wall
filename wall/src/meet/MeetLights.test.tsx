@@ -228,6 +228,7 @@ it('a light that did not answer the home app dims Panels and says so, not "not a
   expect(useHome.getState().readWord).toBe('not-answering');
   const sw = screen.getByRole('switch', { name: 'Panels' });
   expect(sw.closest('.st-room')?.className).toContain('dis');
+  expect(sw.className).toContain('dim');
   fireEvent.mouseEnter(sw);
   await flush(300);
   const tip = document.querySelector('.hover-tip')?.textContent ?? '';
@@ -237,6 +238,21 @@ it('a light that did not answer the home app dims Panels and says so, not "not a
   await flush(10);
   expect(document.body.textContent).toContain('A light did not answer the home app.');
   expect(document.body.textContent).not.toContain('The home app is not answering');
+});
+
+it('a read word for a home app without studio lights keeps the normal tile and its own tip', async () => {
+  await show();
+  mocks.set('wall2_studio', () => {
+    throw 'not-configured';
+  });
+  await act(async () => useHome.getState().readStudio());
+  await flush(10);
+  expect(useHome.getState().readWord).toBe('not-configured');
+  const sw = screen.getByRole('switch', { name: 'Panels' });
+  fireEvent.mouseEnter(sw);
+  await flush(300);
+  const tip = document.querySelector('.hover-tip')?.textContent ?? '';
+  expect(tip).not.toMatch(/could not be read|did not answer|not answering/);
 });
 
 it('a failed moods read leaves no office chip', async () => {

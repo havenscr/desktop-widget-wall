@@ -92,15 +92,21 @@ export function wouldBeDark(studio: Studio, g: Group): boolean {
 export function awayWords(word: HomeWord | null): { head: string; text: string; tip: string } {
   switch (word) {
     case 'not-answering':
-      return { head: 'A light did not answer the home app.', text: 'Showing the last read.', tip: 'a light did not answer the home app' };
+      return { head: 'A light did not answer the home app.', text: 'The switch waits for the next read.', tip: 'a light did not answer the home app. The switch waits for the next read' };
     case 'busy':
-      return { head: 'The home app is busy.', text: 'Showing the last read.', tip: 'the home app is busy' };
+      return { head: 'The home app is busy.', text: 'The switch waits for the next read.', tip: 'the home app is busy. The switch waits for the next read' };
     case 'failed':
       return { head: 'The home app sent an answer the wall could not read.', text: 'Nothing here can be changed until it does.', tip: 'the home app sent an answer the wall could not read' };
-    default:
+    case 'unreachable':
       return { head: 'The home app is not answering.', text: 'Nothing here can be changed until it does.', tip: 'the home app is not answering' };
+    default:
+      return { head: 'The home app could not be read.', text: 'Nothing here can be changed until it can.', tip: 'the home app could not be read' };
   }
 }
+
+/** Words that mean a read was tried and failed. Absent or configuration words are not here: the tile keeps its own specific tip. */
+const FAILED_READ_WORDS: readonly HomeWord[] = ['not-answering', 'busy', 'failed', 'unreachable', 'unknown'];
+export const isFailedRead = (word: HomeWord | null): boolean => word !== null && FAILED_READ_WORDS.includes(word);
 
 /** The tile's state in one place: whether a click does anything, and what its tip says. */
 export function tileState(studio: Studio, g: Group, canWrite: boolean): { disabled: boolean; dim: boolean; tip: string } {

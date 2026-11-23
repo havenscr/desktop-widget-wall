@@ -1,5 +1,5 @@
 import { NameButton, TileSwitch } from './GroupTile';
-import { awayWords, tileState } from './homeModel';
+import { awayWords, isFailedRead, tileState } from './homeModel';
 import { canChange, useHome } from './homeStore';
 import type { Group, HomeWord, Studio } from './home';
 
@@ -20,7 +20,7 @@ export function RoomTile({ studio, g, canWrite }: { studio: Studio; g: Group; ca
 export function AwayTile({ g, word }: { g: Group; word: HomeWord | null }) {
   return (
     <div className="st-tg st-room dis" data-group={g.id}>
-      <TileSwitch label={g.label} on={g.on} disabled tipText={`${g.label}: ${awayWords(word).tip}`} />
+      <TileSwitch label={g.label} on={g.on} dim disabled tipText={`${g.label}: ${awayWords(word).tip}`} />
       <NameButton id={g.id} label={g.label} />
     </div>
   );
@@ -33,7 +33,7 @@ export function RoomTiles() {
   const readDone = useHome((s) => s.readDone);
   if (!studio) return null;
   const may = canChange({ studio, readWord, readDone });
-  const away = readWord !== null;
+  const away = isFailedRead(readWord);
   return (
     <>
       {studio.groups.map((g) =>

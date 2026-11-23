@@ -155,9 +155,21 @@ export function buildSources(s: SourceSnapshot): SourceRow[] {
   // answer there is a fresh Box read even when no screen with the machine readout is open.
   {
     const a = s.agents;
-    const fresh = a.status === 'ready' && a.okAt !== null && !!a.summary?.system && !agentsStale(a) && now - a.okAt <= BOX_FRESH_MS;
-    if (fresh) rows.push({ id: 'box', name: 'Box', tone: 'ok', at: a.okAt, reason: 'Reading normally.' });
-    else rows.push(fromReport('box', 'Box', s.reports.box, now, BOX_FRESH_MS, 'The machine numbers'));
+    const id = 'box' as const;
+    const name = 'Box';
+    const fromReports = () => fromReport(id, name, s.reports.box, now, BOX_FRESH_MS, 'The machine numbers');
+    // The report wins only when it is newer than the last good helper answer.
+    const newerReport = (): SourceRow | null => {
+      const r = s.reports.box;
+      return r && r.okAt !== null && (a.okAt === null || r.okAt > a.okAt) ? fromReports() : null;
+    };
+    if (a.status === 'unconfigured') rows.push({ id, name, tone: 'down', at: null, reason: 'The agents helper is not set up in feeds.json.' });
+    else if (a.status === 'ready' && a.summary && !a.summary.system) rows.push(newerReport() ?? { id, name, tone: 'warn', at: a.okAt, reason: 'The box sent no machine numbers.' });
+    else if (a.status === 'ready' && a.summary?.system && a.okAt !== null) {
+      if (agentsStale(a) || now - a.okAt > BOX_FRESH_MS) {
+        rows.push(newerReport() ?? { id, name, tone: 'warn', at: a.okAt, reason: `Not read for ${ago(a.okAt, now).replace(' ago', '')}. Showing the last good read.` });
+      } else rows.push({ id, name, tone: 'ok', at: a.okAt, reason: 'Reading normally.' });
+    } else rows.push(fromReports());
   }
   return rows;
 }

@@ -257,8 +257,30 @@ it('box: a fresh helper summary with the box numbers is a fresh read, though the
   const r = row(base({ agents: agents({ summary, okAt: NOW, freshAt: NOW }), reports: { box: { okAt: NOW - min(36), last: 'ok' } } }), 'box');
   expect(r).toMatchObject({ tone: 'ok', at: NOW });
   // Without the numbers in the summary, the old read is the old read.
-  const old = row(base({ reports: { box: { okAt: NOW - min(36), last: 'ok' } } }), 'box');
+  const old = row(base({ agents: agents({ status: 'loading', summary: null, okAt: null, freshAt: null }), reports: { box: { okAt: NOW - min(36), last: 'ok' } } }), 'box');
   expect(old).toMatchObject({ tone: 'warn', at: NOW - min(36) });
+});
+
+it('box: agents not set up shows Box not set up, the same tone and words as the Agents row', () => {
+  const s = base({ agents: agents({ status: 'unconfigured', summary: null, okAt: null, freshAt: null }) });
+  expect(row(s, 'box')).toMatchObject({ tone: 'down', at: null, reason: row(s, 'agents').reason });
+});
+
+it('box: a ready helper with no machine numbers is a warn row with a plain reason', () => {
+  const r = row(base({ reports: { box: { okAt: NOW - min(36), last: 'ok' } } }), 'box');
+  expect(r).toMatchObject({ tone: 'warn', reason: 'The box sent no machine numbers.' });
+});
+
+it('box: a good summary gone stale or awaiting shows warn with the last good time, not not-read-yet', () => {
+  const summary = { stale: false, system: { cpuPct: 1, ramPct: 1, gpuPct: null, tempC: 50 } } as unknown as AgentsState['summary'];
+  for (const over of [{ awaiting: true }, { readFailed: true }]) {
+    const r = row(base({ agents: agents({ summary, okAt: NOW - min(5), freshAt: NOW - min(5), ...over }), reports: { box: undefined } }), 'box');
+    expect(r).toMatchObject({ tone: 'warn', at: NOW - min(5) });
+    expect(r.reason).not.toMatch(/not been read yet/);
+  }
+  // A newer report wins.
+  const newer = row(base({ agents: agents({ summary, okAt: NOW - min(5), awaiting: true }), reports: { box: { okAt: NOW - min(1), last: 'ok' } } }), 'box');
+  expect(newer).toMatchObject({ tone: 'ok', at: NOW - min(1) });
 });
 
 it('agents: after the helper stops answering, the row shows the time of the last good read, not never', () => {
