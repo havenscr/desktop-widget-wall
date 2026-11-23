@@ -4,6 +4,7 @@ import { createPortal } from 'react-dom';
 import { invoke } from '../bridge/tauri';
 import { hover } from '../tools/hover';
 import { tip } from '../ui/HoverTip';
+import { useListEdge } from '../ui/useListEdge';
 import { useBrief } from '../work/useBrief';
 import { fileLook } from './fileIcon';
 import { canPreview, PREVIEW_DELAY_MS, recentWhen, useRecentFiles, type RecentFile } from './recent';
@@ -64,12 +65,7 @@ export function RecentCard() {
     );
   };
 
-  const rows = useRef<HTMLUListElement | null>(null);
-  const [atEnd, setAtEnd] = useState(false);
-  const checkEnd = useCallback(() => {
-    const el = rows.current;
-    if (el) setAtEnd(el.scrollHeight - el.scrollTop - el.clientHeight < 4);
-  }, []);
+  const edge = useListEdge([items.length, status]);
   const [shown, setShown] = useState<Shown | null>(null);
   const cache = useRef(new Map<string, string>());
   const noneUntil = useRef(new Map<string, number>());
@@ -139,17 +135,15 @@ export function RecentCard() {
     }, delay);
   };
 
-  useEffect(checkEnd, [items.length, status, checkEnd]);
-
   let body;
   if (status === 'error') body = <p className="shelf-note">Recent files unavailable</p>;
   else if (status === 'ready' && items.length === 0) body = <p className="shelf-note">No recent files</p>;
   else if (status === 'loading') body = null;
   else {
     body = (
-      <ul ref={rows} className={`rf-rows sb-fade-bottom${atEnd ? ' end' : ''}`} onScroll={() => {
+      <ul ref={edge.ref} className={`rf-rows ${edge.className}`} onScroll={() => {
         hide();
-        checkEnd();
+        edge.onScroll();
       }}>
         {items.map((f) => {
           const { Icon, color } = fileLook(f.name);

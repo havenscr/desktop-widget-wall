@@ -18,6 +18,7 @@ import {
 import { useEffect, useRef, useState, type MouseEvent } from 'react';
 import { invoke } from '../bridge/tauri';
 import { hover } from '../tools/hover';
+import { useListEdge } from '../ui/useListEdge';
 import { useBrief } from '../work/useBrief';
 import { CapMenu, type CapMenuItem } from './CapMenu';
 import {
@@ -161,8 +162,6 @@ export function CapturesCard() {
   const funnelWasOpen = useRef(false);
   const [brief, show] = useBrief();
   const card = useRef<HTMLElement | null>(null);
-  const list = useRef<HTMLDivElement | null>(null);
-  const [atEnd, setAtEnd] = useState(false);
 
   const kept = items.filter((c) => !(c.id in binned));
   const shown = arrange(kept, sort, filter);
@@ -187,11 +186,7 @@ export function CapturesCard() {
   }, [items]);
   useEffect(() => trimThumbs(shown.map((c) => c.id)), [items, sort, filter]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const checkEnd = () => {
-    const el = list.current;
-    if (el) setAtEnd(el.scrollHeight - el.scrollTop - el.clientHeight < 4);
-  };
-  useEffect(checkEnd, [shown.length, filter, sort]);
+  const edge = useListEdge([shown.length, filter, sort]);
 
   const act = (c: Capture, action: CaptureAction) => {
     invoke('wall2_captures_act', { id: c.id, action }).then(
@@ -292,7 +287,7 @@ export function CapturesCard() {
             </div>
           ) : null}
         </div>
-        <div ref={list} className={`cap-rows sb-fade-bottom${atEnd ? ' end' : ''}`} role="group" aria-label="Captures" onScroll={checkEnd}>
+        <div ref={edge.ref} className={`cap-rows ${edge.className}`} role="group" aria-label="Captures" onScroll={edge.onScroll}>
           {shown.map((c) => (
             <Row key={c.id} c={c} selected={c.id === big.id} onPick={() => setPicked(c.id)} onMenu={openCaptureMenu(c)} />
           ))}

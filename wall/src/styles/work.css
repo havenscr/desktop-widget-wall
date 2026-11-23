@@ -1751,7 +1751,7 @@
      the padding lets the last row scroll clear of the fade. */
   padding-bottom: 28px;
 }
-.pk-list.sb-fade-bottom {
+.pk-list.sb-fade-bottom.over:not(.end) {
   --sb-fade: 28px;
 }
 .pk-group {

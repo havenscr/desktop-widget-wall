@@ -1,5 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
 import { tip } from '../ui/HoverTip';
+import { useListEdge } from '../ui/useListEdge';
 import { KeyIcon } from './keyIcons';
 import { MAX_PINS, searchLibrary, type LibGroup, type LibKey } from './libraryModel';
 import { pickerBottomY, stageTopOf, type KeyInfo } from './keysModel';
@@ -42,6 +43,7 @@ export function KeyPicker({
   const box = useRef<HTMLDivElement | null>(null);
   const search = useRef<HTMLInputElement | null>(null);
   const groups = useMemo(() => searchLibrary(lib, query), [lib, query]);
+  const edge = useListEdge([groups, filePins.length]);
   useEffect(() => search.current?.focus(), []);
   useEffect(() => {
     // A press outside closes the picker and does nothing else: the click that ends it is
@@ -128,7 +130,7 @@ export function KeyPicker({
           Close
         </button>
       </div>
-      <div className="pk-list sb-fade-bottom">
+      <div ref={edge.ref} className={`pk-list ${edge.className}`} onScroll={edge.onScroll}>
         {filePins.length > 0 && query.trim() === '' && (
           <div className="pk-group">
             <div className="pk-gh">Your keys</div>

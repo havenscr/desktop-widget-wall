@@ -1,11 +1,35 @@
 /* The wall's one scrollbar, for every list that scrolls. 6 px wide, rounded, a cyan thumb on a faint track, no arrows
-   and no end caps. Hidden at rest; shown while the pointer is over the list, while it scrolls (ui/scrollbar.ts sets
-   data-sb-live) and while keyboard focus is inside; it fades out 1 s after (a 0.3 s fade). The bar is 20 px wide: its
-   left 14 px are a transparent border, a gap kept even while the bar is hidden, so nothing shifts when it appears. */
+   and no end caps. Hidden at rest; shown while the pointer is over the list (the innermost one only) and while it
+   scrolls (ui/scrollbar.ts sets data-sb-hover and data-sb-live). Keyboard scrolling is a scroll, so it shows the bar too.
+   It holds 1 s after (0.1 s of that is the script's settle, 0.9 s the delay below), then fades over 0.3 s.
+
+   Chromium runs no CSS transition on the scrollbar pseudo-elements themselves, so the fade lives on the scrolling
+   element: a registered number, --sb-a, is transitioned there, and the track and thumb (which inherit it) read their
+   alpha from it. The vertical bar is 20 px wide: a 14 px transparent border (a gap kept while the bar is hidden, so
+   nothing shifts when it shows) and the 6 px bar. A horizontal bar is 12 px tall, a 6 px gap and the 6 px bar. */
+@property --sb-a {
+  syntax: '<number>';
+  inherits: true;
+  initial-value: 0;
+}
+:where(*) {
+  --sb-a: 0;
+  transition: --sb-a 0.3s ease 0.9s;
+}
+[data-sb-live],
+[data-sb-hover] {
+  --sb-a: 1;
+  transition-delay: 0s;
+  transition-duration: 0.15s;
+}
 ::-webkit-scrollbar {
-  width: 20px;
-  height: 20px;
   background: transparent;
+}
+::-webkit-scrollbar:vertical {
+  width: 20px;
+}
+::-webkit-scrollbar:horizontal {
+  height: 12px;
 }
 ::-webkit-scrollbar-button {
   display: none;
@@ -16,43 +40,28 @@
   background: transparent;
 }
 ::-webkit-scrollbar-track {
-  background-color: rgba(255, 255, 255, 0);
+  background-color: rgba(255, 255, 255, calc(var(--sb-a) * 0.07));
   background-clip: padding-box;
   border-left: 14px solid transparent;
   border-radius: 17px 3px 3px 17px / 3px 3px 3px 3px;
-  transition: background-color 0.3s ease 1s;
 }
 ::-webkit-scrollbar-thumb {
-  background-color: rgba(53, 230, 234, 0);
+  background-color: rgba(53, 230, 234, calc(var(--sb-a) * 0.6));
   background-clip: padding-box;
   border-left: 14px solid transparent;
   border-radius: 17px 3px 3px 17px / 3px 3px 3px 3px;
-  transition: background-color 0.3s ease 1s;
 }
 ::-webkit-scrollbar-track:horizontal,
 ::-webkit-scrollbar-thumb:horizontal {
   border-left: 0;
-  border-top: 14px solid transparent;
-  border-radius: 3px 3px 3px 3px / 17px 17px 3px 3px;
-}
-:hover::-webkit-scrollbar-track,
-:focus-within::-webkit-scrollbar-track,
-[data-sb-live]::-webkit-scrollbar-track {
-  background-color: rgba(255, 255, 255, 0.07);
-  transition-delay: 0s;
-  transition-duration: 0.15s;
-}
-:hover::-webkit-scrollbar-thumb,
-:focus-within::-webkit-scrollbar-thumb,
-[data-sb-live]::-webkit-scrollbar-thumb {
-  background-color: rgba(53, 230, 234, 0.6);
-  transition-delay: 0s;
-  transition-duration: 0.15s;
+  border-top: 6px solid transparent;
+  border-radius: 3px;
 }
 
-/* A fade along the foot of a list while more rows wait below (add `end` once scrolled to the end). The second mask layer
-   keeps the scrollbar's own 20 px solid, so only the rows fade and the bar never does. */
-.sb-fade-bottom {
+/* A fade along the foot of a list while more rows wait below. The hook (ui/useListEdge.ts) adds `over` while the list
+   overflows and `end` once it is scrolled to its foot, so a list that fits, or sits at its end, is not masked. The second
+   mask layer keeps the scrollbar's own 20 px solid, so only the rows fade and the bar never does. */
+.sb-fade-bottom.over:not(.end) {
   --sb-fade: 64px;
   -webkit-mask-image: linear-gradient(#000 calc(100% - var(--sb-fade)), transparent), linear-gradient(#000, #000);
   mask-image: linear-gradient(#000 calc(100% - var(--sb-fade)), transparent), linear-gradient(#000, #000);
@@ -62,8 +71,4 @@
   mask-position: 0 0, 100% 0;
   -webkit-mask-repeat: no-repeat;
   mask-repeat: no-repeat;
-}
-.sb-fade-bottom.end {
-  -webkit-mask-image: none;
-  mask-image: none;
 }
