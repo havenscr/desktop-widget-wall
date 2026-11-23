@@ -607,3 +607,185 @@
 .yt-seeall:hover {
   color: var(--tx);
 }
+
+/* A search's rows: a 64 by 36 picture where the number was, a views column before the length, 50 px tall (as drawn). */
+.yt-list.rich .yt-row,
+.yt-list.rich .yt-cells {
+  height: 50px;
+}
+.yt-list.rich .yt-cells {
+  grid-template-columns: 64px minmax(0, 1.4fr) minmax(0, 1fr) 52px 56px;
+}
+.yt-list.rich .yt-add {
+  top: 10px;
+}
+.yt-thn {
+  position: relative;
+  justify-content: center;
+}
+.yt-rowthumb {
+  width: 64px;
+  height: 36px;
+  border-radius: 6px;
+}
+.yt-rowthumb svg {
+  width: 20px;
+  height: 20px;
+}
+/* The play mark and the moving bars sit over the picture, on a dark disc so they read on any picture. */
+.yt-thn .sp-hov,
+.yt-thbars {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: 28px;
+  height: 28px;
+  box-sizing: border-box;
+  display: none;
+  place-items: center;
+  border-radius: 50%;
+  background: rgba(7, 5, 26, 0.72);
+}
+.yt-thn .sp-hov {
+  padding: 4px;
+}
+.yt-thbars {
+  display: grid;
+}
+.yt-play:hover .yt-thn .sp-hov,
+.yt-play:focus-visible .yt-thn .sp-hov {
+  display: block;
+}
+.yt-views {
+  text-align: right;
+  font: 400 16px/1 var(--body);
+  color: var(--dim);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* The details card of a search result: inside the music card, never over the pointer. */
+.yt-dcard {
+  position: absolute;
+  z-index: 6;
+  box-sizing: border-box;
+  padding: 12px;
+  border-radius: 14px;
+  background: rgba(10, 7, 30, 0.99);
+  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.6), inset 0 0 0 1px rgba(53, 230, 234, 0.55);
+  pointer-events: none;
+  color: var(--tx);
+}
+.yt-dcard-pic {
+  display: block;
+  width: 100%;
+  height: 150px;
+  border-radius: 10px;
+}
+.yt-dcard-title {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  margin-top: 10px;
+  font: 600 18px/24px var(--body);
+}
+.yt-dcard-facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  margin-top: 8px;
+  font: 400 16px/20px var(--body);
+  color: var(--tx);
+}
+.yt-dcard-facts span {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+}
+.yt-dcard-desc {
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  margin: 8px 0 0;
+  font: 400 16px/22px var(--body);
+  color: var(--dim);
+}
+
+/* The sort button of a search's chip row (right of the chips) and its menu. The label never touches the edge: 12 px inside. */
+.mu-chipgroup {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.mu-sortwrap {
+  position: relative;
+  flex: none;
+}
+.mu-sort {
+  height: 40px;
+  min-width: 40px;
+  padding: 0 12px;
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  color: var(--dim);
+  font: 600 18px/1 var(--body);
+  white-space: nowrap;
+}
+.mu-sort:hover {
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--tx);
+}
+.mu-sort.on {
+  color: #fff;
+  background: rgba(53, 230, 234, 0.18);
+  border-color: rgba(53, 230, 234, 0.6);
+}
+.mu-sort:focus-visible,
+.mu-sortmenu button:focus-visible {
+  outline: 3px solid var(--cyan);
+  outline-offset: 2px;
+}
+.mu-sortmenu {
+  position: absolute;
+  z-index: 7;
+  left: 0;
+  top: 46px;
+  width: 260px;
+  box-sizing: border-box;
+  padding: 6px;
+  border-radius: 14px;
+  background: rgba(10, 7, 30, 0.99);
+  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.6), inset 0 0 0 1px rgba(53, 230, 234, 0.55);
+}
+.mu-sortmenu button {
+  width: 100%;
+  height: 40px;
+  box-sizing: border-box;
+  padding: 0 12px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border-radius: 9px;
+  text-align: left;
+  font: 500 18px/1 var(--body);
+  color: var(--tx);
+}
+.mu-sortmenu button span {
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+}
+.mu-sortmenu button:hover,
+.mu-sortmenu button.hot {
+  background: rgba(53, 230, 234, 0.14);
+}

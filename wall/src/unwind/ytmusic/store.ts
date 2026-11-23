@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { youtube, type YtPage, type YtPlaylist, type YtPlaylistSearch, type YtVideo } from '../../music/youtube';
-import { MAX_PAGES, mergePage, searchWords, ytProblem, type YtProblem } from './model';
+import { DEFAULT_SORT, MAX_PAGES, mergePage, searchWords, ytProblem, type YtProblem, type YtSort } from './model';
 import { readYoutubeStatus, useYoutubeStatus } from './status';
 
 /**
@@ -51,10 +51,12 @@ interface LibraryState {
   found: Loaded<YtVideo> | null;
   searchQuota: boolean;
   chip: YtChip;
+  /** How the answer on show is ordered; Best match again with every new search. Ordering never calls YouTube. */
+  sort: YtSort;
   playlistHits: PlaylistHits | null;
 }
 
-const initial = (): LibraryState => ({ tab: 'playlists', playlists: blank(), liked: blank(), opened: null, songs: blank(), pendingStart: null, query: '', found: null, searchQuota: false, chip: 'all', playlistHits: null });
+const initial = (): LibraryState => ({ tab: 'playlists', playlists: blank(), liked: blank(), opened: null, songs: blank(), pendingStart: null, query: '', found: null, searchQuota: false, chip: 'all', sort: DEFAULT_SORT, playlistHits: null });
 
 export const useYtLibrary = create<LibraryState>(() => initial());
 
@@ -213,6 +215,8 @@ export async function runSearch(text: string): Promise<void> {
   const mine = epoch;
   const seq = ++searchSeq;
   const key = wordsKey(words);
+  // Every search starts on Best match again.
+  useYtLibrary.setState({ sort: DEFAULT_SORT });
   // New words start on All with no playlists asked for; the same words again keep the chip and what it found.
   if (wordsKey(useYtLibrary.getState().query) !== key) useYtLibrary.setState({ chip: 'all', playlistHits: null });
   const seen = memo.get(key);
@@ -257,7 +261,12 @@ export async function runSearch(text: string): Promise<void> {
 }
 
 export function clearSearch(): void {
-  useYtLibrary.setState({ query: '', found: null, chip: 'all', playlistHits: null });
+  useYtLibrary.setState({ query: '', found: null, chip: 'all', sort: DEFAULT_SORT, playlistHits: null });
+}
+
+/** Order the answer on show; the results already loaded are only reordered, nothing is asked of YouTube. */
+export function pickSort(sort: YtSort): void {
+  useYtLibrary.setState({ sort });
 }
 
 /** Answers to playlist searches already read, by lower-cased words, and the calls in flight: one call per words. */

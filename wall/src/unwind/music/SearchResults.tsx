@@ -21,7 +21,7 @@ export function splitHits(items: readonly SpotifyItem[]) {
 }
 
 /** The chip row of a search: square chips with counts (a radio group), and "Library" to leave the search. */
-export function SearchChips({ value, counts, kinds, icons, onPick, onLeave }: { value: SearchChip; counts: Partial<Record<Exclude<SearchChip, 'all'>, number>> | null; kinds: readonly Exclude<SearchChip, 'all'>[]; icons: Partial<Record<Exclude<SearchChip, 'all'>, ReactNode>>; onPick: (c: SearchChip) => void; onLeave: () => void }) {
+export function SearchChips({ value, counts, kinds, icons, onPick, onLeave, extra }: { extra?: ReactNode; value: SearchChip; counts: Partial<Record<Exclude<SearchChip, 'all'>, number>> | null; kinds: readonly Exclude<SearchChip, 'all'>[]; icons: Partial<Record<Exclude<SearchChip, 'all'>, ReactNode>>; onPick: (c: SearchChip) => void; onLeave: () => void }) {
   const words: Record<Exclude<SearchChip, 'all'>, string> = { playlists: 'Playlists', albums: 'Albums', songs: 'Songs' };
   const key = (e: ReactKeyboardEvent<HTMLDivElement>) => {
     if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
@@ -34,8 +34,7 @@ export function SearchChips({ value, counts, kinds, icons, onPick, onLeave }: { 
     to.click();
   };
   const all: readonly SearchChip[] = ['all', ...kinds];
-  return (
-    <div className="mu-chips">
+  const list = (
       <div className="mu-chiplist" role="radiogroup" aria-label="Show" onKeyDown={key}>
         {all.map((c) => (
           <button key={c} type="button" role="radio" aria-checked={value === c} tabIndex={value === c ? 0 : -1} className={`mu-chip${value === c ? ' on' : ''}`} onClick={() => onPick(c)}>
@@ -45,6 +44,11 @@ export function SearchChips({ value, counts, kinds, icons, onPick, onLeave }: { 
           </button>
         ))}
       </div>
+  );
+  return (
+    <div className="mu-chips">
+      {/* An extra control (a sort button) sits right of the chips, outside the radio group. */}
+      {extra ? <div className="mu-chipgroup">{list}{extra}</div> : list}
       <button type="button" className="mu-leave" onClick={onLeave}>
         <IconArrowLeft size={18} stroke={1.8} aria-hidden="true" />
         Library

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { IconArrowsShuffle, IconHeart, IconListDetails, IconListNumbers, IconMusic, IconPlayerPlayFilled, IconPlaylist, IconSearch, IconSparkles } from '@tabler/icons-react';
 import type { YtPlaylist, YtVideo } from '../../music/youtube';
 import { tip } from '../../ui/HoverTip';
@@ -7,13 +7,14 @@ import { LibraryRow, type Place } from '../music/LibraryRow';
 import { SearchChips, type SearchChip } from '../music/SearchResults';
 import { libraryMenuOpen } from '../watch/libraryMenuModel';
 import { libraryHandlers } from '../watch/libraryOpen';
-import { MAX_PAGES, PAGE_SIZE, SEARCH_TIP, SPENT_LINE, devSearchKnob, nearEnd, searchSpent, searchesLine, videosLine } from './model';
+import { MAX_PAGES, PAGE_SIZE, SEARCH_TIP, SPENT_LINE, devSearchKnob, nearEnd, searchSpent, searchesLine, sortVideos, videosLine } from './model';
 import { ForYou } from './ForYou';
 import { loadForYou } from './forYouStore';
 import { jump, playFrom, upcoming, useYtQueue } from './queue';
 import { useYoutubeStatus } from './status';
 import { YtSongs } from './YtSongs';
-import { libraryMounted, libraryVisible, loadList, loadPlaylistHits, openPlaylist, pickChip, retryList, runSearch, searchesBack, setTab, startReads, wordsKey, useYtLibrary, type Loaded, type YtChip, type YtTab } from './store';
+import { YtSortButton } from './YtSort';
+import { libraryMounted, libraryVisible, loadList, loadPlaylistHits, openPlaylist, pickChip, pickSort, retryList, runSearch, searchesBack, setTab, startReads, wordsKey, useYtLibrary, type Loaded, type YtChip, type YtTab } from './store';
 import { RowSkeletons, TileSkeletons, YtEmpty, YtRows, YtState, YtThumb, gridKey } from './YtParts';
 
 const PLACES: readonly Place<YtTab>[] = [
@@ -93,6 +94,7 @@ export function YtBrowse({ tall }: { tall: boolean }) {
   const query = useYtLibrary((s) => s.query);
   const found = useYtLibrary((s) => s.found);
   const chip = useYtLibrary((s) => s.chip);
+  const sort = useYtLibrary((s) => s.sort);
   const plHits = useYtLibrary((s) => s.playlistHits);
   const quotaSaid = useYtLibrary((s) => s.searchQuota);
   const left = useYoutubeStatus((s) => s.status?.searchesLeft ?? null);
@@ -121,6 +123,8 @@ export function YtBrowse({ tall }: { tall: boolean }) {
   useEffect(() => {
     if (typeof left === 'number' && left > 0) searchesBack();
   }, [left]);
+  // The answer in the order picked: only reordered, the answer itself and the search are untouched.
+  const ordered = useMemo(() => sortVideos(found?.items ?? [], sort), [found?.items, sort]);
   const spent = searchSpent(left, quotaSaid);
   const line = searchesLine(left);
 
@@ -148,7 +152,7 @@ export function YtBrowse({ tall }: { tall: boolean }) {
   );
   const plWords = plHits && plHits.key === wordsKey(query) ? plHits : null;
   const row = searching ? (
-    <SearchChips value={chip} counts={{ songs: found?.loaded && !found.problem ? found.items.length : undefined, playlists: plWords && !plWords.loading && !plWords.problem ? plWords.items.length : undefined }} kinds={['playlists', 'songs']} icons={CHIP_ICONS} onPick={(c: SearchChip) => pickChip(c as YtChip)} onLeave={() => setTab(tab)} />
+    <SearchChips value={chip} counts={{ songs: found?.loaded && !found.problem ? found.items.length : undefined, playlists: plWords && !plWords.loading && !plWords.problem ? plWords.items.length : undefined }} kinds={['playlists', 'songs']} icons={CHIP_ICONS} extra={chip === 'playlists' ? null : <YtSortButton value={sort} onPick={pickSort} />} onPick={(c: SearchChip) => pickChip(c as YtChip)} onLeave={() => setTab(tab)} />
   ) : (
     <LibraryRow label="Your YouTube library" places={PLACES} value={tab} onPick={setTab} />
   );
@@ -181,7 +185,7 @@ export function YtBrowse({ tall }: { tall: boolean }) {
           ) : found.items.length === 0 ? (
             <YtEmpty text="Nothing found. Try other words." />
           ) : (
-            <YtRows items={found.items} list={{ list: 'found', query }} onPlay={(i) => playFrom(found.items, i, { list: 'found', query })} />
+            <YtRows rich items={ordered} list={{ list: 'found', query }} onPlay={(i) => playFrom(ordered, i, { list: 'found', query })} />
           )}
         </div>
       </div>

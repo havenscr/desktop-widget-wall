@@ -20,8 +20,9 @@ ships no client of its own and receives nothing from yours.
 - The title, the channel's name and the length of a video you add to a playlist you made on the wall, and of the videos in such a playlist that still lack them when you open it to edit. Only the video's id is sent with your YouTube sign-in.
 - The title, the channel's name and the length of videos the wall itself played in the last 30 days (the For you tab's "Back to" shelf). The wall keeps only each video's id and the time it started, at most 200, in one small file on this PC; signing out of YouTube deletes it (or empties it if Windows will not let it be deleted). A video played in the YouTube Music app or a browser is never recorded.
 
-For each video the app reads the title, the channel's name, the length, and the flags that say
-whether the video can play in an embedded player. It does not read descriptions or comments.
+For each video the app reads the title, the channel's name, the length, the view and like counts, the upload date,
+the first part of the description (shown only in the hover card of a search result; held in memory, never written to disk), and the flags that say
+whether the video can play in an embedded player. It does not read comments.
 
 ## What it does with it
 
