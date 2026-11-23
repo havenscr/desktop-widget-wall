@@ -755,6 +755,7 @@
   min-width: 0;
 }
 .tasks-hd {
+  position: relative;
   margin-bottom: 6px;
   /* The height the heading has with its right-hand text, so the block is the same with none. */
   min-height: 24.7px;
@@ -765,6 +766,80 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+.lp {
+  min-width: 0;
+  display: flex;
+}
+.lp-btn {
+  min-width: 0;
+  max-width: 100%;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 6px 0 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  cursor: pointer;
+}
+.lp-btn:focus-visible {
+  outline: 3px solid var(--cyan);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+.lp-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lp-btn svg {
+  flex: none;
+}
+.lp-menu {
+  position: absolute;
+  z-index: 45;
+  top: calc(100% + 4px);
+  left: 0;
+  width: min(100%, 420px);
+  max-height: 340px;
+  overflow-y: auto;
+  box-sizing: border-box;
+  padding: 6px;
+  border: 1px solid var(--cyan);
+  border-radius: 14px;
+  background: rgba(14, 12, 34, 0.96);
+  backdrop-filter: blur(14px);
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.55);
+}
+.lp-menu > button {
+  width: 100%;
+  height: 44px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 24px;
+  align-items: center;
+  gap: 10px;
+  padding: 0 10px;
+  border-radius: 9px;
+  color: var(--tx);
+  font: 600 18px/1 var(--body);
+  text-align: left;
+  cursor: pointer;
+}
+.lp-menu > button > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lp-menu > button svg {
+  color: var(--cyan);
+}
+.lp-menu > button:hover,
+.lp-menu > button:focus-visible {
+  background: rgba(53, 230, 234, 0.14);
+  outline: none;
 }
 .tasks-hd-r {
   flex: none;

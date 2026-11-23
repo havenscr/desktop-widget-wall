@@ -882,3 +882,15 @@ it('Next up mode shows no Later today switch, even with no rows at all', async (
   expect(screen.getByText('Nothing due today')).toBeTruthy();
   expect(screen.queryByRole('switch')).toBeNull();
 });
+
+it('the heading is a list button only when lists are given, and picking calls back', async () => {
+  const picked: string[] = [];
+  const r = render(<TaskCard query={{ list: 'A' }} title="A" lists={{ names: ['A', 'B'], onPick: (n) => picked.push(n) }} />);
+  await flush();
+  fireEvent.click(screen.getByRole('button', { name: 'List: A' }));
+  expect(screen.getByRole('option', { name: 'A' }).getAttribute('aria-selected')).toBe('true');
+  fireEvent.click(screen.getByRole('option', { name: 'B' }));
+  expect(picked).toEqual(['B']);
+  r.rerender(<TaskCard query={{ list: 'A' }} title="A" />);
+  expect(screen.queryByRole('button', { name: 'List: A' })).toBeNull();
+});
