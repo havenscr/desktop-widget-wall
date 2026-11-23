@@ -893,6 +893,10 @@ try {
       const st = document.createElement('style'); st.textContent = extra.join(' '); document.head.appendChild(st);
       document.querySelector(click.slice(6))?.classList.add('fit-hover');
     }
+    else if (click.startsWith('rest:')) {
+      // The pointer comes to rest on the element: React hears a pointerover and starts the rows' rest timers (the Shelf's hover cards).
+      document.querySelector(click.slice(5))?.dispatchEvent(new PointerEvent('pointerover', { bubbles: true }));
+    }
     else if (click.startsWith('settle:')) {
       // Headless --dump-dom draws few frames, so a slide-in or a size transition may still be on its way when the boxes are read.
       // The class goes on an element React never rewrites (the root), and every animation and transition under it ends at once.

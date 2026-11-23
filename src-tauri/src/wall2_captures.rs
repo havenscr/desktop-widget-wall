@@ -760,7 +760,7 @@ fn open_and_place(app: &tauri::AppHandle, path: String) -> Result<(), String> {
 }
 
 /// The file's path text on the clipboard.
-fn copy_text(text: &str) -> Result<(), String> {
+pub(crate) fn copy_text(text: &str) -> Result<(), String> {
     #[cfg(windows)]
     {
         place::set_clipboard_text(text).map_err(|_| FAILED.to_string())
