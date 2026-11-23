@@ -1,4 +1,4 @@
-import { IconAdjustmentsHorizontal, IconAlertTriangle, IconChevronUp, IconLoader2, IconPalette, IconWaveSine } from '@tabler/icons-react';
+import { IconAdjustmentsHorizontal, IconAlertTriangle, IconLoader2, IconPalette, IconWaveSine } from '@tabler/icons-react';
 import { useEffect, useRef, useState, type CSSProperties } from 'react';
 import { readCoverStrips } from '../music/coverTint';
 import { useNowPlayingStore } from '../music/store';
@@ -7,6 +7,7 @@ import { tip } from '../ui/HoverTip';
 import { CUSTOM_MAX, CUSTOM_MIN, PALETTES, SWATCHES, type PaletteEntry } from './lightsync/model';
 import { attachPoll, isOn, useLightSync } from './lightsync/store';
 import { SYNC_WORD, syncChipModel, syncTip, type SyncChipInput } from './moodRow';
+import { failText } from './lightsync/model';
 
 const gradient = (c: readonly string[]): string => (c.length === 0 ? 'transparent' : c.length === 1 ? c[0] : `linear-gradient(135deg, ${c.join(', ')})`);
 
@@ -38,7 +39,7 @@ export function SyncTip() {
   );
 }
 
-/** The Music sync chip: the name starts and stops sync; the dots open the palette strip. Fixed width (`SYNC_WIDTH`). */
+/** The Music sync chip: the chip opens the palette strip; the switch at its right end starts and stops sync. Fixed width (`SYNC_WIDTH`). */
 export function SyncChip({ blocked }: { blocked: boolean }) {
   const input = useSyncInput();
   const open = useLightSync((s) => s.stripOpen);
@@ -51,35 +52,55 @@ export function SyncChip({ blocked }: { blocked: boolean }) {
   }, []);
   const m = syncChipModel(input);
   const entry = PALETTES.find((p) => p.id === palette) ?? PALETTES[0];
-  const dots = entry.swatch.slice(0, 3);
+  // The failure is also said in words: the switch's description carries it for a screen reader.
+  const failNote = m.failed && input.failure !== null ? `Music sync failed: ${failText(input.failure)} Press the switch to try again.` : null;
   return (
-    <div className={`u-mood u-sync${m.lit ? ' lit' : ''}${m.failed ? ' failed' : ''}${open ? ' open' : ''}`} data-mood="sync" data-state={m.busy ? 'starting' : m.failed ? 'failed' : m.lit ? 'on' : 'off'}>
+    // A click anywhere on the chip opens the menu (the label button's Enter reaches here as a click); the switch alone turns sync on or off.
+    <div
+      className={`u-mood u-sync${m.lit ? ' lit' : ''}${m.failed ? ' failed' : ''}${open ? ' open' : ''}`}
+      data-mood="sync"
+      data-state={m.busy ? 'starting' : m.failed ? 'failed' : m.lit ? 'on' : 'off'}
+      onClick={() => useLightSync.getState().openStrip(!open)}
+    >
       <button
         type="button"
         className="u-sync-main"
         data-part="sync-main"
-        aria-pressed={m.lit}
-        aria-disabled={blocked ? 'true' : undefined}
-        onClick={() => void useLightSync.getState().toggle()}
-        {...tip(() => <SyncTip />)}
+        aria-expanded={open}
+        aria-label={`${SYNC_WORD}: colours and settings (${entry.name})`}
+        {...tip('Opens Music sync: colours and settings')}
       >
         {m.failed ? <IconAlertTriangle className="u-mood-ico warn" size={18} stroke={2} aria-hidden="true" /> : m.busy ? <IconLoader2 className="u-mood-ico u-spin" size={18} stroke={2} aria-hidden="true" /> : <IconWaveSine size={18} stroke={2} aria-hidden="true" />}
         <span className="u-mood-name">{SYNC_WORD}</span>
       </button>
       <button
         type="button"
-        className="u-sync-dots"
-        data-part="sync-dots"
-        aria-label={`Colours: ${entry.name}`}
-        aria-expanded={open}
-        onClick={() => useLightSync.getState().openStrip(!open)}
-        {...tip(() => <span className="u-mood-tip"><span>{`Colours: ${entry.name}`}</span><span>Click to choose how the lights are coloured.</span></span>)}
-      >
-        {dots.map((c, i) => (
-          <span key={i} className="u-sync-dot" aria-hidden="true" style={{ background: c } as CSSProperties} />
+        role="switch"
+        className="u-sync-switch"
+        data-part="sync-switch"
+        aria-checked={m.lit}
+        aria-label="Music sync on or off"
+        aria-disabled={blocked ? 'true' : undefined}
+        aria-describedby={failNote ? 'u-sync-fail' : undefined}
+        onClick={(e) => {
+          e.stopPropagation();
+          if (blocked) return;
+          void useLightSync.getState().toggle();
+        }}
+        {...tip(() => (
+          <span className="u-mood-tip">
+            <span>Turns Music sync on or off</span>
+            <SyncTip />
+          </span>
         ))}
-        <IconChevronUp className="u-sync-chev" size={16} stroke={2} aria-hidden="true" />
+      >
+        <span className="u-sync-knob" aria-hidden="true" />
       </button>
+      {failNote && (
+        <span id="u-sync-fail" className="u-sr-only" data-part="sync-fail">
+          {failNote}
+        </span>
+      )}
     </div>
   );
 }
@@ -159,7 +180,7 @@ export function CustomPicker() {
     };
     const onDown = (e: PointerEvent) => {
       const t = e.target as Element | null;
-      if (t && !ref.current?.contains(t) && !t.closest?.('[data-palette="custom"], [data-part="sync-dots"]')) useLightSync.getState().openCustom(false);
+      if (t && !ref.current?.contains(t) && !t.closest?.('[data-palette="custom"], [data-part="sync-main"]')) useLightSync.getState().openCustom(false);
     };
     window.addEventListener('keydown', onKey);
     window.addEventListener('pointerdown', onDown);

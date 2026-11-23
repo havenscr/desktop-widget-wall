@@ -3968,16 +3968,17 @@ button.sp-qrow:hover {
   outline: 3px solid var(--cyan);
   outline-offset: 2px;
 }
-/* Music sync: the first chip, a fixed 208 px (`SYNC_WIDTH`): the name starts and stops sync, the dots open the palette strip. Lit magenta while on. */
+/* Music sync: the first chip, a fixed 208 px (`SYNC_WIDTH`): a click anywhere opens the palette strip; the switch at the right end starts and stops sync. Lit magenta while on. Label and switch keep 10 px or more from the edge and from each other. */
 .u-mood.u-sync {
   box-sizing: border-box;
   width: 208px;
   min-width: 208px;
-  padding: 0;
-  gap: 0;
+  padding: 0 10px 0 14px;
+  gap: 12px;
   justify-content: flex-start;
   overflow: hidden;
   color: var(--tx);
+  cursor: pointer;
 }
 .u-sync button {
   all: unset;
@@ -3993,7 +3994,6 @@ button.sp-qrow:hover {
   flex: 1 1 auto;
   min-width: 0;
   gap: 8px;
-  padding: 0 8px 0 12px;
 }
 .u-sync-main svg {
   flex: none;
@@ -4002,38 +4002,59 @@ button.sp-qrow:hover {
 .u-sync-main .u-mood-ico {
   width: 18px;
 }
-.u-sync-dots {
+.u-sync .u-sync-switch {
   flex: none;
-  gap: 4px;
-  padding: 0 8px;
-  border-left: 1px solid var(--line);
+  position: relative;
+  width: 40px;
+  height: 22px;
+  border-radius: 11px;
+  background: rgba(255, 255, 255, 0.14);
+  transition: background 160ms ease;
 }
-.u-sync-dot {
-  width: 10px;
-  height: 10px;
+.u-sync-knob {
+  position: absolute;
+  left: 3px;
+  top: 3px;
+  width: 16px;
+  height: 16px;
   border-radius: 50%;
+  background: var(--dim);
+  transition: left 160ms ease, background 160ms ease;
 }
-.u-sync-chev {
-  flex: none;
-  color: var(--dim);
-  transition: transform 200ms ease;
-  transform: rotate(180deg);
+.u-sync .u-sync-switch[aria-checked='true'] {
+  background: var(--mag);
 }
-.u-sync.open .u-sync-chev {
-  transform: none;
+.u-sync .u-sync-switch[aria-checked='true'] .u-sync-knob {
+  left: 21px;
+  background: #fff;
 }
-.u-sync button:focus-visible {
+.u-sync .u-sync-switch[aria-disabled='true'] {
+  opacity: 0.6;
+  cursor: default;
+}
+.u-sync-main:focus-visible {
+  /* Inside the chip (it clips): a ring drawn outward would be cut top and bottom. */
   outline: 3px solid var(--cyan);
   outline-offset: -3px;
   border-radius: 17px;
+}
+.u-sync .u-sync-switch:focus-visible {
+  outline: 3px solid var(--cyan);
+  outline-offset: 2px;
+  border-radius: 11px;
+}
+.u-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
 }
 .u-mood.u-sync.lit {
   background: linear-gradient(rgba(255, 61, 154, 0.14), rgba(255, 61, 154, 0.14)), rgba(10, 7, 28, 0.9);
   border-color: var(--mag);
   color: var(--tx);
-}
-.u-mood.u-sync.lit .u-sync-dots {
-  border-left-color: rgba(255, 61, 154, 0.5);
 }
 .u-mood.u-sync.failed {
   border-color: var(--amber);
@@ -4049,7 +4070,7 @@ button.sp-qrow:hover {
   right: 0;
   bottom: calc(100% + 10px);
   display: flex;
-  gap: 4px;
+  gap: 3px;
   padding: 6px;
   border-radius: 25px;
   border: 1px solid var(--line);
@@ -4063,9 +4084,9 @@ button.sp-qrow:hover {
   pointer-events: auto;
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 3px;
   height: 34px;
-  padding: 0 8px;
+  padding: 0 9px 0 6px;
   border-radius: 17px;
   border: 1px solid var(--line);
   background: rgba(10, 7, 28, 0.9);
@@ -4094,9 +4115,9 @@ button.sp-qrow:hover {
 }
 .u-pal-sw {
   flex: none;
-  width: 20px;
-  height: 14px;
-  border-radius: 7px;
+  width: 26px;
+  height: 17px;
+  border-radius: 8.5px;
   border: 1px dashed rgba(183, 175, 214, 0.4);
 }
 .u-pal:not(.dis) .u-pal-sw {
@@ -4705,43 +4726,60 @@ button.sp-qrow:hover {
 }
 .ls-preview {
   position: absolute;
-  left: 50%;
-  top: 6px;
-  width: 190px;
-  height: 100px;
-  margin-left: -95px;
-  pointer-events: none;
+  left: 12px;
+  right: 12px;
+  top: 46px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
 }
-.ls-panels {
-  position: absolute;
-  left: 50px;
-  top: 0;
-  width: 90px;
-  height: 40px;
+.ls-strip {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 22px;
 }
-.ls-bar {
-  position: absolute;
-  left: 0;
-  right: 0;
-  top: 44px;
-  height: 26px;
-  border-radius: 8px;
-  background: #05030f;
-  box-shadow: 0 0 22px rgba(255, 61, 154, 0.55), 0 0 40px rgba(53, 230, 234, 0.3);
+.ls-strip b {
+  flex: none;
+  width: 76px;
+  color: var(--dim);
+  font: 600 16px/1 var(--body);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.ls-pns {
+  display: flex;
+  gap: 3px;
+}
+.ls-pn {
+  display: block;
+  width: 26px;
+  height: 20px;
+  clip-path: polygon(50% 0, 100% 100%, 0 100%);
+}
+.ls-pn:nth-child(even) {
+  clip-path: polygon(0 0, 100% 0, 50% 100%);
 }
 .ls-plays {
-  position: absolute;
-  left: 0;
-  right: 0;
-  top: 82px;
   display: flex;
-  justify-content: space-between;
-  padding: 0 4px;
+  gap: 14px;
 }
 .ls-play {
-  width: 24px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.ls-play i {
+  display: block;
+  width: 26px;
   height: 10px;
   border-radius: 5px;
+}
+.ls-play em {
+  font: 500 16px/1 var(--body);
+  font-style: normal;
+  color: var(--dim);
+  white-space: nowrap;
 }
 .ls-row .ln-label {
   width: 128px;

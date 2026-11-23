@@ -48,8 +48,17 @@ function measureMoods() {
   out.sync = box(slot.querySelector('.u-sync'));
   out.syncState = slot.querySelector('.u-sync')?.getAttribute('data-state') ?? null;
   out.syncFirst = slot.querySelector('.u-mood') === slot.querySelector('.u-sync');
+  {
+    const nm = slot.querySelector('.u-sync .u-mood-name');
+    const rg = document.createRange();
+    if (nm) rg.selectNodeContents(nm);
+    out.syncLabel = nm ? box(rg) : null;
+    out.syncIcon = box(slot.querySelector('.u-sync-main svg'));
+    out.syncSwitch = box(slot.querySelector('.u-sync-switch'));
+    out.syncKnob = box(slot.querySelector('.u-sync-knob'));
+  }
   out.strip = box(strip);
-  out.pals = strip ? [...strip.querySelectorAll('.u-pal')].map((c) => { const n = c.querySelector('.u-mood-name'); return { text: n.textContent.trim(), ...box(c), cut: n.scrollWidth > n.clientWidth + 1 }; }) : [];
+  out.pals = strip ? [...strip.querySelectorAll('.u-pal')].map((c) => { const n = c.querySelector('.u-mood-name'); const rg = document.createRange(); rg.selectNodeContents(n); const tr = box(rg); return { text: n.textContent.trim(), ...box(c), cut: n.scrollWidth > n.clientWidth + 1, pad: Math.min(tr.l - c.getBoundingClientRect().left, c.getBoundingClientRect().right - tr.r) }; }) : [];
   out.lineCut = !!line && line.scrollWidth > line.clientWidth + 1;
   out.lineCs = line ? { ws: getComputedStyle(line).whiteSpace, ov: getComputedStyle(line).textOverflow } : null;
   // What else draws inside either box: images, svgs, buttons, inputs, canvases, or own text, cut by every ancestor that clips.
@@ -111,6 +120,13 @@ const rule = (variant, results, emit) => {
     for (let i = 1; i < m.chips.length; i++) if (m.chips[i].l < m.chips[i - 1].r - 0.5 && !CUTS_OK.includes(variant.name)) fails.push('officemoods: chips "' + m.chips[i - 1].text + '" and "' + m.chips[i].text + '" overlap');
     if (!m.sync || Math.abs(m.sync.w - 208) > 0.5) fails.push('officemoods: the Music sync chip is ' + (m.sync ? r1(m.sync.w) : 'missing') + ' px wide (208, fixed)');
     else if (!m.syncFirst) fails.push('officemoods: the Music sync chip is not the first chip');
+    if (m.sync && m.syncLabel && m.syncSwitch && m.syncIcon) {
+      if (m.syncIcon.l - m.sync.l < 10) fails.push('officemoods: the Music sync icon is ' + r1(m.syncIcon.l - m.sync.l) + ' px from the chip edge (10 at least)');
+      if (m.sync.r - m.syncSwitch.r < 10) fails.push('officemoods: the Music sync switch is ' + r1(m.sync.r - m.syncSwitch.r) + ' px from the chip edge (10 at least)');
+      if (m.syncSwitch.l - m.syncLabel.r < 10) fails.push('officemoods: the Music sync label is ' + r1(m.syncSwitch.l - m.syncLabel.r) + ' px from the switch (10 at least)');
+      if (Math.abs(m.syncSwitch.w - 40) > 0.5 || Math.abs(m.syncSwitch.h - 22) > 0.5) fails.push('officemoods: the Music sync switch is ' + r1(m.syncSwitch.w) + ' by ' + r1(m.syncSwitch.h) + ' (40 by 22)');
+      if (m.syncKnob && (m.syncKnob.l < m.syncSwitch.l || m.syncKnob.r > m.syncSwitch.r)) fails.push('officemoods: the Music sync knob leaves its track');
+    }
     const STRIP_V = variant.name.includes(NAMES.strip);
     if (STRIP_V && !m.strip) fails.push('officemoods: the palette strip is not open');
     if (!STRIP_V && m.strip) fails.push('officemoods: the palette strip is open in a state that should not show it');
@@ -122,6 +138,7 @@ const rule = (variant, results, emit) => {
       for (const p of m.pals) {
         if (p.cut) fails.push('officemoods: palette name "' + p.text + '" is cut');
         if (p.h < 33 || p.h > 35) fails.push('officemoods: palette "' + p.text + '" is ' + r1(p.h) + ' px tall (34)');
+        if (p.pad < 9.5) fails.push('officemoods: palette "' + p.text + '" text is ' + r1(p.pad) + ' px from its button edge (10 at least)');
       }
     }
     if (m.label && m.chips.length && m.label.r > m.chips[0].l + 0.5) fails.push('officemoods: the label overlaps the first chip');
@@ -202,13 +219,13 @@ const variants = [
   { ...V(NAMES.night, `${TOKEN}&office=six&officeoff=on`), q: q(`${TOKEN}&office=six&officeoff=on`, night) },
   V(NAMES.absent, ''),
   V(NAMES.syncOn, `${SIX}&lsync=on`),
-  V(NAMES.syncStart, `${SIX}&lsync=slow`, { click: '[data-part="sync-main"]' }),
-  V(NAMES.syncFail, `${SIX}&lsync=fail`, { click: '[data-part="sync-main"]' }),
-  V(NAMES.syncUnpaired, `${SIX}&lsync=unpaired`, { click: '[data-part="sync-main"]' }),
-  V(NAMES.syncHue, `${SIX}&lsync=hue`, { click: '[data-part="sync-main"] >> hover:[data-part="sync-main"]' }),
+  V(NAMES.syncStart, `${SIX}&lsync=slow`, { click: '[data-part="sync-switch"]' }),
+  V(NAMES.syncFail, `${SIX}&lsync=fail`, { click: '[data-part="sync-switch"]' }),
+  V(NAMES.syncUnpaired, `${SIX}&lsync=unpaired`, { click: '[data-part="sync-switch"]' }),
+  V(NAMES.syncHue, `${SIX}&lsync=hue`, { click: '[data-part="sync-switch"] >> hover:[data-part="sync-switch"]' }),
   { ...V(NAMES.review, SIX), q: `?hz=unwind&at=${encodeURIComponent(night)}&clock=review&weather=ok&audio=demo${SIX}` },
-  V(NAMES.strip, SIX, { click: '[data-part="sync-dots"]' }),
-  V(NAMES.strip + ', sync on', `${SIX}&lsync=on`, { click: '[data-part="sync-dots"]' }),
+  V(NAMES.strip, SIX, { click: '[data-part="sync-main"]' }),
+  V(NAMES.strip + ', sync on', `${SIX}&lsync=on`, { click: '[data-part="sync-main"]' }),
 ];
 
 const on = (...keys) => (v) => keys.some((k) => v.name === `Office moods, ${NAMES[k]}`);
@@ -230,10 +247,10 @@ export default {
       gstate('Off is lit', 'office=six&officeoff=on', ['Office lights are off.', 'Off']),
       gstate('music sync chip first, idle', 'office=six&officeoff=offered&officemood=relax', ['Music sync', 'Relax:'], 'hover:[data-part="sync-main"]'),
       gstate('music sync on', 'office=six&officeoff=offered&officemood=relax&lsync=on', ['Music sync']),
-      gstate('music sync starting', 'office=six&officeoff=offered&officemood=relax&lsync=slow', ['Starting music sync'], '[data-part="sync-main"] >> hover:[data-part="sync-main"]'),
-      gstate('music sync not paired points at Tools', 'office=six&officeoff=offered&officemood=relax&lsync=unpaired', ['Pair it in Tools'], '[data-part="sync-main"] >> hover:[data-part="sync-main"]'),
-      gstate('music sync failed', 'office=six&officeoff=offered&officemood=relax&lsync=fail', ['The Hue bridge did not answer.'], '[data-part="sync-main"] >> hover:[data-part="sync-main"]'),
-      gstate('the palette strip open', 'office=six&officeoff=offered&officemood=relax', ['Synthwave', 'Album art', 'Wall sky', 'Office mood', 'Electric Sheep', 'Neon City', 'Zen Tide', 'Your own'], '[data-part="sync-dots"]'),
+      gstate('music sync starting', 'office=six&officeoff=offered&officemood=relax&lsync=slow', ['Starting music sync'], '[data-part="sync-switch"] >> hover:[data-part="sync-switch"]'),
+      gstate('music sync not paired points at Tools', 'office=six&officeoff=offered&officemood=relax&lsync=unpaired', ['Pair it in Tools'], '[data-part="sync-switch"] >> hover:[data-part="sync-switch"]'),
+      gstate('music sync failed', 'office=six&officeoff=offered&officemood=relax&lsync=fail', ['The Hue bridge did not answer.'], '[data-part="sync-switch"] >> hover:[data-part="sync-switch"]'),
+      gstate('the palette strip open', 'office=six&officeoff=offered&officemood=relax', ['Synthwave', 'Album art', 'Wall sky', 'Office mood', 'Electric Sheep', 'Neon City', 'Zen Tide', 'Your own'], '[data-part="sync-main"]'),
       gstate('a click on Off', 'office=six&officeoff=offered&officemood=relax', ['Office lights are off.'], '[data-mood="off"]'),
       gstate('a click on a mood', 'office=six&officeoff=offered', ['Gaming:', 'Room 25%, panels 10%'], '[data-mood="gaming"]'),
       gstate('a stale read', 'office=six&officeoff=offered&officemood=relax&officestale=1', ['(not fresh)', 'Relax:']),
@@ -268,6 +285,7 @@ export default {
       'moods-line': { css: '.u-office-line { right: 780px !important; }', expect: /^ *FAIL officemoods: the line ends at x /m, appliesTo: on('token') },
       'moods-small': { css: '.u-mood { height: 30px !important; }', expect: /^ *FAIL officemoods: chip ".*" is [\d.]+ px tall/m, appliesTo: on('six') },
       'moods-sync': { css: '.u-mood.u-sync { width: 180px !important; min-width: 180px !important; }', expect: /^ *FAIL officemoods: the Music sync chip is [\d.]+ px wide/m, appliesTo: on('six') },
+      'moods-pal-pad': { css: '.u-pal { padding: 0 2px !important; }', expect: /^ *FAIL officemoods: palette ".*" text is [\d.]+ px from its button edge/m, appliesTo: on('strip') },
       'moods-text': { css: '.u-mood { font-size: 14px !important; }', expect: /^ *FAIL officemoods: text under 16 px/m, appliesTo: on('six') },
     },
   },

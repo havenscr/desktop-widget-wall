@@ -9,7 +9,8 @@ import { WatchSheet } from '../../unwind/watch/Sheet';
 import { resetHome } from '../homeStore';
 import { OfficeMoods } from '../OfficeMoods';
 import { newPreview, stepPreview } from './preview';
-import { DEFAULT_LIGHTS_UI, DEFAULT_LIGHT_SYNC, SWATCHES, engineSettings, resolvePalette } from './model';
+import { DEFAULT_LIGHTS_UI, DEFAULT_LIGHT_SYNC, PALETTES, SWATCHES, engineSettings, resolvePalette } from './model';
+import { useAudioStore } from '../../audio/store';
 import { LightsPanel, barsWords, brightWords, flashWords, smoothWords } from './LightsPanel';
 import { resetLightSync, useLightSync } from './store';
 
@@ -60,6 +61,12 @@ it('the Lights tab has every row, the preview and Your usual, with starting valu
   for (const label of ['Colour speed', 'Brightness', 'Kick flash', 'Smoothness', 'Who follows', 'Panel ripple']) expect(container.textContent).toContain(label);
   expect(container.textContent).toContain('Preview, live');
   expect(container.querySelector('[data-part="lights-preview"]')).not.toBeNull();
+  // Preview B: two labelled strips. Five panel tiles (the engine's count), four named Plays; no monitor bar.
+  const rows = Array.from(container.querySelectorAll('.ls-strip'));
+  expect(rows.map((r) => r.querySelector('b')?.textContent)).toEqual(['Panels', 'Plays']);
+  expect(container.querySelectorAll('.ls-pn')).toHaveLength(5);
+  expect(Array.from(container.querySelectorAll('.ls-play em')).map((e) => e.textContent)).toEqual(['Far Left', 'Left', 'Right', 'Far Right']);
+  expect(container.querySelector('.ls-bar')).toBeNull();
   expect(container.textContent).toContain('every 2 bars');
   expect(container.textContent).toContain('15% to 90%');
   expect(container.textContent).toContain('strong');
@@ -346,6 +353,45 @@ it('a flat cover (one colour) is filled up to three with the nearest swatches', 
     expect(useLightSync.getState().palette).toBe('custom');
   } finally {
     spy.mockRestore();
+  }
+});
+
+it('the preview tiles change colour and brightness when the palette and the sound change', async () => {
+  let cb: FrameRequestCallback | null = null;
+  vi.stubGlobal('requestAnimationFrame', (f: FrameRequestCallback) => {
+    cb = f;
+    return 1;
+  });
+  vi.stubGlobal('cancelAnimationFrame', () => {});
+  try {
+    useAudioStore.setState({ bass: 0, high: 0 });
+    const { container } = render(<LightsPanel />);
+    let t = 1000;
+    const tick = (n = 1) => {
+      for (let i = 0; i < n; i++) {
+        t += 33;
+        act(() => cb?.(t));
+      }
+    };
+    const pn = () => Array.from(container.querySelectorAll<HTMLElement>('.ls-pn'));
+    const colours = () => pn().map((e) => e.style.background);
+    const opac = () => pn().map((e) => Number(e.style.opacity));
+    tick();
+    const quietColours = colours();
+    const quiet = opac();
+    expect(quietColours.every((c) => c !== '')).toBe(true);
+    // Louder sound: the tiles brighten.
+    useAudioStore.setState({ bass: 1, high: 1 });
+    tick(30);
+    expect(Math.max(...opac())).toBeGreaterThan(Math.max(...quiet));
+    // Another palette: the same tiles take its colours.
+    expect(PALETTES.some((p) => p.id === 'neon')).toBe(true);
+    act(() => useLightSync.setState({ palette: 'neon' }));
+    tick();
+    expect(colours()).not.toEqual(quietColours);
+  } finally {
+    vi.unstubAllGlobals();
+    useAudioStore.setState({ bass: 0, high: 0 });
   }
 });
 
