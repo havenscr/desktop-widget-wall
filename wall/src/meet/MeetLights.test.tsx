@@ -218,6 +218,27 @@ it('a failed home read dims the presets and sends nothing', async () => {
   expect(writes).toEqual([]);
 });
 
+it('a light that did not answer the home app dims Panels and says so, not "not answering" or the desk token', async () => {
+  await show();
+  mocks.set('wall2_studio', () => {
+    throw 'not-answering';
+  });
+  await act(async () => useHome.getState().readStudio());
+  await flush(10);
+  expect(useHome.getState().readWord).toBe('not-answering');
+  const sw = screen.getByRole('switch', { name: 'Panels' });
+  expect(sw.closest('.st-room')?.className).toContain('dis');
+  fireEvent.mouseEnter(sw);
+  await flush(300);
+  const tip = document.querySelector('.hover-tip')?.textContent ?? '';
+  expect(tip).toContain('did not answer');
+  expect(tip).not.toMatch(/desk token/i);
+  fireEvent.click(screen.getByRole('button', { name: 'Panels' }));
+  await flush(10);
+  expect(document.body.textContent).toContain('A light did not answer the home app.');
+  expect(document.body.textContent).not.toContain('The home app is not answering');
+});
+
 it('a failed moods read leaves no office chip', async () => {
   mocks.set('wall2_office_moods', () => {
     throw 'unreachable';

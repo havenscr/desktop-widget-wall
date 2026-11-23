@@ -6,9 +6,9 @@ import { useToolsStore } from '../tools/store';
 import { EffectRow } from './EffectPick';
 import { KeyPanel } from './KeyControls';
 import { closeCard, useCard, type CardId } from './cardStore';
-import { needsZone, wouldBeDark } from './homeModel';
+import { awayWords, needsZone, wouldBeDark } from './homeModel';
 import { canChange, useHome } from './homeStore';
-import type { Group, Studio } from './home';
+import type { Group, HomeWord, Studio } from './home';
 import { RoomSliderRow } from './SheetHome';
 import { noneTitle, viewOf, type Snapshot } from './model';
 import { useKeyLights } from './store';
@@ -160,7 +160,7 @@ export function GroupCard() {
   const label = open === 'keys' ? 'Key lights' : (group?.label ?? '');
   return createPortal(
     <div ref={ref} className="st-gcard" data-card={open} role="dialog" tabIndex={-1} aria-label={`${label} settings`} style={{ left: place.left, bottom: place.bottom, width }} onKeyDown={trap}>
-      {open === 'keys' ? <KeysCard v={v} snap={snap} /> : group && studio ? <RoomCard studio={studio} g={group} may={may} away={away} /> : null}
+      {open === 'keys' ? <KeysCard v={v} snap={snap} /> : group && studio ? <RoomCard studio={studio} g={group} may={may} away={away} word={readWord} /> : null}
       <i className="st-gcard-tail" style={{ left: place.tail }} aria-hidden="true" />
     </div>,
     host,
@@ -225,8 +225,8 @@ function CardHead({ title }: { title: string }) {
 }
 
 /** A home group's card: Panels has its brightness and its effect; a room group its brightness; a group that cannot be switched, why. */
-function RoomCard({ studio, g, may, away }: { studio: Studio; g: Group; may: boolean; away: boolean }) {
-  const why = away ? { head: 'The home app is not answering.', text: 'Nothing here can be changed until it does.' } : whyNot(studio, g, may);
+function RoomCard({ studio, g, may, away, word }: { studio: Studio; g: Group; may: boolean; away: boolean; word: HomeWord | null }) {
+  const why = away ? awayWords(word) : whyNot(studio, g, may);
   const dark = darkLine(studio, g);
   return (
     <>

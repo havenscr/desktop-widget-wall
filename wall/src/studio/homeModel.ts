@@ -1,5 +1,5 @@
 import { TEXT, type HomeState } from './homeStore';
-import type { Group, GroupId, Preset, Studio } from './home';
+import type { Group, GroupId, HomeWord, Preset, Studio } from './home';
 
 /** What a Needs-a-zone group says in its `setTo` (the home app's words). */
 export const NEEDS_ZONE = 'Needs a Hue zone';
@@ -83,6 +83,23 @@ export function wouldBeDark(studio: Studio, g: Group): boolean {
   const o = studio.groups.find((x) => x.id === other);
   // The other one off, or not there to ask: the home app would answer "Room would be dark" too.
   return !o || !o.on;
+}
+
+/**
+ * What a failed studio read says, by its word. Only an unreachable home app is "not answering"; a light that
+ * did not answer, a busy home app and an unreadable answer each get their own words.
+ */
+export function awayWords(word: HomeWord | null): { head: string; text: string; tip: string } {
+  switch (word) {
+    case 'not-answering':
+      return { head: 'A light did not answer the home app.', text: 'Showing the last read.', tip: 'a light did not answer the home app' };
+    case 'busy':
+      return { head: 'The home app is busy.', text: 'Showing the last read.', tip: 'the home app is busy' };
+    case 'failed':
+      return { head: 'The home app sent an answer the wall could not read.', text: 'Nothing here can be changed until it does.', tip: 'the home app sent an answer the wall could not read' };
+    default:
+      return { head: 'The home app is not answering.', text: 'Nothing here can be changed until it does.', tip: 'the home app is not answering' };
+  }
 }
 
 /** The tile's state in one place: whether a click does anything, and what its tip says. */

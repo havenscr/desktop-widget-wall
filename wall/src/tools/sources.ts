@@ -71,6 +71,9 @@ function fromReport(id: ReportId, name: string, r: Report | undefined, now: numb
   return { ...base, tone: 'ok', at: r.okAt, reason: 'Reading normally.' };
 }
 
+/** A Box read older than this is not fresh. */
+const BOX_FRESH_MS = 60_000;
+
 /** One row per source from the stores' own state, using each store's own stale rule. Never calls a stale source fresh. */
 export function buildSources(s: SourceSnapshot): SourceRow[] {
   const { now } = s;
@@ -148,7 +151,14 @@ export function buildSources(s: SourceSnapshot): SourceRow[] {
     }
   }
 
-  rows.push(fromReport('box', 'Box', s.reports.box, now, 60_000, 'The machine numbers'));
+  // Box: the numbers ride in the same helper summary the agents poll reads every 15 seconds, so a fresh
+  // answer there is a fresh Box read even when no screen with the machine readout is open.
+  {
+    const a = s.agents;
+    const fresh = a.status === 'ready' && a.okAt !== null && !!a.summary?.system && !agentsStale(a) && now - a.okAt <= BOX_FRESH_MS;
+    if (fresh) rows.push({ id: 'box', name: 'Box', tone: 'ok', at: a.okAt, reason: 'Reading normally.' });
+    else rows.push(fromReport('box', 'Box', s.reports.box, now, BOX_FRESH_MS, 'The machine numbers'));
+  }
   return rows;
 }
 
@@ -182,26 +192,18 @@ export function useSources(): SourceRow[] {
 }
 
 /** Where a hook-held source is read from when no screen has its hook mounted: the same command, read once. */
-const PROBES: Record<ReportId, { command: string; check: (a: unknown) => 'ok' | 'stale' | 'bad' }> = {
+const PROBES: Record<Exclude<ReportId, 'box'>, { command: string; check: (a: unknown) => 'ok' | 'stale' | 'bad' }> = {
   tasks: { command: 'wall2_tasks_next', check: (a) => (Array.isArray(a) ? 'ok' : 'bad') },
   sound: { command: 'wall2_sonos_summary', check: (a) => (a ? 'ok' : 'bad') },
-  box: {
-    command: 'wall2_machines',
-    check: (a) => {
-      const m = a as { pc?: unknown; box?: unknown; boxStale?: boolean } | null;
-      if (!m || !m.pc) return 'bad';
-      return m.boxStale || !m.box ? 'stale' : 'ok';
-    },
-  },
 };
 
-async function probe(id: ReportId): Promise<void> {
+async function probe(id: Exclude<ReportId, 'box'>): Promise<void> {
   const p = PROBES[id];
   try {
     const answer = await invoke<unknown>(p.command);
     const r = p.check(answer);
     if (r === 'ok') reportRead(id, 'ok');
-    else if (r === 'stale') reportRead(id, 'stale', id === 'box' ? 'The box reading is out of date' : undefined);
+    else if (r === 'stale') reportRead(id, 'stale');
     else reportRead(id, 'failed');
   } catch (e) {
     const text = e instanceof Error ? e.message : String(e);
@@ -238,6 +240,7 @@ const run = async (id: SourceId): Promise<RetryResult> => {
     case 'box': {
       const mounted = retryFor(id);
       if (mounted) await mounted();
+      else if (id === 'box') await retryAgents();
       else await probe(id);
       return {};
     }
@@ -271,9 +274,9 @@ export function resetRetries(): void {
   inflight.clear();
 }
 
-/** Read the hook-held sources whose screen is not open (nothing else reads them then), once each. */
+/** Read the hook-held sources whose screen is not open (nothing else reads them then), once each. Box is not one: the agents poll carries it. */
 export function readUnmountedSources(): void {
-  for (const id of ['tasks', 'sound', 'box'] as const) if (!retryFor(id)) void retrySource(id);
+  for (const id of ['tasks', 'sound'] as const) if (!retryFor(id)) void retrySource(id);
 }
 
 /** "10:22 AM", or "never". */

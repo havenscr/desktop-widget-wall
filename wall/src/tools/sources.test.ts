@@ -176,13 +176,13 @@ it('Retry uses a mounted hook\'s own refresh, else reads the same command once',
 
 it('a probe that fails says so, and not set up is its own outcome', async () => {
   mocks.set('wall2_sonos_summary', () => Promise.reject(new Error('failed')));
-  mocks.set('wall2_machines', () => Promise.reject(new Error('not-configured')));
+  mocks.set('wall2_tasks_next', () => Promise.reject(new Error('not-configured')));
   await act(async () => {
     await retrySource('sound');
-    await retrySource('box');
+    await retrySource('tasks');
   });
   expect(useReportStore.getState().sound?.last).toBe('failed');
-  expect(useReportStore.getState().box?.last).toBe('unconfigured');
+  expect(useReportStore.getState().tasks?.last).toBe('unconfigured');
 });
 
 it('opening the drawer reads only the hook-held sources nobody has mounted', async () => {
@@ -198,7 +198,7 @@ it('opening the drawer reads only the hook-held sources nobody has mounted', asy
     await Promise.resolve();
   });
   expect(tasks).toHaveBeenCalledTimes(1);
-  expect(machines).toHaveBeenCalledTimes(1);
+  expect(machines).not.toHaveBeenCalled();
   expect(sonos).not.toHaveBeenCalled();
   off();
 });
@@ -229,8 +229,8 @@ it('one Retry at a time per source: calls while one runs share it and make one n
 
 it('a read that never finishes releases the Retry after the ceiling, with a note', async () => {
   vi.useFakeTimers();
-  mocks.set('wall2_machines', () => new Promise(() => undefined));
-  const p = retrySource('box');
+  mocks.set('wall2_tasks_next', () => new Promise(() => undefined));
+  const p = retrySource('tasks');
   await vi.advanceTimersByTimeAsync(RETRY_CEILING_MS + 10);
   await expect(p).resolves.toEqual({ note: 'The read did not finish' });
   vi.useRealTimers();
@@ -250,4 +250,18 @@ it('every mounted list of a hook-held source is read once by one Retry', async (
   expect(a).toHaveBeenCalledTimes(1);
   expect(b).toHaveBeenCalledTimes(2);
   offB();
+});
+
+it('box: a fresh helper summary with the box numbers is a fresh read, though the machine readout is not open', () => {
+  const summary = { stale: false, system: { cpuPct: 1, ramPct: 1, gpuPct: null, tempC: 50 } } as unknown as AgentsState['summary'];
+  const r = row(base({ agents: agents({ summary, okAt: NOW, freshAt: NOW }), reports: { box: { okAt: NOW - min(36), last: 'ok' } } }), 'box');
+  expect(r).toMatchObject({ tone: 'ok', at: NOW });
+  // Without the numbers in the summary, the old read is the old read.
+  const old = row(base({ reports: { box: { okAt: NOW - min(36), last: 'ok' } } }), 'box');
+  expect(old).toMatchObject({ tone: 'warn', at: NOW - min(36) });
+});
+
+it('agents: after the helper stops answering, the row shows the time of the last good read, not never', () => {
+  const r = row(base({ agents: agents({ status: 'unreachable', summary: null, readFailed: true, freshAt: null, okAt: NOW - min(31) }) }), 'agents');
+  expect(r).toMatchObject({ tone: 'down', at: NOW - min(31) });
 });

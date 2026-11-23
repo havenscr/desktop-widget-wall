@@ -106,6 +106,8 @@ export interface OmniSummary {
   yourMove: YourMove;
   usage: Usage | null;
   day: DaySpan[];
+  /** The box's own numbers, or null when the helper sent none. */
+  system?: { cpuPct: number | null; ramPct: number | null; gpuPct: number | null; tempC: number | null } | null;
   linksAvailable: boolean;
 }
 

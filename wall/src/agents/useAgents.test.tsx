@@ -119,9 +119,13 @@ it('keeps the last answer, marked failed, after a failed read, then drops it aft
   expect(result.current.readFailed).toBe(true);
   expect(result.current.summary).not.toBeNull();
   expect(result.current.freshAt).toBe(freshAt);
+  const okAt = result.current.okAt;
+  expect(okAt).not.toBeNull();
   await flush(KEEP_STALE_MS);
   expect(result.current.status).toBe('unreachable');
   expect(result.current.summary).toBeNull();
+  // The time of the last good read stays, so the Health row can say when it was.
+  expect(result.current.okAt).toBe(okAt);
 });
 
 it('a stale answer from the helper keeps the time of the last fresh one', async () => {
