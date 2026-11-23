@@ -699,12 +699,29 @@ pub(crate) fn require_wall2(label: &str) -> Result<(), String> {
 pub async fn wall2_omni_summary(window: tauri::WebviewWindow, app: tauri::AppHandle) -> Result<OmniSummary, String> {
     require_wall2(window.label())?;
     let base = helper_base(&app)?;
-    let mut summary = tauri::async_runtime::spawn_blocking(move || fetch_summary(&base))
+    let fetched = tauri::async_runtime::spawn_blocking(move || fetch_summary(&base))
         .await
-        .map_err(|_| FAILED.to_string())??;
+        .map_err(|_| FAILED.to_string())
+        .and_then(|r| r);
+    note_summary_read(fetched.is_ok());
+    let mut summary = fetched?;
     remember_ids(ids_of(&summary));
     summary.links_available = link_host(&app).is_ok();
     Ok(summary)
+}
+
+/// True while the last summary read failed, so the log gets one line per run of failures.
+static SUMMARY_FAILING: AtomicBool = AtomicBool::new(false);
+
+/// Log a failed or recovered summary read in the wall log. Fixed words only: never the
+/// address, a token or any part of an answer.
+fn note_summary_read(ok: bool) {
+    let was_failing = SUMMARY_FAILING.swap(!ok, Ordering::SeqCst);
+    if !ok && !was_failing {
+        crate::wall2_window::log("omni-summary", "read failed");
+    } else if ok && was_failing {
+        crate::wall2_window::log("omni-summary", "read recovered");
+    }
 }
 
 /// Open a session by id: the id must be well formed and in the last summary, and the link

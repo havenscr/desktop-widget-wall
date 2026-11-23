@@ -101,7 +101,8 @@ async function read(): Promise<void> {
     const helperMovedAt = moved ? now : (prev.helperMovedAt as number);
     const clock = { helperNow: moved ? helperNow : prev.helperNow, helperMovedAt, skewMs: helperNow - now };
     if (now - helperMovedAt > KEEP_STALE_MS) {
-      useAgentsStore.setState({ ...initial(), ...clock, status: 'unreachable', readFailed: true, checkedAt: now });
+      // okAt stays: the Health row shows when the last good read was.
+      useAgentsStore.setState({ ...initial(), ...clock, status: 'unreachable', readFailed: true, okAt: prev.okAt, checkedAt: now });
       return;
     }
     useAgentsStore.setState((st) => ({
@@ -126,7 +127,7 @@ async function read(): Promise<void> {
       const keep = st.summary !== null && st.okAt !== null && now - st.okAt <= KEEP_STALE_MS;
       return keep
         ? { readFailed: true, checkedAt: now, awaiting: false }
-        : { status: 'unreachable', summary: null, readFailed: true, freshAt: null, okAt: null, checkedAt: now, awaiting: false };
+        : { status: 'unreachable', summary: null, readFailed: true, freshAt: null, okAt: st.okAt, checkedAt: now, awaiting: false };
     });
   } finally {
     if (mine === epoch) busy = false;
