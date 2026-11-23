@@ -4583,7 +4583,7 @@ button.sp-qrow:hover {
 }
 .mu-leave {
   height: 40px;
-  padding: 0 4px;
+  padding: 0 10px;
   display: inline-flex;
   align-items: center;
   gap: 6px;

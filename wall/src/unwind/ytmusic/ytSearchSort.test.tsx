@@ -7,7 +7,7 @@ import { hideTip, resetTip } from '../../ui/HoverTip';
 import { resetListenSource } from '../spotify/model';
 import { resetSpotifyStatus } from '../spotify/status';
 import { DETAIL_CARD_MS, DEFAULT_SORT, compactCount, detailWords, rowThumb, sortVideos, uploadMonth } from './model';
-import { resetQueue } from './queue';
+import { resetQueue, useYtQueue } from './queue';
 import { resetYoutubeStatus } from './status';
 import { resetLibrary, useYtLibrary } from './store';
 import { YtMusicSide } from './YtMusicSide';
@@ -87,6 +87,12 @@ describe('a result row picture and its details words', () => {
     const w = detailWords(vid(1, { views: 2_400_000, likes: 61_000, seconds: 3760, published: '2023-03-14', description: 'First line' }));
     expect(w).toEqual({ views: '2.4M', likes: '61K', length: '1:02:40', month: 'Mar 2023', description: 'First line' });
     expect(detailWords(vid(1, { views: 5, likes: null }))?.likes).toBe('');
+  });
+  it('cuts the description by characters, never leaving half of an emoji', () => {
+    const w = detailWords(vid(1, { description: `${'a'.repeat(599)}\u{1F600}tail` }));
+    expect(Array.from(w!.description)).toHaveLength(600);
+    expect(w!.description.endsWith('\u{1F600}')).toBe(true);
+    expect(/[\ud800-\udbff](?![\udc00-\udfff])|(?<![\ud800-\udbff])[\udc00-\udfff]/.test(w!.description)).toBe(false);
   });
 });
 
@@ -201,6 +207,25 @@ describe('the sort button on the chip row', () => {
     pickSort('Shortest');
     expect(rowTitles()[0]).toBe('Clip 24');
     expect(screen.getByRole('button', { name: 'Play Clip 24' })).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Play Clip 24' }));
+    const q = useYtQueue.getState();
+    expect(q.entries.map((e) => e.id)).toEqual([found[3]!, found[0]!, found[1]!, found[2]!].map((v) => v.id));
+    expect(q.pos).toBe(0);
+    expect(q.entries[q.pos]!.id).toBe(found[3]!.id);
+  });
+
+  it('keeps the playing mark on the row that plays when a sort moves it', async () => {
+    side();
+    await screen.findByText('Mix 1');
+    await run('night');
+    fireEvent.click(screen.getByRole('button', { name: 'Play Clip 22' }));
+    const marked = () => [...document.querySelectorAll('.yt-row.on .yt-title')].map((e) => e.textContent);
+    expect(marked()).toEqual(['Clip 22']);
+    pickSort('Shortest');
+    expect(rowTitles()).toEqual(['Clip 24', 'Clip 21', 'Clip 22', 'Clip 23']);
+    expect(marked()).toEqual(['Clip 22']);
+    pickSort('Channel');
+    expect(marked()).toEqual(['Clip 22']);
   });
 
   it('has the listbox keys: arrows move, Enter picks, Escape closes and hands focus back', async () => {
@@ -304,6 +329,31 @@ describe('the details card', () => {
     act(() => void vi.advanceTimersByTime(DETAIL_CARD_MS));
     expect(card()!.querySelector('.yt-dcard-facts')!.querySelectorAll('span')).toHaveLength(4);
     expect(card()!.querySelector('.yt-dcard-facts')!.textContent).toContain('Jul 2021');
+  });
+
+  it('a wait begun on rows that then change order shows nothing', async () => {
+    await ready();
+    fireEvent.mouseEnter(rowOf('Clip 21'));
+    act(() => void vi.advanceTimersByTime(300));
+    pickSort('Most viewed');
+    expect(rowTitles()).toEqual(['Clip 21', 'Clip 22', 'Clip 24', 'Clip 23']);
+    act(() => void vi.advanceTimersByTime(2000));
+    expect(card()).toBeNull();
+  });
+
+  it('is never wider or taller than the music card less its edges', async () => {
+    side();
+    await screen.findByText('Mix 1');
+    await run('night');
+    const host = document.querySelector('.sp-card') as HTMLElement;
+    Object.defineProperty(host, 'clientWidth', { configurable: true, value: 300 });
+    Object.defineProperty(host, 'clientHeight', { configurable: true, value: 200 });
+    vi.useFakeTimers();
+    fireEvent.mouseEnter(rowOf('Clip 21'));
+    act(() => void vi.advanceTimersByTime(DETAIL_CARD_MS));
+    expect(card()!.style.width).toBe('276px');
+    expect(card()!.style.maxHeight).toBe('176px');
+    expect(card()!.style.overflow).toBe('hidden');
   });
 
   it('the review knob opens the card of a row once the results show', async () => {

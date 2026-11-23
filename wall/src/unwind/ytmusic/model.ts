@@ -307,7 +307,7 @@ export function detailWords(v: YtVideo): DetailWords | null {
     likes: compactCount(v.likes),
     length: lengthText(v.seconds),
     month: uploadMonth(v.published),
-    description: typeof v.description === 'string' ? v.description.slice(0, DESCRIPTION_SHOWN).trim() : '',
+    description: typeof v.description === 'string' ? Array.from(v.description).slice(0, DESCRIPTION_SHOWN).join('').trim() : '',
   };
   return words.views || words.likes || words.month || words.description ? words : null;
 }

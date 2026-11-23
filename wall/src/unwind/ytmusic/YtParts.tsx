@@ -143,20 +143,28 @@ const CARD_EDGE = 12;
  */
 export function DetailCard({ video, anchor, host }: { video: YtVideo; anchor: HTMLElement; host: HTMLElement }) {
   const ref = useRef<HTMLDivElement | null>(null);
-  const [at, setAt] = useState<{ left: number; top: number } | null>(null);
+  const [at, setAt] = useState<{ left: number; top: number; width: number; maxHeight: number } | null>(null);
   const words = detailWords(video);
   useLayoutEffect(() => {
     const box = host.getBoundingClientRect();
     const row = anchor.getBoundingClientRect();
     const scale = host.offsetWidth > 0 && box.width > 0 ? box.width / host.offsetWidth : 1;
-    const height = ref.current?.offsetHeight ?? 0;
     const inner = host.clientHeight || host.offsetHeight;
+    const room = host.clientWidth || host.offsetWidth;
+    // Never wider than the card less its edges, never taller than the card less its edges.
+    const width = room > 0 ? Math.max(0, Math.min(CARD_W, room - 2 * CARD_EDGE)) : CARD_W;
+    const maxHeight = inner > 0 ? Math.max(0, inner - 2 * CARD_EDGE) : 100_000;
+    if (ref.current) {
+      ref.current.style.width = `${width}px`;
+      ref.current.style.maxHeight = `${maxHeight}px`;
+    }
+    const height = Math.min(ref.current?.offsetHeight ?? 0, maxHeight);
     const top0 = (row.top - box.top) / scale - (host.clientTop || 0);
     const bottom0 = (row.bottom - box.top) / scale - (host.clientTop || 0);
     let top = bottom0 + 6;
     if (top + height > inner - CARD_EDGE) top = top0 - 6 - height;
     top = Math.max(CARD_EDGE, Math.min(top, inner - CARD_EDGE - height));
-    setAt({ left: Math.max(CARD_EDGE, (host.clientWidth || host.offsetWidth) - CARD_W - CARD_EDGE), top });
+    setAt({ left: Math.max(CARD_EDGE, room - width - CARD_EDGE), top, width, maxHeight });
   }, [host, anchor, video]);
   if (!words) return null;
   const facts: [ReactNode, string][] = [
@@ -167,7 +175,7 @@ export function DetailCard({ video, anchor, host }: { video: YtVideo; anchor: HT
     [<IconCalendar key="d" size={15} stroke={1.8} aria-hidden="true" />, words.month],
   ];
   return createPortal(
-    <div ref={ref} className="yt-dcard" role="tooltip" data-detail-card="" style={{ width: CARD_W, left: at?.left ?? 0, top: at?.top ?? 0, visibility: at ? 'visible' : 'hidden' }}>
+    <div ref={ref} className="yt-dcard" role="tooltip" data-detail-card="" style={{ width: at?.width ?? CARD_W, maxHeight: at?.maxHeight, overflow: 'hidden', left: at?.left ?? 0, top: at?.top ?? 0, visibility: at ? 'visible' : 'hidden' }}>
       <YtThumb src={rowThumb(video)} className="yt-dcard-pic" />
       <b className="yt-dcard-title">{video.title}</b>
       <div className="yt-dcard-facts">
@@ -219,6 +227,8 @@ export function YtRows({ items, foot, list, onPlay, rich = false }: { items: YtV
   const live = useWatchStore((s) => (s.source === 'music' ? (s.playing?.id ?? null) : null));
   const paused = useWatchStore((s) => s.paused || s.needsClick);
   const now = list && entry && live === entry.id && sameList(from, list) ? entry : null;
+  // The playing row is found by its video, not by the place it had when it was started: a sort moves it.
+  const nowAt = now ? items.findIndex((x) => x.id === now.id) : -1;
   const [menu, setMenu] = useState<OpenMenu | null>(null);
   // The row whose "Open in YouTube" failed: its card says so for 5 seconds.
   const [openFailed, setOpenFailed] = useState<string | null>(null);
@@ -234,6 +244,12 @@ export function YtRows({ items, foot, list, onPlay, rich = false }: { items: YtV
   };
   useEffect(() => () => void (cardTimer.current !== null && clearTimeout(cardTimer.current)), []);
   // The card goes with its row: another list, another order, or a scroll of the list.
+  // A new order, page or search also drops a half-second wait that began on the old rows (a new array of the same rows in the same order does not).
+  const rowsKey = items.map((v) => v.id).join(',');
+  useEffect(() => {
+    if (cardTimer.current !== null) clearTimeout(cardTimer.current);
+    cardTimer.current = null;
+  }, [rowsKey]);
   useEffect(() => setCard((c) => (c && items.some((v) => v.id === c.video.id) && c.anchor.isConnected ? c : null)), [items]);
   const listEl = useRef<HTMLOListElement | null>(null);
   const addButtons = useRef<(HTMLButtonElement | null)[]>([]);
@@ -295,7 +311,7 @@ export function YtRows({ items, foot, list, onPlay, rich = false }: { items: YtV
           const bad = v.playable === 'yes' && !validVideoId(v.id);
           const words = gone ? failedWords(gone) : bad ? 'Not available' : rowWords(v.playable);
           const plays = !words && !!onPlay && v.playable === 'yes';
-          const on = now !== null && now.id === v.id && now.at === i;
+          const on = i === nowAt;
           const lines = rowTip(v, gone ? failedReason(gone) : bad ? 'This video cannot be played here: YouTube gave it an address the wall cannot use.' : null);
           const cells = (
             <>

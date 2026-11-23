@@ -53,8 +53,8 @@ function measureYoutubeSearch() {
     const v = row.querySelector('.yt-views'); const l = row.querySelector('.yt-len');
     if (v && l && v.textContent && l.textContent && content(v).right > content(l).left - 1) { fails.push('the views run into the length of a row'); break; }
   }
-  // Labels sit at least 10 px inside their button's edges (the borderless Library button is the chip row's old one and is left alone).
-  for (const e of cardEl.querySelectorAll('.mu-sort, .mu-sortmenu button, .mu-chip')) {
+  // Labels sit at least 10 px inside their button's edges.
+  for (const e of cardEl.querySelectorAll('.mu-sort, .mu-sortmenu button, .mu-chip, .mu-leave')) {
     const b = e.getBoundingClientRect(); const c = content(e);
     if (b.width === 0 || c.width === 0) continue;
     const left = c.left - b.left; const right = b.right - c.right;

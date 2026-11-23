@@ -835,13 +835,19 @@ fn date_of(value: Option<&Value>) -> Option<String> {
     let day = value?.as_str()?.get(..10)?;
     let b = day.as_bytes();
     let digits = [0, 1, 2, 3, 5, 6, 8, 9].iter().all(|&i| b[i].is_ascii_digit());
+    let year: u32 = day.get(..4)?.parse().ok()?;
     let month: u32 = day.get(5..7)?.parse().ok()?;
-    (digits && b[4] == b'-' && b[7] == b'-' && (1..=12).contains(&month)).then(|| day.to_string())
+    let d: u32 = day.get(8..10)?.parse().ok()?;
+    let leap = year % 4 == 0 && (year % 100 != 0 || year % 400 == 0);
+    let last = match month { 2 => if leap { 29 } else { 28 }, 4 | 6 | 9 | 11 => 30, _ => 31 };
+    (digits && b[4] == b'-' && b[7] == b'-' && (1..=12).contains(&month) && (1..=last).contains(&d)).then(|| day.to_string())
 }
 
 /// A description on one line (every run of white space is one space), cleaned and capped.
 fn description_of(value: Option<&Value>) -> Option<String> {
-    let flat = value?.as_str()?.split_whitespace().collect::<Vec<_>>().join(" ");
+    // The unsafe characters go first (white space stays), so a stripped one cannot leave a double space behind.
+    let kept: String = value?.as_str()?.chars().filter(|c| c.is_whitespace() || !unsafe_char(*c)).collect();
+    let flat = kept.split_whitespace().collect::<Vec<_>>().join(" ");
     clean_text(Some(&Value::String(flat)), DESCRIPTION_MAX)
 }
 
@@ -2005,11 +2011,16 @@ mod tests {
         }
         assert_eq!(count_of(None), None);
         assert_eq!(date_of(Some(&json!("2023-03-14T09:30:00Z"))).as_deref(), Some("2023-03-14"));
-        for bad in [json!("2023-13-01"), json!("2023-00-01"), json!("garbage"), json!("2023/03/14"), json!("2023-03-1\u{e9}"), json!(20230314), json!("")] {
+        for bad in [json!("2023-13-01"), json!("2023-00-01"), json!("garbage"), json!("2023/03/14"), json!("2023-03-1\u{e9}"), json!("2023-03-00"), json!("2023-03-32"), json!("2023-04-31"), json!("2023-02-29"), json!("2023-02-30"), json!(20230314), json!("")] {
             assert_eq!(date_of(Some(&bad)), None, "{bad}");
+        }
+        for good in ["2024-02-29T00:00:00Z", "2023-12-31", "2023-04-30", "2000-02-29"] {
+            assert_eq!(date_of(Some(&json!(good))).as_deref(), Some(&good[..10]));
         }
         assert_eq!(date_of(None), None);
         assert_eq!(description_of(Some(&json!("Line one\n\nLine   two\u{202e}\ttab"))).as_deref(), Some("Line one Line two tab"));
+        assert_eq!(description_of(Some(&json!("one \u{202e} two"))).as_deref(), Some("one two"));
+        assert_eq!(description_of(Some(&json!("one\u{200b} \u{2066}two"))).as_deref(), Some("one two"));
         assert_eq!(description_of(Some(&json!("x".repeat(5000)))).unwrap().chars().count(), DESCRIPTION_MAX);
         assert_eq!(description_of(Some(&json!("  \n "))), None);
         assert_eq!(description_of(Some(&json!(7))), None);
