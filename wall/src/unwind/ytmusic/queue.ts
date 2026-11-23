@@ -228,7 +228,7 @@ function load(pos: number, keepNote = false): void {
   }
   // Only a video the wall itself started goes in the play record (ids and times; a failure is not the pick's business).
   // This runs on every load, an automatic advance and a retried autoplay included. Once it is written, a loaded For you
-  // shelf reads the record again when it is showing (else on its next show), so "Back to" shows the video just played.
+  // shelf reads the record again when it is showing (else on its next show), so "Played on the wall" shows the video just played.
   void youtube
     .notePlay(e.id)
     .then(afterPlay)

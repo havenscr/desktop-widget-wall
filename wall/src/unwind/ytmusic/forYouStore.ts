@@ -4,7 +4,7 @@ import { safeThumb, ytProblem, type YtProblem } from './model';
 import { onLibraryReset } from './store';
 
 /**
- * The For you tab's "Back to" shelf: what the wall itself played in the last 30 days (Rust's play record, ids
+ * The For you tab's "Played on the wall" shelf: what the wall itself played in the last 30 days (Rust's play record, ids
  * and times), shown with the title, channel and length `wall2_youtube_videos` gives. A video YouTube no longer
  * answers for is left out. Nothing here is written by the page except through the queue (`notePlay`).
  *
@@ -50,7 +50,9 @@ export function setForYouView(showing: boolean, all: boolean): void {
 export interface MoodShelf { loading: boolean; rows: YtVideo[]; problem: YtProblem | null; backAt: number | null; cached: boolean; fetchedAt: number }
 /** How long the page reuses an answer it fetched (the same 7 days Rust keeps it). */
 export const MOOD_KEEP_MS = 7 * 24 * 3600 * 1000;
-export const useMoods = create<{ open: string | null; byMood: Record<string, MoodShelf> }>(() => ({ open: null, byMood: {} }));
+export const DEFAULT_MOOD = 'Focus';
+/** `closedByUser` is set when the open chip was closed with a second click; the default mood then stays shut for the session. */
+export const useMoods = create<{ open: string | null; byMood: Record<string, MoodShelf>; closedByUser: boolean }>(() => ({ open: null, byMood: {}, closedByUser: false }));
 let moodEpoch = 0;
 
 onLibraryReset(() => {
@@ -58,6 +60,7 @@ onLibraryReset(() => {
   again = false;
   useForYou.setState(blank());
   moodEpoch += 1;
+  // closedByUser is kept: a sign-out and back in is the same session, so a closed Focus stays closed.
   useMoods.setState({ open: null, byMood: {} });
 });
 
@@ -156,10 +159,10 @@ export function whenWords(at: number | undefined, now = Date.now()): string {
 export async function pickMood(mood: string): Promise<void> {
   const cur = useMoods.getState();
   if (cur.open === mood) {
-    useMoods.setState({ open: null });
+    useMoods.setState({ open: null, closedByUser: true });
     return;
   }
-  useMoods.setState({ open: mood });
+  useMoods.setState({ open: mood, closedByUser: false });
   const have = cur.byMood[mood];
   if (have?.loading) return;
   const now = Date.now();
@@ -191,4 +194,15 @@ export function moodBudgetLine(backAt: number, now = Date.now()): string {
   if (new Date(backAt * 1000).toDateString() === new Date(now).toDateString()) return 'Out of mood searches this week. Back later today.';
   const day = new Date(backAt * 1000).toLocaleDateString('en-US', { weekday: 'long' });
   return `Out of mood searches this week. Back on ${day}.`;
+}
+
+/**
+ * The For you tab opens on the default mood when no mood is open, so the page always has music. It goes the same
+ * way as a click (a mood kept this week costs no search, a spent budget shows its calm line). A chip the user closed
+ * stays closed for the session.
+ */
+export function openDefaultMood(): void {
+  const cur = useMoods.getState();
+  if (cur.open !== null || cur.closedByUser) return;
+  void pickMood(DEFAULT_MOOD);
 }
