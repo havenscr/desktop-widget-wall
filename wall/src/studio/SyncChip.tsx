@@ -1,4 +1,4 @@
-import { IconAdjustmentsHorizontal, IconAlertTriangle, IconLoader2, IconPalette, IconWaveSine } from '@tabler/icons-react';
+import { IconAdjustmentsHorizontal, IconAlertTriangle, IconLoader2, IconPalette, IconWaveform } from '@tabler/icons-react';
 import { useEffect, useRef, useState, type CSSProperties } from 'react';
 import { readCoverStrips } from '../music/coverTint';
 import { useNowPlayingStore } from '../music/store';
@@ -70,7 +70,7 @@ export function SyncChip({ blocked }: { blocked: boolean }) {
         aria-label={`${SYNC_WORD}: colours and settings (${entry.name})`}
         {...tip('Opens Music sync: colours and settings')}
       >
-        {m.failed ? <IconAlertTriangle className="u-mood-ico warn" size={18} stroke={2} aria-hidden="true" /> : m.busy ? <IconLoader2 className="u-mood-ico u-spin" size={18} stroke={2} aria-hidden="true" /> : <IconWaveSine size={18} stroke={2} aria-hidden="true" />}
+        {m.failed ? <IconAlertTriangle className="u-mood-ico warn" size={18} stroke={2} aria-hidden="true" /> : m.busy ? <IconLoader2 className="u-mood-ico u-spin" size={18} stroke={2} aria-hidden="true" /> : <IconWaveform size={18} stroke={2} aria-hidden="true" />}
         <span className="u-mood-name">{SYNC_WORD}</span>
       </button>
       <button
