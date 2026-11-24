@@ -425,3 +425,13 @@
     transform: rotate(360deg);
   }
 }
+
+/* The Sky rows in the Display group: the style chips, then the pages it shows on. */
+.tools-sky {
+  margin-bottom: 18px;
+}
+.tools-sky .tools-sky-label {
+  margin-top: 14px;
+  margin-bottom: 8px;
+  opacity: 0.45;
+}

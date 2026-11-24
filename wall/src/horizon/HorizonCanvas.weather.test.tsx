@@ -1,6 +1,7 @@
 import { act, cleanup, render } from '@testing-library/react';
 import { useState } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { useBackdropSettings } from '../backdrop/settings';
 import { HorizonCanvas, WeatherOverlay } from './HorizonCanvas';
 import type { HorizonOptions } from './index';
 import { stubContext } from './canvasStub';
@@ -216,6 +217,8 @@ describe('the weather in the horizon frame', () => {
   it('draws none of it on Zen (the picture runs, the weather layer does not)', () => {
     useWeatherStore.setState({ reading: rainReading(NOON) });
     usePlaceStore.setState({ active: 'zen' });
+    // The animated sky is on for Zen by default, which splits the picture; its own test is in HorizonCanvas.skyLayer.test.tsx.
+    useBackdropSettings.setState({ places: [] });
     render(<HorizonCanvas now={() => NOON} />);
     expect(frames.size).toBe(1);
     runFrame(100);

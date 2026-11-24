@@ -61,6 +61,11 @@ export function levelAt(ageS: number): number {
   return stage.running ? breathLevel(stage.pattern, Math.max(0, ms - stage.startedAt)) : idleBreathLevel(ms);
 }
 
+/** The breath level (0 to 1) at the wall clock `now` (ms), for a loop that keeps its own clock (the animated sky). */
+export function levelAtTime(now: number): number {
+  return stage.running ? breathLevel(stage.pattern, Math.max(0, now - stage.startedAt)) : idleBreathLevel(now);
+}
+
 /** The picture's share of its light now: 1 while lit, falling to 0 over Dream's first minute. */
 export function pictureFade(now: number): number {
   return stage.dreamAt !== null ? dreamFade(now - stage.dreamAt) : 1;

@@ -319,3 +319,15 @@ button,
   border-radius: 50%;
   background: var(--amber);
 }
+
+/* The animated sky (`backdrop/`): the stage's width, from the top down to the lowest horizon line in use. Plain alpha compositing:
+   no blend mode, no filter. It sits between the horizon's two canvases, under the place veil. */
+.backdrop-canvas {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 2560px;
+  height: 582px;
+  display: block;
+  pointer-events: none;
+}

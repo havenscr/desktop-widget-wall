@@ -95,7 +95,7 @@ export default {
       G('Health, two failing', 'weather=stale&tasks=down&tools=health', ['Health', 'Sources', 'Reload']),
       G('Lights and home', 'tools=lights&keys2=none&lightsync=paired&desktoken=set', ['Key lights', 'Light sync', 'Home app']),
       G('Light sync pairing', 'tools=lights&keys2=none&lightsync=unpaired&desktoken=set', ['Press the link button on the Hue bridge'], LS_ROW + ' .tools-btn.cy'),
-      G('Display', 'tools=display', ['Weather in the scene', 'Video look']),
+      G('Display', 'tools=display', ['Sky', 'Show on', 'Weather in the scene', 'Video look']),
       G('YouTube setup form open', 'youtube=off&meet=signedout&tools=1', ['Client ID', 'Client secret'], YT_ROW + ' .tools-btn'),
     ],
   },

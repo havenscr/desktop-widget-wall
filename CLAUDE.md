@@ -372,6 +372,7 @@ Its horizon (`wall/src/horizon/`) is a hand-tuned canvas renderer: keep its math
 and constants as they are. Run, test, build and review hook: `wall/README.md`.
 Audio levels, the horizon sound ripple, the Unwind tab and Watt the sheep are front end only (`wall/src/audio`, `wall/src/buddy`).
 The Zen place and Dream (`wall/src/zen`) are front end only too; Zen draws the horizon on the Unwind camera with the ridge following the breath, and Dream fades it to black.
+The animated sky (`wall/src/backdrop`, a WebGL layer between the horizon's two canvases, set in Tools, Display, Sky) is front end only and can show on any page.
 `lib.rs` finds the window with `app_window` (labels `main` and `wall2`); behaviour
 only the old app has (fullscreen toggle, monitor 2 placement) must stay on `MAIN_LABEL`.
 Wall 2 is placed through Win32 in `src-tauri/src/wall2_window.rs` (not tao) and writes `wall2-placement.log`; see `wall/README.md`.

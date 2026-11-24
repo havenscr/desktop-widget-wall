@@ -453,6 +453,26 @@ add('zen', 'breath running, box pattern', url('zen', TYPICAL_AT, 'audio=demo'), 
 add('zen', 'dimmed: after the fade', url('dimmed', TYPICAL_AT, 'dreamage=70'), true);
 state('dimmed', 'night with audio demo', 'audio=demo', TIMES.night);
 
+// The animated sky (`src/backdrop/`). The pixel proof pairs: every page drawn on one canvas (`sky=flat`) and split with the sky layer
+// empty (`sky=place`); `npm run sky-proof` reads the two stills and fails on any difference. Then both styles frozen at a moment (`skyt`)
+// at night, at dusk and at noon on Zen, Unwind, Home and Work.
+for (const place of ['work', 'home', 'meet', 'unwind', 'zen']) {
+  state(place, 'sky proof: one canvas', 'sky=flat');
+  state(place, 'sky proof: split, sky layer empty', 'sky=place');
+}
+for (const [when, at] of [['night', TIMES.night], ['dusk', TIMES.dusk], ['noon', TIMES.noon]]) {
+  state('unwind', `sky proof: one canvas, ${when}`, 'sky=flat', at);
+  state('unwind', `sky proof: split, sky layer empty, ${when}`, 'sky=place', at);
+}
+for (const place of ['zen', 'unwind', 'home', 'work']) {
+  for (const [style, name] of [['wash', 'colour wash'], ['aurora', 'aurora']]) {
+    for (const [when, at] of [['night', TIMES.night], ['dusk', TIMES.dusk], ['noon', TIMES.noon]]) {
+      state(place, `sky: ${name}, ${when}`, `skyon=${place}&skystyle=${style}&skyt=40`, at);
+    }
+  }
+  state(place, 'sky: off', 'skyon=');
+}
+
 // keys style: keys tinted by kind by day and night, keys that cannot be sent, For you as two
 // key-height plates, long labels, a key under the pointer and one held down, and the Hide
 // screen button grown under the pointer. `hover:` moves the pointer onto an element, `press:`
@@ -925,6 +945,12 @@ const NO_TEXT = [
   ['work', 'lines:', 'only the drawn levels move'],
   ['home', 'lines:', 'only the drawn levels move'],
   ['zen', 'focus running, long title', 'Zen shows no session title'],
+  // The animated sky is drawn, not written: the pixel proof and the review stills judge it.
+  ['work', 'sky', 'the animated sky is drawn, no text changes'],
+  ['home', 'sky', 'the animated sky is drawn, no text changes'],
+  ['meet', 'sky', 'the animated sky is drawn, no text changes'],
+  ['unwind', 'sky', 'the animated sky is drawn, no text changes'],
+  ['zen', 'sky', 'the animated sky is drawn, no text changes'],
   // Watt set down elsewhere: only where he stands changes (his stored spot), no text.
   ['work', 'Watt: set down', 'only where Watt stands changes'],
   ['home', 'Watt: set down', 'only where Watt stands changes'],
@@ -1067,7 +1093,7 @@ async function launch() {
   let stderr = '';
   chromeProc = spawn(
     chrome,
-    ['--headless', '--no-sandbox', '--disable-gpu', '--mute-audio', `--user-data-dir=${profile}`, '--remote-debugging-port=0', `--window-size=${W},${H + 87}`, 'about:blank'],
+    ['--headless', '--no-sandbox', '--disable-gpu', '--enable-unsafe-swiftshader', '--mute-audio', `--user-data-dir=${profile}`, '--remote-debugging-port=0', `--window-size=${W},${H + 87}`, 'about:blank'],
     { stdio: ['ignore', 'ignore', 'pipe'], detached: process.platform !== 'win32', env: { ...process.env, TMPDIR: scratch, TEMP: scratch, TMP: scratch } },
   );
   const proc = chromeProc;
