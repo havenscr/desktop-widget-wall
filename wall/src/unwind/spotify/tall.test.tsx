@@ -14,7 +14,7 @@ import { deviceKindWord, GONE_LINE, LOCKED_LINE, NOT_YOURS_LINE, PAGE_OFF_LINE, 
 import { deviceRows, DEVICES_FOOT, STALE_NOTE } from './PlayOn';
 import { PLAYBACK_POLL_MS, SEEK_KEY_GAP_MS, SEEK_STEP_MS } from './PlayerRow';
 import { SpotifyCard } from './SpotifyCard';
-import { useSpotifyPinNote } from './playItem';
+import { playPinnedSpotify, useSpotifyPinNote } from './playItem';
 import { QUEUE_NOTE } from './TallViews';
 import { arrowTarget, gridColumns } from './Tile';
 import { resetSpotifyStatus, useSpotifyStatus } from './status';
@@ -1158,6 +1158,45 @@ describe('Play on', () => {
       await flush(2000);
       expect(cancelled).toHaveBeenCalledTimes(1);
       expect(document.querySelector('.sp-note')).toBeNull();
+    });
+
+    it('after Cancel, a play started from a pin shows the start line again', async () => {
+      await begin();
+      await act(async () => (screen.getByRole('button', { name: 'Cancel' }) as HTMLButtonElement).click());
+      await flush(2000);
+      expect(document.querySelector('.sp-note')).toBeNull();
+      status = { starting: true, result: null };
+      await act(async () => playPinnedSpotify('playlist', 'abc123', 'Road Trip'));
+      await flush();
+      expect(screen.getByText('Starting Spotify in the background')).toBeTruthy();
+      expect(screen.getByText('Road Trip plays when it is ready.')).toBeTruthy();
+      await act(async () => (screen.getByRole('button', { name: 'Cancel' }) as HTMLButtonElement).click());
+      await flush(2000);
+    });
+
+    it('a second Play while the start is under way is ignored: the count and Cancel stay', async () => {
+      await begin();
+      let again = 0;
+      mocks.set('wall2_spotify_play', () => {
+        again += 1;
+        return 'starting';
+      });
+      await flush(3000);
+      expect(screen.getByText('3 s')).toBeTruthy();
+      await act(async () => (document.querySelector('.sp-shbtns .sp-btn.fill') as HTMLButtonElement).click());
+      await flush();
+      expect(again).toBe(1);
+      expect(screen.getByText('Starting Spotify in the background')).toBeTruthy();
+      expect(screen.getByText('3 s')).toBeTruthy();
+      expect(screen.getByRole('button', { name: 'Cancel' })).toBeTruthy();
+      expect(screen.getByText('List 1 plays when it is ready.')).toBeTruthy();
+    });
+
+    it('the seconds count never shows more than 30', async () => {
+      await begin();
+      await flush(45_000);
+      expect(screen.getByText('30 s')).toBeTruthy();
+      expect(screen.queryByText('31 s')).toBeNull();
     });
 
     it('says Spotify was not found when the start ends with not installed', async () => {

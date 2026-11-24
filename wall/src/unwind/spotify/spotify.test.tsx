@@ -91,10 +91,10 @@ it('shows startup only for Rust starting and clears it on success or failure', a
   mocks.set('get_now_playing',()=>null);
   const success=finishPlay('starting',()=>notes.push('Starting Spotify'));
   expect(notes).toEqual(['Starting Spotify']); await flush(1000); await success;
-  await expect(finishPlay('starting',()=>notes.push('Starting Spotify'))).resolves.toBeUndefined();
+  await expect(finishPlay('starting',()=>notes.push('Starting Spotify'))).resolves.toBe(true);
   mocks.set('wall2_spotify_start_status',()=>({starting:false,result:'no device'}));
   await expect(finishPlay('starting',()=>notes.push('Starting Spotify'))).rejects.toThrow('no device');
-  await expect(finishPlay('played',()=>notes.push('wrong'))).resolves.toBeUndefined();
+  await expect(finishPlay('played',()=>notes.push('wrong'))).resolves.toBe(true);
   expect(notes).not.toContain('wrong');
 });
 

@@ -10,10 +10,9 @@ pub(crate) const OPENED_URI: &str = "opened-uri";
 pub(crate) const NOT_INSTALLED: &str = "not-installed";
 const FAILED: &str = "failed";
 
-/// First Start menu entry named Spotify, else the first named like Spotify*, else the `spotify:`
-/// link when it has a handler, else nothing is started.
+/// The Start menu entry named exactly Spotify, else the `spotify:` link when it has a handler, else
+/// nothing is started.
 pub(crate) const SCRIPT: &str = "$a = Get-StartApps | Where-Object { $_.Name -eq 'Spotify' } | Select-Object -First 1; \
-if (-not $a) { $a = Get-StartApps | Where-Object { $_.Name -like 'Spotify*' } | Select-Object -First 1 }; \
 if ($a) { Start-Process ('shell:AppsFolder\\' + $a.AppID) -WindowStyle Minimized; 'opened-app'; exit 0 }; \
 if (Test-Path 'Registry::HKEY_CLASSES_ROOT\\spotify') { Start-Process 'spotify:' -WindowStyle Minimized; 'opened-uri'; exit 0 }; \
 'not-installed'";
@@ -34,19 +33,24 @@ pub(crate) fn launch_with(sh: &dyn Shell) -> Result<&'static str, &'static str> 
 
 /// One top-level window as the minimiser sees it.
 #[derive(Clone, Debug, PartialEq)]
+#[cfg_attr(not(windows), allow(dead_code))]
 pub(crate) struct Seen {
     pub id: isize,
     pub image: String,
     pub title: String,
     pub visible: bool,
+    /// The window's process was not running before the launch.
+    pub fresh: bool,
 }
 
-/// The windows to minimise: visible, not there before the launch, not the wall's own, an Edge or
+/// The windows to minimise: visible, not there before the launch, owned by a process that was not
+/// running before it (an unrelated Edge window the owner opens meanwhile is left alone), not the wall's own, an Edge or
 /// Spotify process image, and a title with Spotify in it.
+#[cfg_attr(not(windows), allow(dead_code))]
 pub(crate) fn pick_new_player_windows(before: &[isize], after: &[Seen], own: &[isize]) -> Vec<isize> {
     after
         .iter()
-        .filter(|w| w.visible && !before.contains(&w.id) && !own.contains(&w.id))
+        .filter(|w| w.visible && w.fresh && !before.contains(&w.id) && !own.contains(&w.id))
         .filter(|w| {
             let file = crate::wall2_winutil::exe_file_part(&w.image);
             file == "msedge.exe" || file == "spotify.exe"
@@ -59,6 +63,7 @@ pub(crate) fn pick_new_player_windows(before: &[isize], after: &[Seen], own: &[i
 #[cfg(windows)]
 pub(crate) struct Minimiser {
     before: Vec<isize>,
+    before_pids: Vec<u32>,
     done: Vec<isize>,
 }
 
@@ -66,7 +71,10 @@ pub(crate) struct Minimiser {
 impl Minimiser {
     /// Takes the snapshot of windows that exist now. Call before the launch.
     pub(crate) fn new() -> Self {
-        Self { before: crate::wall2_winutil::sys::top_level_windows(), done: Vec::new() }
+        use crate::wall2_winutil::sys;
+        let before = sys::top_level_windows();
+        let before_pids = before.iter().map(|id| sys::pid_of(*id)).collect();
+        Self { before, before_pids, done: Vec::new() }
     }
 
     /// Minimises each new player window once, without taking focus. Returns how many were done now.
@@ -87,6 +95,7 @@ impl Minimiser {
                 image: sys::image_path(pid).unwrap_or_default(),
                 title: String::from_utf16_lossy(&buf[..n.min(buf.len())]),
                 visible: unsafe { IsWindowVisible(sys::hwnd(id)) }.as_bool(),
+                fresh: !self.before_pids.contains(&pid),
             });
         }
         let picked = pick_new_player_windows(&self.before, &seen, &own);
@@ -147,10 +156,12 @@ mod tests {
             assert!(SCRIPT.contains(part), "{part}");
         }
         assert!(!SCRIPT.contains('"'));
+        assert!(!SCRIPT.contains("-like") && !SCRIPT.contains('*'));
+        assert!(SCRIPT.contains("$_.Name -eq 'Spotify'"));
     }
 
     fn w(id: isize, image: &str, title: &str, visible: bool) -> Seen {
-        Seen { id, image: image.into(), title: title.into(), visible }
+        Seen { id, image: image.into(), title: title.into(), visible, fresh: true }
     }
 
     #[test]
@@ -168,5 +179,13 @@ mod tests {
         assert_eq!(pick_new_player_windows(&[1], &after, &[8]), [2, 3, 4]);
         assert!(pick_new_player_windows(&[1, 2, 3, 4], &after, &[8]).is_empty());
         assert!(pick_new_player_windows(&[], &[], &[]).is_empty());
+    }
+
+    #[test]
+    fn an_unrelated_edge_window_from_an_older_process_is_left_alone() {
+        let mut old = w(9, r"C:\Edge\msedge.exe", "Spotify - news", true);
+        old.fresh = false;
+        let after = [old, w(10, r"C:\Edge\msedge.exe", "Spotify - Web Player", true)];
+        assert_eq!(pick_new_player_windows(&[], &after, &[]), [10]);
     }
 }

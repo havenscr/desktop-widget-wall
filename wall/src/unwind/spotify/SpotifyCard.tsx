@@ -493,7 +493,7 @@ function Browser({ tall }: { tall: boolean }) {
   }, [isOpen]);
   const [ownNote, setNote] = useState<string | null>(null);
   const pinNote = useSpotifyPinNote((s) => s.note);
-  const note = ownNote ?? pinNote;
+  const note = ownNote || pinNote;
   const nowTitle = useNowPlayingStore((s) => s.info?.title ?? '');
   useSpotifyNowRead(nowTitle);
   const isNow = useIsNow();
@@ -604,7 +604,7 @@ function Browser({ tall }: { tall: boolean }) {
     // Whether a player was named decides the words of a refusal ("That player ..." or about this PC).
     const named = !!playDeviceId();
     void playWhole(item, shuffled, () => mounted.current && setNote(STARTING_NOTE)).then(
-      () => mounted.current && setNote(null),
+      (ran) => ran && mounted.current && setNote(null),
       (e) => mounted.current && setNote(playFailureLine(e, named)),
     );
   };
@@ -800,7 +800,7 @@ function useStartSeconds(startedAt: number | null): number {
     const id = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(id);
   }, [startedAt]);
-  return startedAt === null ? 0 : Math.max(0, Math.floor((now - startedAt) / 1000));
+  return startedAt === null ? 0 : Math.min(START_WAIT_S, Math.max(0, Math.floor((now - startedAt) / 1000)));
 }
 
 /** A song in Liked, Recent or Search: a row that plays it, with its details on hover. */
@@ -899,18 +899,16 @@ function SongsView({ item, tall, backLabel, onBack, onNote, onUpNext }: { item: 
   const fail = (e: unknown, named: boolean) => mounted.current && onNote(playFailureLine(e, named));
   const playAll = (shuffled: boolean) => {
     const named = !!playDeviceId();
-    void playWhole(item, shuffled, () => onNote(STARTING_NOTE)).then(() => onNote(null), (e) => fail(e, named));
+    void playWhole(item, shuffled, () => onNote(STARTING_NOTE)).then((ran) => ran && onNote(null), (e) => fail(e, named));
   };
   const playFrom = (t: SpotifyTrack) => {
     if (!t.id || !t.playable) return;
-    useSpotifyStart.setState({ name: t.name });
     const named = !!playDeviceId();
     void (async () => {
       try {
         const player = await confirmPlayer();
         const answer = await spotify.play('track', t.id as string, { context: { kind, id: item.id }, offsetId: t.id as string, ...player });
-        await finishPlay(answer, () => onNote(STARTING_NOTE));
-        onNote(null);
+        if (await finishPlay(answer, () => onNote(STARTING_NOTE), t.name)) onNote(null);
       } catch (e) {
         fail(e, named);
       }

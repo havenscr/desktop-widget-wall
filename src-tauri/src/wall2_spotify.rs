@@ -784,13 +784,27 @@ fn devices_before(cfg: &Config, deadline: Instant) -> Result<Vec<Device>, String
     let value: Value = serde_json::from_slice(&reply.body).map_err(|_| "unreadable reply".to_string())?;
     Ok(shape_devices(&value))
 }
+/// During a cold start the only computer that counts is this PC: another computer on the account
+/// must never take the play. A chosen device, or a PC name that cannot be read, keeps today's rule.
+fn this_pc_only(devices: &[Device], requested: Option<&str>, computer: Option<&str>) -> Vec<Device> {
+    match computer.map(str::trim).filter(|n| !n.is_empty()) {
+        Some(name) if requested.is_none() => devices.iter().filter(|d| !d.kind.eq_ignore_ascii_case("computer") || d.name.eq_ignore_ascii_case(name)).cloned().collect(),
+        _ => devices.to_vec(),
+    }
+}
+fn play_unless_cancelled<C, P>(waited: Result<String, String>, cancelled: C, play: P) -> Result<(), String>
+where C: FnOnce() -> bool, P: FnOnce(&str) -> Result<(), String> {
+    let device = waited?;
+    if cancelled() { return Err("cancelled".into()) }
+    play(&device)
+}
 fn wait_for_computer<N, S, C, D>(mut devices: Vec<Device>, requested: Option<&str>, computer: Option<&str>, limit: Duration, mut now: N, mut sleep: S, mut cancelled: C, mut source: D) -> Result<String, String>
 where N: FnMut() -> Duration, S: FnMut(Duration), C: FnMut() -> bool, D: FnMut(Duration) -> Result<Vec<Device>, String> {
     loop {
         if cancelled() { return Err("cancelled".into()) }
         let elapsed = now();
         if elapsed >= limit { return Err(NO_DEVICE.into()) }
-        match choose_device(&devices, requested, computer) { DeviceChoice::Ready(device) => return Ok(device), DeviceChoice::Restricted => return Err(RESTRICTED.into()), DeviceChoice::Gone => return Err(DEVICE_GONE.into()), _ => {} }
+        match choose_device(&this_pc_only(&devices, requested, computer), requested, computer) { DeviceChoice::Ready(device) => return Ok(device), DeviceChoice::Restricted => return Err(RESTRICTED.into()), DeviceChoice::Gone => return Err(DEVICE_GONE.into()), _ => {} }
         sleep(Duration::from_secs(1).min(limit.saturating_sub(elapsed)));
         let left = limit.saturating_sub(now());
         if left.is_zero() { return Err(NO_DEVICE.into()) }
@@ -816,13 +830,15 @@ fn finish_start(cfg: &Config, request: &PlayRequest, began: Instant, devices: Ve
         Ok(_) => return Err(NOT_INSTALLED.into()),
         Err(word) => return Err(word.into()),
     }
+    minimiser.tick();
+    if CANCEL_PLAYER.load(Ordering::SeqCst) { return Err("cancelled".into()) }
     let computer = std::env::var("COMPUTERNAME").ok();
     let seen = std::cell::RefCell::new(devices.clone());
     let waited = wait_for_computer(devices, request.device_id.as_deref(), computer.as_deref(), START_WAIT, || began.elapsed(), |d| { std::thread::sleep(d); minimiser.tick(); }, || CANCEL_PLAYER.load(Ordering::SeqCst), |left| { let got = devices_before(cfg, Instant::now() + left)?; *seen.borrow_mut() = got.clone(); Ok(got) });
     let seen = seen.into_inner();
     let matched = computer.as_deref().is_some_and(|name| seen.iter().any(|d| d.kind.eq_ignore_ascii_case("computer") && d.name.eq_ignore_ascii_case(name)));
     log::write_start_end(waited.is_ok().then(|| began.elapsed().as_secs()), matched, seen.iter().any(|d| d.restricted), minimiser.count());
-    play_on_device(cfg, request, &waited?)
+    play_unless_cancelled(waited, || CANCEL_PLAYER.load(Ordering::SeqCst), |device| play_on_device(cfg, request, device))
 }
 
 #[tauri::command]
@@ -1244,6 +1260,34 @@ mod tests {
         elapsed.set(Duration::ZERO);
         let late = wait_for_computer(Vec::new(),None,None,START_WAIT,||elapsed.get(),|d|elapsed.set(elapsed.get()+d),||false,|_|{elapsed.set(START_WAIT+Duration::from_secs(1));Ok(vec![device.clone()])});
         assert_eq!(late,Err(NO_DEVICE.into()));
+    }
+
+    #[test]
+    fn a_cancel_after_the_wait_never_plays() {
+        let played = std::cell::Cell::new(false);
+        let got = play_unless_cancelled(Ok(DEVICE.into()), || true, |_| { played.set(true); Ok(()) });
+        assert_eq!(got, Err("cancelled".into()));
+        assert!(!played.get());
+        let got = play_unless_cancelled(Ok(DEVICE.into()), || false, |d| { assert_eq!(d, DEVICE); played.set(true); Ok(()) });
+        assert_eq!(got, Ok(()));
+        assert!(played.get());
+        assert_eq!(play_unless_cancelled(Err(NO_DEVICE.into()), || panic!("not asked"), |_| panic!("no play")), Err(NO_DEVICE.into()));
+    }
+
+    #[test]
+    fn a_cold_start_waits_for_this_pc_not_another_computer() {
+        let other = Device { id: "other".into(), name: "Kitchen".into(), kind: "Computer".into(), active: false, restricted: false, volume: None };
+        let mine = Device { id: DEVICE.into(), name: "DESK".into(), kind: "Computer".into(), active: false, restricted: false, volume: None };
+        let elapsed = std::cell::Cell::new(Duration::ZERO);
+        let never = wait_for_computer(vec![other.clone()], None, Some("Desk"), START_WAIT, || elapsed.get(), |d| elapsed.set(elapsed.get() + d), || false, |_| Ok(vec![other.clone()]));
+        assert_eq!(never, Err(NO_DEVICE.into()));
+        let mut reads = VecDeque::from([Ok(vec![other.clone(), mine.clone()])]);
+        elapsed.set(Duration::ZERO);
+        let got = wait_for_computer(vec![other.clone()], None, Some("Desk"), START_WAIT, || elapsed.get(), |d| elapsed.set(elapsed.get() + d), || false, |_| reads.pop_front().unwrap());
+        assert_eq!(got, Ok(DEVICE.into()));
+        // The name cannot be read: today's rule, a sole computer is taken.
+        let got = wait_for_computer(vec![other.clone()], None, None, START_WAIT, || Duration::ZERO, |_| panic!("no wait"), || false, |_| panic!("no read"));
+        assert_eq!(got, Ok("other".into()));
     }
 
     #[test]

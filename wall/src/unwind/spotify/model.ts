@@ -444,12 +444,12 @@ export async function confirmPlayer(): Promise<{ deviceId?: string }> {
 }
 
 /** The line for a play that failed; a gone player also clears the pick and reads the list again so the chip tells the truth. */
-export function playFailureLine(e: unknown, named: boolean): string {
+export function playFailureLine(e: unknown, named: boolean): string | null {
   const p = spotifyProblem(e);
   if (p === 'devicegone' || (p === 'restricted' && named)) {
     useSpotifyTarget.getState().setTarget(null);
     useSpotifyStart.setState((s) => ({ rev: s.rev + 1 }));
   }
-  // A start the owner cancelled ends quietly: an empty line shows no note.
-  return playProblemLine(p, named);
+  // A start the owner cancelled ends quietly: no line, so no note (never an empty string).
+  return playProblemLine(p, named) || null;
 }
