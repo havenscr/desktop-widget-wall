@@ -1583,7 +1583,7 @@ the centre card; the date line takes it through the frame's `ClockSlot` portal.
   `https://wallcap.localhost/<id>`, served by `src-tauri/src/wall2_captures_media.rs` on the `wallcap` scheme: the Wall 2 window only,
   GET and HEAD only, a held video id only (ids are an HMAC under a key made fresh each run), the app page as Referer, a file that
   still matches its id and starts with the right container bytes, one `bytes=` range per request, at most 1 MiB per reply, every
-  refusal an empty 404. No path ever reaches the page. Dev knobs: `?captures=video` plays the bundled flame loop, `?captures=videobad`
+  refusal an empty 404. No path ever reaches the page. Dev knobs: `?captures=video` plays a short clip the mock records in the page, `?captures=videobad`
   makes the newest recording fail. Not proved here: seeking and the Referer and `Sec-Fetch-Dest` checks on the real PC.
   **Share link** (`src-tauri/src/wall2_share.rs`, `bridge/share.ts`, `tools/ShareKey.tsx`). Right-click a capture and choose "Share link":
   the menu turns into a second step ("Anyone with the link can see this." and "Uploads to go-ae.org and copies the link.") with a
@@ -3656,37 +3656,28 @@ of a set never gets one; Win+L and Ctrl+Alt+Delete stay refused. The page sends 
 else (the rail and clock are hidden under it). It is front end only: it does not change
 the system volume, Do Not Disturb or the focus timer.
 
-- **Flames** (`Flames.tsx`). A muted, looping video (`wall/src/assets/flames/flame-loop.webm`,
-  1280 by 360, a seamless 150 second loop of the same flame as `flame-192.webp`, rendered offline by
-  `wall/scripts/flame-loop.mjs`) covers the stage under the veil. It is paused while the page is hidden or
-  the display is off, and plays again after. Under reduced motion there is no video, only the still
-  `flame-192.webp`. If the video errors, the old two drifting still layers (rotating every 4 minutes with a 30 second
-  cross-fade) take over.
-- **Activities** (`Activities.tsx`, `model.ts`). Chosen before Start with a row of four chips above the length
-  chips: Breathe, Body scan, Candle, Intention. The middle previews the choice; the choice (and the breath pattern) is
-  remembered in `localStorage`. The running label reads "FIVE MINUTES OF ZEN", "... OF BODY SCAN", "... OF CANDLE" or
-  "... OF INTENTION". All keep the clock, Leave, "After this" and click anywhere to end early.
-  Breathe has a second chip row: Calm 4-2-6 (default), Box 4-4-4-4, 4-7-8, Even 5-5 (in, hold, out, hold; a zero hold is skipped).
-  Body scan draws an outline figure with 12 captions (jaw to whole body), one at a time, each session length / 12 long, with a thin
-  progress line; captions crossfade (no crossfade under reduced motion). Candle darkens the veil to 0.65 and flickers one
-  SVG candle (transform and opacity only, also under reduced motion); its line shows for 10 seconds, then fades.
-  Intention shows "What matters for the next hour?" and one text field before Start (Enter or Start begins); the line then
-  shows faint and large for the whole run and is kept in `localStorage` for the day, prefilled if from today.
-- **Breathing guide** (`Breath.tsx`, maths in `model.ts`). By default a 12 second cycle: 4 s in,
-  2 s hold, 6 s out (the pattern is chosen above). A thin cyan to pink ring scales from 0.8 to 1.06 of 370 px with a
-  cubic ease, inside a faint fixed ring at the full inhale size, with a glow (a sibling of the masked ring) that
-  brightens on the inhale. The phase word and the seconds left sit in the centre at a
-  fixed size; `minRingDiameter` checks that the longest word clears the smallest ring by
-  40 px. Starting restarts the cycle at "Breathe in".
-- **Zen layout** (`Zen.tsx`). Flames sit behind a veil that leaves about 45 percent of their
-  light. Top left: the clock. Bottom left: the length picker and Start, or while a session
+- **Picture.** Zen draws the wall's own horizon (sky, ridge and lake) on the Unwind camera: `cameraFor('zen')` is the Unwind
+  preset and `HorizonCanvas` keeps its one canvas running while Zen is open. The ridge lines follow the breath, not the music:
+  `zen/stage.ts` is the one record Zen writes and the frame loop reads (`running`, `pattern`, `startedAt`, `dreamAt`, and the
+  `sample(u, tau)` the echo calls), with no React state in the loop. A running session drives the lines with `breathLevel`
+  (0 at empty, 1 at full, the phase word's own curve); the start screen breathes softly by itself (`idleBreathLevel`, 14 seconds,
+  never still). Each line shows the breath a moment earlier, so a swell runs back through the lines. The lake mirror is brightest
+  on the out breath. Zen ignores audio and draws no grid pulse. The renderer is not edited. The rail, the frame's clock and a playing
+  Watch video are hidden under it (`frame.css`); the video plays on. Under reduced motion it is one still of the ridge at rest.
+  There is no flame video: it was blocked by the release policy (`default-src 'none'`, no `media-src`) and is gone, with its stills.
+- **Breath** (`Zen.tsx`, `Breath.tsx`, maths in `model.ts`). The only activity (Body scan, Candle and Intention are gone). Four
+  pattern chips (Calm 4-2-6 default, Box 4-4-4-4, 4-7-8, Even 5-5; in, hold, out, hold; a zero hold is skipped), remembered in
+  `localStorage`, then the lengths 3, 5 and 10 minutes and Start. While a session runs the phase word and seconds left sit over the
+  lake (no ring). With no input for 20 seconds the start screen's chips and words fade out and return on any input. Watt stands on the shore.
+- **Zen layout** (`Zen.tsx`). Top left: the clock. Bottom left: the pattern and length chips and Start, or while a session
   runs "FIVE MINUTES OF ZEN" with "N:NN left.". Bottom centre while a session runs and is not ending: "Click anywhere
-  to end early" at 13 px (a click outside Leave ends the session). On entry, keyboard focus starts on the chosen length. The chosen length is the
+  to end early" at 16 px (a click outside Leave ends the session). On entry, keyboard focus starts on the chosen length. The chosen length is the
   one filled chip; keyboard focus is a separate offset ring. Leave is at least 36 px tall. Bottom right: Leave, and "After this:
   N things are waiting." from the same task feed as the Work card (hidden when it is not set
   up or empty; the "Neither is urgent." line shows only when every task has a quadrant and
-  none is urgent). The feed returns at most 3 tasks, so a full list reads "3 or more things are waiting." with no urgency line; under reduced motion the ring holds still and only the word and seconds change.
-- **Dream** (`Dream.tsx`). Flames dim to 35 percent, the guide is hidden, and the screen
+  none is urgent). The feed returns at most 3 tasks, so a full list reads "3 or more things are waiting." with no urgency line.
+- **Dream** (`Dream.tsx`). The picture fades to black over the first minute (`dreamFade`, canvas opacity), then the canvas is hidden and
+  not drawn at all (reduced motion: black at once); waking brings it back. The guide is hidden, and the screen
   follows the concept: a large thin clock at left centre (about half white) with the date
   under it, a Tomorrow card at right centre (tomorrow's first meeting from the same feed and
   rules as Unwind's Tomorrow: "as of" when cached, hidden when too old, one line when the
@@ -3707,8 +3698,7 @@ the system volume, Do Not Disturb or the focus timer.
   `zenDimHour` and `zenDimWaitMin` settings. From 6 PM Zen shows a quiet line under the session controls that says when it dims. A click
   wakes back to Zen; it dims again only after another quiet wait. Leave returns to Work.
   `openDream` (Unwind's Dream tab, removed later) opens Zen already dimmed.
-- **Horizon.** While Zen is active the horizon canvas is hidden and not drawn (no frame
-  loop, no timer redraw). Leaving resumes it, gliding from the last camera.
+- **Dev knob.** `?dreamage=<seconds>` (development builds only) opens Dream that far into its fade, for stills.
 
 ## Small fixes on Unwind and Home
 

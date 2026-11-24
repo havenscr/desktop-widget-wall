@@ -44,7 +44,7 @@ export function App() {
       {/* The sun row (ribbon/Ribbon.tsx draws into it): under Watt, who walks that band. */}
       <div className="sun-layer" data-sun-layer="" aria-hidden="true" />
       <Watt />
-      <div className="shell">
+      <div className="shell" data-place={active}>
         <Rail />
         <Screens />
       </div>

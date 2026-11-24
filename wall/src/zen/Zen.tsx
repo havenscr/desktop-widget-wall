@@ -7,23 +7,16 @@ import { loadSettings } from '../settings/settings';
 import { usePlaceStore } from '../state/places';
 import { visibleRows } from '../tasks/model';
 import { useTasks } from '../tasks/useTasks';
-import { BodyScan, Candle, IntentionField, IntentionLine } from './Activities';
 import { Breath } from './Breath';
 import { Dream } from './Dream';
-import { Flames } from './Flames';
+import { SheepSvg } from '../buddy/Watt';
+import { SPRITES, SPRITE_PX } from '../buddy/sprites';
+import { startBreath, stopBreath, setDream as setStageDream, resetStage } from './stage';
 import {
-  ACTIVITIES,
   BREATH_PATTERNS,
   SESSION_MINUTES,
-  ZEN_VEIL,
-  ZEN_VEIL_CANDLE,
-  bodyScanAt,
-  loadChoice,
-  dayKey,
-  loadIntention,
-  saveChoice,
-  saveIntention,
-  type Activity,
+  loadPattern,
+  savePattern,
   type BreathPattern,
   formatLeft,
   dimDue,
@@ -39,6 +32,10 @@ import {
 const DIM_CHECK_MS = 10_000;
 /** Input on the wall that counts as not quiet. */
 const WALL_INPUT_EVENTS = ['pointerdown', 'pointermove', 'wheel', 'keydown'] as const;
+/** With no input for this long the start screen's chips and words fade out; any input brings them back. */
+export const QUIET_FADE_MS = 20_000;
+/** Where Watt stands on the shore, in stage pixels (left edge and ground line). */
+export const SHORE_WATT = { x: 1560, base: 668 } as const;
 /** The guide fades out over this long before Dream shows. */
 export const GUIDE_FADE_MS = 1200;
 
@@ -74,8 +71,8 @@ function Waiting() {
 }
 
 /**
- * The Zen place: a full-stage view over everything else. Flames, a breathing guide and a short
- * timed session. When a session ends it dims to the big thin clock (Dream's look); from 10 PM
+ * The Zen place: a full-stage view over the wall's own horizon (sky, ridge and lake), drawn on the Unwind camera by
+ * `HorizonCanvas`. The ridge lines swell on the inhale and settle on the exhale, a short timed session. When a session ends it dims to the big thin clock (Dream's look); from 10 PM
  * (a setting) until 6 AM it also dims by itself after ten quiet minutes (a setting) of PC idle time
  * (the wall's own input when the system source is unavailable). A click anywhere wakes it, and it dims again only after another quiet wait. Separate
  * from the focus timer and from Do Not Disturb.
@@ -89,47 +86,42 @@ export function Zen({ nowMs = Date.now }: ZenProps) {
     usePlaceStore.getState().takeZenDream();
   }, []);
   const [minutes, setMinutes] = useState<SessionMinutes>(5);
-  const [choice] = useState(loadChoice);
-  const [activity, setActivityState] = useState<Activity>(choice.activity);
-  const [pattern, setPatternState] = useState<BreathPattern>(choice.pattern);
-  const [intention, setIntention] = useState(() => loadIntention(new Date(nowMs())));
+  const [pattern, setPatternState] = useState<BreathPattern>(loadPattern);
   const [startedAt, setStartedAt] = useState<number | null>(null);
-  const setActivity = (a: Activity) => {
-    setActivityState(a);
-    saveChoice(a, pattern);
-  };
   const setPattern = (p: BreathPattern) => {
     setPatternState(p);
-    saveChoice(activity, p);
+    savePattern(p);
   };
+  // The start screen's chips and words fade away after a quiet spell and return on any input.
+  const [quiet, setQuiet] = useState(false);
   // The last input on the wall (pointer, wheel or keys); the quiet wait counts from here.
   const lastInput = useRef(nowMs());
   const [ending, setEnding] = useState(false);
   const clockNow = useCallback(() => new Date(nowMs()), [nowMs]);
   const running = startedAt !== null;
   const left = useLeft(startedAt, minutes, nowMs);
-  const scan = bodyScanAt(running ? minutes * 60 - left : 0, minutes);
 
-  const canStart = activity !== 'intention' || intention.trim() !== '';
-  const start = useCallback(() => {
-    if (!canStart) return;
-    if (activity === 'intention') saveIntention(new Date(nowMs()), intention.trim());
-    setStartedAt(nowMs());
-  }, [nowMs, activity, intention, canStart]);
+  const start = useCallback(() => setStartedAt(nowMs()), [nowMs]);
   const stop = useCallback(() => setStartedAt(null), []);
 
-  // The saved line is for today: reload it whenever the picker shows again (a session ended or was stopped,
-  // Dream was left) and when the local day turns while the picker is up (checked on the dim tick below).
-  const pickerShown = !dream && startedAt === null;
-  const intentionDay = useRef(dayKey(new Date(nowMs())));
+  // The ridge reads the stage, not React state: it follows the running breath, or its own slow one on the start screen.
   useEffect(() => {
-    if (!pickerShown) return;
-    const now = new Date(nowMs());
-    intentionDay.current = dayKey(now);
-    setIntention(loadIntention(now));
-  }, [pickerShown, nowMs]);
+    if (startedAt !== null) startBreath(pattern, performance.now());
+    else stopBreath();
+  }, [startedAt, pattern]);
+  // Dream fades the picture to black over its first minute (`?dreamage=<seconds>` in a development build starts that far in, for stills).
+  useEffect(() => {
+    if (!dream) {
+      setStageDream(null);
+      return;
+    }
+    const age = import.meta.env.DEV ? Number(new URLSearchParams(window.location.search).get('dreamage')) || 0 : 0;
+    setStageDream(performance.now() - age * 1000);
+  }, [dream]);
+  useEffect(() => resetStage, []);
   const wake = useCallback(() => {
     lastInput.current = nowMs();
+    setQuiet(false);
     setEnding(false);
     setStartedAt(null);
     setDream(false);
@@ -162,12 +154,23 @@ export function Zen({ nowMs = Date.now }: ZenProps) {
   useEffect(() => {
     const seen = () => {
       lastInput.current = nowMs();
+      setQuiet(false);
     };
     for (const e of WALL_INPUT_EVENTS) window.addEventListener(e, seen, { passive: true, capture: true });
     return () => {
       for (const e of WALL_INPUT_EVENTS) window.removeEventListener(e, seen, { capture: true });
     };
   }, [nowMs]);
+
+  // A quiet start screen lets its chips and words go.
+  useEffect(() => {
+    if (dream || startedAt !== null) {
+      setQuiet(false);
+      return;
+    }
+    const id = window.setInterval(() => setQuiet(nowMs() - lastInput.current >= QUIET_FADE_MS), 1000);
+    return () => window.clearInterval(id);
+  }, [dream, startedAt, nowMs]);
 
   // Late and quiet: dim by itself. Quiet is the PC's idle age (`wall2_idle_state`, in seconds), asked at most
   // every 10 s and only while Zen is lit (not dimmed), after the dim hour, with the page visible. When that command is
@@ -176,13 +179,6 @@ export function Zen({ nowMs = Date.now }: ZenProps) {
     let live = true;
     let busy = false;
     const id = window.setInterval(() => {
-      if (!dream && startedAt === null) {
-        const now = new Date(nowMs());
-        if (dayKey(now) !== intentionDay.current) {
-          intentionDay.current = dayKey(now);
-          setIntention(loadIntention(now));
-        }
-      }
       if (dream || startedAt !== null || ending || busy || document.hidden) return;
       if (!isDimHour(new Date(nowMs()), dimHour)) return;
       busy = true;
@@ -225,16 +221,14 @@ export function Zen({ nowMs = Date.now }: ZenProps) {
 
   return (
     <section ref={root} className={`zen${dream ? ' is-dream' : ''}`} data-place="zen" aria-label="Zen">
-      <Flames dim={dream} />
-      <div className="zen-veil" style={{ opacity: dream ? 0 : activity === 'candle' ? ZEN_VEIL_CANDLE : ZEN_VEIL }} aria-hidden="true" />
       {dream ? (
         <Dream onWake={wake} now={clockNow} />
       ) : (
         <div className={`zen-guide${ending ? ' ending' : ''}`}>
-          {activity === 'breathe' && <Breath key={pattern.id} startedAt={startedAt} now={nowMs} pattern={pattern} />}
-          {activity === 'scan' && <BodyScan {...scan} />}
-          {activity === 'candle' && <Candle running={running} />}
-          {activity === 'intention' && (running ? <IntentionLine text={intention} /> : <IntentionField value={intention} onChange={setIntention} onEnter={start} />)}
+          <div className="zen-watt" aria-hidden="true" style={{ left: SHORE_WATT.x, top: SHORE_WATT.base - SPRITES.idle.length * SPRITE_PX }}>
+            <SheepSvg pose="idle" />
+          </div>
+          {running && <Breath key={pattern.id} startedAt={startedAt} now={nowMs} pattern={pattern} />}
           {running && !ending && (
             <div
               className="zen-tap"
@@ -257,27 +251,18 @@ export function Zen({ nowMs = Date.now }: ZenProps) {
           <div className="zen-bl">
             {running ? (
               <>
-                <div className="zen-cap">{sessionLabel(minutes, activity)}</div>
+                <div className="zen-cap">{sessionLabel(minutes)}</div>
                 <div className="zen-left">{formatLeft(left)}.</div>
               </>
             ) : (
-              <div className="zen-start">
-                <div className="breath-picker" role="radiogroup" aria-label="Activity">
-                  {ACTIVITIES.map((a) => (
-                    <button key={a.id} type="button" role="radio" aria-checked={a.id === activity} className="zbtn" onClick={() => setActivity(a.id)} {...tip(a.tip, { align: 'start' })}>
-                      {a.label}
+              <div className={`zen-start${quiet ? ' quiet' : ''}`}>
+                <div className="breath-picker" role="radiogroup" aria-label="Breathing pattern">
+                  {BREATH_PATTERNS.map((p) => (
+                    <button key={p.id} type="button" role="radio" aria-checked={p.id === pattern.id} className="zbtn sm" onClick={() => setPattern(p)} {...tip(p.tip, { align: 'start' })}>
+                      {p.label}
                     </button>
                   ))}
                 </div>
-                {activity === 'breathe' && (
-                  <div className="breath-picker" role="radiogroup" aria-label="Breathing pattern">
-                    {BREATH_PATTERNS.map((p) => (
-                      <button key={p.id} type="button" role="radio" aria-checked={p.id === pattern.id} className="zbtn sm" onClick={() => setPattern(p)} {...tip(p.tip, { align: 'start' })}>
-                        {p.label}
-                      </button>
-                    ))}
-                  </div>
-                )}
                 <div className="zen-lenrow">
                   <div className="breath-picker" role="radiogroup" aria-label="Session length">
                     {SESSION_MINUTES.map((m) => (
@@ -286,14 +271,14 @@ export function Zen({ nowMs = Date.now }: ZenProps) {
                       </button>
                     ))}
                   </div>
-                  <button type="button" className="zbtn go" onClick={start} aria-disabled={canStart ? undefined : true} {...(canStart ? {} : tip('Type what matters first'))}>
+                  <button type="button" className="zbtn go" onClick={start}>
                     <IconPlayerPlayFilled size={28} aria-hidden="true" />
                     Start
                   </button>
                 </div>
               </div>
             )}
-            {!running && showDimHint(clockNow()) && <div className="zen-dimhint">{dimHint(dimHour, dimWaitMin)}</div>}
+            {!running && showDimHint(clockNow()) && <div className={`zen-dimhint${quiet ? ' quiet' : ''}`}>{dimHint(dimHour, dimWaitMin)}</div>}
           </div>
           {running && !ending && <div className="zen-hint">Click anywhere to end early</div>}
           <div className="zen-br">
