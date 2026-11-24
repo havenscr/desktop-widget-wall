@@ -24,8 +24,10 @@ const STARTING: &str = "starting";
 const CHOOSE: &str = "choose";
 const RESTRICTED: &str = "restricted";
 const DEVICE_GONE: &str = "device gone";
-const SPOTIFY_URI: &str = "spotify:";
-const START_WAIT: Duration = Duration::from_secs(12);
+const NOT_INSTALLED: &str = "not installed";
+/// How long a start waits for a computer to appear. The front end counts the same time in
+/// `START_WAIT_S` (wall/src/unwind/spotify/model.ts); change both together.
+const START_WAIT: Duration = Duration::from_secs(30);
 const CALLBACK: &str = "/callback";
 const SCOPE: &str = "user-read-playback-state user-modify-playback-state user-read-currently-playing playlist-read-private playlist-read-collaborative user-library-read user-read-recently-played user-library-modify";
 const MAX_BODY: u64 = 1_000_000;
@@ -804,9 +806,23 @@ fn play_on_device_with(cfg: &Config, request: &PlayRequest, device: &str, http: 
     put_with(cfg, &format!("/me/player/play?device_id={device}"), Some(play_payload(request)), http, creds)
 }
 fn finish_start(cfg: &Config, request: &PlayRequest, began: Instant, devices: Vec<Device>) -> Result<(), String> {
+    use crate::wall2_spotify_log as log;
+    use crate::wall2_spotify_launch as launch;
+    let mut minimiser = launch::Minimiser::new();
+    let launched = launch::launch_with(&crate::wall2_lightsync::huesync::PowerShell);
+    log::write_start_launch(match launched { Ok(launch::OPENED_APP) => log::Reason::App, Ok(launch::OPENED_URI) => log::Reason::Uri, Ok(_) => log::Reason::Missing, Err(_) => log::Reason::Failed }, began.elapsed().as_millis());
+    match launched {
+        Ok(launch::OPENED_APP) | Ok(launch::OPENED_URI) => {}
+        Ok(_) => return Err(NOT_INSTALLED.into()),
+        Err(word) => return Err(word.into()),
+    }
     let computer = std::env::var("COMPUTERNAME").ok();
-    let device = wait_for_computer(devices, request.device_id.as_deref(), computer.as_deref(), START_WAIT, || began.elapsed(), std::thread::sleep, || CANCEL_PLAYER.load(Ordering::SeqCst), |left| devices_before(cfg, Instant::now() + left))?;
-    play_on_device(cfg, request, &device)
+    let seen = std::cell::RefCell::new(devices.clone());
+    let waited = wait_for_computer(devices, request.device_id.as_deref(), computer.as_deref(), START_WAIT, || began.elapsed(), |d| { std::thread::sleep(d); minimiser.tick(); }, || CANCEL_PLAYER.load(Ordering::SeqCst), |left| { let got = devices_before(cfg, Instant::now() + left)?; *seen.borrow_mut() = got.clone(); Ok(got) });
+    let seen = seen.into_inner();
+    let matched = computer.as_deref().is_some_and(|name| seen.iter().any(|d| d.kind.eq_ignore_ascii_case("computer") && d.name.eq_ignore_ascii_case(name)));
+    log::write_start_end(waited.is_ok().then(|| began.elapsed().as_secs()), matched, seen.iter().any(|d| d.restricted), minimiser.count());
+    play_on_device(cfg, request, &waited?)
 }
 
 #[tauri::command]
@@ -824,9 +840,9 @@ pub async fn wall2_spotify_play(window: WebviewWindow, request: PlayRequest) -> 
             DeviceChoice::Start => {
                 let counts = device_counts(&devices);
                 crate::wall2_spotify_log::write_devices(counts.0, counts.1, counts.2, counts.3);
-                window.app_handle().opener().open_url(SPOTIFY_URI, None::<&str>).map_err(|_| "failed".to_string())?;
+                let began = Instant::now();
                 std::thread::spawn(move || {
-                    let result = finish_start(&cfg, &request, Instant::now(), devices).err();
+                    let result = finish_start(&cfg, &request, began, devices).err();
                     *start_result().lock().unwrap() = Some(result.unwrap_or_else(|| "played".into()));
                     drop(guard);
                 });
@@ -1228,6 +1244,11 @@ mod tests {
         elapsed.set(Duration::ZERO);
         let late = wait_for_computer(Vec::new(),None,None,START_WAIT,||elapsed.get(),|d|elapsed.set(elapsed.get()+d),||false,|_|{elapsed.set(START_WAIT+Duration::from_secs(1));Ok(vec![device.clone()])});
         assert_eq!(late,Err(NO_DEVICE.into()));
+    }
+
+    #[test]
+    fn the_start_wait_is_thirty_seconds() {
+        assert_eq!(START_WAIT, Duration::from_secs(30));
     }
 
     #[test]

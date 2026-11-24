@@ -37,16 +37,18 @@ export function resetListenSource(): void {
 }
 
 /** What went wrong with a Spotify call, from the bridge's error text. */
-export type SpotifyProblem = 'notsetup' | 'needsSignIn' | 'busy' | 'starting' | 'choose' | 'restricted' | 'devicegone' | 'nodevice' | 'notYours' | 'gone' | 'connection' | 'refused' | 'refusedScope' | 'refusedNotAllowedUser' | 'refusedPremium' | 'refusedMarket' | 'refusedBadRequest' | 'down' | `server:${number}` | `status:${number}` | 'failed';
+export type SpotifyProblem = 'notsetup' | 'needsSignIn' | 'busy' | 'starting' | 'notinstalled' | 'cancelled' | 'choose' | 'restricted' | 'devicegone' | 'nodevice' | 'notYours' | 'gone' | 'connection' | 'refused' | 'refusedScope' | 'refusedNotAllowedUser' | 'refusedPremium' | 'refusedMarket' | 'refusedBadRequest' | 'down' | `server:${number}` | `status:${number}` | 'failed';
 
 /** Retry only calls whose answer can change without a separate account or availability change. */
 export function spotifyRetryable(problem: SpotifyProblem): boolean {
-  return !['refusedScope', 'refusedNotAllowedUser', 'refusedPremium', 'refusedMarket', 'notYours'].includes(problem);
+  return !['refusedScope', 'refusedNotAllowedUser', 'refusedPremium', 'refusedMarket', 'notYours', 'notinstalled', 'cancelled'].includes(problem);
 }
 
 export function spotifyProblem(e: unknown): SpotifyProblem {
   const text = (e instanceof Error ? e.message : typeof e === 'string' ? e : '').toLowerCase();
   if (text.includes('not set up')) return 'notsetup';
+  if (text.includes('not installed')) return 'notinstalled';
+  if (text.includes('cancelled')) return 'cancelled';
   if (text.includes('sign in')) return 'needsSignIn';
   if (text.includes('busy')) return 'busy';
   if (text.includes('starting')) return 'starting';
@@ -179,6 +181,10 @@ export function problemLine(p: SpotifyProblem): string {
       return 'Spotify is busy, try in a minute.';
     case 'starting':
       return 'Spotify is still starting.';
+    case 'notinstalled':
+      return NOT_INSTALLED_LINE;
+    case 'cancelled':
+      return '';
     case 'choose':
       return 'More than one computer is signed in to Spotify. Pick this PC in Spotify once, then press Play.';
     case 'restricted':
@@ -213,6 +219,8 @@ export function problemLine(p: SpotifyProblem): string {
   }
 }
 
+/** The start found no Spotify entry on this PC (no Retry: opening Spotify first is the fix). */
+export const NOT_INSTALLED_LINE = 'Spotify was not found on this PC. Open Spotify, then press Play.';
 /** A chosen player that went to sleep: Play does nothing and says so. */
 export const GONE_LINE = 'That player is not awake. Choose where to play.';
 /** A chosen player that does not allow control from here. */
@@ -355,7 +363,15 @@ export function resetSpotifyTarget(): void {
 }
 
 /** True while the wall waits for Spotify to start on this PC; `rev` changes when a play ends, so the device list is read again. */
-export const useSpotifyStart = create<{ starting: boolean; rev: number; name: string }>(() => ({ starting: false, rev: 0, name: '' }));
+export const useSpotifyStart = create<{ starting: boolean; rev: number; name: string; startedAt: number | null }>(() => ({ starting: false, rev: 0, name: '', startedAt: null }));
+
+/**
+ * How long the start line counts and fills, in seconds. It is the wait of the Rust start (`START_WAIT` in
+ * src-tauri/src/wall2_spotify.rs); the two change together:
+ *   Rust START_WAIT   30 s   the wait for a computer to show in Spotify's player list, launch time included
+ *   here START_WAIT_S 30 s   the filling line and the seconds count
+ */
+export const START_WAIT_S = 30;
 
 /** The note the card shows while the wall starts Spotify (the card draws it as its status line). */
 export const STARTING_NOTE = 'Starting Spotify';
@@ -434,5 +450,6 @@ export function playFailureLine(e: unknown, named: boolean): string {
     useSpotifyTarget.getState().setTarget(null);
     useSpotifyStart.setState((s) => ({ rev: s.rev + 1 }));
   }
+  // A start the owner cancelled ends quietly: an empty line shows no note.
   return playProblemLine(p, named);
 }

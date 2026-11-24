@@ -1,3 +1,5 @@
+// @ts-ignore node's own file call; one test reads the model's source as text.
+import { readFileSync } from 'node:fs';
 import { act, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { mocks } from '../../bridge/tauri';
@@ -8,10 +10,11 @@ import { hideTip, resetTip } from '../../ui/HoverTip';
 import { closeLibraryMenu, useLibraryMenu } from '../watch/libraryMenuModel';
 import { LibraryMenuLayer } from '../watch/LibraryMenu';
 import { resetPins, usePins } from '../watch/pins';
-import { deviceKindWord, GONE_LINE, LOCKED_LINE, NOT_YOURS_LINE, PAGE_OFF_LINE, resetPublicPage, usePublicPage, WHILE_PLAYS, WHILE_HEADINGS, playDeviceId, resetSpotifyTarget, resetListenSource, seekPosition, SEARCH_WAIT_MS, TALL_CLOSE_MS, TALL_OPEN_MS, useListenSource, useSpotifyDevices, useSpotifyNow, useSpotifyStart, useSpotifyTarget } from './model';
+import { deviceKindWord, GONE_LINE, LOCKED_LINE, NOT_YOURS_LINE, PAGE_OFF_LINE, resetPublicPage, usePublicPage, WHILE_PLAYS, WHILE_HEADINGS, playDeviceId, resetSpotifyTarget, resetListenSource, seekPosition, SEARCH_WAIT_MS, START_WAIT_S, STARTING_NOTE, TALL_CLOSE_MS, TALL_OPEN_MS, useListenSource, useSpotifyDevices, useSpotifyNow, useSpotifyStart, useSpotifyTarget } from './model';
 import { deviceRows, DEVICES_FOOT, STALE_NOTE } from './PlayOn';
 import { PLAYBACK_POLL_MS, SEEK_KEY_GAP_MS, SEEK_STEP_MS } from './PlayerRow';
 import { SpotifyCard } from './SpotifyCard';
+import { useSpotifyPinNote } from './playItem';
 import { QUEUE_NOTE } from './TallViews';
 import { arrowTarget, gridColumns } from './Tile';
 import { resetSpotifyStatus, useSpotifyStatus } from './status';
@@ -1103,10 +1106,88 @@ describe('Play on', () => {
     await flush();
     await act(async () => (document.querySelector('.sp-shbtns .sp-btn.fill') as HTMLButtonElement).click());
     await flush();
-    expect(screen.getByText('Starting Spotify on this PC')).toBeTruthy();
-    expect(screen.getByText('List 1 plays as soon as it is ready')).toBeTruthy();
+    expect(screen.getByText('Starting Spotify in the background')).toBeTruthy();
+    expect(screen.getByText('List 1 plays when it is ready.')).toBeTruthy();
     await flush(2000);
-    expect(screen.queryByText('Starting Spotify on this PC')).toBeNull();
+    expect(screen.queryByText('Starting Spotify in the background')).toBeNull();
+  });
+
+  describe('the start line while Spotify opens', () => {
+    let status: { starting: boolean; result: string | null };
+    const cancelled = vi.fn();
+    const begin = async () => {
+      await setup();
+      status = { starting: true, result: null };
+      cancelled.mockClear();
+      mocks.set('wall2_spotify_play', () => 'starting');
+      mocks.set('wall2_spotify_start_status', () => status);
+      mocks.set('wall2_spotify_cancel_start', () => {
+        cancelled();
+        status = { starting: false, result: 'cancelled' };
+      });
+      mocks.set('get_now_playing', () => null);
+      await open();
+      await act(async () => (document.querySelector('.sp-tile') as HTMLButtonElement).click());
+      await flush();
+      await act(async () => (document.querySelector('.sp-shbtns .sp-btn.fill') as HTMLButtonElement).click());
+      await flush();
+    };
+
+    it('counts whole seconds and fills its line over the same 30 s the Rust start waits', async () => {
+      await begin();
+      expect(START_WAIT_S).toBe(30);
+      expect(screen.getByText('0 s')).toBeTruthy();
+      await flush(1000);
+      expect(screen.getByText('1 s')).toBeTruthy();
+      await flush(1000);
+      expect(screen.getByText('2 s')).toBeTruthy();
+      expect((document.querySelector('.sp-note.starting') as HTMLElement).style.getPropertyValue('--sp-wait')).toBe('30s');
+      // The line is not cleared by the card's own note timer.
+      await flush(10_000);
+      expect(screen.getByText('Starting Spotify in the background')).toBeTruthy();
+      expect(screen.getByText('12 s')).toBeTruthy();
+    });
+
+    it('names the Rust wait beside the number', () => {
+      expect(readFileSync('src/unwind/spotify/model.ts', 'utf8')).toContain('src-tauri/src/wall2_spotify.rs');
+    });
+
+    it('Cancel stops the start and the line goes away with no failure line', async () => {
+      await begin();
+      await act(async () => (screen.getByRole('button', { name: 'Cancel' }) as HTMLButtonElement).click());
+      await flush(2000);
+      expect(cancelled).toHaveBeenCalledTimes(1);
+      expect(document.querySelector('.sp-note')).toBeNull();
+    });
+
+    it('says Spotify was not found when the start ends with not installed', async () => {
+      await begin();
+      status = { starting: false, result: 'not installed' };
+      await flush(1000);
+      expect(screen.getByText('Spotify was not found on this PC. Open Spotify, then press Play.')).toBeTruthy();
+      expect(screen.queryByRole('button', { name: /retry/i })).toBeNull();
+    });
+
+    it('clears the line when the song plays', async () => {
+      await begin();
+      status = { starting: false, result: 'played' };
+      await flush(1000);
+      expect(document.querySelector('.sp-note')).toBeNull();
+    });
+
+    it('shows the same line for a play started from a pin', async () => {
+      await setup();
+      await act(async () => {
+        useSpotifyStart.setState({ name: 'Road Trip', startedAt: Date.now() });
+        useSpotifyPinNote.setState({ note: STARTING_NOTE });
+      });
+      await flush(3000);
+      expect(screen.getByText('Starting Spotify in the background')).toBeTruthy();
+      expect(screen.getByText('Road Trip plays when it is ready.')).toBeTruthy();
+      expect(screen.getByText('3 s')).toBeTruthy();
+      expect(screen.getByRole('button', { name: 'Cancel' })).toBeTruthy();
+      await act(async () => useSpotifyPinNote.setState({ note: null }));
+    });
   });
 });
 

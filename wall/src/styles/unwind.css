@@ -3780,6 +3780,17 @@ button.sp-qrow:hover {
   overflow: hidden;
   text-overflow: ellipsis;
 }
+.sp-st-n {
+  flex: none;
+  min-width: 3ch;
+  text-align: right;
+  font: 500 16px/20px var(--body);
+  font-variant-numeric: tabular-nums;
+  color: var(--tx);
+}
+.sp-st-cancel {
+  flex: none;
+}
 .sp-st-line {
   position: absolute;
   left: 14px;
@@ -3797,7 +3808,7 @@ button.sp-qrow:hover {
   border-radius: 2px;
   background: var(--cyan);
   transform-origin: left;
-  animation: sp-fill 15s linear forwards;
+  animation: sp-fill var(--sp-wait, 30s) linear forwards;
 }
 @keyframes sp-fill {
   from {

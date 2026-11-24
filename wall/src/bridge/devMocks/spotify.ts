@@ -95,11 +95,22 @@ export function registerSpotifyMocks(): void {
     const pc: SpotifyDevice = { id: deviceId(91), name: 'Desk speakers', kind: 'Computer', active: !onSpeaker && playMode() !== 'none', restricted: false, volume: 28 };
     const phone: SpotifyDevice = { id: deviceId(93), name: 'Phone', kind: 'Smartphone', active: false, restricted: false, volume: 60 };
     const speaker: SpotifyDevice = { id: deviceId(92), name: 'Kitchen speaker', kind: 'Speaker', active: onSpeaker, restricted: false, volume: 34 };
-    return mode() === 'starting' ? [phone, speaker] : [pc, phone, speaker];
+    return cold() ? [phone, speaker] : [pc, phone, speaker];
   });
-  mocks.set('wall2_spotify_play', () => { available(); if (mode() === 'nodevice') throw new Error('no device'); if (mode() === 'choose') throw new Error('choose'); if (mode() === 'alreadystarting') throw new Error('starting'); return mode() === 'starting' ? 'starting' : 'played'; });
-  mocks.set('wall2_spotify_start_status', () => ({ starting: mode() === 'starting', result: mode() === 'starting' ? null : 'played' }));
-  mocks.set('wall2_spotify_cancel_start', () => undefined);
+  // `spotify=starting` is a slow cold start: the start line shows for about 8 s, then Spotify is ready. `spotify=notinstalled` is the same start that ends after
+  // about 1 s with "not installed". A cancel ends either one with `cancelled`.
+  const cold = () => mode() === 'starting' || mode() === 'notinstalled';
+  let startedAt = 0;
+  let cancelled = false;
+  const COLD_MS = () => (mode() === 'starting' ? 8_000 : 1_000);
+  mocks.set('wall2_spotify_play', () => { available(); if (mode() === 'nodevice') throw new Error('no device'); if (mode() === 'choose') throw new Error('choose'); if (mode() === 'alreadystarting') throw new Error('starting'); if (cold()) { startedAt = Date.now(); cancelled = false; return 'starting'; } return 'played'; });
+  mocks.set('wall2_spotify_start_status', () => {
+    if (!cold()) return { starting: false, result: 'played' };
+    if (cancelled) return { starting: false, result: 'cancelled' };
+    if (Date.now() - startedAt < COLD_MS()) return { starting: true, result: null };
+    return { starting: false, result: mode() === 'notinstalled' ? 'not installed' : 'played' };
+  });
+  mocks.set('wall2_spotify_cancel_start', () => { cancelled = true; });
   mocks.set('wall2_spotify_transfer', () => { available(); });
   // A seek is remembered, so the next read of playback shows where the bar was left.
   mocks.set('wall2_spotify_seek', (args) => { available(); seekedMs = Number(args?.positionMs ?? 0); });

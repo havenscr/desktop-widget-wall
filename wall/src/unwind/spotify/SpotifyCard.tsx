@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type UIEvent } from 'react';
+import { useCallback, useEffect, useRef, useState, type CSSProperties, type UIEvent } from 'react';
 import {
   IconArrowLeft,
   IconArrowsShuffle,
@@ -53,6 +53,7 @@ import {
   SEARCH_MIN,
   SEARCH_WAIT_MS,
   songs,
+  START_WAIT_S,
   spotifyProblem,
   spotifyRetryable,
   STARTING_NOTE,
@@ -509,7 +510,8 @@ function Browser({ tall }: { tall: boolean }) {
     };
   }, []);
   useEffect(() => {
-    if (!note) return;
+    // The starting line stays until the start ends; every other note goes after `NOTE_MS`.
+    if (!note || note === STARTING_NOTE) return;
     const id = setTimeout(() => setNote(null), NOTE_MS);
     return () => clearTimeout(id);
   }, [note]);
@@ -766,6 +768,8 @@ function Browser({ tall }: { tall: boolean }) {
  */
 function Note({ text }: { text: string }) {
   const name = useSpotifyStart((s) => s.name);
+  const startedAt = useSpotifyStart((s) => s.startedAt);
+  const seconds = useStartSeconds(text === STARTING_NOTE ? startedAt : null);
   if (text !== STARTING_NOTE) {
     return (
       <div className="sp-note" role="status">
@@ -774,13 +778,29 @@ function Note({ text }: { text: string }) {
     );
   }
   return (
-    <div className="sp-note starting" role="status">
+    <div className="sp-note starting" role="status" style={{ '--sp-wait': `${START_WAIT_S}s` } as CSSProperties}>
       <IconBrandSpotify size={24} stroke={1.8} aria-hidden="true" />
-      <span className="sp-st-a">Starting Spotify on this PC</span>
-      <span className="sp-st-b">{name ? `${name} plays as soon as it is ready` : 'It plays as soon as it is ready'}</span>
+      <span className="sp-st-a">Starting Spotify in the background</span>
+      <span className="sp-st-b">{name ? `${name} plays when it is ready.` : 'It plays when it is ready.'}</span>
+      <span className="sp-st-n">{seconds} s</span>
+      <button type="button" className="sp-linkbtn sp-st-cancel" onClick={() => void spotify.cancelStart().catch(() => undefined)}>
+        Cancel
+      </button>
       <span className="sp-st-line" aria-hidden="true" />
     </div>
   );
+}
+
+/** Whole seconds since the start began, ticking once a second (0 while there is no start). */
+function useStartSeconds(startedAt: number | null): number {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (startedAt === null) return;
+    setNow(Date.now());
+    const id = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, [startedAt]);
+  return startedAt === null ? 0 : Math.max(0, Math.floor((now - startedAt) / 1000));
 }
 
 /** A song in Liked, Recent or Search: a row that plays it, with its details on hover. */

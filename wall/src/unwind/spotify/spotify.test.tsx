@@ -64,6 +64,9 @@ it('maps the bridge errors to problems', () => {
   expect(spotifyProblem('refused-market')).toBe('refusedMarket');
   expect(spotifyProblem('refused-bad-request')).toBe('refusedBadRequest');
   expect(spotifyProblem('refused-other')).toBe('refused');
+  expect(spotifyProblem('not installed')).toBe('notinstalled');
+  expect(spotifyProblem('cancelled')).toBe('cancelled');
+  expect(problemLine('cancelled')).toBe('');
   expect(spotifyProblem(42)).toBe('failed');
 });
 

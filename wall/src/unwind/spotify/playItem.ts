@@ -13,7 +13,7 @@ export async function finishPlay(answer: 'played' | 'starting', onStarting: () =
   if (answer === 'starting') {
     onStarting();
     // The "Play on" chip says "Starting Spotify" while the start flow runs, and reads the players again after it.
-    useSpotifyStart.setState({ starting: true });
+    useSpotifyStart.setState({ starting: true, startedAt: Date.now() });
     try {
       for (;;) {
         const state = await spotify.startStatus();
@@ -24,7 +24,7 @@ export async function finishPlay(answer: 'played' | 'starting', onStarting: () =
         await waitSecond();
       }
     } finally {
-      useSpotifyStart.setState((s) => ({ starting: false, rev: s.rev + 1 }));
+      useSpotifyStart.setState((s) => ({ starting: false, startedAt: null, rev: s.rev + 1 }));
     }
   }
   await refreshNowPlaying();
