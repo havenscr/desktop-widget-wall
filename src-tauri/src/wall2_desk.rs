@@ -45,6 +45,35 @@ pub struct House {
     pub lit_rooms: Option<u32>,
     pub rooms: Option<u32>,
     pub stale: bool,
+    /// The next lighting routine the home app expects; None when it sends none (older app, or no confident prediction) or the field is malformed.
+    pub next: Option<NextChange>,
+}
+
+/// The three routines the home app runs through Apple Home.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum NextSlot {
+    Day,
+    Evening,
+    LateNight,
+}
+
+/// What the predicted time is measured from.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum NextBasis {
+    Sunrise,
+    Sunset,
+    Clock,
+}
+
+/// The next routine and when: the label comes from the slot, never from the server.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct NextChange {
+    pub slot: NextSlot,
+    pub label: &'static str,
+    pub at: String,
+    pub basis: NextBasis,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -227,7 +256,46 @@ pub(crate) fn shape_house(body: &Value) -> House {
         .and_then(Value::as_f64)
         .filter(|f| f.is_finite() && (-40.0..=140.0).contains(f))
         .map(|f| f.round() as i32);
-    House { observed_at: stamp(body.get("observed_at")), inside_f: inside, lit_rooms: lit, rooms, stale: is_stale(body) }
+    House { observed_at: stamp(body.get("observed_at")), inside_f: inside, lit_rooms: lit, rooms, stale: is_stale(body), next: shape_next(body.get("next")) }
+}
+
+/// RFC 3339 with seconds and a zone (`Z`, `+hh:mm` or `-hh:mm`). `parse_iso` also takes a time with no seconds,
+/// which the countdown must not guess at.
+fn strict_rfc3339(s: &str) -> bool {
+    let b = s.as_bytes();
+    if b.len() < 20 || b[16] != b':' || !b[17].is_ascii_digit() || !b[18].is_ascii_digit() {
+        return false;
+    }
+    let zone_ok = match s.rfind(|c| c == 'Z' || c == '+' || c == '-') {
+        Some(i) if i > 18 => {
+            let z = &s[i..];
+            z == "Z" || (z.len() == 6 && z.as_bytes()[3] == b':')
+        }
+        _ => false,
+    };
+    zone_ok && crate::wall2_feeds::parse_iso(s).is_some()
+}
+
+/// `next` strictly: an object with a known slot, a known basis and an RFC 3339 time; anything else is None.
+fn shape_next(raw: Option<&Value>) -> Option<NextChange> {
+    let o = raw?.as_object()?;
+    let (slot, label) = match o.get("slot")?.as_str()? {
+        "day" => (NextSlot::Day, "Day"),
+        "evening" => (NextSlot::Evening, "Evening"),
+        "late-night" => (NextSlot::LateNight, "Late night"),
+        _ => return None,
+    };
+    let basis = match o.get("basis")?.as_str()? {
+        "sunrise" => NextBasis::Sunrise,
+        "sunset" => NextBasis::Sunset,
+        "clock" => NextBasis::Clock,
+        _ => return None,
+    };
+    let at = stamp(o.get("at"))?;
+    if !strict_rfc3339(&at) {
+        return None;
+    }
+    Some(NextChange { slot, label, at, basis })
 }
 
 /// A room's light list: None when the field is absent or not an array; otherwise each light that checks out (a bad one is dropped).
@@ -519,9 +587,42 @@ mod tests {
     const TOKEN: &str = "s3cr3t-desk-token-value";
 
     #[test]
+    fn house_next_shape() {
+        let next = |v: serde_json::Value| shape_house(&json!({ "next": v })).next;
+        let ok = next(json!({"slot": "late-night", "label": "Whatever", "at": "2026-11-23T06:30:00.000Z", "basis": "clock"})).unwrap();
+        // The label comes from the slot, not from the server.
+        assert_eq!(ok, NextChange { slot: NextSlot::LateNight, label: "Late night", at: "2026-11-23T06:30:00.000Z".into(), basis: NextBasis::Clock });
+        assert_eq!(next(json!({"slot": "day", "at": "2026-11-23T15:10:00Z", "basis": "sunrise"})).unwrap().label, "Day");
+        assert_eq!(next(json!({"slot": "evening", "at": "2026-11-23T23:10:00Z", "basis": "sunset"})).unwrap().label, "Evening");
+        // Absent, null, not an object, unknown slot or basis, missing or bad time: None.
+        assert_eq!(shape_house(&json!({})).next, None);
+        assert_eq!(next(json!(null)), None);
+        assert_eq!(next(json!("evening")), None);
+        assert_eq!(next(json!({"slot": "noon", "at": "2026-11-23T23:10:00Z", "basis": "sunset"})), None);
+        assert_eq!(next(json!({"slot": "evening", "at": "2026-11-23T23:10:00Z", "basis": "moon"})), None);
+        assert_eq!(next(json!({"slot": "evening", "basis": "sunset"})), None);
+        assert_eq!(next(json!({"slot": "evening", "at": "soon", "basis": "sunset"})), None);
+        assert_eq!(next(json!({"slot": "evening", "at": 5, "basis": "sunset"})), None);
+        assert_eq!(next(json!({"slot": 3, "at": "2026-11-23T23:10:00Z", "basis": "sunset"})), None);
+        // A time with no zone, or with no seconds, is not RFC 3339 here: None.
+        assert_eq!(next(json!({"slot": "evening", "at": "2026-11-23T23:10:00", "basis": "sunset"})), None);
+        assert_eq!(next(json!({"slot": "evening", "at": "2026-11-23T23:10:00.000", "basis": "sunset"})), None);
+        assert_eq!(next(json!({"slot": "evening", "at": "2026-11-23T23:10Z", "basis": "sunset"})), None);
+        assert_eq!(next(json!({"slot": "evening", "at": "2026-11-23T23:10-08:00", "basis": "sunset"})), None);
+        assert!(next(json!({"slot": "evening", "at": "2026-11-23T23:10:00-08:00", "basis": "sunset"})).is_some());
+        // A bad `next` never costs the rest of the house read.
+        let h = shape_house(&json!({"inside_temperature_f": 68, "next": {"slot": "x"}}));
+        assert_eq!(h.inside_f, Some(68));
+        assert_eq!(h.next, None);
+        // The camelCase JSON the wall reads.
+        let v = serde_json::to_value(&ok).unwrap();
+        assert_eq!(v, json!({"slot": "late-night", "label": "Late night", "at": "2026-11-23T06:30:00.000Z", "basis": "clock"}));
+    }
+
+    #[test]
     fn house_shape() {
         let h = shape_house(&json!({"ok": true, "observed_at": "2026-11-12T19:58:00.000Z", "inside_temperature_f": 68, "lit_rooms": 2, "rooms": 4, "stale": false}));
-        assert_eq!(h, House { observed_at: Some("2026-11-12T19:58:00.000Z".into()), inside_f: Some(68), lit_rooms: Some(2), rooms: Some(4), stale: false });
+        assert_eq!(h, House { observed_at: Some("2026-11-12T19:58:00.000Z".into()), inside_f: Some(68), lit_rooms: Some(2), rooms: Some(4), stale: false, next: None });
         // Temperature outside -40..140, or not a number, is None; 67.6 rounds.
         assert_eq!(shape_house(&json!({"inside_temperature_f": 141})).inside_f, None);
         assert_eq!(shape_house(&json!({"inside_temperature_f": -41})).inside_f, None);

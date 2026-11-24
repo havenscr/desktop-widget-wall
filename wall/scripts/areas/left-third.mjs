@@ -60,6 +60,11 @@ function measureLeftThird() {
     cards: rects('.home .home-centre > *'),
     dots: rects('.home .house-room'),
     roomsBox: box(document.querySelector('.home .house-rooms')),
+    // The Next line under the dots (null when it is not drawn): its box, words and the colour of its text.
+    nextLine: box(document.querySelector('.home .house-next')),
+    nextText: (document.querySelector('.home .house-next')?.textContent ?? '').trim(),
+    nextColor: document.querySelector('.home .house-next .lw-text') ? getComputedStyle(document.querySelector('.home .house-next .lw-text')).color : '',
+    nextIcon: (document.querySelector('.home .house-next svg')?.getAttribute('class') ?? '').replace('tabler-icon ', ''),
     house: box(document.querySelector('.home .house')),
     outside: box(document.querySelector('.home .outside')),
     weatherText: document.querySelector('.home .outside')?.textContent ?? null,
@@ -105,15 +110,22 @@ const CARDS = {
   [VARIANT_CARD_OFF]: { dot: 2, list: true, title: 'Kitchen', count: 'Lights off', rows: 0, more: '' },
   [VARIANT_CARD_OLD]: { dot: 0, list: false, plain: 'Office: lights on' },
 };
+const VARIANT_NEXT_FAR = 'Home, left third: morning, next change far off';
+const VARIANT_NEXT_SOON = 'Home, left third: late afternoon, next change soon (amber)';
+const VARIANT_NEXT_NONE = 'Home, left third: morning, next change hidden';
+const VARIANT_NEXT_TWELVE = 'Home, left third: morning, twelve rooms, next change far off';
 const VARIANT_WINTER = 'Home, left third: short winter day, house live';
 const VARIANT_SUMMER = 'Home, left third: long summer day, house live';
 const CHECKS = ['.home .home-wing', '.home .lw-head', '.home .lw-curve', '.home .outside', '.home .house'];
 const NO_HOUSE = CHECKS.filter((c) => c !== '.home .house');
 const variant = (name, when, knobs) => ({ name, q: fitQuery(when, knobs), checks: knobs.includes('desk=') ? CHECKS : NO_HOUSE });
-const NAMES = new Set([VARIANT_HOUSE, VARIANT_LATE, VARIANT_NIGHT, VARIANT_ABSENT, VARIANT_STALE, VARIANT_STALE2, VARIANT_NOWX, VARIANT_ROOMS, VARIANT_ONE, VARIANT_SEVEN, VARIANT_TWELVE, VARIANT_NONE, VARIANT_WINTER, VARIANT_SUMMER, ...Object.keys(CARDS)]);
-const WITH_HOUSE = new Set([VARIANT_HOUSE, VARIANT_LATE, VARIANT_NIGHT, VARIANT_STALE, VARIANT_STALE2, VARIANT_ROOMS, VARIANT_ONE, VARIANT_SEVEN, VARIANT_TWELVE, VARIANT_NONE, VARIANT_WINTER, VARIANT_SUMMER, ...Object.keys(CARDS)]);
+const NAMES = new Set([VARIANT_HOUSE, VARIANT_LATE, VARIANT_NIGHT, VARIANT_ABSENT, VARIANT_STALE, VARIANT_STALE2, VARIANT_NOWX, VARIANT_ROOMS, VARIANT_ONE, VARIANT_SEVEN, VARIANT_TWELVE, VARIANT_NONE, VARIANT_WINTER, VARIANT_SUMMER, VARIANT_NEXT_FAR, VARIANT_NEXT_SOON, VARIANT_NEXT_NONE, VARIANT_NEXT_TWELVE, ...Object.keys(CARDS)]);
+const WITH_HOUSE = new Set([VARIANT_HOUSE, VARIANT_LATE, VARIANT_NIGHT, VARIANT_STALE, VARIANT_STALE2, VARIANT_ROOMS, VARIANT_ONE, VARIANT_SEVEN, VARIANT_TWELVE, VARIANT_NONE, VARIANT_WINTER, VARIANT_SUMMER, VARIANT_NEXT_FAR, VARIANT_NEXT_SOON, VARIANT_NEXT_NONE, VARIANT_NEXT_TWELVE, ...Object.keys(CARDS)]);
 const START_Y = 200;
 const END_Y = 470;
+/** With the Next line the block may run to here (the strip under the room dots is kept for it). */
+const END_Y_NEXT = 510;
+const WITH_NEXT = new Set([VARIANT_NEXT_FAR, VARIANT_NEXT_SOON, VARIANT_NEXT_TWELVE]);
 
 function ruleLeftThird(variantEntry, results, emit) {
   if (!NAMES.has(variantEntry.name)) return false;
@@ -126,11 +138,12 @@ function ruleLeftThird(variantEntry, results, emit) {
   const near = (a, b, tol) => Math.abs(a - b) <= tol;
   const hit = (a, b) => a.x < b.r - 0.5 && b.x < a.r - 0.5 && a.y < b.b - 0.5 && b.y < a.b - 0.5;
   const kids = m.parts.filter((p) => p.r - p.x > 0 && p.b - p.y > 0);
-  // The block starts 23 px under the date (y 200) and ends above y 470 (the room dots take up to two lines; the strip under them is kept for the Next line).
+  // The block starts 23 px under the date (y 200) and ends above y 470 (the room dots take up to two lines; the strip under them, to y 510, is for the Next line).
   const first = Math.min(...kids.map((p) => p.y));
   const last = Math.max(...kids.map((p) => p.b));
   if (!near(first, START_Y, 1.5)) fails.push(`left third: starts at y ${first.toFixed(1)}, not ${START_Y}`);
-  if (last > END_Y + 0.5) fails.push(`left third: ends at y ${last.toFixed(1)}, below ${END_Y}`);
+  const endLimit = m.nextLine ? END_Y_NEXT : END_Y;
+  if (last > endLimit + 0.5) fails.push(`left third: ends at y ${last.toFixed(1)}, below ${endLimit}`);
   if (m.date && first < m.date.b + 20) fails.push(`left third: starts ${(first - m.date.b).toFixed(1)} px under the date (20 or more)`);
   // The room dots stay in their box, in at most two lines, each dot clear of the next.
   const dotBoxes = m.dots.filter((d) => d.r - d.x > 0 && d.b - d.y > 0);
@@ -150,6 +163,20 @@ function ruleLeftThird(variantEntry, results, emit) {
     if (total !== undefined && m.dotCount + m.moreN !== Number(total)) fails.push(`left third: ${m.dotCount} room dots plus "+${m.moreN} more" is not the ${total} rooms of the list`);
     if (m.more && m.moreN < 1) fails.push('left third: the "+N more" chip does not give a count');
     if (m.cutNames.length) fails.push(`left third: room name(s) clipped by an ellipsis (${m.cutNames.join(', ')})`);
+  }
+  // The Next line: drawn exactly in the states that carry one, clear of the room dots (under their box), the right words and colour.
+  if (WITH_NEXT.has(variantEntry.name) && !m.nextLine) fails.push('left third: the Next line is not showing');
+  if (!WITH_NEXT.has(variantEntry.name) && m.nextLine) fails.push('left third: the Next line shows where the home app gives none');
+  if (m.nextLine) {
+    if (m.roomsBox && m.nextLine.y < m.roomsBox.b - 0.5) fails.push(`left third: the Next line starts at y ${m.nextLine.y.toFixed(1)}, inside the room dots (they end at y ${m.roomsBox.b.toFixed(1)})`);
+    for (const d of dotBoxes) if (d.b > m.nextLine.y + 0.5 && d.y < m.nextLine.b - 0.5) fails.push('left third: the Next line overlaps a room dot');
+    if (m.nextLine.r > 458 + 136 + 0.5) fails.push(`left third: the Next line reaches x ${m.nextLine.r.toFixed(1)}, past the wing's 458 px`);
+    if (!/^(Day|Evening|Late night) (in \d+ min|at \d{1,2}:\d\d[\s ][AP]M)$/.test(m.nextText)) fails.push(`left third: the Next line reads "${m.nextText}"`);
+    const amber = m.nextColor === 'rgb(255, 194, 77)';
+    if (variantEntry.name === VARIANT_NEXT_SOON && !amber) fails.push(`left third: the Next line is "${m.nextColor}" with minutes to go (amber expected)`);
+    if (variantEntry.name !== VARIANT_NEXT_SOON && amber) fails.push('left third: the Next line is amber with the change hours away');
+    if (variantEntry.name === VARIANT_NEXT_SOON && !/in \d+ min$/.test(m.nextText)) fails.push('left third: the close change does not count down in minutes');
+    if (variantEntry.name === VARIANT_NEXT_FAR && !/ at \d/.test(m.nextText)) fails.push('left third: the far change does not give a clock time');
   }
   // Nothing overlaps the clock, the date, or the card to its right.
   const centre = m.centre;
@@ -217,7 +244,7 @@ function ruleLeftThird(variantEntry, results, emit) {
   }
   for (const f of fails) emit(`  FAIL ${f}`);
   if (fails.length) return true;
-  emit(`  ok   left third: starts at y 200, ends at y ${last.toFixed(0)} (above 470), clear of the clock, the date and the card to its right, text 16 px or more, the labels apart and inside the curve`);
+  emit(`  ok   left third: starts at y 200, ends at y ${last.toFixed(0)} (above ${endLimit}), clear of the clock, the date and the card to its right, text 16 px or more, the labels apart and inside the curve`);
   return false;
 }
 
@@ -242,6 +269,9 @@ export default {
       state('morning, one room', MORNING, 'desk=typical&rooms=1', ['68° inside.', 'Office', '!Living room']),
       state('morning, seven lit rooms, two lines', MORNING, 'desk=typical&rooms=7', ['68° inside.', 'Office', 'Den']),
       state('morning, twelve rooms, two lines and a count', MORNING, 'desk=typical&rooms=12', ['68° inside.', 'Office', 'more']),
+      state('morning, next change far off', MORNING, 'desk=typical&next=far', ['68° inside.', 'Evening at']),
+      state('late afternoon, next change soon (amber)', LATE, 'desk=typical&next=soon', ['Sunset in', 'Evening in 9 min']),
+      state('morning, next change hidden', MORNING, 'desk=typical&next=none', ['68° inside.', '!Evening at', '!Evening in']),
       state('morning, no rooms', MORNING, 'desk=typical&rooms=0', ['68° inside.', '!Guest room']),
       { ...state('room card, three lights', MORNING, 'desk=typical', ['Office', '3 on', 'Desk lamp', 'Bookshelf strip', '80%']), actions: 'hover:.home .house-room:nth-child(1)' },
       { ...state('room card, eight lights, six rows and a count', MORNING, 'desk=typical&rooms=8', ['Living room', '8 on', 'Salt lamp', 'on', '+2 more']), actions: 'hover:.home .house-room:nth-child(2)' },
@@ -267,6 +297,10 @@ export default {
       { ...variant(VARIANT_CARD_LIVING, MORNING, 'desk=typical&rooms=8'), click: 'tip:.home .house-room:nth-child(2)' },
       { ...variant(VARIANT_CARD_OFF, MORNING, 'desk=typical'), click: 'tip:.home .house-room:nth-child(3)' },
       { ...variant(VARIANT_CARD_OLD, MORNING, 'desk=typical&lights=none'), click: 'tip:.home .house-room:nth-child(1)' },
+      variant(VARIANT_NEXT_FAR, MORNING, 'desk=typical&next=far'),
+      variant(VARIANT_NEXT_SOON, LATE, 'desk=typical&next=soon'),
+      variant(VARIANT_NEXT_NONE, MORNING, 'desk=typical&next=none'),
+      variant(VARIANT_NEXT_TWELVE, MORNING, 'desk=typical&rooms=12&next=far'),
       variant(VARIANT_WINTER, WINTER, 'desk=typical'),
       variant(VARIANT_SUMMER, SUMMER, 'desk=typical'),
     ],
@@ -297,6 +331,11 @@ export default {
       'left-asof': { css: '.house-asof { visibility: hidden !important; }', expect: /^ *FAIL left third: not live with two rooms does not show "as of"/m, appliesTo: only(VARIANT_STALE2) },
       'left-glyph-day': { query: '&wday=0', expect: /^ *FAIL left third: by day the weather glyph is /m, appliesTo: only(VARIANT_HOUSE) },
       'left-glyph-night': { query: '&wday=1', expect: /^ *FAIL left third: at night the weather glyph is /m, appliesTo: only(VARIANT_NIGHT) },
+      // The Next line pulled up into the room dots, pushed past the strip kept for it, and set too small.
+      'left-next-up': { css: '.lw-house .house-next { margin-top: -50px !important; }', expect: /^ *FAIL left third: the Next line starts at y [\d.]+, inside the room dots|^ *FAIL left third: the Next line overlaps a room dot/m, appliesTo: only(VARIANT_NEXT_TWELVE) },
+      'left-next-end': { css: '.lw-house .house-next { margin-top: 60px !important; }', expect: /^ *FAIL left third: ends at y [\d.]+, below 510/m, appliesTo: only(VARIANT_NEXT_FAR) },
+      'left-next-small': { css: '.house-next .lw-text { font-size: 12px !important; }', expect: /^ *FAIL left third: text under 16 px in lw-text/m, appliesTo: only(VARIANT_NEXT_FAR) },
+      'left-next-colour': { css: '.house-next.soon .lw-text, .house-next.soon .lw-text b { color: #ffffff !important; }', expect: /^ *FAIL left third: the Next line is "[^"]*" with minutes to go/m, appliesTo: only(VARIANT_NEXT_SOON) },
       'left-crossing': { css: '.lw-label.rise { right: auto !important; left: 100px !important; }', expect: /^ *FAIL left third: the sunrise label covers its own crossing/m, appliesTo: only(VARIANT_HOUSE) },
     },
   },

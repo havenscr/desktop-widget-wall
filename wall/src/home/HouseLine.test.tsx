@@ -1,7 +1,9 @@
-import { act, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { mocks } from '../bridge/tauri';
-import { houseText } from './HouseLine';
+import { HoverTipLayer, resetTip, TIP_DELAY_MS } from '../ui/HoverTip';
+import { houseText, nextView } from './HouseLine';
+import type { NextChange } from './useDesk';
 import { LeftWing } from './LeftWing';
 
 const flush = async (ms = 0) => {
@@ -181,4 +183,126 @@ it('lit rooms: an over-long name stays in its own dot item, whole in the name an
   expect(item?.querySelector('.house-room-name')?.textContent).toBe(long);
   expect(container.querySelector('.house-room.more')).toBeNull();
   afterMeasure();
+});
+
+// The Next line: the routine the home app expects, under the room dots.
+const clockOf = (ms: number) => new Date(ms).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+const change = (slot: NextChange['slot'], ms: number): NextChange => ({
+  slot,
+  label: slot === 'day' ? 'Day' : slot === 'evening' ? 'Evening' : 'Late night',
+  at: new Date(NOW + ms).toISOString(),
+  basis: 'clock',
+});
+const MIN = 60_000;
+const HOUR = 60 * MIN;
+
+it('next: counts down within the hour, gives the clock time beyond, amber in the last 15 minutes', () => {
+  expect(nextView(change('evening', 42 * MIN), NOW)).toMatchObject({ label: 'Evening', when: 'in 42 min', soon: false });
+  expect(nextView(change('evening', 9 * MIN), NOW)).toMatchObject({ when: 'in 9 min', soon: true });
+  expect(nextView(change('evening', 15 * MIN), NOW)).toMatchObject({ when: 'in 15 min', soon: true });
+  expect(nextView(change('evening', 16 * MIN), NOW)?.soon).toBe(false);
+  // Whole minutes round up: never "in 0 min" for a change not yet made.
+  expect(nextView(change('evening', 10_000), NOW)?.when).toBe('in 1 min');
+  expect(nextView(change('evening', 60 * MIN), NOW)?.when).toBe('in 60 min');
+  const far = nextView(change('late-night', 5 * HOUR), NOW);
+  expect(far).toMatchObject({ label: 'Late night', when: `at ${clockOf(NOW + 5 * HOUR)}`, soon: false });
+  expect(far?.tip).toBe(`Late night runs at ${clockOf(NOW + 5 * HOUR)} (Apple Home). Hidden while a mood is held, On Air is on, or nobody is home.`);
+});
+
+it('next: hidden when absent, null, past, now, unreadable, over 26 hours, or an unknown slot', () => {
+  expect(nextView(undefined, NOW)).toBeNull();
+  expect(nextView(null, NOW)).toBeNull();
+  expect(nextView(change('day', -MIN), NOW)).toBeNull();
+  expect(nextView(change('day', 0), NOW)).toBeNull();
+  expect(nextView({ ...change('day', HOUR), at: 'soon' }, NOW)).toBeNull();
+  expect(nextView(change('day', 26 * HOUR), NOW)?.when).toBe(`at ${clockOf(NOW + 26 * HOUR)}`);
+  expect(nextView(change('day', 26 * HOUR + MIN), NOW)).toBeNull();
+  expect(nextView({ ...change('day', HOUR), slot: 'noon' as NextChange['slot'] }, NOW)).toBeNull();
+});
+
+it('next: a third line with the slot icon, bold label and time; amber when close; hover says when', async () => {
+  resetTip();
+  mocks.set('wall2_desk_house', () => house({ next: change('evening', 42 * MIN) }));
+  mocks.set('wall2_desk_rooms', () => rooms);
+  const { container } = render(<><LeftWing now={() => NOW} /><HoverTipLayer /></>);
+  await flush();
+  const line = container.querySelector('.house-next');
+  expect(line?.textContent).toBe('Evening in 42 min');
+  expect(line?.querySelector('b')?.textContent).toBe('Evening');
+  expect(line?.classList.contains('soon')).toBe(false);
+  expect(line?.querySelector('svg')).toBeTruthy();
+  fireEvent.mouseEnter(line as Element);
+  await flush(TIP_DELAY_MS);
+  expect(document.body.textContent).toContain(`Evening runs at ${clockOf(NOW + 42 * MIN)} (Apple Home). Hidden while a mood is held, On Air is on, or nobody is home.`);
+  resetTip();
+});
+
+it('next: amber inside 15 minutes, and a different icon per slot', async () => {
+  const icon = async (slot: NextChange['slot'], ms: number) => {
+    mocks.set('wall2_desk_house', () => house({ next: change(slot, ms) }));
+    mocks.set('wall2_desk_rooms', () => rooms);
+    const { container, unmount } = render(<LeftWing now={() => NOW} />);
+    await flush();
+    const line = container.querySelector('.house-next');
+    const out = { soon: line?.classList.contains('soon'), svg: line?.querySelector('svg')?.getAttribute('class') ?? '' };
+    unmount();
+    return out;
+  };
+  const day = await icon('day', 30 * MIN);
+  const evening = await icon('evening', 9 * MIN);
+  const night = await icon('late-night', 3 * HOUR);
+  expect(evening.soon).toBe(true);
+  expect(day.soon).toBe(false);
+  expect(day.svg).toMatch(/tabler-icon-sun$/);
+  expect(evening.svg).toMatch(/sunset-2/);
+  expect(night.svg).toMatch(/moon/);
+});
+
+it('next: no line when the field is absent or null, or the read is not live', async () => {
+  for (const over of [{}, { next: null }, { next: change('evening', -MIN) }, { next: change('evening', 40 * HOUR) }, { next: change('evening', 9 * MIN), stale: true }]) {
+    mocks.set('wall2_desk_house', () => house(over));
+    mocks.set('wall2_desk_rooms', () => rooms);
+    const { container, unmount } = render(<LeftWing now={() => NOW} />);
+    await flush();
+    expect(container.querySelector('.house')).toBeTruthy();
+    expect(container.querySelector('.house-next')).toBeNull();
+    unmount();
+  }
+});
+
+it('next: moves on with the wall clock, and goes when the time passes', async () => {
+  mocks.set('wall2_desk_house', () => house({ next: change('evening', 5 * MIN + 1000) }));
+  mocks.set('wall2_desk_rooms', () => rooms);
+  const { container } = render(<LeftWing now={Date.now} />);
+  await flush();
+  expect(container.querySelector('.house-next')?.textContent).toBe('Evening in 6 min');
+  await flush(60_000);
+  expect(container.querySelector('.house-next')?.textContent).toBe('Evening in 5 min');
+  await flush(5 * MIN);
+  expect(container.querySelector('.house-next')).toBeNull();
+});
+
+it('next: counts down on the wall minute tick, not the house read, in 30 s steps', async () => {
+  // The house read lands once; only the wall tick moves after that.
+  mocks.set('wall2_desk_house', () => house({ next: change('evening', 2 * MIN) }));
+  mocks.set('wall2_desk_rooms', () => rooms);
+  const { container } = render(<LeftWing now={Date.now} />);
+  await flush();
+  const text = () => container.querySelector('.house-next')?.textContent ?? null;
+  expect(text()).toBe('Evening in 2 min');
+  await flush(30_000);
+  await flush(30_000);
+  expect(text()).toBe('Evening in 1 min');
+  await flush(30_000);
+  await flush(30_000);
+  expect(text()).toBeNull();
+});
+
+it('next: shows when the temperature and lit rooms are both unknown', async () => {
+  mocks.set('wall2_desk_house', () => house({ insideF: null, litRooms: null, next: change('evening', 42 * MIN) }));
+  mocks.set('wall2_desk_rooms', () => Promise.reject(new Error('absent')));
+  const { container } = render(<LeftWing now={Date.now} />);
+  await flush();
+  expect(container.querySelector('.house-line')).toBeNull();
+  expect(container.querySelector('.house-next')?.textContent).toBe('Evening in 42 min');
 });

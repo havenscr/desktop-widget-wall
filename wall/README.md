@@ -396,7 +396,7 @@ row (`home/Rooms.tsx`) and the House line render nothing until the home app read
 
 - **Left third** (`home/LeftWing.tsx`, `sunLine.ts`, `dayCurve.ts`, `SunCurve.tsx`, `OutsideRow.tsx`,
   `HouseLine.tsx`; rules under "Home left third" in `styles/home.css`): everything starts 23 px under the
-  date (wall y 200, 458 px wide from x 136) and ends above y 470 (the room dots take up to two lines; the strip below, to about y 510, is kept for the planned Next line). In order: the headline, the day as a
+  date (wall y 200, 458 px wide from x 136) and ends above y 470 (the room dots take up to two lines; the strip below, to y 510, is the Next line's). In order: the headline, the day as a
   low curve, one row for the weather outside, and the house row with its room dots. All of it redraws once
   a minute; nothing animates.
   - **Headline** (`sunHeadline`): from the horizon's own sun (`ribbon/sun.ts`), to the nearest minute. By day
@@ -566,6 +566,15 @@ ignored, and each control stays latched for 800 ms after its write settles.
   card, one box of 390 by 226 at the default card (its rows give it its height; every layout
   is a layer that fills it, so a change of layout never moves the card), with three
   layouts and the quiet block. They cross-fade over 200 ms (none under reduced motion).
+
+  - **Next line** (`HouseLine.tsx`, `nextView`): a third line under the room dots from the house read's `next`
+    (`slot` day, evening or late-night; `at` an RFC 3339 time; `basis`). The home app learns it from when its
+    Apple Home routines fired; the wall only reads it (`wall2_desk.rs` `shape_next`: slot, basis and time are
+    checked strictly, the label comes from the slot, anything malformed is none). The slot's icon (sun, sunset,
+    moon), the label in bold, then "in 42 min" within 60 minutes (rounded up) or "at 10:30 PM" beyond; amber in the
+    last 15 minutes. Hover: "<Label> runs at <time> (Apple Home). Hidden while a mood is held, On Air is on, or
+    nobody is home." Hidden when `next` is absent (older home app) or null, in the past, more than 26 hours off,
+    or the house read is not live. It moves with the house read's minute poll. Dev knob `?next=far|soon|day|late|none|past`.
   - **Music alone**: a 136 px cover (the speaker glyph tile when there is no cover), the
     kicker "Now playing", the title on up to two lines, the artist, a time row with a 6 px
     bar when the track has a length (the position counts on each second from the read that
