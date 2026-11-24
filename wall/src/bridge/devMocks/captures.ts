@@ -1,5 +1,4 @@
 import { reviewNow } from '../../ui/reviewClock';
-import flameLoop from '../../assets/flames/flame-loop.webm';
 import { setVideoSrcOverride, type Capture } from '../../shelf/captures';
 import { mocks } from '../tauri';
 import { knob } from './long';
@@ -12,7 +11,7 @@ import { knob } from './long';
  *   ?captures=nohistory ShareX has no history file on this PC
  *   ?captures=gone      the third capture's file was moved or deleted (a dimmed row)
  *   ?captures=gonebig   the newest capture's file was moved or deleted
- *   ?captures=video     the newest capture is a recording (plays the bundled flame loop)
+ *   ?captures=video     the newest capture is a recording (plays a short clip drawn and recorded in the page when the mock starts)
  *   ?captures=videobad  the newest capture is a recording that cannot be played here
  *   ?captures=long      the newest capture has a very long title and app name
  *   ?captures=big       the newest capture is over the 6 MB thumbnail limit
@@ -81,9 +80,43 @@ function art(i: number): string {
   return `data:image/svg+xml;base64,${btoa(svg)}`;
 }
 
+/** The playable clip the dev recordings show: a gradient drawn on a canvas and recorded for two seconds. Empty until it is ready. */
+let clipUrl = '';
+function recordClip(): void {
+  try {
+    const canvas = document.createElement('canvas');
+    canvas.width = 160;
+    canvas.height = 90;
+    const g = canvas.getContext('2d');
+    if (!g || typeof MediaRecorder === 'undefined') return;
+    const rec = new MediaRecorder(canvas.captureStream(12));
+    const parts: Blob[] = [];
+    rec.ondataavailable = (e) => parts.push(e.data);
+    rec.onstop = () => {
+      clipUrl = URL.createObjectURL(new Blob(parts, { type: 'video/webm' }));
+    };
+    let f = 0;
+    const id = window.setInterval(() => {
+      const grad = g.createLinearGradient((f * 6) % 160, 0, ((f * 6) % 160) + 160, 90);
+      grad.addColorStop(0, '#2a6cae');
+      grad.addColorStop(1, '#35e6ea');
+      g.fillStyle = grad;
+      g.fillRect(0, 0, 160, 90);
+      if (++f >= 24) {
+        window.clearInterval(id);
+        rec.stop();
+      }
+    }, 83);
+    rec.start();
+  } catch {
+    // No recorder here: a recording shows as one that cannot be played.
+  }
+}
+
 export function registerCapturesMocks(): void {
   const mode = knob('captures');
-  setVideoSrcOverride((c) => (mode === 'videobad' ? 'data:video/mp4;base64,AAAA' : c.id === 'cap0' || c.id === 'cap3' ? flameLoop : 'data:video/mp4;base64,AAAA'));
+  recordClip();
+  setVideoSrcOverride((c) => (mode === 'videobad' || !clipUrl ? 'data:video/mp4;base64,AAAA' : c.id === 'cap0' || c.id === 'cap3' ? clipUrl : 'data:video/mp4;base64,AAAA'));
   mocks.set('wall2_captures_list', () => {
     if (mode === 'nohistory') throw 'not-found';
     if (mode === 'empty') return [];

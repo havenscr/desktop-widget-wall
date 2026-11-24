@@ -9,45 +9,6 @@ const WORDS = ['Breathe in', 'Hold', 'Breathe out', 'Hold'] as const;
 export const SCALE_MIN = 0.8;
 export const SCALE_SPAN = 0.26;
 
-/** The ring is drawn this wide (px) at scale 1; it breathes between SCALE_MIN and SCALE_MIN + SCALE_SPAN of it. */
-export const RING_BASE_PX = 370;
-/** Fixed text sizes (px) inside the ring. The text never scales with the ring. */
-export const WORD_FONT_PX = 28;
-export const NUM_FONT_PX = 22;
-export const WORD_NUM_GAP_PX = 10;
-/** Rough glyph width of the display font, in em, plus its letter spacing. Measured on the longest word. */
-export const GLYPH_EM = 0.62;
-export const WORD_TRACK_EM = 0.04;
-/** The words keep at least this much room to the ring's edge. */
-export const RING_PAD_PX = 40;
-export const LONGEST_WORD = 'Breathe out';
-
-/** Width (px) of the longest word at the guessed glyph width. */
-export function longestWordWidth(): number {
-  return LONGEST_WORD.length * WORD_FONT_PX * (GLYPH_EM + WORD_TRACK_EM);
-}
-
-/** Smallest ring diameter (px) that keeps the longest word and the number clear of the edge by RING_PAD_PX. */
-export function minRingDiameter(): number {
-  const w = longestWordWidth();
-  const h = WORD_FONT_PX + WORD_NUM_GAP_PX + NUM_FONT_PX;
-  return 2 * (Math.hypot(w / 2, h / 2) + RING_PAD_PX);
-}
-
-/** Share of today's flame brightness that stays behind the veil (0 to 1). The veil itself is the rest. */
-export const ZEN_BRIGHTNESS = 0.45;
-export const ZEN_VEIL = 1 - ZEN_BRIGHTNESS;
-/** The Candle activity darkens the flames further. */
-export const ZEN_VEIL_CANDLE = 0.65;
-
-export type Activity = 'breathe' | 'scan' | 'candle' | 'intention';
-export const ACTIVITIES: ReadonlyArray<{ id: Activity; label: string; of: string; tip: string }> = [
-  { id: 'breathe', label: 'Breathe', of: 'ZEN', tip: 'A ring that grows and shrinks to pace your breathing' },
-  { id: 'scan', label: 'Body scan', of: 'BODY SCAN', tip: 'A figure and one calm line at a time, from your jaw down to your feet' },
-  { id: 'candle', label: 'Candle', of: 'CANDLE', tip: 'The room dims and one candle flickers. Rest your eyes on it' },
-  { id: 'intention', label: 'Intention', of: 'INTENTION', tip: 'Write what matters for the next hour; it stays faintly behind the session' },
-];
-
 /** A breathing pattern: seconds in, hold, out, hold (a zero phase is skipped). */
 export interface BreathPattern {
   id: string;
@@ -72,79 +33,10 @@ export function patternSeconds(p: BreathPattern): number {
   return p.phases.reduce((a, b) => a + b, 0);
 }
 
-export const ACTIVITY_KEY = 'wall2-zen-activity';
-export const INTENTION_KEY = 'wall2-zen-intention';
-
-/** The remembered activity and breath pattern. Anything unreadable gives Breathe with the calm pattern. */
-export function loadChoice(): { activity: Activity; pattern: BreathPattern } {
-  try {
-    const o = JSON.parse(localStorage.getItem(ACTIVITY_KEY) ?? '{}') as { activity?: unknown; pattern?: unknown };
-    const activity = ACTIVITIES.find((a) => a.id === o.activity)?.id ?? 'breathe';
-    return { activity, pattern: patternById(o.pattern) };
-  } catch {
-    return { activity: 'breathe', pattern: DEFAULT_PATTERN };
-  }
-}
-
-export function saveChoice(activity: Activity, pattern: BreathPattern): void {
-  try {
-    localStorage.setItem(ACTIVITY_KEY, JSON.stringify({ activity, pattern: pattern.id }));
-  } catch {
-    // Storage blocked: the choice is simply not remembered.
-  }
-}
-
 /** Local calendar day as YYYY-MM-DD. */
 export function dayKey(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
-
-/** Today's intention line, or an empty string when none is saved for today. */
-export function loadIntention(now: Date): string {
-  try {
-    const o = JSON.parse(localStorage.getItem(INTENTION_KEY) ?? 'null') as { day?: unknown; text?: unknown } | null;
-    return o && o.day === dayKey(now) && typeof o.text === 'string' ? o.text : '';
-  } catch {
-    return '';
-  }
-}
-
-export function saveIntention(now: Date, text: string): void {
-  try {
-    localStorage.setItem(INTENTION_KEY, JSON.stringify({ day: dayKey(now), text }));
-  } catch {
-    // Storage blocked: the line is kept for this session only.
-  }
-}
-
-/** The Body scan steps, top to bottom, ending on the whole body. */
-export const BODY_STEPS: ReadonlyArray<{ caption: string; x: number; y: number; r: number }> = [
-  { caption: 'Let your jaw soften.', x: 60, y: 26, r: 12 },
-  { caption: 'Smooth your forehead.', x: 60, y: 16, r: 12 },
-  { caption: 'Rest your eyes.', x: 60, y: 22, r: 10 },
-  { caption: 'Let your shoulders drop.', x: 60, y: 52, r: 30 },
-  { caption: 'Feel the weight of your arms.', x: 60, y: 68, r: 40 },
-  { caption: 'Let your hands open.', x: 60, y: 90, r: 40 },
-  { caption: 'Notice your chest rise and fall.', x: 60, y: 62, r: 20 },
-  { caption: 'Let your belly be soft.', x: 60, y: 82, r: 16 },
-  { caption: 'Feel your back against the chair.', x: 60, y: 66, r: 28 },
-  { caption: 'Release your legs.', x: 60, y: 114, r: 30 },
-  { caption: 'Feel your feet on the floor.', x: 60, y: 140, r: 16 },
-  { caption: 'Rest in your whole body.', x: 60, y: 76, r: 62 },
-];
-
-/** Which Body scan step shows `elapsedSeconds` into a session of `minutes`, and how far through the session it is (0 to 1). */
-export function bodyScanAt(elapsedSeconds: number, minutes: number): { step: number; progress: number } {
-  const total = minutes * 60;
-  const e = Math.min(total, Math.max(0, elapsedSeconds));
-  const stepSeconds = total / BODY_STEPS.length;
-  return { step: Math.min(BODY_STEPS.length - 1, Math.floor(e / stepSeconds + 1e-9)), progress: total > 0 ? e / total : 0 };
-}
-
-/** The Candle line shows this long after a session starts, then fades. */
-export const CANDLE_LINE_MS = 10_000;
-export const CANDLE_LINE = 'Rest your eyes here. When the mind wanders, come back.';
-export const INTENTION_QUESTION = 'What matters for the next hour?';
 
 /** Working parents and standalone sessions, from the same full card list as Work. */
 export function dreamWorkingCount(summary: Pick<OmniSummary, 'lanes' | 'sessionsList'>): number {
@@ -152,10 +44,9 @@ export function dreamWorkingCount(summary: Pick<OmniSummary, 'lanes' | 'sessions
 }
 
 const COUNT_WORDS: Record<number, string> = { 3: 'THREE', 5: 'FIVE', 10: 'TEN' };
-/** "FIVE MINUTES OF ZEN", or "... OF BODY SCAN", "... OF CANDLE", "... OF INTENTION". */
-export function sessionLabel(minutes: number, activity: Activity = 'breathe'): string {
-  const of = ACTIVITIES.find((a) => a.id === activity)?.of ?? 'ZEN';
-  return `${COUNT_WORDS[minutes] ?? String(minutes)} MINUTES OF ${of}`;
+/** "FIVE MINUTES OF ZEN" */
+export function sessionLabel(minutes: number): string {
+  return `${COUNT_WORDS[minutes] ?? String(minutes)} MINUTES OF ZEN`;
 }
 
 /** Quadrants that are not urgent (important only, neither). Hotfix and admin are urgent. */
@@ -177,6 +68,27 @@ export function waitingLines(tasks: ReadonlyArray<{ quadrant: string | null }>):
   const none = q.every((x) => NOT_URGENT.has(x));
   const urgent = !none ? null : n === 1 ? 'It is not urgent.' : 'Neither is urgent.';
   return { count: `After this: ${n} ${n === 1 ? 'thing is' : 'things are'} waiting.`, urgent };
+}
+
+/** The remembered breath pattern is saved under this key (the key kept from the activity picker, so a saved pattern survives). */
+export const PATTERN_KEY = 'wall2-zen-activity';
+
+/** The remembered breath pattern. Anything unreadable gives the calm pattern. */
+export function loadPattern(): BreathPattern {
+  try {
+    const o = JSON.parse(localStorage.getItem(PATTERN_KEY) ?? '{}') as { pattern?: unknown };
+    return patternById(o.pattern);
+  } catch {
+    return DEFAULT_PATTERN;
+  }
+}
+
+export function savePattern(pattern: BreathPattern): void {
+  try {
+    localStorage.setItem(PATTERN_KEY, JSON.stringify({ pattern: pattern.id }));
+  } catch {
+    // Storage blocked: the choice is simply not remembered.
+  }
 }
 
 /** Cubic ease in and out, 0 to 1. */
@@ -256,22 +168,6 @@ export function showDimHint(date: Date): boolean {
   return h >= 18 || h < DIM_END_HOUR;
 }
 
-/** How long one pair of flames stays, and how long the change to the next pair takes. */
-export const FLAME_ROTATE_MS = 4 * 60_000;
-export const FLAME_FADE_MS = 30_000;
-
-/**
- * Which flames show `elapsedMs` after Zen opened. Pair 0 is flames 0 and 1, pair 1 is 1 and 2,
- * and so on round the list; `base` is the full layer, `top` the screen-blended one.
- */
-export function flamePair(elapsedMs: number, count: number): { step: number; base: number; top: number } {
-  const step = Math.max(0, Math.floor(elapsedMs / FLAME_ROTATE_MS));
-  return { step, base: step % count, top: (step + 1) % count };
-}
-
-/** Flames dim to this share in Dream. */
-export const DREAM_DIM = 0.35;
-
 /**
  * Dream's quiet status line: how many agents are still working and whether an agent needs the owner
  * (both null when the agents store is stale or off, then neither is said), then the lights mood that
@@ -313,4 +209,26 @@ export function driftOffset(ms: number, stepped: boolean): { x: number; y: numbe
   const turn = stepped ? Math.floor(ms / DRIFT_STEP_MS) / 4 : ms / DRIFT_PERIOD_MS;
   const a = 2 * Math.PI * (turn - Math.floor(turn));
   return { x: round1(DRIFT_RX * Math.cos(a)), y: round1(DRIFT_RY * Math.sin(a)) };
+}
+
+/** The breath as a level, 0 (empty) to 1 (full), `elapsedMs` into a session of the pattern. The same curve the phase word follows. */
+export function breathLevel(pattern: BreathPattern, elapsedMs: number): number {
+  const b = breathAt(elapsedMs / 1000, pattern);
+  return (b.scale - SCALE_MIN) / SCALE_SPAN;
+}
+
+/** How long one soft swell of the start screen takes. */
+export const IDLE_BREATH_MS = 14_000;
+
+/** The start screen's own slow breath at `ms` (any clock): always moving, between 0.1 and 0.5, so the ridge never sits still. */
+export function idleBreathLevel(ms: number): number {
+  return 0.3 + 0.2 * Math.sin((2 * Math.PI * ms) / IDLE_BREATH_MS);
+}
+
+/** Dream fades the picture to black over this long, then stops drawing it. */
+export const DREAM_FADE_MS = 60_000;
+
+/** The picture's share of its light (1 to 0) `sinceMs` after Dream opened. */
+export function dreamFade(sinceMs: number): number {
+  return Math.min(1, Math.max(0, 1 - sinceMs / DREAM_FADE_MS));
 }

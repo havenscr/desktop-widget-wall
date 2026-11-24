@@ -1,14 +1,14 @@
 import { expect, it } from 'vitest';
 import {
-  BODY_STEPS,
   BREATH_PATTERNS,
-  FLAME_ROTATE_MS,
-  bodyScanAt,
+  DREAM_FADE_MS,
   breathAt,
+  breathLevel,
+  dreamFade,
+  idleBreathLevel,
   patternById,
   patternSeconds,
   ease,
-  flamePair,
   formatLeft,
   dimDue,
   dimHint,
@@ -87,14 +87,6 @@ it('the dim hint is written from the two values', () => {
   expect(showDimHint(new Date(2026, 10, 11, 6, 0))).toBe(false);
 });
 
-it('flame rotation: the pair advances every few minutes round the list', () => {
-  expect(flamePair(0, 3)).toEqual({ step: 0, base: 0, top: 1 });
-  expect(flamePair(FLAME_ROTATE_MS - 1, 3)).toEqual({ step: 0, base: 0, top: 1 });
-  expect(flamePair(FLAME_ROTATE_MS, 3)).toEqual({ step: 1, base: 1, top: 2 });
-  expect(flamePair(2 * FLAME_ROTATE_MS, 3)).toEqual({ step: 2, base: 2, top: 0 });
-  expect(flamePair(3 * FLAME_ROTATE_MS, 3)).toEqual({ step: 3, base: 0, top: 1 });
-});
-
 it('Box 4-4-4-4: in, hold full, out, hold empty', () => {
   const box = patternById('box');
   expect(patternSeconds(box)).toBe(16);
@@ -126,20 +118,43 @@ it('an unknown pattern id is the calm one', () => {
   expect(patternById(undefined).phases).toEqual([4, 2, 6, 0]);
 });
 
-it('Body scan: twelve steps, each session length / 12 long', () => {
-  expect(BODY_STEPS).toHaveLength(12);
-  expect(BODY_STEPS[0].caption).toMatch(/jaw/i);
-  expect(BODY_STEPS[11].caption).toMatch(/whole body/i);
-  // 5 minutes: 25 s a step.
-  expect(bodyScanAt(0, 5)).toEqual({ step: 0, progress: 0 });
-  expect(bodyScanAt(24.9, 5).step).toBe(0);
-  expect(bodyScanAt(25, 5).step).toBe(1);
-  expect(bodyScanAt(299, 5).step).toBe(11);
-  expect(bodyScanAt(300, 5)).toEqual({ step: 11, progress: 1 });
-  expect(bodyScanAt(9999, 5).step).toBe(11);
-  // 3 minutes: 15 s a step; 10 minutes: 50 s a step.
-  expect(bodyScanAt(15, 3).step).toBe(1);
-  expect(bodyScanAt(49, 10).step).toBe(0);
-  expect(bodyScanAt(50, 10).step).toBe(1);
-  expect(bodyScanAt(150, 5).progress).toBeCloseTo(0.5, 6);
+
+it('breathLevel runs 0 to 1 with the phase word and is continuous at every join, for every pattern', () => {
+  for (const p of BREATH_PATTERNS) {
+    const total = patternSeconds(p) * 1000;
+    let prev = breathLevel(p, 0);
+    for (let ms = 10; ms <= total * 2; ms += 10) {
+      const v = breathLevel(p, ms);
+      expect(v).toBeGreaterThanOrEqual(-1e-9);
+      expect(v).toBeLessThanOrEqual(1 + 1e-9);
+      expect(Math.abs(v - prev)).toBeLessThan(0.05);
+      prev = v;
+    }
+  }
+  const calm = BREATH_PATTERNS[0];
+  expect(breathLevel(calm, 0)).toBeCloseTo(0, 6);
+  expect(breathLevel(calm, 4000)).toBeCloseTo(1, 6);
+  expect(breathLevel(calm, 6000)).toBeCloseTo(1, 6);
+  expect(breathLevel(calm, 12000)).toBeCloseTo(0, 6);
+});
+
+it('idleBreathLevel always moves and stays in bounds', () => {
+  let lo = 1;
+  let hi = 0;
+  for (let ms = 0; ms < 60_000; ms += 100) {
+    const v = idleBreathLevel(ms);
+    lo = Math.min(lo, v);
+    hi = Math.max(hi, v);
+  }
+  expect(lo).toBeGreaterThanOrEqual(0.09);
+  expect(hi).toBeLessThanOrEqual(0.51);
+  expect(hi - lo).toBeGreaterThan(0.3);
+  expect(idleBreathLevel(0)).not.toBe(idleBreathLevel(3000));
+});
+
+it('Dream fades the picture to black over its first minute', () => {
+  expect(dreamFade(0)).toBe(1);
+  expect(dreamFade(DREAM_FADE_MS / 2)).toBeCloseTo(0.5, 6);
+  expect(dreamFade(DREAM_FADE_MS)).toBe(0);
+  expect(dreamFade(DREAM_FADE_MS * 3)).toBe(0);
 });

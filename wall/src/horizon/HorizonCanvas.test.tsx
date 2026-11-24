@@ -10,6 +10,7 @@ import { danceHistory, ingestLevels, resetAudio, tickAudio } from '../audio/stor
 import { useIdle } from '../ui/useIdle';
 import { DANCE_AMP, REST_LOOK, REST_OPACITY, REST_OPACITY_VISUALIZER, REST_PHASE, echoOptions, echoStrength } from './echo';
 import type { HorizonEcho } from './renderer';
+import { sample as zenSample, setDream, resetStage } from '../zen/stage';
 
 /** How strongly the echo is drawn (0 for none). */
 const strength = (e: HorizonEcho | null | undefined) => (e ? echoStrength(e) : 0);
@@ -68,6 +69,7 @@ function runFrame(ts: number) {
 }
 
 beforeEach(() => {
+  resetStage();
   idleMock.mockImplementation(() => false);
   usePlaceStore.setState({ active: 'work' });
   resetAudio();
@@ -431,23 +433,63 @@ it('the review still shows the lines at rest, even with music playing, and none 
   expect(draw.mock.lastCall![1]).not.toHaveProperty('echo');
 });
 
-it('does not draw while Zen is active, and resumes (gliding from the old camera) on leaving', () => {
+it('draws on Zen with the Unwind camera and glides there, then glides on to the next place', () => {
   setReducedMotion(false);
   render(<HorizonCanvas now={() => NOON} />);
   runFrame(100);
   act(() => usePlaceStore.getState().setActive('zen'));
-  expect(frames.size).toBe(0);
+  expect(frames.size).toBe(1);
   draw.mockClear();
-  expect(document.querySelector('canvas')!.style.display).toBe('none');
-  expect(draw).not.toHaveBeenCalled();
-  act(() => usePlaceStore.getState().setActive('home'));
-  expect(document.querySelector('canvas')!.style.display).toBe('');
   runFrame(200);
   expect(draw).toHaveBeenCalled();
-  const cam = draw.mock.lastCall![1].camera!;
-  // Strictly between Work and Home: a jump (or no glide) would fail.
-  expect(cam.az0).toBeLessThan(CAMERAS.work.az0);
-  expect(cam.az0).toBeGreaterThan(CAMERAS.home.az0);
+  const toZen = draw.mock.lastCall![1].camera!;
+  // Strictly between Work and Unwind: a jump (or no glide) would fail.
+  expect(toZen.az0).toBeGreaterThan(CAMERAS.work.az0);
+  expect(toZen.az0).toBeLessThan(CAMERAS.unwind.az0);
+  for (let k = 3; k < 60; k++) runFrame(k * 100);
+  expect(draw.mock.lastCall![1].camera).toEqual(CAMERAS.unwind);
+  expect(document.querySelector('canvas')!.style.display).toBe('');
+  act(() => usePlaceStore.getState().setActive('home'));
+  runFrame(7000);
+  expect(draw.mock.lastCall![1].camera!.az0).toBeLessThan(CAMERAS.unwind.az0);
+});
+
+it('Zen lines follow the breath, not the music, and carry no grid pulse', () => {
+  setReducedMotion(false);
+  usePlaceStore.setState({ active: 'zen' });
+  render(<HorizonCanvas now={() => NOON} />);
+  runFrame(100);
+  runFrame(200);
+  const o = draw.mock.lastCall![1];
+  expect(o.echo).toBeDefined();
+  expect(o.echo!.sample).toBe(zenSample);
+  expect(o.echo!.rest).toBeUndefined();
+  expect(o).not.toHaveProperty('grid');
+});
+
+it('Dream fades the picture to black over a minute, then draws nothing until Zen wakes', () => {
+  setReducedMotion(false);
+  usePlaceStore.setState({ active: 'zen' });
+  render(<HorizonCanvas now={() => NOON} />);
+  runFrame(100);
+  const canvas = document.querySelector('canvas')!;
+  const t0 = performance.now();
+  act(() => setDream(t0 - 30_000));
+  runFrame(200);
+  expect(Number(canvas.style.opacity)).toBeGreaterThan(0.3);
+  expect(Number(canvas.style.opacity)).toBeLessThan(0.7);
+  act(() => setDream(t0 - 61_000));
+  runFrame(300);
+  expect(canvas.style.visibility).toBe('hidden');
+  draw.mockClear();
+  runFrame(400);
+  runFrame(500);
+  expect(draw).not.toHaveBeenCalled();
+  act(() => setDream(null));
+  runFrame(600);
+  runFrame(700);
+  expect(canvas.style.visibility).toBe('');
+  expect(draw).toHaveBeenCalled();
 });
 
 it('leaving Zen back to the same place does not glide, so the Unwind moon stays', () => {
@@ -463,14 +505,16 @@ it('leaving Zen back to the same place does not glide, so the Unwind moon stays'
   expect(o.moon).toBeDefined();
 });
 
-it('reduced motion: no timer redraw while Zen is active', () => {
+it('reduced motion: Zen is one still of the ridge at rest, and Dream takes it away at once', () => {
   setReducedMotion(true);
   vi.useFakeTimers();
   render(<HorizonCanvas now={() => NOON} />);
   act(() => usePlaceStore.getState().setActive('zen'));
-  draw.mockClear();
-  act(() => void vi.advanceTimersByTime(180_000));
-  expect(draw).not.toHaveBeenCalled();
+  const canvas = document.querySelector('canvas')!;
+  expect(draw.mock.lastCall![1].camera).toEqual(CAMERAS.unwind);
+  expect(draw.mock.lastCall![1].echo!.sample).toBeUndefined();
+  act(() => setDream(performance.now()));
+  expect(canvas.style.visibility).toBe('hidden');
 });
 
 describe('Home morning view', () => {
@@ -1336,13 +1380,12 @@ describe('the lake reflection', () => {
     expect(mirrored(main)).toHaveLength(before);
   });
 
-  it('is not drawn while Zen is open (the loop stops)', () => {
+  it('is not mirrored on Zen by the music (the loop runs on the breath)', () => {
     const logs = recordCanvases();
     playUnwind(3);
     const main = [...logs.keys()].sort((a, b) => b.width - a.width).map((c) => logs.get(c)!)[0];
     act(() => usePlaceStore.getState().setActive('zen'));
-    const n = mirrored(main).length;
-    expect(frames.size).toBe(0);
-    expect(mirrored(main)).toHaveLength(n);
+    expect(frames.size).toBe(1);
+    expect(main).toBeDefined();
   });
 });

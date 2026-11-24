@@ -35,6 +35,7 @@ import { senseWeather } from '../buddy/senses';
 import { useSceneWeather } from '../weather/sceneSetting';
 import { useWeatherStore } from '../weather/useWeather';
 import { frameDelta, shouldDraw } from './pacing';
+import { levelAt, onStage, pictureFade, sample as zenSample, stage as zenStage } from '../zen/stage';
 import { clearGridPulse, createGridPulse, stepGridPulse } from './pulse';
 import { parseReview, parseSkyReview } from './review';
 import { publishCamera } from './signal';
@@ -72,6 +73,8 @@ import {
 } from './lineTypes';
 
 const REDRAW_MS = 60_000;
+/** Share of the Unwind lines' live strength that Zen draws them at. */
+const ZEN_LINE_SHARE = 0.65;
 /** Stands in for `clearRect` while the ground part is drawn over the sky and the weather (see `paint`). */
 const NO_CLEAR = (): void => {};
 /**
@@ -95,10 +98,9 @@ const MORNING_CHECK_MS = 60_000;
 export function HorizonCanvas({ now = Date.now }: { now?: () => number }) {
   const ref = useRef<HTMLCanvasElement>(null);
   const active = usePlaceStore((s) => s.active);
-  // Zen covers the stage with flames, so the canvas is not drawn then. It keeps the last camera
-  // and glides from there to wherever the user goes next.
+  // Zen draws the same picture on the Unwind camera, its ridge following the breath (`zen/stage.ts`) in place of the music.
   const zen = active === 'zen';
-  const place = active === 'zen' ? null : active;
+  const place = active;
   const reduced = useReducedMotion();
   // Review hook: dev builds only, `?hz=<place>&at=<ISO time>` draws one frozen frame.
   const [review] = useState(() => (import.meta.env.DEV ? parseReview(window.location.search) : null));
@@ -158,7 +160,7 @@ export function HorizonCanvas({ now = Date.now }: { now?: () => number }) {
   const veil = useRef<{ el: Element | null; a: number; until: number; timer: number }>({ el: null, a: 0, until: -2, timer: 0 });
   // True while the drawing is a still (reduced motion, or a frozen review frame).
   const stillRef = useRef(false);
-  const glide = useRef<Glide>(settled(cameraFor(review?.place ?? place ?? 'work', review ? review.ms : now())));
+  const glide = useRef<Glide>(settled(cameraFor(review?.place ?? place, review ? review.ms : now())));
   const repaint = useRef<() => void>(() => {});
   const first = useRef(true);
   // The ridgelines between playing and rest (`stepEchoMotion`): they settle into their resting look
@@ -231,7 +233,7 @@ export function HorizonCanvas({ now = Date.now }: { now?: () => number }) {
   // Drawing: an animated 30 fps loop, or a single frame (a still frame once a minute when motion is reduced).
   useEffect(() => {
     const canvas = ref.current;
-    if (!canvas || zen) return;
+    if (!canvas) return;
     const still = reduced || (review !== null && !demo);
     stillRef.current = still;
     // Start the pulse from nothing: after Zen or a reduced motion spell the stored bands are stale.
@@ -271,8 +273,31 @@ export function HorizonCanvas({ now = Date.now }: { now?: () => number }) {
         o.height = 0;
       }
     };
+    // Zen's picture (sky, ridge and lake) fades to black over Dream's first minute and is then not drawn at all.
+    // Returns true when nothing is to be drawn.
+    const zenDimmed = (): boolean => {
+      if (!zen) {
+        if (canvas.style.opacity !== '' || canvas.style.visibility !== '') {
+          canvas.style.opacity = '';
+          canvas.style.visibility = '';
+        }
+        return false;
+      }
+      const f = reduced && zenStage.dreamAt !== null ? 0 : pictureFade(performance.now());
+      const o = f >= 1 ? '' : f.toFixed(3);
+      if (canvas.style.opacity !== o) canvas.style.opacity = o;
+      const v = f <= 0 ? 'hidden' : '';
+      if (canvas.style.visibility !== v) canvas.style.visibility = v;
+      return f <= 0;
+    };
     const paint = () => {
       if (document.hidden) return;
+      zenStage.now = performance.now();
+      zenStage.echoT = echoT.current;
+      if (zenDimmed()) {
+        dropOverlay();
+        return;
+      }
       const costStart = measureCost ? performance.now() : 0;
       const scale = fitScale(window.innerWidth, window.innerHeight) * (window.devicePixelRatio || 1);
       const width = Math.round(STAGE_WIDTH * scale);
@@ -301,8 +326,19 @@ export function HorizonCanvas({ now = Date.now }: { now?: () => number }) {
         // Clouds turn with the camera at about a third of the land's speed.
         cloudShift: cloudShiftFor(camera),
       };
-      // The grid pulse never appears in the review still or under reduced motion's still frames.
-      if (!still) {
+      // Zen: the lines follow the breath (`zen/stage.ts`), never the music, and there is no grid pulse. They are drawn with the
+      // Unwind camera's own line count and look, the colours it has with no cover playing, at a calmer strength.
+      if (zen && !still) {
+        const echo = echoOptions(camera, 1, echoT.current, gate.current.value * awake.current, 0, REST_LOOK, undefined, 0, lineStops(lines.colours));
+        if (echo) {
+          scaleEcho(echo, ZEN_LINE_SHARE);
+          echo.n = Math.max(1, lineCount.current);
+          echo.sample = zenSample;
+          options.echo = echo;
+        }
+        lastEchoA.current = echo ? echoStrength(echo) : 0;
+      } else if (!still) {
+        // The grid pulse never appears in the review still or under reduced motion's still frames.
         const m = motion.current;
         // The lines take the playing cover's colours (cross-faded between tracks; teal with no cover),
         // or the chosen palette, for every type.
@@ -438,7 +474,8 @@ export function HorizonCanvas({ now = Date.now }: { now?: () => number }) {
       // The lake mirrors the finished frame on the visualizer camera, only while lines are drawn.
       if (REFLECT && lines.reflection && (options.echo || typeShown)) {
         const open = still ? initialEchoGate(glide.current).value : gate.current.value * awake.current;
-        const alpha = reflectionAlpha(visualizerWeight(camera), open);
+        // On Zen the lake is brightest on the out breath and dimmest on the full inhale.
+        const alpha = reflectionAlpha(visualizerWeight(camera), zen && !still ? open * (0.55 + 0.45 * (1 - levelAt(0))) : open);
         if (fctx) drawReflection(reflection.current, fctx, width, height, camera.hy, scale, alpha, undefined, canvas);
         else drawReflection(reflection.current, ctx, width, height, camera.hy, scale, alpha);
       }
@@ -496,13 +533,20 @@ export function HorizonCanvas({ now = Date.now }: { now?: () => number }) {
 
     const frame = (ts: number) => {
       raf = requestAnimationFrame(frame);
+      // Dream has faded the picture out: nothing is stepped or drawn until Zen wakes.
+      if (zen && zenStage.dreamAt !== null && pictureFade(performance.now()) <= 0) {
+        paint();
+        last = 0;
+        return;
+      }
       if (!shouldDraw(ts, last, document.hidden)) return;
       const dt = frameDelta(ts, last);
       drawDt = dt;
       last = ts;
       T += dt;
       const audio = useAudioStore.getState();
-      const driving = musicDriving(motion.current, audio.playing, audioBands(), dt);
+      // Zen ignores the music: the ridge lies still-calm underneath the breath's own lines.
+      const driving = !zen && musicDriving(motion.current, audio.playing, audioBands(), dt);
       if (driving) loud.current = smoothStep(loud.current, loudness(audio), dt);
       stepEchoMotion(motion.current, driving, dt);
       awake.current = stepEchoFade(awake.current, !idleRef.current, dt);
@@ -520,7 +564,7 @@ export function HorizonCanvas({ now = Date.now }: { now?: () => number }) {
       echoT.current += dt;
       const beats = audioBeats();
       const input = pulseIn.current;
-      input.playing = useAudioStore.getState().playing;
+      input.playing = !zen && useAudioStore.getState().playing;
       input.beats = beats.count;
       input.lag = beats.lag / 1000;
       input.bass = beats.bass;
@@ -545,6 +589,15 @@ export function HorizonCanvas({ now = Date.now }: { now?: () => number }) {
       if (!review) timer = window.setInterval(paint, REDRAW_MS);
       // A changed line type or colour is drawn at once, not at the next minute's redraw (the loop does it on its next frame).
       offLines = useLinesStore.subscribe(paint);
+      // Zen changes the stage (a session starts, Dream opens): the still is drawn again.
+      if (zen) {
+        const offStageOnly = offLines;
+        const offStage = onStage(paint);
+        offLines = () => {
+          offStageOnly();
+          offStage();
+        };
+      }
       // A review still shows the weather as soon as the reading (or the Tools switch) arrives.
       if (!reduced) {
         const again = () => {
@@ -624,7 +677,7 @@ export function HorizonCanvas({ now = Date.now }: { now?: () => number }) {
       first.current = false;
       return;
     }
-    if (review || place === null) return;
+    if (review) return;
     // Back from Zen to the camera already showing: nothing to glide (the moon stays on Unwind).
     const target = cameraFor(place, nowRef.current());
     if (glide.current.to === target && glide.current.progress >= 1) return;
@@ -643,7 +696,7 @@ export function HorizonCanvas({ now = Date.now }: { now?: () => number }) {
 
   return (
     <>
-      <canvas ref={ref} className="horizon-canvas" aria-hidden="true" style={zen ? { display: 'none' } : undefined} />
+      <canvas ref={ref} className="horizon-canvas" aria-hidden="true" />
       {/* Fixed to the stage (its transform is the containing block), so it covers the stage
           whatever box it is mounted in, and takes no pointer. */}
       {alwaysFront ? <canvas ref={frontCanvas} className="horizon-canvas horizon-front" aria-hidden="true" style={FRONT_STYLE} /> : null}

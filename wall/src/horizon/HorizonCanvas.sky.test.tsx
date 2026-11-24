@@ -286,7 +286,7 @@ describe('the front layer', () => {
     expect(draw.mock.calls.map(([, o]) => o.part)).toEqual(['sky', 'ground']);
   });
 
-  it('Zen stops both: no front canvas and no frames while it is open', () => {
+  it('Zen mounts no front canvas and keeps the one canvas drawing', () => {
     render(
       <>
         <HorizonCanvas now={() => NIGHT} />
@@ -296,7 +296,7 @@ describe('the front layer', () => {
     runFrame(100);
     act(() => usePlaceStore.getState().setActive('zen'));
     expect(frontCanvas()).toBeNull();
-    expect(frames.size).toBe(0);
+    expect(frames.size).toBe(1);
   });
 
   it('a still frame (reduced motion) is drawn again on both canvases when the layer comes, and once a minute after', () => {

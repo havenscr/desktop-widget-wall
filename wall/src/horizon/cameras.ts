@@ -1,4 +1,4 @@
-import type { CameraPlace } from '../state/places';
+import type { CameraPlace, PlaceId } from '../state/places';
 import { STAGE_WIDTH } from '../stage/fitScale';
 import type { TerrainName } from './renderer';
 
@@ -109,9 +109,9 @@ export function homeCameraFor(date: Date): CameraPreset {
   return min >= MORNING_START_MIN && min < MORNING_END_MIN ? HOME_MORNING : CAMERAS.home;
 }
 
-/** The camera a place uses at a moment (epoch milliseconds). Only Home changes with the hour. */
-export function cameraFor(place: CameraPlace, ms: number): CameraPreset {
-  return place === 'home' ? homeCameraFor(new Date(ms)) : CAMERAS[place];
+/** The camera a place uses at a moment (epoch milliseconds). Only Home changes with the hour; Zen looks along the Unwind ridge. */
+export function cameraFor(place: PlaceId, ms: number): CameraPreset {
+  return place === 'home' ? homeCameraFor(new Date(ms)) : place === 'zen' ? CAMERAS.unwind : CAMERAS[place];
 }
 
 /** Clouds move at this fraction of the horizon's speed when the camera turns. */
