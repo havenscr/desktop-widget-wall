@@ -1,4 +1,4 @@
-import type { BriefOut, BriefTokenStatus } from '../meetBrief';
+import type { AskAnswer, BriefHealth, BriefOut, BriefTokenStatus } from '../meetBrief';
 import { mocks } from '../tauri';
 
 /**
@@ -142,7 +142,54 @@ const tokenOff = (): boolean => {
   }
 };
 
+/** `?ask=ok|slow|busy|off|limit|refused|failing` picks the ask box's answer; the default is `off`. */
+const askMode = (): string => {
+  try {
+    return new URLSearchParams(globalThis.location?.search ?? '').get('ask') ?? 'off';
+  } catch {
+    return 'off';
+  }
+};
+
+/** Invented text only. Two lines, so the panel shows a real answer shape. */
+export const ASK_ANSWER: AskAnswer = {
+  a: 'Priya wrote on Nov 11 that she is happy to go ahead if the support hours stay the same, and asked for a revised quote. The brief does not say what the current hours are.',
+  model: 'Sonnet',
+};
+
+const ASK_HEALTH: Record<string, BriefHealth['ask']> = {
+  ok: { state: 'ready', name: 'Sonnet' },
+  slow: { state: 'ready', name: 'Sonnet' },
+  limit: { state: 'ready', name: 'Sonnet' },
+  refused: { state: 'ready', name: 'Sonnet' },
+  busy: { state: 'busy', name: 'Sonnet' },
+  failing: { state: 'failing', name: 'Claude' },
+};
+
 export function registerMeetBriefMocks(): void {
+  mocks.set('wall2_meet_brief_health', () => ({ ask: ASK_HEALTH[askMode()] ?? { state: 'off', name: 'Claude' } }));
+  mocks.set('wall2_meet_brief_ask', async (args) => {
+    if (typeof args?.key !== 'string' || args.key === '') throw 'gone';
+    if (typeof args.q !== 'string' || args.q.trim() === '') throw 'failed';
+    switch (askMode()) {
+      case 'ok':
+        return ASK_ANSWER;
+      case 'slow':
+        // Never answers inside a screenshot: the panel stays on "Asking".
+        await new Promise((resolve) => setTimeout(resolve, 600_000));
+        return ASK_ANSWER;
+      case 'busy':
+        throw 'busy';
+      case 'limit':
+        throw 'limit';
+      case 'refused':
+        throw 'refused';
+      case 'failing':
+        throw 'model-off';
+      default:
+        throw 'ask-off';
+    }
+  });
   let token: BriefTokenStatus = { set: !tokenOff(), unreadable: false };
   mocks.set('wall2_meet_brief_token_status', () => ({ ...token }));
   mocks.set('wall2_meet_brief_token_set', (args) => {

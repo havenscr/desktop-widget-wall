@@ -26,10 +26,13 @@ const VARIANTS = [
   ['Meet layout, a signed out account: the amber line pushes the ring down', at, 'meet=signin-fault&call=teams'],
   ['Meet layout, brief feed (3 items)', at, 'meet=known&call=teams&checklist=four&brief=ready'],
   ['Meet layout, brief feed (10 items: 7 rows and a count)', at, 'meet=known&call=teams&checklist=four&brief=many'],
+  ['Meet layout, brief feed with the ask box ready', at, 'meet=known&call=teams&checklist=four&brief=ready&ask=ok'],
+  ['Meet layout, brief feed with the ask box off', at, 'meet=known&call=teams&checklist=four&brief=ready&ask=off'],
   ['Meet layout, brief empty (no history yet)', at, 'meet=known&call=teams&checklist=four&brief=empty'],
   ['Meet layout, brief building', at, 'meet=known&call=teams&checklist=four&brief=building'],
   ['Meet layout, studio lights on: Key lights and Panels tiles with their level bars', at, 'meet=known&call=teams&checklist=four&keys2=both&studio=ready&desktoken=set'],
 ];
+const ASK_VARIANT = 'Meet layout, brief feed with the ask box ready';
 const BRIEF_MANY_VARIANT = 'Meet layout, brief feed (10 items: 7 rows and a count)';
 
 /** Runs in the page: every measurement of the Meet layout, as plain data. */
@@ -104,7 +107,14 @@ function measureMeet() {
   const briefWrap = briefRows.map((e, i) => ({ i, t: e.querySelector('.meet-brief-title') })).filter(({ t }) => t && t.getBoundingClientRect().height > parseFloat(getComputedStyle(t).lineHeight) * 1.5).map(({ i }) => `brief row ${i + 1} title wraps to a second line`);
   const briefSub = briefRows.map((e) => e.querySelector('.meet-brief-sub')).filter((t) => t && parseFloat(getComputedStyle(t).fontSize) < 15.95).length;
   const briefMore = document.querySelector('.meet .meet-brief-more');
-  const brief = { rows: briefRows.length, cut: briefCut, wrap: briefWrap, subSmall: briefSub, more: briefMore ? (briefMore.textContent || '').trim() : null, ask: !!document.querySelector('.meet .meet-brief-ask'), bodyBottom: briefBody ? r1(briefBody.bottom) : null };
+  const brief = { rows: briefRows.length, cut: briefCut, wrap: briefWrap, subSmall: briefSub, more: briefMore ? (briefMore.textContent || '').trim() : null, ask: !!document.querySelector('.meet .meet-ask'), bodyBottom: briefBody ? r1(briefBody.bottom) : null };
+  // The ask field and its status words: 40 to 48 px tall, inside the island (nothing past its bottom), status never wraps, text 16 px or more.
+  const askBox = document.querySelector('.meet .meet-ask');
+  const askIn = document.querySelector('.meet .meet-ask-in');
+  const askStatus = document.querySelector('.meet .meet-ask-status');
+  const isl = document.querySelector('.meet .meet-island')?.getBoundingClientRect() ?? null;
+  const ab = askBox ? askBox.getBoundingClientRect() : null;
+  brief.askInfo = askBox ? { h: r1(ab.height), bottom: r1(ab.bottom), islandBottom: isl ? r1(isl.bottom) : null, inSize: askIn ? parseFloat(getComputedStyle(askIn).fontSize) : null, statusWrap: !!askStatus && askStatus.getBoundingClientRect().height > parseFloat(getComputedStyle(askStatus).lineHeight) * 1.5, status: askStatus ? (askStatus.textContent || '').trim() : null } : null;
   const island = document.querySelector('.meet .meet-island');
   const islandText = island ? (island.innerText || '').trim().length : 0;
   const overlaps = [];
@@ -168,7 +178,8 @@ export default {
       state('the call is 12 minutes past its meeting', 'meet=over&call=teams&callsince=-70&rec=1', ['In call, Teams', 'Design review with the platform team', 'min over', 'ended', 'Recording', 'Lunch with Sam']),
       state('the next meeting overlaps this one', 'meet=clash&call=teams', ['Next, overlaps', 'Starts before this one ends', 'Lunch with Sam']),
       state('the hover tip on Mute', 'meet=known&call=teams&checklist=four', ['Sends Ctrl+Shift+M to Teams. The wall cannot see whether you are muted.'], 'hover:.meet-key[data-role="mute"]'),
-      state('brief feed: strip, rows, dimmed ask box', 'meet=known&call=teams&checklist=four&brief=ready', ['Priya Calder', 'Northwind Outfitters', 'Annual renewal', 'Re: renewal terms for next year', 'Quarterly check-in', 'Ask about this meeting (coming later)', '!Also on file']),
+      state('brief feed: strip, rows, ask field with its status word', 'meet=known&call=teams&checklist=four&brief=ready&ask=ok', ['Priya Calder', 'Northwind Outfitters', 'Annual renewal', 'Re: renewal terms for next year', 'Quarterly check-in', 'Sonnet ready', '!coming later', '!Also on file']),
+      state('brief feed: ask box off, its reason in the field', 'meet=known&call=teams&checklist=four&brief=ready&ask=off', ['Re: renewal terms for next year', 'Ask off', '!Sonnet ready']),
       state('brief feed: a row opened', 'meet=known&call=teams&checklist=four&brief=ready', ['Back', 'Happy to go ahead if the support hours stay the same', 'Send the revised quote', 'Open'], '.meet-brief-row'),
       state('brief feed: ten items, seven rows and a count', 'meet=known&call=teams&checklist=four&brief=many', ['+ 3 more items', 'Item 1: notes from the renewal talks', '!Item 8']),
       state('brief empty: no history yet, the island keeps its pages', 'meet=known&call=teams&checklist=four&brief=empty', ['No history yet with Northwind Outfitters', 'Teams is not signed in yet', 'The invite', 'Also on file']),
@@ -213,6 +224,14 @@ export default {
         if (m.brief.rows > 7) fail(`the brief feed draws ${m.brief.rows} rows (7 at most)`);
         if (variant.name === BRIEF_MANY_VARIANT && (m.brief.rows !== 7 || m.brief.more !== '+ 3 more items')) fail(`the ten item feed shows ${m.brief.rows} rows and "${m.brief.more}" (7 rows and "+ 3 more items")`);
         if (m.brief.rows > 0 && !m.brief.ask) fail('the feed has no ask box');
+        const ai = m.brief.askInfo;
+        if (ai) {
+          if (ai.h < 39.5 || ai.h > 48.5) fail(`ask box is ${ai.h} px tall (40 to 48)`);
+          if (ai.islandBottom !== null && ai.bottom > ai.islandBottom + 0.5) fail(`ask box ends at y ${ai.bottom}, past the island (y ${ai.islandBottom})`);
+          if (ai.inSize !== null && ai.inSize < 15.95) fail(`ask field text is ${ai.inSize} px (16 or more)`);
+          if (ai.statusWrap) fail('ask status words wrap');
+          if (variant.name === ASK_VARIANT && ai.status !== 'Sonnet ready') fail(`ask status reads "${ai.status}" (Sonnet ready)`);
+        }
         for (const o of m.out) fail(o);
         for (const o of m.heroParts.slice(0, 3)) fail(`hero overlap: ${o}`);
         for (const n of m.narrow.slice(0, 3)) fail(`key size: ${n}`);
@@ -243,6 +262,9 @@ export default {
       'brief-wrap': { css: '.meet .meet-brief-title { white-space: normal !important; overflow: visible !important; text-overflow: clip !important; }', expect: /^ *FAIL meet layout: brief row \d+ title wraps/m, appliesTo: (v) => v.name === BRIEF_MANY_VARIANT },
       'brief-small': { css: '.meet .meet-brief-sub { font-size: 13px !important; }', expect: /^ *FAIL meet layout: (brief sub line is under 16 px|text under 16 px)/m, appliesTo: (v) => v.name === BRIEF_MANY_VARIANT },
       'brief-tall': { css: '.meet .meet-brief-row { height: 72px !important; }', expect: /^ *FAIL meet layout: brief row \d+ at y /m, appliesTo: (v) => v.name === BRIEF_MANY_VARIANT },
+      'ask-wrap': { css: '.meet .meet-ask-status { white-space: normal !important; width: 70px !important; }', expect: /^ *FAIL meet layout: ask status words wrap/m, appliesTo: (v) => v.name === ASK_VARIANT },
+      'ask-small': { css: '.meet .meet-ask-in { font-size: 13px !important; }', expect: /^ *FAIL meet layout: ask field text is /m, appliesTo: (v) => v.name === ASK_VARIANT },
+      'ask-tall': { css: '.meet .meet-ask { height: 80px !important; }', expect: /^ *FAIL meet layout: ask box is /m, appliesTo: (v) => v.name === ASK_VARIANT },
       'meet-island-empty': { css: '.meet .meet-isl-body, .meet .meet-isl-howto { display: none !important; }', expect: /^ *FAIL meet layout: the island is empty/m, appliesTo: (v) => v.name === VARIANTS[4][0] },
     },
   },

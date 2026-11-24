@@ -4082,6 +4082,8 @@ pub fn run() {
             wall2_meet::brief_token::wall2_meet_brief_token_status,
             wall2_meet::brief::wall2_meet_brief,
             wall2_meet::brief::wall2_meet_brief_open,
+            wall2_meet::brief::wall2_meet_brief_ask,
+            wall2_meet::brief::wall2_meet_brief_health,
             wall2_meet::people::wall2_meet_person_action,
             wall2_meet::people::wall2_meet_person_address,
             wall2_meet::people::wall2_meet_person_contact,

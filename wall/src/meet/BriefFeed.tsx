@@ -1,20 +1,13 @@
-import { IconAddressBook, IconBrandTeams, IconChevronLeft, IconFile, IconFileText, IconFolder, IconMail, IconMessage } from '@tabler/icons-react';
+import { IconAddressBook, IconBrandTeams, IconChevronLeft, IconFile, IconFileText, IconFolder, IconMail } from '@tabler/icons-react';
 import { useEffect, useState } from 'react';
 import { openBriefItem, type BriefOut } from '../bridge/meetBrief';
 import { tip } from '../ui/HoverTip';
+import { AskBox } from './AskBox';
+import { AskPanel } from './AskPanel';
+import { useBriefAsk } from './useBriefAsk';
 import { NOT_CHECKED, ON_AIR_LINE, REFRESH_LINE, itemById, type BriefViewModel, type RowIcon } from './briefModel';
 
 const ICONS: Record<RowIcon, typeof IconMail> = { mail: IconMail, chat: IconBrandTeams, file: IconFile, folder: IconFolder, crm: IconAddressBook, note: IconFileText };
-
-/** The quiet ask box of the voted picture: drawn, dimmed, not in the tab order, nothing behind it yet. */
-function AskBox() {
-  return (
-    <div className="meet-brief-ask" aria-disabled="true">
-      <IconMessage size={20} aria-hidden="true" />
-      <span>Ask about this meeting (coming later)</span>
-    </div>
-  );
-}
 
 /** The slim strip in the island's header: who, company, deal. Plain text, no tips (nothing from the brief goes in an attribute). */
 function Strip({ view, onAir }: { view: BriefViewModel; onAir: boolean }) {
@@ -71,9 +64,10 @@ function Detail({ out, id, onBack }: { out: BriefOut; id: string; onBack: () => 
 
 /**
  * The island when the brief has history (look C): one ranked feed under a slim who / company / deal strip. A row opens a
- * detail over the feed, Back or Escape returns. While On Air is live the rows are not drawn. The text lives in state only.
+ * detail over the feed, Back or Escape returns. While On Air is live the rows are not drawn. The text lives in state only. The foot holds the ask field; an answer opens a panel over the rows.
  */
-export function BriefFeed({ out, view, onAir, retry }: { out: BriefOut; view: BriefViewModel; onAir: boolean; retry?: () => void }) {
+export function BriefFeed({ out, view, onAir, retry, briefKey = null }: { out: BriefOut; view: BriefViewModel; onAir: boolean; retry?: () => void; briefKey?: string | null }) {
+  const ask = useBriefAsk(briefKey, out.state === 'ready', onAir);
   const [detail, setDetail] = useState<string | null>(null);
   useEffect(() => {
     if (onAir) setDetail(null);
@@ -88,7 +82,9 @@ export function BriefFeed({ out, view, onAir, retry }: { out: BriefOut; view: Br
         <Strip view={view} onAir={onAir} />
       </div>
       <div className="meet-isl-body meet-brief-body">
-        {onAir ? null : shown ? (
+        {onAir ? null : ask.view ? (
+          <AskPanel view={ask.view} onBack={ask.back} onClear={ask.clear} />
+        ) : shown ? (
           <Detail out={out} id={shown} onBack={() => setDetail(null)} />
         ) : (
           <div className="meet-brief-list">
@@ -118,7 +114,7 @@ export function BriefFeed({ out, view, onAir, retry }: { out: BriefOut; view: Br
             )}
           </>
         )}
-        <AskBox />
+        <AskBox ask={ask} />
       </div>
     </section>
   );
