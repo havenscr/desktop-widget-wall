@@ -6,7 +6,7 @@ import { rollDay } from '../takeModel';
 import { recorderWord, useRecorder, useRecorderSync } from './recorderStore';
 import { Head } from './Tiles';
 
-const HOVER = 'Sees if the recorder is open and if it holds the mic or camera. A pause made in the recorder is not seen.';
+const HOVER = 'Open or not, from the window list. A pause in the recorder is not seen.';
 
 /** The Recording page's box under Marks today: the Camtasia Recorder's state in one line. */
 export function RecorderBlock({ now }: { now: number }) {
@@ -20,13 +20,12 @@ export function RecorderBlock({ now }: { now: number }) {
   const live = word === 'Recording' || word === 'Paused';
   return (
     <div className="oa2-b oa2-recorder" role="group" aria-label="Camtasia Recorder">
-      <Head label="Camtasia Recorder" icon={<IconVideo size={20} aria-hidden="true" />} right="checked every 5 s" />
+      <Head label="Camtasia Recorder" icon={<IconVideo size={20} aria-hidden="true" />} />
       <div className="oa2-recstate" role="status" {...tip(HOVER)}>
         <i className="oa2-dot" data-mode={word === 'Recording' ? 'rec' : 'idle'} aria-hidden="true" />
         <b>{word}</b>
         {live && cur && <span>{`take ${takes.count}`}</span>}
       </div>
-      <div className="oa2-fine">Not open, Ready, Recording or Paused.</div>
     </div>
   );
 }

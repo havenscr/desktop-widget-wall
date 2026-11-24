@@ -53,7 +53,7 @@ fn is_editor_exe(file_part: &str) -> bool {
     matches!(exe_file_part(file_part).as_str(), "camtasiastudio.exe" | "camtasia.exe")
 }
 
-/// The word for a read: no windows listed at all is unknown, a recorder among them is open.
+/// The word for a read: no visible titled windows listed is unknown, a recorder among them is open.
 #[cfg_attr(not(any(windows, test)), allow(dead_code))]
 pub(crate) fn state_of(listed: usize, recorder_found: bool) -> State {
     if recorder_found {
@@ -73,11 +73,14 @@ fn read_now() -> State {
     let windows = sys::top_level_windows();
     let mut images: HashMap<u32, Option<String>> = HashMap::new();
     let mut found = false;
+    // Only visible titled windows count as listed, so a list of hidden or untitled windows alone is unknown.
+    let mut listed = 0usize;
     for h in &windows {
         let h = *h;
         if !unsafe { IsWindowVisible(sys::hwnd(h)).as_bool() } || !sys::has_title(h) {
             continue;
         }
+        listed += 1;
         let pid = sys::pid_of(h);
         let Some(image) = images.entry(pid).or_insert_with(|| sys::image_path(pid)).clone() else {
             continue;
@@ -87,7 +90,7 @@ fn read_now() -> State {
             break;
         }
     }
-    state_of(windows.len(), found)
+    state_of(listed, found)
 }
 
 #[cfg(not(windows))]

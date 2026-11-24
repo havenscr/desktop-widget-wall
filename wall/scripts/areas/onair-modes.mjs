@@ -160,7 +160,7 @@ export default {
       state('Auto picks Recording over a call', `${REC}&call=teams&meetnow=1`, ['a recorder is running', 'Take timer', '!Held by hand']),
       state('held on Presenting while recording', `${REC}&call=teams&meetnow=1&oamode=meet`, ['Held by hand', 'Talk timer', 'Community talk: November']),
       state('Live picked from the browser camera and mic', 'callbrowserav=1&meet=none&yt=notsetup', ['mic or camera in use', '!Take timer', '!Talk timer']),
-      state('nothing on air', 'oalast=1', ['nothing is on air', '!Take timer', '!Talk timer', 'Show timer', 'Not started. It starts with a broadcast, a recording or a call.', 'Last time on air', 'Live for 58:12', '4 marks saved', 'Open marks.txt', 'Live on StreamYard', 'No broadcast scheduled on YouTube', 'Recording', 'Camtasia Recorder is open', 'Presenting', 'Needs a home app preset named On air.', 'Next show notes', 'Checklist', 'Lights preset:', 'Studio lights']),
+      state('nothing on air', 'oalast=1', ['nothing is on air', '!Take timer', '!Talk timer', 'Show timer', 'Not started. It starts with a broadcast, a recording or a call.', 'Last time on air', 'Live for 58:12', '4 marks saved', 'Open marks.txt', 'Live on StreamYard', 'No broadcast scheduled on YouTube', 'Recording', 'Recorder open', 'Presenting', 'Needs a home app preset named On air.', 'Next show notes', 'Checklist', 'Lights preset:', 'Studio lights']),
       state('nothing on air, no record yet', '', ['Nothing yet. It fills in when a show ends.', 'Needs a home app preset named Recording.']),
     ],
   },

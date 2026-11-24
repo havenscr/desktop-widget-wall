@@ -197,7 +197,7 @@ export function IdlePage({ now, last, onHold }: { now: number; last: LastOnAir |
   const first = show?.state === 'ok' ? show.parts[0] : undefined;
   useRecorderSync();
   const recorderOpen = useRecorder((s) => s.open);
-  const recNext = recorderOpen === null ? 'Recorder not known' : recorderOpen ? 'Camtasia Recorder is open' : 'Camtasia Recorder is not open';
+  const recNext = recorderOpen === null ? 'Recorder not known' : recorderOpen ? 'Recorder open' : 'Recorder not open';
   const liveNext = status?.state === 'scheduled' && status.scheduledAt !== null ? `Next: ${clockText(status.scheduledAt)} on YouTube` : 'No broadcast scheduled on YouTube';
   const meetNext = meeting ? `Next: ${meeting.title}, ${clockText(Date.parse(meeting.start))}` : 'No meeting with a join link';
   return (

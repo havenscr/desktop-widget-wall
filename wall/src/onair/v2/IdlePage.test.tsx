@@ -67,12 +67,12 @@ it('the Recording card says if the Camtasia Recorder is open, not open or not kn
   const now = Date.parse('2026-11-12T10:00:00-08:00');
   mocks.set('wall2_recorder_status', () => ({ state: 'open' }));
   const first = render(<IdlePage now={now} last={null} onHold={() => undefined} />);
-  expect(await screen.findByText('Camtasia Recorder is open')).toBeTruthy();
+  expect(await screen.findByText('Recorder open')).toBeTruthy();
   first.unmount();
   mocks.set('wall2_recorder_status', () => ({ state: 'none' }));
   useRecorder.setState({ open: null });
   const second = render(<IdlePage now={now} last={null} onHold={() => undefined} />);
-  expect(await screen.findByText('Camtasia Recorder is not open')).toBeTruthy();
+  expect(await screen.findByText('Recorder not open')).toBeTruthy();
   second.unmount();
   mocks.set('wall2_recorder_status', () => ({ state: 'unknown' }));
   useRecorder.setState({ open: true });
