@@ -36,6 +36,7 @@ beforeEach(() => {
 });
 afterEach(() => {
   cleanup();
+  vi.restoreAllMocks();
   vi.useRealTimers();
 });
 
@@ -262,9 +263,27 @@ it('a capture whose file is gone is a dimmed row with no Open or Copy when shown
   expect(screen.getAllByText('File moved or deleted').length).toBeGreaterThan(0);
 });
 
-it('a video gets a tile and no thumbnail request; a too-big picture says so', async () => {
+/** jsdom plays nothing: record what the card asks of the element. */
+function stubMedia() {
+  const log: string[] = [];
+  const proto = HTMLMediaElement.prototype;
+  vi.spyOn(proto, 'play').mockImplementation(function (this: HTMLMediaElement) {
+    log.push(`play ${this.getAttribute('src')?.split('#')[0]}`);
+    return Promise.resolve();
+  });
+  vi.spyOn(proto, 'pause').mockImplementation(function (this: HTMLMediaElement) {
+    log.push(`pause ${this.getAttribute('src')?.split('#')[0] ?? 'none'}`);
+  });
+  vi.spyOn(proto, 'load').mockImplementation(() => {
+    log.push('load');
+  });
+  return log;
+}
+const videoList = () => mocks.set('wall2_captures_list', () => [cap(0, { kind: 'video', fileName: 'rec-0.mp4' }), cap(1, { kind: 'video', fileName: 'rec-1.webm' }), cap(2, { kind: 'video', fileName: 'rec-2.mkv' }), cap(3)]);
+
+it('a video that cannot play gets a tile and no thumbnail request; a too-big picture says so', async () => {
   const asked: unknown[] = [];
-  mocks.set('wall2_captures_list', () => [cap(0, { kind: 'video' }), cap(1)]);
+  mocks.set('wall2_captures_list', () => [cap(0, { kind: 'video', fileName: 'rec-0.mkv' }), cap(1)]);
   mocks.set('wall2_captures_thumb', (args) => {
     asked.push(args);
     return Promise.reject('too-big');
@@ -272,10 +291,175 @@ it('a video gets a tile and no thumbnail request; a too-big picture says so', as
   render(<CapturesCard />);
   await screen.findByText('Title 0');
   expect(document.querySelector('.cap-big .cap-tile.video')).toBeTruthy();
+  expect(document.querySelector('video')).toBeNull();
+  expect(screen.getByText("Can't play here. Open it")).toBeTruthy();
   expect(screen.getByText('Video', { selector: '.cap-badge' })).toBeTruthy();
   fireEvent.click(screen.getByRole('button', { name: /App 1/ }));
   await screen.findByText('Too big to preview');
   expect(asked).toEqual([{ id: 'cap1' }]);
+});
+
+it('a recording shows a muted, looping video with no native controls, nothing playing, and asks for no thumbnail', async () => {
+  const log = stubMedia();
+  const asked: unknown[] = [];
+  videoList();
+  mocks.set('wall2_captures_thumb', (args) => {
+    asked.push(args);
+    return 'data:image/png;base64,AAAA';
+  });
+  render(<CapturesCard />);
+  await screen.findByText('Title 0');
+  const v = document.querySelector('.cap-big video') as HTMLVideoElement;
+  expect(v.getAttribute('src')).toMatch(/^https:\/\/wallcap\.localhost\/cap0#/);
+  expect(v.muted).toBe(true);
+  expect(v.loop).toBe(true);
+  expect(v.hasAttribute('controls')).toBe(false);
+  expect(v.getAttribute('preload')).toBe('metadata');
+  expect(log.filter((l) => l.startsWith('play'))).toEqual([]);
+  expect(asked).not.toContainEqual({ id: 'cap0' });
+  expect(asked).not.toContainEqual({ id: 'cap1' });
+  // The video sits in the Copy button; the controls do not.
+  expect(v.closest('button.cap-pic')).toBeTruthy();
+  const play = screen.getByRole('button', { name: 'Play this recording here' });
+  expect(play.closest('button.cap-pic')).toBeNull();
+  expect(screen.getByRole('button', { name: 'Sound on' })).toBeTruthy();
+});
+
+it('a click on the preview copies the recording as a file', async () => {
+  stubMedia();
+  videoList();
+  render(<CapturesCard />);
+  await screen.findByText('Title 0');
+  fireEvent.click(document.querySelector('.cap-big button.cap-pic') as HTMLElement);
+  await screen.findByText('Copied');
+  expect(calls).toEqual([{ id: 'cap0', action: 'copy' }]);
+});
+
+it('Play plays without copying, and Pause pauses', async () => {
+  const log = stubMedia();
+  videoList();
+  render(<CapturesCard />);
+  await screen.findByText('Title 0');
+  fireEvent.click(screen.getByRole('button', { name: 'Play this recording here' }));
+  expect(log.filter((l) => l.startsWith('play'))).toEqual(['play https://wallcap.localhost/cap0']);
+  expect(calls).toEqual([]);
+  fireEvent.click(screen.getByRole('button', { name: 'Pause' }));
+  expect(log[log.length - 1]).toBe('pause https://wallcap.localhost/cap0');
+  expect(calls).toEqual([]);
+});
+
+it('Sound toggles the video between muted and not, without copying', async () => {
+  stubMedia();
+  videoList();
+  render(<CapturesCard />);
+  await screen.findByText('Title 0');
+  const v = document.querySelector('.cap-big video') as HTMLVideoElement;
+  fireEvent.click(screen.getByRole('button', { name: 'Sound on' }));
+  expect(v.muted).toBe(false);
+  fireEvent.click(screen.getByRole('button', { name: 'Sound off' }));
+  expect(v.muted).toBe(true);
+  expect(calls).toEqual([]);
+});
+
+it('picking another capture removes the old element, pausing it and freeing it', async () => {
+  const log = stubMedia();
+  videoList();
+  render(<CapturesCard />);
+  await screen.findByText('Title 0');
+  const first = document.querySelector('.cap-big video') as HTMLVideoElement;
+  fireEvent.click(screen.getByRole('button', { name: 'Play this recording here' }));
+  log.length = 0;
+  fireEvent.click(screen.getByRole('button', { name: /App 1/ }));
+  await screen.findByText('Title 1');
+  expect(first.isConnected).toBe(false);
+  expect(first.hasAttribute('src')).toBe(false);
+  expect(log).toContain('load');
+  expect(log.some((l) => l.startsWith('pause'))).toBe(true);
+  const next = document.querySelector('.cap-big video') as HTMLVideoElement;
+  expect(next.getAttribute('src')).toMatch(/wallcap\.localhost\/cap1#/);
+  expect(document.querySelectorAll('video')).toHaveLength(1);
+  // A fresh element starts paused, muted and asks for Play again.
+  expect(screen.getByRole('button', { name: 'Play this recording here' })).toBeTruthy();
+});
+
+it('a hidden page pauses the video and a visible one plays it again', async () => {
+  const log = stubMedia();
+  videoList();
+  render(<CapturesCard />);
+  await screen.findByText('Title 0');
+  fireEvent.click(screen.getByRole('button', { name: 'Play this recording here' }));
+  const hide = (hidden: boolean) => {
+    Object.defineProperty(document, 'hidden', { configurable: true, get: () => hidden });
+    act(() => {
+      document.dispatchEvent(new Event('visibilitychange'));
+    });
+  };
+  try {
+    log.length = 0;
+    hide(true);
+    expect(log).toContain('pause https://wallcap.localhost/cap0');
+    log.length = 0;
+    hide(false);
+    expect(log).toContain('play https://wallcap.localhost/cap0');
+  } finally {
+    hide(false);
+  }
+});
+
+it('a play() that a pause aborts keeps the Play intent', async () => {
+  const log = stubMedia();
+  videoList();
+  vi.mocked(HTMLMediaElement.prototype.play).mockImplementationOnce(() => Promise.reject(new DOMException('x', 'AbortError')));
+  render(<CapturesCard />);
+  await screen.findByText('Title 0');
+  await act(async () => {
+    fireEvent.click(screen.getByRole('button', { name: 'Play this recording here' }));
+  });
+  expect(screen.getByRole('button', { name: 'Pause' })).toBeTruthy();
+  expect(log.length).toBeGreaterThan(0);
+  // Another kind of refusal drops it.
+  vi.mocked(HTMLMediaElement.prototype.play).mockImplementationOnce(() => Promise.reject(new DOMException('x', 'NotAllowedError')));
+  await act(async () => {
+    fireEvent.click(screen.getByRole('button', { name: 'Pause' }));
+  });
+  await act(async () => {
+    fireEvent.click(screen.getByRole('button', { name: 'Play this recording here' }));
+  });
+  expect(await screen.findByRole('button', { name: 'Play this recording here' })).toBeTruthy();
+});
+
+it('focus on a control that goes away with a failed video moves to the Copy button', async () => {
+  stubMedia();
+  videoList();
+  render(<CapturesCard />);
+  await screen.findByText('Title 0');
+  const play = screen.getByRole('button', { name: 'Play this recording here' });
+  play.focus();
+  fireEvent.error(document.querySelector('.cap-big video') as HTMLVideoElement);
+  expect(document.activeElement).toBe(document.querySelector('.cap-big button.cap-pic'));
+});
+
+it('an error from the video falls back to the tile and drops the controls', async () => {
+  stubMedia();
+  videoList();
+  render(<CapturesCard />);
+  await screen.findByText('Title 0');
+  fireEvent.error(document.querySelector('.cap-big video') as HTMLVideoElement);
+  expect(document.querySelector('video')).toBeNull();
+  expect(screen.getByText("Can't play here. Open it")).toBeTruthy();
+  expect(screen.queryByRole('button', { name: 'Play this recording here' })).toBeNull();
+  expect(screen.getByRole('button', { name: 'Open' })).toBeTruthy();
+});
+
+it('an mkv gets the tile, not a video', async () => {
+  stubMedia();
+  videoList();
+  render(<CapturesCard />);
+  await screen.findByText('Title 0');
+  fireEvent.click(screen.getByRole('button', { name: /App 2/ }));
+  await screen.findByText('Title 2');
+  expect(document.querySelector('.cap-big video')).toBeNull();
+  expect(document.querySelector('.cap-big .cap-tile.video')).toBeTruthy();
 });
 
 it('the page never holds a path', async () => {

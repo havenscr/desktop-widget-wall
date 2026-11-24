@@ -3,7 +3,7 @@
 // right (the list scrolls, never reorders on a click, and the next row peeks out cut at the card bottom). In every state the card is
 // 738 by 485 at design scale, everything in it stays inside the card, every text is 16 px or larger, Copy, Open and Folder are 40 to
 // 48 px tall, rows are at least 40 px tall, and the top of the large picture lines up with the top of the first row. The states: the
-// list, a row picked, the filter menu, the right-click menu, oldest first, a recording newest, a very long title, a missing file (a
+// list, a row picked, the filter menu, the right-click menu, oldest first, a recording newest (its play and sound buttons, and playing), a very long title, a missing file (a
 // dimmed row), the newest file missing (no buttons), no history file and an empty history.
 const at = encodeURIComponent('2026-11-11T10:24:00-08:00');
 const galleryQuery = (knob) => `hz=work&at=${at}&clock=review&weather=ok&screen=shelf&captures=${knob}`;
@@ -106,6 +106,8 @@ export default {
       state('right-click menu, recycle bin armed', 'list', ['Click again to move to Recycle Bin'], 'ctx:.cap-row:nth-child(3) >> .cap-menu .cap-menu-item:nth-child(9) button'),
       state('sorted oldest first', 'list', ['ShareX, oldest first', 'Settings, display'], 'hover:.cap-tools >> .cap-tool:nth-child(1)'),
       state('video newest', 'video', ['Sales overview, region slicer', 'Video']),
+      state('recording, play and sound controls', 'video', ['Sales overview, region slicer'], 'hover:.cap-vctl >> is:.cap-vbtn'),
+      state('recording playing', 'video', ['Sales overview, region slicer'], '.cap-vctl .cap-vbtn:nth-child(1) >> is:.cap-vbtn[aria-pressed="true"]'),
       state('long title and app', 'long', ['Quarterly sales overview']),
       state('a file gone', 'gone', ['File moved or deleted']),
       state('newest file gone', 'gonebig', ['File moved or deleted']),

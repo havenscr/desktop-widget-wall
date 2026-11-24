@@ -1,5 +1,6 @@
 import { reviewNow } from '../../ui/reviewClock';
-import type { Capture } from '../../shelf/captures';
+import flameLoop from '../../assets/flames/flame-loop.webm';
+import { setVideoSrcOverride, type Capture } from '../../shelf/captures';
 import { mocks } from '../tauri';
 import { knob } from './long';
 
@@ -11,7 +12,8 @@ import { knob } from './long';
  *   ?captures=nohistory ShareX has no history file on this PC
  *   ?captures=gone      the third capture's file was moved or deleted (a dimmed row)
  *   ?captures=gonebig   the newest capture's file was moved or deleted
- *   ?captures=video     the newest capture is a recording
+ *   ?captures=video     the newest capture is a recording (plays the bundled flame loop)
+ *   ?captures=videobad  the newest capture is a recording that cannot be played here
  *   ?captures=long      the newest capture has a very long title and app name
  *   ?captures=big       the newest capture is over the 6 MB thumbnail limit
  *   ?share=nokey|badkey|toobig|missing|failed   Share link answers with that error word instead of a link
@@ -61,7 +63,7 @@ function build(mode: string | null): Capture[] {
   }));
   if (mode === 'gone') out[2] = { ...out[2], exists: false };
   if (mode === 'gonebig') out[0] = { ...out[0], exists: false };
-  if (mode === 'video') out[0] = { ...out[0], kind: 'video', fileName: 'capture-01.mp4', size: 22_300_000 };
+  if (mode === 'video' || mode === 'videobad') out[0] = { ...out[0], kind: 'video', fileName: 'capture-01.mp4', size: 22_300_000 };
   if (mode === 'long') out[0] = { ...out[0], title: 'Quarterly sales overview by region and product line with every slicer and filter open at once', app: 'Power BI Desktop (Preview) - Extended Edition' };
   return out;
 }
@@ -81,6 +83,7 @@ function art(i: number): string {
 
 export function registerCapturesMocks(): void {
   const mode = knob('captures');
+  setVideoSrcOverride((c) => (mode === 'videobad' ? 'data:video/mp4;base64,AAAA' : c.id === 'cap0' || c.id === 'cap3' ? flameLoop : 'data:video/mp4;base64,AAAA'));
   mocks.set('wall2_captures_list', () => {
     if (mode === 'nohistory') throw 'not-found';
     if (mode === 'empty') return [];

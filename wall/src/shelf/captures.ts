@@ -180,6 +180,18 @@ export function clearThumbs(): void {
   thumbs.clear();
 }
 
+/** Recording types the large preview can play (WebView2 decodes H.264 mp4, webm and usually mov). mkv and avi are not offered. */
+export const playable = (c: Capture): boolean => c.kind === 'video' && c.exists && /\.(mp4|webm|mov)$/i.test(c.fileName);
+
+let srcOverride: ((c: Capture) => string) | null = null;
+/** Dev only: play another address instead of Rust's scheme (the gallery has no Rust). */
+export function setVideoSrcOverride(f: ((c: Capture) => string) | null): void {
+  srcOverride = f;
+}
+
+/** Where a recording plays from: Rust's `wallcap` scheme by id, never a path. The fragment asks for the first frame to be drawn. */
+export const videoSrc = (c: Capture): string => `${srcOverride ? srcOverride(c) : `https://wallcap.localhost/${encodeURIComponent(c.id)}`}#t=0.001`;
+
 export type Thumb = { state: 'none' } | { state: 'loading' } | { state: 'ready'; src: string } | { state: 'big' } | { state: 'failed' };
 
 /** The picture for a capture: none for a video or a missing file, `big` when Rust says `too-big`. */

@@ -1569,11 +1569,22 @@ the centre card; the date line takes it through the frame's `ClockSlot` portal.
   has an opaque id, and thumbnails, Open, Copy and Folder take only that id. Rust acts only on a path from the history that is an
   absolute local path (no network path, no `\\?\` path, no URL), a regular file, with an image, GIF, mp4, webm, mkv or mov
   extension. Pictures and GIFs up to 6 MB get a thumbnail (the file type is checked by extension and by its first bytes); a video
-  gets a tile. Copy puts the file itself on the clipboard (the same file copy as Explorer's), so it pastes into chats, mail and
+  gets a tile, except an mp4, webm or mov, which plays in the large preview (below). Copy puts the file itself on the clipboard (the same file copy as Explorer's), so it pastes into chats, mail and
   folders. A file that is gone shows a dimmed row, "File moved or deleted", and no buttons; no history file says "ShareX history not
   found on this PC"; an empty history says to use the keys beside the card. The list is read every 10 seconds while the page is
   visible and when the window gets focus. Dev knobs: `?captures=empty|nohistory|gone|gonebig|video|long|big`. Check:
   `npm run fit-check -- --area=captures`.
+  **Playing a recording.** The large preview of an mp4, webm or mov shows its first frame, with a round Play and a round Sound button
+  over the bottom left corner. Nothing autoplays, and it starts muted. A click on the picture still copies the file; the two buttons
+  sit beside the Copy button, not inside it, so they never copy. Play and Pause control it, Sound toggles the audio, and it loops.
+  It plays only while the page is visible, the display is on and at least a tenth of it is on screen; picking another capture
+  removes the element and frees its buffer, and only one `<video>` exists at a time. If the file will not play (HEVC and some x264
+  recordings do not in WebView2) the preview says "Can't play here. Open it". mkv and avi get that tile too. The video's address is
+  `https://wallcap.localhost/<id>`, served by `src-tauri/src/wall2_captures_media.rs` on the `wallcap` scheme: the Wall 2 window only,
+  GET and HEAD only, a held video id only (ids are an HMAC under a key made fresh each run), the app page as Referer, a file that
+  still matches its id and starts with the right container bytes, one `bytes=` range per request, at most 1 MiB per reply, every
+  refusal an empty 404. No path ever reaches the page. Dev knobs: `?captures=video` plays the bundled flame loop, `?captures=videobad`
+  makes the newest recording fail. Not proved here: seeking and the Referer and `Sec-Fetch-Dest` checks on the real PC.
   **Share link** (`src-tauri/src/wall2_share.rs`, `bridge/share.ts`, `tools/ShareKey.tsx`). Right-click a capture and choose "Share link":
   the menu turns into a second step ("Anyone with the link can see this." and "Uploads to go-ae.org and copies the link.") with a
   Share link button and Back. Enter confirms, Escape or Back returns to the first step. Nothing is sent before the confirm. Rust takes
@@ -3474,7 +3485,8 @@ own fonts, connections to the Tauri IPC (`ipc:`, `http://ipc.localhost`,
 `https://*.scdn.co`, `https://*.spotifycdn.com` and, for the
 YouTube library's thumbnails, `https://i.ytimg.com`), no weather service (the weather is read natively), and frames from the two
 video players only (`frame-src https://www.youtube-nocookie.com https://player.twitch.tv`,
-in `csp` and `devCsp`, for Unwind's Watch tab). Everything else is
+in `csp` and `devCsp`, for Unwind's Watch tab), and recordings only from the Captures card's own scheme (`media-src https://wallcap.localhost`,
+in both). Everything else is
 denied (`default-src 'none'`); no `unsafe-eval`, no `unsafe-inline`. React sets
 inline styles through the CSSOM (`element.style`), which CSP allows. To reach a
 new host, add it to `connect-src` (data from `fetch`), `img-src` (pictures) or
