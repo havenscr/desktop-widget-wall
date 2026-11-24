@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type UIEvent } from 'react';
+import { useCallback, useEffect, useRef, useState, type CSSProperties, type UIEvent } from 'react';
 import {
   IconArrowLeft,
   IconArrowsShuffle,
@@ -53,6 +53,7 @@ import {
   SEARCH_MIN,
   SEARCH_WAIT_MS,
   songs,
+  START_WAIT_S,
   spotifyProblem,
   spotifyRetryable,
   STARTING_NOTE,
@@ -492,7 +493,7 @@ function Browser({ tall }: { tall: boolean }) {
   }, [isOpen]);
   const [ownNote, setNote] = useState<string | null>(null);
   const pinNote = useSpotifyPinNote((s) => s.note);
-  const note = ownNote ?? pinNote;
+  const note = ownNote || pinNote;
   const nowTitle = useNowPlayingStore((s) => s.info?.title ?? '');
   useSpotifyNowRead(nowTitle);
   const isNow = useIsNow();
@@ -509,7 +510,8 @@ function Browser({ tall }: { tall: boolean }) {
     };
   }, []);
   useEffect(() => {
-    if (!note) return;
+    // The starting line stays until the start ends; every other note goes after `NOTE_MS`.
+    if (!note || note === STARTING_NOTE) return;
     const id = setTimeout(() => setNote(null), NOTE_MS);
     return () => clearTimeout(id);
   }, [note]);
@@ -602,7 +604,7 @@ function Browser({ tall }: { tall: boolean }) {
     // Whether a player was named decides the words of a refusal ("That player ..." or about this PC).
     const named = !!playDeviceId();
     void playWhole(item, shuffled, () => mounted.current && setNote(STARTING_NOTE)).then(
-      () => mounted.current && setNote(null),
+      (ran) => ran && mounted.current && setNote(null),
       (e) => mounted.current && setNote(playFailureLine(e, named)),
     );
   };
@@ -766,6 +768,8 @@ function Browser({ tall }: { tall: boolean }) {
  */
 function Note({ text }: { text: string }) {
   const name = useSpotifyStart((s) => s.name);
+  const startedAt = useSpotifyStart((s) => s.startedAt);
+  const seconds = useStartSeconds(text === STARTING_NOTE ? startedAt : null);
   if (text !== STARTING_NOTE) {
     return (
       <div className="sp-note" role="status">
@@ -774,13 +778,29 @@ function Note({ text }: { text: string }) {
     );
   }
   return (
-    <div className="sp-note starting" role="status">
+    <div className="sp-note starting" role="status" style={{ '--sp-wait': `${START_WAIT_S}s` } as CSSProperties}>
       <IconBrandSpotify size={24} stroke={1.8} aria-hidden="true" />
-      <span className="sp-st-a">Starting Spotify on this PC</span>
-      <span className="sp-st-b">{name ? `${name} plays as soon as it is ready` : 'It plays as soon as it is ready'}</span>
+      <span className="sp-st-a">Starting Spotify in the background</span>
+      <span className="sp-st-b">{name ? `${name} plays when it is ready.` : 'It plays when it is ready.'}</span>
+      <span className="sp-st-n">{seconds} s</span>
+      <button type="button" className="sp-linkbtn sp-st-cancel" onClick={() => void spotify.cancelStart().catch(() => undefined)}>
+        Cancel
+      </button>
       <span className="sp-st-line" aria-hidden="true" />
     </div>
   );
+}
+
+/** Whole seconds since the start began, ticking once a second (0 while there is no start). */
+function useStartSeconds(startedAt: number | null): number {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (startedAt === null) return;
+    setNow(Date.now());
+    const id = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, [startedAt]);
+  return startedAt === null ? 0 : Math.min(START_WAIT_S, Math.max(0, Math.floor((now - startedAt) / 1000)));
 }
 
 /** A song in Liked, Recent or Search: a row that plays it, with its details on hover. */
@@ -879,18 +899,16 @@ function SongsView({ item, tall, backLabel, onBack, onNote, onUpNext }: { item: 
   const fail = (e: unknown, named: boolean) => mounted.current && onNote(playFailureLine(e, named));
   const playAll = (shuffled: boolean) => {
     const named = !!playDeviceId();
-    void playWhole(item, shuffled, () => onNote(STARTING_NOTE)).then(() => onNote(null), (e) => fail(e, named));
+    void playWhole(item, shuffled, () => onNote(STARTING_NOTE)).then((ran) => ran && onNote(null), (e) => fail(e, named));
   };
   const playFrom = (t: SpotifyTrack) => {
     if (!t.id || !t.playable) return;
-    useSpotifyStart.setState({ name: t.name });
     const named = !!playDeviceId();
     void (async () => {
       try {
         const player = await confirmPlayer();
         const answer = await spotify.play('track', t.id as string, { context: { kind, id: item.id }, offsetId: t.id as string, ...player });
-        await finishPlay(answer, () => onNote(STARTING_NOTE));
-        onNote(null);
+        if (await finishPlay(answer, () => onNote(STARTING_NOTE), t.name)) onNote(null);
       } catch (e) {
         fail(e, named);
       }

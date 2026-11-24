@@ -8,15 +8,15 @@ const LOG_CAP: usize = 64 * 1024;
 static TX: OnceLock<SyncSender<String>> = OnceLock::new();
 
 #[derive(Clone, Copy)]
-pub enum Event { SignInStart, SignInOk, SignInFailed, SignOut, RefreshOk, RefreshRefused, ApiFailed, CoverRefused, PageRead, PageFailed }
+pub enum Event { SignInStart, SignInOk, SignInFailed, SignOut, RefreshOk, RefreshRefused, ApiFailed, CoverRefused, PageRead, PageFailed, StartLaunch }
 impl Event {
-    fn word(self) -> &'static str { match self { Self::SignInStart => "sign-in-start", Self::SignInOk => "sign-in-ok", Self::SignInFailed => "sign-in-failed", Self::SignOut => "sign-out", Self::RefreshOk => "refresh-ok", Self::RefreshRefused => "refresh-refused", Self::ApiFailed => "api-failed", Self::CoverRefused => "cover-refused", Self::PageRead => "page-read", Self::PageFailed => "page-failed" } }
+    fn word(self) -> &'static str { match self { Self::SignInStart => "sign-in-start", Self::SignInOk => "sign-in-ok", Self::SignInFailed => "sign-in-failed", Self::SignOut => "sign-out", Self::RefreshOk => "refresh-ok", Self::RefreshRefused => "refresh-refused", Self::ApiFailed => "api-failed", Self::CoverRefused => "cover-refused", Self::PageRead => "page-read", Self::PageFailed => "page-failed", Self::StartLaunch => "start-launch" } }
 }
 
 #[derive(Clone, Copy)]
-pub enum Reason { None, Busy, Down, Failed, SignInAgain, NoDevice, PortBusy, Missing, Changed, TooBig, Scope, NotAllowedUser, Premium, Market, BadRequest, Other }
+pub enum Reason { None, Busy, Down, Failed, SignInAgain, NoDevice, PortBusy, Missing, Changed, TooBig, Scope, NotAllowedUser, Premium, Market, BadRequest, Other, App, Uri }
 impl Reason {
-    fn word(self) -> &'static str { match self { Self::None => "none", Self::Busy => "busy", Self::Down => "down", Self::Failed => "failed", Self::SignInAgain => "sign-in-again", Self::NoDevice => "no-device", Self::PortBusy => "port-busy", Self::Missing => "missing", Self::Changed => "changed", Self::TooBig => "too-big", Self::Scope => "scope", Self::NotAllowedUser => "not-allowed-user", Self::Premium => "premium", Self::Market => "market", Self::BadRequest => "bad-request", Self::Other => "other" } }
+    fn word(self) -> &'static str { match self { Self::None => "none", Self::Busy => "busy", Self::Down => "down", Self::Failed => "failed", Self::SignInAgain => "sign-in-again", Self::NoDevice => "no-device", Self::PortBusy => "port-busy", Self::Missing => "missing", Self::Changed => "changed", Self::TooBig => "too-big", Self::Scope => "scope", Self::NotAllowedUser => "not-allowed-user", Self::Premium => "premium", Self::Market => "market", Self::BadRequest => "bad-request", Self::Other => "other", Self::App => "app", Self::Uri => "uri" } }
 }
 
 pub fn line(event: Event, reason: Reason, status: u16, elapsed_ms: u128) -> String {
@@ -35,6 +35,25 @@ pub fn write_devices(total: usize, computers: usize, phones: usize, other: usize
 
 fn device_line(total: usize, computers: usize, phones: usize, other: usize) -> String {
     format!("no-device {} {} {} {}\n", total.min(50), computers.min(50), phones.min(50), other.min(50))
+}
+
+/// One line when the launch script has answered: how it went and how many milliseconds it took.
+pub fn write_start_launch(reason: Reason, elapsed_ms: u128) {
+    write(Event::StartLaunch, reason, 0, elapsed_ms);
+}
+
+/// One line at the end of the wait: whole seconds until a computer appeared (`none` when it never
+/// did), whether its name matched this PC, whether any was restricted, windows minimised.
+pub fn write_start_end(seconds: Option<u64>, matched: bool, restricted: bool, minimised: usize) {
+    if let Some(tx) = TX.get() {
+        let _ = tx.try_send(start_end_line(seconds, matched, restricted, minimised));
+    }
+}
+
+fn start_end_line(seconds: Option<u64>, matched: bool, restricted: bool, minimised: usize) -> String {
+    let yes = |b: bool| if b { "yes" } else { "no" };
+    let secs = seconds.map_or("none".to_string(), |s| s.min(999).to_string());
+    format!("start-end {} {} {} {}\n", secs, yes(matched), yes(restricted), minimised.min(20))
 }
 
 pub fn start(dir: Option<std::path::PathBuf>) {
@@ -73,5 +92,12 @@ mod tests {
             assert_eq!(line(Event::ApiFailed, reason, 403, 1), format!("api-failed {word} 403 1\n"));
         }
         assert_eq!(device_line(4, 1, 2, 1), "no-device 4 1 2 1\n");
+        assert_eq!(line(Event::StartLaunch, Reason::App, 0, 1500), "start-launch app 0 1500\n");
+        for reason in [Reason::App, Reason::Uri, Reason::Missing, Reason::Failed] {
+            assert!(line(Event::StartLaunch, reason, 0, 1).bytes().all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || matches!(b, b'-' | b' ' | b'\n')));
+        }
+        assert_eq!(start_end_line(Some(7), true, false, 1), "start-end 7 yes no 1\n");
+        assert_eq!(start_end_line(None, false, true, 0), "start-end none no yes 0\n");
+        assert!(start_end_line(Some(7), true, false, 1).bytes().all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || matches!(b, b'-' | b' ' | b'\n')) );
     }
 }

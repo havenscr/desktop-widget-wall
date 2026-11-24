@@ -67,6 +67,7 @@ mod wall2_lightsync;
 mod wall2_meet;
 mod wall2_oauth;
 mod wall2_spotify;
+mod wall2_spotify_launch;
 mod wall2_spotify_log;
 mod wall2_spotify_page;
 mod wall2_youtube;
