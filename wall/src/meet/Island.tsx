@@ -148,7 +148,7 @@ export function Island({ details, checklist, reloadSoon, meetingId, briefKey = n
   const select = useMeetStore((s) => s.select);
   const setSel = (k: KindId) => select(meetingId, k);
   const kinds = islandKinds({ details, checklist: checklist.items });
-  if (view.mode === 'feed' && brief.out) return <BriefFeed out={brief.out} view={view} onAir={onAir} retry={brief.retry} />;
+  if (view.mode === 'feed' && brief.out) return <BriefFeed out={brief.out} view={view} onAir={onAir} retry={brief.retry} briefKey={briefKey} />;
   const note = <BriefNote view={view} retry={brief.retry} />;
   if (kinds.length === 0) return <HowTo checklist={checklist} reloadSoon={reloadSoon} note={view.mode === 'empty' && !view.stale ? null : note} top={view.mode === 'empty' ? [view.line, ...view.sourceLines].filter(Boolean).join(' · ') : null} />;
   const found = kinds.findIndex((k) => k.id === sel);

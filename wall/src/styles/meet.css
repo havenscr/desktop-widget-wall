@@ -1285,7 +1285,7 @@
 .meet-brief-hidden {
   padding: 12px 6px;
 }
-.meet-brief-ask {
+.meet-ask {
   flex: 1;
   min-width: 0;
   height: 40px;
@@ -1294,13 +1294,66 @@
   gap: 10px;
   padding: 0 16px;
   border-radius: 12px;
-  border: 1px dashed var(--line);
+  border: 1px solid var(--line);
   box-sizing: border-box;
-  font: 19px/1 var(--body);
   color: var(--dim);
-  opacity: 0.5;
-  pointer-events: none;
-  user-select: none;
+}
+.meet-ask[data-off] {
+  opacity: 0.6;
+}
+.meet-ask:focus-within {
+  border-color: var(--violet);
+}
+.meet-ask svg {
+  flex: none;
+}
+.meet-ask-in {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  font: 19px/1 var(--body);
+  color: var(--tx);
+}
+.meet-ask-in::placeholder {
+  color: var(--tx);
+  opacity: 1;
+}
+.meet-ask-in:disabled::placeholder {
+  color: var(--dim);
+}
+.meet-ask-status {
+  flex: none;
+  white-space: nowrap;
+  font: 16px/1 var(--body);
+}
+.meet-ask-q {
+  -webkit-line-clamp: 2;
+}
+.meet-ask-wait {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  font: 19px/1.2 var(--body);
+}
+.meet-ask-a {
+  -webkit-line-clamp: unset;
+  display: block;
+  flex: 1 1 auto;
+  min-height: 0;
+  max-width: 100%;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.meet-ask-src {
+  flex: none;
+  font: 16px/1.3 var(--body);
+}
+.meet-ask-err {
+  font: 19px/1.3 var(--body);
 }
 .meet-brief-detail {
   display: flex;

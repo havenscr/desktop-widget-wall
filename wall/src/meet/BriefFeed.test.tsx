@@ -3,25 +3,26 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { BRIEF_CLIENT, BRIEF_MANY } from '../bridge/devMocks/meetBrief';
 import { mocks } from '../bridge/tauri';
 import { BriefFeed } from './BriefFeed';
+import { usePlaceStore } from '../state/places';
 import { briefView } from './briefModel';
 
 const flush = () => act(async () => {});
-const draw = (out = BRIEF_CLIENT, onAir = false) => render(<BriefFeed out={out} view={briefView(out, null)} onAir={onAir} />);
+const draw = (out = BRIEF_CLIENT, onAir = false) => render(<BriefFeed out={out} view={briefView(out, null)} onAir={onAir} briefKey="1-0" />);
 
 afterEach(() => {
+  usePlaceStore.setState({ active: 'work' });
   mocks.clear();
   window.localStorage.clear();
 });
 
 describe('BriefFeed', () => {
-  it('draws the strip, the rows, the dimmed ask box and no more line for three items', () => {
+  it('draws the strip, the rows, the ask field and no more line for three items', () => {
     draw();
     expect(screen.getByText('Priya Calder · Northwind Outfitters · Annual renewal · Proposal sent')).toBeTruthy();
     expect(screen.getByText('Re: renewal terms for next year')).toBeTruthy();
     expect(screen.queryByText(/more items/)).toBeNull();
-    const ask = screen.getByText('Ask about this meeting (coming later)').closest('.meet-brief-ask') as HTMLElement;
-    expect(ask.getAttribute('aria-disabled')).toBe('true');
-    expect(ask.querySelector('button, input, [tabindex]')).toBeNull();
+    expect(screen.queryByText(/coming later/)).toBeNull();
+    expect(screen.getByLabelText('Ask about this meeting')).toBeTruthy();
   });
 
   it('seven rows and "+ 3 more items" for ten', () => {
@@ -100,5 +101,34 @@ describe('BriefFeed', () => {
       expect(JSON.stringify(window.localStorage)).not.toContain(s);
       expect(JSON.stringify(window.sessionStorage)).not.toContain(s);
     }
+  });
+
+  it('asks from the foot: status word, Enter, the answer panel, Back to the rows', async () => {
+    usePlaceStore.setState({ active: 'meet' });
+    mocks.set('wall2_meet_brief_health', () => ({ ask: { state: 'ready', name: 'Sonnet' } }));
+    const ask = vi.fn(() => ({ a: 'Priya wants the revised quote.', model: 'Sonnet' }));
+    mocks.set('wall2_meet_brief_ask', ask);
+    draw();
+    await flush();
+    expect(screen.getByText('Sonnet ready')).toBeTruthy();
+    const input = screen.getByLabelText('Ask about this meeting');
+    fireEvent.change(input, { target: { value: 'What did she want?' } });
+    expect(ask).not.toHaveBeenCalled();
+    fireEvent.keyDown(input, { key: 'Enter' });
+    await flush();
+    expect(ask).toHaveBeenCalledWith({ key: '1-0', q: 'What did she want?', turns: [] });
+    expect(screen.getByText('Priya wants the revised quote.')).toBeTruthy();
+    expect(screen.queryByText('Quarterly check-in')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: /Back/ }));
+    expect(screen.getByText('Quarterly check-in')).toBeTruthy();
+    expect((screen.getByLabelText('Ask about this meeting') as HTMLInputElement).placeholder).toBe('Ask a follow up');
+  });
+
+  it('the field says why it is off when the box has ask off', async () => {
+    usePlaceStore.setState({ active: 'meet' });
+    mocks.set('wall2_meet_brief_health', () => ({ ask: { state: 'off', name: 'Claude' } }));
+    draw();
+    await flush();
+    expect((screen.getByLabelText('Ask about this meeting') as HTMLInputElement).placeholder).toBe('Ask off');
   });
 });

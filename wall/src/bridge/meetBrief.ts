@@ -14,6 +14,7 @@ export type MatchKind = 'client' | 'internal' | 'unknown' | 'mixed' | 'none';
 /** One source's state; any word Rust does not know arrives as `failed`. */
 export type SourceState = 'ok' | 'empty' | 'not-set-up' | 'failed';
 export type ItemSource = 'crm' | 'mail' | 'chat' | 'note' | 'file';
+/** Krisp notes open a krisp.ai link (https only), built and checked in Rust. */
 export type ItemKind = 'note' | 'thread' | 'chat' | 'meeting' | 'file' | 'folder';
 
 export interface BriefSources {
@@ -116,3 +117,30 @@ export interface PersonContact {
 
 /** Asked when a card opens; Rust answers from its own lookup and holds the answer for the life of that read. */
 export const personContact = (key: string): Promise<PersonContact> => invoke<PersonContact>('wall2_meet_person_contact', { key });
+
+/** Fixed words `askBrief` can reject with. */
+export type AskError = 'not-ready' | 'busy' | 'limit' | 'day-limit' | 'refused' | 'model-off' | 'ask-off' | 'limit-store' | 'forbidden' | 'failed' | 'not-set-up' | 'not-configured' | 'invalid-config' | 'gone';
+export type AskModel = 'Sonnet' | 'Opus' | 'Claude';
+export type AskState = 'off' | 'ready' | 'busy' | 'failing';
+
+export interface AskTurn {
+  q: string;
+  a: string;
+}
+
+/** The answer to one question: plain text, at most 1200 characters, never markup. */
+export interface AskAnswer {
+  a: string;
+  model: AskModel;
+}
+
+/** What `wall2_meet_brief_health` answers: two fixed words and nothing else. */
+export interface BriefHealth {
+  ask: { state: AskState; name: AskModel };
+}
+
+/** Ask one question about the meeting's brief. Content leaves the box only when this is called (the Enter key). */
+export const askBrief = (key: string, q: string, turns: AskTurn[]): Promise<AskAnswer> => invoke<AskAnswer>('wall2_meet_brief_ask', { key, q, turns });
+
+/** The box's ask status; never calls the model. */
+export const briefHealth = (): Promise<BriefHealth> => invoke<BriefHealth>('wall2_meet_brief_health');

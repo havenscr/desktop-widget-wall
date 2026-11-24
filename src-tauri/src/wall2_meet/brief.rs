@@ -34,6 +34,12 @@ const FAILED: &str = "failed";
 pub(crate) const MAX_ANSWER: usize = 64 * 1024;
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(2);
 const TOTAL_TIMEOUT: Duration = Duration::from_secs(10);
+const ASK_TIMEOUT: Duration = Duration::from_secs(60);
+/// The ask answer is read up to this many bytes; one more and the ask fails.
+pub(crate) const MAX_ASK_ANSWER: usize = 8 * 1024;
+pub(crate) const MAX_QUESTION: usize = 300;
+pub(crate) const MAX_REPLY: usize = 1200;
+pub(crate) const MAX_TURNS: usize = 3;
 
 pub(crate) const MAX_PEOPLE: usize = 8;
 pub(crate) const MAX_DEALS: usize = 5;
@@ -491,8 +497,28 @@ fn link_for(open: &Value, cfg: &BriefConfig) -> Option<String> {
         "chat" => chat_url(id),
         "hubspot" => hubspot_url(cfg.portal.as_deref(), open.get("object").and_then(Value::as_str)?, id),
         "file" | "folder" => file_url(id, &cfg.file_hosts),
+        "krisp" => krisp_url(id),
         _ => None,
     }
+}
+
+/// A Krisp notes link: https, host `krisp.ai` or a subdomain of it, no userinfo, no port, plain
+/// ASCII, at most 2048 characters. Anything else gives no link.
+pub(crate) fn krisp_url(id: &str) -> Option<String> {
+    if id.is_empty() || id.len() > MAX_URL || id.bytes().any(|b| !b.is_ascii_graphic() || b == b'\\') {
+        return None;
+    }
+    let rest = id.get(..8).filter(|p| p.eq_ignore_ascii_case("https://")).map(|_| &id[8..])?;
+    let end = rest.find(['/', '?', '#']).unwrap_or(rest.len());
+    let (authority, tail) = rest.split_at(end);
+    if authority.contains(['@', ':']) {
+        return None;
+    }
+    let host = authority.to_ascii_lowercase();
+    if !(host == "krisp.ai" || host.ends_with(".krisp.ai")) || host.starts_with('.') || host.contains("..") {
+        return None;
+    }
+    Some(format!("https://{host}{tail}"))
 }
 
 /// A last check on a stored URL before it opens: one of the fixed hosts with its fixed path
@@ -509,6 +535,9 @@ pub(crate) fn url_still_allowed(url: &str, cfg: &BriefConfig) -> bool {
         if let Some(rest) = url.strip_prefix(prefix) {
             return rest.starts_with(path) && !rest.contains(['@', '\\', '#']);
         }
+    }
+    if url.get(..8).is_some_and(|p| p.eq_ignore_ascii_case("https://")) && krisp_url(url).is_some_and(|u| u == url || u.eq_ignore_ascii_case(url)) {
+        return true;
     }
     file_url(url, &cfg.file_hosts).is_some_and(|u| u == url || u.eq_ignore_ascii_case(url))
 }
@@ -706,11 +735,19 @@ fn valid_meeting_key(key: &str) -> bool {
 pub(crate) trait Helper {
     /// The body of a 2xx answer, at most `MAX_ANSWER` bytes. Errors are fixed words.
     fn get(&self, url: &str, token: &str) -> Result<Vec<u8>, &'static str>;
+    /// A JSON POST: the body of a 2xx answer, at most `MAX_ASK_ANSWER` bytes. Errors are the fixed ask words.
+    fn post(&self, url: &str, token: &str, body: &[u8]) -> Result<Vec<u8>, &'static str>;
 }
 
 fn agent() -> &'static ureq::Agent {
     static AGENT: OnceLock<ureq::Agent> = OnceLock::new();
     AGENT.get_or_init(|| ureq::AgentBuilder::new().timeout_connect(CONNECT_TIMEOUT).timeout(TOTAL_TIMEOUT).redirects(0).build())
+}
+
+/// A second agent for the ask: a model answer can take a while, so 60 seconds in all.
+fn ask_agent() -> &'static ureq::Agent {
+    static AGENT: OnceLock<ureq::Agent> = OnceLock::new();
+    AGENT.get_or_init(|| ureq::AgentBuilder::new().timeout_connect(CONNECT_TIMEOUT).timeout(ASK_TIMEOUT).redirects(0).build())
 }
 
 struct HttpHelper;
@@ -740,6 +777,57 @@ impl Helper for HttpHelper {
             Err(_) => Err(FAILED),
         }
     }
+
+    fn post(&self, url: &str, token: &str, body: &[u8]) -> Result<Vec<u8>, &'static str> {
+        let sent = ask_agent().post(url).set("Authorization", &format!("Bearer {token}")).set("Accept", "application/json").set("Content-Type", "application/json").send_bytes(body);
+        match sent {
+            Ok(resp) if (200..300).contains(&resp.status()) => {
+                if resp.header("content-length").and_then(|v| v.parse::<usize>().ok()).is_some_and(|n| n > MAX_ASK_ANSWER) {
+                    return Err(FAILED);
+                }
+                read_up_to(resp.into_reader(), MAX_ASK_ANSWER)
+            }
+            Ok(_) => Err(FAILED),
+            Err(ureq::Error::Status(code, resp)) => {
+                let small = read_up_to(resp.into_reader(), 512).unwrap_or_default();
+                Err(ask_error_word(code, &small))
+            }
+            Err(_) => Err(FAILED),
+        }
+    }
+}
+
+/// The fixed ask word for a refused POST: the status, and for 429 and 503 the box's own word when it sends one.
+pub(crate) fn ask_error_word(status: u16, body: &[u8]) -> &'static str {
+    let word = serde_json::from_slice::<Value>(body).ok().and_then(|v| v.get("error").and_then(Value::as_str).map(str::to_string));
+    match status {
+        401 | 403 => FORBIDDEN,
+        404 | 409 => "not-ready",
+        429 => match word.as_deref() {
+            Some("limit") => "limit",
+            Some("day-limit") => "day-limit",
+            Some("busy") | None => "busy",
+            Some(_) => FAILED,
+        },
+        502 => "refused",
+        503 => match word.as_deref() {
+            Some("ask-off") => "ask-off",
+            Some("limit-store") => "limit-store",
+            Some("model-off") | None => "model-off",
+            Some(_) => FAILED,
+        },
+        _ => FAILED,
+    }
+}
+
+/// A reader capped at `max` plus one bytes; more than `max` fails.
+fn read_up_to<R: Read>(reader: R, max: usize) -> Result<Vec<u8>, &'static str> {
+    let mut buf = Vec::new();
+    reader.take(max as u64 + 1).read_to_end(&mut buf).map_err(|_| FAILED)?;
+    if buf.len() > max {
+        return Err(FAILED);
+    }
+    Ok(buf)
 }
 
 /// The whole read with its inputs given: config, token, iCalUId, helper and link map. Order of
@@ -806,6 +894,118 @@ pub async fn wall2_meet_brief_open(window: tauri::WebviewWindow, open_key: Strin
         return Err(GONE.to_string());
     }
     window.opener().open_url(url, None::<&str>).map_err(|_| FAILED.to_string())
+}
+
+// Section: ask and health
+
+/// What `wall2_meet_brief_ask` answers: the plain-text answer and a model word from a fixed list.
+#[derive(Serialize, Debug, PartialEq)]
+pub struct AskOut {
+    pub a: String,
+    pub model: &'static str,
+}
+
+#[derive(serde::Deserialize, Debug, Clone, Default)]
+pub struct AskTurn {
+    pub q: String,
+    pub a: String,
+}
+
+/// What `wall2_meet_brief_health` answers: only the two fixed words.
+#[derive(Serialize, Debug, PartialEq)]
+pub struct AskStatus {
+    pub state: &'static str,
+    pub name: &'static str,
+}
+
+#[derive(Serialize, Debug, PartialEq)]
+pub struct HealthOut {
+    pub ask: AskStatus,
+}
+
+fn model_word(v: Option<&Value>) -> &'static str {
+    match v.and_then(Value::as_str) {
+        Some("Sonnet") => "Sonnet",
+        Some("Opus") => "Opus",
+        _ => "Claude",
+    }
+}
+
+/// A question or an earlier turn: control characters dropped, at most `max` characters, None when empty.
+fn clean_ask(raw: &str, max: usize) -> Option<String> {
+    let text: String = raw.chars().filter(|c| !c.is_control() || *c == ' ').take(max).collect();
+    let text = text.trim().to_string();
+    (!text.is_empty()).then_some(text)
+}
+
+/// The shaped answer of a good ask POST: `a` cleaned like display text and cut at 1200, `model` checked.
+pub(crate) fn shape_ask(bytes: &[u8]) -> Result<AskOut, &'static str> {
+    let v: Value = serde_json::from_slice(bytes).map_err(|_| FAILED)?;
+    let a = v.get("a").and_then(Value::as_str).and_then(|s| clean_text(s, MAX_REPLY)).ok_or(FAILED)?;
+    Ok(AskOut { a, model: model_word(v.get("model")) })
+}
+
+/// The whole ask with its inputs given. Order of refusals: no token, no iCalUId for the key, an empty question, then the box.
+pub(crate) fn ask_with(cfg: &BriefConfig, token: Option<&str>, ical: Option<&str>, q: &str, turns: &[AskTurn], helper: &dyn Helper) -> Result<AskOut, &'static str> {
+    let token = token.ok_or(NOT_SET_UP)?;
+    let ical = ical.ok_or(GONE)?;
+    let q = clean_ask(q, MAX_QUESTION).ok_or(FAILED)?;
+    let start = turns.len().saturating_sub(MAX_TURNS);
+    let kept: Vec<Value> = turns[start..]
+        .iter()
+        .filter_map(|t| Some(serde_json::json!({ "q": clean_ask(&t.q, MAX_QUESTION)?, "a": clean_ask(&t.a, MAX_REPLY)? })))
+        .collect();
+    let body = serde_json::to_vec(&serde_json::json!({ "k": brief_key(token, ical), "q": q, "turns": kept })).map_err(|_| FAILED)?;
+    let bytes = helper.post(&format!("{}/wall/v1/brief/ask", cfg.base), token, &body)?;
+    shape_ask(&bytes)
+}
+
+/// The box's ask status from a health body: both words from fixed lists, anything else is `off` and `Claude`.
+pub(crate) fn shape_health(bytes: &[u8]) -> Result<HealthOut, &'static str> {
+    let v: Value = serde_json::from_slice(bytes).map_err(|_| FAILED)?;
+    let ask = v.get("ask");
+    let state = match ask.and_then(|a| a.get("state")).and_then(Value::as_str) {
+        Some("ready") => "ready",
+        Some("busy") => "busy",
+        Some("failing") => "failing",
+        _ => "off",
+    };
+    Ok(HealthOut { ask: AskStatus { state, name: model_word(ask.and_then(|a| a.get("name"))) } })
+}
+
+pub(crate) fn health_with(cfg: &BriefConfig, token: Option<&str>, helper: &dyn Helper) -> Result<HealthOut, &'static str> {
+    let token = token.ok_or(NOT_SET_UP)?;
+    shape_health(&helper.get(&format!("{}/wall/v1/brief/health", cfg.base), token)?)
+}
+
+/// Ask one question about a meeting's brief. Content leaves only when the page calls this.
+#[tauri::command]
+pub async fn wall2_meet_brief_ask(window: tauri::WebviewWindow, key: String, q: String, turns: Vec<AskTurn>) -> Result<AskOut, String> {
+    super::require_wall2(window.label())?;
+    if !valid_meeting_key(&key) {
+        return Err(GONE.to_string());
+    }
+    tauri::async_runtime::spawn_blocking(move || {
+        let cfg = load_config(&window).map_err(str::to_string)?;
+        let token = super::brief_token::read_token();
+        let ical = super::service::lookup_ical(super::links(), &key);
+        ask_with(&cfg, token.as_deref(), ical.as_deref(), &q, &turns, &HttpHelper).map_err(str::to_string)
+    })
+    .await
+    .map_err(|_| FAILED.to_string())?
+}
+
+/// The box's ask status: `{ask: {state, name}}` and nothing else. Never calls the model.
+#[tauri::command]
+pub async fn wall2_meet_brief_health(window: tauri::WebviewWindow) -> Result<HealthOut, String> {
+    super::require_wall2(window.label())?;
+    tauri::async_runtime::spawn_blocking(move || {
+        let cfg = load_config(&window).map_err(str::to_string)?;
+        let token = super::brief_token::read_token();
+        health_with(&cfg, token.as_deref(), &HttpHelper).map_err(str::to_string)
+    })
+    .await
+    .map_err(|_| FAILED.to_string())?
 }
 
 #[cfg(test)]
@@ -1322,6 +1522,10 @@ mod tests {
             self.seen.lock().unwrap().push((url.to_string(), token.to_string()));
             self.answer.clone()
         }
+        fn post(&self, url: &str, token: &str, body: &[u8]) -> Result<Vec<u8>, &'static str> {
+            self.seen.lock().unwrap().push((format!("POST {url} {}", String::from_utf8_lossy(body)), token.to_string()));
+            self.answer.clone()
+        }
     }
 
     fn run(token: Option<&str>, ical: Option<&str>, helper: &FakeHelper) -> Result<BriefOut, &'static str> {
@@ -1383,6 +1587,118 @@ mod tests {
         assert_eq!(read(Ok(good)).unwrap().items[0].open_key.as_deref(), Some("b5-0"));
         assert!(lookup_open(&l, "b1-0").is_none());
         assert!(lookup_open(&l, "b5-0").is_some());
+    }
+
+    #[test]
+    fn krisp_links_are_https_on_krisp_ai_only() {
+        for ok in ["https://krisp.ai/notes/abc", "https://app.krisp.ai/m/abc?x=1", "HTTPS://Notes.Krisp.AI/a"] {
+            assert!(krisp_url(ok).is_some(), "{ok}");
+        }
+        for bad in [
+            "http://krisp.ai/a",
+            "https://krisp.ai.evil.example/a",
+            "https://evilkrisp.ai/a",
+            "https://user@krisp.ai/a",
+            "https://krisp.ai:8443/a",
+            "https://.krisp.ai/a",
+            "https://a..krisp.ai/a",
+            "https://krisp.ai\\@evil.example/a",
+            "https://krisp.ai/a b",
+            "",
+        ] {
+            assert_eq!(krisp_url(bad), None, "{bad}");
+        }
+        let c = cfg();
+        assert!(link_for(&json!({ "type": "krisp", "id": "https://app.krisp.ai/m/1" }), &c).is_some());
+        assert_eq!(link_for(&json!({ "type": "krisp", "id": "http://app.krisp.ai/m/1" }), &c), None);
+        assert!(url_still_allowed("https://app.krisp.ai/m/1", &c));
+        assert!(!url_still_allowed("http://app.krisp.ai/m/1", &c));
+        assert!(!url_still_allowed("https://krisp.ai.evil.example/m/1", &c));
+    }
+
+    #[test]
+    fn a_refused_ask_maps_to_a_fixed_word() {
+        assert_eq!(ask_error_word(401, b""), "forbidden");
+        assert_eq!(ask_error_word(403, b"{}"), "forbidden");
+        assert_eq!(ask_error_word(404, b""), "not-ready");
+        assert_eq!(ask_error_word(409, b""), "not-ready");
+        assert_eq!(ask_error_word(429, br#"{"error":"limit"}"#), "limit");
+        assert_eq!(ask_error_word(429, br#"{"error":"day-limit"}"#), "day-limit");
+        assert_eq!(ask_error_word(429, br#"{"error":"busy"}"#), "busy");
+        assert_eq!(ask_error_word(429, b"not json"), "busy");
+        assert_eq!(ask_error_word(502, b""), "refused");
+        assert_eq!(ask_error_word(503, br#"{"error":"ask-off"}"#), "ask-off");
+        assert_eq!(ask_error_word(503, br#"{"error":503}"#), "model-off");
+        assert_eq!(ask_error_word(503, br#"{"error":"limit-store"}"#), "limit-store");
+        assert_eq!(ask_error_word(503, br#"{"error":"surprise"}"#), "failed");
+        assert_eq!(ask_error_word(429, br#"{"error":"surprise"}"#), "failed");
+        assert_eq!(ask_error_word(500, b""), "failed");
+        assert_eq!(ask_error_word(413, b""), "failed");
+    }
+
+    #[test]
+    fn the_ask_sends_the_key_the_question_and_at_most_three_turns() {
+        let turns: Vec<AskTurn> = (0..5).map(|i| AskTurn { q: format!("question {i}"), a: format!("answer {i}") }).collect();
+        let h = FakeHelper::new(Ok(br#"{"a":"Plain answer.","model":"Sonnet"}"#.to_vec()));
+        let out = ask_with(&cfg(), Some(TOKEN), Some(ICAL), "  What is open?\u{7}  ", &turns, &h).unwrap();
+        assert_eq!(out, AskOut { a: "Plain answer.".into(), model: "Sonnet" });
+        let seen = h.seen.lock().unwrap();
+        assert_eq!(seen.len(), 1);
+        let (line, token) = &seen[0];
+        assert_eq!(token, TOKEN);
+        let (head, body) = line.split_once(" {").unwrap();
+        assert_eq!(head, "POST https://brief-box.example.ts.net:8791/wall/v1/brief/ask");
+        let v: Value = serde_json::from_str(&format!("{{{body}")).unwrap();
+        assert_eq!(v["k"], brief_key(TOKEN, ICAL));
+        assert_eq!(v["q"], "What is open?");
+        assert_eq!(v["turns"].as_array().unwrap().len(), 3);
+        assert_eq!(v["turns"][0]["q"], "question 2");
+        assert!(!line.contains("contoso") && !line.contains("040000008200"));
+    }
+
+    #[test]
+    fn the_ask_refuses_before_sending_and_caps_the_text() {
+        let h = FakeHelper::new(Ok(br#"{"a":"x","model":"Opus"}"#.to_vec()));
+        assert_eq!(ask_with(&cfg(), None, Some(ICAL), "q", &[], &h).unwrap_err(), "not-set-up");
+        assert_eq!(ask_with(&cfg(), Some(TOKEN), None, "q", &[], &h).unwrap_err(), "gone");
+        assert_eq!(ask_with(&cfg(), Some(TOKEN), Some(ICAL), "   ", &[], &h).unwrap_err(), "failed");
+        assert!(h.seen.lock().unwrap().is_empty(), "nothing is sent on a refusal");
+        let long = "q".repeat(500);
+        ask_with(&cfg(), Some(TOKEN), Some(ICAL), &long, &[], &h).unwrap();
+        let seen = h.seen.lock().unwrap();
+        let body = seen[0].0.split_once(" {").unwrap().1;
+        let v: Value = serde_json::from_str(&format!("{{{body}")).unwrap();
+        assert_eq!(v["q"].as_str().unwrap().len(), MAX_QUESTION);
+        assert_eq!(ask_with(&cfg(), Some(TOKEN), Some(ICAL), "q", &[], &FakeHelper::new(Err("limit"))).unwrap_err(), "limit");
+    }
+
+    #[test]
+    fn the_ask_answer_is_plain_text_with_a_checked_model_word() {
+        let shaped = |body: Value| shape_ask(&serde_json::to_vec(&body).unwrap());
+        let out = shaped(json!({ "a": "See https://evil.example now or mail a@b.example. Real text.", "model": "Opus" })).unwrap();
+        assert_eq!(out.a, "See now or mail Real text.");
+        assert_eq!(out.model, "Opus");
+        assert_eq!(shaped(json!({ "a": "ok", "model": "qwen3 30B" })).unwrap().model, "Claude");
+        assert_eq!(shaped(json!({ "a": "ok" })).unwrap().model, "Claude");
+        assert_eq!(shaped(json!({ "a": "z".repeat(3000), "model": "Sonnet" })).unwrap().a.len(), MAX_REPLY);
+        assert_eq!(shaped(json!({ "a": "", "model": "Sonnet" })).unwrap_err(), "failed");
+        assert_eq!(shaped(json!({ "model": "Sonnet" })).unwrap_err(), "failed");
+        assert_eq!(shape_ask(b"nope").unwrap_err(), "failed");
+    }
+
+    #[test]
+    fn health_gives_only_two_fixed_words() {
+        let shaped = |body: Value| shape_health(&serde_json::to_vec(&body).unwrap()).unwrap();
+        assert_eq!(shaped(json!({ "ask": { "state": "ready", "name": "Sonnet" } })), HealthOut { ask: AskStatus { state: "ready", name: "Sonnet" } });
+        assert_eq!(shaped(json!({ "ask": { "state": "busy", "name": "Opus" } })).ask, AskStatus { state: "busy", name: "Opus" });
+        assert_eq!(shaped(json!({ "ask": { "state": "failing", "name": "x" } })).ask, AskStatus { state: "failing", name: "Claude" });
+        assert_eq!(shaped(json!({ "ask": { "state": "surprise", "name": "Sonnet" }, "extra": "https://x.example" })).ask.state, "off");
+        assert_eq!(shaped(json!({})).ask, AskStatus { state: "off", name: "Claude" });
+        let h = FakeHelper::new(Ok(br#"{"ask":{"state":"ready","name":"Sonnet"}}"#.to_vec()));
+        assert_eq!(health_with(&cfg(), Some(TOKEN), &h).unwrap().ask.state, "ready");
+        assert_eq!(h.seen.lock().unwrap()[0].0, "https://brief-box.example.ts.net:8791/wall/v1/brief/health");
+        assert_eq!(health_with(&cfg(), None, &h).unwrap_err(), "not-set-up");
+        assert_eq!(health_with(&cfg(), Some(TOKEN), &FakeHelper::new(Err("forbidden"))).unwrap_err(), "forbidden");
     }
 
     #[test]
