@@ -1,6 +1,7 @@
-import { act, render, screen } from '@testing-library/react';
+import { act, cleanup, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { mocks } from '../bridge/tauri';
+import { playerName } from '../music/players';
 import { resetNowPlaying } from '../music/store';
 import { usePacificTime } from '../ribbon/testZone';
 import { Unwind } from '../screens/Unwind';
@@ -8,6 +9,8 @@ import { usePlaceStore } from '../state/places';
 import { LAST_OWN_KEY, loadLastOwn, readLastOwn } from './lastOwn';
 import { resetLastPlayed, useLastPlayed } from './lastPlayed';
 import { isWallPlayer, shownSource } from './ownSource';
+import { resetSpotifyStatus, useSpotifyStatus } from './spotify/status';
+import { useSpotifySeen } from './spotifySource';
 import { saveSaved } from './watch/saved';
 import { resetWatch, useWatchStore } from './watch/store';
 
@@ -24,6 +27,8 @@ beforeEach(() => {
   localStorage.clear();
   resetWatch();
   resetLastPlayed();
+  useSpotifySeen.setState({ seen: null });
+  resetSpotifyStatus();
   usePlaceStore.setState({ active: 'unwind', from: 'work', zenDream: false });
   mocks.set('get_now_playing', () => ({ playback_status: 'unknown' }));
 });
@@ -159,6 +164,130 @@ it('a stopped session under a raw id shows the neutral words too', async () => {
   await flush();
   expect(screen.getByText('Last played on an app on this PC')).toBeTruthy();
   noRaw();
+});
+
+const SPOTIFY_TRACK = { id: 'abc', name: 'Harbor Radio', artists: 'Example Host', album: '', durationMs: 1000, imageUrl: null, thumbUrl: null, playable: true };
+
+const READY = { setup: true, signedIn: true, reason: null };
+const spotifyIs = (over: Record<string, unknown> | null) =>
+  mocks.set('wall2_spotify_playback', () => (over === null ? null : { playing: true, device: null, track: SPOTIFY_TRACK, progressMs: 0, shuffle: false, ...over }));
+const webApp = (over: Record<string, unknown> = {}) =>
+  mocks.set('get_now_playing', () => ({ title: 'Harbor Radio', artist: 'Example Host', source_app_id: RAW, playback_status: 'playing', ...over }));
+const signedIn = () => {
+  mocks.set('wall2_spotify_status', () => READY);
+  useSpotifyStatus.setState({ status: READY, failed: false });
+};
+
+it('a web app id shows Spotify while Spotify itself says it plays that song', async () => {
+  signedIn();
+  webApp();
+  spotifyIs({});
+  render(<Unwind />);
+  await flush();
+  expect(screen.getByText('Spotify', { selector: '.u-k' })).toBeTruthy();
+  noRaw();
+});
+
+it('a saved Spotify record never labels a playing song that Spotify does not confirm now', async () => {
+  signedIn();
+  useSpotifySeen.setState({ seen: { source: playerName(RAW) ?? '', title: 'Harbor Radio', artist: 'Example Host' } });
+  webApp();
+  spotifyIs(null);
+  render(<Unwind />);
+  await flush();
+  expect(screen.queryByText('Spotify', { selector: '.u-k' })).toBeNull();
+});
+
+it('the at-rest eyebrow says Spotify for a song Spotify confirmed for that source, and stays neutral when it cannot', async () => {
+  useSpotifySeen.setState({ seen: { source: playerName(RAW) ?? '', title: 'Harbor Radio', artist: 'Example Host' } });
+  resetLastPlayed({ title: 'Harbor Radio', artist: 'Example Host', source: playerName(RAW) ?? '' }, null);
+  const shown = render(<Unwind />);
+  await flush();
+  expect(screen.getByText('Last played on Spotify')).toBeTruthy();
+  shown.unmount();
+  useSpotifySeen.setState({ seen: null });
+  render(<Unwind />);
+  await flush();
+  expect(screen.getByText('Last played on an app on this PC')).toBeTruthy();
+});
+
+it('the at-rest eyebrow stays neutral when the saved record has no artist or another source', async () => {
+  const seen = { source: playerName(RAW) ?? '', title: 'Harbor Radio', artist: 'Example Host' };
+  useSpotifySeen.setState({ seen });
+  resetLastPlayed({ title: 'Harbor Radio', artist: '', source: playerName(RAW) ?? '' }, null);
+  const shown = render(<Unwind />);
+  await flush();
+  expect(screen.getByText('Last played on an app on this PC')).toBeTruthy();
+  shown.unmount();
+  resetLastPlayed({ title: 'Harbor Radio', artist: 'Example Host', source: 'Other App' }, null);
+  render(<Unwind />);
+  await flush();
+  expect(screen.queryByText('Last played on Spotify')).toBeNull();
+});
+
+it('another song from Spotify keeps the neutral words', async () => {
+  signedIn();
+  webApp({ title: 'Other Song' });
+  spotifyIs({});
+  render(<Unwind />);
+  await flush();
+  expect(screen.getByText('an app on this PC')).toBeTruthy();
+});
+
+it('a paused Spotify, a null or rejected playback, or another artist keep the neutral words', async () => {
+  for (const answer of [{ playing: false }, null, 'reject', { track: { ...SPOTIFY_TRACK, artists: 'Someone Else' } }] as const) {
+    cleanup();
+    signedIn();
+    webApp();
+    if (answer === 'reject') mocks.set('wall2_spotify_playback', () => Promise.reject(new Error('down')));
+    else spotifyIs(answer);
+    useSpotifySeen.setState({ seen: null });
+    render(<Unwind />);
+    await flush();
+    expect(screen.getByText('an app on this PC')).toBeTruthy();
+    expect(screen.queryByText('Spotify', { selector: '.u-k' })).toBeNull();
+  }
+});
+
+it('a paused web app session is never labelled Spotify', async () => {
+  signedIn();
+  webApp({ playback_status: 'paused' });
+  spotifyIs({});
+  render(<Unwind />);
+  await flush();
+  expect(screen.queryByText('Spotify', { selector: '.u-k' })).toBeNull();
+});
+
+it('a later session from another app with the same title is not labelled Spotify', async () => {
+  signedIn();
+  webApp();
+  spotifyIs({});
+  render(<Unwind />);
+  await flush();
+  expect(screen.getByText('Spotify', { selector: '.u-k' })).toBeTruthy();
+  // Spotify now answers null (it stopped); another web app starts the same title.
+  spotifyIs(null);
+  webApp({ source_app_id: 'com-other-player91b2c' });
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(3000);
+  });
+  expect(screen.queryByText('Spotify', { selector: '.u-k' })).toBeNull();
+  expect(screen.getByText('an app on this PC')).toBeTruthy();
+});
+
+it('does not ask Spotify for playback while it is not set up or signed out', async () => {
+  for (const status of [{ setup: false, signedIn: false, reason: 'not set up' }, { setup: true, signedIn: false, reason: null }]) {
+    cleanup();
+    mocks.set('wall2_spotify_status', () => status);
+    useSpotifyStatus.setState({ status, failed: false });
+    webApp();
+    const asked = vi.fn(() => ({ playing: true, device: null, track: SPOTIFY_TRACK, progressMs: 0, shuffle: false }));
+    mocks.set('wall2_spotify_playback', asked);
+    render(<Unwind />);
+    await flush();
+    expect(asked).not.toHaveBeenCalled();
+    expect(screen.getByText('an app on this PC')).toBeTruthy();
+  }
 });
 
 it('shows a known player by its name and anything else by the neutral words', () => {

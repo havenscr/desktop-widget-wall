@@ -8,7 +8,7 @@ import {
   IconPlayerSkipForwardFilled,
 } from '@tabler/icons-react';
 import { anchorProgress, formatTime, isPlaying, isQuiet, type NowPlayingInfo, type ProgressAnchor } from '../music/model';
-import { isKnownPlayer, playerName, sourceKey } from '../music/players';
+import { isKnownPlayer, isKnownPlayerName, playerName, sourceKey } from '../music/players';
 import { reanchorNowPlaying, rejectArt, seekMedia } from '../music/store';
 import { useSkyKeepClear } from '../horizon/sky';
 import { useNowPlaying } from '../music/useNowPlaying';
@@ -16,6 +16,7 @@ import { useVisible } from '../ui/useVisible';
 import { useLastPlayed } from './lastPlayed';
 import { canPlayLastOwn, playLastOwn } from './lastOwn';
 import { isWallPlayer, ON_THE_WALL, PICK_IN_WATCH, shownSource } from './ownSource';
+import { isSpotifySong, useConfirmSpotify, useSpotifySeen } from './spotifySource';
 import { useOwnView } from './watch/ownPlay';
 import { useWatchStore } from './watch/store';
 import { AUTOPLAY_LINE, musicControls, next as queueNext, playAgain, previous as queuePrevious, useMusicView, type MusicView } from './ytmusic/queue';
@@ -99,7 +100,12 @@ export function Player() {
   const iconWatch =
     !!sessionTitle &&
     ((webView && [watchPlaying?.label, watchStopped?.label, ownPlaylist?.title].some(isTitle)) || (unknownId && [watchPlaying?.label, ownPlaylist?.title].some(isTitle)));
-  const sourceLabel = watchMatch ? 'Watch' : shownSource(rawSourceLabel);
+  // An unnamed source (a browser's web app id) is Spotify only when Spotify itself says it plays this song.
+  const spotifyConfirmed = useConfirmSpotify(source, info?.title, info?.artist, unknownId && !webView && playing);
+  const spotifySeen = useSpotifySeen((s) => s.seen);
+  // While playing, only a fresh confirmation counts; at rest, the saved record for this source, title and artist.
+  const isSpotify = unknownId && !webView && (playing ? spotifyConfirmed : isSpotifySong(spotifySeen, rawSourceLabel, info?.title, info?.artist));
+  const sourceLabel = watchMatch ? 'Watch' : isSpotify ? 'Spotify' : shownSource(rawSourceLabel);
   // The horizon's moon keeps 40 px clear of the player (it moves to another of its places).
   const [box, setBox] = useState<HTMLDivElement | null>(null);
   // The item the wall's own player refused to start (Play falls to the unknown state for it).
@@ -111,7 +117,11 @@ export function Player() {
     ? info?.title
       ? { title: info.title, artist: info.artist || info.album || '', source: sourceLabel ?? '', art }
       : lastPlayed.last
-        ? { ...lastPlayed.last, art: lastPlayed.art }
+        ? {
+            ...lastPlayed.last,
+            source: !isKnownPlayerName(lastPlayed.last.source) && isSpotifySong(spotifySeen, lastPlayed.last.source, lastPlayed.last.title, lastPlayed.last.artist) ? 'Spotify' : lastPlayed.last.source,
+            art: lastPlayed.art,
+          }
         : null
     : null;
   // Whether the card is about the wall's own item. Two ways in: the record says the last thing played was the wall's own
