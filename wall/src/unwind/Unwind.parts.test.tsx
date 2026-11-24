@@ -13,6 +13,8 @@ import { drawnLine } from './statusTestUtil';
 import { Tabs } from './Tabs';
 import { Tomorrow } from './Tomorrow';
 import { useAppVolume, VOLUME_DEBOUNCE_MS } from './Volume';
+import { useSpotifySeen } from './spotifySource';
+import { resetSpotifyStatus } from './spotify/status';
 import { resetWatch, useWatchStore } from './watch/store';
 
 usePacificTime();
@@ -21,6 +23,8 @@ beforeEach(() => {
   vi.useFakeTimers();
   localStorage.clear();
   resetLastPlayed();
+  useSpotifySeen.setState({ seen: null });
+  resetSpotifyStatus();
   usePlaceStore.setState({ active: 'unwind', from: 'work', zenDream: false });
 });
 afterEach(() => {
