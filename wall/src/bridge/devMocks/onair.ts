@@ -24,6 +24,7 @@ import { knob } from './long';
  *   ?oapaused=1                        with oatake, the running take is paused
  *   ?meetnow=1                         the one meeting a call belongs to, 10:00 to 11:00 (devMocks/meet.ts); ?meetlong=1 gives it a 120 character title
  *   ?callbrowserav=1                   a browser holds the camera and microphone with no call (devMocks/signals.ts)
+ *   ?recorder=open|none|unknown        the Camtasia Recorder read (default open)
  *   ?whylong=1                         the new frame's reason line is 90 characters long
  *
  * Open file turns `missing` into the starter's three parts, as the app does.
@@ -78,6 +79,7 @@ export function registerOnAirMocks(): void {
   const parts: string[] = marksKnob === '0' ? [] : marksKnob === 'full' ? [PARTS[0], PARTS[1], PARTS[2]] : [PARTS[0], PARTS[0]];
   const result = (): MarkResult => ({ today: times.length, last: times.slice(-3), lastParts: parts.slice(-3) });
 
+  mocks.set('wall2_recorder_status', () => ({ state: ['open', 'none', 'unknown'].includes(knob('recorder') ?? '') ? knob('recorder') : 'open' }));
   mocks.set('wall2_onair_show', () => {
     switch (which) {
       case 'down':
