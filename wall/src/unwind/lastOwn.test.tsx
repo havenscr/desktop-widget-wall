@@ -8,6 +8,7 @@ import { usePlaceStore } from '../state/places';
 import { LAST_OWN_KEY, loadLastOwn, readLastOwn } from './lastOwn';
 import { resetLastPlayed, useLastPlayed } from './lastPlayed';
 import { isWallPlayer, shownSource } from './ownSource';
+import { useSpotifySeen } from './spotifySource';
 import { saveSaved } from './watch/saved';
 import { resetWatch, useWatchStore } from './watch/store';
 
@@ -24,6 +25,7 @@ beforeEach(() => {
   localStorage.clear();
   resetWatch();
   resetLastPlayed();
+  useSpotifySeen.setState({ seen: null });
   usePlaceStore.setState({ active: 'unwind', from: 'work', zenDream: false });
   mocks.set('get_now_playing', () => ({ playback_status: 'unknown' }));
 });
@@ -159,6 +161,38 @@ it('a stopped session under a raw id shows the neutral words too', async () => {
   await flush();
   expect(screen.getByText('Last played on an app on this PC')).toBeTruthy();
   noRaw();
+});
+
+const SPOTIFY_TRACK = { id: 'abc', name: 'Harbor Radio', artists: 'Example Host', album: '', durationMs: 1000, imageUrl: null, thumbUrl: null, playable: true };
+
+it('a web app id shows Spotify while Spotify itself says it plays that song', async () => {
+  mocks.set('get_now_playing', () => ({ title: 'Harbor Radio', artist: 'Example Host', source_app_id: RAW, playback_status: 'playing' }));
+  mocks.set('wall2_spotify_playback', () => ({ playing: true, device: null, track: SPOTIFY_TRACK, progressMs: 0, shuffle: false }));
+  render(<Unwind />);
+  await flush();
+  expect(screen.getByText('Spotify', { selector: '.u-k' })).toBeTruthy();
+  noRaw();
+});
+
+it('the at-rest eyebrow says Spotify for a song Spotify confirmed, and stays neutral when it cannot', async () => {
+  useSpotifySeen.setState({ seen: { title: 'Harbor Radio', artist: 'Example Host' } });
+  resetLastPlayed({ title: 'Harbor Radio', artist: 'Example Host', source: RAW }, null);
+  const shown = render(<Unwind />);
+  await flush();
+  expect(screen.getByText('Last played on Spotify')).toBeTruthy();
+  shown.unmount();
+  useSpotifySeen.setState({ seen: null });
+  render(<Unwind />);
+  await flush();
+  expect(screen.getByText('Last played on an app on this PC')).toBeTruthy();
+});
+
+it('another song or no answer from Spotify keeps the neutral words', async () => {
+  mocks.set('get_now_playing', () => ({ title: 'Other Song', artist: 'Example Host', source_app_id: RAW, playback_status: 'playing' }));
+  mocks.set('wall2_spotify_playback', () => ({ playing: true, device: null, track: SPOTIFY_TRACK, progressMs: 0, shuffle: false }));
+  render(<Unwind />);
+  await flush();
+  expect(screen.getByText('an app on this PC')).toBeTruthy();
 });
 
 it('shows a known player by its name and anything else by the neutral words', () => {
