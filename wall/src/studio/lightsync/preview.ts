@@ -72,6 +72,8 @@ export interface PreviewState {
   /** Palette position in colours; always moving. */
   pos: number;
   clockMs: number;
+  /** Colours of beat nudge still to apply, spread over `NUDGE_MS`. */
+  nudgeLeft: number;
   recent: { dt: number; bass: number; high: number }[];
   plays: LightState[];
   panels: LightState[];
@@ -93,6 +95,8 @@ export interface PreviewPalette {
 }
 
 const FRAME_MS = 33;
+/** A beat's palette nudge is spread over about this long. */
+const NUDGE_MS = 200;
 const LEVEL_LO = 0.2;
 const LEVEL_SPAN = 0.7;
 const PLAYS = 4;
@@ -105,6 +109,7 @@ export const newPreview = (floor: number, beatCount = 0): PreviewState => ({
   kickAgeMs: Infinity,
   pos: 0,
   clockMs: 0,
+  nudgeLeft: 0,
   recent: [],
   plays: Array.from({ length: PLAYS }, () => light(floor)),
   panels: Array.from({ length: PANELS }, () => light(floor)),
@@ -143,14 +148,19 @@ export function paletteColour(colors: readonly Rgb[], p: number): Rgb {
   return mix(colors[a], colors[(a + 1) % n], smoothstep(0.35, 0.65, q - Math.floor(q)));
 }
 
-function lightFrame(st: PreviewState, s: LightSyncSettings, dt: number, ls: LightState, colour: Rgb, kick: Rgb, env: number, lift: number): Rgb {
+function lightFrame(st: PreviewState, s: LightSyncSettings, dt: number, ls: LightState, colour: Rgb, kick: Rgb, env: number, lift: number, steps: number): Rgb {
   const target = s.floor + (s.brightness - s.floor) * Math.min(1, Math.max(0, s.energyDepth * env + s.kickFlash * lift));
   const b = target < ls.b ? Math.max(target, ls.b - (s.slewDown * dt) / 1000) : target;
   ls.b = b;
   const out = mix(colour, kick, s.kickWhite * lift).map((v) => v * b) as Rgb;
   const y = lum(out);
   const held = ls.swing.limit(st.clockMs, y, GUARD_MAX_TRANSITIONS);
-  const shown = (y > 1e-6 ? out.map((v) => v * (held / y)) : out).map(clamp01) as Rgb;
+  let shown = (y > 1e-6 ? out.map((v) => v * (held / y)) : out).map(clamp01) as Rgb;
+  // A held fall scales the colour up and a channel may clip: mix toward white by the missing luminance (exact, luminance is linear in the mix).
+  const l = lum(shown);
+  if (held !== y && l < held && l < 1) shown = mix(shown, [1, 1, 1], (held - l) / (1 - l));
+  // What is committed is what is sent: rounded to the steps the link carries (255 for panels, 65535 for the Plays).
+  shown = shown.map((v) => Math.round(v * steps) / steps) as Rgb;
   ls.swing.commit(st.clockMs, lum(shown));
   return shown;
 }
@@ -172,24 +182,26 @@ export function stepPreview(st: PreviewState, s: LightSyncSettings, ui: LightsUi
   const colours = palette.colors.map(hexRgb);
   const kick = hexRgb(palette.kick);
   if (input.beatCount > st.seen) {
-    st.pos += s.beatNudge;
+    st.nudgeLeft += s.beatNudge;
     if (!(st.kickAgeMs < s.minPulseGapMs)) st.kickAgeMs = 0;
   }
   st.seen = input.beatCount;
-  st.pos = (((st.pos + dt / driftOf(ui.colourBars)) % colours.length) + colours.length) % colours.length;
+  const take = Math.min(st.nudgeLeft, (s.beatNudge * dt) / NUDGE_MS);
+  st.nudgeLeft -= take;
+  st.pos = (((st.pos + take + dt / driftOf(ui.colourBars)) % colours.length) + colours.length) % colours.length;
   const pulse = kickShape(st.kickAgeMs, s.kickRiseMs, s.kickDecayMs);
 
   const plays = st.plays.map((ls, i) => {
     const inner = i === 1 || i === 2;
     const env = bandLevel(ui.follow[i], st.bassEnv, st.highEnv);
-    return lightFrame(st, s, dt, ls, paletteColour(colours, st.pos + i * 0.25), kick, env, pulse * (inner ? 1 : 0.5));
+    return lightFrame(st, s, dt, ls, paletteColour(colours, st.pos + i * 0.25), kick, env, pulse * (inner ? 1 : 0.5), 65535);
   });
   const env = bandLevel(ui.follow[4], st.bassEnv, st.highEnv);
   const front = st.kickAgeMs < s.rippleMs ? st.kickAgeMs / s.rippleMs : null;
   const panels = st.panels.map((ls, i) => {
     const d = Math.abs(i - 2) / 2;
     const lift = ui.ripple ? (front === null ? 0 : Math.exp(-(((d - front) / 0.2) ** 2)) * (1 - front * front)) : pulse;
-    return lightFrame(st, s, dt, ls, paletteColour(colours, st.pos + i / PANELS), kick, env, lift);
+    return lightFrame(st, s, dt, ls, paletteColour(colours, st.pos + i / PANELS), kick, env, lift, 255);
   });
   if (Number.isFinite(st.kickAgeMs)) st.kickAgeMs += dt;
   return { plays, panels };

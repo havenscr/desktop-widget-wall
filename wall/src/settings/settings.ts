@@ -87,12 +87,14 @@ export function loadLightSync(storage: Pick<Storage, 'getItem'> | null = safeSto
       if (isPaletteId(saved.palette) && (saved.palette !== 'custom' || out.custom.length >= CUSTOM_MIN)) out.palette = saved.palette;
       out.settings = clampSettings(saved.settings);
       out.ui = clampUi(saved.ui);
-      if (saved.version !== LIGHT_SYNC_VERSION) {
+      if (typeof saved.version !== 'number' || saved.version < LIGHT_SYNC_VERSION) {
         // Saved by the strobe engine: its floor, flash and smoothness are not the gentle look, so move to Subtle once.
         // The palette, your own colours, who follows each light and the ripple stay; so do the lights on or off and the gains.
         const subtle = INTENSITIES[DEFAULT_INTENSITY];
         out.settings = { ...out.settings, ...subtle.settings };
         out.ui = { ...out.ui, colourBars: subtle.colourBars };
+        // Saved at once, so the move happens on one launch only.
+        if (storage && 'setItem' in storage) saveLightSync(out, storage as Pick<Storage, 'setItem'>);
       }
     }
   } catch {

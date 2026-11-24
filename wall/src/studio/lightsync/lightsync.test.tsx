@@ -360,6 +360,17 @@ it('a value saved by the strobe engine loads as Subtle once, keeping palette, ow
   expect(loadLightSync({ getItem: () => text }).settings.floor).toBe(0.2);
 });
 
+it('the move to Subtle is saved at load and a version 2 value is left as it is', () => {
+  const store: Record<string, string> = { [LIGHT_SYNC_KEY]: JSON.stringify({ palette: 'neon', settings: { floor: 0.06 }, ui: { colourBars: 1 } }) };
+  const io = { getItem: (k: string) => store[k] ?? null, setItem: (k: string, v: string) => void (store[k] = v) };
+  expect(loadLightSync(io).settings.floor).toBe(INTENSITIES.subtle.settings.floor);
+  expect(JSON.parse(store[LIGHT_SYNC_KEY]).version).toBe(2);
+  store[LIGHT_SYNC_KEY] = JSON.stringify({ ...JSON.parse(store[LIGHT_SYNC_KEY]), settings: { ...INTENSITIES.subtle.settings, floor: 0.2 } });
+  expect(loadLightSync(io).settings.floor).toBe(0.2);
+  const stale = { getItem: () => JSON.stringify({ version: '2', settings: { floor: 0.06 } }) };
+  expect(loadLightSync(stale).settings.floor).toBe(INTENSITIES.subtle.settings.floor);
+});
+
 it.each(PALETTES.filter((p) => p.enabled).map((p) => p.id))('palette %s sends its colours on start', async (id) => {
   useLightSync.setState({ palette: id as PaletteId });
   await show();

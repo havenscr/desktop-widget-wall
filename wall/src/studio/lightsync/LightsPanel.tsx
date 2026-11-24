@@ -97,7 +97,7 @@ function Preview() {
   }, []);
   return (
     <div className="ls-preview" role="img" aria-label="Preview of the lights, live" data-part="lights-preview" ref={root}>
-      <div className="ls-strip" data-row="panels" {...tip('Panels: the Nanoleaf panels on the wall, each lit as it would be right now.')}>
+      <div className="ls-strip" data-row="panels" {...tip('Panels: five stand-in triangles in a row, lit as the Nanoleaf panels would be right now. The real layout of your panels is not known here, so how the ring spreads is approximate.')}>
         <b>Panels</b>
         <span className="ls-pns">
           {PANEL_COUNT.map((i) => (

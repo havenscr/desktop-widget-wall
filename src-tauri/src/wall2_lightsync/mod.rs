@@ -490,7 +490,7 @@ fn run_stream_loop(rig: &dyn Rig, live: &mut Live, ctl: &Control, latest: Latest
         let (bass, high) = engine::levels_from_bands(&bands);
         let out = engine.step(&tuning, engine::Input { bass, high, beat, dt_ms: t - last_tick }, plays.len(), &panel_xy);
         last_tick = t;
-        stats.observe(t, beat, &out.plays);
+        stats.observe(t, beat, &out.plays, tuning.settings.plays);
 
         let channels: Vec<stream::Channel> = plays.iter().zip(&out.plays).map(|(id, c)| (*id, [stream::to16(c[0]), stream::to16(c[1]), stream::to16(c[2])])).collect();
         let sent = stream::encode_frame(sequence, &area_id, &channels).is_some_and(|f| live.hue.send(&f));
@@ -1487,8 +1487,13 @@ mod tests {
         let panels = log.panel_frames.borrow();
         assert!(panels.len() >= 15 && panels.len() <= 25, "about 30 Hz of a 50 Hz tick: {}", panels.len());
         assert_eq!(panels[0].len(), 2 + 2 * 8);
-        // Loud music lights the Plays well above the floor.
-        assert!(hue[39][stream::HEADER_LEN + 1..stream::HEADER_LEN + 7].iter().any(|b| *b > 100));
+        // Loud music lifts the Plays clearly above what silence shows (the floor).
+        let silent_log = Log::default();
+        let silent_rig = FakeRig::new(&silent_log, true);
+        let _ = stream_for(&silent_rig, 40, 20.0, Vec::new(), false);
+        let level = |f: &Vec<u8>| f[stream::HEADER_LEN + 1..stream::HEADER_LEN + 7].iter().step_by(2).map(|b| u32::from(*b)).sum::<u32>();
+        let silent = level(&silent_log.hue_frames.borrow()[39]);
+        assert!(level(&hue[39]) > silent + 15, "loud {} vs silent {silent}", level(&hue[39]));
     }
 
     #[test]

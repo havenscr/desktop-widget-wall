@@ -235,6 +235,8 @@ pub(crate) struct Output {
 
 /// One light-sync frame is about this long; `level_window` counts these.
 const FRAME_MS: f64 = 33.0;
+/// A beat's palette nudge is spread over about this long.
+const NUDGE_MS: f64 = 200.0;
 /// The band level where sound starts to count, and the span above it that fills the range.
 const LEVEL_LO: f64 = 0.2;
 const LEVEL_SPAN: f64 = 0.7;
@@ -351,6 +353,8 @@ pub(crate) struct Engine {
     /// Palette position in colours; always moving.
     pos: f64,
     clock_ms: f64,
+    /// Colours of beat nudge still to apply; spread over `NUDGE_MS` so a beat never steps the colour in one frame.
+    nudge_left: f64,
     floor0: f64,
     /// (dt, bass, high) of recent frames, for the level window.
     recent: VecDeque<(f64, f64, f64)>,
@@ -373,7 +377,7 @@ fn unit(c: Rgb) -> Rgb {
 
 impl Engine {
     pub(crate) fn new(floor: f64) -> Engine {
-        Engine { bass_env: 0.0, high_env: 0.0, kick_age_ms: f64::INFINITY, pos: 0.0, clock_ms: 0.0, floor0: floor, recent: VecDeque::new(), play_state: Vec::new(), panel_state: Vec::new() }
+        Engine { bass_env: 0.0, high_env: 0.0, kick_age_ms: f64::INFINITY, pos: 0.0, clock_ms: 0.0, nudge_left: 0.0, floor0: floor, recent: VecDeque::new(), play_state: Vec::new(), panel_state: Vec::new() }
     }
 
     /// A one-pole follower: fast up, slow down.
@@ -417,12 +421,14 @@ impl Engine {
         self.clock_ms += dt;
 
         if input.beat {
-            self.pos += s.beat_nudge;
+            self.nudge_left += s.beat_nudge;
             if !(self.kick_age_ms < s.min_pulse_gap_ms) {
                 self.kick_age_ms = 0.0;
             }
         }
-        self.pos = (self.pos + dt / s.drift_ms).rem_euclid(t.palette.colors.len() as f64);
+        let take = self.nudge_left.min(s.beat_nudge * dt / NUDGE_MS);
+        self.nudge_left -= take;
+        self.pos = (self.pos + take + dt / s.drift_ms).rem_euclid(t.palette.colors.len() as f64);
         let pulse = kick_shape(self.kick_age_ms, s.kick_rise_ms, s.kick_decay_ms);
 
         let plays = if s.plays { self.plays(t, n_plays, pulse, dt) } else { vec![[0.0; 3]; n_plays] };
@@ -443,7 +449,7 @@ impl Engine {
 
     /// One light's colour: the brightness target from the sound and the pulse, the fall rate limit, the
     /// white mix, then the flash guard on the luminance.
-    fn light(clock: f64, dt: f64, st: &mut LightState, s: &Settings, colour: Rgb, kick: Rgb, env: f64, lift: f64) -> Rgb {
+    fn light(clock: f64, dt: f64, st: &mut LightState, s: &Settings, colour: Rgb, kick: Rgb, env: f64, lift: f64, steps: f64) -> Rgb {
         let target = s.floor + (s.brightness - s.floor) * (s.energy_depth * env + s.kick_flash * lift).clamp(0.0, 1.0);
         let b = if target < st.b { target.max(st.b - s.slew_down * dt / 1000.0) } else { target };
         st.b = b;
@@ -451,7 +457,15 @@ impl Engine {
         let out = scale(mixed, b);
         let y = lum(out);
         let held = st.swing.limit(clock, y, GUARD_MAX_TRANSITIONS);
-        let shown = unit(if y > 1e-6 { scale(out, held / y) } else { out });
+        let mut shown = unit(if y > 1e-6 { scale(out, held / y) } else { out });
+        // A held fall scales the colour up; a channel that clips leaves the light darker than held. Mix toward white
+        // by exactly the missing luminance (luminance is linear in the mix).
+        let l = lum(shown);
+        if held != y && l < held && l < 1.0 {
+            shown = lerp(shown, [1.0; 3], (held - l) / (1.0 - l));
+        }
+        // What is committed is what is sent: rounded to the steps the link carries (255 for panels, 65535 for the Plays).
+        let shown = shown.map(|v| (v * steps).round() / steps);
         st.swing.commit(clock, lum(shown));
         shown
     }
@@ -472,7 +486,7 @@ impl Engine {
                     None => self.high_env,
                 };
                 let colour = palette_colour(&t.palette.colors, self.pos + i as f64 * 0.25);
-                Self::light(self.clock_ms, dt, &mut states[i], s, colour, t.palette.kick, env, pulse * if inner { 1.0 } else { 0.5 })
+                Self::light(self.clock_ms, dt, &mut states[i], s, colour, t.palette.kick, env, pulse * if inner { 1.0 } else { 0.5 }, 65535.0)
             })
             .collect();
         self.play_state = states;
@@ -504,7 +518,7 @@ impl Engine {
                 let colour = palette_colour(&t.palette.colors, self.pos + i as f64 / n);
                 // Ripple off: the whole set takes the same pulse as the Plays, no ring.
                 let lift = if s.ripple { front.map_or(0.0, |f| (-((d / far - f) / 0.2).powi(2)).exp() * (1.0 - f * f)) } else { pulse };
-                let c = Self::light(self.clock_ms, dt, &mut states[i], s, colour, t.palette.kick, env, lift);
+                let c = Self::light(self.clock_ms, dt, &mut states[i], s, colour, t.palette.kick, env, lift, 255.0);
                 [(c[0] * 255.0).round() as u8, (c[1] * 255.0).round() as u8, (c[2] * 255.0).round() as u8, 0]
             })
             .collect();
@@ -531,7 +545,7 @@ impl Stats {
         Stats { swings: Vec::new(), beats: VecDeque::new(), beat_total: 0, max_beats: 0, max_swings: 0, min_lum: f64::INFINITY, start_ms: None, last_ms: 0.0 }
     }
 
-    pub(crate) fn observe(&mut self, now_ms: f64, beat: bool, plays: &[Rgb]) {
+    pub(crate) fn observe(&mut self, now_ms: f64, beat: bool, plays: &[Rgb], plays_on: bool) {
         self.start_ms.get_or_insert(now_ms);
         self.last_ms = now_ms;
         if beat {
@@ -542,6 +556,9 @@ impl Stats {
             self.beats.pop_front();
         }
         self.max_beats = self.max_beats.max(self.beats.len());
+        if !plays_on {
+            return;
+        }
         while self.swings.len() < plays.len() {
             self.swings.push(Swing::default());
         }
@@ -949,37 +966,59 @@ mod tests {
     #[test]
     fn flash_guard_holds_under_three_per_second() {
         for name in ["subtle", "moderate", "high", "harshest"] {
-            let t = fixture_tuning(intensity(name));
-            let mut e = Engine::new(t.settings.floor);
-            let n = XY.len();
-            let mut plays: Vec<Swing> = vec![Swing::default(); 4];
-            let mut panels: Vec<Swing> = vec![Swing::default(); n];
-            let mut now = 0.0;
-            let mut worst = 0;
-            // The fixture, then a fast track: bass and highs pounding with a beat every 274 ms.
-            let mut input: Vec<(f64, f64, bool)> = fixture_frames();
-            for i in 0..600 {
-                let loud = (i / 4) % 2 == 0;
-                input.push((if loud { 1.0 } else { 0.0 }, if i % 2 == 0 { 1.0 } else { 0.0 }, i % 8 == 0));
-            }
-            for (bass, high, beat) in input {
-                now += 33.0;
-                let out = e.step(&t, Input { bass, high, beat, dt_ms: 33.0 }, 4, &XY);
-                for (sw, c) in plays.iter_mut().zip(&out.plays) {
-                    sw.commit(now, super::lum(*c));
-                    worst = worst.max(sw.transitions());
+            for step in [20.0, 33.0] {
+                let t = fixture_tuning(intensity(name));
+                let mut e = Engine::new(t.settings.floor);
+                let mut plays: Vec<Swing> = vec![Swing::default(); 4];
+                let mut panels: Vec<Swing> = vec![Swing::default(); XY.len()];
+                let mut now = 0.0;
+                let (mut worst_p, mut worst_n) = (0, 0);
+                // The fixture, then a fast track: bass and highs pounding with a beat every 264 ms.
+                let mut input: Vec<(f64, f64, bool)> = fixture_frames();
+                for i in 0..600 {
+                    let loud = (i / 4) % 2 == 0;
+                    input.push((if loud { 1.0 } else { 0.0 }, if i % 2 == 0 { 1.0 } else { 0.0 }, i % 8 == 0));
                 }
-                for (sw, c) in panels.iter_mut().zip(&out.panels) {
-                    sw.commit(now, super::lum([f64::from(c[0]) / 255.0, f64::from(c[1]) / 255.0, f64::from(c[2]) / 255.0]));
-                    // Panel bytes are rounded, which can add a transition only at the margin.
-                    assert!(sw.transitions() <= GUARD_MAX_TRANSITIONS + 2, "{name}: {} panel swings in a second", sw.transitions());
+                for (bass, high, beat) in input {
+                    now += step;
+                    let out = e.step(&t, Input { bass, high, beat, dt_ms: step }, 4, &XY);
+                    for (sw, c) in plays.iter_mut().zip(&out.plays) {
+                        sw.commit(now, super::lum(*c));
+                        worst_p = worst_p.max(sw.transitions());
+                    }
+                    for (sw, c) in panels.iter_mut().zip(&out.panels) {
+                        sw.commit(now, super::lum([f64::from(c[0]) / 255.0, f64::from(c[1]) / 255.0, f64::from(c[2]) / 255.0]));
+                        worst_n = worst_n.max(sw.transitions());
+                    }
                 }
+                // A held fall can clip a channel at full brightness; the engine mixes toward white by the missing
+                // luminance and commits the rounded values it sends, so the cap holds at every setting.
+                assert!(worst_p <= GUARD_MAX_TRANSITIONS, "{name} at {step} ms: {worst_p} Play swings in a second");
+                assert!(worst_n <= GUARD_MAX_TRANSITIONS, "{name} at {step} ms: {worst_n} panel swings in a second");
             }
-            // The guard holds brightness at 5 swings a second. With every control at its harshest the palette's
-            // own colour changes (a nudge of 0.25 colours on every beat) can add one more by shifting a light's
-            // luminance, which is still 3 flashes, the WCAG ceiling.
-            let cap = if name == "harshest" { GUARD_MAX_TRANSITIONS + 1 } else { GUARD_MAX_TRANSITIONS };
-            assert!(worst <= cap, "{name}: {worst} swings in a second is over the cap");
+        }
+    }
+
+    #[test]
+    fn a_beat_never_steps_the_colour_in_one_frame() {
+        for (name, limit) in [("subtle", 0.12), ("moderate", 0.2)] {
+            let t = tuning(js(intensity(name)));
+            for phase in 0..16 {
+                let mut e = Engine::new(t.settings.floor);
+                let mut prev = e.step(&t, quiet(33.0), 4, &[]);
+                let mut worst = 0.0_f64;
+                for i in 0..120 {
+                    let beat = i >= phase && (i - phase) % 16 == 0;
+                    let out = e.step(&t, Input { bass: 0.0, high: 0.0, beat, dt_ms: 33.0 }, 4, &[]);
+                    for (a, b) in prev.plays.iter().zip(&out.plays) {
+                        for k in 0..3 {
+                            worst = worst.max((a[k] - b[k]).abs());
+                        }
+                    }
+                    prev = out;
+                }
+                assert!(worst < limit, "{name} phase {phase}: channel stepped {worst}");
+            }
         }
     }
 
@@ -1067,6 +1106,9 @@ mod tests {
         let pos = e.pos;
         e.step(&t, Input { bass: 0.0, high: 0.0, beat: true, dt_ms: 33.0 }, 4, &[]);
         assert!(e.kick_age_ms > 100.0, "the second beat at about 170 ms did not restart the pulse");
+        for _ in 0..8 {
+            e.step(&t, quiet(33.0), 4, &[]);
+        }
         assert!(e.pos - pos > 0.04, "but it still nudged the colour");
     }
 
