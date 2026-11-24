@@ -31,15 +31,37 @@ export const SUNDOWN_AFTER_MS = 60 * 60_000;
 /** The sun's altitude and bearing at a wall time, as the renderer's `sun` gives it. */
 export type SunFn = (ms: number) => { alt: number; az: number };
 
-/** Today's sunset (the sun crossing the horizon going down, evening side) for the local day of `ms`, to the minute. 0 when the sun never sets that day. */
+/** The wall's horizon is drawn for Seattle (`LAT` and `LON` in the renderer), so a "day" is a Pacific day, whatever zone this PC is set to. */
+export const HOME_TZ = 'America/Los_Angeles';
+
+const homeParts = new Intl.DateTimeFormat('en-US', { timeZone: HOME_TZ, hourCycle: 'h23', year: 'numeric', month: 'numeric', day: 'numeric', hour: 'numeric', minute: 'numeric', second: 'numeric' });
+
+/** Milliseconds the home zone is ahead of UTC at `ms` (negative west of Greenwich). */
+function homeOffsetMs(ms: number): number {
+  const p: Record<string, number> = {};
+  for (const x of homeParts.formatToParts(new Date(ms))) if (x.type !== 'literal') p[x.type] = Number(x.value);
+  return Date.UTC(p.year, p.month - 1, p.day, p.hour, p.minute, p.second) - Math.floor(ms / 1000) * 1000;
+}
+
+/** The first moment of the home zone's calendar day that holds `ms`. Right on days that change clocks. */
+export function homeDayStart(ms: number): number {
+  const off = homeOffsetMs(ms);
+  const local = new Date(ms + off);
+  const guess = Date.UTC(local.getUTCFullYear(), local.getUTCMonth(), local.getUTCDate());
+  // The offset at midnight may differ from the one at `ms` (a clock change in between): settle on it.
+  let start = guess - homeOffsetMs(guess - off);
+  start = guess - homeOffsetMs(start);
+  return start;
+}
+
+/** Today's sunset (the sun crossing the horizon going down, evening side) for the home zone's day of `ms`, to the minute. 0 when the sun never sets that day. */
 export function sunsetMs(ms: number, sun: SunFn): number {
-  const d = new Date(ms);
-  d.setHours(0, 0, 0, 0);
-  const t0 = d.getTime();
+  const t0 = homeDayStart(ms);
+  // The next midnight, found from a point well inside the next day, so a 23 or 25 hour day is searched whole.
+  const t1 = homeDayStart(t0 + 36 * 3_600_000);
   let found = 0;
   let prev = sun(t0).alt;
-  for (let m = 1; m <= 1440; m++) {
-    const t = t0 + m * 60_000;
+  for (let t = t0 + 60_000; t <= t1; t += 60_000) {
     const s = sun(t);
     if (prev >= 0 && s.alt < 0 && s.az > 180) found = t;
     prev = s.alt;

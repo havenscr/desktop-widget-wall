@@ -116,6 +116,8 @@ export function Zen({ nowMs = Date.now }: ZenProps) {
   const [ending, setEnding] = useState(false);
   const clockNow = useCallback(() => new Date(nowMs()), [nowMs]);
   const running = startedAt !== null;
+  // True once a session ran to the end and Dream opens: only then do the Sundown lights stay down.
+  const doneRef = useRef(false);
   const stageMode = useRef(mode);
   stageMode.current = mode;
   const left = useLeft(startedAt, minutes, nowMs);
@@ -124,7 +126,11 @@ export function Zen({ nowMs = Date.now }: ZenProps) {
   const start = useCallback(() => {
     const age = import.meta.env.DEV && mode === 'sundown' ? Number(new URLSearchParams(window.location.search).get('sundownage')) || 0 : 0;
     const at = nowMs() - age * 1000;
-    if (mode === 'sundown') startSundown(sundownRange(at, sun), sundownMinutes * 60_000, performance.now() - age * 1000, reduced, nowMs());
+    doneRef.current = false;
+    // A still has no frames to glide over: with the `sundownage` knob present the sky starts at the session's own hour.
+    const knob = import.meta.env.DEV && new URLSearchParams(window.location.search).has('sundownage');
+    const range = sundownRange(at, sun);
+    if (mode === 'sundown') startSundown(range, sundownMinutes * 60_000, performance.now() - age * 1000, reduced, knob ? range.from : nowMs());
     setStartedAt(at);
   }, [nowMs, mode, sundownMinutes, reduced]);
   // Ending early puts the sky back to the real hour.
@@ -184,6 +190,7 @@ export function Zen({ nowMs = Date.now }: ZenProps) {
     if (!ending) return;
     const id = window.setTimeout(() => {
       setEnding(false);
+      doneRef.current = true;
       setStartedAt(null);
       // A finished Sundown holds the night it reached; Dream fades out from it.
       if (stageMode.current === 'sundown') endSundown();
@@ -305,7 +312,7 @@ export function Zen({ nowMs = Date.now }: ZenProps) {
           <div className="zen-bl">
             {running ? (
               mode === 'sundown' ? (
-                <Sundown startedAt={startedAt} minutes={minutes} left={`${formatLeft(left)}.`} lights={lights} now={nowMs} />
+                <Sundown startedAt={startedAt} minutes={minutes} left={`${formatLeft(left)}.`} lights={lights} now={nowMs} doneRef={doneRef} />
               ) : (
                 <>
                   <div className="zen-cap">{sessionLabel(minutes)}</div>
@@ -314,12 +321,33 @@ export function Zen({ nowMs = Date.now }: ZenProps) {
               )
             ) : (
               <div className={`zen-start${quiet ? ' quiet' : ''}`}>
-                <div className="breath-picker" role="radiogroup" aria-label="Mode" onKeyDown={modeKeys}>
+                <div className="zen-moderow">
+                  <div className="breath-picker" role="radiogroup" aria-label="Mode" onKeyDown={modeKeys}>
                   {ZEN_MODES.map((m) => (
                     <button key={m} type="button" role="radio" aria-checked={m === mode} tabIndex={m === mode ? 0 : -1} className="zbtn sm" onClick={() => setMode(m)} {...tip(ZEN_MODE_TIPS[m], { align: 'start' })}>
                       {ZEN_MODE_LABELS[m]}
                     </button>
                   ))}
+                  </div>
+                  {mode === 'sundown' && (
+                    <>
+                    <span className="zen-sw-label" id="zen-lights-label">
+                      Dim the office too
+                    </span>
+                    <button
+                      type="button"
+                      role="switch"
+                      aria-checked={lights}
+                      aria-labelledby="zen-lights-label"
+                      className={`ln-switch${lights ? ' on' : ''}`}
+                      onClick={() => setLights(!lights)}
+                      {...tip(lights ? 'The Office lights step down three times while the sky sets, and back up if you leave early. Click to turn it off.' : 'Click to step the Office lights down three times while the sky sets. Only works while an Office mood is on.', { align: 'start' })}
+                    >
+                      <i aria-hidden="true" />
+                    </button>
+                    <span className="zen-sw-state">{lights ? 'On' : 'Off'}</span>
+                    </>
+                  )}
                 </div>
                 {mode === 'breath' && (
                   <div className="breath-picker" role="radiogroup" aria-label="Breathing pattern">
@@ -330,21 +358,7 @@ export function Zen({ nowMs = Date.now }: ZenProps) {
                     ))}
                   </div>
                 )}
-                {mode === 'sundown' && (
-                  <>
-                    <button
-                      type="button"
-                      role="switch"
-                      aria-checked={lights}
-                      className="zbtn sm"
-                      onClick={() => setLights(!lights)}
-                      {...tip('Steps the Office lights down three times while the sky sets. Only works while an Office mood is on', { align: 'start' })}
-                    >
-                      Dim the office too
-                    </button>
-                    <div className="zen-note">Off unless you turn it on. Steps the Office lights down at most three times, and back up if you leave early.</div>
-                  </>
-                )}
+                {mode === 'sundown' && <div className="zen-note">Off unless you turn it on. Steps the Office lights down three times, and back up if you leave.</div>}
                 <div className="zen-lenrow">
                   <div className="breath-picker" role="radiogroup" aria-label="Session length">
                     {(mode === 'sundown' ? SUNDOWN_MINUTES : SESSION_MINUTES).map((m) => (

@@ -373,9 +373,30 @@
   }
 }
 
-/* The one line under Sundown's lights switch. */
+/* The mode chips, and Sundown's lights switch beside them (the Lights tab's 52 by 32 switch). */
+.zen-moderow {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+.zen-sw-label {
+  margin-left: 14px;
+  font: 500 18px/1.2 var(--body);
+  color: var(--tx);
+  white-space: nowrap;
+}
+.zen-sw-state {
+  min-width: 32px;
+  font: 400 18px/1 var(--body);
+  color: var(--dim);
+}
+/* The one line under the mode row, about Sundown's lights switch. */
 .zen-note {
-  max-width: 640px;
+  /* Tall enough to lift the mode row clear of the lake line. */
+  display: flex;
+  align-items: center;
+  min-height: 100px;
+  max-width: 900px;
   font: 400 18px/1.4 var(--body);
   color: var(--dim);
 }

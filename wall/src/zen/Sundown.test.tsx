@@ -5,7 +5,7 @@ import { Sundown } from './Sundown';
 beforeEach(() => vi.useFakeTimers());
 afterEach(() => vi.useRealTimers());
 
-function setup(lights: boolean) {
+function setup(lights: boolean, done = false) {
   const sent: string[] = [];
   const deps = {
     officeMoodOn: () => true,
@@ -16,7 +16,7 @@ function setup(lights: boolean) {
   };
   const t0 = Date.now();
   const ui = (
-    <Sundown startedAt={t0} minutes={10} left="10:00 left." lights={lights} now={Date.now} deps={deps} />
+    <Sundown startedAt={t0} minutes={10} left="10:00 left." lights={lights} now={Date.now} doneRef={{ current: done }} deps={deps} />
   );
   return { sent, ui };
 }
@@ -36,7 +36,7 @@ it('with the setting off it never talks to the lights', async () => {
 });
 
 it('three steps down over a full session, and they stay down after it ends', async () => {
-  const { sent, ui } = setup(true);
+  const { sent, ui } = setup(true, true);
   const r = render(ui);
   await run(10 * 60_000 + 1000);
   r.unmount();
@@ -59,4 +59,14 @@ it('the caption names the session and the time left', () => {
   const r = render(ui);
   expect(r.container.textContent).toContain('TEN MINUTES OF SUNDOWN');
   expect(r.container.textContent).toContain('10:00 left.');
+});
+
+it('leaving in the closing moment, before Dream opened, still steps back up', async () => {
+  const { sent, ui } = setup(true, false);
+  const r = render(ui);
+  await run(10 * 60_000 + 1000);
+  expect(sent).toEqual(['down', 'down', 'down']);
+  r.unmount();
+  await run(1000);
+  expect(sent).toEqual(['down', 'down', 'down', 'up', 'up', 'up']);
 });

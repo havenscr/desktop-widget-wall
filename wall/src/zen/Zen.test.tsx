@@ -1,7 +1,8 @@
 import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { usePlaceStore } from '../state/places';
-import { SETTINGS_KEY } from '../settings/settings';
+import { SETTINGS_KEY, loadSettings } from '../settings/settings';
+import { HoverTipLayer, TIP_DELAY_MS } from '../ui/HoverTip';
 import { Zen } from './Zen';
 import zenSource from './Zen.tsx?raw';
 // @ts-ignore node's own file call; this test reads the stylesheet as text.
@@ -866,10 +867,96 @@ it('with the lights setting off, a whole Sundown session sends no light command'
   nudge.mockRestore();
 });
 
-it('the Sundown lights and the mode row are tooltipped, and the lights setting defaults off in the source', () => {
-  const src = zenSource.replace('\r\n', '\n');
-  expect(src.match(/\{\.\.\.tip\(/g)!.length).toBeGreaterThanOrEqual(3);
-  expect(readFileSync('src/settings/settings.ts', 'utf8').replace('\r\n', '\n')).toMatch(/zenSundownLights: false/);
+it('the Sundown chip and the lights switch each explain themselves on hover', () => {
+  localStorage.setItem(SETTINGS_KEY, JSON.stringify({ zenMode: 'sundown' }));
+  render(
+    <>
+      <Zen nowMs={clockAt(DAY)} />
+      <HoverTipLayer />
+    </>,
+  );
+  fireEvent.mouseEnter(screen.getByRole('radio', { name: 'Sundown' }));
+  ticks(TIP_DELAY_MS + 50);
+  expect(document.querySelector('.hover-tip')!.textContent).toBe('A wind down: the sky runs from golden hour to night');
+  fireEvent.mouseLeave(screen.getByRole('radio', { name: 'Sundown' }));
+  fireEvent.mouseEnter(screen.getByRole('switch', { name: 'Dim the office too' }));
+  ticks(TIP_DELAY_MS + 50);
+  expect(document.querySelector('.hover-tip')!.textContent).toBe('Click to step the Office lights down three times while the sky sets. Only works while an Office mood is on.');
+});
+
+it('the lights setting is off when nothing is saved, and a fresh Zen shows it off', () => {
+  expect(loadSettings(null).zenSundownLights).toBe(false);
+  localStorage.setItem(SETTINGS_KEY, JSON.stringify({ zenMode: 'sundown' }));
+  render(<Zen nowMs={clockAt(DAY)} />);
+  expect(screen.getByRole('switch', { name: 'Dim the office too' }).getAttribute('aria-checked')).toBe('false');
+});
+
+it('the lights switch sits on the mode row, beside the chips, not on a row of its own', () => {
+  localStorage.setItem(SETTINGS_KEY, JSON.stringify({ zenMode: 'sundown' }));
+  render(<Zen nowMs={clockAt(DAY)} />);
+  const row = document.querySelector('.zen-moderow')!;
+  expect(row.contains(screen.getByRole('radiogroup', { name: 'Mode' }))).toBe(true);
+  expect(row.contains(screen.getByRole('switch', { name: 'Dim the office too' }))).toBe(true);
+  expect(screen.getByRole('switch').classList.contains('ln-switch')).toBe(true);
+});
+
+async function homeWithOfficeMood(level: number) {
+  const { useHome } = await import('../studio/homeStore');
+  const moods = (lv: number) => ({ stale: false, moods: [], off: null, nudge: { mood: 'a', level: lv, floor: 45, step: 10 }, canWrite: true, writeBlock: null });
+  const sent: string[] = [];
+  useHome.setState({
+    moods: moods(level),
+    applying: null,
+    moodFail: null,
+    nudgeMood: async (dir) => {
+      sent.push(dir);
+      const lv = useHome.getState().moods!.nudge!.level;
+      useHome.setState({ moods: moods(lv + (dir === 'down' ? -10 : 10)) });
+    },
+  });
+  return sent;
+}
+const run = (ms: number) => act(async () => void (await vi.advanceTimersByTimeAsync(ms)));
+
+it('lights on, a whole Sundown session: three steps down and no step back up when Dream opens', async () => {
+  const sent = await homeWithOfficeMood(90);
+  localStorage.setItem(SETTINGS_KEY, JSON.stringify({ zenMode: 'sundown', zenSundownLights: true }));
+  render(<Zen nowMs={clockAt(DAY)} />);
+  pick('10 min');
+  start();
+  await run(10 * 60_000 + 300);
+  await run(300);
+  await run(1500);
+  expect(screen.getByLabelText('Wake')).toBeTruthy();
+  expect(sent).toEqual(['down', 'down', 'down']);
+  fireEvent.click(screen.getByLabelText('Wake'));
+  await run(2000);
+  expect(sent).toEqual(['down', 'down', 'down']);
+});
+
+it('lights on, ending early after two steps steps back up twice', async () => {
+  const sent = await homeWithOfficeMood(90);
+  localStorage.setItem(SETTINGS_KEY, JSON.stringify({ zenMode: 'sundown', zenSundownLights: true }));
+  render(<Zen nowMs={clockAt(DAY)} />);
+  pick('10 min');
+  start();
+  await run(5.5 * 60_000);
+  expect(sent).toEqual(['down', 'down']);
+  fireEvent.click(screen.getByRole('button', { name: 'End session early' }));
+  await run(2000);
+  expect(sent).toEqual(['down', 'down', 'up', 'up']);
+});
+
+it('lights on with no Office mood on: nothing is sent', async () => {
+  const sent = await homeWithOfficeMood(90);
+  const { useHome } = await import('../studio/homeStore');
+  useHome.setState({ moods: null });
+  localStorage.setItem(SETTINGS_KEY, JSON.stringify({ zenMode: 'sundown', zenSundownLights: true }));
+  render(<Zen nowMs={clockAt(DAY)} />);
+  pick('10 min');
+  start();
+  await run(10 * 60_000 + 1500);
+  expect(sent).toEqual([]);
 });
 
 it('the start screen text stays 16 px or larger and chips keep 10 px at their sides', () => {

@@ -118,7 +118,9 @@ it('resetting the stage puts the sky back at once', () => {
   expect(skyNow(5000, REAL)).toBe(REAL);
 });
 
-it('skyNow allocates nothing it keeps: same numbers in, same number out', () => {
+it('skyNow gives known values: a quarter of the way is a quarter of the range', () => {
   startSundown(RANGE, 600_000, 0, false, REAL);
-  expect(skyNow(123_456, REAL)).toBe(skyNow(123_456, REAL));
+  expect(skyNow(150_000, REAL)).toBe(1_001_350_000);
+  expect(skyNow(450_000, REAL)).toBe(1_004_050_000);
+  expect(sundownProgress(150_000)).toBe(0.25);
 });

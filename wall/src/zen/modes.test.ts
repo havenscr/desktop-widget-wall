@@ -1,10 +1,17 @@
 import { expect, it } from 'vitest';
 import { sun } from '../horizon/renderer';
-import { SUNDOWN_AFTER_MS, SUNDOWN_BEFORE_MS, SUNDOWN_MINUTES, isZenMode, sundownLabel, sundownRange, sundownSkyMs, sunsetMs } from './modes';
+import { HOME_TZ, SUNDOWN_AFTER_MS, SUNDOWN_BEFORE_MS, SUNDOWN_MINUTES, homeDayStart, isZenMode, sundownLabel, sundownRange, sundownSkyMs, sunsetMs } from './modes';
 
-const NOON = new Date(2026, 10, 11, 12, 0, 0).getTime();
-const EVENING = new Date(2026, 10, 11, 17, 0, 0).getTime();
-const LATE = new Date(2026, 10, 11, 23, 30, 0).getTime();
+// Fixed instants, so no result depends on the zone this machine is set to (run under TZ=UTC and TZ=America/Los_Angeles).
+const NOON = Date.UTC(2026, 10, 11, 20, 0); // 12:00 PST, Nov 11
+const EVENING = Date.UTC(2026, 10, 12, 0, 50); // 4:50 PM PST, Nov 11: a little after sunset
+const LATE = Date.UTC(2026, 10, 12, 7, 30); // 11:30 PM PST, Nov 11
+
+const home = (ms: number) => {
+  const p: Record<string, string> = {};
+  for (const x of new Intl.DateTimeFormat('en-US', { timeZone: HOME_TZ, hourCycle: 'h23', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }).formatToParts(new Date(ms))) p[x.type] = x.value;
+  return `${p.year}-${p.month}-${p.day} ${p.hour}:${p.minute}`;
+};
 
 it('finds the evening sunset of the local day, with the sun just under the horizon after it', () => {
   const set = sunsetMs(NOON, sun);
@@ -59,4 +66,21 @@ it('lengths, label and mode check', () => {
   expect(sundownLabel(20)).toBe('TWENTY MINUTES OF SUNDOWN');
   expect(isZenMode('sundown')).toBe(true);
   expect(isZenMode('summit')).toBe(false);
+});
+
+it('the sunset is the home zone\'s evening of that day, in any machine zone', () => {
+  expect(home(sunsetMs(NOON, sun))).toMatch(/^2026-11-11 16:[0-5]\d$/);
+  // 6 PM PST on Nov 11 is already Nov 12 in UTC: still the Nov 11 sunset, not the next day's.
+  const sixPm = Date.UTC(2026, 10, 12, 2, 0);
+  expect(home(sunsetMs(sixPm, sun))).toMatch(/^2026-11-11 16:[0-5]\d$/);
+  // 1 AM PST on Nov 11 is Nov 11 in the home zone, though already Nov 11 UTC at 9: same sunset as noon.
+  expect(sunsetMs(Date.UTC(2026, 10, 11, 9, 0), sun)).toBe(sunsetMs(NOON, sun));
+});
+
+it('the day starts at home midnight, including on the two days the clocks change', () => {
+  expect(home(homeDayStart(NOON))).toBe('2026-11-11 00:00');
+  expect(home(homeDayStart(Date.UTC(2026, 10, 1, 20, 0)))).toBe('2026-11-01 00:00'); // fall back, 25 hours
+  expect(home(homeDayStart(Date.UTC(2026, 2, 8, 22, 0)))).toBe('2026-03-08 00:00'); // spring forward, 23 hours
+  expect(home(homeDayStart(Date.UTC(2026, 2, 9, 3, 0)))).toBe('2026-03-08 00:00'); // 8 PM PDT Mar 8, still that day
+  for (const d of [Date.UTC(2026, 10, 1, 20, 0), Date.UTC(2026, 2, 8, 22, 0)]) expect(home(sunsetMs(d, sun))).toMatch(/ 1[6-9]:\d\d$/);
 });
