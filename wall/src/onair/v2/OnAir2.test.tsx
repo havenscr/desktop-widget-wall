@@ -14,6 +14,7 @@ import { useOnAirStore } from '../store';
 import { resetTakes, useTakes } from '../takes';
 import { STORAGE_KEY as TAKES_KEY } from '../takeModel';
 import { OnAir2 } from './OnAir2';
+import { useRecorder } from './recorderStore';
 
 vi.setConfig({ testTimeout: 20_000 });
 
@@ -196,7 +197,7 @@ it('keeps a long reason to one line with the whole text in the hover card', asyn
   }
 });
 
-it('Recording: the take timer, the marks with their parts, the six keys, the lights block and nothing in the prompter box', async () => {
+it('Recording: the take timer, the marks with their parts, the six keys, the lights block and the recorder block', async () => {
   localStorage.setItem(TAKES_KEY, JSON.stringify({ day: new Date().toLocaleDateString('sv'), count: 3, longestMs: 400_000, current: { startedAt: Date.now() - 252_000, pausedAt: null, pausedMs: 0, seenAt: Date.now() } }));
   resetTakes();
   signals({ recording: true });
@@ -207,6 +208,42 @@ it('Recording: the take timer, the marks with their parts, the six keys, the lig
   expect(document.querySelector('.oa2-sub')?.textContent).toMatch(/^Take 3\. It started by itself at .* when the recorder began\.$/);
   expect(screen.getByText('Takes today: 3. The longest ran 06:40.')).toBeTruthy();
   expect(screen.getByText('03:12')).toBeTruthy();
+});
+
+const recorderLine = () => document.querySelector('.oa2-recstate')?.textContent;
+const recorderRead = (state: string) => mocks.set('wall2_recorder_status', () => ({ state }));
+
+it('Recording: the recorder block says Not open, Ready, Recording and Paused, and not known when the read fails', async () => {
+  localStorage.setItem(MODE_STORAGE_KEY, JSON.stringify({ held: 'rec' }));
+  recorderRead('none');
+  signals({ recording: false });
+  const first = await open();
+  await screen.findByText('Camtasia Recorder');
+  await waitFor(() => expect(recorderLine()).toBe('Not open'));
+  expect(document.querySelector('.oa2-recstate .oa2-dot')?.getAttribute('data-mode')).toBe('idle');
+  first.unmount();
+  useRecorder.setState({ open: null });
+  recorderRead('open');
+  signals({ recording: false });
+  const second = await open();
+  await waitFor(() => expect(recorderLine()).toBe('Ready'));
+  second.unmount();
+  takesToday({});
+  signals({ recording: true });
+  const third = await open();
+  await waitFor(() => expect(recorderLine()).toBe('Recordingtake 3'));
+  expect(document.querySelector('.oa2-recstate .oa2-dot')?.getAttribute('data-mode')).toBe('rec');
+  third.unmount();
+  takesToday({ pausedAt: Date.now() - 1000 });
+  signals({ recording: true });
+  await open();
+  await waitFor(() => expect(recorderLine()).toBe('Pausedtake 3'));
+  cleanup();
+  mocks.delete('wall2_recorder_status');
+  useRecorder.setState({ open: null });
+  signals({ recording: false });
+  await open();
+  await waitFor(() => expect(recorderLine()).toBe('Not known'));
 });
 
 const tile = (name: string) => screen.getByRole('button', { name }) as HTMLButtonElement;
@@ -444,19 +481,13 @@ it('Recording held while a call is on: the page is Recording, both cases carry a
   await screen.findByText('Call keys');
 });
 
-it('the empty prompter boxes hold their place and nothing else, on both pages', async () => {
-  localStorage.setItem(MODE_STORAGE_KEY, JSON.stringify({ held: 'rec' }));
-  const { unmount } = await open();
-  let box = document.querySelector('.oa2-empty-prompter') as HTMLElement;
+it('the empty prompter box holds its place and nothing else, on the Presenting page', async () => {
+  localStorage.setItem(MODE_STORAGE_KEY, JSON.stringify({ held: 'meet' }));
+  await open();
+  const box = document.querySelector('.oa2-empty-prompter') as HTMLElement;
   expect(box.children.length).toBe(0);
   expect(box.textContent).toBe('');
   expect(box.getAttribute('aria-hidden')).toBe('true');
-  unmount();
-  localStorage.setItem(MODE_STORAGE_KEY, JSON.stringify({ held: 'meet' }));
-  await open();
-  box = document.querySelector('.oa2-empty-prompter') as HTMLElement;
-  expect(box.children.length).toBe(0);
-  expect(box.textContent).toBe('');
 });
 
 it('Presenting before the calendar has answered: the plain call words only, nothing about a match', async () => {

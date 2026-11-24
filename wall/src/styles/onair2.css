@@ -79,6 +79,9 @@
 .oa2-dot[data-mode='rec'] {
   background: var(--mag);
 }
+.oa2-dot[data-mode='idle'] {
+  background: var(--dim);
+}
 .oa2-dot[data-mode='meet'] {
   background: var(--mint);
 }
@@ -254,6 +257,20 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
+.oa2-recstate {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 8px;
+  font: 400 21px/28px var(--body);
+  color: var(--dim);
+  white-space: nowrap;
+  min-width: 0;
+}
+.oa2-recstate b {
+  color: var(--tx);
+  font-weight: 600;
+}
 .oa2-fine {
   margin-top: 6px;
   font: 400 16px/21px var(--body);
@@ -299,8 +316,8 @@
 .oa2-take { left: 1596px; top: 4px; width: 820px; height: 166px; }
 .oa2-reckeys { left: 1596px; top: 182px; width: 820px; height: 110px; }
 .oa2-lights-rec { left: 1596px; top: 308px; width: 820px; height: 154px; }
-/* Boxes kept empty for a later pull request: they hold their place and draw nothing. */
-.oa2-empty-rec { left: 0; top: 316px; width: 640px; height: 104px; }
+.oa2-recorder { left: 0; top: 316px; width: 640px; height: 104px; }
+/* A box kept empty for a later pull request: it holds its place and draws nothing. */
 .oa2-empty-meet { left: 1796px; top: 210px; width: 620px; height: 104px; }
 /* ---- the boxes: Presenting ---- */
 .oa2-talk { left: 0; top: 56px; width: 640px; height: 166px; }
