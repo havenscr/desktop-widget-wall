@@ -60,7 +60,7 @@ export function useBriefAsk(key: string | null, briefReady: boolean, onAir: bool
     const read = () =>
       briefHealth().then(
         (h) => !dead && setHealth(checkHealth(h)),
-        () => !dead && setHealth(null),
+        () => {}, // a failed poll keeps the last health, so one miss never disables the field mid-question
       );
     read();
     const t = setInterval(read, HEALTH_EVERY_MS);
