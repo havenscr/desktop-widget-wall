@@ -5,7 +5,7 @@ import { readCoverStrips, targetTint } from '../../music/coverTint';
 import { useNowPlayingStore } from '../../music/store';
 import { useHome } from '../homeStore';
 import { swatchFor } from '../moodRow';
-import { CUSTOM_MAX, CUSTOM_MIN, DEFAULT_LIGHT_SYNC, FOLLOWS, clampCustom, clampSettings, clampUi, engineSettings, padToMinimum, resolvePalette, type LightSyncSettings, type LightSyncStatus, type LightsUi, type PaletteContext, type PaletteId } from './model';
+import { CUSTOM_MAX, CUSTOM_MIN, DEFAULT_LIGHT_SYNC, FOLLOWS, INTENSITIES, type IntensityId, clampCustom, clampSettings, clampUi, engineSettings, padToMinimum, resolvePalette, type LightSyncSettings, type LightSyncStatus, type LightsUi, type PaletteContext, type PaletteId } from './model';
 
 const hex = (c: number[]) => '#' + c.map((v) => Math.max(0, Math.min(255, Math.round(v))).toString(16).padStart(2, '0')).join('');
 
@@ -46,6 +46,8 @@ export interface LightSyncState {
   /** One setting changed (clamped, saved, and sent to a running sync as a tune). */
   setSettings: (s: Partial<LightSyncSettings>) => void;
   setUi: (u: Partial<LightsUi>) => void;
+  /** An Intensity button: every field in that column, and its colour speed, written at once and sent as one tune. */
+  setIntensity: (id: IntensityId) => void;
   /** One light's Who follows tile: bass, then highs, then both. */
   cycleFollow: (i: number) => void;
   /** Your usual: every Lights setting back (the palette and your colours stay). */
@@ -241,6 +243,12 @@ export const useLightSync = create<LightSyncState>((set, get) => ({
   },
   setUi(next) {
     set({ ui: clampUi({ ...get().ui, ...next }) });
+    persist();
+    tuneNow();
+  },
+  setIntensity(id) {
+    const col = INTENSITIES[id];
+    set({ settings: clampSettings({ ...get().settings, ...col.settings }), ui: clampUi({ ...get().ui, colourBars: col.colourBars }) });
     persist();
     tuneNow();
   },

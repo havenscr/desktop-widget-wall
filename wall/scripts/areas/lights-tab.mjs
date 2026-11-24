@@ -61,7 +61,7 @@ export default {
   name: 'lights-tab',
   gallery: {
     states: [
-      { screen: 'unwind', name: 'lights tab: the Lights tab open on Listen', query: `hz=unwind&at=${encodeURIComponent(at)}&clock=review&weather=ok&audio=demo&desktoken=set&office=six&officeoff=offered&officemood=relax`, custom: true, expect: ['Preview, live', 'Colour speed', 'Brightness', 'Kick flash', 'Smoothness', 'Who follows', 'Panel ripple'], actions: '.w-gear >> .ln-pages button:nth-child(3)' },
+      { screen: 'unwind', name: 'lights tab: the Lights tab open on Listen', query: `hz=unwind&at=${encodeURIComponent(at)}&clock=review&weather=ok&audio=demo&desktoken=set&office=six&officeoff=offered&officemood=relax`, custom: true, expect: ['Preview, live', 'Intensity', 'Colour speed', 'Brightness', 'Pulse', 'Smoothness', 'Who follows', 'Panel ripple'], actions: '.w-gear >> .ln-pages button:nth-child(3)' },
     ],
   },
   fit: {
