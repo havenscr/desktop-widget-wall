@@ -52,7 +52,10 @@ export function useBriefAsk(key: string | null, briefReady: boolean, onAir: bool
 
   const reading = live && !!key && briefReady && !onAir;
   useEffect(() => {
-    if (!reading) return;
+    if (!reading) {
+      setHealth(null);
+      return;
+    }
     let dead = false;
     const read = () =>
       briefHealth().then(

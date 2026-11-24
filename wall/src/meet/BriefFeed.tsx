@@ -114,7 +114,7 @@ export function BriefFeed({ out, view, onAir, retry, briefKey = null }: { out: B
             )}
           </>
         )}
-        <AskBox ask={ask} />
+        <AskBox ask={ask} resetKey={briefKey} />
       </div>
     </section>
   );

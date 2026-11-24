@@ -57,4 +57,17 @@ describe('AskBox', () => {
     const { container } = render(<AskBox ask={base({ health: null })} />);
     expect(container.querySelector('.meet-ask-status')).toBeNull();
   });
+
+  it('a half-typed question is dropped on a new key and when the field goes disabled', () => {
+    const on = base();
+    const { rerender } = render(<AskBox ask={on} resetKey="a" />);
+    const input = () => screen.getByLabelText('Ask about this meeting') as HTMLInputElement;
+    fireEvent.change(input(), { target: { value: 'half' } });
+    rerender(<AskBox ask={on} resetKey="b" />);
+    expect(input().value).toBe('');
+    fireEvent.change(input(), { target: { value: 'again' } });
+    rerender(<AskBox ask={base({ gate: { enabled: false, reason: 'Hidden on air' } })} resetKey="b" />);
+    rerender(<AskBox ask={on} resetKey="b" />);
+    expect(input().value).toBe('');
+  });
 });

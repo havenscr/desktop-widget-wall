@@ -170,4 +170,16 @@ describe('useBriefAsk', () => {
     });
     expect(sent).toBe(false);
   });
+
+  it('forgets the health word when reading stops, so a re-show starts unknown', async () => {
+    const { result } = mount();
+    await flush();
+    expect(result.current.health?.state).toBe('ready');
+    act(() => usePlaceStore.setState({ active: 'work' }));
+    expect(result.current.health).toBeNull();
+    expect(result.current.gate.enabled).toBe(false);
+    mocks.set('wall2_meet_brief_health', () => new Promise(() => {}));
+    act(() => usePlaceStore.setState({ active: 'meet' }));
+    expect(result.current.health).toBeNull();
+  });
 });

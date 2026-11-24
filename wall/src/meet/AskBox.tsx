@@ -1,5 +1,5 @@
 import { IconMessage } from '@tabler/icons-react';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { MAX_Q, PLACEHOLDER, PLACEHOLDER_FOLLOW } from './askModel';
 import type { BriefAsk } from './useBriefAsk';
 import { statusWord } from './askModel';
@@ -8,10 +8,14 @@ import { statusWord } from './askModel';
  * The ask field in the island's foot, with the dim status words beside it. Focus sends nothing; Enter sends, Escape clears and
  * leaves. A disabled field shows its short reason in place of the prompt.
  */
-export function AskBox({ ask }: { ask: BriefAsk }) {
+export function AskBox({ ask, resetKey = null }: { ask: BriefAsk; resetKey?: string | null }) {
   const [text, setText] = useState('');
   const word = statusWord(ask.health);
   const on = ask.gate.enabled;
+  // A half-typed question belongs to one meeting: a new key or a disabled field drops it.
+  useEffect(() => {
+    setText('');
+  }, [resetKey, on]);
   return (
     <>
       <label className="meet-ask" data-off={on ? undefined : 'true'}>
