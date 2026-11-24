@@ -1977,7 +1977,7 @@ mod tests {
         none.current_group = None;
         assert_eq!(plan_favorite(&none, &titles, &id, true).unwrap_err(), NO_ROOM);
         let mut bad_name = summary();
-        bad_name.groups.iter_mut().find(|g| g.id == "G_TWO:2").unwrap().coordinator = "Den/../x".to_string();
+        bad_name.groups.iter_mut().find(|g| g.id == "G_TWO:2").unwrap().coordinator = "Den\u{7}".to_string();
         assert_eq!(plan_favorite(&bad_name, &titles, &id, true).unwrap_err(), NO_ROOM);
         let mut loud = summary();
         loud.speakers.iter_mut().find(|sp| sp.name == "Porch").unwrap().volume = Some(55);
