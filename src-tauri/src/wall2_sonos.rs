@@ -33,6 +33,15 @@
 //!   only when the last good read said `canSkip` and music plays; the service's own
 //!   `nothing-playing` and `cannot-skip` answers come back as those fixed words
 //!
+//! Favorites (no screen uses them yet): `wall2_sonos_favorites` reads `GET /api/favorites`
+//! (an array of `{title, uri, metadata, type, shuffleable}`; only `title` and `type` are
+//! used) and answers `[{id, name, kind}]`, names cleaned and cut at 120 characters, at most
+//! 100. The service has no id, so the id is a hash of its own title and Rust keeps the
+//! id to title pairs of the last read (at most ten minutes old). `wall2_sonos_favorite_play`
+//! takes only that id and sends `POST /api/action/play-favorite` `{"favorite", "coordinator"}`
+//! with the title in the body, never in a path, to the current group's coordinator from the
+//! last good summary; the loud-volume confirm rule is the same as for a preset.
+//!
 //! Cover art (`wall2_sonos_art`, takes nothing from the page): fetches the `albumArtURI` the
 //! last good read held for the playing speaker, under the bounds in `wall2_sonos_read`.
 //!
@@ -48,7 +57,7 @@
 use crate::wall2_feeds::{parse_iso, read_base, read_body, require_ok};
 use crate::wall2_omni::require_wall2;
 use crate::wall2_sonos_log::{self, Event, Kind, Read};
-use crate::wall2_sonos_read::{art_agent, art_cached, art_url, fetch_art, read_all_eight, ArtCache, ArtImage};
+use crate::wall2_sonos_read::{art_agent, get_json, art_cached, art_url, fetch_art, read_all_eight, ArtCache, ArtImage};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::sync::{Mutex, OnceLock};
@@ -59,6 +68,13 @@ const MAX_SPEAKERS: usize = 24;
 const MAX_GROUPS: usize = 24;
 const MAX_PRESETS: usize = 12;
 const MAX_ROUTINES: usize = 48;
+const MAX_FAVORITES: usize = 100;
+const MAX_FAVORITE_CHARS: usize = 120;
+/// The service's own title, as bytes, that goes back to it unchanged; a longer one is left out.
+const MAX_FAVORITE_TITLE: usize = 400;
+const FAVORITE_KINDS: [&str; 3] = ["spotify", "radio", "other"];
+/// How long the last favorites read may be played from.
+const FAVORITES_MAX_AGE: Duration = Duration::from_secs(10 * 60);
 const MAX_SCENES: usize = 12;
 const MAX_TIMERS: usize = 6;
 const MAX_NAME_CHARS: usize = 60;
@@ -91,6 +107,8 @@ const NOTHING_PLAYING: &str = "nothing-playing";
 const OUT_OF_DATE: &str = "Sonos status is out of date";
 const PARTIAL: &str = "Some speakers did not change";
 const UNFINISHED: &str = "The request did not finish";
+const NO_ROOM: &str = "No room to play on";
+const UNKNOWN_FAVORITE: &str = "Unknown favorite";
 /// Error text the front end reads as "ask first, then call again with confirm".
 pub(crate) const NEEDS_CONFIRM: &str = "needs-confirm";
 
@@ -1024,6 +1042,96 @@ async fn dispatch(base: String, calls: Vec<Call>) -> Result<(), String> {
     tauri::async_runtime::spawn_blocking(move || send(&base, &calls)).await.map_err(|_| UNFINISHED.to_string())?
 }
 
+// Section: favorites
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Favorite {
+    pub id: String,
+    pub name: String,
+    /// `spotify`, `radio` or `other` when the service said one of them, else None.
+    pub kind: Option<String>,
+}
+
+/// The id of a favorite: a 64 bit FNV-1a hash of the service's own title, as 16 lowercase hex digits.
+fn favorite_id(title: &str) -> String {
+    let mut h: u64 = 0xcbf2_9ce4_8422_2325;
+    for b in title.as_bytes() {
+        h ^= u64::from(*b);
+        h = h.wrapping_mul(0x0000_0100_0000_01b3);
+    }
+    format!("{h:016x}")
+}
+
+fn valid_favorite_id(id: &str) -> bool {
+    id.len() == 16 && id.chars().all(|c| matches!(c, '0'..='9' | 'a'..='f'))
+}
+
+/// The cleaned list and the id to title pairs behind it. None when the answer is not a list or
+/// has far more entries than the caps (malformed). An entry with no usable title is left out, and
+/// a repeated title counts once.
+fn pick_favorites(body: &Value) -> Option<(Vec<Favorite>, Vec<(String, String)>)> {
+    let items = body.as_array()?;
+    if items.len() > MAX_ENTRIES {
+        return None;
+    }
+    let mut list: Vec<Favorite> = Vec::new();
+    let mut titles: Vec<(String, String)> = Vec::new();
+    for f in items {
+        if list.len() >= MAX_FAVORITES {
+            break;
+        }
+        let Some(title) = f.get("title").and_then(Value::as_str).filter(|t| !t.is_empty() && t.len() <= MAX_FAVORITE_TITLE) else {
+            continue;
+        };
+        let Some(name) = clean_text(title, MAX_FAVORITE_CHARS) else {
+            continue;
+        };
+        let id = favorite_id(title);
+        if titles.iter().any(|(i, _)| *i == id) {
+            continue;
+        }
+        let kind = f.get("type").and_then(Value::as_str).filter(|k| FAVORITE_KINDS.contains(k)).map(str::to_string);
+        list.push(Favorite { id: id.clone(), name, kind });
+        titles.push((id, title.to_string()));
+    }
+    Some((list, titles))
+}
+
+/// The play request for one favorite id on the current group's coordinator. The title goes in
+/// the JSON body only; the path is fixed. A group at an unknown level or above 40 needs a confirm.
+fn plan_favorite(s: &SonosSummary, titles: &[(String, String)], id: &str, confirm: bool) -> Result<Call, String> {
+    if !valid_favorite_id(id) {
+        return Err(UNKNOWN_FAVORITE.to_string());
+    }
+    let title = titles.iter().find(|(i, _)| i == id).map(|(_, t)| t.as_str()).ok_or_else(|| UNKNOWN_FAVORITE.to_string())?;
+    let group = s.current_group.as_deref().and_then(|g| s.groups.iter().find(|x| x.id == g)).ok_or_else(|| NO_ROOM.to_string())?;
+    if !valid_speaker_name(&group.coordinator) {
+        return Err(NO_ROOM.to_string());
+    }
+    let loud = group
+        .members
+        .iter()
+        .filter_map(|m| s.speakers.iter().find(|sp| sp.name == *m))
+        .filter(|sp| sp.online && !on_line_in(sp))
+        .any(|sp| !sp.volume.is_some_and(|v| v <= SAFE_VOLUME));
+    if loud && !confirm {
+        return Err(NEEDS_CONFIRM.to_string());
+    }
+    Ok(post("/api/action/play-favorite".to_string(), Some(json!({ "favorite": title, "coordinator": group.coordinator }))))
+}
+
+/// The id to title pairs of the last favorites read, and when it was.
+static FAVORITES: Mutex<Option<(Instant, Vec<(String, String)>)>> = Mutex::new(None);
+
+fn fresh_favorites() -> Result<Vec<(String, String)>, String> {
+    let guard = FAVORITES.lock().map_err(|_| OUT_OF_DATE.to_string())?;
+    match guard.as_ref() {
+        Some((at, t)) if at.elapsed() <= FAVORITES_MAX_AGE => Ok(t.clone()),
+        _ => Err(OUT_OF_DATE.to_string()),
+    }
+}
+
 // Section: commands
 
 #[tauri::command]
@@ -1121,6 +1229,35 @@ pub async fn wall2_sonos_art(window: tauri::WebviewWindow) -> Result<Option<ArtI
     require_wall2(window.label())?;
     let address = fresh_art_address();
     tauri::async_runtime::spawn_blocking(move || art_cached(&ART, address.as_deref(), |url| fetch_art(art_agent(), url))).await.map_err(|_| UNFINISHED.to_string())
+}
+
+/// The service's favorites as `[{id, name, kind}]`. Failure is one fixed word: `timed-out`,
+/// `no-answer` or `bad-answer`. Nothing is logged.
+#[tauri::command]
+pub async fn wall2_sonos_favorites(window: tauri::WebviewWindow, app: tauri::AppHandle) -> Result<Vec<Favorite>, String> {
+    require_wall2(window.label())?;
+    let base = read_base(&app, "sonosBaseUrl", false)?;
+    tauri::async_runtime::spawn_blocking(move || {
+        let body = get_json(sonos_agent(), &base, "/api/favorites").map_err(|f| f.kind.word().to_string())?;
+        let (list, titles) = pick_favorites(&body).ok_or_else(|| Kind::BadAnswer.word().to_string())?;
+        if let Ok(mut guard) = FAVORITES.lock() {
+            *guard = Some((Instant::now(), titles));
+        }
+        Ok(list)
+    })
+    .await
+    .map_err(|_| Kind::BadAnswer.word().to_string())?
+}
+
+/// Plays one favorite from the last favorites read on the current group. Needs a recent summary
+/// read too (for the group); a loud or unknown level needs `confirm: true`.
+#[tauri::command]
+pub async fn wall2_sonos_favorite_play(window: tauri::WebviewWindow, app: tauri::AppHandle, favorite_id: String, confirm: Option<bool>) -> Result<(), String> {
+    require_wall2(window.label())?;
+    let base = read_base(&app, "sonosBaseUrl", false)?;
+    let call = plan_favorite(&last_good()?, &fresh_favorites()?, &favorite_id, confirm.unwrap_or(false))?;
+    let answer = tauri::async_runtime::spawn_blocking(move || send_one(&base, &call)).await.map_err(|_| UNFINISHED.to_string())??;
+    if skip_accepted(&answer) { Ok(()) } else { Err(REFUSED.to_string()) }
 }
 
 #[tauri::command]
@@ -1740,5 +1877,132 @@ mod tests {
             format!("http://{}", l.local_addr().unwrap())
         };
         assert_eq!(send_skip(&gone, &skip_call()), Err(UNREACHABLE.to_string()));
+    }
+
+    fn favorites_body() -> Value {
+        json!([
+            {"title": "Quiet Radio", "uri": "x-sonosapi-radio:a", "metadata": "<x/>", "type": "radio", "shuffleable": false},
+            {"title": "Pop Picks", "type": "spotify"},
+            {"title": "Odd One", "type": "weird"},
+            {"title": "Quiet Radio", "type": "radio"},
+            {"title": "", "type": "radio"},
+            {"type": "radio"},
+            "text",
+            {"title": 5}
+        ])
+    }
+
+    #[test]
+    fn favorites_are_cleaned_deduplicated_and_kept_with_their_titles() {
+        let (list, titles) = pick_favorites(&favorites_body()).unwrap();
+        let names: Vec<&str> = list.iter().map(|f| f.name.as_str()).collect();
+        assert_eq!(names, vec!["Quiet Radio", "Pop Picks", "Odd One"]);
+        assert_eq!(list[0].kind.as_deref(), Some("radio"));
+        assert_eq!(list[1].kind.as_deref(), Some("spotify"));
+        assert_eq!(list[2].kind, None);
+        assert_eq!(titles.len(), 3);
+        assert!(list.iter().all(|f| valid_favorite_id(&f.id)));
+        assert_eq!(list[0].id, favorite_id("Quiet Radio"));
+    }
+
+    #[test]
+    fn favorites_with_missing_fields_or_a_wrong_shape() {
+        assert_eq!(pick_favorites(&json!([])).unwrap().0, Vec::<Favorite>::new());
+        assert_eq!(pick_favorites(&json!([{}, {"title": null}, {"uri": "x"}])).unwrap().0.len(), 0);
+        assert!(pick_favorites(&json!({"items": []})).is_none());
+        assert!(pick_favorites(&json!("no")).is_none());
+        assert!(pick_favorites(&Value::Null).is_none());
+    }
+
+    #[test]
+    fn favorites_are_bounded() {
+        let many: Vec<Value> = (0..300).map(|i| json!({"title": format!("Station {i}")})).collect();
+        let (list, titles) = pick_favorites(&Value::Array(many)).unwrap();
+        assert_eq!(list.len(), MAX_FAVORITES);
+        assert_eq!(titles.len(), MAX_FAVORITES);
+        let far_too_many: Vec<Value> = (0..=MAX_ENTRIES).map(|i| json!({"title": format!("S{i}")})).collect();
+        assert!(pick_favorites(&Value::Array(far_too_many)).is_none());
+        let long = "w".repeat(300);
+        let (list, _) = pick_favorites(&json!([{"title": long}])).unwrap();
+        assert_eq!(list[0].name.chars().count(), MAX_FAVORITE_CHARS);
+        assert!(list[0].name.ends_with('\u{2026}'));
+        let huge = "w".repeat(MAX_FAVORITE_TITLE + 1);
+        assert!(pick_favorites(&json!([{"title": huge}])).unwrap().0.is_empty());
+        let wide = "\u{e9}".repeat(MAX_FAVORITE_CHARS + 20);
+        let (list, _) = pick_favorites(&json!([{"title": wide}])).unwrap();
+        assert_eq!(list[0].name.chars().count(), MAX_FAVORITE_CHARS);
+    }
+
+    #[test]
+    fn favorite_names_lose_control_and_direction_characters() {
+        let (list, titles) = pick_favorites(&json!([{"title": "Mor\u{202E}ning\n\u{0007}  Mix\u{200B}"}, {"title": "\u{0007}\u{202E}"}])).unwrap();
+        assert_eq!(list.len(), 1);
+        assert_eq!(list[0].name, "Mor ning Mix");
+        // The service gets its own title back untouched.
+        assert_eq!(titles[0].1, "Mor\u{202E}ning\n\u{0007}  Mix\u{200B}");
+    }
+
+    #[test]
+    fn favorite_ids_are_strict() {
+        assert!(valid_favorite_id(&favorite_id("x")));
+        assert_eq!(favorite_id("x").len(), 16);
+        assert_ne!(favorite_id("a"), favorite_id("b"));
+        for bad in ["", "abc", "../etc/passwd", "ABCDEF0123456789", "0123456789abcdeg", "0123456789abcde", "0123456789abcdef0", "0123456789abcde/", "0123456789abcd?x"] {
+            assert!(!valid_favorite_id(bad), "{bad}");
+        }
+    }
+
+    #[test]
+    fn a_favorite_play_goes_to_the_current_groups_coordinator_with_a_fixed_path() {
+        let (_, titles) = pick_favorites(&json!([{"title": "../x?y=1 \"q\""}, {"title": "Quiet Radio"}])).unwrap();
+        let s = summary();
+        let call = plan_favorite(&s, &titles, &titles[0].0, false).unwrap();
+        assert_eq!(call.method, "POST");
+        assert_eq!(call.path, "/api/action/play-favorite");
+        assert_eq!(call.body, Some(json!({"favorite": "../x?y=1 \"q\"", "coordinator": "Den"})));
+        let call = plan_favorite(&s, &titles, &titles[1].0, false).unwrap();
+        assert_eq!(call.body.unwrap()["favorite"], "Quiet Radio");
+    }
+
+    #[test]
+    fn a_favorite_play_refuses_unknown_ids_no_room_and_loud_rooms() {
+        let (_, titles) = pick_favorites(&json!([{"title": "Quiet Radio"}])).unwrap();
+        let id = titles[0].0.clone();
+        let s = summary();
+        for bad in ["", "nope", "../x", "0000000000000000"] {
+            assert_eq!(plan_favorite(&s, &titles, bad, true).unwrap_err(), UNKNOWN_FAVORITE, "{bad}");
+        }
+        assert_eq!(plan_favorite(&s, &[], &id, true).unwrap_err(), UNKNOWN_FAVORITE);
+        let mut none = summary();
+        none.current_group = None;
+        assert_eq!(plan_favorite(&none, &titles, &id, true).unwrap_err(), NO_ROOM);
+        let mut bad_name = summary();
+        bad_name.groups.iter_mut().find(|g| g.id == "G_TWO:2").unwrap().coordinator = "Den/../x".to_string();
+        assert_eq!(plan_favorite(&bad_name, &titles, &id, true).unwrap_err(), NO_ROOM);
+        let mut loud = summary();
+        loud.speakers.iter_mut().find(|sp| sp.name == "Porch").unwrap().volume = Some(55);
+        assert_eq!(plan_favorite(&loud, &titles, &id, false).unwrap_err(), NEEDS_CONFIRM);
+        assert!(plan_favorite(&loud, &titles, &id, true).is_ok());
+        let mut unknown_level = summary();
+        unknown_level.speakers.iter_mut().find(|sp| sp.name == "Den").unwrap().volume = None;
+        assert_eq!(plan_favorite(&unknown_level, &titles, &id, false).unwrap_err(), NEEDS_CONFIRM);
+    }
+
+    #[test]
+    fn the_favorites_list_is_read_over_get_and_play_posts_the_title_in_the_body() {
+        let (base, rx) = skip_server(200, r#"[{"title":"Quiet Radio","type":"radio"}]"#);
+        let body = get_json(sonos_agent(), &base, "/api/favorites").unwrap();
+        let seen = rx.recv_timeout(Duration::from_secs(5)).unwrap();
+        assert!(seen.starts_with("GET /api/favorites HTTP/1.1"), "{seen}");
+        let (list, titles) = pick_favorites(&body).unwrap();
+        assert_eq!(list.len(), 1);
+        let call = plan_favorite(&summary(), &titles, &list[0].id, false).unwrap();
+        let (base, rx) = skip_server(200, r#"{"ok":true}"#);
+        let answer = send_one(&base, &call).unwrap();
+        assert!(skip_accepted(&answer));
+        let seen = rx.recv_timeout(Duration::from_secs(5)).unwrap();
+        assert!(seen.starts_with("POST /api/action/play-favorite HTTP/1.1"), "{seen}");
+        assert!(seen.contains(r#""favorite":"Quiet Radio""#), "{seen}");
+        assert!(seen.contains(r#""coordinator":"Den""#), "{seen}");
     }
 }

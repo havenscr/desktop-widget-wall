@@ -13,7 +13,10 @@ import { knob } from './long';
  * same, but the second try never answers: one failed read waiting, nothing shown), `?where=office|all|common|none` (which place is in use), `?sonos=quiet` (nothing playing), `?sonos=few` (one matching routine plus More), `?sonos=slow` (never answers, for the loading state), `?skip=1` (an unforced play is
  * skipped). `?np=` is a comma list for the Now Playing block: `station` (no length, as for a radio station), `noart` (no cover
  * address), `skip` (the service has back and next), `skipfail` (a skip is refused as a station that cannot skip), `long` (a very long
- * title and artist). The default is a typical
+ * title and artist). `?favs=` is one word for the favorites commands: `empty` (no favorites), `timeout`, `dropped` or `garbled` (the
+ * list fails as timed-out, no-answer or bad-answer), `stale` (play answers "Sonos status is out of date"), `noroom` (play answers
+ * "No room to play on"), `confirm` (play asks for a confirm first), `refused` (play answers "Sonos could not do that"), `unreachable`
+ * (play answers "Could not reach Sonos"). The default is a typical
  * evening with music playing on a group, a cover, a 3:01 length at 1:05 and no back or next.
  */
 const now = () => (reviewNow ? reviewNow() : Date.now());
@@ -51,6 +54,21 @@ const LONG_ROUTINES = [
   ...ROUTINES.slice(5),
   ...Array.from({ length: 6 }, (_, i) => ({ key: `Extra_${i}`, name: `Extra Playlist Number ${i + 1}`, favorite: `Station ${i + 1}`, volume: 10 })),
 ];
+
+/** Eight invented favorites; two have very long names. */
+const FAVORITES = [
+  { id: '0a1b2c3d4e5f6071', name: 'Quiet Radio', kind: 'radio' },
+  { id: '1b2c3d4e5f607182', name: 'Sunny Beats', kind: 'spotify' },
+  { id: '2c3d4e5f60718293', name: 'Lo-fi Room', kind: 'spotify' },
+  { id: '3d4e5f60718293a4', name: 'Blue Hour', kind: 'other' },
+  { id: '4e5f60718293a4b5', name: 'Rain on a Tin Roof', kind: null },
+  { id: '5f60718293a4b5c6', name: 'A Very Long Station Name For Gentle Acoustic Mornings With Coffee And The Paper On The Porch', kind: 'radio' },
+  { id: '60718293a4b5c6d7', name: 'Lively Cleaning Anthems For Getting The Whole House Done Before Friends Arrive For Dinner Tonight', kind: 'spotify' },
+  { id: '718293a4b5c6d7e8', name: 'Soft Strings', kind: 'other' },
+];
+
+/** The `?favs=` word, if any. */
+const favs = (): string | null => knob('favs');
 
 /** The `?np=` words. */
 function np(word: string): boolean {
@@ -217,6 +235,24 @@ export function registerSonosMocks(): void {
   mocks.set('wall2_sonos_skip', async () => {
     await slow();
     if (np('skipfail')) throw new Error('cannot-skip');
+  });
+  mocks.set('wall2_sonos_favorites', async () => {
+    await slow();
+    const k = favs();
+    if (k === 'timeout') throw new Error('timed-out');
+    if (k === 'dropped') throw new Error('no-answer');
+    if (k === 'garbled') throw new Error('bad-answer');
+    return k === 'empty' ? [] : FAVORITES.map((f) => ({ ...f }));
+  });
+  mocks.set('wall2_sonos_favorite_play', async (args) => {
+    await slow();
+    const k = favs();
+    if (k === 'stale') throw new Error('Sonos status is out of date');
+    if (k === 'noroom') throw new Error('No room to play on');
+    if (k === 'refused') throw new Error('Sonos could not do that');
+    if (k === 'unreachable') throw new Error('Could not reach Sonos');
+    if (k === 'confirm' && !(args as { confirm?: boolean } | undefined)?.confirm) throw new Error('needs-confirm');
+    if (!FAVORITES.some((f) => f.id === (args as { favoriteId?: string } | undefined)?.favoriteId)) throw new Error('Unknown favorite');
   });
   mocks.set('wall2_sonos_sleep', slow);
   mocks.set('wall2_sonos_sleep_cancel', slow);
