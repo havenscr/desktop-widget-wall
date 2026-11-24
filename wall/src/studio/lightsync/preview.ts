@@ -154,13 +154,19 @@ function lightFrame(st: PreviewState, s: LightSyncSettings, dt: number, ls: Ligh
   ls.b = b;
   const out = mix(colour, kick, s.kickWhite * lift).map((v) => v * b) as Rgb;
   const y = lum(out);
-  const held = ls.swing.limit(st.clockMs, y, GUARD_MAX_TRANSITIONS);
-  let shown = (y > 1e-6 ? out.map((v) => v * (held / y)) : out).map(clamp01) as Rgb;
-  // A held fall scales the colour up and a channel may clip: mix toward white by the missing luminance (exact, luminance is linear in the mix).
-  const l = lum(shown);
-  if (held !== y && l < held && l < 1) shown = mix(shown, [1, 1, 1], (held - l) / (1 - l));
-  // What is committed is what is sent: rounded to the steps the link carries (255 for panels, 65535 for the Plays).
-  shown = shown.map((v) => Math.round(v * steps) / steps) as Rgb;
+  // The guard decides on the values that are sent: round first (255 steps for panels, 65535 for the Plays), then limit.
+  const round = (c: Rgb) => c.map((v) => Math.round(v * steps) / steps) as Rgb;
+  const cand = round(out.map(clamp01) as Rgb);
+  const l0 = lum(cand);
+  const held = ls.swing.limit(st.clockMs, l0, GUARD_MAX_TRANSITIONS);
+  let shown = cand;
+  if (held !== l0 && y > 1e-6) {
+    // A held value sits 0.09 from the last extreme, so rounding cannot make it a swing. A held fall scales the colour up and a channel may clip: mix toward white by the missing luminance (exact, luminance is linear in the mix).
+    let h = out.map((v) => clamp01(v * (held / y))) as Rgb;
+    const l = lum(h);
+    if (l < held && l < 1) h = mix(h, [1, 1, 1], (held - l) / (1 - l));
+    shown = round(h);
+  }
   ls.swing.commit(st.clockMs, lum(shown));
   return shown;
 }

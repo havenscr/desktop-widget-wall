@@ -468,22 +468,30 @@ it('the preview matches the native frames on the shared fixture (Subtle)', () =>
   });
 });
 
-it('the flash guard holds every intensity under five swings a second in the preview', () => {
-  for (const id of INTENSITY_IDS) {
-    const { settings, colourBars } = INTENSITIES[id];
-    const st = newPreview(settings.floor);
-    const ui = { ...DEFAULT_LIGHTS_UI, colourBars };
-    const counters = Array.from({ length: 4 }, () => new Swing());
-    let now = 0;
-    let beats = 0;
-    for (let i = 0; i < 600; i++) {
-      now += 33;
-      if (i % 8 === 0) beats += 1;
-      const f = stepPreview(st, { ...DEFAULT_LIGHT_SYNC, ...settings }, ui, SYNTH, { bass: (i / 4) % 2 < 1 ? 1 : 0, high: i % 2, beatCount: beats, dtMs: 33 });
-      f.plays.forEach((c, k) => {
-        counters[k].commit(now, 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2]);
-        expect(counters[k].transitions, id).toBeLessThanOrEqual(5);
-      });
+it('the flash guard holds every intensity and the harshest sliders under five swings a second, Plays and panels', () => {
+  const harshest = { floor: 0.05, brightness: 1, energyDepth: 1, kickFlash: 1, kickWhite: 0.5, kickRiseMs: 30, kickDecayMs: 150, attackMs: 40, releaseMs: 200, levelWindow: 1, beatNudge: 0.25, minPulseGapMs: 340, slewDown: 5 };
+  const sets = [...INTENSITY_IDS.map((id) => ({ id: id as string, ...INTENSITIES[id] })), { id: 'harshest', settings: harshest, colourBars: 1 }];
+  const palettes = [SYNTH, { colors: ['#ffffff', '#ffff00', '#ffffff', '#ffff00'], kick: '#ffffff' }, { colors: ['#ffff00', '#00ffff'], kick: '#ffff00' }];
+  const y = (c: number[]) => 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2];
+  for (const palette of palettes) {
+    for (const { id, settings, colourBars } of sets) {
+      for (const step of [20, 33]) {
+        const st = newPreview(settings.floor);
+        const ui = { ...DEFAULT_LIGHTS_UI, colourBars };
+        const counters = Array.from({ length: 9 }, () => new Swing());
+        let now = 0;
+        let beats = 0;
+        const frames = Math.round(20000 / step);
+        for (let i = 0; i < frames; i++) {
+          now += step;
+          if (i % Math.round(264 / step) === 0) beats += 1;
+          const f = stepPreview(st, { ...DEFAULT_LIGHT_SYNC, ...settings }, ui, palette, { bass: (i / 4) % 2 < 1 ? 1 : 0, high: i % 2, beatCount: beats, dtMs: step });
+          [...f.plays, ...f.panels].forEach((c, k) => {
+            counters[k].commit(now, y(c));
+            expect(counters[k].transitions, `${id} ${palette.colors[0]} ${step} ms`).toBeLessThanOrEqual(5);
+          });
+        }
+      }
     }
   }
 });

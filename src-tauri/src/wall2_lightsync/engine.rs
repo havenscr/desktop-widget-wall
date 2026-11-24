@@ -456,16 +456,24 @@ impl Engine {
         let mixed = lerp(colour, kick, s.kick_white * lift);
         let out = scale(mixed, b);
         let y = lum(out);
-        let held = st.swing.limit(clock, y, GUARD_MAX_TRANSITIONS);
-        let mut shown = unit(if y > 1e-6 { scale(out, held / y) } else { out });
-        // A held fall scales the colour up; a channel that clips leaves the light darker than held. Mix toward white
-        // by exactly the missing luminance (luminance is linear in the mix).
-        let l = lum(shown);
-        if held != y && l < held && l < 1.0 {
-            shown = lerp(shown, [1.0; 3], (held - l) / (1.0 - l));
-        }
-        // What is committed is what is sent: rounded to the steps the link carries (255 for panels, 65535 for the Plays).
-        let shown = shown.map(|v| (v * steps).round() / steps);
+        // The guard decides on the values that are sent: round first (255 steps for panels, 65535 for the Plays), then limit.
+        let round = |c: Rgb| c.map(|v| (v * steps).round() / steps);
+        let cand = round(unit(out));
+        let l0 = lum(cand);
+        let held = st.swing.limit(clock, l0, GUARD_MAX_TRANSITIONS);
+        let shown = if held == l0 || y <= 1e-6 {
+            cand
+        } else {
+            // A held value sits 0.09 from the last extreme, so rounding (under 0.01) cannot make it a swing. A held
+            // fall scales the colour up and a channel may clip: mix toward white by the missing luminance (luminance
+            // is linear in the mix).
+            let mut h = unit(scale(out, held / y));
+            let l = lum(h);
+            if l < held && l < 1.0 {
+                h = lerp(h, [1.0; 3], (held - l) / (1.0 - l));
+            }
+            round(h)
+        };
         st.swing.commit(clock, lum(shown));
         shown
     }
@@ -839,7 +847,11 @@ mod tests {
 
     fn fixture_tuning(settings: serde_json::Value) -> Tuning {
         let v: serde_json::Value = serde_json::from_str(&FIXTURE.replace("\r\n", "\n")).unwrap();
-        let palette: PaletteIn = serde_json::from_value(serde_json::json!({ "colors": v["palette"]["colors"], "kick": v["palette"]["kick"], "rest": "#2a0f5a" })).unwrap();
+        fixture_tuning_with(v["palette"]["colors"].clone(), v["palette"]["kick"].clone(), settings)
+    }
+
+    fn fixture_tuning_with(colors: serde_json::Value, kick: serde_json::Value, settings: serde_json::Value) -> Tuning {
+        let palette: PaletteIn = serde_json::from_value(serde_json::json!({ "colors": colors, "kick": kick, "rest": "#2a0f5a" })).unwrap();
         Tuning::from_in(&TuneIn { palette, settings: js(settings) }).unwrap()
     }
 
@@ -965,9 +977,15 @@ mod tests {
 
     #[test]
     fn flash_guard_holds_under_three_per_second() {
+        let palettes = [
+            (serde_json::Value::Null, serde_json::Value::Null),
+            (serde_json::json!(["#ffffff", "#ffff00", "#ffffff", "#ffff00"]), serde_json::json!("#ffffff")),
+            (serde_json::json!(["#ffff00", "#00ffff"]), serde_json::json!("#ffff00")),
+        ];
+        for (colors, kick) in palettes {
         for name in ["subtle", "moderate", "high", "harshest"] {
             for step in [20.0, 33.0] {
-                let t = fixture_tuning(intensity(name));
+                let t = if colors.is_null() { fixture_tuning(intensity(name)) } else { fixture_tuning_with(colors.clone(), kick.clone(), intensity(name)) };
                 let mut e = Engine::new(t.settings.floor);
                 let mut plays: Vec<Swing> = vec![Swing::default(); 4];
                 let mut panels: Vec<Swing> = vec![Swing::default(); XY.len()];
@@ -996,6 +1014,7 @@ mod tests {
                 assert!(worst_p <= GUARD_MAX_TRANSITIONS, "{name} at {step} ms: {worst_p} Play swings in a second");
                 assert!(worst_n <= GUARD_MAX_TRANSITIONS, "{name} at {step} ms: {worst_n} panel swings in a second");
             }
+        }
         }
     }
 
