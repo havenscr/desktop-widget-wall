@@ -115,7 +115,9 @@ export function sendReason(e: unknown, set: Pick<SetInfo, 'name' | 'general'>, h
     case 'no key':
       return 'That key is not in your keys any more';
     case 'no app':
-      return hold ? `Wrong app in front for ${set.name}` : `${set.name} is not in front any more`;
+      if (hold) return `Wrong app in front for ${set.name}`;
+      // A set tied to an app looks for that app's open window itself, so a refusal means none is open.
+      return set.general ? `${set.name} is not in front any more` : `${set.name} is not open`;
     case 'gone':
       return `${set.general ? 'That window' : set.name} is not open any more`;
     case 'elevated':

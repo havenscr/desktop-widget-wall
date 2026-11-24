@@ -72,7 +72,8 @@ describe('words', () => {
   });
   it('a held set in the wrong app says so, in fixed words', () => {
     expect(sendReason('no app', sales, true)).toBe('Wrong app in front for Sales app');
-    expect(sendReason('no app', sales, false)).toBe('Sales app is not in front any more');
+    expect(sendReason('no app', sales, false)).toBe('Sales app is not open');
+    expect(sendReason('no app', general, false)).toBe('General is not in front any more');
   });
   it('every refusal word has its own line', () => {
     const lines = ['busy', 'no key', 'no app', 'gone', 'elevated', 'not forward', 'failed', 'not installed', 'whatever'].map((w) => sendReason(w, sales, false));

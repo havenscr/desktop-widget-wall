@@ -3,7 +3,7 @@
 //!
 //! Everything that decides something is a pure function with a test. The Win32 calls sit in
 //! the small `sys` module, compiled on Windows only. Nothing here logs, and no window title
-//! is ever read into a string: a title is only tested for being empty.
+//! is ever returned or kept: a title is only tested, for being empty or for a starting word.
 
 use std::sync::atomic::{AtomicBool, Ordering};
 
@@ -50,6 +50,14 @@ pub(crate) fn blocks_keys(target_elevated: Option<bool>) -> bool {
 /// elevated program (an elevated wall may move anything, which gains nothing).
 pub(crate) fn blocks_move(target_elevated: Option<bool>, self_elevated: bool) -> bool {
     !self_elevated && blocks_keys(target_elevated)
+}
+
+/// Whether a window title starts with a word, ignoring case. The title is only tested here,
+/// never kept or sent anywhere.
+#[cfg_attr(not(any(windows, test)), allow(dead_code))]
+pub(crate) fn title_starts_with(title: &str, prefix: &str) -> bool {
+    let (title, prefix) = (title.trim_start(), prefix.trim());
+    !prefix.is_empty() && title.len() >= prefix.len() && title.is_char_boundary(prefix.len()) && title[..prefix.len()].eq_ignore_ascii_case(prefix)
 }
 
 /// Window classes of the desktop shell: the taskbars, the desktop and its worker windows.
@@ -145,6 +153,15 @@ pub(crate) mod sys {
         unsafe { InternalGetWindowText(hwnd(h), &mut buf) > 0 }
     }
 
+    /// Whether a window's title starts with a word. The title is read into a small local buffer
+    /// from the window's own record (no message is sent) and is only compared, never returned.
+    pub fn title_matches(h: isize, prefix: &str) -> bool {
+        let mut buf = [0u16; 64];
+        let n = unsafe { InternalGetWindowText(hwnd(h), &mut buf) };
+        let n = (n.max(0) as usize).min(buf.len());
+        super::title_starts_with(&String::from_utf16_lossy(&buf[..n]), prefix)
+    }
+
     fn token_elevated(process: HANDLE) -> Option<bool> {
         unsafe {
             let mut token = HANDLE::default();
@@ -217,6 +234,16 @@ mod tests {
         assert!(!exe_matches("", ""));
         // A folder named like the wanted file does not count.
         assert!(!exe_matches(r"C:\PBIDesktop.exe\other.exe", "PBIDesktop.exe"));
+    }
+
+    #[test]
+    fn a_title_prefix_is_compared_without_case_and_never_empty() {
+        assert!(title_starts_with("Calendar - Someone - Outlook", "Calendar"));
+        assert!(title_starts_with("  calendar - x", "Calendar"));
+        assert!(!title_starts_with("Mail - Someone - Outlook", "Calendar"));
+        assert!(!title_starts_with("Cal", "Calendar"));
+        assert!(!title_starts_with("Calendar", ""));
+        assert!(!title_starts_with("", "Calendar"));
     }
 
     #[test]

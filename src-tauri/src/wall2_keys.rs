@@ -2,9 +2,12 @@
 //!
 //! A key is sent only when the owner clicks it on the wall, and only a chord that is written
 //! in the local `keys.json` (or the small built-in default) for the program that was in front.
+//! One widening: a set tied to programs (never the general set) whose program was not the one
+//! in front goes to the topmost open window of its own programs instead (`pick_target`).
 //! The page sends an app id and a key index; it never sends a chord, a key code or text. Each
-//! step on the way fails closed with a fixed reason word (see `Refusal`), nothing is logged,
-//! and no window title leaves this module. The one process name that does leave is the file
+//! step on the way fails closed with a fixed reason word (see `Refusal`), the only log line is
+//! fixed words and numbers, and no window title leaves this module (a title is only compared
+//! with the word Calendar). The one process name that does leave is the file
 //! name of the program in front when it has no entry, so the owner can write one.
 //!
 //! The chord vocabulary is fixed (`parse_chord`): the modifiers Ctrl, Alt, Shift and Win, and
@@ -584,7 +587,8 @@ pub(crate) enum Refusal {
     Busy,
     /// No such app id or key index in the loaded config.
     NoKey,
-    /// Nothing is remembered, or the remembered program is not that app.
+    /// Nothing is remembered, or the remembered program is not that app, and no window of that
+    /// app is open to use instead.
     NoApp,
     /// The remembered window is gone, hidden, or is now another program's.
     Gone,
@@ -666,6 +670,71 @@ pub(crate) fn check_target(app: &AppDef, remembered: Option<&Remembered>, live: 
         return Err(Refusal::Elevated);
     }
     Ok(())
+}
+
+/// One top-level window as the picker sees it.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct Cand {
+    pub hwnd: isize,
+    pub pid: u32,
+    /// Full image path of the window's process.
+    pub image: String,
+    pub visible: bool,
+    /// It has an owner window (a dialog or tool window), so it is not a main window.
+    pub owned: bool,
+    pub has_title: bool,
+    /// The title starts with the word Calendar (only set for a window the set accepts).
+    pub calendar: bool,
+}
+
+fn usable(app: &AppDef, c: &Cand) -> bool {
+    c.visible && !c.owned && c.has_title && app.accepts(&c.image)
+}
+
+fn remembered_of(c: &Cand) -> Remembered {
+    Remembered { hwnd: c.hwnd, pid: c.pid, image: c.image.clone() }
+}
+
+/// The window a key goes to: the remembered one when the set accepts it (the rule until now);
+/// else, for a set tied to programs only (never the general set), the topmost window of those
+/// programs (`candidates` is in z order, topmost first) that is visible, unowned and titled.
+/// None when there is no such window.
+pub(crate) fn pick_target(app: &AppDef, remembered: Option<&Remembered>, candidates: &[Cand]) -> Option<Remembered> {
+    if let Some(rem) = remembered.filter(|r| app.accepts(&r.image)) {
+        return Some(rem.clone());
+    }
+    match app.matcher {
+        Matcher::Any => None,
+        Matcher::Exe(_) => candidates.iter().find(|c| usable(app, c)).map(remembered_of),
+    }
+}
+
+/// The window to show the Calendar in: a usable window whose title starts with Calendar when
+/// there is one (true in the answer: nothing more to send), else the topmost usable window
+/// (false: switch it to Calendar). None when the app has no usable window.
+pub(crate) fn pick_calendar_window(app: &AppDef, candidates: &[Cand]) -> Option<(Remembered, bool)> {
+    if app.is_general() {
+        return None;
+    }
+    let calendar = candidates.iter().find(|c| usable(app, c) && c.calendar).map(|c| (remembered_of(c), true));
+    calendar.or_else(|| candidates.iter().find(|c| usable(app, c)).map(|c| (remembered_of(c), false)))
+}
+
+/// The set the Open event path uses: New Outlook's own program only.
+fn new_outlook_set() -> AppDef {
+    AppDef { id: "olk".to_string(), name: "New Outlook".to_string(), matcher: Matcher::Exe(vec!["olk.exe".to_string()]), fallback: false, keys: Vec::new() }
+}
+
+/// Bring an open New Outlook window forward and show its Calendar. False when it is not open
+/// or anything refuses, so the caller can start it instead.
+#[cfg(windows)]
+pub(crate) fn show_outlook_calendar() -> bool {
+    win::show_outlook_calendar(&new_outlook_set())
+}
+
+#[cfg(not(windows))]
+pub(crate) fn show_outlook_calendar() -> bool {
+    false
 }
 
 // Section: commands
@@ -912,6 +981,7 @@ async fn run_key(set: AppDef, action: KeyAction, pass: Option<RecordingPass>) ->
 pub(crate) mod win {
     use super::*;
     use crate::wall2_winutil::{is_shell_class, sys, try_begin};
+    use std::collections::HashMap;
     use std::sync::atomic::AtomicBool;
     use std::sync::{Mutex, Once};
     use std::time::{Duration, Instant};
@@ -919,7 +989,7 @@ pub(crate) mod win {
         SendInput, INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT, KEYBD_EVENT_FLAGS, KEYEVENTF_EXTENDEDKEY, KEYEVENTF_KEYUP, VIRTUAL_KEY,
     };
     use windows::Win32::UI::WindowsAndMessaging::{
-        GetForegroundWindow, IsHungAppWindow, IsIconic, IsWindow, IsWindowVisible, SetForegroundWindow, ShowWindowAsync, SW_RESTORE,
+        GetForegroundWindow, GetWindow, IsHungAppWindow, IsIconic, IsWindow, IsWindowVisible, SetForegroundWindow, ShowWindowAsync, GW_OWNER, SW_RESTORE,
     };
 
     /// Held while a send runs, so clicks never overlap.
@@ -1100,7 +1170,17 @@ pub(crate) mod win {
 
     fn send(app: &AppDef, steps: &[Step], pass: Option<RecordingPass>) -> Result<(), Refusal> {
         let _busy = try_begin(&SENDING).ok_or(Refusal::Busy)?;
-        let remembered = current_for_send();
+        let mut remembered = current_for_send();
+        let direct = remembered.as_ref().is_some_and(|r| app.accepts(&r.image));
+        if !direct && !app.is_general() && !is_global_chord(steps) && pass.is_none() {
+            // The program in front is not this set's: use the topmost open window of the set's own programs.
+            let cands = candidates(app);
+            let picked = pick_target(app, remembered.as_ref(), &cands);
+            crate::wall2_signals::note(format!("keys fallback windows {} picked {}", cands.len(), u8::from(picked.is_some())));
+            if picked.is_some() {
+                remembered = picked;
+            }
+        }
         let needs_target = plan_target_for(app, steps, remembered.as_ref(), &remembered.as_ref().map(look).unwrap_or_default(), pass)?;
         // A global key (volume, media) has no target: it is sent at once, nothing is raised, and
         // the front window is not compared before each step.
@@ -1172,6 +1252,64 @@ pub(crate) mod win {
             return Err(Refusal::Failed);
         }
         Ok(())
+    }
+
+    /// Every top-level window in z order, topmost first, leaving out the wall's own, the shell's
+    /// and any that is not answering. The title is read only to test for the word Calendar, and
+    /// only for a window of a program `app` accepts.
+    fn candidates(app: &AppDef) -> Vec<Cand> {
+        let own = std::process::id();
+        let mut images: HashMap<u32, Option<String>> = HashMap::new();
+        let mut out = Vec::new();
+        for h in sys::top_level_windows() {
+            let pid = sys::pid_of(h);
+            if pid == 0 || pid == own || is_shell_class(&sys::class_name(h)) {
+                continue;
+            }
+            let hw = sys::hwnd(h);
+            if unsafe { IsHungAppWindow(hw).as_bool() } {
+                continue;
+            }
+            let Some(image) = images.entry(pid).or_insert_with(|| sys::image_path(pid)).clone() else {
+                continue;
+            };
+            let accepted = app.accepts(&image);
+            out.push(Cand {
+                hwnd: h,
+                pid,
+                visible: unsafe { IsWindowVisible(hw).as_bool() },
+                owned: unsafe { GetWindow(hw, GW_OWNER) }.map(|o| !o.0.is_null()).unwrap_or(false),
+                has_title: sys::has_title(h),
+                calendar: accepted && sys::title_matches(h, "Calendar"),
+                image,
+            });
+        }
+        out
+    }
+
+    /// Raise an open window of `app` and show its Calendar: a window titled Calendar is only raised;
+    /// otherwise the topmost window is raised and sent the fixed chord Ctrl+2. The same checks and
+    /// guard as any key. False when nothing is open or anything refuses.
+    pub fn show_outlook_calendar(app: &AppDef) -> bool {
+        let Some(_busy) = try_begin(&SENDING) else {
+            return false;
+        };
+        let Some((rem, calendar)) = pick_calendar_window(app, &candidates(app)) else {
+            return false;
+        };
+        if check_target(app, Some(&rem), &look(&rem)).is_err() {
+            return false;
+        }
+        if !foreground_is(rem.hwnd) && !bring_forward(rem.hwnd) {
+            return false;
+        }
+        if calendar {
+            return true;
+        }
+        match parse_chord("Ctrl+2") {
+            Some(steps) => play(&steps, Some(rem.hwnd)).is_ok(),
+            None => false,
+        }
     }
 
     /// The remembered window as it is right now (the poll may be up to 400 ms behind, and
@@ -2012,6 +2150,80 @@ mod tests {
         let body = &live[at..live[at..].find("\n}\n").unwrap() + at];
         assert!(body.contains("run_key(set, key.action, None)") && !body.contains("recording_pass"));
         assert!(live.contains("id: String) -> Result<Option<String>, String> {\n    require_wall2"), "the library command takes an id and nothing else from the page");
+    }
+
+    // Section: picking a window
+
+    fn mail_set() -> AppDef {
+        AppDef { id: "mail".into(), name: "Mail and calendar".into(), matcher: Matcher::Exe(vec!["outlook.exe".into(), "olk.exe".into()]), fallback: false, keys: Vec::new() }
+    }
+
+    fn cand(hwnd: isize, image: &str) -> Cand {
+        Cand { hwnd, pid: hwnd as u32, image: image.to_string(), visible: true, owned: false, has_title: true, calendar: false }
+    }
+
+    #[test]
+    fn the_remembered_window_is_kept_when_the_set_accepts_it() {
+        let got = pick_target(&mail_set(), Some(&rem(r"C:\x\olk.exe")), &[cand(9, r"C:\x\olk.exe")]).expect("kept");
+        assert_eq!(got, rem(r"C:\x\olk.exe"));
+    }
+
+    #[test]
+    fn another_program_in_front_falls_back_to_the_topmost_window_of_the_sets_programs() {
+        let cands = [cand(1, r"C:\x\code.exe"), cand(2, r"C:\x\olk.exe"), cand(3, r"C:\x\outlook.exe")];
+        let got = pick_target(&mail_set(), Some(&rem(r"C:\x\code.exe")), &cands).expect("picked");
+        assert_eq!(got.hwnd, 2);
+        let got = pick_target(&mail_set(), None, &cands).expect("picked with nothing remembered");
+        assert_eq!(got.hwnd, 2);
+    }
+
+    #[test]
+    fn the_fallback_skips_hidden_owned_untitled_and_other_programs_windows() {
+        let hidden = Cand { visible: false, ..cand(1, r"C:\x\olk.exe") };
+        let owned = Cand { owned: true, ..cand(2, r"C:\x\olk.exe") };
+        let untitled = Cand { has_title: false, ..cand(3, r"C:\x\olk.exe") };
+        let other = cand(4, r"C:\x\olk.exe.bak\other.exe");
+        let good = cand(5, r"C:\x\OLK.EXE");
+        let got = pick_target(&mail_set(), None, &[hidden, owned, untitled, other, good]).expect("picked");
+        assert_eq!(got.hwnd, 5);
+    }
+
+    #[test]
+    fn no_window_of_the_app_means_no_target() {
+        assert_eq!(pick_target(&mail_set(), Some(&rem(r"C:\x\code.exe")), &[cand(1, r"C:\x\code.exe")]), None);
+        assert_eq!(pick_target(&mail_set(), None, &[]), None);
+    }
+
+    #[test]
+    fn the_general_set_never_falls_back() {
+        let any = anywhere("any", "Any");
+        assert_eq!(pick_target(&any, None, &[cand(1, r"C:\x\olk.exe")]), None);
+        assert_eq!(pick_calendar_window(&any, &[cand(1, r"C:\x\olk.exe")]), None);
+    }
+
+    #[test]
+    fn a_calendar_titled_window_is_preferred_and_only_raised() {
+        let calendar = Cand { calendar: true, ..cand(2, r"C:\x\olk.exe") };
+        let cands = [cand(1, r"C:\x\olk.exe"), calendar];
+        let (got, only_raise) = pick_calendar_window(&mail_set(), &cands).expect("picked");
+        assert_eq!((got.hwnd, only_raise), (2, true));
+    }
+
+    #[test]
+    fn without_a_calendar_window_the_topmost_one_is_switched() {
+        let cands = [cand(1, r"C:\x\code.exe"), cand(2, r"C:\x\olk.exe"), cand(3, r"C:\x\olk.exe")];
+        let (got, only_raise) = pick_calendar_window(&mail_set(), &cands).expect("picked");
+        assert_eq!((got.hwnd, only_raise), (2, false));
+        assert_eq!(pick_calendar_window(&mail_set(), &[cand(1, r"C:\x\code.exe")]), None);
+        // A calendar flag on an unusable window does not count.
+        let hidden = Cand { calendar: true, visible: false, ..cand(1, r"C:\x\olk.exe") };
+        assert_eq!(pick_calendar_window(&mail_set(), &[hidden, cand(2, r"C:\x\olk.exe")]).map(|(r, c)| (r.hwnd, c)), Some((2, false)));
+    }
+
+    #[test]
+    fn the_open_event_set_is_new_outlook_only() {
+        let set = new_outlook_set();
+        assert!(set.accepts(r"C:\x\olk.exe") && !set.accepts(r"C:\x\outlook.exe") && !set.is_general());
     }
 
     // Section: check keys
