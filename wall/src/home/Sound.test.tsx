@@ -239,7 +239,7 @@ it('More holds only Upbeat, Romantic and Reading as tiles; the favorite and volu
   expect(within(pop).queryByText('Speakers')).toBeNull();
   const hover = await tipText(within(pop).getByText('Upbeat').closest('button')!);
   expect(hover).toBe('Play Upbeat Music (Upbeat Music Station) at Vol. 10');
-  expect(hover).not.toMatch(/volume \d/i);
+  expect(pop.textContent).not.toMatch(/volume \d/i);
 });
 
 it('a loud mood tile asks first; Cancel sends nothing and Start sends the confirmed play', async () => {
