@@ -83,8 +83,8 @@
   gap: 10px;
 }
 
-/* The scroller reaches 5 px past the card's padding (room for a tile's focus ring) and its scrollbar
-   sits in the margin, so the content keeps the card's own width. */
+/* The scroller reaches 5 px past the card's padding on the left and top (room for a tile's focus ring) and
+   its scrollbar sits in the right margin, so the content keeps the card's own width. */
 .yt-scroll {
   flex: 1;
   min-height: 0;
