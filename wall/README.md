@@ -979,6 +979,23 @@ skyline, the lake in front. It is drawn on one canvas by `HorizonCanvas.tsx`.
   Dev builds only: `?sky=front` mounts the front canvas everywhere, `?sky=flat` never,
   `?sky=empty` claims it with an empty host (the pixel proof), `?skymoon=x,y,r` puts the moon
   at one place only (fit-check breaks and cost measurement).
+- **The animated sky** (`src/backdrop/`). A slow animated sky behind the ridge on any page. Two styles, Colour wash (default) and
+  Aurora, chosen in Tools, Display, Sky, with a "Show on" chip per page (Zen on by default; every chip off is the off switch).
+  Stored under `wall2-sky` (`settings.ts`, `validateSky` drops unknown styles and pages). While the sky is on for the active page
+  and no screen claims the sky, `HorizonCanvas` splits the picture as the front layer does but mounts the ground canvas in place
+  (`.horizon-ground`, under the veil and the rail, so it skips the veil pass, the rail strip copy and the left edge cut, and the
+  weather's middle layer goes the one canvas way), and `Backdrop.tsx` sits between the two canvases (`.backdrop-canvas`, 2560 by 582,
+  plain alpha, no blend mode or filter). One WebGL context for the app (`shader.ts`, premultiplied output, a soft brightness cap),
+  made the first time a page asks and kept. Cost: a 640 by 128 buffer at about 16 frames a second on Zen and 320 by 64 at about 8
+  elsewhere; a frame guard halves the buffer (and keeps it halved for the session) when 20 frames average over 1.5 times the wanted interval; the loop pauses on idle, display off and lock (not on Zen), and waits on a timer between frames so an 8 frame a second page is not woken at every vsync; it stops (no frame requested) while the page is
+  hidden, a screen holds the sky (Watch), Dream has faded the picture out, or the page is not listed; reduced motion draws one still.
+  A lost or missing context turns the sky off for the session and the Sky panel says so. The colours come from the hour (`palette.ts`,
+  from the renderer's `sun` and `pal`); each page has a gain ceiling (Zen 1, Unwind 0.6, Home 0.45, the rest 0.35) and, off Zen, the
+  gain is held so the muted text keeps 4.5 to 1 (`legibleGain`, a unit test over every page and hour). When the sky stops being wanted the
+  layers stay 700 ms so the fade finishes before the horizon goes back to one canvas. Pixel proof: `npm run gallery -- --only="sky proof"`
+  then `npm run sky-proof` (a manual gate: run it by hand, it is not run in CI) compares each page on one canvas (`?sky=flat`) with the in place split and an empty sky layer
+  (`?sky=place`) by the fit check's own rule (no pixel over 8 levels, at most 1 in 1000 over 2). Dev knobs: `?skyon=work,home`,
+  `?skystyle=aurora|wash`, `?skyt=40` (the moment a review still draws).
 - **Reduced motion.** With `prefers-reduced-motion: reduce` the horizon is drawn
   once a minute and cameras switch without the glide.
 - **Review hook (dev server only).** Open

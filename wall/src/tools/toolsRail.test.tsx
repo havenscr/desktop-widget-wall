@@ -167,7 +167,7 @@ it('each rail entry renders a status line from the state its panel shows', async
   // Work is connected, Second is signed out, Spotify is not set up, YouTube is signed in.
   expect(l.accounts).toBe('1 needs sign-in');
   expect(l.lights).toBe('Hue paired');
-  expect(l.display).toBe('Weather on');
+  expect(l.display).toBe('Weather on, sky on 1 page');
   expect(l.health).toMatch(/^(All fresh|\d+ need a look)$/);
   // The dot beside each line is part of the entry.
   for (const g of GROUPS) expect(document.querySelector(`.tools-tab[data-group="${g.id}"] .tools-dot`)).toBeTruthy();
@@ -178,7 +178,7 @@ it('rail lines follow the state: weather off, not paired, bridge changed, every 
   await flush(500);
   act(() => useSceneWeather.getState().setOn(false));
   await flush();
-  expect(lines().display).toBe('Weather off');
+  expect(lines().display).toBe('Weather off, sky on 1 page');
   lightSyncAnswer = () => ({ paired: false, bridgeChanged: false, running: false, starting: false, lastError: null, stoppedHueSync: false });
   mocks.set('wall2_meet_next', () => ({ accounts: [{ id: 'work', label: 'Work', state: 'ok' }], meetings: [] }));
   act(() => useToolsStore.getState().close());
