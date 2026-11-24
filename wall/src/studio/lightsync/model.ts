@@ -28,22 +28,48 @@ export interface LightSyncSettings {
   plays: boolean;
   panels: boolean;
   sendHz: number;
+  /** How much of the span between floor and peak the sound's level moves (0 to 1). */
+  energyDepth: number;
+  /** How far a pulse mixes toward the palette's kick colour; 0 is no white. */
+  kickWhite: number;
+  kickRiseMs: number;
+  kickDecayMs: number;
+  /** Frames of 33 ms the band levels are averaged over before they are followed. */
+  levelWindow: number;
+  /** Colours a beat nudges the palette along. */
+  beatNudge: number;
+  /** Beats closer than this do not restart a pulse's brightness. */
+  minPulseGapMs: number;
+  /** The fastest brightness fall, per second. */
+  slewDown: number;
 }
 
+/** The intensity choices. The page owns the table; the native side only clamps (`engine.rs`). */
+export type IntensityId = 'subtle' | 'moderate' | 'high';
+export const INTENSITY_IDS: readonly IntensityId[] = ['subtle', 'moderate', 'high'];
+
+/** Every setting an intensity rewrites, plus the colour speed it uses (`colourBars`, which sets the drift). */
+export const INTENSITIES: Record<IntensityId, { settings: Pick<LightSyncSettings, 'floor' | 'brightness' | 'energyDepth' | 'kickFlash' | 'kickWhite' | 'kickRiseMs' | 'kickDecayMs' | 'attackMs' | 'releaseMs' | 'levelWindow' | 'beatNudge' | 'minPulseGapMs' | 'slewDown'>; colourBars: number }> = {
+  subtle: { settings: { floor: 0.35, brightness: 0.8, energyDepth: 0.35, kickFlash: 0.25, kickWhite: 0, kickRiseMs: 80, kickDecayMs: 450, attackMs: 150, releaseMs: 900, levelWindow: 8, beatNudge: 0.04, minPulseGapMs: 500, slewDown: 0.8 }, colourBars: 4 },
+  moderate: { settings: { floor: 0.25, brightness: 0.9, energyDepth: 0.55, kickFlash: 0.45, kickWhite: 0.15, kickRiseMs: 60, kickDecayMs: 320, attackMs: 100, releaseMs: 650, levelWindow: 4, beatNudge: 0.08, minPulseGapMs: 400, slewDown: 1.5 }, colourBars: 2 },
+  high: { settings: { floor: 0.15, brightness: 1, energyDepth: 0.75, kickFlash: 0.7, kickWhite: 0.35, kickRiseMs: 40, kickDecayMs: 220, attackMs: 60, releaseMs: 420, levelWindow: 2, beatNudge: 0.15, minPulseGapMs: 340, slewDown: 3 }, colourBars: 1 },
+};
+
+export const DEFAULT_INTENSITY: IntensityId = 'subtle';
+
 export const DEFAULT_LIGHT_SYNC: LightSyncSettings = {
-  brightness: 0.9,
-  floor: 0.15,
+  ...INTENSITIES.subtle.settings,
   bassGain: 1,
   highGain: 1,
-  kickFlash: 0.8,
-  attackMs: 50,
-  releaseMs: 380,
   beatStep: true,
   rippleMs: 600,
   plays: true,
   panels: true,
   sendHz: 50,
 };
+
+/** Milliseconds the palette takes to move one colour, for each stop of `COLOUR_BARS` (slow to fast). */
+export const DRIFT_MS: readonly number[] = [20000, 14000, 10000, 6000, 3000];
 
 /**
  * The Lights tab's colour speed, who follows and ripple. The page keeps them beside the settings and sends them with
@@ -63,7 +89,7 @@ export interface LightsUi {
   ripple: boolean;
 }
 
-export const DEFAULT_LIGHTS_UI: LightsUi = { colourBars: 2, follow: ['highs', 'bass', 'bass', 'highs', 'both'], ripple: true };
+export const DEFAULT_LIGHTS_UI: LightsUi = { colourBars: INTENSITIES.subtle.colourBars, follow: ['highs', 'bass', 'bass', 'highs', 'both'], ripple: true };
 
 export function clampUi(raw: unknown): LightsUi {
   const r = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>;
@@ -75,22 +101,36 @@ export function clampUi(raw: unknown): LightsUi {
   };
 }
 
-/** The settings object the native side takes: the engine fields plus the Lights tab's three. */
-export function engineSettings(settings: LightSyncSettings, ui: LightsUi): Record<string, unknown> {
-  return { ...settings, colourBars: ui.colourBars, follow: { plays: ui.follow.slice(0, 4), panels: ui.follow[4] }, ripple: ui.ripple };
+/** Milliseconds per colour for a colour speed. */
+export function driftOf(colourBars: number): number {
+  const at = COLOUR_BARS.indexOf(colourBars);
+  return DRIFT_MS[at < 0 ? COLOUR_BARS.indexOf(DEFAULT_LIGHTS_UI.colourBars) : at];
 }
 
-/** The native side's ranges (`Settings::from_in`). `floor` is also held under `brightness`. */
+/** The settings object the native side takes: the engine fields plus the Lights tab's three. */
+export function engineSettings(settings: LightSyncSettings, ui: LightsUi): Record<string, unknown> {
+  return { ...settings, colourBars: ui.colourBars, driftMs: driftOf(ui.colourBars), follow: { plays: ui.follow.slice(0, 4), panels: ui.follow[4] }, ripple: ui.ripple };
+}
+
+/** The native side's ranges (`Settings::from_in`). `floor` is also held 0.1 under `brightness`. */
 const RANGES: Record<Exclude<keyof LightSyncSettings, 'beatStep' | 'plays' | 'panels'>, [number, number]> = {
-  brightness: [0.1, 1],
-  floor: [0, 0.5],
+  brightness: [0.2, 1],
+  floor: [0.05, 0.6],
   bassGain: [0, 2],
   highGain: [0, 2],
   kickFlash: [0, 1],
-  attackMs: [20, 200],
-  releaseMs: [100, 1500],
+  attackMs: [40, 400],
+  releaseMs: [200, 2000],
   rippleMs: [200, 1500],
   sendHz: [25, 60],
+  energyDepth: [0, 1],
+  kickWhite: [0, 0.5],
+  kickRiseMs: [30, 200],
+  kickDecayMs: [150, 1000],
+  levelWindow: [1, 12],
+  beatNudge: [0, 0.25],
+  minPulseGapMs: [340, 1000],
+  slewDown: [0.3, 5],
 };
 
 function num(v: unknown, key: keyof typeof RANGES): number {
@@ -105,7 +145,7 @@ export function clampSettings(raw: unknown): LightSyncSettings {
   const bool = (v: unknown, d: boolean) => (typeof v === 'boolean' ? v : d);
   return {
     brightness,
-    floor: Math.min(num(s.floor, 'floor'), brightness),
+    floor: Math.min(num(s.floor, 'floor'), brightness - 0.1),
     bassGain: num(s.bassGain, 'bassGain'),
     highGain: num(s.highGain, 'highGain'),
     kickFlash: num(s.kickFlash, 'kickFlash'),
@@ -116,6 +156,14 @@ export function clampSettings(raw: unknown): LightSyncSettings {
     plays: bool(s.plays, DEFAULT_LIGHT_SYNC.plays),
     panels: bool(s.panels, DEFAULT_LIGHT_SYNC.panels),
     sendHz: num(s.sendHz, 'sendHz'),
+    energyDepth: num(s.energyDepth, 'energyDepth'),
+    kickWhite: num(s.kickWhite, 'kickWhite'),
+    kickRiseMs: num(s.kickRiseMs, 'kickRiseMs'),
+    kickDecayMs: num(s.kickDecayMs, 'kickDecayMs'),
+    levelWindow: Math.round(num(s.levelWindow, 'levelWindow')),
+    beatNudge: num(s.beatNudge, 'beatNudge'),
+    minPulseGapMs: num(s.minPulseGapMs, 'minPulseGapMs'),
+    slewDown: num(s.slewDown, 'slewDown'),
   };
 }
 
