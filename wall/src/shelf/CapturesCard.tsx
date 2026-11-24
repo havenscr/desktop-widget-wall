@@ -9,6 +9,7 @@ import {
   IconPencil,
   IconPhoto,
   IconPin,
+  IconShare,
   IconSortAscending,
   IconSortDescending,
   IconTextScan2,
@@ -16,6 +17,7 @@ import {
   IconVideo,
 } from '@tabler/icons-react';
 import { useEffect, useRef, useState, type MouseEvent } from 'react';
+import { SHARE_LINES, shareCapture, shareWordOf } from '../bridge/share';
 import { invoke } from '../bridge/tauri';
 import { hover } from '../tools/hover';
 import { useListEdge } from '../ui/useListEdge';
@@ -134,13 +136,21 @@ const MENU_W = 400;
 const FILTER_W = 190;
 
 /** The card's list of what a right-click offers. Everything but Copy path and the folder needs the file to exist; the ShareX rows and Copy image need a picture. */
-function captureItems(c: Capture): CapMenuItem[] {
+function captureItems(c: Capture, sharing: boolean): CapMenuItem[] {
   const ok = c.exists;
   const pic = ok && c.kind === 'image';
   return [
     { id: 'image', label: 'Copy image', Icon: IconPhoto, disabled: !pic, help: 'Copy the picture itself to the clipboard (pictures only, not GIFs or recordings)' },
     { id: 'copy', label: 'Copy as file', Icon: IconFiles, disabled: !ok, help: 'Copy the capture as a file, ready to paste into a chat, an email or a folder' },
     { id: 'path', label: 'Copy path', Icon: IconLink, disabled: !ok, help: 'Copy the full path of the file as text' },
+    {
+      id: 'share',
+      label: 'Share link',
+      Icon: IconShare,
+      disabled: !ok || sharing,
+      help: sharing ? 'A capture is uploading now. Wait for it to finish.' : 'Upload this capture to go-ae.org and copy a short link anyone can open. It asks once more first.',
+      step: { warn: 'Anyone with the link can see this.', note: 'Uploads to go-ae.org and copies the link.', help: 'Upload this capture to go-ae.org now and copy the link' },
+    },
     { id: 'open', label: 'Open', Icon: IconExternalLink, rule: true, disabled: !ok, help: 'Open in its default app, on the main monitor in the lower right quarter' },
     { id: 'edit', label: 'Edit in ShareX', Icon: IconPencil, disabled: !pic, help: 'Open the ShareX image editor on this picture' },
     { id: 'pin', label: 'Pin to screen', Icon: IconPin, disabled: !pic, help: 'Pin this picture on top of everything with ShareX' },
@@ -213,7 +223,7 @@ export function CapturesCard() {
   };
   const openCaptureMenu = (c: Capture) => (e: MouseEvent) => {
     e.preventDefault();
-    setMenu({ kind: 'capture', id: c.id, ...corner(e.clientX, e.clientY, 9 * 38 + 24) });
+    setMenu({ kind: 'capture', id: c.id, ...corner(e.clientX, e.clientY, 10 * 38 + 24) });
   };
   const openFilterMenu = (e: MouseEvent<HTMLButtonElement>) => {
     const b = e.currentTarget.getBoundingClientRect();
@@ -221,7 +231,32 @@ export function CapturesCard() {
     setMenu({ kind: 'filter', ...corner(b.right - FILTER_W * k, b.bottom + 6 * k, 4 * 38 + 12, FILTER_W) });
   };
 
+  // One upload at a time: the ref blocks a second send before the state has drawn.
+  const uploading = useRef(false);
+  const [sharing, setSharing] = useState(false);
+  const share = (c: Capture) => {
+    if (uploading.current) return;
+    uploading.current = true;
+    setSharing(true);
+    shareCapture(c.id).then(
+      () => {
+        uploading.current = false;
+        setSharing(false);
+        show('Link copied');
+      },
+      (e: unknown) => {
+        uploading.current = false;
+        setSharing(false);
+        show(SHARE_LINES[shareWordOf(e)]);
+      },
+    );
+  };
+
   const choose = (c: Capture, id: string) => {
+    if (id === 'share') {
+      share(c);
+      return;
+    }
     if (id === 'image') {
       copyBitmap(c).then(
         () => show(DONE.image),
@@ -263,7 +298,7 @@ export function CapturesCard() {
             )}
             <Badge c={big} />
             <p className="cap-chip" role="status">
-              {brief ?? ''}
+              {sharing ? 'Sharing...' : (brief ?? '')}
             </p>
           </div>
           <div className="cap-bt">
@@ -350,7 +385,7 @@ export function CapturesCard() {
         />
       ) : null}
       {menu?.kind === 'capture' && menuCapture ? (
-        <CapMenu key={menu.id} label="Capture options" items={captureItems(menuCapture)} x={menu.x} y={menu.y} onChoose={(id) => choose(menuCapture, id)} onClose={() => setMenu(null)} />
+        <CapMenu key={menu.id} label="Capture options" items={captureItems(menuCapture, sharing)} x={menu.x} y={menu.y} onChoose={(id) => choose(menuCapture, id)} onClose={() => setMenu(null)} />
       ) : null}
     </section>
   );

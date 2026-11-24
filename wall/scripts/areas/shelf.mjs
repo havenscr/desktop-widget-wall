@@ -79,7 +79,7 @@ function measureShelf() {
       if (tb.width < 120) fails.push('shelf: the dictation text is only ' + r1(tb.width) + ' px wide');
     }
   }
-  for (const k of root.querySelectorAll('.dc-btn, .rf-opt')) {
+  for (const k of root.querySelectorAll('.dc-btn, .rf-opt, .cap-step-btns button')) {
     const b = k.getBoundingClientRect();
     if (b.width === 0) continue;
     if (b.height < 39.5) fails.push('shelf: the button "' + k.textContent.trim() + '" is ' + r1(b.height) + ' px tall (at least 40)');
@@ -187,6 +187,10 @@ export default {
     state('shelf: dictations: hover card on a long text', LISTS + '&' + DICT, ['Cleaned', 'What you said', 'Copy cleaned'], ['hover:.dc-row:nth-child(4) .dc-text >> wait:900 >> is:.dc-card']),
     state('shelf: dictations: Wispr Flow changed its format', LISTS + '&' + DICT + '&dict=changed', ['Dictations', 'Wispr Flow changed its history format. The wall cannot read it yet.']),
     state('shelf: dictations: the read is busy', LISTS + '&' + DICT + '&dict=busy', ['Could not read the Wispr Flow history.', 'Try again']),
+    state('shelf: share link, second step in the capture menu', LISTS, ['Anyone with the link can see this.', 'Uploads to go-ae.org and copies the link.', 'Share link', 'Back'], ['ctx:.cap-row:nth-child(2)', '.cap-menu [data-item=share]']),
+    state('shelf: share link, link copied', LISTS, ['Link copied'], ['ctx:.cap-row:nth-child(2)', '.cap-menu [data-item=share]', '.cap-step-go', 'wait:300']),
+    state('shelf: share link, no key saved', LISTS + '&share=nokey', ['Add the share key in Tools first.'], ['ctx:.cap-row:nth-child(2)', '.cap-menu [data-item=share]', '.cap-step-go', 'wait:300']),
+    state('shelf: share link, key refused', LISTS + '&share=badkey', ['go-ae.org refused the share key. Check it in Tools.'], ['ctx:.cap-row:nth-child(2)', '.cap-menu [data-item=share]', '.cap-step-go', 'wait:300']),
     state('shelf: lists from the task app', 'x=1', ['Tasks (To-Do)', 'Tax / Business', 'House, garden', 'Region'], ['.lp-btn']),
     state('shelf: recent files empty', LISTS + '&recent=empty', ['Recent files', 'No recent files']),
     state('shelf: recent files unavailable', LISTS + '&recent=down', ['Recent files', 'Recent files unavailable']),
@@ -209,6 +213,7 @@ export default {
       variant('Shelf, Dictations with the details card open', LISTS + '&' + DICT, { click: 'rest:.dc-row:nth-child(4)' }),
       variant('Shelf, Dictations, Wispr Flow not installed', LISTS + '&' + DICT + '&dict=not-installed'),
       variant('Shelf, Watt set down at the far right', LISTS + '&wattspot=2300'),
+      variant('Shelf, Share link second step', LISTS, { click: 'ctx:.cap-row:nth-child(2) >> .cap-menu [data-item=share]' }),
     ],
     measurements: { shelf: measureShelf },
     rules: {
@@ -223,6 +228,7 @@ export default {
       'shelf-edge': { css: '.shelf-place .rf-card { flex: 0 0 auto !important; max-height: 200px !important; }', expect: /^ *FAIL shelf: the Recent files, Captures and Capture keys cards end at/m, appliesTo: (v) => v.name === 'Shelf, three lists' },
       'shelf-label-pad': { css: '.shelf-place .shelf-key { padding: 0 !important; width: 100% !important; min-width: 0 !important; } .shelf-place .shelf-more { grid-template-columns: repeat(8, minmax(0, 1fr)) !important; }', expect: /^ *FAIL shelf: the label ".*" is [\d.-]+ px from its key edge/m, appliesTo: (v) => v.name === 'Shelf, three lists' },
       'shelf-dict-pad': { css: '.shelf-place .dc-btn { padding: 0 !important; } .shelf-place .dc-btn-text { min-width: 0 !important; }', expect: /^ *FAIL shelf: the label "(Copy|Raw)" is [\d.-]+ px from its button edge/m, appliesTo: (v) => v.name === 'Shelf, Dictations' },
+      'shelf-step-pad': { css: '.shelf-place .cap-step-btns button { padding: 0 !important; min-width: 0 !important; }', expect: /^ *FAIL shelf: the label "(Share link|Back)" is [\d.-]+ px from its button edge/m, appliesTo: (v) => v.name === 'Shelf, Share link second step' },
       'shelf-keys': { css: '.shelf-place .shelf-key { height: 20px !important; }', expect: /^ *FAIL shelf: key ".*" is \d+ x \d+ px/m, appliesTo: (v) => v.name === 'Shelf, three lists' },
     },
   },

@@ -158,6 +158,7 @@ it('a right-click opens the menu; Escape closes it; each row sends one fixed wor
     'Copy image',
     'Copy as file',
     'Copy path',
+    'Share link',
     'Open',
     'Edit in ShareX',
     'Pin to screen',
@@ -524,4 +525,158 @@ it('says ShareX is not installed for edit, pin and read-text, and the bin failur
   fireEvent.click(screen.getByRole('menuitem', { name: 'Click again to move to Recycle Bin' }));
   await screen.findByText('Could not move to the Recycle Bin');
   expect(rowButtons()).toHaveLength(7);
+});
+
+// Share link: the menu row, its second step, the one send and the lines for each answer.
+let shared: unknown[];
+let shareAnswer: () => Promise<string>;
+
+const openShare = async () => {
+  fireEvent.contextMenu(screen.getByRole('button', { name: /App 2/ }));
+  fireEvent.click(screen.getByRole('menuitem', { name: 'Share link' }));
+};
+const goButton = () => document.querySelector('.cap-step-go') as HTMLButtonElement;
+
+function armShare() {
+  shared = [];
+  shareAnswer = async () => 'https://go-ae.org/s/k7Qm2x';
+  mocks.set('wall2_captures_share', (args) => {
+    shared.push(args);
+    return shareAnswer();
+  });
+}
+
+it('the capture menu has Share link with its help text, and a gone capture cannot be shared', async () => {
+  armShare();
+  render(<CapturesCard />);
+  await screen.findByText('Title 0');
+  fireEvent.contextMenu(screen.getByRole('button', { name: /App 2/ }));
+  const item = screen.getByRole('menuitem', { name: 'Share link' }) as HTMLButtonElement;
+  expect(item.disabled).toBe(false);
+  expect(item.title).toContain('go-ae.org');
+  expect(item.title).toContain('asks once more');
+  fireEvent.keyDown(document, { key: 'Escape' });
+  cleanup();
+  mocks.set('wall2_captures_list', () => [cap(0, { exists: false })]);
+  render(<CapturesCard />);
+  await screen.findByText('Title 0');
+  fireEvent.contextMenu(screen.getAllByRole('button', { name: /App 0/ })[0]);
+  expect((screen.getByRole('menuitem', { name: 'Share link' }) as HTMLButtonElement).disabled).toBe(true);
+});
+
+it('choosing Share link turns the menu into the second step and sends nothing yet', async () => {
+  armShare();
+  render(<CapturesCard />);
+  await screen.findByText('Title 0');
+  await openShare();
+  expect(screen.getByText('Anyone with the link can see this.')).toBeTruthy();
+  expect(screen.getByText('Uploads to go-ae.org and copies the link.')).toBeTruthy();
+  expect(within(screen.getByRole('menu')).getAllByRole('menuitem').map((m) => m.textContent)).toEqual(['Share link', 'Back']);
+  expect(goButton().title).toContain('go-ae.org');
+  expect(document.activeElement).toBe(goButton());
+  expect(shared).toEqual([]);
+});
+
+it('Back and Escape return to the first step; a second Escape closes the menu', async () => {
+  armShare();
+  render(<CapturesCard />);
+  await screen.findByText('Title 0');
+  await openShare();
+  fireEvent.click(screen.getByRole('menuitem', { name: 'Back' }));
+  expect(screen.getByRole('menuitem', { name: 'Copy path' })).toBeTruthy();
+  expect(screen.queryByText('Anyone with the link can see this.')).toBeNull();
+  expect(document.activeElement).toBe(screen.getByRole('menuitem', { name: 'Share link' }));
+  fireEvent.click(screen.getByRole('menuitem', { name: 'Share link' }));
+  fireEvent.keyDown(document, { key: 'Escape' });
+  expect(screen.getByRole('menuitem', { name: 'Copy path' })).toBeTruthy();
+  fireEvent.keyDown(document, { key: 'Escape' });
+  expect(screen.queryByRole('menu')).toBeNull();
+  expect(shared).toEqual([]);
+});
+
+it('Enter confirms: one call with the capture id and nothing else, then Link copied', async () => {
+  armShare();
+  render(<CapturesCard />);
+  await screen.findByText('Title 0');
+  await openShare();
+  fireEvent.keyDown(goButton(), { key: 'Enter' });
+  await screen.findByText('Link copied');
+  expect(shared).toEqual([{ id: 'cap2' }]);
+  expect(screen.queryByRole('menu')).toBeNull();
+  expect(document.body.innerHTML).not.toContain('go-ae.org/s/');
+});
+
+it('the Share link button confirms by click too, and Enter on Back goes back instead', async () => {
+  armShare();
+  render(<CapturesCard />);
+  await screen.findByText('Title 0');
+  await openShare();
+  const back = screen.getByRole('menuitem', { name: 'Back' });
+  back.focus();
+  fireEvent.keyDown(back, { key: 'Enter' });
+  expect(shared).toEqual([]);
+  expect(screen.getByRole('menuitem', { name: 'Share link' })).toBeTruthy();
+  fireEvent.click(screen.getByRole('menuitem', { name: 'Share link' }));
+  fireEvent.click(goButton());
+  await screen.findByText('Link copied');
+  expect(shared).toHaveLength(1);
+});
+
+it('while uploading it says so, the row is off, and a second send is blocked', async () => {
+  armShare();
+  let finish: (v: string) => void = () => undefined;
+  shareAnswer = () => new Promise<string>((r) => (finish = r));
+  render(<CapturesCard />);
+  await screen.findByText('Title 0');
+  await openShare();
+  const go = goButton();
+  fireEvent.click(go);
+  fireEvent.click(go);
+  await screen.findByText('Sharing...');
+  expect(shared).toHaveLength(1);
+  // The menu is closed; opening it again shows the row off.
+  fireEvent.contextMenu(screen.getByRole('button', { name: /App 3/ }));
+  expect((screen.getByRole('menuitem', { name: 'Share link' }) as HTMLButtonElement).disabled).toBe(true);
+  fireEvent.keyDown(document, { key: 'Escape' });
+  await act(async () => finish('https://go-ae.org/s/k7Qm2x'));
+  await screen.findByText('Link copied');
+  expect(screen.queryByText('Sharing...')).toBeNull();
+  expect(shared).toHaveLength(1);
+});
+
+it('Link copied goes away after a few seconds', async () => {
+  armShare();
+  render(<CapturesCard />);
+  await screen.findByText('Title 0');
+  await openShare();
+  vi.useFakeTimers();
+  fireEvent.click(goButton());
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(10);
+  });
+  expect(screen.getByText('Link copied')).toBeTruthy();
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(7_000);
+  });
+  expect(screen.queryByText('Link copied')).toBeNull();
+});
+
+it.each([
+  ['no-key', 'Add the share key in Tools first.'],
+  ['bad-key', 'go-ae.org refused the share key. Check it in Tools.'],
+  ['too-big', 'This file is over 100 MB.'],
+  ['missing', 'This capture is gone.'],
+  ['failed', 'Could not share. Try again.'],
+  ['something-else', 'Could not share. Try again.'],
+])('the answer %s shows its plain line and frees the row to try again', async (word, line) => {
+  armShare();
+  shareAnswer = () => Promise.reject(word);
+  render(<CapturesCard />);
+  await screen.findByText('Title 0');
+  await openShare();
+  fireEvent.click(goButton());
+  await screen.findByText(line);
+  expect(screen.queryByText('Link copied')).toBeNull();
+  fireEvent.contextMenu(screen.getByRole('button', { name: /App 2/ }));
+  expect((screen.getByRole('menuitem', { name: 'Share link' }) as HTMLButtonElement).disabled).toBe(false);
 });
