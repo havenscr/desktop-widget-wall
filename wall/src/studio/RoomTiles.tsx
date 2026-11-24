@@ -1,17 +1,19 @@
-import { NameButton, TileSwitch } from './GroupTile';
+import type { ComponentProps } from 'react';
+import { NameButton, TileLevel, TileSwitch } from './GroupTile';
 import { awayWords, isFailedRead, tileState } from './homeModel';
 import { canChange, useHome } from './homeStore';
 import type { Group, HomeWord, Studio } from './home';
 
-/** One room switch tile: the switch, and the name that opens the group's card. Its knob takes the home app's colour, else the default. */
-export function RoomTile({ studio, g, canWrite }: { studio: Studio; g: Group; canWrite: boolean }) {
+/** One room switch tile: the name that opens the group's card, and the switch at the right. Its knob takes the home app's colour, else the default. */
+export function RoomTile({ studio, g, canWrite, menu }: { studio: Studio; g: Group; canWrite: boolean; menu?: ComponentProps<typeof NameButton>['menu'] }) {
   const st = tileState(studio, g, canWrite);
   const on = g.on;
   const cls = `st-tg st-room${on ? ' on' : ''}${st.disabled ? ' dis' : ''}`;
   return (
     <div className={cls} data-group={g.id}>
+      <NameButton id={g.id} label={g.label} menu={menu} />
       <TileSwitch label={g.label} on={on} dim={st.dim} disabled={st.disabled} knob={g.colour ?? undefined} tipText={st.tip} onClick={() => void useHome.getState().setGroup(g.id, !on)} />
-      <NameButton id={g.id} label={g.label} />
+      {on && !st.disabled && !st.dim && <TileLevel level={g.level} colour={g.colour ?? 'var(--cyan)'} />}
     </div>
   );
 }
@@ -20,8 +22,8 @@ export function RoomTile({ studio, g, canWrite }: { studio: Studio; g: Group; ca
 export function AwayTile({ g, word }: { g: Group; word: HomeWord | null }) {
   return (
     <div className="st-tg st-room dis" data-group={g.id}>
-      <TileSwitch label={g.label} on={g.on} dim disabled tipText={`${g.label}: ${awayWords(word).tip}`} />
       <NameButton id={g.id} label={g.label} />
+      <TileSwitch label={g.label} on={g.on} dim disabled tipText={`${g.label}: ${awayWords(word).tip}`} />
     </div>
   );
 }

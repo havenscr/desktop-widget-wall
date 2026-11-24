@@ -7,11 +7,11 @@ import { ABSENT_LINE, CHANGED_TIP, DOWN_LINE, homeLine, NOT_SET_UP_LINE, presetC
 import { canChange, homeView, useHome } from './homeStore';
 import { PAGE_PRESETS, PresetRow } from './PresetRow';
 import { GroupCard } from './GroupCard';
-import { NameButton, TileSwitch } from './GroupTile';
+import { NameButton, TileLevel, TileSwitch } from './GroupTile';
 import { RoomTiles } from './RoomTiles';
 import { StudioOffer } from './StudioOffer';
 import { useHomePolling } from './useHomePolling';
-import { anyOn, kelvinColour, noneTitle, savedDown, singleLight, summaryLine, viewOf, working, type Snapshot } from './model';
+import { anyOn, kelvinColour, keyLevel, noneTitle, savedDown, singleLight, summaryLine, viewOf, working, type Snapshot } from './model';
 import { useKeyLights } from './store';
 import { useKeyLightPolling } from './useKeyLightPolling';
 
@@ -77,6 +77,7 @@ export function StudioBlock() {
   } else if (v === 'live' || v === 'one') {
     tile = (
       <div className={`st-tg${on ? ' on' : ''}${warnTile ? ' warn' : ''}`} data-group="keys">
+        <NameButton id="keys" label="Key lights" />
         <TileSwitch
           label="Key lights"
           on={on}
@@ -90,7 +91,7 @@ export function StudioBlock() {
                 : 'Turns both key lights on, at the brightness and warmth they last had.'
           }
         />
-        <NameButton id="keys" label="Key lights" />
+        {on && <TileLevel level={keyLevel(snap)} colour={knob} />}
         {warnTile && <IconAlertTriangle size={20} aria-hidden="true" className="st-tg-warn" />}
       </div>
     );
@@ -121,8 +122,8 @@ export function StudioBlock() {
   } else if (v === 'unset') {
     tile = (
       <div className="st-tg dis" data-group="keys" aria-disabled="true" {...tip('The key lights need their addresses, typed once in Tools')}>
-        <TileSwitch label="Key lights" on={false} plain />
         <NameButton id="keys" label="Key lights" />
+        <TileSwitch label="Key lights" on={false} plain />
       </div>
     );
     action = (
@@ -134,8 +135,8 @@ export function StudioBlock() {
   } else {
     tile = (
       <div className="st-tg dis" data-group="keys" aria-disabled="true">
-        <TileSwitch label="Key lights" on={false} plain />
         <NameButton id="keys" label="Key lights" />
+        <TileSwitch label="Key lights" on={false} plain />
       </div>
     );
     action = null;

@@ -2389,35 +2389,83 @@
 }
 .np-line .np-meta {
   padding-top: 0;
-  gap: 2px;
+  gap: 0;
   justify-content: center;
+}
+/* Title, artist and where it plays: 24 + 20 + 20 = the 64 px of the cover. */
+.np-line .np-artist {
+  font: 400 17px/20px var(--body);
+}
+.np-line .np-meta .np-where {
+  margin-top: 0;
 }
 .np-line .np-title {
   display: block;
   -webkit-line-clamp: none;
   line-clamp: none;
-  font: 600 21px/26px var(--body);
+  font: 600 21px/24px var(--body);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 .np-line .np-where {
-  font: 400 17px/22px var(--body);
+  font: 400 16px/20px var(--body);
 }
-.np-line .np-btns {
-  position: static;
+/* The cover with its small round source badge in the corner (the speaker); a cover that has not come shows the source icon alone. */
+.np-tile-b {
+  position: relative;
   flex: none;
+  width: 64px;
+  height: 64px;
+}
+.np-tile-b .np-cover {
+  display: block;
+}
+.np-badge {
+  position: absolute;
+  right: 3px;
+  bottom: 3px;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(8, 6, 24, 0.88);
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.25);
+  color: var(--tx);
+}
+/* The play row under the line: back, pause, next, equal in width and filling the row (the block's 22 px right padding is its own). */
+.np-ctl {
+  flex: none;
+  display: flex;
   gap: 8px;
+  height: 40px;
+  padding-right: 22px;
+  box-sizing: border-box;
 }
-.np-line .np-rd,
-.np-line .np-rd.big {
-  width: 38px;
-  height: 38px;
+.np-ctl > * {
+  box-sizing: border-box;
 }
-.np-line .np-btns .sound-btn {
-  height: 38px;
+.np-ctl .np-rd,
+.np-ctl .np-rd.big {
+  flex: 1 1 0;
+  min-width: 0;
+  width: auto;
+  height: 40px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 14px;
 }
-/* The studio lights block under the line: a title, then three rows (switches 40, looks 34, mood buttons 34). */
+.np-ctl .np-rd.big {
+  border-color: var(--cyan);
+}
+.np-ctl .sound-btn {
+  flex: 1 1 0;
+  min-width: 0;
+  height: 40px;
+  justify-content: center;
+}
+/* The studio lights block under the line: a title, a switches row (40) and the mood buttons (34). */
 .hs-block {
   flex: none;
   display: flex;
@@ -2446,7 +2494,7 @@
   margin-top: 0;
 }
 .hs-row .st-tg {
-  flex: none;
+  flex: 1 1 0;
   --tg-px: 12px;
   --tg-gap: 8px;
 }
@@ -2458,6 +2506,192 @@
 }
 .hs-moods {
   gap: 4px;
+}
+/* Key lights and Panels are the same width (two equal columns); Fine tune stays a 40 px square button. */
+.hs-row.st-switches {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 40px;
+}
+.hs-panels {
+  position: relative;
+  min-width: 0;
+  display: flex;
+}
+.hs-panels .st-tg {
+  flex: 1 1 auto;
+}
+.hs-row .st-chip.st-icon {
+  width: 40px;
+}
+/* The panel effects list under the Panels pill. */
+.hs-pop {
+  position: absolute;
+  z-index: 20;
+  top: calc(100% + 8px);
+  right: 0;
+  box-sizing: border-box;
+  width: 280px;
+  max-height: 252px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 14px 16px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.07), rgba(255, 255, 255, 0.02)), #0c0924;
+  border: 1px solid rgba(53, 230, 234, 0.35);
+  border-radius: 22px;
+  box-shadow: 0 18px 50px -10px rgba(0, 0, 0, 0.7);
+}
+.hs-pop-row {
+  flex: none;
+  box-sizing: border-box;
+  height: 44px;
+  display: flex;
+  align-items: center;
+  padding: 0 14px;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--tx);
+  font: 600 18px/1 var(--body);
+  text-align: left;
+  cursor: pointer;
+}
+.hs-pop-row span {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.hs-pop-row:hover:not(.on) {
+  background: rgba(53, 230, 234, 0.08);
+}
+.hs-pop-row.on {
+  background: rgba(53, 230, 234, 0.14);
+  border-color: rgba(53, 230, 234, 0.55);
+  color: var(--cyan);
+}
+.hs-pop-row.dis {
+  opacity: 0.55;
+  cursor: default;
+}
+.hs-pop-note {
+  padding: 4px 0;
+}
+/* More: three mood tiles in the Morning to Workday style, then the favorites dropdown. */
+.sound-pop.more-pop {
+  overflow: visible;
+  max-height: none;
+}
+.sound-mood-list {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+.sound-mood-list:empty {
+  display: none;
+}
+.sound-mood {
+  box-sizing: border-box;
+  min-width: 0;
+  height: 84px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0 14px;
+  border-radius: 18px;
+  border: 1px solid var(--line);
+  background: linear-gradient(115deg, rgba(var(--c), 0.17), rgba(var(--c), 0.04) 55%, rgba(255, 255, 255, 0.04));
+  color: var(--tx);
+  text-align: left;
+  cursor: pointer;
+}
+.sound-mood:hover:enabled {
+  border-color: rgba(var(--c), 0.6);
+}
+.sound-mood b {
+  min-width: 0;
+  font: 600 20px/23px var(--body);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.sound-fav {
+  position: relative;
+}
+.sound-fav-btn {
+  box-sizing: border-box;
+  width: 100%;
+  height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 14px;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.06);
+  color: #d9d2f5;
+  font: 500 18px/1 var(--body);
+  cursor: pointer;
+}
+.sound-fav-btn.open {
+  border-color: rgba(53, 230, 234, 0.6);
+}
+.sound-fav-list {
+  position: absolute;
+  z-index: 3;
+  left: 0;
+  right: 0;
+  bottom: calc(100% + 6px);
+  box-sizing: border-box;
+  max-height: 212px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.07), rgba(255, 255, 255, 0.02)), #0c0924;
+  border: 1px solid rgba(53, 230, 234, 0.45);
+  border-radius: 18px;
+  box-shadow: 0 18px 50px -10px rgba(0, 0, 0, 0.8);
+}
+.sound-fav-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.sound-fav-row {
+  flex: none;
+  box-sizing: border-box;
+  height: 44px;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: 12px;
+  background: none;
+  color: #e4ddff;
+  font: 500 18px/1 var(--body);
+  text-align: left;
+  cursor: pointer;
+}
+.sound-fav-row svg {
+  flex: none;
+  color: #8f88b4;
+}
+.sound-fav-row span {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.sound-fav-row:hover:enabled {
+  background: rgba(53, 230, 234, 0.1);
+}
+.sound-fav-note {
+  padding: 8px 14px;
 }
 /* The three buttons are the Unwind chips, a little tighter so "Office Recording" fits the 377 px of the left column. */
 .hs-moods .u-mood {

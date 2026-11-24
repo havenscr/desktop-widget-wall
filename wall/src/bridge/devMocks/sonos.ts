@@ -39,9 +39,9 @@ const ROUTINES = [
   { key: 'Evening_Mix', name: 'Evening Mix', favorite: 'Lo-fi Room', volume: 12 },
   { key: 'Late_Night_Mix', name: 'Late Night Mix', favorite: 'Blue Hour', volume: 5 },
   { key: 'Workday_Mix', name: 'Workday Mix', favorite: 'Synth Drive', volume: 10 },
-  { key: 'Bright_Mix', name: 'Bright Pop', favorite: 'Pop Picks', volume: 14 },
-  { key: 'Book_Mix', name: 'Book Club', favorite: 'Soft Strings', volume: 9 },
-  { key: 'Rain_Mix', name: 'Rain Sounds', favorite: 'Rain on a Tin Roof', volume: 18 },
+  { key: 'Upbeat_Mix', name: 'Upbeat Music', favorite: 'Fiji Villa', volume: 10 },
+  { key: 'Reading_Mix', name: 'Reading Music', favorite: 'Classical Essentials', volume: 4 },
+  { key: 'Romantic_Mix', name: 'Romantic Music', favorite: 'Evening Acoustic', volume: 6 },
 ];
 
 const LONG_ROUTINES = [

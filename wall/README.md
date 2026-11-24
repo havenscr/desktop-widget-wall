@@ -512,10 +512,15 @@ ignored, and each control stays latched for 800 ms after its write settles.
   reads as Day; "late night" may be one word or two; case is ignored). The button's label
   is exactly the word, whatever the routine is called; the tooltip has the routine's own
   name, favourite and volume. A word with no matching routine has no button, and when two
-  routines carry the same word the first by name (case-insensitive, then by key) wins, and a routine used by an earlier tile is skipped. Every other routine
-  sits under **More**, with the ungroup all control; the group all control is not offered
-  anywhere on the page (the Rust command and its loud-volume confirm are unchanged). The
-  service has no way to play a favourite directly, so More lists routines only. The one of
+  routines carry the same word the first by name (case-insensitive, then by key) wins, and a routine used by an earlier tile is skipped. **More** holds only three mood tiles, Upbeat (orange, confetti),
+  Romantic (rose, heart) and Reading (blue, book), the first routine by name that carries each word and is not a quick play
+  (the favourite and volume are in the hover text); no other routine and no speaker control is listed. Under the tiles a closed
+  "Choose a favorite" dropdown reads the Sonos favourites (`bridge/sonosFavorites.ts`) when first opened; a long name ends in
+  an ellipsis, a pick plays it on the current group and asks first when the service answers `needs-confirm`. The card's
+  hover text is the wall's own 18 px card (`tip`), not the browser's. Under the song line a play row (back, pause, next) of
+  equal buttons fills the width, above Studio lights; Key lights and Panels are the same switch pills as on the other pages, of
+  equal width, with a square Fine tune button, and the Panels word opens the panel effects list under it. The cover carries a
+  small round speaker badge. The one of
   the five that fits the hour is tagged "Suggested" (from the tiles only; morning 5 to 9 AM, Workday then Day
   on weekdays to 5 PM, Day then Workday at weekends, evening to 9 PM, late night after).
 - **Unforced plays**: a click triggers the routine without `force`, so its own skip

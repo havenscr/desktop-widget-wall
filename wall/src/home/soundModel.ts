@@ -219,6 +219,38 @@ export function moreRoutines(music: readonly MusicRoutine[], tiles: readonly Fac
   return music.filter((r) => !on.has(r.key));
 }
 
+/** The three moods More holds, each with its own word, colour (as `r,g,b`) and line icon. */
+export const MOOD_TILES = [
+  { key: 'upbeat', label: 'Upbeat', rgb: '255,128,64', icon: 'confetti', re: /(?<![a-z0-9])upbeat(?![a-z0-9])/ },
+  { key: 'romantic', label: 'Romantic', rgb: '255,92,120', icon: 'heart', re: /(?<![a-z0-9])romantic(?![a-z0-9])/ },
+  { key: 'reading', label: 'Reading', rgb: '92,168,255', icon: 'book', re: /(?<![a-z0-9])reading(?![a-z0-9])/ },
+] as const satisfies readonly { key: string; label: string; rgb: string; icon: 'confetti' | 'heart' | 'book'; re: RegExp }[];
+
+export interface MoodTile {
+  label: string;
+  rgb: string;
+  icon: (typeof MOOD_TILES)[number]['icon'];
+  routine: MusicRoutine;
+}
+
+/**
+ * What More holds: Upbeat, Romantic and Reading, in that order, each the first routine (by name) that carries its
+ * word and is not already a quick play or another tile. A word with no routine has no tile; every other routine is left out.
+ */
+export function moodTiles(music: readonly MusicRoutine[], tiles: readonly FaceTile[]): MoodTile[] {
+  const on = new Set(tiles.map((t) => t.routine.key));
+  const sorted = [...music].sort(byName);
+  const out: MoodTile[] = [];
+  for (const m of MOOD_TILES) {
+    const routine = sorted.find((r) => !on.has(r.key) && m.re.test(plain(r.name)));
+    if (routine) {
+      on.add(routine.key);
+      out.push({ label: m.label, rgb: m.rgb, icon: m.icon, routine });
+    }
+  }
+  return out;
+}
+
 /** The controls More lists: "Group all" is not offered, and Pause all has its own button. */
 export function moreControls(controls: readonly ControlRoutine[]): ControlRoutine[] {
   return controls.filter((c) => c.action !== 'pauseAll' && c.action !== 'groupAll');
@@ -596,6 +628,8 @@ export interface MusicView {
   clock: { posMs: number; durMs: number } | null;
   /** Back and next are offered: the sound service has the commands. */
   canSkip: boolean;
+  /** Where the sound comes from: a Spotify track, a station (no length), or null when the read does not say. */
+  source: 'spotify' | 'radio' | null;
 }
 
 /**
@@ -627,6 +661,7 @@ export function musicView(args: {
       whereTip: `Spotify on ${track.where}`,
       clock: trackClock(track.durationMs / 1000, track.progressMs / 1000, trackAt, now, live),
       canSkip: s.canSkip,
+      source: 'spotify',
     };
   }
   if (!where) return null;
@@ -640,5 +675,6 @@ export function musicView(args: {
     whereTip: nowLine(s),
     clock: np ? trackClock(np.duration, np.position, s.readAtMs, now, live) : null,
     canSkip: s.canSkip,
+    source: np?.track && np.duration === null ? 'radio' : null,
   };
 }

@@ -1,5 +1,7 @@
+import { measureTileBar, tileBarRule } from '../lib/tile-bar.mjs';
+
 // The Home tab's studio lights: the short Now playing line, the block under it (Key lights and Panels switches, Fine tune,
-// three panel looks, Gaming, Office Recording and As before) and the Condo / Office pick in the Moods heading. Every state
+// Gaming, Office Recording and As before) and the Condo / Office pick in the Moods heading. Every state
 // comes from the `?studio=`, `?office=`, `?officemood=`, `?desktoken=` and `?keys2=` knobs of the development mocks.
 
 const at = '2026-11-11T10:24:00-08:00';
@@ -83,7 +85,7 @@ function rule(v, results, emit) {
     if (!m.line || Math.abs(m.line.h - 64) > 1) fails.push('home studio: the Now playing line is ' + (m.line ? r1(m.line.h) : 'missing') + ' px tall (64)');
     if (!m.cover || Math.abs(m.cover.w - 64) > 1 || Math.abs(m.cover.h - 64) > 1) fails.push('home studio: the cover is ' + (m.cover ? r1(m.cover.w) + ' x ' + r1(m.cover.h) : 'missing') + ' (64 x 64)');
     for (const t of m.transport) if (Math.abs(t.w - 38) > 1 || Math.abs(t.h - 38) > 1) fails.push('home studio: a transport button is ' + r1(t.w) + ' x ' + r1(t.h) + ' px (38 x 38)');
-    for (const [name, row] of [['switches', m.switches], ['looks', m.looks], ['moods', m.moodsRow]]) {
+    for (const [name, row] of [['switches', m.switches], ['moods', m.moodsRow]]) {
       if (!row) continue;
       if (row.l < m.block.l - 0.5 || row.r > m.block.r + 0.5) fails.push('home studio: the ' + name + ' row leaves the block');
     }
@@ -97,12 +99,11 @@ function rule(v, results, emit) {
     for (const c of [...m.switchTiles, ...m.lookChips]) if (c.r > m.block.r + 0.5) fails.push('home studio: "' + c.name + '" ends at x ' + r1(c.r) + ', past the block (' + r1(m.block.r) + ')');
     if (v.name === V_READY || v.name === V_ONE) {
       if (m.switchTiles.length < 3) fails.push('home studio: Key lights, Panels and Fine tune are not all there (' + m.switchTiles.length + ')');
-      if (m.lookChips.length !== 3) fails.push('home studio: ' + m.lookChips.length + ' panel looks on the page (3)');
+      if (m.lookChips.length !== 0) fails.push('home studio: ' + m.lookChips.length + ' panel looks on the page (0; they are in the Panels pop-up)');
       if (m.moodChips.some((c) => c.disabled && c.name !== 'As before')) fails.push('home studio: a mood button is dashed while the home app lists it');
     }
     if (v.name === V_ABSENT) {
       if (!m.moodChips.every((c) => c.disabled)) fails.push('home studio: with no home app answer the three buttons must all be dashed, not live');
-      if (m.lookChips.some((c) => !c.disabled)) fails.push('home studio: with no home app answer a panel look is live');
     }
   }
   if (v.name === V_CONDO || v.name === V_OFFICE) {
@@ -132,7 +133,7 @@ export default {
       state('home studio: ready', READY, ['Studio lights', 'Key lights', 'Panels', 'Gaming', 'Office Recording', 'As before']),
       state('home studio: a hovered As before', `${READY}&officemood=gaming`, ['Puts the office back the way it was before the mood'], 'hover:[data-mood="back"]'),
       state('home studio: Gaming on', `${READY}&officemood=gaming`, ['Gaming', 'As before']),
-      state('home studio: the home app not answering', ABSENT, ['Studio lights', 'Panel looks', 'Gaming', 'Office Recording', 'As before']),
+      state('home studio: the home app not answering', ABSENT, ['Studio lights', 'Panels', 'Gaming', 'Office Recording', 'As before']),
       state('home studio: Moods on Condo', READY, ['Condo', 'Office', 'Day', 'Evening']),
       state('home studio: Moods on Office', READY, ['Condo', 'Office', 'Relax', 'Gaming', 'Recording'], '[data-moods-which="office"]'),
     ],
@@ -145,15 +146,16 @@ export default {
       variant(V_CONDO, READY),
       variant(V_OFFICE, READY, { click: '[data-moods-which="office"]' }),
     ],
-    measurements: { homestudio: measureHomeStudio },
-    rules: { homestudio: rule },
+    measurements: { homestudio: measureHomeStudio, tileBarHome: measureTileBar },
+    rules: { homestudio: rule, tileBarHome: tileBarRule('tileBarHome', 'home studio tiles', (v) => v.name.startsWith('Home studio')) },
     breaks: {
+      'tilebar-home': { css: '.st-name, .st-tg-sw { padding-bottom: 0 !important; } .st-track, .st-bar { bottom: 8px !important; }', expect: /^ *FAIL home studio tiles: tile ".*" text \(with descenders\) ends/m, appliesTo: on(V_READY) },
       'homestudio-tall': { css: '.hs-block { gap: 30px !important; }', expect: /^ *FAIL home studio: the block .* leaves the left column|^ *FAIL home studio: the block ends at y /m, appliesTo: on(V_READY) },
       'homestudio-line': { css: '.np-col > .sound-np, .np-line { height: 90px !important; }', expect: /^ *FAIL home studio: the Now playing line is \d+(\.\d)? px tall/m, appliesTo: on(V_READY) },
       'homestudio-cover': { css: '.sound-np.compact .np-cover, .sound-np.compact .np-slot { width: 100px !important; height: 100px !important; }', expect: /^ *FAIL home studio: the cover is /m, appliesTo: on(V_READY) },
       'homestudio-buttons': { css: '.hs-moods .u-mood { height: 28px !important; }', expect: /^ *FAIL home studio: button ".*" is [\d.]+ px tall/m, appliesTo: on(V_READY) },
       'homestudio-wide': { css: '.hs-moods .u-mood-name { padding: 0 60px !important; }', expect: /^ *FAIL home studio: (button ".*" ends at x|buttons ".*" and ".*" overlap|the moods row leaves the block)/m, appliesTo: on(V_READY) },
-      'homestudio-text': { css: '.hs-title, .hs-row .st-preset, .hs-moods .u-mood { font-size: 13px !important; }', expect: /^ *FAIL home studio: text under 16 px/m, appliesTo: on(V_READY) },
+      'homestudio-text': { css: '.hs-title, .hs-moods .u-mood { font-size: 13px !important; }', expect: /^ *FAIL home studio: text under 16 px/m, appliesTo: on(V_READY) },
       'homestudio-pick': { css: '.moods-pick { display: none !important; }', expect: /^ *FAIL home studio: the "(Condo|Office)" pick is 0 px tall/m, appliesTo: on(V_CONDO) },
       'homestudio-office': { css: '.mood-btn { display: none !important; }', expect: /^ *FAIL home studio: the office cards are/m, appliesTo: on(V_OFFICE) },
       'homestudio-dead': { css: '.hs-moods .u-mood { pointer-events: auto !important; } .hs-moods .u-mood.blocked { display: none !important; }', expect: /^ *FAIL home studio: the three buttons read/m, appliesTo: on(V_ABSENT) },

@@ -1,3 +1,5 @@
+import { measureTileBar, tileBarRule } from '../lib/tile-bar.mjs';
+
 // Studio lights: the key light block on On Air, its Fine tune drawer, the Lights chip on Work and the Key lights
 // section in Tools. Gallery states, fit variants, rules and their deliberate breaks live here; the two big review
 // scripts are not edited for it. Every state comes from the `?keys2=` knob of the development mocks.
@@ -14,6 +16,8 @@ const LEFT_BRI = '.st-side[data-side="left"] .st-sl';
 
 const state = (screen, name, query, expect, actions) => ({ screen, name, query, custom: true, expect, actions });
 
+const tilesVariant = (name, knobs) => ({ name, q: onAirFit(knobs), checks: ['.oa2 .oa2-modes'] });
+const TILES = 'keys2=both&studio=ready&desktoken=set';
 const LIGHTS = '[class*="oa2-lights-"]';
 const BLOCK_CHECKS = [LIGHTS, '.st-block', '.st-block .st-row'];
 
@@ -103,6 +107,8 @@ export default {
   name: 'studio-lights',
   gallery: {
     states: [
+      state('onair', 'studio lights: tiles with level bars, Recording', onAirGallery(`${TILES}&rec=1&oatake=3`), ['Key lights', 'Panels']),
+      state('onair', 'studio lights: tiles with level bars, nothing on air', onAirGallery(`${TILES}&oalast=1`), ['Key lights', 'Panels']),
       state('onair', 'studio lights: not set up (day one)', onAirGallery('keys2=none'), ['Studio lights', 'Office only', 'Key lights: type their addresses in Tools', 'Open Tools', 'Presets and room lights: the home app does not offer them here yet.', '!Fine tune']),
       state('onair', 'studio lights: key lights on, matched', onAirGallery('keys2=both'), ['Key lights 60%, 4400 K', 'Fine tune', 'Presets and room lights: the home app does not offer them here yet.']),
       state('onair', 'studio lights: key lights off', onAirGallery('keys2=off'), ['Key lights are off', 'Fine tune']),
@@ -146,6 +152,10 @@ export default {
       variant('Studio lights, drawer, one light silent', onAirFit('keys2=left-silent'), { click: FINE, checks: ['.st-drawer', '.st-d-keys'] }),
       workVariant(CHIP_V, workFit('agents=ask&rec=1&keys2=both')),
       workVariant('Studio lights, Work chip, long names, lights differ', workFit('agents=ask&long=1&rec=1&keys2=mismatch')),
+      tilesVariant('Studio lights, tiles on On Air, Recording', `${TILES}&rec=1&oatake=3`),
+      tilesVariant('Studio lights, tiles on On Air, Idle', `${TILES}&oalast=1`),
+      tilesVariant('Studio lights, tiles on On Air, Presenting', `${TILES}&call=teams&camera=1&meetnow=1`),
+      tilesVariant('Studio lights, tiles on On Air, Live', `${TILES}&oamode=live&yt=live`),
       variant('Studio lights, On Air, one light not set up', onAirFit('keys2=right-unset')),
       variant('Studio lights, On Air, one light set up and silent', onAirFit('keys2=right-unset-silent')),
       variant('Studio lights, drawer, one light not set up', onAirFit('keys2=right-unset'), { click: FINE, checks: ['.st-drawer', '.st-d-keys'] }),
@@ -155,8 +165,9 @@ export default {
       toolsVariant('Studio lights, Tools, typing an address', workFit('agents=3&tools=lights&keys2=none'), { click: '.kl-row[data-side="left"] .tools-btn then .kl-row[data-side="right"] .tools-btn >> type:.kl-field=192.168.100.200' }),
       toolsVariant('Studio lights, Tools, test results', workFit('agents=3&tools=lights&keys2=left-silent'), { click: '.kl-row[data-side="left"] .tools-btn:not(.cy) then .kl-row[data-side="right"] .tools-btn:not(.cy)' }),
     ],
-    measurements: { studio: measureStudio },
+    measurements: { studio: measureStudio, tileBarOnAir: measureTileBar },
     rules: {
+      tileBarOnAir: tileBarRule('tileBarOnAir', 'on air tiles', (v) => v.name.startsWith('Studio lights, tiles on On Air')),
       studio: (v, results, emit) => {
         const s = results.studio;
         const fails = [];
@@ -219,6 +230,7 @@ export default {
       },
     },
     breaks: {
+      'tilebar-onair': { css: '.st-name, .st-tg-sw { padding-bottom: 0 !important; } .st-track, .st-bar { bottom: 8px !important; }', expect: /^ *FAIL on air tiles: tile ".*" text \(with descenders\) ends/m, appliesTo: (v) => v.name === 'Studio lights, tiles on On Air, Recording' },
       'studio-block': { css: '.st-block { height: 260px !important; }', expect: /^ *FAIL studio: .*(block|footnote)/m, appliesTo: (v) => v.name === BLOCK_V },
       'studio-controls': { css: '.st-chip { height: 30px !important; }', expect: /^ *FAIL studio: control ".*" is \d+(\.\d)? px high/m, appliesTo: (v) => v.name === BLOCK_V },
       'studio-text': { css: '.st-line { font-size: 13px !important; }', expect: /^ *FAIL studio: text under 16 px/m, appliesTo: (v) => v.name === BLOCK_V },

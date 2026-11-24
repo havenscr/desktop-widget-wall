@@ -1,3 +1,5 @@
+import { measureTileBar, tileBarRule } from '../lib/tile-bar.mjs';
+
 // The Meet tab as layout A: the hero at the left (the call key deck: a left column, a 2 by 4 grid of keys, the people and
 // the chips), the island in the centre, the Next card at the right. Gallery states for every state the layout has, and the fit rules with a deliberate break each.
 const at = encodeURIComponent('2026-11-11T10:24:00-08:00');
@@ -26,6 +28,7 @@ const VARIANTS = [
   ['Meet layout, brief feed (10 items: 7 rows and a count)', at, 'meet=known&call=teams&checklist=four&brief=many'],
   ['Meet layout, brief empty (no history yet)', at, 'meet=known&call=teams&checklist=four&brief=empty'],
   ['Meet layout, brief building', at, 'meet=known&call=teams&checklist=four&brief=building'],
+  ['Meet layout, studio lights on: Key lights and Panels tiles with their level bars', at, 'meet=known&call=teams&checklist=four&keys2=both&studio=ready&desktoken=set'],
 ];
 const BRIEF_MANY_VARIANT = 'Meet layout, brief feed (10 items: 7 rows and a count)';
 
@@ -139,6 +142,7 @@ export default {
   name: 'meet-layout',
   gallery: {
     states: [
+      state('studio lights on: Key lights and Panels with level bars', 'meet=known&call=teams&camera=1&leave=60&checklist=four&keys2=both&studio=ready&desktoken=set', ['Key lights', 'Panels']),
       state('next meeting in 20 minutes', 'meet=before&leave=100&checklist=four', ['Next, in 20 min', 'Design review with the platform team', 'Join', 'Open invite', 'After this', 'Lunch with Sam', 'Leave by', 'The wall switches to the call by itself when it starts.', 'The invite', 'Also on file']),
       state('in a Teams call, known client', 'meet=known&call=teams&camera=1&rec=1&leave=60&checklist=four', ['In call, Teams', 'Mute', 'Camera on', 'Share', 'Leave', 'Casey Rowe', '6 invited', '4 said yes, 1 maybe', 'Recording', 'Next', 'Lunch with Sam', 'min left']),
       state('in a call, new client', 'meet=new&call=teams&checklist=four', ['In call, Teams', 'Intro call with a new client', 'Called by Jordan Vale', '3 invited', 'Thanks for making time', 'Who is coming', 'First-meeting list']),
@@ -177,8 +181,9 @@ export default {
   },
   fit: {
     variants: VARIANTS.map(([name, when, knobs, click]) => ({ name, q: fitBase(when, knobs), checks: ['.meet .meet-hero', '.meet .meet-island', '.meet .meet-later', ...(click ? ['.meet .meet-brief-setup', '.meet .meet-keyfield'] : [])], ...(click ? { click } : {}) })),
-    measurements: { meetLayout: measureMeet },
+    measurements: { meetLayout: measureMeet, tileBarMeet: measureTileBar },
     rules: {
+      tileBarMeet: tileBarRule('tileBarMeet', 'meet tiles', (v) => v.name.startsWith('Meet layout')),
       meetLayout: (variant, results, emit) => {
         const m = results.meetLayout;
         if (!variant.name.startsWith('Meet layout')) return false;
@@ -224,6 +229,7 @@ export default {
       },
     },
     breaks: {
+      'tilebar-meet': { css: '.st-name, .st-tg-sw { padding-bottom: 0 !important; } .st-track, .st-bar { bottom: 8px !important; }', expect: /^ *FAIL meet tiles: tile ".*" text \(with descenders\) ends/m, appliesTo: (v) => v.name.includes('studio lights on') },
       'meet-key-narrow': { css: '.meet .meet-hero .meet-key { width: 80px !important; }', expect: /^ *FAIL meet layout: key size: /m, appliesTo: (v) => v.name === VARIANTS[1][0] },
       'meet-ring-size': { css: '.meet .meet-hero .meet-ring-dial { width: 164px !important; height: 164px !important; }', expect: /^ *FAIL meet layout: the ring is /m, appliesTo: (v) => v.name === VARIANTS[1][0] },
       'meet-hero-overlap': { css: '.meet .meet-hero .meet-ppl { top: 200px !important; }', expect: /^ *FAIL meet layout: hero overlap: /m, appliesTo: (v) => v.name === VARIANTS[1][0] },

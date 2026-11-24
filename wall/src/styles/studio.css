@@ -161,7 +161,7 @@
   font-weight: 400;
 }
 .st-switches .st-tg {
-  --tg-px: 8px;
+  --tg-px: 10px;
   --tg-gap: 8px;
 }
 /* A zone group is dimmed at its switch, not at its name: the name stays readable (7 to 1, not 4.4 to 1). */
@@ -218,6 +218,7 @@
 
 /* A switch tile: the switch, its name. The knob takes the colour of the light's warmth. */
 .st-tg {
+  position: relative;
   flex: 1 1 auto;
   min-width: 0;
   display: flex;
@@ -225,6 +226,7 @@
   gap: 0;
   --tg-px: 12px;
   --tg-gap: 0;
+  --tg-foot: 6px;
   height: 40px;
   padding: 0;
   border-radius: 12px;
@@ -252,8 +254,10 @@
   display: flex;
   align-items: center;
   height: 100%;
-  padding: 0 var(--tg-gap) 0 var(--tg-px);
-  border-radius: 11px 0 0 11px;
+  box-sizing: border-box;
+  padding: 0 var(--tg-px) var(--tg-foot) 0;
+  margin-left: auto;
+  border-radius: 0 11px 11px 0;
   background: none;
   border: 0;
   color: inherit;
@@ -268,14 +272,16 @@ button.st-tg-sw:hover .st-sw {
 span.st-tg-sw {
   cursor: default;
 }
+/* The name is at the left, the switch at the right. The foot padding keeps the text and its descenders clear of the level bar. */
 .st-name {
   flex: 1 1 auto;
   min-width: 0;
   height: 100%;
-  padding: 0 var(--tg-px) 0 0;
+  box-sizing: border-box;
+  padding: 0 6px var(--tg-foot) var(--tg-px);
   background: none;
   border: 0;
-  border-radius: 0 11px 11px 0;
+  border-radius: 11px 0 0 11px;
   color: inherit;
   font: inherit;
   text-align: left;
@@ -283,6 +289,21 @@ span.st-tg-sw {
   overflow: hidden;
   text-overflow: ellipsis;
   cursor: pointer;
+}
+/* After the warning icon the name needs no left padding of its own. */
+/* The level bar along the foot of a lit tile: a faint track, and the fill to the light's level. */
+.st-track,
+.st-bar {
+  position: absolute;
+  left: 12px;
+  bottom: 3px;
+  height: 3px;
+  border-radius: 2px;
+  pointer-events: none;
+}
+.st-track {
+  right: 12px;
+  background: rgba(255, 255, 255, 0.12);
 }
 .st-tg.warn .st-name {
   color: var(--amber);

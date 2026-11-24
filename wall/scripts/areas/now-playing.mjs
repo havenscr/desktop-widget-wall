@@ -67,10 +67,10 @@ function measureNow() {
   // The foot: the control row (the music half in the split view) ends within 12 px of the block's bottom.
   const foot = kind === 'both' ? layer.querySelector('.np-half[data-half="music"]') : layer.querySelector('.np-foot');
   if (compact) {
-    // The short form's controls sit at the line's right end.
-    const btns = layer.querySelector('.np-btns');
+    // The short form's controls are the play row under the line, inside the column.
+    const btns = document.querySelector('.home .np-ctl');
     if (!btns) fails.push('now playing: no control row');
-    else if (R(btns).right > bb.right + 0.5 || R(btns).bottom > bb.bottom + 0.5 || R(btns).top < bb.top - 0.5) fails.push('now playing: the control row leaves the line');
+    else if (R(btns).right > bb.right + 0.5 || R(btns).top < bb.bottom - 0.5) fails.push('now playing: the control row leaves the line');
   } else if (!foot) fails.push('now playing: no control row');
   else {
     const gap = bb.bottom - R(foot).bottom;
@@ -86,11 +86,11 @@ function measureNow() {
     if (tall && !clamp && cs.textOverflow !== 'ellipsis') fails.push('now playing: "' + e.textContent.slice(0, 24) + '" is clipped without an ellipsis (' + e.scrollHeight + ' px tall in ' + e.clientHeight + ')');
   }
   // Buttons: 40 px or more each way, 8 px or more from the next.
-  const buttons = [...layer.querySelectorAll('button')].filter((e) => R(e).width > 0);
+  const buttons = [...(compact ? document.querySelector('.home .np-ctl') : layer).querySelectorAll('button')].filter((e) => R(e).width > 0);
   for (const e of buttons) {
     const r = R(e);
-    const least = compact ? 37.5 : 39.5;
-    if (r.width < least || r.height < least) fails.push('now playing: the ' + name(e) + ' button is ' + n(r.width) + ' by ' + n(r.height) + ' px (' + (compact ? '38 by 38' : '40 by 40') + ' at least)');
+    const least = 39.5;
+    if (r.width < least || r.height < least) fails.push('now playing: the ' + name(e) + ' button is ' + n(r.width) + ' by ' + n(r.height) + ' px (' + '40 by 40 at least)');
   }
   for (let i = 0; i < buttons.length; i++) {
     for (let j = i + 1; j < buttons.length; j++) {
@@ -163,7 +163,7 @@ export default {
     state('now playing: nothing playing', QUIET, ['Nothing playing', 'Suggested for this hour']),
     state('now playing: a TV room is not music, the quiet words stay', `${QUIET}&np=tv`, ['Nothing playing', 'Suggested for this hour', '!On the wall']),
     state('now playing: a Spotify track on a speaker', 'spotifyplay=speaker', ['Living room']),
-    state('now playing: Pause tip', 'np=skip', ['Pause every Sonos speaker'], 'hover:.sound-np .np-rd.big'),
+    state('now playing: Pause tip', 'np=skip', ['Pause every Sonos speaker'], 'hover:.np-ctl .np-rd.big'),
     // The wall's own video alone.
     state('now playing: the wall video', `${QUIET}&${WALL}&wplay=0`, ['Night drive mix', 'On the wall. YouTube video', '!12:34']),
     state('now playing: the wall video, paused', `${QUIET}&${WALL}&wplay=0&wstate=paused`, ['Night drive mix', 'On the wall']),
@@ -213,11 +213,11 @@ export default {
       'now-box': { css: '.np-col > .sound-np { height: 100px !important; }', expect: /^ *FAIL now playing: the short form is [\d.]+ px high/m, appliesTo: (v) => v.name === NAMES.music },
       'now-overlap': { css: '.np-line .np-meta { margin-left: -50px !important; }', expect: /^ *FAIL now playing: .* overlaps .* \([\d.]+ by [\d.]+ px\)/m, appliesTo: (v) => v.name === NAMES.music || v.name === NAMES.video },
       'now-leave': { css: '.np-line .np-title { position: relative !important; left: 300px !important; }', expect: /^ *FAIL now playing: np-title leaves the block/m, appliesTo: (v) => v.name === NAMES.music || v.name === NAMES.both },
-      'now-foot': { css: '.np-line .np-btns { margin-top: 50px !important; }', expect: /^ *FAIL now playing: the control row leaves the line/m, appliesTo: (v) => v.name === NAMES.music || v.name === NAMES.video },
+      'now-foot': { css: '.np-ctl { margin-top: -50px !important; }', expect: /^ *FAIL now playing: the control row leaves the line/m, appliesTo: (v) => v.name === NAMES.music || v.name === NAMES.video },
       'now-clip': { css: '.np-line .np-title { text-overflow: clip !important; }', expect: /^ *FAIL now playing: ".*" is clipped without an ellipsis/m, appliesTo: LONG_TITLES },
       // Buttons too small or too close; text too small.
-      'now-button-size': { css: '.np-line .np-rd, .np-line .np-rd.big { width: 30px !important; height: 30px !important; }', expect: /^ *FAIL now playing: the .* button is [\d.]+ by [\d.]+ px \(38 by 38 at least\)/m, appliesTo: MUSIC_OR_VIDEO },
-      'now-button-gap': { css: '.np-line .np-btns { gap: 2px !important; }', expect: /^ *FAIL now playing: the .* and .* buttons are -?[\d.]+ px apart \(8 at least\)/m, appliesTo: (v) => v.name === NAMES.musicLong || v.name === NAMES.video },
+      'now-button-size': { css: '.np-ctl .np-rd, .np-ctl .np-rd.big { height: 30px !important; }', expect: /^ *FAIL now playing: the .* button is [\d.]+ by [\d.]+ px \(40 by 40 at least\)/m, appliesTo: MUSIC_OR_VIDEO },
+      'now-button-gap': { css: '.np-ctl { gap: 2px !important; }', expect: /^ *FAIL now playing: the .* and .* buttons are -?[\d.]+ px apart \(8 at least\)/m, appliesTo: (v) => v.name === NAMES.musicLong || v.name === NAMES.video },
       'now-text-size': { css: '.np-where, .np-title { font-size: 12px !important; }', expect: /^ *FAIL now playing: ".*" is set at [\d.]+ px \(16 at least\)/m, appliesTo: (v) => v.name === NAMES.music || v.name === NAMES.quiet },
     },
   },

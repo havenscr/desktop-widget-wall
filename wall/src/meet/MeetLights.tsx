@@ -3,14 +3,14 @@ import { useEffect, useRef, useState } from 'react';
 import { tip } from '../ui/HoverTip';
 import { useToolsStore } from '../tools/store';
 import { GroupCard } from '../studio/GroupCard';
-import { NameButton, TileSwitch } from '../studio/GroupTile';
+import { NameButton, TileLevel, TileSwitch } from '../studio/GroupTile';
 import { PresetRow } from '../studio/PresetRow';
 import { AwayTile, RoomTile } from '../studio/RoomTiles';
 import { StudioDrawer } from '../studio/StudioDrawer';
 import { isFailedRead } from '../studio/homeModel';
 import { canChange, useHome } from '../studio/homeStore';
 import { moodFailText, rowModel, type RowModel } from '../studio/moodRow';
-import { anyOn, kelvinColour, savedDown, viewOf, working, type Snapshot } from '../studio/model';
+import { anyOn, kelvinColour, keyLevel, savedDown, viewOf, working, type Snapshot } from '../studio/model';
 import { useKeyLights } from '../studio/store';
 import { useHomePolling } from '../studio/useHomePolling';
 import { useKeyLightPolling } from '../studio/useKeyLightPolling';
@@ -112,6 +112,7 @@ export function KeyTile({ snap }: { snap: Snapshot }) {
   if (v === 'live' || v === 'one') {
     return (
       <div className={`st-tg${on ? ' on' : ''}${warn ? ' warn' : ''}`} data-group="keys">
+        <NameButton id="keys" label="Key lights" />
         <TileSwitch
           label="Key lights"
           on={on}
@@ -119,14 +120,14 @@ export function KeyTile({ snap }: { snap: Snapshot }) {
           onClick={() => target && void useKeyLights.getState().set(target, { on: !on })}
           tipText={on ? 'Turns the key lights off. The sliders in Fine tune keep their values.' : 'Turns the key lights on, at the brightness and warmth they last had.'}
         />
-        <NameButton id="keys" label="Key lights" />
+        {on && <TileLevel level={keyLevel(snap)} colour={knob} />}
       </div>
     );
   }
   return (
     <div className="st-tg dis" data-group="keys" aria-disabled="true" {...tip(v === 'unset' ? 'The key lights need their addresses, typed once in Tools' : 'The key lights did not answer the last read')}>
-      <TileSwitch label="Key lights" on={false} plain />
       <NameButton id="keys" label="Key lights" />
+      <TileSwitch label="Key lights" on={false} plain />
     </div>
   );
 }

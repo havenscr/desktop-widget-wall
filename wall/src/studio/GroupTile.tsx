@@ -4,22 +4,37 @@ import { toggleCard, useCard, type CardId } from './cardStore';
 
 /**
  * The name half of a switch tile: a button that opens that group's card. The switch half turns the group on or off
- * as before. Under the pointer the name is cyan and underlined; at rest nothing moves.
+ * as before. A page with its own menu for the name (Home's Panels effects) passes `menu`. Under the pointer the name is cyan and underlined; at rest nothing moves.
  */
-export function NameButton({ id, label, warn = false }: { id: CardId; label: string; warn?: boolean }) {
-  const open = useCard((s) => s.open === id);
+export function NameButton({ id, label, warn = false, menu }: { id: CardId; label: string; warn?: boolean; menu?: { open: boolean; toggle: () => void; tipText: string } }) {
+  const cardOpen = useCard((s) => s.open === id);
+  const open = menu ? menu.open : cardOpen;
   return (
     <button
       type="button"
       className={`st-name${open ? ' open' : ''}${warn ? ' warn' : ''}`}
       data-card-for={id}
-      aria-haspopup="dialog"
+      aria-haspopup={menu ? 'true' : 'dialog'}
       aria-expanded={open}
-      onClick={(e) => toggleCard(id, e.detail === 0)}
-      {...tip(`Opens the settings for ${label}`)}
+      onClick={menu ? menu.toggle : (e) => toggleCard(id, e.detail === 0)}
+      {...tip(menu ? menu.tipText : `Opens the settings for ${label}`)}
     >
       {label}
     </button>
+  );
+}
+
+/**
+ * The level bar along a lit tile's foot: a faint track, and over it a fill to the light's level in its own colour.
+ * With no level known only the track is drawn. Hidden from assistive tech; the switch and name say the rest.
+ */
+export function TileLevel({ level, colour }: { level: number | null; colour: string }) {
+  const pct = level === null || !Number.isFinite(level) ? null : Math.max(0, Math.min(100, level));
+  return (
+    <>
+      <i className="st-track" aria-hidden="true" />
+      {pct !== null && <i className="st-bar" aria-hidden="true" style={{ width: `calc((100% - 24px) * ${pct / 100})`, background: colour }} />}
+    </>
   );
 }
 

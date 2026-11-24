@@ -1,13 +1,18 @@
 import {
+  IconBook,
+  IconChevronDown,
   IconCoffee,
+  IconConfetti,
   IconDesk,
   IconDeviceLaptop,
   IconDeviceSpeaker,
   IconDots,
   IconHeadphones,
+  IconHeart,
   IconHome,
   IconLamp,
   IconMoonStars,
+  IconMusic,
   IconSofa,
   IconPlayerPauseFilled,
   IconPlayerPlayFilled,
@@ -27,6 +32,8 @@ import {
   type ReactNode,
 } from 'react';
 import { invoke } from '../bridge/tauri';
+import { playSonosFavorite, readSonosFavorites, type SonosFavorite } from '../bridge/sonosFavorites';
+import { tip } from '../ui/HoverTip';
 import { useVisible } from '../ui/useVisible';
 import { useCentreStatus } from './centreSources';
 import {
@@ -40,8 +47,7 @@ import {
   chipLabel,
   faceTiles,
   houseTrack,
-  moreControls,
-  moreRoutines,
+  moodTiles,
   wherePlaces,
   groupLabel,
   groupMovers,
@@ -61,8 +67,8 @@ import {
   startedText,
   suggestedKey,
   writeLastPlay,
-  type ControlRoutine,
   type FailureKind,
+  type MoodTile,
   type MusicRoutine,
   type PlayMark,
   type PlaybackRead,
@@ -289,6 +295,9 @@ function Live({
     });
   }, [s]);
 
+  /** Whether a write with this id may start now: none is running and its own latch has passed. */
+  const canStart = useCallback((id: string) => !busyRef.current && (latch.current[id] ?? 0) <= Date.now(), []);
+
   /**
    * Runs one write: busy while it runs, latched for a moment after it settles, a brief
    * result, and a fresh read at once and a moment later.
@@ -300,7 +309,7 @@ function Live({
       ok: string | ((answer: T) => string | null),
       opts: { confirmed?: boolean; ask?: string; yes?: string; done?: (answer: T) => void; undo?: () => void } = {},
     ) => {
-      if (busyRef.current || (latch.current[id] ?? 0) > Date.now()) return;
+      if (!canStart(id)) return;
       busyRef.current = true;
       setBusy(id);
       setConfirm(null);
@@ -336,7 +345,7 @@ function Live({
         if (mounted.current) setBusy(null);
       }
     },
-    [refresh, show, setConfirm],
+    [refresh, show, setConfirm, canStart],
   );
 
   const locked = stale || busy !== null;
@@ -350,11 +359,10 @@ function Live({
   }, [stale, setConfirm]);
 
   const face = faceTiles(s.music);
-  const more = moreRoutines(s.music, face);
+  const moods = moodTiles(s.music, face);
   const suggestion = suggestedKey(s.music, new Date(now));
   const playing = musicPlaying(s);
   const places = wherePlaces(s.presets);
-  const extraControls = moreControls(s.controls);
   const offer = skip && now - skip.at < SKIP_OFFER_MS ? skip : null;
 
   const play = (r: MusicRoutine) => {
@@ -403,16 +411,17 @@ function Live({
       },
     );
 
-  const runControl = (c: ControlRoutine) => {
-    const go = (confirmed: boolean) =>
-      void run(`play:${c.key}`, (k) => invoke('wall2_sonos_play', k ? { routineKey: c.key, confirm: true } : { routineKey: c.key }), `Done: ${c.name}`, {
-        confirmed,
-        ask: loudText(c.loud, 'Group'),
-        yes: 'Group',
-      });
+  const playFavorite = (f: SonosFavorite) => {
+    // The pop-up closes only once the write can start; when another write is busy, say so and keep it open.
+    if (!canStart(`fav:${f.id}`)) {
+      show('Busy, try again', true);
+      return;
+    }
     setPop(null);
-    if (c.loud.length > 0) setConfirm({ text: loudText(c.loud, 'Group'), yes: 'Group', go: () => go(true) });
-    else go(false);
+    const ask = `${f.name} plays on the current group, above volume 40 or at a level the service does not report. Start it?`;
+    const go = (confirmed: boolean) =>
+      void run(`fav:${f.id}`, (c) => playSonosFavorite(f.id, c), `Playing ${f.name}`, { confirmed, ask, yes: 'Start' });
+    go(false);
   };
 
   const setSpeaker = (sp: SonosSpeaker, level: number, undo: () => void) => {
@@ -484,7 +493,7 @@ function Live({
     extra = (
       <span className="sound-skip" role="status">
         <span className="xs warn-text">{offer.reason ? `Skipped: ${offer.reason}` : SKIP_LINE}</span>
-        <button type="button" className="sound-btn small" title="ignores this routine's own conditions" disabled={locked} {...once(() => playAnyway(offer))}>
+        <button type="button" className="sound-btn small" disabled={locked} {...tip("Ignores this routine's own conditions")} {...once(() => playAnyway(offer))}>
           Play anyway
         </button>
       </span>
@@ -493,10 +502,10 @@ function Live({
     side = { text: failureLine(failure, okAt, now), warn: true };
   }
 
-  const hasMore = more.length > 0 || extraControls.length > 0;
-  const hint = face.length === 1 && !hasMore;
+  // More always shows: it holds the favorites picker whether or not a mood routine exists.
+  const hasMore = true;
   // One column per control, so no blank cell sits in the row; the hints take the room they name.
-  const cols = face.length === 0 ? (hasMore ? 3 : 1) : face.length + (hasMore ? 1 : 0) + (hint ? 2 : 0);
+  const cols = face.length === 0 ? (hasMore ? 3 : 1) : face.length + (hasMore ? 1 : 0);
   const timer = soonestTimer(s.sleepTimers, now);
   const left = timer ? sleepLeft(timer, now) : null;
   const gVol = groupVolume(s);
@@ -524,8 +533,8 @@ function Live({
             <button
               type="button"
               className="sound-btn cy"
-              title={suggested ? `Start ${suggested.name}, the suggestion for this hour` : 'No routine fits this hour; pick one above'}
               disabled={locked || !suggested}
+              {...tip(suggested ? `Start ${suggested.name}, the suggestion for this hour` : 'No routine fits this hour; pick one above')}
               {...once(() => suggested && play(suggested))}
             >
               <IconPlayerPlayFilled size={22} aria-hidden="true" />
@@ -541,14 +550,14 @@ function Live({
             const isSug = !isStarted && r.key === suggestion;
             const tag = isStarted ? <u className="sound-tag on">{startedText(mark.at, now)}</u> : null;
             const cls = ['sound-chip', isStarted ? 'on' : '', isSug ? 'sug' : '', tag ? 'has-tag' : '', busy === `play:${r.key}` ? 'working' : ''].filter(Boolean).join(' ');
-            const tip = [`Play ${r.name}`, r.favorite ? `(${r.favorite})` : '', typeof r.volume === 'number' ? `at Vol. ${r.volume}` : 'at a volume the service sets', isSug ? '. Suggested for this hour' : '']
+            const playTip = [`Play ${r.name}`, r.favorite ? `(${r.favorite})` : '', typeof r.volume === 'number' ? `at Vol. ${r.volume}` : 'at a volume the service sets', isSug ? '. Suggested for this hour' : '']
               .filter(Boolean)
               .join(' ');
             return (
               <Chip
                 key={r.key}
                 className={cls}
-                title={tip}
+                tipText={playTip}
                 disabled={locked}
                 tag={tag}
                 name={t.label}
@@ -558,52 +567,33 @@ function Live({
             );
           })}
           {face.length === 0 && <div className="sound-quiet s span-all" style={hasMore ? { gridColumn: '1 / span 2' } : undefined}>No Morning, Day, Evening, Late Night or Workday routine in the Sonos service yet.</div>}
-          {(more.length > 0 || extraControls.length > 0) && (
+          {hasMore && (
             <div className="sound-anchor">
               <button
                 type="button"
                 className={pop === 'more' ? 'sound-chip more open' : 'sound-chip more'}
-                title={`${more.length} more routines${extraControls.length ? ' and speaker controls' : ''}`}
                 aria-expanded={pop === 'more'}
                 onClick={() => setPop(pop === 'more' ? null : 'more')}
+                {...tip(moods.length > 0 ? `${moods.map((m) => m.label).join(', ')} and your Sonos favorites` : 'Your Sonos favorites')}
               >
                 <b className="sound-chip-name">
                   More <IconDots size={22} stroke={2} aria-hidden="true" />
                 </b>
-                <span className="sound-chip-sub">{more.length > 0 ? `${more.length} more` : 'controls'}</span>
+                <span className="sound-chip-sub">{moods.length > 0 ? `${moods.length} more` : 'favorites'}</span>
               </button>
               {pop === 'more' && (
-                <Popup label="More routines" onClose={closePop} right down wide>
-                  {more.length > 0 && <div className="k">Music</div>}
-                  <div className="sound-more-list">
-                    {more.map((r) => (
-                      <button
-                        key={r.key}
-                        type="button"
-                        className="sound-row-btn"
-                        title={`Play ${r.name}${r.favorite ? ` (${r.favorite})` : ''}`}
-                        disabled={locked}
-                        {...once(() => play(r))}
-                      >
-                        <b>{r.name}</b>
-                        <span className="xs">{[r.favorite, typeof r.volume === 'number' ? `Vol. ${r.volume}` : null].filter(Boolean).join(', ')}</span>
-                      </button>
+                <Popup label="More routines" onClose={closePop} right down wide more>
+                  {moods.length > 0 && <div className="k">Music</div>}
+                  <div className="sound-mood-list">
+                    {moods.map((m) => (
+                      <MoodButton key={m.routine.key} m={m} disabled={locked} onPlay={() => play(m.routine)} />
                     ))}
                   </div>
-                  {extraControls.length > 0 && <div className="k">Speakers</div>}
-                  <div className="sound-more-list">
-                    {extraControls.map((c) => (
-                      <button key={c.key} type="button" className="sound-row-btn" title={`Run ${c.name}`} disabled={locked} {...once(() => runControl(c))}>
-                        <b>{c.name}</b>
-                      </button>
-                    ))}
-                  </div>
+                  <div className="k">Sonos favorites</div>
+                  <Favorites disabled={locked} onPlay={playFavorite} />
                 </Popup>
               )}
             </div>
-          )}
-          {hint && (
-            <div className="sound-quiet xs fill">More music routines from the Sonos service show here.</div>
           )}
         </div>
 
@@ -618,8 +608,8 @@ function Live({
                   role="radio"
                   aria-checked={p.active}
                   className={p.active ? 'seg on' : 'seg'}
-                  title={p.active ? `${p.name}: the speakers are grouped this way now` : `Group the speakers as ${p.name}`}
                   disabled={locked}
+                  {...tip(p.active ? `${p.name}: the speakers are grouped this way now` : `Group the speakers as ${p.name}`)}
                   {...once(() => applyPreset(p, label))}
                 >
                   {(() => {
@@ -632,7 +622,7 @@ function Live({
             </div>
           )}
           {playing.length > 0 && (
-            <button type="button" className="sound-btn" title="Pause every Sonos speaker" disabled={locked} {...once(pauseAll)}>
+            <button type="button" className="sound-btn" disabled={locked} {...tip('Pause every Sonos speaker')} {...once(pauseAll)}>
               <IconPlayerPauseFilled size={22} aria-hidden="true" />
               Sonos Off
             </button>
@@ -661,9 +651,9 @@ function Live({
             <button
               type="button"
               className={pop === 'speakers' ? 'sound-btn open' : 'sound-btn'}
-              title="Every speaker, its state and its own volume"
               aria-expanded={pop === 'speakers'}
               onClick={() => setPop(pop === 'speakers' ? null : 'speakers')}
+              {...tip('Every speaker, its state and its own volume')}
             >
               <IconDeviceSpeaker size={22} stroke={1.8} aria-hidden="true" />
               Speakers {s.speakers.length}
@@ -684,8 +674,8 @@ function Live({
               <button
                 type="button"
                 className="sound-btn on"
-                title={`Sonos sleeps ${left !== null ? `in ${left} min` : 'soon'}${timer.fadeMinutes ? `, fading over the last ${timer.fadeMinutes} min` : ''}. Click to cancel`}
                 disabled={locked}
+                {...tip(`Sonos sleeps ${left !== null ? `in ${left} min` : 'soon'}${timer.fadeMinutes ? `, fading over the last ${timer.fadeMinutes} min` : ''}. Click to cancel`)}
                 {...once(() => void run('sleep-cancel', () => invoke('wall2_sonos_sleep_cancel', { id: timer.id }), 'Sleep timer off'))}
               >
                 <IconZzz size={22} stroke={1.8} aria-hidden="true" />
@@ -696,10 +686,10 @@ function Live({
               <button
                 type="button"
                 className={pop === 'sleep' ? 'sound-btn open' : 'sound-btn'}
-                title="Pause Sonos after 30, 60 or 90 minutes, fading out"
                 aria-expanded={pop === 'sleep'}
                 disabled={locked}
                 onClick={() => setPop(pop === 'sleep' ? null : 'sleep')}
+                {...tip('Pause Sonos after 30, 60 or 90 minutes, fading out')}
               >
                 <IconZzz size={22} stroke={1.8} aria-hidden="true" />
                 Sleep
@@ -713,8 +703,8 @@ function Live({
                       key={m}
                       type="button"
                       className="sound-btn"
-                      title={`Pause every speaker in ${m} minutes, fading over the last 5`}
                       disabled={locked}
+                      {...tip(`Pause every speaker in ${m} minutes, fading over the last 5`)}
                       {...once(() => {
                         setPop(null);
                         void run('sleep', () => invoke('wall2_sonos_sleep', { minutes: m }), `Sleep in ${m} min`);
@@ -770,6 +760,80 @@ export function PlayArt({ slot, size = 24 }: { slot: Slot; size?: number }) {
   );
 }
 
+const MOOD_ICONS = { confetti: IconConfetti, heart: IconHeart, book: IconBook } as const;
+
+/** One of More's three mood tiles: the Morning to Workday look (a colour wash and a line icon on its tile); the favorite and volume are in the hover text. */
+function MoodButton({ m, disabled, onPlay }: { m: MoodTile; disabled: boolean; onPlay: () => void }) {
+  const Icon = MOOD_ICONS[m.icon];
+  const r = m.routine;
+  const text = [`Play ${r.name}`, r.favorite ? `(${r.favorite})` : '', typeof r.volume === 'number' ? `at Vol. ${r.volume}` : 'at a volume the service sets'].filter(Boolean).join(' ');
+  return (
+    <button type="button" className="sound-mood" disabled={disabled} style={{ '--c': m.rgb } as CSSProperties} {...tip(text)} {...once(onPlay)}>
+      <span className="sound-art" aria-hidden="true">
+        <Icon size={22} stroke={1.8} />
+      </span>
+      <b>{m.label}</b>
+    </button>
+  );
+}
+
+/**
+ * The Sonos favorites picker: a closed dropdown that reads the list each time it is opened (the list already shown stays
+ * while it loads). A long name ends in an ellipsis (its whole name is in the hover text). Choosing one plays it on the
+ * current group. Escape inside the list closes only the list and puts focus back on its button.
+ */
+function Favorites({ disabled, onPlay }: { disabled: boolean; onPlay: (f: SonosFavorite) => void }) {
+  const [open, setOpen] = useState(false);
+  const [list, setList] = useState<SonosFavorite[] | null>(null);
+  const [failed, setFailed] = useState(false);
+  const asking = useRef(0);
+  const opener = useRef<HTMLButtonElement>(null);
+  const load = () => {
+    const mine = ++asking.current;
+    readSonosFavorites()
+      .then((l) => mine === asking.current && setList(l))
+      .catch(() => mine === asking.current && setFailed(true));
+  };
+  const toggle = () => {
+    if (!open) {
+      setFailed(false);
+      load();
+    }
+    setOpen(!open);
+  };
+  const esc = (e: ReactKeyboardEvent) => {
+    if (e.key !== 'Escape') return;
+    e.stopPropagation();
+    setOpen(false);
+    opener.current?.focus();
+  };
+  return (
+    <div className="sound-fav" onKeyDown={open ? esc : undefined}>
+      <button ref={opener} type="button" className={open ? 'sound-fav-btn open' : 'sound-fav-btn'} aria-expanded={open} onClick={toggle}>
+        <span>Choose a favorite</span>
+        <IconChevronDown size={22} stroke={2} aria-hidden="true" />
+      </button>
+      {open && (
+        <div className="sound-fav-list">
+          {list === null && <div className="sound-fav-note s">{failed ? 'Favorites did not load. Close this and open it again.' : 'Loading favorites'}</div>}
+          {list !== null && failed && <div className="sound-fav-note s">Favorites did not refresh. Close this and open it again.</div>}
+          {list !== null && list.length === 0 && <div className="sound-fav-note s">The Sonos service lists no favorites.</div>}
+          {list !== null && list.length > 0 && (
+            <div role="group" aria-label="Sonos favorites" className="sound-fav-rows">
+              {list.map((f) => (
+                <button key={f.id} type="button" className="sound-fav-row" disabled={disabled} {...tip(f.name)} {...once(() => onPlay(f))}>
+                  <IconMusic size={20} stroke={1.8} aria-hidden="true" />
+                  <span>{f.name}</span>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 const WHERE_ICONS: [RegExp, typeof IconDesk][] = [
   [/^office/i, IconDesk],
   [/^all/i, IconHome],
@@ -778,7 +842,7 @@ const WHERE_ICONS: [RegExp, typeof IconDesk][] = [
 
 function Chip({
   className,
-  title,
+  tipText,
   disabled,
   tag,
   name,
@@ -786,7 +850,7 @@ function Chip({
   action,
 }: {
   className: string;
-  title: string;
+  tipText: string;
   disabled: boolean;
   tag: ReactNode;
   name: string;
@@ -802,7 +866,7 @@ function Chip({
     setTwo(el.scrollHeight > lh * 1.4);
   }, [name, tag]);
   return (
-    <button type="button" className={two ? `${className} two` : className} title={title} disabled={disabled} style={{ '--c': PLAY_ART[slot].rgb } as CSSProperties} {...once(action)}>
+    <button type="button" className={two ? `${className} two` : className} disabled={disabled} style={{ '--c': PLAY_ART[slot].rgb } as CSSProperties} {...tip(tipText)} {...once(action)}>
       {tag}
       <PlayArt slot={slot} />
       <b ref={nameRef} className="sound-chip-name">
@@ -884,7 +948,7 @@ function VolumeSlider({
     commit();
   };
   return (
-    <label className={`sound-slider ${className ?? ''}`} title={title}>
+    <label className={`sound-slider ${className ?? ''}`} {...tip(title)}>
       <span className="sound-slider-lb">{label}</span>
       <input
         type="range"
@@ -940,7 +1004,7 @@ function SpeakerRow({
   const [failed, setFailed] = useState(false);
   return (
     <div className={sp.online ? 'sound-spk' : 'sound-spk off'}>
-      <b className="sound-spk-name" title={sp.name}>
+      <b className="sound-spk-name" {...tip(sp.name)}>
         {sp.name}
       </b>
       <span className={`sound-spk-state ${sp.state}`}>{speakerState(sp)}</span>
@@ -949,7 +1013,7 @@ function SpeakerRow({
         <button
           type="button"
           className="sound-btn small"
-          title="This speaker plays the PC's own sound, so the PC volume is the real control. Opens the Windows volume control"
+          {...tip("This speaker plays the PC's own sound, so the PC volume is the real control. Opens the Windows volume control")}
           {...once(() => void invoke('open_volume_mixer').catch(() => setFailed(true)))}
         >
           {failed ? 'Could not open' : 'PC volume'}
@@ -970,6 +1034,7 @@ function Popup({
   right = false,
   down = false,
   wide = false,
+  more = false,
   children,
 }: {
   label: string;
@@ -977,6 +1042,7 @@ function Popup({
   right?: boolean;
   down?: boolean;
   wide?: boolean;
+  more?: boolean;
   children: ReactNode;
 }) {
   const ref = useRef<HTMLDivElement>(null);
@@ -996,7 +1062,7 @@ function Popup({
     };
   }, [onClose]);
   return (
-    <div ref={ref} className={['sound-pop', right ? 'right' : '', down ? 'down' : '', wide ? 'wide' : ''].filter(Boolean).join(' ')} role="dialog" aria-label={label}>
+    <div ref={ref} className={['sound-pop', right ? 'right' : '', down ? 'down' : '', wide ? 'wide' : '', more ? 'more-pop' : ''].filter(Boolean).join(' ')} role="dialog" aria-label={label}>
       {children}
     </div>
   );

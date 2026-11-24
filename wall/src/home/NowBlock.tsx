@@ -1,4 +1,5 @@
 import {
+  IconBrandSpotify,
   IconChevronRight,
   IconDeviceSpeaker,
   IconDeviceTv,
@@ -7,6 +8,7 @@ import {
   IconPlayerSkipBackFilled,
   IconPlayerSkipForwardFilled,
   IconPlayerStopFilled,
+  IconRadio,
 } from '@tabler/icons-react';
 import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react';
 import { invoke } from '../bridge/tauri';
@@ -187,6 +189,17 @@ function Where({ text, tipText }: { text: string; tipText: string }) {
 /** The glyph tile (no cover): the speaker, or the play this wall started. */
 function MusicTile({ m, size, playArt }: { m: MusicView; size: number; playArt: NowBlockProps['playArt'] }) {
   const icon = size === 136 ? 57 : size === 92 ? 38 : 28;
+  if (m.cover && size === 64) {
+    // The short form: the cover with a small round badge for where it plays (the speaker), in the corner.
+    return (
+      <span className="np-tile-b">
+        <img className="np-cover" src={m.cover} alt="" />
+        <span className="np-badge" data-source={m.source ?? 'speaker'} {...tip(m.source === 'spotify' ? 'Playing from Spotify' : m.source === 'radio' ? 'Playing from a station' : 'Playing on the speakers')}>
+          {m.source === 'spotify' ? <IconBrandSpotify size={16} stroke={1.9} aria-hidden="true" /> : m.source === 'radio' ? <IconRadio size={16} stroke={1.9} aria-hidden="true" /> : <IconDeviceSpeaker size={16} stroke={1.9} aria-hidden="true" />}
+        </span>
+      </span>
+    );
+  }
   if (m.cover) return <img className="np-cover" style={size === 92 ? { width: 92, height: 92, borderRadius: 18 } : undefined} src={m.cover} alt="" />;
   if (m.slot) return <span className={`np-slot${size === 136 ? '' : ' sm'}`}>{playArt(m.slot, icon)}</span>;
   return (
@@ -392,7 +405,7 @@ function Quiet({ p }: { p: NowBlockProps }) {
   );
 }
 
-/** The short form of the music layout: a 64 px cover, the title with where it plays under it, and the controls at 38 px. */
+/** The short form of the music layout: a 64 px cover with its source badge, the title, the artist and where it plays. The controls are `CompactControls`, under it. */
 function MusicLine({ m, p, video }: { m: MusicView; p: NowBlockProps; video: WallVideoView | null }) {
   return (
     <div className="np-line">
@@ -401,6 +414,11 @@ function MusicLine({ m, p, video }: { m: MusicView; p: NowBlockProps; video: Wal
         <b className="np-title" {...tip(m.artist ? `${m.title}, ${m.artist}` : m.title)}>
           {m.title}
         </b>
+        {m.artist && (
+          <span className="np-artist" {...tip(m.artist)}>
+            {m.artist}
+          </span>
+        )}
         {video ? (
           <span className="np-where" {...tip(`${video.title} is on the wall. Open Watch to see it.`)}>
             <IconDeviceTv size={18} stroke={1.8} aria-hidden="true" />
@@ -410,38 +428,53 @@ function MusicLine({ m, p, video }: { m: MusicView; p: NowBlockProps; video: Wal
           <Where text={m.where} tipText={m.clock ? `${m.whereTip}. ${clockMs(m.clock.posMs)} of ${clockMs(m.clock.durMs)}` : m.whereTip} />
         )}
       </div>
-      <div className="np-btns">
-        {m.canSkip && (
-          <Rd label="Previous track" tipText="Previous track" disabled={p.locked} busy={p.skipBusy} onClick={() => p.skip('previous')}>
-            <IconPlayerSkipBackFilled size={18} aria-hidden="true" />
+    </div>
+  );
+}
+
+/**
+ * The controls row under the short form's line: every button the layout offers, equal in width, filling the row. Music: back,
+ * pause, next (back and next only when the sound service has them). With the wall's video: its pause or play and stop join them.
+ */
+function CompactControls({ m, p, video }: { m: MusicView | null; p: NowBlockProps; video: WallVideoView | null }) {
+  const noPause = !video || video.needsClick || !video.youtube;
+  return (
+    <div className="np-ctl" role="group" aria-label="Playback controls">
+      {m ? (
+        <>
+          {m.canSkip && (
+            <Rd label="Previous track" tipText="Previous track" disabled={p.locked} busy={p.skipBusy} onClick={() => p.skip('previous')}>
+              <IconPlayerSkipBackFilled size={20} aria-hidden="true" />
+            </Rd>
+          )}
+          <Rd label="Pause" tipText="Pause every Sonos speaker" big disabled={p.locked} onClick={p.pauseAll}>
+            <IconPlayerPauseFilled size={22} aria-hidden="true" />
           </Rd>
-        )}
-        <Rd label="Pause" tipText="Pause every Sonos speaker" big disabled={p.locked} onClick={p.pauseAll}>
-          <IconPlayerPauseFilled size={20} aria-hidden="true" />
+          {m.canSkip && (
+            <Rd label="Next track" tipText="Next track" disabled={p.locked} busy={p.skipBusy} onClick={() => p.skip('next')}>
+              <IconPlayerSkipForwardFilled size={20} aria-hidden="true" />
+            </Rd>
+          )}
+        </>
+      ) : video ? null : (
+        p.playSuggested
+      )}
+      {video && !noPause && (
+        <Rd label={video.paused ? 'Play video' : 'Pause video'} tipText={video.paused ? 'Play the video on the wall' : 'Pause the video on the wall'} big={!m} onClick={wallVideoControls.togglePause}>
+          {video.paused ? <IconPlayerPlayFilled size={20} aria-hidden="true" /> : <IconPlayerPauseFilled size={20} aria-hidden="true" />}
         </Rd>
-        {m.canSkip && (
-          <Rd label="Next track" tipText="Next track" disabled={p.locked} busy={p.skipBusy} onClick={() => p.skip('next')}>
-            <IconPlayerSkipForwardFilled size={18} aria-hidden="true" />
-          </Rd>
-        )}
-        {video && !(video.needsClick || !video.youtube) && (
-          <Rd label={video.paused ? 'Play video' : 'Pause video'} tipText={video.paused ? 'Play the video on the wall' : 'Pause the video on the wall'} onClick={wallVideoControls.togglePause}>
-            {video.paused ? <IconPlayerPlayFilled size={18} aria-hidden="true" /> : <IconPlayerPauseFilled size={18} aria-hidden="true" />}
-          </Rd>
-        )}
-        {video && (
-          <Rd label="Stop the video" tipText="Stop and remove the video on the wall" onClick={wallVideoControls.stop}>
-            <IconPlayerStopFilled size={18} aria-hidden="true" />
-          </Rd>
-        )}
-      </div>
+      )}
+      {video && (
+        <Rd label="Stop the video" tipText="Stop and remove the video on the wall" onClick={wallVideoControls.stop}>
+          <IconPlayerStopFilled size={20} aria-hidden="true" />
+        </Rd>
+      )}
     </div>
   );
 }
 
 /** The short form of the wall's own video: the tile, "On the wall" and the title, pause or play, and stop. */
 function VideoLine({ v }: { v: WallVideoView }) {
-  const noPause = v.needsClick || !v.youtube;
   return (
     <div className="np-line">
       <VideoTile size={64} tipText="Open Watch" />
@@ -452,16 +485,6 @@ function VideoLine({ v }: { v: WallVideoView }) {
         <span className="np-where" {...tip(v.sub)}>
           <span>{v.needsClick ? CLICK_LINE : `On the wall. ${v.sub}`}</span>
         </span>
-      </div>
-      <div className="np-btns">
-        {!noPause && (
-          <Rd label={v.paused ? 'Play' : 'Pause'} tipText={v.paused ? 'Play the video' : 'Pause the video'} big onClick={wallVideoControls.togglePause}>
-            {v.paused ? <IconPlayerPlayFilled size={20} aria-hidden="true" /> : <IconPlayerPauseFilled size={20} aria-hidden="true" />}
-          </Rd>
-        )}
-        <Rd label="Stop" tipText="Stop and remove the video" onClick={wallVideoControls.stop}>
-          <IconPlayerStopFilled size={18} aria-hidden="true" />
-        </Rd>
       </div>
     </div>
   );
@@ -484,7 +507,6 @@ function QuietLine({ p }: { p: NowBlockProps }) {
           <span>{p.suggestedSlot ? 'Suggested for this hour' : 'Pick a play beside this'}</span>
         </span>
       </div>
-      <div className="np-btns">{p.playSuggested}</div>
     </div>
   );
 }
@@ -561,6 +583,7 @@ export function NowBlock(p: NowBlockProps) {
   return (
     <div className="np-col">
       {stage}
+      <CompactControls m={music} p={p} video={video} />
       {p.below}
     </div>
   );

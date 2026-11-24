@@ -671,7 +671,7 @@ it('compact, both at once: music pause and skip, video play or pause and stop, a
   await play(0);
   expect(block(container).dataset.layout).toBe('both');
   expect(block(container).classList.contains('compact')).toBe(true);
-  expect([...container.querySelectorAll('.np-btns button')].map((b) => b.getAttribute('aria-label'))).toEqual(['Previous track', 'Pause', 'Next track', 'Pause video', 'Stop the video']);
+  expect([...container.querySelectorAll('.np-ctl button')].map((b) => b.getAttribute('aria-label'))).toEqual(['Previous track', 'Pause', 'Next track', 'Pause video', 'Stop the video']);
   fireEvent.click(label(container, 'Pause')!);
   expect(pauseAll).toHaveBeenCalled();
   fireEvent.click(label(container, 'Next track')!);
@@ -683,4 +683,50 @@ it('compact, both at once: music pause and skip, video play or pause and stop, a
   expect(useWatchStore.getState().paused).toBe(false);
   fireEvent.click(label(container, 'Stop the video')!);
   expect(useWatchStore.getState().playing).toBeNull();
+});
+
+// The cover's corner badge says where the sound comes from, with the wall's hover text.
+const badgeTip = async (container: HTMLElement) => {
+  const badge = container.querySelector('.np-badge') as HTMLElement;
+  fireEvent.mouseEnter(badge);
+  await flush(TIP_DELAY_MS + 20);
+  return { source: badge.dataset.source, text: document.querySelector('.hover-tip')?.textContent ?? '' };
+};
+
+it('the cover badge follows the source: Spotify, a station, else the speaker, each with hover text', async () => {
+  const cover = 'data:image/png;base64,iVBORw0KGgo=';
+  const track = { title: 'Paper Lanterns', artist: 'The Quiet Hours', cover, where: 'Den, 2 speakers', progressMs: 65_000, durationMs: 200_000 };
+  const a = render(
+    <>
+      <NowBlock {...props({ track, compact: true })} />
+      <HoverTipLayer />
+    </>,
+  );
+  await flush();
+  expect(await badgeTip(a.container)).toEqual({ source: 'spotify', text: 'Playing from Spotify' });
+  a.unmount();
+
+  mocks.set('wall2_sonos_art', () => ({ mime: 'image/png', base64: 'iVBORw0KGgo=' }));
+  const station = summary();
+  station.nowPlaying = { speaker: 'Den', track: 'Morning Show', artist: null, duration: null, position: null, art: 'key-r' };
+  const b = render(
+    <>
+      <NowBlock {...props({ s: station, compact: true })} />
+      <HoverTipLayer />
+    </>,
+  );
+  await flush();
+  expect(await badgeTip(b.container)).toEqual({ source: 'radio', text: 'Playing from a station' });
+  b.unmount();
+
+  const plain = summary();
+  plain.nowPlaying = { ...plain.nowPlaying!, art: 'key-s' };
+  const c = render(
+    <>
+      <NowBlock {...props({ s: plain, compact: true })} />
+      <HoverTipLayer />
+    </>,
+  );
+  await flush();
+  expect(await badgeTip(c.container)).toEqual({ source: 'speaker', text: 'Playing on the speakers' });
 });

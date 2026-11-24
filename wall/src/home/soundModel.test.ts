@@ -6,6 +6,7 @@ import {
   chipLabel,
   clockMs,
   faceTiles,
+  moodTiles,
   houseTrack,
   playingWhere,
   moreControls,
@@ -454,5 +455,24 @@ describe('the Now Playing block\'s pure rules', () => {
   it('has no music half when nothing plays', () => {
     const quiet = { ...args().s, speakers: args().s.speakers.map((x) => ({ ...x, state: x.input ? x.state : ('stopped' as const) })) };
     expect(musicView(args({ s: quiet }))).toBeNull();
+  });
+});
+
+describe('moodTiles', () => {
+  const r = (key: string, name: string) => ({ key, name, favorite: null, volume: 10 });
+  it('holds only Upbeat, Romantic and Reading, in that order, never a routine already on the face', () => {
+    const music = [r('a', 'Reading Music'), r('b', 'Morning Mix'), r('c', 'Upbeat Music'), r('d', 'Rain Sounds'), r('e', 'Romantic Music Evening')];
+    const face = faceTiles(music);
+    expect(moodTiles(music, face).map((t) => t.label)).toEqual(['Upbeat', 'Reading']);
+    expect(moodTiles([r('x', 'Upbeat'), r('y', 'Not Upbeatish')], []).map((t) => t.routine.key)).toEqual(['x']);
+  });
+  it('one routine named for several moods is one tile; the next mood takes the next routine', () => {
+    const one = [r('a', 'Upbeat Romantic Reading')];
+    expect(moodTiles(one, []).map((t) => [t.label, t.routine.key])).toEqual([['Upbeat', 'a']]);
+    const two = [r('a', 'Upbeat Romantic Reading'), r('b', 'Romantic Evening')];
+    expect(moodTiles(two, []).map((t) => [t.label, t.routine.key])).toEqual([
+      ['Upbeat', 'a'],
+      ['Romantic', 'b'],
+    ]);
   });
 });
