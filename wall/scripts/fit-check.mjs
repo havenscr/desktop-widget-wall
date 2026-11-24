@@ -848,7 +848,7 @@ try {
   html = html.replace(/<script type="module" crossorigin src="\.\/([^"]+)"><\/script>/g, (_, src) =>
     `<script type="module">${readFileSync(join(dist, src), 'utf8').replaceAll('</script', '<\\/script')}</script>`,
   );
-  // `?tauri=1` makes the page think it runs in Tauri (the left rail draws its Full button). The shim only exists here, never in app code:
+  // `?tauri=1` makes the page think it runs in Tauri. The shim only exists here, never in app code:
   // every command and event call is refused, which the app already tolerates when a native call fails.
   html = html.replace('<head>', '<head><script>if (new URLSearchParams(location.search).get("tauri")) { window.__TAURI_INTERNALS__ = { invoke: () => Promise.reject("fit-check shim"), transformCallback: () => 0, unregisterCallback: () => {}, metadata: { currentWindow: { label: "wall2" }, currentWebview: { label: "wall2", windowLabel: "wall2" } } }; window.__TAURI_EVENT_PLUGIN_INTERNALS__ = { unregisterListener: () => {} }; }</script>');
   html = html.replace(/<link rel="stylesheet" crossorigin href="\.\/([^"]+)">/g, (_, href) => `<style>${readFileSync(join(dist, href), 'utf8')}</style>`);

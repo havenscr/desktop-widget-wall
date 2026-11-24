@@ -110,7 +110,7 @@ function subscribe(l: () => void): () => void {
   return () => listeners.delete(l);
 }
 
-/** Current fullscreen state, shared by the keys and the rail button. */
+/** Current fullscreen state, as the keys last set it. */
 export function useFullscreen(): boolean {
   return useSyncExternalStore(subscribe, () => full);
 }

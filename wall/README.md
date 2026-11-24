@@ -6,7 +6,7 @@ label `wall2`, the app identifier) keep that name on purpose. It lives beside th
 existing app (`src/`, untouched) and is built with Vite, React and TypeScript
 (strict). It runs in a plain browser for development and inside Tauri as a second
 app, "Ridgeline". So far: a scaled stage, the live horizon, a left rail with
-Work, Home and Unwind and below them Meet, On air, Shelf, Zen, Tools and (in the app) a fullscreen button, a clock, the Work tab basics (weather, music, focus timer), a task
+Work, Home and Unwind and below them Meet, On air, Shelf, Zen, Tools, a clock, the Work tab basics (weather, music, focus timer), a task
 card, a network tile and mood buttons on Home, the Unwind tab with Watt the sheep, a sound ripple
 on the horizon, the Zen place with Dream, a small Tauri bridge and tests. Home has its moods, a Rooms row, Sonos controls and a network tile.
 
@@ -3553,10 +3553,8 @@ hour.
 ## Fullscreen keys
 
 F11 and Ctrl+F11 toggle true fullscreen; Esc leaves it (only while fullscreen; an Esc pressed during a toggle is queued and applied when it finishes).
-A rail button just above Tools does the same (icons `maximize` and `minimize`,
-label "Enter fullscreen" or "Exit fullscreen", follows the real state, hidden
-outside Tauri). Key repeats are ignored and nothing happens in a plain browser. The handler is
-`wall/src/ui/fullscreen.ts`, installed from `main.tsx`. Leaving fullscreen
+There is no rail button for it: the wall always runs fullscreen. Key repeats are ignored and nothing happens in a plain browser. The handler is
+`wall/src/ui/fullscreen.ts`, installed from `boot.tsx`. Leaving fullscreen
 restores the outer position and size saved just before entering fullscreen.
 One change runs at a time (a second request while one is in flight is ignored).
 `src-tauri/capabilities/wall2.json` adds `core:window:allow-set-fullscreen`,
