@@ -118,7 +118,7 @@ const rule = (variant, results, emit) => {
       if ((c.l < s.l - 0.5 || c.r > s.r + 0.5) && !(CUTS_OK.includes(variant.name) && c.text !== 'Music sync')) fails.push('officemoods: chip "' + c.text + '" leaves the row box');
     }
     for (let i = 1; i < m.chips.length; i++) if (m.chips[i].l < m.chips[i - 1].r - 0.5 && !CUTS_OK.includes(variant.name)) fails.push('officemoods: chips "' + m.chips[i - 1].text + '" and "' + m.chips[i].text + '" overlap');
-    if (!m.sync || Math.abs(m.sync.w - 201) > 0.5) fails.push('officemoods: the Music sync chip is ' + (m.sync ? r1(m.sync.w) : 'missing') + ' px wide (201, fixed)');
+    if (!m.sync || Math.abs(m.sync.w - 203) > 0.5) fails.push('officemoods: the Music sync chip is ' + (m.sync ? r1(m.sync.w) : 'missing') + ' px wide (203, fixed)');
     else if (!m.syncFirst) fails.push('officemoods: the Music sync chip is not the first chip');
     if (m.sync && m.syncLabel && m.syncSwitch && m.syncIcon) {
       if (Math.abs((m.syncIcon.l - m.sync.l) - (m.sync.r - m.syncSwitch.r)) > 0.5) fails.push('officemoods: the Music sync icon is ' + r1(m.syncIcon.l - m.sync.l) + ' px from the left edge but the switch is ' + r1(m.sync.r - m.syncSwitch.r) + ' px from the right (equal)');

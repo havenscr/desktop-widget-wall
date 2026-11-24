@@ -3979,11 +3979,11 @@ button.sp-qrow:hover {
   outline: 3px solid var(--cyan);
   outline-offset: 2px;
 }
-/* Music sync: the first chip, a fixed 201 px (`SYNC_WIDTH`): a click anywhere opens the palette strip; the switch at the right end starts and stops sync. Lit magenta while on. Icon and switch sit 15 px from the edges (14 px of padding and the border), 8 px between icon and name, 12 px between name and switch. */
+/* Music sync: the first chip, a fixed 203 px (`SYNC_WIDTH`): a click anywhere opens the palette strip; the switch at the right end starts and stops sync. Lit magenta while on. Icon and switch sit 15 px from the edges (14 px of padding and the border), 8 px between icon and name, 12 px between name and switch. */
 .u-mood.u-sync {
   box-sizing: border-box;
-  width: 201px;
-  min-width: 201px;
+  width: 203px;
+  min-width: 203px;
   padding: 0 14px;
   gap: 12px;
   justify-content: flex-start;
