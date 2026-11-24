@@ -108,14 +108,15 @@ export function headingFor(set: SetInfo): string {
 }
 
 /** The fixed words `wall2_keys_send` answers with, as one short line. */
-export function sendReason(e: unknown, set: Pick<SetInfo, 'name' | 'general'>, hold: boolean): string {
+export function sendReason(e: unknown, set: Pick<SetInfo, 'name' | 'general'>, _hold: boolean): string {
   switch (errorText(e)) {
     case 'busy':
       return 'Still sending the last key';
     case 'no key':
       return 'That key is not in your keys any more';
     case 'no app':
-      return hold ? `Wrong app in front for ${set.name}` : `${set.name} is not in front any more`;
+      // A set tied to an app looks for that app's open window itself, so a refusal means none is open.
+      return set.general ? `${set.name} is not in front any more` : `${set.name} is not open`;
     case 'gone':
       return `${set.general ? 'That window' : set.name} is not open any more`;
     case 'elevated':

@@ -95,7 +95,7 @@ it('says where a recorder key went, and the refusal in plain words', async () =>
   await flush();
   fireEvent.click(screen.getByRole('button', { name: 'Stop recording' }));
   await flush();
-  expect(screen.getByText(/not in front any more/)).toBeTruthy();
+  expect(screen.getByText(/is not open/)).toBeTruthy();
 });
 
 it('Hold on another page wins over the Recording page, and Auto brings it back', async () => {

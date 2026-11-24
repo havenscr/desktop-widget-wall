@@ -59,6 +59,11 @@ pub(crate) fn recording_reading_now() -> Option<bool> {
     s.known.then(|| recording_of(&s))
 }
 
+/// One fixed-words line for the native side of the signals log (words and numbers only, never a
+/// window title). Written only when that log is running.
+#[cfg_attr(not(windows), allow(dead_code))]
+pub(crate) fn note(line: String) { log::write_native(line); }
+
 #[tauri::command]
 pub fn wall2_signals(window: tauri::WebviewWindow) -> Result<Signals, String> {
     if window.label() != WALL2_LABEL { return Err("forbidden".into()); }

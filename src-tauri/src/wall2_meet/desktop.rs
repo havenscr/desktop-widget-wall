@@ -43,7 +43,9 @@ pub fn open_decision(classic_usable: bool, has_entry: bool, desktop_enabled: boo
 }
 
 /// Fixed target for the new Outlook app: its Calendar. New Outlook has no documented way to
-/// open one event, so a meeting click lands here. Nothing from the page is ever added to it.
+/// open one event, so a meeting click shows its Calendar. An open New Outlook window is raised
+/// instead (`wall2_keys::show_outlook_calendar`); this is only used when none is open, which
+/// starts it. Nothing from the page is ever added to it.
 pub const NEW_OUTLOOK_CALENDAR: &str = "outlookcal:";
 
 /// The documented mailto ProgId of the new Outlook (exact match, any letter case).
@@ -93,24 +95,26 @@ fn starts_with_drive(text: &str) -> bool {
 }
 
 #[allow(clippy::too_many_arguments)]
-pub fn open_with<Find, Launch, LaunchNew, Open>(
+pub fn open_with<Find, Launch, Raise, LaunchNew, Open>(
     desktop_enabled: bool,
     new_outlook: bool,
     entry: Option<&str>,
     web: Option<&str>,
     mut find: Find,
     mut launch: Launch,
+    mut raise_existing: Raise,
     mut launch_new: LaunchNew,
     mut open: Open,
 ) -> Result<(), OpenError>
 where
     Find: FnMut() -> Option<PathBuf>,
     Launch: FnMut(&Path, &str) -> bool,
+    Raise: FnMut() -> bool,
     LaunchNew: FnMut(&str) -> bool,
     Open: FnMut(&str) -> bool,
 {
     if desktop_enabled {
-        if new_outlook && launch_new(NEW_OUTLOOK_CALENDAR) {
+        if new_outlook && (raise_existing() || launch_new(NEW_OUTLOOK_CALENDAR)) {
             return Ok(());
         }
         if let Some(exe) = find() {
@@ -352,10 +356,12 @@ mod tests {
                         for web in [false, true] {
                             for launch_ok in [false, true] {
                                 for new_ok in [false, true] {
+                                  for raise_ok in [false, true] {
                                     let entry_value = "AB".repeat(20);
                                     let mut finds = 0;
                                     let mut launches = 0;
                                     let mut new_launches = 0;
+                                    let mut raises = 0;
                                     let mut opens = 0;
                                     let result = open_with(
                                         enabled,
@@ -364,18 +370,21 @@ mod tests {
                                         web.then_some("https://outlook.office.com/item"),
                                         || { finds += 1; classic.then(|| PathBuf::from(r"C:\Office\OUTLOOK.EXE")) },
                                         |_, _| { launches += 1; launch_ok },
+                                        || { raises += 1; raise_ok },
                                         |target| { assert_eq!(target, "outlookcal:"); new_launches += 1; new_ok },
                                         |_| { opens += 1; true },
                                     );
                                     let tried_new = enabled && new_outlook;
-                                    let new_done = tried_new && new_ok;
+                                    let new_done = tried_new && (raise_ok || new_ok);
                                     let tried_classic = enabled && !new_done && classic;
                                     let classic_done = tried_classic && launch_ok;
-                                    assert_eq!(new_launches, usize::from(tried_new));
+                                    assert_eq!(raises, usize::from(tried_new));
+                                    assert_eq!(new_launches, usize::from(tried_new && !raise_ok));
                                     assert_eq!(finds, usize::from(enabled && !new_done));
                                     assert_eq!(launches, usize::from(tried_classic));
                                     assert_eq!(opens, usize::from(web && !new_done && !classic_done));
                                     assert_eq!(result.is_ok(), new_done || classic_done || web);
+                                  }
                                 }
                             }
                         }

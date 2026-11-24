@@ -444,6 +444,7 @@ pub async fn wall2_open_event(window: tauri::WebviewWindow, key: String) -> Resu
     let result = tauri::async_runtime::spawn_blocking(move || desktop::open_with(
         desktop_enabled, desktop_enabled && desktop::new_outlook_in_use(), target.entry.as_deref(), target.web.as_deref(), desktop::classic_outlook_exe,
         |exe, arg| std::process::Command::new(exe).args(["/select", arg]).spawn().is_ok(),
+        crate::wall2_keys::show_outlook_calendar,
         |target| window.opener().open_url(target, None::<&str>).is_ok(),
         |url| window.opener().open_url(url, None::<&str>).is_ok(),
     )).await.map_err(|_| "failed".to_string())?;
