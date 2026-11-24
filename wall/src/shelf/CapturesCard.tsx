@@ -9,18 +9,24 @@ import {
   IconPencil,
   IconPhoto,
   IconPin,
+  IconPlayerPause,
+  IconPlayerPlay,
   IconShare,
   IconSortAscending,
   IconSortDescending,
   IconTextScan2,
   IconTrash,
   IconVideo,
+  IconVolume,
+  IconVolumeOff,
 } from '@tabler/icons-react';
-import { useEffect, useRef, useState, type MouseEvent } from 'react';
+import { useCallback, useEffect, useRef, useState, type MouseEvent } from 'react';
 import { SHARE_LINES, shareCapture, shareWordOf } from '../bridge/share';
 import { invoke } from '../bridge/tauri';
 import { hover } from '../tools/hover';
+import { useDisplayDark } from '../ui/useDisplayDark';
 import { useListEdge } from '../ui/useListEdge';
+import { useVisible } from '../ui/useVisible';
 import { useBrief } from '../work/useBrief';
 import { CapMenu, type CapMenuItem } from './CapMenu';
 import {
@@ -31,17 +37,20 @@ import {
   formatSize,
   formatWhen,
   kindWord,
+  playable,
   SORTS,
   trimThumbs,
   useCaptures,
   usePref,
   useThumb,
+  videoSrc,
   type Capture,
   type CaptureAction,
   type KindFilter,
 } from './captures';
 
 const GONE = 'File moved or deleted';
+const NO_PLAY = "Can't play here. Open it";
 /** How long a trashed row stays hidden while the list still holds it; a file back in place after this is a restored one. */
 export const BIN_HIDE_MS = 10_000;
 
@@ -76,11 +85,129 @@ function Pic({ c, w, h, large, lazy = false }: { c: Capture; w?: number; h?: num
   if (!c.exists) words = GONE;
   else if (thumb.state === 'big') words = 'Too big to preview';
   else if (thumb.state === 'failed') words = 'No preview';
+  else if (c.kind === 'video' && !playable(c)) words = NO_PLAY;
   return (
     <span className={`cap-tile${c.kind === 'video' ? ' video' : ''}${large ? ' fill' : ''}`} style={style}>
       {icon}
       {large && words ? <span className="cap-tile-note">{words}</span> : null}
     </span>
+  );
+}
+
+/**
+ * The large preview of a recording that can play: its first frame under the same Copy button an image has (a click copies the
+ * file), and two round controls laid over its bottom left corner that are siblings of that button, so pressing them never copies.
+ * Nothing autoplays; it starts muted. It plays only while the owner asked, the page is visible, the display is on and at least a
+ * tenth of it is on screen. The parent keys it by capture id, so another pick removes the element and frees its buffer.
+ */
+function Preview({ c, name, onCopy, onMenu }: { c: Capture; name: string; onCopy: () => void; onMenu: (e: MouseEvent) => void }) {
+  const video = useRef<HTMLVideoElement | null>(null);
+  const visible = useVisible();
+  const dark = useDisplayDark();
+  const [seen, setSeen] = useState(true);
+  const [want, setWant] = useState(false);
+  const [muted, setMuted] = useState(true);
+  const [failed, setFailed] = useState(false);
+  const controls = useRef<HTMLDivElement | null>(null);
+  const copyButton = useRef<HTMLButtonElement | null>(null);
+  const refocus = useRef(false);
+  const running = want && visible && !dark && seen && !failed;
+
+  useEffect(() => {
+    const v = video.current;
+    if (!v || typeof IntersectionObserver === 'undefined') return;
+    const io = new IntersectionObserver((entries) => entries.forEach((e) => setSeen(e.intersectionRatio >= 0.1)), { threshold: [0, 0.1, 1] });
+    io.observe(v);
+    return () => io.disconnect();
+  }, [failed]);
+
+  useEffect(() => {
+    const v = video.current;
+    if (!v) return;
+    if (running) {
+      // A pause that lands during a pending play rejects it with AbortError; that is not a refusal, so the intent stays.
+      void Promise.resolve(v.play()).catch((e: unknown) => {
+        if ((e as { name?: string } | null)?.name !== 'AbortError') setWant(false);
+      });
+    } else {
+      v.pause();
+    }
+  }, [running]);
+
+  // Leaving (another pick, the Shelf closing, an error) frees the decoder and the buffered data. A callback ref sees the
+  // element go; a cleanup effect would find the ref already empty.
+  const attach = useCallback((el: HTMLVideoElement | null) => {
+    if (el) {
+      video.current = el;
+      return;
+    }
+    const old = video.current;
+    video.current = null;
+    if (!old) return;
+    old.pause();
+    old.removeAttribute('src');
+    old.load();
+  }, []);
+
+  // The controls leave when the video fails; focus that was on one goes to the Copy button instead of the page body.
+  useEffect(() => {
+    if (failed && refocus.current) copyButton.current?.focus();
+    refocus.current = false;
+  }, [failed]);
+  const fail = () => {
+    refocus.current = !!controls.current?.contains(document.activeElement);
+    setFailed(true);
+  };
+
+  const tip = `Copy "${name}" to the clipboard as a file. Right-click for more.`;
+  return (
+    <>
+      <button ref={copyButton} type="button" className="cap-pic video" onClick={onCopy} onContextMenu={onMenu} {...hover(tip)}>
+        {failed ? (
+          <span className="cap-tile video fill">
+            <IconVideo size={56} stroke={1.6} aria-hidden="true" />
+            <span className="cap-tile-note">{NO_PLAY}</span>
+          </span>
+        ) : (
+          <video
+            ref={attach}
+            src={videoSrc(c)}
+            muted={muted}
+            loop
+            playsInline
+            preload="metadata"
+            disablePictureInPicture
+            controlsList="nodownload noremoteplayback"
+            tabIndex={-1}
+            aria-hidden="true"
+            onError={fail}
+          />
+        )}
+      </button>
+      {failed ? null : (
+        <div ref={controls} className="cap-vctl">
+          <button
+            type="button"
+            className="cap-vbtn"
+            aria-label={want ? 'Pause' : 'Play this recording here'}
+            onClick={() => setWant((w) => !w)}
+            {...hover(want ? 'Pause' : 'Play this recording here')}
+          >
+            {want ? <IconPlayerPause size={24} stroke={1.8} aria-hidden="true" /> : <IconPlayerPlay size={24} stroke={1.8} aria-hidden="true" />}
+          </button>
+          <button
+            type="button"
+            className="cap-vbtn"
+            aria-label={muted ? 'Sound on' : 'Sound off'}
+            aria-pressed={!muted}
+            onClick={() => setMuted((m) => !m)}
+            {...hover(muted ? 'Sound on' : 'Sound off')}
+          >
+            {muted ? <IconVolumeOff size={24} stroke={1.8} aria-hidden="true" /> : <IconVolume size={24} stroke={1.8} aria-hidden="true" />}
+          </button>
+        </div>
+      )}
+    </>
   );
 }
 
@@ -290,7 +417,9 @@ export function CapturesCard() {
       <div className="cap-hero">
         <div className="cap-big">
           <div className="cap-pic-wrap">
-            {big.exists ? (
+            {playable(big) ? (
+              <Preview key={big.id} c={big} name={name} onCopy={() => act(big, 'copy')} onMenu={openCaptureMenu(big)} />
+            ) : big.exists ? (
               <button
                 type="button"
                 className="cap-pic"

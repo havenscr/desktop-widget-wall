@@ -22,6 +22,10 @@
 //! or the file is gone), `refused` (a path or extension that does not pass), `too-big` and
 //! `not-image` (thumbnails), `forbidden` (the wrong window).
 //!
+//! Playing a recording: the page never gets a path for a video either. `wall2_captures_media.rs` serves a held
+//! video by id on the `wallcap` scheme (`held_video` here does the lookup, `resolve` and the id check). Ids are
+//! an HMAC under a key made fresh each run; if the system cannot make the key, no video id resolves.
+//!
 //! Share link (`wall2_share.rs`) takes an id the same way and resolves it with `open_for`, which runs the same `resolve` as `act`.
 #![cfg_attr(not(windows), allow(dead_code))]
 
@@ -450,15 +454,42 @@ const MAX_HELD: usize = 64;
 /// Id to capture, oldest first, merged across reads and bounded to `MAX_HELD`.
 static HELD: Mutex<Vec<(String, Held)>> = Mutex::new(Vec::new());
 
-/// A stable opaque id: 16 hex characters of a SHA-256 of the path, modified time and size. The
-/// same file in the same state has the same id on every read, whichever read the page holds.
+/// The key the ids are made with: random for this run of the app, so an id cannot be worked out
+/// from a path, a time and a size, and no id survives a restart. None when the system generator
+/// failed; then no video id resolves (see `held_video`) and the list still draws.
+fn id_key() -> Option<&'static [u8; 32]> {
+    static KEY: std::sync::OnceLock<Option<[u8; 32]>> = std::sync::OnceLock::new();
+    KEY.get_or_init(|| {
+        let bytes = crate::wall2_oauth::random_b64(32).and_then(|t| base64::engine::general_purpose::URL_SAFE_NO_PAD.decode(t).ok())?;
+        <[u8; 32]>::try_from(bytes.as_slice()).ok()
+    })
+    .as_ref()
+}
+
+/// The keyed id for a file state, or None without a key.
+pub(crate) fn id_with(key: Option<&[u8; 32]>, path: &str, modified_ms: i64, size: u64) -> Option<String> {
+    use hmac::{Hmac, Mac};
+    let mut mac = <Hmac<Sha256> as Mac>::new_from_slice(key?).expect("HMAC takes a key of any length");
+    mac.update(path.as_bytes());
+    mac.update(&[0u8]);
+    mac.update(&modified_ms.to_le_bytes());
+    mac.update(&size.to_le_bytes());
+    Some(mac.finalize().into_bytes().iter().take(8).map(|b| format!("{b:02x}")).collect())
+}
+
+/// A stable opaque id: 16 hex characters of an HMAC-SHA256, keyed per run, of the path, modified
+/// time and size. The same file in the same state has the same id on every read in one run,
+/// whichever read the page holds. With no key the id is a plain hash: distinct for the list, and
+/// never served, because `held_video` refuses without a key.
 pub(crate) fn id_for(path: &str, modified_ms: i64, size: u64) -> String {
-    let mut h = Sha256::new();
-    h.update(path.as_bytes());
-    h.update([0u8]);
-    h.update(modified_ms.to_le_bytes());
-    h.update(size.to_le_bytes());
-    h.finalize().iter().take(8).map(|b| format!("{b:02x}")).collect()
+    id_with(id_key(), path, modified_ms, size).unwrap_or_else(|| {
+        let mut h = Sha256::new();
+        h.update(path.as_bytes());
+        h.update([0u8]);
+        h.update(modified_ms.to_le_bytes());
+        h.update(size.to_le_bytes());
+        h.finalize().iter().take(8).map(|b| format!("{b:02x}")).collect()
+    })
 }
 
 /// Add a read's captures to the map. An id already there moves to the newest end; the oldest
@@ -663,6 +694,31 @@ pub(crate) fn open_for(id: &str) -> Result<(String, std::fs::File, u64), String>
         return Err(MISSING.to_string());
     }
     Ok((path, file, meta.len()))
+}
+
+/// A held video opened once, for the `wallcap` scheme: its path (for the extension only), the
+/// open handle, the size read from that handle, and whether the id still matches the file as the
+/// handle sees it (false when the file was swapped since it was listed). None when the id is not
+/// held, is not a video, or does not resolve to a regular file. Never says why.
+pub(crate) fn held_video(id: &str) -> Option<(String, std::fs::File, u64, bool)> {
+    let held = {
+        let list = HELD.lock().ok()?;
+        pick(&list, id).cloned()?
+    };
+    if held.kind != Kind::Video {
+        return None;
+    }
+    let key = id_key()?;
+    let path = resolve(&held).ok()?;
+    let file = std::fs::File::open(&path).ok()?;
+    let meta = file.metadata().ok().filter(|m| m.is_file())?;
+    let ms = meta
+        .modified()
+        .ok()
+        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+        .map_or(0, |d| d.as_millis() as i64);
+    let id_ok = id_with(Some(key), &held.path, ms, meta.len()).as_deref() == Some(id);
+    Some((path, file, meta.len(), id_ok))
 }
 
 fn thumb_now(id: &str) -> Result<String, String> {
@@ -1044,6 +1100,16 @@ mod tests {
     const A: &str = r"C:\Users\example\Documents\ShareX\Screenshots\2026-11\shot-a.png";
     const B: &str = r"C:\Users\example\Documents\ShareX\Screenshots\2026-11\clip-b.gif";
     const C: &str = r"C:\Users\example\Documents\ShareX\Screenshots\2026-11\rec-c.mp4";
+
+    #[test]
+    fn no_key_means_no_keyed_id() {
+        assert_eq!(id_with(None, "C:\\a.mp4", 1, 2), None);
+        let k = [7u8; 32];
+        let a = id_with(Some(&k), "C:\\a.mp4", 1, 2).unwrap();
+        assert_eq!(a.len(), 16);
+        assert_eq!(Some(a.clone()), id_with(Some(&k), "C:\\a.mp4", 1, 2));
+        assert_ne!(Some(a), id_with(Some(&[8u8; 32]), "C:\\a.mp4", 1, 2));
+    }
 
     #[test]
     fn parses_a_closed_array() {

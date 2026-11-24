@@ -84,6 +84,7 @@ mod wall2_sonos_read;
 mod wall2_watch;
 mod wall2_tools;
 mod wall2_captures;
+mod wall2_captures_media;
 mod wall2_share;
 mod wall2_recent;
 mod wall2_dictations;
@@ -4035,6 +4036,10 @@ pub fn run() {
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_opener::init())
+        // Plays a ShareX recording in the Captures preview; see wall2_captures_media.rs.
+        .register_asynchronous_uri_scheme_protocol("wallcap", |ctx, request, responder| {
+            wall2_captures_media::handle(ctx.webview_label().to_string(), request, responder)
+        })
         .manage(audio_buffer)
         .invoke_handler(tauri::generate_handler![
             wall2_window::wall2_build_info,

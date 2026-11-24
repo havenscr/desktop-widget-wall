@@ -2673,11 +2673,12 @@ mod tests {
         let security = &conf["app"]["security"];
         let images = "'self' data: https://*.scdn.co https://*.spotifycdn.com https://i.ytimg.com";
         let rest = |script: &str, style: &str, connect: &str| json!({
-            "default-src": "'none'", "script-src": script, "style-src": style, "img-src": images, "font-src": "'self'", "connect-src": connect,
+            "default-src": "'none'", "script-src": script, "style-src": style, "img-src": images, "font-src": "'self'", "media-src": "https://wallcap.localhost", "connect-src": connect,
             "frame-src": "https://www.youtube-nocookie.com https://player.twitch.tv", "frame-ancestors": "'none'", "base-uri": "'none'", "form-action": "'none'", "object-src": "'none'",
         });
         assert_eq!(security["csp"], rest("'self'", "'self'", "'self' ipc: http://ipc.localhost https://ipc.localhost"));
         assert_eq!(security["devCsp"], rest("'self' 'unsafe-inline'", "'self' 'unsafe-inline'", "'self' ipc: http://ipc.localhost https://ipc.localhost http://localhost:1421 ws://localhost:1421"));
+        for key in ["csp", "devCsp"] { assert_eq!(security[key]["media-src"], "https://wallcap.localhost"); }
         for key in ["csp", "devCsp"] { assert_eq!(security[key]["img-src"].as_str().unwrap().matches("https://i.ytimg.com").count(), 1); }
     }
 
