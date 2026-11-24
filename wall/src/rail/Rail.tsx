@@ -3,8 +3,6 @@ import {
   IconBriefcase,
   IconHeadphones,
   IconHome,
-  IconMaximize,
-  IconMinimize,
   IconMoon,
   IconBroadcast,
   IconStack2,
@@ -12,8 +10,6 @@ import {
   IconUsers,
   type Icon,
 } from '@tabler/icons-react';
-import { isTauri } from '../bridge/tauri';
-import { toggleFullscreen, useFullscreen } from '../ui/fullscreen';
 import { PLACES, usePlaceStore } from '../state/places';
 import { alarmChipText, useOpenAlarms } from '../home/useSecurity';
 import { tip } from '../ui/HoverTip';
@@ -25,25 +21,6 @@ const PLACE_ICONS: Record<'work' | 'home' | 'unwind', Icon> = {
   home: IconHome,
   unwind: IconHeadphones,
 };
-
-function FullscreenButton() {
-  const full = useFullscreen();
-  const label = full ? 'Exit fullscreen' : 'Enter fullscreen';
-  const Glyph = full ? IconMinimize : IconMaximize;
-  return (
-    <button
-      type="button"
-      className="rb rb-fs"
-      aria-label={label}
-      onClick={() => {
-        toggleFullscreen().catch((e) => console.warn('[Wall2] fullscreen change failed', e));
-      }}
-    >
-      <Glyph size={30} stroke={1.8} aria-hidden="true" />
-      {full ? 'Exit' : 'Full'}
-    </button>
-  );
-}
 
 export function Rail() {
   const active = usePlaceStore((s) => s.active);
@@ -63,7 +40,7 @@ export function Rail() {
   const onKeyDown = (e: KeyboardEvent<HTMLElement>) => {
     if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
     const buttons = Array.from(
-      e.currentTarget.querySelectorAll<HTMLButtonElement>('button.rb:not(:disabled):not(.rb-fs):not(.rb-tools)'),
+      e.currentTarget.querySelectorAll<HTMLButtonElement>('button.rb:not(:disabled):not(.rb-tools)'),
     );
     const index = buttons.indexOf(document.activeElement as HTMLButtonElement);
     if (index < 0) return;
@@ -149,7 +126,6 @@ export function Rail() {
         <IconMoon size={30} stroke={1.8} aria-hidden="true" />
         Zen
       </button>
-      {isTauri() && <FullscreenButton />}
       <button
         type="button"
         className="rb rb-tools"

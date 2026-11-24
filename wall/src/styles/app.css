@@ -134,10 +134,6 @@ button,
   background: var(--line);
   margin: 6px 0;
 }
-.rb.rb-fs {
-  height: 64px;
-  flex-shrink: 0;
-}
 .rail-spacer {
   flex: 1;
 }
