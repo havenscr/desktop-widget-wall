@@ -23,3 +23,15 @@ test('with no level known only the track is drawn', () => {
   expect(container.querySelector('.st-track')).toBeTruthy();
   expect(container.querySelector('.st-bar')).toBeNull();
 });
+
+test('an off tile keeps its track and draws no bar', () => {
+  const { container } = render(<TileLevel on={false} level={45} colour="#fff" />);
+  expect(container.querySelector('.st-track')).toBeTruthy();
+  expect(container.querySelector('.st-bar')).toBeNull();
+});
+
+test('an on tile draws both the track and the bar', () => {
+  const { container } = render(<TileLevel on level={45} colour="#fff" />);
+  expect(container.querySelector('.st-track')).toBeTruthy();
+  expect(container.querySelector('.st-bar')).toBeTruthy();
+});

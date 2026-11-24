@@ -25,15 +25,15 @@ export function NameButton({ id, label, warn = false, menu }: { id: CardId; labe
 }
 
 /**
- * The level bar along a lit tile's foot: a faint track, and over it a fill to the light's level in its own colour.
+ * The level bar along a tile's foot: a faint track (always drawn, so an off tile keeps its line), and over it a fill to the light's level in its own colour.
  * With no level known only the track is drawn. Hidden from assistive tech; the switch and name say the rest.
  */
-export function TileLevel({ level, colour }: { level: number | null; colour: string }) {
+export function TileLevel({ level, colour, on = true }: { level: number | null; colour: string; on?: boolean }) {
   const pct = level === null || !Number.isFinite(level) ? null : Math.max(0, Math.min(100, level));
   return (
     <>
       <i className="st-track" aria-hidden="true" />
-      {pct !== null && <i className="st-bar" aria-hidden="true" style={{ width: `calc((100% - 24px) * ${pct / 100})`, background: colour }} />}
+      {on && pct !== null && <i className="st-bar" aria-hidden="true" style={{ width: `calc((100% - 24px) * ${pct / 100})`, background: colour }} />}
     </>
   );
 }

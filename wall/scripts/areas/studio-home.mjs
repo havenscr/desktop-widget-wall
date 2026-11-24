@@ -133,6 +133,7 @@ export default {
     states: [
       state('onair', 'block, ready, nothing on', onAirGallery(READY), ['Studio lights', 'Normal:', 'regular routines.', 'Key lights 60%, 4400 K', 'On air', 'Recording', 'Normal', 'Panels', 'Behind monitor', 'Overhead', 'Fine tune']),
       state('onair', 'block, On air is on', onAirGallery('keys2=both&studio=onair&desktoken=set'), ['On air:', 'Key lights on, panels glow, monitor and overhead white', 'Fine tune']),
+      state('onair', 'block, On air is on, key lights off', onAirGallery('keys2=off&studio=onair&desktoken=set'), ['On air:', 'Fine tune']),
       state('onair', 'block, Recording is on', onAirGallery('keys2=both&studio=recording&desktoken=set'), ['Recording:', 'Room 80%, panels calm, key lights on, overhead white']),
       state('onair', 'block, changed since it was set', onAirGallery('keys2=both&studio=changed&desktoken=set'), ['On air, changed', 'since it was set']),
       state('onair', 'block, the home app could not read every light', onAirGallery('keys2=both&studio=stale&desktoken=set'), ['(not fresh)', 'Overhead']),
