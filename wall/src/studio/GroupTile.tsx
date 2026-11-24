@@ -29,7 +29,7 @@ export function NameButton({ id, label, warn = false, menu }: { id: CardId; labe
  * With no level known only the track is drawn. Hidden from assistive tech; the switch and name say the rest.
  */
 export function TileLevel({ level, colour }: { level: number | null; colour: string }) {
-  const pct = level === null ? null : Math.max(0, Math.min(100, level));
+  const pct = level === null || !Number.isFinite(level) ? null : Math.max(0, Math.min(100, level));
   return (
     <>
       <i className="st-track" aria-hidden="true" />

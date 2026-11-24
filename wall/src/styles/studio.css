@@ -291,9 +291,6 @@ span.st-tg-sw {
   cursor: pointer;
 }
 /* After the warning icon the name needs no left padding of its own. */
-.st-tg > svg:first-child + .st-name {
-  padding-left: var(--tg-gap);
-}
 /* The level bar along the foot of a lit tile: a faint track, and the fill to the light's level. */
 .st-track,
 .st-bar {
