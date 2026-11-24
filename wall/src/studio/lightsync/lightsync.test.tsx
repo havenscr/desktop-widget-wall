@@ -126,7 +126,7 @@ it('the chip is first in the row and its width is a fixed part of the fit rule',
   const withSync = fitMoodRow(names, 160, 80, 130, SYNC_WIDTH);
   expect(without.label).toBe(true);
   expect(withSync.label).toBe(false);
-  expect(SYNC_WIDTH).toBe(208);
+  expect(SYNC_WIDTH).toBe(201);
 });
 
 it('states: idle, starting (spinner), on (lit), failed (warning icon)', async () => {

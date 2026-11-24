@@ -28,8 +28,8 @@ export const BACK_FIXED = 53;
 export const BACK_WORD = 'As before';
 /** Off or As before drawn as the icon alone (the last steps of the fit rule): at least a 40 px click. */
 export const ICON_CHIP = 40;
-/** The Music sync chip, first in the row, a fixed width: 2 px of border, 14 px of padding left and 10 right, the 18 px pulse icon and its 8 px gap, the name, a 12 px gap and the 40 px switch. Measured as 196 to 204 px of name and icon in the chip font before the switch moved in; 208 holds the name with at least 10 px to the switch and to each edge. */
-export const SYNC_WIDTH = 208;
+/** The Music sync chip, first in the row, a fixed width: 2 px of border, 14 px of padding each side, the 18 px pulse icon and its 8 px gap, the name (92.5 px in the chip font), a 12 px gap and the 40 px switch: 200.5 px, drawn as 201. */
+export const SYNC_WIDTH = 201;
 export const SYNC_WORD = 'Music sync';
 /** The home app's own caps, mirrored by the native side (`wall2_studio.rs`). */
 export const MOOD_MAX = 12;
