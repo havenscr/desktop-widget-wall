@@ -147,8 +147,8 @@ function PanelsTile() {
   return (
     <div className="hs-panels">
       <div className="st-tg st-room dis" data-group="panels" aria-disabled="true" {...tip(readWord !== null ? 'Panels: the home app is not answering' : 'Panels need the home app, which has not answered yet')}>
-        <TileSwitch label="Panels" on={false} plain />
         <NameButton id="panels" label="Panels" />
+        <TileSwitch label="Panels" on={false} plain />
       </div>
     </div>
   );

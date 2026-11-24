@@ -24,6 +24,20 @@ export function NameButton({ id, label, warn = false, menu }: { id: CardId; labe
   );
 }
 
+/**
+ * The level bar along a lit tile's foot: a faint track, and over it a fill to the light's level in its own colour.
+ * With no level known only the track is drawn. Hidden from assistive tech; the switch and name say the rest.
+ */
+export function TileLevel({ level, colour }: { level: number | null; colour: string }) {
+  const pct = level === null ? null : Math.max(0, Math.min(100, level));
+  return (
+    <>
+      <i className="st-track" aria-hidden="true" />
+      {pct !== null && <i className="st-bar" aria-hidden="true" style={{ width: `calc((100% - 24px) * ${pct / 100})`, background: colour }} />}
+    </>
+  );
+}
+
 /** The switch half: a button when it can be switched, a dead switch (still drawn, still said) when it cannot. */
 export function TileSwitch({ label, on, dim = false, disabled = false, plain = false, onClick, knob, tipText, children }: { label: string; on: boolean; dim?: boolean; disabled?: boolean; plain?: boolean; onClick?: () => void; knob?: string; tipText?: ReactNode; children?: ReactNode }) {
   const sw = (

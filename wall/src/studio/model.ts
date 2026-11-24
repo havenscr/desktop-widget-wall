@@ -68,6 +68,12 @@ export function shown(s: Snapshot): Light | null {
   return working(s)[0]?.light ?? null;
 }
 
+/** The brightness the key lights show on a level bar: the mean of the lights that answered, or null with none. */
+export function keyLevel(s: Snapshot): number | null {
+  const w = working(s);
+  return w.length ? Math.round(w.reduce((a, x) => a + x.light.brightness, 0) / w.length) : null;
+}
+
 /** The knob colour for a warmth: warm amber under 3600 K, cream to 5200 K, cool white above. */
 export function kelvinColour(kelvin: number): string {
   return kelvin < 3600 ? '#ffc98a' : kelvin < 5200 ? '#ffe7c7' : '#e2ecff';

@@ -1,3 +1,5 @@
+import { measureTileBar, tileBarRule } from '../lib/tile-bar.mjs';
+
 // The Home tab's studio lights: the short Now playing line, the block under it (Key lights and Panels switches, Fine tune,
 // Gaming, Office Recording and As before) and the Condo / Office pick in the Moods heading. Every state
 // comes from the `?studio=`, `?office=`, `?officemood=`, `?desktoken=` and `?keys2=` knobs of the development mocks.
@@ -144,9 +146,10 @@ export default {
       variant(V_CONDO, READY),
       variant(V_OFFICE, READY, { click: '[data-moods-which="office"]' }),
     ],
-    measurements: { homestudio: measureHomeStudio },
-    rules: { homestudio: rule },
+    measurements: { homestudio: measureHomeStudio, tileBarHome: measureTileBar },
+    rules: { homestudio: rule, tileBarHome: tileBarRule('tileBarHome', 'home studio tiles', (v) => v.name.startsWith('Home studio')) },
     breaks: {
+      'tilebar-home': { css: '.st-name, .st-tg-sw { padding-bottom: 0 !important; } .st-track, .st-bar { bottom: 8px !important; }', expect: /^ *FAIL home studio tiles: tile ".*" text \(with descenders\) ends/m, appliesTo: on(V_READY) },
       'homestudio-tall': { css: '.hs-block { gap: 30px !important; }', expect: /^ *FAIL home studio: the block .* leaves the left column|^ *FAIL home studio: the block ends at y /m, appliesTo: on(V_READY) },
       'homestudio-line': { css: '.np-col > .sound-np, .np-line { height: 90px !important; }', expect: /^ *FAIL home studio: the Now playing line is \d+(\.\d)? px tall/m, appliesTo: on(V_READY) },
       'homestudio-cover': { css: '.sound-np.compact .np-cover, .sound-np.compact .np-slot { width: 100px !important; height: 100px !important; }', expect: /^ *FAIL home studio: the cover is /m, appliesTo: on(V_READY) },
