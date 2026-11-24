@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { mocks } from '../bridge/tauri';
 import { studioAnswer } from '../studio/homeKit';
@@ -93,15 +93,14 @@ const tipOf = async (el: Element) => {
 };
 const rowNames = (row: string) => [...document.querySelectorAll(`[data-row="${row}"] button, [data-row="${row}"] .st-preset`)].map((b) => b.textContent?.trim() || b.getAttribute('aria-label'));
 
-it('holds the Key lights and Panels switches, Fine tune, three panel looks and the three buttons in order', async () => {
+it('holds the Key lights and Panels switches, Fine tune and the three buttons in order, with no row of panel looks', async () => {
   await show();
   expect(screen.getByText('Studio lights')).toBeTruthy();
   expect(document.querySelector('[data-group="keys"]')).toBeTruthy();
   expect(document.querySelector('[data-group="panels"]')).toBeTruthy();
   expect(screen.getByRole('button', { name: 'Fine tune' })).toBeTruthy();
-  // The first three looks only (the home app lists four); the one that is on shows as on.
-  expect(rowNames('looks')).toEqual(['Glow', 'Calm', 'Sunrise']);
-  expect(btn('Calm').getAttribute('aria-pressed')).toBe('true');
+  expect(document.querySelector('[data-row="looks"]')).toBeNull();
+  expect(document.querySelector('[data-pop="panel-effects"]')).toBeNull();
   expect(rowNames('moods')).toEqual(['Gaming', 'Office Recording', 'As before']);
 });
 
@@ -130,10 +129,15 @@ it('As before is dashed with nothing on, and with a mood on it sends the studio 
   expect(writes.some((w) => w.command === 'wall2_studio_normal')).toBe(true);
 });
 
-it('the switches and looks send the existing calls', async () => {
+it('the Panels word opens the effects list (all four, the one on marked); the switch and a look send the existing calls', async () => {
   await show();
-  fireEvent.click(btn('Sunrise'));
+  fireEvent.click(document.querySelector('[data-group="panels"] .st-name') as HTMLElement);
+  const list = within(document.querySelector('[data-pop="panel-effects"]') as HTMLElement);
+  expect(list.getAllByRole('option').map((o) => o.textContent)).toEqual(['Glow', 'Calm', 'Sunrise', 'Neon']);
+  expect(list.getByText('Calm').closest('button')!.getAttribute('aria-selected')).toBe('true');
+  fireEvent.click(list.getByText('Sunrise'));
   await flush(50);
+  expect(document.querySelector('[data-pop="panel-effects"]')).toBeNull();
   expect(writes).toContainEqual({ command: 'wall2_studio_look', args: { id: 'sunrise' } });
   fireEvent.click(document.querySelector('[data-group="panels"] [role="switch"], [data-group="panels"] button.st-tg-sw') as HTMLElement);
   await flush(50);
@@ -147,14 +151,15 @@ it('the home app away: Panels, looks and the buttons show the wall dashed state 
   });
   await show();
   expect(document.querySelector('[data-group="panels"]')!.getAttribute('aria-disabled')).toBe('true');
-  expect(rowNames('looks')).toEqual(['Panel looks']);
+  expect(document.querySelector('[data-row="looks"]')).toBeNull();
   expect(rowNames('moods')).toEqual(['Gaming', 'Office Recording', 'As before']);
   for (const n of ['Gaming', 'Office Recording', 'As before']) {
     expect(btn(n).getAttribute('aria-disabled')).toBe('true');
     fireEvent.click(btn(n));
   }
-  fireEvent.click(screen.getByText('Panel looks'));
+  fireEvent.click(document.querySelector('[data-group="panels"] .st-name') as HTMLElement);
   await flush(50);
+  expect(document.querySelector('[data-pop="panel-effects"]')).toBeNull();
   expect(writes.filter((w) => w.command !== 'wall2_keylights_set')).toEqual([]);
 });
 
@@ -235,12 +240,11 @@ it('a blocked local storage still works: the condo shows, and the pick works for
   vi.restoreAllMocks();
 });
 
-it('an empty looks list keeps the row as one dashed Panel looks chip with a reason', async () => {
+it('an empty looks list says so in the Panels pop-up', async () => {
   studio = studioAnswer({ looks: [] });
   await show();
-  expect(rowNames('looks')).toEqual(['Panel looks']);
-  expect(screen.getByText('Panel looks').closest('.st-preset')!.getAttribute('aria-disabled')).toBe('true');
-  expect(await tipOf(screen.getByText('Panel looks'))).toContain('no panel looks');
+  fireEvent.click(document.querySelector('[data-group="panels"] .st-name') as HTMLElement);
+  expect(screen.getByText('The home app lists no panel effects yet.')).toBeTruthy();
 });
 
 it('a decoy named like a mood never wins: the id first, then the whole name, no substring', async () => {

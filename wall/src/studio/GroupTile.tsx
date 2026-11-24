@@ -4,19 +4,20 @@ import { toggleCard, useCard, type CardId } from './cardStore';
 
 /**
  * The name half of a switch tile: a button that opens that group's card. The switch half turns the group on or off
- * as before. Under the pointer the name is cyan and underlined; at rest nothing moves.
+ * as before. A page with its own menu for the name (Home's Panels effects) passes `menu`. Under the pointer the name is cyan and underlined; at rest nothing moves.
  */
-export function NameButton({ id, label, warn = false }: { id: CardId; label: string; warn?: boolean }) {
-  const open = useCard((s) => s.open === id);
+export function NameButton({ id, label, warn = false, menu }: { id: CardId; label: string; warn?: boolean; menu?: { open: boolean; toggle: () => void; tipText: string } }) {
+  const cardOpen = useCard((s) => s.open === id);
+  const open = menu ? menu.open : cardOpen;
   return (
     <button
       type="button"
       className={`st-name${open ? ' open' : ''}${warn ? ' warn' : ''}`}
       data-card-for={id}
-      aria-haspopup="dialog"
+      aria-haspopup={menu ? 'listbox' : 'dialog'}
       aria-expanded={open}
-      onClick={(e) => toggleCard(id, e.detail === 0)}
-      {...tip(`Opens the settings for ${label}`)}
+      onClick={menu ? menu.toggle : (e) => toggleCard(id, e.detail === 0)}
+      {...tip(menu ? menu.tipText : `Opens the settings for ${label}`)}
     >
       {label}
     </button>

@@ -1,4 +1,5 @@
 import { IconArrowBackUp } from '@tabler/icons-react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { tip } from '../ui/HoverTip';
 import { KeyTile, Trailing } from '../meet/MeetLights';
 import { GroupCard } from '../studio/GroupCard';
@@ -27,9 +28,6 @@ export function findMood(row: RowModel, d: (typeof HOME_MOODS)[number]): ChipMod
   return moods.find((c) => d.ids.includes(c.id!.toLowerCase())) ?? moods.find((c) => d.labels.includes(c.label.trim().toLowerCase()));
 }
 
-/** At most this many panel looks sit on the page; the rest are in Fine tune. */
-export const HOME_LOOKS = 3;
-
 /** Why a part cannot be used now, in the words the rest of the wall uses; null when it can. */
 function whyNot(): string | null {
   const s = useHome.getState();
@@ -39,64 +37,84 @@ function whyNot(): string | null {
   return null;
 }
 
-/** Panels as a switch. Without the home app's studio answer it is the wall's dead switch (dashed, dim) with a plain tip. */
-function PanelsTile() {
-  const studio = useHome((s) => s.studio);
-  const readWord = useHome((s) => s.readWord);
-  const readDone = useHome((s) => s.readDone);
-  const g = studio?.groups.find((x) => x.id === 'panels');
-  if (studio && g && readWord === null) return <RoomTile studio={studio} g={g} canWrite={canChange({ studio, readWord, readDone })} />;
-  return (
-    <div className="st-tg st-room dis" data-group="panels" aria-disabled="true" {...tip(readWord !== null ? 'Panels: the home app is not answering' : 'Panels need the home app, which has not answered yet')}>
-      <TileSwitch label="Panels" on={false} plain />
-      <NameButton id="panels" label="Panels" />
-    </div>
-  );
-}
-
-/** The first three panel looks as chips (the rest are in Fine tune). Dashed while the home app cannot be changed from here. */
-function Looks() {
+function PanelEffects({ onClose }: { onClose: () => void }) {
   const studio = useHome((s) => s.studio);
   const readWord = useHome((s) => s.readWord);
   const readDone = useHome((s) => s.readDone);
   const applying = useHome((s) => s.applying);
-  if (!studio) {
-    return (
-      <div className="hs-row" data-row="looks" role="group" aria-label="Panel looks">
-        <span className="st-preset dis" aria-disabled="true" {...tip('Panel looks need the home app, which has not answered yet')}>
-          <span>Panel looks</span>
-        </span>
-      </div>
-    );
-  }
-  const looks = studio.looks.slice(0, HOME_LOOKS);
-  if (looks.length === 0) {
-    return (
-      <div className="hs-row" data-row="looks" role="group" aria-label="Panel looks">
-        <span className="st-preset dis" aria-disabled="true" {...tip('The home app lists no panel looks yet')}>
-          <span>Panel looks</span>
-        </span>
-      </div>
-    );
-  }
-  const may = canChange({ studio, readWord, readDone });
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const away = (e: PointerEvent) => {
+      const anchor = ref.current?.parentElement;
+      if (anchor && !anchor.contains(e.target as Node)) onClose();
+    };
+    const key = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
+    document.addEventListener('pointerdown', away);
+    document.addEventListener('keydown', key);
+    return () => {
+      document.removeEventListener('pointerdown', away);
+      document.removeEventListener('keydown', key);
+    };
+  }, [onClose]);
+  const looks = studio?.looks ?? [];
+  const may = studio ? canChange({ studio, readWord, readDone }) : false;
   return (
-    <div className="hs-row" data-row="looks" role="group" aria-label="Panel looks">
+    <div ref={ref} className="hs-pop" role="listbox" aria-label="Panel effects" data-pop="panel-effects">
+      <div className="k">Panel effects</div>
+      {looks.length === 0 && <div className="hs-pop-note s">The home app lists no panel effects yet.</div>}
       {looks.map((l) => (
         <button
           key={l.id}
           type="button"
-          className={`st-preset${l.active ? ' on' : ''}${may ? '' : ' dis'}`}
+          role="option"
+          aria-selected={l.active}
+          className={`hs-pop-row${l.active ? ' on' : ''}${may ? '' : ' dis'}`}
           data-look={l.id}
-          aria-pressed={l.active}
           aria-disabled={may ? undefined : true}
           aria-busy={applying === `look:${l.id}` || undefined}
-          onClick={may && !l.active ? () => void useHome.getState().applyLook(l.id) : undefined}
+          onClick={
+            may && !l.active
+              ? () => {
+                  void useHome.getState().applyLook(l.id);
+                  onClose();
+                }
+              : undefined
+          }
           {...tip(may ? `${l.label}: the panels' look` : (whyNot() ?? 'The home app cannot be changed from here'))}
         >
           <span>{l.label}</span>
         </button>
       ))}
+    </div>
+  );
+}
+
+/**
+ * Panels as the same switch pill as Key lights and the other pages (the switch turns them on or off). Here the word opens a short
+ * list of panel effects under it instead of the settings card. Without the home app's studio answer it is the wall's dead switch
+ * (dashed, dim) with a plain tip.
+ */
+function PanelsTile() {
+  const studio = useHome((s) => s.studio);
+  const readWord = useHome((s) => s.readWord);
+  const readDone = useHome((s) => s.readDone);
+  const [open, setOpen] = useState(false);
+  const close = useCallback(() => setOpen(false), []);
+  const g = studio?.groups.find((x) => x.id === 'panels');
+  if (studio && g && readWord === null) {
+    return (
+      <div className="hs-panels">
+        <RoomTile studio={studio} g={g} canWrite={canChange({ studio, readWord, readDone })} menu={{ open, toggle: () => setOpen(!open), tipText: 'Opens the panel effects' }} />
+        {open && <PanelEffects onClose={close} />}
+      </div>
+    );
+  }
+  return (
+    <div className="hs-panels">
+      <div className="st-tg st-room dis" data-group="panels" aria-disabled="true" {...tip(readWord !== null ? 'Panels: the home app is not answering' : 'Panels need the home app, which has not answered yet')}>
+        <TileSwitch label="Panels" on={false} plain />
+        <NameButton id="panels" label="Panels" />
+      </div>
     </div>
   );
 }
@@ -163,8 +181,7 @@ function MoodButtons() {
 }
 
 /**
- * The studio lights under Now playing on the Home tab: a Key lights switch, a Panels switch and Fine tune on one row, the
- * first three panel looks, and three buttons (Gaming, Office Recording, As before). Same calls as On Air and Unwind;
+ * The studio lights under the play row on the Home tab: a Key lights switch and a Panels switch of equal width and the Fine tune button on one row (the Panels word opens the panel effects under it), and three buttons (Gaming, Office Recording, As before). Same calls as On Air and Unwind;
  * a part the home app cannot serve yet shows the wall's dashed, dim state with the reason on hover.
  */
 export function HomeStudio() {
@@ -182,10 +199,8 @@ export function HomeStudio() {
       <div className="hs-row st-switches" data-row="switches">
         <KeyTile snap={snap} />
         <PanelsTile />
-        <span className="st-spacer" />
         <Trailing snap={snap} />
       </div>
-      <Looks />
       <MoodButtons />
       {drawer && <StudioDrawer />}
       <GroupCard />

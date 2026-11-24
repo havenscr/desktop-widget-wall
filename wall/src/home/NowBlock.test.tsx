@@ -671,7 +671,7 @@ it('compact, both at once: music pause and skip, video play or pause and stop, a
   await play(0);
   expect(block(container).dataset.layout).toBe('both');
   expect(block(container).classList.contains('compact')).toBe(true);
-  expect([...container.querySelectorAll('.np-btns button')].map((b) => b.getAttribute('aria-label'))).toEqual(['Previous track', 'Pause', 'Next track', 'Pause video', 'Stop the video']);
+  expect([...container.querySelectorAll('.np-ctl button')].map((b) => b.getAttribute('aria-label'))).toEqual(['Previous track', 'Pause', 'Next track', 'Pause video', 'Stop the video']);
   fireEvent.click(label(container, 'Pause')!);
   expect(pauseAll).toHaveBeenCalled();
   fireEvent.click(label(container, 'Next track')!);

@@ -1,4 +1,6 @@
 import { act, fireEvent, render, screen, within } from '@testing-library/react';
+// @ts-ignore node's own file calls; this test reads the stylesheet as text.
+import { readFileSync } from 'node:fs';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { mocks } from '../bridge/tauri';
 import { usePacificTime } from '../ribbon/testZone';
@@ -43,9 +45,10 @@ function summary(over: Partial<SonosSummary> = {}): SonosSummary {
       routine('Dusk_Mix', 'Evening Music'),
       routine('Owl_Mix', 'Late Night Music'),
       routine('Desk_Mix', 'Workday Music'),
-      routine('Pop_Mix', 'Bright Pop'),
-      routine('Book_Mix', 'Book Club'),
-      routine('Loud_Mix', 'Loud Party', 55),
+      routine('Pop_Mix', 'Upbeat Music'),
+      routine('Book_Mix', 'Reading Music'),
+      routine('Loud_Mix', 'Romantic Music', 55),
+      routine('Rain_Mix', 'Rain Sounds'),
     ],
     controls: [{ key: 'Group_All', name: 'Group Everything', action: 'groupAll', loud: [] }],
     scenes: [],
@@ -103,7 +106,12 @@ it('never reached says so, with no controls', async () => {
 
 it('shows the five quick plays in the owner\'s order with More, and nothing is written without a click', async () => {
   wire();
-  const { container } = render(<Sound />);
+  const { container } = render(
+    <>
+      <Sound />
+      <HoverTipLayer />
+    </>,
+  );
   await flush(5 * 60_000);
   const names = [...container.querySelectorAll('.sound-plays > .sound-chip .sound-chip-name')].map((n) => n.textContent);
   expect(names).toEqual(['Morning', 'Day', 'Evening', 'Late Night', 'Workday']);
@@ -114,12 +122,13 @@ it('shows the five quick plays in the owner\'s order with More, and nothing is w
   expect(evening.className).not.toContain('has-tag');
   expect(screen.getByText('Day').closest('button')!.className).not.toContain('has-tag');
   expect(within(evening).queryByRole('img', { name: 'Suggested' })).toBeNull();
-  expect(evening.getAttribute('title')).toContain('Play Evening Music');
-  expect(evening.getAttribute('title')).toContain('Suggested for this hour');
+  const hover = await tipText(evening);
+  expect(hover).toContain('Play Evening Music');
+  expect(hover).toContain('Suggested for this hour');
 });
 
 it('a word with no routine leaves its tile out, and the rest stay under More', async () => {
-  wire(() => summary({ music: [routine('a', 'Morning Mix'), routine('w', 'Workday Mix'), routine('x', 'Rain Sounds')] }));
+  wire(() => summary({ music: [routine('a', 'Morning Mix'), routine('w', 'Workday Mix'), routine('x', 'Romantic Music'), routine('y', 'Rain Sounds')] }));
   const { container } = render(<Sound />);
   await flush();
   expect([...container.querySelectorAll('.sound-plays > .sound-chip .sound-chip-name')].slice(0, 2).map((n) => n.textContent)).toEqual(['Morning', 'Workday']);
@@ -153,7 +162,12 @@ it('a skipped play says why and offers Play anyway, which sends the forced call'
     writes.push({ cmd: 'wall2_sonos_play', args });
     return (args as { force?: boolean }).force ? { started: true, reason: null } : { started: false, reason: null };
   });
-  render(<Sound />);
+  render(
+    <>
+      <Sound />
+      <HoverTipLayer />
+    </>,
+  );
   await flush();
   fireEvent.click(screen.getByText('Day').closest('button')!);
   await flush();
@@ -161,7 +175,7 @@ it('a skipped play says why and offers Play anyway, which sends the forced call'
   expect(screen.queryByText('Playing Day')).toBeNull();
   expect(localStorage.getItem(LAST_PLAY_KEY)).toBeNull();
   const anyway = screen.getByText('Play anyway').closest('button')!;
-  expect(anyway.getAttribute('title')).toBe("ignores this routine's own conditions");
+  expect(await tipText(anyway)).toBe("Ignores this routine's own conditions");
   await flush(LATCH_MS);
   fireEvent.click(anyway);
   await flush();
@@ -209,38 +223,45 @@ it('the Play anyway offer goes after a minute', async () => {
   expect(screen.queryByText('Play anyway')).toBeNull();
 });
 
-it('More writes a routine\'s volume as "Vol. 10", never "volume 10"', async () => {
+it('More holds only Upbeat, Romantic and Reading as tiles; the favorite and volume are in the hover text, never "volume 10"', async () => {
   wire();
-  render(<Sound />);
+  render(
+    <>
+      <Sound />
+      <HoverTipLayer />
+    </>,
+  );
   await flush();
   fireEvent.click(screen.getByText('3 more').closest('button')!);
   const pop = screen.getByRole('dialog', { name: 'More routines' });
-  const row = within(pop).getByText('Book Club').closest('button')!;
-  expect(row.querySelector('.xs')!.textContent).toMatch(/, Vol\. \d+$/);
+  expect([...pop.querySelectorAll('.sound-mood b')].map((n) => n.textContent)).toEqual(['Upbeat', 'Romantic', 'Reading']);
+  expect(within(pop).queryByText('Rain Sounds')).toBeNull();
+  expect(within(pop).queryByText('Speakers')).toBeNull();
+  const hover = await tipText(within(pop).getByText('Upbeat').closest('button')!);
+  expect(hover).toBe('Play Upbeat Music (Upbeat Music Station) at Vol. 10');
   expect(pop.textContent).not.toMatch(/volume \d/);
 });
 
-it('More lists the other routines and the speaker controls; a loud one asks first', async () => {
+it('a loud mood tile asks first; Cancel sends nothing and Start sends the confirmed play', async () => {
   wire();
   render(<Sound />);
   await flush();
   fireEvent.click(screen.getByText('3 more').closest('button')!);
   const pop = screen.getByRole('dialog', { name: 'More routines' });
-  expect(within(pop).getByText('Book Club')).toBeTruthy();
-    fireEvent.click(within(pop).getByText('Loud Party').closest('button')!);
+  fireEvent.click(within(pop).getByText('Romantic').closest('button')!);
   await flush();
   expect(writes).toEqual([]);
   expect(screen.getByRole('alertdialog').textContent).toContain('above 40');
   fireEvent.click(screen.getByText('Cancel'));
   expect(writes).toEqual([]);
   fireEvent.click(screen.getByText('3 more').closest('button')!);
-  fireEvent.click(within(screen.getByRole('dialog', { name: 'More routines' })).getByText('Loud Party').closest('button')!);
+  fireEvent.click(within(screen.getByRole('dialog', { name: 'More routines' })).getByText('Romantic').closest('button')!);
   fireEvent.click(screen.getByText('Start'));
   await flush();
   expect(writes).toEqual([{ cmd: 'wall2_sonos_play', args: { routineKey: 'Loud_Mix', confirm: true } }]);
 });
 
-it('Group all is not offered anywhere: not on the face, not under More', async () => {
+it('Group all and the other speaker controls are not offered anywhere: not on the face, not under More', async () => {
   wire(() =>
     summary({
       controls: [
@@ -253,18 +274,55 @@ it('Group all is not offered anywhere: not on the face, not under More', async (
   await flush();
   fireEvent.click(screen.getByText('3 more').closest('button')!);
   const pop = screen.getByRole('dialog', { name: 'More routines' });
-  expect(within(pop).getByText('Ungroup Everything')).toBeTruthy();
+  expect(within(pop).queryByText('Ungroup Everything')).toBeNull();
   expect(container.textContent).not.toMatch(/\bgroup (all|everything)/i);
-  expect(within(pop).queryByText('Group Everything')).toBeNull();
+});
+
+it('the favorites dropdown is closed under More; opening it lists them, a long name is cut with an ellipsis, a pick plays it and asks first when the service says so', async () => {
+  wire();
+  const favs = [
+    { id: '0a1b2c3d4e5f6071', name: 'Quiet Radio', kind: 'radio' },
+    { id: '1b2c3d4e5f607182', name: 'A Very Long Station Name For Gentle Acoustic Mornings With Coffee And The Paper On The Porch', kind: 'spotify' },
+  ];
+  mocks.set('wall2_sonos_favorites', () => favs);
+  let ask = true;
+  mocks.set('wall2_sonos_favorite_play', (args) => {
+    writes.push({ cmd: 'wall2_sonos_favorite_play', args });
+    if (ask && !(args as { confirm?: boolean }).confirm) throw new Error(NEEDS_CONFIRM);
+  });
+  render(<Sound />);
+  await flush();
+  fireEvent.click(screen.getByText('3 more').closest('button')!);
+  expect(screen.getByText('Choose a favorite')).toBeTruthy();
+  expect(document.querySelector('.sound-fav-list')).toBeNull();
+  fireEvent.click(screen.getByText('Choose a favorite').closest('button')!);
+  await flush();
+  const rows = [...document.querySelectorAll('.sound-fav-row span')].map((n) => n.textContent);
+  expect(rows).toEqual(['Quiet Radio', favs[1].name]);
+  expect(css('.sound-fav-row span')).toMatch(/text-overflow:\s*ellipsis/);
+  fireEvent.click(screen.getByText('Quiet Radio').closest('button')!);
+  await flush();
+  expect(writes).toEqual([{ cmd: 'wall2_sonos_favorite_play', args: { favoriteId: '0a1b2c3d4e5f6071' } }]);
+  expect(screen.getByRole('alertdialog')).toBeTruthy();
+  await flush(LATCH_MS);
+  ask = false;
+  fireEvent.click(screen.getByText('Start'));
+  await flush();
+  expect(writes.at(-1)).toEqual({ cmd: 'wall2_sonos_favorite_play', args: { favoriteId: '0a1b2c3d4e5f6071', confirm: true } });
 });
 
 it('the group slider moves the group by a step on release, and asks before any speaker goes above 40', async () => {
   wire();
-  render(<Sound />);
+  render(
+    <>
+      <Sound />
+      <HoverTipLayer />
+    </>,
+  );
   await flush();
   const slider = () => screen.getByLabelText('Volume, Den and 1 more') as HTMLInputElement;
   expect(slider().value).toBe('12');
-  expect(slider().closest('label')!.getAttribute('title')).toContain('same step from its own level');
+  expect(await tipText(slider().closest('label')!)).toContain('same step from its own level');
   fireEvent.change(slider(), { target: { value: '20' } });
   fireEvent.change(slider(), { target: { value: '22' } });
   expect(writes).toEqual([]);
@@ -426,7 +484,7 @@ it('Sonos Off pauses everything and clears the started mark; with nothing playin
   again.unmount();
 
   // No routine fits the hour: Play is off.
-  wire(() => ({ ...quiet, music: [routine('Pop_Mix', 'Bright Pop')] }));
+  wire(() => ({ ...quiet, music: [routine('Pop_Mix', 'Upbeat Music')] }));
   render(<Sound />);
   await flush();
   const play = screen.getByText('Play').closest('button') as HTMLButtonElement;
@@ -754,7 +812,7 @@ it('an Evening Workday routine is the Evening tile and is suggested as Evening a
 });
 
 it('one matched routine plus More: the row has two columns, no blank cell; fewer than five tiles never leave one', async () => {
-  wire(() => summary({ music: [routine('m', 'Morning Mix'), routine('x', 'Rain Sounds')] }));
+  wire(() => summary({ music: [routine('m', 'Morning Mix'), routine('x', 'Romantic Music')] }));
   const { container } = render(<Sound />);
   await flush();
   const row = container.querySelector('.sound-plays') as HTMLElement;
@@ -766,8 +824,9 @@ it('one matched routine plus More: the row has two columns, no blank cell; fewer
     const r = render(<Sound />);
     await flush();
     const el = r.container.querySelector('.sound-plays') as HTMLElement;
-    expect(el.style.gridTemplateColumns).toBe(`repeat(${n}, minmax(0px, 1fr))`);
-    expect(el.children).toHaveLength(n);
+    // More is always there (it holds the favorites), so one column more than the tiles.
+    expect(el.style.gridTemplateColumns).toBe(`repeat(${n + 1}, minmax(0px, 1fr))`);
+    expect(el.children).toHaveLength(n + 1);
     r.unmount();
   }
 });
@@ -811,6 +870,11 @@ it('a read that fails after Sonos was up keeps the block, marked stale, and the 
 });
 
 // home round two: now playing at the left of the block.
+const css = (sel: string): string => {
+  const src = readFileSync('src/styles/home.css', 'utf8').replace(/\r\n/g, '\n');
+  const i = src.indexOf(`${sel} {`);
+  return i < 0 ? '' : src.slice(i, src.indexOf('}', i));
+};
 const tipText = async (el: Element) => {
   fireEvent.mouseEnter(el);
   await flush(400);
@@ -835,14 +899,14 @@ it('a Spotify track on a house speaker shows its title, artist, where it plays a
   await flush(1_000);
   const strip = container.querySelector('.sound-np')!;
   expect(within(strip as HTMLElement).getByText('Paper Lanterns')).toBeTruthy();
-  // The short form: the artist and the length are on hover, not drawn.
+  // The short form: title, artist and where it plays are drawn; the length is on hover; the controls are the play row under it.
   expect(strip.classList.contains('compact')).toBe(true);
-  expect(strip.textContent).not.toContain('The Quiet Hours');
+  expect(strip.textContent).toContain('The Quiet Hours');
   expect(await tipText(strip.querySelector('.np-title')!)).toContain('The Quiet Hours');
   expect(strip.textContent).toContain('Den, 2 speakers');
   expect(await tipText(strip.querySelector('.np-where')!)).toContain('of 3:20');
-  expect(within(strip as HTMLElement).getByLabelText('Pause')).toBeTruthy();
-  expect(within(strip as HTMLElement).queryByLabelText('Next')).toBeNull();
+  expect(within(container.querySelector('.np-ctl') as HTMLElement).getByLabelText('Pause')).toBeTruthy();
+  expect(within(container).queryByLabelText('Next track')).toBeNull();
 });
 
 it('a Spotify track playing on this PC is never shown as the house playing', async () => {
