@@ -1044,16 +1044,20 @@ fn now_ms() -> i64 {
 
 /// Where this call goes: the home app's relay when `homeBaseUrl` is set (with the saved desk key,
 /// read off the async thread), else the sound service's own address (`sonosBaseUrl`).
+/// Only a missing home address falls back; a home address that is set but invalid is an error,
+/// so a typo never sends calls around the relay.
 fn route_from(home: Result<String, String>, sonos: impl FnOnce() -> Result<String, String>, key: Option<String>) -> Result<Route, String> {
     match home {
         Ok(h) => Ok(Route::relay(h, key)),
-        Err(_) => Ok(Route::direct(sonos()?)),
+        Err(e) if e == crate::wall2_feeds::NOT_CONFIGURED => Ok(Route::direct(sonos()?)),
+        Err(e) => Err(e),
     }
 }
 
 async fn sonos_route(app: &tauri::AppHandle) -> Result<Route, String> {
     let home = read_base(app, "homeBaseUrl", false);
-    let key = if home.is_ok() { crate::wall2_desk::off_thread(|| Ok(crate::wall2_desk_token::read_token())).await? } else { None };
+    let wants_key = matches!(&home, Ok(h) if crate::wall2_desk::token_may_go_to(h));
+    let key = if wants_key { crate::wall2_desk::off_thread(|| Ok(crate::wall2_desk_token::read_token())).await? } else { None };
     route_from(home, || read_base(app, "sonosBaseUrl", false), key)
 }
 
@@ -2080,9 +2084,12 @@ mod tests {
         let sonos = || Ok("http://192.168.1.7:5005".to_string());
         let r = route_from(Ok(HOME.to_string()), sonos, None).unwrap();
         assert_eq!(r.url("/api/status"), "http://100.64.0.9:5006/api/sonos/status");
-        let r = route_from(Err("Not configured".to_string()), sonos, None).unwrap();
+        let missing = || Err(crate::wall2_feeds::NOT_CONFIGURED.to_string());
+        let r = route_from(missing(), sonos, None).unwrap();
         assert_eq!(r.url("/api/status"), "http://192.168.1.7:5005/api/status");
-        assert_eq!(route_from(Err("x".to_string()), || Err("Not configured".to_string()), None).unwrap_err(), "Not configured");
+        assert_eq!(route_from(missing(), missing, None).unwrap_err(), crate::wall2_feeds::NOT_CONFIGURED);
+        // A home address that is set but invalid is an error, never a quiet fallback.
+        assert_eq!(route_from(Err("bad-address".to_string()), sonos, None).unwrap_err(), "bad-address");
     }
 
     #[test]
