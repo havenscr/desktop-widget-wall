@@ -39,7 +39,6 @@ import {
   pagesFor,
   readMode,
   saveMode,
-  sendReason,
   stepPage,
   tileSizeClass,
   type KeysSummary,
@@ -571,7 +570,7 @@ export function Keys() {
               onContextMenu={onContext}
               onClick={(e) => {
                 // A key that cannot be sent never reaches Rust: the heading says why, nothing is invoked.
-                if (wrongApp) return showBrief(sendReason('no app', set, hold));
+                if (wrongApp) return showBrief(`Wrong app in front for ${set.name}`);
                 if (!layoutOff && !keyboardOnMouseKey(k.action, e.detail)) void press(`${set.id}:${i}`, e.detail, { command: 'wall2_keys_send', args: { setId: set.id, index: i } }, k.label, k.action, set, hold);
               }}
             >

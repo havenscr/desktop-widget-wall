@@ -60,6 +60,17 @@ pub(crate) fn title_starts_with(title: &str, prefix: &str) -> bool {
     !prefix.is_empty() && title.len() >= prefix.len() && title.is_char_boundary(prefix.len()) && title[..prefix.len()].eq_ignore_ascii_case(prefix)
 }
 
+/// Whether a title is that of a main Outlook window (New Outlook or classic): it ends with the
+/// word Outlook, or starts with a folder name (Mail, Inbox, Calendar, People, Tasks, To Do)
+/// followed by a dash. A compose or reminder window is titled by its subject or as a message, so
+/// it does not match. The title is only tested here, never kept or sent anywhere.
+#[cfg_attr(not(any(windows, test)), allow(dead_code))]
+pub(crate) fn title_is_main_outlook(title: &str) -> bool {
+    let t = title.trim();
+    let ends = t.len() >= 7 && t.is_char_boundary(t.len() - 7) && t[t.len() - 7..].eq_ignore_ascii_case("Outlook");
+    ends || ["Mail", "Inbox", "Calendar", "People", "Tasks", "To Do"].iter().any(|w| title_starts_with(t, &format!("{w} - ")))
+}
+
 /// Window classes of the desktop shell: the taskbars, the desktop and its worker windows.
 /// These are never arranged and never remembered as "the app in front".
 pub(crate) fn is_shell_class(class: &str) -> bool {
@@ -162,6 +173,15 @@ pub(crate) mod sys {
         super::title_starts_with(&String::from_utf16_lossy(&buf[..n]), prefix)
     }
 
+    /// Whether a window's title is that of a main Outlook window. Read from the window's own
+    /// record into a local buffer (no message is sent) and only compared, never returned.
+    pub fn title_is_main_outlook(h: isize) -> bool {
+        let mut buf = [0u16; 512];
+        let n = unsafe { InternalGetWindowText(hwnd(h), &mut buf) };
+        let n = (n.max(0) as usize).min(buf.len());
+        super::title_is_main_outlook(&String::from_utf16_lossy(&buf[..n]))
+    }
+
     fn token_elevated(process: HANDLE) -> Option<bool> {
         unsafe {
             let mut token = HANDLE::default();
@@ -244,6 +264,18 @@ mod tests {
         assert!(!title_starts_with("Cal", "Calendar"));
         assert!(!title_starts_with("Calendar", ""));
         assert!(!title_starts_with("", "Calendar"));
+    }
+
+    #[test]
+    fn main_outlook_titles_are_told_from_compose_windows() {
+        assert!(title_is_main_outlook("Mail - Someone - Outlook"));
+        assert!(title_is_main_outlook("Calendar - Someone - Outlook"));
+        assert!(title_is_main_outlook("Inbox - someone@example.com - Outlook"));
+        assert!(title_is_main_outlook("Tasks - Someone"));
+        assert!(!title_is_main_outlook("Quarterly numbers - Message (HTML)"));
+        assert!(!title_is_main_outlook("Untitled - Message"));
+        assert!(!title_is_main_outlook("1 Reminder"));
+        assert!(!title_is_main_outlook(""));
     }
 
     #[test]

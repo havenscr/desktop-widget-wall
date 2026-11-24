@@ -70,8 +70,8 @@ describe('words', () => {
     expect(headingFor(sales)).toBe('Keys for Sales app');
     expect(headingFor(general)).toBe('Keys: General');
   });
-  it('a held set in the wrong app says so, in fixed words', () => {
-    expect(sendReason('no app', sales, true)).toBe('Wrong app in front for Sales app');
+  it('a set tied to an app says it is not open, held or not', () => {
+    expect(sendReason('no app', sales, true)).toBe('Sales app is not open');
     expect(sendReason('no app', sales, false)).toBe('Sales app is not open');
     expect(sendReason('no app', general, false)).toBe('General is not in front any more');
   });

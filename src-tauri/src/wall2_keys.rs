@@ -674,6 +674,7 @@ pub(crate) fn check_target(app: &AppDef, remembered: Option<&Remembered>, live: 
 
 /// One top-level window as the picker sees it.
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[cfg_attr(not(any(windows, test)), allow(dead_code))]
 pub(crate) struct Cand {
     pub hwnd: isize,
     pub pid: u32,
@@ -683,22 +684,31 @@ pub(crate) struct Cand {
     /// It has an owner window (a dialog or tool window), so it is not a main window.
     pub owned: bool,
     pub has_title: bool,
+    /// The title is that of a main Outlook window, not a compose, reminder or other pop-out
+    /// (only set for a window the set accepts).
+    pub main: bool,
+    /// Hidden by the shell (another virtual desktop, a suspended app), though marked visible.
+    pub cloaked: bool,
     /// The title starts with the word Calendar (only set for a window the set accepts).
     pub calendar: bool,
 }
 
+#[cfg_attr(not(any(windows, test)), allow(dead_code))]
 fn usable(app: &AppDef, c: &Cand) -> bool {
-    c.visible && !c.owned && c.has_title && app.accepts(&c.image)
+    c.visible && !c.cloaked && !c.owned && c.has_title && c.main && app.accepts(&c.image)
 }
 
+#[cfg_attr(not(any(windows, test)), allow(dead_code))]
 fn remembered_of(c: &Cand) -> Remembered {
     Remembered { hwnd: c.hwnd, pid: c.pid, image: c.image.clone() }
 }
 
 /// The window a key goes to: the remembered one when the set accepts it (the rule until now);
 /// else, for a set tied to programs only (never the general set), the topmost window of those
-/// programs (`candidates` is in z order, topmost first) that is visible, unowned and titled.
+/// programs (`candidates` is in z order, topmost first) that is a visible, uncloaked, unowned
+/// main Outlook window.
 /// None when there is no such window.
+#[cfg_attr(not(any(windows, test)), allow(dead_code))]
 pub(crate) fn pick_target(app: &AppDef, remembered: Option<&Remembered>, candidates: &[Cand]) -> Option<Remembered> {
     if let Some(rem) = remembered.filter(|r| app.accepts(&r.image)) {
         return Some(rem.clone());
@@ -712,6 +722,7 @@ pub(crate) fn pick_target(app: &AppDef, remembered: Option<&Remembered>, candida
 /// The window to show the Calendar in: a usable window whose title starts with Calendar when
 /// there is one (true in the answer: nothing more to send), else the topmost usable window
 /// (false: switch it to Calendar). None when the app has no usable window.
+#[cfg_attr(not(any(windows, test)), allow(dead_code))]
 pub(crate) fn pick_calendar_window(app: &AppDef, candidates: &[Cand]) -> Option<(Remembered, bool)> {
     if app.is_general() {
         return None;
@@ -721,6 +732,7 @@ pub(crate) fn pick_calendar_window(app: &AppDef, candidates: &[Cand]) -> Option<
 }
 
 /// The set the Open event path uses: New Outlook's own program only.
+#[cfg_attr(not(any(windows, test)), allow(dead_code))]
 fn new_outlook_set() -> AppDef {
     AppDef { id: "olk".to_string(), name: "New Outlook".to_string(), matcher: Matcher::Exe(vec!["olk.exe".to_string()]), fallback: false, keys: Vec::new() }
 }
@@ -982,9 +994,11 @@ pub(crate) mod win {
     use super::*;
     use crate::wall2_winutil::{is_shell_class, sys, try_begin};
     use std::collections::HashMap;
+    use std::ffi::c_void;
     use std::sync::atomic::AtomicBool;
     use std::sync::{Mutex, Once};
     use std::time::{Duration, Instant};
+    use windows::Win32::Graphics::Dwm::{DwmGetWindowAttribute, DWMWA_CLOAKED};
     use windows::Win32::UI::Input::KeyboardAndMouse::{
         SendInput, INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT, KEYBD_EVENT_FLAGS, KEYEVENTF_EXTENDEDKEY, KEYEVENTF_KEYUP, VIRTUAL_KEY,
     };
@@ -1280,6 +1294,12 @@ pub(crate) mod win {
                 visible: unsafe { IsWindowVisible(hw).as_bool() },
                 owned: unsafe { GetWindow(hw, GW_OWNER) }.map(|o| !o.0.is_null()).unwrap_or(false),
                 has_title: sys::has_title(h),
+                main: accepted && sys::title_is_main_outlook(h),
+                cloaked: {
+                    let mut cloaked = 0u32;
+                    let _ = unsafe { DwmGetWindowAttribute(hw, DWMWA_CLOAKED, &mut cloaked as *mut u32 as *mut c_void, 4) };
+                    cloaked != 0
+                },
                 calendar: accepted && sys::title_matches(h, "Calendar"),
                 image,
             });
@@ -2159,7 +2179,7 @@ mod tests {
     }
 
     fn cand(hwnd: isize, image: &str) -> Cand {
-        Cand { hwnd, pid: hwnd as u32, image: image.to_string(), visible: true, owned: false, has_title: true, calendar: false }
+        Cand { hwnd, pid: hwnd as u32, image: image.to_string(), visible: true, owned: false, has_title: true, main: true, cloaked: false, calendar: false }
     }
 
     #[test]
@@ -2186,6 +2206,33 @@ mod tests {
         let good = cand(5, r"C:\x\OLK.EXE");
         let got = pick_target(&mail_set(), None, &[hidden, owned, untitled, other, good]).expect("picked");
         assert_eq!(got.hwnd, 5);
+    }
+
+    #[test]
+    fn a_compose_window_above_the_main_window_is_never_picked() {
+        let compose = Cand { main: false, ..cand(1, r"C:\x\olk.exe") };
+        let main = cand(2, r"C:\x\olk.exe");
+        assert_eq!(pick_target(&mail_set(), None, &[compose.clone(), main.clone()]).map(|r| r.hwnd), Some(2));
+        assert_eq!(pick_calendar_window(&mail_set(), &[compose, main]).map(|(r, c)| (r.hwnd, c)), Some((2, false)));
+    }
+
+    #[test]
+    fn only_a_compose_window_open_means_no_target() {
+        let compose = Cand { main: false, ..cand(1, r"C:\x\olk.exe") };
+        assert_eq!(pick_target(&mail_set(), None, &[compose.clone()]), None);
+        assert_eq!(pick_calendar_window(&mail_set(), &[compose]), None);
+    }
+
+    #[test]
+    fn a_cloaked_window_is_never_picked() {
+        let cloaked = Cand { cloaked: true, ..cand(1, r"C:\x\olk.exe") };
+        assert_eq!(pick_target(&mail_set(), None, &[cloaked.clone()]), None);
+        assert_eq!(pick_calendar_window(&mail_set(), &[cloaked, cand(2, r"C:\x\olk.exe")]).map(|(r, _)| r.hwnd), Some(2));
+    }
+
+    #[test]
+    fn the_calendar_shortcut_chord_parses() {
+        assert!(parse_chord("Ctrl+2").is_some());
     }
 
     #[test]
