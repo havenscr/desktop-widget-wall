@@ -11,7 +11,7 @@ import { SYNC_WIDTH, SYNC_WORD, fitMoodRow, syncChipModel } from '../moodRow';
 import { OfficeMoods } from '../OfficeMoods';
 import { SyncChip, SyncTip } from '../SyncChip';
 import { renderToString } from 'react-dom/server';
-import { DEFAULT_LIGHTS_UI, DEFAULT_LIGHT_SYNC, INTENSITIES, PALETTES, engineSettings, clampSettings, isHex, resolvePalette, type PaletteId } from './model';
+import { DEFAULT_LIGHTS_UI, DEFAULT_LIGHT_SYNC, INTENSITIES, INTENSITY_IDS, PALETTES, driftOf, intensityOf, engineSettings, clampSettings, isHex, resolvePalette, type PaletteId } from './model';
 import { attachPoll, resetLightSync, useLightSync } from './store';
 
 vi.setConfig({ testTimeout: 20_000 });
@@ -622,4 +622,34 @@ it('rendering the tip without committing it (no effects) does not consume the Hu
   const view = render(<SyncTip />);
   expect(view.container.textContent).toContain('Stopped Hue Sync');
   expect(useLightSync.getState().hueNote).toBe(false);
+});
+
+it('the store writes an intensity column, saves it and sends one tune; a field moved after it reads as Custom', () => {
+  useLightSync.setState({ status: { paired: true, bridgeChanged: false, running: true, starting: false, lastError: null, stoppedHueSync: false } });
+  mocks.set('wall2_lightsync_tune', (args) => {
+    calls.push({ command: 'wall2_lightsync_tune', args });
+  });
+  for (const id of INTENSITY_IDS) {
+    calls = [];
+    useLightSync.getState().setIntensity(id);
+    const col = INTENSITIES[id];
+    const { settings, ui } = useLightSync.getState();
+    expect(settings).toMatchObject(col.settings);
+    expect(ui.colourBars).toBe(col.colourBars);
+    expect(intensityOf(settings, ui)).toBe(id);
+    expect(count('wall2_lightsync_tune')).toBe(1);
+    expect((calls[0].args as { settings: Record<string, unknown> }).settings).toMatchObject({ ...col.settings, driftMs: driftOf(col.colourBars) });
+    expect(JSON.parse(localStorage.getItem(LIGHT_SYNC_KEY) ?? '{}').settings).toMatchObject(col.settings);
+    useLightSync.getState().setSettings({ kickFlash: col.settings.kickFlash === 0.5 ? 0.6 : 0.5 });
+    expect(intensityOf(useLightSync.getState().settings, useLightSync.getState().ui)).toBeNull();
+  }
+});
+
+it('a new install is on Subtle, and with sync off an intensity pick sends nothing', () => {
+  const { settings, ui } = useLightSync.getState();
+  expect(intensityOf(settings, ui)).toBe('subtle');
+  useLightSync.getState().setIntensity('high');
+  expect(count('wall2_lightsync_tune')).toBe(0);
+  useLightSync.getState().resetLights();
+  expect(intensityOf(useLightSync.getState().settings, useLightSync.getState().ui)).toBe('subtle');
 });

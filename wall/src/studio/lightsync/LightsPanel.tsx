@@ -1,8 +1,8 @@
-import { useEffect, useRef, type CSSProperties, type ReactNode } from 'react';
+import { useEffect, useRef, type CSSProperties, type KeyboardEvent, type ReactNode } from 'react';
 import { IconRestore } from '@tabler/icons-react';
 import { tip } from '../../ui/HoverTip';
 import { audioBeats, useAudioStore } from '../../audio/store';
-import { COLOUR_BARS, DEFAULT_LIGHTS_UI, DEFAULT_LIGHT_SYNC, LIGHT_NAMES, resolvePalette, type Follow } from './model';
+import { COLOUR_BARS, DEFAULT_LIGHTS_UI, DEFAULT_LIGHT_SYNC, INTENSITY_IDS, INTENSITY_NAME, INTENSITY_TIP, LIGHT_NAMES, driftOf, intensityOf, resolvePalette, type Follow, type IntensityId } from './model';
 import { newPreview, stepPreview } from './preview';
 import { coverNow, useLightSync } from './store';
 
@@ -11,9 +11,9 @@ export const LIGHTS_TITLE = 'Light sync';
 
 const pct = (v: number) => Math.round(v * 100);
 
-/** "every 2 bars", "every bar", "every bar". */
-export function barsWords(bars: number): string {
-  return bars === 1 ? 'every bar' : `every ${bars} bars`;
+/** The colour speed read back as the drift it sends: "a colour every 10 s". */
+export function driftWords(driftMs: number): string {
+  return `a colour every ${Math.round(driftMs / 1000)} s`;
 }
 /** "15% to 90%". */
 export function brightWords(floor: number, peak: number): string {
@@ -56,6 +56,44 @@ function One({ id, min, max, value, usual, words, note, onChange }: { id: string
       <i className="ln-usual" aria-hidden="true" />
       <input id={id} type="range" min={min} max={max} step={1} value={value} aria-valuetext={words} {...tip(`${note} The mark is your usual.`)} onChange={(e) => onChange(Number(e.target.value))} />
     </span>
+  );
+}
+
+/** The Intensity row: three buttons in one group (arrows move and pick, Home and End jump), "Custom" read back once a slider has moved. */
+function IntensityRow() {
+  const s = useLightSync((st) => st.settings);
+  const ui = useLightSync((st) => st.ui);
+  const group = useRef<HTMLDivElement>(null);
+  const now = intensityOf(s, ui);
+  const pick = (id: IntensityId) => useLightSync.getState().setIntensity(id);
+  const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
+    const at = INTENSITY_IDS.indexOf(document.activeElement?.getAttribute('data-intensity') as IntensityId);
+    const n = INTENSITY_IDS.length;
+    const to = e.key === 'ArrowLeft' || e.key === 'ArrowUp' ? (at + n - 1) % n : e.key === 'ArrowRight' || e.key === 'ArrowDown' ? (at + 1) % n : e.key === 'Home' ? 0 : e.key === 'End' ? n - 1 : -1;
+    if (at < 0 || to < 0) return;
+    e.preventDefault();
+    pick(INTENSITY_IDS[to]);
+    group.current?.querySelectorAll<HTMLElement>('[role="radio"]')[to]?.focus();
+  };
+  return (
+    <>
+      <div className="ln-row ls-row ls-intensity">
+        <span className="ln-label" id="ls-intensity-label">
+          Intensity
+        </span>
+        <div className="w-seg ls-seg" role="radiogroup" aria-labelledby="ls-intensity-label" ref={group} onKeyDown={onKeyDown}>
+          {INTENSITY_IDS.map((id, i) => (
+            <button key={id} type="button" role="radio" data-intensity={id} aria-checked={now === id} tabIndex={now === id || (now === null && i === 0) ? 0 : -1} className={now === id ? 'on' : ''} {...tip(INTENSITY_TIP[id])} onClick={() => pick(id)}>
+              {INTENSITY_NAME[id]}
+            </button>
+          ))}
+        </div>
+        <span className="ln-value ln-fill ls-custom" data-part="intensity-value">
+          {now === null ? 'Custom' : ''}
+        </span>
+      </div>
+      <p className="ln-hint ls-help">How lively the lights are. Moving a slider below shows Custom.</p>
+    </>
   );
 }
 
@@ -132,19 +170,20 @@ export function LightsPanel() {
   const dual = { '--lo': `${floor}%`, '--hi': `${peak}%`, '--usual': `${pct(DEFAULT_LIGHT_SYNC.floor)}%`, '--usual2': `${pct(DEFAULT_LIGHT_SYNC.brightness)}%` } as CSSProperties;
   return (
     <div className="ln-panel ls-panel" data-part="lights-panel">
+      <IntensityRow />
       <div className="ls-head">
         <span className="ls-live">
           <i aria-hidden="true" />
           Preview, live
         </span>
-        <button type="button" className="ln-reset ls-usualbtn" {...tip('Every Lights setting back to your usual: the gentle Subtle look: a colour every 4 bars, brightness 35% to 80%, a soft pulse, smooth fades, ripple on')} onClick={() => useLightSync.getState().resetLights()}>
+        <button type="button" className="ln-reset ls-usualbtn" {...tip('Every Lights setting back to your usual, which is Subtle: a colour every 10 s, brightness 35% to 80%, a soft pulse, smooth fades, ripple on')} onClick={() => useLightSync.getState().resetLights()}>
           <IconRestore size={16} aria-hidden="true" />
           Your usual
         </button>
         <Preview />
       </div>
-      <Row id="ls-speed" label="Colour speed" value={barsWords(ui.colourBars)} help="How quickly the lights move to the next colour.">
-        <One id="ls-speed" min={0} max={COLOUR_BARS.length - 1} value={barsAt} usual={COLOUR_BARS.indexOf(DEFAULT_LIGHTS_UI.colourBars)} words={barsWords(ui.colourBars)} note="How quickly the lights move to the next colour, slow to fast." onChange={(i) => useLightSync.getState().setUi({ colourBars: COLOUR_BARS[i] })} />
+      <Row id="ls-speed" label="Colour speed" value={driftWords(driftOf(ui.colourBars))} help="How quickly the lights move to the next colour.">
+        <One id="ls-speed" min={0} max={COLOUR_BARS.length - 1} value={barsAt} usual={COLOUR_BARS.indexOf(DEFAULT_LIGHTS_UI.colourBars)} words={driftWords(driftOf(ui.colourBars))} note="How quickly the lights move to the next colour, slow to fast." onChange={(i) => useLightSync.getState().setUi({ colourBars: COLOUR_BARS[i] })} />
       </Row>
       <div className="ln-row ls-row">
         <span className="ln-label" id="ls-bright-label">
@@ -159,8 +198,8 @@ export function LightsPanel() {
         <span className="ln-value">{brightWords(s.floor, s.brightness)}</span>
       </div>
       <p className="ln-hint ls-help">Floor keeps the room lit when quiet; peak caps a kick.</p>
-      <Row id="ls-flash" label="Kick flash" value={flashWords(s.kickFlash)} help="How hard a kick flashes the lights above the floor.">
-        <One id="ls-flash" min={0} max={100} value={pct(s.kickFlash)} usual={pct(DEFAULT_LIGHT_SYNC.kickFlash)} words={flashWords(s.kickFlash)} note="How hard a kick flashes the lights, soft to hard." onChange={(v) => set({ kickFlash: v / 100 })} />
+      <Row id="ls-flash" label="Pulse" value={flashWords(s.kickFlash)} help="How strongly a kick lifts the lights above the floor.">
+        <One id="ls-flash" min={0} max={100} value={pct(s.kickFlash)} usual={pct(DEFAULT_LIGHT_SYNC.kickFlash)} words={flashWords(s.kickFlash)} note="How strongly a kick lifts the lights, soft to hard." onChange={(v) => set({ kickFlash: v / 100 })} />
       </Row>
       <Row id="ls-smooth" label="Smoothness" value={smoothWords(smooth)} help="How slowly the lights fade back after a hit.">
         <One id="ls-smooth" min={0} max={100} value={smooth} usual={smoothOf(DEFAULT_LIGHT_SYNC.releaseMs)} words={smoothWords(smooth)} note="How slowly the lights fade back after a hit, snappy to smooth." onChange={(v) => set({ releaseMs: releaseOf(v) })} />

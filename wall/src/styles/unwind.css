@@ -4797,7 +4797,21 @@ button.sp-qrow:hover {
   width: 128px;
 }
 .ls-help {
-  margin: -4px 0 6px;
+  margin: -4px 0 3px;
+}
+.ls-panel .ls-row {
+  min-height: 34px;
+}
+.ls-seg {
+  flex: none;
+  width: 330px;
+}
+.ls-seg button {
+  padding: 0 12px;
+  font-size: 17px;
+}
+.ls-custom {
+  color: var(--cyan);
 }
 .ls-dual {
   --usual2: 90%;
