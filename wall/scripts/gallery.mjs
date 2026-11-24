@@ -1199,6 +1199,11 @@ async function render(cdp, base, s, file, ctl) {
     await to('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'no-preference' }] });
     await to('Page.navigate', { url: `${base}?${s.query}` });
     await new Promise((r) => setTimeout(r, SETTLE_MS));
+    if (s.name.startsWith('sky proof')) {
+      // The pixel proof pairs are taken at two moments: page animations are stopped and the player's progress row (a clock that ticks in real time) is hidden, so only the layers can differ.
+      await to('Runtime.evaluate', { expression: `(() => { const st = document.createElement('style'); st.textContent = '*,*::before,*::after{animation:none!important;transition:none!important} .u-progress{visibility:hidden!important}'; document.head.appendChild(st); })()` });
+      await new Promise((r) => setTimeout(r, 400));
+    }
     for (const step of [s.click ?? []].flat().flatMap((c) => c.split(' >> '))) {
       // A state shown just after a click (a task tick's Undo window). A string may chain steps with ` >> `.
       // `ctx:<selector>` right-clicks (opens the key picker), `hover:` moves the real pointer onto

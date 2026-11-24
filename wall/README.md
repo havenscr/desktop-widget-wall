@@ -993,7 +993,7 @@ skyline, the lake in front. It is drawn on one canvas by `HorizonCanvas.tsx`.
   from the renderer's `sun` and `pal`); each page has a gain ceiling (Zen 1, Unwind 0.6, Home 0.45, the rest 0.35) and, off Zen, the
   gain is held so the muted text keeps 4.5 to 1 (`legibleGain`, a unit test over every page and hour). When the sky stops being wanted the
   layers stay 700 ms so the fade finishes before the horizon goes back to one canvas. Pixel proof: `npm run gallery -- --only="sky proof"`
-  then `npm run sky-proof` compares each page on one canvas (`?sky=flat`) with the in place split and an empty sky layer
+  then `npm run sky-proof` (a manual gate: run it by hand, it is not run in CI) compares each page on one canvas (`?sky=flat`) with the in place split and an empty sky layer
   (`?sky=place`) by the fit check's own rule (no pixel over 8 levels, at most 1 in 1000 over 2). Dev knobs: `?skyon=work,home`,
   `?skystyle=aurora|wash`, `?skyt=40` (the moment a review still draws).
 - **Reduced motion.** With `prefers-reduced-motion: reduce` the horizon is drawn

@@ -97,7 +97,9 @@ export function createShader(canvas: HTMLCanvasElement, lost: () => void): SkySh
     if (!s) return null;
     g.shaderSource(s, source);
     g.compileShader(s);
-    return g.getShaderParameter(s, g.COMPILE_STATUS) ? s : null;
+    if (g.getShaderParameter(s, g.COMPILE_STATUS)) return s;
+    g.deleteShader(s);
+    return null;
   };
   const vs = compile(g.VERTEX_SHADER, VERTEX);
   const programs = {} as Record<SkyStyle, WebGLProgram>;

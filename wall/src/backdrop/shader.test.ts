@@ -72,6 +72,8 @@ describe('sky shader', () => {
     const c = stubGl({ compiles: false });
     expect(createShader(canvasWith(c.gl).el, () => {})).toBeNull();
     expect(c.calls.deleteProgram ?? 0).toBe(0);
+    // The shader that failed to compile is deleted, not leaked.
+    expect(c.calls.deleteShader).toBeGreaterThan(0);
   });
 
   it('sets each uniform once per draw and makes one context for any number of draws and style swaps', () => {
