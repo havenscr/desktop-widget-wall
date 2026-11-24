@@ -34,7 +34,7 @@ import { isNight } from '../buddy/model';
 import { senseWeather } from '../buddy/senses';
 import { useSceneWeather } from '../weather/sceneSetting';
 import { useWeatherStore } from '../weather/useWeather';
-import { frameDelta, shouldDraw } from './pacing';
+import { MIN_FRAME_MS, frameDelta, shouldDraw } from './pacing';
 import { levelAt, onStage, pictureFade, sample as zenSample, stage as zenStage } from '../zen/stage';
 import { clearGridPulse, createGridPulse, stepGridPulse } from './pulse';
 import { parseReview, parseSkyReview } from './review';
@@ -431,7 +431,8 @@ export function HorizonCanvas({ now = Date.now }: { now?: () => number }) {
       }
       // The weather layer: not under reduced motion, nothing while it is off. A review still draws one frozen moment.
       const w = wx.current;
-      const wxOn = !reduced && weatherOn(w);
+      // Zen draws no weather (its Dream fade takes only the main canvas, and the old Zen had none).
+      const wxOn = !reduced && !zen && weatherOn(w);
       const wxTime = review && !demo ? (wxReview?.t ?? 0) : T;
       if (fctx) {
         options.part = 'sky';
@@ -531,15 +532,22 @@ export function HorizonCanvas({ now = Date.now }: { now?: () => number }) {
       if (review) snapWeather(wx.current, demo ? wx.current.rt : (wxReview?.t ?? 0));
     };
 
+    let resume = false;
     const frame = (ts: number) => {
-      raf = requestAnimationFrame(frame);
-      // Dream has faded the picture out: nothing is stepped or drawn until Zen wakes.
+      // Dream has faded the picture out: the canvas is hidden and the loop stops until the stage changes (`onStage` below).
       if (zen && zenStage.dreamAt !== null && pictureFade(performance.now()) <= 0) {
         paint();
-        last = 0;
+        raf = 0;
+        resume = true;
         return;
       }
+      raf = requestAnimationFrame(frame);
       if (!shouldDraw(ts, last, document.hidden)) return;
+      // The first frame after a stop steps by one frame, not by the whole time it was stopped.
+      if (resume) {
+        resume = false;
+        last = ts - MIN_FRAME_MS;
+      }
       const dt = frameDelta(ts, last);
       drawDt = dt;
       last = ts;
@@ -549,7 +557,8 @@ export function HorizonCanvas({ now = Date.now }: { now?: () => number }) {
       const driving = !zen && musicDriving(motion.current, audio.playing, audioBands(), dt);
       if (driving) loud.current = smoothStep(loud.current, loudness(audio), dt);
       stepEchoMotion(motion.current, driving, dt);
-      awake.current = stepEchoFade(awake.current, !idleRef.current, dt);
+      // Zen is watched for the length of a session without input: its picture never goes to the idle fade.
+      awake.current = stepEchoFade(awake.current, !idleRef.current || zen, dt);
       const layer = wx.current;
       layer.since += dt;
       if (layer.since >= 1) {
@@ -585,6 +594,7 @@ export function HorizonCanvas({ now = Date.now }: { now?: () => number }) {
     let timer = 0;
     let offLines = () => {};
     let offSwitchNow = () => {};
+    let offStageLoop = () => {};
     if (still) {
       if (!review) timer = window.setInterval(paint, REDRAW_MS);
       // A changed line type or colour is drawn at once, not at the next minute's redraw (the loop does it on its next frame).
@@ -619,9 +629,16 @@ export function HorizonCanvas({ now = Date.now }: { now?: () => number }) {
       // The Tools switch takes effect on the next frame, not at the next one second read.
       offSwitchNow = useSceneWeather.subscribe(() => void (wx.current.since = 1e9));
       raf = requestAnimationFrame(frame);
+      // A stopped loop (Dream has faded out) starts again when the stage changes and the picture is back.
+      if (zen) {
+        offStageLoop = onStage(() => {
+          if (raf === 0 && pictureFade(performance.now()) > 0) raf = requestAnimationFrame(frame);
+        });
+      }
     }
     return () => {
       offSwitchNow();
+      offStageLoop();
       releaseWeather(wx.current);
       window.removeEventListener('resize', paint);
       document.removeEventListener('visibilitychange', paint);

@@ -482,14 +482,25 @@ it('Dream fades the picture to black over a minute, then draws nothing until Zen
   runFrame(300);
   expect(canvas.style.visibility).toBe('hidden');
   draw.mockClear();
-  runFrame(400);
-  runFrame(500);
-  expect(draw).not.toHaveBeenCalled();
+  // The loop has stopped: no frame is waiting, and waking starts it again.
+  expect(frames.size).toBe(0);
   act(() => setDream(null));
+  expect(frames.size).toBe(1);
   runFrame(600);
   runFrame(700);
   expect(canvas.style.visibility).toBe('');
   expect(draw).toHaveBeenCalled();
+});
+
+it('Zen keeps its ridge through a long session: the idle fade does not apply there', () => {
+  setReducedMotion(false);
+  idleMock.mockImplementation(() => true);
+  usePlaceStore.setState({ active: 'zen' });
+  render(<HorizonCanvas now={() => NOON} />);
+  for (let k = 1; k <= 60; k++) runFrame(k * 100);
+  const o = draw.mock.lastCall![1];
+  expect(o.echo).toBeDefined();
+  expect(o.echo!.a).toBeGreaterThan(0.3);
 });
 
 it('leaving Zen back to the same place does not glide, so the Unwind moon stays', () => {

@@ -11,7 +11,7 @@ import { knob } from './long';
  *   ?captures=nohistory ShareX has no history file on this PC
  *   ?captures=gone      the third capture's file was moved or deleted (a dimmed row)
  *   ?captures=gonebig   the newest capture's file was moved or deleted
- *   ?captures=video     the newest capture is a recording (plays a short clip drawn and recorded in the page when the mock starts)
+ *   ?captures=video     the newest capture is a recording (plays a short clip drawn and recorded in the page when the mock starts; other modes have no playable clip)
  *   ?captures=videobad  the newest capture is a recording that cannot be played here
  *   ?captures=long      the newest capture has a very long title and app name
  *   ?captures=big       the newest capture is over the 6 MB thumbnail limit
@@ -89,10 +89,13 @@ function recordClip(): void {
     canvas.height = 90;
     const g = canvas.getContext('2d');
     if (!g || typeof MediaRecorder === 'undefined') return;
-    const rec = new MediaRecorder(canvas.captureStream(12));
+    const stream = canvas.captureStream(12);
+    const rec = new MediaRecorder(stream);
     const parts: Blob[] = [];
     rec.ondataavailable = (e) => parts.push(e.data);
     rec.onstop = () => {
+      stream.getTracks().forEach((t) => t.stop());
+      if (clipUrl) URL.revokeObjectURL(clipUrl);
       clipUrl = URL.createObjectURL(new Blob(parts, { type: 'video/webm' }));
     };
     let f = 0;
@@ -115,7 +118,7 @@ function recordClip(): void {
 
 export function registerCapturesMocks(): void {
   const mode = knob('captures');
-  recordClip();
+  if (mode === 'video') recordClip();
   setVideoSrcOverride((c) => (mode === 'videobad' || !clipUrl ? 'data:video/mp4;base64,AAAA' : c.id === 'cap0' || c.id === 'cap3' ? clipUrl : 'data:video/mp4;base64,AAAA'));
   mocks.set('wall2_captures_list', () => {
     if (mode === 'nohistory') throw 'not-found';

@@ -213,13 +213,13 @@ describe('the weather in the horizon frame', () => {
     expect(log.filter((e) => e.k === 'mid').pop()!.boxes).toBe(4);
   });
 
-  it('draws it on Zen as on any page (the same scene), with the loop running', () => {
+  it('draws none of it on Zen (the picture runs, the weather layer does not)', () => {
     useWeatherStore.setState({ reading: rainReading(NOON) });
     usePlaceStore.setState({ active: 'zen' });
     render(<HorizonCanvas now={() => NOON} />);
     expect(frames.size).toBe(1);
     runFrame(100);
-    expect(log.length).toBeGreaterThan(0);
+    expect([...new Set(kinds(log))]).toEqual(['whole']);
   });
 
   it('draws no layer under reduced motion, nothing while the page is hidden', () => {
