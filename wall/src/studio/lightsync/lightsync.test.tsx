@@ -11,7 +11,7 @@ import { SYNC_WIDTH, SYNC_WORD, fitMoodRow, syncChipModel } from '../moodRow';
 import { OfficeMoods } from '../OfficeMoods';
 import { SyncChip, SyncTip } from '../SyncChip';
 import { renderToString } from 'react-dom/server';
-import { DEFAULT_LIGHTS_UI, DEFAULT_LIGHT_SYNC, INTENSITIES, PALETTES, engineSettings, clampSettings, isHex, resolvePalette, type PaletteId } from './model';
+import { DEFAULT_LIGHTS_UI, DEFAULT_LIGHT_SYNC, INTENSITIES, INTENSITY_IDS, PALETTES, intensityOf, engineSettings, clampSettings, isHex, resolvePalette, type PaletteId } from './model';
 import { attachPoll, resetLightSync, useLightSync } from './store';
 
 vi.setConfig({ testTimeout: 20_000 });
@@ -622,4 +622,41 @@ it('rendering the tip without committing it (no effects) does not consume the Hu
   const view = render(<SyncTip />);
   expect(view.container.textContent).toContain('Stopped Hue Sync');
   expect(useLightSync.getState().hueNote).toBe(false);
+});
+
+/** The plan's table, written out by hand so a wrong value in the model fails here. */
+const COLUMNS = {
+  subtle: { settings: { floor: 0.35, brightness: 0.8, energyDepth: 0.35, kickFlash: 0.25, kickWhite: 0, kickRiseMs: 80, kickDecayMs: 450, attackMs: 150, releaseMs: 900, levelWindow: 8, beatNudge: 0.04, minPulseGapMs: 500, slewDown: 0.8 }, colourBars: 4, driftMs: 10000 },
+  moderate: { settings: { floor: 0.25, brightness: 0.9, energyDepth: 0.55, kickFlash: 0.45, kickWhite: 0.15, kickRiseMs: 60, kickDecayMs: 320, attackMs: 100, releaseMs: 650, levelWindow: 4, beatNudge: 0.08, minPulseGapMs: 400, slewDown: 1.5 }, colourBars: 2, driftMs: 6000 },
+  high: { settings: { floor: 0.15, brightness: 1, energyDepth: 0.75, kickFlash: 0.7, kickWhite: 0.35, kickRiseMs: 40, kickDecayMs: 220, attackMs: 60, releaseMs: 420, levelWindow: 2, beatNudge: 0.15, minPulseGapMs: 340, slewDown: 3 }, colourBars: 1, driftMs: 4000 },
+} as const;
+
+it('the store writes an intensity column, saves it and sends one tune; a field moved after it reads as Custom', () => {
+  useLightSync.setState({ status: { paired: true, bridgeChanged: false, running: true, starting: false, lastError: null, stoppedHueSync: false } });
+  mocks.set('wall2_lightsync_tune', (args) => {
+    calls.push({ command: 'wall2_lightsync_tune', args });
+  });
+  for (const id of INTENSITY_IDS) {
+    calls = [];
+    useLightSync.getState().setIntensity(id);
+    const col = COLUMNS[id];
+    const { settings, ui } = useLightSync.getState();
+    expect(settings).toMatchObject(col.settings);
+    expect(ui.colourBars).toBe(col.colourBars);
+    expect(intensityOf(settings, ui)).toBe(id);
+    expect(count('wall2_lightsync_tune')).toBe(1);
+    expect((calls[0].args as { settings: Record<string, unknown> }).settings).toMatchObject({ ...col.settings, driftMs: col.driftMs });
+    expect(JSON.parse(localStorage.getItem(LIGHT_SYNC_KEY) ?? '{}').settings).toMatchObject(col.settings);
+    useLightSync.getState().setSettings({ kickFlash: 0.6 });
+    expect(intensityOf(useLightSync.getState().settings, useLightSync.getState().ui)).toBeNull();
+  }
+});
+
+it('a new install is on Subtle, and with sync off an intensity pick sends nothing', () => {
+  const { settings, ui } = useLightSync.getState();
+  expect(intensityOf(settings, ui)).toBe('subtle');
+  useLightSync.getState().setIntensity('high');
+  expect(count('wall2_lightsync_tune')).toBe(0);
+  useLightSync.getState().resetLights();
+  expect(intensityOf(useLightSync.getState().settings, useLightSync.getState().ui)).toBe('subtle');
 });

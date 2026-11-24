@@ -57,6 +57,29 @@ export const INTENSITIES: Record<IntensityId, { settings: Pick<LightSyncSettings
 
 export const DEFAULT_INTENSITY: IntensityId = 'subtle';
 
+/** The name an intensity shows, and its one line for the button's tip. */
+export const INTENSITY_NAME: Record<IntensityId, string> = { subtle: 'Subtle', moderate: 'Moderate', high: 'High' };
+export const INTENSITY_TIP: Record<IntensityId, string> = {
+  subtle: 'Subtle: a slow swell on the beat, no white, colours drifting gently. Picking it sets every slider below.',
+  moderate: 'Moderate: a clear pulse on every beat with a touch of white, colours moving along. Picking it sets every slider below.',
+  high: 'High: a lively, quick pulse and the brightest peaks. It still never goes dark or flashes like a camera. Picking it sets every slider below.',
+};
+
+/** Smoothness is the fade-back time (200 to 2000 ms) shown as 0 to 100. */
+export const smoothOf = (releaseMs: number) => Math.round((releaseMs - 200) / 18);
+export const releaseOf = (smooth: number) => Math.round(200 + (smooth * 1800) / 100);
+
+/** The intensity whose whole column matches the settings and colour speed now; null (shown as Custom) once a slider has moved. */
+export function intensityOf(settings: LightSyncSettings, ui: Pick<LightsUi, 'colourBars'>): IntensityId | null {
+  for (const id of INTENSITY_IDS) {
+    const col = INTENSITIES[id];
+    // Smoothness is a 0 to 100 slider, so releaseMs matches by its stop: dragging away and back must read as the level again.
+    const same = (Object.keys(col.settings) as (keyof typeof col.settings)[]).every((k) => (k === 'releaseMs' ? smoothOf(settings[k]) === smoothOf(col.settings[k]) : settings[k] === col.settings[k]));
+    if (same && ui.colourBars === col.colourBars) return id;
+  }
+  return null;
+}
+
 export const DEFAULT_LIGHT_SYNC: LightSyncSettings = {
   ...INTENSITIES.subtle.settings,
   bassGain: 1,
@@ -69,7 +92,7 @@ export const DEFAULT_LIGHT_SYNC: LightSyncSettings = {
 };
 
 /** Milliseconds the palette takes to move one colour, for each stop of `COLOUR_BARS` (slow to fast). */
-export const DRIFT_MS: readonly number[] = [20000, 14000, 10000, 6000, 3000];
+export const DRIFT_MS: readonly number[] = [20000, 14000, 10000, 6000, 4000];
 
 /**
  * The Lights tab's colour speed, who follows and ripple. The page keeps them beside the settings and sends them with
