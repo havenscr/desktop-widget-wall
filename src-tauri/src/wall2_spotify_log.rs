@@ -98,6 +98,6 @@ mod tests {
         }
         assert_eq!(start_end_line(Some(7), true, false, 1), "start-end 7 yes no 1\n");
         assert_eq!(start_end_line(None, false, true, 0), "start-end none no yes 0\n");
-        assert!(start_end_line(Some(7), true, false, 1).bytes().all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || matches!(b, b' ' | b'\n')) );
+        assert!(start_end_line(Some(7), true, false, 1).bytes().all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || matches!(b, b'-' | b' ' | b'\n')) );
     }
 }
