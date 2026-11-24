@@ -27,6 +27,13 @@ vi.mock('../../music/coverTint', async (orig) => ({
   ],
 }));
 
+/** The plan's table, written out by hand so a wrong value in the model fails here. */
+const COLUMNS = {
+  subtle: { settings: { floor: 0.35, brightness: 0.8, energyDepth: 0.35, kickFlash: 0.25, kickWhite: 0, kickRiseMs: 80, kickDecayMs: 450, attackMs: 150, releaseMs: 900, levelWindow: 8, beatNudge: 0.04, minPulseGapMs: 500, slewDown: 0.8 }, colourBars: 4, driftMs: 10000 },
+  moderate: { settings: { floor: 0.25, brightness: 0.9, energyDepth: 0.55, kickFlash: 0.45, kickWhite: 0.15, kickRiseMs: 60, kickDecayMs: 320, attackMs: 100, releaseMs: 650, levelWindow: 4, beatNudge: 0.08, minPulseGapMs: 400, slewDown: 1.5 }, colourBars: 2, driftMs: 6000 },
+  high: { settings: { floor: 0.15, brightness: 1, energyDepth: 0.75, kickFlash: 0.7, kickWhite: 0.35, kickRiseMs: 40, kickDecayMs: 220, attackMs: 60, releaseMs: 420, levelWindow: 2, beatNudge: 0.15, minPulseGapMs: 340, slewDown: 3 }, colourBars: 1, driftMs: 4000 },
+} as const;
+
 let calls: { command: string; args?: Record<string, unknown> }[];
 const tunes = () => calls.filter((c) => c.command === 'wall2_lightsync_tune');
 const flush = async () => {
@@ -517,21 +524,19 @@ for (const id of INTENSITY_IDS) {
     fireEvent.change(slider('ls-speed'), { target: { value: '0' } });
     const before = tunes().length;
     fireEvent.click(radios()[INTENSITY_IDS.indexOf(id)]);
-    const col = INTENSITIES[id];
+    const col = COLUMNS[id];
     expect(useLightSync.getState().settings).toMatchObject(col.settings);
     expect(useLightSync.getState().ui.colourBars).toBe(col.colourBars);
     expect(tunes().length).toBe(before + 1);
     const sent = (tunes().at(-1)?.args as { settings: Record<string, unknown> }).settings;
-    expect(sent).toMatchObject({ ...col.settings, colourBars: col.colourBars, driftMs: driftOf(col.colourBars) });
+    expect(sent).toMatchObject({ ...col.settings, colourBars: col.colourBars, driftMs: col.driftMs });
     expect(saved().settings).toMatchObject(col.settings);
     expect(radios().map((r) => r.getAttribute('aria-checked'))).toEqual(INTENSITY_IDS.map((x) => String(x === id)));
   });
 }
 
 it('the High column keeps its drift at 4000 ms, the table value', () => {
-  expect(driftOf(INTENSITIES.high.colourBars)).toBe(4000);
-  expect(driftOf(INTENSITIES.moderate.colourBars)).toBe(6000);
-  expect(driftOf(INTENSITIES.subtle.colourBars)).toBe(10000);
+  for (const id of INTENSITY_IDS) expect(driftOf(INTENSITIES[id].colourBars)).toBe(COLUMNS[id].driftMs);
 });
 
 it('moving any slider shows Custom and lights no button; picking a level brings the name back', () => {
@@ -556,6 +561,28 @@ it('Your usual puts Subtle back and its tip says so', () => {
   expect(useLightSync.getState().settings).toEqual(DEFAULT_LIGHT_SYNC);
 });
 
+it('the Your usual tip names Subtle and no longer says bars', async () => {
+  const { container } = render(
+    <>
+      <LightsPanel />
+      <HoverTipLayer />
+    </>,
+  );
+  vi.useFakeTimers();
+  try {
+    fireEvent.mouseEnter(container.querySelector('.ln-reset') as HTMLElement);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(400);
+    });
+    const text = document.querySelector('.hover-tip')?.textContent ?? '';
+    expect(text).toContain('Subtle');
+    expect(text).toContain('a colour every 10 s');
+    expect(text).not.toContain('bars');
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
 it('keyboard order: the group is one tab stop, arrows move and pick, Home and End jump', () => {
   syncOn();
   render(<LightsPanel />);
@@ -564,7 +591,7 @@ it('keyboard order: the group is one tab stop, arrows move and pick, Home and En
   radios()[0].focus();
   fireEvent.keyDown(radios()[0], { key: 'ArrowRight' });
   expect(document.activeElement).toBe(radios()[1]);
-  expect(useLightSync.getState().settings.brightness).toBe(INTENSITIES.moderate.settings.brightness);
+  expect(useLightSync.getState().settings.brightness).toBe(0.9);
   expect(radios().map((r) => r.tabIndex)).toEqual([-1, 0, -1]);
   fireEvent.keyDown(radios()[1], { key: 'End' });
   expect(document.activeElement).toBe(radios()[2]);
@@ -580,4 +607,32 @@ it('keyboard order: the group is one tab stop, arrows move and pick, Home and En
   // The Intensity buttons come before every slider in the document.
   const all = Array.from(document.querySelectorAll('[role="radio"][data-intensity], input[type="range"]'));
   expect(all.slice(0, 3)).toEqual(radios());
+});
+
+it('every intensity column is the hand-written table', () => {
+  for (const id of INTENSITY_IDS) expect(INTENSITIES[id]).toEqual({ settings: COLUMNS[id].settings, colourBars: COLUMNS[id].colourBars });
+});
+
+it('dragging Smoothness away from a level and back to its stop reads as that level again', () => {
+  const { container } = render(<LightsPanel />);
+  for (const [i, id] of INTENSITY_IDS.entries()) {
+    fireEvent.click(radios()[i]);
+    const stop = String(Math.round((COLUMNS[id].settings.releaseMs - 200) / 18));
+    expect(slider('ls-smooth').value).toBe(stop);
+    fireEvent.change(slider('ls-smooth'), { target: { value: '95' } });
+    expect(container.querySelector('[data-part="intensity-value"]')?.textContent).toBe('Custom');
+    fireEvent.change(slider('ls-smooth'), { target: { value: stop } });
+    expect(container.querySelector('[data-part="intensity-value"]')?.textContent).toBe('');
+    expect(radios()[i].getAttribute('aria-checked')).toBe('true');
+  }
+});
+
+it('a field with no slider (kickWhite, beatNudge) changed in the store reads as Custom', () => {
+  const { container } = render(<LightsPanel />);
+  for (const patch of [{ kickWhite: 0.3 }, { beatNudge: 0.2 }]) {
+    fireEvent.click(radios()[0]);
+    act(() => useLightSync.getState().setSettings(patch));
+    expect(container.querySelector('[data-part="intensity-value"]')?.textContent).toBe('Custom');
+    expect(radios().map((r) => r.getAttribute('aria-checked'))).toEqual(['false', 'false', 'false']);
+  }
 });

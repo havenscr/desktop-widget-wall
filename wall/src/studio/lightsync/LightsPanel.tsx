@@ -2,7 +2,7 @@ import { useEffect, useRef, type CSSProperties, type KeyboardEvent, type ReactNo
 import { IconRestore } from '@tabler/icons-react';
 import { tip } from '../../ui/HoverTip';
 import { audioBeats, useAudioStore } from '../../audio/store';
-import { COLOUR_BARS, DEFAULT_LIGHTS_UI, DEFAULT_LIGHT_SYNC, INTENSITY_IDS, INTENSITY_NAME, INTENSITY_TIP, LIGHT_NAMES, driftOf, intensityOf, resolvePalette, type Follow, type IntensityId } from './model';
+import { COLOUR_BARS, DEFAULT_LIGHTS_UI, DEFAULT_LIGHT_SYNC, INTENSITY_IDS, INTENSITY_NAME, INTENSITY_TIP, LIGHT_NAMES, driftOf, intensityOf, releaseOf, smoothOf, resolvePalette, type Follow, type IntensityId } from './model';
 import { newPreview, stepPreview } from './preview';
 import { coverNow, useLightSync } from './store';
 
@@ -23,9 +23,7 @@ export function flashWords(v: number): string {
   const p = pct(v);
   return p < 34 ? 'soft' : p < 67 ? 'medium' : p < 90 ? 'strong' : 'hard';
 }
-/** Smoothness is the fade-back time (200 to 2000 ms) shown as 0 to 100. */
-export const smoothOf = (releaseMs: number) => Math.round((releaseMs - 200) / 18);
-export const releaseOf = (smooth: number) => Math.round(200 + (smooth * 1800) / 100);
+export { releaseOf, smoothOf };
 export function smoothWords(smooth: number): string {
   return smooth < 10 ? 'snappy' : smooth < 35 ? 'a little smooth' : smooth < 65 ? 'smooth' : 'very smooth';
 }

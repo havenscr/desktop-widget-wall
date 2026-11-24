@@ -65,11 +65,16 @@ export const INTENSITY_TIP: Record<IntensityId, string> = {
   high: 'High: a lively, quick pulse and the brightest peaks. It still never goes dark or flashes like a camera. Picking it sets every slider below.',
 };
 
+/** Smoothness is the fade-back time (200 to 2000 ms) shown as 0 to 100. */
+export const smoothOf = (releaseMs: number) => Math.round((releaseMs - 200) / 18);
+export const releaseOf = (smooth: number) => Math.round(200 + (smooth * 1800) / 100);
+
 /** The intensity whose whole column matches the settings and colour speed now; null (shown as Custom) once a slider has moved. */
 export function intensityOf(settings: LightSyncSettings, ui: Pick<LightsUi, 'colourBars'>): IntensityId | null {
   for (const id of INTENSITY_IDS) {
     const col = INTENSITIES[id];
-    const same = (Object.keys(col.settings) as (keyof typeof col.settings)[]).every((k) => settings[k] === col.settings[k]);
+    // Smoothness is a 0 to 100 slider, so releaseMs matches by its stop: dragging away and back must read as the level again.
+    const same = (Object.keys(col.settings) as (keyof typeof col.settings)[]).every((k) => (k === 'releaseMs' ? smoothOf(settings[k]) === smoothOf(col.settings[k]) : settings[k] === col.settings[k]));
     if (same && ui.colourBars === col.colourBars) return id;
   }
   return null;
