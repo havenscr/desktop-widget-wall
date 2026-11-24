@@ -1,72 +1,196 @@
-import type { Follow, LightSyncSettings, LightsUi } from './model';
+import { driftOf, type Follow, type LightSyncSettings, type LightsUi } from './model';
 
 /**
- * The Lights tab's preview: the same maths as the native frame (`engine.rs`) for the settings that show on screen,
- * so a change reads before you look up. One tick in, one frame out; the caller owns the clock and the sound.
+ * The Lights tab's preview: the same maths as the native frame (`engine.rs`), colour included, so the strips show what
+ * the Hue Plays and the panels do. One tick in, one frame out; the caller owns the clock and the sound.
+ * `tests/fixtures/lightsync-frames.json` (under `src-tauri`) is read by this file's test and by the Rust test.
  */
+export type Rgb = [number, number, number];
+
+/** What the flash guard watches: luminance swings of 0.10 or more, at most 5 in a second (WCAG 2.3.1). Mirrors `engine.rs`. */
+export const GUARD_DELTA = 0.1;
+export const GUARD_WINDOW_MS = 1000;
+export const GUARD_MAX_TRANSITIONS = 5;
+
+/** Tracks one light's luminance swings; `limit` is the guard, `commit` records what was really shown. */
+export class Swing {
+  private extreme = 0;
+  private dir = 0;
+  private started = false;
+  readonly times: number[] = [];
+
+  private pop(now: number) {
+    while (this.times.length && this.times[0] <= now - GUARD_WINDOW_MS) this.times.shift();
+  }
+
+  limit(now: number, y: number, max: number): number {
+    this.pop(now);
+    const along = (y - this.extreme) * this.dir;
+    if (!this.started || this.dir === 0 || along >= 0 || -along < GUARD_DELTA || this.times.length < max) return y;
+    return this.extreme - this.dir * (GUARD_DELTA - 0.01);
+  }
+
+  commit(now: number, y: number) {
+    this.pop(now);
+    if (!this.started) {
+      this.started = true;
+      this.extreme = y;
+      return;
+    }
+    const d = y - this.extreme;
+    if (this.dir === 0) {
+      if (Math.abs(d) >= GUARD_DELTA) {
+        this.dir = d > 0 ? 1 : -1;
+        this.extreme = y;
+        this.times.push(now);
+      }
+      return;
+    }
+    const along = d * this.dir;
+    if (along >= 0) this.extreme = y;
+    else if (-along >= GUARD_DELTA) {
+      this.dir = -this.dir;
+      this.extreme = y;
+      this.times.push(now);
+    }
+  }
+
+  get transitions() {
+    return this.times.length;
+  }
+}
+
+interface LightState {
+  b: number;
+  swing: Swing;
+}
+
 export interface PreviewState {
   bassEnv: number;
   highEnv: number;
   kickAgeMs: number;
-  colourPos: number;
-  beats: number;
+  /** Palette position in colours; always moving. */
+  pos: number;
+  clockMs: number;
+  recent: { dt: number; bass: number; high: number }[];
+  plays: LightState[];
+  panels: LightState[];
   /** The beat count last seen, to spot a new beat. */
   seen: number;
 }
 
 export interface PreviewFrame {
-  /** Brightness 0 to 1 of each Play, left to right (four). */
-  plays: number[];
-  /** Brightness of each of the five panel triangles. */
-  panels: number[];
-  /** Palette index the Plays show; panel `i` shows `colour + i`. */
-  colour: number;
+  /** The colour each Play shows, 0 to 1 per channel, left to right (four). */
+  plays: Rgb[];
+  /** The colour of each of the five panel triangles. */
+  panels: Rgb[];
 }
 
-export const KICK_FLASH_MS = 220;
+/** The palette the preview colours come from: hex colours and the kick colour. */
+export interface PreviewPalette {
+  colors: readonly string[];
+  kick: string;
+}
+
+const FRAME_MS = 33;
 const LEVEL_LO = 0.2;
 const LEVEL_SPAN = 0.7;
+const PLAYS = 4;
+const PANELS = 5;
 
-export const newPreview = (floor: number, beatCount = 0): PreviewState => ({ bassEnv: floor, highEnv: floor, kickAgeMs: Infinity, colourPos: 0, beats: 0, seen: beatCount });
+const light = (floor: number): LightState => ({ b: floor, swing: new Swing() });
+export const newPreview = (floor: number, beatCount = 0): PreviewState => ({
+  bassEnv: 0,
+  highEnv: 0,
+  kickAgeMs: Infinity,
+  pos: 0,
+  clockMs: 0,
+  recent: [],
+  plays: Array.from({ length: PLAYS }, () => light(floor)),
+  panels: Array.from({ length: PANELS }, () => light(floor)),
+  seen: beatCount,
+});
 
 const clamp01 = (v: number) => (Number.isFinite(v) ? Math.min(1, Math.max(0, v)) : 0);
 const follow = (env: number, target: number, dt: number, attack: number, release: number) => env + (target - env) * (1 - Math.exp(-dt / (target > env ? attack : release)));
+const hexRgb = (h: string): Rgb => [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16) / 255) as Rgb;
+const mix = (a: Rgb, b: Rgb, t: number): Rgb => {
+  const k = clamp01(t);
+  return [a[0] + (b[0] - a[0]) * k, a[1] + (b[1] - a[1]) * k, a[2] + (b[2] - a[2]) * k];
+};
+const lum = (c: Rgb) => 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2];
+const smoothstep = (lo: number, hi: number, x: number) => {
+  const t = clamp01((x - lo) / (hi - lo));
+  return t * t * (3 - 2 * t);
+};
 
 /** What a light follows. "Both" is the mean of the two envelopes, as the engine takes it. */
 export function bandLevel(f: Follow, bass: number, high: number): number {
   return f === 'bass' ? bass : f === 'highs' ? high : (bass + high) / 2;
 }
 
-export function stepPreview(st: PreviewState, s: LightSyncSettings, ui: LightsUi, colours: number, input: { bass: number; high: number; beatCount: number; dtMs: number }): PreviewFrame {
+/** The 0 to 1 shape of one pulse `t` ms after its beat: a raised cosine rise, then an exponential fall. */
+export function kickShape(t: number, rise: number, tau: number): number {
+  if (!Number.isFinite(t) || t < 0 || t > rise + 5 * tau) return 0;
+  return t < rise ? 0.5 - 0.5 * Math.cos((Math.PI * t) / rise) : Math.exp(-(t - rise) / tau);
+}
+
+/** The palette colour at position `p` (in colours): each colour holds through the outer 30 % of its slot and crossfades through the middle 30 %. */
+export function paletteColour(colors: readonly Rgb[], p: number): Rgb {
+  const n = colors.length;
+  const q = Number.isFinite(p) ? ((p % n) + n) % n : 0;
+  const a = Math.floor(q) % n;
+  return mix(colors[a], colors[(a + 1) % n], smoothstep(0.35, 0.65, q - Math.floor(q)));
+}
+
+function lightFrame(st: PreviewState, s: LightSyncSettings, dt: number, ls: LightState, colour: Rgb, kick: Rgb, env: number, lift: number): Rgb {
+  const target = s.floor + (s.brightness - s.floor) * Math.min(1, Math.max(0, s.energyDepth * env + s.kickFlash * lift));
+  const b = target < ls.b ? Math.max(target, ls.b - (s.slewDown * dt) / 1000) : target;
+  ls.b = b;
+  const out = mix(colour, kick, s.kickWhite * lift).map((v) => v * b) as Rgb;
+  const y = lum(out);
+  const held = ls.swing.limit(st.clockMs, y, GUARD_MAX_TRANSITIONS);
+  const shown = (y > 1e-6 ? out.map((v) => v * (held / y)) : out).map(clamp01) as Rgb;
+  ls.swing.commit(st.clockMs, lum(shown));
+  return shown;
+}
+
+export function stepPreview(st: PreviewState, s: LightSyncSettings, ui: LightsUi, palette: PreviewPalette, input: { bass: number; high: number; beatCount: number; dtMs: number }): PreviewFrame {
   const dt = Number.isFinite(input.dtMs) ? Math.min(500, Math.max(0, input.dtMs)) : 0;
-  const target = (level: number) => s.floor + (s.brightness - s.floor) * clamp01((clamp01(level) - LEVEL_LO) / LEVEL_SPAN);
-  st.bassEnv = follow(st.bassEnv, target(input.bass), dt, s.attackMs, s.releaseMs);
-  st.highEnv = follow(st.highEnv, target(input.high), dt, s.attackMs, s.releaseMs);
+  const shaped = (level: number, gain: number) => clamp01(clamp01((clamp01(level) - LEVEL_LO) / LEVEL_SPAN) * gain);
+  // The mean of the recent band levels over `levelWindow` frames, weighted by the time each lasted.
+  st.recent.push({ dt: Math.max(1, dt), bass: clamp01(input.bass), high: clamp01(input.high) });
+  const span = s.levelWindow * FRAME_MS;
+  let total = st.recent.reduce((t, r) => t + r.dt, 0);
+  while (st.recent.length > 1 && total - st.recent[0].dt >= span) total -= st.recent.shift()!.dt;
+  const wb = st.recent.reduce((t, r) => t + r.dt * r.bass, 0) / total;
+  const wh = st.recent.reduce((t, r) => t + r.dt * r.high, 0) / total;
+  st.bassEnv = follow(st.bassEnv, shaped(wb, s.bassGain), dt, s.attackMs, s.releaseMs);
+  st.highEnv = follow(st.highEnv, shaped(wh, s.highGain), dt, s.attackMs, s.releaseMs);
+  st.clockMs += dt;
+
+  const colours = palette.colors.map(hexRgb);
+  const kick = hexRgb(palette.kick);
   if (input.beatCount > st.seen) {
-    st.kickAgeMs = 0;
-    if (s.beatStep) {
-      st.beats += input.beatCount - st.seen;
-      const every = Math.round(ui.colourBars * 4);
-      if (st.beats >= every) {
-        st.beats = 0;
-        st.colourPos = (st.colourPos + 1) % Math.max(1, colours);
-      }
-    }
+    st.pos += s.beatNudge;
+    if (!(st.kickAgeMs < s.minPulseGapMs)) st.kickAgeMs = 0;
   }
   st.seen = input.beatCount;
-  const kick = st.kickAgeMs < KICK_FLASH_MS ? (1 - st.kickAgeMs / KICK_FLASH_MS) * s.kickFlash : 0;
-  const lift = (env: number, k: number) => Math.min(1, env + k * (1 - env));
-  const plays = [0, 1, 2, 3].map((i) => {
+  st.pos = (((st.pos + dt / driftOf(ui.colourBars)) % colours.length) + colours.length) % colours.length;
+  const pulse = kickShape(st.kickAgeMs, s.kickRiseMs, s.kickDecayMs);
+
+  const plays = st.plays.map((ls, i) => {
     const inner = i === 1 || i === 2;
-    return lift(bandLevel(ui.follow[i], st.bassEnv, st.highEnv), kick * (inner ? 1 : 0.5));
+    const env = bandLevel(ui.follow[i], st.bassEnv, st.highEnv);
+    return lightFrame(st, s, dt, ls, paletteColour(colours, st.pos + i * 0.25), kick, env, pulse * (inner ? 1 : 0.5));
   });
   const env = bandLevel(ui.follow[4], st.bassEnv, st.highEnv);
   const front = st.kickAgeMs < s.rippleMs ? st.kickAgeMs / s.rippleMs : null;
-  const panels = [0, 1, 2, 3, 4].map((i) => {
+  const panels = st.panels.map((ls, i) => {
     const d = Math.abs(i - 2) / 2;
-    const ring = ui.ripple ? (front === null ? 0 : Math.exp(-(((d - front) / 0.2) ** 2)) * s.kickFlash) : kick;
-    return lift(env, ring);
+    const lift = ui.ripple ? (front === null ? 0 : Math.exp(-(((d - front) / 0.2) ** 2)) * (1 - front * front)) : pulse;
+    return lightFrame(st, s, dt, ls, paletteColour(colours, st.pos + i / PANELS), kick, env, lift);
   });
   if (Number.isFinite(st.kickAgeMs)) st.kickAgeMs += dt;
-  return { plays, panels, colour: st.colourPos };
+  return { plays, panels };
 }

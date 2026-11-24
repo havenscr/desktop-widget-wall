@@ -2,7 +2,7 @@ import { StrictMode } from 'react';
 import { act, fireEvent, render, within } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { mocks } from '../../bridge/tauri';
-import { LIGHT_SYNC_KEY, loadLightSync } from '../../settings/settings';
+import { LIGHT_SYNC_KEY, loadLightSync, saveLightSync } from '../../settings/settings';
 import { HoverTipLayer, resetTip } from '../../ui/HoverTip';
 import { setCoverTint, resetCoverTint } from '../../music/coverTint';
 import { useNowPlayingStore } from '../../music/store';
@@ -11,7 +11,7 @@ import { SYNC_WIDTH, SYNC_WORD, fitMoodRow, syncChipModel } from '../moodRow';
 import { OfficeMoods } from '../OfficeMoods';
 import { SyncChip, SyncTip } from '../SyncChip';
 import { renderToString } from 'react-dom/server';
-import { DEFAULT_LIGHTS_UI, DEFAULT_LIGHT_SYNC, PALETTES, engineSettings, clampSettings, isHex, resolvePalette, type PaletteId } from './model';
+import { DEFAULT_LIGHTS_UI, DEFAULT_LIGHT_SYNC, INTENSITIES, PALETTES, engineSettings, clampSettings, isHex, resolvePalette, type PaletteId } from './model';
 import { attachPoll, resetLightSync, useLightSync } from './store';
 
 vi.setConfig({ testTimeout: 20_000 });
@@ -327,7 +327,7 @@ it('a settings read survives a throwing localStorage, and bad saved values are i
     },
   };
   expect(loadLightSync(boom)).toEqual({ palette: 'synthwave', settings: DEFAULT_LIGHT_SYNC, ui: DEFAULT_LIGHTS_UI, custom: [] });
-  const odd = { getItem: () => JSON.stringify({ palette: 'custom', settings: { brightness: 9, floor: 'x', sendHz: 1 } }) };
+  const odd = { getItem: () => JSON.stringify({ version: 2, palette: 'custom', settings: { brightness: 9, floor: 'x', sendHz: 1 } }) };
   const got = loadLightSync(odd);
   expect(got.palette).toBe('synthwave');
   expect(got.settings.brightness).toBe(1);
@@ -338,7 +338,26 @@ it('a settings read survives a throwing localStorage, and bad saved values are i
 
 it('clamps mirror the native ranges, with the floor held under the brightness', () => {
   const c = clampSettings({ brightness: 0.2, floor: 0.4, bassGain: 9, attackMs: 1, releaseMs: 99999, rippleMs: NaN });
-  expect(c).toMatchObject({ brightness: 0.2, floor: 0.2, bassGain: 2, attackMs: 20, releaseMs: 1500, rippleMs: 600 });
+  expect(c).toMatchObject({ brightness: 0.2, floor: 0.1, bassGain: 2, attackMs: 40, releaseMs: 2000, rippleMs: 600 });
+});
+
+it('a value saved by the strobe engine loads as Subtle once, keeping palette, own colours, follow and ripple', () => {
+  const old = {
+    palette: 'custom',
+    custom: ['#ff3d9a', '#35e6ea', '#9a7bff'],
+    settings: { brightness: 0.85, floor: 0.06, kickFlash: 0.8, attackMs: 50, releaseMs: 380, bassGain: 1.5, plays: false },
+    ui: { colourBars: 1, follow: ['bass', 'bass', 'highs', 'highs', 'both'], ripple: false },
+  };
+  const got = loadLightSync({ getItem: () => JSON.stringify(old) });
+  expect(got.settings).toMatchObject({ ...INTENSITIES.subtle.settings, bassGain: 1.5, plays: false });
+  expect(got.ui).toEqual({ colourBars: INTENSITIES.subtle.colourBars, follow: ['bass', 'bass', 'highs', 'highs', 'both'], ripple: false });
+  expect(got.palette).toBe('custom');
+  expect(got.custom).toEqual(old.custom);
+  // Saved again it carries the version, and the next load keeps what was chosen after it.
+  let text = '';
+  saveLightSync({ ...got, settings: { ...got.settings, floor: 0.2 } }, { setItem: (_k, v) => void (text = v) });
+  expect(JSON.parse(text).version).toBe(2);
+  expect(loadLightSync({ getItem: () => text }).settings.floor).toBe(0.2);
 });
 
 it.each(PALETTES.filter((p) => p.enabled).map((p) => p.id))('palette %s sends its colours on start', async (id) => {

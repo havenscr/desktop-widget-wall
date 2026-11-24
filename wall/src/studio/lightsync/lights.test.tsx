@@ -1,4 +1,6 @@
 import { act, fireEvent, render } from '@testing-library/react';
+// @ts-ignore node's own file calls; this test reads the shared fixture as text.
+import { readFileSync } from 'node:fs';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { mocks } from '../../bridge/tauri';
 import { LIGHT_SYNC_KEY } from '../../settings/settings';
@@ -8,8 +10,8 @@ import { useWatchStore } from '../../unwind/watch/store';
 import { WatchSheet } from '../../unwind/watch/Sheet';
 import { resetHome } from '../homeStore';
 import { OfficeMoods } from '../OfficeMoods';
-import { newPreview, stepPreview } from './preview';
-import { DEFAULT_LIGHTS_UI, DEFAULT_LIGHT_SYNC, PALETTES, SWATCHES, engineSettings, resolvePalette } from './model';
+import { Swing, newPreview, stepPreview } from './preview';
+import { DEFAULT_LIGHTS_UI, DEFAULT_LIGHT_SYNC, INTENSITIES, INTENSITY_IDS, PALETTES, SWATCHES, engineSettings, resolvePalette } from './model';
 import { useAudioStore } from '../../audio/store';
 import { LightsPanel, barsWords, brightWords, flashWords, smoothWords } from './LightsPanel';
 import { resetLightSync, useLightSync } from './store';
@@ -67,10 +69,10 @@ it('the Lights tab has every row, the preview and Your usual, with starting valu
   expect(container.querySelectorAll('.ls-pn')).toHaveLength(5);
   expect(Array.from(container.querySelectorAll('.ls-play em')).map((e) => e.textContent)).toEqual(['Far Left', 'Left', 'Right', 'Far Right']);
   expect(container.querySelector('.ls-bar')).toBeNull();
-  expect(container.textContent).toContain('every 2 bars');
-  expect(container.textContent).toContain('15% to 90%');
-  expect(container.textContent).toContain('strong');
-  expect(container.textContent).toContain('a little smooth');
+  expect(container.textContent).toContain('every 4 bars');
+  expect(container.textContent).toContain('35% to 80%');
+  expect(container.textContent).toContain('soft');
+  expect(container.textContent).toContain('smooth');
   expect(container.querySelector('[role="switch"]')?.getAttribute('aria-checked')).toBe('true');
   expect(Array.from(container.querySelectorAll('.ls-tile')).map((t) => t.getAttribute('data-follow'))).toEqual(['highs', 'bass', 'bass', 'highs', 'both']);
   // A cream tick on each slider marks the usual.
@@ -104,12 +106,12 @@ it('brightness has a floor and a peak handle, held in order and inside the nativ
   expect(useLightSync.getState().settings).toMatchObject({ floor: 0.3, brightness: 0.7 });
   expect(container.textContent).toContain('30% to 70%');
   fireEvent.change(slider('Brightness floor'), { target: { value: '90' } });
-  expect(useLightSync.getState().settings.floor).toBe(0.5);
+  expect(useLightSync.getState().settings.floor).toBe(0.6);
   fireEvent.change(slider('Brightness peak'), { target: { value: '5' } });
-  expect(useLightSync.getState().settings.brightness).toBe(0.5);
+  expect(useLightSync.getState().settings.brightness).toBe(0.7);
   expect(tunes().length).toBe(4);
   const last = tunes()[3].args as { settings: { floor: number; brightness: number } };
-  expect(last.settings).toMatchObject({ floor: 0.5, brightness: 0.5 });
+  expect(last.settings).toMatchObject({ floor: 0.6, brightness: 0.7 });
 });
 
 it('kick flash and smoothness map to kickFlash and releaseMs', () => {
@@ -117,7 +119,7 @@ it('kick flash and smoothness map to kickFlash and releaseMs', () => {
   render(<LightsPanel />);
   fireEvent.change(slider('ls-flash'), { target: { value: '100' } });
   fireEvent.change(slider('ls-smooth'), { target: { value: '50' } });
-  expect(useLightSync.getState().settings).toMatchObject({ kickFlash: 1, releaseMs: 800 });
+  expect(useLightSync.getState().settings).toMatchObject({ kickFlash: 1, releaseMs: 1100 });
   expect(tunes().length).toBe(2);
 });
 
@@ -127,8 +129,8 @@ it('a settings change while sync runs is sent as a tune with the palette and the
   fireEvent.change(slider('ls-flash'), { target: { value: '40' } });
   const sent = tunes()[0].args as { palette: { colors: string[]; kick: string; rest: string }; settings: Record<string, unknown> };
   expect(sent.palette.colors).toEqual(resolvePalette('synthwave').colors);
-  expect(Object.keys(sent.settings).sort()).toEqual([...Object.keys(DEFAULT_LIGHT_SYNC), 'colourBars', 'follow', 'ripple'].sort());
-  expect(sent.settings).toMatchObject({ colourBars: 2, ripple: true, follow: { plays: ['highs', 'bass', 'bass', 'highs'], panels: 'both' } });
+  expect(Object.keys(sent.settings).sort()).toEqual([...Object.keys(DEFAULT_LIGHT_SYNC), 'colourBars', 'driftMs', 'follow', 'ripple'].sort());
+  expect(sent.settings).toMatchObject({ colourBars: 4, driftMs: 10000, ripple: true, follow: { plays: ['highs', 'bass', 'bass', 'highs'], panels: 'both' } });
   expect(sent.settings.kickFlash).toBe(0.4);
   expect(saved().settings.kickFlash).toBe(0.4);
 });
@@ -375,7 +377,7 @@ it('the preview tiles change colour and brightness when the palette and the soun
     };
     const pn = () => Array.from(container.querySelectorAll<HTMLElement>('.ls-pn'));
     const colours = () => pn().map((e) => e.style.background);
-    const opac = () => pn().map((e) => Number(e.style.opacity));
+    const opac = () => pn().map((e) => (e.style.background.match(/\d+/g) ?? []).map(Number).reduce((a, b) => Math.max(a, b), 0));
     tick();
     const quietColours = colours();
     const quiet = opac();
@@ -395,41 +397,93 @@ it('the preview tiles change colour and brightness when the palette and the soun
   }
 });
 
+const SYNTH = resolvePalette('synthwave');
 const frame = (st: ReturnType<typeof newPreview>, over: Partial<typeof DEFAULT_LIGHT_SYNC> = {}, ui = DEFAULT_LIGHTS_UI, beatCount = 0, bass = 0, high = 0, dtMs = 33) =>
-  stepPreview(st, { ...DEFAULT_LIGHT_SYNC, ...over }, ui, 3, { bass, high, beatCount, dtMs });
+  stepPreview(st, { ...DEFAULT_LIGHT_SYNC, ...over }, ui, SYNTH, { bass, high, beatCount, dtMs });
+const top = (c: number[]) => Math.max(...c);
 
-it('the preview steps colours every colourBars times four beats', () => {
-  const st = newPreview(0.15);
-  let beats = 0;
-  const ui = { ...DEFAULT_LIGHTS_UI, colourBars: 1 };
-  for (let i = 0; i < 3; i++) frame(st, {}, ui, ++beats);
-  expect(st.colourPos).toBe(0);
-  expect(frame(st, {}, ui, ++beats).colour).toBe(1);
-  const two = newPreview(0.15);
-  beats = 0;
-  for (let i = 0; i < 7; i++) frame(two, {}, DEFAULT_LIGHTS_UI, ++beats);
-  expect(two.colourPos).toBe(0);
-  expect(frame(two, {}, DEFAULT_LIGHTS_UI, ++beats).colour).toBe(1);
+it('the preview palette drifts on its own clock with no beat at all', () => {
+  const st = newPreview(0.35);
+  for (let i = 0; i < 400; i++) frame(st);
+  expect(st.pos).toBeGreaterThan(1);
+  // A faster colour speed (fewer bars) drifts faster.
+  const fast = newPreview(0.35);
+  for (let i = 0; i < 400; i++) frame(fast, {}, { ...DEFAULT_LIGHTS_UI, colourBars: 1 });
+  expect(fast.pos).toBeGreaterThan(st.pos);
 });
 
-it('the preview kick flash follows Kick flash, and Panel ripple off pulses the panels whole', () => {
-  const hit = (flash: number, ripple: boolean) => {
-    const st = newPreview(0);
-    return frame(st, { floor: 0, kickFlash: flash }, { ...DEFAULT_LIGHTS_UI, ripple }, 1);
+it('quiet lights stay on at the floor in a palette colour, never off', () => {
+  const st = newPreview(0.35);
+  let f = frame(st);
+  for (let i = 0; i < 100; i++) f = frame(st);
+  for (const c of [...f.plays, ...f.panels]) expect(top(c)).toBeGreaterThan(0.35 * 0.95 * 0.5);
+});
+
+it('a beat swells the brightness without white on Subtle', () => {
+  const st = newPreview(0.35);
+  const base = frame(st);
+  let peak = 0;
+  frame(st, {}, DEFAULT_LIGHTS_UI, 1);
+  for (let i = 0; i < 8; i++) peak = Math.max(peak, top(frame(st, {}, DEFAULT_LIGHTS_UI, 1).plays[1]));
+  expect(peak).toBeGreaterThan(top(base.plays[1]) + 0.03);
+  expect(peak).toBeLessThanOrEqual(0.8 + 1e-9);
+});
+
+it('Panel ripple off pulses the panels whole, and on starts the ring at the centre panel', () => {
+  const hit = (ripple: boolean) => {
+    const st = newPreview(0.35);
+    const ui = { ...DEFAULT_LIGHTS_UI, ripple };
+    const s = { kickFlash: 1, kickRiseMs: 30, slewDown: 5 };
+    const base = frame(st, s, ui).panels.map(top);
+    let out = frame(st, s, ui, 1);
+    for (let i = 0; i < 3; i++) out = frame(st, s, ui, 1);
+    return out.panels.map((c, i) => top(c) - base[i]);
   };
-  expect(hit(1, true).plays[1]).toBeGreaterThan(hit(0.2, true).plays[1] + 0.4);
-  // Ripple on: the ring starts at the centre panel only. Off: every panel flashes together.
-  const on = hit(1, true).panels;
-  expect(on[2]).toBeGreaterThan(on[0]);
-  const off = hit(1, false).panels;
-  expect(new Set(off.map((v) => v.toFixed(3))).size).toBe(1);
-  expect(off[0]).toBeGreaterThan(0.9);
+  const on = hit(true);
+  expect(on[2]).toBeGreaterThan(on[0] + 0.02);
+  const off = hit(false);
+  expect(off.every((v) => v > 0.02)).toBe(true);
 });
 
 it('the preview takes "both" as the mean, as the engine does', () => {
-  const st = newPreview(0.15);
-  let f = frame(st);
-  for (let i = 0; i < 60; i++) f = frame(st, { floor: 0.0 }, { ...DEFAULT_LIGHTS_UI, follow: ['both', 'bass', 'highs', 'both', 'both'] }, 0, 1, 0);
-  expect(f.plays[0]).toBeCloseTo((st.bassEnv + st.highEnv) / 2, 5);
-  expect(f.panels[0]).toBeCloseTo((st.bassEnv + st.highEnv) / 2, 5);
+  const st = newPreview(0.35);
+  const ui = { ...DEFAULT_LIGHTS_UI, follow: ['both', 'bass', 'highs', 'both', 'both'] as typeof DEFAULT_LIGHTS_UI.follow };
+  let f = frame(st, {}, ui, 0, 1, 0);
+  for (let i = 0; i < 60; i++) f = frame(st, {}, ui, 0, 1, 0);
+  const mean = (st.bassEnv + st.highEnv) / 2;
+  const target = 0.35 + 0.45 * Math.min(1, 0.35 * mean);
+  expect(f.panels[0].some((v) => v > 0)).toBe(true);
+  expect(st.plays[0].b).toBeCloseTo(target, 5);
+});
+
+it('the preview matches the native frames on the shared fixture (Subtle)', () => {
+  const fx = JSON.parse(readFileSync('../src-tauri/tests/fixtures/lightsync-frames.json', 'utf8').replace(/\r\n/g, '\n')) as { dtMs: number; palette: { colors: string[]; kick: string }; frames: [number, number, number][]; plays: number[][] };
+  expect(fx.plays.length).toBe(fx.frames.length);
+  const st = newPreview(DEFAULT_LIGHT_SYNC.floor);
+  let beats = 0;
+  fx.frames.forEach(([bass, high, beat], i) => {
+    if (beat) beats += 1;
+    const f = stepPreview(st, DEFAULT_LIGHT_SYNC, DEFAULT_LIGHTS_UI, fx.palette, { bass, high, beatCount: beats, dtMs: fx.dtMs });
+    f.plays.flat().forEach((v, k) => expect(Math.abs(v - fx.plays[i][k]), `frame ${i} channel ${k}`).toBeLessThan(2e-6));
+  });
+});
+
+it('the flash guard holds every intensity under five swings a second in the preview', () => {
+  for (const id of INTENSITY_IDS) {
+    const { settings, colourBars } = INTENSITIES[id];
+    const st = newPreview(settings.floor);
+    const ui = { ...DEFAULT_LIGHTS_UI, colourBars };
+    const counters = Array.from({ length: 4 }, () => new Swing());
+    let now = 0;
+    let beats = 0;
+    for (let i = 0; i < 600; i++) {
+      now += 33;
+      if (i % 8 === 0) beats += 1;
+      const f = stepPreview(st, { ...DEFAULT_LIGHT_SYNC, ...settings }, ui, SYNTH, { bass: (i / 4) % 2 < 1 ? 1 : 0, high: i % 2, beatCount: beats, dtMs: 33 });
+      f.plays.forEach((c, k) => {
+        counters[k].commit(now, 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2]);
+        expect(counters[k].transitions, id).toBeLessThanOrEqual(5);
+      });
+    }
+  }
 });

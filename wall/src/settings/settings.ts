@@ -1,4 +1,4 @@
-import { CUSTOM_MIN, DEFAULT_LIGHT_SYNC, DEFAULT_PALETTE, clampCustom, clampSettings, clampUi, isPaletteId, type LightSyncSettings, type LightsUi, type PaletteId } from '../studio/lightsync/model';
+import { CUSTOM_MIN, DEFAULT_INTENSITY, DEFAULT_LIGHT_SYNC, INTENSITIES, DEFAULT_PALETTE, clampCustom, clampSettings, clampUi, isPaletteId, type LightSyncSettings, type LightsUi, type PaletteId } from '../studio/lightsync/model';
 
 /** Wall 2 settings, read from localStorage. No settings screen yet. */
 export const SETTINGS_KEY = 'wall2-settings';
@@ -62,6 +62,8 @@ function safeStorage(): Storage | null {
 
 /** The per-PC light sync choice: the palette last picked and the tuning (`wall2.lightsync`). */
 export const LIGHT_SYNC_KEY = 'wall2.lightsync';
+/** The saved shape: 2 is the pulse engine (Subtle, Moderate, High). A value without it was saved by the strobe engine. */
+export const LIGHT_SYNC_VERSION = 2;
 
 export interface LightSyncChoice {
   palette: PaletteId;
@@ -85,6 +87,13 @@ export function loadLightSync(storage: Pick<Storage, 'getItem'> | null = safeSto
       if (isPaletteId(saved.palette) && (saved.palette !== 'custom' || out.custom.length >= CUSTOM_MIN)) out.palette = saved.palette;
       out.settings = clampSettings(saved.settings);
       out.ui = clampUi(saved.ui);
+      if (saved.version !== LIGHT_SYNC_VERSION) {
+        // Saved by the strobe engine: its floor, flash and smoothness are not the gentle look, so move to Subtle once.
+        // The palette, your own colours, who follows each light and the ripple stay; so do the lights on or off and the gains.
+        const subtle = INTENSITIES[DEFAULT_INTENSITY];
+        out.settings = { ...out.settings, ...subtle.settings };
+        out.ui = { ...out.ui, colourBars: subtle.colourBars };
+      }
     }
   } catch {
     /* unreadable: use the defaults */
@@ -94,7 +103,7 @@ export function loadLightSync(storage: Pick<Storage, 'getItem'> | null = safeSto
 
 export function saveLightSync(choice: LightSyncChoice, storage: Pick<Storage, 'setItem'> | null = safeStorage()): void {
   try {
-    storage?.setItem(LIGHT_SYNC_KEY, JSON.stringify(choice));
+    storage?.setItem(LIGHT_SYNC_KEY, JSON.stringify({ ...choice, version: LIGHT_SYNC_VERSION }));
   } catch {
     /* a full or blocked store: the choice lasts until the page closes */
   }

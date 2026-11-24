@@ -23,9 +23,9 @@ export function flashWords(v: number): string {
   const p = pct(v);
   return p < 34 ? 'soft' : p < 67 ? 'medium' : p < 90 ? 'strong' : 'hard';
 }
-/** Smoothness is the fade-back time (100 to 1500 ms) shown as 0 to 100. */
-export const smoothOf = (releaseMs: number) => Math.round((releaseMs - 100) / 14);
-export const releaseOf = (smooth: number) => Math.round(100 + (smooth * 1400) / 100);
+/** Smoothness is the fade-back time (200 to 2000 ms) shown as 0 to 100. */
+export const smoothOf = (releaseMs: number) => Math.round((releaseMs - 200) / 18);
+export const releaseOf = (smooth: number) => Math.round(200 + (smooth * 1800) / 100);
 export function smoothWords(smooth: number): string {
   return smooth < 10 ? 'snappy' : smooth < 35 ? 'a little smooth' : smooth < 65 ? 'smooth' : 'very smooth';
 }
@@ -65,29 +65,29 @@ const PANEL_COUNT = [0, 1, 2, 3, 4];
 function Preview() {
   const palette = useLightSync((s) => s.palette);
   const custom = useLightSync((s) => s.custom);
-  const colours = resolvePalette(palette, { custom, cover: coverNow() }).colors;
+  const resolved = resolvePalette(palette, { custom, cover: coverNow() });
+  const colours = resolved.colors;
   const root = useRef<HTMLDivElement>(null);
-  const live = useRef({ colours });
-  live.current.colours = colours;
+  const live = useRef({ palette: resolved });
+  live.current.palette = resolved;
   useEffect(() => {
-    let state = newPreview(useLightSync.getState().settings.floor, audioBeats().count);
+    const state = newPreview(useLightSync.getState().settings.floor, audioBeats().count);
     let last = performance.now();
     let raf = 0;
     const tick = (now: number) => {
       const { settings, ui } = useLightSync.getState();
       const a = useAudioStore.getState();
-      const cs = live.current.colours;
-      const f = stepPreview(state, settings, ui, cs.length, { bass: a.bass, high: a.high, beatCount: audioBeats().count, dtMs: now - last });
+      const f = stepPreview(state, settings, ui, live.current.palette, { bass: a.bass, high: a.high, beatCount: audioBeats().count, dtMs: now - last });
       last = now;
       const el = root.current;
       if (el) {
+        // The colour each light really shows, brightness included: dark where the lights go dark.
+        const css = (c: number[]) => `rgb(${c.map((v) => Math.round(v * 255)).join(',')})`;
         el.querySelectorAll<HTMLElement>('.ls-play i').forEach((e, i) => {
-          e.style.background = cs[f.colour % cs.length];
-          e.style.opacity = String(Math.max(0.2, f.plays[i]));
+          e.style.background = css(f.plays[i]);
         });
         el.querySelectorAll<HTMLElement>('.ls-pn').forEach((e, i) => {
-          e.style.background = cs[(f.colour + i) % cs.length];
-          e.style.opacity = String(Math.max(0.2, f.panels[i]));
+          e.style.background = css(f.panels[i]);
         });
       }
       raf = requestAnimationFrame(tick);
@@ -101,7 +101,7 @@ function Preview() {
         <b>Panels</b>
         <span className="ls-pns">
           {PANEL_COUNT.map((i) => (
-            <i key={i} className="ls-pn" style={{ background: colours[i % colours.length], opacity: 0.2 }} />
+            <i key={i} className="ls-pn" style={{ background: colours[i % colours.length] }} />
           ))}
         </span>
       </div>
@@ -110,7 +110,7 @@ function Preview() {
         <span className="ls-plays">
           {LIGHT_NAMES.slice(0, 4).map((name) => (
             <span key={name} className="ls-play">
-              <i style={{ background: colours[0], opacity: 0.2 }} />
+              <i style={{ background: colours[0] }} />
               <em>{name}</em>
             </span>
           ))}
@@ -137,7 +137,7 @@ export function LightsPanel() {
           <i aria-hidden="true" />
           Preview, live
         </span>
-        <button type="button" className="ln-reset ls-usualbtn" {...tip('Every Lights setting back to your usual: a colour every 2 bars, brightness 15% to 90%, strong flash, a little smooth, ripple on')} onClick={() => useLightSync.getState().resetLights()}>
+        <button type="button" className="ln-reset ls-usualbtn" {...tip('Every Lights setting back to your usual: the gentle Subtle look: a colour every 4 bars, brightness 35% to 80%, a soft pulse, smooth fades, ripple on')} onClick={() => useLightSync.getState().resetLights()}>
           <IconRestore size={16} aria-hidden="true" />
           Your usual
         </button>
@@ -153,8 +153,8 @@ export function LightsPanel() {
         <span className="ln-track ls-dual" style={dual} role="group" aria-labelledby="ls-bright-label">
           <i className="ln-usual" aria-hidden="true" />
           <i className="ln-usual ls-usual2" aria-hidden="true" />
-          <input type="range" aria-label="Brightness floor" min={0} max={100} step={1} value={floor} aria-valuetext={`floor ${floor}%`} {...tip('The floor: how bright the lights stay when it is quiet. The mark is your usual.')} onChange={(e) => set({ floor: Math.min(50, Number(e.target.value), peak) / 100 })} />
-          <input type="range" aria-label="Brightness peak" min={0} max={100} step={1} value={peak} aria-valuetext={`peak ${peak}%`} {...tip('The peak: the brightest a kick may make the lights. The mark is your usual.')} onChange={(e) => set({ brightness: Math.max(10, Number(e.target.value), floor) / 100 })} />
+          <input type="range" aria-label="Brightness floor" min={0} max={100} step={1} value={floor} aria-valuetext={`floor ${floor}%`} {...tip('The floor: how bright the lights stay when it is quiet. The mark is your usual.')} onChange={(e) => set({ floor: Math.max(5, Math.min(60, Number(e.target.value), peak - 10)) / 100 })} />
+          <input type="range" aria-label="Brightness peak" min={0} max={100} step={1} value={peak} aria-valuetext={`peak ${peak}%`} {...tip('The peak: the brightest a kick may make the lights. The mark is your usual.')} onChange={(e) => set({ brightness: Math.max(20, Number(e.target.value), floor + 10) / 100 })} />
         </span>
         <span className="ln-value">{brightWords(s.floor, s.brightness)}</span>
       </div>
