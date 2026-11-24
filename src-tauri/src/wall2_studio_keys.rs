@@ -3,8 +3,8 @@
 //!
 //! The window is picked by the owner bringing it to the front within 10 seconds, and only a
 //! visible top-level window of a fixed browser image (Firefox, Chrome, Edge) is taken. It is kept in
-//! memory only. The chords come from `keys.json`, key `studio`; nothing is typed that is not in that
-//! file, and a chord Windows would not accept is refused. A window title can only refuse a send (it
+//! memory only. Every key has a built-in StreamYard default chord; `keys.json`, key `studio`, may override
+//! one, and a chord Windows would not accept is refused (the default is used instead). A window title can only refuse a send (it
 //! must contain "StreamYard"), never pick or redirect one. The remembered window is looked at again
 //! before every send. Go live and End show are refused here without `confirm`, whatever the page does.
 //! No title, handle, process id or chord crosses to the page, and nothing is logged.
@@ -43,10 +43,10 @@ pub(crate) fn title_allows(title: &str) -> bool {
     title.to_ascii_lowercase().contains("streamyard")
 }
 
-/// StreamYard's own layout hotkeys (Shift+1 Solo, Shift+2 the second layout) and the two the owner sets in
-/// StreamYard Settings, Hotkeys (Shift+Z Go live, Shift+X End). Share has no default. Used only when
-/// `keys.json` is missing or has no `studio` entry at all.
-const DEFAULTS: &str = r#"{ "studio": { "solo": "Shift+1", "two": "Shift+2", "golive": "Shift+Z", "end": "Shift+X" } }"#;
+/// StreamYard's own default hotkeys for the five keys, the ones listed in StreamYard Settings, Hotkeys.
+/// Go live and End show are the same toggle chord. Each key uses its `keys.json` chord when that parses
+/// and is allowed, and its default otherwise.
+const DEFAULTS: [(&str, &str); 5] = [("solo", "Shift+1"), ("two", "Shift+2"), ("share", "Shift+S"), ("golive", "Shift+G"), ("end", "Shift+G")];
 
 /// How many times a key is pressed: StreamYard wants Go live and End show pressed twice to confirm.
 pub(crate) fn presses(key: &str) -> u8 {
@@ -57,28 +57,40 @@ pub(crate) fn presses(key: &str) -> u8 {
     }
 }
 
-/// The chords to use from the file's text: the defaults only when the text is valid JSON without a
-/// `studio` key; a `studio` value that is not an object, or text that is not JSON, gives none at all.
-pub(crate) fn chords_for(text: &str) -> Vec<(&'static str, Vec<Step>)> {
-    let Ok(root) = serde_json::from_str::<Value>(text) else { return Vec::new() };
-    match root.get("studio") {
-        None => studio_chords(DEFAULTS),
-        Some(v) if v.is_object() => studio_chords(text),
-        Some(_) => Vec::new(),
-    }
+/// The built-in chord of one key; None for a name that is not a studio key.
+fn default_chord(name: &str) -> Option<Vec<Step>> {
+    let (_, chord) = DEFAULTS.iter().find(|(n, _)| *n == name)?;
+    parse_steps(chord).filter(|steps| !blocked_chord(steps))
 }
 
-/// The chords to use from one read of `keys.json`: only a missing file gets the defaults. A read error,
-/// an oversized file, invalid UTF-8 or malformed JSON gives none, so every studio key is `not set up`.
+/// All five keys: the file's chord for a key when it has a valid one, else the key's built-in chord.
+fn with_defaults(file: Vec<(&'static str, Vec<Step>)>) -> Vec<(&'static str, Vec<Step>)> {
+    let mut out = Vec::new();
+    for name in KEYS {
+        let own = file.iter().find(|(n, _)| *n == name).map(|(_, steps)| steps.clone());
+        if let Some(steps) = own.or_else(|| default_chord(name)) {
+            out.push((name, steps));
+        }
+    }
+    out
+}
+
+/// The chords to use from the file's text: every key takes its chord from `studio` when that parses and
+/// is allowed, and its built-in chord otherwise. Text that is not JSON, or a `studio` value that is not
+/// an object, gives the built-in chords.
+pub(crate) fn chords_for(text: &str) -> Vec<(&'static str, Vec<Step>)> {
+    with_defaults(studio_chords(text))
+}
+
+/// The chords to use from one read of `keys.json`: a missing, unreadable, oversized or damaged file
+/// gives the built-in chords, so the keys file is never required.
 pub(crate) fn chords_from_read(read: Result<Vec<u8>, std::io::ErrorKind>) -> Vec<(&'static str, Vec<Step>)> {
     match read {
-        Err(std::io::ErrorKind::NotFound) => studio_chords(DEFAULTS),
-        Err(_) => Vec::new(),
-        Ok(buf) if buf.len() > 32 * 1024 => Vec::new(),
-        Ok(buf) => match String::from_utf8(buf) {
+        Ok(buf) if buf.len() <= 32 * 1024 => match String::from_utf8(buf) {
             Ok(text) => chords_for(&text),
-            Err(_) => Vec::new(),
+            Err(_) => with_defaults(Vec::new()),
         },
+        _ => with_defaults(Vec::new()),
     }
 }
 
@@ -146,7 +158,7 @@ pub struct PickStart {
 pub struct PickStatus {
     state: &'static str,
     browser: Option<&'static str>,
-    /// Which studio keys have a chord in `keys.json`: names only, never a chord.
+    /// Which studio keys have a chord to send: names only, never a chord.
     keys: Vec<&'static str>,
 }
 
@@ -156,7 +168,7 @@ pub struct Sent {
     at: u64,
 }
 
-/// The studio chords of the keys file, read fresh; the defaults only when the file is missing or has no `studio` entry.
+/// The studio chords: the keys file read fresh, each key falling back to its built-in chord.
 fn load_chords(app: &tauri::AppHandle) -> Vec<(&'static str, Vec<Step>)> {
     use tauri::Manager;
     match app.path().app_config_dir() {
@@ -358,27 +370,66 @@ mod tests {
         assert!(studio_chords(r#"{ "studio": { "solo": "Alt+Alt" } }"#).is_empty());
     }
 
-    #[test]
-    fn with_no_studio_entry_the_defaults_apply_and_share_is_unset() {
-        let names = |c: Vec<(&str, Vec<Step>)>| c.iter().map(|(n, _)| n.to_string()).collect::<Vec<_>>();
-        let defaults = vec!["solo", "two", "golive", "end"];
-        assert_eq!(names(chords_for(r#"{ "apps": [] }"#)), defaults);
-        assert_eq!(names(chords_from_read(Err(std::io::ErrorKind::NotFound))), defaults);
-        assert!(chords_for(r#"{ "studio": {} }"#).is_empty());
-        assert_eq!(names(chords_for(FILE)), vec!["solo", "two", "share", "golive"]);
+    fn names(c: Vec<(&str, Vec<Step>)>) -> Vec<String> {
+        c.iter().map(|(n, _)| n.to_string()).collect()
+    }
+
+    fn chord_of(c: &[(&'static str, Vec<Step>)], key: &str) -> Vec<Step> {
+        c.iter().find(|(n, _)| *n == key).map(|(_, s)| s.clone()).expect("key")
     }
 
     #[test]
-    fn a_bad_file_never_falls_back_to_the_defaults() {
-        assert!(chords_for("not json").is_empty());
-        assert!(chords_for(r#"{ "studio": "Shift+1" }"#).is_empty());
-        assert!(chords_for(r#"{ "studio": null }"#).is_empty());
-        assert!(chords_from_read(Ok(b"not json".to_vec())).is_empty());
-        assert!(chords_from_read(Ok(vec![0xff, 0xfe])).is_empty());
-        assert!(chords_from_read(Ok(vec![b' '; 40_000])).is_empty());
-        assert!(chords_from_read(Err(std::io::ErrorKind::PermissionDenied)).is_empty());
-        assert!(chords_from_read(Err(std::io::ErrorKind::Other)).is_empty());
-        assert_eq!(chords_from_read(Ok(FILE.as_bytes().to_vec())).len(), 4);
+    fn the_defaults_give_all_five_keys() {
+        let all = vec!["solo", "two", "share", "golive", "end"];
+        assert_eq!(names(chords_for(r#"{ "apps": [] }"#)), all);
+        assert_eq!(names(chords_from_read(Err(std::io::ErrorKind::NotFound))), all);
+        assert_eq!(names(chords_for(r#"{ "studio": {} }"#)), all);
+        assert_eq!(names(chords_for(FILE)), all);
+        assert_eq!(chord_of(&chords_for("{}"), "golive"), parse_steps("Shift+G").unwrap());
+        assert_eq!(chord_of(&chords_for("{}"), "end"), parse_steps("Shift+G").unwrap());
+        assert_eq!(chord_of(&chords_for("{}"), "solo"), parse_steps("Shift+1").unwrap());
+    }
+
+    #[test]
+    fn a_partial_studio_object_keeps_the_defaults_for_the_rest() {
+        let c = chords_for(r#"{ "studio": { "solo": "Alt+1" } }"#);
+        assert_eq!(names(c.clone()).len(), 5);
+        assert_eq!(chord_of(&c, "solo"), parse_steps("Alt+1").unwrap());
+        assert_eq!(chord_of(&c, "two"), parse_steps("Shift+2").unwrap());
+        assert_eq!(chord_of(&c, "share"), parse_steps("Shift+S").unwrap());
+    }
+
+    #[test]
+    fn a_bad_or_refused_chord_falls_back_to_its_own_default() {
+        let c = chords_for(r#"{ "studio": { "solo": "Alt+Alt", "two": "Win+L", "golive": 5, "end": "Alt+9" } }"#);
+        assert_eq!(names(c.clone()).len(), 5);
+        assert_eq!(chord_of(&c, "solo"), parse_steps("Shift+1").unwrap());
+        assert_eq!(chord_of(&c, "two"), parse_steps("Shift+2").unwrap());
+        assert_eq!(chord_of(&c, "golive"), parse_steps("Shift+G").unwrap());
+        assert_eq!(chord_of(&c, "end"), parse_steps("Alt+9").unwrap());
+    }
+
+    #[test]
+    fn a_bad_file_gives_the_defaults() {
+        let all = 5;
+        assert_eq!(chords_for("not json").len(), all);
+        assert_eq!(chords_for(r#"{ "studio": "Shift+1" }"#).len(), all);
+        assert_eq!(chords_for(r#"{ "studio": null }"#).len(), all);
+        assert_eq!(chords_from_read(Ok(b"not json".to_vec())).len(), all);
+        assert_eq!(chords_from_read(Ok(vec![0xff, 0xfe])).len(), all);
+        assert_eq!(chords_from_read(Ok(vec![b' '; 40_000])).len(), all);
+        assert_eq!(chords_from_read(Err(std::io::ErrorKind::PermissionDenied)).len(), all);
+        assert_eq!(chords_from_read(Err(std::io::ErrorKind::Other)).len(), all);
+        assert_eq!(chord_of(&chords_from_read(Ok(FILE.as_bytes().to_vec())), "solo"), parse_steps("Alt+1").unwrap());
+    }
+
+    #[test]
+    fn every_default_parses_and_is_allowed() {
+        for (name, _) in DEFAULTS {
+            assert!(default_chord(name).is_some(), "{name}");
+        }
+        assert!(default_chord("scene").is_none());
+        assert_eq!(DEFAULTS.len(), KEYS.len());
     }
 
     #[test]

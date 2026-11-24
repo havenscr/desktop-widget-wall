@@ -54,21 +54,25 @@ afterEach(() => {
   mocks.clear();
 });
 
-it('draws the four keys dashed and dim with no chords, and one button in the heading: Pick window, then Open keys file', async () => {
+it('never shows a keys file button: Pick window with no window, nothing in the heading once picked, no tile dim', async () => {
   keysSet = [];
   state = 'none';
   await open();
   const tiles = [...document.querySelectorAll('.oa2-skrow1 .key-tile')];
   expect(tiles.map((t) => t.getAttribute('aria-label'))).toEqual(['Solo', 'Two up', 'Share', 'Go live']);
-  expect(tiles.every((t) => t.classList.contains('off') && t.getAttribute('aria-disabled') === 'true')).toBe(true);
+  expect(tiles.some((t) => t.classList.contains('off') || t.hasAttribute('aria-disabled'))).toBe(false);
   const head = document.querySelector('.oa2-studiokeys .oa2-hd') as HTMLElement;
+  const needle = ['Open', 'keys', 'file'].join(' ');
   expect(head.querySelectorAll('button').length).toBe(1);
   expect(head.textContent).toContain('Pick window');
+  expect(head.textContent).not.toContain(needle);
   state = 'picked';
   await act(async () => {
     await useStudio.getState().read();
   });
-  expect(head.textContent).toContain('Open keys file');
+  expect(head.textContent).not.toContain(needle);
+  expect(head.textContent).not.toContain('Pick window');
+  expect(head.querySelectorAll('button').length).toBe(0);
   expect(sends.length).toBe(0);
 });
 
@@ -114,7 +118,7 @@ it('says each refusal in words and leaves the Sent line alone', async () => {
     ['gone', /The studio window is gone/],
     ['not forward', /would not come forward/],
     ['busy', /still sending/],
-    ['not set up', /No chord set for that key/],
+    ['not set up', /Set one in StreamYard Settings, Hotkeys/],
   ];
   for (const [word, text] of cases) {
     refuse = word;

@@ -100,10 +100,8 @@ function measureOnAirLive() {
       if (head && b.top < head.getBoundingClientRect().bottom - 0.5) fails.push('on air live: row 1 tile "' + t.getAttribute('aria-label') + '" overlaps the heading');
       if (b.bottom > top + 98 - 0.5) fails.push('on air live: row 1 tile "' + t.getAttribute('aria-label') + '" reaches into row 2');
     }
-    const want = q.get('skeys') === 'unset' ? 4 : 0;
     const dim = r1t.filter((t) => t.classList.contains('off')).length;
-    if (q.get('skeys') === 'unset' && dim !== want) fails.push('on air live: with no chords set ' + dim + ' of 4 studio keys are dim (all 4 should be)');
-    if (q.get('skeys') !== 'unset' && q.get('skeys') !== null && dim > 1) fails.push('on air live: with chords set ' + dim + ' studio keys are dim');
+    if (dim > 0) fails.push('on air live: ' + dim + ' studio keys are dim (none should be)');
   }
   // Comments: a row is at most two lines, no visible row is cut at the top, and eight short rows fit.
   const list = root.querySelector('.oa2-cms[role="log"]');
@@ -160,8 +158,8 @@ export default {
   gallery: {
     states: [
       state('live with comments', 'yt=live', ['Live, 37 watching, since 10:02 AM', 'Comments', 'YouTube · read 4 s ago', 'Could you zoom in a little?', 'YouTube only, read every 10 seconds.', 'Show timer', 'Started 10:02 AM, when the broadcast went live.', 'Studio keys', 'Solo', 'Two up', 'Share', 'Go live', 'No key sent yet', 'StreamYard studio', 'Studio window: open (Firefox)', 'The wall cannot see which layout is live. It shows what it sent.', 'Mark a moment', 'Snip', 'Part 1 of 5: Welcome and news', '!Name channel']),
-      state('studio keys, no chords yet', 'yt=none&skeys=unset&swin=none', ['Solo', 'Two up', 'Pick window', 'Studio window: not picked', '!Go live?']),
-      state('studio keys, window picked, no chords', 'yt=none&skeys=unset', ['Open keys file', 'Studio window: open']),
+      state('studio keys, no window picked', 'yt=none&swin=none', ['Solo', 'Two up', 'Pick window', 'Studio window: not picked', '!Go live?']),
+      state('studio keys, window picked', 'yt=none', ['Studio window: open', '!Pick window']),
       state('studio keys, Go live armed', 'yt=none', ['Click again', 'Go live? Click again'], '[data-key="golive"]'),
       state('studio keys, a key sent', 'yt=live', ['Sent: Two up, just now', 'Last key sent: Two up, just now', 'End show'], '[data-key="two"]'),
       state('studio window minimized', 'yt=none&swin=minimized', ['Studio window: minimized']),
@@ -201,8 +199,8 @@ export default {
       variant('comments full', 'yt=live&split=comments'),
       variant('notes full', 'yt=live&split=notes'),
       variant('busy chat, notes full', 'yt=busy&split=notes'),
-      variant('studio keys set', 'yt=live&skeys=set'),
-      variant('studio keys unset, no window', 'yt=none&skeys=unset&swin=none'),
+      variant('studio keys, window picked', 'yt=live'),
+      variant('studio keys, no window', 'yt=none&swin=none'),
       variant('studio window minimized', 'yt=none&swin=minimized'),
       variant('channel field open', 'yt=notsetup', { click: OPEN }),
     ],
