@@ -188,6 +188,16 @@ it('a web app id shows Spotify while Spotify itself says it plays that song', as
   noRaw();
 });
 
+it('a saved Spotify record never labels a playing song that Spotify does not confirm now', async () => {
+  signedIn();
+  useSpotifySeen.setState({ seen: { source: playerName(RAW) ?? '', title: 'Harbor Radio', artist: 'Example Host' } });
+  webApp();
+  spotifyIs(null);
+  render(<Unwind />);
+  await flush();
+  expect(screen.queryByText('Spotify', { selector: '.u-k' })).toBeNull();
+});
+
 it('the at-rest eyebrow says Spotify for a song Spotify confirmed for that source, and stays neutral when it cannot', async () => {
   useSpotifySeen.setState({ seen: { source: playerName(RAW) ?? '', title: 'Harbor Radio', artist: 'Example Host' } });
   resetLastPlayed({ title: 'Harbor Radio', artist: 'Example Host', source: playerName(RAW) ?? '' }, null);

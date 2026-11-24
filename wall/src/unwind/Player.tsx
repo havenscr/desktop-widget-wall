@@ -103,7 +103,8 @@ export function Player() {
   // An unnamed source (a browser's web app id) is Spotify only when Spotify itself says it plays this song.
   const spotifyConfirmed = useConfirmSpotify(source, info?.title, info?.artist, unknownId && !webView && playing);
   const spotifySeen = useSpotifySeen((s) => s.seen);
-  const isSpotify = unknownId && !webView && (spotifyConfirmed || isSpotifySong(spotifySeen, rawSourceLabel, info?.title, info?.artist));
+  // While playing, only a fresh confirmation counts; at rest, the saved record for this source, title and artist.
+  const isSpotify = unknownId && !webView && (playing ? spotifyConfirmed : isSpotifySong(spotifySeen, rawSourceLabel, info?.title, info?.artist));
   const sourceLabel = watchMatch ? 'Watch' : isSpotify ? 'Spotify' : shownSource(rawSourceLabel);
   // The horizon's moon keeps 40 px clear of the player (it moves to another of its places).
   const [box, setBox] = useState<HTMLDivElement | null>(null);
