@@ -34,6 +34,7 @@ const PLACE_IDS = SKY_PLACES.map((p) => p.id);
 export function validateSky(raw: unknown): SkySettings {
   const v = raw && typeof raw === 'object' ? (raw as Partial<SkySettings>) : {};
   const style = STYLE_IDS.includes(v.style as SkyStyle) ? (v.style as SkyStyle) : DEFAULT_SKY.style;
+  // A list that holds only unknown ids becomes an empty list (the sky off) on purpose: it was a list, so it is never read as "no setting" and turned on on Zen.
   if (!Array.isArray(v.places)) return { style, places: [...DEFAULT_SKY.places] };
   // The list keeps the chips' own order and each page once.
   const places = PLACE_IDS.filter((id) => (v.places as unknown[]).includes(id));

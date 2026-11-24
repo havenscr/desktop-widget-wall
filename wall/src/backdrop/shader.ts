@@ -103,23 +103,42 @@ export function createShader(canvas: HTMLCanvasElement, lost: () => void): SkySh
   const programs = {} as Record<SkyStyle, WebGLProgram>;
   const locs = {} as Record<SkyStyle, Record<UniformName, WebGLUniformLocation | null>>;
   const shaders: WebGLShader[] = vs ? [vs] : [];
+  const made: WebGLProgram[] = [];
+  let buffer: WebGLBuffer | null = null;
+  // Whatever was made before a failure is released, so a failed start leaves nothing behind.
+  const release = () => {
+    for (const p of made) g.deleteProgram(p);
+    for (const sh of shaders) g.deleteShader(sh);
+    if (buffer) g.deleteBuffer(buffer);
+  };
   for (const style of STYLES) {
     const fs = compile(g.FRAGMENT_SHADER, fragmentSource(style));
+    if (fs) shaders.push(fs);
     const p = vs && fs ? g.createProgram() : null;
-    if (!vs || !fs || !p) return null;
-    shaders.push(fs);
+    if (!vs || !fs || !p) {
+      release();
+      return null;
+    }
+    made.push(p);
     g.attachShader(p, vs);
     g.attachShader(p, fs);
     g.bindAttribLocation(p, 0, 'a');
     g.linkProgram(p);
-    if (!g.getProgramParameter(p, g.LINK_STATUS)) return null;
+    if (!g.getProgramParameter(p, g.LINK_STATUS)) {
+      release();
+      return null;
+    }
     programs[style] = p;
     const l = {} as Record<UniformName, WebGLUniformLocation | null>;
     for (const name of UNIFORMS) l[name] = g.getUniformLocation(p, name);
     locs[style] = l;
   }
-  // One full screen triangle.
-  const buffer = g.createBuffer();
+  // One full screen triangle. No buffer is a failure: the sky stays off.
+  buffer = g.createBuffer();
+  if (!buffer) {
+    release();
+    return null;
+  }
   g.bindBuffer(g.ARRAY_BUFFER, buffer);
   g.bufferData(g.ARRAY_BUFFER, new Float32Array([-1, -1, 3, -1, -1, 3]), g.STATIC_DRAW);
   g.enableVertexAttribArray(0);

@@ -3,7 +3,7 @@ import { createSkyColours } from './palette';
 import { FRAGMENT, createShader, fragmentSource } from './shader';
 
 /** A stand-in for the browser's graphics context that records what the shell asks of it. */
-function stubGl(opts: { compiles?: boolean } = {}) {
+function stubGl(opts: { compiles?: boolean; buffer?: boolean } = {}) {
   const calls: Record<string, number> = {};
   const count = (n: string) => (calls[n] = (calls[n] ?? 0) + 1);
   const sources: string[] = [];
@@ -24,7 +24,7 @@ function stubGl(opts: { compiles?: boolean } = {}) {
     attachShader: () => {}, bindAttribLocation: () => {}, linkProgram: () => {},
     getProgramParameter: () => true,
     getUniformLocation: (_p: unknown, name: string) => name,
-    createBuffer: () => ({}), bindBuffer: () => {}, bufferData: () => {}, enableVertexAttribArray: () => {}, vertexAttribPointer: () => {},
+    createBuffer: () => (opts.buffer === false ? null : {}), bindBuffer: () => {}, bufferData: () => {}, enableVertexAttribArray: () => {}, vertexAttribPointer: () => {},
     disable: () => {}, clearColor: () => {}, viewport: () => {}, clear: () => {},
     useProgram: (p: object) => {
       used.push(p);
@@ -32,7 +32,7 @@ function stubGl(opts: { compiles?: boolean } = {}) {
     },
     uniform1f: () => count('uniform'), uniform2f: () => count('uniform'), uniform3f: () => count('uniform'),
     drawArrays: () => count('draw'),
-    deleteProgram: () => count('deleteProgram'), deleteShader: () => {}, deleteBuffer: () => count('deleteBuffer'),
+    deleteProgram: () => count('deleteProgram'), deleteShader: () => count('deleteShader'), deleteBuffer: () => count('deleteBuffer'),
     getExtension: () => ({ loseContext: lose }),
   };
   return { gl, calls, sources, programs, used, lose };
@@ -62,6 +62,16 @@ describe('sky shader', () => {
   it('returns null when there is no context or a program does not compile', () => {
     expect(createShader(canvasWith(null).el, () => {})).toBeNull();
     expect(createShader(canvasWith(stubGl({ compiles: false }).gl).el, () => {})).toBeNull();
+  });
+
+  it('a missing buffer is a failure, and whatever was made before a failure is released', () => {
+    const s = stubGl({ buffer: false });
+    expect(createShader(canvasWith(s.gl).el, () => {})).toBeNull();
+    expect(s.calls.deleteProgram).toBe(2);
+    expect(s.calls.deleteShader).toBe(3);
+    const c = stubGl({ compiles: false });
+    expect(createShader(canvasWith(c.gl).el, () => {})).toBeNull();
+    expect(c.calls.deleteProgram ?? 0).toBe(0);
   });
 
   it('sets each uniform once per draw and makes one context for any number of draws and style swaps', () => {

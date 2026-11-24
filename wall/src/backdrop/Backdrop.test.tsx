@@ -4,6 +4,9 @@ import { usePlaceStore } from '../state/places';
 import { resetSkyStore, skySettings, useBackdropSettings } from './settings';
 import { Backdrop, GUARD_FRAMES, PAGE_BUFFER, PAGE_FRAME_MS, ZEN_BUFFER, ZEN_FRAME_MS } from './Backdrop';
 import { setDream, resetStage } from '../zen/stage';
+import { useIdle } from '../ui/useIdle';
+
+vi.mock('../ui/useIdle', () => ({ useIdle: vi.fn(() => false) }));
 
 const { made, shader, lostRef } = vi.hoisted(() => ({
   made: { n: 0, fail: false },
@@ -49,33 +52,46 @@ beforeEach(() => {
     return id;
   });
   vi.spyOn(window, 'cancelAnimationFrame').mockImplementation((id) => void frames.delete(id));
+  vi.mocked(useIdle).mockReturnValue(false);
+  // Only the timers: the frame callbacks are driven by hand.
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
   setHidden(false);
   setReducedMotion(false);
 });
 afterEach(() => {
   cleanup();
+  vi.useRealTimers();
   vi.restoreAllMocks();
   setHidden(false);
 });
 
 const mount = (on = true, mounted = true, review: Parameters<typeof Backdrop>[0]['review'] = null) => render(<Backdrop on={on} mounted={mounted} review={review} />);
 
+/** The next frame: the loop waits on a timer, then asks for an animation frame, which the test runs at `ts`. */
+function step(ts: number, wait = 200) {
+  act(() => void vi.advanceTimersByTime(wait));
+  runFrame(ts);
+}
+const gains = () => shader.draw.mock.calls.map((c) => c[2] as number);
+
 describe('Backdrop', () => {
-  it('draws on the slow page rate on Work and the faster Zen rate on Zen', () => {
+  it('waits on a timer between frames: about 8 a second on a page, about 16 on Zen, no wake at every vsync', () => {
     mount();
     runFrame(1000);
-    const n0 = shader.draw.mock.calls.length;
-    runFrame(1000 + PAGE_FRAME_MS - 20);
-    expect(shader.draw.mock.calls.length).toBe(n0);
-    runFrame(1000 + PAGE_FRAME_MS);
-    expect(shader.draw.mock.calls.length).toBe(n0 + 1);
+    expect(frames.size).toBe(0);
+    act(() => void vi.advanceTimersByTime(PAGE_FRAME_MS - 9));
+    expect(frames.size).toBe(0);
+    act(() => void vi.advanceTimersByTime(2));
+    expect(frames.size).toBe(1);
     cleanup();
+    frames.clear();
     usePlaceStore.setState({ active: 'zen' });
-    shader.draw.mockClear();
     mount();
     runFrame(5000);
-    runFrame(5000 + ZEN_FRAME_MS);
-    expect(shader.draw.mock.calls.length).toBe(2);
+    act(() => void vi.advanceTimersByTime(ZEN_FRAME_MS - 9));
+    expect(frames.size).toBe(0);
+    act(() => void vi.advanceTimersByTime(2));
+    expect(frames.size).toBe(1);
   });
 
   it('uses the small buffer on a page and the larger one on Zen', () => {
@@ -83,7 +99,7 @@ describe('Backdrop', () => {
     runFrame(1000);
     expect(shader.resize).toHaveBeenLastCalledWith(PAGE_BUFFER[0], PAGE_BUFFER[1]);
     act(() => usePlaceStore.setState({ active: 'zen' }));
-    runFrame(2000);
+    step(2000);
     expect(shader.resize).toHaveBeenLastCalledWith(ZEN_BUFFER[0], ZEN_BUFFER[1]);
   });
 
@@ -93,8 +109,20 @@ describe('Backdrop', () => {
     setHidden(true);
     act(() => void document.dispatchEvent(new Event('visibilitychange')));
     expect(frames.size).toBe(0);
+    expect(vi.getTimerCount()).toBe(0);
     setHidden(false);
     act(() => void document.dispatchEvent(new Event('visibilitychange')));
+    expect(frames.size).toBe(1);
+  });
+
+  it('stops on idle, display off or lock on a page, but never on Zen', () => {
+    vi.mocked(useIdle).mockReturnValue(true);
+    const { unmount } = mount();
+    expect(frames.size).toBe(0);
+    expect(vi.getTimerCount()).toBe(0);
+    unmount();
+    usePlaceStore.setState({ active: 'zen' });
+    mount();
     expect(frames.size).toBe(1);
   });
 
@@ -103,6 +131,7 @@ describe('Backdrop', () => {
     mount();
     expect(shader.draw).toHaveBeenCalledTimes(1);
     expect(frames.size).toBe(0);
+    expect(vi.getTimerCount()).toBe(0);
   });
 
   it('draws a review frame once, at the moment asked', () => {
@@ -118,14 +147,28 @@ describe('Backdrop', () => {
     expect((container.querySelector('canvas') as HTMLElement).style.display).toBe('none');
   });
 
-  it('fades out when no longer wanted and then stops asking for frames', () => {
+  it('fades in, and when no longer wanted fades out from the gain on screen to zero, then stops', () => {
     const { rerender } = mount();
     runFrame(1000);
+    for (let k = 1; k <= 8; k++) step(1000 + k * 130);
+    const full = Math.max(...gains());
+    expect(full).toBeGreaterThan(0);
+    // Faded in by steps, not at once.
+    expect(gains()[0]).toBeLessThan(full);
+    shader.draw.mockClear();
     rerender(<Backdrop on={false} mounted={true} review={null} />);
-    for (let k = 1; k < 12 && frames.size > 0; k++) runFrame(1000 + k * 200);
+    for (let k = 1; k <= 12 && (frames.size > 0 || vi.getTimerCount() > 0); k++) {
+      act(() => void vi.advanceTimersByTime(200));
+      if (frames.size > 0) runFrame(3000 + k * 130);
+    }
+    const out = gains();
+    // The first frame out is not a freeze at full brightness: it has already stepped down, and some frames sit strictly between.
+    expect(out[0]).toBeLessThanOrEqual(full);
+    expect(out.some((g) => g > 0 && g < full)).toBe(true);
+    expect(out[out.length - 1]).toBe(0);
+    for (let k = 1; k < out.length; k++) expect(out[k]).toBeLessThanOrEqual(out[k - 1] + 1e-9);
     expect(frames.size).toBe(0);
-    const total = shader.draw.mock.calls.map((c) => c[2] as number);
-    expect(total[total.length - 1]).toBeLessThanOrEqual(total[0]);
+    expect(vi.getTimerCount()).toBe(0);
   });
 
   it('stops on Dream once the picture has faded out, and runs again when the stage changes back', () => {
@@ -134,23 +177,31 @@ describe('Backdrop', () => {
     runFrame(1000);
     const now = performance.now();
     act(() => setDream(now - 120_000));
-    runFrame(2000);
+    step(2000);
     expect(frames.size).toBe(0);
+    expect(vi.getTimerCount()).toBe(0);
     act(() => setDream(null));
     expect(frames.size).toBe(1);
   });
 
-  it('halves its buffer when the frames run slow, and never raises it again', () => {
-    const real = performance.now.bind(performance);
-    let clock = 0;
-    vi.spyOn(performance, 'now').mockImplementation(() => (clock += 20));
+  it('halves its buffer when frames run late (the real interval, not the time spent drawing), and keeps it halved across an off and on', () => {
+    const { rerender } = mount();
+    runFrame(1000);
+    for (let k = 1; k <= GUARD_FRAMES + 2; k++) step(1000 + k * 400);
+    const widths = () => shader.resize.mock.calls.map((c) => c[0] as number);
+    expect(widths()[widths().length - 1]).toBe(PAGE_BUFFER[0] / 2);
+    rerender(<Backdrop on={false} mounted={true} review={null} />);
+    rerender(<Backdrop on={true} mounted={true} review={null} />);
+    step(20_000);
+    step(20_130);
+    expect(widths()[widths().length - 1]).toBe(PAGE_BUFFER[0] / 2);
+  });
+
+  it('keeps its buffer when frames arrive on time', () => {
     mount();
-    for (let k = 0; k < GUARD_FRAMES + 2; k++) runFrame(1000 + k * 200);
-    const widths = shader.resize.mock.calls.map((c) => c[0] as number);
-    expect(widths[widths.length - 1]).toBeLessThan(PAGE_BUFFER[0]);
-    vi.spyOn(performance, 'now').mockImplementation(real);
-    runFrame(100_000);
-    expect(shader.resize.mock.calls.map((c) => c[0] as number).slice(-1)[0]).toBeLessThan(PAGE_BUFFER[0]);
+    runFrame(1000);
+    for (let k = 1; k <= GUARD_FRAMES * 2; k++) step(1000 + k * PAGE_FRAME_MS);
+    for (const [w] of shader.resize.mock.calls) expect(w).toBe(PAGE_BUFFER[0]);
   });
 
   it('turns the sky off for the session when the context is lost or cannot be made', () => {
@@ -169,10 +220,11 @@ describe('Backdrop', () => {
     runFrame(1000);
     expect(made.n).toBe(1);
     act(() => useBackdropSettings.getState().setStyle('aurora'));
-    runFrame(1200);
+    step(1050);
+    step(1100);
     expect(shader.setStyle).not.toHaveBeenCalledWith('aurora');
-    runFrame(1400);
-    runFrame(1600);
+    step(1300);
+    step(1500);
     expect(shader.setStyle).toHaveBeenCalledWith('aurora');
     expect(made.n).toBe(1);
   });

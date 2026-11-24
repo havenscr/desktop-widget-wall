@@ -987,7 +987,7 @@ skyline, the lake in front. It is drawn on one canvas by `HorizonCanvas.tsx`.
   weather's middle layer goes the one canvas way), and `Backdrop.tsx` sits between the two canvases (`.backdrop-canvas`, 2560 by 582,
   plain alpha, no blend mode or filter). One WebGL context for the app (`shader.ts`, premultiplied output, a soft brightness cap),
   made the first time a page asks and kept. Cost: a 640 by 128 buffer at about 16 frames a second on Zen and 320 by 64 at about 8
-  elsewhere; a frame time guard halves the buffer when 30 frames average over 6 ms; it stops (no frame requested) while the page is
+  elsewhere; a frame guard halves the buffer (and keeps it halved for the session) when 20 frames average over 1.5 times the wanted interval; the loop pauses on idle, display off and lock (not on Zen), and waits on a timer between frames so an 8 frame a second page is not woken at every vsync; it stops (no frame requested) while the page is
   hidden, a screen holds the sky (Watch), Dream has faded the picture out, or the page is not listed; reduced motion draws one still.
   A lost or missing context turns the sky off for the session and the Sky panel says so. The colours come from the hour (`palette.ts`,
   from the renderer's `sun` and `pal`); each page has a gain ceiling (Zen 1, Unwind 0.6, Home 0.45, the rest 0.35) and, off Zen, the

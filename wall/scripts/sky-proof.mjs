@@ -63,6 +63,13 @@ function readPng(file) {
 }
 
 const MAX_WORST = 8;
+// Regions: the stage is cut into 8 by 4 blocks (320 by 180), each held to its own count of pixels over 2 levels, so a 1 px seam along
+// the ridge, which adds up to little over the whole stage, still fails: it puts about 320 pixels in each block it crosses, against at most 71 seen.
+const REGION_W = 320;
+const REGION_H = 180;
+const REGION_OVER_2 = Number(process.env.SKY_PROOF_REGION_OVER_2 ?? 100);
+// A probe on Unwind's open sky (no ridge, no card, no glow), under the veil only: the two layouts must agree within 1 level there.
+const PROBE = { x0: 700, y0: 20, x1: 1500, y1: 110, levels: 1 };
 const NEAR_LEVELS = 2;
 const NEAR_SHARE = 1 / 1000;
 const byKey = new Map(manifest.map((m) => [`${m.screen}\0${m.state}`, m]));
@@ -87,15 +94,34 @@ for (const m of manifest) {
   let any = 0;
   let over = 0;
   let worst = 0;
-  for (let i = 0; i < a.w * a.h; i++) {
-    const d = Math.max(Math.abs(a.px[i * a.ch] - b.px[i * b.ch]), Math.abs(a.px[i * a.ch + 1] - b.px[i * b.ch + 1]), Math.abs(a.px[i * a.ch + 2] - b.px[i * b.ch + 2]));
-    if (d > 0) any++;
-    if (d > NEAR_LEVELS) over++;
-    if (d > worst) worst = d;
+  const cols = Math.ceil(a.w / REGION_W);
+  const regions = new Array(cols * Math.ceil(a.h / REGION_H)).fill(0);
+  let probeWorst = 0;
+  let box = null;
+  for (let y = 0; y < a.h; y++) {
+    for (let x = 0; x < a.w; x++) {
+      const i = y * a.w + x;
+      const d = Math.max(Math.abs(a.px[i * a.ch] - b.px[i * b.ch]), Math.abs(a.px[i * a.ch + 1] - b.px[i * b.ch + 1]), Math.abs(a.px[i * a.ch + 2] - b.px[i * b.ch + 2]));
+      if (d > 0) any++;
+      if (d > NEAR_LEVELS) {
+        over++;
+        regions[Math.floor(y / REGION_H) * cols + Math.floor(x / REGION_W)]++;
+      }
+      if (d > worst) worst = d;
+      if (d > MAX_WORST) box = box ? [Math.min(box[0], x), Math.min(box[1], y), Math.max(box[2], x), Math.max(box[3], y)] : [x, y, x, y];
+      if (x >= PROBE.x0 && x < PROBE.x1 && y >= PROBE.y0 && y < PROBE.y1 && d > probeWorst) probeWorst = d;
+    }
   }
-  const bad = worst > MAX_WORST || over > a.w * a.h * NEAR_SHARE;
+  const regionWorst = Math.max(...regions);
+  const probed = m.screen === 'unwind' && m.state === 'sky proof: one canvas';
+  const reasons = [];
+  if (worst > MAX_WORST) reasons.push(`a pixel is ${worst} levels off (within ${box ? box.join(',') : '?'}; a small box is a moving part caught at two moments, so draw the pair again before suspecting the layers)`);
+  if (over > a.w * a.h * NEAR_SHARE) reasons.push(`${over} pixels over ${NEAR_LEVELS} levels`);
+  if (regionWorst > REGION_OVER_2) reasons.push(`a block has ${regionWorst} pixels over ${NEAR_LEVELS} levels (limit ${REGION_OVER_2})`);
+  if (probed && probeWorst > PROBE.levels) reasons.push(`the open sky probe is ${probeWorst} levels off (limit ${PROBE.levels})`);
+  const bad = reasons.length > 0;
   if (bad) failed = true;
-  console.log(`${bad ? 'FAIL' : 'ok  '} ${m.screen.padEnd(7)} ${m.state.replace('sky proof: one canvas', 'one canvas against split').trim()}: ${any} of ${a.w * a.h} pixels differ at all, ${over} by more than ${NEAR_LEVELS} levels, the most ${worst}`);
+  console.log(`${bad ? 'FAIL' : 'ok  '} ${m.screen.padEnd(7)} ${m.state.replace('sky proof: one canvas', 'one canvas against split').trim()}: ${any} of ${a.w * a.h} pixels differ at all, ${over} by more than ${NEAR_LEVELS} levels (${regionWorst} in the worst block), the most ${worst}${probed ? `, open sky probe ${probeWorst}` : ''}${bad ? `; ${reasons.join('; ')}` : ''}`);
 }
 if (pairs === 0) {
   console.log('FAIL sky-proof: no pairs found in the gallery');
