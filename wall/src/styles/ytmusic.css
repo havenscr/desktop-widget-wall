@@ -23,10 +23,10 @@
   flex-direction: column;
   gap: 12px;
   position: relative;
-  /* The scrollers below reach into the card's padding on the right (their scrollbar sits there): the
+  /* The scrollers below reach into the card's right padding by the scrollbar width, no further (their scrollbar sits there): the
      library's own box reaches it too, so nothing of it overflows its box. */
-  margin-right: calc(-5px - var(--yt-sb));
-  padding-right: calc(5px + var(--yt-sb));
+  margin-right: calc(-1 * var(--yt-sb));
+  padding-right: var(--yt-sb);
 }
 
 /* Tabs and the search field share one row (46 px), the field filling the rest. */
@@ -92,8 +92,8 @@
   overflow-y: auto;
   overscroll-behavior: contain;
   scrollbar-gutter: stable;
-  margin: -5px calc(-5px - var(--yt-sb)) 0 -5px;
-  padding: 5px 5px 0 5px;
+  margin: -5px calc(-1 * var(--yt-sb)) 0 -5px;
+  padding: 5px 0 0 5px;
 }
 /* A list of rows takes the keyboard (arrows, Page Up and Down, Home and End scroll it): its ring is inside the box. */
 .yt-rowscroll:focus-visible {
@@ -369,8 +369,8 @@
      never makes the card or the library scroll. Its box reaches 5 px past the library's content on the left and
      top (room for a focus ring) and into the library's right padding (where the rows' scrollbar sits). */
   overflow: clip;
-  margin: -5px calc(-5px - var(--yt-sb)) 0 -5px;
-  padding: 5px calc(5px + var(--yt-sb)) 0 5px;
+  margin: -5px calc(-1 * var(--yt-sb)) 0 -5px;
+  padding: 5px var(--yt-sb) 0 5px;
 }
 .yt-songs .yt-songthumb {
   width: 114px;
