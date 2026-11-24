@@ -6,6 +6,7 @@ import { NotesCard } from '../NotesCard';
 import { useOnAirStore } from '../store';
 import { useTakes } from '../takes';
 import { rollDay, takeClock, takeMs, takesLine } from '../takeModel';
+import { RecorderBlock } from './RecorderBlock';
 import { Head, LibTile, MarkTile, TileRow } from './Tiles';
 import { clockText } from './time';
 import { useDeckKeys, PAUSE_PRESS_ID } from './useDeckKeys';
@@ -120,15 +121,14 @@ function RecordingKeys({ now }: { now: number }) {
 }
 
 /**
- * The Recording page: marks, the outline, the take timer, the recording keys and the studio lights (today's
- * block, unchanged). The prompter's box, under the marks, stays empty until its own pull request.
+ * The Recording page: marks, the recorder's state, the outline, the take timer, the recording keys and the
+ * studio lights (today's block, unchanged).
  */
 export function RecordingPage({ now }: { now: number }) {
   return (
     <>
       <MarksBlock now={now} />
-      {/* The prompter's box (wall 124, 336, 640 by 104) is kept empty: nothing is drawn in it until the prompter's own pull request. */}
-      <div className="oa2-b oa2-empty oa2-empty-prompter oa2-empty-rec" aria-hidden="true" />
+      <RecorderBlock now={now} />
       <NotesCard title="Outline" right="the script is on the prompter" sizes={OUTLINE_SIZES} icon={<IconNotes size={20} aria-hidden="true" />} className="oa2-outline" />
       <TakeTimer now={now} />
       <RecordingKeys now={now} />

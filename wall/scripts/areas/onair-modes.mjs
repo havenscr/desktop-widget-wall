@@ -32,10 +32,10 @@ function measureOnAir2() {
   const boxes = {
     '.oa2-modes': [124, 24, 640, 40],
     ...(mode === 'none' ? { '.oa2-idletimer': [124, 76, 640, 166], '.oa2-lastair': [124, 262, 640, 150], '.oa2-ready-1': [800, 24, 344, 268], '.oa2-ready-2': [1168, 24, 344, 268], '.oa2-ready-3': [1536, 24, 344, 268], '.oa2-idlenotes': [800, 308, 1080, 202], '.oa2-checklist': [1920, 24, 620, 190], '.oa2-lights-idle': [1920, 348, 620, 154] } : {}),
-    ...(mode === 'rec' ? { '.oa2-marks': [124, 84, 640, 230], '.oa2-outline': [800, 24, 890, 486], '.oa2-take': [1720, 24, 820, 166], '.oa2-reckeys': [1720, 202, 820, 110], '.oa2-lights-rec': [1720, 328, 820, 154] } : {}),
+    ...(mode === 'rec' ? { '.oa2-marks': [124, 84, 640, 230], '.oa2-recorder': [124, 336, 640, 104], '.oa2-outline': [800, 24, 890, 486], '.oa2-take': [1720, 24, 820, 166], '.oa2-reckeys': [1720, 202, 820, 110], '.oa2-lights-rec': [1720, 328, 820, 154] } : {}),
     ...(mode === 'meet' ? { '.oa2-talk': [124, 76, 640, 166], '.oa2-callchips': [124, 250, 640, 36], '.oa2-meeting': [124, 298, 640, 212], '.oa2-speaker': [800, 24, 1080, 486], '.oa2-callkeys': [1920, 24, 620, 192], '.oa2-lights-meet': [1920, 348, 620, 154] } : {}),
   };
-  const empty = mode === 'rec' ? ['.oa2-empty-rec', [124, 336, 640, 104]] : mode === 'meet' ? ['.oa2-empty-meet', [1920, 230, 620, 104]] : null;
+  const empty = mode === 'meet' ? ['.oa2-empty-meet', [1920, 230, 620, 104]] : null;
   const expected = Object.keys(boxes).length;
   const found = Object.keys(boxes).filter((s) => document.querySelector('.oa2 ' + s)).length;
   if (found !== expected) fails.push('on air v2: ' + found + ' of ' + expected + ' blocks are on the ' + mode + ' page');
@@ -146,6 +146,9 @@ export default {
       state('Recording, running (take 3)', REC, ['a recorder is running', 'Take timer', '04:12', 'Take 3. It started by itself at', 'Takes today: 3. The longest ran 06:40.', 'Load the data', 'Open marks.txt', 'Outline · Welcome and news', 'Recording keys', 'sent to the recorder', '!Held by hand']),
       state('Recording, paused', `${REC}&oapaused=1`, ['Take 3 is paused. The timer waits with the recorder.', 'Paused', 'Resume', '04:12']),
       state('Recording, held with nothing on', 'oamode=rec', ['Held by hand', 'No recording running. The timer starts with the recorder.', '00:00', 'Record', '!Take 3']),
+      state('Recording, recorder open and ready', 'oamode=rec&recorder=open', ['Camtasia Recorder', 'Ready', '!Not open']),
+      state('Recording, recorder not open', 'oamode=rec&recorder=none', ['Camtasia Recorder', 'Not open']),
+      state('Recording, recorder not known', 'oamode=rec&recorder=unknown', ['Camtasia Recorder', 'Not known', '!Ready']),
       state('Recording, no marks yet', 'rec=1&marks=0', ['None yet today.', 'a recorder is running']),
       state('Recording, marks.txt full after a click', 'rec=1&marks=full', 'marks.txt is full; move it aside', `${KEYS}[data-kind="focus"]`),
       state('Recording, Pause answered', REC, ['Resume', 'Paused', 'Take 3 is paused'], `${KEYS}[aria-label="Pause"]`),
@@ -157,7 +160,7 @@ export default {
       state('Auto picks Recording over a call', `${REC}&call=teams&meetnow=1`, ['a recorder is running', 'Take timer', '!Held by hand']),
       state('held on Presenting while recording', `${REC}&call=teams&meetnow=1&oamode=meet`, ['Held by hand', 'Talk timer', 'Community talk: November']),
       state('Live picked from the browser camera and mic', 'callbrowserav=1&meet=none&yt=notsetup', ['mic or camera in use', '!Take timer', '!Talk timer']),
-      state('nothing on air', 'oalast=1', ['nothing is on air', '!Take timer', '!Talk timer', 'Show timer', 'Not started. It starts with a broadcast, a recording or a call.', 'Last time on air', 'Live for 58:12', '4 marks saved', 'Open marks.txt', 'Live on StreamYard', 'No broadcast scheduled on YouTube', 'Recording', 'No recorder running', 'Presenting', 'Needs a home app preset named On air.', 'Next show notes', 'Checklist', 'Lights preset:', 'Studio lights']),
+      state('nothing on air', 'oalast=1', ['nothing is on air', '!Take timer', '!Talk timer', 'Show timer', 'Not started. It starts with a broadcast, a recording or a call.', 'Last time on air', 'Live for 58:12', '4 marks saved', 'Open marks.txt', 'Live on StreamYard', 'No broadcast scheduled on YouTube', 'Recording', 'Camtasia Recorder is open', 'Presenting', 'Needs a home app preset named On air.', 'Next show notes', 'Checklist', 'Lights preset:', 'Studio lights']),
       state('nothing on air, no record yet', '', ['Nothing yet. It fills in when a show ends.', 'Needs a home app preset named Recording.']),
     ],
   },
@@ -194,7 +197,7 @@ export default {
       'onair2-why': { css: '.oa2-why { white-space: normal !important; }', query: '&whylong=1', expect: /^ *FAIL on air v2: the reason is [\d.]+ px tall/m, appliesTo: isNamed('Recording running') },
       'onair2-keys': { css: '.oa2 .key-tile { height: 30px !important; min-height: 0 !important; }', expect: /^ *FAIL on air v2: key tile ".*" is \d+ x \d+ px/m, appliesTo: isNamed('Recording running') },
       'onair2-box': { css: '.oa2-outline { width: 1100px !important; }', expect: /^ *FAIL on air v2: \.oa2-outline is at/m, appliesTo: isNamed('Recording running') },
-      'onair2-empty': { css: '.oa2-empty-prompter::after { content: "x"; }', expect: /^ *FAIL on air v2: the empty prompter box draws/m, appliesTo: isNamed('Recording running') },
+      'onair2-empty': { css: '.oa2-empty-prompter::after { content: "x"; }', expect: /^ *FAIL on air v2: the empty prompter box draws/m, appliesTo: isNamed('Presenting matched') },
       'onair2-idle-box': { css: '.oa2-idlenotes { width: 1300px !important; }', expect: /^ *FAIL on air v2: \.oa2-idlenotes is at/m, appliesTo: isNamed('nothing on air (the idle page)') },
       'onair2-watt': { css: '.watt-sheep, .watt-hit { margin-top: -300px !important; }', expect: /^ *FAIL on air v2: Watt .* overlaps /m, appliesTo: isNamed('Recording, Watt standing at x 1000') },
     },

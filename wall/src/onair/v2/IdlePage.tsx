@@ -13,6 +13,7 @@ import { clockText, elapsedMs, formatShowTime, startedLine } from '../model';
 import { MODE_LABEL, type PageMode } from '../modes';
 import { useOnAirStore } from '../store';
 import { useYtLive } from '../ytliveStore';
+import { useRecorder, useRecorderSync } from './recorderStore';
 import { Head } from './Tiles';
 
 /** The notes of the first part are drawn large: one size, 26 px. */
@@ -194,6 +195,9 @@ export function IdlePage({ now, last, onHold }: { now: number; last: LastOnAir |
   const meeting = useNextMeeting().joinable;
   const show = useOnAirStore((s) => s.show);
   const first = show?.state === 'ok' ? show.parts[0] : undefined;
+  useRecorderSync();
+  const recorderOpen = useRecorder((s) => s.open);
+  const recNext = recorderOpen === null ? 'Recorder not known' : recorderOpen ? 'Camtasia Recorder is open' : 'Camtasia Recorder is not open';
   const liveNext = status?.state === 'scheduled' && status.scheduledAt !== null ? `Next: ${clockText(status.scheduledAt)} on YouTube` : 'No broadcast scheduled on YouTube';
   const meetNext = meeting ? `Next: ${meeting.title}, ${clockText(Date.parse(meeting.start))}` : 'No meeting with a join link';
   return (
@@ -201,7 +205,7 @@ export function IdlePage({ now, last, onHold }: { now: number; last: LastOnAir |
       <IdleTimer now={now} />
       <LastTime last={last} now={now} />
       <ReadyCard mode="live" icon={<IconBroadcast size={20} aria-hidden="true" />} next={liveNext} onHold={onHold} className="oa2-ready-1" />
-      <ReadyCard mode="rec" icon={<IconPlayerRecordFilled size={20} aria-hidden="true" />} next="No recorder running" onHold={onHold} className="oa2-ready-2" />
+      <ReadyCard mode="rec" icon={<IconPlayerRecordFilled size={20} aria-hidden="true" />} next={recNext} onHold={onHold} className="oa2-ready-2" />
       <ReadyCard mode="meet" icon={<IconPresentation size={20} aria-hidden="true" />} next={meetNext} onHold={onHold} className="oa2-ready-3" />
       <NotesCard title="Next show notes" right={first?.name} sizes={NOTES_SIZES} icon={<IconNotes size={20} aria-hidden="true" />} className="oa2-idlenotes" index={0} />
       <Checklist onHold={onHold} />

@@ -76,6 +76,7 @@ mod wall2_youtube_played;
 mod wall2_omni;
 mod wall2_power;
 mod wall2_signals;
+mod wall2_recorder;
 mod wall2_studio_keys;
 mod wall2_sonos;
 mod wall2_media;
@@ -4257,6 +4258,7 @@ pub fn run() {
             wall2_studio::wall2_office_mood_nudge,
             wall2_onair::wall2_onair_show,
             wall2_stagepop_cmd::wall2_stagepop_status,
+            wall2_recorder::wall2_recorder_status,
             wall2_stagepop_cmd::wall2_stagepop_send,
             wall2_stagepop_cmd::wall2_stagepop_token,
             wall2_stagepop_cmd::wall2_stagepop_placement_set,
