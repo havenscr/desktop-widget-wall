@@ -13,8 +13,6 @@ export type PickState = 'none' | 'waiting' | 'picked' | 'gone' | 'minimized';
 export interface PickStatus {
   state: PickState;
   browser: 'firefox' | 'chrome' | 'edge' | null;
-  /** Which keys have a chord in keys.json. Names only. */
-  keys: StudioKey[];
 }
 export interface Sent {
   key: StudioKey;
@@ -32,7 +30,7 @@ export function refusalText(e: unknown): string {
     case 'not streamyard':
       return 'Switch that window to the StreamYard tab';
     case 'not set up':
-      return 'No chord set for that key';
+      return 'StreamYard has no hotkey for that key. Set one in StreamYard Settings, Hotkeys';
     case 'gone':
       return 'The studio window is gone. Pick it again';
     case 'not forward':

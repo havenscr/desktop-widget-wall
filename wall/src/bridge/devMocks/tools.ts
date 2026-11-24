@@ -17,7 +17,6 @@ import { knob } from './long';
  * Registered after every other mock, so a knob wins. A no-op without knobs.
  */
 export function registerToolsMocks(): void {
-  if (!mocks.has('wall2_open_keys_file')) mocks.set('wall2_open_keys_file', () => undefined);
   if (knob('keys') === 'refused') {
     mocks.set('wall2_keys_summary', () => {
       throw 'app 3, key 7: chord is not in the allowed key list, so the whole file was refused and the built-in keys stay in use until it is fixed';
