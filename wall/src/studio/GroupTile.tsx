@@ -14,7 +14,7 @@ export function NameButton({ id, label, warn = false, menu }: { id: CardId; labe
       type="button"
       className={`st-name${open ? ' open' : ''}${warn ? ' warn' : ''}`}
       data-card-for={id}
-      aria-haspopup={menu ? 'listbox' : 'dialog'}
+      aria-haspopup={menu ? 'true' : 'dialog'}
       aria-expanded={open}
       onClick={menu ? menu.toggle : (e) => toggleCard(id, e.detail === 0)}
       {...tip(menu ? menu.tipText : `Opens the settings for ${label}`)}

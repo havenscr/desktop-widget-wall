@@ -295,6 +295,9 @@ function Live({
     });
   }, [s]);
 
+  /** Whether a write with this id may start now: none is running and its own latch has passed. */
+  const canStart = useCallback((id: string) => !busyRef.current && (latch.current[id] ?? 0) <= Date.now(), []);
+
   /**
    * Runs one write: busy while it runs, latched for a moment after it settles, a brief
    * result, and a fresh read at once and a moment later.
@@ -306,7 +309,7 @@ function Live({
       ok: string | ((answer: T) => string | null),
       opts: { confirmed?: boolean; ask?: string; yes?: string; done?: (answer: T) => void; undo?: () => void } = {},
     ) => {
-      if (busyRef.current || (latch.current[id] ?? 0) > Date.now()) return;
+      if (!canStart(id)) return;
       busyRef.current = true;
       setBusy(id);
       setConfirm(null);
@@ -342,7 +345,7 @@ function Live({
         if (mounted.current) setBusy(null);
       }
     },
-    [refresh, show, setConfirm],
+    [refresh, show, setConfirm, canStart],
   );
 
   const locked = stale || busy !== null;
@@ -409,6 +412,11 @@ function Live({
     );
 
   const playFavorite = (f: SonosFavorite) => {
+    // The pop-up closes only once the write can start; when another write is busy, say so and keep it open.
+    if (!canStart(`fav:${f.id}`)) {
+      show('Busy, try again', true);
+      return;
+    }
     setPop(null);
     const ask = `${f.name} plays on the current group, above volume 40 or at a level the service does not report. Start it?`;
     const go = (confirmed: boolean) =>
@@ -770,23 +778,21 @@ function MoodButton({ m, disabled, onPlay }: { m: MoodTile; disabled: boolean; o
 }
 
 /**
- * The Sonos favorites picker: a closed dropdown that reads the list when it is first opened. A long name ends in an ellipsis
- * (its whole name is in the hover text). Choosing one plays it on the current group.
+ * The Sonos favorites picker: a closed dropdown that reads the list each time it is opened (the list already shown stays
+ * while it loads). A long name ends in an ellipsis (its whole name is in the hover text). Choosing one plays it on the
+ * current group. Escape inside the list closes only the list and puts focus back on its button.
  */
 function Favorites({ disabled, onPlay }: { disabled: boolean; onPlay: (f: SonosFavorite) => void }) {
   const [open, setOpen] = useState(false);
   const [list, setList] = useState<SonosFavorite[] | null>(null);
   const [failed, setFailed] = useState(false);
-  const asked = useRef(false);
+  const asking = useRef(0);
+  const opener = useRef<HTMLButtonElement>(null);
   const load = () => {
-    if (asked.current) return;
-    asked.current = true;
+    const mine = ++asking.current;
     readSonosFavorites()
-      .then((l) => setList(l))
-      .catch(() => {
-        asked.current = false;
-        setFailed(true);
-      });
+      .then((l) => mine === asking.current && setList(l))
+      .catch(() => mine === asking.current && setFailed(true));
   };
   const toggle = () => {
     if (!open) {
@@ -795,22 +801,33 @@ function Favorites({ disabled, onPlay }: { disabled: boolean; onPlay: (f: SonosF
     }
     setOpen(!open);
   };
+  const esc = (e: ReactKeyboardEvent) => {
+    if (e.key !== 'Escape') return;
+    e.stopPropagation();
+    setOpen(false);
+    opener.current?.focus();
+  };
   return (
-    <div className="sound-fav">
-      <button type="button" className={open ? 'sound-fav-btn open' : 'sound-fav-btn'} aria-haspopup="listbox" aria-expanded={open} onClick={toggle}>
+    <div className="sound-fav" onKeyDown={open ? esc : undefined}>
+      <button ref={opener} type="button" className={open ? 'sound-fav-btn open' : 'sound-fav-btn'} aria-expanded={open} onClick={toggle}>
         <span>Choose a favorite</span>
         <IconChevronDown size={22} stroke={2} aria-hidden="true" />
       </button>
       {open && (
-        <div className="sound-fav-list" role="listbox" aria-label="Sonos favorites">
+        <div className="sound-fav-list">
           {list === null && <div className="sound-fav-note s">{failed ? 'Favorites did not load. Close this and open it again.' : 'Loading favorites'}</div>}
+          {list !== null && failed && <div className="sound-fav-note s">Favorites did not refresh. Close this and open it again.</div>}
           {list !== null && list.length === 0 && <div className="sound-fav-note s">The Sonos service lists no favorites.</div>}
-          {list?.map((f) => (
-            <button key={f.id} type="button" role="option" aria-selected={false} className="sound-fav-row" disabled={disabled} {...tip(f.name)} {...once(() => onPlay(f))}>
-              <IconMusic size={20} stroke={1.8} aria-hidden="true" />
-              <span>{f.name}</span>
-            </button>
-          ))}
+          {list !== null && list.length > 0 && (
+            <div role="group" aria-label="Sonos favorites" className="sound-fav-rows">
+              {list.map((f) => (
+                <button key={f.id} type="button" className="sound-fav-row" disabled={disabled} {...tip(f.name)} {...once(() => onPlay(f))}>
+                  <IconMusic size={20} stroke={1.8} aria-hidden="true" />
+                  <span>{f.name}</span>
+                </button>
+              ))}
+            </div>
+          )}
         </div>
       )}
     </div>

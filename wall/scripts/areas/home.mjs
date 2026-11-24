@@ -78,6 +78,21 @@ function measureHome() {
     out.favText = dd ? (() => { const b = dd.getBoundingClientRect(); return { left: dd.querySelector('span').getBoundingClientRect().left - b.left, right: b.right - dd.querySelector('svg').getBoundingClientRect().right }; })() : null;
     out.favRow = (() => { const r = dd && dd.getBoundingClientRect(); return r ? { l: r.left, r: r.right } : null; })();
   }
+  if (kind === 'favs') {
+    const list = q('.home .sound-pop.more-pop .sound-fav-list');
+    scan(list, 'favorites list');
+    out.pop = box(q('.home .sound-pop.more-pop'));
+    out.favList = box(list);
+    out.favRows = list
+      ? [...list.querySelectorAll('.sound-fav-row')].map((r) => {
+          const b = r.getBoundingClientRect();
+          const first = r.firstElementChild.getBoundingClientRect();
+          const last = r.lastElementChild;
+          const lb = last.getBoundingClientRect();
+          return { name: last.textContent.trim().slice(0, 24), l: b.left, r: b.right, w: b.width, left: first.left - b.left, right: b.right - lb.right };
+        })
+      : [];
+  }
   return out;
 }
 
@@ -87,6 +102,7 @@ const V_ART = 'Home sound card, no cover';
 const V_LONG = 'Home sound card, long names';
 const V_PANELS = 'Home sound card, Panels effects open';
 const V_MORE = 'Home sound card, More open';
+const V_FAVS = 'Home sound card, More and the favorites list open';
 const variant = (name, knobs, kind, extra = {}) => ({ name, q: `${fitQuery(knobs)}&homecheck=${kind}`, checks: CHECKS, ...extra });
 const state = (name, knobs, expect, actions) => ({ screen: 'home', name, query: galleryQuery(knobs), custom: true, expect, actions });
 const on = (...names) => (v) => names.includes(v.name);
@@ -140,6 +156,13 @@ function rule(v, results, emit) {
     else if (m.favText.left < 10 || m.favText.right < 10) fails.push('home sound card: the favorites dropdown text is too close to its sides');
     if (m.pop && (m.pop.r > m.stage.w || m.pop.b > m.stage.h)) fails.push('home sound card: More leaves the screen');
   }
+  if (v.name === V_FAVS) {
+    if (!m.favList || m.favRows.length < 2) fails.push('home sound card: the favorites list shows ' + m.favRows.length + ' rows');
+    else {
+      for (const x of m.favRows) if (x.left < 10 || x.right < 10) fails.push('home sound card: favorite "' + x.name + '" has text ' + r1(Math.min(x.left, x.right)) + ' px from its row side (10 needed)');
+      if (m.favList.l < 0 || m.favList.r > m.stage.w || m.favList.t < 0 || m.favList.b > m.stage.h) fails.push('home sound card: the favorites list leaves the screen');
+    }
+  }
   for (const x of m.small) fails.push('home sound card: text under 16 px: ' + x);
   for (const f of fails) emit('  FAIL ' + f);
   if (fails.length) return true;
@@ -167,6 +190,7 @@ export default {
       variant(V_LONG, `${READY},long`, 'card'),
       variant(V_PANELS, READY, 'panels', { click: '.hs-panels .st-name', checks: ['.home .np-ctl'] }),
       variant(V_MORE, READY, 'more', { click: '.sound-chip.more', checks: ['.home .np-ctl'] }),
+      variant(V_FAVS, READY, 'favs', { click: '.sound-chip.more >> .sound-fav-btn', checks: ['.home .np-ctl'] }),
     ],
     measurements: { home: measureHome },
     rules: { home: rule },
@@ -178,6 +202,8 @@ export default {
       'home-icon': { css: '.hs-row .st-chip.st-icon { width: 64px !important; }', expect: /^ *FAIL home sound card: the sliders button is/m, appliesTo: on(V_CARD) },
       'home-pop-pad': { css: '.hs-pop-row { padding: 0 !important; }', expect: /^ *FAIL home sound card: ".*" is [\d.]+ px from its button side/m, appliesTo: on(V_PANELS) },
       'home-mood-pad': { css: '.sound-mood { padding: 0 !important; }', expect: /^ *FAIL home sound card: tile ".*" has text/m, appliesTo: on(V_MORE) },
+      'home-fav-pad': { css: '.sound-fav-row { padding: 0 !important; }', expect: /^ *FAIL home sound card: favorite ".*" has text/m, appliesTo: on(V_FAVS) },
+      'home-fav-text': { css: '.sound-fav-row span { font-size: 13px !important; }', expect: /^ *FAIL home sound card: text under 16 px: favorites list/m, appliesTo: on(V_FAVS) },
       'home-text': { css: '.np-line .np-where, .hs-title { font-size: 13px !important; }', expect: /^ *FAIL home sound card: text under 16 px/m, appliesTo: on(V_CARD) },
     },
   },

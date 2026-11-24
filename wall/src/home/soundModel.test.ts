@@ -466,4 +466,13 @@ describe('moodTiles', () => {
     expect(moodTiles(music, face).map((t) => t.label)).toEqual(['Upbeat', 'Reading']);
     expect(moodTiles([r('x', 'Upbeat'), r('y', 'Not Upbeatish')], []).map((t) => t.routine.key)).toEqual(['x']);
   });
+  it('one routine named for several moods is one tile; the next mood takes the next routine', () => {
+    const one = [r('a', 'Upbeat Romantic Reading')];
+    expect(moodTiles(one, []).map((t) => [t.label, t.routine.key])).toEqual([['Upbeat', 'a']]);
+    const two = [r('a', 'Upbeat Romantic Reading'), r('b', 'Romantic Evening')];
+    expect(moodTiles(two, []).map((t) => [t.label, t.routine.key])).toEqual([
+      ['Upbeat', 'a'],
+      ['Romantic', 'b'],
+    ]);
+  });
 });

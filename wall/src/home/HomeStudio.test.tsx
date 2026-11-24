@@ -2,6 +2,7 @@ import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { mocks } from '../bridge/tauri';
 import { studioAnswer } from '../studio/homeKit';
+import { resetCard, useCard } from '../studio/cardStore';
 import { resetHome } from '../studio/homeStore';
 import { resetKeyLights } from '../studio/store';
 import { HoverTipLayer, resetTip } from '../ui/HoverTip';
@@ -36,6 +37,7 @@ beforeEach(() => {
   vi.setSystemTime(Date.parse('2026-11-14T10:00:00-08:00'));
   resetKeyLights();
   resetHome();
+  resetCard();
   resetTip();
   localStorage.clear();
   writes = [];
@@ -133,8 +135,10 @@ it('the Panels word opens the effects list (all four, the one on marked); the sw
   await show();
   fireEvent.click(document.querySelector('[data-group="panels"] .st-name') as HTMLElement);
   const list = within(document.querySelector('[data-pop="panel-effects"]') as HTMLElement);
-  expect(list.getAllByRole('option').map((o) => o.textContent)).toEqual(['Glow', 'Calm', 'Sunrise', 'Neon']);
-  expect(list.getByText('Calm').closest('button')!.getAttribute('aria-selected')).toBe('true');
+  expect(list.getAllByRole('button').map((o) => o.textContent)).toEqual(['Glow', 'Calm', 'Sunrise', 'Neon']);
+  expect(list.getByText('Calm').closest('button')!.getAttribute('aria-pressed')).toBe('true');
+  expect(list.queryByRole('option')).toBeNull();
+  expect(document.querySelector('[data-pop="panel-effects"]')!.getAttribute('role')).toBe('group');
   fireEvent.click(list.getByText('Sunrise'));
   await flush(50);
   expect(document.querySelector('[data-pop="panel-effects"]')).toBeNull();
@@ -275,4 +279,34 @@ it('only decoys listed: both buttons are dashed and send nothing', async () => {
   }
   await flush(50);
   expect(writes.some((w) => w.command === 'wall2_office_mood')).toBe(false);
+});
+
+it('the Panels menu and a settings card are never open together, in either direction', async () => {
+  await show();
+  const keysName = document.querySelector('[data-card-for="keys"]') as HTMLElement;
+  const panelsName = document.querySelector('[data-group="panels"] .st-name') as HTMLElement;
+  fireEvent.click(keysName);
+  await flush(10);
+  expect(useCard.getState().open).toBe('keys');
+  fireEvent.click(panelsName);
+  await flush(10);
+  expect(document.querySelector('[data-pop="panel-effects"]')).toBeTruthy();
+  expect(useCard.getState().open).toBeNull();
+  fireEvent.click(keysName);
+  await flush(10);
+  expect(useCard.getState().open).toBe('keys');
+  expect(document.querySelector('[data-pop="panel-effects"]')).toBeNull();
+});
+
+it('Escape in the Panels menu closes only the menu and puts focus back on the Panels word', async () => {
+  await show();
+  const panelsName = document.querySelector('[data-group="panels"] .st-name') as HTMLElement;
+  fireEvent.click(panelsName);
+  const outer = vi.fn();
+  document.addEventListener('keydown', outer);
+  fireEvent.keyDown(screen.getByText('Sunrise'), { key: 'Escape' });
+  document.removeEventListener('keydown', outer);
+  expect(outer).not.toHaveBeenCalled();
+  expect(document.querySelector('[data-pop="panel-effects"]')).toBeNull();
+  expect(document.activeElement).toBe(panelsName);
 });

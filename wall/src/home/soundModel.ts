@@ -235,7 +235,7 @@ export interface MoodTile {
 
 /**
  * What More holds: Upbeat, Romantic and Reading, in that order, each the first routine (by name) that carries its
- * word and is not already a quick play. A word with no routine has no tile; every other routine is left out.
+ * word and is not already a quick play or another tile. A word with no routine has no tile; every other routine is left out.
  */
 export function moodTiles(music: readonly MusicRoutine[], tiles: readonly FaceTile[]): MoodTile[] {
   const on = new Set(tiles.map((t) => t.routine.key));
@@ -243,7 +243,10 @@ export function moodTiles(music: readonly MusicRoutine[], tiles: readonly FaceTi
   const out: MoodTile[] = [];
   for (const m of MOOD_TILES) {
     const routine = sorted.find((r) => !on.has(r.key) && m.re.test(plain(r.name)));
-    if (routine) out.push({ label: m.label, rgb: m.rgb, icon: m.icon, routine });
+    if (routine) {
+      on.add(routine.key);
+      out.push({ label: m.label, rgb: m.rgb, icon: m.icon, routine });
+    }
   }
   return out;
 }
@@ -625,6 +628,8 @@ export interface MusicView {
   clock: { posMs: number; durMs: number } | null;
   /** Back and next are offered: the sound service has the commands. */
   canSkip: boolean;
+  /** Where the sound comes from: a Spotify track, a station (no length), or null when the read does not say. */
+  source: 'spotify' | 'radio' | null;
 }
 
 /**
@@ -656,6 +661,7 @@ export function musicView(args: {
       whereTip: `Spotify on ${track.where}`,
       clock: trackClock(track.durationMs / 1000, track.progressMs / 1000, trackAt, now, live),
       canSkip: s.canSkip,
+      source: 'spotify',
     };
   }
   if (!where) return null;
@@ -669,5 +675,6 @@ export function musicView(args: {
     whereTip: nowLine(s),
     clock: np ? trackClock(np.duration, np.position, s.readAtMs, now, live) : null,
     canSkip: s.canSkip,
+    source: np?.track && np.duration === null ? 'radio' : null,
   };
 }

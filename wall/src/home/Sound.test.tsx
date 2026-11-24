@@ -239,7 +239,7 @@ it('More holds only Upbeat, Romantic and Reading as tiles; the favorite and volu
   expect(within(pop).queryByText('Speakers')).toBeNull();
   const hover = await tipText(within(pop).getByText('Upbeat').closest('button')!);
   expect(hover).toBe('Play Upbeat Music (Upbeat Music Station) at Vol. 10');
-  expect(pop.textContent).not.toMatch(/volume \d/);
+  expect(hover).not.toMatch(/volume \d/i);
 });
 
 it('a loud mood tile asks first; Cancel sends nothing and Start sends the confirmed play', async () => {
@@ -309,6 +309,86 @@ it('the favorites dropdown is closed under More; opening it lists them, a long n
   fireEvent.click(screen.getByText('Start'));
   await flush();
   expect(writes.at(-1)).toEqual({ cmd: 'wall2_sonos_favorite_play', args: { favoriteId: '0a1b2c3d4e5f6071', confirm: true } });
+});
+
+const openFavorites = async () => {
+  if (!screen.queryByText('Choose a favorite')) fireEvent.click(screen.getByText('3 more').closest('button')!);
+  fireEvent.click(screen.getByText('Choose a favorite').closest('button')!);
+  await flush();
+};
+
+it('the favorites list is a plain group of buttons; Escape closes only the list, focus goes back to its button, More stays open', async () => {
+  wire();
+  mocks.set('wall2_sonos_favorites', () => [{ id: 'f1', name: 'Quiet Radio', kind: 'radio' }]);
+  render(<Sound />);
+  await flush();
+  await openFavorites();
+  const list = document.querySelector('.sound-fav-list') as HTMLElement;
+  expect(list.querySelector('[role="listbox"], [role="option"]')).toBeNull();
+  const group = within(list).getByRole('group', { name: 'Sonos favorites' });
+  expect(within(group).getAllByRole('button').map((b) => b.textContent)).toEqual(['Quiet Radio']);
+  const opener = screen.getByText('Choose a favorite').closest('button')!;
+  expect(opener.getAttribute('aria-haspopup')).toBeNull();
+  fireEvent.keyDown(within(group).getByText('Quiet Radio'), { key: 'Escape' });
+  expect(document.querySelector('.sound-fav-list')).toBeNull();
+  expect(document.activeElement).toBe(opener);
+  expect(screen.getByRole('dialog', { name: 'More routines' })).toBeTruthy();
+  // With the list shut, Escape closes More as before.
+  fireEvent.keyDown(document, { key: 'Escape' });
+  expect(screen.queryByRole('dialog', { name: 'More routines' })).toBeNull();
+});
+
+it('the loading and error words sit outside the favorites group', async () => {
+  wire();
+  mocks.set('wall2_sonos_favorites', () => new Promise(() => {}));
+  render(<Sound />);
+  await flush();
+  await openFavorites();
+  const note = screen.getByText('Loading favorites');
+  expect(note.parentElement!.classList.contains('sound-fav-list')).toBe(true);
+  expect(document.querySelector('.sound-fav-list [role="group"]')).toBeNull();
+});
+
+it('the favorites are read again each time More opens, and the shown list stays while it loads', async () => {
+  wire();
+  let reads = 0;
+  let answer: Promise<unknown> | null = null;
+  mocks.set('wall2_sonos_favorites', () => {
+    reads += 1;
+    return answer ?? [{ id: 'f1', name: reads === 1 ? 'Quiet Radio' : 'Old Radio', kind: 'radio' }];
+  });
+  render(<Sound />);
+  await flush();
+  await openFavorites();
+  expect(reads).toBe(1);
+  fireEvent.click(screen.getByText('Choose a favorite').closest('button')!);
+  answer = new Promise(() => {});
+  fireEvent.click(screen.getByText('Choose a favorite').closest('button')!);
+  await flush();
+  expect(reads).toBe(2);
+  expect(screen.getByText('Quiet Radio')).toBeTruthy();
+  expect(screen.queryByText('Loading favorites')).toBeNull();
+});
+
+it('a favorite pressed while another write holds the latch keeps the pop-up open and says Busy, try again', async () => {
+  wire();
+  mocks.set('wall2_sonos_favorites', () => [{ id: 'f1', name: 'Quiet Radio', kind: 'radio' }]);
+  mocks.set('wall2_sonos_favorite_play', (args) => {
+    writes.push({ cmd: 'wall2_sonos_favorite_play', args });
+  });
+  render(<Sound />);
+  await flush();
+  await openFavorites();
+  fireEvent.click(screen.getByText('Quiet Radio').closest('button')!);
+  await flush();
+  expect(screen.queryByRole('dialog', { name: 'More routines' })).toBeNull();
+  // Straight away again: the same write is latched, so nothing starts.
+  await openFavorites();
+  fireEvent.click(screen.getByText('Quiet Radio').closest('button')!);
+  await flush();
+  expect(writes).toHaveLength(1);
+  expect(screen.getByRole('dialog', { name: 'More routines' })).toBeTruthy();
+  expect(screen.getByText('Busy, try again')).toBeTruthy();
 });
 
 it('the group slider moves the group by a step on release, and asks before any speaker goes above 40', async () => {

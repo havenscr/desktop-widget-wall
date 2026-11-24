@@ -1,4 +1,5 @@
 import {
+  IconBrandSpotify,
   IconChevronRight,
   IconDeviceSpeaker,
   IconDeviceTv,
@@ -7,6 +8,7 @@ import {
   IconPlayerSkipBackFilled,
   IconPlayerSkipForwardFilled,
   IconPlayerStopFilled,
+  IconRadio,
 } from '@tabler/icons-react';
 import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react';
 import { invoke } from '../bridge/tauri';
@@ -192,8 +194,8 @@ function MusicTile({ m, size, playArt }: { m: MusicView; size: number; playArt: 
     return (
       <span className="np-tile-b">
         <img className="np-cover" src={m.cover} alt="" />
-        <span className="np-badge" aria-hidden="true">
-          <IconDeviceSpeaker size={16} stroke={1.9} />
+        <span className="np-badge" data-source={m.source ?? 'speaker'} {...tip(m.source === 'spotify' ? 'Playing from Spotify' : m.source === 'radio' ? 'Playing from a station' : 'Playing on the speakers')}>
+          {m.source === 'spotify' ? <IconBrandSpotify size={16} stroke={1.9} aria-hidden="true" /> : m.source === 'radio' ? <IconRadio size={16} stroke={1.9} aria-hidden="true" /> : <IconDeviceSpeaker size={16} stroke={1.9} aria-hidden="true" />}
         </span>
       </span>
     );
