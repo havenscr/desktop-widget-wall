@@ -14,6 +14,51 @@ use std::net::Ipv4Addr;
 use std::sync::{Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
+/// Where the sound reads and commands go. `relay`: the home app, `<home>/api/sonos/<rest>` for every
+/// `/api/<rest>` the service itself serves, with the desk key (`X-Desk-Token`) when one is saved and
+/// the address may receive it. Not `relay`: the sound service's own address, `<base>/api/<rest>`
+/// (used only when no home address is set). Debug output is hand written so the key never prints.
+pub(crate) struct Route {
+    origin: String,
+    relay: bool,
+    pub(crate) key: Option<String>,
+}
+
+impl std::fmt::Debug for Route {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Route").field("relay", &self.relay).finish_non_exhaustive()
+    }
+}
+
+impl Route {
+    pub(crate) fn direct(base: impl Into<String>) -> Route {
+        Route { origin: base.into(), relay: false, key: None }
+    }
+
+    pub(crate) fn relay(home: impl Into<String>, key: Option<String>) -> Route {
+        let origin: String = home.into();
+        let key = key.filter(|_| crate::wall2_desk::token_may_go_to(&origin));
+        Route { origin, relay: true, key }
+    }
+
+    /// The full address of one service path (`/api/<rest>`).
+    pub(crate) fn url(&self, path: &str) -> String {
+        if self.relay {
+            format!("{}/api/sonos/{}", self.origin, path.strip_prefix("/api/").unwrap_or_else(|| path.trim_start_matches('/')))
+        } else {
+            format!("{}{path}", self.origin)
+        }
+    }
+
+    /// Adds the desk key header to a relay request that has a key; every other request is unchanged.
+    pub(crate) fn apply(&self, req: ureq::Request) -> ureq::Request {
+        match (self.relay, &self.key) {
+            (true, Some(k)) => req.set("X-Desk-Token", k),
+            _ => req,
+        }
+    }
+}
+
 /// The largest body one read accepts (the same limit the other feeds use).
 const MAX_BODY: u64 = 1_000_000;
 /// A successful read slower than this is written to the log as `slow`.
@@ -79,8 +124,8 @@ fn read_limited(reader: impl std::io::Read, max: u64) -> Result<Vec<u8>, Kind> {
     }
 }
 
-pub(crate) fn get_json(agent: &ureq::Agent, base: &str, path: &str) -> Result<Value, Failure> {
-    let resp = agent.get(&format!("{base}{path}")).set("Accept", "application/json").call().map_err(|e| classify(&e))?;
+pub(crate) fn get_json(agent: &ureq::Agent, route: &Route, path: &str) -> Result<Value, Failure> {
+    let resp = route.apply(agent.get(&route.url(path)).set("Accept", "application/json")).call().map_err(|e| classify(&e))?;
     let status = resp.status();
     if !(200..300).contains(&status) {
         return Err(Failure { kind: Kind::BadAnswer, status });
@@ -89,9 +134,9 @@ pub(crate) fn get_json(agent: &ureq::Agent, base: &str, path: &str) -> Result<Va
     serde_json::from_slice(&body).map_err(|_| Failure { kind: Kind::BadAnswer, status })
 }
 
-fn get_timed(agent: &ureq::Agent, base: &str, path: &str) -> Timed {
+fn get_timed(agent: &ureq::Agent, route: &Route, path: &str) -> Timed {
     let start = Instant::now();
-    let result = get_json(agent, base, path);
+    let result = get_json(agent, route, path);
     Timed { result, ms: start.elapsed().as_millis() }
 }
 
@@ -114,9 +159,9 @@ fn log_lines(timed: &[Timed]) -> Vec<String> {
 /// The answers of the eight reads in order, run side by side, so a slow service costs one
 /// time limit, not eight. The three required reads failing fails the whole read with the
 /// first failed one's kind; a failed optional read (the capabilities too) answers null.
-pub(crate) fn read_all_eight(agent: &ureq::Agent, base: &str) -> Result<Vec<Value>, Kind> {
+pub(crate) fn read_all_eight(agent: &ureq::Agent, route: &Route) -> Result<Vec<Value>, Kind> {
     let timed: Vec<Timed> = std::thread::scope(|sc| {
-        let handles: Vec<_> = READS.iter().map(|(_, path)| sc.spawn(move || get_timed(agent, base, path))).collect();
+        let handles: Vec<_> = READS.iter().map(|(_, path)| sc.spawn(move || get_timed(agent, route, path))).collect();
         handles
             .into_iter()
             .map(|h| h.join().unwrap_or(Timed { result: Err(Failure { kind: Kind::BadAnswer, status: 0 }), ms: 0 }))
@@ -398,12 +443,12 @@ mod tests {
             Serve::StallBody => STALL_MS,
             _ => PROMPT_MS,
         };
-        get_json(&agent(ms), &serve(how), "/api/status").unwrap_err()
+        get_json(&agent(ms), &Route::direct(serve(how)), "/api/status").unwrap_err()
     }
 
     #[test]
     fn a_good_answer_reads() {
-        assert!(get_json(&agent(PROMPT_MS), &serve(Serve::Json), "/api/status").is_ok());
+        assert!(get_json(&agent(PROMPT_MS), &Route::direct(serve(Serve::Json)), "/api/status").is_ok());
     }
 
     #[test]
@@ -425,7 +470,7 @@ mod tests {
             let l = TcpListener::bind("127.0.0.1:0").unwrap();
             format!("http://{}", l.local_addr().unwrap())
         };
-        assert_eq!(get_json(&agent(PROMPT_MS), &gone, "/api/status").unwrap_err(), Failure { kind: Kind::NoAnswer, status: 0 });
+        assert_eq!(get_json(&agent(PROMPT_MS), &Route::direct(gone), "/api/status").unwrap_err(), Failure { kind: Kind::NoAnswer, status: 0 });
         assert_eq!(fail_of(Serve::Close), Failure { kind: Kind::NoAnswer, status: 0 });
     }
 
@@ -489,11 +534,11 @@ mod tests {
 
     #[test]
     fn the_eight_reads_answer_or_fail_with_the_first_required_kind() {
-        let got = read_all_eight(&agent(PROMPT_MS), &serve(Serve::Json)).unwrap();
+        let got = read_all_eight(&agent(PROMPT_MS), &Route::direct(serve(Serve::Json))).unwrap();
         assert_eq!(got.len(), 8);
-        assert_eq!(read_all_eight(&agent(PROMPT_MS), &serve(Serve::Status(500))).unwrap_err(), Kind::BadAnswer);
-        assert_eq!(read_all_eight(&agent(SHORT_MS), &serve(Serve::Silent)).unwrap_err(), Kind::TimedOut);
-        assert_eq!(read_all_eight(&agent(PROMPT_MS), &serve(Serve::Close)).unwrap_err(), Kind::NoAnswer);
+        assert_eq!(read_all_eight(&agent(PROMPT_MS), &Route::direct(serve(Serve::Status(500)))).unwrap_err(), Kind::BadAnswer);
+        assert_eq!(read_all_eight(&agent(SHORT_MS), &Route::direct(serve(Serve::Silent))).unwrap_err(), Kind::TimedOut);
+        assert_eq!(read_all_eight(&agent(PROMPT_MS), &Route::direct(serve(Serve::Close))).unwrap_err(), Kind::NoAnswer);
     }
 
     const PNG: [u8; 8] = [0x89, b'P', b'N', b'G', 0x0D, 0x0A, 0x1A, 0x0A];

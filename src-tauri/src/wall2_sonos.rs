@@ -1,9 +1,13 @@
 //! Wall 2 Home Sound block: reads the owner's Sonos service and sends the few commands the
 //! block offers.
 //!
-//! The address comes from `feeds.json` (`sonosBaseUrl`) through the helpers in
-//! `wall2_feeds.rs` (scheme, host and port only; plain `http` to a private address is
-//! allowed, as for `homeBaseUrl`) and is never put in an error message or a log.
+//! Every read and command goes through the home app's relay, `<homeBaseUrl>/api/sonos/<rest>`
+//! for each `/api/<rest>` below, with the saved desk key sent as `X-Desk-Token` (read from
+//! Credential Manager, only to a loopback or tailnet address, never logged). Only when no
+//! `homeBaseUrl` is set does it use `feeds.json` `sonosBaseUrl` (`<base>/api/<rest>`). Addresses come
+//! through the helpers in `wall2_feeds.rs` (scheme, host and port only; plain `http` to a private
+//! address is allowed) and are never put in an error message or a log. Cover art still reads the
+//! speaker addresses directly.
 //!
 //! Reads (`wall2_sonos_summary`, only when the front end asks): `GET /api/status`,
 //! `/api/speakers`, `/api/routines`, `/api/groups`, `/api/group-presets`, `/api/scenes`,
@@ -57,7 +61,7 @@
 use crate::wall2_feeds::{parse_iso, read_base, read_body, require_ok};
 use crate::wall2_omni::require_wall2;
 use crate::wall2_sonos_log::{self, Event, Kind, Read};
-use crate::wall2_sonos_read::{art_agent, get_json, art_cached, art_url, fetch_art, read_all_eight, ArtCache, ArtImage};
+use crate::wall2_sonos_read::{art_agent, get_json, art_cached, art_url, fetch_art, read_all_eight, ArtCache, ArtImage, Route};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::sync::{Mutex, OnceLock};
@@ -932,8 +936,8 @@ fn fail(e: ureq::Error) -> String {
 /// failed read answers one fixed word for its kind (`timed-out`, `no-answer` or
 /// `bad-answer`, see `wall2_sonos_read`); failed and slow reads are also written to
 /// `wall2-sonos.log`.
-fn read_all(base: &str) -> Result<Reads, String> {
-    let mut answers = read_all_eight(sonos_agent(), base).map_err(|k| k.word().to_string())?.into_iter();
+fn read_all(route: &Route) -> Result<Reads, String> {
+    let mut answers = read_all_eight(sonos_agent(), route).map_err(|k| k.word().to_string())?.into_iter();
     let mut next = || answers.next().unwrap_or(Value::Null);
     Ok(Reads { status: next(), speakers: next(), routines: next(), groups: next(), presets: next(), scenes: next(), timers: next(), capabilities: next() })
 }
@@ -946,8 +950,8 @@ fn write_agent() -> &'static ureq::Agent {
 }
 
 /// Sends one write; the answer's JSON (bounded), or null when it has none.
-fn send_one(base: &str, c: &Call) -> Result<Value, String> {
-    let req = write_agent().request(c.method, &format!("{base}{}", c.path)).set("Accept", "application/json");
+fn send_one(route: &Route, c: &Call) -> Result<Value, String> {
+    let req = route.apply(write_agent().request(c.method, &route.url(&c.path)).set("Accept", "application/json"));
     let result = match &c.body {
         Some(b) => req.set("Content-Type", "application/json").send_string(&b.to_string()),
         None => req.call(),
@@ -958,9 +962,9 @@ fn send_one(base: &str, c: &Call) -> Result<Value, String> {
 
 /// Sends the skip. A 4xx answer is read (bounded) for the service's own word; anything else that
 /// is not a success is the plain refusal.
-fn send_skip(base: &str, c: &Call) -> Result<(), String> {
+fn send_skip(route: &Route, c: &Call) -> Result<(), String> {
     let body = c.body.as_ref().map(Value::to_string).unwrap_or_else(|| "{}".to_string());
-    let sent = write_agent().request(c.method, &format!("{base}{}", c.path)).set("Accept", "application/json").set("Content-Type", "application/json").send_string(&body);
+    let sent = route.apply(write_agent().request(c.method, &route.url(&c.path)).set("Accept", "application/json")).set("Content-Type", "application/json").send_string(&body);
     match sent {
         Ok(resp) => {
             let resp = require_ok(resp).map_err(|_| REFUSED.to_string())?;
@@ -977,9 +981,9 @@ fn send_skip(base: &str, c: &Call) -> Result<(), String> {
 
 /// Sends every write side by side. All failed: the first error. Some failed: "Some
 /// speakers did not change".
-fn send(base: &str, calls: &[Call]) -> Result<(), String> {
+fn send(route: &Route, calls: &[Call]) -> Result<(), String> {
     let results: Vec<Result<Value, String>> = std::thread::scope(|sc| {
-        let handles: Vec<_> = calls.iter().map(|c| sc.spawn(move || send_one(base, c))).collect();
+        let handles: Vec<_> = calls.iter().map(|c| sc.spawn(move || send_one(route, c))).collect();
         handles.into_iter().map(|h| h.join().unwrap_or_else(|_| Err(REFUSED.to_string()))).collect()
     });
     merge_results(results)
@@ -1038,8 +1042,23 @@ fn now_ms() -> i64 {
     std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis() as i64).unwrap_or(0)
 }
 
-async fn dispatch(base: String, calls: Vec<Call>) -> Result<(), String> {
-    tauri::async_runtime::spawn_blocking(move || send(&base, &calls)).await.map_err(|_| UNFINISHED.to_string())?
+/// Where this call goes: the home app's relay when `homeBaseUrl` is set (with the saved desk key,
+/// read off the async thread), else the sound service's own address (`sonosBaseUrl`).
+fn route_from(home: Result<String, String>, sonos: impl FnOnce() -> Result<String, String>, key: Option<String>) -> Result<Route, String> {
+    match home {
+        Ok(h) => Ok(Route::relay(h, key)),
+        Err(_) => Ok(Route::direct(sonos()?)),
+    }
+}
+
+async fn sonos_route(app: &tauri::AppHandle) -> Result<Route, String> {
+    let home = read_base(app, "homeBaseUrl", false);
+    let key = if home.is_ok() { crate::wall2_desk::off_thread(|| Ok(crate::wall2_desk_token::read_token())).await? } else { None };
+    route_from(home, || read_base(app, "sonosBaseUrl", false), key)
+}
+
+async fn dispatch(route: Route, calls: Vec<Call>) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || send(&route, &calls)).await.map_err(|_| UNFINISHED.to_string())?
 }
 
 // Section: favorites
@@ -1137,9 +1156,9 @@ fn fresh_favorites() -> Result<Vec<(String, String)>, String> {
 #[tauri::command]
 pub async fn wall2_sonos_summary(window: tauri::WebviewWindow, app: tauri::AppHandle) -> Result<SonosSummary, String> {
     require_wall2(window.label())?;
-    let base = read_base(&app, "sonosBaseUrl", false)?;
+    let route = sonos_route(&app).await?;
     tauri::async_runtime::spawn_blocking(move || {
-        let reads = read_all(&base)?;
+        let reads = read_all(&route)?;
         if reads_too_big(&reads) {
             wall2_sonos_log::write_line(wall2_sonos_log::line(Event::Failed, Read::Lists, Kind::BadAnswer, 200, 0));
             return Err(Kind::BadAnswer.word().to_string());
@@ -1165,14 +1184,14 @@ pub async fn wall2_sonos_play(
     force: Option<bool>,
 ) -> Result<PlayResult, String> {
     require_wall2(window.label())?;
-    let base = read_base(&app, "sonosBaseUrl", false)?;
+    let route = sonos_route(&app).await?;
     let force = force.unwrap_or(false);
     if force && !take_force(&LAST_SKIP, &routine_key)? {
         return Err("Play anyway is offered only right after a skip".to_string());
     }
     let calls = plan_play(&last_good()?, &routine_key, confirm.unwrap_or(false), force)?;
     let call = calls.into_iter().next().ok_or_else(|| REFUSED.to_string())?;
-    let body = tauri::async_runtime::spawn_blocking(move || send_one(&base, &call)).await.map_err(|_| UNFINISHED.to_string())??;
+    let body = tauri::async_runtime::spawn_blocking(move || send_one(&route, &call)).await.map_err(|_| UNFINISHED.to_string())??;
     let result = if force { PlayResult { started: true, reason: None } } else { play_outcome(&body) };
     if let Ok(mut guard) = LAST_SKIP.lock() {
         *guard = if result.started { None } else { Some((routine_key, Instant::now())) };
@@ -1183,9 +1202,9 @@ pub async fn wall2_sonos_play(
 #[tauri::command]
 pub async fn wall2_sonos_preset(window: tauri::WebviewWindow, app: tauri::AppHandle, preset_id: String, confirm: Option<bool>) -> Result<(), String> {
     require_wall2(window.label())?;
-    let base = read_base(&app, "sonosBaseUrl", false)?;
+    let route = sonos_route(&app).await?;
     let calls = plan_preset(&last_good()?, &preset_id, confirm.unwrap_or(false))?;
-    dispatch(base, calls).await
+    dispatch(route, calls).await
 }
 
 #[tauri::command]
@@ -1198,17 +1217,17 @@ pub async fn wall2_sonos_volume(
     confirm: Option<bool>,
 ) -> Result<(), String> {
     require_wall2(window.label())?;
-    let base = read_base(&app, "sonosBaseUrl", false)?;
+    let route = sonos_route(&app).await?;
     let calls = plan_volume(&last_good()?, &target, level, step, confirm.unwrap_or(false))?;
-    dispatch(base, calls).await
+    dispatch(route, calls).await
 }
 
 /// Pausing is the safe direction, so it does not wait for a fresh read.
 #[tauri::command]
 pub async fn wall2_sonos_pause_all(window: tauri::WebviewWindow, app: tauri::AppHandle) -> Result<(), String> {
     require_wall2(window.label())?;
-    let base = read_base(&app, "sonosBaseUrl", false)?;
-    dispatch(base, vec![post("/api/action/pause-all".to_string(), None)]).await
+    let route = sonos_route(&app).await?;
+    dispatch(route, vec![post("/api/action/pause-all".to_string(), None)]).await
 }
 
 /// Back or next. Refused unless the last good read (at most two minutes old) said `canSkip`; the page
@@ -1216,10 +1235,10 @@ pub async fn wall2_sonos_pause_all(window: tauri::WebviewWindow, app: tauri::App
 #[tauri::command]
 pub async fn wall2_sonos_skip(window: tauri::WebviewWindow, app: tauri::AppHandle, direction: String) -> Result<(), String> {
     require_wall2(window.label())?;
-    let base = read_base(&app, "sonosBaseUrl", false)?;
+    let route = sonos_route(&app).await?;
     let calls = plan_skip(&last_good()?, &direction)?;
     let call = calls.into_iter().next().ok_or_else(|| REFUSED.to_string())?;
-    tauri::async_runtime::spawn_blocking(move || send_skip(&base, &call)).await.map_err(|_| UNFINISHED.to_string())?
+    tauri::async_runtime::spawn_blocking(move || send_skip(&route, &call)).await.map_err(|_| UNFINISHED.to_string())?
 }
 
 /// The playing track's cover as `{ mime, base64 }`, or nothing. Takes no address from the page: it
@@ -1236,9 +1255,9 @@ pub async fn wall2_sonos_art(window: tauri::WebviewWindow) -> Result<Option<ArtI
 #[tauri::command]
 pub async fn wall2_sonos_favorites(window: tauri::WebviewWindow, app: tauri::AppHandle) -> Result<Vec<Favorite>, String> {
     require_wall2(window.label())?;
-    let base = read_base(&app, "sonosBaseUrl", false)?;
+    let route = sonos_route(&app).await?;
     tauri::async_runtime::spawn_blocking(move || {
-        let body = get_json(sonos_agent(), &base, "/api/favorites").map_err(|f| f.kind.word().to_string())?;
+        let body = get_json(sonos_agent(), &route, "/api/favorites").map_err(|f| f.kind.word().to_string())?;
         let (list, titles) = pick_favorites(&body).ok_or_else(|| Kind::BadAnswer.word().to_string())?;
         if let Ok(mut guard) = FAVORITES.lock() {
             *guard = Some((Instant::now(), titles));
@@ -1254,26 +1273,26 @@ pub async fn wall2_sonos_favorites(window: tauri::WebviewWindow, app: tauri::App
 #[tauri::command]
 pub async fn wall2_sonos_favorite_play(window: tauri::WebviewWindow, app: tauri::AppHandle, favorite_id: String, confirm: Option<bool>) -> Result<(), String> {
     require_wall2(window.label())?;
-    let base = read_base(&app, "sonosBaseUrl", false)?;
+    let route = sonos_route(&app).await?;
     let call = plan_favorite(&last_good()?, &fresh_favorites()?, &favorite_id, confirm.unwrap_or(false))?;
-    let answer = tauri::async_runtime::spawn_blocking(move || send_one(&base, &call)).await.map_err(|_| UNFINISHED.to_string())??;
+    let answer = tauri::async_runtime::spawn_blocking(move || send_one(&route, &call)).await.map_err(|_| UNFINISHED.to_string())??;
     if skip_accepted(&answer) { Ok(()) } else { Err(REFUSED.to_string()) }
 }
 
 #[tauri::command]
 pub async fn wall2_sonos_sleep(window: tauri::WebviewWindow, app: tauri::AppHandle, minutes: u32) -> Result<(), String> {
     require_wall2(window.label())?;
-    let base = read_base(&app, "sonosBaseUrl", false)?;
+    let route = sonos_route(&app).await?;
     let calls = plan_sleep(minutes)?;
-    dispatch(base, calls).await
+    dispatch(route, calls).await
 }
 
 #[tauri::command]
 pub async fn wall2_sonos_sleep_cancel(window: tauri::WebviewWindow, app: tauri::AppHandle, id: String) -> Result<(), String> {
     require_wall2(window.label())?;
-    let base = read_base(&app, "sonosBaseUrl", false)?;
+    let route = sonos_route(&app).await?;
     let calls = plan_sleep_cancel(&last_good()?, &id)?;
-    dispatch(base, calls).await
+    dispatch(route, calls).await
 }
 
 #[cfg(test)]
@@ -1858,25 +1877,25 @@ mod tests {
     #[test]
     fn a_skip_goes_out_as_an_empty_json_post_and_each_answer_has_its_word() {
         let (base, rx) = skip_server(200, r#"{"ok":true}"#);
-        assert_eq!(send_skip(&base, &skip_call()), Ok(()));
+        assert_eq!(send_skip(&Route::direct(base), &skip_call()), Ok(()));
         let seen = rx.recv_timeout(Duration::from_secs(5)).unwrap();
         assert!(seen.starts_with("POST /api/action/next HTTP/1.1"), "{seen}");
         assert!(seen.to_ascii_lowercase().contains("content-type: application/json"), "{seen}");
         assert!(seen.ends_with("{}"), "{seen}");
-        assert_eq!(send_skip(&skip_server(200, r#"{"ok":false}"#).0, &skip_call()), Err(REFUSED.to_string()));
+        assert_eq!(send_skip(&Route::direct(skip_server(200, r#"{"ok":false}"#).0), &skip_call()), Err(REFUSED.to_string()));
         // Only `{"ok": true}` is done: an empty object, null, a page, another object and "true" as text are the refusal.
         for odd in ["{}", "null", "<html>done</html>", r#"{"done":true}"#, r#"{"ok":"true"}"#, "", "true"] {
-            assert_eq!(send_skip(&skip_server(200, odd).0, &skip_call()), Err(REFUSED.to_string()), "{odd}");
+            assert_eq!(send_skip(&Route::direct(skip_server(200, odd).0), &skip_call()), Err(REFUSED.to_string()), "{odd}");
         }
-        assert_eq!(send_skip(&skip_server(409, r#"{"error":"nothing-playing"}"#).0, &skip_call()), Err("nothing-playing".to_string()));
-        assert_eq!(send_skip(&skip_server(400, r#"{"error":"cannot-skip"}"#).0, &skip_call()), Err("cannot-skip".to_string()));
-        assert_eq!(send_skip(&skip_server(404, "not json").0, &skip_call()), Err(REFUSED.to_string()));
-        assert_eq!(send_skip(&skip_server(500, r#"{"error":"cannot-skip"}"#).0, &skip_call()), Err(REFUSED.to_string()));
+        assert_eq!(send_skip(&Route::direct(skip_server(409, r#"{"error":"nothing-playing"}"#).0), &skip_call()), Err("nothing-playing".to_string()));
+        assert_eq!(send_skip(&Route::direct(skip_server(400, r#"{"error":"cannot-skip"}"#).0), &skip_call()), Err("cannot-skip".to_string()));
+        assert_eq!(send_skip(&Route::direct(skip_server(404, "not json").0), &skip_call()), Err(REFUSED.to_string()));
+        assert_eq!(send_skip(&Route::direct(skip_server(500, r#"{"error":"cannot-skip"}"#).0), &skip_call()), Err(REFUSED.to_string()));
         let gone = {
             let l = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
             format!("http://{}", l.local_addr().unwrap())
         };
-        assert_eq!(send_skip(&gone, &skip_call()), Err(UNREACHABLE.to_string()));
+        assert_eq!(send_skip(&Route::direct(gone.clone()), &skip_call()), Err(UNREACHABLE.to_string()));
     }
 
     fn favorites_body() -> Value {
@@ -1991,18 +2010,114 @@ mod tests {
     #[test]
     fn the_favorites_list_is_read_over_get_and_play_posts_the_title_in_the_body() {
         let (base, rx) = skip_server(200, r#"[{"title":"Quiet Radio","type":"radio"}]"#);
-        let body = get_json(sonos_agent(), &base, "/api/favorites").unwrap();
+        let body = get_json(sonos_agent(), &Route::direct(base), "/api/favorites").unwrap();
         let seen = rx.recv_timeout(Duration::from_secs(5)).unwrap();
         assert!(seen.starts_with("GET /api/favorites HTTP/1.1"), "{seen}");
         let (list, titles) = pick_favorites(&body).unwrap();
         assert_eq!(list.len(), 1);
         let call = plan_favorite(&summary(), &titles, &list[0].id, false).unwrap();
         let (base, rx) = skip_server(200, r#"{"ok":true}"#);
-        let answer = send_one(&base, &call).unwrap();
+        let answer = send_one(&Route::direct(base), &call).unwrap();
         assert!(skip_accepted(&answer));
         let seen = rx.recv_timeout(Duration::from_secs(5)).unwrap();
         assert!(seen.starts_with("POST /api/action/play-favorite HTTP/1.1"), "{seen}");
         assert!(seen.contains(r#""favorite":"Quiet Radio""#), "{seen}");
         assert!(seen.contains(r#""coordinator":"Den""#), "{seen}");
+    }
+
+    // Section: the relay route
+
+    const HOME: &str = "http://100.64.0.9:5006";
+    const ALL_PATHS: [&str; 15] = [
+        "/api/status", "/api/speakers", "/api/routines", "/api/groups", "/api/group-presets", "/api/scenes",
+        "/api/sleep-timers", "/api/capabilities", "/api/favorites", "/api/trigger/Sunrise_Mix?force=true",
+        "/api/group-presets/desk_mode/apply", "/api/action/volume", "/api/action/pause-all",
+        "/api/sleep-timer/t1", "/api/action/play-favorite",
+    ];
+
+    #[test]
+    fn the_relay_url_keeps_every_path_under_api_sonos() {
+        let r = Route::relay(HOME, None);
+        assert_eq!(r.url("/api/status"), "http://100.64.0.9:5006/api/sonos/status");
+        assert_eq!(r.url("/api/trigger/Sunrise_Mix?force=true"), "http://100.64.0.9:5006/api/sonos/trigger/Sunrise_Mix?force=true");
+        assert_eq!(r.url("/api/group-presets/desk_mode/apply"), "http://100.64.0.9:5006/api/sonos/group-presets/desk_mode/apply");
+        assert_eq!(r.url("/api/sleep-timer/t1"), "http://100.64.0.9:5006/api/sonos/sleep-timer/t1");
+        for p in ALL_PATHS {
+            let u = r.url(p);
+            assert!(u.starts_with("http://100.64.0.9:5006/api/sonos/"), "{u}");
+            assert!(!u.contains("/api/sonos/api/") && !u.contains(".."), "{u}");
+        }
+    }
+
+    #[test]
+    fn every_command_the_planners_build_stays_under_the_relay() {
+        let s = summary();
+        let r = Route::relay(HOME, None);
+        let mut calls = plan_play(&s, "Sunrise_Mix", false, false).unwrap();
+        calls.extend(plan_preset(&s, "desk_mode", false).unwrap());
+        calls.extend(plan_sleep(30).unwrap());
+        calls.extend(plan_sleep_cancel(&s, "t1").unwrap());
+        calls.extend(plan_skip(&s, "next").unwrap());
+        calls.extend(plan_skip(&s, "previous").unwrap());
+        calls.push(post("/api/action/pause-all".to_string(), None));
+        calls.push(post("/api/action/volume".to_string(), None));
+        for c in calls {
+            let u = r.url(&c.path);
+            assert!(u.starts_with("http://100.64.0.9:5006/api/sonos/"), "{u}");
+            assert!(!u.contains("/api/sonos/api/"), "{u}");
+        }
+    }
+
+    #[test]
+    fn without_a_relay_the_service_address_is_used_as_before() {
+        let d = Route::direct("http://192.168.1.7:5005");
+        assert_eq!(d.url("/api/status"), "http://192.168.1.7:5005/api/status");
+        assert_eq!(d.url("/api/action/next"), "http://192.168.1.7:5005/api/action/next");
+    }
+
+    #[test]
+    fn the_home_address_wins_and_the_service_address_is_the_fallback() {
+        let sonos = || Ok("http://192.168.1.7:5005".to_string());
+        let r = route_from(Ok(HOME.to_string()), sonos, None).unwrap();
+        assert_eq!(r.url("/api/status"), "http://100.64.0.9:5006/api/sonos/status");
+        let r = route_from(Err("Not configured".to_string()), sonos, None).unwrap();
+        assert_eq!(r.url("/api/status"), "http://192.168.1.7:5005/api/status");
+        assert_eq!(route_from(Err("x".to_string()), || Err("Not configured".to_string()), None).unwrap_err(), "Not configured");
+    }
+
+    #[test]
+    fn the_desk_key_goes_only_on_the_relay_and_only_where_a_key_may_go() {
+        assert_eq!(Route::relay(HOME, Some("k1".to_string())).key.as_deref(), Some("k1"));
+        assert_eq!(Route::relay("http://127.0.0.1:5006", Some("k1".to_string())).key.as_deref(), Some("k1"));
+        assert_eq!(Route::relay("http://192.168.1.7:5006", Some("k1".to_string())).key, None);
+        assert_eq!(Route::relay("https://example.com", Some("k1".to_string())).key, None);
+        assert_eq!(Route::direct(HOME).key, None);
+        assert!(!format!("{:?}", Route::relay(HOME, Some("k1".to_string()))).contains("k1"));
+    }
+
+    #[test]
+    fn the_desk_key_header_is_sent_on_a_relay_write_and_not_on_a_direct_one() {
+        let (base, rx) = skip_server(200, r#"{"ok":true}"#);
+        assert_eq!(send_skip(&Route::relay(base, Some("k1".to_string())), &skip_call()), Ok(()));
+        let seen = rx.recv_timeout(Duration::from_secs(5)).unwrap();
+        assert!(seen.starts_with("POST /api/sonos/action/next HTTP/1.1"), "{seen}");
+        assert!(seen.to_ascii_lowercase().contains("x-desk-token: k1"), "{seen}");
+        let (base, rx) = skip_server(200, r#"{"ok":true}"#);
+        assert_eq!(send_skip(&Route::direct(base), &skip_call()), Ok(()));
+        let seen = rx.recv_timeout(Duration::from_secs(5)).unwrap();
+        assert!(!seen.to_ascii_lowercase().contains("x-desk-token"), "{seen}");
+        let (base, rx) = skip_server(200, r#"{"ok":true}"#);
+        assert_eq!(send_skip(&Route::relay(base, None), &skip_call()), Ok(()));
+        assert!(!rx.recv_timeout(Duration::from_secs(5)).unwrap().to_ascii_lowercase().contains("x-desk-token"));
+    }
+
+    #[test]
+    fn the_desk_key_header_is_sent_on_a_relay_read() {
+        let (base, rx) = skip_server(200, r#"[{"title":"Quiet Radio","type":"radio"}]"#);
+        let body = get_json(sonos_agent(), &Route::relay(base, Some("k1".to_string())), "/api/favorites").unwrap();
+        assert!(body.is_array());
+        let seen = rx.recv_timeout(Duration::from_secs(5)).unwrap();
+        assert!(seen.starts_with("GET /api/sonos/favorites HTTP/1.1"), "{seen}");
+        assert!(seen.to_ascii_lowercase().contains("x-desk-token: k1"), "{seen}");
     }
 }
