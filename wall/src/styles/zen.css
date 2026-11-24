@@ -3,87 +3,8 @@
   position: fixed;
   inset: 0;
   z-index: 50;
-  background: #04020e;
+  /* No backdrop of its own: the wall's horizon shows through (Dream fades it to black, see HorizonCanvas). */
   overflow: hidden;
-}
-
-/* Flames: a looping video; reduced motion gets one still, and a video that cannot play falls back to two drifting layers. */
-.flame-video,
-.fl-still {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  background-size: cover;
-  background-position: center;
-}
-.flame-video {
-  background: #04020e;
-}
-/* The fallback layers: two drifting images, the upper one screen-blended. */
-.flames {
-  position: absolute;
-  inset: 0;
-  overflow: hidden;
-  transition: opacity 2500ms ease;
-}
-.fl-pair {
-  position: absolute;
-  inset: 0;
-}
-.fl-pair:nth-child(2) {
-  animation: fl-in var(--fade, 30000ms) ease-in-out backwards;
-}
-.fl {
-  position: absolute;
-  inset: -7%;
-  background-size: cover;
-  background-position: center;
-  animation: fl-drift 40s ease-in-out infinite alternate;
-}
-.fl.b {
-  mix-blend-mode: screen;
-  animation: fl-drift 52s ease-in-out infinite alternate-reverse, fl-fade 24s ease-in-out infinite alternate;
-}
-.flames.still .fl,
-.flames.still .fl.b {
-  animation: none;
-}
-.flames.still .fl.b {
-  opacity: 0.6;
-}
-@keyframes fl-drift {
-  from {
-    transform: scale(1) translate(0, 0) rotate(0deg);
-  }
-  to {
-    transform: scale(1.18) translate(-2.2%, 1.4%) rotate(1.4deg);
-  }
-}
-@keyframes fl-fade {
-  0%,
-  30% {
-    opacity: 0;
-  }
-  70%,
-  100% {
-    opacity: 0.9;
-  }
-}
-@keyframes fl-in {
-  from {
-    opacity: 0;
-  }
-}
-
-/* Dimmed behind the guide: the flames keep about 45 percent of their light. */
-.zen-veil {
-  position: absolute;
-  inset: 0;
-  background: #04020e;
-  transition: opacity 2500ms ease;
-  pointer-events: none;
 }
 
 /* Breathing guide. */
@@ -96,63 +17,29 @@
   opacity: 0;
   pointer-events: none;
 }
+/* The phase word and the seconds left, centred over the lake. */
 .breath {
   position: absolute;
-  inset: 0;
+  left: 0;
+  right: 0;
+  top: 560px;
+  text-align: center;
   pointer-events: none;
 }
-.breath-guide,
-.breath-ring {
-  position: absolute;
-  left: 50%;
-  top: 340px;
-}
-/* The faint guide ring sits at the full inhale size, a target for the breath. */
-.breath-guide {
-  box-sizing: border-box;
-  border-radius: 50%;
-  border: 1px solid rgba(241, 236, 255, 0.14);
-}
-.breath-ring {
-  display: grid;
-  place-items: center;
-}
-.breath-circle {
-  position: absolute;
-  inset: 0;
-  box-sizing: border-box;
-  border-radius: 50%;
-  border: 2px solid transparent;
-  background: linear-gradient(135deg, var(--cyan), var(--mag)) border-box;
-  -webkit-mask: linear-gradient(#000 0 0) padding-box exclude, linear-gradient(#000 0 0);
-  mask: linear-gradient(#000 0 0) padding-box exclude, linear-gradient(#000 0 0);
-  transform: scale(0.8);
-}
-.breath-glow {
-  position: absolute;
-  inset: 0;
-  border-radius: 50%;
-  background: radial-gradient(circle, rgba(154, 123, 255, 0.34), rgba(255, 61, 154, 0.12) 65%, transparent 72%);
-  opacity: 0.25;
-  transform: scale(0.8);
-}
-.breath-words {
-  position: relative;
-  text-align: center;
-}
-/* Font sizes and the gap come from model.ts (inline), so the fit test and the screen agree. */
 .breath-word {
-  font-family: var(--disp);
-  font-weight: 300;
-  line-height: 1;
+  font: 300 36px/1 var(--disp);
   letter-spacing: 0.04em;
   white-space: nowrap;
+  color: var(--tx);
 }
 .breath-num {
-  font-family: var(--disp);
-  font-weight: 400;
-  line-height: 1;
+  margin-top: 12px;
+  font: 400 28px/1 var(--disp);
   color: var(--dim);
+}
+.zen-watt {
+  position: absolute;
+  pointer-events: none;
 }
 .zen-tap {
   position: absolute;
@@ -203,6 +90,14 @@
   align-items: flex-start;
   gap: 14px;
 }
+.zen-start,
+.zen-dimhint {
+  transition: opacity 1200ms ease;
+}
+.zen-start.quiet,
+.zen-dimhint.quiet {
+  opacity: 0;
+}
 .zen-lenrow {
   display: flex;
   align-items: center;
@@ -212,7 +107,7 @@
   display: flex;
   gap: 12px;
 }
-/* The breathing patterns are a smaller row under the activities. */
+/* The breathing patterns, a smaller row over the lengths. */
 .zbtn.sm {
   min-width: 0;
   height: 56px;
@@ -220,160 +115,12 @@
   font-size: 18px;
 }
 
-/* The middle of the stage: the chosen activity, centred where the ring sits. */
-.zen-mid {
-  position: absolute;
-  left: 0;
-  right: 0;
-  top: 0;
-  height: 680px;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 18px;
-  pointer-events: none;
-}
-.zen-figure {
-  overflow: visible;
-}
-.zen-figure-hl {
-  transition: cx 900ms ease, cy 900ms ease, r 900ms ease;
-}
-.zen-scan-cap {
-  position: relative;
-  width: 1100px;
-  height: 40px;
-}
-.zen-scan-cap p {
-  position: absolute;
-  inset: 0;
-  margin: 0;
-  text-align: center;
-  font: 400 28px/40px var(--disp);
-  letter-spacing: 0.02em;
-  color: var(--tx);
-}
-.zen-scan-cap p.cur {
-  animation: zen-in 900ms ease both;
-}
-.zen-scan-cap p.out {
-  animation: zen-out 900ms ease both;
-}
-.zen-scan-bar {
-  width: 480px;
-  height: 2px;
-  background: rgba(241, 236, 255, 0.16);
-}
-.zen-scan-bar i {
-  display: block;
-  height: 100%;
-  background: var(--cyan);
-  transition: width 600ms linear;
-}
-.zen-candle-line {
-  margin: 0;
-  max-width: 900px;
-  text-align: center;
-  font: 400 26px/1.3 var(--body);
-  color: #cfc6ee;
-  transition: opacity 2500ms ease;
-}
-.zen-candle-line.gone {
-  opacity: 0;
-}
-/* The flicker moves only by transform and opacity, and runs under reduced motion too (it is the one thing on the page). */
-.zen-candle-flame {
-  transform-box: fill-box;
-  transform-origin: 50% 100%;
-  animation: zen-flicker 3.1s ease-in-out infinite;
-}
-.zen-candle-glow {
-  transform-box: fill-box;
-  transform-origin: 50% 50%;
-  animation: zen-glow 4.3s ease-in-out infinite;
-}
-@keyframes zen-flicker {
-  0%,
-  100% {
-    transform: scale(1, 1) rotate(0deg);
-  }
-  22% {
-    transform: scale(0.97, 1.04) rotate(-1.2deg);
-  }
-  47% {
-    transform: scale(1.02, 0.96) rotate(0.8deg);
-  }
-  71% {
-    transform: scale(0.98, 1.03) rotate(1.4deg);
-  }
-}
-@keyframes zen-glow {
-  0%,
-  100% {
-    opacity: 0.85;
-    transform: scale(1);
-  }
-  40% {
-    opacity: 1;
-    transform: scale(1.04);
-  }
-  70% {
-    opacity: 0.75;
-    transform: scale(0.97);
-  }
-}
-@keyframes zen-in {
-  from {
-    opacity: 0;
-  }
-}
-@keyframes zen-out {
-  to {
-    opacity: 0;
-  }
-}
-.zen-q {
-  margin: 0;
-  font: 400 40px/1.2 var(--disp);
-  color: var(--tx);
-}
-.zen-intent-pick {
-  pointer-events: none;
-}
-.zen-field {
-  pointer-events: auto;
-  box-sizing: border-box;
-  width: 900px;
-  height: 76px;
-  padding: 0 28px;
-  border: 0;
-  border-radius: 20px;
-  background: rgba(10, 8, 30, 0.7);
-  box-shadow: inset 0 0 0 2px rgba(53, 230, 234, 0.6);
-  font: 400 32px/1 var(--body);
-  color: var(--tx);
-  outline: none;
-}
-.zen-field::placeholder {
-  color: rgba(241, 236, 255, 0.35);
-}
-.zen-field:focus-visible {
-  box-shadow: inset 0 0 0 3px var(--cyan);
-}
-.zen-intent-line p {
-  margin: 0;
-  max-width: 1500px;
-  text-align: center;
-  font: 300 84px/1.15 var(--disp);
-  color: rgba(241, 236, 255, 0.16);
-}
 .zen-hint {
   position: absolute;
   left: 50%;
   bottom: 44px;
   transform: translateX(-50%);
-  font: 400 13px/1 var(--body);
+  font: 400 16px/1 var(--body);
   color: var(--dim);
   pointer-events: none;
 }
@@ -382,7 +129,7 @@
   left: 0;
   bottom: 4px;
   white-space: nowrap;
-  font: 400 13px/16px var(--body);
+  font: 400 16px/16px var(--body);
   color: var(--dim);
 }
 .zen-br {
@@ -610,22 +357,12 @@
   }
 }
 @media (prefers-reduced-motion: reduce) {
-  .flames,
-  .zen-veil,
   .zen-guide,
-  .zbtn,
-  .zen-scan-bar i,
-  .zen-candle-line {
+  .zen-start,
+  .zen-dimhint,
+  .zbtn {
     transition: none;
   }
-  .zen-scan-cap p.cur,
-  .zen-scan-cap p.out {
-    animation: none;
-  }
-  .zen-scan-cap p.out {
-    display: none;
-  }
-  .fl-pair:nth-child(2),
   .dream,
   .dream-bob,
   .dream-z {

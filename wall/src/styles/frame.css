@@ -10,6 +10,14 @@
   gap: 16px;
 }
 
+/* Zen draws the whole stage itself, over the horizon: the rail is not shown (its slot stays, so the grid holds still). */
+.shell[data-place='zen'] .rail,
+.main[data-place='zen'] > .top > div[title],
+.main[data-place='zen'] .w-stage {
+  /* The frame's own clock and a playing video sit under the transparent Zen: hidden (the video plays on). */
+  visibility: hidden;
+}
+
 /* Top band (content, stage y 20 to 510), the empty band where the horizon and Watt show
    (y 526 to 580), and the ribbon over the lake (y 596 to 700). */
 .main {

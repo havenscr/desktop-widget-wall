@@ -110,7 +110,8 @@ export function DreamDrift({ now, children }: { now: () => Date; children: React
 }
 
 /**
- * Dream: the breathing guide is gone, flames are dimmed (by `Flames`), a large thin clock at left centre
+ * Dream: the breathing guide is gone and the picture behind it fades to black over the first minute (`HorizonCanvas`
+ * draws it, `zen/stage.ts` carries the start time), then stops. A large thin clock at left centre
  * with the date under it, tomorrow's first meeting at right centre, a quiet status line along the bottom
  * left, and Watt asleep in the corner with z's drifting up. A click wakes back to Zen.
  * Everything is dim, and all the text drifts slowly (burn-in).

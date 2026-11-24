@@ -60,8 +60,8 @@ const PLACES = {
   home: { hz: 'home' },
   unwind: { hz: 'unwind' },
   meet: { hz: 'work', screen: 'meet' },
-  zen: { hz: 'work', screen: 'zen' },
-  dimmed: { hz: 'work', screen: 'dream' },
+  zen: { hz: 'unwind', screen: 'zen' },
+  dimmed: { hz: 'unwind', screen: 'dream' },
 };
 const url = (place, at, extra = '') => {
   const p = PLACES[place];
@@ -445,12 +445,12 @@ state('zen', 'focus running, long title', 'focus=long');
 // Zen in the evening with the dim hint, and late at night but not yet quiet (so still bright).
 state('zen', 'evening hint', '', '2026-11-11T20:15:00-08:00');
 state('zen', 'late, not yet quiet', '', '2026-11-11T23:40:00-08:00');
-// Zen's activities before Start: the chip under the pointer is clicked, then the middle previews it.
-const ACT_CHIP = (n) => `[role="radiogroup"][aria-label="Activity"] [role="radio"]:nth-child(${n})`;
-add('zen', 'activity: body scan', url('zen', TYPICAL_AT, ''), true, ACT_CHIP(2));
-add('zen', 'activity: candle', url('zen', TYPICAL_AT, ''), true, ACT_CHIP(3));
-add('zen', 'activity: intention', url('zen', TYPICAL_AT, ''), true, [ACT_CHIP(4), 'type:.zen-field=Finish the dashboard draft']);
-add('zen', 'activity: breathe, box pattern', url('zen', TYPICAL_AT, ''), true, '[role="radiogroup"][aria-label="Breathing pattern"] [role="radio"]:nth-child(2)');
+// Zen on the ridge: the start screen is the plain state above. A Breath session running (the lines swell with the breath,
+// the audio demo knob only keeps the frame loop moving), the box pattern chosen, and Dream after its fade to black.
+const START = '.zbtn.go';
+add('zen', 'breath running', url('zen', TYPICAL_AT, 'audio=demo'), true, START);
+add('zen', 'breath running, box pattern', url('zen', TYPICAL_AT, 'audio=demo'), true, ['[role="radiogroup"][aria-label="Breathing pattern"] [role="radio"]:nth-child(2)', START]);
+add('zen', 'dimmed: after the fade', url('dimmed', TYPICAL_AT, 'dreamage=70'), true);
 state('dimmed', 'night with audio demo', 'audio=demo', TIMES.night);
 
 // keys style: keys tinted by kind by day and night, keys that cannot be sent, For you as two
@@ -795,18 +795,17 @@ const EXPECT = [
   ['home', 'tools: open', ['Accounts', 'Health']],
   ['unwind', 'tools: open', ['Accounts', 'Health']],
   // Zen and Dream
-  ['zen', 'sparse', ['Breathe in', '!things are waiting']],
+  ['zen', 'sparse', ['Start', '!things are waiting']],
   ['zen', 'heavy', 'After this: 3 or more things are waiting'],
   ['zen', 'typical', 'Start', true],
-  ['zen', 'activity: body scan', ['Let your jaw soften.', 'Start']],
-  ['zen', 'activity: candle', ['Rest your eyes here.', 'Start']],
-  ['zen', 'activity: intention', ['What matters for the next hour?', 'Start']],
-  ['zen', 'activity: breathe, box pattern', ['Breathe in', 'Box 4-4-4-4']],
-  ['zen', 'evening hint', ['Breathe in', 'Dims by itself after 10 PM and 10 quiet minutes']],
-  ['zen', 'late, not yet quiet', ['Breathe in', 'Dims by itself after 10 PM and 10 quiet minutes']],
-  ['zen', 'dimmed: sparse', '!Breathe in'],
-  ['zen', 'dimmed: heavy', '!Breathe in'],
-  ['zen', 'dimmed: night with audio demo', '!Breathe in'],
+  ['zen', 'breath running', ['Breathe in', 'FIVE MINUTES OF ZEN']],
+  ['zen', 'breath running, box pattern', ['Breathe in', 'FIVE MINUTES OF ZEN']],
+  ['zen', 'evening hint', ['Start', 'Dims by itself after 10 PM and 10 quiet minutes']],
+  ['zen', 'late, not yet quiet', ['Start', 'Dims by itself after 10 PM and 10 quiet minutes']],
+  ['zen', 'dimmed: sparse', '!Start'],
+  ['zen', 'dimmed: heavy', '!Start'],
+  ['zen', 'dimmed: night with audio demo', '!Start'],
+  ['zen', 'dimmed: after the fade', 'Click anywhere to wake'],
   ['zen', 'dimmed: one agent waiting', 'Click anywhere to wake'],
   ['zen', 'dimmed: broken: calendar not available', 'Calendar not available'],
   // keys style
@@ -829,7 +828,7 @@ const EXPECT = [
   ['home', 'leave: on home', ['Leave in 12 min.', 'Moods']],
   ['unwind', 'leave: on unwind', ['Leave in 4 min.', 'Dismiss', 'Hide screen']],
   ['meet', 'leave: on meet', ['Leave in 12 min.', 'Design review with the platform team']],
-  ['zen', 'leave: none on zen', ['Breathe in', '!Leave in']],
+  ['zen', 'leave: none on zen', ['Start', '!Leave in']],
   ['work', 'recording: work', ['Now \u00b7 Recording', 'Stop recording', 'Mark moment', 'Recording00:']],
   ['work', 'recording: with leave', ['Leave in 4 min.', 'Now \u00b7 Recording', 'Recording00:']],
   ['work', 'recording: agents header', ['Now \u00b7 Recording', '00:0', '!Recording00:', 'Architecture working']],
@@ -838,7 +837,7 @@ const EXPECT = [
   ['home', 'recording: home', ['Recording00:', 'Moods']],
   ['unwind', 'recording: unwind', ['Recording00:', 'Hide screen']],
   ['meet', 'recording: meet', ['Recording00:', 'Design review with the platform team']],
-  ['zen', 'recording: none on zen', ['Breathe in', '!Recording00']],
+  ['zen', 'recording: none on zen', ['Start', '!Recording00']],
   ['unwind', 'unwind: hide screen note', ['Could not watch input']],
   // unwind listen
   ['unwind', 'listen: playing', ['Tokyo Burnout', 'Up next', 'Lantern Song 2', 'Road Trip 1', '!Which player the wall follows']],

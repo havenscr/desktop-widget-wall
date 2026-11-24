@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 
 export type PlaceId = 'work' | 'home' | 'unwind' | 'meet' | 'onair' | 'shelf' | 'zen';
-/** The places with a horizon camera (Zen draws no horizon). */
+/** The places with a camera of their own (Zen borrows Unwind's). */
 export type CameraPlace = Exclude<PlaceId, 'zen'>;
 
 /** The places in the main group of the rail; Zen has its own button lower down. */
