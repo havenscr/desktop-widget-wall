@@ -7,7 +7,7 @@ import type { PickStatus, Sent, StudioKey } from './studioModel';
 /** How often the pick status is read while the Live page shows and the display is on. */
 export const STUDIO_POLL_MS = 3000;
 
-const EMPTY: PickStatus = { state: 'none', browser: null, keys: [] };
+const EMPTY: PickStatus = { state: 'none', browser: null };
 
 /** What the wall knows about the studio window, and the last key it sent. In memory only: no title, handle or id ever arrives here. */
 interface StudioState {

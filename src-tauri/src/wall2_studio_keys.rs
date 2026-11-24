@@ -43,10 +43,11 @@ pub(crate) fn title_allows(title: &str) -> bool {
     title.to_ascii_lowercase().contains("streamyard")
 }
 
-/// StreamYard's own default hotkeys for the five keys, the ones listed in StreamYard Settings, Hotkeys.
-/// Go live and End show are the same toggle chord. Each key uses its `keys.json` chord when that parses
-/// and is allowed, and its default otherwise.
-const DEFAULTS: [(&str, &str); 5] = [("solo", "Shift+1"), ("two", "Shift+2"), ("share", "Shift+S"), ("golive", "Shift+G"), ("end", "Shift+G")];
+/// The built-in chord of each key. Solo, Two up (StreamYard's "Cropped layout") and Share screen are
+/// StreamYard's own defaults. Go live and End show are the owner's chosen chords, set once in StreamYard
+/// Settings, Hotkeys (Start stream and End stream); they are always two different chords, never a shared
+/// toggle. Each key uses its `keys.json` chord when that parses and is allowed, and its default otherwise.
+const DEFAULTS: [(&str, &str); 5] = [("solo", "Shift+1"), ("two", "Shift+2"), ("share", "Shift+S"), ("golive", "Shift+Z"), ("end", "Shift+X")];
 
 /// How many times a key is pressed: StreamYard wants Go live and End show pressed twice to confirm.
 pub(crate) fn presses(key: &str) -> u8 {
@@ -70,6 +71,20 @@ fn with_defaults(file: Vec<(&'static str, Vec<Step>)>) -> Vec<(&'static str, Vec
         let own = file.iter().find(|(n, _)| *n == name).map(|(_, steps)| steps.clone());
         if let Some(steps) = own.or_else(|| default_chord(name)) {
             out.push((name, steps));
+        }
+    }
+    // Go live and End show must never be the same chord, or one press could end a show it started.
+    let same = match (out.iter().find(|(n, _)| *n == "golive"), out.iter().find(|(n, _)| *n == "end")) {
+        (Some((_, a)), Some((_, b))) => a == b,
+        _ => false,
+    };
+    if same {
+        for (name, steps) in out.iter_mut() {
+            if needs_confirm(name) {
+                if let Some(own) = default_chord(name) {
+                    *steps = own;
+                }
+            }
         }
     }
     out
@@ -173,7 +188,7 @@ fn load_chords(app: &tauri::AppHandle) -> Vec<(&'static str, Vec<Step>)> {
     use tauri::Manager;
     match app.path().app_config_dir() {
         Ok(dir) => chords_from_read(crate::wall2_keys::read_keys_file(&dir.join("keys.json"))),
-        Err(_) => Vec::new(),
+        Err(_) => with_defaults(Vec::new()),
     }
 }
 
@@ -385,8 +400,8 @@ mod tests {
         assert_eq!(names(chords_from_read(Err(std::io::ErrorKind::NotFound))), all);
         assert_eq!(names(chords_for(r#"{ "studio": {} }"#)), all);
         assert_eq!(names(chords_for(FILE)), all);
-        assert_eq!(chord_of(&chords_for("{}"), "golive"), parse_steps("Shift+G").unwrap());
-        assert_eq!(chord_of(&chords_for("{}"), "end"), parse_steps("Shift+G").unwrap());
+        assert_eq!(chord_of(&chords_for("{}"), "golive"), parse_steps("Shift+Z").unwrap());
+        assert_eq!(chord_of(&chords_for("{}"), "end"), parse_steps("Shift+X").unwrap());
         assert_eq!(chord_of(&chords_for("{}"), "solo"), parse_steps("Shift+1").unwrap());
     }
 
@@ -405,7 +420,7 @@ mod tests {
         assert_eq!(names(c.clone()).len(), 5);
         assert_eq!(chord_of(&c, "solo"), parse_steps("Shift+1").unwrap());
         assert_eq!(chord_of(&c, "two"), parse_steps("Shift+2").unwrap());
-        assert_eq!(chord_of(&c, "golive"), parse_steps("Shift+G").unwrap());
+        assert_eq!(chord_of(&c, "golive"), parse_steps("Shift+Z").unwrap());
         assert_eq!(chord_of(&c, "end"), parse_steps("Alt+9").unwrap());
     }
 
@@ -430,6 +445,32 @@ mod tests {
         }
         assert!(default_chord("scene").is_none());
         assert_eq!(DEFAULTS.len(), KEYS.len());
+    }
+
+    #[test]
+    fn go_live_and_end_defaults_are_two_different_chords() {
+        let c = chords_for("{}");
+        assert_ne!(chord_of(&c, "golive"), chord_of(&c, "end"));
+    }
+
+    #[test]
+    fn a_file_that_gives_go_live_and_end_the_same_chord_falls_back_to_the_two_defaults() {
+        let c = chords_for(r#"{ "studio": { "golive": "Alt+9", "end": "Alt+9" } }"#);
+        assert_eq!(c.len(), 5);
+        assert_eq!(chord_of(&c, "golive"), parse_steps("Shift+Z").unwrap());
+        assert_eq!(chord_of(&c, "end"), parse_steps("Shift+X").unwrap());
+        let own = chords_for(r#"{ "studio": { "golive": "Alt+8", "end": "Alt+9" } }"#);
+        assert_eq!(chord_of(&own, "golive"), parse_steps("Alt+8").unwrap());
+        assert_eq!(chord_of(&own, "end"), parse_steps("Alt+9").unwrap());
+    }
+
+    #[test]
+    fn no_config_folder_gives_the_defaults_not_no_chords() {
+        assert_eq!(names(with_defaults(Vec::new())).len(), 5);
+        let src = include_str!("wall2_studio_keys.rs").replace("\r\n", "\n");
+        let at = src.find(&["fn load_", "chords("].concat()).expect("load");
+        let body = &src[at..at + src[at..].find("\n}\n").expect("end")];
+        assert!(body.contains(&["Err(_) => with_", "defaults(Vec::new())"].concat()));
     }
 
     #[test]

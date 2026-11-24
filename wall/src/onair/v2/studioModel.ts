@@ -13,8 +13,6 @@ export type PickState = 'none' | 'waiting' | 'picked' | 'gone' | 'minimized';
 export interface PickStatus {
   state: PickState;
   browser: 'firefox' | 'chrome' | 'edge' | null;
-  /** Which keys have a chord in keys.json. Names only. */
-  keys: StudioKey[];
 }
 export interface Sent {
   key: StudioKey;

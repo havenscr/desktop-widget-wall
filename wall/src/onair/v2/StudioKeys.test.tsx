@@ -12,7 +12,6 @@ import { useStudio } from './studioStore';
 
 const NOW = 1_700_000_000_000;
 let sends: { key: string; confirm: boolean }[];
-let keysSet: string[];
 let state: string;
 let refuse: string | null;
 
@@ -31,7 +30,6 @@ const open = async () => {
 
 beforeEach(() => {
   sends = [];
-  keysSet = ['solo', 'two', 'share', 'golive', 'end'];
   state = 'picked';
   refuse = null;
   useStudio.getState().reset();
@@ -39,13 +37,12 @@ beforeEach(() => {
   resetLibIndex();
   mocks.set('wall2_keys_library', () => LIBRARY_DATA);
   mocks.set('wall2_studio_pick_start', () => ({ state: 'waiting' }));
-  mocks.set('wall2_studio_pick_status', () => ({ state, browser: state === 'none' ? null : 'firefox', keys: keysSet }));
+  mocks.set('wall2_studio_pick_status', () => ({ state, browser: state === 'none' ? null : 'firefox' }));
   mocks.set('wall2_studio_key', (args) => {
     sends.push({ key: String(args?.key), confirm: args?.confirm === true });
     if (refuse) throw refuse;
     return { sent: args?.key, at: NOW - 120_000 };
   });
-  mocks.set('wall2_open_keys_file', () => undefined);
 });
 afterEach(() => {
   vi.useRealTimers();
@@ -55,7 +52,6 @@ afterEach(() => {
 });
 
 it('never shows a keys file button: Pick window with no window, nothing in the heading once picked, no tile dim', async () => {
-  keysSet = [];
   state = 'none';
   await open();
   const tiles = [...document.querySelectorAll('.oa2-skrow1 .key-tile')];
