@@ -1,6 +1,6 @@
 import { GROUP_KEY, useToolsStore, type ToolsFocus } from '../../tools/store';
 
-const FOCUS: readonly string[] = ['accounts', 'keylights', 'desktoken', 'stagepop', 'health', 'lights', 'display'];
+const FOCUS: readonly string[] = ['accounts', 'keylights', 'desktoken', 'sharekey', 'stagepop', 'health', 'lights', 'display'];
 import { mocks } from '../tauri';
 import { knob } from './long';
 
@@ -8,7 +8,7 @@ import { knob } from './long';
  * Dev only: the Tools drawer's knobs for review stills.
  *
  *   ?tools=1          open the drawer on load (on the group this browser had open last)
- *   ?tools=accounts   open at Accounts and ring it; `keylights`, `desktoken` and `stagepop` ring their block;
+ *   ?tools=accounts   open at Accounts and ring it; `keylights`, `desktoken`, `sharekey` and `stagepop` ring their block;
  *                     `health`, `lights` and `display` open that group
  *   ?keys=refused     `wall2_keys_summary` refuses the file with a long reason
  *   (`?source=default` is the existing knob for "no keys.json")

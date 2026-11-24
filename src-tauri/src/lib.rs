@@ -83,6 +83,7 @@ mod wall2_sonos_read;
 mod wall2_watch;
 mod wall2_tools;
 mod wall2_captures;
+mod wall2_share;
 mod wall2_recent;
 mod wall2_dictations;
 mod wall2_onair;
@@ -4146,6 +4147,10 @@ pub fn run() {
             wall2_captures::wall2_captures_list,
             wall2_captures::wall2_captures_thumb,
             wall2_captures::wall2_captures_act,
+            wall2_share::wall2_captures_share,
+            wall2_share::wall2_share_key_status,
+            wall2_share::wall2_share_key_set,
+            wall2_share::wall2_share_key_forget,
             wall2_recent::wall2_recent_files,
             wall2_recent::wall2_recent_open,
             wall2_recent::wall2_recent_folder,

@@ -1569,6 +1569,19 @@ the centre card; the date line takes it through the frame's `ClockSlot` portal.
   found on this PC"; an empty history says to use the keys beside the card. The list is read every 10 seconds while the page is
   visible and when the window gets focus. Dev knobs: `?captures=empty|nohistory|gone|gonebig|video|long|big`. Check:
   `npm run fit-check -- --area=captures`.
+  **Share link** (`src-tauri/src/wall2_share.rs`, `bridge/share.ts`, `tools/ShareKey.tsx`). Right-click a capture and choose "Share link":
+  the menu turns into a second step ("Anyone with the link can see this." and "Uploads to go-ae.org and copies the link.") with a
+  Share link button and Back. Enter confirms, Escape or Back returns to the first step. Nothing is sent before the confirm. Rust takes
+  only the capture id, resolves it with the same checks as Open and Copy, refuses a file over 100 MB from its size before reading it,
+  and sends the file's bytes in one POST to `https://go-ae.org/api/share` (the key as a bearer token, the file name only with safe
+  characters in `X-Filename`, `X-Share-Source: wall`; 10 s to connect, 300 s overall, no redirects). Only a 201 whose link is exactly
+  `https://go-ae.org/s/` and a short URL-safe code is accepted; the link goes on the clipboard and the card says "Link copied" for
+  a few seconds ("Sharing..." while it uploads, and the row is off so a second send cannot start). Failures are plain lines: no key
+  ("Add the share key in Tools first."), key refused ("go-ae.org refused the share key. Check it in Tools."), over 100 MB, capture gone,
+  and a general "Could not share. Try again." **The share key** is typed once in Tools, Lights and home, under the desk token ("Share
+  key", Set up, Change, Forget) and kept in Windows Credential Manager (`WidgetWall2/share/upload/0`) with the desk token's rules; the
+  page learns only whether one is set or unreadable. The key, the path, the file name and the link are never logged or put in an error.
+  Dev knobs: `?share=nokey|badkey|toobig|missing|failed|slow`, `?sharekey=none|unreadable`.
 - **Browser dev.** `npm run dev` registers mocks for the commands Work calls
   (`src/bridge/devMocks/`, dev server only); in a review still (`?hz=&at=`) the
   meeting and task mocks follow the review's time. Review knobs: `?meet=none` (no
