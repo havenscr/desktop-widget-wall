@@ -22,7 +22,7 @@
 //! or the file is gone), `refused` (a path or extension that does not pass), `too-big` and
 //! `not-image` (thumbnails), `forbidden` (the wrong window).
 //!
-//! Share link (`wall2_share.rs`) takes an id the same way and resolves it with `path_for`, which runs the same `resolve` as `act`.
+//! Share link (`wall2_share.rs`) takes an id the same way and resolves it with `open_for`, which runs the same `resolve` as `act`.
 #![cfg_attr(not(windows), allow(dead_code))]
 
 use base64::Engine as _;
@@ -647,17 +647,22 @@ pub(crate) fn data_url(name: &str, bytes: &[u8]) -> Result<String, &'static str>
     Ok(format!("data:{mime};base64,{}", base64::engine::general_purpose::STANDARD.encode(bytes)))
 }
 
-/// The checked path and size of a held capture, by id, for the Share link upload. Runs the same
+/// A held capture opened once, by id, for the Share link upload: its checked path, the open handle
+/// and the size read from that handle's metadata (which must say a regular file). Runs the same
 /// `resolve` as Open and Copy (an allowed local path, a regular file, an allowed extension).
 /// Err is `missing` (no such id or file), `refused` or `failed`.
-pub(crate) fn path_for(id: &str) -> Result<(String, u64), String> {
+pub(crate) fn open_for(id: &str) -> Result<(String, std::fs::File, u64), String> {
     let held = {
         let list = HELD.lock().map_err(|_| FAILED.to_string())?;
         pick(&list, id).cloned().ok_or_else(|| MISSING.to_string())?
     };
     let path = resolve(&held).map_err(str::to_string)?;
-    let size = regular_size(Path::new(&path)).ok_or_else(|| MISSING.to_string())?;
-    Ok((path, size))
+    let file = std::fs::File::open(&path).map_err(|_| MISSING.to_string())?;
+    let meta = file.metadata().map_err(|_| MISSING.to_string())?;
+    if !meta.is_file() {
+        return Err(MISSING.to_string());
+    }
+    Ok((path, file, meta.len()))
 }
 
 fn thumb_now(id: &str) -> Result<String, String> {

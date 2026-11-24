@@ -80,5 +80,5 @@ If Wispr Flow is installed, the Shelf's Dictations list reads its history from t
 ## Share link (Shelf captures)
 
 - **Sent:** only when you right-click a capture, choose "Share link" and confirm the second step. The file itself and its name (the name only, no folder, with unusual characters replaced) go to go-ae.org, with the share key as a bearer token. Anyone with the link it returns can see the file. Nothing is sent before the confirm, and nothing about the other captures is sent.
-- **Kept:** the share key, in Windows Credential Manager on this PC. You type it once in Tools. The page never receives it back; it learns only whether one is set. Forget in Tools removes it. The link is put on the clipboard and shown nowhere else.
+- **Kept:** the share key, in Windows Credential Manager on this PC. You type it once in Tools. The page never receives it back; it learns only whether one is set. Forget in Tools removes it. The link is put on the clipboard and shown nowhere else, except in the Shelf's result chip when the clipboard copy fails after the upload, so you can copy it by hand.
 - **Logged:** nothing. The key, the file's path, its name and the link are never written to a log or to an error message. To delete a shared file, use the go-ae.org tools; the wall does not delete shared files.

@@ -171,6 +171,8 @@ export function CapturesCard() {
   const [binned, setBinned] = useState<Record<string, number>>({});
   const funnelWasOpen = useRef(false);
   const [brief, show] = useBrief();
+  // Share messages have their own line, so the chip can wrap them without changing how every other message looks.
+  const [shareBrief, showShare] = useBrief();
   const card = useRef<HTMLElement | null>(null);
 
   const kept = items.filter((c) => !(c.id in binned));
@@ -234,23 +236,30 @@ export function CapturesCard() {
   // One upload at a time: the ref blocks a second send before the state has drawn.
   const uploading = useRef(false);
   const [sharing, setSharing] = useState(false);
+  // A link whose clipboard copy failed stays in the chip, selectable, until the next share starts.
+  const [loose, setLoose] = useState<string | null>(null);
   const share = (c: Capture) => {
     if (uploading.current) return;
     uploading.current = true;
     setSharing(true);
+    setLoose(null);
     shareCapture(c.id).then(
-      () => {
+      (r) => {
         uploading.current = false;
         setSharing(false);
-        show('Link copied');
+        if (r.copied) showShare('Link copied');
+        else setLoose(r.url);
       },
       (e: unknown) => {
         uploading.current = false;
         setSharing(false);
-        show(SHARE_LINES[shareWordOf(e)]);
+        showShare(SHARE_LINES[shareWordOf(e)]);
       },
     );
   };
+
+  const chipText = sharing ? 'Sharing...' : loose !== null ? `Link ready, copy failed: ${loose}` : (shareBrief ?? brief ?? '');
+  const chipClass = loose !== null ? 'cap-chip cap-chip-share cap-chip-link' : sharing || shareBrief !== null ? 'cap-chip cap-chip-share' : 'cap-chip';
 
   const choose = (c: Capture, id: string) => {
     if (id === 'share') {
@@ -297,8 +306,8 @@ export function CapturesCard() {
               </div>
             )}
             <Badge c={big} />
-            <p className="cap-chip" role="status">
-              {sharing ? 'Sharing...' : (brief ?? '')}
+            <p className={chipClass} role="status">
+              {chipText}
             </p>
           </div>
           <div className="cap-bt">

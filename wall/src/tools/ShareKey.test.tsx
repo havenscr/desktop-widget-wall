@@ -161,3 +161,9 @@ it('the commands are registered natively', () => {
     expect(lib).toContain(c);
   }
 });
+
+it('rings its block when asked to', async () => {
+  render(<ShareKey ringed />);
+  await flush();
+  expect(document.querySelector('[data-section="sharekey"]')?.className).toContain('tools-ringed');
+});

@@ -190,17 +190,31 @@ button.cap-pic:focus-visible {
   max-width: calc(100% - 24px);
   margin: 0;
   padding: 9px 16px;
-  border-radius: 20px;
+  border-radius: 999px;
   background: var(--cyan);
   color: var(--page);
-  font: 700 17px/1.25 var(--body);
-  /* A long line (a share error) wraps inside the picture instead of being cut. */
-  white-space: normal;
-  text-align: center;
+  font: 700 17px/1.2 var(--body);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
   pointer-events: none;
 }
 .cap-chip:empty {
   display: none;
+}
+/* A share message: a long line (an error, a link) wraps inside the picture instead of being cut. */
+.cap-chip.cap-chip-share {
+  border-radius: 20px;
+  line-height: 1.25;
+  white-space: normal;
+  overflow: visible;
+  text-align: center;
+}
+/* A link the copy missed stays until the next share, takes the mouse, and can be selected and copied by hand. */
+.cap-chip.cap-chip-link {
+  pointer-events: auto;
+  user-select: text;
+  overflow-wrap: anywhere;
 }
 .cap-bt {
   display: flex;

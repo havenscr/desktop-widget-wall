@@ -2,19 +2,23 @@
 //!
 //! What the page can and cannot do:
 //! - `wall2_captures_share` takes only a capture id. Rust resolves it to the file with the same
-//!   rules as Open and Copy (`wall2_captures::path_for`, which runs `resolve`: an allowed local
+//!   rules as Open and Copy (`wall2_captures::open_for`, which runs `resolve`: an allowed local
 //!   path, a regular file, an allowed extension, checked again after links are followed). The page
 //!   never sends or receives a path.
-//! - A file over 100 MB is refused from its metadata, before it is read.
+//! - The file is opened once, after `resolve`. Its size comes from that open handle's metadata (which
+//!   must say a regular file), a file over 100 MB is refused before any byte is read, and the same
+//!   handle is what the upload reads, so the Content-Length sent is the size of what is read.
 //! - The upload key is typed once in Tools and kept in Windows Credential Manager at
 //!   `crate::wall2_oauth::credential_target("share", "upload", 0)` (`WidgetWall2/share/upload/0`),
 //!   with the desk token's store trait and value rule. Only Rust reads it. The page learns whether
 //!   one is set (`set`, `unreadable`) and nothing else. The key can only upload.
 //! - The upload is one POST of the file's bytes to `https://go-ae.org/api/share` with the key as a
 //!   bearer token, the file's name only (no folder, safe characters, capped) in `X-Filename`, and
-//!   `X-Share-Source: wall`. The answer must be a 201 whose `url` starts with exactly
-//!   `https://go-ae.org/s/` followed by a short URL-safe code; anything else is `failed`.
-//! - The link goes on the clipboard as text and is the only thing the page gets back.
+//!   `X-Share-Source: wall`. The answer must be a 201 carrying a `code` of 1 to 32 URL-safe characters
+//!   and a `url` that is exactly `https://go-ae.org/s/` followed by that code; anything else is `failed`.
+//! - The link goes on the clipboard as text. The page gets the link and whether the copy worked
+//!   (`copied`); a clipboard that fails after the upload still answers the link, so a retry never
+//!   uploads a second public copy.
 //! - Nothing is logged or put in an error: not the key, the path, the file name or the link.
 //!
 //! Errors are fixed words: `no-key` (none saved, or the saved one cannot be read), `bad-key` (the
@@ -24,6 +28,7 @@
 
 use crate::wall2_desk_token::{forget_with, read_with, set_with, status_with, TokenStatus, TokenStore};
 use crate::wall2_meet::store::{BlobStore, CredBlobs, Fetch};
+use serde::Serialize;
 use std::io::Read;
 use std::time::Duration;
 
@@ -34,7 +39,8 @@ pub(crate) const MAX_BYTES: u64 = 100 * 1024 * 1024;
 const NAME_CHARS: usize = 100;
 const CODE_CHARS: usize = 32;
 const CONNECT_SECS: u64 = 10;
-const OVERALL_SECS: u64 = 300;
+/// A stalled read or write ends the call; there is no overall cap, so a big file on a slow uplink can finish.
+const IO_SECS: u64 = 60;
 /// The most of an answer that is read.
 const ANSWER_BYTES: u64 = 8 * 1024;
 
@@ -74,8 +80,22 @@ impl TokenStore for RealStore {
 pub(crate) struct Upload<'a> {
     pub key: &'a str,
     pub name: &'a str,
-    pub path: &'a str,
     pub size: u64,
+}
+
+/// A held capture, already resolved and opened once. `size` is from the open handle, and `body` is
+/// that same handle, so what is announced is what is read.
+pub(crate) struct Source {
+    pub path: String,
+    pub size: u64,
+    pub body: Box<dyn Read>,
+}
+
+/// What the page learns from a finished share: the link, and whether it reached the clipboard.
+#[derive(Debug, PartialEq, Eq, Serialize)]
+pub struct Shared {
+    pub url: String,
+    pub copied: bool,
 }
 
 /// The server's answer. `status` is 0 when no answer came (no connection, a timeout, a read error).
@@ -86,18 +106,18 @@ pub(crate) struct Reply {
 
 /// The HTTP layer, so tests never touch the network.
 pub(crate) trait Uploader {
-    fn post(&self, up: &Upload) -> Reply;
+    fn post(&self, up: &Upload, body: &mut dyn Read) -> Reply;
 }
 
 struct RealUploader;
 
 impl Uploader for RealUploader {
-    fn post(&self, up: &Upload) -> Reply {
+    fn post(&self, up: &Upload, body: &mut dyn Read) -> Reply {
         let none = Reply { status: 0, body: String::new() };
-        let Ok(file) = std::fs::File::open(up.path) else { return none };
         let agent = ureq::AgentBuilder::new()
             .timeout_connect(Duration::from_secs(CONNECT_SECS))
-            .timeout(Duration::from_secs(OVERALL_SECS))
+            .timeout_read(Duration::from_secs(IO_SECS))
+            .timeout_write(Duration::from_secs(IO_SECS))
             .redirects(0)
             .build();
         let sent = agent
@@ -107,15 +127,15 @@ impl Uploader for RealUploader {
             .set("Content-Type", "application/octet-stream")
             .set("X-Filename", up.name)
             .set("X-Share-Source", "wall")
-            .send(file.take(up.size));
+            .send((&mut *body).take(up.size));
         match sent {
             Ok(resp) | Err(ureq::Error::Status(_, resp)) => {
                 let status = resp.status();
-                let mut body = String::new();
-                if resp.into_reader().take(ANSWER_BYTES).read_to_string(&mut body).is_err() {
-                    body.clear();
+                let mut text = String::new();
+                if resp.into_reader().take(ANSWER_BYTES).read_to_string(&mut text).is_err() {
+                    text.clear();
                 }
-                Reply { status, body }
+                Reply { status, body: text }
             }
             Err(_) => none,
         }
@@ -146,49 +166,52 @@ pub(crate) fn safe_name(path: &str) -> String {
     format!("{short}{ext}")
 }
 
-/// The link in an answer, only when it is exactly `https://go-ae.org/s/<code>` with a short URL-safe code.
+/// The link in an answer, only when `code` is 1 to 32 URL-safe characters and `url` is exactly
+/// `https://go-ae.org/s/` followed by that code.
 pub(crate) fn link_in(body: &str) -> Option<String> {
     let v: serde_json::Value = serde_json::from_str(body).ok()?;
     let url = v.get("url")?.as_str()?;
-    let code = url.strip_prefix(URL_PREFIX)?;
+    let code = v.get("code")?.as_str()?;
     let ok = !code.is_empty() && code.len() <= CODE_CHARS && code.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_');
-    ok.then(|| url.to_string())
+    (ok && url.strip_prefix(URL_PREFIX) == Some(code)).then(|| url.to_string())
 }
 
-/// The whole job against injected parts: the held capture (`source` is the path and size, or why
-/// not), the key store, the HTTP layer and the clipboard. Returns the link, or one fixed word.
+/// The whole job against injected parts: the held capture (`source` is the opened file, or why
+/// not), the key store, the HTTP layer and the clipboard. Returns the link and whether it was
+/// copied, or one fixed word. A clipboard that fails is not an error: the file is already public.
 pub(crate) fn share_with(
-    source: Result<(String, u64), String>,
+    source: Result<Source, String>,
     store: &dyn TokenStore,
     http: &dyn Uploader,
     clip: &dyn Fn(&str) -> Result<(), String>,
-) -> Result<String, String> {
-    let (path, size) = source.map_err(|e| if e == FAILED { FAILED.to_string() } else { MISSING.to_string() })?;
+) -> Result<Shared, String> {
+    let Source { path, size, mut body } = source.map_err(|e| if e == FAILED { FAILED.to_string() } else { MISSING.to_string() })?;
     if size > MAX_BYTES {
         return Err(TOO_BIG.to_string());
     }
     let key = read_with(store).ok_or_else(|| NO_KEY.to_string())?;
     let name = safe_name(&path);
-    let reply = http.post(&Upload { key: &key, name: &name, path: &path, size });
+    let reply = http.post(&Upload { key: &key, name: &name, size }, &mut *body);
     let url = match reply.status {
         201 => link_in(&reply.body).ok_or_else(|| FAILED.to_string())?,
         401 | 403 => return Err(BAD_KEY.to_string()),
         413 => return Err(TOO_BIG.to_string()),
         _ => return Err(FAILED.to_string()),
     };
-    clip(&url).map_err(|_| FAILED.to_string())?;
-    Ok(url)
+    let copied = clip(&url).is_ok();
+    Ok(Shared { url, copied })
 }
 
-fn share_now(id: &str) -> Result<String, String> {
-    share_with(crate::wall2_captures::path_for(id), &RealStore, &RealUploader, &|t| crate::wall2_captures::copy_text(t))
+fn share_now(id: &str) -> Result<Shared, String> {
+    let source = crate::wall2_captures::open_for(id).map(|(path, file, size)| Source { path, size, body: Box::new(file) });
+    share_with(source, &RealStore, &RealUploader, &|t| crate::wall2_captures::copy_text(t))
 }
 
 // Section: commands (wall2 window only; blocking work off the async thread)
 
-/// Upload one capture by id and put its short link on the clipboard. Answers the link.
+/// Upload one capture by id and put its short link on the clipboard. Answers the link and whether the copy worked.
 #[tauri::command]
-pub async fn wall2_captures_share(window: tauri::WebviewWindow, id: String) -> Result<String, String> {
+pub async fn wall2_captures_share(window: tauri::WebviewWindow, id: String) -> Result<Shared, String> {
     crate::wall2_meet::require_wall2(window.label())?;
     crate::wall2_desk::off_thread(move || share_now(&id)).await
 }
@@ -255,26 +278,36 @@ mod tests {
         status: u16,
         body: String,
         seen: RefCell<Vec<(String, String, u64)>>,
+        read: RefCell<Vec<usize>>,
     }
 
     impl Http {
         fn new(status: u16, body: &str) -> Http {
-            Http { status, body: body.to_string(), seen: RefCell::new(Vec::new()) }
+            Http { status, body: body.to_string(), seen: RefCell::new(Vec::new()), read: RefCell::new(Vec::new()) }
         }
     }
 
     impl Uploader for Http {
-        fn post(&self, up: &Upload) -> Reply {
+        fn post(&self, up: &Upload, body: &mut dyn Read) -> Reply {
+            let mut bytes = Vec::new();
+            body.read_to_end(&mut bytes).unwrap();
+            self.read.borrow_mut().push(bytes.len());
             self.seen.borrow_mut().push((up.key.to_string(), up.name.to_string(), up.size));
             Reply { status: self.status, body: self.body.clone() }
         }
     }
 
-    fn src(size: u64) -> Result<(String, u64), String> {
-        Ok((r"C:\Users\example\Pictures\Sales overview.png".to_string(), size))
+    /// A held capture of `size` bytes: the announced size, and a body of that many bytes.
+    fn src(size: u64) -> Result<Source, String> {
+        let body: Box<dyn Read> = Box::new(std::io::repeat(7).take(size.min(4096)));
+        Ok(Source { path: r"C:\Users\example\Pictures\Sales overview.png".to_string(), size, body })
     }
 
-    fn run(source: Result<(String, u64), String>, store: &Fake, http: &Http) -> (Result<String, String>, Vec<String>) {
+    fn link(url: &str) -> Result<Shared, String> {
+        Ok(Shared { url: url.to_string(), copied: true })
+    }
+
+    fn run(source: Result<Source, String>, store: &Fake, http: &Http) -> (Result<Shared, String>, Vec<String>) {
         let copied = RefCell::new(Vec::new());
         let r = share_with(source, store, http, &|t| {
             copied.borrow_mut().push(t.to_string());
@@ -287,11 +320,13 @@ mod tests {
     fn success_returns_the_link_and_puts_it_on_the_clipboard() {
         let http = Http::new(201, GOOD);
         let (r, copied) = run(src(1234), &keyed(), &http);
-        assert_eq!(r, Ok("https://go-ae.org/s/k7Qm2x".to_string()));
+        assert_eq!(r, link("https://go-ae.org/s/k7Qm2x"));
         assert_eq!(copied, vec!["https://go-ae.org/s/k7Qm2x".to_string()]);
         let seen = http.seen.borrow();
         assert_eq!(seen.len(), 1);
         assert_eq!(seen[0], (KEY.to_string(), "Sales_overview.png".to_string(), 1234));
+        // The uploader is handed the held body itself.
+        assert_eq!(*http.read.borrow(), vec![1234]);
     }
 
     #[test]
@@ -329,6 +364,7 @@ mod tests {
         let http = Http::new(201, GOOD);
         assert_eq!(run(src(MAX_BYTES + 1), &keyed(), &http).0, Err(TOO_BIG.to_string()));
         assert!(http.seen.borrow().is_empty());
+        assert!(http.read.borrow().is_empty());
         // Exactly 100 MB is allowed.
         assert!(run(src(MAX_BYTES), &keyed(), &http).0.is_ok());
     }
@@ -353,25 +389,28 @@ mod tests {
 
     #[test]
     fn a_malformed_or_foreign_link_is_failed_and_not_copied() {
-        let long = format!(r#"{{"url":"https://go-ae.org/s/{}"}}"#, "a".repeat(33));
-        let bodies = [
-            "",
-            "not json",
-            "{}",
-            r#"{"url":42}"#,
-            r#"{"url":"https://evil.example/s/abc"}"#,
-            r#"{"url":"http://go-ae.org/s/abc"}"#,
-            r#"{"url":"https://go-ae.org.evil.example/s/abc"}"#,
-            r#"{"url":"https://go-ae.org/s/"}"#,
-            r#"{"url":"https://go-ae.org/s/a/b"}"#,
-            r#"{"url":"https://go-ae.org/s/a b"}"#,
-            r#"{"url":"https://go-ae.org/s/abc?x=1"}"#,
-            r#"{"url":"https://go-ae.org/s/abc#x"}"#,
-            r#"{"url":"https://go-ae.org/api/share"}"#,
-            r#"{"url":"https://go-ae.org/s/ab\ncd"}"#,
-            long.as_str(),
+        let long = "a".repeat(33);
+        let long_url = format!("https://go-ae.org/s/{long}");
+        // (url, code): each pair breaks one rule while the other half looks fine.
+        let pairs: [(&str, &str); 14] = [
+            ("https://evil.example/s/abc", "abc"),
+            ("http://go-ae.org/s/abc", "abc"),
+            ("https://go-ae.org.evil.example/s/abc", "abc"),
+            ("https://go-ae.org/s/", ""),
+            ("https://go-ae.org/s/a/b", "a/b"),
+            ("https://go-ae.org/s/a b", "a b"),
+            ("https://go-ae.org/s/abc?x=1", "abc?x=1"),
+            ("https://go-ae.org/s/abc#x", "abc#x"),
+            ("https://go-ae.org/api/share", "share"),
+            ("https://go-ae.org/s/ab\ncd", "ab\ncd"),
+            (long_url.as_str(), long.as_str()),
+            ("https://go-ae.org/s/abc", "abd"),
+            ("https://go-ae.org/s/abc/", "abc"),
+            ("https://go-ae.org/s/abc", "https://go-ae.org/s/abc"),
         ];
-        for body in bodies {
+        let mut bodies: Vec<String> = pairs.iter().map(|(u, c)| serde_json::json!({ "url": u, "code": c }).to_string()).collect();
+        bodies.extend(["", "not json", "{}", r#"{"url":42,"code":"abc"}"#, r#"{"url":"https://go-ae.org/s/abc","code":42}"#].map(String::from));
+        for body in &bodies {
             let http = Http::new(201, body);
             let (r, copied) = run(src(10), &keyed(), &http);
             assert_eq!(r, Err(FAILED.to_string()), "{body}");
@@ -380,10 +419,35 @@ mod tests {
     }
 
     #[test]
-    fn a_clipboard_that_fails_is_failed() {
+    fn an_answer_without_a_code_or_with_another_code_is_failed() {
+        for body in [
+            r#"{"url":"https://go-ae.org/s/k7Qm2x"}"#,
+            r#"{"url":"https://go-ae.org/s/k7Qm2x","code":null}"#,
+            r#"{"url":"https://go-ae.org/s/k7Qm2x","code":"other1"}"#,
+            r#"{"url":"https://go-ae.org/s/k7Qm2x","code":"k7Qm2"}"#,
+            r#"{"url":"https://go-ae.org/s/k7Qm2x","code":""}"#,
+        ] {
+            let http = Http::new(201, body);
+            let (r, copied) = run(src(10), &keyed(), &http);
+            assert_eq!(r, Err(FAILED.to_string()), "{body}");
+            assert!(copied.is_empty(), "{body}");
+        }
+        assert_eq!(link_in(GOOD), Some("https://go-ae.org/s/k7Qm2x".to_string()));
+    }
+
+    #[test]
+    fn a_clipboard_that_fails_still_answers_the_link() {
         let http = Http::new(201, GOOD);
         let r = share_with(src(10), &keyed(), &http, &|_| Err("failed".to_string()));
-        assert_eq!(r, Err(FAILED.to_string()));
+        assert_eq!(r, Ok(Shared { url: "https://go-ae.org/s/k7Qm2x".to_string(), copied: false }));
+        // The file went up once.
+        assert_eq!(http.seen.borrow().len(), 1);
+    }
+
+    #[test]
+    fn the_answer_to_the_page_is_url_and_copied() {
+        let shown = serde_json::to_string(&Shared { url: "https://go-ae.org/s/k7Qm2x".to_string(), copied: false }).unwrap();
+        assert_eq!(shown, r#"{"url":"https://go-ae.org/s/k7Qm2x","copied":false}"#);
     }
 
     #[test]

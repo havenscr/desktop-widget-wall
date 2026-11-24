@@ -529,7 +529,7 @@ it('says ShareX is not installed for edit, pin and read-text, and the bin failur
 
 // Share link: the menu row, its second step, the one send and the lines for each answer.
 let shared: unknown[];
-let shareAnswer: () => Promise<string>;
+let shareAnswer: () => Promise<unknown>;
 
 const openShare = async () => {
   fireEvent.contextMenu(screen.getByRole('button', { name: /App 2/ }));
@@ -539,7 +539,7 @@ const goButton = () => document.querySelector('.cap-step-go') as HTMLButtonEleme
 
 function armShare() {
   shared = [];
-  shareAnswer = async () => 'https://go-ae.org/s/k7Qm2x';
+  shareAnswer = async () => ({ url: 'https://go-ae.org/s/k7Qm2x', copied: true });
   mocks.set('wall2_captures_share', (args) => {
     shared.push(args);
     return shareAnswer();
@@ -624,8 +624,8 @@ it('the Share link button confirms by click too, and Enter on Back goes back ins
 
 it('while uploading it says so, the row is off, and a second send is blocked', async () => {
   armShare();
-  let finish: (v: string) => void = () => undefined;
-  shareAnswer = () => new Promise<string>((r) => (finish = r));
+  let finish: (v: unknown) => void = () => undefined;
+  shareAnswer = () => new Promise<unknown>((r) => (finish = r));
   render(<CapturesCard />);
   await screen.findByText('Title 0');
   await openShare();
@@ -638,10 +638,54 @@ it('while uploading it says so, the row is off, and a second send is blocked', a
   fireEvent.contextMenu(screen.getByRole('button', { name: /App 3/ }));
   expect((screen.getByRole('menuitem', { name: 'Share link' }) as HTMLButtonElement).disabled).toBe(true);
   fireEvent.keyDown(document, { key: 'Escape' });
-  await act(async () => finish('https://go-ae.org/s/k7Qm2x'));
+  await act(async () => finish({ url: 'https://go-ae.org/s/k7Qm2x', copied: true }));
   await screen.findByText('Link copied');
   expect(screen.queryByText('Sharing...')).toBeNull();
   expect(shared).toHaveLength(1);
+});
+
+it('a link the clipboard missed stays in the chip, selectable, and a retry starts clean', async () => {
+  armShare();
+  shareAnswer = async () => ({ url: 'https://go-ae.org/s/k7Qm2x', copied: false });
+  render(<CapturesCard />);
+  await screen.findByText('Title 0');
+  await openShare();
+  fireEvent.click(goButton());
+  const chip = await screen.findByText('Link ready, copy failed: https://go-ae.org/s/k7Qm2x');
+  expect(chip.className).toContain('cap-chip-link');
+  expect(screen.queryByText('Link copied')).toBeNull();
+  vi.useFakeTimers();
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(30_000);
+  });
+  expect(screen.getByText(/Link ready, copy failed/)).toBeTruthy();
+  vi.useRealTimers();
+  shareAnswer = async () => ({ url: 'https://go-ae.org/s/k7Qm2x', copied: true });
+  await openShare();
+  fireEvent.click(goButton());
+  await screen.findByText('Link copied');
+  expect(screen.queryByText(/copy failed/)).toBeNull();
+  expect(shared).toHaveLength(2);
+});
+
+it('only share messages use the wrapping chip look; other results keep the plain chip', async () => {
+  armShare();
+  render(<CapturesCard />);
+  await screen.findByText('Title 0');
+  await openShare();
+  fireEvent.click(goButton());
+  expect((await screen.findByText('Link copied')).className).toContain('cap-chip-share');
+  expect((await screen.findByText('Link copied')).className).not.toContain('cap-chip-link');
+});
+
+it('a share answer with no link is failed', async () => {
+  armShare();
+  shareAnswer = async () => 'https://go-ae.org/s/k7Qm2x';
+  render(<CapturesCard />);
+  await screen.findByText('Title 0');
+  await openShare();
+  fireEvent.click(goButton());
+  await screen.findByText('Could not share. Try again.');
 });
 
 it('Link copied goes away after a few seconds', async () => {

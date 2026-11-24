@@ -189,6 +189,7 @@ export default {
     state('shelf: dictations: the read is busy', LISTS + '&' + DICT + '&dict=busy', ['Could not read the Wispr Flow history.', 'Try again']),
     state('shelf: share link, second step in the capture menu', LISTS, ['Anyone with the link can see this.', 'Uploads to go-ae.org and copies the link.', 'Share link', 'Back'], ['ctx:.cap-row:nth-child(2)', '.cap-menu [data-item=share]']),
     state('shelf: share link, link copied', LISTS, ['Link copied'], ['ctx:.cap-row:nth-child(2)', '.cap-menu [data-item=share]', '.cap-step-go', 'wait:300']),
+    state('shelf: share link, copy failed', LISTS + '&share=nocopy', ['Link ready, copy failed: https://go-ae.org/s/k7Qm2x'], ['ctx:.cap-row:nth-child(2)', '.cap-menu [data-item=share]', '.cap-step-go', 'wait:300']),
     state('shelf: share link, no key saved', LISTS + '&share=nokey', ['Add the share key in Tools first.'], ['ctx:.cap-row:nth-child(2)', '.cap-menu [data-item=share]', '.cap-step-go', 'wait:300']),
     state('shelf: share link, key refused', LISTS + '&share=badkey', ['go-ae.org refused the share key. Check it in Tools.'], ['ctx:.cap-row:nth-child(2)', '.cap-menu [data-item=share]', '.cap-step-go', 'wait:300']),
     state('shelf: lists from the task app', 'x=1', ['Tasks (To-Do)', 'Tax / Business', 'House, garden', 'Region'], ['.lp-btn']),

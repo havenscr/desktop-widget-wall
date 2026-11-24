@@ -19,9 +19,18 @@ export interface ShareKeyStatus {
   unreadable: boolean;
 }
 
-/** Uploads one capture by id and resolves with its short link, which Rust has already put on the clipboard. Rejects with one of the words. */
-export function shareCapture(id: string): Promise<string> {
-  return invoke<string>('wall2_captures_share', { id });
+/** A finished share: the short link, and whether Rust managed to put it on the clipboard. */
+export interface ShareResult {
+  url: string;
+  copied: boolean;
+}
+
+/** Uploads one capture by id and resolves with its short link and whether it was copied. Rejects with one of the words. */
+export async function shareCapture(id: string): Promise<ShareResult> {
+  const o = await invoke<unknown>('wall2_captures_share', { id });
+  const r = o && typeof o === 'object' ? (o as Record<string, unknown>) : {};
+  if (typeof r.url !== 'string' || r.url === '') throw 'failed';
+  return { url: r.url, copied: r.copied === true };
 }
 
 /** The word in a rejection; anything not recognised is `failed`. */

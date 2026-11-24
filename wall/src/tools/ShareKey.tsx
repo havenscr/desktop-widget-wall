@@ -15,7 +15,7 @@ export const SHARE_KEY_ERRORS = {
  * upload a capture to go-ae.org and nothing else. The field is emptied from React state as soon as the command
  * answers, and nothing here ever shows the saved key, its length or any part of it.
  */
-export function ShareKey() {
+export function ShareKey({ ringed = false }: { ringed?: boolean }) {
   const [status, setStatus] = useState<ShareKeyStatus | null>(null);
   const [editing, setEditing] = useState(false);
   const [value, setValue] = useState('');
@@ -104,7 +104,7 @@ export function ShareKey() {
   };
 
   return (
-    <div className="tools-block" data-section="sharekey">
+    <div className={ringed ? 'tools-block tools-ringed' : 'tools-block'} data-section="sharekey">
       <div className="tools-head kl-top">
         <span className="tools-k sm">
           <IconShare size={16} aria-hidden="true" /> Share link

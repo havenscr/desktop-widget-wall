@@ -15,6 +15,7 @@ import { knob } from './long';
  *   ?captures=long      the newest capture has a very long title and app name
  *   ?captures=big       the newest capture is over the 6 MB thumbnail limit
  *   ?share=nokey|badkey|toobig|missing|failed   Share link answers with that error word instead of a link
+ *   ?share=nocopy       Share link uploads but the clipboard fails (the link shows in the chip)
  *   ?share=slow         Share link never answers (the busy state stays)
  *   ?sharekey=none|unreadable   no share key saved on this PC, or one that cannot be read
  *
@@ -123,7 +124,7 @@ function registerShareMocks(): void {
     if (how === 'slow') await new Promise<never>(() => undefined);
     const word = how ? SHARE_WORDS[how] : undefined;
     if (word) throw word;
-    return 'https://go-ae.org/s/k7Qm2x';
+    return { url: 'https://go-ae.org/s/k7Qm2x', copied: how !== 'nocopy' };
   });
   mocks.set('wall2_share_key_status', () => ({ set: key.set, unreadable: key.unreadable }));
   mocks.set('wall2_share_key_set', (args) => {
