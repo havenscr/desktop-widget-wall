@@ -451,6 +451,14 @@ const START = '.zbtn.go';
 add('zen', 'breath running', url('zen', TYPICAL_AT, 'audio=demo'), true, START);
 add('zen', 'breath running, box pattern', url('zen', TYPICAL_AT, 'audio=demo'), true, ['[role="radiogroup"][aria-label="Breathing pattern"] [role="radio"]:nth-child(2)', START]);
 add('zen', 'dimmed: after the fade', url('dimmed', TYPICAL_AT, 'dreamage=70'), true);
+// Sundown: the mode chip row on the start screen with Sundown picked, then a session at the start, the middle and the end
+// (`sundownage` starts the session that many seconds in, in a development build). The sky runs golden hour to night.
+const SUNDOWN = '[role="radiogroup"][aria-label="Mode"] [role="radio"]:nth-child(2)';
+add('zen', 'mode chips: Breath', url('zen', TYPICAL_AT, ''), false);
+add('zen', 'mode chips: Sundown', url('zen', TYPICAL_AT, ''), true, SUNDOWN);
+add('zen', 'sundown: start', url('zen', TYPICAL_AT, 'audio=demo&sundownage=0'), true, [SUNDOWN, START]);
+add('zen', 'sundown: middle', url('zen', TYPICAL_AT, 'audio=demo&sundownage=600'), true, [SUNDOWN, START]);
+add('zen', 'sundown: end', url('zen', TYPICAL_AT, 'audio=demo&sundownage=1170'), true, [SUNDOWN, START]);
 state('dimmed', 'night with audio demo', 'audio=demo', TIMES.night);
 
 // The animated sky (`src/backdrop/`). The pixel proof pairs: every page drawn on one canvas (`sky=flat`) and split with the sky layer
@@ -820,6 +828,11 @@ const EXPECT = [
   ['zen', 'typical', 'Start', true],
   ['zen', 'breath running', ['Breathe in', 'FIVE MINUTES OF ZEN']],
   ['zen', 'breath running, box pattern', ['Breathe in', 'FIVE MINUTES OF ZEN']],
+  ['zen', 'mode chips: Breath', ['Breath', 'Sundown', 'Calm 4-2-6']],
+  ['zen', 'mode chips: Sundown', ['Dim the office too', 'Off unless you turn it on', '20 min']],
+  ['zen', 'sundown: start', ['TWENTY MINUTES OF SUNDOWN']],
+  ['zen', 'sundown: middle', ['TWENTY MINUTES OF SUNDOWN']],
+  ['zen', 'sundown: end', ['TWENTY MINUTES OF SUNDOWN']],
   ['zen', 'evening hint', ['Start', 'Dims by itself after 10 PM and 10 quiet minutes']],
   ['zen', 'late, not yet quiet', ['Start', 'Dims by itself after 10 PM and 10 quiet minutes']],
   ['zen', 'dimmed: sparse', '!Start'],

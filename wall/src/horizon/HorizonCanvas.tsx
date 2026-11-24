@@ -35,7 +35,7 @@ import { senseWeather } from '../buddy/senses';
 import { useSceneWeather } from '../weather/sceneSetting';
 import { useWeatherStore } from '../weather/useWeather';
 import { MIN_FRAME_MS, frameDelta, shouldDraw } from './pacing';
-import { levelAt, onStage, pictureFade, sample as zenSample, stage as zenStage } from '../zen/stage';
+import { levelAt, onStage, pictureFade, sample as zenSample, skyNow, stage as zenStage } from '../zen/stage';
 import { clearGridPulse, createGridPulse, stepGridPulse } from './pulse';
 import { parseReview, parseSkyReview } from './review';
 import { Backdrop } from '../backdrop/Backdrop';
@@ -349,7 +349,8 @@ export function HorizonCanvas({ now = Date.now }: { now?: () => number }) {
         height,
         scale,
         camera,
-        ms: review ? review.ms : nowRef.current(),
+        // Zen's Sundown runs the sky on its own clock (`zen/stage.ts`); every other moment draws the real hour.
+        ms: zen ? skyNow(performance.now(), review ? review.ms : nowRef.current()) : review ? review.ms : nowRef.current(),
         t: review && still ? 0 : T,
         phase: review && still ? 0 : (T * 0.32) % 1,
         // Clouds turn with the camera at about a third of the land's speed.

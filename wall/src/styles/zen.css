@@ -372,3 +372,10 @@
     opacity: 0.8;
   }
 }
+
+/* The one line under Sundown's lights switch. */
+.zen-note {
+  max-width: 640px;
+  font: 400 18px/1.4 var(--body);
+  color: var(--dim);
+}

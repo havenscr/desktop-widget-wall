@@ -1537,12 +1537,21 @@ the centre card; the date line takes it through the frame's `ClockSlot` portal.
   choice; no titles, no artists). Review knob `?media=ended` shows an ended session.
 - **Settings** (`wall/src/settings/`). `localStorage` key `wall2-settings`, JSON
   with optional `latitude` and `longitude` (defaults 47.68, -122.21), `zenDimHour` (whole
-  hour 18 to 23, default 22) and `zenDimWaitMin` (whole minutes 1 to 60, default 10). No settings
+  hour 18 to 23, default 22) and `zenDimWaitMin` (whole minutes 1 to 60, default 10). `zenMode` (`breath` or `sundown`, default `breath`, the mode picked last) and `zenSundownLights` (true or false, default false). No settings
   screen yet; Zen shows the two Zen values as a quiet line in the evening. `shelfLists` is an optional override: an array of
   task app list names for the Shelf place (the Shelf reads the lists from the task app when it is empty) (at most 8; each trimmed, 1 to 60 characters, no control
   characters, the same rule as the native list check; duplicates dropped after trimming). With no
   settings screen, set it in the browser console or by editing the stored JSON, for example
   `localStorage.setItem('wall2-settings', JSON.stringify({ shelfLists: ['Tasks (To-Do)', 'House'] }))`.
+- **Zen modes** (`zen/modes.ts`, `zen/Sundown.tsx`, `zen/lights.ts`). The start screen has a Breath and Sundown chip row (arrow keys move along it). Sundown is a
+  10, 20 or 30 minute wind down: the sky clock (`stage.sky`, read by `HorizonCanvas` and the animated sky through `skyNow`) runs from 35 minutes before today's
+  sunset to 60 minutes after it, whatever the real hour is (from the real time when that is already inside the window), gliding in over 1.6 s; Dream then
+  opens from the night sky. Leaving early glides back to the real hour. Under reduced motion the sky steps five times with no glide. The ridge keeps the
+  start screen's slow breath. A "Dim the office too" switch (setting `zenSundownLights`, off by default) steps the Office lights down at 25, 50 and 75
+  percent through `nudgeMood('down')`: only while the last moods read shows an Office mood on, at most three steps, a refusal is silent and ends the
+  stepping, leaving early steps back up by the steps taken, a full session leaves them down. Dev knob: `?sundownage=<seconds>` starts a Sundown session
+  that far in, for stills.
+
 - **Shelf place** (`screens/ShelfPlace.tsx`, `styles/shelf.css`). A rail button between On air and Zen.
   Four parts: a Recent files card in the left wing under the clock (see Recent files below), a Captures card (see Captures below), a
   side card with six ShareX keys (Region, Screen, GIF, Record, Text (OCR), History; they use the same press
