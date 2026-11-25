@@ -146,6 +146,11 @@
 .zen-br .zleave {
   pointer-events: auto;
 }
+/* End session: 18 px text, 22 px of padding either side (10 px at the least). */
+.zen-br .zend {
+  font-size: 18px;
+  padding: 0 22px;
+}
 .zen-waiting {
   text-align: right;
   font: 400 20px/1.4 var(--body);
@@ -399,4 +404,63 @@
   max-width: 900px;
   font: 400 18px/1.4 var(--body);
   color: var(--dim);
+}
+
+/* Summit: the lantern walking the skyline, the peak's name, and one light on the summit per finished session today. All positions are
+   stage pixels set by the component; the lantern is moved once a second and the transition makes that a walk. */
+.summit {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.summit-lantern,
+.summit-light,
+.summit-name {
+  position: absolute;
+  left: 0;
+  top: 0;
+}
+.summit-lantern {
+  width: 16px;
+  height: 16px;
+  margin: -8px 0 0 -8px;
+  border-radius: 50%;
+  background: #ffd98a;
+  box-shadow: 0 0 14px 6px rgba(255, 200, 110, 0.55);
+  transition: transform 1s linear;
+}
+.summit-light {
+  width: 10px;
+  height: 10px;
+  margin: -5px 0 0 -5px;
+  border-radius: 50%;
+  background: #ffe9b8;
+  box-shadow: 0 0 10px 3px rgba(255, 220, 150, 0.5);
+}
+.summit-name {
+  opacity: 0;
+  transition: opacity 2.4s ease;
+}
+.summit-name.on {
+  opacity: 1;
+}
+.summit-name span {
+  display: block;
+  transform: translateX(-50%);
+  white-space: nowrap;
+  font: 600 18px/1 var(--disp);
+  letter-spacing: 0.2em;
+  color: var(--dim);
+  text-shadow: 0 1px 6px rgba(0, 0, 0, 0.45);
+}
+.zen-count {
+  margin-top: 10px;
+  font: 400 18px/1.2 var(--body);
+  color: var(--dim);
+}
+@media (prefers-reduced-motion: reduce) {
+  .summit-lantern,
+  .summit-name {
+    transition: none;
+  }
 }

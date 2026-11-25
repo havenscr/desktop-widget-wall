@@ -13,6 +13,10 @@ export const MAX_SESSIONS = 48;
 export interface FocusSession {
   start: number;
   end: number;
+  /** Shared by the records of one climb (a pause and resume writes a new record); older saves have none and fall back to `start`. */
+  id?: number;
+  /** True on the record where the timer ran to zero. Ending early or pausing never sets it. */
+  done?: boolean;
 }
 
 const pad = (n: number) => String(n).padStart(2, '0');
@@ -50,17 +54,30 @@ export function sessionsOn(sessions: readonly FocusSession[], now: number): Focu
  * A session starts at `now` and is planned to end at `endAt`. Sessions that ended before
  * today are dropped; one that ran past midnight is kept whole.
  */
-export function openSession(sessions: readonly FocusSession[], now: number, endAt: number): FocusSession[] {
+export function openSession(sessions: readonly FocusSession[], now: number, endAt: number, id: number = now): FocusSession[] {
   const today = dayBounds(now).start;
   const kept = sessions.filter((s) => s.end > today);
-  return [...kept, { start: now, end: Math.max(now, endAt) }].slice(-MAX_SESSIONS);
+  return [...kept, { start: now, end: Math.max(now, endAt), id }].slice(-MAX_SESSIONS);
+}
+
+/** The id of the climb a resume continues: the last record's. */
+export function lastClimbId(sessions: readonly FocusSession[], fallback: number): number {
+  const last = sessions[sessions.length - 1];
+  return last ? (last.id ?? last.start) : fallback;
+}
+
+/** The last record is a completed climb: the timer ran to zero. */
+export function completeSession(sessions: readonly FocusSession[]): FocusSession[] {
+  const last = sessions[sessions.length - 1];
+  if (!last) return sessions as FocusSession[];
+  return [...sessions.slice(0, -1), { ...last, done: true }];
 }
 
 /** The last session stops at `at` if it was planned to run past it. */
 export function closeSession(sessions: readonly FocusSession[], at: number): FocusSession[] {
   const last = sessions[sessions.length - 1];
   if (!last || last.end <= at) return sessions as FocusSession[];
-  return [...sessions.slice(0, -1), { start: last.start, end: Math.max(last.start, at) }];
+  return [...sessions.slice(0, -1), { ...last, end: Math.max(last.start, at) }];
 }
 
 export function serializeDay(sessions: readonly FocusSession[]): string {
@@ -76,9 +93,14 @@ export function parseDay(raw: string | null): FocusSession[] {
     const out: FocusSession[] = [];
     for (const s of v.sessions as unknown[]) {
       if (!s || typeof s !== 'object') continue;
-      const { start, end } = s as Record<string, unknown>;
+      const { start, end, id, done } = s as Record<string, unknown>;
       if (typeof start === 'number' && typeof end === 'number' && Number.isFinite(start) && Number.isFinite(end) && end >= start) {
-        out.push({ start, end });
+        out.push({
+          start,
+          end,
+          ...(typeof id === 'number' && Number.isFinite(id) ? { id } : {}),
+          ...(done === true ? { done: true } : {}),
+        });
       }
     }
     return out.slice(-MAX_SESSIONS);

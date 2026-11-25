@@ -1,8 +1,9 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { IconPlayerPlayFilled, IconX } from '@tabler/icons-react';
 import { Clock } from '../clock/Clock';
 import { tip } from '../ui/HoverTip';
 import { invoke } from '../bridge/tauri';
+import { dayKey } from '../focus/day';
 import { loadSettings, saveSettings } from '../settings/settings';
 import { sun } from '../horizon/renderer';
 import { useReducedMotion } from '../ui/useReducedMotion';
@@ -15,7 +16,9 @@ import { SheepSvg } from '../buddy/Watt';
 import { SPRITES, SPRITE_PX } from '../buddy/sprites';
 import { startBreath, stopBreath, setDream as setStageDream, resetStage, setMode as setStageMode, touchStage, startSundown, endSundown, clearSky } from './stage';
 import { Sundown } from './Sundown';
-import { DEFAULT_SUNDOWN_MINUTES, SUNDOWN_MINUTES, ZEN_MODES, ZEN_MODE_LABELS, ZEN_MODE_TIPS, sundownRange, type SundownMinutes, type ZenMode } from './modes';
+import { SummitCaption, SummitScene } from './Summit';
+import { useFocusStore } from '../focus/store';
+import { DEFAULT_SUNDOWN_MINUTES, SUMMIT_MINUTES, SUNDOWN_MINUTES, ZEN_MODES, finishedLights, ZEN_MODE_LABELS, ZEN_MODE_TIPS, sundownRange, type SundownMinutes, type ZenMode } from './modes';
 import {
   BREATH_PATTERNS,
   SESSION_MINUTES,
@@ -90,12 +93,25 @@ export function Zen({ nowMs = Date.now }: ZenProps) {
   useEffect(() => {
     usePlaceStore.getState().takeZenDream();
   }, []);
-  const [mode, setModeState] = useState<ZenMode>(savedMode);
+  // Summit shows the wall's one focus timer. When it is already running as Zen opens (started on Work), Zen opens on it.
+  const focus = useFocusStore((st) => st.state);
+  const focusSessions = useFocusStore((st) => st.sessions);
+  const focusLoaded = useFocusStore((st) => st.loaded);
+  const [mode, setModeState] = useState<ZenMode>(() => (useFocusStore.getState().state.status === 'running' ? 'summit' : savedMode));
+  // A store that loads after Zen mounts: a running timer still opens Summit, once, unless a mode was already picked.
+  const modeSettled = useRef(useFocusStore.getState().loaded);
+  const modePicked = useRef(false);
+  useEffect(() => {
+    if (!focusLoaded || modeSettled.current) return;
+    modeSettled.current = true;
+    if (!modePicked.current && focus.status === 'running') setModeState('summit');
+  }, [focusLoaded, focus.status]);
   const [lights, setLightsState] = useState(savedLights);
   const [breathMinutes, setMinutes] = useState<SessionMinutes>(5);
   const [sundownMinutes, setSundownMinutes] = useState<SundownMinutes>(DEFAULT_SUNDOWN_MINUTES);
-  const minutes = mode === 'sundown' ? sundownMinutes : breathMinutes;
+  const minutes = mode === 'sundown' ? sundownMinutes : mode === 'summit' ? focus.minutes : breathMinutes;
   const setMode = (m: ZenMode) => {
+    modePicked.current = true;
     setModeState(m);
     saveSettings({ zenMode: m });
   };
@@ -115,12 +131,40 @@ export function Zen({ nowMs = Date.now }: ZenProps) {
   const lastInput = useRef(nowMs());
   const [ending, setEnding] = useState(false);
   const clockNow = useCallback(() => new Date(nowMs()), [nowMs]);
-  const running = startedAt !== null;
+  // Summit runs while the focus timer does; its start is derived from the timer's end so a pause and resume keeps the climb.
+  // A click on the stage leaves Summit (back to the start screen); the timer is not touched, so reopening Zen shows the session again.
+  const [summitAway, setSummitAway] = useState(false);
+  const summitRun = mode === 'summit' && focus.status === 'running' && !summitAway;
+  const summitStart = summitRun ? focus.endAt - focus.minutes * 60_000 : null;
+  const running = startedAt !== null || summitRun;
+  const summitSession = useMemo(() => (summitRun && focus.status === 'running' ? { endAt: focus.endAt, minutes: focus.minutes } : null), [summitRun, focus]);
+  // Lights follow the store (a session finishing adds one at once) and the local day (yesterday's clear at midnight).
+  const [today, setToday] = useState(() => dayKey(nowMs()));
+  useEffect(() => {
+    const t = new Date(nowMs());
+    const next = new Date(t.getFullYear(), t.getMonth(), t.getDate() + 1).getTime();
+    const id = setTimeout(() => setToday(dayKey(nowMs())), Math.max(1000, next - t.getTime()));
+    return () => clearTimeout(id);
+  }, [today, nowMs]);
+  const summitLights = useMemo(() => finishedLights(focusSessions, nowMs()), [focusSessions, today, nowMs]);
+  /** A stage click leaves the running session's view. Summit only closes: the focus timer and Do Not Disturb keep running. */
+  const endEarly = () => {
+    if (mode === 'summit') setSummitAway(true);
+    else stop();
+  };
+  /** The End session button: the person's own click stops the shared focus timer, as Work's stop does. */
+  const endSummit = () => useFocusStore.getState().reset();
+  const startSummit = () => {
+    const f = useFocusStore.getState();
+    setSummitAway(false);
+    if (f.state.status === 'paused') f.resume();
+    else if (f.state.status !== 'running') f.startLabeled('Summit');
+  };
   // True once a session ran to the end and Dream opens: only then do the Sundown lights stay down.
   const doneRef = useRef(false);
   const stageMode = useRef(mode);
   stageMode.current = mode;
-  const left = useLeft(startedAt, minutes, nowMs);
+  const left = useLeft(startedAt ?? summitStart, minutes, nowMs);
 
   // `?sundownage=<seconds>` in a development build starts a Sundown session that far in, for stills.
   const start = useCallback(() => {
@@ -213,13 +257,13 @@ export function Zen({ nowMs = Date.now }: ZenProps) {
 
   // A quiet start screen lets its chips and words go.
   useEffect(() => {
-    if (dream || startedAt !== null) {
+    if (dream || running) {
       setQuiet(false);
       return;
     }
     const id = window.setInterval(() => setQuiet(nowMs() - lastInput.current >= QUIET_FADE_MS), 1000);
     return () => window.clearInterval(id);
-  }, [dream, startedAt, nowMs]);
+  }, [dream, running, nowMs]);
 
   // Late and quiet: dim by itself. Quiet is the PC's idle age (`wall2_idle_state`, in seconds), asked at most
   // every 10 s and only while Zen is lit (not dimmed), after the dim hour, with the page visible. When that command is
@@ -228,7 +272,7 @@ export function Zen({ nowMs = Date.now }: ZenProps) {
     let live = true;
     let busy = false;
     const id = window.setInterval(() => {
-      if (dream || startedAt !== null || ending || busy || document.hidden) return;
+      if (dream || running || ending || busy || document.hidden) return;
       if (!isDimHour(new Date(nowMs()), dimHour)) return;
       busy = true;
       const asked = nowMs();
@@ -250,7 +294,7 @@ export function Zen({ nowMs = Date.now }: ZenProps) {
       live = false;
       window.clearInterval(id);
     };
-  }, [dream, startedAt, ending, nowMs, dimHour, waitMs]);
+  }, [dream, running, ending, nowMs, dimHour, waitMs]);
 
   // Zen covers the rail, so keep keyboard focus inside it. Focus follows the controls: the tap target
   // when a session starts (Start unmounts), Start when the picker returns, the first control otherwise.
@@ -259,14 +303,14 @@ export function Zen({ nowMs = Date.now }: ZenProps) {
   useEffect(() => {
     const r = root.current;
     if (!r) return;
-    const running = startedAt !== null && !ending;
+    const running = (startedAt !== null || summitRun) && !ending;
     // The chosen length first, so the ring and the fill sit on the same chip at rest.
     const first = () => r.querySelector<HTMLElement>('[aria-label="Session length"] [role="radio"][aria-checked="true"]:not(:disabled)') ?? r.querySelector<HTMLElement>('button:not(:disabled), [role="button"]');
     if (!dream && running && !wasRunning.current) (r.querySelector<HTMLElement>('.zen-tap') ?? first())?.focus();
     else if (!dream && !running && wasRunning.current && startedAt === null) (r.querySelector<HTMLElement>('.zbtn.go') ?? first())?.focus();
     else if (!wasRunning.current && !running) first()?.focus();
     wasRunning.current = running;
-  }, [dream, startedAt, ending]);
+  }, [dream, startedAt, summitRun, ending]);
 
   // Left and right arrows move along the mode chips, as the other chip rows do.
   const modeKeys = (e: React.KeyboardEvent<HTMLDivElement>) => {
@@ -289,19 +333,20 @@ export function Zen({ nowMs = Date.now }: ZenProps) {
           <div className="zen-watt" aria-hidden="true" style={{ left: SHORE_WATT.x, top: SHORE_WATT.base - SPRITES.idle.length * SPRITE_PX }}>
             <SheepSvg pose="idle" />
           </div>
+          {mode === 'summit' && <SummitScene session={summitSession} lights={summitLights} now={nowMs} />}
           {running && mode === 'breath' && <Breath key={pattern.id} startedAt={startedAt} now={nowMs} pattern={pattern} />}
           {running && !ending && (
             <div
               className="zen-tap"
               role="button"
               tabIndex={0}
-              aria-label="End session early"
-              onClick={stop}
+              aria-label={mode === 'summit' ? 'Close Summit' : 'End session early'}
+              onClick={endEarly}
               onKeyDown={(e) => {
                 if (e.key === 'Enter' || e.key === ' ') {
                   e.preventDefault();
                   if (e.repeat && e.key === 'Enter') return;
-                  stop();
+                  endEarly();
                 }
               }}
             />
@@ -312,7 +357,9 @@ export function Zen({ nowMs = Date.now }: ZenProps) {
           <div className="zen-bl">
             {running ? (
               mode === 'sundown' ? (
-                <Sundown startedAt={startedAt} minutes={minutes} left={`${formatLeft(left)}.`} lights={lights} now={nowMs} doneRef={doneRef} />
+                startedAt !== null && <Sundown startedAt={startedAt} minutes={minutes} left={`${formatLeft(left)}.`} lights={lights} now={nowMs} doneRef={doneRef} />
+              ) : mode === 'summit' ? (
+                <SummitCaption minutes={minutes} left={`${formatLeft(left)}.`} lights={summitLights} />
               ) : (
                 <>
                   <div className="zen-cap">{sessionLabel(minutes)}</div>
@@ -358,26 +405,39 @@ export function Zen({ nowMs = Date.now }: ZenProps) {
                     ))}
                   </div>
                 )}
+                {mode === 'summit' && <div className="zen-note">Runs the focus timer, so Do Not Disturb comes with it. Leaving Zen does not stop it.</div>}
                 {mode === 'sundown' && <div className="zen-note">Off unless you turn it on. Steps the Office lights down three times, and back up if you leave.</div>}
                 <div className="zen-lenrow">
                   <div className="breath-picker" role="radiogroup" aria-label="Session length">
-                    {(mode === 'sundown' ? SUNDOWN_MINUTES : SESSION_MINUTES).map((m) => (
-                      <button key={m} type="button" role="radio" aria-checked={m === minutes} className="zbtn" onClick={() => (mode === 'sundown' ? setSundownMinutes(m as SundownMinutes) : setMinutes(m as SessionMinutes))}>
+                    {(mode === 'sundown' ? SUNDOWN_MINUTES : mode === 'summit' ? summitChips(focus.minutes) : SESSION_MINUTES).map((m) => (
+                      <button
+                        key={m}
+                        type="button"
+                        role="radio"
+                        aria-checked={m === minutes}
+                        className="zbtn"
+                        onClick={() => (mode === 'sundown' ? setSundownMinutes(m as SundownMinutes) : mode === 'summit' ? useFocusStore.getState().setMinutes(m) : setMinutes(m as SessionMinutes))}
+                      >
                         {m} min
                       </button>
                     ))}
                   </div>
-                  <button type="button" className="zbtn go" onClick={start}>
+                  <button type="button" className="zbtn go" onClick={mode === 'summit' ? startSummit : start}>
                     <IconPlayerPlayFilled size={28} aria-hidden="true" />
-                    Start
+                    {mode === 'summit' && focus.status === 'paused' ? 'Resume' : mode === 'summit' && focus.status === 'running' ? 'Back to Summit' : 'Start'}
                   </button>
                 </div>
               </div>
             )}
             {!running && showDimHint(clockNow()) && <div className={`zen-dimhint${quiet ? ' quiet' : ''}`}>{dimHint(dimHour, dimWaitMin)}</div>}
           </div>
-          {running && !ending && <div className="zen-hint">Click anywhere to end early</div>}
+          {running && !ending && <div className="zen-hint">{mode === 'summit' ? 'Click anywhere to close Summit' : 'Click anywhere to end early'}</div>}
           <div className="zen-br">
+            {summitRun && !ending && (
+              <button type="button" className="zbtn zleave zend" onClick={endSummit} {...tip('Stops the focus timer and Do Not Disturb')}>
+                End session
+              </button>
+            )}
             <button
               type="button"
               className="zbtn zleave"
@@ -393,4 +453,9 @@ export function Zen({ nowMs = Date.now }: ZenProps) {
       )}
     </section>
   );
+}
+
+/** Summit's length chips; a length Work set outside the usual three shows as its own selected chip. */
+function summitChips(current: number): readonly number[] {
+  return (SUMMIT_MINUTES as readonly number[]).includes(current) ? SUMMIT_MINUTES : [...SUMMIT_MINUTES, current].sort((a, b) => a - b);
 }

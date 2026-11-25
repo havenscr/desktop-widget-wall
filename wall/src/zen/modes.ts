@@ -1,12 +1,17 @@
-/** The modes of Zen: what drives the picture and what counts as the end. Breath and Sundown for now. */
-export const ZEN_MODES = ['breath', 'sundown'] as const;
+import type { CameraPreset } from '../horizon/cameras';
+import { ridgeTopY } from '../horizon/ridge';
+import { dayKey, type FocusSession } from '../focus/day';
+
+/** The modes of Zen: what drives the picture and what counts as the end. */
+export const ZEN_MODES = ['breath', 'sundown', 'summit'] as const;
 export type ZenMode = (typeof ZEN_MODES)[number];
 export const DEFAULT_ZEN_MODE: ZenMode = 'breath';
 
-export const ZEN_MODE_LABELS: Record<ZenMode, string> = { breath: 'Breath', sundown: 'Sundown' };
+export const ZEN_MODE_LABELS: Record<ZenMode, string> = { breath: 'Breath', sundown: 'Sundown', summit: 'Summit' };
 export const ZEN_MODE_TIPS: Record<ZenMode, string> = {
   breath: 'The ridge swells and settles with a slow breath',
   sundown: 'A wind down: the sky runs from golden hour to night',
+  summit: 'A focus session drawn as a climb: a lantern walks the ridge up The Brothers',
 };
 
 export function isZenMode(v: unknown): v is ZenMode {
@@ -89,3 +94,51 @@ export function sundownSkyMs(startMs: number, progress: number, sun: SunFn): num
 export const LIGHT_MARKS = [0.25, 0.5, 0.75] as const;
 /** The most the lights ever step in one session. */
 export const MAX_LIGHT_STEPS = LIGHT_MARKS.length;
+
+/** Summit's focus lengths, in minutes (the same timer the Work place runs). */
+export const SUMMIT_MINUTES = [25, 50, 90] as const;
+/** The most lights shown on the summit for today's finished sessions. */
+export const MAX_SUMMIT_LIGHTS = 8;
+/** The peak the lantern climbs to, by its azimuth in the panorama (`terrain/pano.json`). */
+export const SUMMIT_PEAK = 'The Brothers';
+export const SUMMIT_PEAK_AZ = 267.83;
+/** How far left of the peak (stage pixels) the lantern starts. */
+export const SUMMIT_RUN_PX = 520;
+/** The lantern sits this far above the skyline (stage pixels). */
+export const LANTERN_LIFT_PX = 18;
+/** Half the width of the stretch of ridge the lantern follows, so it glides over the ridge's small teeth. */
+const SKYLINE_SMOOTH_PX = 6;
+
+const SUMMIT_WORDS: Record<number, string> = { 25: 'TWENTY FIVE', 50: 'FIFTY', 90: 'NINETY' };
+/** "FIFTY MINUTES OF SUMMIT" */
+export function summitLabel(minutes: number): string {
+  return `${SUMMIT_WORDS[minutes] ?? String(minutes)} MINUTES OF SUMMIT`;
+}
+
+type ClimbCamera = Pick<CameraPreset, 'az0' | 'ppd' | 'hy' | 'vex'>;
+
+/** The stage x of the peak for a camera. */
+export function peakX(cam: ClimbCamera): number {
+  return (SUMMIT_PEAK_AZ - cam.az0) * cam.ppd;
+}
+
+/** The skyline height (stage y of the lantern's resting point) at stage x. */
+export function skylineY(cam: ClimbCamera, x: number): number {
+  return ridgeTopY(cam, x - SKYLINE_SMOOTH_PX, x + SKYLINE_SMOOTH_PX) - LANTERN_LIFT_PX;
+}
+
+/** Where the lantern stands `progress` (0 to 1) of the way up: x runs from `SUMMIT_RUN_PX` left of the peak to the peak, y rides the skyline. */
+export function climbPoint(progress: number, cam: ClimbCamera): { x: number; y: number } {
+  const p = progress < 0 || Number.isNaN(progress) ? 0 : progress > 1 ? 1 : progress;
+  const end = peakX(cam);
+  const x = end - SUMMIT_RUN_PX * (1 - p);
+  return { x, y: skylineY(cam, x) };
+}
+
+/** The finished climbs that count as lights today: the timer ran to zero (not ended early), counted once however many pause and resume records it has, on the day it ended. At most `MAX_SUMMIT_LIGHTS`. */
+export function finishedLights(sessions: readonly FocusSession[], now: number): number {
+  const today = dayKey(now);
+  const climbs = new Set<number>();
+  for (const s of sessions) if (s.done === true && s.end <= now && dayKey(s.end) === today) climbs.add(s.id ?? s.start);
+  return Math.min(MAX_SUMMIT_LIGHTS, climbs.size);
+}

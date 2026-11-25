@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { invoke as bridgeInvoke } from '../bridge/tauri';
-import { closeSession, FOCUS_DAY_KEY, openSession, parseDay, serializeDay, type FocusSession } from './day';
+import { closeSession, completeSession, FOCUS_DAY_KEY, lastClimbId, openSession, parseDay, serializeDay, type FocusSession } from './day';
 import { createFocusDnd, type FocusDnd } from './dnd';
 import * as m from './model';
 
@@ -77,8 +77,12 @@ export function createFocusStore(deps: FocusDeps) {
       generation++;
       const now = deps.now();
       let sessions = get().sessions;
-      if (next.status === 'running' && prev.status !== 'running') sessions = openSession(sessions, now, next.endAt);
-      else if (next.status !== 'running' && prev.status === 'running') sessions = closeSession(sessions, Math.min(prev.endAt, now));
+      if (next.status === 'running' && prev.status !== 'running') {
+        sessions = openSession(sessions, now, next.endAt, prev.status === 'paused' ? lastClimbId(sessions, now) : now);
+      } else if (next.status !== 'running' && prev.status === 'running') {
+        sessions = closeSession(sessions, Math.min(prev.endAt, now));
+        if (next.status === 'finished') sessions = completeSession(sessions);
+      }
       const daySaved = sessions !== get().sessions;
       set({ state: next, now, sessions });
       try {
@@ -103,8 +107,14 @@ export function createFocusStore(deps: FocusDeps) {
         let restored = m.initialFocus;
         let sessions: FocusSession[] = [];
         try {
-          restored = m.restore(store().getItem(m.FOCUS_KEY), deps.now());
+          const raw = store().getItem(m.FOCUS_KEY);
+          restored = m.restore(raw, deps.now());
           sessions = parseDay(store().getItem(FOCUS_DAY_KEY));
+          // A timer that ran out while the app was closed still finished its climb.
+          if (restored.status === 'finished' && raw && (JSON.parse(raw) as { status?: unknown }).status === 'running') {
+            sessions = completeSession(sessions);
+            store().setItem(FOCUS_DAY_KEY, serializeDay(sessions));
+          }
         } catch {
           /* unreadable: idle */
         }

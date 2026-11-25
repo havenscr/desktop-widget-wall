@@ -65,7 +65,8 @@ it('lengths, label and mode check', () => {
   expect([...SUNDOWN_MINUTES]).toEqual([10, 20, 30]);
   expect(sundownLabel(20)).toBe('TWENTY MINUTES OF SUNDOWN');
   expect(isZenMode('sundown')).toBe(true);
-  expect(isZenMode('summit')).toBe(false);
+  expect(isZenMode('summit')).toBe(true);
+  expect(isZenMode('candle')).toBe(false);
 });
 
 it('the sunset is the home zone\'s evening of that day, in any machine zone', () => {
