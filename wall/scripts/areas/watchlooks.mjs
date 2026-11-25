@@ -29,7 +29,7 @@ const measureTune = () => {
       const set = sheet && sheet.querySelector('.wk-set');
       if (!sheet || !set) return { fails: ['look settings: the Looks sheet has no settings section'], mode };
       const s = R(sheet);
-      if (s.t < -0.5 || s.b > 658.5 || s.r > 2560.5) fails.push('look settings: the sheet is ' + Math.round(s.h) + ' px tall, y ' + Math.round(s.t) + ' to ' + Math.round(s.b) + ' (inside the stage and clear of the office slot at y 662)');
+      if (s.t < -0.5 || s.b > 650.5 || s.r > 2560.5) fails.push('look settings: the sheet is ' + Math.round(s.h) + ' px tall, y ' + Math.round(s.t) + ' to ' + Math.round(s.b) + ' (inside the stage and clear of the office slot at y 656)');
       const rowsBox = set.querySelector('.wk-rows');
       const rb = R(rowsBox);
       const scrolls = rowsBox.scrollHeight > rowsBox.clientHeight + 1;

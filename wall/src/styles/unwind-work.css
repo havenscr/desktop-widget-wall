@@ -4,7 +4,7 @@
   position: absolute;
   left: 0;
   width: 2416px;
-  bottom: 0;
+  bottom: -6px;
   height: 4px;
   border-radius: 2px;
   background: rgba(255, 255, 255, 0.16);
