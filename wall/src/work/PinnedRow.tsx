@@ -7,15 +7,14 @@ import { isLayoutAction, layoutOffReason, useArrangeStatus } from './arrangeStat
 import { errorText } from './deckModel';
 import { useDeckStore } from './deckStore';
 import { KeyIcon } from './keyIcons';
-import { libIndex, pinKind } from './keyKind';
 import { loadKeys } from './keysFeed';
 import { KeyPicker } from './KeyPicker';
 import { KeyMenu, type KeyMenuAction } from './KeyMenu';
 import { keyboardOnMouseKey, useKeyPress } from './keyPress';
-import { allKeys, MAX_PINS, movePin, PINS_KEY, removePin, resolvePin, savePins, serializePins, swapPin, type LibGroup, type PinView } from './libraryModel';
+import { MAX_PINS, movePin, PINS_KEY, removePin, resolvePin, savePins, serializePins, swapPin, type LibGroup } from './libraryModel';
 import { tileSizeClass, type KeyInfo } from './keysModel';
 import { useBrief } from './useBrief';
-import { usePins } from './usePins';
+import { makeKindOf, usePins } from './usePins';
 import { runWallAction } from './wallActions';
 
 /** Always five columns, so a pinned tile is the size of a Now tile whatever the count. */
@@ -124,12 +123,7 @@ export function PinnedRow() {
     if (applied) setClock(Date.now());
   }, [applied]);
 
-  const byId = lib ? allKeys(lib) : null;
-  const index = lib ? libIndex(lib) : null;
-  const kindOf = (p: PinView) => {
-    const hit = p.ref.startsWith('lib:') ? byId?.get(p.ref.slice(4)) : undefined;
-    return pinKind(p.ref, hit ? { group: hit.group.id, action: hit.key.action } : null, { action: p.action, label: p.label }, index);
-  };
+  const kindOf = makeKindOf(lib);
   if (read.status === 'absent') return null;
 
   const undoShown = applied !== null && applied.until > clock;
