@@ -453,7 +453,9 @@
 .oa2-lights-idle > .st-block { height: 202px; padding: 19px 0 15px; }
 .oa2-lights-idle .st-presets { margin-top: 14px; }
 .oa2-lights-idle .st-sum { margin-top: 13px; }
-.oa2-lights-idle .st-switches { margin-top: 13px; gap: 4px; }
+.oa2-lights-idle .st-switches { margin-top: 13px; }
+/* Tighter gaps give every name its 10 px clear of the switch inside the 620 px row. */
+.oa2 .st-switches { gap: 3px; }
 .oa2-lights-idle .st-switches .st-tg { font-size: 16px; }
 /* Tile names stay 10 px clear of the switch. */
 .oa2-lights-idle .st-switches .st-name { padding-right: 10px; }
