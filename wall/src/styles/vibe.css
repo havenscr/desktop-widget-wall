@@ -1,0 +1,16 @@
+/* The vibe's back layer (`vibe/VibeLayer.tsx`): one canvas inside the Unwind place, behind the place's own content
+   (z-index -1 puts it under the art, title and controls, which are DOM), starting at the wing's right edge.
+   It feathers its own bounds: 64 px on the left edge, 48 px top and bottom, so it never ends on a line. */
+.vibe-back {
+  position: absolute;
+  top: 0;
+  right: 0;
+  height: 100%;
+  z-index: -1;
+  pointer-events: none;
+  mix-blend-mode: screen;
+  -webkit-mask-image: linear-gradient(90deg, transparent 0, #000 64px), linear-gradient(180deg, transparent 0, #000 48px, #000 calc(100% - 48px), transparent 100%);
+  mask-image: linear-gradient(90deg, transparent 0, #000 64px), linear-gradient(180deg, transparent 0, #000 48px, #000 calc(100% - 48px), transparent 100%);
+  -webkit-mask-composite: source-in;
+  mask-composite: intersect;
+}

@@ -1,8 +1,15 @@
 import { act, fireEvent, render, screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { DEFAULT_LINES, resetLinesStore, useLinesStore } from '../../horizon/linesSettings';
-import { LinesPanel, sliderWords } from './LinesPanel';
+// @ts-ignore node's own file call; the stylesheet rules are read as text.
+import { readFileSync } from 'node:fs';
+import { DEFAULT_VIBE, VIBE_KEY, resetVibeStore, useVibeStore } from '../../horizon/vibeSettings';
+import { LINES_KEY } from '../../horizon/linesSettings';
+import { LinesPanel, VIBE_HINTS, sliderWords } from './LinesPanel';
 import { HoverTipLayer, resetTip } from '../../ui/HoverTip';
+
+/** A stylesheet's text (the path is a variable on purpose: a literal `new URL` is rewritten by the bundler). */
+const sheet = (f: string): string => (readFileSync(new URL(f, import.meta.url), 'utf8') as string).replace(/\r\n/g, '\n');
 
 beforeEach(() => {
   localStorage.clear();
@@ -104,8 +111,9 @@ describe('the Lines panel', () => {
     );
     expect(screen.getByText(/The ridgelines dance as they do today/)).toBeTruthy();
     expect(screen.getByText('One setting for the lines everywhere music plays.')).toBeTruthy();
-    const controls = [...screen.getAllByRole('radio'), ...screen.getAllByRole('button'), ...screen.getAllByRole('slider'), screen.getByRole('switch')];
-    expect(controls).toHaveLength(5 + 5 + 2 + 3 + 1 + 3 + 1);
+    const controls = [...screen.getAllByRole('radio'), ...screen.getAllByRole('button'), ...screen.getAllByRole('slider'), ...screen.getAllByRole('switch')];
+    // 14 radios (types, colours, at rest, cover), 5 buttons (two resets, three presets), 3 sliders, 4 switches.
+    expect(controls).toHaveLength(14 + 5 + 3 + 4);
     for (const el of controls) {
       expect(el.getAttribute('title')).toBeNull();
       resetTip();
@@ -114,5 +122,82 @@ describe('the Lines panel', () => {
       expect(document.querySelector('.hover-tip')?.textContent, el.getAttribute('aria-label') ?? el.textContent ?? '').toBeTruthy();
     }
     resetTip();
+  });
+});
+
+describe('the Vibe section', () => {
+  const sw = (name: string) => screen.getByRole('switch', { name });
+
+  beforeEach(() => resetVibeStore());
+
+  it('has Auto vibe, Drop Glitch and Calm cap switches and a Cover choice, each with a helper line', () => {
+    render(<LinesPanel />);
+    expect(sw('Auto vibe').getAttribute('aria-checked')).toBe('true');
+    expect(sw('Drop Glitch')).toBeTruthy();
+    expect(sw('Calm cap').getAttribute('aria-checked')).toBe('false');
+    expect(screen.getByRole('radio', { name: 'Scene and title' }).getAttribute('aria-checked')).toBe('true');
+    for (const id of ['auto', 'glitch', 'calm']) {
+      const hint = document.getElementById(`ln-${id}-hint`)!;
+      expect(hint.className).toBe('ln-hint');
+      expect(hint.textContent!.length).toBeGreaterThan(20);
+    }
+    expect(screen.getByText(VIBE_HINTS.cover)).toBeTruthy();
+    expect(sw('Auto vibe').getAttribute('aria-describedby')).toBe('ln-auto-hint');
+  });
+
+  it('shows Drop Glitch on and locked while Auto vibe is on, and free once Auto vibe is off', () => {
+    render(<LinesPanel />);
+    const g = sw('Drop Glitch');
+    expect(g.getAttribute('aria-checked')).toBe('true');
+    expect(g.getAttribute('aria-disabled')).toBe('true');
+    expect(screen.getByText('On with Auto vibe')).toBeTruthy();
+    fireEvent.click(g);
+    expect(useVibeStore.getState().dropGlitch).toBe(false);
+    fireEvent.click(sw('Auto vibe'));
+    expect(useVibeStore.getState().auto).toBe(false);
+    expect(sw('Drop Glitch').getAttribute('aria-checked')).toBe('false');
+    expect(sw('Drop Glitch').getAttribute('aria-disabled')).toBeNull();
+    fireEvent.click(sw('Drop Glitch'));
+    expect(useVibeStore.getState().dropGlitch).toBe(true);
+    expect(sw('Drop Glitch').getAttribute('aria-checked')).toBe('true');
+    // Turning Auto vibe back on shows it on and locked again, and keeps the choice made.
+    fireEvent.click(sw('Auto vibe'));
+    expect(sw('Drop Glitch').getAttribute('aria-disabled')).toBe('true');
+    expect(useVibeStore.getState().dropGlitch).toBe(true);
+  });
+
+  it('changes Calm cap and Cover and keeps them in the vibe store, away from the Lines setting', () => {
+    render(<LinesPanel />);
+    fireEvent.click(sw('Calm cap'));
+    fireEvent.click(screen.getByRole('radio', { name: 'Scene only' }));
+    expect(useVibeStore.getState()).toMatchObject({ calmCap: true, cover: 'scene' });
+    expect(JSON.parse(localStorage.getItem(VIBE_KEY)!)).toMatchObject({ calmCap: true, cover: 'scene' });
+    expect(localStorage.getItem(LINES_KEY) ?? '').not.toContain('calmCap');
+    // Reset to my usual is the lines only; Reset vibe is the vibe only.
+    act(() => screen.getByRole('button', { name: 'Reset to my usual' }).click());
+    expect(useVibeStore.getState().calmCap).toBe(true);
+    act(() => screen.getByRole('button', { name: 'Reset vibe' }).click());
+    expect(useVibeStore.getState()).toMatchObject(DEFAULT_VIBE);
+  });
+
+  it('moves the Cover choice with the arrow keys', () => {
+    render(<LinesPanel />);
+    screen.getByRole('radio', { name: 'Scene and title' }).focus();
+    fireEvent.keyDown(screen.getByRole('radiogroup', { name: 'Cover' }), { key: 'ArrowRight' });
+    expect(useVibeStore.getState().cover).toBe('scene');
+  });
+
+  it('puts each switch row out as name, switch, value, the flush right layout of the Looks sheet', () => {
+    render(<LinesPanel />);
+    for (const name of ['Auto vibe', 'Drop Glitch', 'Calm cap']) {
+      const row = sw(name).closest('.ln-row')!;
+      expect(row.classList.contains('ln-swrow')).toBe(true);
+      const kids = Array.from(row.children);
+      expect(kids.map((k) => k.className.split(' ')[0])).toEqual(['ln-label', 'ln-switch', 'ln-value']);
+    }
+    const css = sheet('../../styles/unwind.css');
+    expect(css).toMatch(/\.ln-swrow \.ln-label\.ln-sw \+ \.ln-switch\s*\{\s*margin-left:\s*auto/);
+    expect(css).toMatch(/\.ln-swrow \.ln-label\.ln-sw\s*\{\s*width:\s*auto/);
+    expect(css).toMatch(/\.ln-swrow \.ln-switch \+ \.ln-value\s*\{\s*margin-left:\s*0/);
   });
 });

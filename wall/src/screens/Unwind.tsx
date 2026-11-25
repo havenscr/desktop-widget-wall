@@ -26,6 +26,7 @@ import { WatchCard } from '../unwind/watch/WatchCard';
 import { UNWIND_ROOM_HEIGHT, UNWIND_ROOM_TOP } from './frameLayout';
 import { OfficeMoods } from '../studio/OfficeMoods';
 import { reviewDate, reviewNow } from '../ui/reviewClock';
+import { VibeLayer } from '../vibe/VibeLayer';
 
 /** Spotify's status is read only while Listen shows (the card and Up next need it). */
 function SpotifyStatusPoll() {
@@ -109,6 +110,8 @@ export function Unwind() {
   const listenRest = useWatchRest((s) => s.rest) && !watch;
   return (
     <section className="unwind zones wide" data-place="unwind" data-tab={tab} data-listen-rest={listenRest ? 'true' : undefined} aria-label="Unwind">
+      {/* The vibe's back layer sits behind everything here (z-index -1) and runs on Listen and Watch alike. */}
+      <VibeLayer />
       {watch ? null : <ListenRest />}
       <div className="u-wing">
         <DateLine now={reviewDate} />

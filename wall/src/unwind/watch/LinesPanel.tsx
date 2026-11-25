@@ -2,6 +2,7 @@ import type { CSSProperties, KeyboardEvent } from 'react';
 import { IconRestore, IconSettings } from '@tabler/icons-react';
 import { tip } from '../../ui/HoverTip';
 import { DEFAULT_LINES, LINE_PRESETS, activePreset, useLinesStore, type LineColours, type LinePreset, type LineRest, type LineType } from '../../horizon/linesSettings';
+import { DEFAULT_VIBE, useVibeStore, type VibeCover } from '../../horizon/vibeSettings';
 import { useWatchStore } from './store';
 
 /** The sheet heading and name on the Lines side. */
@@ -37,6 +38,19 @@ const SLIDERS: { field: SliderField; label: string; min: number; max: number; un
   { field: 'smooth', label: 'Smoothness', min: 0, max: 100, unit: '', more: 'smoother', less: 'snappier', note: 'How slowly the lines fall back after a hit' },
   { field: 'height', label: 'Height', min: 20, max: 220, unit: ' px', more: 'taller', less: 'lower', note: 'The most a hit may throw a line above its place' },
 ];
+
+const COVERS: { id: VibeCover; name: string; note: string }[] = [
+  { id: 'title', name: 'Scene and title', note: 'Effects pass over the scene and the song title' },
+  { id: 'scene', name: 'Scene only', note: 'Effects keep clear of the song title' },
+];
+
+/** The words after a vibe switch, and the helper line under it. */
+export const VIBE_HINTS = {
+  auto: 'Colour and glow follow how loud the music has been lately.',
+  dropGlitch: 'Slices tear across the picture when the music drops. Auto vibe turns it on too.',
+  calmCap: 'Halves every effect and swaps the glitch for a soft glow, for a calmer wall.',
+  cover: 'Scene and title lets effects pass over the song title.',
+} as const;
 
 /** A slider's value read back in plain words and numbers, on one line. */
 export function sliderWords(field: SliderField, value: number): string {
@@ -88,6 +102,105 @@ function Slider({ field }: { field: SliderField }) {
       </span>
       <span className="ln-value">{words}</span>
     </div>
+  );
+}
+
+/**
+ * A switch row of the Vibe section: the name at its natural width, the switch flush right at the end of the
+ * slider column, the value in the right column, then the helper line. `locked` shows it on and not clickable.
+ */
+function VibeSwitch({ id, label, on, locked, words, hint, tipText, onToggle }: { id: string; label: string; on: boolean; locked?: boolean; words: string; hint: string; tipText: string; onToggle: () => void }) {
+  return (
+    <>
+      <div className="ln-row ln-swrow">
+        <span className="ln-label ln-sw" id={`ln-${id}-label`}>
+          {label}
+        </span>
+        <button
+          type="button"
+          role="switch"
+          aria-checked={on}
+          aria-disabled={locked || undefined}
+          aria-labelledby={`ln-${id}-label`}
+          aria-describedby={`ln-${id}-hint`}
+          className={`ln-switch${on ? ' on' : ''}${locked ? ' wk-blocked' : ''}`}
+          {...tip(tipText)}
+          onClick={() => {
+            if (!locked) onToggle();
+          }}
+        >
+          <i aria-hidden="true" />
+        </button>
+        <span className="ln-value">{words}</span>
+      </div>
+      <p className="ln-hint" id={`ln-${id}-hint`}>
+        {hint}
+      </p>
+    </>
+  );
+}
+
+/** The Vibe section of the Lines side: Auto vibe, Drop Glitch, Calm cap and Cover. Its own setting; Reset to my usual leaves it alone. */
+function VibeSection() {
+  const v = useVibeStore();
+  const set = v.setVibe;
+  // The engine glitches on a drop when Auto vibe or Drop Glitch is on, so the switch reads on and locked under Auto vibe.
+  const glitchOn = v.auto || v.dropGlitch;
+  const cover = COVERS.find((x) => x.id === v.cover)!;
+  return (
+    <section className="ln-vibe" aria-labelledby="ln-vibe-head">
+      <div className="ln-row ln-head">
+        <span className="ln-label" id="ln-vibe-head">
+          Vibe
+        </span>
+        <button type="button" className="ln-reset" {...tip('The vibe settings back to your usual: Auto vibe on, the rest off, Scene and title')} onClick={v.reset}>
+          <IconRestore size={16} aria-hidden="true" />
+          Reset vibe
+        </button>
+      </div>
+      <VibeSwitch
+        id="auto"
+        label="Auto vibe"
+        on={v.auto}
+        words={v.auto ? (DEFAULT_VIBE.auto ? 'On, your usual' : 'On') : 'Off, fixed levels'}
+        hint={VIBE_HINTS.auto}
+        tipText={v.auto ? 'Colour and glow follow the music. Click to turn it off.' : 'Every effect sits at a fixed level. Click to follow the music.'}
+        onToggle={() => set({ auto: !v.auto })}
+      />
+      <VibeSwitch
+        id="glitch"
+        label="Drop Glitch"
+        on={glitchOn}
+        locked={v.auto}
+        words={v.auto ? 'On with Auto vibe' : v.dropGlitch ? 'On' : 'Off, your usual'}
+        hint={VIBE_HINTS.dropGlitch}
+        tipText={v.auto ? 'Auto vibe has this on. Turn Auto vibe off to choose it yourself.' : v.dropGlitch ? 'Slices tear on each drop. Click to turn it off.' : 'Click to let a drop tear slices across the picture.'}
+        onToggle={() => set({ dropGlitch: !v.dropGlitch })}
+      />
+      <VibeSwitch
+        id="calm"
+        label="Calm cap"
+        on={v.calmCap}
+        words={v.calmCap ? 'On' : 'Off, your usual'}
+        hint={VIBE_HINTS.calmCap}
+        tipText={v.calmCap ? 'Effects are halved. Click to turn it off.' : 'Click to halve every effect and swap the glitch for a soft glow.'}
+        onToggle={() => set({ calmCap: !v.calmCap })}
+      />
+      <div className="ln-row">
+        <span className="ln-label" id="ln-cover-label">
+          Cover
+        </span>
+        <div className="ln-chips" role="radiogroup" aria-labelledby="ln-cover-label" onKeyDown={arrows(COVERS, v.cover, (id) => set({ cover: id }))}>
+          {COVERS.map((x) => (
+            <button key={x.id} type="button" role="radio" aria-checked={v.cover === x.id} tabIndex={v.cover === x.id ? 0 : -1} className={v.cover === x.id ? 'on' : ''} {...tip(x.note)} onClick={() => set({ cover: x.id })}>
+              {x.name}
+            </button>
+          ))}
+        </div>
+        <span className="ln-value ln-fill">{v.cover === DEFAULT_VIBE.cover ? 'your usual' : cover.name}</span>
+      </div>
+      <p className="ln-hint">{VIBE_HINTS.cover}</p>
+    </section>
   );
 }
 
@@ -196,6 +309,7 @@ export function LinesPanel() {
         </div>
         <span className="ln-value ln-fill">{preset === 'dancing' ? 'your usual' : preset ? '' : 'your own mix'}</span>
       </div>
+      <VibeSection />
       <p className="ln-foot">One setting for the lines everywhere music plays.</p>
     </div>
   );
