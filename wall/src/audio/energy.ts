@@ -7,7 +7,11 @@
 
 /** Time constant, in seconds, of the exponential average of loudness (4 to 8 is the allowed range). */
 export const ENERGY_WINDOW_S = 6;
-/** Milliseconds of missing sound over which energy is held, not decayed (a track change, a short pause). */
+/**
+ * Milliseconds, counted from the first step after sound is judged gone (the store's silence
+ * deadline, 350 ms after the last sound), over which energy is held, not decayed (a track
+ * change, a short pause). Counted from the last sound the hold is this plus that deadline.
+ */
 export const GAP_HOLD_MS = 2000;
 /** Energy below this is silence: it snaps to 0 and never counts as a quiet stretch. */
 export const SILENCE_FLOOR = 0.005;
@@ -22,8 +26,14 @@ export const ARM_S = 4;
 export const DROP_FLOOR = 0.15;
 /** The quiet stretch must stay this flat; a steady climb out of silence is not a build. */
 export const ARM_SPAN = 0.2;
-/** Seconds the armed state survives once energy has left the quiet band without dropping. */
-export const ARM_EXPIRY_S = 4;
+/**
+ * Seconds the armed state survives once energy has left the quiet band without dropping. Sized
+ * from the time constant: climbing from the arm level to the rise level takes at most about one
+ * window for any loudness a drop can reach, so twice the window leaves room for a slow build.
+ */
+export const ARM_EXPIRY_S = 2 * ENERGY_WINDOW_S;
+/** One step moves the average by at most this much time (a hidden page's first tick must not snap it). */
+export const MAX_STEP_MS = 250;
 /** A beat must land within this many ms of the crossing (before or after) to confirm it. */
 export const BEAT_CONFIRM_MS = 250;
 /** Seconds after a drop during which no other drop is flagged. */
@@ -97,6 +107,12 @@ export function stepEnergy(
     if (beatCount > s.beatCount) s.beatSeenAt = now;
     s.beatCount = beatCount;
   }
+  if (elapsedMs > GAP_HOLD_MS) {
+    // The loop was not running (a hidden page): what was building before is not known any more.
+    disarm(s);
+    s.crossedAt = -Infinity;
+  }
+  elapsedMs = Math.min(elapsedMs, MAX_STEP_MS);
   if (playing) s.lastSoundAt = now;
   // Sound feeds the average; a short gap holds it; a long one pulls it to zero.
   let input = s.energy;
@@ -106,7 +122,17 @@ export function stepEnergy(
   let e = s.energy + (input - s.energy) * k;
   if (!playing && input === 0 && e < SILENCE_FLOOR) e = 0;
   s.energy = e < 0 ? 0 : e > 1 ? 1 : e;
-  detectDrop(s, now);
+  if (playing) detectDrop(s, now);
+  else {
+    // Falling energy in silence is not a build-up: nothing is counted or armed until sound returns.
+    disarm(s);
+    s.crossedAt = -Infinity;
+  }
+}
+
+/** True when stepping can change nothing: silent, energy at 0, nothing armed or pending. */
+export function energyIdle(s: EnergyState, playing: boolean): boolean {
+  return !playing && s.energy === 0 && !s.armed && s.stretchSince === -Infinity && s.crossedAt === -Infinity;
 }
 
 function detectDrop(s: EnergyState, now: number): void {

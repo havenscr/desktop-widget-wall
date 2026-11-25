@@ -4,6 +4,8 @@ import {
   DROP_RISE,
   ENERGY_WINDOW_S,
   GAP_HOLD_MS,
+  MAX_STEP_MS,
+  energyIdle,
   REFRACTORY_S,
   createEnergy,
   resetEnergy,
@@ -200,5 +202,43 @@ describe('drop flag', () => {
     expect(r.s.energy).toBe(0);
     expect(r.s.drops.count).toBe(0);
     expect(r.s.drops.lastAt).toBe(-Infinity);
+  });
+
+  it('flags the drop for a realistic build then 0.8 or 0.85 loudness', () => {
+    for (const level of [0.8, 0.85]) {
+      const r = rig();
+      r.run(8000, 0.3, true, 500);
+      r.run(30000, level, true, 500);
+      expect(r.s.drops.count).toBe(1);
+    }
+  });
+
+  it('does not count decaying silence as a build-up', () => {
+    const r = rig();
+    r.run(30000, 1, true, 500);
+    r.run(12000, 0, false);
+    r.run(30000, 1, true, 500);
+    expect(r.s.drops.count).toBe(0);
+  });
+
+  it('a hidden page (one long step) neither snaps the energy nor fakes a stretch', () => {
+    const r = rig();
+    r.run(5000, 0.3, true, 500);
+    const before = r.s.energy;
+    stepEnergy(r.s, r.now + 60000, 60000, 1, true, 0);
+    expect(r.s.energy - before).toBeLessThan(1 - Math.exp(-MAX_STEP_MS / 1000 / ENERGY_WINDOW_S) + 1e-9);
+    expect(r.s.armed).toBe(false);
+    // Any quiet stretch starts over at the wake-up tick; none carries across the gap.
+    expect(r.s.stretchSince === -Infinity || r.s.stretchSince === r.now + 60000).toBe(true);
+  });
+
+  it('is idle only when silent, at 0 and nothing armed', () => {
+    const r = rig();
+    expect(energyIdle(r.s, false)).toBe(true);
+    expect(energyIdle(r.s, true)).toBe(false);
+    r.run(2000, 0.5);
+    expect(energyIdle(r.s, false)).toBe(false);
+    r.run(90000, 0, false);
+    expect(energyIdle(r.s, false)).toBe(true);
   });
 });

@@ -148,3 +148,30 @@ it('clears energy and drop stamps on reset', () => {
   expect(audioDrops().count).toBe(0);
   expect(audioDrops().lastAt).toBe(-Infinity);
 });
+
+it('through the tick: silence between two loud stretches is no build-up, and a hidden page does not snap energy', () => {
+  const beatBands = (t: number) => ({ ...loud, bands: Array.from({ length: 32 }, (_, i) => (i < 6 && Math.floor(t / 250) % 2 === 0 ? 255 : 5)) });
+  let t = 0;
+  const run = (ms: number, sound: boolean) => {
+    const end = t + ms;
+    for (; t < end; t += 33) {
+      if (sound) ingestLevels(beatBands(t), t);
+      tickAudio(t);
+    }
+  };
+  run(30000, true);
+  run(12000, false);
+  run(30000, true);
+  expect(audioDrops().count).toBe(0);
+  const before = audioEnergy();
+  t += 3_600_000;
+  ingestLevels(beatBands(t), t);
+  tickAudio(t);
+  expect(Math.abs(audioEnergy() - before)).toBeLessThan(0.05);
+});
+
+it('keeps energy at exactly 0 while idle', () => {
+  for (let t = 0; t < 5000; t += 33) tickAudio(t);
+  expect(audioEnergy()).toBe(0);
+  expect(audioDrops().count).toBe(0);
+});

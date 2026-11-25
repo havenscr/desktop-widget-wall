@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { SILENCE_MS, clamp01, hasSound, loudness, smoothStep, type AudioLevelsPayload, type Levels } from './model';
 import { createBeatDetector, type BeatDetector } from './beat';
-import { createEnergy, resetEnergy, stepEnergy, type DropStamp } from './energy';
+import { createEnergy, energyIdle, resetEnergy, stepEnergy, type DropStamp } from './energy';
 import { APP_DANCE_PARAMS, clearDance, createDance, setDanceParams, stepDance, type DanceParams } from './dance';
 import { lineSettings } from '../horizon/linesSettings';
 
@@ -170,7 +170,7 @@ export function tickAudio(now: number): void {
   const playing = now - lastSoundAt <= SILENCE_MS;
   // Slow energy and drops read the levels as they stood before this tick moves them.
   const lv = useAudioStore.getState();
-  stepEnergy(energy, now, elapsedMs, loudness(lv), playing, detector.count);
+  if (!energyIdle(energy, playing)) stepEnergy(energy, now, elapsedMs, loudness(lv), playing, detector.count);
   advanceHistory(now, playing);
   if (!playing) {
     // Past the silence deadline the levels are zero at once, as in the old visualizer.
