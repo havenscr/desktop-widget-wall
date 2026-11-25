@@ -974,7 +974,7 @@ EXPECT.push(
 // watt drive-in: the drive-in look is on with something playing (Watt himself has no text).
 EXPECT.push(['unwind', 'Watt: drive-in', ['Open in YouTube']]);
 // work layer up: the full ribbon's hour labels show over the page.
-EXPECT.push(['unwind', 'work layer up', ['12 PM', '2 PM']]);
+EXPECT.push(['unwind', 'work layer up', ['12 PM', '2 PM', 'Go On Air']]);
 
 /**
  * States that set a knob but change nothing in the page text, so no text can prove them: the

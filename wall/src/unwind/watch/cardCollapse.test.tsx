@@ -33,6 +33,11 @@ afterEach(() => {
 });
 
 describe('the Watch card shrinking back', () => {
+  it('marks closing in the same commit the card lets go, never from a later effect', () => {
+    const src = css('../watch/WatchCard.tsx');
+    const effects = src.match(/useEffect\(\(\) => \{[\s\S]*?\n  \}, \[[^\]]*\]\);/g) ?? [];
+    expect(effects.some((e) => /setClosing\(true\)/.test(e))).toBe(false);
+  });
   it('is marked closing for its collapse time after it stops growing, so what is under it waits', async () => {
     render(<WatchCard />);
     expect(card().style.getPropertyValue('--w-collapse')).toBe(`${CARD_COLLAPSE_MS}ms`);
