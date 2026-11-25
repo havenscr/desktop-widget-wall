@@ -35,7 +35,7 @@ function writeTuneSoon(): void {
   tuneDirty = true;
   if (tuneTimer === null) tuneTimer = setTimeout(flushTune, TUNE_WRITE_MS);
 }
-import { relinkSaved } from './rowMenu';
+import { relinkSaved } from './rowMenuModel';
 import { addSaved, cleanLabel, cleanText, loadSaved, MAX_LABEL, removeSaved, renameSaved, saveSaved, type SavedItem } from './saved';
 import { stopLine, type StopReason } from './stops';
 
@@ -434,10 +434,10 @@ useWatchStore.subscribe((s, prev) => {
   if (title !== undefined) s.fillLabel(key, title);
 });
 
-/** Tests only: back to a fresh store over whatever local storage holds now. */
 /** Told when a saved item's link changes (old key, new key), so what holds the old key can follow. */
 export const relinkListeners: Array<(from: string, to: string) => void> = [];
 
+/** Tests only: back to a fresh store over whatever local storage holds now. */
 export function resetWatch(): void {
   cancelTuneWrite();
   waitingTitles.clear();

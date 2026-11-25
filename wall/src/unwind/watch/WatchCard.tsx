@@ -10,7 +10,7 @@ import { AddMenu } from './AddToPlaylist';
 import { OwnEditor } from './OwnEditor';
 import { OwnFollow } from './OwnFollow';
 import { RowMenu } from './RowMenu';
-import { linkText } from './rowMenu';
+import { linkText } from './rowMenuModel';
 import { openInBrowser } from './openInBrowser';
 import { PASTE_ERROR_MS } from './ownShared';
 import { countText, DeleteAsk, OwnTile, savedVideo } from './OwnParts';

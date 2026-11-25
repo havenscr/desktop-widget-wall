@@ -8,7 +8,7 @@ import { usePlaceStore } from '../../state/places';
 import { resetLastPlayed } from '../lastPlayed';
 import { ADD_ERRORS, SAVED_KEY, type SavedItem } from './saved';
 import { LINK_ERRORS } from './links';
-import { linkText, relinkSaved } from './rowMenu';
+import { linkText, relinkSaved } from './rowMenuModel';
 import { PINS_KEY, resetPins, usePins } from './pins';
 import { resetWatch, useWatchStore } from './store';
 import { UnwindView } from './testView';
