@@ -57,7 +57,7 @@ export default {
     state('refused file', 'show=refused&marks=0&oatimer=idle', ['No parts yet']),
     state('forty parts', 'show=forty&oatimer=run', [' of 40: ']),
     state('long notes', 'show=long&oatimer=run', ['Notes', 'Mark a moment']),
-    state('marks full', 'marks=full&oatimer=run', ['Mark a moment'], '.oa2-skrow2 .key-tile[aria-label="Mark a moment"]'),
+    state('marks full', 'marks=full&oatimer=run', ['Mark a moment'], '.oa2-skgrid .key-tile[aria-label="Mark a moment"]'),
     state('Watt standing', 'oatimer=run&wattspot=1000', ['Show timer']),
     state('timer stopped at 24 hours', 'oatimer=limit', ['24:00:00', 'Stopped at 24 hours']),
   ] },
@@ -72,7 +72,7 @@ export default {
       variant('Watt set down at the far left', 'oatimer=run&wattspot=200'),
       variant('Watt set down at the far right', 'oatimer=run&wattspot=2300'),
       variant('timer stopped itself at 24 hours', 'oatimer=limit'),
-      variant('marks.txt full after a click', 'marks=full&oatimer=run', { click: '.oa2-skrow2 .key-tile[aria-label="Mark a moment"]' }),
+      variant('marks.txt full after a click', 'marks=full&oatimer=run', { click: '.oa2-skgrid .key-tile[aria-label="Mark a moment"]' }),
     ],
     measurements: { onair: measureOnAir },
     rules: {

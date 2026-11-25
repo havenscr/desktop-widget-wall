@@ -85,9 +85,8 @@ it('draws the Live page: chip, comments newest at the bottom, the foot, and the 
   expect(document.querySelectorAll('.oa2-comments button:not(.oa2-exp)').length).toBe(0);
   expect(document.querySelectorAll('.oa2-comments .oa2-exp').length).toBe(1);
   await waitFor(() => expect(screen.getByText(/^Part 1 of 2: Load the data/)).toBeTruthy());
-  // The studio keys: four StreamYard keys in row 1 and three in row 2; the prompter box holds the pop-out controls and the status block is drawn.
-  expect(document.querySelectorAll('.oa2-studiokeys .oa2-skrow1 .key-tile').length).toBe(4);
-  expect(document.querySelectorAll('.oa2-studiokeys .oa2-skrow2 .key-tile').length).toBe(3);
+  // The studio keys: eight equal keys; the prompter box holds the pop-out controls and the status block is drawn.
+  expect(document.querySelectorAll('.oa2-studiokeys .oa2-skgrid .key-tile').length).toBe(8);
   expect(document.querySelector('.oa2-stagepop')).not.toBeNull();
   expect(document.querySelector('.oa2-empty-live')).toBeNull();
   expect(document.querySelector('.oa2-studiostatus')).not.toBeNull();

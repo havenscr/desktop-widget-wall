@@ -8,6 +8,9 @@ import { useYtLive } from '../ytliveStore';
 import { StudioKeys } from './StudioKeys';
 import { StudioStatus } from './StudioStatus';
 import { STUDIO_CONFIRM_MS } from './studioModel';
+import onair2Css from '../../styles/onair2.css?raw';
+import workCss from '../../styles/work.css?raw';
+import { DEFAULT_SLOTS, LABEL_MAX_PX, PICKER_ORDER, SLOTS_KEY, fitLabel, loadSlots, measureLabel, parseSlots, saveSlots } from './studioSlots';
 import { useStudio } from './studioStore';
 
 const NOW = 1_700_000_000_000;
@@ -28,7 +31,13 @@ const open = async () => {
   });
 };
 
+/** The default slots with these actions put into the first slots. */
+const withSlots = (first: string[]) => DEFAULT_SLOTS.map((d, i) => (first[i] ? { a: first[i] } : d));
+const tiles = () => [...document.querySelectorAll<HTMLElement>('.oa2-skgrid .key-tile')];
+const rightClick = (el: Element) => fireEvent.contextMenu(el);
+
 beforeEach(() => {
+  localStorage.clear();
   sends = [];
   state = 'picked';
   refuse = null;
@@ -54,8 +63,8 @@ afterEach(() => {
 it('never shows a keys file button: Pick window with no window, nothing in the heading once picked, no tile dim', async () => {
   state = 'none';
   await open();
-  const tiles = [...document.querySelectorAll('.oa2-skrow1 .key-tile')];
-  expect(tiles.map((t) => t.getAttribute('aria-label'))).toEqual(['Solo', 'Two up', 'Share', 'Go live']);
+  const tiles = [...document.querySelectorAll('.oa2-skgrid .key-tile')];
+  expect(tiles.map((t) => t.getAttribute('aria-label'))).toEqual(['Full Screen Speaker', 'Presenter View', '2 Person Presenter View', 'Screenshare', 'Mute mic', 'Camera off', 'Mark a moment', 'Go live']);
   expect(tiles.some((t) => t.classList.contains('off') || t.hasAttribute('aria-disabled'))).toBe(false);
   const head = document.querySelector('.oa2-studiokeys .oa2-hd') as HTMLElement;
   const needle = ['Open', 'keys', 'file'].join(' ');
@@ -96,17 +105,19 @@ it('the half of a double click never confirms', async () => {
   expect(sends.length).toBe(0);
 });
 
-it('Solo sends at once, without confirm, and the Sent line says what the wall sent', async () => {
+it('Two up sends at once, without confirm, and the Sent line says what the wall sent', async () => {
+  localStorage.setItem(SLOTS_KEY, JSON.stringify(withSlots(['two'])));
   await open();
   fireEvent.click(screen.getByRole('button', { name: 'Two up' }), { detail: 1 });
   await waitFor(() => expect(sends).toEqual([{ key: 'two', confirm: false }]));
   await waitFor(() => expect(screen.getAllByText(/Sent: Two up, 2 min ago/).length).toBe(1));
   expect(screen.getByText('Last key sent: Two up, 2 min ago')).toBeTruthy();
   expect(screen.getByText('The wall cannot see which layout is live. It shows what it sent.')).toBeTruthy();
-  expect(document.querySelector('.oa2-skrow1 [aria-pressed="true"]')).toBeNull();
+  expect(document.querySelector('.oa2-skgrid [aria-pressed="true"]')).toBeNull();
 });
 
 it('says each refusal in words and leaves the Sent line alone', async () => {
+  localStorage.setItem(SLOTS_KEY, JSON.stringify(withSlots(['share'])));
   await open();
   const cases: [string, RegExp][] = [
     ['no studio window', /Pick the StreamYard window first/],
@@ -131,4 +142,304 @@ it('the status block warns in amber when the window is minimized', async () => {
   await open();
   const line = screen.getByText('Studio window: minimized');
   expect(line.getAttribute('data-warn')).toBe('true');
+});
+
+it('shows eight equal keys in two rows of four, defaults in order, short scene labels with full names in the key hover', async () => {
+  await open();
+  const t = tiles();
+  expect(t.length).toBe(8);
+  expect(t.map((k) => k.getAttribute('data-key'))).toEqual(['scene1', 'scene2', 'scene3', 'scene4', 'mute', 'camera', 'mark', 'golive']);
+  expect(t.map((k) => k.querySelector('.deck-lbl')?.textContent)).toEqual(['Speaker', 'Presenter', '2 Person', 'Screenshare', 'Mute mic', 'Camera off', 'Mark a moment', 'Go live']);
+  const grid = document.querySelector('.oa2-skgrid') as HTMLElement;
+  expect(grid.querySelectorAll('.key-tile').length).toBe(8);
+});
+
+it('right-click opens the picker with the StreamYard group then the Wall group, and a pick survives a reload', async () => {
+  await open();
+  rightClick(tiles()[7]);
+  const dlg = screen.getByRole('dialog');
+  const heads = [...dlg.querySelectorAll('.pk-gh')].map((h) => h.textContent);
+  expect(heads).toEqual(['StreamYard', 'Wall']);
+  const rows = [...dlg.querySelectorAll('.pk-row')].map((r) => r.getAttribute('aria-label'));
+  expect(rows).toEqual(['Full Screen Speaker', 'Presenter View', '2 Person Presenter View', 'Screenshare', 'Mute mic', 'Camera off', 'Share', 'Go live', 'Solo', 'Two up', 'Mark a moment', 'Snip', 'Hide screen']);
+  expect(dlg.querySelector('input[aria-label="Label"]')).toBeNull();
+  fireEvent.click(screen.getByRole('button', { name: 'Snip' }));
+  expect(screen.queryByRole('dialog')).toBeNull();
+  expect(tiles()[7].getAttribute('data-key')).toBe('snip');
+  expect(JSON.parse(localStorage.getItem(SLOTS_KEY) ?? '')[7]).toEqual({ a: 'snip' });
+  cleanup();
+  await open();
+  expect(tiles()[7].getAttribute('data-key')).toBe('snip');
+});
+
+it('a scene key has a Label field that renames the key and keeps the full name in its aria name', async () => {
+  await open();
+  rightClick(tiles()[0]);
+  const field = screen.getByLabelText('Label') as HTMLInputElement;
+  fireEvent.change(field, { target: { value: 'Host' } });
+  expect(tiles()[0].querySelector('.deck-lbl')?.textContent).toBe('Host');
+  expect(tiles()[0].getAttribute('aria-label')).toBe('Host, Full Screen Speaker');
+  expect(JSON.parse(localStorage.getItem(SLOTS_KEY) ?? '')[0]).toEqual({ a: 'scene1', l: 'Host' });
+});
+
+it('a bad stored value falls back to the defaults', async () => {
+  for (const bad of ['not json', '[]', JSON.stringify(Array(8).fill({ a: 'nope' })), JSON.stringify([...DEFAULT_SLOTS.slice(0, 7), 5])]) {
+    localStorage.setItem(SLOTS_KEY, bad);
+    render(both());
+    expect(tiles().map((k) => k.getAttribute('data-key'))).toEqual(['scene1', 'scene2', 'scene3', 'scene4', 'mute', 'camera', 'mark', 'golive']);
+    cleanup();
+  }
+});
+
+it('scene, mute and camera keys say Waiting on StreamYard setup and send nothing', async () => {
+  await open();
+  for (const i of [0, 4, 5]) {
+    fireEvent.click(tiles()[i], { detail: 1 });
+    await waitFor(() => expect(screen.getAllByText(/Waiting on StreamYard setup/).length).toBeGreaterThan(0));
+    await act(async () => void (await new Promise((r) => setTimeout(r, 600))));
+  }
+  expect(sends.length).toBe(0);
+  expect(document.querySelector('[data-last="true"]')).toBeNull();
+});
+
+it('only the key sent last glows, and a wall action counts', async () => {
+  localStorage.setItem(SLOTS_KEY, JSON.stringify(withSlots(['two', 'share'])));
+  await open();
+  expect(document.querySelectorAll('[data-last]').length).toBe(0);
+  fireEvent.click(tiles()[0], { detail: 1 });
+  await waitFor(() => expect(tiles()[0].getAttribute('data-last')).toBe('true'));
+  await act(async () => void (await new Promise((r) => setTimeout(r, 600))));
+  fireEvent.click(tiles()[1], { detail: 1 });
+  await waitFor(() => expect(tiles()[1].getAttribute('data-last')).toBe('true'));
+  expect(document.querySelectorAll('[data-last]').length).toBe(1);
+  expect(tiles()[0].hasAttribute('data-last')).toBe(false);
+});
+
+/** The declarations of the first rule in `css` whose selector is exactly `sel`. */
+const ruleOf = (css: string, sel: string): string => {
+  const i = css.indexOf(`${sel} {`);
+  return i < 0 ? '' : css.slice(css.indexOf('{', i) + 1, css.indexOf('}', i));
+};
+/** Classes and attributes in a selector: the middle number of its specificity. */
+const weight = (sel: string): number => (sel.match(/\.[\w-]+|\[[^\]]+\]/g) ?? []).length;
+
+it('rule A: no studio key has a kind, and the stylesheet colours every studio key as the base key, beating every kind rule', async () => {
+  await open();
+  expect(tiles().some((k) => k.hasAttribute('data-kind'))).toBe(false);
+  cleanup();
+  const all = Object.values(PICKER_ORDER).flat();
+  for (let at = 0; at < all.length; at += 8) {
+    localStorage.setItem(SLOTS_KEY, JSON.stringify(DEFAULT_SLOTS.map((d, i) => (all[at + i] ? { a: all[at + i] } : d))));
+    render(both());
+    expect(tiles().length).toBe(8);
+    expect(tiles().some((k) => k.hasAttribute('data-kind'))).toBe(false);
+    cleanup();
+  }
+  expect(workCss.includes("key-tile[data-kind=")).toBe(true);
+  expect(ruleOf(onair2Css, '.oa2 .oa2-studiokeys .deck-tile.key-tile.off')).toBe('');
+  const sel = '.oa2 .oa2-studiokeys .deck-tile.key-tile';
+  const base = /--g: ([\d, ]+);/.exec(ruleOf(workCss, '.key-tile,\n.fy-plate'))?.[1];
+  const studio = /--g: ([\d, ]+);/.exec(ruleOf(onair2Css, sel))?.[1];
+  expect(base).toBeTruthy();
+  // The studio colour is the base colour, not a kind's.
+  expect(studio).toBe(base);
+  // The pin outweighs every kind rule (`.key-tile[data-kind='...']`), so a kind could never recolour it.
+  for (const m of workCss.matchAll(/(\.key-tile\[data-kind=[^{]+)\{/g)) expect(weight(sel)).toBeGreaterThan(weight(m[1].trim().split(',')[0]));
+  // The only accents are the last-sent glow and the armed state.
+  expect(onair2Css).toContain(`${sel}[data-last='true']`);
+  expect(onair2Css).toContain(`${sel}[data-armed='true']`);
+});
+
+it('rule B: a label too long for its key is shortened to one line, and the full name stays in the accessible name', async () => {
+  localStorage.setItem(SLOTS_KEY, JSON.stringify(DEFAULT_SLOTS.map((d, i) => (i === 0 ? { a: 'scene1', l: 'ABCDEFGHIJKLMNOP' } : d))));
+  await open();
+  for (const k of tiles()) {
+    const text = k.querySelector('.deck-lbl')?.textContent ?? '';
+    expect(text.includes('\n')).toBe(false);
+    expect(measureLabel(text)).toBeLessThanOrEqual(LABEL_MAX_PX);
+    expect(k.getAttribute('aria-label')).toContain(text);
+  }
+  // Whatever the text, the drawn words are exactly what fitLabel gives for the full label, so no line can wrap.
+  expect(fitLabel('Alpha Beta Gamma Delta', LABEL_MAX_PX, measureLabel)).toBe('Alpha Beta');
+  for (const t of ['A', 'Two words', 'Wide wide wide wide wide wide', 'Wwwwwwwwwwwwwwwwwwwwwww']) {
+    const fit = fitLabel(t, LABEL_MAX_PX, measureLabel);
+    expect(/\s{2,}|\n/.test(fit)).toBe(false);
+    expect(measureLabel(fit)).toBeLessThanOrEqual(LABEL_MAX_PX);
+    expect(fitLabel(fit, LABEL_MAX_PX, measureLabel)).toBe(fit);
+  }
+  const long = tiles()[0];
+  expect(long.querySelector('.deck-lbl')?.textContent?.endsWith('\u2026')).toBe(true);
+  // The name holds the whole label and the drawn words.
+  expect(long.getAttribute('aria-label')).toBe('ABCDEFGHIJKLMN\u2026, ABCDEFGHIJKLMNOP, Full Screen Speaker');
+  const rule = ruleOf(onair2Css, '.oa2 .oa2-studiokeys .deck-tile.key-tile .deck-lbl.oa2-sklbl');
+  expect(rule).toContain('white-space: nowrap');
+  expect(rule).toContain('font-size: 16px');
+  expect(rule).toContain('text-align: center');
+});
+
+it('Snip and Hide screen send their library keys, and glow only once the send went through', async () => {
+  const lib: string[] = [];
+  let fail = false;
+  mocks.set('wall2_keys_send_library', (args) => {
+    lib.push(String(args?.id));
+    if (fail) throw 'failed';
+    return null;
+  });
+  localStorage.setItem(SLOTS_KEY, JSON.stringify(withSlots(['snip', 'hide'])));
+  await open();
+  await waitFor(() => expect(document.querySelector('.oa2-studiokeys')).not.toBeNull());
+  fail = true;
+  fireEvent.click(tiles()[0], { detail: 1 });
+  await waitFor(() => expect(lib).toEqual(['snip']));
+  await act(async () => void (await new Promise((r) => setTimeout(r, 600))));
+  expect(document.querySelector('[data-last]')).toBeNull();
+  fail = false;
+  fireEvent.click(tiles()[1], { detail: 1 });
+  await waitFor(() => expect(lib).toEqual(['snip', 'strip-dark']));
+  await waitFor(() => expect(tiles()[1].getAttribute('data-last')).toBe('true'));
+  expect(document.querySelectorAll('[data-last]').length).toBe(1);
+});
+
+it('two keys with the same action: only the one pressed glows', async () => {
+  localStorage.setItem(SLOTS_KEY, JSON.stringify(withSlots(['two', 'two'])));
+  await open();
+  fireEvent.click(tiles()[1], { detail: 1 });
+  await waitFor(() => expect(tiles()[1].getAttribute('data-last')).toBe('true'));
+  expect(tiles()[0].hasAttribute('data-last')).toBe(false);
+});
+
+it('a pending Go live confirm does not follow a reassignment to another key', async () => {
+  await open();
+  fireEvent.click(tiles()[7], { detail: 1 });
+  expect(tiles()[7].getAttribute('data-armed')).toBe('true');
+  rightClick(tiles()[0]);
+  fireEvent.click(screen.getByRole('button', { name: 'Go live' }));
+  expect(tiles()[0].getAttribute('data-key')).toBe('golive');
+  expect(document.querySelector('[data-armed]')).toBeNull();
+  fireEvent.click(tiles()[0], { detail: 1 });
+  expect(sends.length).toBe(0);
+  expect(tiles()[0].getAttribute('data-armed')).toBe('true');
+});
+
+const liveStatus = (): void => {
+  useYtLive.setState({ status: { state: 'live', startedAt: NOW - 60_000, scheduledAt: null, viewers: 3, chat: false, readAt: NOW, stale: false, word: null, statusLeft: 1000, chatLeft: 1000 } });
+};
+
+it('while live the Go live key is End show, glows per slot through the swap, and End show sends only while live', async () => {
+  await open();
+  fireEvent.click(tiles()[7], { detail: 1 });
+  fireEvent.click(tiles()[7], { detail: 1 });
+  await waitFor(() => expect(tiles()[7].getAttribute('data-last')).toBe('true'));
+  act(() => liveStatus());
+  expect(tiles()[7].getAttribute('data-key')).toBe('end');
+  expect(tiles()[7].getAttribute('data-last')).toBe('true');
+  fireEvent.click(tiles()[7], { detail: 1 });
+  fireEvent.click(tiles()[7], { detail: 1 });
+  await waitFor(() => expect(sends.map((x) => x.key)).toEqual(['golive', 'end']));
+  // Back to not live: the key is Go live again, still the one that glows, and no End show is sent.
+  act(() => useYtLive.setState({ status: null }));
+  expect(tiles()[7].getAttribute('data-key')).toBe('golive');
+  expect(tiles()[7].getAttribute('data-last')).toBe('true');
+  fireEvent.click(tiles()[7], { detail: 1 });
+  expect(sends.map((x) => x.key)).toEqual(['golive', 'end']);
+});
+
+it('two Go live keys: a confirm arms only the key pressed', async () => {
+  localStorage.setItem(SLOTS_KEY, JSON.stringify(withSlots(['golive'])));
+  await open();
+  fireEvent.click(tiles()[0], { detail: 1 });
+  expect(tiles()[0].getAttribute('data-armed')).toBe('true');
+  expect(tiles()[7].hasAttribute('data-armed')).toBe(false);
+  expect(tiles()[7].querySelector('.deck-lbl')?.textContent).toBe('Go live');
+});
+
+it('Snip through a slot also runs from the keyboard, as it is not a mouse-only key', async () => {
+  const lib: string[] = [];
+  mocks.set('wall2_keys_send_library', (args) => {
+    lib.push(String(args?.id));
+    return null;
+  });
+  localStorage.setItem(SLOTS_KEY, JSON.stringify(withSlots(['snip'])));
+  await open();
+  await waitFor(() => expect(document.querySelector('.oa2-studiokeys')).not.toBeNull());
+  fireEvent.click(tiles()[0], { detail: 0 });
+  await waitFor(() => expect(lib).toEqual(['snip']));
+});
+
+it('Escape closes the picker and returns the focus to the key', async () => {
+  await open();
+  const key = tiles()[3];
+  key.focus();
+  fireEvent.keyDown(key, { key: 'ContextMenu' });
+  expect(screen.getByRole('dialog')).toBeTruthy();
+  fireEvent.keyDown(document, { key: 'Escape' });
+  expect(screen.queryByRole('dialog')).toBeNull();
+  await waitFor(() => expect(document.activeElement).toBe(tiles()[3]));
+});
+
+it('End show is not in the picker, and a stored End show becomes Go live', async () => {
+  localStorage.setItem(SLOTS_KEY, JSON.stringify(DEFAULT_SLOTS.map((d, i) => (i === 0 ? { a: 'end' } : d))));
+  await open();
+  expect(tiles()[0].getAttribute('data-key')).toBe('golive');
+  rightClick(tiles()[1]);
+  expect(screen.queryByRole('button', { name: 'End show' })).toBeNull();
+});
+
+it('the picker opens from the keyboard, takes the focus, completes a pick, and returns the focus to the key', async () => {
+  for (const press of [{ key: 'ContextMenu' }, { key: 'F10', shiftKey: true }]) {
+    localStorage.clear();
+    await open();
+    const key = tiles()[7];
+    key.focus();
+    fireEvent.keyDown(key, press);
+    const dlg = screen.getByRole('dialog');
+    expect(dlg.contains(document.activeElement)).toBe(true);
+    fireEvent.keyDown(document.activeElement as Element, { key: 'ArrowDown' });
+    const row = document.activeElement as HTMLElement;
+    expect(row.classList.contains('pk-row')).toBe(true);
+    // Enter on a button is a click.
+    fireEvent.click(row);
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(tiles()[7].getAttribute('data-key')).not.toBe('golive');
+    await waitFor(() => expect(document.activeElement).toBe(tiles()[7]));
+    cleanup();
+  }
+});
+
+it('Mark a moment is busy while it writes', async () => {
+  let release: (v: unknown) => void = () => {};
+  mocks.set('wall2_onair_mark', () => new Promise((r) => (release = r)));
+  await open();
+  fireEvent.click(tiles()[6], { detail: 1 });
+  await waitFor(() => expect(tiles()[6].getAttribute('aria-busy')).toBe('true'));
+  await act(async () => release({ ok: true }));
+});
+
+it('the slots are saved on a change and read back; bad stored data and a bad label are cleaned', () => {
+  expect(parseSlots(null).map((s) => s.a)).toEqual(DEFAULT_SLOTS.map((s) => s.a));
+  const slots = DEFAULT_SLOTS.map((d, i) => (i === 0 ? { a: 'scene1' as const, l: 'Host' } : { ...d }));
+  saveSlots(slots);
+  expect(JSON.parse(localStorage.getItem(SLOTS_KEY) ?? '')).toEqual(slots);
+  expect(loadSlots()).toEqual(slots);
+  // A label on a key that is not a scene is dropped; a long one is cut to 16 characters.
+  const raw = JSON.stringify(DEFAULT_SLOTS.map((d, i) => (i === 0 ? { a: 'scene2', l: '  ' + 'x'.repeat(40) } : i === 4 ? { a: 'mute', l: 'Quiet' } : d)));
+  const out = parseSlots(raw);
+  expect(out[0]).toEqual({ a: 'scene2', l: 'x'.repeat(16) });
+  expect(out[4]).toEqual({ a: 'mute' });
+  // A label that is not a string throws the whole value away; a label of only spaces is dropped.
+  expect(parseSlots(JSON.stringify(DEFAULT_SLOTS.map((d, i) => (i === 0 ? { a: 'scene1', l: 7 } : d)))).map((x) => x.l)).toEqual(Array(8).fill(undefined));
+  expect(parseSlots(JSON.stringify(DEFAULT_SLOTS.map((d, i) => (i === 0 ? { a: 'scene1', l: '   ' } : d))))[0]).toEqual({ a: 'scene1' });
+  expect(parseSlots(JSON.stringify(DEFAULT_SLOTS.map((d, i) => (i === 6 ? { a: 'snip', l: 'Shot' } : d))))[6]).toEqual({ a: 'snip' });
+  for (const bad of ['{', 'null', '{}', JSON.stringify(DEFAULT_SLOTS.slice(0, 7)), JSON.stringify([...DEFAULT_SLOTS.slice(0, 7), { a: 'mute', l: 4 }])]) expect(parseSlots(bad).map((s) => s.a)).toEqual(DEFAULT_SLOTS.map((s) => s.a));
+});
+
+it('fitLabel keeps a label that fits, drops words then letters when it does not, and never wraps', () => {
+  const measure = (s: string) => s.length * 10;
+  expect(fitLabel('Speaker', 100, measure)).toBe('Speaker');
+  expect(fitLabel('Full Screen Speaker', 100, measure)).toBe('Full');
+  const long = fitLabel('Supercalifragilistic', 100, measure);
+  expect(long.endsWith('\u2026')).toBe(true);
+  expect(measure(long)).toBeLessThanOrEqual(100);
+  expect(long.includes('\n')).toBe(false);
+  expect(fitLabel('Anything at all', 5, measure)).toBe('\u2026');
 });

@@ -1,19 +1,39 @@
-import { IconAppWindow, IconBroadcast, IconPlayerStopFilled, IconScreenShare, IconUser, IconUsers, type Icon } from '@tabler/icons-react';
-import { useEffect, useRef, useState } from 'react';
+import { IconAppWindow } from '@tabler/icons-react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { tip } from '../../ui/HoverTip';
+import { keyboardOnMouseKey } from '../../work/keyPress';
+import { resolveKey } from '../keyResolve';
 import { useOnAirStore } from '../store';
 import { statusStale } from '../ytlive';
 import { useYtLive } from '../ytliveStore';
-import { LibTile, MarkTile, TileRow, Head } from './Tiles';
-import { agoText, needsConfirm, refusalText, STUDIO_CONFIRM_MS, STUDIO_LABEL, type StudioKey } from './studioModel';
+import { Head } from './Tiles';
+import { agoText, needsConfirm, refusalText, STUDIO_CONFIRM_MS, type StudioKey } from './studioModel';
+import { LABEL_MAX_PX, SLOT_INFO, WAITING, fitLabel, loadSlots, measureLabel, saveSlots, slotLabel, type ShownAction, type Slot } from './studioSlots';
+import { SLOT_ICON as ICON } from './studioIcons';
+import { StudioPicker } from './StudioPicker';
 import { useStudio } from './studioStore';
 import { useDeckKeys } from './useDeckKeys';
 
-const ICON: Record<StudioKey, Icon> = { solo: IconUser, two: IconUsers, share: IconScreenShare, golive: IconBroadcast, end: IconPlayerStopFilled };
+/** Wall actions that are keys of the key library. */
+const LIB_ID: Partial<Record<ShownAction, string>> = { snip: 'snip', hide: 'strip-dark' };
 
-/** The studio keys box: row 1 the StreamYard keys, row 2 the three keys that work anywhere. */
+export const WAITING_TEXT = 'Waiting on StreamYard setup';
+
+/**
+ * The studio keys box: eight equal keys in two rows of four. Each slot holds one action (StreamYard or
+ * wall), chosen by right-click. Every key has one look; only the key sent last glows.
+ */
 export function StudioKeys({ now }: { now: number }) {
-  const keys = useDeckKeys();
+  // A library key's press settles here: it glows only when it went through.
+  const pending = useRef<{ id: string; slot: number } | null>(null);
+  const [last, setLast] = useState<{ slot: number } | null>(null);
+  const done = useCallback((id: string, ok: boolean) => {
+    const p = pending.current;
+    if (!p || p.id !== id) return;
+    pending.current = null;
+    if (ok) setLast({ slot: p.slot });
+  }, []);
+  const keys = useDeckKeys(done);
   const mark = useOnAirStore((s) => s.mark);
   const marking = useOnAirStore((s) => s.marking);
   const status = useStudio((s) => s.status);
@@ -22,18 +42,71 @@ export function StudioKeys({ now }: { now: number }) {
   const pick = useStudio((s) => s.pick);
   const yt = useYtLive((s) => s.status);
   const live = yt?.state === 'live' && !statusStale(yt, now);
-  const [armed, setArmed] = useState<StudioKey | null>(null);
+  const [slots, setSlots] = useState<Slot[]>(loadSlots);
+  const [picker, setPicker] = useState<number | null>(null);
+  const [armed, setArmed] = useState<{ slot: number; action: ShownAction } | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const busy = useRef(false);
+  const tiles = useRef<(HTMLButtonElement | null)[]>([]);
   useEffect(() => () => clearTimeout(timer.current), []);
+  // End show only runs while the show is live; the key is read at press time, not from a stale render.
+  const liveNow = useRef(live);
+  liveNow.current = live;
   const picked = status.state === 'picked' || status.state === 'minimized';
 
-  const press = async (key: StudioKey, detail: number) => {
+  /** A reassigned or relabelled slot starts clean: no pending confirm, no glow. */
+  const change = (i: number, next: Slot) => {
+    clearTimeout(timer.current);
+    setArmed(null);
+    setLast((l) => (l && l.slot === i ? null : l));
+    setSlots((cur) => {
+      const out = cur.map((s, j) => (j === i ? next : s));
+      saveSlots(out);
+      return out;
+    });
+  };
+
+  /** Closes the picker and puts the focus back on the key it was opened from. */
+  const closePicker = () => {
+    const i = picker;
+    setPicker(null);
+    if (i !== null) requestAnimationFrame(() => tiles.current[i]?.focus());
+  };
+
+  const press = async (slot: number, action: ShownAction, detail: number, label: string) => {
     // A click that is part of a double click never counts, and neither does one while a send runs.
     if (detail > 1 || busy.current) return;
-    if (needsConfirm(key) && armed !== key) {
-      setArmed(key);
-      keys.showBrief(`${STUDIO_LABEL[key]}? Click again`);
+    if (WAITING.has(action)) {
+      keys.showBrief(`${label}: ${WAITING_TEXT}`);
+      return;
+    }
+    if (action === 'mark') {
+      const before = useOnAirStore.getState().marks;
+      await mark(undefined);
+      const st = useOnAirStore.getState();
+      if (st.marksNote === null && st.marks !== before) setLast({ slot });
+      return;
+    }
+    const lib = LIB_ID[action];
+    if (lib) {
+      const k = keys.groups ? resolveKey(lib, keys.groups) : null;
+      if (!k) {
+        keys.showBrief(keys.groups ? `The key library has no runnable key "${lib}"` : 'The key library is not ready');
+        return;
+      }
+      if (keyboardOnMouseKey(k.action, detail)) return;
+      pending.current = { id: `onair:${k.id}`, slot };
+      void keys.press(`onair:${k.id}`, detail, { command: 'wall2_keys_send_library', args: { id: k.id } }, label, k.action, k.where, false);
+      return;
+    }
+    const key = action as StudioKey;
+    if (action === 'end' && !liveNow.current) {
+      keys.showBrief('End show works only while the show is live');
+      return;
+    }
+    if (needsConfirm(key) && !(armed && armed.slot === slot && armed.action === action)) {
+      setArmed({ slot, action });
+      keys.showBrief(`${SLOT_INFO[action].full}? Click again`);
       clearTimeout(timer.current);
       timer.current = setTimeout(() => setArmed(null), STUDIO_CONFIRM_MS);
       return;
@@ -43,6 +116,7 @@ export function StudioKeys({ now }: { now: number }) {
     busy.current = true;
     try {
       await send(key, needsConfirm(key));
+      setLast({ slot });
     } catch (e) {
       keys.showBrief(refusalText(e));
     } finally {
@@ -50,29 +124,63 @@ export function StudioKeys({ now }: { now: number }) {
     }
   };
 
-  const tile = (key: StudioKey) => {
-    const I = ICON[key];
-    const isArmed = armed === key;
-    const label = isArmed ? 'Click again' : STUDIO_LABEL[key];
+  const tile = (slot: Slot, i: number) => {
+    // While the show is live the Go live key is the End show key.
+    const action: ShownAction = slot.a === 'golive' && live ? 'end' : slot.a;
+    const info = SLOT_INFO[action];
+    const I = ICON[action];
+    const isArmed = armed !== null && armed.slot === i && armed.action === action;
+    const full = isArmed ? 'Click again' : slotLabel({ a: action, l: slot.l });
+    const text = fitLabel(full, LABEL_MAX_PX, measureLabel);
+    // The accessible name uses the whole label, never the fitted one, and always holds the words drawn on the key.
+    const custom = !isArmed && !!SLOT_INFO[action].scene && !!slot.l;
+    const base = custom ? `${full}, ${info.full}` : info.full;
+    const name = isArmed ? `${info.full}? Click again` : base.includes(text) ? base : `${text}, ${base}`;
+    let help: string;
+    if (WAITING.has(action)) help = `${info.full}. ${WAITING_TEXT}: this key works once the Stage Pop-out add-on is set up. Right-click to change the key.`;
+    else if (needsConfirm(action as StudioKey)) help = `${info.full} in StreamYard. Click twice within 3 seconds. StreamYard is then sent the key twice. Right-click to change the key.`;
+    else if (info.group === 'wall') help = `${info.full}. Right-click to change the key.`;
+    else help = `Send the ${info.full} hotkey to the StreamYard window you picked. Right-click to change the key.`;
+    const lib = LIB_ID[action];
+    const libAction = lib && keys.groups ? (resolveKey(lib, keys.groups)?.action ?? null) : null;
+    const onKey = keys.onKeyDown(libAction);
     return (
       <button
-        key={key}
+        key={i}
+        ref={(el) => {
+          tiles.current[i] = el;
+        }}
         type="button"
-        className={`deck-tile key-tile oa2-sk`}
+        className="deck-tile key-tile oa2-sk"
         data-armed={isArmed ? 'true' : undefined}
-        data-key={key}
-        aria-label={isArmed ? `${STUDIO_LABEL[key]}? Click again` : STUDIO_LABEL[key]}
-        onKeyDown={(e) => e.repeat && e.preventDefault()}
-        onClick={(e) => void press(key, e.detail)}
-        {...tip(needsConfirm(key) ? `${STUDIO_LABEL[key]} in StreamYard. Click twice within 3 seconds. StreamYard is then sent the key twice.` : `Send the ${STUDIO_LABEL[key]} hotkey to the StreamYard window you picked.`)}
+        data-last={last !== null && last.slot === i ? 'true' : undefined}
+        data-key={action}
+        data-slot={i}
+        aria-label={name}
+        aria-busy={action === 'mark' ? marking : undefined}
+        onKeyDown={(e) => {
+          // The Context Menu key and Shift+F10 open the picker, as a right-click does.
+          if (e.key === 'ContextMenu' || (e.key === 'F10' && e.shiftKey)) {
+            e.preventDefault();
+            setPicker(i);
+            return;
+          }
+          onKey(e);
+        }}
+        onContextMenu={(e) => {
+          e.preventDefault();
+          setPicker(i);
+        }}
+        onClick={(e) => void press(i, action, e.detail, full)}
+        {...tip(help)}
       >
         <I size={22} stroke={1.8} aria-hidden="true" />
-        <span className="deck-lbl">{label}</span>
+        <span className="deck-lbl oa2-sklbl">{text}</span>
       </button>
     );
   };
 
-  const right = sent ? `Sent: ${STUDIO_LABEL[sent.key]}, ${agoText(sent.at, now)}` : 'No key sent yet';
+  const right = useMemo(() => (sent ? `Sent: ${SLOT_INFO[sent.key].full}, ${agoText(sent.at, now)}` : 'No key sent yet'), [sent, now]);
   const action = !picked ? (
     <button type="button" className="oa-btn oa2-hdbtn" onClick={() => void pick()} {...tip('Then click the StreamYard browser window within 10 seconds.')}>
       <IconAppWindow size={20} aria-hidden="true" />
@@ -83,21 +191,19 @@ export function StudioKeys({ now }: { now: number }) {
   return (
     <div className="oa2-b oa2-studiokeys" role="group" aria-label="Studio keys">
       <Head label="Studio keys" brief={keys.brief} right={right} action={action} />
-      <div className="oa2-skrow1">
-        <div className="deck-tiles keys-tiles oa2-tiles" style={{ gridTemplateColumns: 'repeat(4, minmax(0, 1fr))' }}>
-          {tile('solo')}
-          {tile('two')}
-          {tile('share')}
-          {live ? tile('end') : tile('golive')}
-        </div>
-      </div>
-      <div className="oa2-skrow2">
-        <TileRow keys={keys} cols={3}>
-          <MarkTile mark={mark} showMs={undefined} marking={marking} />
-          <LibTile keys={keys} spec={{ id: 'snip' }} />
-          <LibTile keys={keys} spec={{ id: 'strip-dark' }} />
-        </TileRow>
-      </div>
+      <div className="oa2-skgrid">{slots.map(tile)}</div>
+      {picker !== null && (
+        <StudioPicker
+          slot={slots[picker]}
+          index={picker}
+          onChoose={(a) => {
+            change(picker, { a });
+            closePicker();
+          }}
+          onLabel={(l) => change(picker, { a: slots[picker].a, l: l.trim() || undefined })}
+          onClose={closePicker}
+        />
+      )}
     </div>
   );
 }

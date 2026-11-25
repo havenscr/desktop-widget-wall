@@ -173,7 +173,7 @@ export default {
       variant('nothing on air, no record yet, no run of show file', 'show=missing'),
       variant('nothing on air, Watt standing at x 1000', 'oalast=1&wattspot=1000'),
       variant('Live, forty parts', 'oamode=live&yt=live&show=forty'),
-      variant('Live, marks.txt full after a click', 'oamode=live&yt=live&marks=full', { click: '.oa2-skrow2 .key-tile[aria-label="Mark a moment"]' }),
+      variant('Live, marks.txt full after a click', 'oamode=live&yt=live&marks=full', { click: '.oa2-skgrid .key-tile[aria-label="Mark a moment"]' }),
       variant('Live, Watt standing at x 1000', 'oamode=live&yt=live&wattspot=1000'),
       variant('Presenting matched', MEET),
       variant('Presenting matched with a 120 character meeting title', `${MEET}&meetlong=1`),
