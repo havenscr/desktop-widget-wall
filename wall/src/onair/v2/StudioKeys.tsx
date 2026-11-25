@@ -25,13 +25,16 @@ export const WAITING_TEXT = 'Waiting on StreamYard setup';
  */
 export function StudioKeys({ now }: { now: number }) {
   // A library key's press settles here: it glows only when it went through.
-  const pending = useRef<{ id: string; slot: number } | null>(null);
+  const pending = useRef<{ id: string; slot: number; gen: number } | null>(null);
+  // Bumped for a slot whenever it is reassigned or relabelled, so a press still in flight cannot light it afterwards.
+  const gens = useRef<number[]>([]);
+  const genOf = (i: number) => gens.current[i] ?? 0;
   const [last, setLast] = useState<{ slot: number } | null>(null);
   const done = useCallback((id: string, ok: boolean) => {
     const p = pending.current;
     if (!p || p.id !== id) return;
     pending.current = null;
-    if (ok) setLast({ slot: p.slot });
+    if (ok && p.gen === (gens.current[p.slot] ?? 0)) setLast({ slot: p.slot });
   }, []);
   const keys = useDeckKeys(done);
   const mark = useOnAirStore((s) => s.mark);
@@ -56,6 +59,7 @@ export function StudioKeys({ now }: { now: number }) {
 
   /** A reassigned or relabelled slot starts clean: no pending confirm, no glow. */
   const change = (i: number, next: Slot) => {
+    gens.current[i] = genOf(i) + 1;
     clearTimeout(timer.current);
     setArmed(null);
     setLast((l) => (l && l.slot === i ? null : l));
@@ -80,11 +84,12 @@ export function StudioKeys({ now }: { now: number }) {
       keys.showBrief(`${label}: ${WAITING_TEXT}`);
       return;
     }
+    const gen = genOf(slot);
     if (action === 'mark') {
       const before = useOnAirStore.getState().marks;
       await mark(undefined);
       const st = useOnAirStore.getState();
-      if (st.marksNote === null && st.marks !== before) setLast({ slot });
+      if (st.marksNote === null && st.marks !== before && gen === genOf(slot)) setLast({ slot });
       return;
     }
     const lib = LIB_ID[action];
@@ -95,7 +100,7 @@ export function StudioKeys({ now }: { now: number }) {
         return;
       }
       if (keyboardOnMouseKey(k.action, detail)) return;
-      pending.current = { id: `onair:${k.id}`, slot };
+      pending.current = { id: `onair:${k.id}`, slot, gen };
       void keys.press(`onair:${k.id}`, detail, { command: 'wall2_keys_send_library', args: { id: k.id } }, label, k.action, k.where, false);
       return;
     }
@@ -116,7 +121,7 @@ export function StudioKeys({ now }: { now: number }) {
     busy.current = true;
     try {
       await send(key, needsConfirm(key));
-      setLast({ slot });
+      if (gen === genOf(slot)) setLast({ slot });
     } catch (e) {
       keys.showBrief(refusalText(e));
     } finally {

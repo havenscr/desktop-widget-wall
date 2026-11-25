@@ -8,11 +8,14 @@ import { useYtLive } from '../ytliveStore';
 import { StudioKeys } from './StudioKeys';
 import { StudioStatus } from './StudioStatus';
 import { STUDIO_CONFIRM_MS } from './studioModel';
-import onair2Css from '../../styles/onair2.css?raw';
-import workCss from '../../styles/work.css?raw';
+import onair2Raw from '../../styles/onair2.css?raw';
+import workRaw from '../../styles/work.css?raw';
 import { DEFAULT_SLOTS, LABEL_MAX_PX, PICKER_ORDER, SLOTS_KEY, fitLabel, loadSlots, measureLabel, parseSlots, saveSlots } from './studioSlots';
 import { useStudio } from './studioStore';
 
+/** The stylesheets as text, with line endings the same on every checkout. */
+const onair2Css = onair2Raw.replace(/\r\n/g, '\n');
+const workCss = workRaw.replace(/\r\n/g, '\n');
 const NOW = 1_700_000_000_000;
 let sends: { key: string; confirm: boolean }[];
 let state: string;
@@ -342,6 +345,19 @@ it('while live the Go live key is End show, glows per slot through the swap, and
   expect(tiles()[7].getAttribute('data-last')).toBe('true');
   fireEvent.click(tiles()[7], { detail: 1 });
   expect(sends.map((x) => x.key)).toEqual(['golive', 'end']);
+});
+
+it('a press still in flight does not light a key that was reassigned meanwhile', async () => {
+  let release: (v: unknown) => void = () => {};
+  mocks.set('wall2_studio_key', () => new Promise((r) => (release = r)));
+  localStorage.setItem(SLOTS_KEY, JSON.stringify(withSlots(['two'])));
+  await open();
+  fireEvent.click(tiles()[0], { detail: 1 });
+  rightClick(tiles()[0]);
+  fireEvent.click(screen.getByRole('button', { name: 'Share' }));
+  expect(tiles()[0].getAttribute('data-key')).toBe('share');
+  await act(async () => release({ sent: 'two', at: NOW }));
+  expect(document.querySelector('[data-last]')).toBeNull();
 });
 
 it('two Go live keys: a confirm arms only the key pressed', async () => {
