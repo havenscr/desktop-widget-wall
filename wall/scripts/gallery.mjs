@@ -270,6 +270,8 @@ state('unwind', 'work layer at rest, Listen', 'ltab=listen&lctl=shown&meet=heavy
 add('unwind', 'work layer up, Listen', url('unwind', TIMES.night, 'ltab=listen&lctl=shown&meet=heavy'), true, 'hover:.u-date');
 state('unwind', 'work layer at rest, Watch', 'watch=mock&wlist=three&wlook=drivein&wplay=0&meet=heavy', TIMES.night);
 add('unwind', 'work layer up, Watch', url('unwind', TIMES.night, 'watch=mock&wlist=three&wlook=drivein&wplay=0&meet=heavy&keys=three&hold=three&pins=three'), true, 'hover:.u-date');
+add('unwind', 'work layer up, Watch calendar not available', url('unwind', TIMES.night, 'watch=mock&wlist=three&wlook=drivein&wplay=0&meet=signedout&keys=three&hold=three&pins=three'), true, 'hover:.u-date');
+add('unwind', 'work layer up, Listen calendar not available', url('unwind', TIMES.night, 'ltab=listen&lctl=shown&meet=signedout'), true, 'hover:.u-date');
 add('unwind', 'work layer up, Watch five keys', url('unwind', TIMES.night, 'watch=mock&wlist=three&wlook=drivein&wplay=0&meet=heavy&keys=three&hold=three&pins=long'), true, 'hover:.u-date');
 add('unwind', 'work layer up, Watch one key', url('unwind', TIMES.night, 'watch=mock&wlist=three&wlook=drivein&wplay=0&meet=heavy&keys=three&hold=three&pins=one'), true, 'hover:.u-date');
 add('unwind', 'work layer up, Watch list grown', url('unwind', TIMES.night, 'watch=mock&wlist=three&wlook=drivein&wplay=0&meet=heavy&keys=three&hold=three&pins=three'), true, 'hover:.w-card');

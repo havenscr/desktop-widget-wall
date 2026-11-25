@@ -9,6 +9,7 @@ import { LAYER_FADE_OUT_MS } from './UnwindTimeline';
 import { resetWatch, useWatchStore } from '../watch/store';
 import { useWatchRest } from '../watch/rest';
 import { useWorkLayerStore } from './layerStore';
+import { NextUp } from './NextUp';
 
 const flush = async (ms = 0) => {
   await act(async () => {
@@ -29,6 +30,39 @@ beforeEach(() => {
 afterEach(() => {
   vi.useRealTimers();
   mocks.clear();
+});
+
+describe('Unwind work layer, one shown state', () => {
+  it('a dialog, menu or take takes the timeline, the keys and Next up down together, and Next up stops reading', async () => {
+    let reads = 0;
+    mocks.set('wall2_meet_next', () => (reads++, { accounts: [], meetings: [] }));
+    render(
+      <Frame place="unwind">
+        <NextUp tab="watch" />
+      </Frame>,
+    );
+    await flush();
+    fireEvent.pointerEnter(main());
+    await flush(50);
+    const band = () => document.querySelector<HTMLElement>('.u-nu')!;
+    expect(useWorkLayerStore.getState().shown).toBe(true);
+    expect(band().hasAttribute('inert')).toBe(false);
+    expect(reads).toBeGreaterThan(0);
+    for (const html of ['<div role="dialog"></div>', '<div role="menu"></div>', '<div class="w-take"></div>', '<div class="u-lib-menu"></div>', '<div class="watt-menu"></div>']) {
+      document.body.insertAdjacentHTML('beforeend', html);
+      await flush(50);
+      expect(useWorkLayerStore.getState().shown).toBe(false);
+      expect(band().hasAttribute('inert')).toBe(true);
+      expect(layer().hasAttribute('inert')).toBe(true);
+      await flush(LAYER_FADE_OUT_MS + 20);
+      const after = reads;
+      await flush(5 * 60_000);
+      expect(reads).toBe(after);
+      document.body.lastElementChild!.remove();
+      await flush(50);
+      expect(useWorkLayerStore.getState().shown).toBe(true);
+    }
+  });
 });
 
 describe('Unwind work layer', () => {

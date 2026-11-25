@@ -38,7 +38,7 @@ function Body() {
     <>
       <div className="u-nu-count">
         <span className="u-nu-cap">{meeting && Date.parse(meeting.start) <= now ? 'NOW' : 'NEXT UP'}</span>
-        <span className="u-nu-big">{meeting ? countdownText(meeting, now) : next.unavailable ? 'Calendar not available' : 'No meetings ahead'}</span>
+        <span className={`u-nu-big${meeting ? '' : ' quiet'}`}>{meeting ? countdownText(meeting, now) : next.unavailable ? 'Calendar not available' : 'No meetings ahead'}</span>
       </div>
       <div className="u-nu-rule" aria-hidden="true" />
       <div className="u-nu-info">
@@ -56,18 +56,20 @@ function Body() {
         </div>
         <div className="u-nu-l2">{stats}</div>
       </div>
-      <button
-        type="button"
-        className="u-nu-btn join"
-        disabled={!canJoin}
-        {...tip(canJoin ? 'Join the next meeting.' : meeting ? 'This meeting has no join link.' : 'There is no meeting to join.')}
-        onClick={() => {
-          if (meeting && canJoin) void invoke('wall2_meet_join', { key: meeting.key }).catch(() => undefined);
-        }}
-      >
-        <IconVideo size={22} aria-hidden="true" />
-        {meeting && !canJoin ? NO_JOIN_LINK_LABEL : 'Join'}
-      </button>
+      {/* The tip sits on a wrapper: a disabled button never gets the pointer events a tip needs. */}
+      <span className="u-nu-tipwrap" {...tip(canJoin ? 'Join the next meeting.' : meeting ? 'This meeting has no join link.' : 'There is no meeting to join.')}>
+        <button
+          type="button"
+          className="u-nu-btn join"
+          disabled={!canJoin}
+          onClick={() => {
+            if (meeting && canJoin) void invoke('wall2_meet_join', { key: meeting.key }).catch(() => undefined);
+          }}
+        >
+          <IconVideo size={22} aria-hidden="true" />
+          {meeting && !canJoin ? NO_JOIN_LINK_LABEL : 'Join'}
+        </button>
+      </span>
       <button type="button" className="u-nu-btn air" {...tip('Go to On Air.')} onClick={() => setActive('onair')}>
         <IconBroadcast size={22} aria-hidden="true" />
         Go On Air

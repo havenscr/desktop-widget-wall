@@ -255,7 +255,8 @@
     visibility 0s;
 }
 .u-nu-count {
-  flex: none;
+  flex: 0 1 auto;
+  min-width: 0;
   display: flex;
   flex-direction: column;
   justify-content: center;
@@ -270,6 +271,16 @@
   color: #bff7f2;
   text-shadow: 0 0 18px rgba(31, 211, 200, 0.45);
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* No meeting to count down to ("No meetings ahead", "Calendar not available"): a smaller line, so the info column keeps its room. */
+.u-nu-big.quiet {
+  font: 600 22px/42px var(--disp);
+}
+.u-nu-tipwrap {
+  flex: none;
+  display: inline-flex;
 }
 .u-nu-rule {
   flex: none;
@@ -331,6 +342,7 @@
   align-items: center;
   gap: 8px;
   font: 600 18px/1 var(--disp);
+  white-space: nowrap;
   cursor: pointer;
   border: 1px solid;
 }

@@ -33,10 +33,24 @@ afterEach(() => {
 });
 
 describe('the Watch card shrinking back', () => {
-  it('marks closing in the same commit the card lets go, never from a later effect', () => {
-    const src = css('../watch/WatchCard.tsx');
-    const effects = src.match(/useEffect\(\(\) => \{[\s\S]*?\n  \}, \[[^\]]*\]\);/g) ?? [];
-    expect(effects.some((e) => /setClosing\(true\)/.test(e))).toBe(false);
+  it('marks closing in the same render the card lets go: no state is grown, then neither grown nor closing', async () => {
+    render(<WatchCard />);
+    const states: string[] = [];
+    const seen: (string | null)[] = [];
+    const watch = new MutationObserver((rs) => rs.forEach((r) => seen.push(r.oldValue)));
+    watch.observe(card(), { attributes: true, attributeFilter: ['class'], attributeOldValue: true });
+    fireEvent.pointerEnter(card());
+    await flush(TALL_OPEN_MS + 20);
+    fireEvent.pointerLeave(card());
+    await flush(TALL_CLOSE_MS + 20);
+    await flush(CARD_COLLAPSE_MS + 20);
+    watch.takeRecords().forEach((r) => seen.push(r.oldValue));
+    watch.disconnect();
+    states.push(...(seen.filter((v) => v !== null) as string[]), card().className);
+    expect(states.some((c) => c.includes('grown'))).toBe(true);
+    states.forEach((c, i) => {
+      if (i > 0 && states[i - 1].includes('grown')) expect(c.includes('grown') || c.includes('closing')).toBe(true);
+    });
   });
   it('is marked closing for its collapse time after it stops growing, so what is under it waits', async () => {
     render(<WatchCard />);

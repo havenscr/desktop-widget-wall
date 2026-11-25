@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import { act, fireEvent, render } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { mocks } from '../../bridge/tauri';
+import { HoverTipLayer, resetTip, TIP_DELAY_MS } from '../../ui/HoverTip';
 import type { MeetData } from '../../meet/model';
 import { usePlaceStore } from '../../state/places';
 import { resetAgents } from '../../agents/useAgents';
@@ -59,12 +60,53 @@ describe('Next up band', () => {
     expect(join.disabled).toBe(true);
     expect(join.textContent).toBe('No join link');
   });
-  it('says so with no meetings, and when the calendar cannot be read', async () => {
+  it('says so with no meetings', async () => {
     mocks.set('wall2_meet_next', () => ({ accounts: [], meetings: [] }));
     const r = render(<NextUp tab="watch" />);
     await flush(50);
     expect(r.container.querySelector('.u-nu-big')!.textContent).toBe('No meetings ahead');
     expect(r.container.querySelector<HTMLButtonElement>('.u-nu-btn.join')!.disabled).toBe(true);
+  });
+  it('says the calendar is not available when the read fails', async () => {
+    mocks.set('wall2_meet_next', () => {
+      throw new Error('graph-network');
+    });
+    const r = render(<NextUp tab="watch" />);
+    await flush(50);
+    expect(r.container.querySelector('.u-nu-big')!.textContent).toBe('Calendar not available');
+    expect(r.container.querySelector('.u-nu-big')!.classList.contains('quiet')).toBe(true);
+  });
+  it('says the calendar is not available when every account is signed out', async () => {
+    mocks.set('wall2_meet_next', () => ({ accounts: [{ id: 'a', label: 'Work', state: 'signed-out' }], meetings: [] }));
+    const r = render(<NextUp tab="listen" />);
+    await flush(50);
+    expect(r.container.querySelector('.u-nu-big')!.textContent).toBe('Calendar not available');
+  });
+  it('names a meeting that has started with the NOW cap', async () => {
+    mocks.set('wall2_meet_next', () => {
+      const s = Date.now() - 5 * 60_000;
+      return { accounts: [], meetings: [{ key: 'm1', accountId: 'a', title: 'Standup', start: new Date(s).toISOString(), end: new Date(s + 1800_000).toISOString(), canJoin: true }] };
+    });
+    const r = render(<NextUp tab="watch" />);
+    await flush(50);
+    expect(r.container.querySelector('.u-nu-cap')!.textContent).toBe('NOW');
+    expect(r.container.querySelector('.u-nu-big')!.textContent).toMatch(/^Now, \d+ min left$/);
+  });
+  it('puts the tip on a wrapper, since a disabled button gets no pointer', async () => {
+    mocks.set('wall2_meet_next', () => feed(false));
+    const r = render(
+      <>
+        <NextUp tab="watch" />
+        <HoverTipLayer />
+      </>,
+    );
+    await flush(50);
+    const wrap = r.container.querySelector('.u-nu-tipwrap')!;
+    expect(wrap.querySelector('.u-nu-btn.join')).not.toBeNull();
+    fireEvent.mouseEnter(wrap);
+    await flush(TIP_DELAY_MS + 20);
+    expect(document.body.textContent).toContain('This meeting has no join link.');
+    resetTip();
   });
   it('Go On Air only switches the place', async () => {
     mocks.set('wall2_meet_next', () => feed(true));
@@ -82,6 +124,9 @@ describe('Next up band', () => {
     expect(band.hasAttribute('inert')).toBe(false);
     act(() => useWorkLayerStore.setState({ shown: false }));
     expect(band.hasAttribute('inert')).toBe(true);
+    // Inert: the buttons are out of the tab order and take no click while hidden.
+    expect(band.closest('[inert]')).toBe(band);
+    expect(band.querySelectorAll('button')).toHaveLength(2);
     expect(band.querySelector('.u-nu-big')).not.toBeNull();
     await flush(LAYER_FADE_OUT_MS + 20);
     expect(band.querySelector('.u-nu-big')).toBeNull();
@@ -102,5 +147,10 @@ describe('Next up band', () => {
     expect(sizes.length).toBeGreaterThan(5);
     expect(Math.min(...sizes)).toBeGreaterThanOrEqual(16);
     expect(block).toMatch(/\.u-nu-btn \{[^}]*height: 48px;/);
+    // Labels never wrap, and the big line shrinks with an ellipsis, in the quiet state too.
+    expect(block).toMatch(/\.u-nu-btn \{[^}]*white-space: nowrap;/);
+    expect(block).toMatch(/\.u-nu-big \{[^}]*white-space: nowrap;[^}]*overflow: hidden;[^}]*text-overflow: ellipsis;/);
+    expect(block).toMatch(/\.u-nu-big\.quiet \{\s*font: 600 (\d+)px/);
+    expect(Number(/\.u-nu-big\.quiet \{\s*font: 600 (\d+)px/.exec(block)![1])).toBeGreaterThanOrEqual(16);
   });
 });
