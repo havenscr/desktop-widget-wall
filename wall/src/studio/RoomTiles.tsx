@@ -13,7 +13,7 @@ export function RoomTile({ studio, g, canWrite, menu }: { studio: Studio; g: Gro
     <div className={cls} data-group={g.id}>
       <NameButton id={g.id} label={g.label} menu={menu} />
       <TileSwitch label={g.label} on={on} dim={st.dim} disabled={st.disabled} knob={g.colour ?? undefined} tipText={st.tip} onClick={() => void useHome.getState().setGroup(g.id, !on)} />
-      <TileLevel on={on && !st.disabled && !st.dim} level={g.level} colour={g.colour ?? 'var(--cyan)'} />
+      {!st.disabled && !st.dim && <TileLevel on={on} level={g.level} colour={g.colour ?? 'var(--cyan)'} />}
     </div>
   );
 }

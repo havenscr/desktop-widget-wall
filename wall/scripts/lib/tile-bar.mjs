@@ -49,7 +49,7 @@ export function tileBarFails(rows, label) {
     if (t.text.l < t.tile.l + 10 - 0.5) fails.push(who + ' text starts ' + r1(t.text.l - t.tile.l) + ' px from the tile side (10 at least)');
     if (!t.cut && t.text.r > t.tile.r - 10 + 0.5) fails.push(who + ' text ends ' + r1(t.tile.r - t.text.r) + ' px from the tile side (10 at least)');
     if (t.sw && t.sw.r > t.tile.r - 10 + 0.5) fails.push(who + ' switch ends ' + r1(t.tile.r - t.sw.r) + ' px from the tile side (10 at least)');
-    if (t.sw && t.text.r > t.sw.l + 0.5 && !t.cut) fails.push(who + ' text runs under its switch');
+    if (t.sw && t.text.r > t.sw.l - 10 + 0.5 && !t.cut) fails.push(who + ' text ends ' + r1(t.sw.l - t.text.r) + ' px from its switch (10 at least)');
     if (t.px < 15.99) fails.push(who + ' text is ' + t.px + ' px (16 at least)');
     if (t.cut) fails.push(who + ' name is cut (box ' + (t.nameW ? t.nameW[0] + ', text ' + t.nameW[1] : '?') + ' px, tile ' + r1(t.tile.r - t.tile.l) + ' px wide)');
     if (t.track && t.text.b > t.track.t - 4 + 0.05) fails.push(who + ' text (with descenders) ends ' + r1(t.track.t - t.text.b) + ' px above the level bar (4 at least)');

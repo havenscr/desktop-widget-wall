@@ -453,10 +453,10 @@
 .oa2-lights-idle > .st-block { height: 202px; padding: 19px 0 15px; }
 .oa2-lights-idle .st-presets { margin-top: 14px; }
 .oa2-lights-idle .st-sum { margin-top: 13px; }
-.oa2-lights-idle .st-switches { margin-top: 13px; }
+.oa2-lights-idle .st-switches { margin-top: 13px; gap: 4px; }
+.oa2-lights-idle .st-switches .st-tg { font-size: 16px; }
 /* Tile names stay 10 px clear of the switch. */
 .oa2-lights-idle .st-switches .st-name { padding-right: 10px; }
-.oa2-lights-idle .st-tg-sw { padding-right: 6px; }
 /* The idle notes card is 202 px tall: a tighter frame so the first part's notes at 26 px have room. */
 .oa2 .oa-card.oa2-idlenotes { padding: 18px 24px 14px; }
 .oa2-idlenotes .oa-notes { gap: 8px; }
