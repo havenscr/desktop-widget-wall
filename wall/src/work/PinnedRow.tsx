@@ -1,48 +1,25 @@
 import { IconPin, IconPlus } from '@tabler/icons-react';
 import { useEffect, useRef, useState, type KeyboardEvent, type MouseEvent } from 'react';
-import { invoke } from '../bridge/tauri';
 import { overlayOwnsPointer } from '../ribbon/DrawerScrim';
 import { tip } from '../ui/HoverTip';
 import { previewTip } from './ZonesPreview';
-import { useVisible } from '../ui/useVisible';
 import { isLayoutAction, layoutOffReason, useArrangeStatus } from './arrangeStatus';
 import { errorText } from './deckModel';
 import { useDeckStore } from './deckStore';
 import { KeyIcon } from './keyIcons';
 import { libIndex, pinKind } from './keyKind';
-import { joinKeys, loadKeys, useKeysFeedStore } from './keysFeed';
+import { loadKeys } from './keysFeed';
 import { KeyPicker } from './KeyPicker';
 import { KeyMenu, type KeyMenuAction } from './KeyMenu';
 import { keyboardOnMouseKey, useKeyPress } from './keyPress';
-import { allKeys, FALLBACK_PINS, MAX_PINS, movePin, parsePins, PINS_CHANGED_EVENT, PINS_KEY, readPinsRaw, removePin, resolvePin, savePins, serializePins, swapPin, type LibGroup, type PinView } from './libraryModel';
+import { allKeys, MAX_PINS, movePin, PINS_KEY, removePin, resolvePin, savePins, serializePins, swapPin, type LibGroup, type PinView } from './libraryModel';
 import { tileSizeClass, type KeyInfo } from './keysModel';
 import { useBrief } from './useBrief';
+import { usePins } from './usePins';
 import { runWallAction } from './wallActions';
 
 /** Always five columns, so a pinned tile is the size of a Now tile whatever the count. */
 const columns = (n: number) => Math.min(MAX_PINS, Math.max(1, n));
-
-/** The library, read once; null while it loads or when it cannot be read. */
-function useLibrary(): { lib: LibGroup[] | null; failed: boolean; retry: () => void } {
-  const [lib, setLib] = useState<LibGroup[] | null>(null);
-  const [failed, setFailed] = useState(false);
-  const [tries, setTries] = useState(0);
-  useEffect(() => {
-    let live = true;
-    invoke<LibGroup[]>('wall2_keys_library').then(
-      (g) => {
-        if (!live) return;
-        setLib(Array.isArray(g) ? g : null);
-        setFailed(!Array.isArray(g));
-      },
-      () => live && (setLib(null), setFailed(true)),
-    );
-    return () => {
-      live = false;
-    };
-  }, [tries]);
-  return { lib, failed, retry: () => (setFailed(false), setTries((n) => n + 1)) };
-}
 
 /**
  * "Always here": up to five keys that never change by themselves. They are the owner's
@@ -126,27 +103,17 @@ function replaceResolved(entries: readonly unknown[], slots: readonly number[], 
 }
 
 export function PinnedRow() {
-  const visible = useVisible();
-  useEffect(() => (visible ? joinKeys() : undefined), [visible]);
-  const read = useKeysFeedStore((s) => s.read);
-  const { lib, failed: libFailed, retry: retryLib } = useLibrary();
+  const { read, lib, libFailed, retryLib, raw, setRaw, filePins, kept, pins } = usePins();
   const arrange = useArrangeStatus();
   const [brief, showBrief] = useBrief();
   const { press, onKeyDown } = useKeyPress(showBrief, loadKeys);
   const applied = useDeckStore((s) => s.applied);
   const [clock, setClock] = useState(() => Date.now());
-  const [raw, setRaw] = useState<string | null>(readPinsRaw);
   const [picker, setPicker] = useState<number | null>(null);
   const [menu, setMenu] = useState<number | null>(null);
   /** Whether the open menu came from the keyboard (the ContextMenu key or Shift+F10). */
   const menuByKey = useRef(false);
   const [busy, setBusy] = useState(false);
-  useEffect(() => {
-    const changed = () => setRaw(readPinsRaw());
-    window.addEventListener(PINS_CHANGED_EVENT, changed);
-    return () => window.removeEventListener(PINS_CHANGED_EVENT, changed);
-  }, []);
-
   // Hide Undo when its minute is up.
   useEffect(() => {
     if (!applied || applied.until <= clock) return;
@@ -157,12 +124,6 @@ export function PinnedRow() {
     if (applied) setClock(Date.now());
   }, [applied]);
 
-  const summary = read.status === 'ready' ? read.summary : null;
-  const filePins = summary?.filePins ?? [];
-  const defaults = summary?.defaultPins ?? FALLBACK_PINS;
-  const kept = lib ? parsePins(raw, lib, filePins) : null;
-  const refs = kept ?? defaults;
-  const pins: PinView[] = lib ? refs.map((r) => resolvePin(r, lib, filePins)).filter((p): p is PinView => p !== null).slice(0, MAX_PINS) : [];
   const byId = lib ? allKeys(lib) : null;
   const index = lib ? libIndex(lib) : null;
   const kindOf = (p: PinView) => {

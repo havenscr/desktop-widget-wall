@@ -16,7 +16,7 @@ import { PASTE_ERROR_MS } from './ownShared';
 import { countText, DeleteAsk, OwnTile, savedVideo } from './OwnParts';
 import { askDetails } from './ownDetails';
 import { useOwnLists } from './ownLists';
-import { useListGrow } from './useListGrow';
+import { CARD_COLLAPSE_MS, useListGrow } from './useListGrow';
 import { restBridge, restZone, useWatchRest } from './rest';
 import { playOwn, setFollow, useOwnView, type OwnView } from './ownPlay';
 import { closeWatchSearch, isLinkText, runWatchSearch, useWatchSearch, wordsProblem } from './searchStore';
@@ -613,10 +613,26 @@ export function WatchCard() {
   const resting = useWatchRest((s) => s.rest && !s.cardHeld) && mode === 'list';
   const zone = restZone('card');
   const grow = useListGrow(card, mode === 'list' && !empty && !searching);
+  // `closing` marks the card's shrink after it stops growing, so what fades back in beneath it (the keys row) waits for it.
+  const [closing, setClosing] = useState(false);
+  const wasGrown = useRef(false);
+  useEffect(() => {
+    if (grow.grown) {
+      wasGrown.current = true;
+      setClosing(false);
+      return;
+    }
+    if (!wasGrown.current) return;
+    wasGrown.current = false;
+    setClosing(true);
+    const id = setTimeout(() => setClosing(false), CARD_COLLAPSE_MS);
+    return () => clearTimeout(id);
+  }, [grow.grown]);
   return (
     <section
       ref={setCard}
-      className={`u-card w-card${empty ? ' empty' : ''}${mode === 'edit' || searching ? ' own-tall' : ''}${grow.grown ? ' grown' : ''}`}
+      className={`u-card w-card${empty ? ' empty' : ''}${mode === 'edit' || searching ? ' own-tall' : ''}${grow.grown ? ' grown' : ''}${closing ? ' closing' : ''}`}
+      style={{ ['--w-collapse' as string]: `${CARD_COLLAPSE_MS}ms` }}
       aria-label="Watch list"
       data-rest={resting ? 'true' : 'false'}
       {...zone}

@@ -116,12 +116,12 @@ describe('Unwind work layer', () => {
     const before = s.slice(s.indexOf('.u-work::before'), s.indexOf('}', s.indexOf('.u-work::before')));
     expect(before).toContain('pointer-events: none');
   });
-  it('sits under the music card and the grown Watch list that reach into the foot band', () => {
+  it('sits under the music card and the Watch list (grown or shrinking) that reach into the foot band', () => {
     const s = css('../../styles/unwind-work.css');
     const u = css('../../styles/unwind.css');
     const z = Number(/\.u-work \{[^}]*?z-index: (\d+)/.exec(s)?.[1]);
     expect(Number(/\.sp-card \{[^}]*?z-index: (\d+)/.exec(u)?.[1])).toBeGreaterThan(z);
-    expect(s).toMatch(/\.w-card\.grown \{\s*position: relative;\s*z-index: (\d+)/);
-    expect(Number(/\.w-card\.grown \{\s*position: relative;\s*z-index: (\d+)/.exec(s)?.[1])).toBeGreaterThan(z);
+    expect(s).toMatch(/\.w-card \{[^}]*?position: relative;\s*z-index: (\d+)/);
+    expect(Number(/\.w-card \{[^}]*?position: relative;\s*z-index: (\d+)/.exec(s)?.[1])).toBeGreaterThan(z);
   });
 });

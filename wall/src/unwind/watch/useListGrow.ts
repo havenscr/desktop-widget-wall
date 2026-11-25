@@ -1,6 +1,9 @@
 import { useHoverHold } from '../../ui/useHoverHold';
 import { TALL_CLOSE_MS, TALL_OPEN_MS } from '../spotify/model';
 
+/** How long the card takes to shrink back after it stops growing. The one source: the card gets it as `--w-collapse` (the height transition) and the keys row waits that long before coming back. */
+export const CARD_COLLAPSE_MS = 400;
+
 /**
  * The Watch list card grows while the pointer rests on it, the way Listen's card does: it opens after the same
  * wait (TALL_OPEN_MS) and closes the same moment after the pointer and keyboard focus have both left (TALL_CLOSE_MS).

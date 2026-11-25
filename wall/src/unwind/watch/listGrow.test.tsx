@@ -83,6 +83,6 @@ describe('the Watch list card grows while pointed at', () => {
     const rule = s.slice(s.indexOf('.w-card.grown {'));
     expect(rule).toContain('height: 630px;');
     expect(rule).toContain('transition-duration: 250ms, 240ms;');
-    expect(s).toContain('.w-card:not(.own-tall) {\n  transition: opacity 250ms ease, height 400ms ease-out;');
+    expect(s).toContain('.w-card:not(.own-tall) {\n  transition: opacity 250ms ease, height var(--w-collapse, 400ms) ease-out;');
   });
 });

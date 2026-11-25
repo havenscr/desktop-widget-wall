@@ -82,7 +82,8 @@
     opacity var(--u-work-out, 400ms) ease,
     visibility 0s linear var(--u-work-out, 400ms);
 }
-.w-card.grown {
+.w-card {
+  /* Always above the layer and the keys row: it stays on top while it grows and while it shrinks back. */
   position: relative;
   z-index: 2;
 }
@@ -90,6 +91,124 @@
   .u-work,
   .u-work[data-shown],
   .main:has(.w-take, [role='dialog'], [role='menu'], .u-lib-menu, .watt-menu) > .u-work {
+    transition: none;
+  }
+}
+
+/* The keys row (unwind/work/UnwindKeys.tsx): five places under the Watch list, the card's own width (538 inside its
+   border), 12 px under its resting foot (stage y 344: the room top less 8). It fades with the layer (250 ms in, 400 ms out, as the layer)
+   and under the Watch list while that grows, shrinks back (`closing`, the card's collapse time) or has its editor or search open, so it never shows through a card
+   that is covering its place. Faded it is invisible, takes no pointer, and is `inert`. */
+.u-right {
+  position: relative;
+}
+.u-keys {
+  position: absolute;
+  left: 1px;
+  right: 1px;
+  top: calc(var(--room-top, 332px) - 8px);
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition:
+    opacity var(--u-work-out, 400ms) ease,
+    visibility 0s linear var(--u-work-out, 400ms);
+}
+.u-keys[data-shown] {
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+  transition:
+    opacity 250ms ease,
+    visibility 0s;
+}
+.u-right:has(.w-card.grown, .w-card.closing, .w-card.own-tall) > .u-keys {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition:
+    opacity var(--u-work-out, 400ms) ease,
+    visibility 0s linear var(--u-work-out, 400ms);
+}
+.u-keys-tiles {
+  /* The tiles arrive after the first read: they fade in rather than appear. */
+  animation: u-keys-in 250ms ease both;
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 8px;
+}
+.u-key {
+  min-width: 0;
+  height: 64px;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 0 10px;
+  border-radius: 14px;
+  border: 1px solid var(--edge);
+  background: rgba(10, 7, 28, 0.86);
+  color: var(--tx);
+  font: 500 16px/1 var(--disp);
+  cursor: pointer;
+  transition:
+    background 200ms ease,
+    border-color 200ms ease;
+}
+.u-key:hover {
+  background: rgba(53, 230, 234, 0.14);
+  border-color: rgba(53, 230, 234, 0.5);
+}
+.u-key:focus-visible {
+  outline: 3px solid var(--cyan);
+  outline-offset: 2px;
+}
+.u-key.empty {
+  background: transparent;
+  border: 1px dashed rgba(255, 255, 255, 0.22);
+  cursor: default;
+}
+.u-key.empty:hover {
+  background: transparent;
+  border-color: rgba(255, 255, 255, 0.22);
+}
+.u-key.off {
+  color: var(--dim);
+  cursor: not-allowed;
+}
+.u-key-l {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.u-keys-line {
+  min-height: 24px;
+  margin-top: 6px;
+  font: 400 16px/24px var(--body);
+  color: var(--dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+@keyframes u-keys-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .u-keys-tiles {
+    animation: none;
+  }
+  .u-keys,
+  .u-keys[data-shown],
+  .u-right:has(.w-card.grown, .w-card.closing, .w-card.own-tall) > .u-keys,
+  .u-key {
     transition: none;
   }
 }
