@@ -3399,7 +3399,9 @@ Any other line under a part is a note too
 - `# <title>`: optional, only on the first line that is not blank or a comment; at most 60 characters (longer is cut with an ellipsis).
 - `## <part name> | <minutes>`: a part. The name is 1 to 60 characters (longer is cut with an ellipsis); minutes are optional, 1 to 240 (out of range: no minutes). Text after the last bar that is not a number belongs to the name. At most 40 parts; later parts and their notes are skipped.
 - `- <note>`, or any other line under a part: a note, at most 160 characters (longer is cut with an ellipsis), at most 12 a part.
-- Lines before the first part (other than the title and comments), empty notes and lines past a limit are skipped and counted. Control characters, line and paragraph separators and direction marks are dropped everywhere, and a tab becomes a space.
+- Empty notes and lines past a limit are skipped and counted. Control characters, line and paragraph separators and direction marks are dropped everywhere, and a tab becomes a space.
+
+Notes with no `##` heading read as one list of up to 40. The Notes card's Edit button (one note per line, Save, Cancel, Escape) calls `wall2_onair_save_notes(lines)`: each line is cleaned and cut, empty lines dropped, more than 40 notes or a note over 160 characters is refused with a reason, and the file is replaced atomically (temp file, then rename). The first save over a file with `##` headings, `//` comments or skipped lines keeps one copy as `run-of-show.bak.txt`. Only a leading `- ` is a bullet, so `-5 degrees` keeps its dash.
 
 Open file (`wall2_onair_open` with `show`) writes a starter file with three example parts only when there is no file, never over one, then opens it in the default editor.
 

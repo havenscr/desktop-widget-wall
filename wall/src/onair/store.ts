@@ -45,6 +45,8 @@ export interface OnAirState {
   /** One mark (a second within a second counts once). `showMs` is the time to write; the show timer's time when left out (the new On Air frame passes the take or talk time). */
   mark: (showMs?: number) => Promise<void>;
   open: (which: 'show' | 'marks') => Promise<void>;
+  /** Replace the notes in run-of-show.txt with these lines, then read the file again. Answers null when saved, else the one line saying why not. */
+  saveNotes: (lines: string[]) => Promise<string | null>;
 }
 
 /**
@@ -162,6 +164,27 @@ export function createOnAirStore(deps: OnAirDeps) {
         } finally {
           set({ marking: false });
         }
+      },
+      saveNotes: async (lines) => {
+        try {
+          await deps.invoke('wall2_onair_save_notes', { lines });
+        } catch (e) {
+          return m.saveErrorText(e);
+        }
+        // Read the file again at once (once more if that fails); the editor closes only on a fresh answer.
+        for (let tries = 0; tries < 2; tries++) {
+          const seq = ++readSeq;
+          lastRead = deps.now();
+          try {
+            const answer = await deps.invoke<unknown>('wall2_onair_show');
+            if (!m.isShow(answer)) throw new Error('failed');
+            if (seq === readSeq) set({ show: answer, showError: null });
+            return null;
+          } catch {
+            // Try once more.
+          }
+        }
+        return m.SAVED_NOT_REFRESHED;
       },
       open: async (which) => {
         try {

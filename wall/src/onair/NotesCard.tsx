@@ -1,4 +1,4 @@
-import { useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
+import { useLayoutEffect, useRef, useState, type CSSProperties, type KeyboardEvent, type ReactNode } from 'react';
 import { tip } from '../ui/HoverTip';
 import { ShowProblem, useShowProblem } from './ShowProblem';
 import { useOnAirStore } from './store';
@@ -89,12 +89,42 @@ export function NotesCard({ title, right, sizes = NOTE_SIZES, icon, className, s
   const listRef = useRef<HTMLUListElement | null>(null);
   const [fit, setFit] = useState<NoteFit>({ size: sizes[0], shown: notes.length });
   const key = notes.join('\u0000');
+  const saveNotes = useOnAirStore((s) => s.saveNotes);
+  const [editing, setEditing] = useState(false);
+  const [text, setText] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [why, setWhy] = useState<string | null>(null);
+  const canEdit = title !== undefined && show !== null && show.state !== 'refused';
+  const startEdit = () => {
+    setText(notes.join('\n'));
+    setWhy(null);
+    setEditing(true);
+  };
+  const cancel = () => {
+    if (busy) return;
+    setEditing(false);
+    setWhy(null);
+  };
+  const save = async () => {
+    if (busy) return;
+    setBusy(true);
+    const refused = await saveNotes(text.split(/\r?\n/));
+    setBusy(false);
+    if (refused === null) setEditing(false);
+    setWhy(refused);
+  };
+  const onKey = (e: KeyboardEvent) => {
+    if (e.key === 'Escape') {
+      e.stopPropagation();
+      cancel();
+    }
+  };
   useLayoutEffect(() => {
     const list = listRef.current;
     const next = list ? fitNotes(list, notes.length, sizes) : { size: sizes[0], shown: notes.length };
     setFit((f) => (f.size === next.size && f.shown === next.shown ? f : next));
     // The notes' text is the key: a new read measures again.
-  }, [key, sizes]);
+  }, [key, sizes, editing]);
   const shown = Math.min(fit.shown, notes.length);
   const hidden = notes.slice(shown);
   return (
@@ -106,10 +136,40 @@ export function NotesCard({ title, right, sizes = NOTE_SIZES, icon, className, s
           {icon}
           <span className="k oa-k ellipsis">{title}</span>
           {right && <span className="oa2-hd-r ellipsis">{right}</span>}
+          {canEdit && !editing && (
+            <button type="button" className="oa-btn sm oa2-notes-edit" onClick={startEdit} {...tip('Edit the notes: one note per line')}>
+              Edit
+            </button>
+          )}
           {action}
         </div>
       )}
-      {!hasShow ? (
+      {editing ? (
+        <div className="oa2-notes-ed" onKeyDown={onKey}>
+          <textarea
+            className="oa2-notes-ta"
+            aria-label="Notes, one per line"
+            value={text}
+            autoFocus
+            spellCheck={false}
+            onChange={(e) => setText(e.target.value)}
+          />
+          {why && (
+            <div className="oa2-notes-why" role="alert">
+              {why}
+            </div>
+          )}
+          <div className="oa2-notes-btns">
+            <button type="button" className="oa-btn sm cy" aria-disabled={busy} onClick={() => void save()}>
+              Save
+            </button>
+            <button type="button" className="oa-btn sm" aria-disabled={busy} onClick={cancel}>
+              Cancel
+            </button>
+            <span className="oa2-notes-hint">One note per line</span>
+          </div>
+        </div>
+      ) : !hasShow ? (
         <>
           {problem && <ShowProblem text={problem} />}
           <FormatHelp />

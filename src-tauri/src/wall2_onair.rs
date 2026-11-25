@@ -6,7 +6,7 @@
 //! Only the `wall2` window may ask, the file work runs off the thread that serves the web view,
 //! nothing is logged, and errors are three fixed words: `not-configured` (no config folder on
 //! this PC), `failed` (a read, a write or the opener failed) and `refused` (an argument or a
-//! file past its limit). The parser, the mark line and every limit are pure functions below.
+//! file past its limit; saving notes adds the reason after `refused: `). The parser, the mark line and every limit are pure functions below.
 
 use serde::Serialize;
 use std::io::{Read, Seek, SeekFrom, Write};
@@ -22,6 +22,12 @@ const TITLE_MAX: usize = 60;
 const NAME_MAX: usize = 60;
 const NOTE_MAX: usize = 160;
 const NOTES_MAX: usize = 12;
+/// A headingless list, and a saved list, holds at most this many notes.
+const SAVE_NOTES_MAX: usize = 40;
+/// Name of the one copy kept of a file that had `##` part headings.
+pub(crate) const BACKUP_FILE: &str = "run-of-show.bak.txt";
+const SAVE_TMP_FILE: &str = "run-of-show.tmp";
+const BACKUP_TMP_FILE: &str = "run-of-show.bak.tmp";
 const PARTS_MAX: usize = 40;
 const MINUTES_MIN: u32 = 1;
 const MINUTES_MAX: u32 = 240;
@@ -104,6 +110,15 @@ pub(crate) fn cut(s: &str, max: usize) -> String {
     format!("{}\u{2026}", kept.trim_end())
 }
 
+/// A note line without its bullet: only a leading `- ` (dash and space) goes, and a lone `-` is empty, so `-5 degrees` keeps its dash.
+pub(crate) fn note_body(line: &str) -> &str {
+    if line == "-" {
+        ""
+    } else {
+        line.strip_prefix("- ").unwrap_or(line)
+    }
+}
+
 /// The text after `## `: a name, then optionally `| minutes`. None when the name is empty.
 pub(crate) fn part_line(rest: &str) -> Option<(String, Option<u16>)> {
     let (name, minutes) = match rest.rfind('|') {
@@ -165,15 +180,25 @@ pub(crate) fn parse_show(text: &str) -> (Option<String>, Vec<Part>, u32) {
             }
             continue;
         }
+        // A later "#" line is not a title and not a note: skip it, as before.
+        if line.starts_with('#') {
+            skipped += 1;
+            continue;
+        }
+        // Notes with no heading above them are one list, kept as a part with no name.
+        if parts.is_empty() {
+            parts.push(Part { name: String::new(), minutes: None, notes: Vec::new() });
+        }
         let Some(part) = parts.last_mut() else {
             skipped += 1;
             continue;
         };
-        if dropping || part.notes.len() >= NOTES_MAX {
+        let cap = if part.name.is_empty() { SAVE_NOTES_MAX } else { NOTES_MAX };
+        if dropping || part.notes.len() >= cap {
             skipped += 1;
             continue;
         }
-        let note = clean(line.strip_prefix('-').unwrap_or(line));
+        let note = clean(note_body(line));
         if note.is_empty() {
             skipped += 1;
         } else {
@@ -194,6 +219,108 @@ pub(crate) fn show_from(bytes: Option<&[u8]>, len: u64, read_at: u64) -> Show {
     let Ok(text) = std::str::from_utf8(bytes) else { return empty("refused", Some(NOT_TEXT)) };
     let (title, parts, skipped) = parse_show(text);
     Show { state: "ok", title, parts, skipped, reason: None, read_at }
+}
+
+// Section: saving the notes (pure and file work on a given folder)
+
+/// The notes to write: each line cleaned and cut like a read note, empty ones dropped. Refused
+/// (with the reason the page shows) past the count or a line past its size.
+pub(crate) fn clean_notes(lines: &[String]) -> Result<Vec<String>, String> {
+    let mut out = Vec::new();
+    for raw in lines {
+        // A line break inside one entry makes it several notes.
+        for piece in raw.split(['\n', '\r']) {
+            let piece = piece.trim();
+            let note = clean(note_body(piece));
+            if note.is_empty() {
+                continue;
+            }
+            if note.chars().count() > NOTE_MAX {
+                return Err(format!("refused: a note is over {NOTE_MAX} characters"));
+            }
+            out.push(note);
+            if out.len() > SAVE_NOTES_MAX {
+                return Err(format!("refused: more than {SAVE_NOTES_MAX} notes"));
+            }
+        }
+    }
+    Ok(out)
+}
+
+/// The file text for a list of notes: the show's title line when it had one, then `- note` lines.
+pub(crate) fn notes_text(title: Option<&str>, notes: &[String]) -> String {
+    let mut out = String::new();
+    if let Some(t) = title {
+        out.push_str(&format!("# {t}\n\n"));
+    }
+    for n in notes {
+        out.push_str(&format!("- {n}\n"));
+    }
+    out
+}
+
+/// True when a save would drop something from this file's text: a `##` part heading, a `//` comment,
+/// or any line the reader skips.
+pub(crate) fn needs_backup(text: &str) -> bool {
+    text.split('\n').any(|l| {
+        let l = l.trim();
+        l.starts_with("##") || l.starts_with("//")
+    }) || parse_show(text).2 > 0
+}
+
+/// Writes `bytes` to `tmp`, flushes it, and renames it to `dest`. On any failure the temp file is removed, so `dest` is only ever absent or complete.
+/// (On Windows `std::fs::rename` replaces an existing file: it uses MoveFileExW with MOVEFILE_REPLACE_EXISTING.)
+pub(crate) fn write_atomic(tmp: &Path, dest: &Path, bytes: &[u8]) -> std::io::Result<()> {
+    let result = (|| -> std::io::Result<()> {
+        let mut f = std::fs::File::create(tmp)?;
+        f.write_all(bytes)?;
+        f.sync_all()?;
+        drop(f);
+        std::fs::rename(tmp, dest)
+    })();
+    if result.is_err() {
+        let _ = std::fs::remove_file(tmp);
+    }
+    result
+}
+
+/// Replaces the notes in `run-of-show.txt` in `dir`: the first save over a file a save would change
+/// beyond its notes (see `needs_backup`) keeps it once as `run-of-show.bak.txt`; the new text goes to a
+/// temp file beside it and is renamed over it. The only paths touched are the fixed names inside `dir`.
+pub(crate) fn save_notes_in(dir: &Path, lines: &[String]) -> Result<usize, String> {
+    let notes = clean_notes(lines)?;
+    std::fs::create_dir_all(dir).map_err(|_| "failed".to_string())?;
+    let path = dir.join(SHOW_FILE);
+    let old = match std::fs::read(&path) {
+        Ok(b) => Some(b),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
+        Err(_) => return Err("failed".to_string()),
+    };
+    let mut title = None;
+    let mut backup: Option<&[u8]> = None;
+    if let Some(bytes) = &old {
+        let text = String::from_utf8_lossy(bytes);
+        let readable = bytes.len() as u64 <= SHOW_MAX_BYTES && std::str::from_utf8(bytes).is_ok();
+        if readable {
+            title = parse_show(&text).0;
+        }
+        if !readable || needs_backup(&text) {
+            backup = Some(bytes.as_slice());
+        }
+    }
+    let text = notes_text(title.as_deref(), &notes);
+    // Every refusal comes before anything is written.
+    if text.len() as u64 > SHOW_MAX_BYTES {
+        return Err("refused: run-of-show.txt would be over 32 KB".to_string());
+    }
+    if let Some(bytes) = backup {
+        let bak = dir.join(BACKUP_FILE);
+        if !bak.exists() {
+            write_atomic(&dir.join(BACKUP_TMP_FILE), &bak, bytes).map_err(|_| "failed".to_string())?;
+        }
+    }
+    write_atomic(&dir.join(SAVE_TMP_FILE), &path, text.as_bytes()).map_err(|_| "failed".to_string())?;
+    Ok(notes.len())
 }
 
 // Section: marks (pure)
@@ -461,6 +588,13 @@ pub async fn wall2_onair_open(window: tauri::WebviewWindow, app: tauri::AppHandl
     tauri::async_runtime::spawn_blocking(move || open(&app, name)).await.map_err(|_| "failed".to_string())?
 }
 
+/// Replaces the notes in `run-of-show.txt` with these lines (one note each) and answers with how many were saved.
+#[tauri::command]
+pub async fn wall2_onair_save_notes(window: tauri::WebviewWindow, app: tauri::AppHandle, lines: Vec<String>) -> Result<u32, String> {
+    check(window.label())?;
+    tauri::async_runtime::spawn_blocking(move || save_notes_in(&config_dir(&app)?, &lines).map(|n| n as u32)).await.map_err(|_| "failed".to_string())?
+}
+
 // Section: tests
 
 #[cfg(test)]
@@ -525,10 +659,178 @@ mod tests {
     }
 
     #[test]
-    fn comments_are_never_counted_and_lines_before_the_first_part_are() {
+    fn comments_are_never_counted_and_lines_before_the_first_part_are_one_list() {
         let (_, p, skipped) = parse_show("# T\nstray one\n- stray two\n// comment\n   // indented comment\n## A\n// under a part\n- n");
-        assert_eq!(skipped, 2);
-        assert_eq!(p[0].notes, vec!["n".to_string()]);
+        assert_eq!(skipped, 0);
+        assert_eq!(p.len(), 2);
+        assert_eq!((p[0].name.as_str(), p[0].notes.clone()), ("", vec!["stray one".to_string(), "stray two".to_string()]));
+        assert_eq!(p[1].notes, vec!["n".to_string()]);
+    }
+
+    #[test]
+    fn a_headingless_file_is_one_list_up_to_40_notes() {
+        let (title, p, skipped) = parse_show("# Show\n- a\n- b\n\nc\n");
+        assert_eq!(title.as_deref(), Some("Show"));
+        assert_eq!((p.len(), skipped), (1, 0));
+        assert_eq!(p[0].notes, vec!["a".to_string(), "b".to_string(), "c".to_string()]);
+        let many: String = (0..45).map(|i| format!("- n{i}\n")).collect();
+        let (_, p, skipped) = parse_show(&many);
+        assert_eq!((p[0].notes.len(), skipped), (40, 5));
+        // No notes at all stays no parts.
+        assert!(parse_show("# Only a title\n").1.is_empty());
+    }
+
+    #[test]
+    fn an_old_file_with_parts_still_reads_by_part() {
+        let (_, p, skipped) = parse_show("## A | 5\n- one\n## B\n- two\n");
+        assert_eq!((p.len(), skipped), (2, 0));
+        assert_eq!(p[1].notes, vec!["two".to_string()]);
+    }
+
+    fn scratch(name: &str) -> std::path::PathBuf {
+        let dir = std::env::temp_dir().join(format!("wall2-onair-save-{name}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    fn lines(items: &[&str]) -> Vec<String> {
+        items.iter().map(|s| s.to_string()).collect()
+    }
+
+    #[test]
+    fn a_save_round_trips() {
+        let dir = scratch("round");
+        let n = save_notes_in(&dir, &lines(&["  First\u{7} note ", "", "- Second", "Third\nFourth", "   "])).unwrap();
+        assert_eq!(n, 4);
+        let text = std::fs::read_to_string(dir.join(SHOW_FILE)).unwrap();
+        assert_eq!(text, "- First note\n- Second\n- Third\n- Fourth\n");
+        let (_, p, skipped) = parse_show(&text);
+        assert_eq!(skipped, 0);
+        assert_eq!(p[0].notes, vec!["First note".to_string(), "Second".to_string(), "Third".to_string(), "Fourth".to_string()]);
+        assert!(!dir.join(SAVE_TMP_FILE).exists());
+        assert!(!dir.join(BACKUP_FILE).exists());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_save_keeps_the_title_and_notes_that_look_like_comments() {
+        let dir = scratch("title");
+        std::fs::write(dir.join(SHOW_FILE), "# Friday\n- old\n").unwrap();
+        save_notes_in(&dir, &lines(&["// not a comment", "# not a title"])).unwrap();
+        let (title, p, skipped) = parse_show(&std::fs::read_to_string(dir.join(SHOW_FILE)).unwrap());
+        assert_eq!(title.as_deref(), Some("Friday"));
+        assert_eq!(skipped, 0);
+        assert_eq!(p[0].notes, vec!["// not a comment".to_string(), "# not a title".to_string()]);
+        assert!(!dir.join(BACKUP_FILE).exists());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn too_many_or_too_long_is_refused_and_nothing_is_written() {
+        let dir = scratch("refuse");
+        std::fs::write(dir.join(SHOW_FILE), "- keep\n").unwrap();
+        let many: Vec<String> = (0..41).map(|i| format!("n{i}")).collect();
+        let err = save_notes_in(&dir, &many).unwrap_err();
+        assert!(err.starts_with("refused: ") && err.contains("40"), "{err}");
+        let long = vec!["x".repeat(NOTE_MAX + 1)];
+        let err = save_notes_in(&dir, &long).unwrap_err();
+        assert!(err.starts_with("refused: ") && err.contains("160"), "{err}");
+        assert_eq!(std::fs::read_to_string(dir.join(SHOW_FILE)).unwrap(), "- keep\n");
+        // The limits themselves are allowed.
+        let exact: Vec<String> = (0..40).map(|_| "y".repeat(NOTE_MAX)).collect();
+        assert_eq!(save_notes_in(&dir, &exact), Ok(40));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn the_first_save_over_parts_keeps_one_backup_once() {
+        let dir = scratch("backup");
+        let old = "## A | 5\n- one\n## B\n- two\n";
+        std::fs::write(dir.join(SHOW_FILE), old).unwrap();
+        save_notes_in(&dir, &lines(&["one", "two"])).unwrap();
+        assert_eq!(std::fs::read_to_string(dir.join(BACKUP_FILE)).unwrap(), old);
+        assert_eq!(std::fs::read_to_string(dir.join(SHOW_FILE)).unwrap(), "- one\n- two\n");
+        // A second save has no headings to keep and never touches the copy; even a file with headings again does not replace it.
+        save_notes_in(&dir, &lines(&["three"])).unwrap();
+        std::fs::write(dir.join(SHOW_FILE), "## C\n- other\n").unwrap();
+        save_notes_in(&dir, &lines(&["four"])).unwrap();
+        assert_eq!(std::fs::read_to_string(dir.join(BACKUP_FILE)).unwrap(), old);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_comment_or_a_skipped_line_also_keeps_the_backup() {
+        for (name, old) in [("comment", "// my plan\n- one\n"), ("skipped", "# T\n- one\n- \n")] {
+            let dir = scratch(name);
+            std::fs::write(dir.join(SHOW_FILE), old).unwrap();
+            save_notes_in(&dir, &lines(&["one"])).unwrap();
+            assert_eq!(std::fs::read_to_string(dir.join(BACKUP_FILE)).unwrap(), old, "{name}");
+            let _ = std::fs::remove_dir_all(&dir);
+        }
+        // A file with only a title and notes loses nothing, so it needs no copy.
+        let dir = scratch("plain");
+        std::fs::write(dir.join(SHOW_FILE), "# T\n- one\n- two\n").unwrap();
+        save_notes_in(&dir, &lines(&["one"])).unwrap();
+        assert!(!dir.join(BACKUP_FILE).exists());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_refused_save_writes_no_backup() {
+        let dir = scratch("nobak");
+        let old = "## A\n- x\n";
+        std::fs::write(dir.join(SHOW_FILE), old).unwrap();
+        // A too-long note is refused before the file is even read.
+        assert!(save_notes_in(&dir, &["q".repeat(NOTE_MAX + 1)]).is_err());
+        assert!(!dir.join(BACKUP_FILE).exists());
+        assert_eq!(std::fs::read_to_string(dir.join(SHOW_FILE)).unwrap(), old);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_failed_atomic_write_leaves_no_temp_and_no_partial_destination() {
+        let dir = scratch("atomic");
+        let dest = dir.join("dest.txt");
+        let tmp = dir.join("dest.tmp");
+        // A directory in the way makes the rename fail after the temp file was written.
+        std::fs::create_dir_all(&dest).unwrap();
+        assert!(write_atomic(&tmp, &dest, b"data").is_err());
+        assert!(!tmp.exists());
+        assert!(dest.is_dir());
+        std::fs::remove_dir_all(&dest).unwrap();
+        write_atomic(&tmp, &dest, b"data").unwrap();
+        assert_eq!(std::fs::read(&dest).unwrap(), b"data");
+        assert!(!tmp.exists());
+        // A leftover temp backup from a crash is not a backup: the next save writes the real one.
+        std::fs::write(dir.join(BACKUP_TMP_FILE), "half").unwrap();
+        std::fs::write(dir.join(SHOW_FILE), "## A\n- one\n").unwrap();
+        save_notes_in(&dir, &lines(&["one"])).unwrap();
+        assert_eq!(std::fs::read_to_string(dir.join(BACKUP_FILE)).unwrap(), "## A\n- one\n");
+        assert!(!dir.join(BACKUP_TMP_FILE).exists());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn only_a_dash_and_space_is_a_bullet() {
+        let (_, p, skipped) = parse_show("- -5 degrees\n-5 degrees\n- plain\n-\n");
+        assert_eq!(skipped, 1);
+        assert_eq!(p[0].notes, vec!["-5 degrees".to_string(), "-5 degrees".to_string(), "plain".to_string()]);
+        let dir = scratch("dash");
+        save_notes_in(&dir, &lines(&["-5 degrees", "- bulleted", "-"])).unwrap();
+        let text = std::fs::read_to_string(dir.join(SHOW_FILE)).unwrap();
+        assert_eq!(text, "- -5 degrees\n- bulleted\n");
+        assert_eq!(parse_show(&text).1[0].notes, vec!["-5 degrees".to_string(), "bulleted".to_string()]);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_save_with_no_file_writes_one() {
+        let dir = scratch("fresh");
+        assert_eq!(save_notes_in(&dir, &lines(&["only"])), Ok(1));
+        assert_eq!(std::fs::read_to_string(dir.join(SHOW_FILE)).unwrap(), "- only\n");
+        assert!(!dir.join(BACKUP_FILE).exists());
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
@@ -750,7 +1052,7 @@ garbage line\n\
     #[test]
     fn the_window_check_is_the_first_statement_of_every_command() {
         let src = include_str!("wall2_onair.rs");
-        for name in ["wall2_onair_show(", "wall2_onair_mark(", "wall2_onair_marks_today(", "wall2_onair_open("] {
+        for name in ["wall2_onair_show(", "wall2_onair_mark(", "wall2_onair_marks_today(", "wall2_onair_open(", "wall2_onair_save_notes("] {
             let at = src.find(&format!("pub async fn {name}")).expect("command");
             let body = &src[at..];
             let open = body.find('{').expect("body");
