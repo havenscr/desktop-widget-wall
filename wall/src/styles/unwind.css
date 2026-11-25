@@ -5078,3 +5078,11 @@ button.sp-qrow:hover {
 .unwind:has(> .w-sheet) :is(.sp-card, .u-right) * {
   pointer-events: none;
 }
+/* The Watch list row menu: the pin menu's box, placed in the card by script. */
+.w-rowmenu {
+  z-index: 60;
+}
+.w-link-row {
+  display: flex;
+  flex-direction: column;
+}

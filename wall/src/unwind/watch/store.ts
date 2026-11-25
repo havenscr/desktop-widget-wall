@@ -35,6 +35,7 @@ function writeTuneSoon(): void {
   tuneDirty = true;
   if (tuneTimer === null) tuneTimer = setTimeout(flushTune, TUNE_WRITE_MS);
 }
+import { relinkSaved } from './rowMenu';
 import { addSaved, cleanLabel, cleanText, loadSaved, MAX_LABEL, removeSaved, renameSaved, saveSaved, type SavedItem } from './saved';
 import { stopLine, type StopReason } from './stops';
 
@@ -137,6 +138,8 @@ export interface WatchState {
   /** Take an item out of the Watch list only: what plays keeps playing. */
   unsave: (key: string) => void;
   rename: (key: string, label: string) => void;
+  /** Replace a saved item's link with a pasted one, as the paste box reads it; returns the refusal line, or null when it changed. */
+  relink: (key: string, text: string) => string | null;
   setEditing: (key: string | null) => void;
   play: (ref: WatchRef) => void;
   /**
@@ -246,6 +249,19 @@ export const useWatchStore = create<WatchState>((set, get) => ({
     saveSaved(items);
     const playing = get().playing;
     set({ saved: items, editing: null, playing: playing && refKey(playing) === key ? (items.find((i) => refKey(i) === key) ?? playing) : playing });
+  },
+  relink: (key, text) => {
+    const r = relinkSaved(get().saved, key, text);
+    if (!r.ok) return r.error;
+    // The same video again (a different spelling of its link): nothing to change.
+    if (r.key === key) return null;
+    waitingTitles.delete(key);
+    saveSaved(r.items);
+    // A video that was playing from the old link stops: the new one is not what is in the frame.
+    const playing = get().playing;
+    if (playing && refKey(playing) === key) get().stop();
+    set({ saved: r.items });
+    return null;
   },
   setEditing: (editing) => set({ editing }),
   play: (ref) => {
