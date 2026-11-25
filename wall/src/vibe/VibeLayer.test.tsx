@@ -1,4 +1,5 @@
-import { act, render } from '@testing-library/react';
+import { act, cleanup, render } from '@testing-library/react';
+import { Fragment, StrictMode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ingestLevels, resetAudio, tickAudio } from '../audio/store';
 import { resetVibeStore, useVibeStore } from '../horizon/vibeSettings';
@@ -12,7 +13,20 @@ import { readFileSync } from 'node:fs';
 const sheet = (f: string): string => (readFileSync(new URL(f, import.meta.url), 'utf8') as string).replace(/\r\n/g, '\n');
 import unwindSrc from '../screens/Unwind.tsx?raw';
 
-const sound = { bass: 0.8, mid: 0.4, high: 0.2, bands: [255, 200, 100], waveform: [0.1] };
+// The drop stamps are the one signal a test cannot easily make by sound: this lets a test add a drop by hand.
+const fakeDrops = vi.hoisted(() => ({ count: 0, lastAt: -Infinity }));
+vi.mock('../audio/store', async (orig) => ({
+  ...(await orig<typeof import('../audio/store')>()),
+  audioDrops: () => fakeDrops,
+}));
+
+const sound = {
+  bass: 0.8,
+  mid: 0.4,
+  high: 0.2,
+  bands: [255, 200, 100],
+  waveform: [0.1],
+};
 
 /** A host whose frames run when the test says so. */
 function manual() {
@@ -58,6 +72,18 @@ beforeEach(() => {
   localStorage.clear();
   resetVibeStore();
   vi.stubGlobal('ResizeObserver', RO);
+  fakeDrops.count = 0;
+  vi.spyOn(Element.prototype, 'getBoundingClientRect').mockImplementation(() => ({
+    left: 0,
+    top: 0,
+    right: 2560,
+    bottom: 720,
+    width: 2560,
+    height: 720,
+    x: 0,
+    y: 0,
+    toJSON: () => ({}),
+  }));
   // jsdom has no layout: the place is 2000 by 680 and its wing ends at x 480.
   vi.spyOn(HTMLElement.prototype, 'offsetWidth', 'get').mockImplementation(function (this: HTMLElement) {
     return this.classList.contains('u-wing') ? 440 : this.classList.contains('u-art') ? 224 : 2000;
@@ -81,22 +107,33 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-function mount(host: LoopHost, art = true) {
+function mount(host: LoopHost, art = true, horizon = false, strict = false) {
   const s = stubCanvas();
   restore = s.restore;
+  const Wrap = strict ? StrictMode : Fragment;
   const r = render(
-    <section data-place="unwind">
-      <VibeLayer host={host} />
-      <div className="u-wing" />
-      <div className="u-np">Song</div>
-      {art ? (
-        <div className="u-art">
-          <img src="data:image/png;base64,AAAA" alt="" />
-        </div>
-      ) : null}
-    </section>,
+    <Wrap>
+      {horizon ? <canvas className="horizon-canvas" /> : null}
+      <section data-place="unwind">
+        <VibeLayer host={host} />
+        <div className="u-wing" />
+        <div className="u-np">Song</div>
+        {art ? (
+          <div className="u-art">
+            <img src="data:image/png;base64,AAAA" alt="" />
+          </div>
+        ) : null}
+      </section>
+    </Wrap>,
   );
-  return { ...r, rec: s.rec, canvas: r.container.querySelector('canvas.vibe-back')! as HTMLCanvasElement, title: r.container.querySelector('canvas.vibe-title')! as HTMLCanvasElement };
+  return {
+    ...r,
+    rec: s.rec,
+    canvas: r.container.querySelector('canvas.vibe-back')! as HTMLCanvasElement,
+    title: r.container.querySelector('canvas.vibe-title')! as HTMLCanvasElement,
+    front: r.container.querySelector('canvas.vibe-front')! as HTMLCanvasElement,
+    hz: r.container.querySelector('canvas.horizon-canvas') as HTMLCanvasElement | null,
+  };
 }
 
 describe('the vibe back layer', () => {
@@ -122,6 +159,13 @@ describe('the vibe back layer', () => {
     expect(c).toMatch(/mask-composite:\s*intersect/);
   });
 
+  it('its mask ramps to zero on the right edge too, in both the prefixed and plain properties', () => {
+    const c = sheet('../styles/vibe.css').replace(/\r\n/g, '\n');
+    const ramp = 'linear-gradient(90deg, transparent 0, #000 64px, #000 calc(100% - 96px), transparent 100%)';
+    expect(c).toContain('-webkit-mask-image: ' + ramp);
+    expect(c).toMatch(new RegExp('\\n  mask-image: ' + ramp.replace(/[()]/g, '\\$&')));
+  });
+
   it('the main area is its own stacking context while the layer is in it, so z-index -1 stays above the horizon canvas', () => {
     expect(sheet('../styles/vibe.css')).toMatch(/\.main:has\(\.vibe-back\)\s*\{\s*isolation:\s*isolate/);
   });
@@ -129,6 +173,8 @@ describe('the vibe back layer', () => {
   it('draws nothing and stops when no music plays and every effect is at rest', () => {
     const m = manual();
     const { rec } = mount(m.host);
+    // The hole masks bake once at mount; only frames are counted.
+    rec.calls.length = 0;
     m.frames(1000, 400);
     expect(m.pending()).toBe(false);
     expect(rec.calls.some((c) => c[0] === 'drawImage')).toBe(false);
@@ -211,7 +257,8 @@ describe('the vibe back layer', () => {
         tickAudio(t);
       }
     });
-  const copies = (rec: { calls: unknown[][] }, back: HTMLCanvasElement) => rec.calls.filter((c) => c[0] === 'drawImage' && c[1] === back && c.length === 10);
+  const copies = (rec: { calls: unknown[][] }, back: HTMLCanvasElement) =>
+    rec.calls.filter((c) => c[0] === 'drawImage' && c[1] === back && c.length === 10);
 
   it('Scene and title lets the effects pass over the song title; Scene only takes them off it', () => {
     const m = manual();
@@ -324,6 +371,88 @@ describe('the vibe back layer', () => {
     for (let k = 1; k < alphas.length; k++) expect(alphas[k - 1] - alphas[k]).toBeLessThan(0.05);
     expect(alphas.some((v) => v > 0.05 && v < 0.35)).toBe(true);
     expect(alphas[0]).toBeGreaterThan(0.3);
+  });
+
+  const rampOf = (rec: { calls: unknown[][] }) => {
+    // The grain fill's alpha each frame: the set right before each full-canvas fillRect, grain first and lines second.
+    const out: number[] = [];
+    let a = 0;
+    let n = 0;
+    let fill: unknown = '';
+    for (const c of rec.calls) {
+      if (c[0] === 'set globalAlpha') a = c[1] as number;
+      if (c[0] === 'set fillStyle') fill = c[1];
+      // The baked patterns are 'transparent' stand-ins under the recording context; the aurora's feather is a gradient.
+      if (c[0] === 'fillRect' && c[3] === 760 && c[4] === 340 && fill === 'transparent') {
+        if (n++ % 2 === 0) out.push(a);
+      }
+    }
+    return out;
+  };
+
+  it('Tape Grain is off by default, fades in when switched on and fades out when switched off, never in one jump', () => {
+    const m = manual();
+    const { rec, front } = mount(m.host);
+    expect(front.getAttribute('aria-hidden')).toBe('true');
+    playFor(4000);
+    m.frames(10000, 60);
+    expect(rampOf(rec)).toHaveLength(0);
+    act(() => useVibeStore.getState().setVibe({ tapeGrain: true }));
+    rec.calls.length = 0;
+    m.frames(20000, 90);
+    const up = rampOf(rec);
+    expect(up.length).toBeGreaterThan(10);
+    for (let k = 1; k < up.length; k++) expect(Math.abs(up[k] - up[k - 1])).toBeLessThan(0.05);
+    expect(up[0]).toBeLessThan(up[up.length - 1]);
+    act(() => useVibeStore.getState().setVibe({ tapeGrain: false }));
+    rec.calls.length = 0;
+    m.frames(30000, 90);
+    const down = rampOf(rec);
+    expect(down.length).toBeGreaterThan(5);
+    for (let k = 1; k < down.length; k++) expect(Math.abs(down[k] - down[k - 1])).toBeLessThan(0.05);
+    expect(down[0]).toBeGreaterThan(down[down.length - 1]);
+    // Switched off, the front is cleared once and then nothing is drawn.
+    expect(rec.calls.some((c) => c[0] === 'clearRect')).toBe(true);
+  });
+
+  it('a drop tears slices with Auto vibe on, or with Drop Glitch on, and with neither or under Calm cap it does not', () => {
+    const tears = (settings: Record<string, boolean>) => {
+      cleanup();
+      resetVibeStore();
+      const m = manual();
+      act(() => useVibeStore.getState().setVibe(settings));
+      const { rec, hz } = mount(m.host, true, true);
+      playFor(4000);
+      m.frames(10000, 60);
+      rec.calls.length = 0;
+      fakeDrops.count += 1;
+      m.frames(20000, 20);
+      return rec.calls.filter((c) => c[0] === 'drawImage' && c[1] === hz).length;
+    };
+    expect(tears({ auto: true })).toBeGreaterThan(5);
+    expect(tears({ auto: false, dropGlitch: true })).toBeGreaterThan(5);
+    expect(tears({ auto: false, dropGlitch: false })).toBe(0);
+    expect(tears({ auto: true, calmCap: true })).toBe(0);
+  });
+
+  it('a remount over a canvas that is already sized (dev double mount) still bakes the sprites and tears', () => {
+    resetVibeStore();
+    const m = manual();
+    act(() => useVibeStore.getState().setVibe({ auto: true, tapeGrain: true }));
+    const { rec, hz } = mount(m.host, true, true, true);
+    playFor(4000);
+    m.frames(10000, 60);
+    rec.calls.length = 0;
+    fakeDrops.count += 1;
+    m.frames(20000, 20);
+    expect(rec.calls.filter((c) => c[0] === 'drawImage' && c[1] === hz).length).toBeGreaterThan(5);
+  });
+
+  it('its stylesheet puts the front layer above the scene, click-through, and feathers its bounds', () => {
+    const c = sheet('../styles/vibe.css');
+    expect(c).toMatch(/\.vibe-front\s*\{[^}]*z-index:\s*2/);
+    expect(c).toMatch(/\.vibe-front\s*\{[^}]*pointer-events:\s*none/);
+    expect(c).toMatch(/\.vibe-front\s*\{[^}]*transparent 0, #000 64px/);
   });
 
   it('stops while the page is hidden and starts again when it is shown', () => {

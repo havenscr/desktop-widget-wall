@@ -1,6 +1,6 @@
 /* The vibe's back layer (`vibe/VibeLayer.tsx`): one canvas inside the Unwind place, behind the place's own content
    (z-index -1 puts it under the art, title and controls, which are DOM), starting at the wing's right edge.
-   It feathers its own bounds: 64 px on the left edge, 48 px top and bottom, so it never ends on a line. */
+   It feathers its own bounds: 64 px on the left edge, 96 px on the right edge, 48 px top and bottom, so it never ends on a line. */
 .vibe-back {
   position: absolute;
   top: 0;
@@ -9,8 +9,8 @@
   z-index: -1;
   pointer-events: none;
   mix-blend-mode: screen;
-  -webkit-mask-image: linear-gradient(90deg, transparent 0, #000 64px), linear-gradient(180deg, transparent 0, #000 48px, #000 calc(100% - 48px), transparent 100%);
-  mask-image: linear-gradient(90deg, transparent 0, #000 64px), linear-gradient(180deg, transparent 0, #000 48px, #000 calc(100% - 48px), transparent 100%);
+  -webkit-mask-image: linear-gradient(90deg, transparent 0, #000 64px, #000 calc(100% - 96px), transparent 100%), linear-gradient(180deg, transparent 0, #000 48px, #000 calc(100% - 48px), transparent 100%);
+  mask-image: linear-gradient(90deg, transparent 0, #000 64px, #000 calc(100% - 96px), transparent 100%), linear-gradient(180deg, transparent 0, #000 48px, #000 calc(100% - 48px), transparent 100%);
   -webkit-mask-composite: source-in;
   mask-composite: intersect;
 }
@@ -33,4 +33,20 @@
   mix-blend-mode: screen;
   -webkit-mask-image: radial-gradient(ellipse closest-side, #000 0, rgba(0, 0, 0, 0.84) 25%, rgba(0, 0, 0, 0.5) 50%, rgba(0, 0, 0, 0.16) 75%, transparent 100%);
   mask-image: radial-gradient(ellipse closest-side, #000 0, rgba(0, 0, 0, 0.84) 25%, rgba(0, 0, 0, 0.5) 50%, rgba(0, 0, 0, 0.16) 75%, transparent 100%);
+}
+
+/* The front layer (Tape Grain and the Drop Glitch): over the scene and the art, under nothing the user presses (the
+   layer punches soft holes over every control and readout, and over the title with Cover set to Scene only).
+   Click-through, normal blend, and its own bounds feather like the back layer's. */
+.vibe-front {
+  position: absolute;
+  top: 0;
+  right: 0;
+  height: 100%;
+  z-index: 2;
+  pointer-events: none;
+  -webkit-mask-image: linear-gradient(90deg, transparent 0, #000 64px), linear-gradient(180deg, transparent 0, #000 48px, #000 calc(100% - 48px), transparent 100%);
+  mask-image: linear-gradient(90deg, transparent 0, #000 64px, #000 calc(100% - 96px), transparent 100%), linear-gradient(180deg, transparent 0, #000 48px, #000 calc(100% - 48px), transparent 100%);
+  -webkit-mask-composite: source-in;
+  mask-composite: intersect;
 }
