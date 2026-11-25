@@ -21,7 +21,7 @@ export type RelinkResult = { ok: true; items: SavedItem[]; key: string } | { ok:
 
 /**
  * Replace the link of one saved item with a pasted one, checked as the paste box checks it. The item keeps its place
- * and the name the owner gave it; one that still had its kind's default name takes the new kind's default. A link
+ * and a name the owner typed (`named`); any other name, fetched titles included, goes back to the new kind's default. A link
  * that is not valid, or that is already another item of the list, is refused and the old one stays.
  */
 export function relinkSaved(items: readonly SavedItem[], key: string, text: string): RelinkResult {
@@ -31,6 +31,6 @@ export function relinkSaved(items: readonly SavedItem[], key: string, text: stri
   if (!parsed.ok) return { ok: false, error: parsed.error };
   const next = refKey(parsed.ref);
   if (next !== key && items.some((i) => refKey(i) === next)) return { ok: false, error: ADD_ERRORS.dup };
-  const label = old.label === defaultLabel(old) ? defaultLabel(parsed.ref) : old.label;
-  return { ok: true, key: next, items: items.map((i) => (refKey(i) === key ? { kind: parsed.ref.kind, id: parsed.ref.id, label } : i)) };
+  const kept = old.named === true;
+  return { ok: true, key: next, items: items.map((i) => (refKey(i) === key ? kept ? { kind: parsed.ref.kind, id: parsed.ref.id, label: old.label, named: true as const } : { kind: parsed.ref.kind, id: parsed.ref.id, label: defaultLabel(parsed.ref) } : i)) };
 }

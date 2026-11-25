@@ -81,7 +81,7 @@ function NameField({ item }: { item: SavedItem }) {
 }
 
 /** The row of "Edit link": the item's address in a field; Enter saves it, Escape keeps the old one, a refused link shows its reason under the row. */
-function LinkField({ item, onDone }: { item: SavedItem; onDone: () => void }) {
+function LinkField({ item, onDone }: { item: SavedItem; onDone: (key: string) => void }) {
   const [text, setText] = useState(linkText(item));
   const [error, setError] = useState<string | null>(null);
   const ref = useRef<HTMLInputElement>(null);
@@ -90,9 +90,13 @@ function LinkField({ item, onDone }: { item: SavedItem; onDone: () => void }) {
     ref.current?.select();
   }, []);
   const done = () => {
+    const at = useWatchStore.getState().saved.findIndex((i) => refKey(i) === refKey(item));
     const refused = useWatchStore.getState().relink(refKey(item), text);
     if (refused) setError(refused);
-    else onDone();
+    else {
+      const now = useWatchStore.getState().saved[at];
+      onDone(now ? refKey(now) : refKey(item));
+    }
   };
   const onKey = (e: KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Enter') {
@@ -100,7 +104,7 @@ function LinkField({ item, onDone }: { item: SavedItem; onDone: () => void }) {
       done();
     } else if (e.key === 'Escape') {
       e.preventDefault();
-      onDone();
+      onDone(refKey(item));
     }
   };
   return (
@@ -487,13 +491,13 @@ function WatchList({ empty, draft, setDraft, host, own }: { empty: boolean; draf
           }
           if (linking === key)
             return (
-              <li key={key}>
-                <LinkField item={item} onDone={() => setLinking(null)} />
+              <li key={key} data-key={key}>
+                <LinkField item={item} onDone={(next) => (setLinking(null), setTimeout(() => document.querySelector<HTMLElement>(`.w-list li[data-key="${next}"] .w-play`)?.focus(), 0))} />
               </li>
             );
           const on = playingKey === key;
           return (
-            <li key={key}>
+            <li key={key} data-key={key}>
               <div
                 className={`w-row${on ? ' on' : ''}`}
                 onContextMenu={(e) => openRowMenu(e, key, false)}

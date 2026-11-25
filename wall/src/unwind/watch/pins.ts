@@ -2,7 +2,7 @@ import { create } from 'zustand';
 import { isKind, kindName, refKey, validId, type WatchKind } from './links';
 import { cleanText, MAX_LABEL, type SavedItem } from './saved';
 import { ownThumb } from './OwnParts';
-import { useWatchStore } from './store';
+import { relinkListeners, useWatchStore } from './store';
 
 /** Where the three pins are kept: an array of at most three keys (`refKey`), each null for an empty place. */
 export const PINS_KEY = 'wall2-watch-pins';
@@ -149,7 +149,7 @@ export function loadPins(): PinPlace[] {
   }
 }
 
-function savePins(places: readonly PinPlace[]): void {
+export function savePins(places: readonly PinPlace[]): void {
   try {
     localStorage.setItem(PINS_KEY, JSON.stringify(places.slice(0, PIN_PLACES)));
   } catch {
@@ -331,3 +331,12 @@ export function artBackground(key: string): string {
   const h = artHue(key);
   return `linear-gradient(135deg, hsl(${h} 85% 60%), hsl(${(h + 250) % 360} 70% 22%) 60%, hsl(${(h + 150) % 360} 80% 52%))`;
 }
+
+// A saved item whose link was edited keeps its pin: the place follows the item to its new key.
+relinkListeners.push((from, to) => {
+  const cur = usePins.getState().places;
+  if (!cur.includes(from)) return;
+  const places = cur.map((pl) => (pl === from ? to : pl));
+  savePins(places);
+  usePins.setState({ places });
+});

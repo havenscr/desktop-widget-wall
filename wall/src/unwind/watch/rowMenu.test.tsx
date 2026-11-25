@@ -1,8 +1,7 @@
-// @ts-ignore node's own file call; the menu's source is read as text.
-import { readFileSync } from 'node:fs';
 import { act, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { mocks } from '../../bridge/tauri';
+import { HoverTipLayer, resetTip } from '../../ui/HoverTip';
 import { resetNowPlaying } from '../../music/store';
 import { useSignalStore } from '../../signals/store';
 import { usePlaceStore } from '../../state/places';
@@ -10,13 +9,14 @@ import { resetLastPlayed } from '../lastPlayed';
 import { ADD_ERRORS, SAVED_KEY, type SavedItem } from './saved';
 import { LINK_ERRORS } from './links';
 import { linkText, relinkSaved } from './rowMenu';
+import { PINS_KEY, resetPins, usePins } from './pins';
 import { resetWatch, useWatchStore } from './store';
 import { UnwindView } from './testView';
 
 const A = 'Ab3dEfGh1jK';
 const B = 'Zy9xWvUt8sR';
 const LIST: SavedItem[] = [
-  { kind: 'video', id: A, label: 'Night drive mix' },
+  { kind: 'video', id: A, label: 'Night drive mix', named: true },
   { kind: 'video', id: B, label: 'YouTube video' },
   { kind: 'live', id: 'Lofi_Live01', label: 'Lofi radio' },
 ];
@@ -30,7 +30,12 @@ const flush = async (ms = 0) => {
 async function open() {
   localStorage.setItem(SAVED_KEY, JSON.stringify(LIST));
   resetWatch();
-  render(<UnwindView />);
+  render(
+    <>
+      <UnwindView />
+      <HoverTipLayer />
+    </>,
+  );
   await flush();
   act(() => useWatchStore.getState().setTab('watch'));
   await flush();
@@ -47,6 +52,7 @@ beforeEach(() => {
 });
 afterEach(() => {
   vi.useRealTimers();
+  resetTip();
   mocks.clear();
   resetNowPlaying();
   resetLastPlayed();
@@ -124,7 +130,7 @@ describe('the row menu', () => {
     fireEvent.keyDown(field, { key: 'Enter' });
     await flush();
     const saved = useWatchStore.getState().saved;
-    expect(saved[0]).toEqual({ kind: 'video', id: 'QqQqQqQqQq1', label: 'Night drive mix' });
+    expect(saved[0]).toEqual({ kind: 'video', id: 'QqQqQqQqQq1', label: 'Night drive mix', named: true });
     expect(JSON.parse(localStorage.getItem(SAVED_KEY)!)[0].id).toBe('QqQqQqQqQq1');
     expect(screen.queryByLabelText(/^Link for/)).toBeNull();
   });
@@ -142,10 +148,65 @@ describe('the row menu', () => {
   });
 });
 
-describe('source', () => {
-  it('the menu has no third action and every item carries a hover tip', () => {
-    const src = (readFileSync('src/unwind/watch/RowMenu.tsx', 'utf8') as string).replace(/\r\n/g, '\n');
-    expect(src.match(/role="menuitem"/g)?.length).toBe(2);
-    expect(src.match(/role="menuitem" \{\.\.\.tip\(/g)?.length).toBe(2);
+describe('hover tips and focus', () => {
+  it('each menu item shows a hover tip', async () => {
+    await open();
+    fireEvent.contextMenu(rows()[0]!);
+    await flush();
+    for (const [name, text] of [['Edit link', 'Change the link of this youtube video'], ['Open on YouTube', 'Open this page on YouTube in your browser']] as const) {
+      fireEvent.focus(screen.getByRole('menuitem', { name }));
+      await flush(1000);
+      expect(document.body.textContent).toContain(text);
+    }
+  });
+
+  it('focus returns to the row after Escape and after a save', async () => {
+    await open();
+    const start = async () => {
+      fireEvent.contextMenu(rows()[0]!);
+      await flush();
+      fireEvent.click(screen.getByRole('menuitem', { name: 'Edit link' }));
+      await flush();
+      return screen.getByLabelText('Link for Night drive mix');
+    };
+    fireEvent.keyDown(await start(), { key: 'Escape' });
+    await flush();
+    expect(document.activeElement).toBe(rows()[0]!.querySelector('.w-play'));
+    const field = await start();
+    fireEvent.change(field, { target: { value: 'https://www.youtube.com/watch?v=QqQqQqQqQq1' } });
+    fireEvent.keyDown(field, { key: 'Enter' });
+    await flush();
+    expect(document.activeElement).toBe(rows()[0]!.querySelector('.w-play'));
+  });
+});
+
+describe("relink and the owner's data", () => {
+  it('a typed name is kept; a fetched title goes back to the default so the next title can be fetched', () => {
+    const typed: SavedItem[] = [{ kind: 'video', id: A, label: 'My pick', named: true }];
+    const a = relinkSaved(typed, `video:${A}`, 'https://youtu.be/QqQqQqQqQq1');
+    expect(a.ok && a.items[0]).toEqual({ kind: 'video', id: 'QqQqQqQqQq1', label: 'My pick', named: true });
+    const fetched: SavedItem[] = [{ kind: 'video', id: A, label: 'Old fetched title' }];
+    const b = relinkSaved(fetched, `video:${A}`, 'https://youtu.be/QqQqQqQqQq1');
+    expect(b.ok && b.items[0]).toEqual({ kind: 'video', id: 'QqQqQqQqQq1', label: 'YouTube video' });
+  });
+
+  it('rename marks a name as typed; records without the field still load', () => {
+    localStorage.setItem(SAVED_KEY, JSON.stringify([{ kind: 'video', id: A, label: 'Old record' }]));
+    resetWatch();
+    expect(useWatchStore.getState().saved[0]!.named).toBeUndefined();
+    act(() => useWatchStore.getState().rename(`video:${A}`, 'Typed'));
+    expect(useWatchStore.getState().saved[0]).toEqual({ kind: 'video', id: A, label: 'Typed', named: true });
+    resetWatch();
+    expect(useWatchStore.getState().saved[0]!.named).toBe(true);
+  });
+
+  it('a pin on the old link moves to the new one and is saved', () => {
+    localStorage.setItem(SAVED_KEY, JSON.stringify(LIST));
+    localStorage.setItem(PINS_KEY, JSON.stringify([`video:${A}`, null, null]));
+    resetWatch();
+    resetPins();
+    expect(useWatchStore.getState().relink(`video:${A}`, 'https://youtu.be/QqQqQqQqQq1')).toBeNull();
+    expect(usePins.getState().places[0]).toBe('video:QqQqQqQqQq1');
+    expect(JSON.parse(localStorage.getItem(PINS_KEY)!)[0]).toBe('video:QqQqQqQqQq1');
   });
 });

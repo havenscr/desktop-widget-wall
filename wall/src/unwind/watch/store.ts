@@ -261,6 +261,8 @@ export const useWatchStore = create<WatchState>((set, get) => ({
     const playing = get().playing;
     if (playing && refKey(playing) === key) get().stop();
     set({ saved: r.items });
+    // A pin on the old link follows the item to the new one (`pins.ts` listens).
+    for (const fn of relinkListeners) fn(key, r.key);
     return null;
   },
   setEditing: (editing) => set({ editing }),
@@ -433,6 +435,9 @@ useWatchStore.subscribe((s, prev) => {
 });
 
 /** Tests only: back to a fresh store over whatever local storage holds now. */
+/** Told when a saved item's link changes (old key, new key), so what holds the old key can follow. */
+export const relinkListeners: Array<(from: string, to: string) => void> = [];
+
 export function resetWatch(): void {
   cancelTuneWrite();
   waitingTitles.clear();
