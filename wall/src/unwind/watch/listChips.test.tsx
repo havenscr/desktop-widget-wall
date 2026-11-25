@@ -129,6 +129,46 @@ describe('the chip row', () => {
   });
 });
 
+describe('the chip scroller', () => {
+  const wheel = (el: HTMLElement, deltaY: number) => {
+    const event = new WheelEvent('wheel', { deltaY, cancelable: true, bubbles: true });
+    act(() => {
+      el.dispatchEvent(event);
+    });
+    return event;
+  };
+  const size = (el: HTMLElement, scrollWidth: number, clientWidth: number) => {
+    Object.defineProperty(el, 'scrollWidth', { configurable: true, value: scrollWidth });
+    Object.defineProperty(el, 'clientWidth', { configurable: true, value: clientWidth });
+  };
+  it('a vertical wheel scrolls the chips sideways while they overflow', async () => {
+    seed();
+    render(<WatchCard />);
+    await flush();
+    const el = document.querySelector('.w-chips') as HTMLElement;
+    size(el, 600, 378);
+    const event = wheel(el, 90);
+    expect(el.scrollLeft).toBe(90);
+    expect(event.defaultPrevented).toBe(true);
+  });
+  it('does nothing while every chip fits', async () => {
+    seed();
+    render(<WatchCard />);
+    await flush();
+    const el = document.querySelector('.w-chips') as HTMLElement;
+    size(el, 378, 378);
+    const event = wheel(el, 90);
+    expect(el.scrollLeft).toBe(0);
+    expect(event.defaultPrevented).toBe(false);
+  });
+  it('the edge fade class is off while the chips fit', async () => {
+    seed();
+    render(<WatchCard />);
+    await flush();
+    expect(document.querySelector('.w-chips')!.classList.contains('over')).toBe(false);
+  });
+});
+
 describe('a chip that is gone', () => {
   it('is forgotten, so a tag made again later does not filter the list', async () => {
     localStorage.setItem(LISTVIEW_KEY, JSON.stringify({ chip: 'tag:gone', sort: 'recent' }));

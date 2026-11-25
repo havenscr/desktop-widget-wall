@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { type ChipCounts, type ChipId, type ListSort } from './listView';
 import { SortChip } from './SortChip';
 
@@ -26,10 +26,23 @@ export function chipList(counts: ChipCounts): { id: ChipId; label: string; count
 /** The row between the card's head and its list: filter chips (scrolling sideways, faded at the right edge) and the sort chip. */
 export function ListChips({ counts, chip, sort, onChip, onSort }: Props) {
   const row = useRef<HTMLDivElement>(null);
+  const [over, setOver] = useState(false);
   useEffect(() => {
     // A chip chosen earlier and out of sight comes into view.
     row.current?.querySelector<HTMLElement>('[aria-pressed="true"]')?.scrollIntoView?.({ inline: 'nearest', block: 'nearest' });
   }, [chip]);
+  const names = chipList(counts).map((c) => `${c.label}${c.count}`).join('|');
+  useEffect(() => {
+    // The fade at the right edge shows only while chips run past it.
+    const el = row.current;
+    if (!el) return;
+    const measure = () => setOver(el.scrollWidth > el.clientWidth + 1);
+    measure();
+    if (typeof ResizeObserver === 'undefined') return;
+    const watch = new ResizeObserver(measure);
+    watch.observe(el);
+    return () => watch.disconnect();
+  }, [names]);
   useEffect(() => {
     // A mouse wheel only turns up and down; with chips past the edge it scrolls them sideways instead.
     const el = row.current;
@@ -47,7 +60,7 @@ export function ListChips({ counts, chip, sort, onChip, onSort }: Props) {
   }, []);
   return (
     <div className="w-chiprow">
-      <div ref={row} className="w-chips" role="group" aria-label="Show part of the list">
+      <div ref={row} className={`w-chips${over ? ' over' : ''}`} role="group" aria-label="Show part of the list">
         {chipList(counts).map((c) => (
           <button key={c.id} type="button" className={`w-chip${c.id === chip ? ' on' : ''}`} aria-pressed={c.id === chip} aria-label={`${c.label}, ${c.count}`} onClick={() => onChip(c.id)}>
             <span className="w-chip-name">{c.label}</span>

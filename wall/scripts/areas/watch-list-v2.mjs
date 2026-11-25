@@ -38,8 +38,9 @@ function measureWatchListV2() {
     if (Math.abs(s.width - 108) > 1) fails.push('the sort chip is ' + r0(s.width) + ' px wide (108)');
     if (s.right > c.right - 22 + 1) fails.push('the sort chip reaches past the card padding');
     const scroller = row.querySelector('.w-chips').getBoundingClientRect();
-    if (scroller.right > s.left - 0.5) fails.push('the chips run into the sort chip');
-    if (scroller.left < c.left + 22 - 1) fails.push('the chips start left of the card padding');
+    // The scroller has 6 px of room each side (for focus rings) and the same negative margin: its box is 6 px wider than the chips it shows.
+    if (scroller.right - 6 > s.left - 0.5) fails.push('the chips run into the sort chip');
+    if (scroller.left + 6 < c.left + 22 - 1) fails.push('the chips start left of the card padding');
   }
   const list = card.querySelector('.w-list');
   const field = card.querySelector('.w-field');
@@ -62,14 +63,17 @@ function measureWatchListV2() {
     const b = e.getBoundingClientRect(); const t = content(e);
     if (b.width === 0 || t.width === 0) continue;
     const scroll = row.querySelector('.w-chips').getBoundingClientRect();
-    if (b.right > scroll.right + 0.5 && e.classList.contains('w-chip')) continue;
+    if (b.right > scroll.right - 6 + 0.5 && e.classList.contains('w-chip')) continue;
     if (t.left - b.left < 9.5 || b.right - t.right < 9.5) { fails.push('the label of ' + name(e) + ' is ' + r0(Math.min(t.left - b.left, b.right - t.right)) + ' px from the button edge (10 at least)'); break; }
   }
   for (const e of card.querySelectorAll('*')) {
     if ([...e.childNodes].some((x) => x.nodeType === 3 && x.textContent.trim()) && parseFloat(getComputedStyle(e).fontSize) < 15.99) { fails.push('text under 16 px in ' + name(e)); break; }
   }
   const mask = getComputedStyle(row.querySelector('.w-chips')).maskImage || getComputedStyle(row.querySelector('.w-chips')).webkitMaskImage || '';
-  if (mask.indexOf('gradient') < 0) fails.push('the chips do not fade at the right edge');
+  const chipsBox = row.querySelector('.w-chips');
+  const runsOver = chipsBox.scrollWidth > chipsBox.clientWidth + 1;
+  if (runsOver && mask.indexOf('gradient') < 0) fails.push('the chips do not fade at the right edge');
+  if (!runsOver && mask.indexOf('gradient') >= 0) fails.push('the chips fade although they all fit');
   const menu = card.querySelector('.w-sortmenu');
   if (menu) {
     const b = menu.getBoundingClientRect();
