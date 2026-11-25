@@ -3,6 +3,8 @@ import { defaultLabel, isKind, refKey, validId, type WatchRef } from './links';
 /** A saved item: a kind and an id (checked) and the owner's label for it. */
 export interface SavedItem extends WatchRef {
   label: string;
+  /** True once the owner typed the name (rename); a name fetched from the player never sets it. */
+  named?: true;
 }
 
 export const SAVED_KEY = 'wall2-watch-list';
@@ -49,13 +51,13 @@ export function parseSaved(raw: string | null): SavedItem[] {
   for (const e of v) {
     if (out.length >= MAX_SAVED) break;
     if (!e || typeof e !== 'object') continue;
-    const { kind, id, label } = e as Record<string, unknown>;
+    const { kind, id, label, named } = e as Record<string, unknown>;
     if (!isKind(kind) || !validId(kind, id)) continue;
     const ref = { kind, id };
     const key = refKey(ref);
     if (seen.has(key)) continue;
     seen.add(key);
-    out.push({ ...ref, label: cleanLabel(label, ref) });
+    out.push(named === true ? { ...ref, label: cleanLabel(label, ref), named: true } : { ...ref, label: cleanLabel(label, ref) });
   }
   return out;
 }
@@ -70,7 +72,7 @@ export function loadSaved(): SavedItem[] {
 
 export function saveSaved(items: readonly SavedItem[]): void {
   try {
-    localStorage.setItem(SAVED_KEY, JSON.stringify(items.slice(0, MAX_SAVED).map(({ kind, id, label }) => ({ kind, id, label }))));
+    localStorage.setItem(SAVED_KEY, JSON.stringify(items.slice(0, MAX_SAVED).map(({ kind, id, label, named }) => (named ? { kind, id, label, named } : { kind, id, label }))));
   } catch {
     /* the list stays for this session */
   }
@@ -96,5 +98,11 @@ export function removeSaved(items: readonly SavedItem[], key: string): SavedItem
 }
 
 export function renameSaved(items: readonly SavedItem[], key: string, label: string): SavedItem[] {
-  return items.map((i) => (refKey(i) === key ? { ...i, label: cleanLabel(label, i) } : i));
+  return items.map((i) => {
+    if (refKey(i) !== key) return i;
+    const clean = cleanLabel(label, i);
+    const { named: _was, ...rest } = i;
+    const named = clean !== i.label ? clean !== defaultLabel(i) : i.named === true;
+    return named ? { ...rest, label: clean, named: true as const } : { ...rest, label: clean };
+  });
 }

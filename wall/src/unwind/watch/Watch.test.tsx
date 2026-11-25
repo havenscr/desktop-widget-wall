@@ -181,7 +181,7 @@ it('explains itself with nothing saved, refuses a bad link in one line and saves
   const name = screen.getByLabelText('Name for this youtube video') as HTMLInputElement;
   fireEvent.change(name, { target: { value: 'Rainy evening' } });
   fireEvent.keyDown(name, { key: 'Enter' });
-  expect(parseSaved(localStorage.getItem(SAVED_KEY))).toEqual([{ kind: 'video', id: V, label: 'Rainy evening' }]);
+  expect(parseSaved(localStorage.getItem(SAVED_KEY))).toEqual([{ kind: 'video', id: V, label: 'Rainy evening', named: true }]);
   expect(screen.getByText('1 saved')).toBeTruthy();
   await act(async () => screen.getByRole('button', { name: 'Remove Rainy evening' }).click());
   expect(parseSaved(localStorage.getItem(SAVED_KEY))).toEqual([]);

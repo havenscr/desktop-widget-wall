@@ -9,6 +9,9 @@ import { useWatchStore } from './store';
 import { AddMenu } from './AddToPlaylist';
 import { OwnEditor } from './OwnEditor';
 import { OwnFollow } from './OwnFollow';
+import { RowMenu } from './RowMenu';
+import { linkText } from './rowMenuModel';
+import { openInBrowser } from './openInBrowser';
 import { PASTE_ERROR_MS } from './ownShared';
 import { countText, DeleteAsk, OwnTile, savedVideo } from './OwnParts';
 import { askDetails } from './ownDetails';
@@ -73,6 +76,64 @@ function NameField({ item }: { item: SavedItem }) {
       <button type="button" className="w-mini" title="Save the name" aria-label="Save the name" onClick={done}>
         <IconCheck size={20} aria-hidden="true" />
       </button>
+    </div>
+  );
+}
+
+/** The row of "Edit link": the item's address in a field; Enter saves it, Escape keeps the old one, a refused link shows its reason under the row. */
+function LinkField({ item, onDone }: { item: SavedItem; onDone: (key: string) => void }) {
+  const [text, setText] = useState(linkText(item));
+  const [error, setError] = useState<string | null>(null);
+  const ref = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    ref.current?.focus();
+    ref.current?.select();
+  }, []);
+  const done = () => {
+    const at = useWatchStore.getState().saved.findIndex((i) => refKey(i) === refKey(item));
+    const refused = useWatchStore.getState().relink(refKey(item), text);
+    if (refused) setError(refused);
+    else {
+      const now = useWatchStore.getState().saved[at];
+      onDone(now ? refKey(now) : refKey(item));
+    }
+  };
+  const onKey = (e: KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      done();
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      onDone(refKey(item));
+    }
+  };
+  return (
+    <div className="w-link-row">
+      <div className="w-row editing">
+        <span className="w-kind" title={kindName(item.kind)}>
+          <KindIcon kind={item.kind} />
+        </span>
+        <input
+          ref={ref}
+          className="w-name-in"
+          value={text}
+          maxLength={4096}
+          spellCheck={false}
+          autoComplete="off"
+          aria-label={`Link for ${item.label}`}
+          aria-invalid={error ? true : undefined}
+          onChange={(e) => (setText(e.target.value), setError(null))}
+          onKeyDown={onKey}
+        />
+        <button type="button" className="w-mini" title="Save the link" aria-label="Save the link" onClick={done}>
+          <IconCheck size={20} aria-hidden="true" />
+        </button>
+      </div>
+      {error ? (
+        <div className="w-err" role="alert">
+          {error}
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -164,11 +225,14 @@ function WatchList({ empty, draft, setDraft, host, own }: { empty: boolean; draf
   const [error, setError] = useState<string | null>(null);
   const [asking, setAsking] = useState<string | null>(null);
   const [menu, setMenu] = useState<{ key: string; anchor: HTMLElement } | null>(null);
+  // The row menu (right-click or Shift+F10), and the row whose link is being edited.
+  const [rowMenu, setRowMenu] = useState<{ key: string; anchor: HTMLElement; byKeyboard: boolean } | null>(null);
+  const [linking, setLinking] = useState<string | null>(null);
   // The playlist a pasted video link also names, offered once (`known`: the video was in the list already); kept here, never saved.
   const [offer, setOffer] = useState<{ ref: WatchRef; known: boolean } | null>(null);
   const fieldRef = useRef<HTMLInputElement>(null);
   // The card is in use while its field has text, a name is being typed, the new playlist form or a question or a menu is open: it never rests then.
-  const held = text.trim() !== '' || editing !== null || draft || asking !== null || menu !== null || searching;
+  const held = text.trim() !== '' || editing !== null || draft || asking !== null || menu !== null || rowMenu !== null || linking !== null || searching;
   useEffect(() => {
     useWatchRest.setState({ cardHeld: held });
     // A field that went away with the focus in it sends no blur: the card's focus hold is let go when it was the last thing holding it.
@@ -345,6 +409,13 @@ function WatchList({ empty, draft, setDraft, host, own }: { empty: boolean; draf
     );
   }
 
+  const openRowMenu = (e: { currentTarget: HTMLElement; preventDefault: () => void }, key: string, byKeyboard: boolean) => {
+    e.preventDefault();
+    other();
+    setMenu(null);
+    setRowMenu({ key, anchor: e.currentTarget, byKeyboard });
+  };
+  const rowMenuItem = rowMenu ? saved.find((i) => refKey(i) === rowMenu.key) : undefined;
   const menuItem = menu ? saved.find((i) => refKey(i) === menu.key) : undefined;
   return (
     <>
@@ -418,10 +489,22 @@ function WatchList({ empty, draft, setDraft, host, own }: { empty: boolean; draf
               </li>
             );
           }
+          if (linking === key)
+            return (
+              <li key={key} data-key={key}>
+                <LinkField item={item} onDone={(next) => (setLinking(null), setTimeout(() => document.querySelector<HTMLElement>(`.w-list li[data-key="${next}"] .w-play`)?.focus(), 0))} />
+              </li>
+            );
           const on = playingKey === key;
           return (
-            <li key={key}>
-              <div className={`w-row${on ? ' on' : ''}`}>
+            <li key={key} data-key={key}>
+              <div
+                className={`w-row${on ? ' on' : ''}`}
+                onContextMenu={(e) => openRowMenu(e, key, false)}
+                onKeyDown={(e) => {
+                  if ((e.key === 'F10' && e.shiftKey) || e.key === 'ContextMenu') openRowMenu(e, key, true);
+                }}
+              >
                 <button
                   type="button"
                   className="w-play"
@@ -468,6 +551,21 @@ function WatchList({ empty, draft, setDraft, host, own }: { empty: boolean; draf
       {field}
       {errLine}
       {offerLine}
+      {rowMenu && rowMenuItem && host ? (
+        <RowMenu
+          item={rowMenuItem}
+          anchor={rowMenu.anchor}
+          host={host}
+          byKeyboard={rowMenu.byKeyboard}
+          onEdit={() => setLinking(rowMenu.key)}
+          onOpen={() => void openInBrowser(rowMenuItem).then((ok) => (ok ? undefined : showError('Could not open the browser.')))}
+          onClose={(restore) => {
+            const anchor = rowMenu.anchor;
+            setRowMenu(null);
+            if (restore) anchor.querySelector<HTMLElement>('.w-play')?.focus();
+          }}
+        />
+      ) : null}
       {menu && menuItem && host ? <AddMenu video={savedVideo(menuItem)} anchor={menu.anchor} host={host} onClose={() => setMenu(null)} /> : null}
     </>
   );
