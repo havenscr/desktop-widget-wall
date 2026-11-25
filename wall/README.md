@@ -385,6 +385,8 @@ In a browser there is no Tauri. `src/bridge/tauri.ts` then answers `invoke`
 from a mock table (`mocks`); fill it from tests or dev code. An unknown command
 rejects with a clear error. Inside Tauri, `invoke` calls the real command.
 
+The Rust unit tests also run on Linux: `cargo test --manifest-path src-tauri/Cargo.toml` from the repository root, after installing the Tauri system libraries (webkit2gtk 4.1, GTK 3, libsoup 3, appindicator, librsvg, OpenSSL, D-Bus, libxdo, ALSA, pkg-config). The Windows-only parts (the `windows` crates, the Win32 and media-session commands, the Credential Manager store) are gated with `#[cfg(windows)]`, and the few that other modules call have plain stubs off Windows. The Windows CI build stays the final check.
+
 ## Home moods
 
 Home follows the concept's `f_home` on the frame's zones (`screens/Home.tsx`,

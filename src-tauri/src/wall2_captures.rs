@@ -1638,6 +1638,8 @@ mod tests {
         assert_eq!(pick_new_window(&[], &before, "shot-a"), None);
     }
 
+    // Windows paths: the standard library splits on backslashes only on Windows.
+    #[cfg(windows)]
     #[test]
     fn the_file_stem_drops_the_folder_and_extension() {
         assert_eq!(file_stem_of(A), "shot-a");

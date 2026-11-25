@@ -36,11 +36,19 @@ pub fn challenge_for(verifier: &str) -> Option<String> {
     crate::wall2_oauth::challenge_for(verifier)
 }
 
-#[cfg(test)]
+#[cfg(all(test, windows))]
 fn random_bytes(n: usize) -> Option<Vec<u8>> {
     use windows::Win32::Security::Cryptography::{BCryptGenRandom, BCRYPT_ALG_HANDLE, BCRYPT_USE_SYSTEM_PREFERRED_RNG};
     let mut bytes = vec![0u8; n];
     if unsafe { BCryptGenRandom(BCRYPT_ALG_HANDLE::default(), &mut bytes, BCRYPT_USE_SYSTEM_PREFERRED_RNG) }.is_ok() { Some(bytes) } else { None }
+}
+
+#[cfg(all(test, not(windows)))]
+fn random_bytes(n: usize) -> Option<Vec<u8>> {
+    use std::io::Read;
+    let mut bytes = vec![0u8; n];
+    std::fs::File::open("/dev/urandom").ok()?.read_exact(&mut bytes).ok()?;
+    Some(bytes)
 }
 
 pub fn authorize_url(tenant: &str, client_id: &str, redirect_uri: &str, challenge: &str, state: &str, scope: &str) -> String {
