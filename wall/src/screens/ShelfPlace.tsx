@@ -10,6 +10,7 @@ import { tip } from '../ui/HoverTip';
 import { useBrief } from '../work/useBrief';
 import { useKeyPress } from '../work/keyPress';
 import { Keys } from '../work/Keys';
+import { shelfKind } from './shelfKinds';
 import { PinnedRow } from '../work/PinnedRow';
 
 /** The ShareX keys the Shelf shows, by library id; each runs through the same press path as a pinned key. */
@@ -89,6 +90,7 @@ export function ShelfPlace() {
                 key={id}
                 type="button"
                 className="shelf-key"
+                data-kind={shelfKind(id)}
                 onClick={(e) => {
                   // A key press from the keyboard never fires a ShareX task (the same rule as every capture key).
                   if (e.detail === 0) return;
@@ -113,6 +115,7 @@ export function ShelfPlace() {
                 key={id}
                 type="button"
                 className="shelf-key shelf-key-sm"
+                data-kind={shelfKind(id)}
                 onClick={(e) => {
                   if (e.detail === 0) return;
                   void press(id, e.detail, { command: 'wall2_keys_send_library', args: { id } }, label, action, { name: 'ShareX', general: true }, false);

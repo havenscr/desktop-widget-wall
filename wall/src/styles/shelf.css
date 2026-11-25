@@ -85,6 +85,32 @@
 .shelf-key-sm:hover {
   background: rgba(53, 230, 234, 0.12);
 }
+/* A key with a kind takes the Work key look: a soft wash and an edge in the kind's colour (--g, set in work.css) and the icon in it.
+   The label keeps the main text colour, the same as the Work keys. A key without a kind keeps the neutral style above. */
+.shelf-key[data-kind] {
+  background: linear-gradient(180deg, rgba(var(--g), 0.24), rgba(var(--g), 0.1)), rgba(11, 8, 32, 0.86);
+  border-color: rgba(var(--g), 0.92);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.18), 0 2px 0 rgba(3, 2, 14, 0.65);
+  color: var(--tx);
+  transition: background 200ms ease, border-color 200ms ease, box-shadow 200ms ease, transform 200ms ease;
+}
+.shelf-key[data-kind] svg {
+  color: rgb(var(--g));
+}
+.shelf-key[data-kind]:hover {
+  background: linear-gradient(180deg, rgba(var(--g), 0.38), rgba(var(--g), 0.2)), rgba(11, 8, 32, 0.86);
+  border-color: rgb(var(--g));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.24), 0 2px 0 rgba(3, 2, 14, 0.65), 0 0 18px -3px rgba(var(--g), 0.75);
+}
+.shelf-key[data-kind]:active {
+  transform: translateY(2px);
+  background: linear-gradient(180deg, rgba(var(--g), 0.08), rgba(var(--g), 0.18)), rgba(6, 4, 20, 0.94);
+  border-color: rgb(var(--g));
+  box-shadow: inset 0 3px 6px rgba(0, 0, 0, 0.7);
+}
+.shelf-key[data-kind]:focus-visible {
+  outline-color: rgb(var(--g));
+}
 
 /* Captures card (shelf/CapturesCard.tsx): the picked capture large on the left (the picture grows to fill the card,
    Copy, Open and Folder sit at the bottom left), every capture as a row on the right that scrolls and never reorders. */
