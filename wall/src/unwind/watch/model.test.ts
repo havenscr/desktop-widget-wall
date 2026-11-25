@@ -216,7 +216,7 @@ describe('messages from a player', () => {
 
 describe('saved items', () => {
   const ok = { kind: 'video', id: V, label: 'Night drive' };
-  it('keeps only well formed entries, cleans labels, drops repeats, at most 24', () => {
+  it('keeps only well formed entries, cleans labels, drops repeats, at most 200', () => {
     const raw = JSON.stringify([
       ok,
       { kind: 'video', id: V, label: 'again' },
@@ -227,7 +227,7 @@ describe('saved items', () => {
       { kind: 'playlist', id: PL, label: 7 },
       null,
       'text',
-      ...Array.from({ length: 40 }, (_, i) => ({ kind: 'twitch', id: `chan_${i}`, label: 'c' })),
+      ...Array.from({ length: 240 }, (_, i) => ({ kind: 'twitch', id: `chan_${i}`, label: 'c' })),
     ]);
     const items = parseSaved(raw);
     expect(items.length).toBe(MAX_SAVED);
@@ -236,7 +236,7 @@ describe('saved items', () => {
     expect(items[2]).toEqual({ kind: 'playlist', id: PL, label: 'YouTube playlist' });
   });
   it('reads nothing from broken or oversized storage', () => {
-    for (const raw of [null, '', 'not json', '{"kind":"video"}', '42', 'x'.repeat(40_000)]) expect(parseSaved(raw)).toEqual([]);
+    for (const raw of [null, '', 'not json', '{"kind":"video"}', '42', 'x'.repeat(300_000)]) expect(parseSaved(raw)).toEqual([]);
   });
   it('drops bidi overrides, isolates and zero-width characters from a label', () => {
     const ref = { kind: 'video' as const, id: V };
@@ -336,7 +336,7 @@ describe('stop rules', () => {
   });
   it('adds a pasted link to the list and storage, or says why not', () => {
     expect(useWatchStore.getState().addLink('https://www.twitch.tv/pixel_harbor')).toBeNull();
-    expect(useWatchStore.getState().saved[0]).toEqual({ kind: 'twitch', id: 'pixel_harbor', label: 'pixel_harbor on Twitch' });
+    expect(useWatchStore.getState().saved[0]).toEqual({ kind: 'twitch', id: 'pixel_harbor', label: 'pixel_harbor on Twitch', addedAt: expect.any(Number) });
     expect(useWatchStore.getState().editing).toBe('twitch:pixel_harbor');
     expect(parseSaved(localStorage.getItem(SAVED_KEY)).length).toBe(2);
     expect(useWatchStore.getState().addLink('https://evil.example')).toBe(LINK_ERRORS.other);

@@ -131,14 +131,14 @@ describe('the list', () => {
     expect(within(row('Friday wind down')).getByText('1 video')).toBeTruthy();
   });
 
-  it('has the New playlist button, disabled with its reason at 24 entries', async () => {
+  it('has the New playlist button, disabled with its reason at the most entries', async () => {
     seed();
     const r = render(<UnwindView />);
     await flush();
     const button = screen.getByRole('button', { name: 'New playlist' }) as HTMLButtonElement;
     expect(button.disabled).toBe(false);
     r.unmount();
-    const full = Array.from({ length: 20 }, (_, i) => ({ kind: 'video', id: `Filler${String(i).padStart(5, '0')}`, label: `Filler ${i}` }));
+    const full = Array.from({ length: 200 }, (_, i) => ({ kind: 'video', id: `Filler${String(i).padStart(5, '0')}`, label: `Filler ${i}` }));
     seed({ extra: full });
     render(<UnwindView />);
     await flush();

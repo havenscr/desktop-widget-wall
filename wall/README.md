@@ -2320,8 +2320,8 @@ there, still playing, when the owner comes back (see "The stage layer" below).
   as it is: remove it and paste the link again. Video ids are exactly 11 of `[A-Za-z0-9_-]`, playlist ids
   13 to 64, Twitch logins 3 to 25 of `[a-z0-9_]` (lower-cased; site pages such as
   `directory` are refused). Anything else, a user name, a port, another scheme or a look-alike
-  host, gets one plain line. Saved items (kind, id, label, at most 24) are in local storage
-  (`wall2-watch-list`), checked whole on every read (`saved.ts`). A new item opens its name
+  host, gets one plain line. Saved items (kind, id, label, at most 200) are in local storage
+  (`wall2-watch-list`), checked whole on every read (`saved.ts`). Each item may also carry `addedAt`, `lastPlayedAt`, `plays`, `seconds`, `views` and up to 8 `tags`, each checked on its own (a bad one is dropped, the record stays); a play from a row or pin counts a play, and a save from search keeps the video's length and views. The first save of a list longer than 24 copies it once to `wall2-watch-list-backup`, because a build older than this cuts a list to 24 on its next save. A new item opens its name
   field; each row plays on click and has rename and remove buttons (32 px, with tooltips).
   Empty, the card explains itself. It shows five whole rows; past five the list scrolls a row
   at a time inside the card, with a visible scrollbar and a fade along the bottom while more
@@ -2540,7 +2540,7 @@ there, still playing, when the owner comes back (see "The stage layer" below).
 - **Your own playlists** (`ownLists.ts`, `ownPlay.ts`, `OwnEditor.tsx`, `OwnFollow.tsx`, `AddToPlaylist.tsx`, `OwnParts.tsx`,
   `styles/ownlists.css`). A playlist is made on this wall and lives on this PC only: the Google sign-in is read only and nothing is
   created on YouTube. It holds YouTube videos only (no Twitch, no live stream, no connected playlist), at most 50, and it counts as
-  one of the 24 list entries. In the saved list (`wall2-watch-list`) it is an ordinary entry of kind `own`: an id of 12 characters
+  one of the 200 list entries. In the saved list (`wall2-watch-list`) it is an ordinary entry of kind `own`: an id of 12 characters
   `[a-z0-9]` made on the wall (`OWN_ID`, random, never a YouTube shape) and its name. Its videos are in a second local storage key,
   `wall2-watch-playlists`: `{ v: 1, lists: { <id>: { items: [{ id, title?, channel?, seconds? }], shuffle, repeat } } }`. It is read
   tolerantly (`parseOwn`: a value over 600,000 characters, bad JSON or another `v` is an empty store; each list is read on its own and

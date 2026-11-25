@@ -592,10 +592,14 @@ export function WatchCard() {
   useEffect(() => {
     if (!unnamed) return;
     askDetails(unnamed.split(','), (id, info) => {
-      if (!info.title) return;
       const st = useWatchStore.getState();
       // A saved item is kind plus id: the same id may be saved as a video and as a live stream, each filled by its own key.
-      for (const hit of st.saved) if ((hit.kind === 'video' || hit.kind === 'live') && hit.id === id) st.fillLabel(refKey(hit), info.title);
+      for (const hit of st.saved) {
+        if (hit.kind !== 'video' && hit.kind !== 'live') continue;
+        if (hit.id !== id) continue;
+        if (hit.kind === 'video') st.noteMeta(refKey(hit), { seconds: info.seconds, views: info.views });
+        if (info.title) st.fillLabel(refKey(hit), info.title);
+      }
     });
   }, [unnamed]);
   const mode = open ? 'edit' : own?.follow ? 'follow' : 'list';

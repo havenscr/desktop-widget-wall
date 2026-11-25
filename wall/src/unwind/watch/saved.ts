@@ -5,13 +5,95 @@ export interface SavedItem extends WatchRef {
   label: string;
   /** True once the owner typed the name (rename); a name fetched from the player never sets it. */
   named?: true;
+  /** When it was saved (ms since 1970). */
+  addedAt?: number;
+  /** When it last played from the list (ms since 1970). */
+  lastPlayedAt?: number;
+  /** How many times it played from the list. */
+  plays?: number;
+  /** Its length in seconds, when known (not for a live stream). */
+  seconds?: number;
+  /** Its view count, when known. */
+  views?: number;
+  /** The owner's tags, cleaned, at most MAX_TAGS. */
+  tags?: string[];
+}
+
+/** What a save may know about the video: its length and view count. */
+export interface SavedMeta {
+  seconds?: number;
+  views?: number;
 }
 
 export const SAVED_KEY = 'wall2-watch-list';
-export const MAX_SAVED = 24;
+/** The list's key before saved data v2 (a build older than v2 keeps only 24 of a longer list). */
+export const LEGACY_MAX = 24;
+export const MAX_SAVED = 200;
+/** Where the full list is copied, once, the first time a v2 save holds more than the old limit. */
+export const BACKUP_KEY = 'wall2-watch-list-backup';
+export const MAX_TAGS = 8;
+export const MAX_TAG = 24;
 export const MAX_LABEL = 60;
 /** A stored value longer than this is not read at all. */
-const MAX_STORED = 32_000;
+const MAX_STORED = 256_000;
+/** Saved times must fall between 2020-01-01 and a day from now. */
+const MIN_TIME = Date.UTC(2020, 0, 1);
+const DAY_MS = 86_400_000;
+
+/** A finite whole number of at least 0, else undefined. */
+function wholeCount(v: unknown): number | undefined {
+  return typeof v === 'number' && Number.isFinite(v) && Number.isInteger(v) && v >= 0 ? v : undefined;
+}
+
+function wholeTime(v: unknown, now: number): number | undefined {
+  const n = wholeCount(v);
+  return n !== undefined && n >= MIN_TIME && n <= now + DAY_MS ? n : undefined;
+}
+
+/** One tag: cleaned to a line, a leading # dropped, at most 24 characters; empty when nothing is left. */
+export function cleanTag(raw: unknown): string {
+  return cleanText(typeof raw === 'string' ? raw.replace(/^\s*#+/, '') : raw, MAX_TAG);
+}
+
+/** A tag list: each tag cleaned, empty ones dropped, repeats (any case) dropped, at most 8. Undefined when none is left. */
+export function cleanTags(raw: unknown): string[] | undefined {
+  if (!Array.isArray(raw)) return undefined;
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const t of raw) {
+    const tag = cleanTag(t);
+    const low = tag.toLowerCase();
+    if (!tag || seen.has(low)) continue;
+    seen.add(low);
+    out.push(tag);
+    if (out.length >= MAX_TAGS) break;
+  }
+  return out.length > 0 ? out : undefined;
+}
+
+/** The optional fields of a stored entry, each checked on its own: a bad one is left out, never the record. */
+function extras(e: Record<string, unknown>, now: number): Omit<SavedItem, 'kind' | 'id' | 'label' | 'named'> {
+  const out: Omit<SavedItem, 'kind' | 'id' | 'label' | 'named'> = {};
+  const addedAt = wholeTime(e.addedAt, now);
+  const lastPlayedAt = wholeTime(e.lastPlayedAt, now);
+  const plays = wholeCount(e.plays);
+  const seconds = wholeCount(e.seconds);
+  const views = wholeCount(e.views);
+  const tags = cleanTags(e.tags);
+  if (addedAt !== undefined) out.addedAt = addedAt;
+  if (lastPlayedAt !== undefined) out.lastPlayedAt = lastPlayedAt;
+  if (plays !== undefined) out.plays = plays;
+  if (seconds !== undefined) out.seconds = seconds;
+  if (views !== undefined) out.views = views;
+  if (tags) out.tags = tags;
+  return out;
+}
+
+/** An item as stored: only the fields it has, in a fixed order, so a v1 list round-trips byte for byte. */
+function stored(i: SavedItem): SavedItem {
+  const { kind, id, label, named, ...more } = i;
+  return { kind, id, label, ...(named ? { named } : {}), ...extras(more as Record<string, unknown>, Number.MAX_SAFE_INTEGER - DAY_MS) };
+}
 
 /**
  * Text on one line for display: bidi overrides and isolates and zero-width characters dropped,
@@ -35,7 +117,7 @@ export function cleanLabel(raw: unknown, ref: WatchRef): string {
 /**
  * The saved list from its stored text, checked whole on every read: an array, each entry a
  * known kind with an id of that kind's exact shape, its label cleaned, no item twice, at
- * most 24. Anything else is dropped.
+ * most 200. Anything else is dropped.
  */
 export function parseSaved(raw: string | null): SavedItem[] {
   if (!raw || raw.length > MAX_STORED) return [];
@@ -46,18 +128,20 @@ export function parseSaved(raw: string | null): SavedItem[] {
     return [];
   }
   if (!Array.isArray(v)) return [];
+  const now = Date.now();
   const out: SavedItem[] = [];
   const seen = new Set<string>();
   for (const e of v) {
     if (out.length >= MAX_SAVED) break;
     if (!e || typeof e !== 'object') continue;
     const { kind, id, label, named } = e as Record<string, unknown>;
+    const more = extras(e as Record<string, unknown>, now);
     if (!isKind(kind) || !validId(kind, id)) continue;
     const ref = { kind, id };
     const key = refKey(ref);
     if (seen.has(key)) continue;
     seen.add(key);
-    out.push(named === true ? { ...ref, label: cleanLabel(label, ref), named: true } : { ...ref, label: cleanLabel(label, ref) });
+    out.push(named === true ? { ...ref, label: cleanLabel(label, ref), named: true, ...more } : { ...ref, label: cleanLabel(label, ref), ...more });
   }
   return out;
 }
@@ -72,7 +156,10 @@ export function loadSaved(): SavedItem[] {
 
 export function saveSaved(items: readonly SavedItem[]): void {
   try {
-    localStorage.setItem(SAVED_KEY, JSON.stringify(items.slice(0, MAX_SAVED).map(({ kind, id, label, named }) => (named ? { kind, id, label, named } : { kind, id, label }))));
+    const text = JSON.stringify(items.slice(0, MAX_SAVED).map(stored));
+    // A build older than v2 cuts a longer list to 24 on its next save: keep one full copy, once.
+    if (items.length > LEGACY_MAX && localStorage.getItem(BACKUP_KEY) === null) localStorage.setItem(BACKUP_KEY, text);
+    localStorage.setItem(SAVED_KEY, text);
   } catch {
     /* the list stays for this session */
   }
@@ -86,10 +173,15 @@ export const ADD_ERRORS = {
 } as const;
 
 /** Add an item at the top of the list, unless it is already there or the list is full. */
-export function addSaved(items: readonly SavedItem[], ref: WatchRef): AddResult {
+export function addSaved(items: readonly SavedItem[], ref: WatchRef, meta?: SavedMeta, now?: number): AddResult {
   if (items.some((i) => refKey(i) === refKey(ref))) return { ok: false, error: ADD_ERRORS.dup };
   if (items.length >= MAX_SAVED) return { ok: false, error: ADD_ERRORS.full };
-  const added = { kind: ref.kind, id: ref.id, label: defaultLabel(ref) };
+  const added: SavedItem = { kind: ref.kind, id: ref.id, label: defaultLabel(ref) };
+  if (now !== undefined) added.addedAt = now;
+  const seconds = wholeCount(meta?.seconds);
+  const views = wholeCount(meta?.views);
+  if (seconds) added.seconds = seconds;
+  if (views !== undefined) added.views = views;
   return { ok: true, items: [added, ...items], added };
 }
 
@@ -104,5 +196,37 @@ export function renameSaved(items: readonly SavedItem[], key: string, label: str
     const { named: _was, ...rest } = i;
     const named = clean !== i.label ? clean !== defaultLabel(i) : i.named === true;
     return named ? { ...rest, label: clean, named: true as const } : { ...rest, label: clean };
+  });
+}
+
+/** What a play changes on a saved item: one more play, the time of it. Items not in the list are left alone. */
+export function notePlay(items: readonly SavedItem[], key: string, now: number): SavedItem[] {
+  return items.map((i) => (refKey(i) === key ? { ...i, plays: (i.plays ?? 0) + 1, lastPlayedAt: now } : i));
+}
+
+/** Fill the length and view count an item lacks; what it already has stays. Returns the same array when nothing changes. */
+export function noteMeta(items: readonly SavedItem[], key: string, meta: SavedMeta): readonly SavedItem[] {
+  const seconds = wholeCount(meta.seconds);
+  const views = wholeCount(meta.views);
+  let changed = false;
+  const next = items.map((i) => {
+    if (refKey(i) !== key) return i;
+    const add: SavedMeta = {};
+    if (i.seconds === undefined && seconds) add.seconds = seconds;
+    if (i.views === undefined && views !== undefined) add.views = views;
+    if (Object.keys(add).length === 0) return i;
+    changed = true;
+    return { ...i, ...add };
+  });
+  return changed ? next : items;
+}
+
+/** Set an item's tags (cleaned, deduped, at most 8); none left removes the field. */
+export function tagSaved(items: readonly SavedItem[], key: string, tags: readonly unknown[]): SavedItem[] {
+  const clean = cleanTags(tags);
+  return items.map((i) => {
+    if (refKey(i) !== key) return i;
+    const { tags: _old, ...rest } = i;
+    return clean ? { ...rest, tags: clean } : rest;
   });
 }

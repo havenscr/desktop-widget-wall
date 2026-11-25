@@ -108,7 +108,7 @@ describe('the lists store', () => {
     expect(entry?.label).toBe('Wind down');
     expect(w().lists[r.id].items).toEqual([{ id: vid(1), title: 'One' }]);
     expect(JSON.parse(localStorage.getItem(OWN_KEY)!).lists[r.id].items).toHaveLength(1);
-    expect(JSON.parse(localStorage.getItem(SAVED_KEY)!)[0]).toEqual({ kind: 'own', id: r.id, label: 'Wind down', named: true });
+    expect(JSON.parse(localStorage.getItem(SAVED_KEY)!)[0]).toEqual({ kind: 'own', id: r.id, label: 'Wind down', named: true, addedAt: expect.any(Number) });
   });
   it('create refuses at 24 entries', () => {
     const items = Array.from({ length: MAX_SAVED }, (_, i) => ({ kind: 'video', id: vid(i), label: `v${i}` }));

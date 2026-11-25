@@ -9,7 +9,7 @@ function forget(ids: readonly string[]): void {
 }
 
 /** Ask YouTube (signed in only) for what an own playlist's videos are missing; `learn` fills absent fields only. */
-export function askDetails(ids: readonly string[], learn: (id: string, info: { title?: string; channel?: string; seconds?: number }) => void): void {
+export function askDetails(ids: readonly string[], learn: (id: string, info: { title?: string; channel?: string; seconds?: number; views?: number }) => void): void {
   const wanted: string[] = [];
   for (const id of ids) {
     if (!validId('video', id) || asked.has(id) || wanted.includes(id)) continue;
@@ -36,7 +36,7 @@ export function askDetails(ids: readonly string[], learn: (id: string, info: { t
         const answers = await youtube.videos(chunk);
         for (const answer of answers) {
           if (!answer || typeof answer.id !== 'string' || !allowed.has(answer.id)) continue;
-          learn(answer.id, { title: answer.title ?? undefined, channel: answer.channel ?? undefined, seconds: answer.seconds ?? undefined });
+          learn(answer.id, { title: answer.title ?? undefined, channel: answer.channel ?? undefined, seconds: answer.seconds ?? undefined, views: answer.views ?? undefined });
         }
       } catch {
         forget(chunk);
