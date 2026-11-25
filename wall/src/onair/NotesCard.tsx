@@ -1,7 +1,5 @@
-import { IconArrowLeft, IconArrowRight } from '@tabler/icons-react';
 import { useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { tip } from '../ui/HoverTip';
-import { clampIndex, nextLine } from './model';
 import { ShowProblem, useShowProblem } from './ShowProblem';
 import { useOnAirStore } from './store';
 
@@ -60,7 +58,7 @@ function FormatHelp() {
   return (
     <div className="oa-help">
       <span className="oa-help-l"><code>## Part name | 10</code> starts a part planned for 10 minutes</span>
-      <span className="oa-help-l"><code>- A note</code> is a note for the part above it</span>
+      <span className="oa-help-l"><code>- A note</code> is one note on the list</span>
       <span className="oa-help-l"><code>// A comment</code> is ignored; <code># Title</code> on the first line names the show</span>
     </div>
   );
@@ -76,63 +74,50 @@ export interface NotesCardProps {
   /** A box's own position and width, and a control at the end of the heading. */
   style?: CSSProperties;
   action?: ReactNode;
-  /** Show this part instead of the saved current one (the idle page shows the first). */
-  index?: number;
 }
 
 /**
- * The centre card: the current part's notes, as large as they fit, then Previous part, Next part
- * and what comes next. Notes that cannot fit even at the smallest size end in "+N more", whose
- * tooltip carries the rest.
+ * The centre card: every note in the run of show as one list in file order, as large as they fit.
+ * Notes that cannot fit even at the smallest size end in "+N more", whose tooltip carries the rest.
  */
-export function NotesCard({ title, right, sizes = NOTE_SIZES, icon, className, style, action, index }: NotesCardProps = {}) {
+export function NotesCard({ title, right, sizes = NOTE_SIZES, icon, className, style, action }: NotesCardProps = {}) {
   const show = useOnAirStore((s) => s.show);
-  const partIndex = useOnAirStore((s) => s.saved.partIndex);
-  const goPart = useOnAirStore((s) => s.goPart);
   const parts = show?.state === 'ok' ? show.parts : [];
-  const current = clampIndex(index ?? partIndex, parts.length);
   const problem = useShowProblem();
-  const part = parts[current] ?? null;
-  const notes = part?.notes ?? [];
+  const hasShow = parts.length > 0;
+  const notes = parts.flatMap((p) => p.notes);
   const listRef = useRef<HTMLUListElement | null>(null);
   const [fit, setFit] = useState<NoteFit>({ size: sizes[0], shown: notes.length });
-  const key = `${current}\u0000${notes.join('\u0000')}`;
+  const key = notes.join('\u0000');
   useLayoutEffect(() => {
     const list = listRef.current;
     const next = list ? fitNotes(list, notes.length, sizes) : { size: sizes[0], shown: notes.length };
     setFit((f) => (f.size === next.size && f.shown === next.shown ? f : next));
-    // The notes' text is the key: a new part or a new read measures again.
+    // The notes' text is the key: a new read measures again.
   }, [key, sizes]);
   const shown = Math.min(fit.shown, notes.length);
   const hidden = notes.slice(shown);
-  const prev = current > 0 ? parts[current - 1] : null;
-  const next = parts[current + 1] ?? null;
   return (
-    <section className={`panel oa-card${className ? ` ${className}` : ''}`} aria-label={title ?? 'Notes for this part'} style={style}>
+    <section className={`panel oa-card${className ? ` ${className}` : ''}`} aria-label={title ?? 'Notes'} style={style}>
       {title === undefined ? (
-        <span className="k oa-k ellipsis" {...(part ? tip(part.name) : {})}>
-          Notes for this part{part ? ` · ${part.name}` : ''}
-        </span>
+        <span className="k oa-k ellipsis">Notes</span>
       ) : (
         <div className="oa2-hd">
           {icon}
-          <span className="k oa-k ellipsis" {...(part ? tip(part.name) : {})}>
-            {title}
-            {part ? ` · ${part.name}` : ''}
-          </span>
+          <span className="k oa-k ellipsis">{title}</span>
           {right && <span className="oa2-hd-r ellipsis">{right}</span>}
           {action}
         </div>
       )}
-      {!part ? (
+      {!hasShow ? (
         <>
           {problem && <ShowProblem text={problem} />}
           <FormatHelp />
         </>
       ) : notes.length === 0 ? (
         <div className="oa-nonotes">
-          <span className="oa-nonotes-t">No notes for this part</span>
-          <span className="xs">Lines under its ## line in run-of-show.txt show here.</span>
+          <span className="oa-nonotes-t">No notes yet</span>
+          <span className="xs">Lines in run-of-show.txt show here.</span>
         </div>
       ) : (
         <ul className="oa-notes" ref={listRef} style={{ ['--oa-note' as string]: `${fit.size}px` }}>
@@ -147,19 +132,6 @@ export function NotesCard({ title, right, sizes = NOTE_SIZES, icon, className, s
           </li>
         </ul>
       )}
-      <div className="oa-card-foot">
-        <button type="button" className="oa-btn fill oa-step" aria-label={title === undefined ? undefined : 'Previous part'} aria-disabled={!prev} onClick={() => prev && goPart(current - 1)} {...tip(prev ? `Back to ${prev.name}` : 'This is the first part')}>
-          <IconArrowLeft size={22} aria-hidden="true" />
-          {title === undefined ? 'Previous part' : <span className="oa-step-t">Previous part</span>}
-        </button>
-        <button type="button" className="oa-btn cy oa-step" aria-label={title === undefined ? undefined : 'Next part'} aria-disabled={!next} onClick={() => next && goPart(current + 1)} {...tip(next ? `On to ${next.name}` : 'This is the last part')}>
-          {title === undefined ? 'Next part' : <span className="oa-step-t">Next part</span>}
-          <IconArrowRight size={22} aria-hidden="true" />
-        </button>
-        <span className="xs oa-nextline ellipsis" {...tip(nextLine(parts, current))}>
-          {nextLine(parts, current)}
-        </span>
-      </div>
     </section>
   );
 }

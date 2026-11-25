@@ -327,7 +327,7 @@ it('Pause counts only after Rust took the press without an error, and the tile b
   expect(tile('Pause')).toBeTruthy();
 });
 
-it('Mark a moment writes the take time and the part, and counts once for a double click', async () => {
+it('Mark a moment writes the take time and no part, and counts once for a double click', async () => {
   takesToday({});
   signals({ recording: true });
   await open();
@@ -335,9 +335,9 @@ it('Mark a moment writes the take time and the part, and counts once for a doubl
   fireEvent.click(tile('Mark a moment'), { detail: 1 });
   fireEvent.click(tile('Mark a moment'), { detail: 2 });
   await flush();
-  const marked = sent.filter((s) => (s as { mark?: unknown }).mark) as { mark: { showMs: number; part: string } }[];
+  const marked = sent.filter((s) => (s as { mark?: unknown }).mark) as { mark: { showMs: number; part: string | null } }[];
   expect(marked).toHaveLength(1);
-  expect(marked[0].mark.part).toBe('Load the data');
+  expect(marked[0].mark.part).toBeNull();
   expect(marked[0].mark.showMs).toBe(252_000);
   expect(await within(document.querySelector('.oa2-marks') as HTMLElement).findByText('04:12')).toBeTruthy();
 });

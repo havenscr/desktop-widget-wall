@@ -84,7 +84,7 @@ export default {
       },
     },
     breaks: {
-      'onair-floor': { css: '.oa2-runline { top: 600px !important; }', expect: /^ *FAIL on air: .* ends at y/m, appliesTo: (v) => v.name === 'On Air, typical, running at 42:13' },
+      'onair-floor': { css: '.oa2-runline { display: flex !important; top: 600px !important; }', expect: /^ *FAIL on air: .* ends at y/m, appliesTo: (v) => v.name === 'On Air, typical, running at 42:13' },
       'onair-watt': { css: '.watt-sheep, .watt-hit { margin-top: -300px !important; }', expect: /^ *FAIL on air: Watt .* overlaps /m, appliesTo: (v) => v.name === 'On Air, Watt standing under the notes card' },
     },
   },

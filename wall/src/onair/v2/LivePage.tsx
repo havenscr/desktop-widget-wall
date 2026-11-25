@@ -1,11 +1,11 @@
-import { IconArrowLeft, IconArrowRight, IconMessageCircle, IconNotes, IconPlayerPauseFilled, IconPlayerPlayFilled } from '@tabler/icons-react';
+import { IconMessageCircle, IconNotes, IconPlayerPauseFilled, IconPlayerPlayFilled } from '@tabler/icons-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { StudioBlock } from '../../studio/StudioBlock';
 import { useSignalStore } from '../../signals/store';
 import { tip } from '../../ui/HoverTip';
 import { NotesCard } from '../NotesCard';
 import { ShowProblem, useShowProblem } from '../ShowProblem';
-import { atLimit, clampIndex, elapsedMs, formatShowTime, partTime, RESET_CONFIRM_MS, startedLine } from '../model';
+import { atLimit, elapsedMs, formatShowTime, RESET_CONFIRM_MS, startedLine } from '../model';
 import { useOnAirStore } from '../store';
 import { statusStale } from '../ytlive';
 import { useChatPolling, useYtLive } from '../ytliveStore';
@@ -145,40 +145,20 @@ function LiveChips({ now }: { now: number }) {
   );
 }
 
-/** The run of show as one small line: the part, the time left in it and two arrow buttons. Not drawn without parts. */
-function RunLine({ now }: { now: number }) {
+/** The run of show's problem line (no file, a refused file, a failed read) with Open file. Hidden when there are notes or nothing was read yet. */
+function RunLine() {
   const show = useOnAirStore((s) => s.show);
-  const saved = useOnAirStore((s) => s.saved);
-  const goPart = useOnAirStore((s) => s.goPart);
   const problem = useShowProblem();
   const parts = show?.state === 'ok' ? show.parts : [];
-  // Without parts (no file, a refused file, a failed read) the box says why, with Open file; before the first read it stays hidden.
-  if (parts.length === 0) {
-    return problem ? (
+  // Without parts the box says why, with Open file; before the first read it stays hidden.
+  if (parts.length === 0 && problem) {
+    return (
       <div className="oa2-b oa2-runline" role="group" aria-label="Run of show">
         <ShowProblem text={problem} />
       </div>
-    ) : (
-      <div className="oa2-b oa2-runline" hidden />
     );
   }
-  const i = clampIndex(saved.partIndex, parts.length);
-  const p = parts[i];
-  const t = partTime(p, true, Math.max(0, elapsedMs(saved, now) - saved.partSinceMs));
-  const line = `Part ${i + 1} of ${parts.length}: ${p.name}${t.text ? ` · ${t.text}` : ''}`;
-  return (
-    <div className="oa2-b oa2-runline" role="group" aria-label="Run of show">
-      <span className="oa2-runline-t ellipsis" {...tip(line)}>
-        {line}
-      </span>
-      <button type="button" className="oa-btn oa2-arrow" aria-label="Previous part" aria-disabled={i === 0} onClick={() => goPart(i - 1)} {...tip('Go back one part')}>
-        <IconArrowLeft size={20} aria-hidden="true" />
-      </button>
-      <button type="button" className="oa-btn cy oa2-arrow" aria-label="Next part" aria-disabled={i >= parts.length - 1} onClick={() => goPart(i + 1)} {...tip('Go to the next part')}>
-        <IconArrowRight size={20} aria-hidden="true" />
-      </button>
-    </div>
-  );
+  return <div className="oa2-b oa2-runline" hidden />;
 }
 
 /** Where the split area starts inside the frame. */
@@ -187,12 +167,12 @@ const SPLIT_X = 676;
 /** A folded panel: 72 px wide, its count, and a click puts it back. */
 function Rail({ kind, count, left, onClick }: { kind: 'comments' | 'notes'; count: number; left: number; onClick: () => void }) {
   const isC = kind === 'comments';
-  const label = isC ? `${count} new comment${count === 1 ? '' : 's'} since you folded it. Show comments` : `${count} part${count === 1 ? '' : 's'} left. Show notes`;
+  const label = isC ? `${count} new comment${count === 1 ? '' : 's'} since you folded it. Show comments` : `${count} note${count === 1 ? '' : 's'}. Show notes`;
   return (
     <button type="button" className={`panel oa2-b oa2-rail oa2-rail-${kind}`} style={{ left }} aria-label={label} onClick={onClick} {...tip(isC ? 'Show the comments' : 'Show the notes')}>
       {isC ? <IconMessageCircle size={22} aria-hidden="true" /> : <IconNotes size={22} aria-hidden="true" />}
       <span className="oa2-rail-n">{count}</span>
-      <span className="oa2-rail-w">{isC ? 'new' : 'left'}</span>
+      <span className="oa2-rail-w">{isC ? 'new' : 'notes'}</span>
     </button>
   );
 }
@@ -202,7 +182,6 @@ function SplitArea({ now }: { now: number }) {
   const status = useYtLive((s) => s.status);
   const chat = useYtLive((s) => s.chat);
   const show = useOnAirStore((s) => s.show);
-  const saved = useOnAirStore((s) => s.saved);
   const entered = useRef(Date.now()).current;
   const key = status === null ? null : status.state === 'live' && status.startedAt !== null ? `yt-${status.startedAt}` : `page-${entered}`;
   const { mode, set } = useSplit(key);
@@ -218,8 +197,7 @@ function SplitArea({ now }: { now: number }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [commentsFolded]);
   const fresh = seen ? ids.filter((id) => !seen.has(id)).length : 0;
-  const parts = show?.state === 'ok' ? show.parts : [];
-  const left = parts.length === 0 ? 0 : parts.length - clampIndex(saved.partIndex, parts.length);
+  const left = show?.state === 'ok' ? show.parts.reduce((n, p) => n + p.notes.length, 0) : 0;
   const cLeft = SPLIT_X;
   const nLeft = SPLIT_X + w.comments + SPLIT_GAP;
   return (
@@ -259,7 +237,7 @@ export function LivePage({ now }: { now: number }) {
       <LiveTimer now={now} />
       <LiveChips now={now} />
       <StudioStatus now={now} />
-      <RunLine now={now} />
+      <RunLine />
       <SplitArea now={now} />
       <StudioKeys now={now} />
       <StagePop />

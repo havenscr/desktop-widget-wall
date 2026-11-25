@@ -40,10 +40,6 @@ export interface Saved {
   firstStartAt: number | null;
   /** When it was last stopped; null while running or before a start. */
   stoppedAt: number | null;
-  /** The current part's index in the run of show. */
-  partIndex: number;
-  /** The show time at which the current part became current. */
-  partSinceMs: number;
 }
 
 export const STORAGE_KEY = 'wall2-onair';
@@ -55,9 +51,8 @@ export const READ_FLOOR_MS = 5000;
 export const MARK_QUIET_MS = 1000;
 /** Reset waits this long for its second click. */
 export const RESET_CONFIRM_MS = 3000;
-export const MAX_PARTS = 40;
 
-export const IDLE: Saved = { running: false, startedAt: null, accumulatedMs: 0, firstStartAt: null, stoppedAt: null, partIndex: 0, partSinceMs: 0 };
+export const IDLE: Saved = { running: false, startedAt: null, accumulatedMs: 0, firstStartAt: null, stoppedAt: null };
 
 const num = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);
 const time = (v: unknown, now: number): number | null => (num(v) && v > 0 && v <= now + 60_000 ? v : null);
@@ -76,7 +71,7 @@ export function stoppedAtLimit(s: Saved, reachedAt: number): Saved {
 
 /**
  * The saved form, checked field by field: anything missing, of the wrong type, a running start
- * in the future or past the limits makes the whole thing idle (never a half-trusted timer). A
+ * in the future or past the limits makes the whole thing idle (never a half-trusted timer); the part fields older versions stored are ignored. A
  * running timer that has run past 24 hours since it was stored comes back as the stopped state.
  */
 export function parseSaved(raw: string | null, now: number): Saved {
@@ -91,20 +86,14 @@ export function parseSaved(raw: string | null, now: number): Saved {
   const running = v.running === true;
   const startedAt = startTime(v.startedAt, now);
   const acc = v.accumulatedMs;
-  const part = v.partIndex;
-  const since = v.partSinceMs;
   if (typeof v.running !== 'boolean' || !num(acc) || acc < 0 || acc > MAX_SHOW_MS) return IDLE;
   if (running !== (startedAt !== null)) return IDLE;
-  if (!num(part) || !Number.isInteger(part) || part < 0 || part >= MAX_PARTS) return IDLE;
-  if (!num(since) || since < 0 || since > MAX_SHOW_MS) return IDLE;
   const saved: Saved = {
     running,
     startedAt,
     accumulatedMs: acc,
     firstStartAt: time(v.firstStartAt, now),
     stoppedAt: running ? null : time(v.stoppedAt, now),
-    partIndex: part,
-    partSinceMs: since,
   };
   if (saved.startedAt !== null && saved.accumulatedMs + Math.max(0, now - saved.startedAt) >= MAX_SHOW_MS) {
     return stoppedAtLimit(saved, saved.startedAt + (MAX_SHOW_MS - saved.accumulatedMs));
@@ -154,43 +143,6 @@ export function startedLine(s: Saved, now: number): string {
   const started = s.firstStartAt !== null ? `Started ${clockText(s.firstStartAt)} by hand` : 'Started by hand';
   if (!s.running && s.stoppedAt !== null) return `${started}, stopped at ${clockText(s.stoppedAt)}. ${tail}`;
   return `${started}. ${tail}`;
-}
-
-/** Whole minutes, rounded up, for "7 min left". */
-const minutesUp = (ms: number) => Math.max(1, Math.ceil(ms / 60_000));
-
-/** What a row of the run of show says on its right. */
-export interface PartTime {
-  text: string;
-  /** Past its planned minutes (the current part only). */
-  over: boolean;
-}
-
-/**
- * The time beside a part: planned minutes for parts done and to come; for the current part the
- * minutes left, or a quiet "N min over" once the time in it passes the plan. A part with no
- * planned minutes says nothing.
- */
-export function partTime(part: Part, current: boolean, inPartMs: number): PartTime {
-  if (part.minutes === null) return { text: current && inPartMs >= 60_000 ? `${Math.floor(inPartMs / 60_000)} min in` : '', over: false };
-  if (!current) return { text: `${part.minutes} min`, over: false };
-  const left = part.minutes * 60_000 - inPartMs;
-  if (left > 0) return { text: `${minutesUp(left)} min left`, over: false };
-  const over = -left;
-  return { text: over < 60_000 ? 'on time' : `${Math.floor(over / 60_000)} min over`, over: over >= 60_000 };
-}
-
-/** The index held to the parts there are (0 when there are none). */
-export function clampIndex(index: number, count: number): number {
-  return count <= 0 ? 0 : Math.min(Math.max(0, Math.floor(index)), count - 1);
-}
-
-/** "Next: Audience questions, 15 min", or what is true when there is no next part. */
-export function nextLine(parts: Part[], index: number): string {
-  if (parts.length === 0) return 'No parts yet';
-  const next = parts[index + 1];
-  if (!next) return 'This is the last part';
-  return `Next: ${next.name}${next.minutes !== null ? `, ${next.minutes} min` : ''}`;
 }
 
 /** The fixed word Rust answered with, from an invoke error. */

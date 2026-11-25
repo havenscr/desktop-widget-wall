@@ -193,8 +193,6 @@ function Checklist({ onHold }: { onHold: (m: PageMode) => void }) {
 export function IdlePage({ now, last, onHold }: { now: number; last: LastOnAir | null; onHold: (m: PageMode) => void }) {
   const status = useYtLive((s) => s.status);
   const meeting = useNextMeeting().joinable;
-  const show = useOnAirStore((s) => s.show);
-  const first = show?.state === 'ok' ? show.parts[0] : undefined;
   useRecorderSync();
   const recorderOpen = useRecorder((s) => s.open);
   const recNext = recorderOpen === null ? 'Recorder not known' : recorderOpen ? 'Recorder open' : 'Recorder not open';
@@ -207,7 +205,7 @@ export function IdlePage({ now, last, onHold }: { now: number; last: LastOnAir |
       <ReadyCard mode="live" icon={<IconBroadcast size={20} aria-hidden="true" />} next={liveNext} onHold={onHold} className="oa2-ready-1" />
       <ReadyCard mode="rec" icon={<IconPlayerRecordFilled size={20} aria-hidden="true" />} next={recNext} onHold={onHold} className="oa2-ready-2" />
       <ReadyCard mode="meet" icon={<IconPresentation size={20} aria-hidden="true" />} next={meetNext} onHold={onHold} className="oa2-ready-3" />
-      <NotesCard title="Next show notes" right={first?.name} sizes={NOTES_SIZES} icon={<IconNotes size={20} aria-hidden="true" />} className="oa2-idlenotes" index={0} />
+      <NotesCard title="Next show notes" sizes={NOTES_SIZES} icon={<IconNotes size={20} aria-hidden="true" />} className="oa2-idlenotes" />
       <Checklist onHold={onHold} />
       <div className="oa2-b oa2-lights-idle">
         <StudioBlock />

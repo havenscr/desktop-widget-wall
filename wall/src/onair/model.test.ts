@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { atLimit, clampIndex, elapsedMs, formatShowTime, IDLE, isShow, markErrorText, markLine, MAX_SHOW_MS, nextLine, parseSaved, partTime, startedLine, type Part, type Saved } from './model';
+import { atLimit, elapsedMs, formatShowTime, IDLE, isShow, markErrorText, markLine, MAX_SHOW_MS, parseSaved, startedLine, type Part, type Saved } from './model';
 
 const NOW = Date.parse('2026-11-13T10:24:00-08:00');
 const part = (name: string, minutes: number | null, notes: string[] = []): Part => ({ name, minutes, notes });
@@ -24,7 +24,7 @@ describe('show time', () => {
 });
 
 describe('the saved timer', () => {
-  const running: Saved = { running: true, startedAt: NOW - 60_000, accumulatedMs: 1000, firstStartAt: NOW - 61_000, stoppedAt: null, partIndex: 2, partSinceMs: 500 };
+  const running: Saved = { running: true, startedAt: NOW - 60_000, accumulatedMs: 1000, firstStartAt: NOW - 61_000, stoppedAt: null };
 
   it('comes back as it was saved, so a running timer keeps counting across a restart', () => {
     const back = parseSaved(JSON.stringify(running), NOW);
@@ -40,8 +40,15 @@ describe('the saved timer', () => {
     expect(parseSaved(JSON.stringify({ ...running, startedAt: null }), NOW)).toEqual(IDLE);
     expect(parseSaved(JSON.stringify({ ...running, startedAt: NOW + 3_600_000 }), NOW)).toEqual(IDLE);
     expect(parseSaved(JSON.stringify({ ...running, accumulatedMs: -1 }), NOW)).toEqual(IDLE);
-    expect(parseSaved(JSON.stringify({ ...running, partIndex: 1.5 }), NOW)).toEqual(IDLE);
-    expect(parseSaved(JSON.stringify({ ...running, partIndex: 40 }), NOW)).toEqual(IDLE);
+  });
+
+  it('loads state saved by older versions that held a part index, whatever its value, and drops those fields', () => {
+    for (const old of [{ partIndex: 2, partSinceMs: 500 }, { partIndex: 1.5, partSinceMs: -4 }, { partIndex: 99 }, { partIndex: 'x' }]) {
+      const back = parseSaved(JSON.stringify({ ...running, ...old }), NOW);
+      expect(back).toEqual(running);
+      expect(back).not.toHaveProperty('partIndex');
+      expect(back).not.toHaveProperty('partSinceMs');
+    }
   });
 
   it('refuses a running start in the future, past two seconds of clock jitter', () => {
@@ -80,31 +87,6 @@ describe('words', () => {
     expect(startedLine(on, NOW)).toMatch(/^Started \d{1,2}:42 [AP]M by hand\. No stream service connected\.$/);
     const off: Saved = { ...IDLE, accumulatedMs: 1000, firstStartAt: started, stoppedAt: NOW };
     expect(startedLine(off, NOW)).toMatch(/^Started \d{1,2}:42 [AP]M by hand, stopped at \d{1,2}:24 [AP]M\. No stream service connected\.$/);
-  });
-
-  it('gives a part its planned minutes, the minutes left, or a quiet over-time mark', () => {
-    const p = part('Demo', 20);
-    expect(partTime(p, false, 0)).toEqual({ text: '20 min', over: false });
-    expect(partTime(p, true, 13 * 60_000)).toEqual({ text: '7 min left', over: false });
-    expect(partTime(p, true, 19 * 60_000 + 30_000)).toEqual({ text: '1 min left', over: false });
-    expect(partTime(p, true, 20 * 60_000 + 30_000)).toEqual({ text: 'on time', over: false });
-    expect(partTime(p, true, 23 * 60_000)).toEqual({ text: '3 min over', over: true });
-    expect(partTime(part('Open', null), false, 0)).toEqual({ text: '', over: false });
-    expect(partTime(part('Open', null), true, 5 * 60_000)).toEqual({ text: '5 min in', over: false });
-  });
-
-  it('names the next part and its minutes', () => {
-    const parts = [part('A', 5), part('B', 15), part('C', null)];
-    expect(nextLine(parts, 0)).toBe('Next: B, 15 min');
-    expect(nextLine(parts, 1)).toBe('Next: C');
-    expect(nextLine(parts, 2)).toBe('This is the last part');
-    expect(nextLine([], 0)).toBe('No parts yet');
-  });
-
-  it('holds the part index to the parts there are', () => {
-    expect(clampIndex(5, 3)).toBe(2);
-    expect(clampIndex(-1, 3)).toBe(0);
-    expect(clampIndex(4, 0)).toBe(0);
   });
 
   it('says today\'s marks and why a mark was refused', () => {
