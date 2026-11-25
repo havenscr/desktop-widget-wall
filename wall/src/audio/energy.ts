@@ -91,8 +91,9 @@ function disarm(s: EnergyState): void {
 }
 
 /**
- * Advance to `now` (ms). `elapsedMs` is the time since the last step (not capped by the caller
- * beyond sanity), `level` the loudness 0 to 1 and `playing` whether sound is arriving. `beatCount`
+ * Advance to `now` (ms). `elapsedMs` is the time since the last step: one step moves the average by
+ * at most `MAX_STEP_MS`, and a gap longer than `GAP_HOLD_MS` also disarms the drop detector (a
+ * hidden page). `level` is the loudness 0 to 1 and `playing` whether sound is arriving. `beatCount`
  * is the beat detector's count, read to see when a beat arrived.
  */
 export function stepEnergy(
