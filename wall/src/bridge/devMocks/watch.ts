@@ -17,7 +17,7 @@ import { endSleepNow, startSleepAt } from '../../unwind/watch/sleep';
 import { useWatchStore, VOLUME_KEY } from '../../unwind/watch/store';
 import { resetLastPlayed } from '../../unwind/lastPlayed';
 import { underClock } from '../../unwind/UnderClock';
-import { ctlTiming } from '../../unwind/watch/Watch';
+import { ctlTiming } from '../../unwind/watch/rest';
 import { usePlaceStore } from '../../state/places';
 import { mocks } from '../tauri';
 import { knob } from './long';

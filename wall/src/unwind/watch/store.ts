@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { usePlaceStore } from '../../state/places';
 import { defaultLabel, parseLink, refKey, validId, type WatchRef } from './links';
 import { playerLink } from './playerLink';
+import { useWatchRest } from './rest';
 import { PLAYER_VOLUME } from './urls';
 import { driveInMode } from './DriveInFrame';
 import { DRIVE_IN_SCREEN, lookFor, loadLooks, saveLooks, type LookId, type LookSettings, type WallRect } from './looks';
@@ -421,3 +422,9 @@ export function resetWatch(): void {
   waitingTitles.clear();
   useWatchStore.setState({ tab: 'listen', saved: loadSaved(), looks: loadLooks(), tune: loadTune(), volume: loadVolume(), playing: null, source: 'watch', lastStopped: null, paused: false, muted: false, report: NO_REPORT, needsClick: false, clickHint: false, sheet: false, sheetTab: null, stopped: null, editing: null, peek: false });
 }
+
+// The controls' rest belongs to one tab. Any tab change (setTab, or a play that jumps to Watch) clears it before React
+// renders the incoming tab, so neither tab ever mounts rested; the outgoing tab's own cleanup comes after.
+useWatchStore.subscribe((s, p) => {
+  if (s.tab !== p.tab) useWatchRest.setState({ rest: false });
+});
