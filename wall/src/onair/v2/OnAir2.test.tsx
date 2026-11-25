@@ -197,12 +197,13 @@ it('keeps a long reason to one line with the whole text in the hover card', asyn
   }
 });
 
-it('Recording: the take timer, the marks with their parts, the six keys, the lights block and the recorder block', async () => {
+it('Recording: the take timer, the marks, the full notes list in file order, the six keys, the lights block and the recorder block', async () => {
   localStorage.setItem(TAKES_KEY, JSON.stringify({ day: new Date().toLocaleDateString('sv'), count: 3, longestMs: 400_000, current: { startedAt: Date.now() - 252_000, pausedAt: null, pausedMs: 0, seenAt: Date.now() } }));
   resetTakes();
   signals({ recording: true });
   await open();
-  await screen.findByText('Load the data');
+  await screen.findByText('03:12');
+  expect([...document.querySelectorAll('.oa2-outline .oa-note span')].map((e) => e.textContent)).toEqual(['Open the blank file', 'Pick the second way']);
   expect(screen.getByRole('timer').textContent).toBe('04:12');
   expect(screen.getByText('Recording', { selector: '.oa2-chip' })).toBeTruthy();
   expect(document.querySelector('.oa2-sub')?.textContent).toMatch(/^Take 3\. It started by itself at .* when the recorder began\.$/);
@@ -327,7 +328,7 @@ it('Pause counts only after Rust took the press without an error, and the tile b
   expect(tile('Pause')).toBeTruthy();
 });
 
-it('Mark a moment writes the take time and the part, and counts once for a double click', async () => {
+it('Mark a moment writes the take time and no part, and counts once for a double click', async () => {
   takesToday({});
   signals({ recording: true });
   await open();
@@ -335,19 +336,19 @@ it('Mark a moment writes the take time and the part, and counts once for a doubl
   fireEvent.click(tile('Mark a moment'), { detail: 1 });
   fireEvent.click(tile('Mark a moment'), { detail: 2 });
   await flush();
-  const marked = sent.filter((s) => (s as { mark?: unknown }).mark) as { mark: { showMs: number; part: string } }[];
+  const marked = sent.filter((s) => (s as { mark?: unknown }).mark) as { mark: { showMs: number; part: string | null } }[];
   expect(marked).toHaveLength(1);
-  expect(marked[0].mark.part).toBe('Load the data');
+  expect(marked[0].mark.part).toBeNull();
   expect(marked[0].mark.showMs).toBe(252_000);
   expect(await within(document.querySelector('.oa2-marks') as HTMLElement).findByText('04:12')).toBeTruthy();
 });
 
-it('Marks today: rows with the show time and the part, none yet, a refusal in amber in place of the takes line, and Open marks.txt', async () => {
+it('Marks today: rows with the show time only (a part from an older marks line is not shown), none yet, a refusal in amber in place of the takes line, and Open marks.txt', async () => {
   localStorage.setItem(MODE_STORAGE_KEY, JSON.stringify({ held: 'rec' }));
   await open();
-  await screen.findByText('Load the data', { selector: '.oa2-row-t' });
+  await screen.findByText('03:12', { selector: '.oa2-row-t b' });
   const rows = [...document.querySelectorAll('.oa2-marks .oa2-row')].map((r) => r.textContent);
-  expect(rows).toEqual(['03:12 Load the data', '09:40']);
+  expect(rows).toEqual(['03:12', '09:40']);
   expect(screen.getByText('No takes yet today.')).toBeTruthy();
   fireEvent.click(screen.getByRole('button', { name: 'Open marks.txt' }));
   await flush();
@@ -380,6 +381,7 @@ it('Presenting, matched: the chip, the talk time from the meeting start, the min
   expect(screen.getByText(/^You joined at /)).toBeTruthy();
   expect(screen.getByText(/^\d+:\d+( [AP]M)? to \d+:\d+ [AP]M today$/)).toBeTruthy();
   expect(screen.queryByRole('button', { name: /Outlook/ })).toBeNull();
+  expect([...document.querySelectorAll('.oa2-speaker .oa-note span')].map((e) => e.textContent)).toEqual(['Open the blank file', 'Pick the second way']);
 });
 
 it('Presenting, joined late: the sub says when you joined', async () => {
@@ -517,7 +519,7 @@ it('Presenting, joined before the meeting starts: "Starts", with the timer waiti
 it('Takes today after midnight: the page shows today, not the count the store still holds for yesterday', async () => {
   localStorage.setItem(MODE_STORAGE_KEY, JSON.stringify({ held: 'rec' }));
   await open();
-  await screen.findByText('Load the data');
+  await screen.findByText('03:12');
   act(() => useTakes.setState({ takes: { day: '2000-01-01', count: 3, longestMs: 400_000, current: null } }));
   expect(screen.getByText('No takes yet today.')).toBeTruthy();
   expect(screen.queryByText(/Takes today: 3/)).toBeNull();

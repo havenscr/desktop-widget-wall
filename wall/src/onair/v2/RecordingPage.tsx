@@ -14,25 +14,24 @@ import { useDeckKeys, PAUSE_PRESS_ID } from './useDeckKeys';
 /** The outline's note sizes: a little larger than a card of notes in the middle, the list is short. */
 const OUTLINE_SIZES = [32, 28, 24, 22] as const;
 
-/** Today's last marks: the show time and the part, three at most, then the takes line and Open marks.txt. */
+/** Today's last marks: the show time, three at most, then the takes line and Open marks.txt. */
 function MarksBlock({ now }: { now: number }) {
   const marks = useOnAirStore((s) => s.marks);
   const note = useOnAirStore((s) => s.marksNote);
   const open = useOnAirStore((s) => s.open);
   // The day rolls here too: after midnight the count starts again before the next recording event.
   const takes = rollDay(useTakes((s) => s.takes), now);
-  const rows = marks ? marks.last.map((t, i) => ({ t, part: marks.lastParts?.[i] ?? '' })) : [];
+  const rows = marks ? marks.last.map((t) => ({ t })) : [];
   return (
     <div className="oa2-b oa2-marks" role="group" aria-label="Marks today">
       <Head label="Marks today" right="saved to marks.txt" />
       <div className="oa2-rows">
         {rows.length > 0 ? (
           rows.map((r, i) => (
-            <div key={i} className="oa2-row" {...tip(`${r.t}${r.part ? ` in ${r.part}` : ''}. Written to marks.txt.`)}>
+            <div key={i} className="oa2-row" {...tip(`${r.t}. Written to marks.txt.`)}>
               <IconBookmark size={20} aria-hidden="true" />
               <span className="oa2-row-t">
                 <b>{r.t}</b>
-                {r.part ? ` ${r.part}` : ''}
               </span>
             </div>
           ))
@@ -45,7 +44,7 @@ function MarksBlock({ now }: { now: number }) {
       <div className={`oa2-fine${note ? ' amber' : ''}`} role="status">
         {note ?? takesLine(takes)}
       </div>
-      <button type="button" className="oa-btn sm oa2-open" onClick={() => void open('marks')} {...tip('Open marks.txt in the default editor: one line a mark, with the local time, the show time and the part')}>
+      <button type="button" className="oa-btn sm oa2-open" onClick={() => void open('marks')} {...tip('Open marks.txt in the default editor: one line a mark, with the local time and the show time')}>
         Open marks.txt
       </button>
     </div>

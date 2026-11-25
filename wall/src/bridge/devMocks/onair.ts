@@ -64,10 +64,10 @@ const show = (state: Show['state'], parts: Part[] = [], extra: Partial<Show> = {
 
 function savedTimer(kind: string | null, now: number): Saved | null {
   const at = 42 * 60_000 + 13_000;
-  if (kind === 'run') return { running: true, startedAt: now - at, accumulatedMs: 0, firstStartAt: now - at, stoppedAt: null, partIndex: 2, partSinceMs: at - 13 * 60_000 };
-  if (kind === 'stopped') return { running: false, startedAt: null, accumulatedMs: at, firstStartAt: now - at - 3 * 60_000, stoppedAt: now - 3 * 60_000, partIndex: 2, partSinceMs: at - 13 * 60_000 };
-  if (kind === 'limit') return { running: false, startedAt: null, accumulatedMs: MAX_SHOW_MS, firstStartAt: now - MAX_SHOW_MS - 3_600_000, stoppedAt: now - 3_600_000, partIndex: 4, partSinceMs: MAX_SHOW_MS - 25 * 60_000 };
-  if (kind === 'idle') return { running: false, startedAt: null, accumulatedMs: 0, firstStartAt: null, stoppedAt: null, partIndex: 0, partSinceMs: 0 };
+  if (kind === 'run') return { running: true, startedAt: now - at, accumulatedMs: 0, firstStartAt: now - at, stoppedAt: null };
+  if (kind === 'stopped') return { running: false, startedAt: null, accumulatedMs: at, firstStartAt: now - at - 3 * 60_000, stoppedAt: now - 3 * 60_000 };
+  if (kind === 'limit') return { running: false, startedAt: null, accumulatedMs: MAX_SHOW_MS, firstStartAt: now - MAX_SHOW_MS - 3_600_000, stoppedAt: now - 3_600_000 };
+  if (kind === 'idle') return { running: false, startedAt: null, accumulatedMs: 0, firstStartAt: null, stoppedAt: null };
   return null;
 }
 
@@ -119,8 +119,6 @@ export function registerOnAirMocks(): void {
   });
 
   const saved = savedTimer(knob('oatimer'), Date.now());
-  // Forty parts: the current one deep in the list, so the list has scrolled to it.
-  if (saved && which === 'forty') saved.partIndex = 23;
   if (saved) {
     try {
       window.localStorage.setItem(STORAGE_KEY, JSON.stringify(saved));

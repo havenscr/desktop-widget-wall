@@ -86,7 +86,11 @@ it('draws the Live page: chip, comments newest at the bottom, the foot, and the 
   // Comment rows are not buttons: the heading's expand button is the card's only button.
   expect(document.querySelectorAll('.oa2-comments button:not(.oa2-exp)').length).toBe(0);
   expect(document.querySelectorAll('.oa2-comments .oa2-exp').length).toBe(1);
-  await waitFor(() => expect(screen.getByText(/^Part 1 of 2: Load the data/)).toBeTruthy());
+  // No Part line and no part arrows: the run line is hidden and the notes are one list.
+  await waitFor(() => expect(document.querySelectorAll('.oa2-livenotes .oa-note').length).toBeGreaterThan(0));
+  expect((document.querySelector('.oa2-runline') as HTMLElement).hidden).toBe(true);
+  expect(screen.queryByText(/^Part \d+ of \d+/)).toBeNull();
+  expect(screen.queryByRole('button', { name: /(Previous|Next) part/ })).toBeNull();
   // The studio keys: four StreamYard keys in row 1 and three in row 2; the prompter box holds the pop-out controls and the status block is drawn.
   expect(document.querySelectorAll('.oa2-studiokeys .oa2-skrow1 .key-tile').length).toBe(4);
   expect(document.querySelectorAll('.oa2-studiokeys .oa2-skrow2 .key-tile').length).toBe(3);
