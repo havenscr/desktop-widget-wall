@@ -1,10 +1,10 @@
 import { expect, it } from 'vitest';
-import { DEFAULT_SETTINGS, loadSettings, SETTINGS_KEY } from './settings';
+import { DEFAULT_SETTINGS, loadSettings, saveSettings, SETTINGS_KEY } from './settings';
 
 const store = (value: string | null) => ({ getItem: (k: string) => (k === SETTINGS_KEY ? value : null) });
 
 it('defaults when nothing is saved', () => {
-  expect(loadSettings(store(null))).toEqual({ latitude: 47.68, longitude: -122.21, zenDimHour: 22, zenDimWaitMin: 10, shelfLists: [] });
+  expect(loadSettings(store(null))).toEqual({ latitude: 47.68, longitude: -122.21, zenDimHour: 22, zenDimWaitMin: 10, zenMode: 'breath', zenSundownLights: false, shelfLists: [] });
   expect(loadSettings(null)).toEqual(DEFAULT_SETTINGS);
 });
 
@@ -34,4 +34,21 @@ it('Shelf list names match the native rules: no control characters, 60 character
   expect(loadSettings(store(JSON.stringify({ shelfLists: names }))).shelfLists).toEqual(['A', long60, 'B']);
   const nine = ['1', '2', '3', '4', '5', '6', '7', '8', '8', '9'];
   expect(loadSettings(store(JSON.stringify({ shelfLists: nine }))).shelfLists).toEqual(['1', '2', '3', '4', '5', '6', '7', '8']);
+});
+
+it('the Zen mode and the Sundown lights switch: Breath and off by default, bad values ignored', () => {
+  expect(DEFAULT_SETTINGS.zenMode).toBe('breath');
+  expect(DEFAULT_SETTINGS.zenSundownLights).toBe(false);
+  expect(loadSettings(store('{"zenMode":"sundown","zenSundownLights":true}'))).toMatchObject({ zenMode: 'sundown', zenSundownLights: true });
+  expect(loadSettings(store('{"zenMode":"disco","zenSundownLights":"yes"}'))).toEqual(DEFAULT_SETTINGS);
+});
+
+it('saveSettings keeps what else is stored', () => {
+  const mem: Record<string, string> = { [SETTINGS_KEY]: '{"latitude":40.7,"other":1}' };
+  const st = { getItem: (k: string) => mem[k] ?? null, setItem: (k: string, v: string) => void (mem[k] = v) };
+  saveSettings({ zenMode: 'sundown' }, st);
+  expect(JSON.parse(mem[SETTINGS_KEY])).toEqual({ latitude: 40.7, other: 1, zenMode: 'sundown' });
+  mem[SETTINGS_KEY] = 'not json';
+  saveSettings({ zenSundownLights: true }, st);
+  expect(JSON.parse(mem[SETTINGS_KEY])).toEqual({ zenSundownLights: true });
 });

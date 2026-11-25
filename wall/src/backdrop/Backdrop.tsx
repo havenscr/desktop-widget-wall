@@ -2,7 +2,7 @@ import { useEffect, useRef } from 'react';
 import { usePlaceStore } from '../state/places';
 import { useIdle } from '../ui/useIdle';
 import { useReducedMotion } from '../ui/useReducedMotion';
-import { levelAtTime, onStage, pictureFade, stage } from '../zen/stage';
+import { levelAtTime, onStage, pictureFade, skyNow, stage, sundownProgress } from '../zen/stage';
 import { SKY_HEIGHT, live } from './live';
 import { createSkyColours, legibleGain, skyColoursAt } from './palette';
 import { createShader, type SkyShader } from './shader';
@@ -93,10 +93,14 @@ export function Backdrop({ on, mounted, review }: BackdropProps) {
     let timer = 0;
 
     const refresh = (now: number, snap: boolean) => {
-      if (now - k.refreshed < REFRESH_MS && !snap) return;
+      // Sundown moves the sky's hour on, so its colours are read at every frame of the slow rate while it runs.
+      const every = cur.current.place === 'zen' && (stage.sky.on || stage.sky.outAt > 0) ? 0 : REFRESH_MS;
+      if (now - k.refreshed < every && !snap) return;
       k.refreshed = now;
       const { place: p, style: s } = cur.current;
-      const ms = review ? review.ms : Date.now();
+      const real = review ? review.ms : Date.now();
+      // Zen's Sundown runs the sky on its own clock.
+      const ms = p === 'zen' ? skyNow(performance.now(), real) : real;
       skyColoursAt(ms, review?.style ?? s, colours);
       const sp = sun(ms);
       k.target = legibleGain(p, sp.alt, sp.az > 180, review?.style ?? s, colours);
@@ -141,7 +145,9 @@ export function Backdrop({ on, mounted, review }: BackdropProps) {
       let total = k.gain * k.fade * k.swap;
       if (p === 'zen') {
         // Zen follows its picture's fade into Dream, and the breath moves the gain about 12 percent.
-        total *= pictureFade(performance.now()) * (1 + 0.12 * (2 * levelAtTime(performance.now()) - 1));
+        // Sundown cools the sky and lowers its gain to about 0.4 by the end.
+        const pulse = stage.mode === 'sundown' ? 1 - 0.6 * sundownProgress(performance.now()) : 1 + 0.12 * (2 * levelAtTime(performance.now()) - 1);
+        total *= pictureFade(performance.now()) * pulse;
       }
       // Faded all the way out: one clearing frame, then nothing more to draw.
       const t = review ? review.t : T0 + (now - k.t0) / 1000;

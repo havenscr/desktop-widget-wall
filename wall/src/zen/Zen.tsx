@@ -3,7 +3,9 @@ import { IconPlayerPlayFilled, IconX } from '@tabler/icons-react';
 import { Clock } from '../clock/Clock';
 import { tip } from '../ui/HoverTip';
 import { invoke } from '../bridge/tauri';
-import { loadSettings } from '../settings/settings';
+import { loadSettings, saveSettings } from '../settings/settings';
+import { sun } from '../horizon/renderer';
+import { useReducedMotion } from '../ui/useReducedMotion';
 import { usePlaceStore } from '../state/places';
 import { visibleRows } from '../tasks/model';
 import { useTasks } from '../tasks/useTasks';
@@ -11,7 +13,9 @@ import { Breath } from './Breath';
 import { Dream } from './Dream';
 import { SheepSvg } from '../buddy/Watt';
 import { SPRITES, SPRITE_PX } from '../buddy/sprites';
-import { startBreath, stopBreath, setDream as setStageDream, resetStage } from './stage';
+import { startBreath, stopBreath, setDream as setStageDream, resetStage, setMode as setStageMode, touchStage, startSundown, endSundown, clearSky } from './stage';
+import { Sundown } from './Sundown';
+import { DEFAULT_SUNDOWN_MINUTES, SUNDOWN_MINUTES, ZEN_MODES, ZEN_MODE_LABELS, ZEN_MODE_TIPS, sundownRange, type SundownMinutes, type ZenMode } from './modes';
 import {
   BREATH_PATTERNS,
   SESSION_MINUTES,
@@ -45,7 +49,7 @@ export interface ZenProps {
 }
 
 /** Seconds left in the running session, ticking twice a second. */
-function useLeft(startedAt: number | null, minutes: SessionMinutes, nowMs: () => number): number {
+function useLeft(startedAt: number | null, minutes: number, nowMs: () => number): number {
   const [left, setLeft] = useState(() => (startedAt === null ? 0 : sessionSecondsLeft(startedAt, minutes, nowMs())));
   useEffect(() => {
     if (startedAt === null) return;
@@ -78,14 +82,27 @@ function Waiting() {
  * from the focus timer and from Do Not Disturb.
  */
 export function Zen({ nowMs = Date.now }: ZenProps) {
-  const [{ zenDimHour: dimHour, zenDimWaitMin: dimWaitMin }] = useState(() => loadSettings());
+  const [{ zenDimHour: dimHour, zenDimWaitMin: dimWaitMin, zenMode: savedMode, zenSundownLights: savedLights }] = useState(() => loadSettings());
+  const reduced = useReducedMotion();
   const waitMs = dimWaitMin * 60_000;
   // Unwind's Dream tab opens Zen already dimmed; otherwise Zen starts bright.
   const [dream, setDream] = useState(() => usePlaceStore.getState().zenDream);
   useEffect(() => {
     usePlaceStore.getState().takeZenDream();
   }, []);
-  const [minutes, setMinutes] = useState<SessionMinutes>(5);
+  const [mode, setModeState] = useState<ZenMode>(savedMode);
+  const [lights, setLightsState] = useState(savedLights);
+  const [breathMinutes, setMinutes] = useState<SessionMinutes>(5);
+  const [sundownMinutes, setSundownMinutes] = useState<SundownMinutes>(DEFAULT_SUNDOWN_MINUTES);
+  const minutes = mode === 'sundown' ? sundownMinutes : breathMinutes;
+  const setMode = (m: ZenMode) => {
+    setModeState(m);
+    saveSettings({ zenMode: m });
+  };
+  const setLights = (on: boolean) => {
+    setLightsState(on);
+    saveSettings({ zenSundownLights: on });
+  };
   const [pattern, setPatternState] = useState<BreathPattern>(loadPattern);
   const [startedAt, setStartedAt] = useState<number | null>(null);
   const setPattern = (p: BreathPattern) => {
@@ -99,16 +116,44 @@ export function Zen({ nowMs = Date.now }: ZenProps) {
   const [ending, setEnding] = useState(false);
   const clockNow = useCallback(() => new Date(nowMs()), [nowMs]);
   const running = startedAt !== null;
+  // True once a session ran to the end and Dream opens: only then do the Sundown lights stay down.
+  const doneRef = useRef(false);
+  const stageMode = useRef(mode);
+  stageMode.current = mode;
   const left = useLeft(startedAt, minutes, nowMs);
 
-  const start = useCallback(() => setStartedAt(nowMs()), [nowMs]);
-  const stop = useCallback(() => setStartedAt(null), []);
+  // `?sundownage=<seconds>` in a development build starts a Sundown session that far in, for stills.
+  const start = useCallback(() => {
+    const age = import.meta.env.DEV && mode === 'sundown' ? Number(new URLSearchParams(window.location.search).get('sundownage')) || 0 : 0;
+    const at = nowMs() - age * 1000;
+    doneRef.current = false;
+    // A still has no frames to glide over: with the `sundownage` knob present the sky starts at the session's own hour.
+    const knob = import.meta.env.DEV && new URLSearchParams(window.location.search).has('sundownage');
+    const range = sundownRange(at, sun);
+    if (mode === 'sundown') startSundown(range, sundownMinutes * 60_000, performance.now() - age * 1000, reduced, knob ? range.from : nowMs());
+    setStartedAt(at);
+  }, [nowMs, mode, sundownMinutes, reduced]);
+  // Ending early puts the sky back to the real hour.
+  const stop = useCallback(() => {
+    clearSky(performance.now(), nowMs());
+    setStartedAt(null);
+  }, [nowMs]);
 
   // The ridge reads the stage, not React state: it follows the running breath, or its own slow one on the start screen.
   useEffect(() => {
-    if (startedAt !== null) startBreath(pattern, performance.now());
-    else stopBreath();
-  }, [startedAt, pattern]);
+    if (startedAt === null) stopBreath();
+    else if (mode === 'breath') startBreath(pattern, performance.now());
+  }, [startedAt, pattern, mode]);
+  // The mode picks what drives the picture; a switch glides (the ridge's own camera glide) because the driver is a level the loop reads.
+  useEffect(() => {
+    if (startedAt === null) setStageMode(mode);
+  }, [mode, startedAt]);
+  // Under reduced motion the sky steps instead of gliding, and a still frame redraws only when asked: ask once a second while Sundown runs.
+  useEffect(() => {
+    if (!reduced || startedAt === null || mode !== 'sundown') return;
+    const id = window.setInterval(touchStage, 1000);
+    return () => window.clearInterval(id);
+  }, [reduced, startedAt, mode]);
   // Dream fades the picture to black over its first minute (`?dreamage=<seconds>` in a development build starts that far in, for stills).
   useEffect(() => {
     if (!dream) {
@@ -121,6 +166,7 @@ export function Zen({ nowMs = Date.now }: ZenProps) {
   useEffect(() => resetStage, []);
   const wake = useCallback(() => {
     lastInput.current = nowMs();
+    clearSky(performance.now(), nowMs());
     setQuiet(false);
     setEnding(false);
     setStartedAt(null);
@@ -144,7 +190,10 @@ export function Zen({ nowMs = Date.now }: ZenProps) {
     if (!ending) return;
     const id = window.setTimeout(() => {
       setEnding(false);
+      doneRef.current = true;
       setStartedAt(null);
+      // A finished Sundown holds the night it reached; Dream fades out from it.
+      if (stageMode.current === 'sundown') endSundown();
       setDream(true);
     }, GUIDE_FADE_MS);
     return () => window.clearTimeout(id);
@@ -219,6 +268,18 @@ export function Zen({ nowMs = Date.now }: ZenProps) {
     wasRunning.current = running;
   }, [dream, startedAt, ending]);
 
+  // Left and right arrows move along the mode chips, as the other chip rows do.
+  const modeKeys = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+    e.preventDefault();
+    e.stopPropagation();
+    const at = ZEN_MODES.indexOf(mode);
+    const next = ZEN_MODES[(at + (e.key === 'ArrowRight' ? 1 : ZEN_MODES.length - 1)) % ZEN_MODES.length];
+    setMode(next);
+    const chips = e.currentTarget.querySelectorAll<HTMLElement>('[role="radio"]');
+    chips[ZEN_MODES.indexOf(next)]?.focus();
+  };
+
   return (
     <section ref={root} className={`zen${dream ? ' is-dream' : ''}`} data-place="zen" aria-label="Zen">
       {dream ? (
@@ -228,7 +289,7 @@ export function Zen({ nowMs = Date.now }: ZenProps) {
           <div className="zen-watt" aria-hidden="true" style={{ left: SHORE_WATT.x, top: SHORE_WATT.base - SPRITES.idle.length * SPRITE_PX }}>
             <SheepSvg pose="idle" />
           </div>
-          {running && <Breath key={pattern.id} startedAt={startedAt} now={nowMs} pattern={pattern} />}
+          {running && mode === 'breath' && <Breath key={pattern.id} startedAt={startedAt} now={nowMs} pattern={pattern} />}
           {running && !ending && (
             <div
               className="zen-tap"
@@ -250,23 +311,58 @@ export function Zen({ nowMs = Date.now }: ZenProps) {
           </div>
           <div className="zen-bl">
             {running ? (
-              <>
-                <div className="zen-cap">{sessionLabel(minutes)}</div>
-                <div className="zen-left">{formatLeft(left)}.</div>
-              </>
+              mode === 'sundown' ? (
+                <Sundown startedAt={startedAt} minutes={minutes} left={`${formatLeft(left)}.`} lights={lights} now={nowMs} doneRef={doneRef} />
+              ) : (
+                <>
+                  <div className="zen-cap">{sessionLabel(minutes)}</div>
+                  <div className="zen-left">{formatLeft(left)}.</div>
+                </>
+              )
             ) : (
               <div className={`zen-start${quiet ? ' quiet' : ''}`}>
-                <div className="breath-picker" role="radiogroup" aria-label="Breathing pattern">
-                  {BREATH_PATTERNS.map((p) => (
-                    <button key={p.id} type="button" role="radio" aria-checked={p.id === pattern.id} className="zbtn sm" onClick={() => setPattern(p)} {...tip(p.tip, { align: 'start' })}>
-                      {p.label}
+                <div className="zen-moderow">
+                  <div className="breath-picker" role="radiogroup" aria-label="Mode" onKeyDown={modeKeys}>
+                  {ZEN_MODES.map((m) => (
+                    <button key={m} type="button" role="radio" aria-checked={m === mode} tabIndex={m === mode ? 0 : -1} className="zbtn sm" onClick={() => setMode(m)} {...tip(ZEN_MODE_TIPS[m], { align: 'start' })}>
+                      {ZEN_MODE_LABELS[m]}
                     </button>
                   ))}
+                  </div>
+                  {mode === 'sundown' && (
+                    <>
+                    <span className="zen-sw-label" id="zen-lights-label">
+                      Dim the office too
+                    </span>
+                    <button
+                      type="button"
+                      role="switch"
+                      aria-checked={lights}
+                      aria-labelledby="zen-lights-label"
+                      className={`ln-switch${lights ? ' on' : ''}`}
+                      onClick={() => setLights(!lights)}
+                      {...tip(lights ? 'The Office lights step down three times while the sky sets, and back up if you leave early. Click to turn it off.' : 'Click to step the Office lights down three times while the sky sets. Only works while an Office mood is on.', { align: 'start' })}
+                    >
+                      <i aria-hidden="true" />
+                    </button>
+                    <span className="zen-sw-state">{lights ? 'On' : 'Off'}</span>
+                    </>
+                  )}
                 </div>
+                {mode === 'breath' && (
+                  <div className="breath-picker" role="radiogroup" aria-label="Breathing pattern">
+                    {BREATH_PATTERNS.map((p) => (
+                      <button key={p.id} type="button" role="radio" aria-checked={p.id === pattern.id} className="zbtn sm" onClick={() => setPattern(p)} {...tip(p.tip, { align: 'start' })}>
+                        {p.label}
+                      </button>
+                    ))}
+                  </div>
+                )}
+                {mode === 'sundown' && <div className="zen-note">Off unless you turn it on. Steps the Office lights down three times, and back up if you leave.</div>}
                 <div className="zen-lenrow">
                   <div className="breath-picker" role="radiogroup" aria-label="Session length">
-                    {SESSION_MINUTES.map((m) => (
-                      <button key={m} type="button" role="radio" aria-checked={m === minutes} className="zbtn" onClick={() => setMinutes(m)}>
+                    {(mode === 'sundown' ? SUNDOWN_MINUTES : SESSION_MINUTES).map((m) => (
+                      <button key={m} type="button" role="radio" aria-checked={m === minutes} className="zbtn" onClick={() => (mode === 'sundown' ? setSundownMinutes(m as SundownMinutes) : setMinutes(m as SessionMinutes))}>
                         {m} min
                       </button>
                     ))}
