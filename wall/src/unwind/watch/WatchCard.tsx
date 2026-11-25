@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent } from 'react';
 import { IconBrandTwitch, IconBrandYoutube, IconBroadcast, IconCheck, IconPencil, IconPlaylist, IconPlaylistAdd, IconPlus, IconSearch, IconX } from '@tabler/icons-react';
 import { useSkyKeepClear } from '../../horizon/sky';
 import { tip } from '../../ui/HoverTip';
@@ -21,6 +21,9 @@ import { restBridge, restZone, useWatchRest } from './rest';
 import { playOwn, setFollow, useOwnView, type OwnView } from './ownPlay';
 import { closeWatchSearch, isLinkText, runWatchSearch, useWatchSearch, wordsProblem } from './searchStore';
 import { WatchResults } from './WatchSearch';
+import { ListChips } from './ListChips';
+import { ALL_CHIP, chipCounts, chipExists, countLine, filterItems, sortItems } from './listView';
+import { useListView } from './listViewStore';
 
 export { PASTE_ERROR_MS };
 /** How long the offer of a second choice (the playlist a pasted video link also names) stays under the field. */
@@ -259,7 +262,19 @@ function WatchList({ empty, draft, setDraft, host, own }: { empty: boolean; draf
     errTimer.current = setTimeout(() => setError(null), PASTE_ERROR_MS);
   };
   const playingKey = playing ? refKey(playing) : null;
-  const list = useMoreBelow(saved.length + (draft ? 1 : 0));
+  // The chip and sort in force, and the words typed in the field (a link is never a filter). A chip whose items are all gone means All.
+  const view = useListView();
+  const counts = useMemo(() => chipCounts(saved), [saved]);
+  const chip = chipExists(counts, view.chip) ? view.chip : ALL_CHIP;
+  const filterText = isLinkText(text) ? '' : text;
+  const shown = useMemo(() => sortItems(filterItems(saved, chip, filterText, editing), view.sort), [saved, chip, filterText, editing, view.sort]);
+  const narrowed = chip !== ALL_CHIP || filterText.trim() !== '';
+  const list = useMoreBelow(shown.length + (draft ? 1 : 0));
+  useEffect(() => {
+    // A new view of the list starts at its top.
+    if (list.ref.current) list.ref.current.scrollTop = 0;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [chip, view.sort, filterText]);
   const st = useWatchStore.getState();
   // Another row's click drops a draft that was never made.
   const other = () => {
@@ -422,17 +437,23 @@ function WatchList({ empty, draft, setDraft, host, own }: { empty: boolean; draf
       <div className="u-card-head">
         <span className="u-k">Watch list</span>
         <span className="u-xs" title={`At most ${MAX_SAVED}`}>
-          {saved.length} saved
+          {countLine(shown.length, saved.length, narrowed)}
         </span>
         {newButton}
       </div>
+      <ListChips counts={counts} chip={chip} sort={view.sort} onChip={view.setChip} onSort={view.setSort} />
       <ul className={`w-list${list.more ? ' more' : ''}`} ref={list.ref} onScroll={list.check}>
         {draft ? (
           <li key="draft">
             <DraftRow onDone={() => setDraft(false)} onError={showError} />
           </li>
         ) : null}
-        {saved.map((item) => {
+        {shown.length === 0 && !draft ? (
+          <li className="w-none" role="status">
+            {filterText.trim() !== '' ? 'Nothing in the list matches those words.' : 'Nothing saved under this chip.'}
+          </li>
+        ) : null}
+        {shown.map((item) => {
           const key = refKey(item);
           if (editing === key)
             return (
