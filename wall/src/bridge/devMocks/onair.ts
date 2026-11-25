@@ -112,6 +112,14 @@ export function registerOnAirMocks(): void {
     times.push(s >= 3600 ? `${Math.floor(s / 3600)}:${pad(Math.floor(s / 60) % 60)}:${pad(s % 60)}` : `${pad(Math.floor(s / 60))}:${pad(s % 60)}`);
     return result();
   });
+  mocks.set('wall2_onair_save_notes', (args) => {
+    const lines = ((args?.lines as string[] | undefined) ?? []).map((l) => l.trim()).filter(Boolean);
+    if (lines.length > 40) throw 'refused: more than 40 notes';
+    if (lines.some((l) => l.length > 160)) throw 'refused: a note is over 160 characters';
+    which = 'typical';
+    TYPICAL.splice(0, TYPICAL.length, { name: '', minutes: null, notes: lines });
+    return lines.length;
+  });
   mocks.set('wall2_onair_open', (args) => {
     if (args?.which && args.which === knob('openfail')) throw 'failed';
     if (args?.which === 'show' && which === 'missing') which = 'starter';

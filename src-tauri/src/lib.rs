@@ -4267,6 +4267,7 @@ pub fn run() {
             wall2_onair::wall2_onair_mark,
             wall2_onair::wall2_onair_marks_today,
             wall2_onair::wall2_onair_open,
+            wall2_onair::wall2_onair_save_notes,
             wall2_keylights_cmd::wall2_keylights_status,
             wall2_keylights_cmd::wall2_keylights_set_address,
             wall2_keylights_cmd::wall2_keylights_forget,

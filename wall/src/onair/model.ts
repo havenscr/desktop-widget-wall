@@ -173,6 +173,17 @@ export function openErrorText(e: unknown, which: 'show' | 'marks'): string {
   return errorWord(e) === 'not-configured' ? 'No config folder on this PC' : `Could not open ${name}`;
 }
 
+/** Saved notes that were refused or failed, in one line (Rust's reason after `refused: `). */
+export function saveErrorText(e: unknown): string {
+  const w = errorWord(e);
+  if (w === 'not-configured') return 'No config folder on this PC';
+  if (w.startsWith('refused: ')) {
+    const why = w.slice('refused: '.length).trim();
+    return why ? `Not saved: ${why}` : 'Not saved: the notes are over a limit';
+  }
+  return 'Could not save run-of-show.txt';
+}
+
 /** The line under "Mark a moment". */
 export function markLine(m: MarkResult | null): string {
   if (!m) return 'Saved to marks.txt';

@@ -45,6 +45,8 @@ export interface OnAirState {
   /** One mark (a second within a second counts once). `showMs` is the time to write; the show timer's time when left out (the new On Air frame passes the take or talk time). */
   mark: (showMs?: number) => Promise<void>;
   open: (which: 'show' | 'marks') => Promise<void>;
+  /** Replace the notes in run-of-show.txt with these lines, then read the file again. Answers null when saved, else the one line saying why not. */
+  saveNotes: (lines: string[]) => Promise<string | null>;
 }
 
 /**
@@ -162,6 +164,16 @@ export function createOnAirStore(deps: OnAirDeps) {
         } finally {
           set({ marking: false });
         }
+      },
+      saveNotes: async (lines) => {
+        try {
+          await deps.invoke('wall2_onair_save_notes', { lines });
+        } catch (e) {
+          return m.saveErrorText(e);
+        }
+        lastRead = -Infinity;
+        await get().loadShow();
+        return null;
       },
       open: async (which) => {
         try {

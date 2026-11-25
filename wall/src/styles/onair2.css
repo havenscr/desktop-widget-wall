@@ -469,3 +469,13 @@
 .oa2-showproblem { display: flex; flex-direction: row; align-items: center; gap: 8px; min-width: 0; width: 100%; }
 .oa2-showproblem-t { color: var(--amber); flex: 1; min-width: 0; display: flex; align-items: center; gap: 6px; font: 500 18px/26px var(--body); }
 .oa2-showproblem .oa-btn { flex: none; font-size: 16px; }
+
+.oa2-hd .oa2-notes-edit { margin: -3px 0 -3px auto; }
+.oa2-hd-r + .oa2-notes-edit { margin-left: 0; }
+.oa2-hd .oa2-notes-edit + .oa2-exp { margin-left: 0; }
+.oa2-notes-ed { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 10px; margin-top: 10px; }
+.oa2-notes-ta { flex: 1; min-height: 0; resize: none; box-sizing: border-box; width: 100%; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--line); background: rgba(255, 255, 255, 0.05); color: var(--tx); font: 500 16px/1.4 var(--body); }
+.oa2-notes-ta:focus-visible { outline: 2px solid var(--cyan); outline-offset: 1px; }
+.oa2-notes-why { flex: none; font: 600 16px/1.3 var(--body); color: var(--tx); border-left: 3px solid var(--cyan); padding-left: 10px; }
+.oa2-notes-btns { flex: none; display: flex; align-items: center; gap: 10px; white-space: nowrap; }
+.oa2-notes-hint { font: 500 16px/1 var(--body); color: var(--dim); margin-left: auto; white-space: nowrap; }

@@ -235,4 +235,27 @@ describe('the On Air store', () => {
     await store.getState().loadMarks();
     expect(store.getState().marksDate).not.toBe(first);
   });
+
+  it('saves notes, reads the file again at once, and answers the reason when refused', async () => {
+    let refuse: string | null = null;
+    const { store, calls } = setup({
+      wall2_onair_save_notes: () => {
+        if (refuse) throw refuse;
+        return 2;
+      },
+      wall2_onair_show: () => SHOW,
+    });
+    expect(await store.getState().saveNotes(['a', 'b'])).toBeNull();
+    expect(calls.map((c) => c.command)).toEqual(['wall2_onair_save_notes', 'wall2_onair_show']);
+    expect(calls[0].args).toEqual({ lines: ['a', 'b'] });
+    expect(store.getState().show).toEqual(SHOW);
+    // A second save right after still reads again (the five second floor does not apply).
+    expect(await store.getState().saveNotes(['c'])).toBeNull();
+    expect(calls.filter((c) => c.command === 'wall2_onair_show')).toHaveLength(2);
+    refuse = 'refused: more than 40 notes';
+    expect(await store.getState().saveNotes(['d'])).toBe('Not saved: more than 40 notes');
+    refuse = 'failed';
+    expect(await store.getState().saveNotes(['d'])).toBe('Could not save run-of-show.txt');
+    expect(calls.filter((c) => c.command === 'wall2_onair_show')).toHaveLength(2);
+  });
 });
