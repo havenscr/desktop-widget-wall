@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useReducedMotion } from '../ui/useReducedMotion';
 import { useIdle } from '../ui/useIdle';
@@ -35,9 +35,12 @@ import { senseWeather } from '../buddy/senses';
 import { useSceneWeather } from '../weather/sceneSetting';
 import { useWeatherStore } from '../weather/useWeather';
 import { MIN_FRAME_MS, frameDelta, shouldDraw } from './pacing';
-import { levelAt, onStage, pictureFade, sample as zenSample, stage as zenStage } from '../zen/stage';
+import { levelAt, onStage, pictureFade, sample as zenSample, skyNow, stage as zenStage } from '../zen/stage';
 import { clearGridPulse, createGridPulse, stepGridPulse } from './pulse';
 import { parseReview, parseSkyReview } from './review';
+import { Backdrop } from '../backdrop/Backdrop';
+import { live } from '../backdrop/live';
+import { useSkyLayer } from '../backdrop/useSkyLayer';
 import { publishCamera } from './signal';
 import { frontHost, moonFor, useSkyClaim, useSkyStore, type SkyBox } from './sky';
 import { drawVeil, veilStrength } from './veil';
@@ -142,7 +145,22 @@ export function HorizonCanvas({ now = Date.now }: { now?: () => number }) {
   // Dev builds only: `?sky=front` mounts the front canvas everywhere, `?sky=flat` never, `?skymoon=x,y,r` moves the moon (fit-check breaks, cost measurement).
   const [skyReview] = useState(() => (import.meta.env.DEV ? parseSkyReview(window.location.search) : null));
   const alwaysFront = !zen && skyReview?.front === 'always';
-  const host = zen || skyReview?.front === 'always' || skyReview?.front === 'never' ? null : frontHost(claims);
+  const host = zen || skyReview?.front === 'always' || skyReview?.front === 'never' || skyReview?.front === 'place' ? null : frontHost(claims);
+  // The animated sky (`backdrop/`): wanted on the pages the setting lists while no screen holds the sky. While it is, the ground is
+  // drawn on its own canvas in place (under the veil and the rail), and the sky layer sits between the two canvases.
+  const forcedPlace = skyReview?.front === 'place';
+  const layer = useSkyLayer({ place, claimed: host !== null || alwaysFront || skyReview?.front === 'never', reduced, pages: skyReview?.on });
+  const split = (layer.mounted || forcedPlace) && host === null && !alwaysFront;
+  // The sky layer's canvas is made the first time a page asks for it and kept while the app runs (one context, never one per page).
+  const [skyMade, setSkyMade] = useState(false);
+  if (layer.want && !skyMade) setSkyMade(true);
+  const skyReviewFrame = useMemo(() => (review ? { ms: review.ms, t: skyReview?.t ?? 40, style: skyReview?.style } : null), [review, skyReview]);
+  const groundRef = useRef<HTMLCanvasElement | null>(null);
+  const [ground, setGround] = useState<HTMLCanvasElement | null>(null);
+  const groundCanvas = useCallback((el: HTMLCanvasElement | null) => {
+    groundRef.current = el;
+    setGround(el);
+  }, []);
   // The moon's candidate places (`MOON_PLACES`), or the one review place.
   const [moonPlaces] = useState(() => (skyReview?.moon ? [skyReview.moon] : MOON_PLACES));
   // The moon last drawn, published on the canvas as `data-moon` ("x,y,r", or empty) for the fit check.
@@ -276,10 +294,16 @@ export function HorizonCanvas({ now = Date.now }: { now?: () => number }) {
     // Zen's picture (sky, ridge and lake) fades to black over Dream's first minute and is then not drawn at all.
     // Returns true when nothing is to be drawn.
     const zenDimmed = (): boolean => {
+      // The ground canvas (when the sky is on) goes with the main one.
+      const g = groundRef.current;
       if (!zen) {
         if (canvas.style.opacity !== '' || canvas.style.visibility !== '') {
           canvas.style.opacity = '';
           canvas.style.visibility = '';
+        }
+        if (g && (g.style.opacity !== '' || g.style.visibility !== '')) {
+          g.style.opacity = '';
+          g.style.visibility = '';
         }
         return false;
       }
@@ -288,6 +312,10 @@ export function HorizonCanvas({ now = Date.now }: { now?: () => number }) {
       if (canvas.style.opacity !== o) canvas.style.opacity = o;
       const v = f <= 0 ? 'hidden' : '';
       if (canvas.style.visibility !== v) canvas.style.visibility = v;
+      if (g) {
+        if (g.style.opacity !== o) g.style.opacity = o;
+        if (g.style.visibility !== v) g.style.visibility = v;
+      }
       return f <= 0;
     };
     const paint = () => {
@@ -309,6 +337,7 @@ export function HorizonCanvas({ now = Date.now }: { now?: () => number }) {
       const ctx = canvas.getContext('2d');
       if (!ctx) return;
       const camera = glideCamera(glide.current);
+      live.hy = camera.hy;
       // The Lines setting (`linesSettings.ts`), read from the store without a render.
       const lines = lineSettings();
       const newType = lines.type !== 'mountains';
@@ -320,7 +349,8 @@ export function HorizonCanvas({ now = Date.now }: { now?: () => number }) {
         height,
         scale,
         camera,
-        ms: review ? review.ms : nowRef.current(),
+        // Zen's Sundown runs the sky on its own clock (`zen/stage.ts`); every other moment draws the real hour.
+        ms: zen ? skyNow(performance.now(), review ? review.ms : nowRef.current()) : review ? review.ms : nowRef.current(),
         t: review && still ? 0 : T,
         phase: review && still ? 0 : (T * 0.32) % 1,
         // Clouds turn with the camera at about a third of the land's speed.
@@ -420,7 +450,9 @@ export function HorizonCanvas({ now = Date.now }: { now?: () => number }) {
       }
       // With the front canvas mounted: the sky here, the ground there, on the same frame. A front
       // canvas no longer in the page (its host was taken out) is none: this canvas draws it all.
-      const fc = frontRef.current;
+      // The ground canvas in place (the animated sky is on) is the same split, mounted under the veil and the rail.
+      const fc = frontRef.current ?? groundRef.current;
+      const inPlace = fc !== null && fc === groundRef.current;
       let fctx: CanvasRenderingContext2D | null = null;
       if (fc && fc.isConnected) {
         if (fc.width !== width || fc.height !== height) {
@@ -483,9 +515,11 @@ export function HorizonCanvas({ now = Date.now }: { now?: () => number }) {
       // The weather in front of the ground and the lines, on the canvas the ground is on, before the veil pass.
       // The mid layer goes ABOVE the place veil, as the picked pictures drew it: with the front canvas, after its veil (below); with one
       // canvas, on the overlay canvas the page puts after the veil (`WeatherOverlay`), or on this canvas when there is none.
-      if (wxOn && !fctx) drawWeatherMid(overlayContext(width, height) ?? ctx, w, wxTime, camera.hy, scale, width, height, awake.current);
+      // With the ground in place the weather goes the one canvas way: on the overlay above the veil (or on the ground canvas, when the page has none).
+      if (wxOn && (!fctx || inPlace)) drawWeatherMid(overlayContext(width, height) ?? fctx ?? ctx, w, wxTime, camera.hy, scale, width, height, awake.current);
       else dropOverlay();
-      if (fc && fctx) {
+      // The ground in place has no rail strip to copy and no veil to repeat: it lies under both.
+      if (fc && fctx && !inPlace) {
         // Left of the main area (the rail's column) the front canvas is cut away: the main canvas
         // takes the ground there over its sky, so the rail's glass shows the whole picture.
         const strip = Math.min(width, Math.ceil(MAIN_LEFT * scale));
@@ -667,6 +701,11 @@ export function HorizonCanvas({ now = Date.now }: { now?: () => number }) {
     if (stillRef.current) repaint.current();
   }, [claims, front]);
 
+  // The ground canvas coming or going is drawn at once, in the same frame: a page never shows a moment with no ground.
+  useLayoutEffect(() => {
+    repaint.current();
+  }, [ground]);
+
   // Hidden pages return with the lines at rest, and the grid pulse and the band history from nothing, never from stale levels.
   useEffect(() => {
     const onHide = () => {
@@ -714,6 +753,8 @@ export function HorizonCanvas({ now = Date.now }: { now?: () => number }) {
   return (
     <>
       <canvas ref={ref} className="horizon-canvas" aria-hidden="true" />
+      {skyMade && !forcedPlace ? <Backdrop on={layer.want} mounted={layer.mounted} review={skyReviewFrame} /> : null}
+      {split ? <canvas ref={groundCanvas} className="horizon-canvas horizon-ground" aria-hidden="true" /> : null}
       {/* Fixed to the stage (its transform is the containing block), so it covers the stage
           whatever box it is mounted in, and takes no pointer. */}
       {alwaysFront ? <canvas ref={frontCanvas} className="horizon-canvas horizon-front" aria-hidden="true" style={FRONT_STYLE} /> : null}

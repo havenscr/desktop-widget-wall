@@ -1,3 +1,4 @@
+import { DEFAULT_ZEN_MODE, isZenMode, type ZenMode } from '../zen/modes';
 import { CUSTOM_MIN, DEFAULT_INTENSITY, DEFAULT_LIGHT_SYNC, INTENSITIES, DEFAULT_PALETTE, clampCustom, clampSettings, clampUi, isPaletteId, type LightSyncSettings, type LightsUi, type PaletteId } from '../studio/lightsync/model';
 
 /** Wall 2 settings, read from localStorage. No settings screen yet. */
@@ -10,11 +11,15 @@ export interface Settings {
   zenDimHour: number;
   /** Quiet minutes on the wall (1 to 60) before Zen dims by itself. */
   zenDimWaitMin: number;
+  /** The Zen mode picked last (Breath or Sundown). */
+  zenMode: ZenMode;
+  /** Sundown also steps the Office lights down while it runs. Off unless turned on. */
+  zenSundownLights: boolean;
   /** Names of the task app lists the Shelf place offers (the wall has no route that lists them). */
   shelfLists: string[];
 }
 
-export const DEFAULT_SETTINGS: Settings = { latitude: 47.68, longitude: -122.21, zenDimHour: 22, zenDimWaitMin: 10, shelfLists: [] };
+export const DEFAULT_SETTINGS: Settings = { latitude: 47.68, longitude: -122.21, zenDimHour: 22, zenDimWaitMin: 10, zenMode: DEFAULT_ZEN_MODE, zenSundownLights: false, shelfLists: [] };
 
 function validInt(v: unknown, min: number, max: number): v is number {
   return validNumber(v, min, max) && Number.isInteger(v);
@@ -36,6 +41,8 @@ export function loadSettings(storage: Pick<Storage, 'getItem'> | null = safeStor
       if (validNumber(saved.longitude, -180, 180)) out.longitude = saved.longitude;
       if (validInt(saved.zenDimHour, 18, 23)) out.zenDimHour = saved.zenDimHour;
       if (validInt(saved.zenDimWaitMin, 1, 60)) out.zenDimWaitMin = saved.zenDimWaitMin;
+      if (isZenMode(saved.zenMode)) out.zenMode = saved.zenMode;
+      if (typeof saved.zenSundownLights === 'boolean') out.zenSundownLights = saved.zenSundownLights;
       if (Array.isArray(saved.shelfLists)) {
         // The same rule as the native list-name check (`valid_list_name` in wall2_feeds.rs): 1 to 60 characters
         // after trimming, no control characters. Duplicates are dropped after trimming.
@@ -50,6 +57,23 @@ export function loadSettings(storage: Pick<Storage, 'getItem'> | null = safeStor
     /* unreadable settings: use defaults */
   }
   return out;
+}
+
+/** Saves one or more settings next to the others already stored (unknown keys are kept). A blocked store keeps the choice until the page closes. */
+export function saveSettings(patch: Partial<Pick<Settings, 'zenMode' | 'zenSundownLights'>>, storage: Pick<Storage, 'getItem' | 'setItem'> | null = safeStorage()): void {
+  try {
+    if (!storage) return;
+    let saved: Record<string, unknown> = {};
+    try {
+      const parsed = JSON.parse(storage.getItem(SETTINGS_KEY) ?? '{}') as unknown;
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) saved = parsed as Record<string, unknown>;
+    } catch {
+      /* unreadable: start from nothing */
+    }
+    storage.setItem(SETTINGS_KEY, JSON.stringify({ ...saved, ...patch }));
+  } catch {
+    /* a full or blocked store */
+  }
 }
 
 function safeStorage(): Storage | null {

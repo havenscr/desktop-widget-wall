@@ -1,7 +1,8 @@
 import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { usePlaceStore } from '../state/places';
-import { SETTINGS_KEY } from '../settings/settings';
+import { SETTINGS_KEY, loadSettings } from '../settings/settings';
+import { HoverTipLayer, TIP_DELAY_MS } from '../ui/HoverTip';
 import { Zen } from './Zen';
 import zenSource from './Zen.tsx?raw';
 // @ts-ignore node's own file call; this test reads the stylesheet as text.
@@ -781,4 +782,194 @@ it('the session label says minutes of Zen', () => {
 it('every new control has a tooltip handler', () => {
   render(<Zen nowMs={clockAt(DAY)} />);
   expect(zenSource.match(/\{\.\.\.tip\(/g)!.length).toBeGreaterThanOrEqual(1);
+});
+
+// Sundown.
+it('the start screen has a mode row, Breath first, and the choice is remembered', () => {
+  const first = render(<Zen nowMs={clockAt(DAY)} />);
+  const modes = screen.getByRole('radiogroup', { name: 'Mode' });
+  expect(within(modes).getAllByRole('radio').map((r) => r.textContent)).toEqual(['Breath', 'Sundown']);
+  expect(within(modes).getByRole('radio', { name: 'Breath' }).getAttribute('aria-checked')).toBe('true');
+  expect(screen.queryByRole('radiogroup', { name: 'Breathing pattern' })).not.toBeNull();
+  pick('Sundown');
+  expect(JSON.parse(localStorage.getItem(SETTINGS_KEY)!).zenMode).toBe('sundown');
+  expect(screen.queryByRole('radiogroup', { name: 'Breathing pattern' })).toBeNull();
+  first.unmount();
+  render(<Zen nowMs={clockAt(DAY)} />);
+  expect(screen.getByRole('radio', { name: 'Sundown' }).getAttribute('aria-checked')).toBe('true');
+});
+
+it('arrow keys move along the mode row', () => {
+  render(<Zen nowMs={clockAt(DAY)} />);
+  fireEvent.keyDown(screen.getByRole('radio', { name: 'Breath' }), { key: 'ArrowRight' });
+  expect(screen.getByRole('radio', { name: 'Sundown' }).getAttribute('aria-checked')).toBe('true');
+  fireEvent.keyDown(screen.getByRole('radio', { name: 'Sundown' }), { key: 'ArrowLeft' });
+  expect(screen.getByRole('radio', { name: 'Breath' }).getAttribute('aria-checked')).toBe('true');
+});
+
+it('Sundown offers 10, 20 and 30 minutes, 20 chosen, and a lights switch that is off with its helper text', () => {
+  localStorage.setItem(SETTINGS_KEY, JSON.stringify({ zenMode: 'sundown' }));
+  render(<Zen nowMs={clockAt(DAY)} />);
+  for (const m of ['10 min', '20 min', '30 min']) expect(screen.getByRole('radio', { name: m })).toBeTruthy();
+  expect(screen.getByRole('radio', { name: '20 min' }).getAttribute('aria-checked')).toBe('true');
+  const sw = screen.getByRole('switch', { name: 'Dim the office too' });
+  expect(sw.getAttribute('aria-checked')).toBe('false');
+  expect(document.querySelector('.zen-note')!.textContent).toMatch(/Off unless you turn it on/);
+  fireEvent.click(sw);
+  expect(sw.getAttribute('aria-checked')).toBe('true');
+  expect(JSON.parse(localStorage.getItem(SETTINGS_KEY)!).zenSundownLights).toBe(true);
+});
+
+it('a Sundown session runs the sky clock and ends in Dream with the sky held at night', async () => {
+  const { stage, skyNow } = await import('./stage');
+  localStorage.setItem(SETTINGS_KEY, JSON.stringify({ zenMode: 'sundown' }));
+  render(<Zen nowMs={clockAt(DAY)} />);
+  pick('10 min');
+  start();
+  ticks(100);
+  expect(screen.getByText('TEN MINUTES OF SUNDOWN')).toBeTruthy();
+  expect(stage.mode).toBe('sundown');
+  expect(stage.running).toBe(true);
+  expect(stage.sky.on).toBe(true);
+  expect(document.querySelector('.breath-word')).toBeNull();
+  ticks(10 * 60_000 + 300);
+  ticks(1300);
+  expect(screen.getByLabelText('Wake')).toBeTruthy();
+  expect(stage.running).toBe(false);
+  expect(stage.sky.on).toBe(true);
+  expect(skyNow(performance.now(), 1)).toBe(stage.sky.to);
+  fireEvent.click(screen.getByLabelText('Wake'));
+  expect(stage.sky.on).toBe(false);
+});
+
+it('ending a Sundown early puts the sky back', async () => {
+  const { stage } = await import('./stage');
+  localStorage.setItem(SETTINGS_KEY, JSON.stringify({ zenMode: 'sundown' }));
+  render(<Zen nowMs={clockAt(DAY)} />);
+  start();
+  ticks(100);
+  expect(stage.sky.on).toBe(true);
+  fireEvent.click(screen.getByRole('button', { name: 'End session early' }));
+  expect(stage.sky.on).toBe(false);
+  expect(screen.queryByLabelText('Wake')).toBeNull();
+});
+
+it('with the lights setting off, a whole Sundown session sends no light command', async () => {
+  const { useHome } = await import('../studio/homeStore');
+  const nudge = vi.spyOn(useHome.getState(), 'nudgeMood');
+  useHome.setState({ moods: { stale: false, moods: [], off: null, nudge: { mood: 'a', level: 70, floor: 45, step: 10 }, canWrite: true, writeBlock: null } });
+  localStorage.setItem(SETTINGS_KEY, JSON.stringify({ zenMode: 'sundown', zenSundownLights: false }));
+  render(<Zen nowMs={clockAt(DAY)} />);
+  pick('10 min');
+  start();
+  ticks(10 * 60_000 + 2000);
+  expect(nudge).not.toHaveBeenCalled();
+  nudge.mockRestore();
+});
+
+it('the Sundown chip and the lights switch each explain themselves on hover', () => {
+  localStorage.setItem(SETTINGS_KEY, JSON.stringify({ zenMode: 'sundown' }));
+  render(
+    <>
+      <Zen nowMs={clockAt(DAY)} />
+      <HoverTipLayer />
+    </>,
+  );
+  fireEvent.mouseEnter(screen.getByRole('radio', { name: 'Sundown' }));
+  ticks(TIP_DELAY_MS + 50);
+  expect(document.querySelector('.hover-tip')!.textContent).toBe('A wind down: the sky runs from golden hour to night');
+  fireEvent.mouseLeave(screen.getByRole('radio', { name: 'Sundown' }));
+  fireEvent.mouseEnter(screen.getByRole('switch', { name: 'Dim the office too' }));
+  ticks(TIP_DELAY_MS + 50);
+  expect(document.querySelector('.hover-tip')!.textContent).toBe('Click to step the Office lights down three times while the sky sets. Only works while an Office mood is on.');
+});
+
+it('the lights setting is off when nothing is saved, and a fresh Zen shows it off', () => {
+  expect(loadSettings(null).zenSundownLights).toBe(false);
+  localStorage.setItem(SETTINGS_KEY, JSON.stringify({ zenMode: 'sundown' }));
+  render(<Zen nowMs={clockAt(DAY)} />);
+  expect(screen.getByRole('switch', { name: 'Dim the office too' }).getAttribute('aria-checked')).toBe('false');
+});
+
+it('the lights switch sits on the mode row, beside the chips, not on a row of its own', () => {
+  localStorage.setItem(SETTINGS_KEY, JSON.stringify({ zenMode: 'sundown' }));
+  render(<Zen nowMs={clockAt(DAY)} />);
+  const row = document.querySelector('.zen-moderow')!;
+  expect(row.contains(screen.getByRole('radiogroup', { name: 'Mode' }))).toBe(true);
+  expect(row.contains(screen.getByRole('switch', { name: 'Dim the office too' }))).toBe(true);
+  expect(screen.getByRole('switch').classList.contains('ln-switch')).toBe(true);
+});
+
+async function homeWithOfficeMood(level: number) {
+  const { useHome } = await import('../studio/homeStore');
+  const moods = (lv: number) => ({ stale: false, moods: [], off: null, nudge: { mood: 'a', level: lv, floor: 45, step: 10 }, canWrite: true, writeBlock: null });
+  const sent: string[] = [];
+  useHome.setState({
+    moods: moods(level),
+    applying: null,
+    moodFail: null,
+    nudgeMood: async (dir) => {
+      sent.push(dir);
+      const lv = useHome.getState().moods!.nudge!.level;
+      useHome.setState({ moods: moods(lv + (dir === 'down' ? -10 : 10)) });
+    },
+  });
+  return sent;
+}
+const run = (ms: number) => act(async () => void (await vi.advanceTimersByTimeAsync(ms)));
+
+it('lights on, a whole Sundown session: three steps down and no step back up when Dream opens', async () => {
+  const sent = await homeWithOfficeMood(90);
+  localStorage.setItem(SETTINGS_KEY, JSON.stringify({ zenMode: 'sundown', zenSundownLights: true }));
+  render(<Zen nowMs={clockAt(DAY)} />);
+  pick('10 min');
+  start();
+  await run(10 * 60_000 + 300);
+  await run(300);
+  await run(1500);
+  expect(screen.getByLabelText('Wake')).toBeTruthy();
+  expect(sent).toEqual(['down', 'down', 'down']);
+  fireEvent.click(screen.getByLabelText('Wake'));
+  await run(2000);
+  expect(sent).toEqual(['down', 'down', 'down']);
+});
+
+it('lights on, ending early after two steps steps back up twice', async () => {
+  const sent = await homeWithOfficeMood(90);
+  localStorage.setItem(SETTINGS_KEY, JSON.stringify({ zenMode: 'sundown', zenSundownLights: true }));
+  render(<Zen nowMs={clockAt(DAY)} />);
+  pick('10 min');
+  start();
+  await run(5.5 * 60_000);
+  expect(sent).toEqual(['down', 'down']);
+  fireEvent.click(screen.getByRole('button', { name: 'End session early' }));
+  await run(2000);
+  expect(sent).toEqual(['down', 'down', 'up', 'up']);
+});
+
+it('lights on with no Office mood on: nothing is sent', async () => {
+  const sent = await homeWithOfficeMood(90);
+  const { useHome } = await import('../studio/homeStore');
+  useHome.setState({ moods: null });
+  localStorage.setItem(SETTINGS_KEY, JSON.stringify({ zenMode: 'sundown', zenSundownLights: true }));
+  render(<Zen nowMs={clockAt(DAY)} />);
+  pick('10 min');
+  start();
+  await run(10 * 60_000 + 1500);
+  expect(sent).toEqual([]);
+});
+
+it('the start screen text stays 16 px or larger and chips keep 10 px at their sides', () => {
+  const css = zenCss.replace('\r\n', '\n');
+  for (const sel of ['.zbtn', '.zbtn.sm', '.zen-note', '.zen-cap', '.zen-left', '.zen-hint', '.breath-word']) {
+    const block = new RegExp('(?:^|\\n)' + sel.replace(/\./g, '\\.') + '\\s*\\{([^}]*)\\}').exec(css);
+    expect(block, sel).not.toBeNull();
+    const size = /font(?:-size)?:\s*(?:\d+\s+)?(\d+)px/.exec(block![1]);
+    expect(size, sel).not.toBeNull();
+    expect(Number(size![1]), sel).toBeGreaterThanOrEqual(16);
+  }
+  for (const sel of ['.zbtn', '.zbtn.sm']) {
+    const block = new RegExp('(?:^|\\n)' + sel.replace(/\./g, '\\.') + '\\s*\\{([^}]*)\\}').exec(css)!;
+    expect(Number(/padding:\s*0 (\d+)px/.exec(block[1])![1])).toBeGreaterThanOrEqual(10);
+  }
 });

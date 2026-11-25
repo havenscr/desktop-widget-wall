@@ -979,6 +979,23 @@ skyline, the lake in front. It is drawn on one canvas by `HorizonCanvas.tsx`.
   Dev builds only: `?sky=front` mounts the front canvas everywhere, `?sky=flat` never,
   `?sky=empty` claims it with an empty host (the pixel proof), `?skymoon=x,y,r` puts the moon
   at one place only (fit-check breaks and cost measurement).
+- **The animated sky** (`src/backdrop/`). A slow animated sky behind the ridge on any page. Two styles, Colour wash (default) and
+  Aurora, chosen in Tools, Display, Sky, with a "Show on" chip per page (Zen on by default; every chip off is the off switch).
+  Stored under `wall2-sky` (`settings.ts`, `validateSky` drops unknown styles and pages). While the sky is on for the active page
+  and no screen claims the sky, `HorizonCanvas` splits the picture as the front layer does but mounts the ground canvas in place
+  (`.horizon-ground`, under the veil and the rail, so it skips the veil pass, the rail strip copy and the left edge cut, and the
+  weather's middle layer goes the one canvas way), and `Backdrop.tsx` sits between the two canvases (`.backdrop-canvas`, 2560 by 582,
+  plain alpha, no blend mode or filter). One WebGL context for the app (`shader.ts`, premultiplied output, a soft brightness cap),
+  made the first time a page asks and kept. Cost: a 640 by 128 buffer at about 16 frames a second on Zen and 320 by 64 at about 8
+  elsewhere; a frame guard halves the buffer (and keeps it halved for the session) when 20 frames average over 1.5 times the wanted interval; the loop pauses on idle, display off and lock (not on Zen), and waits on a timer between frames so an 8 frame a second page is not woken at every vsync; it stops (no frame requested) while the page is
+  hidden, a screen holds the sky (Watch), Dream has faded the picture out, or the page is not listed; reduced motion draws one still.
+  A lost or missing context turns the sky off for the session and the Sky panel says so. The colours come from the hour (`palette.ts`,
+  from the renderer's `sun` and `pal`); each page has a gain ceiling (Zen 1, Unwind 0.6, Home 0.45, the rest 0.35) and, off Zen, the
+  gain is held so the muted text keeps 4.5 to 1 (`legibleGain`, a unit test over every page and hour). When the sky stops being wanted the
+  layers stay 700 ms so the fade finishes before the horizon goes back to one canvas. Pixel proof: `npm run gallery -- --only="sky proof"`
+  then `npm run sky-proof` (a manual gate: run it by hand, it is not run in CI) compares each page on one canvas (`?sky=flat`) with the in place split and an empty sky layer
+  (`?sky=place`) by the fit check's own rule (no pixel over 8 levels, at most 1 in 1000 over 2). Dev knobs: `?skyon=work,home`,
+  `?skystyle=aurora|wash`, `?skyt=40` (the moment a review still draws).
 - **Reduced motion.** With `prefers-reduced-motion: reduce` the horizon is drawn
   once a minute and cameras switch without the glide.
 - **Review hook (dev server only).** Open
@@ -1520,12 +1537,21 @@ the centre card; the date line takes it through the frame's `ClockSlot` portal.
   choice; no titles, no artists). Review knob `?media=ended` shows an ended session.
 - **Settings** (`wall/src/settings/`). `localStorage` key `wall2-settings`, JSON
   with optional `latitude` and `longitude` (defaults 47.68, -122.21), `zenDimHour` (whole
-  hour 18 to 23, default 22) and `zenDimWaitMin` (whole minutes 1 to 60, default 10). No settings
+  hour 18 to 23, default 22) and `zenDimWaitMin` (whole minutes 1 to 60, default 10). `zenMode` (`breath` or `sundown`, default `breath`, the mode picked last) and `zenSundownLights` (true or false, default false). No settings
   screen yet; Zen shows the two Zen values as a quiet line in the evening. `shelfLists` is an optional override: an array of
   task app list names for the Shelf place (the Shelf reads the lists from the task app when it is empty) (at most 8; each trimmed, 1 to 60 characters, no control
   characters, the same rule as the native list check; duplicates dropped after trimming). With no
   settings screen, set it in the browser console or by editing the stored JSON, for example
   `localStorage.setItem('wall2-settings', JSON.stringify({ shelfLists: ['Tasks (To-Do)', 'House'] }))`.
+- **Zen modes** (`zen/modes.ts`, `zen/Sundown.tsx`, `zen/lights.ts`). The start screen has a Breath and Sundown chip row (arrow keys move along it). Sundown is a
+  10, 20 or 30 minute wind down: the sky clock (`stage.sky`, read by `HorizonCanvas` and the animated sky through `skyNow`) runs from 35 minutes before today's
+  sunset to 60 minutes after it, whatever the real hour is (from the real time when that is already inside the window), gliding in over 1.6 s; Dream then
+  opens from the night sky. Leaving early glides back to the real hour. Under reduced motion the sky steps five times with no glide. The ridge keeps the
+  start screen's slow breath. A "Dim the office too" switch (setting `zenSundownLights`, off by default) steps the Office lights down at 25, 50 and 75
+  percent through `nudgeMood('down')`: only while the last moods read shows an Office mood on, at most three steps, a refusal is silent and ends the
+  stepping, leaving early steps back up by the steps taken, a full session leaves them down. Dev knob: `?sundownage=<seconds>` starts a Sundown session
+  that far in, for stills.
+
 - **Shelf place** (`screens/ShelfPlace.tsx`, `styles/shelf.css`). A rail button between On air and Zen.
   Four parts: a Recent files card in the left wing under the clock (see Recent files below), a Captures card (see Captures below), a
   side card with six ShareX keys (Region, Screen, GIF, Record, Text (OCR), History; they use the same press

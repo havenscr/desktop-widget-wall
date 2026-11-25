@@ -7,6 +7,8 @@ import { hover } from './hover';
 import { LOOKS } from '../unwind/watch/looks';
 import { useWatchStore } from '../unwind/watch/store';
 import { useSceneWeather } from '../weather/sceneSetting';
+import { useBackdropSettings } from '../backdrop/settings';
+import { SkyPanel, skyLine } from './SkyPanel';
 import { isAbsent } from '../work/deckModel';
 import { joinKeys, reloadKeys, useKeysFeedStore, type Read } from '../work/keysFeed';
 import type { KeysSummary } from '../work/keysModel';
@@ -252,9 +254,11 @@ function LightsPanel({ ringed }: PanelProps) {
 
 function DisplayPanel() {
   const on = useSceneWeather((s) => s.on);
-  useRailStatus('display', on ? 'Weather on' : 'Weather off', 'none');
+  const skyPages = useBackdropSettings((s) => s.places.length);
+  useRailStatus('display', `${on ? 'Weather on' : 'Weather off'}, ${skyLine(skyPages)}`, 'none');
   return (
     <>
+      <SkyPanel />
       <SceneWeather />
       <VideoLook />
     </>
@@ -276,7 +280,7 @@ export const GROUPS: readonly ToolsGroup[] = [
   { id: 'accounts', name: 'Accounts', icon: IconUserCircle, tip: 'Calendar, Spotify and YouTube sign-ins', sections: ['accounts'], Panel: AccountsPanel },
   { id: 'health', name: 'Health', icon: IconHeartbeat, tip: 'When each source was last read, and the keys file', sections: [], Panel: HealthPanel },
   { id: 'lights', name: 'Lights and home', icon: IconBulb, tip: 'Key lights, Light sync, the home app token, the share key and the stage pop-out', sections: ['keylights', 'desktoken', 'sharekey', 'stagepop'], Panel: LightsPanel },
-  { id: 'display', name: 'Display', icon: IconPalette, tip: 'Weather in the scene and the video look', sections: [], Panel: DisplayPanel },
+  { id: 'display', name: 'Display', icon: IconPalette, tip: 'Weather in the scene, the animated sky and the video look', sections: [], Panel: DisplayPanel },
 ];
 
 /** The group a focus names: a group id, or a section inside a group. */

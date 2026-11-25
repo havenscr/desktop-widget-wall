@@ -425,3 +425,16 @@
     transform: rotate(360deg);
   }
 }
+
+/* The Sky rows in the Display group: the style chips, then the pages it shows on. */
+.tools-sky {
+  margin-bottom: 18px;
+}
+.tools-sky .tools-sky-label {
+  margin-top: 14px;
+  margin-bottom: 8px;
+}
+/* The panel dims a block's own small heading to .45; this label is read, so it keeps the full muted colour (4.5 to 1). */
+.tools-panel > .tools-sky > .tools-k.sm.tools-sky-label {
+  opacity: 1;
+}

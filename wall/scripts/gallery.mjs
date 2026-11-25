@@ -451,7 +451,35 @@ const START = '.zbtn.go';
 add('zen', 'breath running', url('zen', TYPICAL_AT, 'audio=demo'), true, START);
 add('zen', 'breath running, box pattern', url('zen', TYPICAL_AT, 'audio=demo'), true, ['[role="radiogroup"][aria-label="Breathing pattern"] [role="radio"]:nth-child(2)', START]);
 add('zen', 'dimmed: after the fade', url('dimmed', TYPICAL_AT, 'dreamage=70'), true);
+// Sundown: the mode chip row on the start screen with Sundown picked, then a session at the start, the middle and the end
+// (`sundownage` starts the session that many seconds in, in a development build). The sky runs golden hour to night.
+const SUNDOWN = '[role="radiogroup"][aria-label="Mode"] [role="radio"]:nth-child(2)';
+add('zen', 'mode chips: Breath', url('zen', TYPICAL_AT, ''), false);
+add('zen', 'mode chips: Sundown', url('zen', TYPICAL_AT, ''), true, SUNDOWN);
+add('zen', 'sundown: start', url('zen', TYPICAL_AT, 'audio=demo&sundownage=0'), true, [SUNDOWN, START]);
+add('zen', 'sundown: middle', url('zen', TYPICAL_AT, 'audio=demo&sundownage=600'), true, [SUNDOWN, START]);
+add('zen', 'sundown: end', url('zen', TYPICAL_AT, 'audio=demo&sundownage=1170'), true, [SUNDOWN, START]);
 state('dimmed', 'night with audio demo', 'audio=demo', TIMES.night);
+
+// The animated sky (`src/backdrop/`). The pixel proof pairs: every page drawn on one canvas (`sky=flat`) and split with the sky layer
+// empty (`sky=place`); `npm run sky-proof` reads the two stills and fails on any difference. Then both styles frozen at a moment (`skyt`)
+// at night, at dusk and at noon on Zen, Unwind, Home and Work.
+for (const place of ['work', 'home', 'meet', 'unwind', 'zen']) {
+  state(place, 'sky proof: one canvas', 'sky=flat');
+  state(place, 'sky proof: split, sky layer empty', 'sky=place');
+}
+for (const [when, at] of [['night', TIMES.night], ['dusk', TIMES.dusk], ['noon', TIMES.noon]]) {
+  state('unwind', `sky proof: one canvas, ${when}`, 'sky=flat', at);
+  state('unwind', `sky proof: split, sky layer empty, ${when}`, 'sky=place', at);
+}
+for (const place of ['zen', 'unwind', 'home', 'work']) {
+  for (const [style, name] of [['wash', 'colour wash'], ['aurora', 'aurora']]) {
+    for (const [when, at] of [['night', TIMES.night], ['dusk', TIMES.dusk], ['noon', TIMES.noon]]) {
+      state(place, `sky: ${name}, ${when}`, `skyon=${place}&skystyle=${style}&skyt=40`, at);
+    }
+  }
+  state(place, 'sky: off', 'skyon=');
+}
 
 // keys style: keys tinted by kind by day and night, keys that cannot be sent, For you as two
 // key-height plates, long labels, a key under the pointer and one held down, and the Hide
@@ -800,6 +828,11 @@ const EXPECT = [
   ['zen', 'typical', 'Start', true],
   ['zen', 'breath running', ['Breathe in', 'FIVE MINUTES OF ZEN']],
   ['zen', 'breath running, box pattern', ['Breathe in', 'FIVE MINUTES OF ZEN']],
+  ['zen', 'mode chips: Breath', ['Breath', 'Sundown', 'Calm 4-2-6']],
+  ['zen', 'mode chips: Sundown', ['Dim the office too', 'Off unless you turn it on', '20 min']],
+  ['zen', 'sundown: start', ['TWENTY MINUTES OF SUNDOWN']],
+  ['zen', 'sundown: middle', ['TWENTY MINUTES OF SUNDOWN']],
+  ['zen', 'sundown: end', ['TWENTY MINUTES OF SUNDOWN']],
   ['zen', 'evening hint', ['Start', 'Dims by itself after 10 PM and 10 quiet minutes']],
   ['zen', 'late, not yet quiet', ['Start', 'Dims by itself after 10 PM and 10 quiet minutes']],
   ['zen', 'dimmed: sparse', '!Start'],
@@ -925,6 +958,12 @@ const NO_TEXT = [
   ['work', 'lines:', 'only the drawn levels move'],
   ['home', 'lines:', 'only the drawn levels move'],
   ['zen', 'focus running, long title', 'Zen shows no session title'],
+  // The animated sky is drawn, not written: the pixel proof and the review stills judge it.
+  ['work', 'sky', 'the animated sky is drawn, no text changes'],
+  ['home', 'sky', 'the animated sky is drawn, no text changes'],
+  ['meet', 'sky', 'the animated sky is drawn, no text changes'],
+  ['unwind', 'sky', 'the animated sky is drawn, no text changes'],
+  ['zen', 'sky', 'the animated sky is drawn, no text changes'],
   // Watt set down elsewhere: only where he stands changes (his stored spot), no text.
   ['work', 'Watt: set down', 'only where Watt stands changes'],
   ['home', 'Watt: set down', 'only where Watt stands changes'],
@@ -1067,7 +1106,7 @@ async function launch() {
   let stderr = '';
   chromeProc = spawn(
     chrome,
-    ['--headless', '--no-sandbox', '--disable-gpu', '--mute-audio', `--user-data-dir=${profile}`, '--remote-debugging-port=0', `--window-size=${W},${H + 87}`, 'about:blank'],
+    ['--headless', '--no-sandbox', '--disable-gpu', '--enable-unsafe-swiftshader', '--mute-audio', `--user-data-dir=${profile}`, '--remote-debugging-port=0', `--window-size=${W},${H + 87}`, 'about:blank'],
     { stdio: ['ignore', 'ignore', 'pipe'], detached: process.platform !== 'win32', env: { ...process.env, TMPDIR: scratch, TEMP: scratch, TMP: scratch } },
   );
   const proc = chromeProc;
@@ -1173,6 +1212,11 @@ async function render(cdp, base, s, file, ctl) {
     await to('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'no-preference' }] });
     await to('Page.navigate', { url: `${base}?${s.query}` });
     await new Promise((r) => setTimeout(r, SETTLE_MS));
+    if (s.name.startsWith('sky proof')) {
+      // The pixel proof pairs are taken at two moments: page animations are stopped the player's progress row (a clock that ticks in real time) the rail's icons and Meet's countdown ring (both drew differently from one capture to the next) are hidden, so only the layers can differ.
+      await to('Runtime.evaluate', { expression: `(() => { const st = document.createElement('style'); st.textContent = '*,*::before,*::after{animation:none!important;transition:none!important} .u-progress,.rail .rb svg,.meet-ring svg{visibility:hidden!important}'; document.head.appendChild(st); })()` });
+      await new Promise((r) => setTimeout(r, 400));
+    }
     for (const step of [s.click ?? []].flat().flatMap((c) => c.split(' >> '))) {
       // A state shown just after a click (a task tick's Undo window). A string may chain steps with ` >> `.
       // `ctx:<selector>` right-clicks (opens the key picker), `hover:` moves the real pointer onto
