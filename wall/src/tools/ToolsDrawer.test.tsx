@@ -197,7 +197,7 @@ it('Video look: chips from the Watch looks, the active one lit, a click uses the
   fireEvent.click(feathered);
   expect(useWatchStore.getState().looks).toMatchObject({ mode: 'one', all: 'feather' });
   expect(feathered.getAttribute('aria-pressed')).toBe('true');
-  expect(screen.getByText('How video sits in the sky on Watch')).toBeTruthy();
+  expect(screen.getByText('How video sits in the sky.')).toBeTruthy();
   // The video look has no Off chip of its own (the weather switch below it has).
   expect([...feathered.closest('.tools-chips')!.querySelectorAll('button')].map((b) => b.textContent)).not.toContain('Off');
 });
@@ -443,7 +443,7 @@ it('Weather in the scene: two chips in the Display group, on by default, each st
   expect(block.parentElement?.hasAttribute('hidden')).toBe(false);
   expect(drawer.querySelector('.tools-top .tools-weather')).toBeNull();
   expect(block.querySelector('.tools-k.sm')?.textContent).toBe('Weather in the scene');
-  expect(block.querySelector('.tools-hint')?.textContent).toBe('Rain and wind from your forecast.');
+  expect(block.querySelector('.tools-hint')?.textContent).toBe('Forecast rain and wind.');
   const on = screen.getByRole('button', { name: 'On' });
   const off = screen.getByRole('button', { name: 'Off' });
   expect(on.getAttribute('aria-pressed')).toBe('true');

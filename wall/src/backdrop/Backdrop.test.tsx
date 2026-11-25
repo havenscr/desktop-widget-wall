@@ -134,6 +134,16 @@ describe('Backdrop', () => {
     expect(vi.getTimerCount()).toBe(0);
   });
 
+  it('a strength change redraws the still frame under reduced motion, at the new gain', () => {
+    setReducedMotion(true);
+    mount();
+    expect(shader.draw).toHaveBeenCalledTimes(1);
+    const before = gains()[0];
+    act(() => useBackdropSettings.getState().setStrength(0.1));
+    expect(shader.draw).toHaveBeenCalledTimes(2);
+    expect(gains()[1]).toBeLessThan(before);
+  });
+
   it('draws a review frame once, at the moment asked', () => {
     mount(true, true, { ms: Date.UTC(2026, 10, 11, 22), t: 77 });
     expect(shader.draw).toHaveBeenCalledTimes(1);

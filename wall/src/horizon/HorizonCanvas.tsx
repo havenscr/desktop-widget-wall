@@ -41,6 +41,8 @@ import { parseReview, parseSkyReview } from './review';
 import { Backdrop } from '../backdrop/Backdrop';
 import { live } from '../backdrop/live';
 import { useSkyLayer } from '../backdrop/useSkyLayer';
+import { veilScale } from '../backdrop/palette';
+import { useBackdropSettings } from '../backdrop/settings';
 import { publishCamera } from './signal';
 import { frontHost, moonFor, useSkyClaim, useSkyStore, type SkyBox } from './sky';
 import { drawVeil, veilStrength } from './veil';
@@ -150,6 +152,9 @@ export function HorizonCanvas({ now = Date.now }: { now?: () => number }) {
   // drawn on its own canvas in place (under the veil and the rail), and the sky layer sits between the two canvases.
   const forcedPlace = skyReview?.front === 'place';
   const layer = useSkyLayer({ place, claimed: host !== null || alwaysFront || skyReview?.front === 'never', reduced, pages: skyReview?.on });
+  // A stronger sky thins the page veil (`veilScale`), so it reads as strong on a page of cards as on Zen; the veil stays whole while the sky is not drawn.
+  const strength = useBackdropSettings((s) => s.strength);
+  const veilK = layer.want ? veilScale(strength) : 1;
   const split = (layer.mounted || forcedPlace) && host === null && !alwaysFront;
   // The sky layer's canvas is made the first time a page asks for it and kept while the app runs (one context, never one per page).
   const [skyMade, setSkyMade] = useState(false);
@@ -685,9 +690,12 @@ export function HorizonCanvas({ now = Date.now }: { now?: () => number }) {
   // The veil is looked up and read on the first frame with the front canvas and again after a
   // place change (then each frame through its transition), never otherwise: a style read each
   // frame forces a style flush.
+  // It is also read again when the veil's scale changes (the strength moved, or the sky came or went).
   useEffect(() => {
+    const el = ref.current?.parentElement?.querySelector(':scope > .veil');
+    if (el instanceof HTMLElement) el.style.setProperty('--veil-k', String(veilK));
     veil.current.until = -2;
-  }, [active]);
+  }, [active, veilK]);
   useEffect(() => () => window.clearTimeout(veil.current.timer), []);
 
   // A still frame is drawn again when the sky layers change (the front canvas comes or goes, a
