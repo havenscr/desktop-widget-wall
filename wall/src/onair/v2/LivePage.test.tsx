@@ -1,4 +1,5 @@
 import css from '../../styles/onair2.css?raw';
+import workCss from '../../styles/work.css?raw';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { LIBRARY_DATA } from '../../bridge/devMocks/libraryData';
@@ -190,14 +191,103 @@ it('a refused chip shows the fixed words, and a failure shows the generic line',
   await waitFor(() => expect(screen.getByText('Could not check the channel')).toBeTruthy());
 });
 
-it('the comments card is solid in every state: no dashed attribute and no transparent rule', async () => {
+it('the lit chip follows the stored handle, then falls back to the name inside a longer title', async () => {
+  const { litChip, HANDLE_KEY } = await import('./ChannelField');
+  expect(litChip('Analytic Endeavors LLC', null)).toBe(0);
+  expect(litChip('HAVENS CONSULTING | Power BI', null)).toBe(1);
+  expect(litChip('Sample Studio', null)).toBe(-1);
+  expect(litChip('Sample Studio', '@HavensConsulting')).toBe(1);
+  expect(litChip('Havens Consulting', '@analyticendeavors')).toBe(0);
+  expect(litChip(null, '@other')).toBe(-1);
+  // Stored handle wins in the card, even when the YouTube title names neither chip.
+  localStorage.setItem(HANDLE_KEY, '@AnalyticEndeavors');
+  channelSet = true;
+  status = live({ state: 'none', chat: false });
+  await open();
+  fireEvent.click(await screen.findByRole('button', { name: 'Change' }));
+  expect(screen.getByRole('button', { name: 'Analytic Endeavors' }).getAttribute('data-lit')).toBe('true');
+  expect(screen.getByRole('button', { name: 'Havens Consulting' }).getAttribute('data-lit')).toBe('false');
+  expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Analytic Endeavors' }));
+});
+
+it('a title with extra words lights its chip when nothing is stored, and the picker focuses the first chip when none is lit', async () => {
+  mocks.set('wall2_ytlive_channel', () => ({ set: true, title: 'Havens Consulting | Power BI' }));
+  status = live({ state: 'none', chat: false });
+  await open();
+  fireEvent.click(await screen.findByRole('button', { name: 'Change' }));
+  expect(screen.getByRole('button', { name: 'Havens Consulting' }).getAttribute('data-lit')).toBe('true');
+  expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Havens Consulting' }));
+  cleanup();
+  useYtLive.getState().reset();
+  mocks.set('wall2_ytlive_channel', () => ({ set: false, title: null }));
+  status = live({ state: 'not-set-up', chat: false });
+  await open();
+  fireEvent.click(await screen.findByRole('button', { name: 'Name channel' }));
+  expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Analytic Endeavors' }));
+});
+
+it('a tap while the channel is being checked is ignored', async () => {
   channelSet = false;
   status = live({ state: 'not-set-up', chat: false });
   await open();
-  await screen.findByRole('button', { name: 'Name channel' });
+  fireEvent.click(await screen.findByRole('button', { name: 'Name channel' }));
+  let release: () => void = () => {};
+  const sent: unknown[] = [];
+  mocks.set('wall2_ytlive_set_channel', (args) => {
+    sent.push((args as { text: string }).text);
+    return new Promise((r) => {
+      release = () => r({ set: true, title: 'Analytic Endeavors' });
+    });
+  });
+  fireEvent.click(screen.getByRole('button', { name: 'Analytic Endeavors' }));
+  await waitFor(() => expect(screen.getByText('Checking the channel')).toBeTruthy());
+  fireEvent.click(screen.getByRole('button', { name: 'Havens Consulting' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Analytic Endeavors' }));
+  expect(sent).toEqual(['@AnalyticEndeavors']);
+  status = live({ state: 'none', chat: false });
+  await act(async () => release());
+  await waitFor(() => expect(screen.getByText('Channel: Analytic Endeavors')).toBeTruthy());
+});
+
+const norm = (t: string) => t.replace(/\r\n/g, '\n');
+
+it('the comments card is solid in every state: no dashed attribute and no transparent rule, with the panel background present', async () => {
+  const sheet = norm(css);
+  const work = norm(workCss);
+  expect(sheet).toMatch(/\.oa2 \.oa2-comments \{[^}]*left: 676px/);
+  expect(work).toMatch(/\n\.panel \{[^}]*background: linear-gradient/);
+  expect(sheet).not.toMatch(/oa2-comments\[data-dashed/);
+  expect(sheet).not.toMatch(/\.oa2-comments[^{]*\{[^}]*(transparent|dashed)/);
+  const states: [LiveStatus, boolean][] = [
+    [live({ state: 'not-set-up', chat: false }), false],
+    [live({ state: 'live' }), true],
+  ];
+  for (const [st, set] of states) {
+    channelSet = set;
+    status = st;
+    useYtLive.getState().reset();
+    const r = await open();
+    await waitFor(() => expect(document.querySelector('.oa2-comments')).not.toBeNull());
+    const card = document.querySelector('.oa2-comments') as HTMLElement;
+    expect(card.hasAttribute('data-dashed')).toBe(false);
+    expect(card.style.background).toBe('');
+    r.unmount();
+  }
+  // The reading state: before the first status answer.
+  useYtLive.getState().reset();
+  mocks.set('wall2_ytlive_status', () => new Promise(() => {}));
+  localStorage.setItem(MODE_STORAGE_KEY, JSON.stringify({ held: 'live' }));
+  render(<OnAir2 />);
+  await waitFor(() => expect(document.querySelector('.oa2-comments')?.getAttribute('data-view')).toBe('reading'));
   expect(document.querySelector('.oa2-comments')?.hasAttribute('data-dashed')).toBe(false);
-  expect(css).not.toMatch(/oa2-comments\[data-dashed/);
-  expect(css).not.toMatch(/\.oa2-comments[^{]*\{[^}]*transparent/);
+});
+
+it('the chip CSS is 16 px or more and never wraps', () => {
+  const sheet = norm(css);
+  const rule = /\.oa2 \.oa2-chip \{([^}]*)\}/.exec(sheet)?.[1] ?? '';
+  expect(rule).toMatch(/white-space: nowrap/);
+  const px = Number(/font: \d+ (\d+)px/.exec(rule)?.[1]);
+  expect(px).toBeGreaterThanOrEqual(16);
 });
 
 it('starts the timer from the broadcast start once, only when idle, and never again after a Reset', async () => {

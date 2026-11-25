@@ -1,5 +1,5 @@
 import { IconBroadcast, IconCheck } from '@tabler/icons-react';
-import { useEffect, type KeyboardEvent } from 'react';
+import { useEffect, useRef, type KeyboardEvent } from 'react';
 import { tip } from '../../ui/HoverTip';
 import { useYtLive } from '../ytliveStore';
 
@@ -15,7 +15,33 @@ export const CHANNEL_CHIPS = [
 const FIELD_TIP =
   'The YouTube channel your StreamYard shows go out on. Tap one to read its live state and chat with your YouTube sign-in; nothing is posted.';
 
-const same = (a: string | null | undefined, b: string) => a != null && a.trim().toLowerCase() === b.toLowerCase();
+/** The tapped handle, kept on this PC so the right chip lights whatever the channel's YouTube title says. Not a secret. */
+export const HANDLE_KEY = 'wall2-comments-channel-handle';
+
+function readHandle(): string | null {
+  try {
+    return window.localStorage.getItem(HANDLE_KEY);
+  } catch {
+    return null;
+  }
+}
+
+function writeHandle(handle: string | null): void {
+  try {
+    if (handle === null) window.localStorage.removeItem(HANDLE_KEY);
+    else window.localStorage.setItem(HANDLE_KEY, handle);
+  } catch {
+    // Storage may be blocked; the title fallback still lights the chip.
+  }
+}
+
+/** The index of the chip to light: the stored handle when it is one of ours, else the chip name found in the saved title. */
+export function litChip(title: string | null | undefined, stored: string | null): number {
+  const byHandle = CHANNEL_CHIPS.findIndex((c) => stored !== null && c.handle.toLowerCase() === stored.toLowerCase());
+  if (byHandle >= 0) return byHandle;
+  const t = (title ?? '').toLowerCase();
+  return t === '' ? -1 : CHANNEL_CHIPS.findIndex((c) => t.includes(c.name.toLowerCase()));
+}
 
 /**
  * The channel picker, inside the comments card: one chip per channel, no text field. A tap saves that channel through YouTube's
@@ -27,10 +53,20 @@ export function ChannelField({ onClose, firstTime }: { onClose: () => void; firs
   const saved = useYtLive((s) => s.channel);
   const setChannel = useYtLive((s) => s.setChannel);
   const clear = useYtLive((s) => s.clearChannelError);
-  useEffect(() => () => clear(), [clear]);
+  const lit = saved?.set === true ? litChip(saved.title, readHandle()) : -1;
+  const chips = useRef<(HTMLButtonElement | null)[]>([]);
+  useEffect(() => {
+    chips.current[lit >= 0 ? lit : 0]?.focus();
+    return () => clear();
+    // Focus once, when the picker opens.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [clear]);
   const pick = async (handle: string) => {
     if (checking) return;
-    if (await setChannel(handle)) onClose();
+    if (await setChannel(handle)) {
+      writeHandle(handle);
+      onClose();
+    }
   };
   const onKey = (e: KeyboardEvent<HTMLDivElement>) => {
     if (e.key === 'Escape') {
@@ -43,15 +79,18 @@ export function ChannelField({ onClose, firstTime }: { onClose: () => void; firs
     <div className="oa2-chf" data-checking={checking ? 'true' : 'false'} onKeyDown={onKey}>
       <div className="oa2-chf-row">
         <IconBroadcast size={20} aria-hidden="true" />
-        {CHANNEL_CHIPS.map((c) => {
-          const lit = saved?.set === true && same(saved.title, c.name);
+        {CHANNEL_CHIPS.map((c, i) => {
+          const on = i === lit;
           return (
             <button
               key={c.handle}
+              ref={(el) => {
+                chips.current[i] = el;
+              }}
               type="button"
               className="oa-btn oa2-chip"
-              data-lit={lit ? 'true' : 'false'}
-              aria-pressed={lit}
+              data-lit={on ? 'true' : 'false'}
+              aria-pressed={on}
               aria-disabled={checking}
               onClick={() => void pick(c.handle)}
               {...tip(FIELD_TIP)}
