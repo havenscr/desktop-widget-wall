@@ -1,4 +1,4 @@
-import { useEffect, type CSSProperties } from 'react';
+import { useEffect } from 'react';
 import { startAudio } from './audio/capture';
 import { Watt } from './buddy/Watt';
 import { useFocusStore } from './focus/store';
@@ -6,8 +6,6 @@ import { acquireNowPlaying } from './music/store';
 import { HorizonCanvas, WeatherOverlay } from './horizon/HorizonCanvas';
 import { Rail } from './rail/Rail';
 import { usePlaceStore } from './state/places';
-import { veilScale } from './backdrop/palette';
-import { skyListed, useBackdropSettings } from './backdrop/settings';
 import { Screens } from './screens/Screens';
 import { Stage } from './stage/Stage';
 import { HoverTipLayer } from './ui/HoverTip';
@@ -23,10 +21,6 @@ import { useOnAirLiveReport } from './onair/useOnAirLiveReport';
 
 export function App() {
   const active = usePlaceStore((s) => s.active);
-  const strength = useBackdropSettings((s) => s.strength);
-  const skyOn = useBackdropSettings((s) => s.available && skyListed(s.places, active));
-  // A stronger sky thins the page veil, so the sky reads as strong on a page of cards as on Zen.
-  const veilK = skyOn ? veilScale(strength) : 1;
   // The focus timer lives for the whole app, not for the Work screen.
   useEffect(() => {
     useFocusStore.getState().init();
@@ -45,7 +39,7 @@ export function App() {
   return (
     <Stage>
       <HorizonCanvas />
-      <div className="veil" data-place={active} style={{ '--veil-k': veilK } as CSSProperties} aria-hidden="true" />
+      <div className="veil" data-place={active} aria-hidden="true" />
       <WeatherOverlay />
       {/* The sun row (ribbon/Ribbon.tsx draws into it): under Watt, who walks that band. */}
       <div className="sun-layer" data-sun-layer="" aria-hidden="true" />

@@ -69,3 +69,11 @@ it('the hint appears only past the readable level on a page with text, not on Ze
   fireEvent.change(slider, { target: { value: '35' } });
   expect(screen.queryByText('Text may be harder to read at this strength.')).toBeNull();
 });
+
+it('the slider names its helper line with aria-describedby', () => {
+  render(<SkyPanel />);
+  const slider = screen.getByRole('slider', { name: 'Strength' });
+  const id = slider.getAttribute('aria-describedby');
+  expect(id).toBeTruthy();
+  expect(document.getElementById(id!)?.textContent).toMatch(/Faint to as strong as Zen/);
+});

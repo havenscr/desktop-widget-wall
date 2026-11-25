@@ -52,6 +52,10 @@ describe('sky setting', () => {
     expect(skySettings().strength).toBe(DEFAULT_SKY.strength);
   });
 
+  it('a stored strength is rounded to the nearest 5 percent', () => {
+    for (const [raw, want] of [[0.37, 0.35], [0.38, 0.4], [0.5, 0.5], [0.123, 0.1], [0.97, 0.95], [0.99, 1]] as const) expect(validateSky({ style: 'wash', places: [], strength: raw }).strength).toBe(want);
+  });
+
   it('a page toggles on and off by itself', () => {
     const { togglePlace } = useBackdropSettings.getState();
     togglePlace('home');
