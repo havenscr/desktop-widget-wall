@@ -10,7 +10,7 @@ function problemOf(show: Show, showError: string | null, showNote: string | null
   if (!show) return showError;
   if (show.state === 'refused') return show.reason ?? 'run-of-show.txt was refused';
   if (show.state === 'missing') return 'No run-of-show.txt yet';
-  if (show.state === 'ok' && show.parts.length === 0) return 'run-of-show.txt has no parts yet';
+  if (show.state === 'ok' && show.parts.length === 0) return 'run-of-show.txt has no notes yet';
   return showError;
 }
 

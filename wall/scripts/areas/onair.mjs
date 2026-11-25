@@ -53,7 +53,7 @@ export default {
   name: 'onair',
   gallery: { states: [
     state('typical (running at 42:13)', 'oatimer=run', ['42:1', 'Show timer', 'Notes', 'Mark a moment']),
-    state('no file', 'show=missing&marks=0&oatimer=idle', ['## Part name | 10']),
+    state('no file', 'show=missing&marks=0&oatimer=idle', ['- A note', 'one per line']),
     state('refused file', 'show=refused&marks=0&oatimer=idle', ['Open file']),
     state('forty parts', 'show=forty&oatimer=run', ['Notes']),
     state('long notes', 'show=long&oatimer=run', ['Notes', 'Mark a moment']),

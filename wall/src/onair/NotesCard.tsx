@@ -57,8 +57,8 @@ export function fitNotes(list: HTMLElement, count: number, sizes: readonly numbe
 function FormatHelp() {
   return (
     <div className="oa-help">
-      <span className="oa-help-l"><code>## Part name | 10</code> starts a part planned for 10 minutes</span>
-      <span className="oa-help-l"><code>- A note</code> is one note on the list</span>
+      <span className="oa-help-l"><code>- A note</code> is one note, one per line</span>
+      <span className="oa-help-l">Notes show in the order they are in the file</span>
       <span className="oa-help-l"><code>// A comment</code> is ignored; <code># Title</code> on the first line names the show</span>
     </div>
   );
