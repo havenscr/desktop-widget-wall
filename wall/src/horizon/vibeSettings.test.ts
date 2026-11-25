@@ -21,6 +21,15 @@ describe('vibe settings', () => {
     });
     expect(validateVibe(null)).toEqual(DEFAULT_VIBE);
     expect(validateVibe('scene')).toEqual(DEFAULT_VIBE);
+    expect(validateVibe([true, true])).toEqual(DEFAULT_VIBE);
+    expect(validateVibe(7)).toEqual(DEFAULT_VIBE);
+  });
+
+  it('the frame reads the settings alone, without the store actions', () => {
+    expect(Object.keys(vibeSettings()).sort()).toEqual(['auto', 'calmCap', 'cover', 'dropGlitch', 'tapeGrain']);
+    useVibeStore.getState().setVibe({ tapeGrain: true });
+    expect(vibeSettings().tapeGrain).toBe(true);
+    expect(vibeSettings()).toBe(vibeSettings());
   });
 
   it('a broken or older stored value falls back field by field', () => {
@@ -46,6 +55,6 @@ describe('vibe settings', () => {
     useLinesStore.getState().reset();
     resetLinesStore();
     expect(vibeSettings().dropGlitch).toBe(true);
-    expect(localStorage.getItem(LINES_KEY)).not.toContain('dropGlitch');
+    expect(localStorage.getItem(LINES_KEY) ?? '').not.toContain('dropGlitch');
   });
 });

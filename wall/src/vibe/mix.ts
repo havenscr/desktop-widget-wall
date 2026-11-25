@@ -1,9 +1,14 @@
 import type { VibeSettings } from '../horizon/vibeSettings';
 
 /**
- * The vibe effects' mix, pure and with no drawing. One call per frame turns the settings, the slow
- * energy and the drop stamps into the strengths the layers draw with. The effects run on Listen
- * and Watch alike; this module does not know which screen it is on.
+ * The vibe effects' mix, with no drawing. One call per frame turns the settings, the slow energy
+ * and the drop stamps into the strengths the layers draw with. The effects run on Listen and
+ * Watch alike; this module does not know which screen it is on.
+ *
+ * Not pure: `stepVibe`, `settleVibe` and `noteDrop` mutate the `VibeState` (and, for `stepVibe`,
+ * the `VibeFrame`) they are given, so nothing allocates per frame. The caller owns that state and
+ * that frame. Stepping advances the eases, so never call `stepVibe` for a preview or a peek: use
+ * a state of its own, or read the last frame.
  *
  * Hard rule: nothing ends abruptly. Every strength is a two stage exponential ease (a toggle's
  * per frame change stays small from the first frame to the last, and lands exactly on 0 or 1),
@@ -34,8 +39,17 @@ export const STEP_S = 1 / 13;
 
 /** The glitch envelope for `s` seconds since a drop: 0 before and after, 50 ms rise, eased tail. */
 export const envOf = (s: number): number => (s >= 0 && s < DROP_S ? sstep(0, 0.05, s) * Math.pow(1 - s / DROP_S, 2) : 0);
-/** The glow swell for `s` seconds since a drop: 70 ms rise, then exp(-s / 0.42). */
-export const swellOf = (s: number): number => (s >= 0 ? sstep(0, 0.07, s) * Math.exp(-s / 0.42) : 0);
+/** Below this the swell tail counts as finished (about 2.6 s after a drop) and is exactly 0. */
+export const SWELL_EPS = 0.002;
+/** The glow swell for `s` seconds since a drop: 70 ms rise, exp(-s / 0.42), exactly 0 once under `SWELL_EPS`. */
+export const swellOf = (s: number): number => {
+  if (!(s >= 0)) return 0;
+  const v = sstep(0, 0.07, s) * Math.exp(-s / 0.42);
+  return v < SWELL_EPS ? 0 : v;
+};
+
+/** Drop stamps kept. A new drop past this replaces the one contributing least, so the envelope never cuts. */
+export const MAX_DROPS = 8;
 
 interface Ease2 {
   a: number;
@@ -62,9 +76,8 @@ export interface VibeState {
   /** 1 while music plays; eases to 0 after it stops. */
   live: Ease2;
   palette: number;
-  /** Seconds (the frame clock) of the newest and the one before it; -Infinity for none. */
-  dropAt: number;
-  prevAt: number;
+  /** Frame clock seconds of each live drop; -Infinity marks a free slot. Fixed size, never reallocated. */
+  drops: Float64Array;
 }
 
 const ease0 = (v = 0): Ease2 => ({ a: v, b: v });
@@ -73,7 +86,7 @@ const ease0 = (v = 0): Ease2 => ({ a: v, b: v });
 export function createVibeState(): VibeState {
   return {
     auto: ease0(), tape: ease0(), glitch: ease0(), calm: ease0(), title: ease0(), live: ease0(),
-    palette: 0, dropAt: -Infinity, prevAt: -Infinity,
+    palette: 0, drops: new Float64Array(MAX_DROPS).fill(-Infinity),
   };
 }
 
@@ -87,12 +100,27 @@ export function settleVibe(s: VibeState, settings: VibeSettings, playing: boolea
   s.title = ease0(t.title);
   s.live = ease0(t.live);
   s.palette = clamp01(energy);
+  s.drops.fill(-Infinity);
 }
 
-/** A drop at `nowS`: the previous one keeps fading, so two drops overlap their tails and nothing cuts. */
+const contribution = (at: number, nowS: number): number => Math.max(envOf(nowS - at), swellOf(nowS - at));
+
+/**
+ * A drop at `nowS`. Earlier drops keep fading, so drops overlap their tails and nothing cuts. It
+ * takes a free slot, or when all are in use the one contributing least right now (a finished
+ * tail first), which can only change the envelope by that smallest amount.
+ */
 export function noteDrop(s: VibeState, nowS: number): void {
-  s.prevAt = s.dropAt;
-  s.dropAt = nowS;
+  let slot = 0;
+  let least = Infinity;
+  for (let i = 0; i < s.drops.length; i++) {
+    const c = s.drops[i] === -Infinity ? -1 : contribution(s.drops[i], nowS);
+    if (c < least) {
+      least = c;
+      slot = i;
+    }
+  }
+  s.drops[slot] = nowS;
 }
 
 function targets(settings: VibeSettings, playing: boolean) {
@@ -157,7 +185,7 @@ export interface VibeInput {
  * the mix; off, every effect sits at a fixed level.
  */
 export function stepVibe(s: VibeState, out: VibeFrame, dt: number, nowS: number, input: VibeInput): VibeFrame {
-  const d = Math.min(MAX_DT_S, Math.max(0, dt));
+  const d = Number.isFinite(dt) ? Math.min(MAX_DT_S, Math.max(0, dt)) : 0;
   const t = targets(input.settings, input.playing);
   const au = ease2(s.auto, t.auto, d, EASE_TAU_S);
   const tape = ease2(s.tape, t.tape, d, EASE_TAU_S);
@@ -177,8 +205,15 @@ export function stepVibe(s: VibeState, out: VibeFrame, dt: number, nowS: number,
   const mTape = au * (0.5 + 0.3 * e) + fx * 0.7;
   const mGrain = au * (1 - 0.62 * e) + fx * 0.7;
 
-  const env = Math.max(envOf(nowS - s.dropAt), envOf(nowS - s.prevAt));
-  const swell = Math.max(swellOf(nowS - s.dropAt), swellOf(nowS - s.prevAt));
+  let env = 0;
+  let swell = 0;
+  for (let i = 0; i < s.drops.length; i++) {
+    const age = nowS - s.drops[i];
+    const ev = envOf(age);
+    const sv = swellOf(age);
+    if (ev > env) env = ev;
+    if (sv > swell) swell = sv;
+  }
 
   out.aurora = live * mAurora * cap * (1 + 0.18 * swell * cap);
   out.rich = live * mRich;
@@ -196,6 +231,6 @@ export function stepVibe(s: VibeState, out: VibeFrame, dt: number, nowS: number,
   out.bassGain = 1 - 0.25 * calm;
   out.live = live;
   out.active =
-    live > 0 || au !== t.auto || tape !== t.tape || glitch !== t.glitch || calm !== t.calm || title !== t.title || env > 0 || swell > 0.002;
+    live > 0 || au !== t.auto || tape !== t.tape || glitch !== t.glitch || calm !== t.calm || title !== t.title || env > 0 || swell > 0;
   return out;
 }

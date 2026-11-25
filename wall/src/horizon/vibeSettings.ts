@@ -6,7 +6,11 @@ export type VibeCover = 'scene' | 'title';
 export interface VibeSettings {
   /** Colour, glow and the mix follow how loud the music has been lately (on), or sit at fixed levels (off). */
   auto: boolean;
-  /** Slices tear across the picture on each drop, with or without Auto vibe. */
+  /**
+   * Slices tear across the picture on each drop. Auto vibe also lets a drop glitch (the engine's
+   * glitch level is `dropGlitch || auto`), so this switch only matters with Auto vibe off. The
+   * settings panel must say so: show it as on and locked, or hint it, while Auto vibe is on.
+   */
   dropGlitch: boolean;
   /** Film grain, scanlines and a slow tracking bar. */
   tapeGrain: boolean;
@@ -73,8 +77,17 @@ export const useVibeStore = create<VibeStore>((set) => ({
     }),
 }));
 
-/** The settings as the frame reads them, never through a render. */
-export const vibeSettings = (): VibeSettings => useVibeStore.getState();
+const pick = (v: VibeSettings): VibeSettings => ({
+  auto: v.auto, dropGlitch: v.dropGlitch, tapeGrain: v.tapeGrain, calmCap: v.calmCap, cover: v.cover,
+});
+// The settings alone (no actions), rebuilt only when they change, so a frame reads them for free.
+let current = pick(useVibeStore.getState());
+useVibeStore.subscribe((state) => {
+  current = pick(state);
+});
+
+/** The settings as the frame reads them, never through a render. Do not mutate the result. */
+export const vibeSettings = (): Readonly<VibeSettings> => current;
 
 /** Tests: read the stored setting again. */
 export function resetVibeStore(): void {

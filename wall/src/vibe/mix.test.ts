@@ -4,6 +4,7 @@ import {
   DROP_S,
   EASE_TAU_S,
   LIVE_TAU_S,
+  MAX_DROPS,
   MAX_DT_S,
   createVibeFrame,
   createVibeState,
@@ -60,7 +61,9 @@ describe('envelopes', () => {
     for (let s = 0; s <= 2; s += 0.005) top = Math.max(top, envOf(s), swellOf(s));
     expect(top).toBeLessThanOrEqual(1);
     expect(top).toBeGreaterThan(0.6);
-    expect(swellOf(5)).toBeLessThan(0.0001);
+    expect(swellOf(5)).toBe(0);
+    expect(swellOf(2.5)).toBeGreaterThan(0);
+    expect(swellOf(2.8)).toBe(0);
   });
 
   it('rise in about 50 and 70 ms and fall smoothly (no frame jumps more than a rise step)', () => {
@@ -146,8 +149,84 @@ describe('mix table', () => {
       if (t > 1.5) expect(Math.abs(out.swell - prev)).toBeLessThan(0.1);
       prev = out.swell;
     }
-    expect(out.swell).toBeLessThan(0.005);
+    expect(out.swell).toBe(0);
+    expect(out.haloSwell).toBe(0);
     expect(out.env).toBe(0);
+  });
+
+  /** Largest one frame fall of one drop's own envelope, the bound a crowd of drops must also keep. */
+  const singleFall = (() => {
+    let worst = 0;
+    for (let t = 0; t < 4; t += 1 / 1200) {
+      worst = Math.max(worst, envOf(t) - envOf(t + FRAME), swellOf(t) - swellOf(t + FRAME));
+    }
+    return worst;
+  })();
+
+  it('rapid drops never cut the envelope: it falls no faster than a single drop does at any phase', () => {
+    for (const times of [[1, 1.01, 1.02], [1, 1.01, 1.02, 1.03, 1.04, 1.05, 1.06, 1.07, 1.08, 1.09, 1.1, 1.11], [1, 1.2, 1.4, 1.6, 1.8, 2]]) {
+      const s = createVibeState();
+      settleVibe(s, DEFAULT_VIBE, true, 0.5);
+      const out = createVibeFrame();
+      let prevEnv = 0;
+      let prevSwell = 0;
+      let next = 0;
+      for (let t = 0.5; t < 8; t += FRAME) {
+        while (next < times.length && times[next] <= t) noteDrop(s, times[next++]);
+        stepVibe(s, out, FRAME, t, { settings: DEFAULT_VIBE, playing: true, energy: 0.5 });
+        expect(prevEnv - out.env).toBeLessThanOrEqual(singleFall + 1e-9);
+        expect(prevSwell - out.swell).toBeLessThanOrEqual(singleFall + 1e-9);
+        prevEnv = out.env;
+        prevSwell = out.swell;
+      }
+      expect(out.env).toBe(0);
+      expect(out.swell).toBe(0);
+    }
+  });
+
+  it('a full set of stamps replaces the one contributing least, never the strongest', () => {
+    const s = createVibeState();
+    settleVibe(s, DEFAULT_VIBE, true, 0.5);
+    for (let i = 0; i < MAX_DROPS; i++) noteDrop(s, 1 + i * 0.01);
+    expect(s.drops.length).toBe(MAX_DROPS);
+    noteDrop(s, 1.2);
+    expect(Array.from(s.drops)).toContain(1.2);
+    expect(s.drops.filter((v) => v !== 1.2).length).toBe(MAX_DROPS - 1);
+  });
+
+  it('never reports inactive while a drop tail is still above 0', () => {
+    const s = createVibeState();
+    settleVibe(s, DEFAULT_VIBE, false, 0);
+    noteDrop(s, 0);
+    const out = createVibeFrame();
+    for (let t = 0; t < 10; t += FRAME) {
+      stepVibe(s, out, FRAME, t, { settings: DEFAULT_VIBE, playing: false, energy: 0 });
+      if (!out.active) {
+        expect(out.swell).toBe(0);
+        expect(out.haloSwell).toBe(0);
+        expect(out.env).toBe(0);
+      }
+    }
+    expect(out.active).toBe(false);
+  });
+
+  it('keeps the frame finite for a NaN, infinite or out of range energy and a NaN step', () => {
+    const clamped = (e: number) => {
+      const s = createVibeState();
+      settleVibe(s, DEFAULT_VIBE, true, 0.5);
+      return { ...stepVibe(s, createVibeFrame(), FRAME, 0, { settings: DEFAULT_VIBE, playing: true, energy: e }) };
+    };
+    for (const e of [Number.NaN, Infinity, -Infinity, -3, 7]) {
+      const f = clamped(e);
+      for (const k of FIELDS) expect(Number.isFinite(f[k] as number), `${String(k)} at ${e}`).toBe(true);
+    }
+    expect(clamped(7)).toEqual(clamped(1));
+    expect(clamped(-3)).toEqual(clamped(0));
+    expect(clamped(Number.NaN)).toEqual(clamped(0));
+    const s = createVibeState();
+    settleVibe(s, DEFAULT_VIBE, true, 0.5);
+    const out = stepVibe(s, createVibeFrame(), Number.NaN, 0, { settings: DEFAULT_VIBE, playing: true, energy: 0.5 });
+    for (const k of FIELDS) expect(Number.isFinite(out[k] as number), String(k)).toBe(true);
   });
 
   it('the palette follows energy slowly, cool to warm', () => {
