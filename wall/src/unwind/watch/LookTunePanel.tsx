@@ -94,7 +94,7 @@ function SwitchRow({ look, c, hint }: { look: LookId; c: SwitchControl; hint: (k
       >
         <i aria-hidden="true" />
       </button>
-      <span className="ln-value ln-fill">{blocked ? c.needs!.reason : on ? (c.words?.on ?? (c.usual ? 'On, your usual' : 'On')) : (c.words?.off ?? (c.usual ? 'Off' : 'Off, your usual'))}</span>
+      <span className="ln-value">{blocked ? c.needs!.reason : on ? (c.words?.on ?? (c.usual ? 'On, your usual' : 'On')) : (c.words?.off ?? (c.usual ? 'Off' : 'Off, your usual'))}</span>
     </div>
   );
 }
