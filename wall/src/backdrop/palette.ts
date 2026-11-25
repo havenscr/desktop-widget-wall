@@ -155,6 +155,16 @@ export function contrast(a: Rgb, b: Rgb): number {
 export const DEFAULT_STRENGTH = 0.35;
 export const MIN_STRENGTH = 0.1;
 
+/**
+ * How much of the page veil (`frame.css`) is left at this strength. The veil darkens the sky on a page of cards by half, so without
+ * this a stronger sky is only half as strong on Work as on Zen. At the default and under, the whole veil stays; at 100% a quarter of it
+ * is left (Work 0.52 to 0.13), so the sky reads about 87% as strong as on Zen. The text check above reads the same scaled veil.
+ */
+export function veilScale(strength: number): number {
+  if (strength <= DEFAULT_STRENGTH) return 1;
+  return 1 - 0.75 * ((Math.min(1, strength) - DEFAULT_STRENGTH) / (1 - DEFAULT_STRENGTH));
+}
+
 /** The contrast the wall's muted text needs. */
 export const MIN_CONTRAST = 4.5;
 
@@ -165,9 +175,9 @@ const VEIL_COLOUR: Rgb = [6 / 255, 4 / 255, 22 / 255];
  * the brightest colour the shader can output (the worst of its three), laid over the hour's own upper sky, the band under the top (where
  * text sits straight on the sky: the clock, Unwind's captions, Zen's words), with the page's veil on top.
  */
-function contrastWith(place: PlaceId, alt: number, eve: boolean, gain: number, colours: SkyColours): number {
+function contrastWith(place: PlaceId, alt: number, eve: boolean, gain: number, colours: SkyColours, veilK = 1): number {
   const upper = pal(alt, eve).s[1] as number[];
-  const veil = veilFor(place);
+  const veil = veilFor(place) * veilK;
   let worst = Infinity;
   for (const col of [colours.a, colours.b, colours.c]) {
     const src = [softCap(SHADER_RAW_PEAK * col[0] * gain), softCap(SHADER_RAW_PEAK * col[1] * gain), softCap(SHADER_RAW_PEAK * col[2] * gain)];
@@ -227,7 +237,7 @@ export function strengthHurtsText(strength: number, places: readonly PlaceId[], 
     for (const eve of [false, true]) {
       for (const alt of [-20, -6, 0, 10, 25, 40, 60]) {
         const colours = skyColoursForAlt(alt, eve, style, createSkyColours());
-        if (contrastWith(place, alt, eve, legibleGain(place, alt, eve, style, colours, strength), colours) < MIN_CONTRAST) return true;
+        if (contrastWith(place, alt, eve, legibleGain(place, alt, eve, style, colours, strength), colours, veilScale(strength)) < MIN_CONTRAST) return true;
       }
     }
   }

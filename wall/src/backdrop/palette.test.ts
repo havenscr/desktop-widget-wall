@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { PlaceId } from '../state/places';
-import { DEFAULT_STRENGTH, MIN_CONTRAST, strengthHurtsText, SHADER_CAP, bareContrast, createSkyColours, legibleGain, pageGain, skyColoursAt, skyColoursForAlt, softCap, totalGain, worstCase } from './palette';
+import { DEFAULT_STRENGTH, MIN_CONTRAST, strengthHurtsText, veilFor, veilScale, SHADER_CAP, bareContrast, createSkyColours, legibleGain, pageGain, skyColoursAt, skyColoursForAlt, softCap, totalGain, worstCase } from './palette';
 
 const PLACES: PlaceId[] = ['zen', 'work', 'home', 'unwind', 'meet', 'onair', 'shelf'];
 const STYLES = ['wash', 'aurora'] as const;
@@ -120,6 +120,18 @@ describe('sky palette', () => {
     expect(strengthHurtsText(0.1, ['work'], 'wash')).toBe(false);
     expect(strengthHurtsText(1, ['zen'], 'wash')).toBe(false);
     expect(strengthHurtsText(1, ['unwind'], 'wash')).toBe(true);
-    expect(strengthHurtsText(1, ['work'], 'wash')).toBe(false);
+    expect(strengthHurtsText(1, ['work'], 'wash')).toBe(true);
+    expect(strengthHurtsText(0.35, ['work'], 'wash')).toBe(false);
+  });
+
+  it('on Work, 100% shows clearly more sky than 35%, measured as the gain times what the veil lets through', () => {
+    for (const [alt, eve] of [[-20, true], [22, false], [40, false]] as const) {
+      const c = skyColoursForAlt(alt, eve, 'wash', createSkyColours());
+      const seen = (p: PlaceId, s: number) => legibleGain(p, alt, eve, 'wash', c, s) * (1 - veilFor(p) * veilScale(s));
+      expect(veilScale(DEFAULT_STRENGTH)).toBe(1);
+      expect(seen('work', 1)).toBeGreaterThan(seen('work', DEFAULT_STRENGTH) * 3);
+      expect(seen('work', 1)).toBeGreaterThan(seen('zen', 1) * 0.8);
+      expect(seen('home', 1)).toBeGreaterThan(seen('home', DEFAULT_STRENGTH) * 2);
+    }
   });
 });
