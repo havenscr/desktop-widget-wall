@@ -269,6 +269,63 @@ describe('the vibe back layer', () => {
     expect(drawsOf()).toBeGreaterThan(0);
   });
 
+  it('bakes again for a new track on the same img element, once the new cover has loaded', () => {
+    const m = manual();
+    const s = stubCanvas();
+    restore = s.restore;
+    let ready = true;
+    vi.spyOn(HTMLImageElement.prototype, 'complete', 'get').mockImplementation(() => ready);
+    vi.spyOn(HTMLImageElement.prototype, 'naturalWidth', 'get').mockImplementation(() => (ready ? 300 : 0));
+    const r = render(
+      <section data-place="unwind">
+        <VibeLayer host={m.host} />
+        <div className="u-wing" />
+        <div className="u-art">
+          <img src="a.png" alt="" />
+        </div>
+      </section>,
+    );
+    const img = r.container.querySelector('img')!;
+    m.frames(1000, 3);
+    const drawsOf = () => s.rec.calls.filter((c) => c[0] === 'drawImage' && c[1] === img).length;
+    const first = drawsOf();
+    expect(first).toBeGreaterThan(0);
+    // The track changes: the src moves and the new picture has not loaded, so the plain fill is baked.
+    ready = false;
+    act(() => {
+      img.setAttribute('src', 'b.png');
+    });
+    m.frames(2000, 3);
+    expect(drawsOf()).toBe(first);
+    ready = true;
+    act(() => {
+      img.dispatchEvent(new Event('load'));
+    });
+    m.frames(3000, 3);
+    expect(drawsOf()).toBeGreaterThan(first);
+  });
+
+  it('fades the title layer with the cover ease rather than jumping', () => {
+    const m = manual();
+    const { rec, canvas } = mount(m.host);
+    playFor(4000);
+    m.frames(10000, 60);
+    rec.calls.length = 0;
+    act(() => useVibeStore.getState().setVibe({ cover: 'scene' }));
+    m.frames(20000, 60);
+    // The alpha of each copy onto the title: it steps down, never in one jump, and ends at no copy.
+    const alphas: number[] = [];
+    let a = 0;
+    for (const c of rec.calls) {
+      if (c[0] === 'set globalAlpha') a = c[1] as number;
+      if (c[0] === 'drawImage' && c[1] === canvas && c.length === 10) alphas.push(a);
+    }
+    expect(alphas.length).toBeGreaterThan(3);
+    for (let k = 1; k < alphas.length; k++) expect(alphas[k - 1] - alphas[k]).toBeLessThan(0.05);
+    expect(alphas.some((v) => v > 0.05 && v < 0.35)).toBe(true);
+    expect(alphas[0]).toBeGreaterThan(0.3);
+  });
+
   it('stops while the page is hidden and starts again when it is shown', () => {
     const m = manual();
     mount(m.host);

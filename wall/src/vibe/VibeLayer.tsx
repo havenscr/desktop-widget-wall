@@ -131,7 +131,8 @@ export function VibeLayer({ host = browserHost }: { host?: LoopHost }) {
         if (img !== watched) {
           watched?.removeEventListener('load', onImgLoad);
           watched = img;
-          if (img && !ready) img.addEventListener('load', onImgLoad);
+          // Kept for the element's life: the player reuses one img across tracks, and every new src fires load again.
+          img?.addEventListener('load', onImgLoad);
         }
       } else {
         art = { x: 0, y: 0, w: 0, h: 0 };
