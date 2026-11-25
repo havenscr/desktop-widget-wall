@@ -1,4 +1,4 @@
-import { useLayoutEffect, useRef, useState } from 'react';
+import { useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { keyboardOnMouseKey, useKeyPress } from '../../work/keyPress';
 import { isLayoutAction, layoutOffReason, useArrangeStatus } from '../../work/arrangeStatus';
 import { KeyIcon } from '../../work/keyIcons';
@@ -39,10 +39,14 @@ function useFittedLabels(labels: readonly string[], measure?: Measure) {
       ro?.disconnect();
     };
   }, [key, measure]);
-  const words = labels.map((l) => {
-    const cands = labelCandidates(l, labels);
-    return fit.measure ? pickLabel(cands, fit.avail, fit.measure) : cands[0]!;
-  });
+  const words = useMemo(
+    () =>
+      key.split('\n').map((l, _i, all) => {
+        const cands = labelCandidates(l, all);
+        return fit.measure ? pickLabel(cands, fit.avail, fit.measure) : cands[0]!;
+      }),
+    [key, fit],
+  );
   return { tilesRef, words };
 }
 

@@ -167,8 +167,20 @@ describe('Unwind keys row', () => {
     const s = css('../../styles/unwind-work.css');
     const keys = s.slice(s.indexOf('.u-key {'), s.indexOf('.u-keys-line {'));
     expect(keys).not.toContain('ellipsis');
-    expect(keys).not.toContain('overflow: hidden');
     expect(keys).not.toContain('line-clamp');
     expect(keys).toMatch(/\.u-key-l \{[^}]*white-space: nowrap/);
+    expect(keys).toMatch(/\.u-key\.deck-tile\.key-tile \{[^}]*height: 64px/);
+  });
+  it('fits labels to the measured tile width, with a fake measure and a real width', async () => {
+    localStorage.setItem(PINS_KEY, JSON.stringify(['lib:record-169', 'lib:snip']));
+    const w = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'clientWidth');
+    Object.defineProperty(HTMLElement.prototype, 'clientWidth', { configurable: true, get: () => 60 });
+    try {
+      const r = render(<UnwindKeys measure={(t) => t.length * 10} />);
+      await flush(50);
+      for (const l of r.container.querySelectorAll('.u-key-l')) expect((l.textContent ?? '').length * 10).toBeLessThanOrEqual(60);
+    } finally {
+      if (w) Object.defineProperty(HTMLElement.prototype, 'clientWidth', w);
+    }
   });
 });

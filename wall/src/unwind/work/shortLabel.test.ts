@@ -27,10 +27,18 @@ describe('the measured chooser', () => {
   });
   it('takes the shortest fitting one when the leading ones do not, else the shortest', () => {
     expect(pickLabel(['Screenshot', 'Capture', 'Cap', 'Snip', 'Go'], 30, m)).toBe('Cap');
-    expect(pickLabel(['Screenshot', 'Capture'], 20, m)).toBe('Capture');
+    expect(pickLabel(['Screenshot', 'Capture'], 20, m)).toBe('Ca');
+  });
+  it('cuts letters from the end of one unbreakable long word until it fits', () => {
+    const t = pickLabel(['Supercalifragilistic'], 55, m);
+    expect(t).toBe('Super');
+    expect(m(t)).toBeLessThanOrEqual(55);
   });
   it('takes the first when nothing is measured yet, and a user name leads', () => {
     expect(pickLabel(['Record'], 0, m)).toBe('Record');
     expect(pickLabel(labelCandidates('Snip', ['Snip'], 'Mine'), 100, m)).toBe('Mine');
   });
+});
+it('drops trailing punctuation from candidates', () => {
+  expect(shortLabels(['Sonos: Mute', 'Excel: Undo'])).toEqual(['Sonos', 'Excel']);
 });

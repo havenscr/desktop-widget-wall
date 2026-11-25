@@ -1,7 +1,12 @@
 /** Labels that read better as one word than as their first word. */
 const SHORT: Record<string, string> = { 'Record 16:9': 'Record', 'Hide screen': 'Hide' };
 
-const words = (label: string) => label.split(/\s+/).filter(Boolean);
+/** The words of a label, each without trailing punctuation ("Sonos:" is "Sonos"). */
+const words = (label: string) =>
+  label
+    .split(/\s+/)
+    .map((w) => w.replace(/[:;,.!?]+$/, ''))
+    .filter(Boolean);
 const lower = (w: string) => w.toLowerCase();
 const upFirst = (w: string) => (w ? w[0]!.toUpperCase() + w.slice(1) : w);
 
@@ -45,7 +50,7 @@ export type Measure = (text: string) => number;
 
 /**
  * The first of the first three candidates (name, short word, distinguishing word) that fits `avail` px; failing that,
- * the shortest candidate that fits; failing that, the shortest one. `measure` is the real font's width (canvas) or a
+ * the shortest candidate that fits; failing that, the shortest one with letters dropped from its end until it fits. `measure` is the real font's width (canvas) or a
  * stand-in under test. An unmeasured row (`avail` of 0) takes the first.
  */
 export function pickLabel(candidates: readonly string[], avail: number, measure: Measure, firstN = 3): string {
@@ -55,17 +60,28 @@ export function pickLabel(candidates: readonly string[], avail: number, measure:
   const lead = candidates.slice(0, firstN).find(fits);
   if (lead !== undefined) return lead;
   const byLength = [...candidates].sort((a, b) => measure(a) - measure(b));
-  return byLength.find(fits) ?? byLength[0] ?? first;
+  const fitting = byLength.find(fits);
+  if (fitting !== undefined) return fitting;
+  // Nothing fits whole: drop letters from the end of the shortest until it does (no ellipsis).
+  let t = byLength[0] ?? first;
+  while (t.length > 1 && !fits(t)) t = t.slice(0, -1);
+  return t;
 }
 
-/** A canvas measure for the font a label is drawn in, or null where there is no canvas. */
+/** A canvas measure for the font a label is drawn in (one per font), or null where there is no canvas. */
+const measures = new Map<string, Measure | null>();
 export function canvasMeasure(font: string): Measure | null {
+  if (measures.has(font)) return measures.get(font) ?? null;
+  let m: Measure | null = null;
   try {
     const ctx = document.createElement('canvas').getContext('2d');
-    if (!ctx) return null;
-    ctx.font = font;
-    return (t) => ctx.measureText(t).width;
+    if (ctx) {
+      ctx.font = font;
+      m = (t) => ctx.measureText(t).width;
+    }
   } catch {
-    return null;
+    m = null;
   }
+  measures.set(font, m);
+  return m;
 }
