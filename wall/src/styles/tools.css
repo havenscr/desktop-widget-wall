@@ -426,15 +426,87 @@
   }
 }
 
-/* The Sky rows in the Display group: the style chips, then the pages it shows on. */
+/* The Display panel (a grid, in two columns): Sky style and Weather, then Strength and Video look, the strength's one-line helper across
+   both, and the Show on chips across the full width (seven chips need it to sit on one line). Every helper is one line. */
+.tools-panel[aria-labelledby='tools-tab-display']:not([hidden]) {
+  display: grid;
+  grid-template-columns: 228px minmax(0, 1fr);
+  grid-template-areas:
+    'title title'
+    'style weather'
+    'strength video'
+    'note note'
+    'places places';
+  column-gap: 14px;
+  row-gap: 16px;
+  align-items: start;
+}
+.tools-panel[aria-labelledby='tools-tab-display'] .tools-hint,
+.tools-panel[aria-labelledby='tools-tab-display'] .tools-chips {
+  white-space: nowrap;
+}
+.tools-panel[aria-labelledby='tools-tab-display'] > .tools-ptitle {
+  grid-area: title;
+}
 .tools-sky {
-  margin-bottom: 18px;
+  display: contents;
+}
+.tools-sky-style {
+  grid-area: style;
+}
+.tools-sky-strength {
+  grid-area: strength;
+}
+.tools-sky-note {
+  grid-area: note;
+  margin-top: -8px;
+}
+.tools-sky-note.warn {
+  color: var(--amber);
+}
+.tools-sky-places {
+  grid-area: places;
+}
+.tools-panel .tools-weather {
+  grid-area: weather;
+}
+.tools-panel .tools-video {
+  grid-area: video;
+}
+.tools-video > .tools-k.sm {
+  display: block;
+  margin-bottom: 10px;
+}
+.tools-sky-pct {
+  font: 17px/1.3 var(--body);
+  color: var(--tx);
 }
 .tools-sky .tools-sky-label {
-  margin-top: 14px;
   margin-bottom: 8px;
 }
+/* The seven page chips share one line in the panel's width: a 10 px side padding (the least a chip's text keeps from its edge) and a 6 px gap. */
+.tools-sky-places .tools-chips {
+  gap: 6px;
+  flex-wrap: nowrap;
+}
+.tools-sky-places .tools-chip {
+  padding: 0 10px;
+}
+.tools-slider {
+  display: block;
+  width: 100%;
+  height: 32px;
+  margin: 0;
+  accent-color: var(--cyan);
+  background: transparent;
+  cursor: pointer;
+}
+.tools-slider:focus-visible {
+  outline: 3px solid var(--cyan);
+  outline-offset: 2px;
+  border-radius: 8px;
+}
 /* The panel dims a block's own small heading to .45; this label is read, so it keeps the full muted colour (4.5 to 1). */
-.tools-panel > .tools-sky > .tools-k.sm.tools-sky-label {
+.tools-panel .tools-sky-label {
   opacity: 1;
 }

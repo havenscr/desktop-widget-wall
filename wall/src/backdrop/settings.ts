@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import type { PlaceId } from '../state/places';
+import { DEFAULT_STRENGTH, MIN_STRENGTH } from './palette';
 
 /** The two animated skies: slow wide bands of colour, or soft swaying curtains. */
 export type SkyStyle = 'wash' | 'aurora';
@@ -8,6 +9,8 @@ export interface SkySettings {
   style: SkyStyle;
   /** The pages the animated sky shows on. An empty list is the off switch. */
   places: PlaceId[];
+  /** How strong the colour wash is, 0.1 (faint) to 1 (as strong as on Zen). The default is today's look. */
+  strength: number;
 }
 
 export const SKY_KEY = 'wall2-sky';
@@ -25,7 +28,7 @@ export const SKY_PLACES: readonly { id: PlaceId; name: string }[] = [
   { id: 'onair', name: 'On Air' },
   { id: 'shelf', name: 'Shelf' },
 ];
-export const DEFAULT_SKY: Readonly<SkySettings> = { style: 'wash', places: ['zen'] };
+export const DEFAULT_SKY: Readonly<SkySettings> = { style: 'wash', places: ['zen'], strength: DEFAULT_STRENGTH };
 
 const STYLE_IDS = SKY_STYLES.map((s) => s.id);
 const PLACE_IDS = SKY_PLACES.map((p) => p.id);
@@ -33,12 +36,13 @@ const PLACE_IDS = SKY_PLACES.map((p) => p.id);
 /** A stored value made safe: unknown styles and pages are dropped, so a bad value can never turn the sky on where it was not asked for. */
 export function validateSky(raw: unknown): SkySettings {
   const v = raw && typeof raw === 'object' ? (raw as Partial<SkySettings>) : {};
+  const strength = typeof v.strength === 'number' && Number.isFinite(v.strength) ? Math.round(Math.min(1, Math.max(MIN_STRENGTH, v.strength)) * 100) / 100 : DEFAULT_STRENGTH;
   const style = STYLE_IDS.includes(v.style as SkyStyle) ? (v.style as SkyStyle) : DEFAULT_SKY.style;
   // A list that holds only unknown ids becomes an empty list (the sky off) on purpose: it was a list, so it is never read as "no setting" and turned on on Zen.
-  if (!Array.isArray(v.places)) return { style, places: [...DEFAULT_SKY.places] };
+  if (!Array.isArray(v.places)) return { style, places: [...DEFAULT_SKY.places], strength };
   // The list keeps the chips' own order and each page once.
   const places = PLACE_IDS.filter((id) => (v.places as unknown[]).includes(id));
-  return { style, places };
+  return { style, places, strength };
 }
 
 function load(): SkySettings {
@@ -50,7 +54,7 @@ function load(): SkySettings {
 }
 function save(value: SkySettings): void {
   try {
-    localStorage.setItem(SKY_KEY, JSON.stringify({ style: value.style, places: value.places }));
+    localStorage.setItem(SKY_KEY, JSON.stringify({ style: value.style, places: value.places, strength: value.strength }));
   } catch {
     // Storage may be unavailable: the setting then lasts until the wall restarts.
   }
@@ -60,6 +64,7 @@ interface SkyStore extends SkySettings {
   /** False once the graphics context could not be made or was lost: the sky stays off for the session. */
   available: boolean;
   setStyle: (style: SkyStyle) => void;
+  setStrength: (strength: number) => void;
   togglePlace: (id: PlaceId) => void;
   markUnavailable: () => void;
 }
@@ -69,13 +74,18 @@ export const useBackdropSettings = create<SkyStore>((set, get) => ({
   ...load(),
   available: true,
   setStyle: (style) => {
-    const next = validateSky({ style, places: get().places });
+    const next = validateSky({ style, places: get().places, strength: get().strength });
     save(next);
     set({ style: next.style });
   },
+  setStrength: (strength) => {
+    const next = validateSky({ style: get().style, places: get().places, strength });
+    save(next);
+    set({ strength: next.strength });
+  },
   togglePlace: (id) => {
     const has = get().places.includes(id);
-    const next = validateSky({ style: get().style, places: has ? get().places.filter((p) => p !== id) : [...get().places, id] });
+    const next = validateSky({ style: get().style, strength: get().strength, places: has ? get().places.filter((p) => p !== id) : [...get().places, id] });
     save(next);
     set({ places: next.places });
   },

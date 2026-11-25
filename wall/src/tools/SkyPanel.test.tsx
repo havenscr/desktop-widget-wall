@@ -47,3 +47,25 @@ it('says so when the graphics context is not available', () => {
   rerender(<SkyPanel />);
   expect(screen.getByText(/not available on this PC/)).toBeTruthy();
 });
+
+it('the strength slider runs 10 to 100, starts at today\'s 35, saves under wall2-sky, and has helper text', () => {
+  render(<SkyPanel />);
+  const slider = screen.getByRole('slider', { name: 'Strength' }) as HTMLInputElement;
+  expect([slider.min, slider.max, slider.value]).toEqual(['10', '100', '35']);
+  expect(screen.getByText(/Faint to as strong as Zen/)).toBeTruthy();
+  expect(screen.queryByText('Text may be harder to read at this strength.')).toBeNull();
+  fireEvent.change(slider, { target: { value: '100' } });
+  expect(JSON.parse(localStorage.getItem(SKY_KEY)!).strength).toBe(1);
+  expect(screen.getByText('100%')).toBeTruthy();
+});
+
+it('the hint appears only past the readable level on a page with text, not on Zen alone', () => {
+  render(<SkyPanel />);
+  const slider = screen.getByRole('slider', { name: 'Strength' });
+  fireEvent.change(slider, { target: { value: '100' } });
+  expect(screen.queryByText('Text may be harder to read at this strength.')).toBeNull();
+  fireEvent.click(screen.getByRole('button', { name: 'Unwind' }));
+  expect(screen.getByText('Text may be harder to read at this strength.')).toBeTruthy();
+  fireEvent.change(slider, { target: { value: '35' } });
+  expect(screen.queryByText('Text may be harder to read at this strength.')).toBeNull();
+});

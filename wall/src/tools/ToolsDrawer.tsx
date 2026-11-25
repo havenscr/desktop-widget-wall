@@ -97,7 +97,7 @@ function VideoLook() {
   const setLooks = useWatchStore((s) => s.setLooks);
   const perKind = looks.mode === 'kind';
   return (
-    <div>
+    <div className="tools-video">
       <div className="tools-k sm">Video look</div>
       <div className="tools-chips">
         {LOOKS.map((l) => {
@@ -109,7 +109,7 @@ function VideoLook() {
           );
         })}
       </div>
-      <div className="tools-hint">{perKind ? 'Each source has its own look on Watch. Pick one here to use it for everything.' : 'How video sits in the sky on Watch'}</div>
+      <div className="tools-hint">{perKind ? 'Each source has its own look. Pick one for all.' : 'How video sits in the sky.'}</div>
     </div>
   );
 }
@@ -133,7 +133,7 @@ function SceneWeather() {
           Off
         </button>
       </div>
-      <div className="tools-hint">Rain and wind from your forecast.</div>
+      <div className="tools-hint">Forecast rain and wind.</div>
     </div>
   );
 }

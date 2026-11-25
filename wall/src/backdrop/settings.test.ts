@@ -8,17 +8,17 @@ describe('sky setting', () => {
   });
 
   it('defaults to Colour wash on Zen only', () => {
-    expect(DEFAULT_SKY).toEqual({ style: 'wash', places: ['zen'] });
+    expect(DEFAULT_SKY).toEqual({ style: 'wash', places: ['zen'], strength: 0.35 });
     expect(skySettings()).toMatchObject(DEFAULT_SKY);
   });
 
   it('an unknown style falls back to wash and unknown pages are dropped', () => {
-    expect(validateSky({ style: 'stars', places: ['work', 'moon', 'zen', 'work'] })).toEqual({ style: 'wash', places: ['zen', 'work'] });
-    expect(validateSky({ style: 'aurora', places: ['unwind'] })).toEqual({ style: 'aurora', places: ['unwind'] });
+    expect(validateSky({ style: 'stars', places: ['work', 'moon', 'zen', 'work'] })).toEqual({ style: 'wash', places: ['zen', 'work'], strength: 0.35 });
+    expect(validateSky({ style: 'aurora', places: ['unwind'] })).toEqual({ style: 'aurora', places: ['unwind'], strength: 0.35 });
   });
 
   it('an empty list is valid and means off', () => {
-    expect(validateSky({ style: 'wash', places: [] })).toEqual({ style: 'wash', places: [] });
+    expect(validateSky({ style: 'wash', places: [] })).toEqual({ style: 'wash', places: [], strength: 0.35 });
   });
 
   it('garbage gives the default, so a bad value never turns the sky on somewhere new', () => {
@@ -32,9 +32,24 @@ describe('sky setting', () => {
     useBackdropSettings.getState().setStyle('aurora');
     useBackdropSettings.getState().togglePlace('work');
     useBackdropSettings.getState().togglePlace('zen');
-    expect(JSON.parse(localStorage.getItem(SKY_KEY)!)).toEqual({ style: 'aurora', places: ['work'] });
+    expect(JSON.parse(localStorage.getItem(SKY_KEY)!)).toEqual({ style: 'aurora', places: ['work'], strength: 0.35 });
     resetSkyStore();
     expect(skySettings()).toMatchObject({ style: 'aurora', places: ['work'] });
+  });
+
+  it('the strength is kept under wall2-sky, clamped to 10 to 100 percent, and falls back to the default', () => {
+    useBackdropSettings.getState().setStrength(0.8);
+    expect(JSON.parse(localStorage.getItem(SKY_KEY)!).strength).toBe(0.8);
+    resetSkyStore();
+    expect(skySettings().strength).toBe(0.8);
+    useBackdropSettings.getState().setStrength(5);
+    expect(skySettings().strength).toBe(1);
+    useBackdropSettings.getState().setStrength(-1);
+    expect(skySettings().strength).toBe(0.1);
+    for (const bad of ['high', null, NaN, Infinity, {}]) expect(validateSky({ style: 'wash', places: ['zen'], strength: bad }).strength).toBe(DEFAULT_SKY.strength);
+    localStorage.setItem(SKY_KEY, JSON.stringify({ style: 'wash', places: ['work'] }));
+    resetSkyStore();
+    expect(skySettings().strength).toBe(DEFAULT_SKY.strength);
   });
 
   it('a page toggles on and off by itself', () => {

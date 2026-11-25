@@ -148,6 +148,13 @@ export function contrast(a: Rgb, b: Rgb): number {
   return (Math.max(la, lb) + 0.05) / (Math.min(la, lb) + 0.05);
 }
 
+/**
+ * The sky strength slider's range and its default. The default (35%) is today's look: the page ceilings above. Under it the sky
+ * fades down to faint; over it each page climbs from its own ceiling to Zen's full gain at 100%.
+ */
+export const DEFAULT_STRENGTH = 0.35;
+export const MIN_STRENGTH = 0.1;
+
 /** The contrast the wall's muted text needs. */
 export const MIN_CONTRAST = 4.5;
 
@@ -182,7 +189,15 @@ export function bareContrast(place: PlaceId, alt: number, eve = false): number {
  * hour's gain under the page's ceiling. Zero where the bare sky already misses it (a bright noon sky with
  * no veil leaves no room): there the sky layer stays dark rather than make the page harder to read.
  */
-export function legibleGain(place: PlaceId, alt: number, eve: boolean, style: SkyStyle, colours: SkyColours = skyColoursForAlt(alt, eve, style, createSkyColours())): number {
+export function legibleGain(place: PlaceId, alt: number, eve: boolean, style: SkyStyle, colours: SkyColours = skyColoursForAlt(alt, eve, style, createSkyColours()), strength: number = DEFAULT_STRENGTH): number {
+  const base = legibleBase(place, alt, eve, colours);
+  if (strength <= DEFAULT_STRENGTH) return base * (strength / DEFAULT_STRENGTH);
+  // Past the default the page leaves its readable ceiling and climbs toward the whole hour's gain, which is what Zen carries: at 100% every page has it.
+  return base + (colours.gain - base) * ((strength - DEFAULT_STRENGTH) / (1 - DEFAULT_STRENGTH));
+}
+
+/** The gain a page keeps at the default strength: the page's ceiling, cut back where the muted text would miss 4.5 to 1. */
+function legibleBase(place: PlaceId, alt: number, eve: boolean, colours: SkyColours): number {
   const want = totalGain(place, colours.gain);
   // Zen's words sit over the lake, not on the sky (the sky has no text under it), so it keeps its full gain.
   if (place === 'zen') return want;
@@ -196,6 +211,25 @@ export function legibleGain(place: PlaceId, alt: number, eve: boolean, style: Sk
     else hi = mid;
   }
   return lo;
+}
+
+/**
+ * True when, at this strength, the muted text drops under 4.5 to 1 on one of these pages at some hour of the day
+ * (sampled from deep night to high noon, morning and evening). Zen is left out: its words sit over the lake. At or under the
+ * default strength the gain is already held to the check, so it is never true there.
+ */
+export function strengthHurtsText(strength: number, places: readonly PlaceId[], style: SkyStyle): boolean {
+  if (strength <= DEFAULT_STRENGTH) return false;
+  for (const place of places) {
+    if (place === 'zen') continue;
+    for (const eve of [false, true]) {
+      for (const alt of [-20, -6, 0, 10, 25, 40, 60]) {
+        const colours = skyColoursForAlt(alt, eve, style, createSkyColours());
+        if (contrastWith(place, alt, eve, legibleGain(place, alt, eve, style, colours, strength), colours) < MIN_CONTRAST) return true;
+      }
+    }
+  }
+  return false;
 }
 
 /** The legibility check as a number: the muted text's contrast on `place` at this hour, with the gain the page actually carries. */
