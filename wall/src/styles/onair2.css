@@ -449,8 +449,16 @@
 .oa2 .oa-card.oa2-idlenotes { left: 676px; top: 288px; width: 1080px; height: 202px; }
 .oa2-checklist { left: 1796px; top: 4px; width: 620px; height: 190px; }
 .oa2-checklist .oa2-row { min-height: 40px; }
-.oa2-lights-idle { left: 1796px; top: 328px; width: 620px; height: 154px; }
-.oa2-lights-idle > .st-block { height: 148px; }
+.oa2-lights-idle { left: 1796px; top: 288px; width: 620px; height: 202px; }
+.oa2-lights-idle > .st-block { height: 202px; padding: 19px 0 15px; }
+.oa2-lights-idle .st-presets { margin-top: 14px; }
+.oa2-lights-idle .st-sum { margin-top: 13px; }
+.oa2-lights-idle .st-switches { margin-top: 13px; }
+/* Tighter gaps give every name its 10 px clear of the switch inside the 620 px row. */
+.oa2 .st-switches { gap: 3px; }
+.oa2-lights-idle .st-switches .st-tg { font-size: 16px; }
+/* Tile names stay 10 px clear of the switch. */
+.oa2-lights-idle .st-switches .st-name { padding-right: 10px; }
 /* The idle notes card is 202 px tall: a tighter frame so the first part's notes at 26 px have room. */
 .oa2 .oa-card.oa2-idlenotes { padding: 18px 24px 14px; }
 .oa2-idlenotes .oa-notes { gap: 8px; }

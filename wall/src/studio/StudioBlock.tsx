@@ -91,7 +91,7 @@ export function StudioBlock() {
                 : 'Turns both key lights on, at the brightness and warmth they last had.'
           }
         />
-        {on && <TileLevel level={keyLevel(snap)} colour={knob} />}
+        <TileLevel on={on} level={keyLevel(snap)} colour={knob} />
         {warnTile && <IconAlertTriangle size={20} aria-hidden="true" className="st-tg-warn" />}
       </div>
     );

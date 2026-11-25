@@ -120,7 +120,7 @@ export function KeyTile({ snap }: { snap: Snapshot }) {
           onClick={() => target && void useKeyLights.getState().set(target, { on: !on })}
           tipText={on ? 'Turns the key lights off. The sliders in Fine tune keep their values.' : 'Turns the key lights on, at the brightness and warmth they last had.'}
         />
-        {on && <TileLevel level={keyLevel(snap)} colour={knob} />}
+        <TileLevel on={on} level={keyLevel(snap)} colour={knob} />
       </div>
     );
   }
