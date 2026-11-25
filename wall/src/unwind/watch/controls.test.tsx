@@ -578,6 +578,23 @@ describe('the position bar', () => {
   });
 });
 
+describe('the look settings switch rows', () => {
+  const rule = (sel: string) => {
+    const css = (readFileSync('src/styles/unwind.css', 'utf8') as string).replace(/\r\n/g, '\n').replace(/\/\*[\s\S]*?\*\//g, '');
+    return [...css.matchAll(/([^{}]+)\{([^{}]*)\}/g)].filter((m) => m[1]!.split(',').map((x) => x.trim()).includes(sel)).map((m) => m[2]).join('');
+  };
+  it('keeps the name at its natural width, the switch flush right of the slider column, and the value in the 206 px column', () => {
+    expect(rule('.wk-set .ln-label.wk-sw')).toMatch(/width: auto/);
+    expect(rule('.wk-set .ln-label.wk-sw')).not.toMatch(/width: \d+px/);
+    expect(rule('.wk-set .ln-label.wk-sw + .ln-switch')).toMatch(/margin-left: auto/);
+    expect(rule('.wk-set .ln-switch + .ln-value')).toMatch(/margin-left: 0/);
+    expect(rule('.wk-set .ln-value')).toMatch(/width: 206px/);
+    expect(rule('.wk-set .ln-value.ln-fill')).toBe('');
+    const tsx = (readFileSync('src/unwind/watch/LookTunePanel.tsx', 'utf8') as string).replace(/\r\n/g, '\n');
+    expect(tsx).not.toMatch(/ln-value ln-fill/);
+  });
+});
+
 describe('the buddy seam and the opener', () => {
   it('driveInAudience gives the screen in wall pixels only while something is on in the drive-in look', () => {
     seed({ mode: 'one', all: 'drivein' });

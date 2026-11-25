@@ -2080,13 +2080,18 @@
   width: 112px;
 }
 .wk-set .ln-label.wk-sw {
-  width: 190px;
+  width: auto;
 }
 .wk-set .ln-value {
   width: 206px;
 }
-.wk-set .ln-value.ln-fill {
-  width: auto;
+/* A switch row: the name at its natural width on the left, the switch flush right at the end of the
+   slider column (the tracks' right end), and the value in the same 206 px right column as a slider's. */
+.wk-set .ln-label.wk-sw + .ln-switch {
+  margin-left: auto;
+}
+.wk-set .ln-switch + .ln-value {
+  margin-left: 0;
 }
 .wk-set {
   display: flex;
