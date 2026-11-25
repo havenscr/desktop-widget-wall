@@ -7,12 +7,14 @@ pub fn b64url(bytes: &[u8]) -> String {
     base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(bytes)
 }
 
+#[cfg(windows)]
 pub fn random_b64(bytes: usize) -> Option<String> {
     use windows::Win32::Security::Cryptography::{BCryptGenRandom, BCRYPT_ALG_HANDLE, BCRYPT_USE_SYSTEM_PREFERRED_RNG};
     let mut buf = vec![0u8; bytes];
     if unsafe { BCryptGenRandom(BCRYPT_ALG_HANDLE::default(), &mut buf, BCRYPT_USE_SYSTEM_PREFERRED_RNG) }.is_ok() { Some(b64url(&buf)) } else { None }
 }
 
+#[cfg(windows)]
 pub fn challenge_for(verifier: &str) -> Option<String> {
     use windows::Win32::Security::Cryptography::{BCryptHash, BCRYPT_SHA256_ALG_HANDLE};
     let mut out = [0u8; 32];
@@ -82,4 +84,20 @@ pub fn wait_for_callback_cancelled(server: &tiny_http::Server, path: &str, state
 
 pub fn credential_target(service: &str, id: &str, n: usize) -> String {
     format!("WidgetWall2/{service}/{id}/{n}")
+}
+
+/// Not Windows: the same values from the OS random source and the sha2 crate, so the PKCE helpers
+/// work in the Linux unit tests.
+#[cfg(not(windows))]
+pub fn random_b64(bytes: usize) -> Option<String> {
+    use std::io::Read;
+    let mut buf = vec![0u8; bytes];
+    std::fs::File::open("/dev/urandom").ok()?.read_exact(&mut buf).ok()?;
+    Some(b64url(&buf))
+}
+
+#[cfg(not(windows))]
+pub fn challenge_for(verifier: &str) -> Option<String> {
+    use sha2::{Digest, Sha256};
+    Some(b64url(&Sha256::digest(verifier.as_bytes())))
 }

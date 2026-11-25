@@ -15,13 +15,62 @@ tauri = { version = "2", features = ["tray-icon"] }
 tauri-plugin-shell = "2"
 tauri-plugin-fs = "2"
 tauri-plugin-opener = "2"
-webview2-com = "0.38.2"
-windows-core = "0.61.2"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = { version = "1.0", features = ["preserve_order"] }
 cpal = "0.15"
 
-# Windows APIs
+base64 = "0.22"
+# Recent files preview (wall2_recent.rs): the shell thumbnail encoded as PNG. Already in the lockfile through tauri.
+png = "0.17"
+
+# Meeting brief key: sha256 of the brief token and HMAC-SHA256 of the iCalUId (wall2_meet/brief.rs).
+sha2 = "0.10"
+hmac = "0.12"
+
+# Visualizer frequency bands: one 1024-point real FFT per audio-levels event.
+realfft = "3.5"
+
+# Claude Stats - SQLite database reading
+rusqlite = { version = "0.31", features = ["bundled"] }
+
+# OAuth callback server
+tiny_http = "0.12"
+
+# Stage pop-out channel (wall2_stagepop): sync WebSocket server on 127.0.0.1 only, no TLS, no async runtime.
+tungstenite = { version = "=0.26.2", default-features = false, features = ["handshake"] }
+
+# HTTP client for Google Maps API and Microsoft OAuth token endpoint
+ureq = "2.9"
+# Pinned TLS for the Hue bridge (wall2_lightsync): same rustls and ring as ureq in the lockfile.
+rustls = { version = "0.23.46", default-features = false, features = ["ring", "std", "tls12"] }
+urlencoding = "2.1"
+# Hue Entertainment stream (wall2_lightsync/stream.rs): pure Rust DTLS 1.2 with PSK, no OpenSSL.
+webrtc-dtls = { version = "=0.12.0", default-features = false }
+webrtc-util = { version = "=0.11.0", default-features = false, features = ["conn"] }
+tokio = { version = "=1.52.3", default-features = false, features = ["net", "time", "rt"] }
+
+# Recent Files - directory operations
+dirs = "5.0"
+
+# System stats (CPU / RAM / disk). Pure user-mode: NtQuerySystemInformation,
+# GlobalMemoryStatusEx, GetDiskFreeSpaceEx. Replaces the LibreHardwareMonitor
+# HTTP dependency, whose ring-0 sensor driver polls SMBus/EC hardware we never
+# read - the widget only ever wanted four percentages.
+sysinfo = "0.32"
+
+# GPU utilisation via NVIDIA's user-mode NVML library (ships with the driver).
+# Falls back to the PDH "GPU Engine" performance counter for non-NVIDIA parts.
+nvml-wrapper = "0.10"
+
+[features]
+default = ["custom-protocol"]
+custom-protocol = ["tauri/custom-protocol"]
+
+# Windows only: the Win32, WinRT and WebView2 bindings do not build on other platforms,
+# which keeps the Rust unit tests runnable on Linux.
+[target.'cfg(windows)'.dependencies]
+webview2-com = "0.38.2"
+windows-core = "0.61.2"
 windows = { version = "0.58", features = [
     "Foundation",
     "Foundation_Collections",
@@ -76,49 +125,3 @@ windows = { version = "0.58", features = [
     # Wall 2 keys: the lock action (wall2_keys.rs)
     "Win32_System_Shutdown"
 ] }
-base64 = "0.22"
-# Recent files preview (wall2_recent.rs): the shell thumbnail encoded as PNG. Already in the lockfile through tauri.
-png = "0.17"
-
-# Meeting brief key: sha256 of the brief token and HMAC-SHA256 of the iCalUId (wall2_meet/brief.rs).
-sha2 = "0.10"
-hmac = "0.12"
-
-# Visualizer frequency bands: one 1024-point real FFT per audio-levels event.
-realfft = "3.5"
-
-# Claude Stats - SQLite database reading
-rusqlite = { version = "0.31", features = ["bundled"] }
-
-# OAuth callback server
-tiny_http = "0.12"
-
-# Stage pop-out channel (wall2_stagepop): sync WebSocket server on 127.0.0.1 only, no TLS, no async runtime.
-tungstenite = { version = "=0.26.2", default-features = false, features = ["handshake"] }
-
-# HTTP client for Google Maps API and Microsoft OAuth token endpoint
-ureq = "2.9"
-# Pinned TLS for the Hue bridge (wall2_lightsync): same rustls and ring as ureq in the lockfile.
-rustls = { version = "0.23.46", default-features = false, features = ["ring", "std", "tls12"] }
-urlencoding = "2.1"
-# Hue Entertainment stream (wall2_lightsync/stream.rs): pure Rust DTLS 1.2 with PSK, no OpenSSL.
-webrtc-dtls = { version = "=0.12.0", default-features = false }
-webrtc-util = { version = "=0.11.0", default-features = false, features = ["conn"] }
-tokio = { version = "=1.52.3", default-features = false, features = ["net", "time", "rt"] }
-
-# Recent Files - directory operations
-dirs = "5.0"
-
-# System stats (CPU / RAM / disk). Pure user-mode: NtQuerySystemInformation,
-# GlobalMemoryStatusEx, GetDiskFreeSpaceEx. Replaces the LibreHardwareMonitor
-# HTTP dependency, whose ring-0 sensor driver polls SMBus/EC hardware we never
-# read - the widget only ever wanted four percentages.
-sysinfo = "0.32"
-
-# GPU utilisation via NVIDIA's user-mode NVML library (ships with the driver).
-# Falls back to the PDH "GPU Engine" performance counter for non-NVIDIA parts.
-nvml-wrapper = "0.10"
-
-[features]
-default = ["custom-protocol"]
-custom-protocol = ["tauri/custom-protocol"]

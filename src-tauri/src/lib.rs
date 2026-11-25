@@ -6,6 +6,9 @@
   ========================================================================
 */
 
+// Off Windows only the unit tests build, so the Windows-only code paths look unused there.
+#![cfg_attr(not(windows), allow(dead_code, unused_imports, unused_variables))]
+
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use serde::{Deserialize, Serialize};
 use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
@@ -19,28 +22,37 @@ use tauri::{
 
 // Windows Media Session API imports
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
+#[cfg(windows)]
 use windows::Foundation::TimeSpan;
+#[cfg(windows)]
 use windows::Media::Control::{
     GlobalSystemMediaTransportControlsSession, GlobalSystemMediaTransportControlsSessionManager,
     GlobalSystemMediaTransportControlsSessionPlaybackStatus,
 };
+#[cfg(windows)]
 use windows::Media::MediaPlaybackAutoRepeatMode;
 
 // Windows Core Audio API imports
+#[cfg(windows)]
 use windows::Win32::Media::Audio::{
     eCapture, eMultimedia, eRender, Endpoints::IAudioEndpointVolume, IAudioSessionControl,
     IAudioSessionControl2, IAudioSessionEnumerator, IAudioSessionManager2, IMMDevice,
     IMMDeviceCollection, IMMDeviceEnumerator, ISimpleAudioVolume, MMDeviceEnumerator,
     DEVICE_STATE_ACTIVE,
 };
+#[cfg(windows)]
 use windows::Win32::Storage::FileSystem::WIN32_FIND_DATAW;
+#[cfg(windows)]
 use windows::Win32::System::Com::{
     CoCreateInstance, CoInitializeEx, IPersistFile, CLSCTX_ALL, COINIT_MULTITHREADED, STGM_READ,
 };
 
 // Windows Shell Link imports for Recent Files
+#[cfg(windows)]
 use windows::core::{Interface, PCWSTR};
+#[cfg(windows)]
 use windows::Win32::Foundation::BOOL;
+#[cfg(windows)]
 use windows::Win32::UI::Shell::{IShellLinkW, ShellLink};
 
 // File system
@@ -149,6 +161,7 @@ struct DisplayState {
 }
 
 // Audio device info for frontend
+#[cfg(windows)]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AudioDeviceInfo {
     pub id: String,
@@ -509,6 +522,7 @@ async fn validate_address(
 }
 
 // List all available audio devices (async to avoid blocking main thread)
+#[cfg(windows)]
 #[tauri::command]
 async fn list_audio_devices() -> Vec<AudioDeviceInfo> {
     // Run device enumeration in a blocking thread pool
@@ -939,6 +953,7 @@ async fn get_default_loopback_device() -> Option<String> {
 // ================================================================
 
 /// Convert Windows playback status to our enum
+#[cfg(windows)]
 fn convert_playback_status(
     status: GlobalSystemMediaTransportControlsSessionPlaybackStatus,
 ) -> PlaybackStatus {
@@ -1010,6 +1025,7 @@ fn fallback_app_name(app_id: &str) -> String {
 }
 
 /// The lower case status word `wall2_media` works with.
+#[cfg(windows)]
 fn status_word(status: GlobalSystemMediaTransportControlsSessionPlaybackStatus) -> &'static str {
     match status {
         GlobalSystemMediaTransportControlsSessionPlaybackStatus::Playing => "playing",
@@ -1023,11 +1039,13 @@ fn status_word(status: GlobalSystemMediaTransportControlsSessionPlaybackStatus) 
 }
 
 /// A session's app id, cut to the 200 characters the page receives.
+#[cfg(windows)]
 fn session_app_id(session: &GlobalSystemMediaTransportControlsSession) -> String {
     session.SourceAppUserModelId().map(|h| h.to_string()).unwrap_or_default().chars().take(200).collect()
 }
 
 /// A session's facts for telling it from another session of the same app (see `wall2_media::match_current`).
+#[cfg(windows)]
 fn session_fingerprint(session: &GlobalSystemMediaTransportControlsSession) -> wall2_media::Fingerprint {
     let status = session
         .GetPlaybackInfo()
@@ -1057,6 +1075,7 @@ fn session_fingerprint(session: &GlobalSystemMediaTransportControlsSession) -> w
 /// the object `GetCurrentSession` returns is looked up in the list directly. When the manager hands out
 /// a different wrapper for the same session, the app id is used, and with several sessions of one app
 /// their title, timeline and status decide (`wall2_media::match_current`).
+#[cfg(windows)]
 fn current_index(
     list: &[GlobalSystemMediaTransportControlsSession],
     current: &GlobalSystemMediaTransportControlsSession,
@@ -1079,6 +1098,7 @@ fn current_index(
 /// Wall 2: reads every media session and lets `wall2_media::choose` pick the one to show. Returns
 /// the session, its key, and whether it plays but has ended (to be reported as paused). None when
 /// there is no session to show.
+#[cfg(windows)]
 fn choose_session(
     manager: &GlobalSystemMediaTransportControlsSessionManager,
 ) -> Option<(GlobalSystemMediaTransportControlsSession, String, bool)> {
@@ -1127,6 +1147,7 @@ fn choose_session(
 /// The session a media command acts on. From Wall 2 the session with this key, else the first with
 /// this app id, when one is given and still exists (`wall2_media::resolve`); from any other window,
 /// Windows' current session. An explicit Wall 2 target that is gone is refused.
+#[cfg(windows)]
 fn session_for(
     manager: &GlobalSystemMediaTransportControlsSessionManager,
     window_label: &str,
@@ -1148,6 +1169,7 @@ fn session_for(
 }
 
 /// Read album art thumbnail and return as base64
+#[cfg(windows)]
 fn read_thumbnail_sync(
     thumbnail_ref: &windows::Storage::Streams::IRandomAccessStreamReference,
 ) -> Option<(String, String)> {
@@ -1179,6 +1201,7 @@ static LAST_ART_TRACK_KEY: Mutex<Option<String>> = Mutex::new(None);
 /// `art_for` is the `art_key` of the art the caller already holds (Wall 2 sends it). With
 /// it, the art is skipped only while it matches the current track, whatever other callers
 /// did. Without it (the first wall), the shared last-sent key decides, as before.
+#[cfg(windows)]
 #[tauri::command]
 async fn get_now_playing(window: tauri::WebviewWindow, art_for: Option<String>) -> Result<NowPlayingInfo, String> {
     static READ: wall2_media::BoundedRead<(bool, NowPlayingInfo)> = wall2_media::BoundedRead::new();
@@ -1209,6 +1232,7 @@ async fn get_now_playing(window: tauri::WebviewWindow, art_for: Option<String>) 
 }
 
 /// One full snapshot, shared before each caller decides whether it already holds the art.
+#[cfg(windows)]
 fn read_now_playing_sync(wall2: bool) -> NowPlayingInfo {
         static ART_CACHE: Mutex<Option<(String, String, String)>> = Mutex::new(None);
         // Try to get session manager
@@ -1345,6 +1369,7 @@ fn read_now_playing_sync(wall2: bool) -> NowPlayingInfo {
 }
 
 /// Toggle play/pause (async to avoid blocking main thread)
+#[cfg(windows)]
 #[tauri::command]
 async fn media_play_pause(window: tauri::WebviewWindow, session_key: Option<String>, source_id: Option<String>) -> Result<(), String> {
     let label = window.label().to_string();
@@ -1368,6 +1393,7 @@ async fn media_play_pause(window: tauri::WebviewWindow, session_key: Option<Stri
 }
 
 /// Skip to next track (async to avoid blocking main thread)
+#[cfg(windows)]
 #[tauri::command]
 async fn media_next(window: tauri::WebviewWindow, session_key: Option<String>, source_id: Option<String>) -> Result<(), String> {
     let label = window.label().to_string();
@@ -1391,6 +1417,7 @@ async fn media_next(window: tauri::WebviewWindow, session_key: Option<String>, s
 }
 
 /// Skip to previous track (async to avoid blocking main thread)
+#[cfg(windows)]
 #[tauri::command]
 async fn media_previous(window: tauri::WebviewWindow, session_key: Option<String>, source_id: Option<String>) -> Result<(), String> {
     let label = window.label().to_string();
@@ -1422,6 +1449,7 @@ fn seek_ticks(position_seconds: f64) -> i64 {
 }
 
 /// Seek to a specific position in seconds (async to avoid blocking main thread)
+#[cfg(windows)]
 #[tauri::command]
 async fn media_seek(window: tauri::WebviewWindow, position_seconds: f64, session_key: Option<String>, source_id: Option<String>) -> Result<bool, String> {
     let label = window.label().to_string();
@@ -1448,6 +1476,7 @@ async fn media_seek(window: tauri::WebviewWindow, position_seconds: f64, session
 }
 
 /// Toggle shuffle mode (async to avoid blocking main thread)
+#[cfg(windows)]
 #[tauri::command]
 async fn media_toggle_shuffle(window: tauri::WebviewWindow, session_key: Option<String>, source_id: Option<String>) -> Result<bool, String> {
     let label = window.label().to_string();
@@ -1483,6 +1512,7 @@ async fn media_toggle_shuffle(window: tauri::WebviewWindow, session_key: Option<
 
 /// Set repeat mode (async to avoid blocking main thread)
 /// mode: "none", "track", or "list"
+#[cfg(windows)]
 #[tauri::command]
 async fn media_set_repeat_mode(window: tauri::WebviewWindow, mode: String, session_key: Option<String>, source_id: Option<String>) -> Result<(), String> {
     let label = window.label().to_string();
@@ -1513,6 +1543,7 @@ async fn media_set_repeat_mode(window: tauri::WebviewWindow, mode: String, sessi
 }
 
 /// Cycle through repeat modes: none -> list -> track -> none
+#[cfg(windows)]
 #[tauri::command]
 async fn media_cycle_repeat(window: tauri::WebviewWindow, session_key: Option<String>, source_id: Option<String>) -> Result<String, String> {
     let label = window.label().to_string();
@@ -1575,6 +1606,7 @@ static SHORTCUT_CACHE: Mutex<
     Option<std::collections::HashMap<(PathBuf, std::time::SystemTime), PathBuf>>,
 > = Mutex::new(None);
 
+#[cfg(windows)]
 fn resolve_shortcut_cached(
     lnk_path: &std::path::Path,
     modified: std::time::SystemTime,
@@ -1611,6 +1643,7 @@ fn resolve_shortcut_cached(
     resolved
 }
 
+#[cfg(windows)]
 fn resolve_shortcut(lnk_path: &std::path::Path) -> Option<PathBuf> {
     unsafe {
         // COM init is per-thread and idempotent (returns S_FALSE when the
@@ -1657,6 +1690,7 @@ fn resolve_shortcut(lnk_path: &std::path::Path) -> Option<PathBuf> {
 }
 
 /// Get recent files from Windows Recent folder
+#[cfg(windows)]
 #[tauri::command]
 async fn get_recent_files(limit: Option<usize>) -> Vec<RecentFileInfo> {
     let limit = limit.unwrap_or(15);
@@ -1668,6 +1702,7 @@ async fn get_recent_files(limit: Option<usize>) -> Vec<RecentFileInfo> {
 
 /// The Recent folder's shortcuts resolved to existing files, newest first, at most `limit`.
 /// Shared by the old app's `get_recent_files` and the Wall 2 Shelf's `wall2_recent_files`.
+#[cfg(windows)]
 pub(crate) fn read_recent_files(limit: usize) -> Vec<RecentFileInfo> {
     {
         let mut files = Vec::new();
@@ -1760,6 +1795,12 @@ pub(crate) fn read_recent_files(limit: usize) -> Vec<RecentFileInfo> {
     }
 }
 
+/// Not Windows: no Recent Files folder to read.
+#[cfg(not(windows))]
+pub(crate) fn read_recent_files(_limit: usize) -> Vec<RecentFileInfo> {
+    Vec::new()
+}
+
 /// Simple date formatting without external crate
 fn chrono_lite_format(unix_secs: i64) -> String {
     // Convert unix timestamp to ISO 8601 format
@@ -1817,6 +1858,7 @@ async fn open_file(window: tauri::WebviewWindow, path: String) -> Result<(), Str
 }
 
 /// Copy a file to the Windows clipboard (like right-click -> Copy in Explorer)
+#[cfg(windows)]
 #[tauri::command]
 async fn copy_file_to_clipboard(window: tauri::WebviewWindow, path: String) -> Result<(), String> {
     old_window_only(window.label())?;
@@ -1827,6 +1869,7 @@ async fn copy_file_to_clipboard(window: tauri::WebviewWindow, path: String) -> R
 
 /// Put one file on the clipboard as a file (CF_HDROP). Shared by the old app's command above
 /// and the Wall 2 captures copy, which passes only a path it took from ShareX's history.
+#[cfg(windows)]
 pub(crate) fn copy_path_hdrop(path: &str) -> Result<(), String> {
     use std::ptr;
     use windows::Win32::System::DataExchange::{
@@ -1900,6 +1943,7 @@ pub(crate) fn copy_path_hdrop(path: &str) -> Result<(), String> {
 }
 
 /// Open File Explorer showing the folder containing a file, centered on main monitor
+#[cfg(windows)]
 #[tauri::command]
 async fn open_folder_in_explorer(window: tauri::WebviewWindow, path: String) -> Result<(), String> {
     old_window_only(window.label())?;
@@ -2040,6 +2084,7 @@ async fn open_folder_in_explorer(window: tauri::WebviewWindow, path: String) -> 
 }
 
 /// Open volume mixer on specified monitor with configurable size
+#[cfg(windows)]
 #[tauri::command]
 async fn open_volume_mixer(
     monitor: Option<u32>,
@@ -2211,6 +2256,7 @@ async fn open_volume_mixer(
 }
 
 /// Bring Outlook desktop app to front (no repositioning, no URL opening)
+#[cfg(windows)]
 #[tauri::command]
 async fn open_in_outlook(_url: String) -> Result<(), String> {
     use windows::Win32::Foundation::{BOOL, HWND, LPARAM};
@@ -2520,6 +2566,7 @@ try {
 }
 
 /// Turn off all monitors (computer stays running)
+#[cfg(windows)]
 #[tauri::command]
 async fn turn_off_monitors() -> Result<(), String> {
     use windows::Win32::Foundation::WPARAM;
@@ -2556,6 +2603,7 @@ async fn turn_off_monitors() -> Result<(), String> {
 }
 
 /// Open a URL (Teams/Zoom meeting) and position the window on primary monitor
+#[cfg(windows)]
 #[tauri::command]
 async fn open_meeting_on_primary(url: String) -> Result<(), String> {
     use windows::Win32::Graphics::Gdi::{
@@ -2628,6 +2676,7 @@ async fn open_meeting_on_primary(url: String) -> Result<(), String> {
 // ================================================================
 
 /// Audio session info for frontend
+#[cfg(windows)]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AudioSessionInfo {
     pub id: String,
@@ -2644,6 +2693,7 @@ pub struct MasterVolumeInfo {
 }
 
 /// Full audio levels response
+#[cfg(windows)]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AudioLevelsResponse {
     pub master: MasterVolumeInfo,
@@ -2651,6 +2701,7 @@ pub struct AudioLevelsResponse {
 }
 
 /// Get all audio sessions and their volume levels
+#[cfg(windows)]
 #[tauri::command]
 async fn get_audio_sessions() -> Result<AudioLevelsResponse, String> {
     tauri::async_runtime::spawn_blocking(|| {
@@ -2747,6 +2798,7 @@ static PROCESS_NAME_CACHE: Mutex<Option<(std::time::Instant, std::collections::H
 const PROCESS_NAME_CACHE_TTL: std::time::Duration = std::time::Duration::from_secs(300);
 
 /// Get process name from PID (memoized, see PROCESS_NAME_CACHE)
+#[cfg(windows)]
 fn get_process_name(pid: u32) -> Option<String> {
     use windows::Win32::Foundation::CloseHandle;
     use windows::Win32::System::ProcessStatus::K32GetModuleBaseNameW;
@@ -2804,6 +2856,7 @@ fn get_process_name(pid: u32) -> Option<String> {
 }
 
 /// Set volume for a specific audio session
+#[cfg(windows)]
 #[tauri::command]
 async fn set_audio_session_volume(session_name: String, level: u32) -> Result<(), String> {
     tauri::async_runtime::spawn_blocking(move || {
@@ -2872,6 +2925,7 @@ async fn set_audio_session_volume(session_name: String, level: u32) -> Result<()
 }
 
 /// Toggle mute for a specific audio session
+#[cfg(windows)]
 #[tauri::command]
 async fn toggle_audio_session_mute(session_name: String) -> Result<bool, String> {
     tauri::async_runtime::spawn_blocking(move || {
@@ -2944,6 +2998,7 @@ async fn toggle_audio_session_mute(session_name: String) -> Result<bool, String>
 
 /// Toggle mute for ALL microphones/capture devices
 /// Returns true if microphones are now muted, false if unmuted
+#[cfg(windows)]
 #[tauri::command]
 async fn toggle_all_microphones_mute() -> Result<bool, String> {
     tauri::async_runtime::spawn_blocking(|| {
@@ -3240,6 +3295,7 @@ pub(crate) fn nvml_handle() -> Option<&'static nvml_wrapper::Nvml> {
 }
 
 /// GPU utilisation 0-100, or None if neither source is available.
+#[cfg(windows)]
 fn read_gpu_percent() -> Option<f32> {
     if let Some(nvml) = nvml_handle() {
         if let Ok(device) = nvml.device_by_index(0) {
@@ -3263,6 +3319,7 @@ unsafe impl Send for PdhQuery {}
 
 static PDH_GPU: std::sync::OnceLock<Option<Mutex<PdhQuery>>> = std::sync::OnceLock::new();
 
+#[cfg(windows)]
 fn pdh_gpu_percent() -> Option<f32> {
     use windows::core::w;
     use windows::Win32::System::Performance::{
@@ -3341,6 +3398,7 @@ fn pdh_gpu_percent() -> Option<f32> {
 }
 
 /// Blocking read behind `get_system_stats`; the Wall 2 machines feed calls it too.
+#[cfg(windows)]
 pub(crate) fn read_system_stats() -> Result<SystemStatsSummary, String> {
     use sysinfo::Disks;
 
@@ -3410,6 +3468,13 @@ pub(crate) fn read_system_stats() -> Result<SystemStatsSummary, String> {
     Ok(out)
 }
 
+/// Not Windows: no system stats source.
+#[cfg(not(windows))]
+pub(crate) fn read_system_stats() -> Result<SystemStatsSummary, String> {
+    Err("System stats are only available on Windows".to_string())
+}
+
+#[cfg(windows)]
 #[tauri::command]
 async fn get_system_stats() -> Result<SystemStatsSummary, String> {
     tauri::async_runtime::spawn_blocking(read_system_stats)
@@ -4013,6 +4078,7 @@ fn on_display_state_change() {
     });
 }
 
+#[cfg(windows)]
 pub fn run() {
     // Create shared audio buffer
     let audio_buffer = Arc::new(SharedAudioBuffer::default());
@@ -4490,6 +4556,12 @@ pub fn run() {
         })
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+
+/// Not Windows: the app is Windows only; this build exists so the unit tests run on Linux.
+#[cfg(not(windows))]
+pub fn run() {
+    eprintln!("Widget Wall runs on Windows only.");
 }
 
 #[cfg(test)]
