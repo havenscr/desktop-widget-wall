@@ -23,6 +23,7 @@ import { useToolsStore } from '../tools/store';
 import { useMusicView } from '../unwind/ytmusic/queue';
 import { LinesGear } from '../unwind/watch/LinesPanel';
 import { WatchCard } from '../unwind/watch/WatchCard';
+import { UnwindKeys } from '../unwind/work/UnwindKeys';
 import { UNWIND_ROOM_HEIGHT, UNWIND_ROOM_TOP } from './frameLayout';
 import { OfficeMoods } from '../studio/OfficeMoods';
 import { reviewDate, reviewNow } from '../ui/reviewClock';
@@ -145,7 +146,12 @@ export function Unwind() {
           Unwind never controls any other room than the office. Hide screen is the app's one corner control, not Unwind's. */}
       <OfficeMoods />
       <div className="u-right" style={{ ['--room-top' as string]: `${UNWIND_ROOM_TOP}px`, ['--room-height' as string]: `${UNWIND_ROOM_HEIGHT}px` }}>
-        {watch ? <WatchCard /> : null}
+        {watch ? (
+          <>
+            <WatchCard />
+            <UnwindKeys />
+          </>
+        ) : null}
       </div>
       {sheet ? <WatchSheet initial={watch ? 'looks' : 'lines'} /> : null}
     </section>
