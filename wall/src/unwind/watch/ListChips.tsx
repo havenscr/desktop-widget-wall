@@ -30,11 +30,26 @@ export function ListChips({ counts, chip, sort, onChip, onSort }: Props) {
     // A chip chosen earlier and out of sight comes into view.
     row.current?.querySelector<HTMLElement>('[aria-pressed="true"]')?.scrollIntoView?.({ inline: 'nearest', block: 'nearest' });
   }, [chip]);
+  useEffect(() => {
+    // A mouse wheel only turns up and down; with chips past the edge it scrolls them sideways instead.
+    const el = row.current;
+    if (!el) return;
+    const wheel = (event: WheelEvent) => {
+      if (el.scrollWidth <= el.clientWidth || Math.abs(event.deltaY) <= Math.abs(event.deltaX)) return;
+      const max = el.scrollWidth - el.clientWidth;
+      const next = Math.min(max, Math.max(0, el.scrollLeft + event.deltaY));
+      if (next === el.scrollLeft) return;
+      event.preventDefault();
+      el.scrollLeft = next;
+    };
+    el.addEventListener('wheel', wheel, { passive: false });
+    return () => el.removeEventListener('wheel', wheel);
+  }, []);
   return (
     <div className="w-chiprow">
       <div ref={row} className="w-chips" role="group" aria-label="Show part of the list">
         {chipList(counts).map((c) => (
-          <button key={c.id} type="button" className={`w-chip${c.id === chip ? ' on' : ''}`} aria-pressed={c.id === chip} onClick={() => onChip(c.id)}>
+          <button key={c.id} type="button" className={`w-chip${c.id === chip ? ' on' : ''}`} aria-pressed={c.id === chip} aria-label={`${c.label}, ${c.count}`} onClick={() => onChip(c.id)}>
             <span className="w-chip-name">{c.label}</span>
             <span className="w-chip-n">{c.count}</span>
           </button>

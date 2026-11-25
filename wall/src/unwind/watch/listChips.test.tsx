@@ -129,6 +129,28 @@ describe('the chip row', () => {
   });
 });
 
+describe('a chip that is gone', () => {
+  it('is forgotten, so a tag made again later does not filter the list', async () => {
+    localStorage.setItem(LISTVIEW_KEY, JSON.stringify({ chip: 'tag:gone', sort: 'recent' }));
+    seed();
+    render(<WatchCard />);
+    await flush();
+    expect(JSON.parse(localStorage.getItem(LISTVIEW_KEY)!).chip).toBe('all');
+    cleanup();
+    seed([...ITEMS, { kind: 'video', id: 'Qq1wWe2rTy3', label: 'Fresh', tags: ['gone'] }]);
+    render(<WatchCard />);
+    await flush();
+    expect(labels()).toHaveLength(5);
+    expect(chip('All').getAttribute('aria-pressed')).toBe('true');
+  });
+  it('a chip label reads its name and count', async () => {
+    seed();
+    render(<WatchCard />);
+    await flush();
+    expect(chip('Live').getAttribute('aria-label')).toBe('Live, 1');
+  });
+});
+
 describe('the sort chip', () => {
   it('opens a listbox of six orders, marks the current one and reorders the list', async () => {
     seed();
@@ -158,6 +180,107 @@ describe('the sort chip', () => {
     });
     expect(document.querySelector('.w-sortmenu')).toBeNull();
     expect(document.activeElement).toBe(button);
+  });
+});
+
+describe('the sort menu by keyboard and touch', () => {
+  const open = async () => {
+    seed();
+    render(<WatchCard />);
+    await flush();
+    const button = document.querySelector('.w-sortchip') as HTMLButtonElement;
+    await click(button);
+    const menu = document.querySelector('.w-sortmenu') as HTMLElement;
+    const opts = () => [...document.querySelectorAll<HTMLElement>('.w-sortmenu [role="option"]')];
+    const key = async (k: string) => {
+      await act(async () => {
+        fireEvent.keyDown(document.activeElement ?? menu, { key: k });
+      });
+    };
+    return { button, opts, key };
+  };
+  it('opens on the current order and the arrows, Home and End move and wrap', async () => {
+    const { opts, key } = await open();
+    expect(document.activeElement).toBe(opts()[0]);
+    await key('ArrowDown');
+    expect(document.activeElement).toBe(opts()[1]);
+    await key('ArrowUp');
+    await key('ArrowUp');
+    expect(document.activeElement).toBe(opts()[5]);
+    await key('Home');
+    expect(document.activeElement).toBe(opts()[0]);
+    await key('End');
+    expect(document.activeElement).toBe(opts()[5]);
+  });
+  it('a pick (what Enter and Space do on a button) sorts, closes and returns the focus', async () => {
+    const { button, opts, key } = await open();
+    await key('ArrowDown');
+    await click(document.activeElement!);
+    expect(document.querySelector('.w-sortmenu')).toBeNull();
+    expect(button.textContent).toBe('Played');
+    expect(document.activeElement).toBe(button);
+    expect(opts()).toHaveLength(0);
+  });
+  it('Tab hands the focus back to the chip and closes the menu', async () => {
+    const { button, key } = await open();
+    await key('Tab');
+    expect(document.querySelector('.w-sortmenu')).toBeNull();
+    expect(document.activeElement).toBe(button);
+  });
+  it('a press outside closes it without a pick', async () => {
+    const { button } = await open();
+    await act(async () => {
+      fireEvent.pointerDown(document.body);
+    });
+    expect(document.querySelector('.w-sortmenu')).toBeNull();
+    expect(button.textContent).toBe('Recent');
+  });
+});
+
+describe('the list under a filter', () => {
+  it('filters and sorts 200 saved items', async () => {
+    const many = Array.from({ length: 200 }, (_, i) => ({ kind: 'video', id: `V${String(i).padStart(10, '0')}`, label: `Clip ${i}`, tags: i % 4 === 0 ? ['four'] : [], plays: i }));
+    seed(many);
+    render(<WatchCard />);
+    await flush();
+    expect(count()).toBe('200 saved');
+    await click(chip('#four'));
+    expect(labels()).toHaveLength(50);
+    expect(count()).toBe('50 of 200');
+    await type('clip 19');
+    expect(labels()).toEqual(['Clip 192', 'Clip 196']);
+    await type('clip 196');
+    expect(labels()).toEqual(['Clip 196']);
+    await click(document.querySelector('.w-sortchip')!);
+    await click([...document.querySelectorAll('.w-sortmenu [role="option"]')][3]!);
+    await type('');
+    expect(labels()[0]).toBe('Clip 0');
+    expect(labels()[1]).toBe('Clip 4');
+    expect(labels()[49]).toBe('Clip 196');
+  });
+  it('keeps the row being renamed while a filter hides its neighbours', async () => {
+    seed();
+    render(<WatchCard />);
+    await flush();
+    await click(document.querySelector('button[aria-label="Rename Apple orchard"]')!);
+    await type('rain');
+    expect(labels()).toEqual(['Rain radio']);
+    expect(document.querySelector('.w-row.editing input')).not.toBeNull();
+  });
+  it('a lone # is no filter: the count stays "n saved"', async () => {
+    seed();
+    render(<WatchCard />);
+    await flush();
+    await type('#');
+    expect(count()).toBe('4 saved');
+  });
+  it('the empty card has no chip row while a new playlist draft is open', async () => {
+    seed([]);
+    render(<WatchCard />);
+    await flush();
+    await click([...document.querySelectorAll('button')].find((b) => /New playlist/.test(b.textContent ?? ''))!);
+    expect(document.querySelector('.own-draft')).not.toBeNull();
+    expect(document.querySelector('.w-chiprow')).toBeNull();
   });
 });
 

@@ -22,7 +22,7 @@ import { playOwn, setFollow, useOwnView, type OwnView } from './ownPlay';
 import { closeWatchSearch, isLinkText, runWatchSearch, useWatchSearch, wordsProblem } from './searchStore';
 import { WatchResults } from './WatchSearch';
 import { ListChips } from './ListChips';
-import { ALL_CHIP, chipCounts, chipExists, countLine, filterItems, sortItems } from './listView';
+import { ALL_CHIP, chipCounts, chipExists, countLine, filterItems, sortItems, wordsOf } from './listView';
 import { useListView } from './listViewStore';
 
 export { PASTE_ERROR_MS };
@@ -266,9 +266,13 @@ function WatchList({ empty, draft, setDraft, host, own }: { empty: boolean; draf
   const view = useListView();
   const counts = useMemo(() => chipCounts(saved), [saved]);
   const chip = chipExists(counts, view.chip) ? view.chip : ALL_CHIP;
+  useEffect(() => {
+    // A chip that fell back to All is forgotten, so a tag made again later does not quietly filter the list.
+    if (view.chip !== chip) view.setChip(chip);
+  }, [view, chip]);
   const filterText = isLinkText(text) ? '' : text;
   const shown = useMemo(() => sortItems(filterItems(saved, chip, filterText, editing), view.sort), [saved, chip, filterText, editing, view.sort]);
-  const narrowed = chip !== ALL_CHIP || filterText.trim() !== '';
+  const narrowed = chip !== ALL_CHIP || wordsOf(filterText).length > 0;
   const list = useMoreBelow(shown.length + (draft ? 1 : 0));
   useEffect(() => {
     // A new view of the list starts at its top.
@@ -441,7 +445,7 @@ function WatchList({ empty, draft, setDraft, host, own }: { empty: boolean; draf
         </span>
         {newButton}
       </div>
-      <ListChips counts={counts} chip={chip} sort={view.sort} onChip={view.setChip} onSort={view.setSort} />
+      {saved.length > 0 ? <ListChips counts={counts} chip={chip} sort={view.sort} onChip={view.setChip} onSort={view.setSort} /> : null}
       <ul className={`w-list${list.more ? ' more' : ''}`} ref={list.ref} onScroll={list.check}>
         {draft ? (
           <li key="draft">
@@ -450,7 +454,7 @@ function WatchList({ empty, draft, setDraft, host, own }: { empty: boolean; draf
         ) : null}
         {shown.length === 0 && !draft ? (
           <li className="w-none" role="status">
-            {filterText.trim() !== '' ? 'Nothing in the list matches those words.' : 'Nothing saved under this chip.'}
+            {wordsOf(filterText).length > 0 ? 'Nothing in the list matches those words.' : 'Nothing saved under this chip.'}
           </li>
         ) : null}
         {shown.map((item) => {

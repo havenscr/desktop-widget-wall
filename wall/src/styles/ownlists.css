@@ -1081,9 +1081,12 @@ button.ws-play {
   flex: 1;
   min-width: 0;
   display: flex;
-  gap: 8px;
+  gap: 10px;
   overflow-x: auto;
   scrollbar-width: none;
+  /* Room above and below for the 5 px focus ring, which a scroll box would clip; the margin gives the room back. */
+  padding: 6px 0;
+  margin: -6px 0;
   -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 24px), transparent);
   mask-image: linear-gradient(90deg, #000 calc(100% - 24px), transparent);
 }

@@ -1,6 +1,9 @@
 import { kindName, refKey } from './links';
 import { cleanTag, type SavedItem } from './saved';
 
+/** One collator for every name order: case and accents ignored, digits in order. */
+const COLLATOR = new Intl.Collator(undefined, { sensitivity: 'base', numeric: true });
+
 /** The sorts of the Watch list. `recent` is the stored order (a new item goes to the top), so it needs no stamp. */
 export type ListSort = 'recent' | 'played' | 'plays' | 'name' | 'longest' | 'views';
 
@@ -80,7 +83,7 @@ export function chipCounts(items: readonly SavedItem[]): ChipCounts {
       else tags.set(low, { name: t, count: 1 });
     }
   }
-  out.tags = [...tags.entries()].map(([low, v]) => ({ chip: tagChip(low), name: v.name, count: v.count })).sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
+  out.tags = [...tags.entries()].map(([low, v]) => ({ chip: tagChip(low), name: v.name, count: v.count })).sort((a, b) => b.count - a.count || COLLATOR.compare(a.name, b.name));
   return out;
 }
 
@@ -124,7 +127,7 @@ export function sortItems(items: readonly SavedItem[], sort: ListSort): SavedIte
   if (sort === 'recent') return [...items];
   const rows = items.map((item, at) => ({ item, at }));
   if (sort === 'name') {
-    rows.sort((a, b) => a.item.label.localeCompare(b.item.label, undefined, { sensitivity: 'base', numeric: true }) || a.at - b.at);
+    rows.sort((a, b) => COLLATOR.compare(a.item.label, b.item.label) || a.at - b.at);
   } else {
     const get = NUMBER[sort]!;
     rows.sort((a, b) => {

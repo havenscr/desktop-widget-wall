@@ -38,7 +38,8 @@ export function SortChip({ value, onPick }: { value: ListSort; onPick: (sort: Li
       event.stopPropagation();
       close(true);
     } else if (event.key === 'Tab') {
-      setOpen(false);
+      // The focus goes back to the chip first, so Tab carries on from the chip and not from a menu that is gone.
+      close(true);
     } else if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
       event.preventDefault();
       if (rows.length) rows[(at + (event.key === 'ArrowDown' ? 1 : rows.length - 1)) % rows.length]!.focus();
