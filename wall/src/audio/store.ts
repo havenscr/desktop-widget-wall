@@ -1,6 +1,7 @@
 import { create } from 'zustand';
-import { SILENCE_MS, clamp01, hasSound, smoothStep, type AudioLevelsPayload, type Levels } from './model';
+import { SILENCE_MS, clamp01, hasSound, loudness, smoothStep, type AudioLevelsPayload, type Levels } from './model';
 import { createBeatDetector, type BeatDetector } from './beat';
+import { createEnergy, resetEnergy, stepEnergy, type DropStamp } from './energy';
 import { APP_DANCE_PARAMS, clearDance, createDance, setDanceParams, stepDance, type DanceParams } from './dance';
 import { lineSettings } from '../horizon/linesSettings';
 
@@ -25,6 +26,20 @@ export const BAND_COUNT = 32;
 // changes 30 times a second and only the horizon's frame loop reads it.
 const bands = new Float32Array(BAND_COUNT);
 const detector = createBeatDetector();
+const energy = createEnergy();
+
+/** How loud the music has been lately, 0 to 1 (a slow average; 0 in silence). */
+export function audioEnergy(): number {
+  return energy.energy;
+}
+
+/**
+ * Drop stamps: `count` goes up once per drop (a build, then a jump, confirmed by a beat) and
+ * `lastAt` is the tick time of the newest. Compare the count; it is never a per-frame flag.
+ */
+export function audioDrops(): Readonly<DropStamp> {
+  return energy.drops;
+}
 
 /** The newest spectrum bands, 0 to 1 (bass first). A live view: copy it to keep a frame. */
 export function audioBands(): Readonly<Float32Array> {
@@ -149,9 +164,13 @@ export function ingestLevels(payload: AudioLevelsPayload | null | undefined, now
 
 /** Advance smoothing and silence to `now`. Call about 30 times a second while the page is visible. */
 export function tickAudio(now: number): void {
-  const dt = lastTickAt === null ? 0 : Math.min(0.25, Math.max(0, (now - lastTickAt) / 1000));
+  const elapsedMs = lastTickAt === null ? 0 : Math.max(0, now - lastTickAt);
+  const dt = Math.min(0.25, elapsedMs / 1000);
   lastTickAt = now;
   const playing = now - lastSoundAt <= SILENCE_MS;
+  // Slow energy and drops read the levels as they stood before this tick moves them.
+  const lv = useAudioStore.getState();
+  stepEnergy(energy, now, elapsedMs, loudness(lv), playing, detector.count);
   advanceHistory(now, playing);
   if (!playing) {
     // Past the silence deadline the levels are zero at once, as in the old visualizer.
@@ -183,6 +202,7 @@ export function resetAudio(): void {
   lastTickAt = null;
   bands.fill(0);
   detector.reset();
+  resetEnergy(energy);
   historyPaused = false;
   clearHistory();
   useAudioStore.setState({ ...QUIET });
