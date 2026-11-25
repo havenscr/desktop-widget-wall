@@ -1555,7 +1555,7 @@ the centre card; the date line takes it through the frame's `ClockSlot` portal.
   `startLabeled('Summit')` (25, 50 or 90 minutes, the Work timer's own length), so Do Not Disturb comes with it, and leaving Zen never stops the timer.
   Zen opens in Summit when the timer is already running (that is not saved as the mode). A lantern, one DOM element moved once a second with a 1 s CSS
   transition (no frame loop), walks the skyline from 520 px left of The Brothers to the peak (`climbPoint`); the peak's name fades in at 85 percent; each
-  focus session finished today (at least 5 minutes) leaves a small light on the summit, at most eight. A click on the stage ends the session. Dev knob:
+  focus session finished today (at least 5 minutes) leaves a small light on the summit, at most eight. A click on the stage only closes Summit: the focus timer and Do Not Disturb keep running, and reopening Zen shows the session again. The End session button stops the focus timer. Dev knob:
   `?summit=<percent>&lights=<n>` runs a focus session that far in, with that many finished sessions today, for stills.
 
 - **Shelf place** (`screens/ShelfPlace.tsx`, `styles/shelf.css`). A rail button between On air and Zen.

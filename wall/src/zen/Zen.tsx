@@ -121,20 +121,25 @@ export function Zen({ nowMs = Date.now }: ZenProps) {
   const [ending, setEnding] = useState(false);
   const clockNow = useCallback(() => new Date(nowMs()), [nowMs]);
   // Summit runs while the focus timer does; its start is derived from the timer's end so a pause and resume keeps the climb.
-  const summitRun = mode === 'summit' && focus.status === 'running';
+  // A click on the stage leaves Summit (back to the start screen); the timer is not touched, so reopening Zen shows the session again.
+  const [summitAway, setSummitAway] = useState(false);
+  const summitRun = mode === 'summit' && focus.status === 'running' && !summitAway;
   const summitStart = summitRun ? focus.endAt - focus.minutes * 60_000 : null;
   const running = startedAt !== null || summitRun;
   const summitSession = useMemo(() => (summitRun && focus.status === 'running' ? { endAt: focus.endAt, minutes: focus.minutes } : null), [summitRun, focus]);
   const summitLights = finishedLights(focusSessions, nowMs());
-  /** Ends the running session early: Summit stops the focus timer (the person's own click); leaving Zen never does. */
+  /** A stage click leaves the running session's view. Summit only closes: the focus timer and Do Not Disturb keep running. */
   const endEarly = () => {
-    if (mode === 'summit') useFocusStore.getState().reset();
+    if (mode === 'summit') setSummitAway(true);
     else stop();
   };
+  /** The End session button: the person's own click stops the shared focus timer, as Work's stop does. */
+  const endSummit = () => useFocusStore.getState().reset();
   const startSummit = () => {
     const f = useFocusStore.getState();
+    setSummitAway(false);
     if (f.state.status === 'paused') f.resume();
-    else f.startLabeled('Summit');
+    else if (f.state.status !== 'running') f.startLabeled('Summit');
   };
   // True once a session ran to the end and Dream opens: only then do the Sundown lights stay down.
   const doneRef = useRef(false);
@@ -316,7 +321,7 @@ export function Zen({ nowMs = Date.now }: ZenProps) {
               className="zen-tap"
               role="button"
               tabIndex={0}
-              aria-label="End session early"
+              aria-label={mode === 'summit' ? 'Close Summit' : 'End session early'}
               onClick={endEarly}
               onKeyDown={(e) => {
                 if (e.key === 'Enter' || e.key === ' ') {
@@ -400,15 +405,20 @@ export function Zen({ nowMs = Date.now }: ZenProps) {
                   </div>
                   <button type="button" className="zbtn go" onClick={mode === 'summit' ? startSummit : start}>
                     <IconPlayerPlayFilled size={28} aria-hidden="true" />
-                    {mode === 'summit' && focus.status === 'paused' ? 'Resume' : 'Start'}
+                    {mode === 'summit' && focus.status === 'paused' ? 'Resume' : mode === 'summit' && focus.status === 'running' ? 'Back to Summit' : 'Start'}
                   </button>
                 </div>
               </div>
             )}
             {!running && showDimHint(clockNow()) && <div className={`zen-dimhint${quiet ? ' quiet' : ''}`}>{dimHint(dimHour, dimWaitMin)}</div>}
           </div>
-          {running && !ending && <div className="zen-hint">{mode === 'summit' ? 'Click anywhere to end the focus session' : 'Click anywhere to end early'}</div>}
+          {running && !ending && <div className="zen-hint">{mode === 'summit' ? 'Click anywhere to close Summit' : 'Click anywhere to end early'}</div>}
           <div className="zen-br">
+            {summitRun && !ending && (
+              <button type="button" className="zbtn zleave zend" onClick={endSummit} {...tip('Stops the focus timer and Do Not Disturb')}>
+                End session
+              </button>
+            )}
             <button
               type="button"
               className="zbtn zleave"

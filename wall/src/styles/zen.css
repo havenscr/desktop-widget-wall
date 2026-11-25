@@ -146,6 +146,11 @@
 .zen-br .zleave {
   pointer-events: auto;
 }
+/* End session: 18 px text, 22 px of padding either side (10 px at the least). */
+.zen-br .zend {
+  font-size: 18px;
+  padding: 0 22px;
+}
 .zen-waiting {
   text-align: right;
   font: 400 20px/1.4 var(--body);

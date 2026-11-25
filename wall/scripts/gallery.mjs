@@ -466,6 +466,8 @@ add('zen', 'mode chips: Summit', url('zen', TYPICAL_AT, ''), true, SUMMIT);
 add('zen', 'summit: 0 percent', url('zen', TYPICAL_AT, 'summit=0&lights=3'), true, SUMMIT);
 add('zen', 'summit: 50 percent', url('zen', TYPICAL_AT, 'summit=50&lights=3'), true, SUMMIT);
 add('zen', 'summit: 95 percent', url('zen', TYPICAL_AT, 'summit=95&lights=3'), true, SUMMIT);
+// The End session button sits above Leave while a session runs.
+add('zen', 'summit: End session button', url('zen', TYPICAL_AT, 'summit=50&lights=3'), true, [SUMMIT, 'is:.zen-br .zend']);
 // Sundown: the mode chip row on the start screen with Sundown picked, then a session at the start, the middle and the end
 // (`sundownage` starts the session that many seconds in, in a development build). The sky runs golden hour to night.
 const SUNDOWN = '[role="radiogroup"][aria-label="Mode"] [role="radio"]:nth-child(2)';
@@ -851,6 +853,7 @@ const EXPECT = [
   ['zen', 'summit: 0 percent', ['TWENTY FIVE MINUTES OF SUMMIT', '3 climbs finished today.']],
   ['zen', 'summit: 50 percent', ['TWENTY FIVE MINUTES OF SUMMIT', '3 climbs finished today.']],
   ['zen', 'summit: 95 percent', ['TWENTY FIVE MINUTES OF SUMMIT', '3 climbs finished today.']],
+  ['zen', 'summit: End session button', ['End session', 'Leave']],
   ['zen', 'sundown: start', ['TWENTY MINUTES OF SUNDOWN']],
   ['zen', 'sundown: middle', ['TWENTY MINUTES OF SUNDOWN']],
   ['zen', 'sundown: end', ['TWENTY MINUTES OF SUNDOWN']],

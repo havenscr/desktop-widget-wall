@@ -13,9 +13,9 @@ import zenSource from './Zen.tsx?raw';
 // @ts-ignore node's own file call; this test reads the stylesheet as text.
 import { readFileSync } from 'node:fs';
 
-const summitSrc = summitSource.replace('\r\n', '\n');
-const zenSrc = zenSource.replace('\r\n', '\n');
-const css = readFileSync('src/styles/zen.css', 'utf8').replace('\r\n', '\n');
+const summitSrc = summitSource.replace(/\r\n/g, '\n');
+const zenSrc = zenSource.replace(/\r\n/g, '\n');
+const css = readFileSync('src/styles/zen.css', 'utf8').replace(/\r\n/g, '\n');
 const CAM = CAMERAS.unwind;
 const T0 = new Date(2026, 10, 11, 10, 0, 0).getTime();
 const MIN = 60_000;
@@ -164,11 +164,29 @@ it('the counts run and a finished session lights the summit', () => {
   expect(screen.getByRole('button', { name: /Start/ })).toBeTruthy();
 });
 
-it('a click on the stage ends the focus session; Summit is never switched to while a session runs', () => {
+it('a click on the stage only closes Summit: the focus timer keeps running', () => {
   useFocusStore.getState().startLabeled('Summit');
   render(<Zen nowMs={() => Date.now()} />);
-  fireEvent.click(screen.getByRole('button', { name: 'End session early' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Close Summit' }));
+  expect(useFocusStore.getState().state.status).toBe('running');
+  expect(document.querySelector('.summit-lantern')).toBeNull();
+  expect(screen.queryByRole('button', { name: 'End session' })).toBeNull();
+  cleanup();
+  // Reopening Zen while the timer runs opens Summit on the session again.
+  render(<Zen nowMs={() => Date.now()} />);
+  expect(document.querySelector('.summit-lantern')).not.toBeNull();
+});
+
+it('End session stops the focus timer and has a tooltip', () => {
+  useFocusStore.getState().startLabeled('Summit');
+  render(<Zen nowMs={() => Date.now()} />);
+  const btn = screen.getByRole('button', { name: 'End session' });
+  fireEvent.focus(btn);
+  fireEvent.click(btn);
   expect(useFocusStore.getState().state.status).toBe('idle');
+  expect(screen.queryByRole('button', { name: 'End session' })).toBeNull();
+  expect(zenSrc).toMatch(/tip\('Stops the focus timer and Do Not Disturb'\)/);
+  expect(css).toMatch(/\.zen-br \.zend \{[^}]*font-size: 18px;[^}]*padding: 0 22px/);
 });
 
 it('a paused focus timer offers Resume instead of a second Start', () => {
