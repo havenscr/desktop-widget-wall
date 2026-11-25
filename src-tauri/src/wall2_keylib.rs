@@ -322,7 +322,7 @@ pub(crate) const LIBRARY: &[LibEntry] = &[
     LibEntry { id: "lights-back", label: "Lights back", icon: "undo", group: "house", kind: LibKind::Wall, how: "stops sync and puts your mood back", spec: "lights:back" },
     LibEntry { id: "pt-run", label: "PowerToys Run", icon: "search", group: "powertoys", kind: LibKind::Check, how: "Alt+Space", spec: "Alt+Space" },
     LibEntry { id: "pt-color", label: "Color picker", icon: "brush", group: "powertoys", kind: LibKind::Check, how: "Win+Shift+C", spec: "Win+Shift+C" },
-    LibEntry { id: "pt-ocr", label: "Copy text from the screen", icon: "copy", group: "powertoys", kind: LibKind::Check, how: "Win+Shift+T", spec: "Win+Shift+T" },
+    LibEntry { id: "pt-ocr", label: "Copy screen text", icon: "copy", group: "powertoys", kind: LibKind::Check, how: "Win+Shift+T", spec: "Win+Shift+T" },
     LibEntry { id: "pt-top", label: "Keep window on top", icon: "window", group: "powertoys", kind: LibKind::Check, how: "Win+Ctrl+T", spec: "Win+Ctrl+T" },
     LibEntry { id: "pt-plain", label: "Paste as plain text", icon: "clipboard", group: "powertoys", kind: LibKind::Check, how: "Win+Ctrl+Alt+V", spec: "Win+Ctrl+Alt+V" },
     LibEntry { id: "sx-region", label: "Capture region", icon: "screenshot", group: "sharex", kind: LibKind::Wall, how: "ShareX: drag a box on screen to capture", spec: "sharex:region" },

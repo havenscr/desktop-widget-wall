@@ -1085,7 +1085,7 @@ export const LIBRARY_DATA: LibGroup[] = [
    },
    {
     "id": "pt-ocr",
-    "label": "Copy text from the screen",
+    "label": "Copy screen text",
     "icon": "copy",
     "kind": "check",
     "how": "Win+Shift+T",
