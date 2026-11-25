@@ -31,8 +31,12 @@ export const LEGACY_MAX = 24;
 export const MAX_SAVED = 200;
 /** A copy of the list in the v1 shape (kind, id, label, named), refreshed on every save of a list longer than the old limit. */
 export const BACKUP_KEY = 'wall2-watch-list-backup';
-/** The stored text exactly as found, copied once before a save replaces text that did not read back whole. Never overwritten. */
+/** The stored text exactly as found, copied before a save replaces text that did not read back whole. Slot 1 is this key, slot n the key with "-n". Never overwritten. */
 export const RAW_BACKUP_KEY = 'wall2-watch-list-raw';
+/** How many distinct originals are kept. */
+export const RAW_SLOTS = 4;
+/** An old build refuses stored text longer than this and reads an empty list. */
+export const OLD_BUILD_MAX = 32_000;
 /** Per field caps: a value past one is a bad field and is dropped. */
 export const MAX_PLAYS = 1_000_000;
 export const MAX_SECONDS = 604_800;
@@ -171,26 +175,56 @@ function readsLossy(raw: string): boolean {
   }
 }
 
+function rawSlot(n: number): string {
+  return n === 1 ? RAW_BACKUP_KEY : `${RAW_BACKUP_KEY}-${n}`;
+}
+
+/** Keep `found` in a raw slot: true when a slot already holds exactly it or a free one now does; false when all slots hold other text. */
+function keepRaw(found: string): boolean {
+  let free = 0;
+  for (let n = 1; n <= RAW_SLOTS; n++) {
+    const held = localStorage.getItem(rawSlot(n));
+    if (held === found) return true;
+    if (held === null && free === 0) free = n;
+  }
+  if (free === 0) return false;
+  localStorage.setItem(rawSlot(free), found);
+  return true;
+}
+
+/** The v1 shape of the list (kind, id, label, named), the first entries that keep the text within what an old build reads. */
+export function oldShape(items: readonly SavedItem[]): string {
+  const parts: string[] = [];
+  let size = 2;
+  for (const { kind, id, label, named } of items.slice(0, MAX_SAVED)) {
+    const part = JSON.stringify(named ? { kind, id, label, named } : { kind, id, label });
+    if (size + part.length + (parts.length > 0 ? 1 : 0) > OLD_BUILD_MAX) break;
+    size += part.length + (parts.length > 0 ? 1 : 0);
+    parts.push(part);
+  }
+  return `[${parts.join(',')}]`;
+}
+
 /**
  * Write the list. The stored text is never replaced while it holds something this build cannot read back whole
- * unless that text is first copied, once, to `RAW_BACKUP_KEY` (and if that copy cannot be written, the list stays
- * for this session and storage is left alone). Then the list is written; a copy in the v1 shape follows, in its
- * own try, for a list longer than the old limit, so a full disk costs the copy and never the list.
+ * unless that text is first kept in a raw slot (up to 4 distinct originals; when none is free, or a copy cannot be
+ * written, the list stays for this session and storage is left alone). Then the list is written; a copy in the old
+ * shape follows, in its own try, so a full disk costs the copy and never the list. That copy is refreshed on every save
+ * of a list longer than the old limit and removed on any save of a shorter one.
  */
 export function saveSaved(items: readonly SavedItem[]): void {
-  let text: string;
   try {
-    text = JSON.stringify(items.slice(0, MAX_SAVED).map(stored));
+    const text = JSON.stringify(items.slice(0, MAX_SAVED).map(stored));
     const found = localStorage.getItem(SAVED_KEY);
-    if (found !== null && found !== text && readsLossy(found) && localStorage.getItem(RAW_BACKUP_KEY) === null) localStorage.setItem(RAW_BACKUP_KEY, found);
+    if (found !== null && found !== '' && found !== text && readsLossy(found) && !keepRaw(found)) return;
     localStorage.setItem(SAVED_KEY, text);
   } catch {
     /* the list stays for this session */
     return;
   }
-  if (items.length <= LEGACY_MAX) return;
   try {
-    localStorage.setItem(BACKUP_KEY, JSON.stringify(items.slice(0, MAX_SAVED).map(({ kind, id, label, named }) => (named ? { kind, id, label, named } : { kind, id, label }))));
+    if (items.length > LEGACY_MAX) localStorage.setItem(BACKUP_KEY, oldShape(items));
+    else localStorage.removeItem(BACKUP_KEY);
   } catch {
     /* no copy this time */
   }

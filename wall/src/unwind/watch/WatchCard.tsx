@@ -599,6 +599,7 @@ export function WatchCard() {
       for (const hit of st.saved) {
         if (hit.kind !== 'video' && hit.kind !== 'live') continue;
         if (hit.id !== id) continue;
+        // Only items asked above (unnamed ones) reach this; a titled v1 video gets length and views from a search save instead, to spare YouTube quota.
         if (hit.kind === 'video') st.noteMeta(refKey(hit), { seconds: info.seconds, views: info.views });
         if (info.title) st.fillLabel(refKey(hit), info.title);
       }

@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { addSaved, BACKUP_KEY, cleanTags, LEGACY_MAX, loadSaved, MAX_PLAYS, MAX_SAVED, MAX_SECONDS, MAX_VIEWS, noteMeta, notePlay, parseSaved, RAW_BACKUP_KEY, saveSaved, SAVED_KEY, tagSaved, type SavedItem } from './saved';
+import { addSaved, BACKUP_KEY, oldShape, OLD_BUILD_MAX, RAW_SLOTS, cleanTags, LEGACY_MAX, loadSaved, MAX_PLAYS, MAX_SAVED, MAX_SECONDS, MAX_VIEWS, noteMeta, notePlay, parseSaved, RAW_BACKUP_KEY, saveSaved, SAVED_KEY, tagSaved, type SavedItem } from './saved';
 import { resetWatch, useWatchStore } from './store';
 import { playOwn } from './ownPlay';
 import { useOwnLists } from './ownLists';
@@ -102,6 +102,27 @@ describe('saved data v2: writing', () => {
     expect(copy[0]).toEqual({ kind: 'twitch', id: 'chan_0', label: 'c0' });
   });
 
+  it('keeps the old shape copy within what an old build reads, first entries in order', () => {
+    const fat = Array.from({ length: 200 }, (_, i) => ({ kind: 'twitch' as const, id: `chan_${i}`, label: '"'.repeat(60), named: true as const }));
+    expect(JSON.stringify(fat.map(({ kind, id, label, named }) => ({ kind, id, label, named }))).length).toBeGreaterThan(OLD_BUILD_MAX);
+    const text = oldShape(fat);
+    expect(text.length).toBeLessThanOrEqual(OLD_BUILD_MAX);
+    const kept = JSON.parse(text);
+    expect(kept.length).toBeGreaterThan(24);
+    expect(kept.length).toBeLessThan(200);
+    expect(kept.map((i: { id: string }) => i.id)).toEqual(fat.slice(0, kept.length).map((i) => i.id));
+    saveSaved(fat);
+    expect(localStorage.getItem(BACKUP_KEY)).toBe(text);
+    expect(parseSaved(text)).toHaveLength(kept.length);
+  });
+
+  it('removes the old shape copy when the list shrinks to the old limit', () => {
+    saveSaved(many(LEGACY_MAX + 5));
+    expect(localStorage.getItem(BACKUP_KEY)).not.toBeNull();
+    saveSaved(many(LEGACY_MAX));
+    expect(localStorage.getItem(BACKUP_KEY)).toBeNull();
+  });
+
   it('writes the list even when the copy cannot be written', () => {
     const real = Storage.prototype.setItem;
     const spy = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(function (this: Storage, k: string, v: string) {
@@ -131,6 +152,36 @@ describe('saved data v2: a list that did not read back whole is kept', () => {
     localStorage.setItem(SAVED_KEY, 'also broken');
     saveSaved(many(2));
     expect(localStorage.getItem(RAW_BACKUP_KEY)).toBe(broken);
+    expect(localStorage.getItem(`${RAW_BACKUP_KEY}-2`)).toBe('also broken');
+  });
+
+  it('keeps every distinct lossy original, one slot each, and none twice', () => {
+    for (let n = 1; n <= RAW_SLOTS; n++) {
+      localStorage.setItem(SAVED_KEY, `broken ${n}`);
+      saveSaved(many(1));
+    }
+    const held = Array.from({ length: RAW_SLOTS }, (_, n) => localStorage.getItem(n === 0 ? RAW_BACKUP_KEY : `${RAW_BACKUP_KEY}-${n + 1}`));
+    expect(held).toEqual(['broken 1', 'broken 2', 'broken 3', 'broken 4']);
+    localStorage.setItem(SAVED_KEY, 'broken 2');
+    saveSaved(many(1));
+    expect(JSON.parse(localStorage.getItem(SAVED_KEY)!)).toHaveLength(1);
+    expect(localStorage.getItem(`${RAW_BACKUP_KEY}-${RAW_SLOTS + 1}`)).toBeNull();
+  });
+
+  it('leaves storage alone when every slot holds other text', () => {
+    for (let n = 1; n <= RAW_SLOTS; n++) {
+      localStorage.setItem(SAVED_KEY, `broken ${n}`);
+      saveSaved(many(1));
+    }
+    localStorage.setItem(SAVED_KEY, 'broken new');
+    saveSaved(many(1));
+    expect(localStorage.getItem(SAVED_KEY)).toBe('broken new');
+  });
+
+  it('treats an empty stored value as nothing to copy', () => {
+    localStorage.setItem(SAVED_KEY, '');
+    saveSaved(many(1));
+    expect(localStorage.getItem(RAW_BACKUP_KEY)).toBeNull();
   });
 
   it('copies oversized text, a non-list, and a list with dropped entries', () => {
