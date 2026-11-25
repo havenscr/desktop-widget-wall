@@ -6,9 +6,9 @@ import { useNowPlayingStore } from '../music/store';
 import { useReducedMotion } from '../ui/useReducedMotion';
 import { createAurora } from './aurora';
 import { bakeMatte, radiusOf, type Matte } from './artMatte';
-import { drawGlow } from './glow';
+import { drawGlow, type GlowInput } from './glow';
 import { DEGRADED_FRAME_MS, browserHost, createLoop, createProbe, type LoopHost } from './loop';
-import { createVibeFrame, createVibeState, noteDrop, stepVibe } from './mix';
+import { createVibeFrame, createVibeState, noteDrop, stepVibe, type VibeInput } from './mix';
 import { softStops } from './feather';
 
 /** Backing store scale: the canvas is drawn at half resolution and scaled up by CSS. */
@@ -18,6 +18,12 @@ export const SKY_END = 0.48;
 export const SKY_FEATHER = 0.16;
 /** The art box: Listen's cover, or Watch's video. */
 export const ART_SELECTOR = '.u-art, .w-screen';
+/** The song title: Listen's line, or Watch's. Scene and title lets the effects pass over it. */
+export const TITLE_SELECTOR = '.u-np, .w-title';
+/** Layout pixels the title's own canvas reaches past its box, so the feathered edge falls clear of the letters. */
+export const TITLE_PAD = 28;
+/** How much of the picture under the title the title's canvas adds back; the back layer already shows through behind the letters. */
+const TITLE_PASS = 0.5;
 const REBAKE_MS = 500;
 
 /** Where `el` sits inside `root`, in the root's own (unscaled) layout pixels. */
@@ -41,12 +47,15 @@ export function boxIn(root: HTMLElement, el: HTMLElement): { x: number; y: numbe
  */
 export function VibeLayer({ host = browserHost }: { host?: LoopHost }) {
   const ref = useRef<HTMLCanvasElement>(null);
+  const titleRef = useRef<HTMLCanvasElement>(null);
   const reduced = useReducedMotion();
   useEffect(() => {
     const canvas = ref.current;
     const section = canvas?.parentElement;
     const ctx = canvas?.getContext('2d');
-    if (!canvas || !section || !ctx) return;
+    const tcanvas = titleRef.current;
+    const tctx = tcanvas?.getContext('2d');
+    if (!canvas || !section || !ctx || !tcanvas || !tctx) return;
     const aurora = createAurora();
     const state = createVibeState();
     const frame = createVibeFrame();
@@ -64,6 +73,16 @@ export function VibeLayer({ host = browserHost }: { host?: LoopHost }) {
     let lastE = -1;
     let lastA = -1;
     let lastH = -1;
+    let lastT = -1;
+    let titleOn = false;
+    // Where the title's own canvas copies from the back canvas, in back canvas pixels, and its size in its own.
+    const tbox = { sx: 0, sy: 0, sw: 0, sh: 0, dw: 0, dh: 0 };
+    let sig = '';
+    // The two frame inputs are built once and refilled each frame.
+    const input: VibeInput = { settings: vibeSettings(), playing: false, energy: 0 };
+    const glowIn: GlowInput = { halo: 0, swell: 0, bass: 0, kick: 0 };
+    const onImgLoad = (): void => later();
+    let watched: HTMLImageElement | null = null;
 
     const measure = (): void => {
       const wing = section.querySelector<HTMLElement>('.u-wing');
@@ -71,6 +90,7 @@ export function VibeLayer({ host = browserHost }: { host?: LoopHost }) {
       const w = Math.max(0, section.offsetWidth - left);
       const h = section.offsetHeight;
       canvas.style.left = `${left}px`;
+      canvas.style.width = `${w}px`;
       const bw = Math.max(1, Math.round(w * BACKING));
       const bh = Math.max(1, Math.round(h * BACKING));
       if (bw !== canvas.width || bh !== canvas.height) {
@@ -86,17 +106,55 @@ export function VibeLayer({ host = browserHost }: { host?: LoopHost }) {
         const b = boxIn(section, el);
         art = { x: b.x - left, y: b.y, w: b.w, h: b.h };
         const img = el.querySelector('img');
-        const key = `${img?.getAttribute('src') ?? ''}|${b.w}x${b.h}|${radiusOf(el)}`;
+        const ready = img && img.complete && img.naturalWidth > 0 ? img : null;
+        // A cover that has not loaded yet bakes the plain fill; its load event changes the key and bakes the picture.
+        const key = `${img?.getAttribute('src') ?? ''}|${ready ? 'ready' : 'wait'}|${b.w}x${b.h}|${radiusOf(el)}`;
         if (key !== matteKey && b.w > 0 && b.h > 0) {
           matteKey = key;
-          const ready = img && img.complete && img.naturalWidth > 0 ? img : null;
           matte = bakeMatte(ready, b.w, b.h, radiusOf(el));
+        }
+        if (img !== watched) {
+          watched?.removeEventListener('load', onImgLoad);
+          watched = img;
+          if (img && !ready) img.addEventListener('load', onImgLoad);
         }
       } else {
         art = { x: 0, y: 0, w: 0, h: 0 };
         matte = null;
         matteKey = '';
       }
+      const tel = section.querySelector<HTMLElement>(TITLE_SELECTOR);
+      let tx = 0;
+      let ty = 0;
+      let tw = 0;
+      let th = 0;
+      if (tel && tel.offsetWidth > 0) {
+        const b = boxIn(section, tel);
+        tx = b.x - TITLE_PAD;
+        ty = b.y - TITLE_PAD;
+        tw = b.w + 2 * TITLE_PAD;
+        th = b.h + 2 * TITLE_PAD;
+      }
+      tcanvas.style.left = `${tx}px`;
+      tcanvas.style.top = `${ty}px`;
+      tcanvas.style.width = `${tw}px`;
+      tcanvas.style.height = `${th}px`;
+      tbox.dw = Math.max(1, Math.round(tw * BACKING));
+      tbox.dh = Math.max(1, Math.round(th * BACKING));
+      if (tcanvas.width !== tbox.dw || tcanvas.height !== tbox.dh) {
+        tcanvas.width = tbox.dw;
+        tcanvas.height = tbox.dh;
+        lastT = -1;
+      }
+      tbox.sx = (tx - left) * BACKING;
+      tbox.sy = ty * BACKING;
+      tbox.sw = tw * BACKING;
+      tbox.sh = th * BACKING;
+      titleOn = tw > 0;
+      // Churn that moves nothing (class changes under the observer) wakes nothing.
+      const now = `${left}|${w}|${h}|${art.x}|${art.y}|${art.w}|${art.h}|${matteKey}|${tx}|${ty}|${tw}|${th}`;
+      if (now === sig) return;
+      sig = now;
       loop.kick();
     };
 
@@ -112,10 +170,11 @@ export function VibeLayer({ host = browserHost }: { host?: LoopHost }) {
       const still = reduced;
       const kick = still ? 0 : danceKick() * frame.kickGain;
       const bass = still ? 0.3 : audio.bass * frame.bassGain;
-      if (still && Math.abs(energy - lastE) <= 0.1 && Math.abs(frame.aurora - lastA) + Math.abs(frame.halo - lastH) < 0.004 && lastE >= 0) return;
+      if (still && Math.abs(energy - lastE) <= 0.1 && Math.abs(frame.aurora - lastA) + Math.abs(frame.halo - lastH) + Math.abs(frame.titleCover - lastT) < 0.004 && lastE >= 0) return;
       lastE = energy;
       lastA = frame.aurora;
       lastH = frame.halo;
+      lastT = frame.titleCover;
       ctx.setTransform(1, 0, 0, 1, 0, 0);
       ctx.globalCompositeOperation = 'source-over';
       ctx.globalAlpha = 1;
@@ -131,7 +190,22 @@ export function VibeLayer({ host = browserHost }: { host?: LoopHost }) {
       ctx.fillStyle = skyFade;
       ctx.fillRect(0, ch * (SKY_END - SKY_FEATHER), cw, ch);
       ctx.globalCompositeOperation = 'source-over';
-      if (matte && art.w > 0) drawGlow(ctx, matte, art.x * BACKING, art.y * BACKING, BACKING, { halo: frame.halo, swell: frame.haloSwell, bass, kick });
+      if (matte && art.w > 0) {
+        glowIn.halo = frame.halo;
+        glowIn.swell = frame.haloSwell;
+        glowIn.bass = bass;
+        glowIn.kick = kick;
+        drawGlow(ctx, matte, art.x * BACKING, art.y * BACKING, BACKING, glowIn);
+      }
+      // Scene and title: the title's own canvas lies over the title and shows the part of this picture under it.
+      // Scene only: it fades out (the plan's 0.2 s ease on the cover change), leaving the title clean.
+      const pass = (1 - frame.titleCover) * TITLE_PASS;
+      tctx.clearRect(0, 0, tcanvas.width, tcanvas.height);
+      if (titleOn && pass > 0.004 && (frame.aurora > 0.003 || frame.halo > 0.003 || frame.haloSwell > 0.003)) {
+        tctx.globalAlpha = pass;
+        tctx.drawImage(canvas, tbox.sx, tbox.sy, tbox.sw, tbox.sh, 0, 0, tbox.dw, tbox.dh);
+        tctx.globalAlpha = 1;
+      }
     };
 
     const loop = createLoop(
@@ -141,9 +215,13 @@ export function VibeLayer({ host = browserHost }: { host?: LoopHost }) {
         const n = audioDrops().count;
         if (n > lastDrops) noteDrop(state, ts / 1000);
         lastDrops = n;
-        stepVibe(state, frame, dt, ts / 1000, { settings: vibeSettings(), playing: useAudioStore.getState().playing, energy: audioEnergy() });
+        input.settings = vibeSettings();
+        input.playing = useAudioStore.getState().playing;
+        input.energy = audioEnergy();
+        stepVibe(state, frame, dt, ts / 1000, input);
         if (!frame.active) {
           ctx.clearRect(0, 0, canvas.width, canvas.height);
+          tctx.clearRect(0, 0, tcanvas.width, tcanvas.height);
           lastE = -1;
           return false;
         }
@@ -182,9 +260,15 @@ export function VibeLayer({ host = browserHost }: { host?: LoopHost }) {
       offAudio();
       offSettings();
       ro?.disconnect();
+      watched?.removeEventListener('load', onImgLoad);
       mo.disconnect();
       document.removeEventListener('visibilitychange', kick);
     };
   }, [host, reduced]);
-  return <canvas ref={ref} className="vibe-back" aria-hidden="true" data-vibe="back" />;
+  return (
+    <>
+      <canvas ref={ref} className="vibe-back" aria-hidden="true" data-vibe="back" />
+      <canvas ref={titleRef} className="vibe-title" aria-hidden="true" data-vibe="title" />
+    </>
+  );
 }

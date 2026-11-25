@@ -16,17 +16,29 @@ const sound = { bass: 0.8, mid: 0.4, high: 0.2, bands: [255, 200, 100], waveform
 
 /** A host whose frames run when the test says so. */
 function manual() {
-  let cb: ((ts: number) => void) | null = null;
-  const host: LoopHost = { raf: (f) => ((cb = f), 7), caf: () => (cb = null), hidden: () => false };
+  const cbs = new Map<number, (ts: number) => void>();
+  let next = 1;
+  let hid = false;
+  const host: LoopHost = {
+    raf: (f) => {
+      cbs.set(next, f);
+      return next++;
+    },
+    caf: (id) => void cbs.delete(id),
+    hidden: () => hid,
+  };
   return {
     host,
-    pending: () => cb !== null,
+    pending: () => cbs.size > 0,
+    hide: (h: boolean) => {
+      hid = h;
+    },
     /** Run frames every 33 ms from `from` for `n` frames. */
     frames(from: number, n: number) {
       for (let i = 0; i < n; i++) {
-        const f = cb;
-        cb = null;
-        f?.(from + i * 33);
+        const run = [...cbs.values()];
+        cbs.clear();
+        for (const f of run) f(from + i * 33);
       }
     },
   };
@@ -76,6 +88,7 @@ function mount(host: LoopHost, art = true) {
     <section data-place="unwind">
       <VibeLayer host={host} />
       <div className="u-wing" />
+      <div className="u-np">Song</div>
       {art ? (
         <div className="u-art">
           <img src="data:image/png;base64,AAAA" alt="" />
@@ -83,7 +96,7 @@ function mount(host: LoopHost, art = true) {
       ) : null}
     </section>,
   );
-  return { ...r, rec: s.rec, canvas: r.container.querySelector('canvas')! };
+  return { ...r, rec: s.rec, canvas: r.container.querySelector('canvas.vibe-back')! as HTMLCanvasElement, title: r.container.querySelector('canvas.vibe-title')! as HTMLCanvasElement };
 }
 
 describe('the vibe back layer', () => {
@@ -93,6 +106,8 @@ describe('the vibe back layer', () => {
     expect(container.querySelector('section')!.firstElementChild).toBe(canvas);
     expect(canvas.getAttribute('aria-hidden')).toBe('true');
     expect(canvas.style.left).toBe('480px');
+    // Its CSS width is the area right of the wing, so the half resolution backing stretches evenly on both axes.
+    expect(canvas.style.width).toBe('1520px');
     expect(canvas.width).toBe(760);
     expect(canvas.height).toBe(340);
   });
@@ -105,6 +120,10 @@ describe('the vibe back layer', () => {
     expect(c).toMatch(/transparent 0, #000 64px/);
     expect(c).toMatch(/#000 48px, #000 calc\(100% - 48px\)/);
     expect(c).toMatch(/mask-composite:\s*intersect/);
+  });
+
+  it('the main area is its own stacking context while the layer is in it, so z-index -1 stays above the horizon canvas', () => {
+    expect(sheet('../styles/vibe.css')).toMatch(/\.main:has\(\.vibe-back\)\s*\{\s*isolation:\s*isolate/);
   });
 
   it('draws nothing and stops when no music plays and every effect is at rest', () => {
@@ -183,6 +202,97 @@ describe('the vibe back layer', () => {
     m.frames(10000, 400);
     expect(m.pending()).toBe(false);
     expect(rec.calls.some((c) => c[0] === 'clearRect')).toBe(true);
+  });
+
+  const playFor = (ms: number) =>
+    act(() => {
+      for (let t = 0; t < ms; t += 33) {
+        ingestLevels(sound, t);
+        tickAudio(t);
+      }
+    });
+  const copies = (rec: { calls: unknown[][] }, back: HTMLCanvasElement) => rec.calls.filter((c) => c[0] === 'drawImage' && c[1] === back && c.length === 10);
+
+  it('Scene and title lets the effects pass over the song title; Scene only takes them off it', () => {
+    const m = manual();
+    const { rec, canvas, title } = mount(m.host);
+    expect(title.style.width).toBe('2056px');
+    playFor(4000);
+    m.frames(10000, 60);
+    expect(copies(rec, canvas).length).toBeGreaterThan(10);
+    rec.calls.length = 0;
+    act(() => useVibeStore.getState().setVibe({ cover: 'scene' }));
+    m.frames(20000, 60);
+    // It fades out with the cover ease, then no frame copies anything onto the title.
+    rec.calls.length = 0;
+    m.frames(30000, 30);
+    expect(copies(rec, canvas)).toHaveLength(0);
+    rec.calls.length = 0;
+    act(() => useVibeStore.getState().setVibe({ cover: 'title' }));
+    m.frames(40000, 60);
+    expect(copies(rec, canvas).length).toBeGreaterThan(10);
+  });
+
+  it('its stylesheet puts the title canvas above the title, click-through, with all four edges feathered', () => {
+    const c = sheet('../styles/vibe.css');
+    expect(c).toMatch(/\.vibe-title\s*\{[^}]*z-index:\s*1/);
+    expect(c).toMatch(/\.vibe-title\s*\{[^}]*pointer-events:\s*none/);
+    expect(c).toMatch(/\.vibe-title\s*\{[^}]*linear-gradient\(90deg[^}]*linear-gradient\(180deg/);
+  });
+
+  it('bakes the cover again when it finishes loading, not only the plain fill', () => {
+    const m = manual();
+    const s = stubCanvas();
+    restore = s.restore;
+    let ready = false;
+    vi.spyOn(HTMLImageElement.prototype, 'complete', 'get').mockImplementation(() => ready);
+    vi.spyOn(HTMLImageElement.prototype, 'naturalWidth', 'get').mockImplementation(() => (ready ? 300 : 0));
+    const r = render(
+      <section data-place="unwind">
+        <VibeLayer host={m.host} />
+        <div className="u-wing" />
+        <div className="u-art">
+          <img src="x.png" alt="" />
+        </div>
+      </section>,
+    );
+    const img = r.container.querySelector('img')!;
+    const drawsOf = () => s.rec.calls.filter((c) => c[0] === 'drawImage' && c[1] === img).length;
+    expect(drawsOf()).toBe(0);
+    ready = true;
+    act(() => {
+      img.dispatchEvent(new Event('load'));
+    });
+    m.frames(1000, 3);
+    expect(drawsOf()).toBeGreaterThan(0);
+  });
+
+  it('stops while the page is hidden and starts again when it is shown', () => {
+    const m = manual();
+    mount(m.host);
+    playFor(4000);
+    m.frames(10000, 5);
+    expect(m.pending()).toBe(true);
+    m.hide(true);
+    m.frames(10200, 1);
+    expect(m.pending()).toBe(false);
+    m.hide(false);
+    act(() => {
+      document.dispatchEvent(new Event('visibilitychange'));
+    });
+    expect(m.pending()).toBe(true);
+  });
+
+  it('does not wake the loop for layout churn that moves nothing', () => {
+    const m = manual();
+    const { container } = mount(m.host);
+    m.frames(1000, 400);
+    expect(m.pending()).toBe(false);
+    const sect = container.querySelector('section')!;
+    act(() => {
+      sect.classList.add('noise');
+    });
+    expect(m.pending()).toBe(false);
   });
 
   it('is mounted in the Unwind place before everything else, so it runs on Listen and Watch alike', () => {

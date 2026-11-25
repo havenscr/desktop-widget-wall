@@ -3,6 +3,7 @@ import auroraSrc from './aurora.ts?raw';
 import glowSrc from './glow.ts?raw';
 import mixSrc from './mix.ts?raw';
 import colourSrc from './colours.ts?raw';
+import layerSrc from './VibeLayer.tsx?raw';
 
 function bodyOf(src: string, name: string): string {
   const text = src.replace(/\r\n/g, '\n');
@@ -18,6 +19,23 @@ function bodyOf(src: string, name: string): string {
     }
   }
   throw new Error(`unclosed ${name}`);
+}
+
+/** The braces of an arrow function held in a const, or passed on after `marker`, up to its closing brace. */
+function arrowBody(src: string, marker: string): string {
+  const text = src.replace(/\r\n/g, '\n');
+  const at = text.indexOf(marker);
+  if (at < 0) throw new Error(`no ${marker}`);
+  const open = text.indexOf('{', at + marker.length);
+  let depth = 0;
+  for (let i = open; i < text.length; i++) {
+    if (text[i] === '{') depth++;
+    else if (text[i] === '}') {
+      depth -= 1;
+      if (depth === 0) return text.slice(open + 1, i);
+    }
+  }
+  throw new Error(`unclosed ${marker}`);
 }
 
 const RULES: [string, RegExp][] = [
@@ -49,6 +67,22 @@ describe('the vibe frame path allocates nothing and uses no filter', () => {
       expect(bad, `${fn} has: ${bad.join(', ')}`).toEqual([]);
     });
   }
+
+  const strip = (code: string): string => code.replace(/\/\/.*$/gm, '').replace(/\/\*[\s\S]*?\*\//g, '');
+  const scan = (code: string): string[] => RULES.filter(([, re]) => re.test(code)).map(([n]) => n);
+
+  it('the layer loop callback (each frame)', () => {
+    expect(scan(strip(arrowBody(layerSrc, '(ts, dt) =>')))).toEqual([]);
+  });
+
+  it('the layer draw (each frame), apart from the sky feather gradient it makes once per size', () => {
+    const code = strip(arrowBody(layerSrc, 'const draw = (ts: number): void =>'));
+    // The gradient is created once after a resize and kept (`if (!skyFade)`); every other line must allocate nothing.
+    const once = code.indexOf('if (!skyFade) {');
+    expect(once).toBeGreaterThan(0);
+    const end = code.indexOf('}', code.indexOf('addColorStop', once));
+    expect(scan(code.slice(0, once) + code.slice(end + 1))).toEqual([]);
+  });
 
   it('the ribbon colour helper is only used when baking', () => {
     expect(colourSrc).toContain('export function ribbonColour');

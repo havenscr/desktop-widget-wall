@@ -112,8 +112,8 @@ describe('the Lines panel', () => {
     expect(screen.getByText(/The ridgelines dance as they do today/)).toBeTruthy();
     expect(screen.getByText('One setting for the lines everywhere music plays.')).toBeTruthy();
     const controls = [...screen.getAllByRole('radio'), ...screen.getAllByRole('button'), ...screen.getAllByRole('slider'), ...screen.getAllByRole('switch')];
-    // 14 radios (types, colours, at rest, cover), 5 buttons (two resets, three presets), 3 sliders, 4 switches.
-    expect(controls).toHaveLength(14 + 5 + 3 + 4);
+    // 14 radios (types, colours, at rest, cover), 5 buttons (two resets, three presets), 3 sliders, 3 switches.
+    expect(controls).toHaveLength(14 + 5 + 3 + 3);
     for (const el of controls) {
       expect(el.getAttribute('title')).toBeNull();
       resetTip();
@@ -130,40 +130,21 @@ describe('the Vibe section', () => {
 
   beforeEach(() => resetVibeStore());
 
-  it('has Auto vibe, Drop Glitch and Calm cap switches and a Cover choice, each with a helper line', () => {
+  it('has Auto vibe and Calm cap switches and a Cover choice, each with a helper line', () => {
     render(<LinesPanel />);
     expect(sw('Auto vibe').getAttribute('aria-checked')).toBe('true');
-    expect(sw('Drop Glitch')).toBeTruthy();
+    expect(screen.queryByRole('switch', { name: 'Drop Glitch' })).toBeNull();
     expect(sw('Calm cap').getAttribute('aria-checked')).toBe('false');
     expect(screen.getByRole('radio', { name: 'Scene and title' }).getAttribute('aria-checked')).toBe('true');
-    for (const id of ['auto', 'glitch', 'calm']) {
+    for (const id of ['auto', 'calm']) {
       const hint = document.getElementById(`ln-${id}-hint`)!;
       expect(hint.className).toBe('ln-hint');
       expect(hint.textContent!.length).toBeGreaterThan(20);
     }
     expect(screen.getByText(VIBE_HINTS.cover)).toBeTruthy();
     expect(sw('Auto vibe').getAttribute('aria-describedby')).toBe('ln-auto-hint');
-  });
-
-  it('shows Drop Glitch on and locked while Auto vibe is on, and free once Auto vibe is off', () => {
-    render(<LinesPanel />);
-    const g = sw('Drop Glitch');
-    expect(g.getAttribute('aria-checked')).toBe('true');
-    expect(g.getAttribute('aria-disabled')).toBe('true');
-    expect(screen.getByText('On with Auto vibe')).toBeTruthy();
-    fireEvent.click(g);
-    expect(useVibeStore.getState().dropGlitch).toBe(false);
-    fireEvent.click(sw('Auto vibe'));
-    expect(useVibeStore.getState().auto).toBe(false);
-    expect(sw('Drop Glitch').getAttribute('aria-checked')).toBe('false');
-    expect(sw('Drop Glitch').getAttribute('aria-disabled')).toBeNull();
-    fireEvent.click(sw('Drop Glitch'));
-    expect(useVibeStore.getState().dropGlitch).toBe(true);
-    expect(sw('Drop Glitch').getAttribute('aria-checked')).toBe('true');
-    // Turning Auto vibe back on shows it on and locked again, and keeps the choice made.
-    fireEvent.click(sw('Auto vibe'));
-    expect(sw('Drop Glitch').getAttribute('aria-disabled')).toBe('true');
-    expect(useVibeStore.getState().dropGlitch).toBe(true);
+    expect(screen.getByRole('radiogroup', { name: 'Cover' }).getAttribute('aria-describedby')).toBe('ln-cover-hint');
+    expect(document.getElementById('ln-cover-hint')!.textContent).toBe(VIBE_HINTS.cover);
   });
 
   it('changes Calm cap and Cover and keeps them in the vibe store, away from the Lines setting', () => {
@@ -189,7 +170,7 @@ describe('the Vibe section', () => {
 
   it('puts each switch row out as name, switch, value, the flush right layout of the Looks sheet', () => {
     render(<LinesPanel />);
-    for (const name of ['Auto vibe', 'Drop Glitch', 'Calm cap']) {
+    for (const name of ['Auto vibe', 'Calm cap']) {
       const row = sw(name).closest('.ln-row')!;
       expect(row.classList.contains('ln-swrow')).toBe(true);
       const kids = Array.from(row.children);

@@ -47,8 +47,7 @@ const COVERS: { id: VibeCover; name: string; note: string }[] = [
 /** The words after a vibe switch, and the helper line under it. */
 export const VIBE_HINTS = {
   auto: 'Colour and glow follow how loud the music has been lately.',
-  dropGlitch: 'Slices tear across the picture when the music drops. Auto vibe turns it on too.',
-  calmCap: 'Halves every effect and swaps the glitch for a soft glow, for a calmer wall.',
+  calmCap: 'Halves every effect and softens the kick and bass, for a calmer wall.',
   cover: 'Scene and title lets effects pass over the song title.',
 } as const;
 
@@ -140,12 +139,10 @@ function VibeSwitch({ id, label, on, locked, words, hint, tipText, onToggle }: {
   );
 }
 
-/** The Vibe section of the Lines side: Auto vibe, Drop Glitch, Calm cap and Cover. Its own setting; Reset to my usual leaves it alone. */
+/** The Vibe section of the Lines side: Auto vibe, Calm cap and Cover. Its own setting; Reset to my usual leaves it alone. */
 function VibeSection() {
   const v = useVibeStore();
   const set = v.setVibe;
-  // The engine glitches on a drop when Auto vibe or Drop Glitch is on, so the switch reads on and locked under Auto vibe.
-  const glitchOn = v.auto || v.dropGlitch;
   const cover = COVERS.find((x) => x.id === v.cover)!;
   return (
     <section className="ln-vibe" aria-labelledby="ln-vibe-head">
@@ -168,29 +165,19 @@ function VibeSection() {
         onToggle={() => set({ auto: !v.auto })}
       />
       <VibeSwitch
-        id="glitch"
-        label="Drop Glitch"
-        on={glitchOn}
-        locked={v.auto}
-        words={v.auto ? 'On with Auto vibe' : v.dropGlitch ? 'On' : 'Off, your usual'}
-        hint={VIBE_HINTS.dropGlitch}
-        tipText={v.auto ? 'Auto vibe has this on. Turn Auto vibe off to choose it yourself.' : v.dropGlitch ? 'Slices tear on each drop. Click to turn it off.' : 'Click to let a drop tear slices across the picture.'}
-        onToggle={() => set({ dropGlitch: !v.dropGlitch })}
-      />
-      <VibeSwitch
         id="calm"
         label="Calm cap"
         on={v.calmCap}
         words={v.calmCap ? 'On' : 'Off, your usual'}
         hint={VIBE_HINTS.calmCap}
-        tipText={v.calmCap ? 'Effects are halved. Click to turn it off.' : 'Click to halve every effect and swap the glitch for a soft glow.'}
+        tipText={v.calmCap ? 'Effects are halved. Click to turn it off.' : 'Click to halve every effect.'}
         onToggle={() => set({ calmCap: !v.calmCap })}
       />
       <div className="ln-row">
         <span className="ln-label" id="ln-cover-label">
           Cover
         </span>
-        <div className="ln-chips" role="radiogroup" aria-labelledby="ln-cover-label" onKeyDown={arrows(COVERS, v.cover, (id) => set({ cover: id }))}>
+        <div className="ln-chips" role="radiogroup" aria-labelledby="ln-cover-label" aria-describedby="ln-cover-hint" onKeyDown={arrows(COVERS, v.cover, (id) => set({ cover: id }))}>
           {COVERS.map((x) => (
             <button key={x.id} type="button" role="radio" aria-checked={v.cover === x.id} tabIndex={v.cover === x.id ? 0 : -1} className={v.cover === x.id ? 'on' : ''} {...tip(x.note)} onClick={() => set({ cover: x.id })}>
               {x.name}
@@ -199,7 +186,7 @@ function VibeSection() {
         </div>
         <span className="ln-value ln-fill">{v.cover === DEFAULT_VIBE.cover ? 'your usual' : cover.name}</span>
       </div>
-      <p className="ln-hint">{VIBE_HINTS.cover}</p>
+      <p className="ln-hint" id="ln-cover-hint">{VIBE_HINTS.cover}</p>
     </section>
   );
 }

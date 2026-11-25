@@ -14,3 +14,24 @@
   -webkit-mask-composite: source-in;
   mask-composite: intersect;
 }
+
+/* z-index -1 only works against a stacking context of the main area's own: without one the layer would sit behind
+   the horizon's canvas and the veil and be invisible. Watch's sky and layered looks already isolate it; this makes
+   Listen the same. */
+.main:has(.vibe-back) {
+  isolation: isolate;
+}
+
+/* The title's own layer (Scene and title): a small canvas over the song title that shows the part of the back layer
+   under it, so the effects pass over the letters. It is above the title, click-through, and feathers all four edges
+   by 28 px so it never ends on a line. Scene only fades it out. */
+.vibe-title {
+  position: absolute;
+  z-index: 1;
+  pointer-events: none;
+  mix-blend-mode: screen;
+  -webkit-mask-image: linear-gradient(90deg, transparent 0, #000 28px, #000 calc(100% - 28px), transparent 100%), linear-gradient(180deg, transparent 0, #000 28px, #000 calc(100% - 28px), transparent 100%);
+  mask-image: linear-gradient(90deg, transparent 0, #000 28px, #000 calc(100% - 28px), transparent 100%), linear-gradient(180deg, transparent 0, #000 28px, #000 calc(100% - 28px), transparent 100%);
+  -webkit-mask-composite: source-in;
+  mask-composite: intersect;
+}
