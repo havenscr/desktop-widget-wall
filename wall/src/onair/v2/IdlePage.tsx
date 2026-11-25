@@ -16,7 +16,7 @@ import { useYtLive } from '../ytliveStore';
 import { useRecorder, useRecorderSync } from './recorderStore';
 import { Head } from './Tiles';
 
-/** The notes of the first part are drawn large: one size, 26 px. */
+/** The notes are drawn large: one size, 26 px. */
 const NOTES_SIZES = [26] as const;
 
 /** The home app's preset names for each page (matched against the shown name, without case, spaces or punctuation). */
@@ -77,7 +77,7 @@ function LastTime({ last, now }: { last: LastOnAir | null; now: number }) {
           </div>
         )}
       </div>
-      <button type="button" className="oa-btn sm oa2-open" onClick={() => void open('marks')} {...tip('Open marks.txt in the default editor: one line a mark, with the local time, the show time and the part')}>
+      <button type="button" className="oa-btn sm oa2-open" onClick={() => void open('marks')} {...tip('Open marks.txt in the default editor: one line a mark, with the local time and the show time')}>
         Open marks.txt
       </button>
     </div>
@@ -187,8 +187,8 @@ function Checklist({ onHold }: { onHold: (m: PageMode) => void }) {
 }
 
 /**
- * The page for nothing on air: the show timer idle, the last time on air, three Get ready cards, the
- * first part's notes, the checklist and the studio lights. Boxes are the ones the planned picture draws.
+ * The page for nothing on air: the show timer idle, the last time on air, three Get ready cards,
+ * the notes, the checklist and the studio lights. Boxes are the ones the planned picture draws.
  */
 export function IdlePage({ now, last, onHold }: { now: number; last: LastOnAir | null; onHold: (m: PageMode) => void }) {
   const status = useYtLive((s) => s.status);

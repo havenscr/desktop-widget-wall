@@ -1,7 +1,6 @@
 /**
  * On Air: the pure parts. The show timer's arithmetic and its saved form, the run of show's
- * answer from Rust, a part's planned time against the time spent in it, and the fixed lines for
- * every refusal. No clock is read here; every function takes `now`.
+ * answer from Rust, and the fixed lines for every refusal. No clock is read here; every function takes `now`.
  */
 
 /** One part of the run of show, as Rust parsed it from `run-of-show.txt`. */
@@ -29,7 +28,7 @@ export interface MarkResult {
   lastParts?: string[];
 }
 
-/** The show timer and the current part, as kept in local storage (`wall2-onair`). */
+/** The show timer, as kept in local storage (`wall2-onair`). */
 export interface Saved {
   running: boolean;
   /** When the running stretch began (epoch ms); null while stopped. */
@@ -71,8 +70,9 @@ export function stoppedAtLimit(s: Saved, reachedAt: number): Saved {
 
 /**
  * The saved form, checked field by field: anything missing, of the wrong type, a running start
- * in the future or past the limits makes the whole thing idle (never a half-trusted timer); the part fields older versions stored are ignored. A
+ * in the future or past the limits makes the whole thing idle (never a half-trusted timer). A
  * running timer that has run past 24 hours since it was stored comes back as the stopped state.
+ * Fields older versions stored (a part index and its start time) are ignored, never an error.
  */
 export function parseSaved(raw: string | null, now: number): Saved {
   if (!raw) return IDLE;

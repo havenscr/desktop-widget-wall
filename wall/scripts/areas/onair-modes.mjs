@@ -143,7 +143,7 @@ export default {
   name: 'onair-modes',
   gallery: {
     states: [
-      state('Recording, running (take 3)', REC, ['a recorder is running', 'Take timer', '04:12', 'Take 3. It started by itself at', 'Takes today: 3. The longest ran 06:40.', 'Load the data', 'Open marks.txt', 'Outline · Welcome and news', 'Recording keys', 'sent to the recorder', '!Held by hand']),
+      state('Recording, running (take 3)', REC, ['a recorder is running', 'Take timer', '04:12', 'Take 3. It started by itself at', 'Takes today: 3. The longest ran 06:40.', 'Open marks.txt', 'Outline', 'Say hello and the one piece of news', 'Recording keys', 'sent to the recorder', '!Held by hand']),
       state('Recording, paused', `${REC}&oapaused=1`, ['Take 3 is paused. The timer waits with the recorder.', 'Paused', 'Resume', '04:12']),
       state('Recording, held with nothing on', 'oamode=rec', ['Held by hand', 'No recording running. The timer starts with the recorder.', '00:00', 'Record', '!Take 3']),
       state('Recording, recorder open and ready', 'oamode=rec&recorder=open', ['Camtasia Recorder', 'Ready', '!Not open']),
@@ -154,7 +154,7 @@ export default {
       state('Recording, Pause answered', REC, ['Resume', 'Paused', 'Take 3 is paused'], `${KEYS}[aria-label="Pause"]`),
       state('Recording, the reason hovered', REC, 'a recorder is running', 'hover:.oa2-why'),
       state('Recording, Auto focused with the keyboard', REC, 'Auto', 'kbd:.oa2-auto'),
-      state('Presenting, matched Teams call', MEET, ['a Teams call is on', 'Teams call on', 'camera on', 'mic on', 'Talk timer', '24:00', '36 min left', 'Community talk: November', '10:00 to 11:00 AM today', '42 invited. Organiser: Event host', 'You joined at 9:56 AM', 'Speaker notes · Welcome and news', 'Call keys', 'sent to Teams', 'Started 10:00 AM with the meeting']),
+      state('Presenting, matched Teams call', MEET, ['a Teams call is on', 'Teams call on', 'camera on', 'mic on', 'Talk timer', '24:00', '36 min left', 'Community talk: November', '10:00 to 11:00 AM today', '42 invited. Organiser: Event host', 'You joined at 9:56 AM', 'Speaker notes', 'Say hello and the one piece of news', 'Call keys', 'sent to Teams', 'Started 10:00 AM with the meeting']),
       state('Presenting, unmatched Zoom call', 'call=zoom&callsince=-12&meet=none', ['A Zoom call is on', 'No meeting on your calendar matches it', 'Started 10:12 AM, when the call began. No end time known.', 'Time left: not known. The timer counts up', 'On since 10:12 AM', 'sent to Zoom', '!Open in Outlook']),
       state('Presenting, browser call', 'call=browser&meetnow=1', ['a browser call is on', 'Browser call on', 'no keys for a browser call', 'Mute', 'Share screen']),
       state('Auto picks Recording over a call', `${REC}&call=teams&meetnow=1`, ['a recorder is running', 'Take timer', '!Held by hand']),

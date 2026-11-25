@@ -85,7 +85,7 @@ function LiveTimer({ now }: { now: number }) {
               Start
             </button>
           )}
-          <button type="button" className={`oa-btn oa-reset${confirm ? ' confirm' : ''}`} aria-disabled={saved.running || nothing} onClick={onReset} {...tip(saved.running ? 'Stop the timer first to reset it' : nothing ? 'Nothing to reset yet' : 'Set the timer to 00:00 and go back to the first part (asks again first)')}>
+          <button type="button" className={`oa-btn oa-reset${confirm ? ' confirm' : ''}`} aria-disabled={saved.running || nothing} onClick={onReset} {...tip(saved.running ? 'Stop the timer first to reset it' : nothing ? 'Nothing to reset yet' : 'Set the timer to 00:00 (asks again first)')}>
             {confirm ? 'Reset? Click again' : 'Reset'}
           </button>
         </div>

@@ -157,7 +157,7 @@ export default {
   name: 'onair-live',
   gallery: {
     states: [
-      state('live with comments', 'yt=live', ['Live, 37 watching, since 10:02 AM', 'Comments', 'YouTube · read 4 s ago', 'Could you zoom in a little?', 'YouTube only, read every 10 seconds.', 'Show timer', 'Started 10:02 AM, when the broadcast went live.', 'Studio keys', 'Solo', 'Two up', 'Share', 'Go live', 'No key sent yet', 'StreamYard studio', 'Studio window: open (Firefox)', 'The wall cannot see which layout is live. It shows what it sent.', 'Mark a moment', 'Snip', 'Part 1 of 5: Welcome and news', '!Name channel']),
+      state('live with comments', 'yt=live', ['Live, 37 watching, since 10:02 AM', 'Comments', 'YouTube · read 4 s ago', 'Could you zoom in a little?', 'YouTube only, read every 10 seconds.', 'Show timer', 'Started 10:02 AM, when the broadcast went live.', 'Studio keys', 'Solo', 'Two up', 'Share', 'Go live', 'No key sent yet', 'StreamYard studio', 'Studio window: open (Firefox)', 'The wall cannot see which layout is live. It shows what it sent.', 'Mark a moment', 'Snip', 'Say hello and the one piece of news', '!Name channel']),
       state('studio keys, no window picked', 'yt=none&swin=none', ['Solo', 'Two up', 'Pick window', 'Studio window: not picked', '!Go live?']),
       state('studio keys, window picked', 'yt=none', ['Studio window: open', '!Pick window']),
       state('studio keys, Go live armed', 'yt=none', ['Click again', 'Go live? Click again'], '[data-key="golive"]'),
