@@ -1360,10 +1360,11 @@ try {
       if (ringEl && art) {
         const rr = ringEl.getBoundingClientRect(), ar = art.getBoundingClientRect();
         const d = Math.abs((rr.left + rr.right) / 2 - (ar.left + ar.right) / 2);
+        if (Math.abs(ar.width - 60) > 0.5 || Math.abs(ar.height - 60) > 0.5) lw.push('left wing: the album cover is ' + ar.width.toFixed(1) + ' x ' + ar.height.toFixed(1) + ' px, 60 x 60 wanted');
         if (d > 1) lw.push('left wing: the album cover centre is ' + d.toFixed(1) + ' px off the focus ring centre (1 px allowed)');
       }
     }
-    const chipRights = [...document.querySelectorAll('.work .right-wing .chip-col .est')].map((e) => { const g = document.createRange(); g.selectNodeContents(e); return g.getBoundingClientRect().right; });
+    const chipRights = [...document.querySelectorAll('.work[data-place="work"] .right-wing .chip-col .est')].map((e) => { const g = document.createRange(); g.selectNodeContents(e); return g.getBoundingClientRect().right; });
     if (chipRights.length > 1 && Math.max(...chipRights) - Math.min(...chipRights) > 0.5) lw.push('due today: time chips end their text at different x (' + chipRights.map((x) => x.toFixed(1)).join(', ') + ')');
     const hd = wing && wing.querySelector('.mc-hd span:last-child');
     if (hd) {

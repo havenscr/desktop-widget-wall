@@ -1062,9 +1062,9 @@
   padding: 6px 10px;
   white-space: nowrap;
 }
-/* Every time chip fills the column and sets its text to the right with tabular numbers, so the "m" of
+/* On the Work page only (Shelf's task lists keep their centred chips). Every time chip fills the column and sets its text to the right with tabular numbers, so the "m" of
    "30 m" and "60+ m" is at one x down the list. */
-.chip-col .est {
+.work[data-place='work'] .chip-col .est {
   box-sizing: border-box;
   width: 100%;
   text-align: right;
