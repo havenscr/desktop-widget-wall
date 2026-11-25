@@ -151,6 +151,9 @@ const EXPECT = {
   lwring: /^ *FAIL left wing: focus outline on Choose a focus length/m,
   lwtemp: /^ *FAIL left wing: TEMP header /m,
   lwround: /^ *FAIL left wing: round control /m,
+  lwtitle: /^ *FAIL left wing: the track title starts /m,
+  lwcover: /^ *FAIL left wing: the album cover centre /m,
+  chipedge: /^ *FAIL due today: time chips /m,
   // unwind listen
   'listen-player': /^ *FAIL listen: the player ends at y \d+/m,
   'listen-card': /^ *FAIL listen: the Spotify card /m,
@@ -287,6 +290,9 @@ const OVERFLOWS = {
   lwring: '.work .left-wing .focus-mini-ring:focus-visible { outline: none !important; }',
   lwtemp: '.work .left-wing .mc-hd span:last-child { transform: translateX(14px); }',
   lwround: '.work .wl .rd, .work .wl .focus-mini-ring, .work .wl .ring { border-radius: 0 !important; }',
+  lwtitle: '.work .left-wing .music-mini { gap: 31px !important; }',
+  lwcover: '.work .left-wing .music-mini .art { margin-left: 9px !important; }',
+  chipedge: '.work .right-wing .chip-col .est { text-align: left !important; }',
   // unwind listen: the player pushed down into the lines, the card grown past the foot, the status
   // line run into the office lights slot, Up next rows grown past the horizon.
   'listen-player': '.u-listen { margin-top: 200px; }',
@@ -1341,6 +1347,25 @@ try {
         if (!sameLine || !equal) lw.push('left wing: music buttons are not on one line and equal in size (line ' + sameLine + ', equal ' + equal + ')');
       }
     }
+    // The focus row and the music row share two lines: the track title starts at the x of "Focus done",
+    // and the cover's centre is the ring's centre (1 px allowed).
+    const fmini = wing && wing.querySelector('.focus-mini');
+    const textLeft = (e) => { const g = document.createRange(); g.selectNodeContents(e); return g.getBoundingClientRect().left; };
+    if (fmini && mini) {
+      const ft = fmini.querySelector('.focus-mini-text .t2');
+      const mt = mini.querySelector('.music-mini-text .b6, .music-mini-text .s');
+      const ringEl = fmini.querySelector('.ring');
+      const art = mini.querySelector('.art');
+      if (ft && mt && Math.abs(textLeft(ft) - textLeft(mt)) > 1) lw.push('left wing: the track title starts at x ' + textLeft(mt).toFixed(1) + ', the focus title at ' + textLeft(ft).toFixed(1));
+      if (ringEl && art) {
+        const rr = ringEl.getBoundingClientRect(), ar = art.getBoundingClientRect();
+        const d = Math.abs((rr.left + rr.right) / 2 - (ar.left + ar.right) / 2);
+        if (Math.abs(ar.width - 60) > 0.5 || Math.abs(ar.height - 60) > 0.5) lw.push('left wing: the album cover is ' + ar.width.toFixed(1) + ' x ' + ar.height.toFixed(1) + ' px, 60 x 60 wanted');
+        if (d > 1) lw.push('left wing: the album cover centre is ' + d.toFixed(1) + ' px off the focus ring centre (1 px allowed)');
+      }
+    }
+    const chipRights = [...document.querySelectorAll('.work[data-place="work"] .right-wing .chip-col .est')].map((e) => { const g = document.createRange(); g.selectNodeContents(e); return g.getBoundingClientRect().right; });
+    if (chipRights.length > 1 && Math.max(...chipRights) - Math.min(...chipRights) > 0.5) lw.push('due today: time chips end their text at different x (' + chipRights.map((x) => x.toFixed(1)).join(', ') + ')');
     const hd = wing && wing.querySelector('.mc-hd span:last-child');
     if (hd) {
       const mid = (e) => { const r = e.getBoundingClientRect(); const g = document.createRange(); g.selectNodeContents(e); const t = g.getBoundingClientRect(); return (t.left + t.right) / 2 || (r.left + r.right) / 2; };

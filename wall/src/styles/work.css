@@ -428,7 +428,9 @@
 .music-mini {
   display: flex;
   align-items: center;
-  gap: 14px;
+  /* The cover is as wide as the focus ring (60 px) and the gap is the focus row's 18 px, so the title
+     starts at the same x as "Focus done" and the cover's centre is the ring's centre. */
+  gap: 18px;
   min-width: 0;
   transition: opacity 600ms ease;
 }
@@ -436,8 +438,8 @@
   opacity: 0.55;
 }
 .music-mini .art {
-  width: 52px;
-  height: 52px;
+  width: 60px;
+  height: 60px;
   border-radius: 14px;
   flex: none;
   overflow: hidden;
@@ -1059,6 +1061,14 @@
   border-radius: 10px;
   padding: 6px 10px;
   white-space: nowrap;
+}
+/* On the Work page only (Shelf's task lists keep their centred chips). Every time chip fills the column and sets its text to the right with tabular numbers, so the "m" of
+   "30 m" and "60+ m" is at one x down the list. */
+.work[data-place='work'] .chip-col .est {
+  box-sizing: border-box;
+  width: 100%;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
 }
 .task-err {
   color: var(--amber);
