@@ -13,6 +13,7 @@ import { PASTE_ERROR_MS } from './ownShared';
 import { countText, DeleteAsk, OwnTile, savedVideo } from './OwnParts';
 import { askDetails } from './ownDetails';
 import { useOwnLists } from './ownLists';
+import { useListGrow } from './useListGrow';
 import { restBridge, restZone, useWatchRest } from './rest';
 import { playOwn, setFollow, useOwnView, type OwnView } from './ownPlay';
 import { closeWatchSearch, isLinkText, runWatchSearch, useWatchSearch, wordsProblem } from './searchStore';
@@ -505,8 +506,20 @@ export function WatchCard() {
   // While a video plays and the controls rest, the card rests with them (same timing); it never rests in use (see `cardHeld`)
   // or while its playlist editor or follow view is open. At rest it keeps the pointer only to notice it entering its box.
   const resting = useWatchRest((s) => s.rest && !s.cardHeld) && mode === 'list';
+  const zone = restZone('card');
+  const grow = useListGrow(card, mode === 'list' && !empty && !searching);
   return (
-    <section ref={setCard} className={`u-card w-card${empty ? ' empty' : ''}${mode === 'edit' || searching ? ' own-tall' : ''}`} aria-label="Watch list" data-rest={resting ? 'true' : 'false'} {...restZone('card')}>
+    <section
+      ref={setCard}
+      className={`u-card w-card${empty ? ' empty' : ''}${mode === 'edit' || searching ? ' own-tall' : ''}${grow.grown ? ' grown' : ''}`}
+      aria-label="Watch list"
+      data-rest={resting ? 'true' : 'false'}
+      {...zone}
+      onPointerEnter={() => (zone.onPointerEnter(), grow.handlers.onPointerEnter())}
+      onPointerLeave={(e) => (zone.onPointerLeave(e), grow.handlers.onPointerLeave())}
+      onFocusCapture={grow.handlers.onFocusCapture}
+      onBlurCapture={grow.handlers.onBlurCapture}
+    >
       {mode === 'edit' ? <OwnEditor id={open!} /> : mode === 'follow' ? <OwnFollow view={own!} /> : <WatchList empty={empty} draft={draft} setDraft={setDraft} host={card} own={own} />}
     </section>
   );
