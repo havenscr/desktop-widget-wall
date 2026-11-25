@@ -123,16 +123,18 @@ export function noteDrop(s: VibeState, nowS: number): void {
   s.drops[slot] = nowS;
 }
 
-function targets(settings: VibeSettings, playing: boolean) {
-  return {
-    auto: settings.auto ? 1 : 0,
-    tape: settings.tapeGrain ? 1 : 0,
-    // Vote 3A: the manual switch, or Auto vibe, lets a drop glitch.
-    glitch: settings.dropGlitch || settings.auto ? 1 : 0,
-    calm: settings.calmCap ? 1 : 0,
-    title: settings.cover === 'scene' ? 1 : 0,
-    live: playing ? 1 : 0,
-  };
+// One scratch object, rewritten by each call: the frame path allocates nothing.
+const T = { auto: 0, tape: 0, glitch: 0, calm: 0, title: 0, live: 0 };
+
+function targets(settings: VibeSettings, playing: boolean): typeof T {
+  T.auto = settings.auto ? 1 : 0;
+  T.tape = settings.tapeGrain ? 1 : 0;
+  // Vote 3A: the manual switch, or Auto vibe, lets a drop glitch.
+  T.glitch = settings.dropGlitch || settings.auto ? 1 : 0;
+  T.calm = settings.calmCap ? 1 : 0;
+  T.title = settings.cover === 'scene' ? 1 : 0;
+  T.live = playing ? 1 : 0;
+  return T;
 }
 
 /** What the layers draw with this frame. Written in place by `stepVibe`; strengths are 0 to about 1.2. */

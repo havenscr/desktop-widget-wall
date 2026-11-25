@@ -309,7 +309,7 @@ describe('the feathered look stands in front of the mountains', () => {
       expect(stage.querySelector('.w-glow')).not.toBeNull();
       expect(front()).toBeNull();
       expect(claims().watch.front).toBeUndefined();
-      expect(document.querySelectorAll('canvas').length).toBe(1);
+      expect(document.querySelectorAll('canvas:not(.vibe-back):not(.vibe-title)').length).toBe(1);
     }
     // Its box still keeps the moon off it: the first place is within 40 px of the picture.
     expect(moonFor(MOON_PLACES, claims())).not.toBe(MOON);

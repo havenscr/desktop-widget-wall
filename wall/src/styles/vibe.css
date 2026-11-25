@@ -1,0 +1,36 @@
+/* The vibe's back layer (`vibe/VibeLayer.tsx`): one canvas inside the Unwind place, behind the place's own content
+   (z-index -1 puts it under the art, title and controls, which are DOM), starting at the wing's right edge.
+   It feathers its own bounds: 64 px on the left edge, 48 px top and bottom, so it never ends on a line. */
+.vibe-back {
+  position: absolute;
+  top: 0;
+  right: 0;
+  height: 100%;
+  z-index: -1;
+  pointer-events: none;
+  mix-blend-mode: screen;
+  -webkit-mask-image: linear-gradient(90deg, transparent 0, #000 64px), linear-gradient(180deg, transparent 0, #000 48px, #000 calc(100% - 48px), transparent 100%);
+  mask-image: linear-gradient(90deg, transparent 0, #000 64px), linear-gradient(180deg, transparent 0, #000 48px, #000 calc(100% - 48px), transparent 100%);
+  -webkit-mask-composite: source-in;
+  mask-composite: intersect;
+}
+
+/* z-index -1 only works against a stacking context of the main area's own: without one the layer would sit behind
+   the horizon's canvas and the veil and be invisible. Watch's sky and layered looks already isolate it; this makes
+   Listen the same. */
+.main:has(.vibe-back) {
+  isolation: isolate;
+}
+
+/* The title's own layer (Scene and title): a canvas over the song title that shows the part of the back layer under it,
+   so the effects pass over the letters. It is above the title and click-through. Its mask is one elliptical bell
+   that reaches zero at the canvas edge (smooth steps, no straight edge anywhere), so it never reads as a shape.
+   Scene only fades it out. */
+.vibe-title {
+  position: absolute;
+  z-index: 1;
+  pointer-events: none;
+  mix-blend-mode: screen;
+  -webkit-mask-image: radial-gradient(ellipse closest-side, #000 0, rgba(0, 0, 0, 0.84) 25%, rgba(0, 0, 0, 0.5) 50%, rgba(0, 0, 0, 0.16) 75%, transparent 100%);
+  mask-image: radial-gradient(ellipse closest-side, #000 0, rgba(0, 0, 0, 0.84) 25%, rgba(0, 0, 0, 0.5) 50%, rgba(0, 0, 0, 0.16) 75%, transparent 100%);
+}
