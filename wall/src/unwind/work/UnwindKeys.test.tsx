@@ -8,6 +8,7 @@ import { PINS_KEY } from '../../work/libraryModel';
 import { resetKeysFeed } from '../../work/keysFeed';
 import type { KeysSummary } from '../../work/keysModel';
 import { useWorkLayerStore } from './layerStore';
+import { PinnedRow } from '../../work/PinnedRow';
 import { UnwindKeys } from './UnwindKeys';
 
 const flush = async (ms = 0) => {
@@ -96,11 +97,11 @@ describe('Unwind keys row', () => {
     expect(s).toMatch(/\.u-key \{[^}]*height: 64px/);
     expect(s).toMatch(/\.u-keys-tiles \{[^}]*repeat\(5, minmax\(0, 1fr\)\)[^}]*gap: 8px/);
   });
-  it('all text is 16 px or more and tiles keep 10 px of padding', () => {
+  it('all text is 16 px or more and tiles keep 6 px of side padding', () => {
     const s = css('../../styles/unwind-work.css');
     const keys = s.slice(s.indexOf('.u-keys {'));
     for (const m of keys.matchAll(/font: \d+ (\d+)px/g)) expect(Number(m[1])).toBeGreaterThanOrEqual(16);
-    expect(keys).toMatch(/\.u-key \{[^}]*padding: 0 10px/);
+    expect(keys).toMatch(/\.u-key\.deck-tile\.key-tile \{[^}]*padding: 0 6px/);
   });
   it('always has five equal places: one pin leaves four quiet empty ones, three leaves two', async () => {
     for (const [pins, empty] of [[['lib:thirds'], 4], [['lib:thirds', 'lib:focus', 'lib:snip'], 2]] as const) {
@@ -139,5 +140,35 @@ describe('Unwind keys row', () => {
     expect(parseFloat(getComputedStyle(r.container.querySelector<HTMLElement>('.u-keys-line')!).fontSize)).toBeGreaterThanOrEqual(16);
     expect(getComputedStyle(r.container.querySelector<HTMLElement>('.u-key-l')!).whiteSpace).toBe('nowrap');
     style.remove();
+  });
+  it('tiles are Work key tiles with the same kind for the same pins', async () => {
+    const u = render(<UnwindKeys />);
+    await flush(50);
+    const unwindKinds = [...u.container.querySelectorAll('.u-key:not(.empty)')].map((t) => [t.getAttribute('aria-label'), t.getAttribute('data-kind')]);
+    expect(u.container.querySelector('.u-key:not(.empty)')!.className).toBe('deck-tile key-tile u-key');
+    u.unmount();
+    const w = render(<PinnedRow />);
+    await flush(50);
+    const workKinds = [...w.container.querySelectorAll('.pin-tile')].map((t) => [t.getAttribute('aria-label'), t.getAttribute('data-kind')]);
+    expect(unwindKinds.length).toBe(5);
+    expect(unwindKinds.every(([, k]) => !!k)).toBe(true);
+    expect(unwindKinds).toEqual(workKinds);
+  });
+  it('a key that cannot run has no kind, as on Work', async () => {
+    localStorage.setItem(PINS_KEY, JSON.stringify(['lib:thirds']));
+    mocks.set('wall2_arrange_status', () => false);
+    const r = render(<UnwindKeys />);
+    await flush(50);
+    const t = r.container.querySelector('.u-key:not(.empty)')!;
+    expect(t.classList.contains('off')).toBe(true);
+    expect(t.hasAttribute('data-kind')).toBe(false);
+  });
+  it('no label is cut with an ellipsis and none is clipped', () => {
+    const s = css('../../styles/unwind-work.css');
+    const keys = s.slice(s.indexOf('.u-key {'), s.indexOf('.u-keys-line {'));
+    expect(keys).not.toContain('ellipsis');
+    expect(keys).not.toContain('overflow: hidden');
+    expect(keys).not.toContain('line-clamp');
+    expect(keys).toMatch(/\.u-key-l \{[^}]*white-space: nowrap/);
   });
 });

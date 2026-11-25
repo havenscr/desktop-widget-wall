@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react';
 import { invoke } from '../bridge/tauri';
 import { useVisible } from '../ui/useVisible';
+import { libIndex, pinKind, type KeyKind } from './keyKind';
 import { joinKeys, useKeysFeedStore } from './keysFeed';
-import { FALLBACK_PINS, MAX_PINS, parsePins, PINS_CHANGED_EVENT, readPinsRaw, resolvePin, type LibGroup, type PinView } from './libraryModel';
+import { allKeys, FALLBACK_PINS, MAX_PINS, parsePins, PINS_CHANGED_EVENT, readPinsRaw, resolvePin, type LibGroup, type PinView } from './libraryModel';
 
 /** The library, read once; null while it loads or when it cannot be read. */
 export function useLibrary(on = true): { lib: LibGroup[] | null; failed: boolean; retry: () => void } {
@@ -50,4 +51,14 @@ export function usePins(active = true) {
   const refs = kept ?? defaults;
   const pins: PinView[] = lib ? refs.map((r) => resolvePin(r, lib, filePins)).filter((p): p is PinView => p !== null).slice(0, MAX_PINS) : [];
   return { read, lib, libFailed, retryLib, raw, setRaw, filePins, kept, pins };
+}
+
+/** The kind (and so the colour) of a pinned key, the one answer for the Work row and the Unwind keys: built from the library and the key's own action and label. */
+export function makeKindOf(lib: readonly LibGroup[] | null): (p: PinView) => KeyKind {
+  const byId = lib ? allKeys(lib) : null;
+  const index = lib ? libIndex(lib) : null;
+  return (p) => {
+    const hit = p.ref.startsWith('lib:') ? byId?.get(p.ref.slice(4)) : undefined;
+    return pinKind(p.ref, hit ? { group: hit.group.id, action: hit.key.action } : null, { action: p.action, label: p.label }, index);
+  };
 }
