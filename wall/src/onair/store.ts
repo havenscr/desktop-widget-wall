@@ -171,9 +171,20 @@ export function createOnAirStore(deps: OnAirDeps) {
         } catch (e) {
           return m.saveErrorText(e);
         }
-        lastRead = -Infinity;
-        await get().loadShow();
-        return null;
+        // Read the file again at once (once more if that fails); the editor closes only on a fresh answer.
+        for (let tries = 0; tries < 2; tries++) {
+          const seq = ++readSeq;
+          lastRead = deps.now();
+          try {
+            const answer = await deps.invoke<unknown>('wall2_onair_show');
+            if (!m.isShow(answer)) throw new Error('failed');
+            if (seq === readSeq) set({ show: answer, showError: null });
+            return null;
+          } catch {
+            // Try once more.
+          }
+        }
+        return m.SAVED_NOT_REFRESHED;
       },
       open: async (which) => {
         try {

@@ -93,3 +93,12 @@ it('there is no Edit while the file is refused', () => {
   render(<NotesCard title="Notes" />);
   expect(screen.queryByRole('button', { name: 'Edit' })).toBeNull();
 });
+
+it('when the list cannot refresh after a save the box stays open with that line', async () => {
+  useOnAirStore.setState({ saveNotes: async () => 'Saved, but the list could not refresh' });
+  render(<NotesCard title="Notes" />);
+  edit();
+  fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+  expect((await screen.findByRole('alert')).textContent).toBe('Saved, but the list could not refresh');
+  expect(box()).toBeTruthy();
+});

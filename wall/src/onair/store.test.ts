@@ -258,4 +258,24 @@ describe('the On Air store', () => {
     expect(await store.getState().saveNotes(['d'])).toBe('Could not save run-of-show.txt');
     expect(calls.filter((c) => c.command === 'wall2_onair_show')).toHaveLength(2);
   });
+
+  it('a failed read after a save is tried once more, then reported as saved but not refreshed', async () => {
+    let reads = 0;
+    let fail = 1;
+    const { store, calls } = setup({
+      wall2_onair_save_notes: () => 1,
+      wall2_onair_show: () => {
+        reads++;
+        if (fail-- > 0) throw 'failed';
+        return SHOW;
+      },
+    });
+    expect(await store.getState().saveNotes(['a'])).toBeNull();
+    expect(reads).toBe(2);
+    expect(store.getState().show).toEqual(SHOW);
+    fail = 5;
+    expect(await store.getState().saveNotes(['a'])).toBe('Saved, but the list could not refresh');
+    expect(reads).toBe(4);
+    expect(calls.filter((c) => c.command === 'wall2_onair_save_notes')).toHaveLength(2);
+  });
 });

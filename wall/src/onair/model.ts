@@ -173,6 +173,9 @@ export function openErrorText(e: unknown, which: 'show' | 'marks'): string {
   return errorWord(e) === 'not-configured' ? 'No config folder on this PC' : `Could not open ${name}`;
 }
 
+/** The line when notes were saved but the file could not be read back. */
+export const SAVED_NOT_REFRESHED = 'Saved, but the list could not refresh';
+
 /** Saved notes that were refused or failed, in one line (Rust's reason after `refused: `). */
 export function saveErrorText(e: unknown): string {
   const w = errorWord(e);
