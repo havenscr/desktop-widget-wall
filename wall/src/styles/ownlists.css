@@ -1049,7 +1049,7 @@ button.ws-play {
 /* Pointed at, the Watch list card grows down to just above the ground (the editor's height) to show more rows: the
    same ease and timing as Listen's card (400 ms closing, 240 ms opening). Nothing else sits in this column on the
    Watch tab, and at rest the card keeps its normal size, so no control is covered. */
-.w-card {
+.w-card:not(.own-tall) {
   transition: opacity 250ms ease, height 400ms ease-out;
 }
 .w-card.grown {
@@ -1060,7 +1060,7 @@ button.ws-play {
   flex-basis: 440px;
 }
 @media (prefers-reduced-motion: reduce) {
-  .w-card,
+  .w-card:not(.own-tall),
   .w-card.grown {
     transition: none;
   }

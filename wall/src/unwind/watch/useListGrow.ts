@@ -29,6 +29,9 @@ export function useListGrow(card: HTMLElement | null, enabled: boolean) {
       clear(openT);
       clear(closeT);
       setGrown(false);
+    } else if (inside.current && !openT.current) {
+      // Enabled while the pointer is already on the card (editor closed, list no longer empty): start the wait now.
+      openT.current = setTimeout(() => ((openT.current = null), setGrown(true)), TALL_OPEN_MS);
     }
   }, [enabled]);
   useEffect(

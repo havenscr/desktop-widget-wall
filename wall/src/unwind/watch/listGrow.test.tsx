@@ -66,11 +66,23 @@ describe('the Watch list card grows while pointed at', () => {
     expect(card().classList.contains('grown')).toBe(false);
   });
 
+  it('arms the wait when the card becomes enabled with the pointer already inside', async () => {
+    localStorage.setItem(SAVED_KEY, '[]');
+    resetWatch();
+    render(<WatchCard />);
+    fireEvent.pointerEnter(card());
+    await flush(TALL_OPEN_MS + 50);
+    expect(card().classList.contains('grown')).toBe(false);
+    act(() => useWatchStore.getState().addRef({ kind: 'twitch', id: 'late_one' }, false));
+    await flush(TALL_OPEN_MS + 50);
+    expect(card().classList.contains('grown')).toBe(true);
+  });
+
   it('the style grows the card to the editor height with Listen\'s open and close timing, inside the 720 px strip', () => {
     const s = css('../../styles/ownlists.css');
     const rule = s.slice(s.indexOf('.w-card.grown {'));
     expect(rule).toContain('height: 630px;');
     expect(rule).toContain('transition-duration: 250ms, 240ms;');
-    expect(s).toContain('transition: opacity 250ms ease, height 400ms ease-out;');
+    expect(s).toContain('.w-card:not(.own-tall) {\n  transition: opacity 250ms ease, height 400ms ease-out;');
   });
 });
