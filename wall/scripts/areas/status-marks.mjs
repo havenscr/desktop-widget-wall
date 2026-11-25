@@ -123,11 +123,11 @@ const measureMarks = () => {
     const L = R(line);
     const want = { calm: 1, need: 1, busy: 2, stale: 0, focus: 1, seven: 6, worst: 6, watch: 2, watchworst: 6 }[mode];
     if (!mark) fails.push('status marks: no work-put-away mark in the capsule');
-    // The boxes: 36 high at y 664 from x 124, each button the capsule's full height.
-    if (!near(c.t, 664, 1) || !near(c.h, 36, 0.6) || !near(c.l, 124, 1)) fails.push('status marks: the capsule is at x ' + Math.round(c.l) + ', y ' + Math.round(c.t) + ', ' + Math.round(c.h) + ' tall (x 124, y 664, 36 tall)');
+    // The boxes: 36 high at y 658 from x 124, each button the capsule's full height.
+    if (!near(c.t, 658, 1) || !near(c.h, 36, 0.6) || !near(c.l, 124, 1)) fails.push('status marks: the capsule is at x ' + Math.round(c.l) + ', y ' + Math.round(c.t) + ', ' + Math.round(c.h) + ' tall (x 124, y 658, 36 tall)');
     if (need) {
       const n = R(need);
-      if (!near(n.t, 664, 1) || !near(n.h, 36, 0.6)) fails.push('status marks: the amber pill is at y ' + Math.round(n.t) + ', ' + Math.round(n.h) + ' tall (y 664, 36 tall)');
+      if (!near(n.t, 658, 1) || !near(n.h, 36, 0.6)) fails.push('status marks: the amber pill is at y ' + Math.round(n.t) + ', ' + Math.round(n.h) + ' tall (y 658, 36 tall)');
       if (!near(n.l - c.r, 10, 0.6)) fails.push('status marks: the amber pill sits ' + Math.round((n.l - c.r) * 10) / 10 + ' px right of the capsule (10)');
     }
     for (const b of line.querySelectorAll('button')) {
@@ -180,7 +180,7 @@ const measureMarks = () => {
     const tom = document.querySelector('.u-tomorrow');
     if (tom) {
       const t = R(tom);
-      if (!near(t.l, 124, 1) || !near(t.w, 470, 1) || !near(t.t, 588.4, 1.5) || !near(t.h, 53.6, 1.5)) fails.push('status marks: Tomorrow is at ' + where(t) + ' (124, 588, 594, 642)');
+      if (!near(t.l, 124, 1) || !near(t.w, 470, 1) || !near(t.t, 582.4, 1.5) || !near(t.h, 53.6, 1.5)) fails.push('status marks: Tomorrow is at ' + where(t) + ' (124, 582, 594, 636)');
       if (meet(L, t)) fails.push('status marks: the row at ' + where(L) + ' overlaps Tomorrow at ' + where(t));
     }
     const centre = document.querySelector('.u-centre');
@@ -204,7 +204,7 @@ const rule = (variant, results, emit) => {
   if (r.fails.length) return true;
   if (r.mode.startsWith('card')) emit(`  ok   status marks: the card on ${r.name} starts at x ${r.left} (the control's left edge), ${r.width} px wide, clear of the rail and 12 px from the wall edge`);
   else if (r.mode === 'dream') emit(`  ok   status marks: Dream's sentence is 16 px, rgba(241, 236, 255, .54), the needs part amber with an 8 px dot (${r.width} px wide)`);
-  else emit(`  ok   status marks: capsule ${r.cap} wide and pill at 36 high from x 124, y 664, the row ${r.width} px wide (right edge ${r.right}, the wing ends at ${r.wing}, the centre column starts at ${r.centre}), no text cut, 16 px or more, nothing overlaps Tomorrow, the controls, Watt or the drive-in`);
+  else emit(`  ok   status marks: capsule ${r.cap} wide and pill at 36 high from x 124, y 658, the row ${r.width} px wide (right edge ${r.right}, the wing ends at ${r.wing}, the centre column starts at ${r.centre}), no text cut, 16 px or more, nothing overlaps Tomorrow, the controls, Watt or the drive-in`);
   return false;
 };
 
