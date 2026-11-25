@@ -585,8 +585,10 @@ export function WatchCard() {
   useSkyKeepClear('watch-card', card);
   // A saved video or live stream nobody named shows its real title as soon as YouTube's details say it (signed in only);
   // the player fills it the same way when it plays (`fillLabel` never touches a name that was typed).
+  // A named video is not asked just for its length and views: that would spend YouTube quota on up to 200 videos at every load,
+  // for numbers nothing shows yet. Its length and views fill when it is saved from a search, or when a name is asked for anyway.
   const unnamed = saved
-    .filter((i) => (i.kind === 'video' || i.kind === 'live') && i.label === defaultLabel(i))
+    .filter((i) => (i.kind === 'video' || i.kind === 'live') && (i.label === defaultLabel(i)))
     .map((i) => i.id)
     .join(',');
   useEffect(() => {

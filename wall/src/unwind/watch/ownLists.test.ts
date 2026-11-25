@@ -110,7 +110,7 @@ describe('the lists store', () => {
     expect(JSON.parse(localStorage.getItem(OWN_KEY)!).lists[r.id].items).toHaveLength(1);
     expect(JSON.parse(localStorage.getItem(SAVED_KEY)!)[0]).toEqual({ kind: 'own', id: r.id, label: 'Wind down', named: true, addedAt: expect.any(Number) });
   });
-  it('create refuses at 24 entries', () => {
+  it('create refuses when the list is full', () => {
     const items = Array.from({ length: MAX_SAVED }, (_, i) => ({ kind: 'video', id: vid(i), label: `v${i}` }));
     localStorage.setItem(SAVED_KEY, JSON.stringify(items));
     resetWatch();

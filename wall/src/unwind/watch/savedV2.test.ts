@@ -1,6 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { addSaved, BACKUP_KEY, cleanTags, LEGACY_MAX, loadSaved, MAX_SAVED, noteMeta, notePlay, parseSaved, saveSaved, SAVED_KEY, tagSaved, type SavedItem } from './saved';
+import { addSaved, BACKUP_KEY, cleanTags, LEGACY_MAX, loadSaved, MAX_PLAYS, MAX_SAVED, MAX_SECONDS, MAX_VIEWS, noteMeta, notePlay, parseSaved, RAW_BACKUP_KEY, saveSaved, SAVED_KEY, tagSaved, type SavedItem } from './saved';
 import { resetWatch, useWatchStore } from './store';
+import { playOwn } from './ownPlay';
+import { useOwnLists } from './ownLists';
 
 const V = 'Ab3dEfGh1jK';
 const T0 = Date.UTC(2026, 5, 1);
@@ -28,11 +30,11 @@ describe('saved data v2: reading', () => {
   it('drops a bad field alone and keeps the record and its other fields', () => {
     const good = { addedAt: T0, lastPlayedAt: T0, plays: 2, seconds: 60, views: 9, tags: ['a'] };
     const bad: Record<string, unknown[]> = {
-      addedAt: ['x', -1, 1.5, Date.UTC(2019, 11, 31), Date.now() + 3 * 86_400_000, null, NaN],
-      lastPlayedAt: ['x', 0, 2.5, Date.UTC(2019, 0, 1), Date.now() + 3 * 86_400_000],
-      plays: ['3', -1, 1.5, null, Infinity],
-      seconds: ['9', -5, 0.5, null],
-      views: ['9', -5, 0.5, null],
+      addedAt: ['x', -1, 1.5, Date.UTC(2019, 11, 31), null, NaN],
+      lastPlayedAt: ['x', 0, 2.5, Date.UTC(2019, 0, 1)],
+      plays: ['3', -1, 1.5, null, Infinity, MAX_PLAYS + 1],
+      seconds: ['9', -5, 0.5, null, MAX_SECONDS + 1],
+      views: ['9', -5, 0.5, null, MAX_VIEWS + 1],
       tags: ['lofi', 5, [], [''], [3, null]],
     };
     for (const [field, values] of Object.entries(bad))
@@ -88,16 +90,92 @@ describe('saved data v2: writing', () => {
     expect(loadSaved()).toEqual(items);
   });
 
-  it('writes the backup once, the first time a list is longer than the old limit', () => {
+  it('keeps a v1 shaped copy of a long list, refreshed on every save', () => {
     saveSaved(many(LEGACY_MAX));
     expect(localStorage.getItem(BACKUP_KEY)).toBeNull();
-    const full = many(LEGACY_MAX + 5);
-    saveSaved(full);
-    const backup = localStorage.getItem(BACKUP_KEY);
-    expect(backup).toBe(localStorage.getItem(SAVED_KEY));
-    expect(JSON.parse(backup!)).toHaveLength(LEGACY_MAX + 5);
-    saveSaved(many(LEGACY_MAX + 9));
-    expect(localStorage.getItem(BACKUP_KEY)).toBe(backup);
+    saveSaved(many(LEGACY_MAX + 5));
+    expect(JSON.parse(localStorage.getItem(BACKUP_KEY)!)).toHaveLength(LEGACY_MAX + 5);
+    const more = [...many(LEGACY_MAX + 9)].map((i, n) => (n === 0 ? { ...i, plays: 4, addedAt: T0 } : i));
+    saveSaved(more);
+    const copy = JSON.parse(localStorage.getItem(BACKUP_KEY)!);
+    expect(copy).toHaveLength(LEGACY_MAX + 9);
+    expect(copy[0]).toEqual({ kind: 'twitch', id: 'chan_0', label: 'c0' });
+  });
+
+  it('writes the list even when the copy cannot be written', () => {
+    const real = Storage.prototype.setItem;
+    const spy = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(function (this: Storage, k: string, v: string) {
+      if (k === BACKUP_KEY) throw new Error('quota');
+      real.call(this, k, v);
+    });
+    saveSaved(many(LEGACY_MAX + 5));
+    spy.mockRestore();
+    expect(JSON.parse(localStorage.getItem(SAVED_KEY)!)).toHaveLength(LEGACY_MAX + 5);
+    expect(localStorage.getItem(BACKUP_KEY)).toBeNull();
+  });
+});
+
+describe('saved data v2: a list that did not read back whole is kept', () => {
+  const good = (n: number) => Array.from({ length: n }, (_, i) => ({ kind: 'twitch', id: `chan_${i}`, label: `c${i}` }));
+
+  it('keeps the good entries of a list with bad ones mixed in', () => {
+    const raw = JSON.stringify([good(1)[0], null, 'x', { kind: 'video', id: 'bad' }, entry({ plays: 'x', views: 7 }), { kind: 'nope', id: V }]);
+    expect(parseSaved(raw)).toEqual([good(1)[0], entry({ views: 7 })]);
+  });
+
+  it('copies broken JSON to the raw key before the next save, once, and never overwrites that copy', () => {
+    localStorage.setItem(SAVED_KEY, '[{"kind":"video","id":"' + V + '","label":"Night"');
+    const broken = localStorage.getItem(SAVED_KEY);
+    saveSaved(many(1));
+    expect(localStorage.getItem(RAW_BACKUP_KEY)).toBe(broken);
+    localStorage.setItem(SAVED_KEY, 'also broken');
+    saveSaved(many(2));
+    expect(localStorage.getItem(RAW_BACKUP_KEY)).toBe(broken);
+  });
+
+  it('copies oversized text, a non-list, and a list with dropped entries', () => {
+    for (const raw of ['x'.repeat(300_000), '{"a":1}', JSON.stringify([...good(3), { kind: 'video', id: 'bad', label: 'lost' }])]) {
+      localStorage.clear();
+      localStorage.setItem(SAVED_KEY, raw);
+      saveSaved(many(1));
+      expect(localStorage.getItem(RAW_BACKUP_KEY), raw.slice(0, 20)).toBe(raw);
+    }
+  });
+
+  it('keeps entries 201 to 210 of over-cap storage in the raw copy', () => {
+    const raw = JSON.stringify(good(210));
+    localStorage.setItem(SAVED_KEY, raw);
+    const items = loadSaved();
+    expect(items).toHaveLength(200);
+    saveSaved(items);
+    expect(localStorage.getItem(RAW_BACKUP_KEY)).toBe(raw);
+    expect(JSON.parse(localStorage.getItem(SAVED_KEY)!)).toHaveLength(200);
+  });
+
+  it('makes no raw copy for text that read back whole, nor for nothing stored', () => {
+    saveSaved(many(2));
+    saveSaved(many(3));
+    expect(localStorage.getItem(RAW_BACKUP_KEY)).toBeNull();
+  });
+
+  it('leaves storage alone when the raw copy cannot be written', () => {
+    const raw = 'not json';
+    localStorage.setItem(SAVED_KEY, raw);
+    const real = Storage.prototype.setItem;
+    const spy = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(function (this: Storage, k: string, v: string) {
+      if (k === RAW_BACKUP_KEY) throw new Error('quota');
+      real.call(this, k, v);
+    });
+    saveSaved(many(1));
+    spy.mockRestore();
+    expect(localStorage.getItem(SAVED_KEY)).toBe(raw);
+  });
+
+  it('keeps a time stamp in the future on read, and drops it on write', () => {
+    const future = Date.now() + 5 * 86_400_000;
+    expect(one({ addedAt: future })).toMatchObject({ addedAt: future });
+    saveSaved([{ ...entry(), addedAt: future }] as SavedItem[]);
+    expect(JSON.parse(localStorage.getItem(SAVED_KEY)!)[0]).toEqual(entry());
   });
 });
 
@@ -132,6 +210,25 @@ describe('saved data v2: stats', () => {
 });
 
 describe('saved data v2: the store', () => {
+  it('records a play of an own playlist and keeps playing the recorded item', () => {
+    localStorage.setItem(SAVED_KEY, JSON.stringify([{ kind: 'own', id: 'abcdefghijkl', label: 'Mine', named: true }, entry()]));
+    resetWatch();
+    useOwnLists.setState({ lists: { abcdefghijkl: { items: [{ id: V, title: 'One' }], shuffle: false, repeat: false } } });
+    expect(playOwn('abcdefghijkl')).toBe(true);
+    const item = useWatchStore.getState().saved.find((i) => i.kind === 'own')!;
+    expect(item.plays).toBe(1);
+    expect(item.lastPlayedAt).toBeGreaterThan(Date.UTC(2020, 0, 1));
+    expect(parseSaved(localStorage.getItem(SAVED_KEY)).find((i) => i.kind === 'own')).toEqual(item);
+  });
+
+  it('play leaves the playing item with its recorded plays', () => {
+    localStorage.setItem(SAVED_KEY, JSON.stringify([entry()]));
+    resetWatch();
+    useWatchStore.getState().play({ kind: 'video', id: V });
+    expect(useWatchStore.getState().playing).toEqual(useWatchStore.getState().saved[0]);
+    expect(useWatchStore.getState().playing?.plays).toBe(1);
+  });
+
   beforeEach(() => {
     localStorage.setItem(SAVED_KEY, JSON.stringify([entry(), { kind: 'twitch', id: 'abc', label: 'abc' }]));
     resetWatch();

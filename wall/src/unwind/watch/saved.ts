@@ -29,8 +29,14 @@ export const SAVED_KEY = 'wall2-watch-list';
 /** The list's key before saved data v2 (a build older than v2 keeps only 24 of a longer list). */
 export const LEGACY_MAX = 24;
 export const MAX_SAVED = 200;
-/** Where the full list is copied, once, the first time a v2 save holds more than the old limit. */
+/** A copy of the list in the v1 shape (kind, id, label, named), refreshed on every save of a list longer than the old limit. */
 export const BACKUP_KEY = 'wall2-watch-list-backup';
+/** The stored text exactly as found, copied once before a save replaces text that did not read back whole. Never overwritten. */
+export const RAW_BACKUP_KEY = 'wall2-watch-list-raw';
+/** Per field caps: a value past one is a bad field and is dropped. */
+export const MAX_PLAYS = 1_000_000;
+export const MAX_SECONDS = 604_800;
+export const MAX_VIEWS = 1_000_000_000_000;
 export const MAX_TAGS = 8;
 export const MAX_TAG = 24;
 export const MAX_LABEL = 60;
@@ -41,13 +47,14 @@ const MIN_TIME = Date.UTC(2020, 0, 1);
 const DAY_MS = 86_400_000;
 
 /** A finite whole number of at least 0, else undefined. */
-function wholeCount(v: unknown): number | undefined {
-  return typeof v === 'number' && Number.isFinite(v) && Number.isInteger(v) && v >= 0 ? v : undefined;
+function wholeCount(v: unknown, max = Number.MAX_SAFE_INTEGER): number | undefined {
+  return typeof v === 'number' && Number.isFinite(v) && Number.isInteger(v) && v >= 0 && v <= max ? v : undefined;
 }
 
-function wholeTime(v: unknown, now: number): number | undefined {
+/** A time since 2020. `latest` is the newest allowed: no bound on read (a clock set wrong once must not erase stamps), a day past now on write. */
+function wholeTime(v: unknown, latest: number): number | undefined {
   const n = wholeCount(v);
-  return n !== undefined && n >= MIN_TIME && n <= now + DAY_MS ? n : undefined;
+  return n !== undefined && n >= MIN_TIME && n <= latest ? n : undefined;
 }
 
 /** One tag: cleaned to a line, a leading # dropped, at most 24 characters; empty when nothing is left. */
@@ -72,13 +79,13 @@ export function cleanTags(raw: unknown): string[] | undefined {
 }
 
 /** The optional fields of a stored entry, each checked on its own: a bad one is left out, never the record. */
-function extras(e: Record<string, unknown>, now: number): Omit<SavedItem, 'kind' | 'id' | 'label' | 'named'> {
+function extras(e: Record<string, unknown>, latest: number): Omit<SavedItem, 'kind' | 'id' | 'label' | 'named'> {
   const out: Omit<SavedItem, 'kind' | 'id' | 'label' | 'named'> = {};
-  const addedAt = wholeTime(e.addedAt, now);
-  const lastPlayedAt = wholeTime(e.lastPlayedAt, now);
-  const plays = wholeCount(e.plays);
-  const seconds = wholeCount(e.seconds);
-  const views = wholeCount(e.views);
+  const addedAt = wholeTime(e.addedAt, latest);
+  const lastPlayedAt = wholeTime(e.lastPlayedAt, latest);
+  const plays = wholeCount(e.plays, MAX_PLAYS);
+  const seconds = wholeCount(e.seconds, MAX_SECONDS);
+  const views = wholeCount(e.views, MAX_VIEWS);
   const tags = cleanTags(e.tags);
   if (addedAt !== undefined) out.addedAt = addedAt;
   if (lastPlayedAt !== undefined) out.lastPlayedAt = lastPlayedAt;
@@ -92,7 +99,7 @@ function extras(e: Record<string, unknown>, now: number): Omit<SavedItem, 'kind'
 /** An item as stored: only the fields it has, in a fixed order, so a v1 list round-trips byte for byte. */
 function stored(i: SavedItem): SavedItem {
   const { kind, id, label, named, ...more } = i;
-  return { kind, id, label, ...(named ? { named } : {}), ...extras(more as Record<string, unknown>, Number.MAX_SAFE_INTEGER - DAY_MS) };
+  return { kind, id, label, ...(named ? { named } : {}), ...extras(more as Record<string, unknown>, Date.now() + DAY_MS) };
 }
 
 /**
@@ -128,14 +135,13 @@ export function parseSaved(raw: string | null): SavedItem[] {
     return [];
   }
   if (!Array.isArray(v)) return [];
-  const now = Date.now();
   const out: SavedItem[] = [];
   const seen = new Set<string>();
   for (const e of v) {
     if (out.length >= MAX_SAVED) break;
     if (!e || typeof e !== 'object') continue;
     const { kind, id, label, named } = e as Record<string, unknown>;
-    const more = extras(e as Record<string, unknown>, now);
+    const more = extras(e as Record<string, unknown>, Number.MAX_SAFE_INTEGER);
     if (!isKind(kind) || !validId(kind, id)) continue;
     const ref = { kind, id };
     const key = refKey(ref);
@@ -154,14 +160,39 @@ export function loadSaved(): SavedItem[] {
   }
 }
 
-export function saveSaved(items: readonly SavedItem[]): void {
+/** True when stored text would not read back whole: too long, not JSON, not a list, or some entries would be dropped (bad ones, repeats, past 200). */
+function readsLossy(raw: string): boolean {
+  if (raw.length > MAX_STORED) return true;
   try {
-    const text = JSON.stringify(items.slice(0, MAX_SAVED).map(stored));
-    // A build older than v2 cuts a longer list to 24 on its next save: keep one full copy, once.
-    if (items.length > LEGACY_MAX && localStorage.getItem(BACKUP_KEY) === null) localStorage.setItem(BACKUP_KEY, text);
+    const v: unknown = JSON.parse(raw);
+    return !Array.isArray(v) || parseSaved(raw).length !== v.length;
+  } catch {
+    return true;
+  }
+}
+
+/**
+ * Write the list. The stored text is never replaced while it holds something this build cannot read back whole
+ * unless that text is first copied, once, to `RAW_BACKUP_KEY` (and if that copy cannot be written, the list stays
+ * for this session and storage is left alone). Then the list is written; a copy in the v1 shape follows, in its
+ * own try, for a list longer than the old limit, so a full disk costs the copy and never the list.
+ */
+export function saveSaved(items: readonly SavedItem[]): void {
+  let text: string;
+  try {
+    text = JSON.stringify(items.slice(0, MAX_SAVED).map(stored));
+    const found = localStorage.getItem(SAVED_KEY);
+    if (found !== null && found !== text && readsLossy(found) && localStorage.getItem(RAW_BACKUP_KEY) === null) localStorage.setItem(RAW_BACKUP_KEY, found);
     localStorage.setItem(SAVED_KEY, text);
   } catch {
     /* the list stays for this session */
+    return;
+  }
+  if (items.length <= LEGACY_MAX) return;
+  try {
+    localStorage.setItem(BACKUP_KEY, JSON.stringify(items.slice(0, MAX_SAVED).map(({ kind, id, label, named }) => (named ? { kind, id, label, named } : { kind, id, label }))));
+  } catch {
+    /* no copy this time */
   }
 }
 
@@ -178,8 +209,8 @@ export function addSaved(items: readonly SavedItem[], ref: WatchRef, meta?: Save
   if (items.length >= MAX_SAVED) return { ok: false, error: ADD_ERRORS.full };
   const added: SavedItem = { kind: ref.kind, id: ref.id, label: defaultLabel(ref) };
   if (now !== undefined) added.addedAt = now;
-  const seconds = wholeCount(meta?.seconds);
-  const views = wholeCount(meta?.views);
+  const seconds = wholeCount(meta?.seconds, MAX_SECONDS);
+  const views = wholeCount(meta?.views, MAX_VIEWS);
   if (seconds) added.seconds = seconds;
   if (views !== undefined) added.views = views;
   return { ok: true, items: [added, ...items], added };
@@ -201,13 +232,13 @@ export function renameSaved(items: readonly SavedItem[], key: string, label: str
 
 /** What a play changes on a saved item: one more play, the time of it. Items not in the list are left alone. */
 export function notePlay(items: readonly SavedItem[], key: string, now: number): SavedItem[] {
-  return items.map((i) => (refKey(i) === key ? { ...i, plays: (i.plays ?? 0) + 1, lastPlayedAt: now } : i));
+  return items.map((i) => (refKey(i) === key ? { ...i, plays: Math.min((i.plays ?? 0) + 1, MAX_PLAYS), lastPlayedAt: now } : i));
 }
 
 /** Fill the length and view count an item lacks; what it already has stays. Returns the same array when nothing changes. */
 export function noteMeta(items: readonly SavedItem[], key: string, meta: SavedMeta): readonly SavedItem[] {
-  const seconds = wholeCount(meta.seconds);
-  const views = wholeCount(meta.views);
+  const seconds = wholeCount(meta.seconds, MAX_SECONDS);
+  const views = wholeCount(meta.views, MAX_VIEWS);
   let changed = false;
   const next = items.map((i) => {
     if (refKey(i) !== key) return i;

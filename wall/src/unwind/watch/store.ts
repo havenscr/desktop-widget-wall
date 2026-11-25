@@ -26,12 +26,13 @@ export function flushTune(): void {
 }
 
 /** A play from the list or a pin: one more play and the time, for an item that is saved; others are left alone. */
-function recordPlay(key: string): void {
+export function recordPlay(key: string): SavedItem | null {
   const s = useWatchStore.getState().saved;
-  if (!s.some((i) => refKey(i) === key)) return;
+  if (!s.some((i) => refKey(i) === key)) return null;
   const next = notePlay(s, key, Date.now());
   saveSaved(next);
   useWatchStore.setState({ saved: next });
+  return next.find((i) => refKey(i) === key) ?? null;
 }
 
 function cancelTuneWrite(): void {
@@ -288,8 +289,8 @@ export const useWatchStore = create<WatchState>((set, get) => ({
     if (ref.kind === 'own') return;
     const item = get().saved.find((i) => refKey(i) === refKey(ref));
     if (!item) return;
-    recordPlay(refKey(item));
-    set({ playing: item, source: 'watch', lastStopped: null, paused: false, muted: false, report: NO_REPORT, needsClick: false, clickHint: false, stopped: null, tab: 'watch' });
+    const recorded = recordPlay(refKey(item)) ?? item;
+    set({ playing: recorded, source: 'watch', lastStopped: null, paused: false, muted: false, report: NO_REPORT, needsClick: false, clickHint: false, stopped: null, tab: 'watch' });
   },
   playPinned: (ref, label) => {
     if (ref.kind !== 'video' && ref.kind !== 'live' && ref.kind !== 'playlist') return false;
