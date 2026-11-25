@@ -270,6 +270,8 @@ state('unwind', 'work layer at rest, Listen', 'ltab=listen&lctl=shown&meet=heavy
 add('unwind', 'work layer up, Listen', url('unwind', TIMES.night, 'ltab=listen&lctl=shown&meet=heavy'), true, 'hover:.u-date');
 state('unwind', 'work layer at rest, Watch', 'watch=mock&wlist=three&wlook=drivein&wplay=0&meet=heavy', TIMES.night);
 add('unwind', 'work layer up, Watch', url('unwind', TIMES.night, 'watch=mock&wlist=three&wlook=drivein&wplay=0&meet=heavy'), true, 'hover:.u-date');
+add('unwind', 'work layer up, Watch list grown', url('unwind', TIMES.night, 'watch=mock&wlist=three&wlook=drivein&wplay=0&meet=heavy'), true, 'hover:.w-card');
+add('unwind', 'work layer up, Listen card grown', url('unwind', TIMES.night, 'ltab=listen&lctl=shown&meet=heavy&audio=demo'), true, 'grow');
 state('unwind', 'music paused', 'media=paused');
 state('unwind', 'long track and artist', 'media=long');
 state('unwind', 'audio demo (levels moving)', 'audio=demo');

@@ -39,13 +39,14 @@
   right: 0;
   bottom: 0;
   height: 104px;
-  z-index: 3;
+  /* Under the music card and the grown Watch list (they reach into this band), so they stay clickable and are not darkened. */
+  z-index: 1;
   opacity: 0;
   visibility: hidden;
   pointer-events: none;
   transition:
-    opacity 400ms ease,
-    visibility 0s linear 400ms;
+    opacity var(--u-work-out, 400ms) ease,
+    visibility 0s linear var(--u-work-out, 400ms);
 }
 .u-work::before {
   content: '';
@@ -77,10 +78,18 @@
   opacity: 0;
   visibility: hidden;
   pointer-events: none;
+  transition:
+    opacity var(--u-work-out, 400ms) ease,
+    visibility 0s linear var(--u-work-out, 400ms);
+}
+.w-card.grown {
+  position: relative;
+  z-index: 2;
 }
 @media (prefers-reduced-motion: reduce) {
   .u-work,
-  .u-work[data-shown] {
+  .u-work[data-shown],
+  .main:has(.w-take, [role='dialog'], [role='menu'], .u-lib-menu, .watt-menu) > .u-work {
     transition: none;
   }
 }

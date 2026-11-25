@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { act, fireEvent, render } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { useHoverHold } from './useHoverHold';
@@ -7,6 +8,15 @@ function Probe({ enabled = true, openMs = 0, closeMs = 1500 }: { enabled?: boole
   return (
     <div data-testid="z" data-on={h.active ? 'y' : 'n'} {...h.handlers}>
       <button type="button">b</button>
+    </div>
+  );
+}
+function Boxed() {
+  const [el, setEl] = useState<HTMLElement | null>(null);
+  const h = useHoverHold(el, { openMs: 0, closeMs: 1500, enabled: true });
+  return (
+    <div ref={setEl} data-testid="z" data-on={h.active ? 'y' : 'n'} {...h.handlers}>
+      <button type="button">tab</button>
     </div>
   );
 }
@@ -53,5 +63,34 @@ describe('useHoverHold', () => {
     fireEvent.pointerEnter(r.getByTestId('z'));
     r.rerender(<Probe enabled={false} />);
     expect(on(r)).toBe('n');
+  });
+  it('a mouse click leaves focus on a button inside, and the layer still hides after the pointer leaves', async () => {
+    const real = Element.prototype.matches;
+    // A mouse click's focus is not :focus-visible.
+    vi.spyOn(Element.prototype, 'matches').mockImplementation(function (this: Element, q: string) {
+      return q === ':focus-visible' ? false : real.call(this, q);
+    });
+    const r = render(<Boxed />);
+    fireEvent.pointerEnter(r.getByTestId('z'));
+    const b = r.getByText('tab');
+    act(() => b.focus());
+    expect(document.activeElement).toBe(b);
+    fireEvent.pointerLeave(r.getByTestId('z'));
+    await flush(1600);
+    expect(on(r)).toBe('n');
+    vi.restoreAllMocks();
+  });
+  it('keyboard focus inside still holds it open after the pointer leaves', async () => {
+    const real = Element.prototype.matches;
+    vi.spyOn(Element.prototype, 'matches').mockImplementation(function (this: Element, q: string) {
+      return q === ':focus-visible' ? true : real.call(this, q);
+    });
+    const r = render(<Boxed />);
+    fireEvent.pointerEnter(r.getByTestId('z'));
+    act(() => r.getByText('tab').focus());
+    fireEvent.pointerLeave(r.getByTestId('z'));
+    await flush(3000);
+    expect(on(r)).toBe('y');
+    vi.restoreAllMocks();
   });
 });

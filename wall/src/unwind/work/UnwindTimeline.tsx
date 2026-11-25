@@ -1,10 +1,12 @@
 import { useEffect, useState } from 'react';
 import { Ribbon } from '../../ribbon/Ribbon';
 import { RibbonLine } from '../../ribbon/RibbonLine';
+import { useDayFeed } from '../../ribbon/useDayEvents';
+import { useVisible } from '../../ui/useVisible';
 import { reviewNow } from '../../ui/reviewClock';
 import { useWorkLayerStore } from './layerStore';
 
-/** The fade out lasts this long (unwind-work.css); the full ribbon stays mounted until it is done. */
+/** The fade out lasts this long. It is the one source: written to the layer as `--u-work-out` (unwind-work.css reads it) and used for the unmount wait. */
 export const LAYER_FADE_OUT_MS = 400;
 
 /**
@@ -15,19 +17,21 @@ export const LAYER_FADE_OUT_MS = 400;
 export function UnwindTimeline() {
   const shown = useWorkLayerStore((s) => s.shown);
   const [mounted, setMounted] = useState(false);
+  // One calendar read for the line and the full ribbon.
+  const feed = useDayFeed(useVisible());
   useEffect(() => {
     if (shown) {
       setMounted(true);
       return;
     }
-    const id = setTimeout(() => setMounted(false), LAYER_FADE_OUT_MS + 50);
+    const id = setTimeout(() => setMounted(false), LAYER_FADE_OUT_MS);
     return () => clearTimeout(id);
   }, [shown]);
   return (
     <>
-      <RibbonLine now={reviewNow} />
-      <div className="u-work" data-shown={shown ? '' : undefined} inert={!shown} data-testid="u-work">
-        {mounted ? <Ribbon kind="work" now={reviewNow} compact /> : null}
+      <RibbonLine feed={feed} now={reviewNow} />
+      <div className="u-work" data-shown={shown ? '' : undefined} inert={!shown} data-testid="u-work" style={{ ['--u-work-out' as string]: `${LAYER_FADE_OUT_MS}ms` }}>
+        {mounted ? <Ribbon kind="work" now={reviewNow} compact feed={feed} /> : null}
       </div>
     </>
   );

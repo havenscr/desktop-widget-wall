@@ -1,5 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
+/** True when the focus on `el` is a keyboard one; a mouse click's focus does not hold anything open. A browser without the selector counts every focus as keyboard. */
+function keyboardFocus(el: Element): boolean {
+  try {
+    return el.matches(':focus-visible');
+  } catch {
+    return true;
+  }
+}
+
 export interface HoverHoldOptions {
   /** Wait before the pointer shows it (0 shows at once). */
   openMs: number;
@@ -11,7 +20,7 @@ export interface HoverHoldOptions {
 
 /**
  * A hold that is on while the pointer or keyboard focus is inside `el`: it turns on after `openMs`, and turns off
- * `closeMs` after the pointer and focus have both left. The Watch list card's grow and Unwind's work layer share it.
+ * `closeMs` after the pointer and keyboard focus have both left (focus a mouse click left behind does not hold it). The Watch list card's grow and Unwind's work layer share it.
  */
 export function useHoverHold(el: HTMLElement | null, { openMs, closeMs, enabled }: HoverHoldOptions) {
   const [active, setActive] = useState(false);
@@ -30,7 +39,7 @@ export function useHoverHold(el: HTMLElement | null, { openMs, closeMs, enabled 
     (focusTo?: Element | null) => {
       clear(closeT);
       const f = focusTo === undefined ? document.activeElement : focusTo;
-      if (inside.current || (el && f && f !== document.body && el.contains(f))) return;
+      if (inside.current || (el && f && f !== document.body && el.contains(f) && keyboardFocus(f))) return;
       closeT.current = setTimeout(() => setActive(false), closeMs);
     },
     [el, closeMs],

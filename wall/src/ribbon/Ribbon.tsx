@@ -16,7 +16,7 @@ import { AgentsToday } from './AgentsToday';
 import { DayDrawer } from './DayDrawer';
 import { DayLip } from './DayLip';
 import { sunTimes } from './sun';
-import { useDayFeed } from './useDayEvents';
+import { useDayFeed, type DayFeed } from './useDayEvents';
 import { categoryLine, toneDotVars, toneVars } from './tones';
 import { useDueTaskFeed } from './useDueTasks';
 
@@ -199,10 +199,12 @@ export function useMinute(now: () => number): number {
  * empty day and the task read was good with nothing due. Before a read, after a failed
  * one, or when a feed is not set up, the row shows nothing.
  */
-export function Ribbon({ kind, now = Date.now, compact = false }: { kind: RibbonKind; now?: () => number; compact?: boolean }) {
+export function Ribbon({ kind, now = Date.now, compact = false, feed }: { kind: RibbonKind; now?: () => number; compact?: boolean; feed?: DayFeed }) {
   const visible = useVisible();
   const t = useMinute(now);
-  const day = useDayFeed(visible);
+  // A layer that already reads the day (Unwind's thin line) passes its feed, so the calendar is asked once.
+  const own = useDayFeed(visible && !feed);
+  const day = feed ?? own;
   const events = day.events;
   const due = useDueTaskFeed(kind, visible);
   const tasks = due.tasks;
