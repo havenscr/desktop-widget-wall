@@ -33,6 +33,7 @@ import { openInBrowser } from './openInBrowser';
 import { CTL_REST_MS, ctlTiming, keyboardFocus, restBridge, useWatchRest } from './rest';
 import { next as ownNext, NO_PLAY_LINE, playAgain as ownPlayAgain, previous as ownPrevious, useOwnFinished, useOwnView, type OwnView } from './ownPlay';
 import { clock, countText } from './ownShared';
+import { useWatchSearch } from './searchStore';
 
 export { clock };
 
@@ -295,7 +296,7 @@ function typing(el: Element | null): boolean {
 
 /** True while something that takes Escape first is open: the Watch sheet, the tools drawer, a dialog, a menu or Watt's menu. */
 function somethingOpen(): boolean {
-  if (useWatchStore.getState().sheet || useToolsStore.getState().open || useOwnLists.getState().open !== null) return true;
+  if (useWatchStore.getState().sheet || useToolsStore.getState().open || useOwnLists.getState().open !== null || useWatchSearch.getState().open) return true;
   return document.querySelector('[role="dialog"], [role="menu"], .watt-menu') !== null;
 }
 

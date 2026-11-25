@@ -169,7 +169,7 @@ it('explains itself with nothing saved, refuses a bad link in one line and saves
   render(<UnwindView />);
   await flush();
   expect(screen.getByText(/Save the videos, playlists, live streams and Twitch channels/)).toBeTruthy();
-  const field = screen.getByLabelText('Paste a YouTube or Twitch link');
+  const field = screen.getByLabelText('Search or paste a link');
   fireEvent.change(field, { target: { value: 'https://youtube.com.evil.example/watch?v=Ab3dEfGh1jK' } });
   fireEvent.submit(field.closest('form')!);
   expect(screen.getByRole('alert').textContent).toBe(LINK_ERRORS.other);

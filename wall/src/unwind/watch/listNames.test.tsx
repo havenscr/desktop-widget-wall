@@ -70,7 +70,7 @@ describe('the empty Watch list', () => {
     expect(document.querySelector('.w-forms')).toBeNull();
     expect(document.body.textContent).not.toContain('youtu.be/');
     expect(screen.getByText(/Save the videos, playlists, live streams and Twitch channels/)).toBeTruthy();
-    const field = screen.getByPlaceholderText('Paste a YouTube or Twitch link');
+    const field = screen.getByPlaceholderText('Search or paste a link');
     // The app's own hover card (never a native title).
     expect(field.getAttribute('title')).toBeNull();
     fireEvent.mouseEnter(field);

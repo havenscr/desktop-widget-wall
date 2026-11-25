@@ -1101,21 +1101,25 @@ fn wait_for<T: Clone>(flight: &Flight<T>) -> Result<T, &'static str> {
 /// A music search: the same words again are answered from memory and cost nothing, the same words already
 /// in flight share one call, and the day's budget is reserved before the call (so two calls starting at 99 do
 /// not both go out) and given back only when no request left the machine.
-fn search_with(ctx: &Ctx, text: &str) -> Result<Page<YtVideo>, &'static str> {
+fn search_with(ctx: &Ctx, text: &str) -> Result<Page<YtVideo>, &'static str> { search_in(ctx, text, true) }
+
+/// The same search with the Music category (`music`, Listen) or across every category (Watch). The two keep their own
+/// memory and flights (the Watch key carries a prefix), and both spend from the same day's budget.
+fn search_in(ctx: &Ctx, text: &str, music: bool) -> Result<Page<YtVideo>, &'static str> {
     let query = check_query(text).ok_or(INVALID)?;
-    let key = query.to_lowercase();
+    let key = if music { query.to_lowercase() } else { format!("any:{}", query.to_lowercase()) };
     let now = (ctx.now)();
     let gen = lib_gen();
     if let Some(page) = with_lib(|l| l.searches.get(&key, now, SEARCH_TTL)) { return Ok(page) }
     // The flight is tied to this sign-in, so a search that spans a sign-out never answers the next session.
     let lead = match join_flight(&FLIGHTS, &format!("{gen}:{key}")) { Joined::Follow(flight) => return wait_for(&flight), Joined::Lead(lead) => lead };
     // The same words may have been answered while this call waited to start.
-    let result = match with_lib(|l| l.searches.get(&key, now, SEARCH_TTL)) { Some(page) => Ok(page), None => search_run(ctx, gen, &query, &key, now) };
+    let result = match with_lib(|l| l.searches.get(&key, now, SEARCH_TTL)) { Some(page) => Ok(page), None => search_run(ctx, gen, &query, &key, now, music) };
     lead.finish(result.clone());
     result
 }
 
-fn search_run(ctx: &Ctx, gen: u64, query: &str, key: &str, now: u64) -> Result<Page<YtVideo>, &'static str> {
+fn search_run(ctx: &Ctx, gen: u64, query: &str, key: &str, now: u64, music: bool) -> Result<Page<YtVideo>, &'static str> {
     // A search that succeeded while its details read failed keeps its answer: a retry reads the details only.
     let kept = with_lib(|l| l.found.get(key, now, FOUND_TTL));
     let ids = match kept {
@@ -1127,9 +1131,10 @@ fn search_run(ctx: &Ctx, gen: u64, query: &str, key: &str, now: u64) -> Result<P
                 Some(false) => return Err(QUOTA),
                 None => return Err(DOWN),
             }
-            let category = music_category(ctx, gen);
-            let params = [("part", "snippet"), ("type", "video"), ("videoCategoryId", category.as_str()), ("videoEmbeddable", "true"),
-                ("maxResults", SEARCH_SIZE), ("q", query), ("fields", "items(id/videoId)")];
+            let category = music.then(|| music_category(ctx, gen));
+            let mut params = vec![("part", "snippet"), ("type", "video")];
+            if let Some(category) = category.as_deref() { params.push(("videoCategoryId", category)); }
+            params.extend([("videoEmbeddable", "true"), ("maxResults", SEARCH_SIZE), ("q", query), ("fields", "items(id/videoId)")]);
             let sent = std::cell::Cell::new(false);
             let answer = match api_get_sent(ctx, EP_SEARCH, &params, true, &sent) {
                 Ok(a) => a,
@@ -2250,6 +2255,29 @@ mod tests {
     }
 
     #[test]
+    fn a_watch_search_leaves_out_the_category_keeps_its_own_memory_and_shares_the_budget() {
+        let _t = exclusive(); token_in_memory();
+        let creds = FakeCreds::new(Some("stored-refresh"));
+        let now = clock(T0);
+        let found = || ok(json!({ "items": [{ "id": { "videoId": VID_A } }, { "id": { "videoId": VID_B } }] }));
+        let details = || ok(json!({ "items": [video(VID_A, "Glass Harbor", "PT3M34S", json!({})), video(VID_B, "Low Tide Motel", "PT4M12S", json!({}))] }));
+        let http = FakeHttp::reads(vec![found(), details(), category_answer(), found()], vec![]);
+        let page = run(&http, &creds, &now, |c| search_in(c, "  Night Drive ", false)).unwrap();
+        assert_eq!(page.items.len(), 2);
+        let urls = http.get_urls();
+        assert_eq!(urls.len(), 2, "no category read, one search, one details read");
+        for part in ["search?", "type=video", "videoEmbeddable=true", "q=Night%20Drive&"] { assert!(urls[0].contains(part), "{part} in {}", urls[0]); }
+        assert!(!urls[0].contains("videoCategoryId"), "{}", urls[0]);
+        assert_eq!(with_lib(|l| l.used(T0)), 1);
+        // The same words again come from memory; the music search of the same words is its own search.
+        run(&http, &creds, &now, |c| search_in(c, "night drive", false)).unwrap();
+        assert_eq!(http.get_urls().len(), 2);
+        run(&http, &creds, &now, |c| search_with(c, "night drive")).unwrap();
+        assert!(http.get_urls()[3].contains("videoCategoryId=10"));
+        assert_eq!(with_lib(|l| l.used(T0)), 2);
+    }
+
+    #[test]
     fn the_music_category_falls_back_to_ten() {
         let _t = exclusive(); token_in_memory();
         let creds = FakeCreds::new(Some("stored-refresh"));
@@ -3145,10 +3173,11 @@ pub async fn wall2_youtube_liked(window: WebviewWindow, page_token: Option<Strin
 }
 
 #[tauri::command]
-pub async fn wall2_youtube_search(window: WebviewWindow, query: String) -> Result<Page<YtVideo>, String> {
+pub async fn wall2_youtube_search(window: WebviewWindow, query: String, any_category: Option<bool>) -> Result<Page<YtVideo>, String> {
     require(&window)?;
     let app = window.app_handle().clone();
-    tauri::async_runtime::spawn_blocking(move || read_with_app(&app, |ctx| search_with(ctx, &query))).await.map_err(|_| FAILED.to_string())?
+    let music = !any_category.unwrap_or(false);
+    tauri::async_runtime::spawn_blocking(move || read_with_app(&app, |ctx| search_in(ctx, &query, music))).await.map_err(|_| FAILED.to_string())?
 }
 
 /// The answer of a playlist search: the playlists and what is left of the day's budget.

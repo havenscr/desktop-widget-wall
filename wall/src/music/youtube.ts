@@ -61,7 +61,7 @@ export const youtube = {
   liked: (pageToken?: string | null, fresh?: boolean): Promise<YtPage<YtVideo>> =>
     tokenOk(pageToken) ? invoke<YtPage<YtVideo>>('wall2_youtube_liked', { pageToken: pageToken ?? null, fresh: fresh === true }) : refuse(),
   /** A music search (Rust counts it against the day's budget; the same words again are free). */
-  search: (query: string): Promise<YtPage<YtVideo>> => invoke<YtPage<YtVideo>>('wall2_youtube_search', { query }),
+  search: (query: string, anyCategory = false): Promise<YtPage<YtVideo>> => invoke<YtPage<YtVideo>>('wall2_youtube_search', anyCategory ? { query, anyCategory: true } : { query }),
   /** A playlist search, run only when asked (one search call of the day's budget; the same words again are free). */
   searchPlaylists: (query: string): Promise<YtPlaylistSearch> => invoke<YtPlaylistSearch>('wall2_youtube_search_playlists', { query }),
   /** One mood's music (Focus, Energize, ...): kept 7 days in Rust, at most 10 searches in any 7 days across all moods. */

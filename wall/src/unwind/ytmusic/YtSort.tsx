@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
-import { IconArrowsSort, IconCheck, IconEye, IconSortAscendingLetters, IconSortAscendingNumbers, IconSortDescendingNumbers, IconSparkles, IconUser } from '@tabler/icons-react';
+import { IconArrowsSort, IconCheck, IconChevronDown, IconEye, IconSortAscendingLetters, IconSortAscendingNumbers, IconSortDescendingNumbers, IconSparkles, IconUser } from '@tabler/icons-react';
 import type { ReactNode } from 'react';
 import { tip } from '../../ui/HoverTip';
 import { DEFAULT_SORT, SORT_CHOICES, SORT_TIP, type YtSort } from './model';
@@ -19,7 +19,7 @@ const ICONS: Record<YtSort, ReactNode> = {
  * move, Enter or Space picks, Escape and a press anywhere else close it (Escape hands the focus back to the button).
  * Sorting reorders the results already loaded; nothing here asks YouTube for anything.
  */
-export function YtSortButton({ value, onPick }: { value: YtSort; onPick: (sort: YtSort) => void }) {
+export function YtSortButton({ value, onPick, labelled = false }: { value: YtSort; onPick: (sort: YtSort) => void; /** Watch's results: the button always reads "Sort: <short name>" with a chevron, and its menu opens under the whole header row. */ labelled?: boolean }) {
   const [open, setOpen] = useState(false);
   const wrap = useRef<HTMLDivElement | null>(null);
   const button = useRef<HTMLButtonElement | null>(null);
@@ -65,22 +65,23 @@ export function YtSortButton({ value, onPick }: { value: YtSort; onPick: (sort: 
   };
 
   return (
-    <div ref={wrap} className="mu-sortwrap">
+    <div ref={wrap} className={`mu-sortwrap${labelled ? ' labelled' : ''}`}>
       <button
         ref={button}
         type="button"
-        className={`mu-sort${picked ? ' on' : ''}`}
+        className={`mu-sort${picked && !labelled ? ' on' : ''}`}
         aria-haspopup="listbox"
         aria-expanded={open}
         aria-label={`Sort results: ${current.label}`}
         onClick={() => setOpen((o) => !o)}
         {...tip(SORT_TIP)}
       >
-        <IconArrowsSort size={18} stroke={1.8} aria-hidden="true" />
-        {picked ? <span className="mu-sort-name">{current.short}</span> : null}
+        {labelled ? null : <IconArrowsSort size={18} stroke={1.8} aria-hidden="true" />}
+        {labelled ? <span className="mu-sort-name">Sort: {current.short}</span> : picked ? <span className="mu-sort-name">{current.short}</span> : null}
+        {labelled ? <IconChevronDown size={18} stroke={2} aria-hidden="true" /> : null}
       </button>
       {open && (
-        <div ref={menu} className="mu-sortmenu" role="listbox" aria-label="Sort results" onKeyDown={onKeyDown}>
+        <div ref={menu} className={`mu-sortmenu${labelled ? ' ws-menu' : ''}`} role="listbox" aria-label="Sort results" onKeyDown={onKeyDown}>
           {SORT_CHOICES.map((c) => (
             <button key={c.id} type="button" role="option" aria-selected={c.id === value} tabIndex={-1} className={c.id === value ? 'hot' : undefined} onClick={() => pick(c.id)}>
               {ICONS[c.id]}

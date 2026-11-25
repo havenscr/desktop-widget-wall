@@ -404,7 +404,7 @@ describe('the left block', () => {
 });
 
 describe('the paste offer', () => {
-  const field = () => screen.getByLabelText('Paste a YouTube or Twitch link') as HTMLInputElement;
+  const field = () => screen.getByLabelText('Search or paste a link') as HTMLInputElement;
   const offer = () => document.querySelector('.w-offer');
   const err = () => document.querySelector('.w-err');
   const saved = () => useWatchStore.getState().saved;
