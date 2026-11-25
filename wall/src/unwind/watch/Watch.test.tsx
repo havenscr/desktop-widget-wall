@@ -181,19 +181,19 @@ it('explains itself with nothing saved, refuses a bad link in one line and saves
   const name = screen.getByLabelText('Name for this youtube video') as HTMLInputElement;
   fireEvent.change(name, { target: { value: 'Rainy evening' } });
   fireEvent.keyDown(name, { key: 'Enter' });
-  expect(parseSaved(localStorage.getItem(SAVED_KEY))).toEqual([{ kind: 'video', id: V, label: 'Rainy evening', named: true }]);
+  expect(parseSaved(localStorage.getItem(SAVED_KEY))).toEqual([{ kind: 'video', id: V, label: 'Rainy evening', named: true, addedAt: expect.any(Number) }]);
   expect(screen.getByText('1 saved')).toBeTruthy();
   await act(async () => screen.getByRole('button', { name: 'Remove Rainy evening' }).click());
   expect(parseSaved(localStorage.getItem(SAVED_KEY))).toEqual([]);
 });
 
-it('lists 24 items in a list that scrolls inside the card', async () => {
-  seed(Array.from({ length: 30 }, (_, i) => ({ kind: 'twitch', id: `chan_${i}`, label: `Channel ${i}` })));
+it('lists 200 items, the most, in a list that scrolls inside the card', async () => {
+  seed(Array.from({ length: 210 }, (_, i) => ({ kind: 'twitch', id: `chan_${i}`, label: `Channel ${i}` })));
   useWatchStore.getState().setTab('watch');
   render(<UnwindView />);
   await flush();
-  expect(document.querySelectorAll('.w-list li').length).toBe(24);
-  expect(screen.getByText('24 saved')).toBeTruthy();
+  expect(document.querySelectorAll('.w-list li').length).toBe(200);
+  expect(screen.getByText('200 saved')).toBeTruthy();
 });
 
 it('plays a row in one frame built from the checked id, with the fixed attributes, and stops on Stop', async () => {

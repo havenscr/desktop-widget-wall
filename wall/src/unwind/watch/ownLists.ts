@@ -37,6 +37,8 @@ export interface OwnVideo {
   title?: string;
   channel?: string;
   seconds?: number;
+  /** Only a search result or library row carries it; an own list never stores it. */
+  views?: number | null;
 }
 
 export interface OwnList {

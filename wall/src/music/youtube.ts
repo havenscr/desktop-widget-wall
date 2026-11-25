@@ -18,7 +18,7 @@ export type YtPlayable = 'yes' | 'embed' | 'private' | 'removed' | 'region';
  */
 export interface YtVideo { id: string; title: string; channel: string; seconds: number; thumb: string | null; playable: YtPlayable; views?: number | null; likes?: number | null; published?: string | null; description?: string | null }
 /** What YouTube says about one video of an own playlist. `seconds` is null for a live video or when no length came back. */
-export interface YtDetail { id: string; title: string | null; channel: string | null; seconds: number | null; /** Development mocks only (a drawn motif, so no picture is fetched); Rust sends none. */ thumb?: string | null }
+export interface YtDetail { id: string; title: string | null; channel: string | null; seconds: number | null; /** Views, when the details call says (older builds send none). */ views?: number | null; /** Development mocks only (a drawn motif, so no picture is fetched); Rust sends none. */ thumb?: string | null }
 /** One play the wall made: a video id and when it started (seconds since 1970). Nothing else is kept. */
 export interface YtPlayed { id: string; at: number }
 /** The answer of a playlist search: the playlists and what is left of the day's search budget. */

@@ -585,17 +585,24 @@ export function WatchCard() {
   useSkyKeepClear('watch-card', card);
   // A saved video or live stream nobody named shows its real title as soon as YouTube's details say it (signed in only);
   // the player fills it the same way when it plays (`fillLabel` never touches a name that was typed).
+  // A named video is not asked just for its length and views: that would spend YouTube quota on up to 200 videos at every load,
+  // for numbers nothing shows yet. Its length and views fill when it is saved from a search, or when a name is asked for anyway.
   const unnamed = saved
-    .filter((i) => (i.kind === 'video' || i.kind === 'live') && i.label === defaultLabel(i))
+    .filter((i) => (i.kind === 'video' || i.kind === 'live') && (i.label === defaultLabel(i)))
     .map((i) => i.id)
     .join(',');
   useEffect(() => {
     if (!unnamed) return;
     askDetails(unnamed.split(','), (id, info) => {
-      if (!info.title) return;
       const st = useWatchStore.getState();
       // A saved item is kind plus id: the same id may be saved as a video and as a live stream, each filled by its own key.
-      for (const hit of st.saved) if ((hit.kind === 'video' || hit.kind === 'live') && hit.id === id) st.fillLabel(refKey(hit), info.title);
+      for (const hit of st.saved) {
+        if (hit.kind !== 'video' && hit.kind !== 'live') continue;
+        if (hit.id !== id) continue;
+        // Only items asked above (unnamed ones) reach this; a titled v1 video gets length and views from a search save instead, to spare YouTube quota.
+        if (hit.kind === 'video') st.noteMeta(refKey(hit), { seconds: info.seconds, views: info.views });
+        if (info.title) st.fillLabel(refKey(hit), info.title);
+      }
     });
   }, [unnamed]);
   const mode = open ? 'edit' : own?.follow ? 'follow' : 'list';

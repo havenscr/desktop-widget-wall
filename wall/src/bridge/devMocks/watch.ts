@@ -28,7 +28,7 @@ import { knob } from './long';
  * drawing's stand-in) is drawn where the player would be, and the tab opens.
  *
  *   ?watch=mock               the poster in place of the frame; opens Watch
- *   ?wlist=none|three|many|default   nothing saved, three items, the full 24 (default three), or
+ *   ?wlist=none|three|many|full|default   nothing saved, three items, 62 mixed items with tags, views and lengths, the full 200 (default three), or
  *                             a video and a live stream that still carry their kind's default label
  *   ?wmeta=title|long|none|other   what the mock player reports of the playing video (through the
  *                             frame's own `takeVideoInfo`): an invented title and channel; a long
@@ -223,11 +223,27 @@ const META = {
 } as const;
 const WORDS = ['Synthwave set', 'Rain on a city window', 'Concert wide shots', 'Harbor at dusk', 'Desert road', 'Late show replay', 'Jazz trio session', 'Northern lights'];
 
-function many(): typeof THREE {
-  const out = [...THREE, { kind: 'playlist', id: 'PLmockPlaylist0001', label: 'Saved for the weekend, a very long playlist name' }];
-  for (let i = out.length; i < 24; i++) {
-    const id = `Mock${String(i).padStart(2, '0')}abcde`.slice(0, 11);
-    out.push(i % 5 === 0 ? { kind: 'twitch', id: `channel_${i}`, label: `channel_${i}` } : { kind: 'video', id, label: `${WORDS[i % WORDS.length]} ${i}` });
+const TAGS = ['lofi', 'focus', 'music', 'talks', 'travel', 'cooking'];
+const NOW = Date.UTC(2026, 5, 1);
+
+/** `count` mixed items: the three, a playlist, then videos and Twitch channels carrying tags, views, lengths and play stats. */
+function many(count = 62): Array<Record<string, unknown>> {
+  const out: Array<Record<string, unknown>> = [...THREE, { kind: 'playlist', id: 'PLmockPlaylist0001', label: 'Saved for the weekend, a very long playlist name' }];
+  for (let i = out.length; i < count; i++) {
+    const id = `Mk${String(i).padStart(3, '0')}abcdef`.slice(0, 11);
+    const tags = i % 3 === 0 ? [TAGS[i % TAGS.length]] : i % 7 === 0 ? [TAGS[i % TAGS.length], TAGS[(i + 1) % TAGS.length]] : undefined;
+    if (i % 5 === 0) out.push({ kind: 'twitch', id: `channel_${i}`, label: `channel_${i}`, ...(tags ? { tags } : {}) });
+    else
+      out.push({
+        kind: 'video',
+        id,
+        label: `${WORDS[i % WORDS.length]} ${i}`,
+        addedAt: NOW - i * 3_600_000,
+        seconds: 120 + ((i * 397) % 5400),
+        views: 1000 + ((i * 7919) % 900_000),
+        ...(i % 4 === 0 ? { plays: 1 + (i % 9), lastPlayedAt: NOW - i * 7_200_000 } : {}),
+        ...(tags ? { tags } : {}),
+      });
   }
   return out;
 }
@@ -340,7 +356,7 @@ export function registerWatchMocks(): void {
     if (ownState) localStorage.setItem(SAVED_KEY, JSON.stringify(OWN_SAVED));
     else if (yt) localStorage.setItem(SAVED_KEY, JSON.stringify([...yt.saved, ...THREE]));
     else if (list === 'none') localStorage.removeItem(SAVED_KEY);
-    else localStorage.setItem(SAVED_KEY, JSON.stringify(list === 'many' ? many() : list === 'default' ? DEFAULTS : knob('wpins') === 'long' ? LONG_THREE : THREE));
+    else localStorage.setItem(SAVED_KEY, JSON.stringify(list === 'many' ? many() : list === 'full' ? many(200) : list === 'default' ? DEFAULTS : knob('wpins') === 'long' ? LONG_THREE : THREE));
     const pins = knob('wpins');
     const keys = THREE.map((i) => `${i.kind}:${i.id}`);
     if (pins === 'one') localStorage.setItem(PINS_KEY, JSON.stringify([keys[0]]));

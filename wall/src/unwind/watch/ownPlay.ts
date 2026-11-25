@@ -3,7 +3,7 @@ import { create } from 'zustand';
 import { LOAD_GAP_MS, markFailed, PLAYED_S, useYtQueue, type FailedWhy } from '../ytmusic/queue';
 import { MAX_OWN_VIDEOS, useOwnLists, type OwnList, type OwnLists } from './ownLists';
 import { validId } from './links';
-import { useWatchStore, type PlayerReport, type WatchState } from './store';
+import { recordPlay, useWatchStore, type PlayerReport, type WatchState } from './store';
 
 /**
  * Playing a playlist made on the wall, in memory only (nothing here is kept across a restart): the model is
@@ -305,6 +305,7 @@ export function playOwn(listId: string, fromVideo?: string): boolean {
     return false;
   }
   request(n);
+  recordPlay(`own:${listId}`);
   return true;
 }
 

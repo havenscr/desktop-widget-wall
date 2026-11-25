@@ -171,7 +171,7 @@ export function AddMenu({
       st.unsave(aloneKey);
       return;
     }
-    const refused = st.addRef({ kind: 'video', id: video.id }, false);
+    const refused = st.addRef({ kind: 'video', id: video.id }, false, { seconds: video.seconds, views: video.views ?? undefined });
     if (refused) setError(`Watch list: ${refused}`);
     else if (video.title) st.fillLabel(aloneKey, video.title);
   };

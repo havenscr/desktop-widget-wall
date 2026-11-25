@@ -25,6 +25,16 @@ export function flushTune(): void {
   saveTune(useWatchStore.getState().tune);
 }
 
+/** A play from the list or a pin: one more play and the time, for an item that is saved; others are left alone. */
+export function recordPlay(key: string): SavedItem | null {
+  const s = useWatchStore.getState().saved;
+  if (!s.some((i) => refKey(i) === key)) return null;
+  const next = notePlay(s, key, Date.now());
+  saveSaved(next);
+  useWatchStore.setState({ saved: next });
+  return next.find((i) => refKey(i) === key) ?? null;
+}
+
 function cancelTuneWrite(): void {
   if (tuneTimer !== null) clearTimeout(tuneTimer);
   tuneTimer = null;
@@ -36,7 +46,7 @@ function writeTuneSoon(): void {
   if (tuneTimer === null) tuneTimer = setTimeout(flushTune, TUNE_WRITE_MS);
 }
 import { relinkSaved } from './rowMenuModel';
-import { addSaved, cleanLabel, cleanText, loadSaved, MAX_LABEL, removeSaved, renameSaved, saveSaved, type SavedItem } from './saved';
+import { addSaved, cleanLabel, cleanText, loadSaved, MAX_LABEL, noteMeta, notePlay, removeSaved, renameSaved, saveSaved, type SavedItem, type SavedMeta } from './saved';
 import { stopLine, type StopReason } from './stops';
 
 export type UnwindTab = 'listen' | 'watch';
@@ -131,7 +141,9 @@ export interface WatchState {
   /** Read and save a pasted link; returns the refusal line, or null when it was added. */
   addLink: (text: string) => string | null;
   /** Save one checked item at the top of the list (the same path as a pasted link); the refusal line, or null. `openName` false leaves the name field alone. */
-  addRef: (ref: WatchRef, openName?: boolean) => string | null;
+  addRef: (ref: WatchRef, openName?: boolean, meta?: SavedMeta) => string | null;
+  /** Fill the length and views a saved item lacks (what it has stays). */
+  noteMeta: (key: string, meta: SavedMeta) => void;
   /** Give a saved video or live stream that still has its default label the player's title for it, once; false when nothing changed. */
   fillLabel: (key: string, title: string) => boolean;
   remove: (key: string) => void;
@@ -204,13 +216,19 @@ export const useWatchStore = create<WatchState>((set, get) => ({
     if (!parsed.ok) return parsed.error;
     return get().addRef(parsed.ref);
   },
-  addRef: (ref, openName = true) => {
-    const r = addSaved(get().saved, ref);
+  addRef: (ref, openName = true, meta) => {
+    const r = addSaved(get().saved, ref, meta, Date.now());
     if (!r.ok) return r.error;
     saveSaved(r.items);
     // A new item starts with its kind as its label; its name field opens so it can be named.
     set(openName ? { saved: r.items, editing: refKey(r.added) } : { saved: r.items });
     return null;
+  },
+  noteMeta: (key, meta) => {
+    const items = noteMeta(get().saved, key, meta) as SavedItem[];
+    if (items === get().saved) return;
+    saveSaved(items);
+    set({ saved: items });
   },
   fillLabel: (key, title) => {
     const st = get();
@@ -271,12 +289,14 @@ export const useWatchStore = create<WatchState>((set, get) => ({
     if (ref.kind === 'own') return;
     const item = get().saved.find((i) => refKey(i) === refKey(ref));
     if (!item) return;
-    set({ playing: item, source: 'watch', lastStopped: null, paused: false, muted: false, report: NO_REPORT, needsClick: false, clickHint: false, stopped: null, tab: 'watch' });
+    const recorded = recordPlay(refKey(item)) ?? item;
+    set({ playing: recorded, source: 'watch', lastStopped: null, paused: false, muted: false, report: NO_REPORT, needsClick: false, clickHint: false, stopped: null, tab: 'watch' });
   },
   playPinned: (ref, label) => {
     if (ref.kind !== 'video' && ref.kind !== 'live' && ref.kind !== 'playlist') return false;
     if (!validId(ref.kind, ref.id)) return false;
     const item: SavedItem = { kind: ref.kind, id: ref.id, label: cleanText(label, MAX_LABEL) || defaultLabel(ref) };
+    recordPlay(refKey(item));
     set({ playing: item, source: 'watch', lastStopped: null, paused: false, muted: false, report: NO_REPORT, needsClick: false, clickHint: false, stopped: null, tab: 'watch' });
     return true;
   },
