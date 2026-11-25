@@ -146,25 +146,26 @@ export function PinnedRow() {
             const layoutOff = isLayoutAction(p.action) && arrange !== true;
             const sel = undoShown && applied?.action === p.action && p.action !== null;
             const where = { name: p.group ?? 'the app in front', general: p.group === null };
+            const shown = p.name ?? p.label;
             const runPin = (detail: number) => {
               if (layoutOff || !p.runnable || keyboardOnMouseKey(p.action, detail)) return;
               const [kind, id] = [p.ref.slice(0, 4), p.ref.slice(4)];
               const call = kind === 'lib:' ? ({ command: 'wall2_keys_send_library', args: { id } } as const) : ({ command: 'wall2_keys_send', args: { setId: 'pinned', index: Number(p.ref.slice(5)) } } as const);
-              void press(`pin:${p.ref}`, detail, call, p.label, p.action, where, false);
+              void press(`pin:${p.ref}`, detail, call, shown, p.action, where, false);
             };
             const actions: KeyMenuAction[] = [
-              { id: 'run', label: 'Run it now', disabled: layoutOff || !p.runnable, help: p.runnable ? `Sends ${p.label} once, right now.` : `${p.label} cannot run: ${p.how}.` },
-              { id: 'left', label: 'Move left', disabled: i === 0, help: i === 0 ? 'Already first.' : `Swaps ${p.label} with the key on its left.` },
-              { id: 'right', label: 'Move right', disabled: i === pins.length - 1, help: i === pins.length - 1 ? 'Already last.' : `Swaps ${p.label} with the key on its right.` },
-              { id: 'replace', label: 'Replace with another key', help: `Pick a key from the library to take ${p.label}'s place. A key already in Always here swaps places with it.` },
-              { id: 'remove', label: 'Remove from Always here', help: `Takes ${p.label} off the Always here row. It stays in the key library.` },
+              { id: 'run', label: 'Run it now', disabled: layoutOff || !p.runnable, help: p.runnable ? `Sends ${shown} once, right now.` : `${shown} cannot run: ${p.how}.` },
+              { id: 'left', label: 'Move left', disabled: i === 0, help: i === 0 ? 'Already first.' : `Swaps ${shown} with the key on its left.` },
+              { id: 'right', label: 'Move right', disabled: i === pins.length - 1, help: i === pins.length - 1 ? 'Already last.' : `Swaps ${shown} with the key on its right.` },
+              { id: 'replace', label: 'Replace with another key', help: `Pick a key from the library to take ${shown}'s place. A key already in Always here swaps places with it.` },
+              { id: 'remove', label: 'Remove from Always here', help: `Takes ${shown} off the Always here row. It stays in the key library.` },
             ];
             return (
               <div className="key-tile-wrap" key={p.ref} data-ref={p.ref}>
               <button
                 type="button"
                 className={`deck-tile key-tile pin-tile${layoutOff || !p.runnable ? ' off' : ''}${sel ? ' sel' : ''}`}
-                aria-label={p.name ?? p.label}
+                aria-label={shown}
                 data-kind={layoutOff || !p.runnable ? undefined : kindOf(p)}
                 aria-disabled={layoutOff || !p.runnable || undefined}
                 {...previewTip(
@@ -173,19 +174,19 @@ export function PinnedRow() {
                   layoutOff
                     ? layoutOffReason(arrange)
                     : !p.runnable
-                      ? `${p.label}: ${p.how}. Right-click to take it out of Always here.`
-                      : `${p.label}${p.group ? ` (${p.group})` : ''}${p.kind === 'check' ? ', a shortcut to check on your PC' : ''}.${p.how ? ` ${p.how}.` : ''} Right-click for more.`,
+                      ? `${shown}: ${p.how}. Right-click to take it out of Always here.`
+                      : `${shown}${p.group ? ` (${p.group})` : ''}${p.kind === 'check' ? ', a shortcut to check on your PC' : ''}.${p.how ? ` ${p.how}.` : ''} Right-click for more.`,
                 )}
                 onContextMenu={onContext(i)}
                 onKeyDown={onKey(i, p.action)}
                 onClick={(e) => runPin(e.detail)}
               >
                 <KeyIcon name={p.icon} size={20} />
-                <span className="deck-lbl">{p.name ?? p.label}</span>
+                <span className="deck-lbl">{shown}</span>
               </button>
               {menu === i && (
                 <KeyMenu
-                  title={`${p.label}, in Always here`}
+                  title={`${shown}, in Always here`}
                   actions={actions}
                   byKeyboard={menuByKey.current}
                   onClose={() => setMenu(null)}

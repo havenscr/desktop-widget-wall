@@ -36,7 +36,8 @@ export function KeyPicker({
   slot: number;
   onChoose: (ref: string) => void;
   onReset: () => void;
-  onClose: () => void;
+  /** `restoreFocus` is true for Escape and the Close button, false for a press elsewhere. */
+  onClose: (restoreFocus?: boolean) => void;
   adding?: boolean;
 }) {
   const [query, setQuery] = useState('');
@@ -50,7 +51,7 @@ export function KeyPicker({
     // swallowed once, so a task row or a card button under the pointer is not also activated.
     const away = (e: Event) => {
       if (overlayOwnsPointer() || !box.current || box.current.contains(e.target as Node)) return;
-      onClose();
+      onClose(false);
       const eat = (c: Event) => {
         c.stopPropagation();
         c.preventDefault();
@@ -67,7 +68,7 @@ export function KeyPicker({
     const escape = (e: globalThis.KeyboardEvent) => {
       if (e.key !== 'Escape' || overlayOwnsPointer()) return;
       e.preventDefault();
-      onClose();
+      onClose(true);
     };
     document.addEventListener('pointerdown', away, true);
     document.addEventListener('keydown', escape);
@@ -126,7 +127,7 @@ export function KeyPicker({
           value={query}
           onChange={(e) => setQuery(e.target.value)}
         />
-        <button type="button" className="deck-mini" aria-label="Close the picker" {...tip('Close (Escape)')} onClick={onClose}>
+        <button type="button" className="deck-mini" aria-label="Close the picker" {...tip('Close (Escape)')} onClick={() => onClose(true)}>
           Close
         </button>
       </div>

@@ -1,4 +1,5 @@
 import { saveMode } from '../../work/keysModel';
+import { PIN_NAMES_KEY } from '../../work/pinNames';
 import { LIBRARY_DATA } from './libraryData';
 import { knob, longOr } from './long';
 import { mocks } from '../tauri';
@@ -142,6 +143,14 @@ export function registerDeckMocks(): void {
       exe = 'notepad.exe';
       saveMode({ hold: true, setId: 'sales' });
       break;
+  }
+  // `?pinnames=long`: the five default keys carry names at the longest the rename check allows (the Work row and Unwind's row).
+  if (knob('pinnames') === 'long') {
+    try {
+      localStorage.setItem(PIN_NAMES_KEY, JSON.stringify({ 'lib:thirds': 'Tile it all', 'lib:focus': 'Deep work', 'lib:record-169': 'Screencast', 'lib:snip': 'Snap shot', 'lib:strip-dark': 'Hide all' }));
+    } catch {
+      // Storage blocked: the dev page shows the keys unnamed.
+    }
   }
   const hold = knob('hold');
   if (hold) saveMode({ hold: true, setId: hold });

@@ -1,10 +1,10 @@
 import { IconPlus } from '@tabler/icons-react';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type MouseEvent, type ReactNode } from 'react';
 import { overlayOwnsPointer } from '../../ribbon/DrawerScrim';
-import { KeyMenu, type KeyMenuAction } from '../../work/KeyMenu';
+import { KeyMenu, MENU_CLOSE_MS, type KeyMenuAction } from '../../work/KeyMenu';
 import { KeyPicker } from '../../work/KeyPicker';
-import { KeyRename } from '../../work/KeyRename';
-import { setPinName } from '../../work/pinNames';
+import { KeyRename, type FitCheck } from '../../work/KeyRename';
+import { setPinName, WORK_PIN_LABEL_AVAIL, WORK_PIN_LABEL_PX } from '../../work/pinNames';
 import { usePinEdits } from '../../work/usePinEdits';
 import { keyboardOnMouseKey, useKeyPress } from '../../work/keyPress';
 import { isLayoutAction, layoutOffReason, useArrangeStatus } from '../../work/arrangeStatus';
@@ -25,9 +25,9 @@ import { canvasMeasure, labelCandidates, pickLabel, type Measure } from './short
  */
 function useFittedLabels(labels: readonly string[], names: readonly string[], measure?: Measure) {
   const tilesRef = useRef<HTMLDivElement>(null);
-  const [fit, setFit] = useState<{ avail: number; measure: Measure | null }>({ avail: 0, measure: null });
-  const key = labels.join('\n');
-  const nameKey = names.join('\n');
+  const [fit, setFit] = useState<{ avail: number; measure: Measure | null; family: string }>({ avail: 0, measure: null, family: '' });
+  // One key for the lists (JSON, so no character in a label or a name can join two of them).
+  const key = JSON.stringify([labels, names]);
   useLayoutEffect(() => {
     let live = true;
     const read = () => {
@@ -36,7 +36,7 @@ function useFittedLabels(labels: readonly string[], names: readonly string[], me
       const cs = getComputedStyle(tile);
       const avail = tile.clientWidth - parseFloat(cs.paddingLeft || '0') - parseFloat(cs.paddingRight || '0');
       const m = measure ?? (avail > 0 ? canvasMeasure(`${cs.fontWeight} ${cs.fontSize} ${cs.fontFamily}`) : null);
-      setFit((f) => (f.avail === avail && f.measure === m ? f : { avail, measure: m }));
+      setFit((f) => (f.avail === avail && f.measure === m && f.family === cs.fontFamily ? f : { avail, measure: m, family: cs.fontFamily }));
     };
     read();
     void document.fonts?.ready.then(read);
@@ -47,14 +47,13 @@ function useFittedLabels(labels: readonly string[], names: readonly string[], me
       ro?.disconnect();
     };
   }, [key, measure]);
-  const words = useMemo(
-    () =>
-      key.split('\n').map((l, i, all) => {
-        const cands = labelCandidates(l, all, nameKey.split('\n')[i] || undefined);
-        return fit.measure ? pickLabel(cands, fit.avail, fit.measure) : cands[0]!;
-      }),
-    [key, nameKey, fit],
-  );
+  const words = useMemo(() => {
+    const [ls, ns] = JSON.parse(key) as [string[], string[]];
+    return ls.map((l, i) => {
+      const cands = labelCandidates(l, ls, ns[i] || undefined);
+      return fit.measure ? pickLabel(cands, fit.avail, fit.measure) : cands[0]!;
+    });
+  }, [key, fit]);
   return { tilesRef, words, fit };
 }
 
@@ -79,6 +78,30 @@ function Fade({ children }: { children: ReactNode }) {
     return () => clearTimeout(t);
   }, [children]);
   return kept ? <div className={`u-fade${out ? ' out' : ''}`}>{kept}</div> : null;
+}
+
+/**
+ * Closes the picker or the rename popover after `MENU_CLOSE_MS` with no input (a pointer move or press, a key, focus
+ * moving), as the menu does, so `held` cannot stay on. Focus goes back to the tile only when it was inside the popover.
+ */
+function useIdleClose(active: boolean, close: (restoreFocus: boolean) => void) {
+  const closeRef = useRef(close);
+  closeRef.current = close;
+  useEffect(() => {
+    if (!active) return;
+    let timer: ReturnType<typeof setTimeout>;
+    const arm = () => {
+      clearTimeout(timer);
+      timer = setTimeout(() => closeRef.current(!!document.activeElement?.closest('.u-keys .pk, .u-keys .key-rename')), MENU_CLOSE_MS);
+    };
+    const events = ['pointermove', 'pointerdown', 'keydown', 'focusin'] as const;
+    for (const e of events) document.addEventListener(e, arm, true);
+    arm();
+    return () => {
+      clearTimeout(timer);
+      for (const e of events) document.removeEventListener(e, arm, true);
+    };
+  }, [active]);
 }
 
 /**
@@ -123,6 +146,17 @@ export function UnwindKeys({ measure }: { measure?: Measure } = {}) {
       setRename(null);
     }
   }, [shown]);
+  const focusTile = (slot: number) => requestAnimationFrame(() => tilesRef.current?.querySelectorAll<HTMLElement>('.key-tile')[slot]?.focus());
+  const closeRename = (restoreFocus: boolean) => {
+    if (restoreFocus && rename !== null) focusTile(rename);
+    setRename(null);
+  };
+  const closePicker = (restoreFocus: boolean) => {
+    if (restoreFocus && picker !== null) focusTile(picker);
+    setPicker(null);
+  };
+  useIdleClose(rename !== null, closeRename);
+  useIdleClose(picker !== null, closePicker);
   if (read.status === 'absent' || !lib) return null;
   const refs = pins.map((p) => p.ref);
   const openPicker = (slot: number) => {
@@ -151,7 +185,6 @@ export function UnwindKeys({ measure }: { measure?: Measure } = {}) {
     }
     onKeyDown(action)(e);
   };
-  const focusTile = (slot: number) => requestAnimationFrame(() => tilesRef.current?.querySelectorAll<HTMLElement>('.key-tile')[slot]?.focus());
   const menuPin = menu !== null ? pins[menu] : undefined;
   const renamePin = rename !== null ? pins[rename] : undefined;
   const menuNode =
@@ -181,28 +214,28 @@ export function UnwindKeys({ measure }: { measure?: Measure } = {}) {
         onChoose={() => openPicker(pins.length)}
       />
     );
+  // A name must fit the label of this row's tile and of the Work row's narrowest tile (15 px, `WORK_PIN_LABEL_AVAIL` wide).
+  const workMeasure = measure ?? (fit.family ? canvasMeasure(`500 ${WORK_PIN_LABEL_PX}px ${fit.family}`) : null);
+  const fitChecks: FitCheck[] = [
+    { avail: fit.avail, measure: fit.measure },
+    { avail: WORK_PIN_LABEL_AVAIL, measure: workMeasure },
+  ];
   const renameNode =
     renamePin && rename !== null ? (
       <KeyRename
         key={`rename-${renamePin.ref}`}
         title={renamePin.label}
         initial={renamePin.name ?? ''}
-        avail={fit.avail}
-        measure={fit.measure}
+        checks={fitChecks}
         onSave={(name) => {
           setPinName(renamePin.ref, name);
-          setRename(null);
-          focusTile(rename);
+          closeRename(true);
         }}
         onReset={() => {
           setPinName(renamePin.ref, '');
-          setRename(null);
-          focusTile(rename);
+          closeRename(true);
         }}
-        onClose={() => {
-          setRename(null);
-          focusTile(rename);
-        }}
+        onClose={closeRename}
       />
     ) : null;
   const pickerNode =
@@ -215,13 +248,13 @@ export function UnwindKeys({ measure }: { measure?: Measure } = {}) {
         adding={picker >= pins.length}
         onChoose={(ref) => {
           edits.choose(picker, ref);
-          setPicker(null);
+          closePicker(true);
         }}
         onReset={() => {
           edits.reset();
-          setPicker(null);
+          closePicker(true);
         }}
-        onClose={() => setPicker(null)}
+        onClose={(restoreFocus) => closePicker(restoreFocus === true)}
       />
     ) : null;
 
@@ -231,7 +264,7 @@ export function UnwindKeys({ measure }: { measure?: Measure } = {}) {
     const [kind, id] = [p.ref.slice(0, 4), p.ref.slice(4)];
     const call = kind === 'lib:' ? ({ command: 'wall2_keys_send_library', args: { id } } as const) : ({ command: 'wall2_keys_send', args: { setId: 'pinned', index: Number(p.ref.slice(5)) } } as const);
     const where = { name: p.group ?? 'the app in front', general: p.group === null };
-    void press(`pin:${p.ref}`, detail, call, p.label, p.action, where, false);
+    void press(`pin:${p.ref}`, detail, call, p.name ?? p.label, p.action, where, false);
   }
 
   return (
