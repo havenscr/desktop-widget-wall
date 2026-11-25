@@ -719,16 +719,24 @@ pub(crate) fn pick_target(app: &AppDef, remembered: Option<&Remembered>, candida
     }
 }
 
-/// The window to show the Calendar in: a usable window whose title starts with Calendar when
-/// there is one (true in the answer: nothing more to send), else the topmost usable window
-/// (false: switch it to Calendar). None when the app has no usable window.
+/// What to do for an Open event: raise a usable window already titled Calendar, or launch the
+/// Calendar. No key is ever sent, so a window that is not on the Calendar is not switched.
+#[derive(Debug, PartialEq)]
 #[cfg_attr(not(any(windows, test)), allow(dead_code))]
-pub(crate) fn pick_calendar_window(app: &AppDef, candidates: &[Cand]) -> Option<(Remembered, bool)> {
+pub(crate) enum CalendarAction {
+    Raise(Remembered),
+    Launch,
+}
+
+#[cfg_attr(not(any(windows, test)), allow(dead_code))]
+pub(crate) fn calendar_action(app: &AppDef, candidates: &[Cand]) -> CalendarAction {
     if app.is_general() {
-        return None;
+        return CalendarAction::Launch;
     }
-    let calendar = candidates.iter().find(|c| usable(app, c) && c.calendar).map(|c| (remembered_of(c), true));
-    calendar.or_else(|| candidates.iter().find(|c| usable(app, c)).map(|c| (remembered_of(c), false)))
+    match candidates.iter().find(|c| usable(app, c) && c.calendar) {
+        Some(c) => CalendarAction::Raise(remembered_of(c)),
+        None => CalendarAction::Launch,
+    }
 }
 
 /// The set the Open event path uses: New Outlook's own program only.
@@ -737,8 +745,8 @@ fn new_outlook_set() -> AppDef {
     AppDef { id: "olk".to_string(), name: "New Outlook".to_string(), matcher: Matcher::Exe(vec!["olk.exe".to_string()]), fallback: false, keys: Vec::new() }
 }
 
-/// Bring an open New Outlook window forward and show its Calendar. False when it is not open
-/// or anything refuses, so the caller can start it instead.
+/// Bring an open New Outlook window titled Calendar forward. False when there is none or
+/// anything refuses, so the caller starts the Calendar instead. Sends no key.
 #[cfg(windows)]
 pub(crate) fn show_outlook_calendar() -> bool {
     win::show_outlook_calendar(&new_outlook_set())
@@ -1307,29 +1315,20 @@ pub(crate) mod win {
         out
     }
 
-    /// Raise an open window of `app` and show its Calendar: a window titled Calendar is only raised;
-    /// otherwise the topmost window is raised and sent the fixed chord Ctrl+2. The same checks and
-    /// guard as any key. False when nothing is open or anything refuses.
+    /// Raise an open window of `app` that is titled Calendar. Never sends a key: with no such
+    /// window it returns false and the caller starts the Calendar. The same checks and guard as
+    /// any key. False when nothing qualifies or anything refuses.
     pub fn show_outlook_calendar(app: &AppDef) -> bool {
         let Some(_busy) = try_begin(&SENDING) else {
             return false;
         };
-        let Some((rem, calendar)) = pick_calendar_window(app, &candidates(app)) else {
+        let CalendarAction::Raise(rem) = calendar_action(app, &candidates(app)) else {
             return false;
         };
         if check_target(app, Some(&rem), &look(&rem)).is_err() {
             return false;
         }
-        if !foreground_is(rem.hwnd) && !bring_forward(rem.hwnd) {
-            return false;
-        }
-        if calendar {
-            return true;
-        }
-        match parse_chord("Ctrl+2") {
-            Some(steps) => play(&steps, Some(rem.hwnd)).is_ok(),
-            None => false,
-        }
+        foreground_is(rem.hwnd) || bring_forward(rem.hwnd)
     }
 
     /// The remembered window as it is right now (the poll may be up to 400 ms behind, and
@@ -2213,26 +2212,25 @@ mod tests {
         let compose = Cand { main: false, ..cand(1, r"C:\x\olk.exe") };
         let main = cand(2, r"C:\x\olk.exe");
         assert_eq!(pick_target(&mail_set(), None, &[compose.clone(), main.clone()]).map(|r| r.hwnd), Some(2));
-        assert_eq!(pick_calendar_window(&mail_set(), &[compose, main]).map(|(r, c)| (r.hwnd, c)), Some((2, false)));
+        let compose_cal = Cand { calendar: true, ..compose };
+        assert_eq!(calendar_action(&mail_set(), &[compose_cal, main]), CalendarAction::Launch);
     }
 
     #[test]
     fn only_a_compose_window_open_means_no_target() {
         let compose = Cand { main: false, ..cand(1, r"C:\x\olk.exe") };
         assert_eq!(pick_target(&mail_set(), None, &[compose.clone()]), None);
-        assert_eq!(pick_calendar_window(&mail_set(), &[compose]), None);
+        let compose = Cand { calendar: true, ..compose };
+        assert_eq!(calendar_action(&mail_set(), &[compose]), CalendarAction::Launch);
     }
 
     #[test]
     fn a_cloaked_window_is_never_picked() {
         let cloaked = Cand { cloaked: true, ..cand(1, r"C:\x\olk.exe") };
         assert_eq!(pick_target(&mail_set(), None, &[cloaked.clone()]), None);
-        assert_eq!(pick_calendar_window(&mail_set(), &[cloaked, cand(2, r"C:\x\olk.exe")]).map(|(r, _)| r.hwnd), Some(2));
-    }
-
-    #[test]
-    fn the_calendar_shortcut_chord_parses() {
-        assert!(parse_chord("Ctrl+2").is_some());
+        let cloaked = Cand { calendar: true, ..cloaked };
+        let shown = Cand { calendar: true, ..cand(2, r"C:\x\olk.exe") };
+        assert_eq!(calendar_action(&mail_set(), &[cloaked, shown]).clone_hwnd(), Some(2));
     }
 
     #[test]
@@ -2245,26 +2243,51 @@ mod tests {
     fn the_general_set_never_falls_back() {
         let any = anywhere("any", "Any");
         assert_eq!(pick_target(&any, None, &[cand(1, r"C:\x\olk.exe")]), None);
-        assert_eq!(pick_calendar_window(&any, &[cand(1, r"C:\x\olk.exe")]), None);
+        let calendar = Cand { calendar: true, ..cand(1, r"C:\x\olk.exe") };
+        assert_eq!(calendar_action(&any, &[calendar]), CalendarAction::Launch);
+    }
+
+    impl CalendarAction {
+        fn clone_hwnd(&self) -> Option<isize> {
+            match self {
+                CalendarAction::Raise(r) => Some(r.hwnd),
+                CalendarAction::Launch => None,
+            }
+        }
     }
 
     #[test]
-    fn a_calendar_titled_window_is_preferred_and_only_raised() {
+    fn a_calendar_titled_window_is_raised() {
         let calendar = Cand { calendar: true, ..cand(2, r"C:\x\olk.exe") };
         let cands = [cand(1, r"C:\x\olk.exe"), calendar];
-        let (got, only_raise) = pick_calendar_window(&mail_set(), &cands).expect("picked");
-        assert_eq!((got.hwnd, only_raise), (2, true));
+        match calendar_action(&mail_set(), &cands) {
+            CalendarAction::Raise(got) => assert_eq!(got.hwnd, 2),
+            CalendarAction::Launch => panic!("expected a raise"),
+        }
     }
 
     #[test]
-    fn without_a_calendar_window_the_topmost_one_is_switched() {
+    fn without_a_calendar_window_the_calendar_is_launched() {
         let cands = [cand(1, r"C:\x\code.exe"), cand(2, r"C:\x\olk.exe"), cand(3, r"C:\x\olk.exe")];
-        let (got, only_raise) = pick_calendar_window(&mail_set(), &cands).expect("picked");
-        assert_eq!((got.hwnd, only_raise), (2, false));
-        assert_eq!(pick_calendar_window(&mail_set(), &[cand(1, r"C:\x\code.exe")]), None);
-        // A calendar flag on an unusable window does not count.
+        assert_eq!(calendar_action(&mail_set(), &cands), CalendarAction::Launch);
+        assert_eq!(calendar_action(&mail_set(), &[]), CalendarAction::Launch);
+        // A calendar flag on an unusable or foreign window does not count.
         let hidden = Cand { calendar: true, visible: false, ..cand(1, r"C:\x\olk.exe") };
-        assert_eq!(pick_calendar_window(&mail_set(), &[hidden, cand(2, r"C:\x\olk.exe")]).map(|(r, c)| (r.hwnd, c)), Some((2, false)));
+        assert_eq!(calendar_action(&mail_set(), &[hidden, cand(2, r"C:\x\olk.exe")]), CalendarAction::Launch);
+        let foreign = Cand { calendar: true, ..cand(1, r"C:\x\code.exe") };
+        assert_eq!(calendar_action(&mail_set(), &[foreign]), CalendarAction::Launch);
+    }
+
+    #[test]
+    fn showing_the_calendar_never_sends_a_key() {
+        // The checkout may have Windows line ends.
+        let src = include_str!("wall2_keys.rs").replace("\r\n", "\n");
+        let at = src.find("pub fn show_outlook_calendar(app: &AppDef)").expect("function");
+        let body = &src[at..at + src[at..].find("\n    }\n").expect("end")];
+        // Needles are built from parts so this test does not match itself.
+        for needle in [["parse", "_chord"].concat(), ["pla", "y("].concat(), ["send", "_input"].concat()] {
+            assert!(!body.contains(&needle), "show_outlook_calendar must not send keys: {needle}");
+        }
     }
 
     #[test]
