@@ -72,10 +72,11 @@ export function SkyPanel() {
           step={5}
           value={pct}
           onChange={(e) => setStrength(Number(e.currentTarget.value) / 100)}
+          aria-describedby="tools-sky-note"
         />
-      </div>
-      <div className={hurts ? 'tools-hint tools-sky-note warn' : 'tools-hint tools-sky-note'}>
+      <div id="tools-sky-note" className={hurts ? 'tools-hint tools-sky-note warn' : 'tools-hint tools-sky-note'}>
         {hurts ? 'Text may be harder to read at this strength.' : `Faint to as strong as Zen. Default is ${Math.round(DEFAULT_STRENGTH * 100)}%.`}
+      </div>
       </div>
       <div className="tools-sky-places">
       <div className="tools-k sm tools-sky-label" id="tools-sky-on">

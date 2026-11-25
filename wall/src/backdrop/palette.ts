@@ -191,6 +191,7 @@ export function bareContrast(place: PlaceId, alt: number, eve = false): number {
  */
 export function legibleGain(place: PlaceId, alt: number, eve: boolean, style: SkyStyle, colours: SkyColours = skyColoursForAlt(alt, eve, style, createSkyColours()), strength: number = DEFAULT_STRENGTH): number {
   const base = legibleBase(place, alt, eve, colours);
+  strength = Math.min(1, Math.max(MIN_STRENGTH, strength));
   if (strength <= DEFAULT_STRENGTH) return base * (strength / DEFAULT_STRENGTH);
   // Past the default the page leaves its readable ceiling and climbs toward the whole hour's gain, which is what Zen carries: at 100% every page has it.
   return base + (colours.gain - base) * ((strength - DEFAULT_STRENGTH) / (1 - DEFAULT_STRENGTH));
@@ -218,6 +219,7 @@ function legibleBase(place: PlaceId, alt: number, eve: boolean, colours: SkyColo
  * (sampled from deep night to high noon, morning and evening). Zen is left out: its words sit over the lake. At or under the
  * default strength the gain is already held to the check, so it is never true there.
  */
+// Conservative on purpose: any sampled hour that misses 4.5 to 1 counts, though the real sky is rarely at its brightest.
 export function strengthHurtsText(strength: number, places: readonly PlaceId[], style: SkyStyle): boolean {
   if (strength <= DEFAULT_STRENGTH) return false;
   for (const place of places) {

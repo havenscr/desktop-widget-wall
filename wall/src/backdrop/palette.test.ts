@@ -89,11 +89,23 @@ describe('sky palette', () => {
       const zen = legibleGain('zen', alt, eve, 'wash', c, 1);
       for (const place of PLACES) {
         expect(legibleGain(place, alt, eve, 'wash', c)).toBe(legibleGain(place, alt, eve, 'wash', c, DEFAULT_STRENGTH));
+        expect(legibleGain(place, alt, eve, 'wash', c, 0.1)).toBeLessThan(legibleGain(place, alt, eve, 'wash', c, DEFAULT_STRENGTH));
         expect(legibleGain(place, alt, eve, 'wash', c, 1)).toBeCloseTo(zen, 9);
-        expect(legibleGain(place, alt, eve, 'wash', c, 0.1)).toBeLessThan(legibleGain(place, alt, eve, 'wash', c, DEFAULT_STRENGTH) + 1e-12);
       }
       expect(zen).toBeCloseTo(totalGain('zen', c.gain), 9);
     }
+  });
+
+  it('the default strength gives the numbers the wall had before the slider (frozen)', () => {
+    const night = skyColoursForAlt(-20, true, 'wash', createSkyColours());
+    const noon = skyColoursForAlt(40, false, 'wash', createSkyColours());
+    const at = (p: PlaceId, c: typeof night, alt: number, eve: boolean) => legibleGain(p, alt, eve, 'wash', c, DEFAULT_STRENGTH);
+    expect(at('zen', night, -20, true)).toBeCloseTo(0.9, 9);
+    expect(at('work', night, -20, true)).toBeCloseTo(0.315, 9);
+    expect(at('home', night, -20, true)).toBeCloseTo(0.405, 9);
+    expect(at('unwind', night, -20, true)).toBeCloseTo(0.402627, 5);
+    expect(at('work', noon, 40, false)).toBeCloseTo(0.217, 9);
+    expect(at('home', noon, 40, false)).toBeCloseTo(0.279, 9);
   });
 
   it('the gain only rises with the strength, and the text hint shows only past the level where text keeps 4.5 to 1', () => {

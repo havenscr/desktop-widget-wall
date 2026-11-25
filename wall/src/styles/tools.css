@@ -434,8 +434,8 @@
   grid-template-areas:
     'title title'
     'style weather'
-    'strength video'
-    'note note'
+    'strength strength'
+    'video video'
     'places places';
   column-gap: 14px;
   row-gap: 16px;
@@ -458,8 +458,7 @@
   grid-area: strength;
 }
 .tools-sky-note {
-  grid-area: note;
-  margin-top: -8px;
+  margin-top: 6px;
 }
 .tools-sky-note.warn {
   color: var(--amber);
@@ -473,6 +472,10 @@
 .tools-panel .tools-video {
   grid-area: video;
 }
+.tools-video .tools-chips {
+  gap: 4px;
+  flex-wrap: nowrap;
+}
 .tools-video > .tools-k.sm {
   display: block;
   margin-bottom: 10px;
@@ -484,12 +487,15 @@
 .tools-sky .tools-sky-label {
   margin-bottom: 8px;
 }
-/* The seven page chips share one line in the panel's width: a 10 px side padding (the least a chip's text keeps from its edge) and a 6 px gap. */
+/* The seven page chips share one line in the panel's width: an 11 px side padding and a 4 px gap. */
 .tools-sky-places .tools-chips {
-  gap: 6px;
+  gap: 4px;
   flex-wrap: nowrap;
 }
 .tools-sky-places .tools-chip {
+  padding: 0 11px;
+}
+.tools-video .tools-chip {
   padding: 0 10px;
 }
 .tools-slider {

@@ -36,7 +36,7 @@ const PLACE_IDS = SKY_PLACES.map((p) => p.id);
 /** A stored value made safe: unknown styles and pages are dropped, so a bad value can never turn the sky on where it was not asked for. */
 export function validateSky(raw: unknown): SkySettings {
   const v = raw && typeof raw === 'object' ? (raw as Partial<SkySettings>) : {};
-  const strength = typeof v.strength === 'number' && Number.isFinite(v.strength) ? Math.round(Math.min(1, Math.max(MIN_STRENGTH, v.strength)) * 100) / 100 : DEFAULT_STRENGTH;
+  const strength = typeof v.strength === 'number' && Number.isFinite(v.strength) ? Math.round(Math.min(1, Math.max(MIN_STRENGTH, v.strength)) * 20) / 20 : DEFAULT_STRENGTH;
   const style = STYLE_IDS.includes(v.style as SkyStyle) ? (v.style as SkyStyle) : DEFAULT_SKY.style;
   // A list that holds only unknown ids becomes an empty list (the sky off) on purpose: it was a list, so it is never read as "no setting" and turned on on Zen.
   if (!Array.isArray(v.places)) return { style, places: [...DEFAULT_SKY.places], strength };
