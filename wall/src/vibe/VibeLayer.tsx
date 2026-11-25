@@ -89,6 +89,9 @@ export function VibeLayer({ host = browserHost }: { host?: LoopHost }) {
     let titleHole: HTMLCanvasElement | null = null;
     let holeKey = '';
     let frontDrawn = false;
+    // The grain's own gain: eased to zero over about a second when the loop runs over budget, so it never cuts.
+    let grainGain = 1;
+    let lastGainS = -1;
     let bakedW = 0;
     const gsrc: GlitchSources = { hz: null, map: { ax: 1, bx: 0, ay: 1, by: 0 }, img: null, art: { x: 0, y: 0, w: 0, h: 0 } };
     const state = createVibeState();
@@ -291,14 +294,19 @@ export function VibeLayer({ host = browserHost }: { host?: LoopHost }) {
       }
       // The front layer: Tape Grain and the Drop Glitch over the scene and the art, with soft holes over the controls.
       // The grain is the first thing to go when frames run long; both fade with their own eased strengths.
-      const tapeOn = frame.tape > 0.003 && !probe.degraded;
+      const gainDt = lastGainS < 0 ? 0 : Math.min(0.25, Math.max(0, nowS - lastGainS));
+      lastGainS = nowS;
+      const gainTarget = probe.degraded ? 0 : 1;
+      grainGain += Math.max(-gainDt, Math.min(gainDt, gainTarget - grainGain));
+      const tapeAmt = frame.tape * grainGain;
+      const tapeOn = tapeAmt > 0.003;
       const glitchAmt = still ? 0 : frame.glitch;
       if (tapeOn || (glitchAmt > 0.003 && frame.env > 0.003)) {
         fctx.setTransform(1, 0, 0, 1, 0, 0);
         fctx.globalCompositeOperation = 'source-over';
         fctx.globalAlpha = 1;
         fctx.clearRect(0, 0, cw, ch);
-        if (tapeOn) tape.draw(fctx, cw, ch, still ? 0 : nowS, frame.tape, frame.grain, still);
+        if (tapeOn) tape.draw(fctx, cw, ch, still ? 0 : nowS, tapeAmt, frame.grain, still);
         if (glitchAmt > 0.003) glitch.draw(fctx, cw, ch, nowS, state.drops, glitchAmt, gsrc);
         fctx.globalCompositeOperation = 'destination-out';
         fctx.globalAlpha = 1;
@@ -366,6 +374,9 @@ export function VibeLayer({ host = browserHost }: { host?: LoopHost }) {
     measure();
     return () => {
       loop.stop();
+      // A remount (the reduced-motion toggle, a width change) starts with frontDrawn false: leave no old pixels behind.
+      fctx.clearRect(0, 0, fcanvas.width, fcanvas.height);
+      frontDrawn = false;
       if (pending) host.caf(pending);
       offAudio();
       offSettings();

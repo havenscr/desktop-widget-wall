@@ -159,11 +159,16 @@ describe('the vibe back layer', () => {
     expect(c).toMatch(/mask-composite:\s*intersect/);
   });
 
-  it('its mask ramps to zero on the right edge too, in both the prefixed and plain properties', () => {
+  it('each layer\'s mask ramps to zero on the right edge, in both the prefixed and the plain property', () => {
     const c = sheet('../styles/vibe.css').replace(/\r\n/g, '\n');
     const ramp = 'linear-gradient(90deg, transparent 0, #000 64px, #000 calc(100% - 96px), transparent 100%)';
-    expect(c).toContain('-webkit-mask-image: ' + ramp);
-    expect(c).toMatch(new RegExp('\\n  mask-image: ' + ramp.replace(/[()]/g, '\\$&')));
+    for (const sel of ['.vibe-back', '.vibe-front']) {
+      const start = c.indexOf('\n' + sel + ' {');
+      expect(start).toBeGreaterThan(-1);
+      const rule = c.slice(start, c.indexOf('}', start));
+      expect(rule).toContain('\n  -webkit-mask-image: ' + ramp);
+      expect(rule).toContain('\n  mask-image: ' + ramp);
+    }
   });
 
   it('the main area is its own stacking context while the layer is in it, so z-index -1 stays above the horizon canvas', () => {
@@ -446,6 +451,51 @@ describe('the vibe back layer', () => {
     fakeDrops.count += 1;
     m.frames(20000, 20);
     expect(rec.calls.filter((c) => c[0] === 'drawImage' && c[1] === hz).length).toBeGreaterThan(5);
+  });
+
+  it('when frames run over budget the grain eases to zero in steps instead of cutting', () => {
+    window.history.replaceState({}, '', '/?vibeprobe=1');
+    let clock = 0;
+    vi.spyOn(performance, 'now').mockImplementation(() => (clock += 10));
+    try {
+      const m = manual();
+      act(() => useVibeStore.getState().setVibe({ tapeGrain: true }));
+      const { rec } = mount(m.host);
+      playFor(4000);
+      m.frames(10000, 60);
+      rec.calls.length = 0;
+      m.frames(20000, 400);
+      const ramp = rampOf(rec);
+      expect(ramp.length).toBeGreaterThan(10);
+      expect(ramp[0]).toBeGreaterThan(0.01);
+      for (let k = 1; k < ramp.length; k++) expect(Math.abs(ramp[k] - ramp[k - 1])).toBeLessThan(0.05);
+      // Some steps sit strictly between the full grain and nothing, and the grain is gone by the end.
+      expect(ramp.some((a) => a < ramp[0] * 0.9 && a > 0.003)).toBe(true);
+      rec.calls.length = 0;
+      m.frames(60000, 20);
+      expect(rampOf(rec)).toHaveLength(0);
+    } finally {
+      window.history.replaceState({}, '', '/');
+    }
+  });
+
+  it('switching reduced motion on clears the front canvas, so no old glitch pixels stay behind', () => {
+    const listeners = new Set<() => void>();
+    const mq = { matches: false, addEventListener: (_: string, f: () => void) => void listeners.add(f), removeEventListener: (_: string, f: () => void) => void listeners.delete(f) };
+    vi.stubGlobal('matchMedia', () => mq);
+    const m = manual();
+    act(() => useVibeStore.getState().setVibe({ auto: true, tapeGrain: true }));
+    const { rec, front } = mount(m.host);
+    playFor(4000);
+    m.frames(10000, 60);
+    fakeDrops.count += 1;
+    m.frames(20000, 10);
+    rec.calls.length = 0;
+    act(() => {
+      mq.matches = true;
+      listeners.forEach((f) => f());
+    });
+    expect(rec.calls.some((c) => c[0] === 'clearRect' && c[3] === front.width && c[4] === front.height)).toBe(true);
   });
 
   it('its stylesheet puts the front layer above the scene, click-through, and feathers its bounds', () => {
