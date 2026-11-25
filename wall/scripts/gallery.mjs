@@ -257,6 +257,8 @@ marks('sessions waiting', 'agents=ask');
 marks('none running', 'agents=0', 'hover:.u-cap-work');
 marks('helper not set up', 'agents=off', 'hover:.u-cap-work');
 marks('focus on', 'focus=long', 'hover:.u-cap-work');
+state('unwind', 'listen active', 'ltab=listen&lctl=shown', TIMES.night);
+state('unwind', 'listen inactive', 'ltab=listen&lctl=rest', TIMES.night);
 state('unwind', 'music paused', 'media=paused');
 state('unwind', 'long track and artist', 'media=long');
 state('unwind', 'audio demo (levels moving)', 'audio=demo');
@@ -710,6 +712,8 @@ const EXPECT = [
   ['unwind', 'status marks, helper not set up', ['Work is put away', '!No agent needs you', '!still running']],
   ['unwind', 'status marks, focus on', 'Focus is still on'],
   ['unwind', 'music paused', '1:03'],
+  ['unwind', 'listen active', 'Tokyo Burnout'],
+  ['unwind', 'listen inactive', 'Tokyo Burnout'],
   ['unwind', 'long track', 'An Extremely Long Song Title'],
   ['unwind', 'broken: media unavailable', 'Nothing playing'],
   ['unwind', 'nine moods, long labels', ['Up next', '!Away For The Weekend']],

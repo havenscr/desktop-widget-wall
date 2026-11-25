@@ -309,7 +309,7 @@ function somethingOpen(): boolean {
  * video's lower edge (`peek`), and focus left the controls. Pointer, focus or a Tab press brings
  * them back at once. No timer runs while they cannot rest; the timer is cleared on unmount.
  */
-function useControlsFade(canRest: boolean, peek: boolean) {
+export function useControlsFade(canRest: boolean, peek: boolean) {
   const [rest, setRest] = useState(false);
   const timer = useRef<ReturnType<typeof setTimeout>>(undefined);
   // Which zones hold the controls shown: the left block ('now') and the zones beside it that report through `restZone`.

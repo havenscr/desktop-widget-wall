@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { DateLine } from '../unwind/DateLine';
 import { Player } from '../unwind/Player';
 import { SpotifyCard } from '../unwind/spotify/SpotifyCard';
@@ -12,7 +13,11 @@ import { UnderClock } from '../unwind/UnderClock';
 import { useCoverTintFollow } from '../unwind/useCoverTintFollow';
 import { WatchSheet } from '../unwind/watch/Sheet';
 import { useWatchStore } from '../unwind/watch/store';
-import { WatchPanel } from '../unwind/watch/Watch';
+import { useControlsFade, WatchPanel } from '../unwind/watch/Watch';
+import { restZone, useWatchRest } from '../unwind/watch/rest';
+import { isPlaying } from '../music/model';
+import { useNowPlaying } from '../music/useNowPlaying';
+import { useMusicView } from '../unwind/ytmusic/queue';
 import { LinesGear } from '../unwind/watch/LinesPanel';
 import { WatchCard } from '../unwind/watch/WatchCard';
 import { UNWIND_ROOM_HEIGHT, UNWIND_ROOM_TOP } from './frameLayout';
@@ -22,6 +27,27 @@ import { reviewDate, reviewNow } from '../ui/reviewClock';
 /** Spotify's status is read only while Listen shows (the card and Up next need it). */
 function SpotifyStatusPoll() {
   useSpotifyStatusPoll();
+  return null;
+}
+
+/**
+ * Listen's inactive state: the same rest Watch has (`useControlsFade`: the same 3 s, the same pointer, focus and Tab
+ * wake, the same store the Office moods line reads). It may rest only while music plays and the sheet is closed;
+ * mounted only with Listen, so it never runs beside Watch's own.
+ */
+function ListenRest() {
+  const { info } = useNowPlaying();
+  const music = useMusicView();
+  const sheet = useWatchStore((s) => s.sheet);
+  const playing = isPlaying(info) || music?.state === 'playing';
+  const { wake } = useControlsFade(playing && !sheet && !music?.needsClick, false);
+  useEffect(() => {
+    const tab = (e: KeyboardEvent) => {
+      if (e.key === 'Tab') wake();
+    };
+    document.addEventListener('keydown', tab, true);
+    return () => document.removeEventListener('keydown', tab, true);
+  }, [wake]);
   return null;
 }
 
@@ -42,8 +68,10 @@ export function Unwind() {
   const watch = tab === 'watch';
   const wallMusic = useQueueActive();
   useCoverTintFollow();
+  const listenRest = useWatchRest((s) => s.rest) && !watch;
   return (
-    <section className="unwind zones wide" data-place="unwind" data-tab={tab} aria-label="Unwind">
+    <section className="unwind zones wide" data-place="unwind" data-tab={tab} data-listen-rest={listenRest ? 'true' : undefined} aria-label="Unwind">
+      {watch ? null : <ListenRest />}
       <div className="u-wing">
         <DateLine now={reviewDate} />
         <Tabs />
@@ -60,10 +88,10 @@ export function Unwind() {
         ) : (
           <>
             {/* lines controls: the gear on Listen opens the sheet on its Lines side. */}
-            <div className="u-tabrow u-listen-gear">
+            <div className="u-tabrow u-listen-gear" {...restZone('gear')}>
               <LinesGear />
             </div>
-            <div className="u-listen" role="tabpanel" id={LISTEN_PANEL_ID} aria-labelledby={LISTEN_TAB_ID}>
+            <div className="u-listen" role="tabpanel" id={LISTEN_PANEL_ID} aria-labelledby={LISTEN_TAB_ID} {...restZone('now')}>
               <Player />
             </div>
           </>
