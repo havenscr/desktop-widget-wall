@@ -22,16 +22,15 @@
   isolation: isolate;
 }
 
-/* The title's own layer (Scene and title): a small canvas over the song title that shows the part of the back layer
-   under it, so the effects pass over the letters. It is above the title, click-through, and feathers all four edges
-   by 28 px so it never ends on a line. Scene only fades it out. */
+/* The title's own layer (Scene and title): a canvas over the song title that shows the part of the back layer under it,
+   so the effects pass over the letters. It is above the title and click-through. Its mask is one elliptical bell
+   that reaches zero at the canvas edge (smooth steps, no straight edge anywhere), so it never reads as a shape.
+   Scene only fades it out. */
 .vibe-title {
   position: absolute;
   z-index: 1;
   pointer-events: none;
   mix-blend-mode: screen;
-  -webkit-mask-image: linear-gradient(90deg, transparent 0, #000 28px, #000 calc(100% - 28px), transparent 100%), linear-gradient(180deg, transparent 0, #000 28px, #000 calc(100% - 28px), transparent 100%);
-  mask-image: linear-gradient(90deg, transparent 0, #000 28px, #000 calc(100% - 28px), transparent 100%), linear-gradient(180deg, transparent 0, #000 28px, #000 calc(100% - 28px), transparent 100%);
-  -webkit-mask-composite: source-in;
-  mask-composite: intersect;
+  -webkit-mask-image: radial-gradient(ellipse closest-side, #000 0, rgba(0, 0, 0, 0.84) 25%, rgba(0, 0, 0, 0.5) 50%, rgba(0, 0, 0, 0.16) 75%, transparent 100%);
+  mask-image: radial-gradient(ellipse closest-side, #000 0, rgba(0, 0, 0, 0.84) 25%, rgba(0, 0, 0, 0.5) 50%, rgba(0, 0, 0, 0.16) 75%, transparent 100%);
 }

@@ -216,7 +216,7 @@ describe('the vibe back layer', () => {
   it('Scene and title lets the effects pass over the song title; Scene only takes them off it', () => {
     const m = manual();
     const { rec, canvas, title } = mount(m.host);
-    expect(title.style.width).toBe('2056px');
+    expect(title.style.width).toBe('2240px');
     playFor(4000);
     m.frames(10000, 60);
     expect(copies(rec, canvas).length).toBeGreaterThan(10);
@@ -233,11 +233,13 @@ describe('the vibe back layer', () => {
     expect(copies(rec, canvas).length).toBeGreaterThan(10);
   });
 
-  it('its stylesheet puts the title canvas above the title, click-through, with all four edges feathered', () => {
+  it('its stylesheet puts the title canvas above the title, click-through, with a bell mask that ends at zero', () => {
     const c = sheet('../styles/vibe.css');
     expect(c).toMatch(/\.vibe-title\s*\{[^}]*z-index:\s*1/);
     expect(c).toMatch(/\.vibe-title\s*\{[^}]*pointer-events:\s*none/);
-    expect(c).toMatch(/\.vibe-title\s*\{[^}]*linear-gradient\(90deg[^}]*linear-gradient\(180deg/);
+    // One elliptical bell that ends at zero: no straight edge can show.
+    expect(c).toMatch(/\.vibe-title\s*\{[^}]*radial-gradient\(ellipse closest-side[^}]*transparent 100%\)/);
+    expect(/\.vibe-title\s*\{[^}]*linear-gradient/.test(c)).toBe(false);
   });
 
   it('bakes the cover again when it finishes loading, not only the plain fill', () => {

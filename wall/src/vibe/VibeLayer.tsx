@@ -20,11 +20,26 @@ export const SKY_FEATHER = 0.16;
 export const ART_SELECTOR = '.u-art, .w-screen';
 /** The song title: Listen's line, or Watch's. Scene and title lets the effects pass over it. */
 export const TITLE_SELECTOR = '.u-np, .w-title';
-/** Layout pixels the title's own canvas reaches past its box, so the feathered edge falls clear of the letters. */
-export const TITLE_PAD = 28;
+/** Layout pixels the title's own canvas reaches past the letters; its mask is a bell that is zero at the canvas edge, so no edge shows. */
+export const TITLE_PAD_X = 120;
+export const TITLE_PAD_Y = 64;
 /** How much of the picture under the title the title's canvas adds back; the back layer already shows through behind the letters. */
-const TITLE_PASS = 0.5;
+const TITLE_PASS = 0.4;
 const REBAKE_MS = 500;
+
+/** The width of `el`'s text in the root's layout pixels, at most `max`; `max` itself where a range cannot be measured. */
+export function textWidth(el: HTMLElement, root: HTMLElement, max: number): number {
+  try {
+    const r = document.createRange();
+    r.selectNodeContents(el);
+    const w = r.getBoundingClientRect().width;
+    const scale = root.offsetWidth > 0 ? root.getBoundingClientRect().width / root.offsetWidth : 1;
+    if (w > 0 && scale > 0) return Math.min(max, w / scale);
+  } catch {
+    /* no layout here */
+  }
+  return max;
+}
 
 /** Where `el` sits inside `root`, in the root's own (unscaled) layout pixels. */
 export function boxIn(root: HTMLElement, el: HTMLElement): { x: number; y: number; w: number; h: number } {
@@ -130,10 +145,12 @@ export function VibeLayer({ host = browserHost }: { host?: LoopHost }) {
       let th = 0;
       if (tel && tel.offsetWidth > 0) {
         const b = boxIn(section, tel);
-        tx = b.x - TITLE_PAD;
-        ty = b.y - TITLE_PAD;
-        tw = b.w + 2 * TITLE_PAD;
-        th = b.h + 2 * TITLE_PAD;
+        // Round the letters, not the line's whole box (a title line is as wide as its column).
+        const letters = textWidth(tel, section, b.w);
+        tx = b.x - TITLE_PAD_X;
+        ty = b.y - TITLE_PAD_Y;
+        tw = letters + 2 * TITLE_PAD_X;
+        th = b.h + 2 * TITLE_PAD_Y;
       }
       tcanvas.style.left = `${tx}px`;
       tcanvas.style.top = `${ty}px`;
