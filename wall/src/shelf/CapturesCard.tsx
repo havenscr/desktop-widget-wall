@@ -341,15 +341,15 @@ export function CapturesCard() {
     if (to === null) return;
     e.preventDefault();
     const next = shown[Math.min(Math.max(to, 0), shown.length - 1)];
-    if (!next) return;
+    if (!next || next.id === big.id) return;
     moveTo.current = next.id;
     setPicked(next.id);
   };
   const bigId = big?.id;
   useEffect(() => {
     const id = moveTo.current;
-    if (id === null || id !== bigId) return;
     moveTo.current = null;
+    if (id === null || id !== bigId) return;
     const row = Array.from(card.current?.querySelectorAll<HTMLElement>('.cap-row') ?? []).find((r) => r.dataset.cap === id);
     if (!row) return;
     row.focus({ preventScroll: true });
@@ -491,7 +491,10 @@ export function CapturesCard() {
         </div>
         <div ref={edge.ref} className={`cap-rows ${edge.className}`} role="group" aria-label="Captures" onScroll={edge.onScroll} onKeyDown={onRowsKey}>
           {shown.map((c) => (
-            <Row key={c.id} c={c} selected={c.id === big.id} onPick={() => setPicked(c.id)} onMenu={openCaptureMenu(c)} />
+            <Row key={c.id} c={c} selected={c.id === big.id} onPick={() => {
+                moveTo.current = null;
+                setPicked(c.id);
+              }} onMenu={openCaptureMenu(c)} />
           ))}
         </div>
       </div>
