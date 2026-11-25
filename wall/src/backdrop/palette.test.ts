@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { PlaceId } from '../state/places';
-import { MIN_CONTRAST, SHADER_CAP, bareContrast, createSkyColours, legibleGain, pageGain, skyColoursAt, skyColoursForAlt, softCap, totalGain, worstCase } from './palette';
+import { DEFAULT_STRENGTH, MIN_CONTRAST, strengthHurtsText, veilFor, veilScale, SHADER_CAP, bareContrast, createSkyColours, legibleGain, pageGain, skyColoursAt, skyColoursForAlt, softCap, totalGain, worstCase } from './palette';
 
 const PLACES: PlaceId[] = ['zen', 'work', 'home', 'unwind', 'meet', 'onair', 'shelf'];
 const STYLES = ['wash', 'aurora'] as const;
@@ -81,5 +81,57 @@ describe('sky palette', () => {
     }
     const c = skyColoursForAlt(40, false, 'wash', createSkyColours());
     expect(legibleGain('zen', 40, false, 'wash', c)).toBeCloseTo(totalGain('zen', c.gain), 9);
+  });
+
+  it('the default strength keeps today\'s gain, 100% gives every page the gain Zen has, and faint is less', () => {
+    for (const [alt, eve] of [[-20, true], [10, false], [40, false]] as const) {
+      const c = skyColoursForAlt(alt, eve, 'wash', createSkyColours());
+      const zen = legibleGain('zen', alt, eve, 'wash', c, 1);
+      for (const place of PLACES) {
+        expect(legibleGain(place, alt, eve, 'wash', c)).toBe(legibleGain(place, alt, eve, 'wash', c, DEFAULT_STRENGTH));
+        expect(legibleGain(place, alt, eve, 'wash', c, 0.1)).toBeLessThan(legibleGain(place, alt, eve, 'wash', c, DEFAULT_STRENGTH));
+        expect(legibleGain(place, alt, eve, 'wash', c, 1)).toBeCloseTo(zen, 9);
+      }
+      expect(zen).toBeCloseTo(totalGain('zen', c.gain), 9);
+    }
+  });
+
+  it('the default strength gives the numbers the wall had before the slider (frozen)', () => {
+    const night = skyColoursForAlt(-20, true, 'wash', createSkyColours());
+    const noon = skyColoursForAlt(40, false, 'wash', createSkyColours());
+    const at = (p: PlaceId, c: typeof night, alt: number, eve: boolean) => legibleGain(p, alt, eve, 'wash', c, DEFAULT_STRENGTH);
+    expect(at('zen', night, -20, true)).toBeCloseTo(0.9, 9);
+    expect(at('work', night, -20, true)).toBeCloseTo(0.315, 9);
+    expect(at('home', night, -20, true)).toBeCloseTo(0.405, 9);
+    expect(at('unwind', night, -20, true)).toBeCloseTo(0.402627, 5);
+    expect(at('work', noon, 40, false)).toBeCloseTo(0.217, 9);
+    expect(at('home', noon, 40, false)).toBeCloseTo(0.279, 9);
+  });
+
+  it('the gain only rises with the strength, and the text hint shows only past the level where text keeps 4.5 to 1', () => {
+    const c = skyColoursForAlt(-20, true, 'wash', createSkyColours());
+    let last = -1;
+    for (let s = 0.1; s <= 1.0001; s += 0.05) {
+      const g = legibleGain('work', -20, true, 'wash', c, s);
+      expect(g).toBeGreaterThanOrEqual(last - 1e-12);
+      last = g;
+    }
+    expect(strengthHurtsText(DEFAULT_STRENGTH, ['work', 'home'], 'wash')).toBe(false);
+    expect(strengthHurtsText(0.1, ['work'], 'wash')).toBe(false);
+    expect(strengthHurtsText(1, ['zen'], 'wash')).toBe(false);
+    expect(strengthHurtsText(1, ['unwind'], 'wash')).toBe(true);
+    expect(strengthHurtsText(1, ['work'], 'wash')).toBe(true);
+    expect(strengthHurtsText(0.35, ['work'], 'wash')).toBe(false);
+  });
+
+  it('on Work, 100% shows clearly more sky than 35%, measured as the gain times what the veil lets through', () => {
+    for (const [alt, eve] of [[-20, true], [22, false], [40, false]] as const) {
+      const c = skyColoursForAlt(alt, eve, 'wash', createSkyColours());
+      const seen = (p: PlaceId, s: number) => legibleGain(p, alt, eve, 'wash', c, s) * (1 - veilFor(p) * veilScale(s));
+      expect(veilScale(DEFAULT_STRENGTH)).toBe(1);
+      expect(seen('work', 1)).toBeGreaterThan(seen('work', DEFAULT_STRENGTH) * 3);
+      expect(seen('work', 1)).toBeGreaterThan(seen('zen', 1) * 0.8);
+      expect(seen('home', 1)).toBeGreaterThan(seen('home', DEFAULT_STRENGTH) * 2);
+    }
   });
 });

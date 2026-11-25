@@ -62,7 +62,7 @@
   initial-value: 0.52;
 }
 .veil {
-  --veil: 0.52;
+  --veil: calc(0.52 * var(--veil-k, 1));
   position: absolute;
   inset: 0;
   pointer-events: none;
@@ -76,10 +76,10 @@
   transition: --veil 600ms ease;
 }
 .veil[data-place='home'] {
-  --veil: 0.36;
+  --veil: calc(0.36 * var(--veil-k, 1));
 }
 .veil[data-place='unwind'] {
-  --veil: 0.1;
+  --veil: calc(0.1 * var(--veil-k, 1));
 }
 .veil[data-place='zen'] {
   --veil: 0;

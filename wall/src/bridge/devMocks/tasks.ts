@@ -106,7 +106,7 @@ export function registerTaskMocks(): void {
     { id: 'd2', title: 'Review the dashboard draft before the client call', due: 0, allDay: true, hour: 0, estimate: '30', tags: ['work', 'phone call', 'q4 planning'], bucket: 0 },
     { id: 'd3', title: 'Confirm the venue for the spring workshop', due: 0, allDay: false, hour: 17, estimate: '15', tags: ['hr'], bucket: 0 },
     { id: 'd4', title: 'Reply to the audit questions', due: 0, allDay: true, hour: 0, estimate: null, tags: [], bucket: 1 },
-    { id: 'd5', title: 'Update the onboarding checklist', due: 0, allDay: true, hour: 0, estimate: '45', tags: ['ideas', 'misc'], bucket: 0 },
+    { id: 'd5', title: 'Update the onboarding checklist', due: 0, allDay: true, hour: 0, estimate: '60plus', tags: ['ideas', 'misc'], bucket: 0 },
     { id: 'd6', title: 'Book the travel for the offsite', due: -1, allDay: true, hour: 0, estimate: '60plus', tags: ['errands', 'repairs', 'garden'], bucket: 0 },
     { id: 'd7', title: 'Prepare the quarterly numbers for the board pack and the lenders', due: 0, allDay: true, hour: 0, estimate: '60plus', tags: ['an unusually long tag name here', 'finance'], bucket: 1 },
     { id: 'd8', title: 'Check the backup report', due: 0, allDay: true, hour: 0, estimate: '15', tags: ['misc'], bucket: 0 },

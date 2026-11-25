@@ -67,6 +67,7 @@ import {
   type SpotifyProblem,
 } from './model';
 import { PinButton } from '../watch/PinButton';
+import { restZone, useWatchRest } from '../watch/rest';
 import { usePins } from '../watch/pins';
 import { finishPlay, playWhole, useSpotifyPinNote } from './playItem';
 import { readSpotifyStatus, spotifyReady, useSpotifyStatus } from './status';
@@ -173,6 +174,15 @@ export function SpotifyCard() {
   chooserOpen.current = chooser;
   const pointerIn = useRef(false);
   const swallowOff = useRef<(() => void) | null>(null);
+  // Listen's inactive state: the card fades with the music controls (see `useControlsFade`), and its pointer and focus
+  // hold the controls shown the way the Watch list card's do. A tall (open) card never rests.
+  const resting = useWatchRest((s) => s.rest) && !tall;
+  const rz = restZone('lib');
+  // An open card or chooser is in use: the music controls and the moods row never rest behind it (Listen reads this).
+  useEffect(() => {
+    useWatchRest.setState({ cardHeld: tall || chooser });
+    return () => useWatchRest.setState({ cardHeld: false });
+  }, [tall, chooser]);
 
   const clearClose = useCallback(() => {
     if (closeTimer.current) clearTimeout(closeTimer.current);
@@ -333,18 +343,22 @@ export function SpotifyCard() {
       ref={setCard}
       className={`u-card sp-card${source === 'youtube' ? ' yt' : ''}${tall ? ' tall' : ''}`}
       data-tall={tall ? 'true' : 'false'}
+      data-rest={resting ? 'true' : 'false'}
       aria-label="Music to play"
       onPointerEnter={() => {
+        rz.onPointerEnter();
         pointerIn.current = true;
         clearClose();
         if (!tall) armOpen();
       }}
-      onPointerLeave={() => {
+      onPointerLeave={(e) => {
+        rz.onPointerLeave(e);
         pointerIn.current = false;
         clearOpen();
         if (tall) armClose();
       }}
       onFocusCapture={(e) => {
+        rz.onFocus(e);
         clearClose();
         // Keyboard way in: focus-visible landing on a control below the top row (not a text field) opens it.
         const t = e.target as Element;
@@ -354,6 +368,7 @@ export function SpotifyCard() {
         }
       }}
       onBlurCapture={(e) => {
+        rz.onBlur(e);
         if (tall && !pointerIn.current) armClose(e.relatedTarget as Element | null);
       }}
     >

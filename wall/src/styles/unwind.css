@@ -2203,6 +2203,45 @@
     transition: none;
   }
 }
+/* Listen's inactive state, the Watch rest pattern (same 250 ms ease, same triggers, same store): the Spotify or YouTube
+   Music card, the gear, the transport row and the time bar fade out and take no pointer; the cover, the title and
+   the artist line stay, dimmed. The boxes keep the pointer only to notice it entering, which brings everything back. */
+.u-listen-gear,
+.u-listen .u-transport,
+.u-listen .u-art,
+.u-listen .u-np,
+.u-listen .u-artist,
+.u-listen .u-src {
+  transition: opacity 250ms ease;
+}
+.unwind[data-listen-rest='true'] .u-listen-gear > *,
+.unwind[data-listen-rest='true'] .u-listen .u-transport,
+.unwind[data-listen-rest='true'] .u-listen .u-src {
+  opacity: 0;
+  pointer-events: none;
+}
+.unwind[data-listen-rest='true'] .u-listen :is(.u-art, .u-np, .u-artist) {
+  opacity: 0.5;
+}
+.unwind[data-listen-rest='true'] .u-listen .u-np {
+  text-shadow: none;
+}
+.sp-card[data-rest='true'] {
+  opacity: 0;
+}
+.sp-card[data-rest='true'] > * {
+  pointer-events: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  .u-listen-gear,
+  .u-listen .u-transport,
+  .u-listen .u-art,
+  .u-listen .u-np,
+  .u-listen .u-artist,
+  .u-listen .u-src {
+    transition: none;
+  }
+}
 /* The Unwind button on the rail while a video plays out of sight: a small cyan play mark. */
 .rb-play {
   position: absolute;
@@ -2466,7 +2505,13 @@
   gap: 12px;
   padding: 16px 20px 14px;
   /* Closing takes 400 ms; opening (below) 240 ms. */
-  transition: left 400ms ease-out, width 400ms ease-out, height 400ms ease-out;
+  transition: left 400ms ease-out, width 400ms ease-out, height 400ms ease-out, opacity 250ms ease;
+}
+@media (prefers-reduced-motion: reduce) {
+  /* Only the fade stops; the card's open and close size animation is not part of the rest. */
+  .sp-card {
+    transition: left 400ms ease-out, width 400ms ease-out, height 400ms ease-out;
+  }
 }
 .sp-card.yt {
   height: auto;

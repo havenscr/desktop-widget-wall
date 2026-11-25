@@ -15,7 +15,7 @@ import { displayPins, pinKindName, pinnable, usePins, type PinPlace, type PinSho
 import type { SavedItem } from './watch/saved';
 import { nextStep, sleepWords, stepSleep, useSleep } from './watch/sleep';
 import { useWatchStore } from './watch/store';
-import { ctlTiming } from './watch/Watch';
+import { ctlTiming } from './watch/rest';
 
 /** Development only: `?wrows=shown` holds the rows at full strength for stills. */
 export const underClock = { hold: false };

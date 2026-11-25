@@ -45,12 +45,13 @@ const T0 = 40;
 export function Backdrop({ on, mounted, review }: BackdropProps) {
   const place = usePlaceStore((s) => s.active);
   const style = useBackdropSettings((s) => s.style);
+  const strength = useBackdropSettings((s) => s.strength);
   const reduced = useReducedMotion();
   const canvas = useRef<HTMLCanvasElement>(null);
   const shader = useRef<SkyShader | null>(null);
   // What the loop reads, kept current each render so a page switch never restarts it.
-  const cur = useRef({ place, style, on });
-  cur.current = { place, style, on };
+  const cur = useRef({ place, style, on, strength });
+  cur.current = { place, style, on, strength };
   const redraw = useRef<() => void>(() => {});
 
   // The one context for the whole app: made when this first mounts, kept until the app ends.
@@ -97,13 +98,13 @@ export function Backdrop({ on, mounted, review }: BackdropProps) {
       const every = cur.current.place === 'zen' && (stage.sky.on || stage.sky.outAt > 0) ? 0 : REFRESH_MS;
       if (now - k.refreshed < every && !snap) return;
       k.refreshed = now;
-      const { place: p, style: s } = cur.current;
+      const { place: p, style: s, strength: power } = cur.current;
       const real = review ? review.ms : Date.now();
       // Zen's Sundown runs the sky on its own clock.
       const ms = p === 'zen' ? skyNow(performance.now(), real) : real;
       skyColoursAt(ms, review?.style ?? s, colours);
       const sp = sun(ms);
-      k.target = legibleGain(p, sp.alt, sp.az > 180, review?.style ?? s, colours);
+      k.target = legibleGain(p, sp.alt, sp.az > 180, review?.style ?? s, colours, power);
       if (k.gain < 0 || snap) k.gain = k.target;
     };
     const resize = () => {
@@ -224,13 +225,13 @@ export function Backdrop({ on, mounted, review }: BackdropProps) {
     };
   }, [mounted, on, reduced, review, paused]);
 
-  // A still (reduced motion, a review frame) is drawn again when the page, the style or the wish changes.
+  // A still (reduced motion, a review frame) is drawn again when the page, the style, the strength or the wish changes.
   const firstDraw = useRef(true);
   useEffect(() => {
     // Not on the first run: mounting already drew it.
     if (firstDraw.current) firstDraw.current = false;
     else redraw.current();
-  }, [place, style, on]);
+  }, [place, style, on, strength]);
 
   return <canvas ref={canvas} className="backdrop-canvas" aria-hidden="true" style={mounted ? undefined : { display: 'none' }} />;
 }

@@ -1,4 +1,5 @@
 import type { KeyboardEvent } from 'react';
+import { DEFAULT_STRENGTH, MIN_STRENGTH, strengthHurtsText } from '../backdrop/palette';
 import { SKY_PLACES, SKY_STYLES, useBackdropSettings, type SkyStyle } from '../backdrop/settings';
 import { hover } from './hover';
 
@@ -28,10 +29,15 @@ export function SkyPanel() {
   const style = useBackdropSettings((s) => s.style);
   const places = useBackdropSettings((s) => s.places);
   const available = useBackdropSettings((s) => s.available);
+  const strength = useBackdropSettings((s) => s.strength);
   const setStyle = useBackdropSettings((s) => s.setStyle);
+  const setStrength = useBackdropSettings((s) => s.setStrength);
   const toggle = useBackdropSettings((s) => s.togglePlace);
+  const pct = Math.round(strength * 100);
+  const hurts = strengthHurtsText(strength, places, style);
   return (
     <div className="tools-sky">
+      <div className="tools-sky-style">
       <div className="tools-head">
         <span className="tools-k sm" {...hover('A slow animated sky behind the mountains, on the pages you choose. Still under reduced motion.')}>
           Sky
@@ -47,7 +53,32 @@ export function SkyPanel() {
           );
         })}
       </div>
-      <div className="tools-hint">How the sky moves: slow bands of colour, or swaying curtains of light.</div>
+      <div className="tools-hint">Slow bands or soft curtains.</div>
+      </div>
+      <div className="tools-sky-strength">
+        <div className="tools-head">
+          <span className="tools-k sm" id="tools-sky-strength" {...hover('How strong the sky colour is. At 100% any page is as bright as Zen.')}>
+            Strength
+          </span>
+          <span className="tools-sky-pct">{pct}%</span>
+        </div>
+        <input
+          type="range"
+          className="tools-slider"
+          aria-labelledby="tools-sky-strength"
+          aria-valuetext={`${pct} percent`}
+          min={Math.round(MIN_STRENGTH * 100)}
+          max={100}
+          step={5}
+          value={pct}
+          onChange={(e) => setStrength(Number(e.currentTarget.value) / 100)}
+          aria-describedby="tools-sky-note"
+        />
+      <div id="tools-sky-note" className={hurts ? 'tools-hint tools-sky-note warn' : 'tools-hint tools-sky-note'}>
+        {hurts ? 'Text may be harder to read at this strength.' : `Faint to as strong as Zen. Default is ${Math.round(DEFAULT_STRENGTH * 100)}%.`}
+      </div>
+      </div>
+      <div className="tools-sky-places">
       <div className="tools-k sm tools-sky-label" id="tools-sky-on">
         Show on
       </div>
@@ -62,6 +93,7 @@ export function SkyPanel() {
         })}
       </div>
       <div className="tools-hint">{available ? 'Each page on its own. With every page off, the sky stays still.' : 'The animated sky is not available on this PC.'}</div>
+      </div>
     </div>
   );
 }

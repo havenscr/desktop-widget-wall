@@ -30,7 +30,7 @@ import { next as queueNext, previous as queuePrevious, useMusicView } from '../y
 import { AddToPlaylistButton, useAddMenuOpen } from './AddToPlaylist';
 import { useOwnLists } from './ownLists';
 import { openInBrowser } from './openInBrowser';
-import { keyboardFocus, restBridge, useWatchRest } from './rest';
+import { CTL_REST_MS, ctlTiming, keyboardFocus, restBridge, useWatchRest } from './rest';
 import { next as ownNext, NO_PLAY_LINE, playAgain as ownPlayAgain, previous as ownPrevious, useOwnFinished, useOwnView, type OwnView } from './ownPlay';
 import { clock, countText } from './ownShared';
 
@@ -284,10 +284,7 @@ function NextLine({ own }: { own: OwnView }) {
   );
 }
 
-/** watch behaviour: how long the controls stay after the pointer or focus leaves them, while a video plays. */
-export const CTL_REST_MS = 3000;
-/** Development only: the dev mocks (`?wctl=rest`) shorten the wait so headless stills catch the faded block. */
-export const ctlTiming = { restMs: CTL_REST_MS };
+export { CTL_REST_MS, ctlTiming };
 
 /** True for an element that takes typed text (the list's link field, a rename field). */
 function typing(el: Element | null): boolean {
@@ -309,7 +306,7 @@ function somethingOpen(): boolean {
  * video's lower edge (`peek`), and focus left the controls. Pointer, focus or a Tab press brings
  * them back at once. No timer runs while they cannot rest; the timer is cleared on unmount.
  */
-function useControlsFade(canRest: boolean, peek: boolean) {
+export function useControlsFade(canRest: boolean, peek: boolean) {
   const [rest, setRest] = useState(false);
   const timer = useRef<ReturnType<typeof setTimeout>>(undefined);
   // Which zones hold the controls shown: the left block ('now') and the zones beside it that report through `restZone`.

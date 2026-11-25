@@ -8,6 +8,7 @@ import { MAIN_LEFT } from '../screens/frameLayout';
 import { claimSky, releaseSky, useSkyClaim, useSkyStore, type SkyClaim } from './sky';
 import { usePlaceStore } from '../state/places';
 import { resetAudio } from '../audio/store';
+import { resetSkyStore, useBackdropSettings } from '../backdrop/settings';
 
 // The still frame under reduced motion is redrawn once a minute; one test steps that timer.
 vi.setConfig({ testTimeout: 20_000 });
@@ -266,6 +267,47 @@ describe('the front layer', () => {
     act(() => usePlaceStore.getState().setActive('unwind'));
     runFrame(1300);
     expect(style).toHaveBeenCalled();
+  });
+
+  it('the veil thins with the strength only while the sky is drawn, and its front-canvas read is armed again when that changes', () => {
+    localStorage.clear();
+    resetSkyStore();
+    useBackdropSettings.setState({ places: ['unwind'], strength: 1 });
+    let clock = 1000;
+    vi.spyOn(performance, 'now').mockImplementation(() => clock);
+    const { container, rerender } = render(
+      <>
+        <div className="veil" style={{ ['--veil' as string]: '0.1' }} />
+        <HorizonCanvas now={() => NIGHT} />
+        <Asker claim={null} />
+      </>,
+    );
+    const veil = container.querySelector('.veil') as HTMLElement;
+    // jsdom has no graphics context, so the sky marks itself unavailable and the veil stays whole; a working context is set by hand.
+    expect(veil.style.getPropertyValue('--veil-k')).toBe('1');
+    act(() => useBackdropSettings.setState({ available: true }));
+    expect(Number(veil.style.getPropertyValue('--veil-k'))).toBeCloseTo(0.25, 9);
+    act(() => useBackdropSettings.getState().setStrength(0.35));
+    expect(veil.style.getPropertyValue('--veil-k')).toBe('1');
+    act(() => useBackdropSettings.getState().setStrength(1));
+    expect(Number(veil.style.getPropertyValue('--veil-k'))).toBeCloseTo(0.25, 9);
+    // A screen takes the sky: the sky is not drawn, so the veil is whole again, and the front canvas reads it afresh.
+    runFrame(100);
+    clock += 900;
+    runFrame(200);
+    const style = vi.spyOn(window, 'getComputedStyle');
+    style.mockClear();
+    rerender(
+      <>
+        <div className="veil" style={{ ['--veil' as string]: '0.1' }} />
+        <HorizonCanvas now={() => NIGHT} />
+        <Asker claim={{}} />
+      </>,
+    );
+    expect(veil.style.getPropertyValue('--veil-k')).toBe('1');
+    runFrame(300);
+    expect(style).toHaveBeenCalled();
+    resetSkyStore();
   });
 
   it('rests with the main canvas: a hidden page draws neither, and both resume together', () => {

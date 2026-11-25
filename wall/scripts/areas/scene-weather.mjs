@@ -107,7 +107,7 @@ export default {
       state('unwind', 'scene weather: Watt fluffy after the shake', unwind(EVE, 'weather=rain&wattwx=fluffy')),
       state('unwind', 'scene weather: Watt leaning in the wind, facing left, with the loose strand', unwind(DAY, 'weather=wind&wattwx=lean')),
       state('unwind', 'scene weather: reduced motion with rain, no layer and Watt damp', unwind(EVE, 'weather=rain&reduced=1')),
-      { screen: 'work', name: 'scene weather: Tools, the switch on', query: `hz=work&at=${at(10, 24)}&clock=review&agents=3&weather=rain&tools=display`, custom: true, expect: ['Weather in the scene', 'On', 'Off', 'Rain and wind from your forecast.'] },
+      { screen: 'work', name: 'scene weather: Tools, the switch on', query: `hz=work&at=${at(10, 24)}&clock=review&agents=3&weather=rain&tools=display`, custom: true, expect: ['Weather in the scene', 'On', 'Off', 'Forecast rain and wind.'] },
       { screen: 'work', name: 'scene weather: Tools, the switch off', query: `hz=work&at=${at(10, 24)}&clock=review&agents=3&weather=rain&tools=display`, custom: true, actions: '.tools-weather .tools-chip:nth-child(2)', expect: ['Weather in the scene', 'Off'] },
       { screen: 'work', name: 'scene weather: Tools, the Off tip', query: `hz=work&at=${at(10, 24)}&clock=review&agents=3&weather=rain&tools=display`, custom: true, actions: 'hover:.tools-weather .tools-chip:nth-child(2)', expect: ['Keep the scene and Watt as on a dry day'] },
       { screen: 'work', name: 'scene weather: Tools, the On tip', query: `hz=work&at=${at(10, 24)}&clock=review&agents=3&weather=rain&tools=display`, custom: true, actions: 'hover:.tools-weather .tools-chip:nth-child(1)', expect: ['Show rain and wind from the forecast on the mountains and on Watt'] },
