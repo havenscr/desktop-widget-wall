@@ -23,7 +23,7 @@ function measureDayLine() {
   }
   const worst = boxes.reduce((w, x) => (x.b > w.b ? x : w), { cls: '', b: -1 });
   const tom = document.querySelector('.u-tomorrow');
-  return { found: true, lineTop: lt, worst, count: boxes.length, hasFoot: !!foot, tomorrowB: tom ? tom.getBoundingClientRect().bottom : null, footTop: (document.querySelector('.u-line, .u-cap') || foot || document.body).getBoundingClientRect().top };
+  return { found: true, lineTop: lt, worst, count: boxes.length, hasFoot: !!foot, tomorrowB: tom ? tom.getBoundingClientRect().bottom : null, footTop: (() => { const l = document.querySelector('.u-line'); return l ? l.getBoundingClientRect().top : null; })() };
 }
 
 // Runs in the page.
@@ -37,7 +37,15 @@ function measureSheetScroll() {
   const hb = head ? head.getBoundingClientRect() : null;
   const before = hb ? hb.top : 0;
   const over = body.scrollHeight - body.clientHeight > 1;
+  const overClass = body.classList.contains('over');
+  const atRestMask = getComputedStyle(body).maskImage || getComputedStyle(body).webkitMaskImage || 'none';
   body.scrollTop = body.scrollHeight;
+  // The hook (ui/useListEdge.ts) sets `end` once the foot is within 4 px; the measurement runs without a frame, so it applies the same rule and then reads the stylesheet's answer for that state.
+  const endNow = body.scrollHeight - body.scrollTop - body.clientHeight < 4;
+  const hadEnd = body.classList.contains('end');
+  body.classList.add('end');
+  const endMask = getComputedStyle(body).maskImage || getComputedStyle(body).webkitMaskImage || 'none';
+  if (!hadEnd) body.classList.remove('end');
   const rows = [...body.querySelectorAll('.ln-row, .ls-row, .ls-who, .ln-foot, .ln-hint')];
   const last = rows[rows.length - 1];
   const bb = body.getBoundingClientRect();
@@ -46,7 +54,7 @@ function measureSheetScroll() {
   const headMoved = hb ? Math.abs(head.getBoundingClientRect().top - before) > 0.5 : false;
   const cs = getComputedStyle(body);
   body.scrollTop = 0;
-  return { found: true, body: true, bottom: sb.bottom, top: sb.top, over, reach, headMoved, ovY: cs.overflowY, fade: body.classList.contains('sb-fade-bottom'), lights: sheet.classList.contains('ls-sheet') };
+  return { found: true, body: true, bottom: sb.bottom, top: sb.top, over, reach, headMoved, ovY: cs.overflowY, overClass, endNow, endMask, atRestMask, fade: body.classList.contains('sb-fade-bottom'), lights: sheet.classList.contains('ls-sheet') };
 }
 
 export default {
@@ -67,7 +75,8 @@ export default {
         if (!m || !m.found) { fail('the day line is not on the page'); return true; }
         if (!m.hasFoot) fail('the bottom row is not on the page');
         else if (m.lineTop - m.worst.b < 3.95) fail(`a box (${m.worst.cls}) ends at y ${Math.round(m.worst.b * 10) / 10}, ${Math.round((m.lineTop - m.worst.b) * 10) / 10} px above the day line at ${Math.round(m.lineTop * 10) / 10} (4 at least)`);
-        if (m.tomorrowB != null && m.footTop != null && m.tomorrowB > m.footTop - 0.5) fail(`Tomorrow ends at y ${Math.round(m.tomorrowB)}, into the bottom row at ${Math.round(m.footTop)}`);
+        if (m.footTop == null) fail('the status line (.u-line) is not on the page');
+        else if (m.tomorrowB != null && m.tomorrowB > m.footTop - 0.5) fail(`Tomorrow ends at y ${Math.round(m.tomorrowB)}, into the bottom row at ${Math.round(m.footTop)}`);
         if (!bad) emit(`  ok   day line: ${m.count} boxes of the bottom row end at y ${Math.round(m.worst.b * 10) / 10}, ${Math.round((m.lineTop - m.worst.b) * 10) / 10} px above the day line (4 at least), Tomorrow clear`);
         return bad;
       },
@@ -81,6 +90,10 @@ export default {
         if (m.bottom > 650.5) fail(`the sheet ends at y ${Math.round(m.bottom)} (650 at most, clear of Office moods)`);
         if (m.ovY !== 'auto') fail('the body does not scroll (overflow-y ' + m.ovY + ')');
         if (!m.fade) fail('the body has no fade hook');
+        if (m.over && !m.overClass) fail('the body overflows but has no over class before scrolling');
+        if (m.over && !m.endNow) fail('the body is not at its end after scrolling to the bottom');
+        if (m.over && m.atRestMask === 'none') fail('the body overflows but draws no fade at rest');
+        if (m.endMask !== 'none') fail('a fade mask is still drawn at the end of the scroll (' + m.endMask.slice(0, 30) + ')');
         if (!m.reach) fail('the last row cannot be scrolled into view');
         if (m.headMoved) fail('the heading row moved while the body scrolled');
         if (!bad) emit(`  ok   sheet scroll: the ${m.lights ? 'Lights' : 'Lines'} sheet ends at y ${Math.round(m.bottom)} (650 at most), the body ${m.over ? 'scrolls' : 'fits'} with the heading fixed, the last row reachable`);

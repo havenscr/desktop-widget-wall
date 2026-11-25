@@ -1801,6 +1801,14 @@
   min-height: 0;
   overflow-y: auto;
   overflow-x: hidden;
+  /* A row focused by keyboard scrolls clear of the 64 px bottom fade; 6 px at the sides keep focus rings whole. */
+  scroll-padding-bottom: 64px;
+  padding: 0 6px;
+  margin: 0 -6px;
+}
+.w-sheet.ln-sheet > .ln-body .ls-help {
+  /* The scrollbar takes 20 px of the width, so the Lights help wraps rather than being cut. */
+  white-space: normal;
 }
 .ln-panel {
   display: flex;
@@ -1878,6 +1886,7 @@
 .ln-types button {
   flex: 1;
   padding: 0 6px;
+  margin: 0 -6px;
 }
 .ln-chips button:hover,
 .ln-reset:hover,
@@ -2044,7 +2053,7 @@
    sheet's height follows its content, and the foot line about saved items makes room for it. ---- */
 .w-sheet.w-tune {
   height: auto;
-  /* Wall y 20 to 650: clear of the office slot at y 662. With the most rows and a look per kind the rows scroll inside the sheet; 630 leaves the row cut at the foot showing only what the 28 px fade covers (fit-check proves it). */
+  /* Wall y 20 to 650: clear of the office slot at y 656. With the most rows and a look per kind the rows scroll inside the sheet; 630 leaves the row cut at the foot showing only what the 28 px fade covers (fit-check proves it). */
   max-height: 630px;
   gap: 6px;
   padding: 16px 26px 12px;
@@ -3905,7 +3914,7 @@ button.sp-qrow:hover {
   }
 }
 /* The Office moods row (`studio/OfficeMoods.tsx`). It is the office-lights slot: right edge at wall x
-   2364, top y 662, 34 tall. The row ends 126 px before the old edge so the Hide screen control, which grows to
+   2364, top y 656, 34 tall. The row ends 126 px before the old edge so the Hide screen control, which grows to
    a 154 px pill when pointed at, never covers a chip. Empty it is the old 420 by 34 box with no pointer; shown
    it is as wide as its parts, 420 to 1124 (the 1124 is the row's left limit, wall x 1240, where the vote found
    free space in every state). The box takes no pointer, only the chips do. */

@@ -43,3 +43,16 @@ it('the day line sits 6 px below the frame and the bottom row 6 px above it', ()
   expect(css().match(/\.u-foot \{[^}]*\}/)![0]).toMatch(/bottom: 6px/);
   expect(css().match(/\.u-office-slot \{[^}]*\}/)![0]).toMatch(/top: 636px/);
 });
+
+it('the scroll body keeps focused rows clear of the fade and its focus rings whole', () => {
+  const body = css().match(/\.w-sheet\.ln-sheet > \.ln-body \{[^}]*\}/)![0];
+  expect(body).toMatch(new RegExp('scroll-padding-' + 'bottom: 64px'));
+  expect(body).toMatch(new RegExp('padding: 0 6' + 'px'));
+});
+
+it('switching page opens the new page at the top (the body is keyed by page)', async () => {
+  render(<WatchSheet initial="lines" />);
+  const first = document.querySelector('.ln-body')!;
+  await act(async () => screen.getByRole('tab', { name: 'Lights' }).click());
+  expect(document.querySelector('.ln-body')).not.toBe(first);
+});

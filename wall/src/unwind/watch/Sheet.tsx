@@ -115,7 +115,7 @@ export function WatchSheet({ initial = 'looks' }: { initial?: 'looks' | 'lines' 
         </button>
       </div>
       </div>
-      {page !== 'looks' ? <div className={`ln-body ${edge.className}`} ref={edge.ref} onScroll={edge.onScroll}>{page === 'lines' ? <LinesPanel /> : <LightsPanel />}</div> : <>
+      {page !== 'looks' ? <div key={page} className={`ln-body ${edge.className}`} ref={edge.ref} onScroll={edge.onScroll}>{page === 'lines' ? <LinesPanel /> : <LightsPanel />}</div> : <>
       <div className="w-seg w-mode" role="radiogroup" aria-label="The same look for all, or each source its own">
         <button type="button" role="radio" aria-checked={looks.mode === 'one'} className={looks.mode === 'one' ? 'on' : ''} title="Every video, live stream and Twitch channel plays in the same look" onClick={() => set({ mode: 'one' })}>
           Same for all
