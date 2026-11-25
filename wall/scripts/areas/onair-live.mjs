@@ -1,5 +1,5 @@
 // The Live page of the new On Air frame: the show timer, the YouTube chips, the run of show line,
-// the comments card with the channel field in it, the notes, the studio keys (row 2) and the lights. Gallery states, fit variants, the
+// the comments card with the channel field in it, the notes, the studio keys and the lights. Gallery states, fit variants, the
 // `onairLive` measurement and its deliberate breaks live here. Every name and comment in the mocks is invented.
 
 const at = encodeURIComponent('2026-11-11T10:24:00-08:00');
@@ -82,26 +82,46 @@ function measureOnAirLive() {
     const b = hd.getBoundingClientRect();
     if (Math.abs(b.left - (800 + cw)) > 1 || Math.abs(b.width - 24) > 1) fails.push('on air live: the split handle is at x ' + r1(b.left) + ', ' + r1(b.width) + ' wide and should be in the 24 px gap at x ' + (800 + cw));
   }
-  // Studio keys: row 1 (four StreamYard keys) between the heading and row 2, row 2 (three tiles) at its final y (box top + 98).
+  // Studio keys: eight equal keys, two rows of four, under the heading. Every label is one line high and centred
+  // (left and right gaps within 1 px), 16 px, and no key is dim.
   const sk = root.querySelector('.oa2-studiokeys');
   if (sk) {
     const top = sk.getBoundingClientRect().top;
-    const r1t = [...sk.querySelectorAll('.oa2-skrow1 .key-tile')];
-    const r2t = [...sk.querySelectorAll('.oa2-skrow2 .key-tile')];
-    if (r1t.length !== 4) fails.push('on air live: row 1 of the studio keys has ' + r1t.length + ' tiles (it has 4)');
-    if (r2t.length > 0 && r2t.length !== 3) fails.push('on air live: row 2 of the studio keys has ' + r2t.length + ' tiles (it has 3)');
-    for (const t of r2t) {
-      const y = t.getBoundingClientRect().top - top;
-      if (Math.abs(y - 98) > 1.5) fails.push('on air live: row 2 tile "' + t.getAttribute('aria-label') + '" is ' + r1(y) + ' px under the box top (its final y is 98)');
-    }
+    const tiles = [...sk.querySelectorAll('.oa2-skgrid .key-tile')];
+    if (tiles.length !== 8) fails.push('on air live: the studio keys have ' + tiles.length + ' keys (they have 8)');
     const head = sk.querySelector('.oa2-hd');
-    for (const t of r1t) {
+    const ws = new Set(tiles.map((t) => Math.round(t.getBoundingClientRect().width)));
+    const hs = new Set(tiles.map((t) => Math.round(t.getBoundingClientRect().height)));
+    if (ws.size > 1 || hs.size > 1) fails.push('on air live: the studio keys are not equal (widths ' + [...ws].join('/') + ', heights ' + [...hs].join('/') + ')');
+    const tops = [...new Set(tiles.map((t) => Math.round(t.getBoundingClientRect().top)))];
+    if (tiles.length === 8 && tops.length !== 2) fails.push('on air live: the studio keys sit in ' + tops.length + ' rows (they sit in 2)');
+    for (const t of tiles) {
+      const name = t.getAttribute('data-key');
       const b = t.getBoundingClientRect();
-      if (head && b.top < head.getBoundingClientRect().bottom - 0.5) fails.push('on air live: row 1 tile "' + t.getAttribute('aria-label') + '" overlaps the heading');
-      if (b.bottom > top + 98 - 0.5) fails.push('on air live: row 1 tile "' + t.getAttribute('aria-label') + '" reaches into row 2');
+      if (head && b.top < head.getBoundingClientRect().bottom - 0.5) fails.push('on air live: studio key "' + name + '" overlaps the heading');
+      if (b.bottom > top + 192 - 0.5) fails.push('on air live: studio key "' + name + '" reaches below the box');
+      if (t.hasAttribute('data-kind')) fails.push('on air live: studio key "' + name + '" carries a kind colour');
+      if (t.classList.contains('off')) fails.push('on air live: studio key "' + name + '" is dim (none should be)');
+      const lbl = t.querySelector('.deck-lbl');
+      const ic = t.querySelector('svg');
+      if (!lbl) continue;
+      const range = document.createRange();
+      range.selectNodeContents(lbl);
+      const rects = [...range.getClientRects()];
+      const lines = new Set(rects.map((r) => Math.round(r.top)));
+      if (lines.size > 1) fails.push('on air live: studio key "' + name + '" label is on ' + lines.size + ' lines');
+      const lb = rects[0] ? { left: Math.min(...rects.map((r) => r.left)), right: Math.max(...rects.map((r) => r.right)) } : lbl.getBoundingClientRect();
+      const gl = lb.left - b.left;
+      const gr = b.right - lb.right;
+      if (Math.abs(gl - gr) > 1.01) fails.push('on air live: studio key "' + name + '" label is not centred (gaps ' + r1(gl) + ' and ' + r1(gr) + ')');
+      if (lbl.scrollWidth > lbl.clientWidth + 0.5) fails.push('on air live: studio key "' + name + '" label is cut');
+      if (lbl.getBoundingClientRect().height > 20.5) fails.push('on air live: studio key "' + name + '" label is ' + r1(lbl.getBoundingClientRect().height) + ' px tall (one line is 20)');
+      if (ic && ic.getBoundingClientRect().bottom > lbl.getBoundingClientRect().top + 0.5) fails.push('on air live: studio key "' + name + '" icon is not above its label');
+      if (ic) {
+        const ib = ic.getBoundingClientRect();
+        if (Math.abs(ib.left - b.left - (b.right - ib.right)) > 1.01) fails.push('on air live: studio key "' + name + '" icon is not centred');
+      }
     }
-    const dim = r1t.filter((t) => t.classList.contains('off')).length;
-    if (dim > 0) fails.push('on air live: ' + dim + ' studio keys are dim (none should be)');
   }
   // Comments: a row is at most two lines, no visible row is cut at the top, and eight short rows fit.
   const list = root.querySelector('.oa2-cms[role="log"]');
@@ -126,11 +146,10 @@ function measureOnAirLive() {
   // Notes: 27 px, in a card 436 wide.
   const note = root.querySelector('.oa2-livenotes .oa-note');
   if (note && Math.abs(parseFloat(getComputedStyle(note).fontSize) - 27) > 0.6) fails.push('on air live: the notes are ' + getComputedStyle(note).fontSize + ' (27 px)');
-  // Every key tile at least 76 by 76 (row 1 of the studio keys is 58 tall: it sits between the heading and row 2), no text under 16 px.
+  // Every key tile at least 74 high and 76 wide, no text under 16 px.
   for (const tile of root.querySelectorAll('.key-tile')) {
     const b = tile.getBoundingClientRect();
-    const low = tile.closest('.oa2-skrow1') ? 57.5 : 75.5;
-    if (b.height < low || b.width < 75.5) fails.push('on air live: key tile "' + tile.getAttribute('aria-label') + '" is ' + Math.round(b.width) + ' x ' + Math.round(b.height) + ' px (at least ' + Math.round(low + 0.5) + ' high and 76 wide)');
+    if (b.height < 73.5 || b.width < 75.5) fails.push('on air live: key tile "' + tile.getAttribute('aria-label') + '" is ' + Math.round(b.width) + ' x ' + Math.round(b.height) + ' px (at least 74 high and 76 wide)');
   }
   for (const e of root.querySelectorAll('*')) {
     if (!visible(e)) continue;
@@ -157,11 +176,11 @@ export default {
   name: 'onair-live',
   gallery: {
     states: [
-      state('live with comments', 'yt=live', ['Live, 37 watching, since 10:02 AM', 'Comments', 'YouTube · read 4 s ago', 'Could you zoom in a little?', 'YouTube only, read every 10 seconds.', 'Show timer', 'Started 10:02 AM, when the broadcast went live.', 'Studio keys', 'Solo', 'Two up', 'Share', 'Go live', 'No key sent yet', 'StreamYard studio', 'Studio window: open (Firefox)', 'The wall cannot see which layout is live. It shows what it sent.', 'Mark a moment', 'Snip', 'Say hello and the one piece of news', '!Name channel']),
-      state('studio keys, no window picked', 'yt=none&swin=none', ['Solo', 'Two up', 'Pick window', 'Studio window: not picked', '!Go live?']),
+      state('live with comments', 'yt=live', ['Live, 37 watching, since 10:02 AM', 'Comments', 'YouTube · read 4 s ago', 'Could you zoom in a little?', 'YouTube only, read every 10 seconds.', 'Show timer', 'Started 10:02 AM, when the broadcast went live.', 'Studio keys', 'Speaker', 'Presenter', '2 Person', 'Screenshare', 'Mute mic', 'Camera off', 'Go live', 'No key sent yet', 'StreamYard studio', 'Studio window: open (Firefox)', 'The wall cannot see which layout is live. It shows what it sent.', 'Mark a moment', 'Say hello and the one piece of news', '!Name channel']),
+      state('studio keys, no window picked', 'yt=none&swin=none', ['Speaker', 'Presenter', 'Pick window', 'Studio window: not picked', '!Go live?']),
       state('studio keys, window picked', 'yt=none', ['Studio window: open', '!Pick window']),
       state('studio keys, Go live armed', 'yt=none', ['Click again', 'Go live? Click again'], '[data-key="golive"]'),
-      state('studio keys, a key sent', 'yt=live', ['Sent: Two up, just now', 'Last key sent: Two up, just now', 'End show'], '[data-key="two"]'),
+      state('studio keys, a scene key waits for the add-on', 'yt=live', ['Speaker: Waiting on StreamYard setup', 'End show'], '[data-key="scene1"]'),
       state('studio window minimized', 'yt=none&swin=minimized', ['Studio window: minimized']),
       state('busy chat, wrapped rows and a Super Chat', 'yt=busy', ['$5.00', 'Thanks', 'YouTube only, read every 10 seconds.']),
       state('live, no comments yet', 'yt=empty', ['No comments yet. They show here within about 10 seconds of being posted.']),
@@ -209,7 +228,7 @@ export default {
       onairLive: (variantEntry, results, emit) => {
         for (const failure of results.onairLive) emit(`  FAIL ${failure}`);
         if (results.onairLive.length) return true;
-        if (variantEntry.name.startsWith('On Air live,')) emit('  ok   on air live: every block in its planned box (the split at 620 / 436 or the dragged and folded states, the handle in the gap) inside y 20 to 510, row 1 of the studio keys above row 2 and row 2 at its final y, comment rows at most two lines and none cut, notes 27 px, key tiles at least 76 px, text at least 16 px');
+        if (variantEntry.name.startsWith('On Air live,')) emit('  ok   on air live: every block in its planned box (the split at 620 / 436 or the dragged and folded states, the handle in the gap) inside y 20 to 510, eight equal studio keys in two rows with one-line centred labels, comment rows at most two lines and none cut, notes 27 px, key tiles at least 76 px, text at least 16 px');
         return false;
       },
     },
@@ -218,7 +237,7 @@ export default {
       'onair-notes-wide': { css: '.oa2 .oa-card.oa2-livenotes { width: 620px !important; }', expect: /^ *FAIL on air live: \.oa2-livenotes is at/m, appliesTo: isNamed('live with comments') },
       'onair-run-file': { css: '.oa2-runline[hidden] { display: flex !important; min-height: 20px; }', expect: /^ *FAIL on air live: the run line is shown with no parts/m, appliesTo: isNamed('live, no run of show file') },
       'onair-split-min': { css: '.oa2 .oa-card.oa2-livenotes { width: 200px !important; }', expect: /^ *FAIL on air live: the notes are [\d.]+ px wide, under their minimum/m, appliesTo: isNamed('live with comments') },
-      'onair-keys-move': { css: '.oa2-skrow2 { top: 40px !important; }', expect: /^ *FAIL on air live: row 2 tile ".*" is [\d.]+ px under the box top/m, appliesTo: isNamed('live with comments') },
+      'onair-keys-rows': { css: '.oa2-skgrid { grid-template-columns: repeat(3, minmax(0, 1fr)) !important; }', expect: /^ *FAIL on air live: the studio keys sit in 3 rows/m, appliesTo: isNamed('live with comments') },
     },
   },
 };

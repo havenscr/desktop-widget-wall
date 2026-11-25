@@ -366,21 +366,30 @@
 .oa2-sp-note[data-failed='true'] { color: var(--amber); }
 .oa2-lights-live { left: 1796px; top: 328px; width: 620px; height: 154px; }
 .oa2-lights-live > .st-block { height: 148px; }
-/* Row 1 of the studio keys box: the StreamYard keys, between the heading and row 2. */
-.oa2-skrow1 { position: absolute; left: 0; right: 0; top: 34px; height: 58px; }
-.oa2-skrow1 .oa2-tiles { margin-top: 0; }
-.oa2 .oa2-skrow1 .deck-tile.key-tile { height: 58px; grid-template-rows: 22px 20px; padding-top: 6px; }
-.oa2 .oa2-skrow1 .deck-tile.key-tile.off { border-style: dashed; opacity: 0.6; }
-.oa2 .oa2-skrow1 .deck-tile.key-tile[data-armed='true'] { border-color: rgba(255, 82, 82, 0.9); background: rgba(255, 82, 82, 0.16); }
+/* The studio keys: eight equal keys, two rows of four, under the heading. Rule A: one key style, so the colour
+   variable is pinned to the base key colour (no data-kind on these tiles); the only accents are the last-sent glow,
+   the armed state and the off state every key has. Rule B: icon above, label below, centred, 16 px, one line. */
+.oa2-skgrid { position: absolute; left: 0; right: 0; top: 34px; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); grid-template-rows: repeat(2, 74px); gap: 8px; }
+.oa2 .oa2-studiokeys .deck-tile.key-tile { --g: 183, 175, 214; height: 74px; grid-template-rows: 22px 20px; row-gap: 4px; padding: 8px 8px 0; font-size: 16px; line-height: 20px; justify-items: center; align-content: start; text-align: center; }
+.oa2 .oa2-studiokeys .deck-tile.key-tile .deck-lbl.oa2-sklbl { display: block; white-space: nowrap; overflow: hidden; text-overflow: clip; max-height: none; max-width: 100%; font-size: 16px; line-height: 20px; text-align: center; -webkit-line-clamp: unset; line-clamp: unset; align-self: start; }
+.oa2 .oa2-studiokeys .deck-tile.key-tile[data-last='true'] { background: linear-gradient(180deg, rgba(var(--g), 0.36), rgba(var(--g), 0.22)), rgba(11, 8, 32, 0.86); border-color: rgb(var(--g)); box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.2), 0 0 0 2px rgba(var(--g), 0.38), 0 0 16px -2px rgba(var(--g), 0.6); }
+.oa2 .oa2-studiokeys .deck-tile.key-tile[data-armed='true'] { border-color: rgba(255, 82, 82, 0.9); background: rgba(255, 82, 82, 0.16); }
+/* The picker: a tall popover left of the keys box, down the strip (x 1478 to 1908, y 14 to 704), the whole list with no scrolling. */
+.oa2-skpick { left: -442px; top: -10px; right: auto; bottom: auto; width: 430px; height: 690px; z-index: 60; border-radius: 16px; gap: 4px; padding: 6px 8px; }
+.oa2-skpick .pk-purpose-t { flex: 1 1 auto; font: 600 16px/1 var(--body); color: var(--tx); padding-left: 4px; }
+.oa2-skpick .pk-search { height: 40px; font-size: 16px; }
+.oa2-skpick .deck-mini { height: 40px; font-size: 16px; }
+.oa2-skpick .pk-list { padding-bottom: 0; }
+.oa2-skpick .pk-group { display: block; }
+.oa2-skpick .pk-gh { font-size: 16px; line-height: 28px; padding: 2px 4px 0; position: static; }
+.oa2-skpick .pk-row { min-height: 40px; font-size: 16px; }
+.oa2-skpick .pk-row svg { flex: none; }
+.oa2-skpick .pk-mark { font-size: 16px; padding: 2px 8px; }
 .oa2 .oa2-hdbtn { margin: 0 0 0 auto; height: 26px; border-radius: 9px; min-width: 0; padding: 0 12px; font-size: 16px; display: inline-flex; align-items: center; gap: 6px; flex: none; }
 .oa2-hd-r + .oa2-hdbtn { margin-left: 12px; }
 .oa2-st-l { margin-top: 8px; }
 .oa2-st-l[data-warn='true'] { color: #ffb74d; }
 .oa2-st-fine { margin-top: 10px; font: 400 16px/22px var(--body); color: var(--dim); }
-/* Row 2 of the studio keys box sits at its final place (box y 98 to 174); row 1 is empty sky until the studio keys pull request. */
-.oa2-skrow2 { position: absolute; left: 0; right: 0; top: 98px; height: 76px; }
-.oa2-skrow2 .oa2-tiles,
-.oa2-skrow2 .oa2-quiet { margin-top: 0; }
 .oa2-chip[data-kind='live'] {
   border-color: rgba(255, 82, 82, 0.8);
   background: linear-gradient(rgba(255, 82, 82, 0.18), rgba(255, 82, 82, 0.06)), rgba(14, 10, 36, 0.9);
