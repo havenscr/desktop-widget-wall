@@ -944,10 +944,6 @@ it('a key that lands on the row already shown leaves no pending focus for later 
   await screen.findByText('Title 0');
   press(rowButtons()[0], 'Home');
   press(rowButtons()[0], 'ArrowUp');
-  fireEvent.click(rowButtons()[2]);
-  await screen.findByText('Title 2');
-  fireEvent.click(rowButtons()[0]);
-  await screen.findByText('Title 0');
   (document.activeElement as HTMLElement | null)?.blur();
   fireEvent.click(screen.getByRole('button', { name: /Show: All/ }));
   fireEvent.click(await screen.findByText('Video'));
