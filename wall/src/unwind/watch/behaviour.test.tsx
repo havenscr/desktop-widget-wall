@@ -354,7 +354,7 @@ describe('the keys on the Watch tab', () => {
     expect(useWatchStore.getState().paused).toBe(true);
     fireEvent.keyDown(document.body, { key: ' ' });
     expect(useWatchStore.getState().paused).toBe(false);
-    const field = screen.getByLabelText('Paste a YouTube or Twitch link');
+    const field = screen.getByLabelText('Search or paste a link');
     act(() => field.focus());
     fireEvent.keyDown(field, { key: ' ' });
     expect(useWatchStore.getState().paused).toBe(false);
@@ -372,7 +372,7 @@ describe('the keys on the Watch tab', () => {
     fireEvent.keyDown(document.body, { key: 'Escape' });
     expect(useWatchStore.getState().playing).not.toBeNull();
     act(() => useWatchStore.getState().setSheet(false));
-    const field = screen.getByLabelText('Paste a YouTube or Twitch link');
+    const field = screen.getByLabelText('Search or paste a link');
     act(() => field.focus());
     fireEvent.keyDown(field, { key: 'Escape' });
     expect(useWatchStore.getState().playing).not.toBeNull();

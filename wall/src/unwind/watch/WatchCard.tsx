@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from 'react';
-import { IconBrandTwitch, IconBrandYoutube, IconBroadcast, IconCheck, IconPencil, IconPlaylist, IconPlaylistAdd, IconPlus, IconX } from '@tabler/icons-react';
+import { IconBrandTwitch, IconBrandYoutube, IconBroadcast, IconCheck, IconPencil, IconPlaylist, IconPlaylistAdd, IconPlus, IconSearch, IconX } from '@tabler/icons-react';
 import { useSkyKeepClear } from '../../horizon/sky';
 import { tip } from '../../ui/HoverTip';
 import { useSignalStore } from '../../signals/store';
@@ -15,6 +15,8 @@ import { askDetails } from './ownDetails';
 import { useOwnLists } from './ownLists';
 import { restBridge, restZone, useWatchRest } from './rest';
 import { playOwn, setFollow, useOwnView, type OwnView } from './ownPlay';
+import { closeWatchSearch, isLinkText, runWatchSearch, useWatchSearch, wordsProblem } from './searchStore';
+import { WatchResults } from './WatchSearch';
 
 export { PASTE_ERROR_MS };
 /** How long the offer of a second choice (the playlist a pasted video link also names) stays under the field. */
@@ -156,6 +158,7 @@ function WatchList({ empty, draft, setDraft, host, own }: { empty: boolean; draf
   const playing = useWatchStore((s) => s.playing);
   const editing = useWatchStore((s) => s.editing);
   const inCall = useSignalStore((s) => s.call !== null);
+  const searching = useWatchSearch((s) => s.open);
   const [text, setText] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [asking, setAsking] = useState<string | null>(null);
@@ -164,7 +167,7 @@ function WatchList({ empty, draft, setDraft, host, own }: { empty: boolean; draf
   const [offer, setOffer] = useState<{ ref: WatchRef; known: boolean } | null>(null);
   const fieldRef = useRef<HTMLInputElement>(null);
   // The card is in use while its field has text, a name is being typed, the new playlist form or a question or a menu is open: it never rests then.
-  const held = text.trim() !== '' || editing !== null || draft || asking !== null || menu !== null;
+  const held = text.trim() !== '' || editing !== null || draft || asking !== null || menu !== null || searching;
   useEffect(() => {
     useWatchRest.setState({ cardHeld: held });
     // A field that went away with the focus in it sends no blur: the card's focus hold is let go when it was the last thing holding it.
@@ -207,6 +210,20 @@ function WatchList({ empty, draft, setDraft, host, own }: { empty: boolean; draf
 
   const submit = (e: FormEvent) => {
     e.preventDefault();
+    // Words search YouTube; a link is saved to the list.
+    if (!isLinkText(text)) {
+      if (text.trim()) {
+        dropOffer();
+        const problem = wordsProblem(text);
+        if (problem) {
+          showError(problem);
+          return;
+        }
+        setError(null);
+        void runWatchSearch(text);
+      }
+      return;
+    }
     const parsed = parseLink(text);
     const refused = st.addLink(text);
     clearTimeout(errTimer.current);
@@ -218,6 +235,7 @@ function WatchList({ empty, draft, setDraft, host, own }: { empty: boolean; draf
     } else {
       setError(null);
       setText('');
+      closeWatchSearch();
       if (parsed.ok && parsed.alsoList && !alreadySaved(parsed.alsoList)) showOffer(parsed.alsoList, false);
     }
   };
@@ -232,25 +250,37 @@ function WatchList({ empty, draft, setDraft, host, own }: { empty: boolean; draf
     fieldRef.current?.focus();
   };
 
+  const words = text.trim() !== '' && !isLinkText(text);
   const field = (
     <form className="w-field" onSubmit={submit}>
+      <span className="w-fieldbox">
+      <IconSearch size={20} stroke={1.8} aria-hidden="true" className="w-fieldicon" />
       <input
         ref={fieldRef}
         className="w-paste"
         value={text}
-        placeholder="Paste a YouTube or Twitch link"
-        aria-label="Paste a YouTube or Twitch link"
-        {...tip('A YouTube video, playlist or live stream, or a Twitch channel')}
+        placeholder="Search or paste a link"
+        aria-label="Search or paste a link"
+        {...tip('Words search YouTube. A YouTube video, playlist or live stream, or a Twitch channel saves to the list.')}
         spellCheck={false}
         autoComplete="off"
         maxLength={4096}
         onChange={(e) => {
           setText(e.target.value);
           dropOffer();
+          if (e.target.value.trim() === '') closeWatchSearch();
+        }}
+        onKeyDown={(e) => {
+          if (e.key === 'Escape' && searching) {
+            e.preventDefault();
+            e.stopPropagation();
+            closeWatchSearch();
+          }
         }}
       />
-      <button type="submit" className="w-add" disabled={!text.trim()} title="Save this link to the list">
-        Save
+      </span>
+      <button type="submit" className="w-add" disabled={!text.trim()} title={words ? 'Search YouTube for these words (uses one of the day\'s searches)' : 'Save this link to the list'}>
+        {words ? 'Search' : 'Save'}
       </button>
     </form>
   );
@@ -285,6 +315,19 @@ function WatchList({ empty, draft, setDraft, host, own }: { empty: boolean; draf
       New playlist
     </button>
   );
+
+  if (searching) {
+    return (
+      <>
+        <div className="u-card-head">
+          <span className="u-k">Watch list</span>
+        </div>
+        <WatchResults host={host} />
+        {field}
+        {errLine}
+      </>
+    );
+  }
 
   if (empty) {
     return (
@@ -457,12 +500,13 @@ export function WatchCard() {
     });
   }, [unnamed]);
   const mode = open ? 'edit' : own?.follow ? 'follow' : 'list';
-  const empty = mode === 'list' && saved.length === 0 && !draft;
+  const searching = useWatchSearch((s) => s.open) && mode === 'list';
+  const empty = mode === 'list' && saved.length === 0 && !draft && !searching;
   // While a video plays and the controls rest, the card rests with them (same timing); it never rests in use (see `cardHeld`)
   // or while its playlist editor or follow view is open. At rest it keeps the pointer only to notice it entering its box.
   const resting = useWatchRest((s) => s.rest && !s.cardHeld) && mode === 'list';
   return (
-    <section ref={setCard} className={`u-card w-card${empty ? ' empty' : ''}${mode === 'edit' ? ' own-tall' : ''}`} aria-label="Watch list" data-rest={resting ? 'true' : 'false'} {...restZone('card')}>
+    <section ref={setCard} className={`u-card w-card${empty ? ' empty' : ''}${mode === 'edit' || searching ? ' own-tall' : ''}`} aria-label="Watch list" data-rest={resting ? 'true' : 'false'} {...restZone('card')}>
       {mode === 'edit' ? <OwnEditor id={open!} /> : mode === 'follow' ? <OwnFollow view={own!} /> : <WatchList empty={empty} draft={draft} setDraft={setDraft} host={card} own={own} />}
     </section>
   );

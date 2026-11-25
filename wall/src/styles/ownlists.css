@@ -749,3 +749,299 @@ button.own-v.bad {
     transition: none;
   }
 }
+
+/* ---- Watch search: the results in place of the list (the card is tall, as the editor's) ---- */
+.ws {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+}
+.ws-bar {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+  min-height: 36px;
+}
+.ws-n {
+  flex: 1;
+  min-width: 0;
+  font: 500 16px/1 var(--body);
+  color: var(--tx);
+  white-space: nowrap;
+}
+.mu-sortwrap.labelled {
+  position: static;
+}
+.ws-bar .mu-sort {
+  height: 36px;
+  padding: 0 10px 0 12px;
+  gap: 6px;
+  font-size: 16px;
+  color: var(--tx);
+}
+.ws-menu {
+  right: 0;
+  left: auto;
+  top: 42px;
+}
+.ws-menu svg {
+  display: none;
+}
+.ws-seg {
+  display: flex;
+  flex: none;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  overflow: hidden;
+}
+.ws-seg button {
+  width: 36px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  color: var(--tx);
+}
+.ws-seg button.on {
+  background: #1fd3c8;
+  color: #0b0a18;
+}
+.ws-seg button:hover:not(.on) {
+  background: rgba(255, 255, 255, 0.08);
+}
+.ws-back {
+  height: 36px;
+  padding: 0 12px;
+  flex: none;
+  box-sizing: border-box;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  font: 600 16px/1 var(--body);
+  color: var(--tx);
+  white-space: nowrap;
+}
+.ws-back:hover,
+.ws-bar .mu-sort:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+.ws-bar button:focus-visible,
+.ws-play:focus-visible,
+.ws-add:focus-visible {
+  outline: 3px solid var(--cyan);
+  outline-offset: 2px;
+}
+.ws-scroll {
+  flex: 1;
+  min-height: 0;
+  margin: 12px -8px 0;
+  padding: 0 8px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.ws-scroll:focus-visible {
+  outline: 2px solid var(--cyan);
+  outline-offset: -2px;
+  border-radius: 12px;
+}
+.ws-scroll.more {
+  -webkit-mask-image: linear-gradient(180deg, #000 calc(100% - 34px), rgba(0, 0, 0, 0.25));
+  mask-image: linear-gradient(180deg, #000 calc(100% - 34px), rgba(0, 0, 0, 0.25));
+}
+.ws ol {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.ws-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+.ws-item {
+  position: relative;
+  min-width: 0;
+}
+.ws-play {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  padding: 0;
+  text-align: left;
+  color: var(--tx);
+  border-radius: 10px;
+}
+button.ws-play {
+  cursor: pointer;
+}
+.ws-item.off .ws-play {
+  opacity: 0.5;
+}
+.ws-thumb {
+  display: block;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.05);
+}
+.ws-grid .ws-pic {
+  position: relative;
+  display: block;
+}
+.ws-grid .ws-thumb {
+  width: 100%;
+  height: 100px;
+  border-radius: 10px;
+}
+.ws-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.ws-dur {
+  position: absolute;
+  right: 6px;
+  bottom: 6px;
+  padding: 1px 7px;
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.75);
+  font: 600 16px/1.25 var(--body);
+  font-variant-numeric: tabular-nums;
+  color: #fff;
+}
+.ws-title {
+  display: block;
+  font: 500 16px/1.25 var(--body);
+  color: var(--tx);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ws-grid .ws-title {
+  margin-top: 6px;
+}
+/* The text sits 10 px inside the clickable edge. */
+.ws-grid .ws-title,
+.ws-grid .ws-meta {
+  padding: 0 10px;
+}
+.ws-meta {
+  display: block;
+  font: 400 16px/1.25 var(--body);
+  color: #a39bc6;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ws-item.on .ws-title {
+  color: var(--cyan);
+}
+.ws-item.on .ws-thumb {
+  box-shadow: 0 0 0 2px var(--cyan);
+}
+.ws-play:hover:not(.off) .ws-title {
+  color: var(--cyan);
+}
+/* The plus: over the picture's top right corner in the grid, in the length's place in the list; shown on hover, on keyboard focus and while its menu is open. */
+.ws-add {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  border-radius: 10px;
+  color: #fff;
+  background: rgba(10, 7, 30, 0.82);
+  opacity: 0.5;
+  transition: opacity 200ms ease;
+}
+.ws-item:hover > .ws-add,
+.ws-item:has(:focus-visible) > .ws-add,
+.ws-add[aria-expanded='true'] {
+  opacity: 1;
+}
+.ws-list .ws-item {
+  height: 56px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+.ws-list .ws-play {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  height: 56px;
+  border-radius: 0;
+}
+.ws-list .ws-thumb {
+  flex: none;
+  width: 80px;
+  height: 45px;
+  border-radius: 7px;
+}
+.ws-text {
+  flex: 1;
+  min-width: 0;
+}
+.ws-views,
+.ws-len {
+  flex: none;
+  text-align: right;
+  font: 400 16px/1 var(--body);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.ws-views {
+  width: 52px;
+  color: #c9c6e0;
+}
+.ws-len {
+  width: 66px;
+  color: var(--tx);
+  transition: opacity 200ms ease;
+}
+.ws-list .ws-add {
+  top: 11px;
+  right: 4px;
+  background: transparent;
+}
+.ws-list .ws-play {
+  padding-right: 42px;
+}
+.ws-list .ws-item:hover > .ws-add,
+.ws-list .ws-item:has(:focus-visible) > .ws-add,
+.ws-list .ws-add[aria-expanded='true'] {
+  background: rgba(53, 230, 234, 0.2);
+}
+.ws .yt-state {
+  padding: 24px 8px;
+}
+.ws-foot {
+  flex: none;
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 8px 0 10px;
+  font: 400 16px/1.2 var(--body);
+  color: #c9c6e0;
+  white-space: nowrap;
+}
+
+/* The search field: a magnifier at its left, the text 10 px clear of it. */
+.w-fieldbox {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  display: flex;
+}
+.w-fieldicon {
+  position: absolute;
+  left: 14px;
+  top: 12px;
+  color: var(--dim);
+  pointer-events: none;
+}
+.w-fieldbox .w-paste {
+  padding-left: 44px;
+}
