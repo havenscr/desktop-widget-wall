@@ -180,6 +180,11 @@ pub(crate) fn parse_show(text: &str) -> (Option<String>, Vec<Part>, u32) {
             }
             continue;
         }
+        // A later "#" line is not a title and not a note: skip it, as before.
+        if line.starts_with('#') {
+            skipped += 1;
+            continue;
+        }
         // Notes with no heading above them are one list, kept as a part with no name.
         if parts.is_empty() {
             parts.push(Part { name: String::new(), minutes: None, notes: Vec::new() });
