@@ -1,6 +1,6 @@
 import { beforeEach, expect, it } from 'vitest';
 import { SILENCE_MS, hasSound, loudness, smoothStep } from './model';
-import { audioBands, audioBeats, ingestLevels, resetAudio, tickAudio, useAudioStore } from './store';
+import { audioBands, audioBeats, audioDrops, audioEnergy, ingestLevels, resetAudio, tickAudio, useAudioStore } from './store';
 
 const loud = { bass: 0.8, mid: 0.4, high: 0.2, bands: [1], waveform: [0.1] };
 const empty = { bass: 0, mid: 0, high: 0, bands: [], waveform: [] };
@@ -121,4 +121,57 @@ it('feeds the beat detector: a kick in the low bands every 0.5 s gives beats, an
   expect(b.bass).toBeCloseTo(80 / 255, 2);
   resetAudio();
   expect(audioBeats().count).toBe(0);
+});
+
+it('exposes slow energy that rises with loud sound and falls to 0 in silence', () => {
+  expect(audioEnergy()).toBe(0);
+  for (let t = 0; t <= 10000; t += 33) {
+    ingestLevels(loud, t);
+    tickAudio(t);
+  }
+  const e = audioEnergy();
+  expect(e).toBeGreaterThan(0.3);
+  expect(e).toBeLessThan(0.8);
+  for (let t = 10000; t <= 70000; t += 33) tickAudio(t);
+  expect(audioEnergy()).toBe(0);
+  expect(audioDrops().count).toBe(0);
+});
+
+it('clears energy and drop stamps on reset', () => {
+  for (let t = 0; t <= 5000; t += 33) {
+    ingestLevels(loud, t);
+    tickAudio(t);
+  }
+  expect(audioEnergy()).toBeGreaterThan(0);
+  resetAudio();
+  expect(audioEnergy()).toBe(0);
+  expect(audioDrops().count).toBe(0);
+  expect(audioDrops().lastAt).toBe(-Infinity);
+});
+
+it('through the tick: silence between two loud stretches is no build-up, and a hidden page does not snap energy', () => {
+  const beatBands = (t: number) => ({ ...loud, bands: Array.from({ length: 32 }, (_, i) => (i < 6 && Math.floor(t / 250) % 2 === 0 ? 255 : 5)) });
+  let t = 0;
+  const run = (ms: number, sound: boolean) => {
+    const end = t + ms;
+    for (; t < end; t += 33) {
+      if (sound) ingestLevels(beatBands(t), t);
+      tickAudio(t);
+    }
+  };
+  run(30000, true);
+  run(12000, false);
+  run(30000, true);
+  expect(audioDrops().count).toBe(0);
+  const before = audioEnergy();
+  t += 3_600_000;
+  ingestLevels(beatBands(t), t);
+  tickAudio(t);
+  expect(Math.abs(audioEnergy() - before)).toBeLessThan(0.05);
+});
+
+it('keeps energy at exactly 0 while idle', () => {
+  for (let t = 0; t < 5000; t += 33) tickAudio(t);
+  expect(audioEnergy()).toBe(0);
+  expect(audioDrops().count).toBe(0);
 });
