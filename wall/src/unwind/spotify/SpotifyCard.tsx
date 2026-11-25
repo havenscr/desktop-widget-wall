@@ -178,6 +178,11 @@ export function SpotifyCard() {
   // hold the controls shown the way the Watch list card's do. A tall (open) card never rests.
   const resting = useWatchRest((s) => s.rest) && !tall;
   const rz = restZone('lib');
+  // An open card or chooser is in use: the music controls and the moods row never rest behind it (Listen reads this).
+  useEffect(() => {
+    useWatchRest.setState({ cardHeld: tall || chooser });
+    return () => useWatchRest.setState({ cardHeld: false });
+  }, [tall, chooser]);
 
   const clearClose = useCallback(() => {
     if (closeTimer.current) clearTimeout(closeTimer.current);

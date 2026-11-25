@@ -2508,8 +2508,9 @@
   transition: left 400ms ease-out, width 400ms ease-out, height 400ms ease-out, opacity 250ms ease;
 }
 @media (prefers-reduced-motion: reduce) {
+  /* Only the fade stops; the card's open and close size animation is not part of the rest. */
   .sp-card {
-    transition: none;
+    transition: left 400ms ease-out, width 400ms ease-out, height 400ms ease-out;
   }
 }
 .sp-card.yt {

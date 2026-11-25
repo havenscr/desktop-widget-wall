@@ -12,6 +12,11 @@ import { create } from 'zustand';
  */
 export const useWatchRest = create<{ rest: boolean; cardHeld: boolean }>(() => ({ rest: false, cardHeld: false }));
 
+/** How long the controls stay after the pointer or focus leaves them, while something plays (Watch and Listen). */
+export const CTL_REST_MS = 3000;
+/** Development only: the dev mocks shorten the wait so headless stills catch the faded block. */
+export const ctlTiming = { restMs: CTL_REST_MS };
+
 export interface RestBridge {
   enter: (id: string) => void;
   leave: (id: string) => void;

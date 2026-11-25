@@ -1,6 +1,6 @@
 import { useLinesStore, validateLines } from '../../horizon/linesSettings';
 import { useWatchStore } from '../../unwind/watch/store';
-import { ctlTiming } from '../../unwind/watch/Watch';
+import { ctlTiming } from '../../unwind/watch/rest';
 
 /**
  * Dev only: the Lines setting for stills, the gallery and the fit check, set for this page only
@@ -37,5 +37,5 @@ export function registerLinesMocks(search: string = window.location.search): voi
   if (any) useLinesStore.setState(validateLines(next));
   if (q.get('ltab') === 'listen') useWatchStore.getState().setTab('listen');
   if (q.get('lctl') === 'rest') ctlTiming.restMs = 200;
-  else if (q.get('lctl') === 'shown') ctlTiming.restMs = 3_600_000;
+  else if (q.get('lctl') === 'shown') ctlTiming.restMs = 600_000;
 }

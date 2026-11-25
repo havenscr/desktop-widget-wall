@@ -30,7 +30,7 @@ import { next as queueNext, previous as queuePrevious, useMusicView } from '../y
 import { AddToPlaylistButton, useAddMenuOpen } from './AddToPlaylist';
 import { useOwnLists } from './ownLists';
 import { openInBrowser } from './openInBrowser';
-import { keyboardFocus, restBridge, useWatchRest } from './rest';
+import { CTL_REST_MS, ctlTiming, keyboardFocus, restBridge, useWatchRest } from './rest';
 import { next as ownNext, NO_PLAY_LINE, playAgain as ownPlayAgain, previous as ownPrevious, useOwnFinished, useOwnView, type OwnView } from './ownPlay';
 import { clock, countText } from './ownShared';
 
@@ -284,10 +284,7 @@ function NextLine({ own }: { own: OwnView }) {
   );
 }
 
-/** watch behaviour: how long the controls stay after the pointer or focus leaves them, while a video plays. */
-export const CTL_REST_MS = 3000;
-/** Development only: the dev mocks (`?wctl=rest`) shorten the wait so headless stills catch the faded block. */
-export const ctlTiming = { restMs: CTL_REST_MS };
+export { CTL_REST_MS, ctlTiming };
 
 /** True for an element that takes typed text (the list's link field, a rename field). */
 function typing(el: Element | null): boolean {

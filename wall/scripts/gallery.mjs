@@ -30,6 +30,12 @@ const H = 720;
 const SETTLE_MS = 2500;
 const STATE_TIMEOUT_MS = 30_000;
 const RESTARTED = 'browser restarted';
+/** States whose elements must have a given computed opacity (an inactive look hides by opacity, which no page text can show). Keyed 'screen|state'. */
+const OPACITY = {
+  'unwind|listen active': { '.sp-card': 1, '.u-listen .u-transport': 1, '.u-listen-gear > *': 1, '.u-listen .u-np': 1 },
+  'unwind|listen inactive': { '.sp-card': 0, '.u-listen .u-transport': 0, '.u-listen-gear > *': 0, '.u-listen .u-np': 0.5, '.u-listen .u-artist': 0.5, '.u-listen .u-art': 0.5 },
+};
+
 /** How long a state may take past SETTLE_MS for its expected text to appear (a busy machine). Never applies to text that must not be shown. */
 const EXPECT_GRACE_MS = 8000;
 const PARALLEL = 3;
@@ -1298,6 +1304,11 @@ async function render(cdp, base, s, file, ctl) {
     if (info.boundary) errors.push('an error fallback is showing');
     const failed = [...missed(info.text, false), ...missed(firstText).filter((w) => w.absent)];
     for (const { needle, absent } of failed) errors.push(`${absent ? 'unexpected' : 'expected'} text ${absent ? 'shown' : 'not shown'}: "${needle}"`);
+    for (const [sel, want] of Object.entries(OPACITY[`${s.screen}|${s.name}`] ?? {})) {
+      const got = await to('Runtime.evaluate', { expression: `(() => { const el = document.querySelector(${JSON.stringify(sel)}); return el ? Number(getComputedStyle(el).opacity) : null; })()`, returnByValue: true });
+      const v = got.result.value;
+      if (v === null || Math.abs(v - want) > 0.05) errors.push(`${sel} opacity ${v}, wanted ${want}`);
+    }
     if (info.w !== W || info.h !== H) errors.push(`viewport ${info.w} x ${info.h}`);
     if (ctl.cancelled) throw new Error('cancelled');
     const shot = await to('Page.captureScreenshot', { format: 'png', clip: { x: 0, y: 0, width: W, height: H, scale: 1 } });
