@@ -16,10 +16,18 @@ export function useSuppressed(): boolean {
   const [on, setOn] = useState(() => document.querySelector(SUPPRESS_SELECTOR) !== null);
   useEffect(() => {
     const look = () => setOn(document.querySelector(SUPPRESS_SELECTOR) !== null);
-    const watch = new MutationObserver(look);
+    // One look per animation frame, however many class changes land in it.
+    let frame = 0;
+    const soon = () => {
+      if (!frame) frame = requestAnimationFrame(() => ((frame = 0), look()));
+    };
+    const watch = new MutationObserver(soon);
     watch.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['class', 'role'] });
     look();
-    return () => watch.disconnect();
+    return () => {
+      watch.disconnect();
+      if (frame) cancelAnimationFrame(frame);
+    };
   }, []);
   return on;
 }
