@@ -371,7 +371,7 @@ its own Tauri app (`src-tauri/tauri.wall2.conf.json`). Do not mix it with `src/`
 Its horizon (`wall/src/horizon/`) is a hand-tuned canvas renderer: keep its maths
 and constants as they are. Run, test, build and review hook: `wall/README.md`.
 Audio levels, the horizon sound ripple, the Unwind tab and Watt the sheep are front end only (`wall/src/audio`, `wall/src/buddy`).
-The Zen place and Dream (`wall/src/zen`) are front end only too; Zen draws the horizon on the Unwind camera with the ridge following the breath, and Dream fades it to black. Zen has two modes, Breath and Sundown (a sky wind down, with an optional, default off, stepping of the Office lights).
+The Zen place and Dream (`wall/src/zen`) are front end only too; Zen draws the horizon on the Unwind camera with the ridge following the breath, and Dream fades it to black. Zen has three modes, Breath, Sundown (a sky wind down, with an optional, default off, stepping of the Office lights) and Summit (the focus timer as a lantern climbing to The Brothers; leaving Zen never stops the timer).
 The animated sky (`wall/src/backdrop`, a WebGL layer between the horizon's two canvases, set in Tools, Display, Sky) is front end only and can show on any page.
 `lib.rs` finds the window with `app_window` (labels `main` and `wall2`); behaviour
 only the old app has (fullscreen toggle, monitor 2 placement) must stay on `MAIN_LABEL`.

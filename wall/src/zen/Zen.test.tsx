@@ -260,7 +260,7 @@ it('the dim check effect lists what it reads among its dependencies', () => {
   const effect = /DIM_CHECK_MS\);[\s\S]*?\}, \[([^\]]*)\]\);/.exec(zenSource);
   expect(effect).not.toBeNull();
   const deps = effect![1].split(',').map((d) => d.trim());
-  expect(deps).toEqual(expect.arrayContaining(['startedAt', 'ending', 'nowMs', 'dimHour', 'waitMs']));
+  expect(deps).toEqual(expect.arrayContaining(['running', 'ending', 'nowMs', 'dimHour', 'waitMs']));
 });
 
 function systemIdle(secs: () => number) {
@@ -788,7 +788,7 @@ it('every new control has a tooltip handler', () => {
 it('the start screen has a mode row, Breath first, and the choice is remembered', () => {
   const first = render(<Zen nowMs={clockAt(DAY)} />);
   const modes = screen.getByRole('radiogroup', { name: 'Mode' });
-  expect(within(modes).getAllByRole('radio').map((r) => r.textContent)).toEqual(['Breath', 'Sundown']);
+  expect(within(modes).getAllByRole('radio').map((r) => r.textContent)).toEqual(['Breath', 'Sundown', 'Summit']);
   expect(within(modes).getByRole('radio', { name: 'Breath' }).getAttribute('aria-checked')).toBe('true');
   expect(screen.queryByRole('radiogroup', { name: 'Breathing pattern' })).not.toBeNull();
   pick('Sundown');

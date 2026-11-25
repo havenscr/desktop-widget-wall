@@ -26,6 +26,7 @@ import { MOCK_DETAILS } from './meet';
  *   ?weather=rain|heavy|rainwind|wind|heavywind   (rain, heavy rain, rain with wind, dry wind, heavy rain with wind: weather code and wind in both sources)
  *   ?clock=review           (Date.now starts at the `?at=` moment and then runs, so screens that read it agree)
  *   ?focus=long               (a focus session running under a long title); `?focus=run` a session on, `?focus=done` finished
+ *   ?summit=<percent>&lights=<n>   (a focus session that far through, with n finished sessions today, for Zen's Summit stills)
  *   ?alarmcount=N             (the home app's open alarm count, 0 to 999; the default is 4, `?net=calm` is 0)
  *   ?wattspot=<x>             (Watt was set down at that x on every place, On Air included: his stored spot, before he loads)
  *   ?wattwear=star|bow|cape|bolt|flower|backpack|wings   (Watt has been a friend for 30 days and wears that, before he loads)
@@ -341,6 +342,21 @@ function weather(mode: string): void {
 /** The answer's mock text for a focus session under a long title. */
 const LONG_FOCUS = 'Draft the workshop outline for the spring conference and circulate it to the planning group';
 
+/** A 25 minute focus session `pct` percent through, with `lights` finished 25 minute sessions earlier today. */
+function summitSeed(pct: number, lights: number): void {
+  const t = now();
+  const min = 60_000;
+  const len = 25 * min;
+  const d = new Date(t);
+  const midnight = new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+  const sessions = Array.from({ length: Math.min(8, lights) }, (_, i) => {
+    const start = Math.max(midnight, t - (i + 2) * 3_600_000);
+    return { start, end: start + len };
+  });
+  const start = t - (pct / 100) * len;
+  useFocusStore.setState({ state: { status: 'running', minutes: 25, endAt: start + len, label: 'Summit' }, sessions: [...sessions, { start, end: start + len }] });
+}
+
 /** Registered last, after every other mock, so a knob wins. A no-op without knobs. */
 export function registerGalleryMocks(): void {
   const spot = Number(knob('wattspot'));
@@ -381,6 +397,8 @@ export function registerGalleryMocks(): void {
   const w = knob('weather');
   if (w) weather(w);
   if (knob('reduced') === '1') reducedMotion();
+  const summit = Number(knob('summit'));
+  if (knob('summit') && Number.isFinite(summit)) setTimeout(() => summitSeed(summit, Number(knob('lights')) || 0), 400);
   if (knob('focus') === 'done') setTimeout(() => useFocusStore.setState({ state: { status: 'finished', minutes: 25 } }), 400);
   if (knob('focus') === 'run') setTimeout(() => useFocusStore.getState().startLabeled('Review the draft'), 400);
   if (knob('focus') === 'long') setTimeout(() => useFocusStore.getState().startLabeled(LONG_FOCUS), 400);

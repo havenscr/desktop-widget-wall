@@ -451,6 +451,13 @@ const START = '.zbtn.go';
 add('zen', 'breath running', url('zen', TYPICAL_AT, 'audio=demo'), true, START);
 add('zen', 'breath running, box pattern', url('zen', TYPICAL_AT, 'audio=demo'), true, ['[role="radiogroup"][aria-label="Breathing pattern"] [role="radio"]:nth-child(2)', START]);
 add('zen', 'dimmed: after the fade', url('dimmed', TYPICAL_AT, 'dreamage=70'), true);
+// Summit: the mode row with Summit picked, then a focus session at 0, 50 and 95 percent with three finished sessions today
+// (`summit` and `lights` seed the focus timer in a development build). The lantern walks the ridge up to The Brothers.
+const SUMMIT = '[role="radiogroup"][aria-label="Mode"] [role="radio"]:nth-child(3)';
+add('zen', 'mode chips: Summit', url('zen', TYPICAL_AT, ''), true, SUMMIT);
+add('zen', 'summit: 0 percent', url('zen', TYPICAL_AT, 'summit=0&lights=3'), true, SUMMIT);
+add('zen', 'summit: 50 percent', url('zen', TYPICAL_AT, 'summit=50&lights=3'), true, SUMMIT);
+add('zen', 'summit: 95 percent', url('zen', TYPICAL_AT, 'summit=95&lights=3'), true, SUMMIT);
 // Sundown: the mode chip row on the start screen with Sundown picked, then a session at the start, the middle and the end
 // (`sundownage` starts the session that many seconds in, in a development build). The sky runs golden hour to night.
 const SUNDOWN = '[role="radiogroup"][aria-label="Mode"] [role="radio"]:nth-child(2)';
@@ -830,6 +837,10 @@ const EXPECT = [
   ['zen', 'breath running, box pattern', ['Breathe in', 'FIVE MINUTES OF ZEN']],
   ['zen', 'mode chips: Breath', ['Breath', 'Sundown', 'Calm 4-2-6']],
   ['zen', 'mode chips: Sundown', ['Dim the office too', 'Off unless you turn it on', '20 min']],
+  ['zen', 'mode chips: Summit', ['Summit', 'Do Not Disturb comes with it', '25 min']],
+  ['zen', 'summit: 0 percent', ['TWENTY FIVE MINUTES OF SUMMIT', '3 climbs finished today.']],
+  ['zen', 'summit: 50 percent', ['TWENTY FIVE MINUTES OF SUMMIT', '3 climbs finished today.']],
+  ['zen', 'summit: 95 percent', ['TWENTY FIVE MINUTES OF SUMMIT', '3 climbs finished today.']],
   ['zen', 'sundown: start', ['TWENTY MINUTES OF SUNDOWN']],
   ['zen', 'sundown: middle', ['TWENTY MINUTES OF SUNDOWN']],
   ['zen', 'sundown: end', ['TWENTY MINUTES OF SUNDOWN']],
