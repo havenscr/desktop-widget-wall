@@ -209,22 +209,26 @@ export function oldShape(items: readonly SavedItem[]): string {
  * Write the list. The stored text is never replaced while it holds something this build cannot read back whole
  * unless that text is first kept in a raw slot (up to 4 distinct originals; when none is free, or a copy cannot be
  * written, the list stays for this session and storage is left alone). Then the list is written; a copy in the old
- * shape follows, in its own try, so a full disk costs the copy and never the list. That copy is refreshed on every save
- * of a list longer than the old limit and removed on any save of a shorter one.
+ * shape follows, in its own try, so a full disk costs the copy and never the list. That copy is refreshed only by a save
+ * of a list longer than the old limit whose stored text read back whole; every other save leaves it as it is, and the
+ * app never removes it (it may hold the only good copy of a long list).
  */
 export function saveSaved(items: readonly SavedItem[]): void {
+  let clean: boolean;
   try {
     const text = JSON.stringify(items.slice(0, MAX_SAVED).map(stored));
     const found = localStorage.getItem(SAVED_KEY);
-    if (found !== null && found !== '' && found !== text && readsLossy(found) && !keepRaw(found)) return;
+    const odd = found !== null && found !== '' && found !== text && readsLossy(found);
+    if (odd && !keepRaw(found)) return;
+    clean = !odd && !(found !== null && found !== '' && readsLossy(found));
     localStorage.setItem(SAVED_KEY, text);
   } catch {
     /* the list stays for this session */
     return;
   }
+  if (!clean || items.length <= LEGACY_MAX) return;
   try {
-    if (items.length > LEGACY_MAX) localStorage.setItem(BACKUP_KEY, oldShape(items));
-    else localStorage.removeItem(BACKUP_KEY);
+    localStorage.setItem(BACKUP_KEY, oldShape(items));
   } catch {
     /* no copy this time */
   }

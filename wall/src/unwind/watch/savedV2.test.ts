@@ -116,11 +116,45 @@ describe('saved data v2: writing', () => {
     expect(parseSaved(text)).toHaveLength(kept.length);
   });
 
-  it('removes the old shape copy when the list shrinks to the old limit', () => {
+  it('never removes the old shape copy: a shorter list leaves it as it is', () => {
     saveSaved(many(LEGACY_MAX + 5));
-    expect(localStorage.getItem(BACKUP_KEY)).not.toBeNull();
+    const long = localStorage.getItem(BACKUP_KEY);
+    expect(long).not.toBeNull();
     saveSaved(many(LEGACY_MAX));
-    expect(localStorage.getItem(BACKUP_KEY)).toBeNull();
+    saveSaved(many(1));
+    expect(localStorage.getItem(BACKUP_KEY)).toBe(long);
+  });
+
+  it('keeps the long copy when the main key was corrupt or empty and one item is added', () => {
+    saveSaved(many(40));
+    const long = localStorage.getItem(BACKUP_KEY);
+    for (const bad of ['{broken', '']) {
+      localStorage.setItem(SAVED_KEY, bad);
+      resetWatch();
+      expect(useWatchStore.getState().saved).toEqual([]);
+      expect(useWatchStore.getState().addRef({ kind: 'video', id: V }, false)).toBeNull();
+      expect(localStorage.getItem(BACKUP_KEY)).toBe(long);
+    }
+  });
+
+  it('keeps the long copy after an old build cut the list to 24 and this build saves', () => {
+    saveSaved(many(40));
+    const long = localStorage.getItem(BACKUP_KEY);
+    localStorage.setItem(SAVED_KEY, JSON.stringify(many(LEGACY_MAX).map(({ kind, id, label }) => ({ kind, id, label }))));
+    resetWatch();
+    expect(useWatchStore.getState().saved).toHaveLength(LEGACY_MAX);
+    useWatchStore.getState().rename('twitch:chan_0', 'Renamed');
+    expect(localStorage.getItem(BACKUP_KEY)).toBe(long);
+  });
+
+  it('does not refresh the copy from a save whose stored text did not read back whole', () => {
+    saveSaved(many(40));
+    const long = localStorage.getItem(BACKUP_KEY);
+    localStorage.setItem(SAVED_KEY, 'broken');
+    saveSaved(many(60));
+    expect(localStorage.getItem(BACKUP_KEY)).toBe(long);
+    saveSaved(many(61));
+    expect(JSON.parse(localStorage.getItem(BACKUP_KEY)!)).toHaveLength(61);
   });
 
   it('writes the list even when the copy cannot be written', () => {
