@@ -16,7 +16,7 @@ import { AgentsToday } from './AgentsToday';
 import { DayDrawer } from './DayDrawer';
 import { DayLip } from './DayLip';
 import { sunTimes } from './sun';
-import { useDayFeed } from './useDayEvents';
+import { useDayFeed, type DayFeed } from './useDayEvents';
 import { categoryLine, toneDotVars, toneVars } from './tones';
 import { useDueTaskFeed } from './useDueTasks';
 
@@ -168,7 +168,7 @@ const ROW2_TIP: Record<RibbonKind, string> = {
 };
 
 /** The needle's clock: the time now, refreshed on each whole minute while the page is visible. */
-function useMinute(now: () => number): number {
+export function useMinute(now: () => number): number {
   const visible = useVisible();
   const [t, setT] = useState(now);
   useEffect(() => {
@@ -199,10 +199,12 @@ function useMinute(now: () => number): number {
  * empty day and the task read was good with nothing due. Before a read, after a failed
  * one, or when a feed is not set up, the row shows nothing.
  */
-export function Ribbon({ kind, now = Date.now }: { kind: RibbonKind; now?: () => number }) {
+export function Ribbon({ kind, now = Date.now, compact = false, feed }: { kind: RibbonKind; now?: () => number; compact?: boolean; feed?: DayFeed }) {
   const visible = useVisible();
   const t = useMinute(now);
-  const day = useDayFeed(visible);
+  // A layer that already reads the day (Unwind's thin line) passes its feed, so the calendar is asked once.
+  const own = useDayFeed(visible && !feed);
+  const day = feed ?? own;
   const events = day.events;
   const due = useDueTaskFeed(kind, visible);
   const tasks = due.tasks;
@@ -235,7 +237,7 @@ export function Ribbon({ kind, now = Date.now }: { kind: RibbonKind; now?: () =>
   const bannerOn = useChipLayout((st) => st.banner);
   const placeNow = usePlaceStore((st) => st.active);
   const bannerInBand = bannerOn && placeNow !== 'work';
-  const sunMarks = bannerInBand ? [] : sunLabels(sun, t);
+  const sunMarks = bannerInBand || compact ? [] : sunLabels(sun, t);
   // Watt walks that band and draws in front of the markers, so they live in the stage's own layer under him (`.sun-layer`, App.tsx).
   const [sunLayer, setSunLayer] = useState<Element | null>(null);
   useLayoutEffect(() => setSunLayer(document.querySelector('[data-sun-layer]')), []);
@@ -434,8 +436,8 @@ export function Ribbon({ kind, now = Date.now }: { kind: RibbonKind; now?: () =>
       {sunMarks.map((l) => (
         <span key={l.kind} className="sunm-hit" style={{ left: l.x }} title={l.tip} aria-hidden="true" />
       ))}
-      {calm && overlay?.kind !== 'drawer' && <DayLip open={false} x={handleLeft + HANDLE_W / 2 - LIP_INSET} onToggle={toggleByLip} />}
-      {calm && overlay?.kind === 'drawer' && (
+      {calm && !compact && overlay?.kind !== 'drawer' && <DayLip open={false} x={handleLeft + HANDLE_W / 2 - LIP_INSET} onToggle={toggleByLip} />}
+      {calm && !compact && overlay?.kind === 'drawer' && (
         <DayDrawer
           chips={dayChips}
           allDay={allDay}
@@ -447,7 +449,7 @@ export function Ribbon({ kind, now = Date.now }: { kind: RibbonKind; now?: () =>
           lip={<DayLip open x={null} onToggle={toggleByLip} />}
         />
       )}
-      {calm && overlay?.kind === 'panel' && <AgentsToday now={t} onClose={close} />}
+      {calm && !compact && overlay?.kind === 'panel' && <AgentsToday now={t} onClose={close} />}
     </>
   );
 }

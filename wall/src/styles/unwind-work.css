@@ -1,0 +1,95 @@
+/* Unwind's work layer (Frame.tsx, unwind/work): a thin day line at rest along the foot of the frame, and the full
+   Work timeline over it while the pointer is on Unwind. Design pixels as in ribbon.css (2416 wide, the ribbon 104 tall). */
+.rib-line {
+  position: absolute;
+  left: 0;
+  width: 2416px;
+  bottom: 0;
+  height: 4px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.16);
+  pointer-events: none;
+}
+.rib-line .rl-ev {
+  position: absolute;
+  top: 0;
+  height: 4px;
+  border-radius: 2px;
+  background: rgba(154, 123, 255, 0.85);
+}
+.rib-line .rl-ev[data-state='past'] {
+  background: rgba(154, 123, 255, 0.4);
+}
+.rib-line .rl-now {
+  position: absolute;
+  top: -3px;
+  width: 10px;
+  height: 10px;
+  margin-left: -5px;
+  border-radius: 50%;
+  background: var(--amber);
+}
+
+/* The layer: the full ribbon over a backdrop that darkens everything beneath it from 160 px up, so the ribbon and its
+   chips read over Tomorrow and the status line. Faded in 250 ms, out 400 ms (the hold is in useWorkLayer). While
+   hidden it is invisible and `inert`, so a hidden chip never takes a click or a Tab stop. */
+.u-work {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 104px;
+  /* Under the music card and the grown Watch list (they reach into this band), so they stay clickable and are not darkened. */
+  z-index: 1;
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition:
+    opacity var(--u-work-out, 400ms) ease,
+    visibility 0s linear var(--u-work-out, 400ms);
+}
+.u-work::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 160px;
+  background: linear-gradient(180deg, rgba(6, 4, 22, 0), rgba(6, 4, 22, 0.82) 55%);
+  pointer-events: none;
+}
+.u-work[data-shown] {
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+  transition:
+    opacity 250ms ease,
+    visibility 0s;
+}
+.u-work > .rib {
+  position: absolute;
+  inset: 0;
+}
+.main[data-place='unwind'] .rib-line {
+  z-index: 2;
+}
+/* A take (the video asking to be clicked), a dialog or a menu is up: the layer stays down. */
+.main:has(.w-take, [role='dialog'], [role='menu'], .u-lib-menu, .watt-menu) > .u-work {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition:
+    opacity var(--u-work-out, 400ms) ease,
+    visibility 0s linear var(--u-work-out, 400ms);
+}
+.w-card.grown {
+  position: relative;
+  z-index: 2;
+}
+@media (prefers-reduced-motion: reduce) {
+  .u-work,
+  .u-work[data-shown],
+  .main:has(.w-take, [role='dialog'], [role='menu'], .u-lib-menu, .watt-menu) > .u-work {
+    transition: none;
+  }
+}

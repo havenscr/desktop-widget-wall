@@ -4,6 +4,8 @@ import { Ribbon, type RibbonKind } from '../ribbon/Ribbon';
 import type { PlaceId } from '../state/places';
 import { reviewDate, reviewNow } from '../ui/reviewClock';
 import { WatchStageLayer } from '../unwind/watch/StageLayer';
+import { UnwindTimeline } from '../unwind/work/UnwindTimeline';
+import { useWorkLayer } from '../unwind/work/useWorkLayer';
 
 /**
  * The end of the clock's date line, for a place to fill through a portal (Work puts the
@@ -26,8 +28,9 @@ export function ribbonKind(place: PlaceId): RibbonKind | null {
 export function Frame({ place, children }: { place: PlaceId; children: ReactNode }) {
   const kind = ribbonKind(place);
   const [slot, setSlot] = useState<HTMLElement | null>(null);
+  const layer = useWorkLayer(place);
   return (
-    <div className={kind ? 'main' : 'main tall'} data-place={place}>
+    <div className={kind ? 'main' : 'main tall'} data-place={place} ref={layer.setEl} {...layer.handlers}>
       <div className="top">
         <Clock now={reviewDate}>
           <span className="clk-slot" ref={setSlot} />
@@ -38,6 +41,7 @@ export function Frame({ place, children }: { place: PlaceId; children: ReactNode
       </div>
       {kind && <div className="band" aria-hidden="true" />}
       {kind && <Ribbon kind={kind} now={reviewNow} />}
+      {place === 'unwind' && <UnwindTimeline />}
     </div>
   );
 }

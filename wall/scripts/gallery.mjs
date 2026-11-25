@@ -265,6 +265,13 @@ marks('helper not set up', 'agents=off', 'hover:.u-cap-work');
 marks('focus on', 'focus=long', 'hover:.u-cap-work');
 state('unwind', 'listen active', 'ltab=listen&lctl=shown', TIMES.night);
 state('unwind', 'listen inactive', 'ltab=listen&lctl=rest', TIMES.night);
+// The work layer (thin day line at rest; the full timeline while the pointer is on Unwind).
+state('unwind', 'work layer at rest, Listen', 'ltab=listen&lctl=shown&meet=heavy', TIMES.night);
+add('unwind', 'work layer up, Listen', url('unwind', TIMES.night, 'ltab=listen&lctl=shown&meet=heavy'), true, 'hover:.u-date');
+state('unwind', 'work layer at rest, Watch', 'watch=mock&wlist=three&wlook=drivein&wplay=0&meet=heavy', TIMES.night);
+add('unwind', 'work layer up, Watch', url('unwind', TIMES.night, 'watch=mock&wlist=three&wlook=drivein&wplay=0&meet=heavy'), true, 'hover:.u-date');
+add('unwind', 'work layer up, Watch list grown', url('unwind', TIMES.night, 'watch=mock&wlist=three&wlook=drivein&wplay=0&meet=heavy'), true, 'hover:.w-card');
+add('unwind', 'work layer up, Listen card grown', url('unwind', TIMES.night, 'ltab=listen&lctl=shown&meet=heavy&audio=demo'), true, 'grow');
 state('unwind', 'music paused', 'media=paused');
 state('unwind', 'long track and artist', 'media=long');
 state('unwind', 'audio demo (levels moving)', 'audio=demo');
@@ -964,12 +971,16 @@ EXPECT.push(
 
 // watt drive-in: the drive-in look is on with something playing (Watt himself has no text).
 EXPECT.push(['unwind', 'Watt: drive-in', ['Open in YouTube']]);
+// work layer up: the full ribbon's hour labels show over the page.
+EXPECT.push(['unwind', 'work layer up', ['12 PM', '2 PM']]);
 
 /**
  * States that set a knob but change nothing in the page text, so no text can prove them: the
  * reason is recorded in the manifest. Everything else that sets a knob needs an EXPECT.
  */
 const NO_TEXT = [
+  ['unwind', 'work layer at rest', 'a 4 px line with no text; the layer test checks it'],
+
   ['work', 'watch behaviour: a video playing elsewhere', 'the rail mark is drawn, not text; fit-check checks it and the stage'],
   ['work', 'music paused', 'only the play and pause icon changes'],
   ['work', 'box numbers stale', 'the numbers keep their text and are only dimmed'],
