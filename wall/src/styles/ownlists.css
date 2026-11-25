@@ -1050,7 +1050,7 @@ button.ws-play {
    same ease and timing as Listen's card (400 ms closing, 240 ms opening). Nothing else sits in this column on the
    Watch tab, and at rest the card keeps its normal size, so no control is covered. */
 .w-card:not(.own-tall) {
-  transition: opacity 250ms ease, height 400ms ease-out;
+  transition: opacity 250ms ease, height var(--w-collapse, 400ms) ease-out;
 }
 .w-card.grown {
   height: 630px;

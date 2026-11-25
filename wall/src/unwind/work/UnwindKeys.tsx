@@ -2,6 +2,8 @@ import { keyboardOnMouseKey, useKeyPress } from '../../work/keyPress';
 import { isLayoutAction, layoutOffReason, useArrangeStatus } from '../../work/arrangeStatus';
 import { KeyIcon } from '../../work/keyIcons';
 import { loadKeys } from '../../work/keysFeed';
+import { MAX_PINS } from '../../work/libraryModel';
+import { tip } from '../../ui/HoverTip';
 import { usePins } from '../../work/usePins';
 import { useBrief } from '../../work/useBrief';
 import { previewTip } from '../../work/ZonesPreview';
@@ -16,11 +18,11 @@ import { shortLabels } from './shortLabel';
  */
 export function UnwindKeys() {
   const shown = useWorkLayerStore((s) => s.shown);
-  const { read, lib, pins } = usePins();
+  const { read, lib, pins } = usePins(shown);
   const arrange = useArrangeStatus();
   const [brief, showBrief] = useBrief();
   const { press, onKeyDown } = useKeyPress(showBrief, loadKeys);
-  if (read.status === 'absent' || !lib || pins.length === 0) return null;
+  if (read.status === 'absent' || !lib) return null;
   const words = shortLabels(pins.map((p) => p.label));
   return (
     <section className="u-keys" data-shown={shown ? '' : undefined} inert={!shown} aria-label="Always here keys" data-testid="u-keys">
@@ -51,6 +53,9 @@ export function UnwindKeys() {
             </button>
           );
         })}
+        {Array.from({ length: Math.max(0, MAX_PINS - pins.length) }, (_, i) => (
+          <div key={`empty-${i}`} className="u-key empty" aria-hidden="true" {...tip('An empty place. Add keys to Always here on Work.')} />
+        ))}
       </div>
       <div className="u-keys-line" role="status">
         {brief}
