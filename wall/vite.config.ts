@@ -15,7 +15,7 @@ export default defineConfig({
     // but have timed out at the 5 s default on a busy CI runner. One limit for every file.
     testTimeout: 20_000,
     // frameLayout.test.ts reads frame.css as text (?raw) to hold it to the shared constants;
-    // screens/Home.test.tsx reads home.css the same way for its zone columns, ytmusic/addToPlaylist.test.tsx ytmusic.css, and ribbon/tones.test.ts ribbon.css.
-    css: { include: [/frame\.css/, /home\.css/, /ytmusic\.css/, /ribbon\.css/] },
+    // screens/Home.test.tsx reads home.css the same way for its zone columns, ytmusic/addToPlaylist.test.tsx ytmusic.css, and ribbon/tones.test.ts ribbon.css, and onair/v2/LivePage.test.tsx onair2.css and work.css.
+    css: { include: [/frame\.css/, /home\.css/, /ytmusic\.css/, /ribbon\.css/, /onair2\.css/, /work\.css/] },
   },
 });
