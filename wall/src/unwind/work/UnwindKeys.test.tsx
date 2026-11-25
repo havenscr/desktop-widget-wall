@@ -108,11 +108,11 @@ describe('Unwind keys row', () => {
       localStorage.setItem(PINS_KEY, JSON.stringify(pins));
       const r = render(<UnwindKeys />);
       await flush(50);
-      expect(r.container.querySelectorAll('.u-keys-tiles > .u-key')).toHaveLength(5);
+      expect(r.container.querySelectorAll('.u-keys-tiles > .u-key-wrap > .u-key')).toHaveLength(5);
       expect(r.container.querySelectorAll('.u-key:not(.empty)')).toHaveLength(pins.length);
       const empties = [...r.container.querySelectorAll('.u-key.empty')];
       expect(empties).toHaveLength(empty);
-      expect(empties.every((e) => e.tagName === 'DIV' && e.getAttribute('aria-hidden') === 'true')).toBe(true);
+      expect(empties.every((e) => e.tagName === 'BUTTON' && e.getAttribute('aria-label') === 'Add a key')).toBe(true);
       r.unmount();
     }
     expect(css('../../styles/unwind-work.css')).toMatch(/\.u-key\.empty \{[^}]*border: 1px dashed/);
@@ -182,5 +182,86 @@ describe('Unwind keys row', () => {
     } finally {
       if (w) Object.defineProperty(HTMLElement.prototype, 'clientWidth', w);
     }
+  });
+  it('a right-click opens the full Work key menu, and Move right changes the stored row', async () => {
+    const r = render(<UnwindKeys />);
+    await flush(50);
+    fireEvent.contextMenu(r.container.querySelector('[aria-label="Thirds"]')!);
+    await flush(10);
+    const rows = [...document.querySelectorAll('[role="menu"] [role="menuitem"]')].map((b) => b.textContent);
+    expect(rows).toEqual(['Run it now', 'Move left', 'Move right', 'Replace with another key', 'Rename...', 'Remove from Always here']);
+    expect(useWorkLayerStore.getState().held).toBe(true);
+    fireEvent.click([...document.querySelectorAll('[role="menuitem"]')].find((b) => b.textContent === 'Move right')!, { detail: 1 });
+    await flush(300);
+    expect(JSON.parse(localStorage.getItem(PINS_KEY)!).slice(0, 2)).toEqual(['lib:focus', 'lib:thirds']);
+    expect(document.querySelector('[role="menu"]')).toBeNull();
+    expect(useWorkLayerStore.getState().held).toBe(false);
+  });
+  it('the ContextMenu key and Shift+F10 open the menu too', async () => {
+    const r = render(<UnwindKeys />);
+    await flush(50);
+    fireEvent.keyDown(r.container.querySelector('[aria-label="Snip"]')!, { key: 'ContextMenu' });
+    await flush(10);
+    expect(document.querySelector('[role="menu"]')).not.toBeNull();
+    fireEvent.keyDown(document, { key: 'Escape' });
+    await flush(300);
+    fireEvent.keyDown(r.container.querySelector('[aria-label="Snip"]')!, { key: 'F10', shiftKey: true });
+    await flush(10);
+    expect(document.querySelector('[role="menu"]')).not.toBeNull();
+  });
+  it('an empty place has Add a key, which opens the picker and adds the key', async () => {
+    localStorage.setItem(PINS_KEY, JSON.stringify(['lib:thirds']));
+    const r = render(<UnwindKeys />);
+    await flush(50);
+    fireEvent.contextMenu(r.container.querySelector('.u-key.empty')!);
+    await flush(10);
+    expect([...document.querySelectorAll('[role="menuitem"]')].map((b) => b.textContent)).toEqual(['Add a key']);
+    fireEvent.click(document.querySelector('[role="menuitem"]')!, { detail: 1 });
+    await flush(10);
+    const dlg = document.querySelector('.pk');
+    expect(dlg).not.toBeNull();
+    expect(useWorkLayerStore.getState().held).toBe(true);
+    fireEvent.click(dlg!.querySelector('button.pk-row:not([aria-disabled="true"])')!);
+    await flush(300);
+    expect(JSON.parse(localStorage.getItem(PINS_KEY)!)).toHaveLength(2);
+  });
+  it('Rename shows the name on this row and on the Work row, Reset clears it, and a name too wide for the tile cannot be saved', async () => {
+    const wide = (t: string) => t.length * 10;
+    const r = render(<UnwindKeys measure={wide} />);
+    await flush(50);
+    const work = render(<PinnedRow />);
+    await flush(50);
+    fireEvent.contextMenu(r.container.querySelector('[aria-label="Snip"]')!);
+    await flush(10);
+    fireEvent.click([...document.querySelectorAll('[role="menuitem"]')].find((b) => b.textContent === 'Rename...')!, { detail: 1 });
+    await flush(10);
+    const field = document.querySelector<HTMLInputElement>('input[aria-label="Name"]')!;
+    const save = [...document.querySelectorAll('button')].find((b) => b.textContent === 'Save')!;
+    expect(save.disabled).toBe(true);
+    fireEvent.change(field, { target: { value: 'A very long name here' } });
+    expect(document.querySelector('.key-rename-fit')!.textContent).toMatch(/Too long/);
+    expect(save.disabled).toBe(true);
+    fireEvent.change(field, { target: { value: 'Grab' } });
+    expect(document.querySelector('.key-rename-fit')!.textContent).toMatch(/Fits/);
+    fireEvent.click(save);
+    await flush(300);
+    expect(JSON.parse(localStorage.getItem('wall2-keys-pin-names')!)).toEqual({ 'lib:snip': 'Grab' });
+    expect(r.container.querySelector('[aria-label="Grab"] .u-key-l')!.textContent).toBe('Grab');
+    expect(work.container.querySelector('.pin-tile[aria-label="Grab"] .deck-lbl')!.textContent).toBe('Grab');
+    fireEvent.contextMenu(r.container.querySelector('[aria-label="Grab"]')!);
+    await flush(10);
+    fireEvent.click([...document.querySelectorAll('[role="menuitem"]')].find((b) => b.textContent === 'Rename...')!, { detail: 1 });
+    await flush(10);
+    fireEvent.click([...document.querySelectorAll('button')].find((b) => b.textContent === 'Reset')!);
+    await flush(300);
+    expect(localStorage.getItem('wall2-keys-pin-names')).toBeNull();
+    expect(r.container.querySelector('[aria-label="Snip"]')).not.toBeNull();
+    expect(work.container.querySelector('.pin-tile[aria-label="Snip"]')).not.toBeNull();
+  });
+  it('the layer suppression leaves the keys row menu and picker out, and the popovers fade', () => {
+    const s = css('../../styles/unwind-work.css');
+    expect(s).toContain("[role='dialog']:not(.u-keys *)");
+    expect(s).toContain("[role='menu']:not(.u-keys *)");
+    expect(s).toMatch(/\.u-fade\.out > \* \{[^}]*animation: u-keys-pop-out/);
   });
 });

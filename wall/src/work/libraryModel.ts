@@ -29,7 +29,7 @@ export const MAX_PINS = 5;
  */
 export const FALLBACK_PINS: readonly string[] = ['lib:thirds', 'lib:focus', 'lib:record-169', 'lib:snip', 'lib:strip-dark'];
 
-const REF_RE = /^(lib:[a-z0-9-]{1,24}|file:[0-9]{1,2})$/;
+export const REF_RE = /^(lib:[a-z0-9-]{1,24}|file:[0-9]{1,2})$/;
 
 /** A pin ready to draw and send. */
 export interface PinView {
@@ -44,6 +44,8 @@ export interface PinView {
   /** The group the key belongs to, for the tooltip of a key like "Mute" that several groups have. */
   group: string | null;
   runnable: boolean;
+  /** The name its owner gave this key (shown in place of the label, everywhere the key shows), when there is one. */
+  name?: string;
 }
 
 export function allKeys(lib: readonly LibGroup[]): Map<string, { key: LibKey; group: LibGroup }> {
