@@ -334,25 +334,6 @@
   padding: 3px 8px;
   margin-right: 6px;
 }
-.oa-card-foot {
-  flex: none;
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  border-top: 1px solid var(--line);
-  padding-top: 16px;
-}
-.oa-step {
-  height: 52px;
-  font-size: 20px;
-  padding: 0 22px;
-}
-.oa-nextline {
-  margin-left: auto;
-  min-width: 0;
-  color: var(--dim);
-}
-
 @media (prefers-reduced-motion: reduce) {
   .oa-btn,
   .oa-row {

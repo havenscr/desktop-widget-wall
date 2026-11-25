@@ -2004,6 +2004,26 @@
   left: 24px;
   background: #ece8ff;
 }
+/* The Vibe section's switch rows (`LinesPanel.tsx`), the same layout as the Looks sheet's: the name at its natural
+   width on the left, the switch flush right at the end of the slider column, the value in the right column. */
+.ln-vibe {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 6px;
+}
+.ln-swrow .ln-label.ln-sw {
+  width: auto;
+}
+.ln-swrow .ln-label.ln-sw + .ln-switch {
+  margin-left: auto;
+}
+.ln-swrow .ln-switch + .ln-value {
+  margin-left: 0;
+}
+.ln-switch[aria-disabled='true'] {
+  cursor: default;
+}
 @media (prefers-reduced-motion: reduce) {
   .ln-switch i {
     transition: none;

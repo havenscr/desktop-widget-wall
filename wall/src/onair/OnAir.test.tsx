@@ -79,7 +79,7 @@ it('asks Rust only through the four On Air commands, and each of them is registe
   for (const c of seen) expect(lib).toContain(`wall2_onair::${c}`);
 });
 
-// Behaviours the old page had tests for and the new frame keeps: shown on the Live page, which has the timer and the part line.
+// Behaviours the old page had tests for and the new frame keeps: shown on the Live page, which has the timer and the notes.
 const SHOW: Show = { state: 'ok', title: 'Friday stream', parts: [{ name: 'Welcome', minutes: 5, notes: [] }], skipped: 0, reason: null, readAt: 1 };
 const many = (n: number): Show => ({ ...SHOW, parts: Array.from({ length: n }, (_, i) => ({ name: `Part ${i + 1}`, minutes: 5, notes: [`Note ${i + 1}`] })) });
 const setHidden = (on: boolean) => {
@@ -157,24 +157,13 @@ it('does not read the file after the place closed', async () => {
   expect(reads).toBe(0);
 });
 
-it('follows the file when it shrinks: the last part is current, the time in it does not restart, and growing back does not jump', async () => {
-  let current: Show = many(30);
-  mocks.set('wall2_onair_show', () => current);
-  openLive(current);
-  mocks.set('wall2_onair_show', () => current);
+it('shows a long run of show as one list of notes with no Part line, and a stored part index from an older version is ignored', async () => {
+  localStorage.setItem('wall2-onair', JSON.stringify({ running: false, startedAt: null, accumulatedMs: 0, firstStartAt: null, stoppedAt: null, partIndex: 29, partSinceMs: 5 }));
+  const show = many(30);
+  openLive(show);
   await flush();
-  act(() => useOnAirStore.getState().goPart(29));
-  expect(screen.getByText(/^Part 30 of 30: Part 30/)).toBeTruthy();
-  current = many(3);
-  await flush(6000);
-  await act(async () => void (await useOnAirStore.getState().loadShow()));
-  expect(screen.getByText(/^Part 3 of 3: Part 3/)).toBeTruthy();
-  expect(useOnAirStore.getState().saved.partIndex).toBe(2);
-  const since = useOnAirStore.getState().saved.partSinceMs;
-  act(() => useOnAirStore.getState().goPart(2));
-  expect(useOnAirStore.getState().saved.partSinceMs).toBe(since);
-  current = many(30);
-  await flush(6000);
-  await act(async () => void (await useOnAirStore.getState().loadShow()));
-  expect(screen.getByText(/^Part 3 of 30: Part 3/)).toBeTruthy();
+  expect(screen.queryByText(/^Part \d+ of \d+/)).toBeNull();
+  expect(screen.queryByRole('button', { name: /(Previous|Next) part/ })).toBeNull();
+  expect(document.querySelectorAll('.oa2-livenotes .oa-note')).toHaveLength(30);
+  expect(useOnAirStore.getState().saved).not.toHaveProperty('partIndex');
 });

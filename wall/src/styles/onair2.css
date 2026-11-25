@@ -338,12 +338,6 @@
 .oa2-runline { left: 0; top: 438px; width: 640px; height: 46px; flex-direction: row; align-items: center; gap: 8px; }
 .oa2 .oa2-comments { left: 676px; top: 4px; width: 620px; height: 486px; }
 .oa2 .oa-card.oa2-livenotes { left: 1320px; top: 4px; width: 436px; height: 486px; }
-/* A narrow notes card (a dragged split) keeps the two step buttons as arrows only. */
-.oa2 .oa-card.oa2-livenotes { container-type: inline-size; }
-@container (max-width: 400px) {
-  .oa2-livenotes .oa-step-t { display: none; }
-  .oa2-livenotes .oa-step { padding: 0 16px; }
-}
 .oa2-hd .oa2-exp { margin: -2px 0 -2px auto; width: 30px; height: 30px; min-width: 0; padding: 0; display: grid; place-items: center; flex: none; }
 .oa2-hd-r + .oa2-exp { margin-left: 0; }
 .oa2-split-h { position: absolute; top: 4px; width: 24px; height: 486px; cursor: col-resize; touch-action: none; display: grid; place-items: center; z-index: 2; }
@@ -400,11 +394,8 @@
   border-color: rgba(255, 82, 82, 0.8);
   background: linear-gradient(rgba(255, 82, 82, 0.18), rgba(255, 82, 82, 0.06)), rgba(14, 10, 36, 0.9);
 }
-.oa2-runline-t { flex: 1; min-width: 0; font: 500 19px/26px var(--body); color: var(--tx); }
-.oa2 .oa2-arrow { width: 44px; height: 32px; min-width: 0; padding: 0; display: grid; place-items: center; flex: none; }
 
 /* ---- comments ---- */
-.oa2-comments[data-dashed='true'] { border-style: dashed; border-color: rgba(255, 255, 255, 0.3); background: transparent; }
 .oa2-cms {
   flex: 1;
   min-height: 0;
@@ -433,7 +424,9 @@
 .oa2-chf { flex: 1; min-height: 0; display: flex; flex-direction: column; justify-content: center; gap: 10px; }
 .oa2-chf-row { display: flex; align-items: center; gap: 8px; }
 .oa2-chf-row > svg { color: var(--dim); flex: none; }
-.oa2 .oa2-chf-in { flex: 1; min-width: 0; height: 44px; font: 400 20px/1 var(--body); }
+.oa2 .oa2-chip { flex: none; white-space: nowrap; font: 600 16px/1 var(--body); }
+.oa2 .oa2-chip[data-lit='true'] { background: rgba(80, 200, 220, 0.22); border-color: var(--cyan, #4fd1e0); color: #fff; }
+.oa2-chf-row .oa-btn { white-space: nowrap; }
 .oa2-chf-note { font: 500 17px/22px var(--body); color: var(--dim); }
 .oa2-chf-note.bad { color: var(--amber); }
 
@@ -471,8 +464,6 @@
 /* The idle notes card is 202 px tall: a tighter frame so the first part's notes at 26 px have room. */
 .oa2 .oa-card.oa2-idlenotes { padding: 18px 24px 14px; }
 .oa2-idlenotes .oa-notes { gap: 8px; }
-.oa2-idlenotes .oa-card-foot { padding-top: 10px; }
-.oa2-idlenotes .oa-step { height: 44px; }
 
 /* Why the run of show is empty: one line and Open file */
 .oa2-showproblem { display: flex; flex-direction: row; align-items: center; gap: 8px; min-width: 0; width: 100%; }

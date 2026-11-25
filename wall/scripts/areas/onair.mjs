@@ -53,9 +53,9 @@ export default {
   name: 'onair',
   gallery: { states: [
     state('typical (running at 42:13)', 'oatimer=run', ['42:1', 'Show timer', 'Notes', 'Mark a moment']),
-    state('no file', 'show=missing&marks=0&oatimer=idle', ['No parts yet', '## Part name | 10']),
-    state('refused file', 'show=refused&marks=0&oatimer=idle', ['No parts yet']),
-    state('forty parts', 'show=forty&oatimer=run', [' of 40: ']),
+    state('no file', 'show=missing&marks=0&oatimer=idle', ['- A note', 'one per line']),
+    state('refused file', 'show=refused&marks=0&oatimer=idle', ['Open file']),
+    state('forty parts', 'show=forty&oatimer=run', ['Notes']),
     state('long notes', 'show=long&oatimer=run', ['Notes', 'Mark a moment']),
     state('marks full', 'marks=full&oatimer=run', ['Mark a moment'], '.oa2-skgrid .key-tile[aria-label="Mark a moment"]'),
     state('Watt standing', 'oatimer=run&wattspot=1000', ['Show timer']),
@@ -84,7 +84,7 @@ export default {
       },
     },
     breaks: {
-      'onair-floor': { css: '.oa2-runline { top: 600px !important; }', expect: /^ *FAIL on air: .* ends at y/m, appliesTo: (v) => v.name === 'On Air, typical, running at 42:13' },
+      'onair-floor': { css: '.oa2-runline { display: flex !important; top: 600px !important; }', expect: /^ *FAIL on air: .* ends at y/m, appliesTo: (v) => v.name === 'On Air, typical, running at 42:13' },
       'onair-watt': { css: '.watt-sheep, .watt-hit { margin-top: -300px !important; }', expect: /^ *FAIL on air: Watt .* overlaps /m, appliesTo: (v) => v.name === 'On Air, Watt standing under the notes card' },
     },
   },
