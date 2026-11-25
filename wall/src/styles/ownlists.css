@@ -921,6 +921,11 @@ button.ws-play {
 .ws-grid .ws-title {
   margin-top: 6px;
 }
+/* The text sits 10 px inside the clickable edge. */
+.ws-grid .ws-title,
+.ws-grid .ws-meta {
+  padding: 0 10px;
+}
 .ws-meta {
   display: block;
   font: 400 16px/1.25 var(--body);
@@ -950,15 +955,13 @@ button.ws-play {
   border-radius: 10px;
   color: #fff;
   background: rgba(10, 7, 30, 0.82);
-  opacity: 0;
-  pointer-events: none;
+  opacity: 0.5;
   transition: opacity 200ms ease;
 }
 .ws-item:hover > .ws-add,
 .ws-item:has(:focus-visible) > .ws-add,
 .ws-add[aria-expanded='true'] {
   opacity: 1;
-  pointer-events: auto;
 }
 .ws-list .ws-item {
   height: 56px;
@@ -998,19 +1001,18 @@ button.ws-play {
   color: var(--tx);
   transition: opacity 200ms ease;
 }
+.ws-list .ws-add {
+  top: 11px;
+  right: 4px;
+  background: transparent;
+}
+.ws-list .ws-play {
+  padding-right: 42px;
+}
 .ws-list .ws-item:hover > .ws-add,
 .ws-list .ws-item:has(:focus-visible) > .ws-add,
 .ws-list .ws-add[aria-expanded='true'] {
   background: rgba(53, 230, 234, 0.2);
-}
-.ws-list .ws-add {
-  top: 11px;
-  right: 8px;
-}
-.ws-list .ws-item:hover .ws-len,
-.ws-list .ws-item:has(:focus-visible) .ws-len,
-.ws-list .ws-item:has(.ws-add[aria-expanded='true']) .ws-len {
-  opacity: 0;
 }
 .ws .yt-state {
   padding: 24px 8px;
@@ -1024,4 +1026,22 @@ button.ws-play {
   font: 400 16px/1.2 var(--body);
   color: #c9c6e0;
   white-space: nowrap;
+}
+
+/* The search field: a magnifier at its left, the text 10 px clear of it. */
+.w-fieldbox {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  display: flex;
+}
+.w-fieldicon {
+  position: absolute;
+  left: 14px;
+  top: 12px;
+  color: var(--dim);
+  pointer-events: none;
+}
+.w-fieldbox .w-paste {
+  padding-left: 44px;
 }

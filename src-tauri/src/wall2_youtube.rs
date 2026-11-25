@@ -1104,10 +1104,11 @@ fn wait_for<T: Clone>(flight: &Flight<T>) -> Result<T, &'static str> {
 fn search_with(ctx: &Ctx, text: &str) -> Result<Page<YtVideo>, &'static str> { search_in(ctx, text, true) }
 
 /// The same search with the Music category (`music`, Listen) or across every category (Watch). The two keep their own
-/// memory and flights (the Watch key carries a prefix), and both spend from the same day's budget.
+/// memory and flights, and both spend from the same day's budget. The Watch key starts with a control character
+/// (U+0001): `check_query` refuses control characters, so no words a user can send ever produce a Watch key.
 fn search_in(ctx: &Ctx, text: &str, music: bool) -> Result<Page<YtVideo>, &'static str> {
     let query = check_query(text).ok_or(INVALID)?;
-    let key = if music { query.to_lowercase() } else { format!("any:{}", query.to_lowercase()) };
+    let key = if music { query.to_lowercase() } else { format!("\u{1}any:{}", query.to_lowercase()) };
     let now = (ctx.now)();
     let gen = lib_gen();
     if let Some(page) = with_lib(|l| l.searches.get(&key, now, SEARCH_TTL)) { return Ok(page) }
@@ -2274,6 +2275,25 @@ mod tests {
         assert_eq!(http.get_urls().len(), 2);
         run(&http, &creds, &now, |c| search_with(c, "night drive")).unwrap();
         assert!(http.get_urls()[3].contains("videoCategoryId=10"));
+        assert_eq!(with_lib(|l| l.used(T0)), 2);
+    }
+
+    #[test]
+    fn a_music_search_for_the_words_any_colon_cats_never_shares_a_watch_search_for_cats() {
+        let _t = exclusive(); token_in_memory();
+        let creds = FakeCreds::new(Some("stored-refresh"));
+        let now = clock(T0);
+        let found = || ok(json!({ "items": [{ "id": { "videoId": VID_A } }, { "id": { "videoId": VID_B } }] }));
+        let details = || ok(json!({ "items": [video(VID_A, "Glass Harbor", "PT3M34S", json!({})), video(VID_B, "Low Tide Motel", "PT4M12S", json!({}))] }));
+        let http = FakeHttp::reads(vec![found(), details(), category_answer(), found()], vec![]);
+        run(&http, &creds, &now, |c| search_in(c, "cats", false)).unwrap();
+        assert!(!http.get_urls()[0].contains("videoCategoryId"));
+        // The words a user can type never reach the Watch key, which starts with a control character check_query refuses.
+        assert_eq!(check_query("\u{1}any:cats"), None);
+        run(&http, &creds, &now, |c| search_with(c, "any:cats")).unwrap();
+        let urls = http.get_urls();
+        assert_eq!(urls.len(), 4, "the music search made its own category read and search call");
+        assert!(urls[3].contains("videoCategoryId=10") && urls[3].contains("q=any%3Acats"), "{}", urls[3]);
         assert_eq!(with_lib(|l| l.used(T0)), 2);
     }
 

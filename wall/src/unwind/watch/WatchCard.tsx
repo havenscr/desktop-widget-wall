@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from 'react';
-import { IconBrandTwitch, IconBrandYoutube, IconBroadcast, IconCheck, IconPencil, IconPlaylist, IconPlaylistAdd, IconPlus, IconX } from '@tabler/icons-react';
+import { IconBrandTwitch, IconBrandYoutube, IconBroadcast, IconCheck, IconPencil, IconPlaylist, IconPlaylistAdd, IconPlus, IconSearch, IconX } from '@tabler/icons-react';
 import { useSkyKeepClear } from '../../horizon/sky';
 import { tip } from '../../ui/HoverTip';
 import { useSignalStore } from '../../signals/store';
@@ -15,7 +15,7 @@ import { askDetails } from './ownDetails';
 import { useOwnLists } from './ownLists';
 import { restBridge, restZone, useWatchRest } from './rest';
 import { playOwn, setFollow, useOwnView, type OwnView } from './ownPlay';
-import { closeWatchSearch, isLinkText, runWatchSearch, useWatchSearch } from './searchStore';
+import { closeWatchSearch, isLinkText, runWatchSearch, useWatchSearch, wordsProblem } from './searchStore';
 import { WatchResults } from './WatchSearch';
 
 export { PASTE_ERROR_MS };
@@ -213,8 +213,13 @@ function WatchList({ empty, draft, setDraft, host, own }: { empty: boolean; draf
     // Words search YouTube; a link is saved to the list.
     if (!isLinkText(text)) {
       if (text.trim()) {
-        setError(null);
         dropOffer();
+        const problem = wordsProblem(text);
+        if (problem) {
+          showError(problem);
+          return;
+        }
+        setError(null);
         void runWatchSearch(text);
       }
       return;
@@ -248,6 +253,8 @@ function WatchList({ empty, draft, setDraft, host, own }: { empty: boolean; draf
   const words = text.trim() !== '' && !isLinkText(text);
   const field = (
     <form className="w-field" onSubmit={submit}>
+      <span className="w-fieldbox">
+      <IconSearch size={20} stroke={1.8} aria-hidden="true" className="w-fieldicon" />
       <input
         ref={fieldRef}
         className="w-paste"
@@ -271,6 +278,7 @@ function WatchList({ empty, draft, setDraft, host, own }: { empty: boolean; draf
           }
         }}
       />
+      </span>
       <button type="submit" className="w-add" disabled={!text.trim()} title={words ? 'Search YouTube for these words (uses one of the day\'s searches)' : 'Save this link to the list'}>
         {words ? 'Search' : 'Save'}
       </button>

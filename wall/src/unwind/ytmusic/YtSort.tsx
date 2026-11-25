@@ -72,7 +72,7 @@ export function YtSortButton({ value, onPick, labelled = false }: { value: YtSor
         className={`mu-sort${picked && !labelled ? ' on' : ''}`}
         aria-haspopup="listbox"
         aria-expanded={open}
-        aria-label={`Sort results: ${current.label}`}
+        aria-label={labelled ? `Sort: ${current.short}, change the order` : `Sort results: ${current.label}`}
         onClick={() => setOpen((o) => !o)}
         {...tip(SORT_TIP)}
       >

@@ -66,6 +66,18 @@ function measureWatchSearch() {
     if (e.classList.contains('ws-add')) continue;
     if (b.width < 31.5 || b.height < 31.5) fails.push('control ' + name(e) + ' is ' + r0(b.width) + ' by ' + r0(b.height) + ' (32 at least)');
   }
+  // The text of a result sits at least 10 px inside its clickable button.
+  for (const btn of ws.querySelectorAll('button.ws-play')) {
+    const b = btn.getBoundingClientRect();
+    let worst = 999;
+    for (const t of btn.querySelectorAll('.ws-title, .ws-meta, .ws-views, .ws-len')) {
+      if (!t.textContent) continue;
+      // A long text is cut by its box (an ellipsis), so what shows ends at the box's edge.
+      const r = content(t); const box = t.getBoundingClientRect(); const cs = getComputedStyle(t);
+      worst = Math.min(worst, Math.max(r.left, box.left + parseFloat(cs.paddingLeft)) - b.left, b.right - Math.min(r.right, box.right - parseFloat(cs.paddingRight)));
+    }
+    if (worst < 9.5) { fails.push('the text of a result is ' + r0(worst) + ' px from its button edge (10 at least)'); break; }
+  }
   for (const e of card.querySelectorAll('.mu-sort, .mu-sortmenu button, .ws-back, .w-add')) {
     const b = e.getBoundingClientRect(); const t = content(e);
     if (b.width === 0 || t.width === 0) continue;
@@ -131,6 +143,7 @@ export default {
       'watchsearch-row-height': { css: '.ws-list .ws-item { height: 44px !important; }', expect: /^ *FAIL watch search: a list row is /m, appliesTo: (v) => v.name === LISTV },
       'watchsearch-views-left': { css: '.ws-views { text-align: left !important; }', expect: /^ *FAIL watch search: the views are not right aligned/m, appliesTo: (v) => v.name === LISTV },
       'watchsearch-tight-label': { css: '.ws-back { padding: 0 3px !important; }', expect: /^ *FAIL watch search: the label of .* is [\d.]+ px from the button edge/m, appliesTo: (v) => v.name === GRIDV },
+      'watchsearch-text-edge': { css: '.ws-grid .ws-title, .ws-grid .ws-meta { padding: 0 !important; }', expect: /^ *FAIL watch search: the text of a result is [\d.-]+ px from its button edge/m, appliesTo: (v) => v.name === GRIDV },
       'watchsearch-menu-out': { css: '.ws-menu { right: -300px !important; }', expect: /^ *FAIL watch search: the sort menu leaves the card/m, appliesTo: (v) => v.name === MENUV },
     },
   },

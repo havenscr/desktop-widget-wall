@@ -6,7 +6,9 @@ import { useSignalStore } from '../../signals/store';
 import { HoverTipLayer, resetTip } from '../../ui/HoverTip';
 import { resetYoutubeStatus } from '../ytmusic/status';
 import { WatchCard } from './WatchCard';
-import { SEARCH_SORT_KEY, SEARCH_VIEW_KEY, closeWatchSearch, isLinkText, loadSort, loadView, useWatchSearch } from './searchStore';
+import { useToolsStore } from '../../tools/store';
+import { OWN_KEY, resetOwnLists, useOwnLists } from './ownLists';
+import { SEARCH_SORT_KEY, SEARCH_VIEW_KEY, closeWatchSearch, isLinkText, loadSort, loadView, pickView, useWatchSearch, wordsProblem } from './searchStore';
 import { SAVED_KEY } from './saved';
 import { resetWatch, useWatchStore } from './store';
 
@@ -41,6 +43,7 @@ beforeEach(() => {
   closeWatchSearch();
   useWatchSearch.setState({ view: loadView(), sort: loadSort() });
   resetYoutubeStatus();
+  useToolsStore.setState({ open: false });
   useSignalStore.setState({ call: null });
   search = makeSearch();
   mocks.set('wall2_youtube_search', search);
@@ -64,13 +67,17 @@ const card = () =>
   );
 
 describe('telling words from a link', () => {
-  it('reads a scheme or a dotted name as a link and plain words as a search', () => {
-    expect(isLinkText('https://www.youtube.com/watch?v=Ab3dEfGh1jK')).toBe(true);
-    expect(isLinkText('youtu.be/Ab3dEfGh1jK')).toBe(true);
-    expect(isLinkText('https://example.com/x')).toBe(true);
-    expect(isLinkText('synthwave night drive')).toBe(false);
-    expect(isLinkText('lofi')).toBe(false);
-    expect(isLinkText('')).toBe(false);
+  it('reads what the saver accepts as a link, with or without a scheme', () => {
+    for (const link of ['https://www.youtube.com/watch?v=Ab3dEfGh1jK', 'youtu.be/Ab3dEfGh1jK', 'youtube.com/watch?v=Ab3dEfGh1jK', 'music.youtube.com/watch?v=Ab3dEfGh1jK', 'www.youtube.com/playlist?list=PLmockPlaylist0001', 'twitch.tv/somechannel', 'https://example.com/x', 'youtu.be/short']) expect(isLinkText(link), link).toBe(true);
+  });
+  it('reads every other text, a dotted word included, as words', () => {
+    for (const words of ['synthwave night drive', 'lofi', 'node.js', 'mr.beast', 'drum.live', 'youtube tutorials', 'what.is.love', '']) expect(isLinkText(words), words).toBe(false);
+  });
+  it('refuses words over 100 characters, and nothing else', () => {
+    expect(wordsProblem('a'.repeat(101))).toBe('Searches can be up to 100 characters.');
+    expect(wordsProblem('a'.repeat(100))).toBeNull();
+    expect(wordsProblem('bad\u0007words')).toBe('Searches cannot hold that character.');
+    expect(wordsProblem('')).toBeNull();
   });
 });
 
@@ -154,7 +161,7 @@ describe('the Watch card search', () => {
     expect(document.querySelector('.ws')).toBeNull();
   });
 
-  it('says so when YouTube is not set up, and offers a way on', async () => {
+  it('says so when YouTube is not set up, and its button opens Accounts in Tools', async () => {
     mocks.set('wall2_youtube_search', () => {
       throw new Error('not set up');
     });
@@ -162,5 +169,94 @@ describe('the Watch card search', () => {
     await type('night');
     await click(mainButton());
     expect(document.querySelector('.yt-state')).toBeTruthy();
+    expect(useToolsStore.getState().open).toBe(false);
+    await click(screen.getByText('Open Tools'));
+    expect(useToolsStore.getState().open).toBe(true);
+  });
+
+  it('drops an older answer when a new search starts, and the count follows the newest call', async () => {
+    const waiting: Array<(page: { items: YtVideo[]; next: null }) => void> = [];
+    let done = 0;
+    mocks.set('wall2_youtube_search', () => new Promise((resolve) => waiting.push((page) => ((done += 1), resolve(page)))));
+    mocks.set('wall2_youtube_status', () => ({ setup: true, signedIn: true, reason: null, searchesLeft: 100 - done }));
+    card();
+    await type('first words');
+    await click(mainButton());
+    await type('second words');
+    await click(mainButton());
+    expect(waiting).toHaveLength(2);
+    waiting[1]!({ items: [vid(7)], next: null });
+    await flush();
+    expect(screen.getByText('1 video')).toBeTruthy();
+    expect(screen.getByText('99 searches left today')).toBeTruthy();
+    waiting[0]!({ items: [vid(8), vid(9)], next: null });
+    await flush();
+    expect(screen.getByText('1 video')).toBeTruthy();
+    expect(document.querySelector('.ws-title')?.textContent).toBe('Clip 7');
+    expect(screen.getByText('98 searches left today')).toBeTruthy();
+  });
+
+  it('never saves words as a link: the saved list stays as it was', async () => {
+    card();
+    const before = localStorage.getItem(SAVED_KEY);
+    await type('synthwave night drive');
+    await click(mainButton());
+    expect(useWatchStore.getState().saved).toHaveLength(1);
+    expect(localStorage.getItem(SAVED_KEY)).toBe(before);
+    expect(document.querySelector('.w-err')).toBeNull();
+  });
+
+  it('shows a short line, and calls nothing, for words over 100 characters', async () => {
+    card();
+    await type('a'.repeat(101));
+    await click(mainButton());
+    expect(search).not.toHaveBeenCalled();
+    expect(document.querySelector('.w-err')?.textContent).toBe('Searches can be up to 100 characters.');
+    expect(document.querySelector('.ws')).toBeNull();
+  });
+
+  it('closes the results when a link is saved', async () => {
+    card();
+    await type('night');
+    await click(mainButton());
+    expect(document.querySelector('.ws')).toBeTruthy();
+    await type('https://youtu.be/Ab3dEfGh1jQ');
+    expect(mainButton().textContent).toBe('Save');
+    await click(mainButton());
+    expect(document.querySelector('.ws')).toBeNull();
+    expect(useWatchStore.getState().saved.some((i) => i.id === 'Ab3dEfGh1jQ')).toBe(true);
+  });
+
+  it('the plus saves a result to a playlist of the wall', async () => {
+    localStorage.setItem(SAVED_KEY, JSON.stringify([{ kind: 'own', id: 'fridaywind01', label: 'Friday wind down' }]));
+    localStorage.setItem(OWN_KEY, JSON.stringify({ v: 1, lists: { fridaywind01: { items: [], shuffle: false, repeat: false } } }));
+    resetWatch();
+    resetOwnLists();
+    card();
+    await type('night');
+    await click(mainButton());
+    await click(document.querySelectorAll('.ws-add')[1]!);
+    const row = [...document.querySelectorAll('.w-pop-row')].find((r) => r.textContent?.includes('Friday wind down'))!;
+    await click(row);
+    expect(useOwnLists.getState().lists.fridaywind01?.items.map((i) => i.id)).toEqual([vid(2).id]);
+  });
+});
+
+describe('the kept view and sort when storage fails', () => {
+  it('falls back to grid and Best match when reading throws', () => {
+    const spy = vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
+      throw new Error('blocked');
+    });
+    expect(loadView()).toBe('grid');
+    expect(loadSort()).toBe('best');
+    spy.mockRestore();
+  });
+  it('still changes the view for the session when writing throws', () => {
+    const spy = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+      throw new Error('full');
+    });
+    expect(() => pickView('list')).not.toThrow();
+    expect(useWatchSearch.getState().view).toBe('list');
+    spy.mockRestore();
   });
 });

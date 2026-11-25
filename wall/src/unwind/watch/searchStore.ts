@@ -57,12 +57,27 @@ interface SearchState {
 
 export const useWatchSearch = create<SearchState>(() => ({ open: false, query: '', found: null, view: loadView(), sort: loadSort() }));
 
-/** Words are searched; anything that reads as an address (a scheme, or a name with a dot and no spaces) is a link to save. */
+const LINK_HOSTS = new Set(['youtube.com', 'www.youtube.com', 'm.youtube.com', 'music.youtube.com', 'youtu.be', 'twitch.tv', 'www.twitch.tv', 'm.twitch.tv']);
+
+/**
+ * A link to save: text the saver accepts (a YouTube or Twitch link, with or without a scheme, or a bare video id), or text
+ * that starts with a scheme or with one of those hosts (so a half-typed or wrong link gets the saver's own message).
+ * Everything else, a dotted word such as `node.js` included, is words to search.
+ */
 export function isLinkText(text: string): boolean {
   const t = text.trim();
-  if (!t) return false;
-  if (/^https?:\/\//i.test(t) || /^[^\s/]+\.[a-z]{2,}(\/|$)/i.test(t)) return true;
-  return parseLink(t).ok;
+  if (!t || /\s/.test(t)) return false;
+  if (/^https?:\/\//i.test(t)) return true;
+  if (parseLink(t).ok) return true;
+  return LINK_HOSTS.has(t.split(/[/?#]/)[0]!.toLowerCase());
+}
+
+/** Why words cannot be searched (more than 100 characters, or a character YouTube's search refuses); null when they can. */
+export function wordsProblem(text: string): string | null {
+  const t = text.trim();
+  if (!t) return null;
+  if (searchWords(t)) return null;
+  return [...t].length > 100 ? 'Searches can be up to 100 characters.' : 'Searches cannot hold that character.';
 }
 
 let seq = 0;
@@ -75,13 +90,12 @@ export async function runWatchSearch(text: string): Promise<void> {
   useWatchSearch.setState({ open: true, query: words, found: { items: [], loading: true, problem: null } });
   try {
     const page = await youtube.search(words, true);
-    if (mine !== seq) return;
-    useWatchSearch.setState({ found: { items: Array.isArray(page?.items) ? page.items : [], loading: false, problem: null } });
+    if (mine === seq) useWatchSearch.setState({ found: { items: Array.isArray(page?.items) ? page.items : [], loading: false, problem: null } });
   } catch (e) {
-    if (mine !== seq) return;
-    useWatchSearch.setState({ found: { items: [], loading: false, problem: ytProblem(e) } });
+    if (mine === seq) useWatchSearch.setState({ found: { items: [], loading: false, problem: ytProblem(e) } });
   }
-  // The count of searches left changed (or the answer came from memory and it did not): ask.
+  // The count of searches left changed (or the answer came from memory and it did not): ask, even for an answer that was
+  // replaced, so the count never stays one too high when the older call is the last to finish.
   void readYoutubeStatus();
 }
 
