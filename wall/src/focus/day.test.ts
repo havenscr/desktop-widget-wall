@@ -11,7 +11,7 @@ it('names the local day', () => {
 
 it('opens a session to its planned end and drops earlier days', () => {
   const old = [{ start: at(10, 9), end: at(10, 9, 25) }];
-  expect(openSession(old, at(11, 10), at(11, 10, 25))).toEqual([{ start: at(11, 10), end: at(11, 10, 25) }]);
+  expect(openSession(old, at(11, 10), at(11, 10, 25))).toEqual([{ start: at(11, 10), end: at(11, 10, 25), id: at(11, 10) }]);
 });
 
 it('closes the last session early, never later than planned', () => {
@@ -42,7 +42,7 @@ it('keeps a session that ran past midnight when the next one opens', () => {
     { start: at(10, 9), end: at(10, 9, 25) },
     { start: at(10, 23, 50), end: at(11, 0, 15) },
   ];
-  expect(openSession(s, at(11, 10), at(11, 10, 25))).toEqual([s[1], { start: at(11, 10), end: at(11, 10, 25) }]);
+  expect(openSession(s, at(11, 10), at(11, 10, 25))).toEqual([s[1], { start: at(11, 10), end: at(11, 10, 25), id: at(11, 10) }]);
 });
 
 it('round-trips a save and skips bad entries', () => {

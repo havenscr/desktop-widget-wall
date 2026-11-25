@@ -146,8 +146,8 @@ it('keeps today\'s sessions: a pause closes one early, a finish closes at its pl
   await vi.advanceTimersByTimeAsync(20 * MIN); // finishes at 10:30
   const at = (h: number, m: number) => new Date(2026, 10, 11, h, m).getTime();
   const want = [
-    { start: at(10, 0), end: at(10, 10) },
-    { start: at(10, 15), end: at(10, 30) },
+    { start: at(10, 0), end: at(10, 10), id: at(10, 0) },
+    { start: at(10, 15), end: at(10, 30), id: at(10, 0), done: true },
   ];
   expect(t.useStore.getState().state.status).toBe('finished');
   expect(t.useStore.getState().sessions).toEqual(want);
@@ -163,6 +163,6 @@ it('restores saved sessions at start and drops earlier days on the next write', 
   s.init();
   expect(t.useStore.getState().sessions).toHaveLength(1);
   s.start();
-  expect(t.useStore.getState().sessions).toEqual([{ start: Date.now(), end: Date.now() + 25 * MIN }]);
+  expect(t.useStore.getState().sessions).toEqual([{ start: Date.now(), end: Date.now() + 25 * MIN, id: Date.now() }]);
   t.useStore.getState().dispose();
 });

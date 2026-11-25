@@ -3,6 +3,7 @@ import { IconPlayerPlayFilled, IconX } from '@tabler/icons-react';
 import { Clock } from '../clock/Clock';
 import { tip } from '../ui/HoverTip';
 import { invoke } from '../bridge/tauri';
+import { dayKey } from '../focus/day';
 import { loadSettings, saveSettings } from '../settings/settings';
 import { sun } from '../horizon/renderer';
 import { useReducedMotion } from '../ui/useReducedMotion';
@@ -95,12 +96,22 @@ export function Zen({ nowMs = Date.now }: ZenProps) {
   // Summit shows the wall's one focus timer. When it is already running as Zen opens (started on Work), Zen opens on it.
   const focus = useFocusStore((st) => st.state);
   const focusSessions = useFocusStore((st) => st.sessions);
+  const focusLoaded = useFocusStore((st) => st.loaded);
   const [mode, setModeState] = useState<ZenMode>(() => (useFocusStore.getState().state.status === 'running' ? 'summit' : savedMode));
+  // A store that loads after Zen mounts: a running timer still opens Summit, once, unless a mode was already picked.
+  const modeSettled = useRef(useFocusStore.getState().loaded);
+  const modePicked = useRef(false);
+  useEffect(() => {
+    if (!focusLoaded || modeSettled.current) return;
+    modeSettled.current = true;
+    if (!modePicked.current && focus.status === 'running') setModeState('summit');
+  }, [focusLoaded, focus.status]);
   const [lights, setLightsState] = useState(savedLights);
   const [breathMinutes, setMinutes] = useState<SessionMinutes>(5);
   const [sundownMinutes, setSundownMinutes] = useState<SundownMinutes>(DEFAULT_SUNDOWN_MINUTES);
   const minutes = mode === 'sundown' ? sundownMinutes : mode === 'summit' ? focus.minutes : breathMinutes;
   const setMode = (m: ZenMode) => {
+    modePicked.current = true;
     setModeState(m);
     saveSettings({ zenMode: m });
   };
@@ -127,7 +138,15 @@ export function Zen({ nowMs = Date.now }: ZenProps) {
   const summitStart = summitRun ? focus.endAt - focus.minutes * 60_000 : null;
   const running = startedAt !== null || summitRun;
   const summitSession = useMemo(() => (summitRun && focus.status === 'running' ? { endAt: focus.endAt, minutes: focus.minutes } : null), [summitRun, focus]);
-  const summitLights = finishedLights(focusSessions, nowMs());
+  // Lights follow the store (a session finishing adds one at once) and the local day (yesterday's clear at midnight).
+  const [today, setToday] = useState(() => dayKey(nowMs()));
+  useEffect(() => {
+    const t = new Date(nowMs());
+    const next = new Date(t.getFullYear(), t.getMonth(), t.getDate() + 1).getTime();
+    const id = setTimeout(() => setToday(dayKey(nowMs())), Math.max(1000, next - t.getTime()));
+    return () => clearTimeout(id);
+  }, [today, nowMs]);
+  const summitLights = useMemo(() => finishedLights(focusSessions, nowMs()), [focusSessions, today, nowMs]);
   /** A stage click leaves the running session's view. Summit only closes: the focus timer and Do Not Disturb keep running. */
   const endEarly = () => {
     if (mode === 'summit') setSummitAway(true);
@@ -390,7 +409,7 @@ export function Zen({ nowMs = Date.now }: ZenProps) {
                 {mode === 'sundown' && <div className="zen-note">Off unless you turn it on. Steps the Office lights down three times, and back up if you leave.</div>}
                 <div className="zen-lenrow">
                   <div className="breath-picker" role="radiogroup" aria-label="Session length">
-                    {(mode === 'sundown' ? SUNDOWN_MINUTES : mode === 'summit' ? SUMMIT_MINUTES : SESSION_MINUTES).map((m) => (
+                    {(mode === 'sundown' ? SUNDOWN_MINUTES : mode === 'summit' ? summitChips(focus.minutes) : SESSION_MINUTES).map((m) => (
                       <button
                         key={m}
                         type="button"
@@ -434,4 +453,9 @@ export function Zen({ nowMs = Date.now }: ZenProps) {
       )}
     </section>
   );
+}
+
+/** Summit's length chips; a length Work set outside the usual three shows as its own selected chip. */
+function summitChips(current: number): readonly number[] {
+  return (SUMMIT_MINUTES as readonly number[]).includes(current) ? SUMMIT_MINUTES : [...SUMMIT_MINUTES, current].sort((a, b) => a - b);
 }

@@ -1,6 +1,6 @@
 import type { CameraPreset } from '../horizon/cameras';
 import { ridgeTopY } from '../horizon/ridge';
-import { sessionsOn, type FocusSession } from '../focus/day';
+import { dayKey, type FocusSession } from '../focus/day';
 
 /** The modes of Zen: what drives the picture and what counts as the end. */
 export const ZEN_MODES = ['breath', 'sundown', 'summit'] as const;
@@ -135,11 +135,10 @@ export function climbPoint(progress: number, cam: ClimbCamera): { x: number; y: 
   return { x, y: skylineY(cam, x) };
 }
 
-/** The finished focus sessions that count as lights today, newest last: ended before `now`, at least a real session long, and not the one running. At most `MAX_SUMMIT_LIGHTS`. */
+/** The finished climbs that count as lights today: the timer ran to zero (not ended early), counted once however many pause and resume records it has, on the day it ended. At most `MAX_SUMMIT_LIGHTS`. */
 export function finishedLights(sessions: readonly FocusSession[], now: number): number {
-  let n = 0;
-  for (const s of sessionsOn(sessions, now)) if (s.end <= now && s.end - s.start >= MIN_SESSION_MS) n++;
-  return Math.min(MAX_SUMMIT_LIGHTS, n);
+  const today = dayKey(now);
+  const climbs = new Set<number>();
+  for (const s of sessions) if (s.done === true && s.end <= now && dayKey(s.end) === today) climbs.add(s.id ?? s.start);
+  return Math.min(MAX_SUMMIT_LIGHTS, climbs.size);
 }
-/** A session shorter than this was ended early and leaves no light (the timer's smallest length is 5 minutes). */
-const MIN_SESSION_MS = 5 * 60_000 - 1000;

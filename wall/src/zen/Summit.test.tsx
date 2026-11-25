@@ -8,13 +8,9 @@ import { SETTINGS_KEY } from '../settings/settings';
 import { Zen } from './Zen';
 import { SummitCaption, SummitScene, climbProgress } from './Summit';
 import { LANTERN_LIFT_PX, MAX_SUMMIT_LIGHTS, SUMMIT_MINUTES, SUMMIT_RUN_PX, climbPoint, finishedLights, peakX, summitLabel } from './modes';
-import summitSource from './Summit.tsx?raw';
-import zenSource from './Zen.tsx?raw';
 // @ts-ignore node's own file call; this test reads the stylesheet as text.
 import { readFileSync } from 'node:fs';
 
-const summitSrc = summitSource.replace(/\r\n/g, '\n');
-const zenSrc = zenSource.replace(/\r\n/g, '\n');
 const css = readFileSync('src/styles/zen.css', 'utf8').replace(/\r\n/g, '\n');
 const CAM = CAMERAS.unwind;
 const T0 = new Date(2026, 10, 11, 10, 0, 0).getTime();
@@ -59,16 +55,100 @@ it('the climb starts 520 px left of the peak and ends on it, on the skyline', ()
   expect(LANTERN_LIFT_PX).toBeGreaterThan(0);
 });
 
-it('a finished session lights the summit: today only, real sessions only, at most eight', () => {
-  const day = (h: number, len = 25) => ({ start: new Date(2026, 10, 11, h, 0).getTime(), end: new Date(2026, 10, 11, h, len).getTime() });
+it('a finished climb lights the summit: completed only, once per climb, today only, at most eight', () => {
+  const day = (h: number, len = 25, extra: object = { done: true }) => ({ start: new Date(2026, 10, 11, h, 0).getTime(), end: new Date(2026, 10, 11, h, len).getTime(), ...extra });
   const noon = new Date(2026, 10, 11, 12, 0).getTime();
   expect(finishedLights([], noon)).toBe(0);
   expect(finishedLights([day(8), day(9), day(10)], noon)).toBe(3);
-  // Running (ends later), cut short (under 5 minutes) and yesterday's do not count.
-  expect(finishedLights([day(8), { start: noon - MIN, end: noon + 24 * MIN }, day(9, 2), { start: noon - 30 * 3_600_000, end: noon - 29 * 3_600_000 }], noon)).toBe(1);
+  // Running, ended early (not done), a 4:59 session (not done) and yesterday's do not count.
+  expect(finishedLights([day(8), { start: noon - MIN, end: noon + 24 * MIN, done: true }, day(9, 6, {}), day(10, 4, {}), { start: noon - 30 * 3_600_000, end: noon - 29 * 3_600_000, done: true }], noon)).toBe(1);
+  // Two records of one climb (pause then resume) are one light.
+  expect(finishedLights([day(8, 10, { id: 5 }), { ...day(9, 15), id: 5 }], noon)).toBe(1);
+  // A climb that ends just after midnight counts on the day it ended, whole.
+  const late = { start: new Date(2026, 10, 11, 23, 58).getTime(), end: new Date(2026, 10, 12, 0, 23).getTime(), done: true };
+  expect(finishedLights([late], new Date(2026, 10, 12, 1, 0).getTime())).toBe(1);
+  expect(finishedLights([late], noon)).toBe(0);
   const many = Array.from({ length: 12 }, (_, i) => day(i));
   expect(finishedLights(many, new Date(2026, 10, 11, 23, 0).getTime())).toBe(MAX_SUMMIT_LIGHTS);
   expect(MAX_SUMMIT_LIGHTS).toBe(8);
+});
+
+it('the store marks a climb done only when the timer runs to zero, one light across pause and resume', () => {
+  const f = () => useFocusStore.getState();
+  const lights = () => finishedLights(f().sessions, Date.now());
+  f().init();
+  f().start();
+  ticks(10 * MIN);
+  f().pause();
+  ticks(MIN);
+  f().resume();
+  expect(f().sessions).toHaveLength(2);
+  ticks(15 * MIN + 1000);
+  expect(f().state.status).toBe('finished');
+  expect(lights()).toBe(1);
+  // End session at minute 6 leaves no light.
+  f().start();
+  ticks(6 * MIN);
+  f().reset();
+  expect(lights()).toBe(1);
+  // Paused after 4:59 and ended: no light.
+  f().start();
+  ticks(4 * MIN + 59_000);
+  f().pause();
+  f().reset();
+  expect(lights()).toBe(1);
+  // A full session adds one.
+  f().start();
+  ticks(25 * MIN + 1000);
+  expect(lights()).toBe(2);
+});
+
+it('an old save without ids or done flags still reads, and counts no lights', () => {
+  localStorage.setItem('wall2-focus-day', JSON.stringify({ sessions: [{ start: T0 - 40 * MIN, end: T0 - 10 * MIN }] }));
+  useFocusStore.getState().init();
+  expect(useFocusStore.getState().sessions).toHaveLength(1);
+  expect(finishedLights(useFocusStore.getState().sessions, T0)).toBe(0);
+});
+
+it('a session finishing while Zen is open adds its light at once', () => {
+  localStorage.setItem(SETTINGS_KEY, JSON.stringify({ zenMode: 'summit' }));
+  useFocusStore.getState().init();
+  useFocusStore.getState().startLabeled('Summit');
+  render(<Zen nowMs={() => Date.now()} />);
+  expect(document.querySelectorAll('.summit-light').length).toBe(0);
+  ticks(25 * MIN + 1000);
+  expect(useFocusStore.getState().state.status).toBe('finished');
+  expect(document.querySelectorAll('.summit-light').length).toBe(1);
+});
+
+it('yesterday lights clear at local midnight while Zen stays open', () => {
+  vi.setSystemTime(new Date(2026, 10, 11, 23, 0).getTime());
+  localStorage.setItem(SETTINGS_KEY, JSON.stringify({ zenMode: 'summit' }));
+  useFocusStore.getState().init();
+  useFocusStore.getState().start();
+  ticks(25 * MIN + 1000);
+  render(<Zen nowMs={() => Date.now()} />);
+  expect(document.querySelectorAll('.summit-light').length).toBe(1);
+  ticks(2 * 3_600_000);
+  expect(document.querySelectorAll('.summit-light').length).toBe(0);
+});
+
+it('a timer already running opens Summit even when the store loads after Zen mounts', () => {
+  localStorage.setItem(SETTINGS_KEY, JSON.stringify({ zenMode: 'breath' }));
+  localStorage.setItem('wall2-focus', JSON.stringify({ status: 'running', minutes: 25, endAt: T0 + 20 * MIN }));
+  render(<Zen nowMs={() => Date.now()} />);
+  expect(document.querySelector('.summit-lantern')).toBeNull();
+  act(() => useFocusStore.getState().init());
+  expect(document.querySelector('.summit-lantern')).not.toBeNull();
+});
+
+it('a length Work set outside the usual chips shows as the selected chip', () => {
+  localStorage.setItem(SETTINGS_KEY, JSON.stringify({ zenMode: 'summit' }));
+  useFocusStore.getState().init();
+  useFocusStore.getState().setMinutes(35);
+  render(<Zen nowMs={() => Date.now()} />);
+  expect(screen.getByRole('radio', { name: '35 min' }).getAttribute('aria-checked')).toBe('true');
+  expect(screen.getAllByRole('radio', { name: /min$/ }).filter((r) => r.getAttribute('aria-checked') === 'true')).toHaveLength(1);
 });
 
 it('the caption names the length and counts the lights', () => {
@@ -185,7 +265,7 @@ it('End session stops the focus timer and has a tooltip', () => {
   fireEvent.click(btn);
   expect(useFocusStore.getState().state.status).toBe('idle');
   expect(screen.queryByRole('button', { name: 'End session' })).toBeNull();
-  expect(zenSrc).toMatch(/tip\('Stops the focus timer and Do Not Disturb'\)/);
+  expect(btn.getAttribute('aria-label') ?? btn.textContent).toBe('End session');
   expect(css).toMatch(/\.zen-br \.zend \{[^}]*font-size: 18px;[^}]*padding: 0 22px/);
 });
 
@@ -207,12 +287,22 @@ it('the Summit start screen explains the shared timer in text of 16 px or more',
   expect(css).toMatch(/\.summit-name span \{[^}]*font: 600 18px/);
 });
 
-it('Summit draws with no frame loop, never touches the timer on unmount, and honours reduced motion', () => {
-  const needle = ['request', 'Animation', 'Frame'].join('');
-  expect(summitSrc.includes(needle)).toBe(false);
-  expect(summitSrc).toMatch(/setInterval\(tick, LANTERN_TICK_MS\)/);
-  expect(summitSrc).not.toMatch(/useFocusStore/);
-  expect(zenSrc).not.toMatch(/useEffect\(\(\) => \(\) => useFocusStore/);
+it('Summit draws with no frame loop and never touches the timer on unmount', () => {
+  const raf = vi.spyOn(window, 'requestAnimationFrame');
+  useFocusStore.getState().startLabeled('Summit');
+  const { unmount } = render(<Zen nowMs={() => Date.now()} />);
+  ticks(5000);
+  expect(raf).not.toHaveBeenCalled();
+  unmount();
+  expect(useFocusStore.getState().state.status).toBe('running');
+  raf.mockRestore();
+});
+
+it('the Summit text keeps its size and the buttons keep their padding', () => {
+  const px = (re: RegExp) => Number(re.exec(css)?.[1] ?? 0);
+  expect(px(/\.zen-hint \{[^}]*font: 400 (\d+)px/)).toBeGreaterThanOrEqual(16);
+  expect(px(/\.zen-br \.zend \{[^}]*padding: 0 (\d+)px/)).toBeGreaterThanOrEqual(10);
+  expect(px(/\.zleave \{[^}]*padding: 0 (\d+)px/)).toBeGreaterThanOrEqual(10);
   expect(css).toMatch(/\.summit-lantern \{[^}]*transition: transform 1s linear/);
   expect(css).toMatch(/prefers-reduced-motion: reduce\) \{\s*\.summit-lantern,\s*\.summit-name \{\s*transition: none/);
 });

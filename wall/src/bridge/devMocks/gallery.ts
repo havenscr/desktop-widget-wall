@@ -351,7 +351,7 @@ function summitSeed(pct: number, lights: number): void {
   const midnight = new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
   const sessions = Array.from({ length: Math.min(8, lights) }, (_, i) => {
     const start = Math.max(midnight, t - (i + 2) * 3_600_000);
-    return { start, end: start + len };
+    return { start, end: start + len, id: start, done: true };
   });
   const start = t - (pct / 100) * len;
   useFocusStore.setState({ state: { status: 'running', minutes: 25, endAt: start + len, label: 'Summit' }, sessions: [...sessions, { start, end: start + len }] });
