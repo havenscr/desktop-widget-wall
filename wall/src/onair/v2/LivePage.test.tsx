@@ -1,3 +1,4 @@
+import css from '../../styles/onair2.css?raw';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { LIBRARY_DATA } from '../../bridge/devMocks/libraryData';
@@ -139,47 +140,64 @@ it('says so when the comments cannot be read: no channel, signed out, refused', 
   await waitFor(() => expect(screen.getByText('YouTube would not let the wall read this chat.')).toBeTruthy());
 });
 
-it('the channel field: empty, an unknown name, a good name, and Escape closes the field only', async () => {
+it('the channel chips: a tap sends that handle, the lit chip follows the saved channel, no text field', async () => {
   channelSet = false;
   status = live({ state: 'not-set-up', chat: false });
   await open();
   fireEvent.click(await screen.findByRole('button', { name: 'Name channel' }));
-  const field = screen.getByLabelText('YouTube channel') as HTMLInputElement;
-  expect(screen.getByRole('button', { name: 'Save' }).getAttribute('aria-disabled')).toBe('true');
-  setChannelAnswer = () => {
-    throw 'not found';
-  };
-  fireEvent.change(field, { target: { value: '@nobody' } });
-  fireEvent.click(screen.getByRole('button', { name: 'Save' }));
-  await waitFor(() => expect(screen.getByText('YouTube has no channel with that handle')).toBeTruthy());
-  setChannelAnswer = () => ({ set: true, title: 'Sample Studio' });
-  status = live({ state: 'none', chat: false });
-  fireEvent.change(field, { target: { value: '@sample' } });
-  fireEvent.click(screen.getByRole('button', { name: 'Save' }));
-  await waitFor(() => expect(screen.getByText('Channel: Sample Studio')).toBeTruthy());
-  expect(screen.getByRole('button', { name: 'Change' })).toBeTruthy();
-  fireEvent.click(screen.getByRole('button', { name: 'Change' }));
-  fireEvent.keyDown(screen.getByLabelText('YouTube channel'), { key: 'Escape' });
+  expect(document.querySelector('.oa2-chf input')).toBeNull();
   expect(screen.queryByLabelText('YouTube channel')).toBeNull();
+  const ae = screen.getByRole('button', { name: 'Analytic Endeavors' });
+  const hc = screen.getByRole('button', { name: 'Havens Consulting' });
+  expect(ae.getAttribute('data-lit')).toBe('false');
+  const sent: unknown[] = [];
+  mocks.set('wall2_ytlive_set_channel', (args) => {
+    sent.push((args as { text: string }).text);
+    return setChannelAnswer();
+  });
+  setChannelAnswer = () => ({ set: true, title: 'Havens Consulting' });
+  status = live({ state: 'none', chat: false });
+  fireEvent.click(hc);
+  await waitFor(() => expect(screen.getByText('Channel: Havens Consulting')).toBeTruthy());
+  expect(sent).toEqual(['@HavensConsulting']);
+  fireEvent.click(screen.getByRole('button', { name: 'Change' }));
+  expect(screen.getByRole('button', { name: 'Havens Consulting' }).getAttribute('data-lit')).toBe('true');
+  expect(screen.getByRole('button', { name: 'Analytic Endeavors' }).getAttribute('data-lit')).toBe('false');
+  setChannelAnswer = () => ({ set: true, title: 'Analytic Endeavors' });
+  fireEvent.click(screen.getByRole('button', { name: 'Analytic Endeavors' }));
+  await waitFor(() => expect(screen.getByText('Channel: Analytic Endeavors')).toBeTruthy());
+  expect(sent).toEqual(['@HavensConsulting', '@AnalyticEndeavors']);
+  fireEvent.click(screen.getByRole('button', { name: 'Change' }));
+  fireEvent.keyDown(screen.getByRole('button', { name: 'Analytic Endeavors' }), { key: 'Escape' });
+  expect(screen.queryByRole('button', { name: 'Havens Consulting' })).toBeNull();
   expect(document.querySelector('.oa2-comments')).not.toBeNull();
 });
 
-it('an invalid channel text shows the fixed words, and a failure shows the generic line', async () => {
+it('a refused chip shows the fixed words, and a failure shows the generic line', async () => {
   channelSet = false;
   status = live({ state: 'not-set-up', chat: false });
   await open();
   fireEvent.click(await screen.findByRole('button', { name: 'Name channel' }));
-  fireEvent.change(screen.getByLabelText('YouTube channel'), { target: { value: 'hello' } });
   setChannelAnswer = () => {
-    throw 'invalid';
+    throw 'not found';
   };
-  fireEvent.click(screen.getByRole('button', { name: 'Save' }));
-  await waitFor(() => expect(screen.getByText('That is not a handle or a channel link')).toBeTruthy());
+  fireEvent.click(screen.getByRole('button', { name: 'Analytic Endeavors' }));
+  await waitFor(() => expect(screen.getByText('YouTube has no channel with that handle')).toBeTruthy());
   setChannelAnswer = () => {
     throw 'boom';
   };
-  fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Havens Consulting' }));
   await waitFor(() => expect(screen.getByText('Could not check the channel')).toBeTruthy());
+});
+
+it('the comments card is solid in every state: no dashed attribute and no transparent rule', async () => {
+  channelSet = false;
+  status = live({ state: 'not-set-up', chat: false });
+  await open();
+  await screen.findByRole('button', { name: 'Name channel' });
+  expect(document.querySelector('.oa2-comments')?.hasAttribute('data-dashed')).toBe(false);
+  expect(css).not.toMatch(/oa2-comments\[data-dashed/);
+  expect(css).not.toMatch(/\.oa2-comments[^{]*\{[^}]*transparent/);
 });
 
 it('starts the timer from the broadcast start once, only when idle, and never again after a Reset', async () => {

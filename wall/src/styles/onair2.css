@@ -395,7 +395,6 @@
 .oa2 .oa2-arrow { width: 44px; height: 32px; min-width: 0; padding: 0; display: grid; place-items: center; flex: none; }
 
 /* ---- comments ---- */
-.oa2-comments[data-dashed='true'] { border-style: dashed; border-color: rgba(255, 255, 255, 0.3); background: transparent; }
 .oa2-cms {
   flex: 1;
   min-height: 0;
@@ -424,7 +423,9 @@
 .oa2-chf { flex: 1; min-height: 0; display: flex; flex-direction: column; justify-content: center; gap: 10px; }
 .oa2-chf-row { display: flex; align-items: center; gap: 8px; }
 .oa2-chf-row > svg { color: var(--dim); flex: none; }
-.oa2 .oa2-chf-in { flex: 1; min-width: 0; height: 44px; font: 400 20px/1 var(--body); }
+.oa2 .oa2-chip { flex: none; white-space: nowrap; font: 600 16px/1 var(--body); }
+.oa2 .oa2-chip[data-lit='true'] { background: rgba(80, 200, 220, 0.22); border-color: var(--cyan, #4fd1e0); color: #fff; }
+.oa2-chf-row .oa-btn { white-space: nowrap; }
 .oa2-chf-note { font: 500 17px/22px var(--body); color: var(--dim); }
 .oa2-chf-note.bad { color: var(--amber); }
 

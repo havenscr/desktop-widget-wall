@@ -1,64 +1,66 @@
 import { IconBroadcast, IconCheck } from '@tabler/icons-react';
-import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
+import { useEffect, type KeyboardEvent } from 'react';
 import { tip } from '../../ui/HoverTip';
 import { useYtLive } from '../ytliveStore';
 
+/** The two channels the shows go out on. Public YouTube handles; the lead confirms them. */
+export const AE_CHANNEL = '@AnalyticEndeavors';
+export const HC_CHANNEL = '@HavensConsulting';
+
+export const CHANNEL_CHIPS = [
+  { name: 'Analytic Endeavors', handle: AE_CHANNEL },
+  { name: 'Havens Consulting', handle: HC_CHANNEL },
+] as const;
+
 const FIELD_TIP =
-  'The YouTube channel your StreamYard shows go out on. Type its handle (it starts with @) or paste its channel link. The wall reads its live state and chat with your YouTube sign-in; nothing is posted.';
+  'The YouTube channel your StreamYard shows go out on. Tap one to read its live state and chat with your YouTube sign-in; nothing is posted.';
+
+const same = (a: string | null | undefined, b: string) => a != null && a.trim().toLowerCase() === b.toLowerCase();
 
 /**
- * The channel field, inside the comments card: a text field with Save and Cancel, "Checking the channel" while it asks YouTube,
- * the fixed error line when YouTube has no such channel, and the channel's name once it is named. The text typed here is kept in
- * this component only and is never written anywhere.
+ * The channel picker, inside the comments card: one chip per channel, no text field. A tap saves that channel through YouTube's
+ * check; the chip for the saved channel is lit. "Checking the channel" shows while it asks, and the fixed error line when it fails.
  */
 export function ChannelField({ onClose, firstTime }: { onClose: () => void; firstTime: boolean }) {
   const checking = useYtLive((s) => s.checking);
   const error = useYtLive((s) => s.channelError);
+  const saved = useYtLive((s) => s.channel);
   const setChannel = useYtLive((s) => s.setChannel);
   const clear = useYtLive((s) => s.clearChannelError);
-  const [value, setValue] = useState('');
-  const field = useRef<HTMLInputElement | null>(null);
-  useEffect(() => {
-    field.current?.focus();
-    return () => clear();
-  }, [clear]);
-  const ready = value.trim().length > 0 && !checking;
-  const save = async () => {
-    if (!ready) return;
-    if (await setChannel(value.trim())) onClose();
+  useEffect(() => () => clear(), [clear]);
+  const pick = async (handle: string) => {
+    if (checking) return;
+    if (await setChannel(handle)) onClose();
   };
-  const onKey = (e: KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === 'Enter') void save();
-    else if (e.key === 'Escape') {
-      // Escape closes the field only; the page stays as it is.
+  const onKey = (e: KeyboardEvent<HTMLDivElement>) => {
+    if (e.key === 'Escape') {
+      // Escape closes the picker only; the page stays as it is.
       e.stopPropagation();
       if (!checking) onClose();
     }
   };
   return (
-    <div className="oa2-chf" data-checking={checking ? 'true' : 'false'}>
+    <div className="oa2-chf" data-checking={checking ? 'true' : 'false'} onKeyDown={onKey}>
       <div className="oa2-chf-row">
         <IconBroadcast size={20} aria-hidden="true" />
-        <input
-          ref={field}
-          className="tools-input oa2-chf-in"
-          type="text"
-          placeholder="@handle or channel link"
-          aria-label="YouTube channel"
-          autoComplete="off"
-          spellCheck={false}
-          autoCorrect="off"
-          autoCapitalize="off"
-          disabled={checking}
-          value={value}
-          onChange={(e) => setValue(e.target.value)}
-          onKeyDown={onKey}
-          {...tip(FIELD_TIP)}
-        />
-        <button type="button" className="oa-btn cy sm" aria-disabled={!ready} onClick={() => void save()} {...tip('Check the channel with YouTube and save it on this PC')}>
-          Save
-        </button>
-        <button type="button" className="oa-btn sm" disabled={checking} onClick={onClose} {...tip(firstTime ? 'Close the field; no channel is named yet' : 'Close the field without saving')}>
+        {CHANNEL_CHIPS.map((c) => {
+          const lit = saved?.set === true && same(saved.title, c.name);
+          return (
+            <button
+              key={c.handle}
+              type="button"
+              className="oa-btn oa2-chip"
+              data-lit={lit ? 'true' : 'false'}
+              aria-pressed={lit}
+              aria-disabled={checking}
+              onClick={() => void pick(c.handle)}
+              {...tip(FIELD_TIP)}
+            >
+              {c.name}
+            </button>
+          );
+        })}
+        <button type="button" className="oa-btn" disabled={checking} onClick={onClose} {...tip(firstTime ? 'Close the picker; no channel is named yet' : 'Close the picker without changing the channel')}>
           Cancel
         </button>
       </div>
@@ -85,7 +87,7 @@ export function ChannelLine({ title, onChange }: { title: string | null; onChang
       <span className="oa2-chl-t ellipsis" {...tip(title ? `Reads live state and chat of ${title}` : 'The channel is named')}>
         {title ? `Channel: ${title}` : 'Channel named'}
       </span>
-      <button type="button" className="oa-btn sm" onClick={onChange} {...tip('Type a different handle or channel link')}>
+      <button type="button" className="oa-btn sm" onClick={onChange} {...tip('Pick a different channel')}>
         Change
       </button>
       <button type="button" className="oa-btn sm" onClick={() => void forget()} {...tip('Stops reading this channel; nothing on YouTube changes')}>
