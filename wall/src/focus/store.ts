@@ -12,6 +12,17 @@ export interface FocusDeps {
   storage: () => Storage3 | null;
 }
 
+/** How long Undo stays offered after Stop or Restart. */
+export const UNDO_MS = 6000;
+
+/** The session as it stood before Stop or Restart, kept for `UNDO_MS`. */
+export interface FocusUndo {
+  kind: 'stop' | 'restart';
+  prev: m.FocusState;
+  /** The day ribbon's records as they stood before the action; Undo puts exactly these back. */
+  sessions: FocusSession[];
+}
+
 export interface FocusStore {
   state: m.FocusState;
   /** True once `init` has restored the saved state. */
@@ -20,6 +31,8 @@ export interface FocusStore {
   now: number;
   /** Focus sessions, for the day ribbon (`wall2-focus-day`). Only today's are kept on each write. */
   sessions: FocusSession[];
+  /** Set for `UNDO_MS` after `stop` or `restart`; any other change to the session clears it. */
+  undo: FocusUndo | null;
   /** Idempotent: restore saved state, arm the end timer, undo a leftover Do Not Disturb. */
   init: () => void;
   start: () => void;
@@ -29,6 +42,14 @@ export interface FocusStore {
   resume: () => void;
   reset: () => void;
   setMinutes: (minutes: number) => void;
+  /** Add or take 5 minutes off the time left of a running or paused session (1 to 120 minutes). */
+  adjustLeft: (direction: 1 | -1) => void;
+  /** End a running or paused session now, keeping the length, and offer Undo. */
+  stop: () => void;
+  /** Start the same length again from full, keeping the name, and offer Undo. */
+  restart: () => void;
+  /** Put back the session as it stood before the last Stop or Restart, if the offer is still open. */
+  undoLast: () => void;
   /** Finish an overdue timer now. Safe to call at any time. */
   reconcile: () => void;
   /** Refresh `now` for the display and reconcile. */
@@ -58,6 +79,7 @@ export function createFocusStore(deps: FocusDeps) {
   // Bumped on every state change; a deferred Do Not Disturb step compares it.
   let generation = 0;
   let initialized = false;
+  let undoTimer: ReturnType<typeof setTimeout> | undefined;
   let onVisible: (() => void) | null = null;
 
   return create<FocusStore>((set, get) => {
@@ -71,20 +93,29 @@ export function createFocusStore(deps: FocusDeps) {
       if (s.status !== 'running') return;
       timer = setTimeout(() => get().reconcile(), Math.max(0, s.endAt - deps.now()));
     };
-    const commit = (next: m.FocusState) => {
+    const clearUndoTimer = () => {
+      if (undoTimer !== undefined) clearTimeout(undoTimer);
+      undoTimer = undefined;
+    };
+    const commit = (next: m.FocusState, fresh = false, restoreSessions?: FocusSession[]) => {
       const prev = get().state;
       if (next === prev) return;
       generation++;
+      clearUndoTimer();
       const now = deps.now();
       let sessions = get().sessions;
-      if (next.status === 'running' && prev.status !== 'running') {
-        sessions = openSession(sessions, now, next.endAt, prev.status === 'paused' ? lastClimbId(sessions, now) : now);
+      if (next.status === 'running' && prev.status === 'running') {
+        // The end moved (time added or taken off, or a restart): the climb carries on from here.
+        sessions = openSession(closeSession(sessions, now), now, next.endAt, fresh ? now : lastClimbId(sessions, now));
+      } else if (next.status === 'running' && prev.status !== 'running') {
+        sessions = openSession(sessions, now, next.endAt, prev.status === 'paused' && !fresh ? lastClimbId(sessions, now) : now);
       } else if (next.status !== 'running' && prev.status === 'running') {
         sessions = closeSession(sessions, Math.min(prev.endAt, now));
         if (next.status === 'finished') sessions = completeSession(sessions);
       }
+      if (restoreSessions) sessions = restoreSessions;
       const daySaved = sessions !== get().sessions;
-      set({ state: next, now, sessions });
+      set({ state: next, now, sessions, undo: null });
       try {
         store().setItem(m.FOCUS_KEY, m.serialize(next));
         if (daySaved) store().setItem(FOCUS_DAY_KEY, serializeDay(sessions));
@@ -96,8 +127,14 @@ export function createFocusStore(deps: FocusDeps) {
       else if (next.status !== 'running' && prev.status === 'running') void dnd.release();
     };
 
+    const offerUndo = (kind: FocusUndo['kind'], prev: m.FocusState, sessions: FocusSession[]) => {
+      set({ undo: { kind, prev, sessions } });
+      undoTimer = setTimeout(() => set({ undo: null }), UNDO_MS);
+    };
+
     return {
       state: m.initialFocus,
+      undo: null,
       now: deps.now(),
       sessions: [],
       loaded: false,
@@ -146,6 +183,34 @@ export function createFocusStore(deps: FocusDeps) {
         const s = get().state;
         if (s.status === 'idle' || s.status === 'finished') commit({ status: 'idle', minutes: m.clampMinutes(minutes) });
       },
+      adjustLeft: (direction) => {
+        get().reconcile(); // a session already past its end is finished, not revived by Plus
+        commit(m.adjustRemaining(get().state, deps.now(), direction));
+      },
+      stop: () => {
+        const prev = get().state;
+        if (prev.status !== 'running' && prev.status !== 'paused') return;
+        const before = get().sessions;
+        commit(m.reset(prev));
+        offerUndo('stop', prev, before);
+      },
+      restart: () => {
+        const prev = get().state;
+        if (prev.status !== 'running' && prev.status !== 'paused') return;
+        const before = get().sessions;
+        commit(m.restart(prev, deps.now()), true);
+        offerUndo('restart', prev, before);
+      },
+      undoLast: () => {
+        const u = get().undo;
+        if (!u) return;
+        const now = deps.now();
+        // The time kept counting: a session that ran out meanwhile comes back finished, as if it ended on its own.
+        const ranOut = u.prev.status === 'running' && u.prev.endAt <= now;
+        const target: m.FocusState = ranOut ? { status: 'finished', minutes: u.prev.minutes } : u.prev;
+        commit(target, false, ranOut ? completeSession(u.sessions) : u.sessions);
+        set({ undo: null });
+      },
       reconcile: () => {
         const now = deps.now();
         const s = get().state;
@@ -159,11 +224,12 @@ export function createFocusStore(deps: FocusDeps) {
       },
       dispose: () => {
         disarm();
+        clearUndoTimer();
         generation++;
         initialized = false;
         if (onVisible) document.removeEventListener('visibilitychange', onVisible);
         onVisible = null;
-        set({ state: m.initialFocus, now: deps.now(), sessions: [], loaded: false });
+        set({ state: m.initialFocus, now: deps.now(), sessions: [], loaded: false, undo: null });
       },
     };
   });
