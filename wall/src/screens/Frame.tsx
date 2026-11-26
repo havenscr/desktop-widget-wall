@@ -5,6 +5,7 @@ import type { PlaceId } from '../state/places';
 import { reviewDate, reviewNow } from '../ui/reviewClock';
 import { WatchStageLayer } from '../unwind/watch/StageLayer';
 import { UnwindTimeline } from '../unwind/work/UnwindTimeline';
+import { useWorkLayerStore } from '../unwind/work/layerStore';
 import { useWorkLayer } from '../unwind/work/useWorkLayer';
 
 /**
@@ -29,8 +30,10 @@ export function Frame({ place, children }: { place: PlaceId; children: ReactNode
   const kind = ribbonKind(place);
   const [slot, setSlot] = useState<HTMLElement | null>(null);
   const layer = useWorkLayer(place);
+  // Unwind's row lifts above the timeline while the layer is up (unwind-work.css).
+  const lifted = useWorkLayerStore((s) => s.shown) && place === 'unwind';
   return (
-    <div className={kind ? 'main' : 'main tall'} data-place={place} ref={layer.setEl} {...layer.handlers}>
+    <div className={kind ? 'main' : 'main tall'} data-place={place} data-work-shown={lifted ? '' : undefined} ref={layer.setEl} {...layer.handlers}>
       <div className="top">
         <Clock now={reviewDate}>
           <span className="clk-slot" ref={setSlot} />

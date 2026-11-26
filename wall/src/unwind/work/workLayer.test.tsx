@@ -155,9 +155,26 @@ describe('Unwind work layer', () => {
     expect(s).toContain('opacity var(--u-work-out, 400ms)');
     expect(s).toContain('prefers-reduced-motion');
   });
+  it('under reduced motion the lift takes its place with no slide, the day line has no fade and the veil no fade in; the veil drops its blur under reduced transparency', () => {
+    const s = css('../../styles/unwind-work.css');
+    const block = (head: string) => {
+      const at = s.indexOf(head);
+      expect(at).toBeGreaterThan(-1);
+      return s.slice(at, s.indexOf('\n}\n', at));
+    };
+    const motion = block('/* Reduced motion: the row takes its new place');
+    expect(motion).toMatch(/\.main\[data-place='unwind'\]\[data-work-shown\] \.u-foot,\s*\.main\[data-place='unwind'\]\[data-work-shown\] \.u-office-slot \{\s*transition: none;/);
+    expect(motion).toMatch(/\.main\[data-work-shown\] \.rib-line \{\s*transition: none;/);
+    expect(motion).toMatch(/::after \{\s*animation: none;/);
+    const trans = block('/* Reduced transparency');
+    expect(trans).toContain('backdrop-filter: none');
+    expect(trans).toContain('-webkit-backdrop-filter: none');
+  });
   it('the take, dialog and menu suppression fades out too, and is not an instant cut', () => {
     const s = css('../../styles/unwind-work.css');
-    const rule = s.slice(s.indexOf(".main:has(.w-take"), s.indexOf('}', s.indexOf(".main:has(.w-take")));
+    const start = s.indexOf('.main:has(\n  .w-take');
+    expect(start).toBeGreaterThan(-1);
+    const rule = s.slice(start, s.indexOf('\n}', start));
     expect(rule).toContain('visibility: hidden');
     expect(rule).toMatch(/transition:\s*opacity var\(--u-work-out, 400ms\) ease,\s*visibility 0s linear var\(--u-work-out, 400ms\)/);
   });

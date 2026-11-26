@@ -463,7 +463,7 @@ export function WatchPanel() {
   // Rule for the three resting parts (controls, Watch list card, moods line): each rests unless IT is in use or held; what holds
   // one part (text in the Watch field, a moods failure) never keeps another awake.
   // The Always here keys row holds the controls up while its menu, picker or rename popover is open (`held`).
-  const keysHeld = useWorkLayerStore((s) => s.held);
+  const keysHeld = useWorkLayerStore((s) => s.held || s.panel);
   const canRest = playing !== null && !paused && !ended && !needsClick && !openFailed && !sheetOpen && !menuOpen && !keysHeld;
   const { rest, wake, zone } = useControlsFade(canRest, peek);
   useWatchKeys(playing !== null, playing !== null && playing.kind !== 'twitch', wake);

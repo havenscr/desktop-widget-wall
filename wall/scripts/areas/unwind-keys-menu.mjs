@@ -2,9 +2,9 @@
 // fully on screen (inside the stage), no label in them wraps or is cut, and every text is 16 px or more. The menu and the
 // rename popover open upward from the row; the picker fills the right wing (x 2000 to 2540, y 20 to 650).
 const BASE = '?hz=unwind&at=2026-11-11T22%3A30%3A00-08%3A00&clock=review&weather=ok&agents=3&watch=mock&wlist=three&wlook=drivein&wplay=0&meet=heavy&keys=three&hold=three&pins=long';
-const OPEN = 'rest:.u-date >> ctx:.u-keys .u-key:not(.empty)';
+const OPEN = 'rest:.u-foot >> ctx:.u-keys .u-key:not(.empty)';
 const GALLERY_Q = 'hz=unwind&at=2026-11-11T13%3A12%3A00-08%3A00&long=1&agents=ask&net=calm&audio=demo&desktoken=set&office=six&officeoff=offered&officemood=relax&watch=mock&wlist=three&wplay=0';
-const GALLERY_OPEN = 'hover:.u-date >> ctx:.u-keys .u-key:not(.empty)';
+const GALLERY_OPEN = 'hover:.u-foot >> ctx:.u-keys .u-key:not(.empty)';
 const MENU = 'Unwind keys, menu open';
 const PICKER = 'Unwind keys, picker open';
 const RENAME = 'Unwind keys, rename open, too long a name';
