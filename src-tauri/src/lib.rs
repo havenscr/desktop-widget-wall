@@ -4328,6 +4328,7 @@ pub fn run() {
             wall2_stagepop_cmd::wall2_stagepop_status,
             wall2_recorder::wall2_recorder_status,
             wall2_stagepop_cmd::wall2_stagepop_send,
+            wall2_stagepop_cmd::wall2_stagepop_studio,
             wall2_stagepop_cmd::wall2_stagepop_token,
             wall2_stagepop_cmd::wall2_stagepop_placement_set,
             wall2_onair::wall2_onair_mark,
