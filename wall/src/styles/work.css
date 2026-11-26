@@ -1238,8 +1238,7 @@
 .shelf-key[data-kind='capture'] {
   --g: 255, 61, 154;
 }
-.key-tile[data-kind='focus'],
-.shelf-key[data-kind='focus'] {
+.key-tile[data-kind='focus'] {
   --g: 154, 123, 255;
 }
 .key-tile[data-kind='app'],
