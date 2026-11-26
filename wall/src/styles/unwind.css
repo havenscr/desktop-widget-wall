@@ -1778,6 +1778,7 @@
 .w-head > .u-k {
   flex: 1;
   min-width: 0;
+  white-space: nowrap;
   line-height: 1.15;
   display: -webkit-box;
   -webkit-box-orient: vertical;
@@ -2034,6 +2035,11 @@
    width on the left, the switch flush right at the end of the slider column, the value in the right column. */
 .ln-vibe {
   gap: 6px;
+  /* The section's own heading is gone (the page tab names it): the reset sits right on its row, 6 px clear of the scroller's top like the Lines page. */
+  padding-top: 6px;
+}
+.ln-vibe > .ln-head {
+  justify-content: flex-end;
 }
 .ln-swrow .ln-label.ln-sw {
   width: auto;

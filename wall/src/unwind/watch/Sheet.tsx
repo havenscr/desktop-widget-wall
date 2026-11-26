@@ -62,8 +62,8 @@ export function WatchSheet({ initial = 'looks' }: { initial?: 'looks' | 'lines' 
     if (asked) setPage(asked);
   }, [asked]);
   const title = page === 'lines' ? LINES_TITLE : page === 'vibe' ? VIBE_TITLE : page === 'lights' ? LIGHTS_TITLE : 'How video is shown';
-  // Four tabs leave the heading little room: the heading row shows a short name per page, the dialog and its tip keep the full one.
-  const heading = page === 'lines' ? 'Line motion' : page === 'vibe' ? 'The vibe' : page === 'lights' ? 'Light sync' : 'Video look';
+  // Four tabs leave the heading little room: the heading row shows a one-word name per page, the dialog and its tip keep the full one.
+  const heading = page === 'lines' ? 'Lines' : page === 'vibe' ? 'Vibe' : page === 'lights' ? 'Lights' : 'Look';
   const looks = useWatchStore((s) => s.looks);
   const saved = useWatchStore((s) => s.saved);
   const playing = useWatchStore((s) => s.playing);

@@ -158,11 +158,8 @@ export function VibePanel() {
   // The engine glitches on a drop when Auto vibe or Drop Glitch is on, so the switch reads on and locked under Auto vibe.
   const glitchOn = v.auto || v.dropGlitch;
   return (
-    <div className="ln-panel ln-vibe" role="group" aria-labelledby="ln-vibe-head">
+    <div className="ln-panel ln-vibe" role="group" aria-label="Vibe">
       <div className="ln-row ln-head">
-        <span className="ln-label" id="ln-vibe-head">
-          Vibe
-        </span>
         <button type="button" className="ln-reset" {...tip('The vibe settings back to your usual: Auto vibe on, the rest off, Scene and title, Medium music on other tabs')} onClick={v.reset}>
           <IconRestore size={16} aria-hidden="true" />
           Reset vibe

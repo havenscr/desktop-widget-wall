@@ -54,15 +54,15 @@ function measureSheetHead() {
       const t = r.getBoundingClientRect();
       const bb = b.getBoundingClientRect();
       return { words: b.textContent.trim(), pad: Math.min(t.left - bb.left, bb.right - t.right) };
-    }), cut: title.scrollHeight > title.clientHeight + 1, crossGap: xb.left - tb.right, fontsReady: document.fonts ? document.fonts.status : 'unknown' };
+    }), cut: title.scrollHeight > title.clientHeight + 1 || title.scrollWidth > title.clientWidth + 1, lines: Math.round(text.height / (parseFloat(getComputedStyle(title).lineHeight) || text.height)), crossGap: xb.left - tb.right, fontsReady: document.fonts ? document.fonts.status : 'unknown' };
 }
 
 export default {
   name: 'lights-tab',
   gallery: {
     states: [
-      { screen: 'unwind', name: 'sheet pages: Looks', query: `hz=unwind&at=${encodeURIComponent(at)}&clock=review&weather=ok&audio=demo&desktoken=set&office=six&officeoff=offered&officemood=relax`, custom: true, expect: ['Video look'], actions: '.w-gear >> .ln-pages button:nth-child(1)' },
-      { screen: 'unwind', name: 'sheet pages: Lines', query: `hz=unwind&at=${encodeURIComponent(at)}&clock=review&weather=ok&audio=demo&desktoken=set&office=six&officeoff=offered&officemood=relax`, custom: true, expect: ['Line motion'], actions: '.w-gear' },
+      { screen: 'unwind', name: 'sheet pages: Looks', query: `hz=unwind&at=${encodeURIComponent(at)}&clock=review&weather=ok&audio=demo&desktoken=set&office=six&officeoff=offered&officemood=relax`, custom: true, expect: ['Same for all'], actions: '.w-gear >> .ln-pages button:nth-child(1)' },
+      { screen: 'unwind', name: 'sheet pages: Lines', query: `hz=unwind&at=${encodeURIComponent(at)}&clock=review&weather=ok&audio=demo&desktoken=set&office=six&officeoff=offered&officemood=relax`, custom: true, expect: ['How lively'], actions: '.w-gear' },
       { screen: 'unwind', name: 'sheet pages: Vibe', query: `hz=unwind&at=${encodeURIComponent(at)}&clock=review&weather=ok&audio=demo&desktoken=set&office=six&officeoff=offered&officemood=relax`, custom: true, expect: ['Auto vibe', 'Music on other tabs'], actions: '.w-gear >> .ln-pages button:nth-child(3)' },
       { screen: 'unwind', name: 'sheet pages: Vibe, scrolled to the bottom', query: `hz=unwind&at=${encodeURIComponent(at)}&clock=review&weather=ok&audio=demo&desktoken=set&office=six&officeoff=offered&officemood=relax`, custom: true, expect: ['Music on other tabs'], actions: '.w-gear >> .ln-pages button:nth-child(3) >> scrollend:.w-sheet > .ln-body' },
       { screen: 'unwind', name: 'lights tab: the Lights tab open on Listen', query: `hz=unwind&at=${encodeURIComponent(at)}&clock=review&weather=ok&audio=demo&desktoken=set&office=six&officeoff=offered&officemood=relax`, custom: true, expect: ['Preview, live', 'Intensity', 'Colour speed', 'Brightness', 'Pulse', 'Smoothness', 'Who follows', 'Panel ripple'], actions: '.w-gear >> .ln-pages button:nth-child(4)' },
@@ -89,6 +89,7 @@ export default {
         const tight = (m.tabPad || []).filter((b) => b.pad < 9.5);
         if (tight.length) fail('tab text under 10 px from its button edge: ' + tight.map((b) => `${b.words} ${Math.round(b.pad * 10) / 10}`).join(', '));
         if (m.cut) fail(`"${m.words}" is cut`);
+        if (m.lines > 1) fail(`"${m.words}" runs over ${m.lines} lines (one line only)`);
         if (m.crossGap < 7.5) fail(`the tabs end ${Math.round(m.crossGap * 10) / 10} px from the close cross (8 at least)`);
         if (!bad) emit(`  ok   sheet heading: "${m.words}" ends ${Math.round(m.gap)} px before the tabs, whole, and the tabs clear the cross (fonts ${m.fontsReady})`);
         return bad;
