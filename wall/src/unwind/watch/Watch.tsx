@@ -34,6 +34,7 @@ import { CTL_REST_MS, ctlTiming, keyboardFocus, restBridge, useWatchRest } from 
 import { next as ownNext, NO_PLAY_LINE, playAgain as ownPlayAgain, previous as ownPrevious, useOwnFinished, useOwnView, type OwnView } from './ownPlay';
 import { clock, countText } from './ownShared';
 import { useWatchSearch } from './searchStore';
+import { useWorkLayerStore } from '../work/layerStore';
 
 export { clock };
 
@@ -461,7 +462,9 @@ export function WatchPanel() {
   // So does the sheet the gear opened: the row (and the lit gear) stays while it is open.
   // Rule for the three resting parts (controls, Watch list card, moods line): each rests unless IT is in use or held; what holds
   // one part (text in the Watch field, a moods failure) never keeps another awake.
-  const canRest = playing !== null && !paused && !ended && !needsClick && !openFailed && !sheetOpen && !menuOpen;
+  // The Always here keys row holds the controls up while its menu, picker or rename popover is open (`held`).
+  const keysHeld = useWorkLayerStore((s) => s.held);
+  const canRest = playing !== null && !paused && !ended && !needsClick && !openFailed && !sheetOpen && !menuOpen && !keysHeld;
   const { rest, wake, zone } = useControlsFade(canRest, peek);
   useWatchKeys(playing !== null, playing !== null && playing.kind !== 'twitch', wake);
 

@@ -1355,6 +1355,51 @@
   top: auto;
   bottom: calc(100% + 4px);
 }
+.key-rename {
+  position: absolute;
+  z-index: 45;
+  top: 38px;
+  right: 0;
+  width: 350px;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px;
+  border: 2px solid rgba(220, 211, 251, 0.58);
+  border-radius: 14px;
+  background: rgb(14, 12, 34);
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.55);
+}
+.key-rename-title {
+  color: var(--dim);
+  font: 500 16px/1.2 var(--body);
+  white-space: nowrap;
+}
+.key-rename-field {
+  flex: none;
+  width: 100%;
+  box-sizing: border-box;
+}
+.key-rename-field[aria-invalid='true'] {
+  border-color: var(--amber, #f5b84a);
+}
+.key-rename-fit {
+  color: var(--dim);
+  font: 500 16px/1.2 var(--body);
+  white-space: nowrap;
+}
+.key-rename-fit.bad {
+  color: var(--amber, #f5b84a);
+}
+.key-rename-btns {
+  display: flex;
+  gap: 10px;
+}
+.key-rename .deck-mini:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
 .key-menu-title {
   padding: 8px 10px;
   color: var(--dim);

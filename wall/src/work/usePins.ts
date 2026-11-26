@@ -3,6 +3,7 @@ import { invoke } from '../bridge/tauri';
 import { useVisible } from '../ui/useVisible';
 import { libIndex, pinKind, type KeyKind } from './keyKind';
 import { joinKeys, useKeysFeedStore } from './keysFeed';
+import { readPinNames, type PinNames } from './pinNames';
 import { allKeys, FALLBACK_PINS, MAX_PINS, parsePins, PINS_CHANGED_EVENT, readPinsRaw, resolvePin, type LibGroup, type PinView } from './libraryModel';
 
 /** The library, read once; null while it loads or when it cannot be read. */
@@ -39,8 +40,12 @@ export function usePins(active = true) {
   const read = useKeysFeedStore((s) => s.read);
   const { lib, failed: libFailed, retry: retryLib } = useLibrary(active);
   const [raw, setRaw] = useState<string | null>(readPinsRaw);
+  const [names, setNames] = useState<PinNames>(readPinNames);
   useEffect(() => {
-    const changed = () => setRaw(readPinsRaw());
+    const changed = () => {
+      setRaw(readPinsRaw());
+      setNames(readPinNames());
+    };
     window.addEventListener(PINS_CHANGED_EVENT, changed);
     return () => window.removeEventListener(PINS_CHANGED_EVENT, changed);
   }, []);
@@ -49,7 +54,13 @@ export function usePins(active = true) {
   const defaults = summary?.defaultPins ?? FALLBACK_PINS;
   const kept = lib ? parsePins(raw, lib, filePins) : null;
   const refs = kept ?? defaults;
-  const pins: PinView[] = lib ? refs.map((r) => resolvePin(r, lib, filePins)).filter((p): p is PinView => p !== null).slice(0, MAX_PINS) : [];
+  const pins: PinView[] = lib
+    ? refs
+        .map((r) => resolvePin(r, lib, filePins))
+        .filter((p): p is PinView => p !== null)
+        .slice(0, MAX_PINS)
+        .map((p) => (names[p.ref] ? { ...p, name: names[p.ref] } : p))
+    : [];
   return { read, lib, libFailed, retryLib, raw, setRaw, filePins, kept, pins };
 }
 

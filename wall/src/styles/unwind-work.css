@@ -73,8 +73,9 @@
 .main[data-place='unwind'] .rib-line {
   z-index: 2;
 }
-/* A take (the video asking to be clicked), a dialog or a menu is up: the layer stays down. */
-.main:has(.w-take, [role='dialog'], [role='menu'], .u-lib-menu, .watt-menu) > .u-work {
+/* A take (the video asking to be clicked), a dialog or a menu is up: the layer stays down. The keys row's own menu, picker
+   and rename popover are not counted (they sit in `.u-keys`): the layer is held up under them. */
+.main:has(.w-take, [role='dialog']:not(.u-keys *), [role='menu']:not(.u-keys *), .u-lib-menu, .watt-menu) > .u-work {
   opacity: 0;
   visibility: hidden;
   pointer-events: none;
@@ -87,10 +88,71 @@
   position: relative;
   z-index: 2;
 }
+/* The keys row's menu and rename popover open upward from the row, the right edge of the row; each tile's wrapper does
+   not hold the menu's place, the row does. The picker fills the right wing, stage y 20 to 650 (the row starts at the
+   room top less 8 below y 20, so the picker starts that far above it). */
+.u-keys .u-key-wrap {
+  position: static;
+  height: 64px;
+}
+.u-keys .key-menu,
+.u-keys .key-rename {
+  top: auto;
+  bottom: calc(100% + 4px);
+  right: 0;
+}
+.u-keys .pk {
+  top: calc(8px - var(--room-top, 332px));
+  bottom: auto;
+  left: -1px;
+  right: -1px;
+  height: 630px;
+}
+/* One column in the narrow wing, so no key's label is cut short; every text in it is 16 px or more. */
+.u-keys .pk-group {
+  grid-template-columns: minmax(0, 1fr);
+}
+.u-keys .pk-reset,
+.u-keys .pk-gh,
+.u-keys .pk-badge,
+.u-keys .pk-mark {
+  font-size: 16px;
+}
+.u-key.empty svg {
+  color: var(--dim);
+}
+/* Opening and closing fade (Fade in UnwindKeys.tsx keeps a closing one for as long as the fade takes). */
+.u-fade {
+  display: contents;
+}
+.u-fade > * {
+  animation: u-keys-pop-in 150ms ease both;
+}
+.u-fade.out > * {
+  animation: u-keys-pop-out 180ms ease both;
+  pointer-events: none;
+}
+@keyframes u-keys-pop-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@keyframes u-keys-pop-out {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .u-work,
   .u-work[data-shown],
-  .main:has(.w-take, [role='dialog'], [role='menu'], .u-lib-menu, .watt-menu) > .u-work {
+  .main:has(.w-take, [role='dialog']:not(.u-keys *), [role='menu']:not(.u-keys *), .u-lib-menu, .watt-menu) > .u-work {
     transition: none;
   }
 }
@@ -132,7 +194,7 @@
 }
 .u-keys-tiles {
   /* The tiles arrive after the first read: they fade in rather than appear. */
-  animation: u-keys-in 250ms ease both;
+  animation: u-keys-in 250ms ease backwards;
   display: grid;
   grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 8px;
@@ -180,7 +242,9 @@
   }
 }
 @media (prefers-reduced-motion: reduce) {
-  .u-keys-tiles {
+  .u-keys-tiles,
+  .u-fade > *,
+  .u-fade.out > * {
     animation: none;
   }
   .u-keys,

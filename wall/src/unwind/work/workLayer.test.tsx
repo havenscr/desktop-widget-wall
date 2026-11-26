@@ -9,6 +9,7 @@ import { LAYER_FADE_OUT_MS } from './UnwindTimeline';
 import { resetWatch, useWatchStore } from '../watch/store';
 import { useWatchRest } from '../watch/rest';
 import { useWorkLayerStore } from './layerStore';
+import { LAYER_CLOSE_MS } from './useWorkLayer';
 
 const flush = async (ms = 0) => {
   await act(async () => {
@@ -23,7 +24,7 @@ beforeEach(() => {
   vi.useFakeTimers();
   resetWatch();
   useWatchRest.setState({ rest: false, cardHeld: false });
-  useWorkLayerStore.setState({ shown: false });
+  useWorkLayerStore.setState({ shown: false, held: false });
   mocks.set('wall2_meet_day', () => ({ accounts: [], events: [] }));
 });
 afterEach(() => {
@@ -123,5 +124,23 @@ describe('Unwind work layer', () => {
     expect(Number(/\.sp-card \{[^}]*?z-index: (\d+)/.exec(u)?.[1])).toBeGreaterThan(z);
     expect(s).toMatch(/\.w-card \{[^}]*?position: relative;\s*z-index: (\d+)/);
     expect(Number(/\.w-card \{[^}]*?position: relative;\s*z-index: (\d+)/.exec(s)?.[1])).toBeGreaterThan(z);
+  });
+  it('held (the keys row menu or picker open) keeps the layer up after the pointer leaves, and not past a rest', async () => {
+    render(<Frame place="unwind">x</Frame>);
+    fireEvent.pointerEnter(main());
+    await flush();
+    act(() => useWorkLayerStore.setState({ held: true }));
+    fireEvent.pointerLeave(main());
+    await flush(LAYER_CLOSE_MS + 500);
+    expect(useWorkLayerStore.getState().shown).toBe(true);
+    act(() => useWatchRest.setState({ rest: true }));
+    await flush();
+    expect(useWorkLayerStore.getState().shown).toBe(false);
+    act(() => useWatchRest.setState({ rest: false }));
+    await flush();
+    expect(useWorkLayerStore.getState().shown).toBe(true);
+    act(() => useWorkLayerStore.setState({ held: false }));
+    await flush(LAYER_CLOSE_MS + 500);
+    expect(useWorkLayerStore.getState().shown).toBe(false);
   });
 });
