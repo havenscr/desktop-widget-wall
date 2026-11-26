@@ -202,6 +202,9 @@ const EXPECT = {
   'lines-control': /^ *FAIL lines: control ".*" is [\d.]+ px tall/m,
   'lines-text': /^ *FAIL lines: text under 16 px /m,
   'lines-cut': /^ *FAIL lines: text is cut /m,
+  'lines-cut-spill': /^ *FAIL lines: text is cut .*, spills\)/m,
+  'lines-cut-overlap': /^ *FAIL lines: text is cut .*, overlaps\)/m,
+  'lines-cut-height': /^ *FAIL lines: text is cut .*, clipped tall\)/m,
   'card-end': /^ *FAIL card right end on card \d+: /m,
   'spotify-copy': /^ *FAIL copy: Spotify message is cut/m,
   'account-copy': /^ *FAIL copy: account message is cut/m,
@@ -360,6 +363,10 @@ const OVERFLOWS = {
   'lines-control': '.ln-chips button { height: 24px !important; }',
   'lines-text': '.ln-label { font-size: 12px !important; }',
   'lines-cut': '.ln-label { width: 40px !important; overflow: hidden !important; text-overflow: ellipsis !important; }',
+  // One break per way a line of text can be cut: a nowrap line wider than its box, a label running into the next control, a box shorter than its text.
+  'lines-cut-spill': '.ln-hint { white-space: nowrap !important; width: 120px !important; }',
+  'lines-cut-overlap': '.ln-label { margin-right: -60px !important; }',
+  'lines-cut-height': '.ln-hint { height: 10px !important; overflow: hidden !important; }',
   'spotify-copy': '.sp-note { width: 80px !important; overflow: hidden !important; white-space: nowrap !important; }',
   'account-copy': '.tools-note { width: 80px !important; overflow: hidden !important; white-space: nowrap !important; }',
 };
@@ -1839,9 +1846,22 @@ try {
           if (!el || ![...el.childNodes].some((n) => n.nodeType === 3 && n.textContent.trim())) continue;
           const fs = parseFloat(getComputedStyle(el).fontSize);
           if (fs < 15.5) lines.push('lines: text under 16 px in "' + el.textContent.trim().slice(0, 30) + '" (' + fs + ' px)');
-          // No label, value or help line is ellipsized or clipped: its text fits its own box.
+          // No label, value or help line is cut: ellipsized or clipped sideways, a no-wrap line wider than its box,
+          // text running into the next control on its row, or a box shorter than its text.
           const cs = getComputedStyle(el);
-          if ((cs.overflowX !== 'visible' || cs.textOverflow === 'ellipsis') && el.scrollWidth > el.clientWidth + 1) lines.push('lines: text is cut in "' + el.textContent.trim().slice(0, 40) + '" (' + el.scrollWidth + ' px of ' + el.clientWidth + ')');
+          const tag = '"' + el.textContent.trim().slice(0, 40) + '"';
+          if ((cs.overflowX !== 'visible' || cs.textOverflow === 'ellipsis') && el.scrollWidth > el.clientWidth + 1) lines.push('lines: text is cut in ' + tag + ' (' + el.scrollWidth + ' px of ' + el.clientWidth + ', clipped wide)');
+          else if (cs.whiteSpace.startsWith('nowrap') && el.scrollWidth > el.clientWidth + 1) lines.push('lines: text is cut in ' + tag + ' (' + el.scrollWidth + ' px of ' + el.clientWidth + ', spills)');
+          if (cs.overflowY !== 'visible' && el.scrollHeight > el.clientHeight + 1) lines.push('lines: text is cut in ' + tag + ' (' + el.scrollHeight + ' px of ' + el.clientHeight + ', clipped tall)');
+          const next = el.nextElementSibling;
+          if (next) {
+            const range = document.createRange();
+            range.selectNodeContents(el);
+            const t = range.getBoundingClientRect();
+            const n = next.getBoundingClientRect();
+            const sameRow = n.width > 0 && n.top < t.bottom - 1 && n.bottom > t.top + 1;
+            if (sameRow && t.width > 0 && t.right > n.left + 0.5) lines.push('lines: text is cut in ' + tag + ' (its text ends at ' + Math.round(t.right) + ', the next control starts at ' + Math.round(n.left) + ', overlaps)');
+          }
         }
       }
     }
@@ -2014,6 +2034,9 @@ try {
     'lines-control': (v) => v.name === 'Lines settings sheet',
     'lines-text': (v) => v.name === 'Lines settings sheet',
     'lines-cut': (v) => v.name === 'Lines settings sheet',
+    'lines-cut-spill': (v) => v.name === 'Lines settings sheet',
+    'lines-cut-overlap': (v) => v.name === 'Lines settings sheet',
+    'lines-cut-height': (v) => v.name === 'Lines settings sheet',
   };
   for (const [name, entry] of Object.entries(AREA_BREAKS)) BREAK_ON[name] = entry.appliesTo;
   const breakOn = BREAK_ON[overflow] ? VARIANTS.filter(BREAK_ON[overflow]) : VARIANTS.slice(0, 1);

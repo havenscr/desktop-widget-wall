@@ -10,7 +10,7 @@ import { REFLECT, createReflection, drawReflection, reflectionAlpha } from './re
 import { audioBands, audioBeats, clearDanceHistory, danceKick, pauseDanceHistory, useAudioStore } from '../audio/store';
 import { loudness, smoothStep } from '../audio/model';
 import { CAMERAS, HOME_MORNING, MOON_PLACES, cameraFor, cloudShiftFor, glideCamera, localDay, settled, startGlide, stepGlide, type CameraPreset, type Glide } from './cameras';
-import { createLevelEase, fractionsAt, stepLevelEase, withMusicLevel, type MusicFractions } from './offTabMusic';
+import { createLevelEase, fractionsAt, stepLevelEase, withMusicLevel, type LevelEase, type MusicFractions } from './offTabMusic';
 import { vibeSettings } from './vibeSettings';
 import {
   REST_LOOK,
@@ -208,10 +208,14 @@ export function HorizonCanvas({ now = Date.now }: { now?: () => number }) {
   // at the usual setting, so the bands are read exactly as before).
   const echoT = useRef(0);
   // Music on other tabs (`offTabMusic.ts`): the eased level, its fractions, how much music drives the lines, and a scratch camera.
-  const levelEase = useRef(createLevelEase(vibeSettings().offTabMusic));
-  const level = useRef<MusicFractions>(fractionsAt(levelEase.current.pos, { amp: 0, a: 0, n: 0, gp: 0, vw: 0 }));
+  // Made once (lazily), not on every render.
+  const levelEase = useRef<LevelEase>(null as unknown as LevelEase);
+  if (!levelEase.current) levelEase.current = createLevelEase(vibeSettings().offTabMusic);
+  const level = useRef<MusicFractions>(null as unknown as MusicFractions);
+  if (!level.current) level.current = fractionsAt(levelEase.current.pos, { amp: 0, a: 0, n: 0, gp: 0, vw: 0 });
   const playWeight = useRef(0);
-  const musicCam = useRef<CameraPreset>({ ...glide.current.to });
+  const musicCam = useRef<CameraPreset>(null as unknown as CameraPreset);
+  if (!musicCam.current) musicCam.current = { ...glide.current.to };
   const cap = useRef(createMountainCap());
   const sampler = useRef(createEchoSampler(cap.current.bands));
   // The new line types (Bars, Ribbon, Sparks, Skyline): their state and one frame input, made once.

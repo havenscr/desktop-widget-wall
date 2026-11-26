@@ -303,6 +303,55 @@ it('Music on other tabs: Calm keeps Work at 3 lines, Medium draws 6 taller lines
   expect(seen('full').n).toBeCloseTo(CAMERAS.unwind.en, 6);
 });
 
+it('Music on other tabs: Calm keeps the Home camera at its own 3 lines and height', () => {
+  setReducedMotion(false);
+  usePlaceStore.setState({ active: 'home' });
+  startMusic();
+  render(<HorizonCanvas now={() => NOON} />);
+  for (let ts = 100; ts <= 5000; ts += 100) runFrame(ts);
+  expect(draw.mock.lastCall![1].echo!).toMatchObject({ n: 3, amp: CAMERAS.home.eamp });
+});
+
+it('Music on other tabs: a level changed on a mounted canvas eases, continues from where it is, and a tab switch does not jump it', () => {
+  setReducedMotion(false);
+  useVibeStore.getState().setVibe({ offTabMusic: 'calm' });
+  startMusic();
+  render(<HorizonCanvas now={() => NOON} />);
+  let ts = 0;
+  const step = () => {
+    ts += 33;
+    ingestLevels(LOUD_BANDS, 1000 + ts);
+    tickAudio(1000 + ts);
+    runFrame(ts);
+    return draw.mock.lastCall![1].echo!.amp;
+  };
+  for (let k = 0; k < 150; k++) step(); // settled at Calm
+  const calm = step();
+  expect(calm).toBeCloseTo(CAMERAS.work.eamp, 6);
+  // Calm to Full on the mounted canvas: monotonic, no jump on the first frame.
+  act(() => useVibeStore.getState().setVibe({ offTabMusic: 'full' }));
+  const rise: number[] = [calm];
+  for (let k = 0; k < 12; k++) rise.push(step());
+  for (let k = 1; k < rise.length; k++) expect(rise[k]).toBeGreaterThanOrEqual(rise[k - 1] - 1e-9);
+  expect(rise[1] - rise[0]).toBeLessThan(1);
+  expect(rise[12]).toBeGreaterThan(calm + 5);
+  // Mid-ease to Medium: continues from the current value.
+  const before = rise[rise.length - 1];
+  act(() => useVibeStore.getState().setVibe({ offTabMusic: 'medium' }));
+  const after = step();
+  expect(Math.abs(after - before)).toBeLessThan(2);
+  // A tab switch part way through the ease does not jump the value.
+  act(() => useVibeStore.getState().setVibe({ offTabMusic: 'calm' }));
+  step();
+  let prev = step();
+  act(() => usePlaceStore.setState({ active: 'home' }));
+  for (let k = 0; k < 60; k++) {
+    const v = step();
+    expect(Math.abs(v - prev)).toBeLessThan(2);
+    prev = v;
+  }
+});
+
 it('when music starts the lines lift: rest falls continuously from 1 to 0 over 1.5 s, and the drawn strength never steps', () => {
   setReducedMotion(false);
   usePlaceStore.setState({ active: 'unwind' });
