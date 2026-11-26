@@ -15,6 +15,10 @@
 //!   Manager, `WidgetWall2/stagepop/token/0`) is shown once in Tools. A wrong MAC closes the socket with 1008.
 //! - The pin is checked and set under the shared lock when a client authenticates (`authenticate`), so of two
 //!   origins that both passed the handshake only the first to authenticate is kept.
+//! - After the welcome the wall may send `{type:"studio", id, action, name?}` (action `scene`, `mute` or `camera`; a
+//!   scene name of 1 to 80 characters with no control character; the other two take none) and the add-on answers
+//!   `{type:"studio_result", id, ok, reason}`. One studio command is in flight at a time; a second is "busy". The
+//!   answer is accepted only from the current authenticated client and only for the id that is waiting.
 //! - Text frames only, 8 KiB per message and frame, at most 20 inbound frames a second (pings and pongs count), ping every 30 s,
 //!   closed after 60 s of silence.
 //! The token is never logged (this module logs nothing) and never leaves Rust except as the answer to
@@ -240,16 +244,18 @@ pub(crate) fn studio_message(id: u64, action: &str, name: Option<&str>) -> Resul
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct StudioAnswer {
     pub ok: bool,
-    /// "ok", "not found", "studio not open", "not connected", "no answer", "refused" or "failed".
+    /// "ok", "already" (ok, nothing to do), "not found", "studio not open", "not connected", "no answer", "busy",
+    /// "refused" or "failed".
     pub reason: &'static str,
 }
 
 /// Maps the add-on's reason word to a fixed one; anything unknown is "failed".
 pub(crate) fn answer_of(ok: bool, reason: &str) -> StudioAnswer {
     if ok {
-        return StudioAnswer { ok: true, reason: "ok" };
+        return StudioAnswer { ok: true, reason: if reason == "already" { "already" } else { "ok" } };
     }
     let reason = match reason {
+        "busy" => "busy",
         "not found" => "not found",
         "studio not open" => "studio not open",
         "refused" => "refused",
@@ -594,7 +600,7 @@ impl Core {
 
     /// Sends one studio command and waits (at most 4 s) for the add-on's answer. Every outcome is an answer with a
     /// reason word, never an error: a bad command is "refused", no add-on is "not connected", silence is "no answer".
-    /// One command is in flight at a time; a newer one replaces the older, which then reads "no answer".
+    /// One command is in flight at a time; a second one while it waits is answered "busy" at once.
     pub(crate) fn studio(&self, action: &str, name: Option<&str>) -> StudioAnswer {
         self.studio_wait(action, name, STUDIO_WAIT)
     }
@@ -607,6 +613,10 @@ impl Core {
             let Some(tx) = s.tx.clone() else { return fail("not connected") };
             let id = s.studio_id + 1;
             let Ok(text) = studio_message(id, action, name) else { return fail("refused") };
+            // One command at a time: a second one is refused at once and never replaces the waiting one.
+            if s.studio.is_some() {
+                return fail("busy");
+            }
             s.studio_id = id;
             s.studio = Some((id, answer_tx));
             if tx.send(text).is_err() {
@@ -1083,6 +1093,8 @@ mod tests {
         assert_eq!(answer_of(false, "studio not open").reason, "studio not open");
         assert_eq!(answer_of(false, "refused").reason, "refused");
         assert_eq!(answer_of(false, "<script>").reason, "failed");
+        assert_eq!(answer_of(true, "already"), StudioAnswer { ok: true, reason: "already" });
+        assert_eq!(answer_of(false, "busy").reason, "busy");
         assert!(!answer_of(false, "not found").ok);
         assert_eq!(parse_in(r#"{"type":"studio_result","id":3,"ok":false,"reason":"not found"}"#), Some(In::Studio { id: 3, ok: false, reason: "not found".into() }));
         assert_eq!(parse_in(r#"{"type":"studio_result","id":3,"ok":true}"#), None);
@@ -1110,6 +1122,20 @@ mod tests {
         core.handle_text(&format!(r#"{{"type":"studio_result","id":{},"ok":true,"reason":"ok"}}"#, id + 5));
         core.handle_text(&format!(r#"{{"type":"studio_result","id":{id},"ok":false,"reason":"not found"}}"#));
         assert_eq!(t.join().unwrap(), StudioAnswer { ok: false, reason: "not found" });
+    }
+
+    #[test]
+    fn a_second_studio_command_while_one_waits_is_busy_and_keeps_the_first() {
+        let core = Arc::new(core_with(Some("tok")));
+        let (_, rx) = core.authenticate(ORIGIN, 0).unwrap();
+        let c = Arc::clone(&core);
+        let t = std::thread::spawn(move || c.studio_wait("mute", None, Duration::from_secs(3)));
+        let sent: Value = serde_json::from_str(&rx.recv_timeout(Duration::from_secs(3)).unwrap()).unwrap();
+        let id = sent["id"].as_u64().unwrap();
+        assert_eq!(core.studio_wait("camera", None, Duration::from_millis(10)), StudioAnswer { ok: false, reason: "busy" });
+        assert!(rx.try_recv().is_err());
+        core.handle_text(&format!(r#"{{"type":"studio_result","id":{id},"ok":true,"reason":"already"}}"#));
+        assert_eq!(t.join().unwrap(), StudioAnswer { ok: true, reason: "already" });
     }
 
     #[test]

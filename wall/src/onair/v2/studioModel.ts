@@ -53,12 +53,16 @@ export function agoText(at: number, now: number): string {
 /** What the Stage Pop-out add-on answered to a scene, mute or camera key. */
 export interface StudioAnswer {
   ok: boolean;
-  reason: 'ok' | 'not found' | 'studio not open' | 'not connected' | 'no answer' | 'refused' | 'failed';
+  reason: 'ok' | 'already' | 'busy' | 'not found' | 'studio not open' | 'not connected' | 'no answer' | 'refused' | 'failed';
 }
 
 /** A short reason for the key face (it fits a key at 16 px) and a full line for the heading. */
-export function studioAnswerText(a: StudioAnswer): { short: string; full: string } {
+export function studioAnswerText(a: StudioAnswer, action?: 'scene' | 'mute' | 'camera'): { short: string; full: string } {
   switch (a.reason) {
+    case 'already':
+      return action === 'camera' ? { short: 'Already off', full: 'The camera is already off' } : { short: 'Already muted', full: 'The mic is already muted' };
+    case 'busy':
+      return { short: 'Busy', full: 'Another studio key is still working' };
     case 'ok':
       return { short: 'Sent', full: 'Sent to StreamYard' };
     case 'not found':

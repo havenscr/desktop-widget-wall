@@ -241,6 +241,18 @@ it('a good answer glows the key, and every reason has a short text that fits a k
   }
 });
 
+it('already muted and busy show short texts that fit a key', async () => {
+  mocks.set('wall2_stagepop_studio', () => ({ ok: true, reason: 'already' }));
+  await open();
+  fireEvent.click(tiles()[4], { detail: 1 });
+  await waitFor(() => expect(tiles()[4].querySelector('.oa2-sklbl')!.textContent).toBe('Already muted'));
+  expect(tiles()[4].getAttribute('data-note')).toBe('ok');
+  expect(studioAnswerText({ ok: true, reason: 'already' }, 'camera').short).toBe('Already off');
+  for (const t of [studioAnswerText({ ok: true, reason: 'already' }, 'mute'), studioAnswerText({ ok: true, reason: 'already' }, 'camera'), studioAnswerText({ ok: false, reason: 'busy' })]) {
+    expect(measureLabel(t.short)).toBeLessThanOrEqual(LABEL_MAX_PX);
+  }
+});
+
 it('Go live keeps its two clicks and does not use the add-on', async () => {
   const calls: unknown[] = [];
   mocks.set('wall2_stagepop_studio', (args) => (calls.push(args), { ok: true, reason: 'ok' }));

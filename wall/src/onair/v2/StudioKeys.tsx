@@ -94,9 +94,10 @@ export function StudioKeys({ now }: { now: number }) {
     if (addon) {
       busy.current = true;
       try {
-        // The whole scene name goes, not the label drawn on the key.
+        // The full scene name from SLOT_INFO goes, never the label: the label is only a display name the user may
+        // edit, while the full name is the scene's real name in StreamYard.
         const a = await studio(addon, addon === 'scene' ? SLOT_INFO[action].full : undefined);
-        const t = studioAnswerText(a);
+        const t = studioAnswerText(a, addon);
         keys.showBrief(`${SLOT_INFO[action].full}: ${t.full}`);
         if (gen === genOf(slot)) {
           clearTimeout(noteTimer.current);
