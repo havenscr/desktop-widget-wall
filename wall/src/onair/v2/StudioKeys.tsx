@@ -55,7 +55,7 @@ export function StudioKeys({ now }: { now: number }) {
   // End show only runs while the show is live; the key is read at press time, not from a stale render.
   const liveNow = useRef(live);
   liveNow.current = live;
-  const picked = !needsFind(status.state);
+  const findNow = needsFind(status.state);
 
   /** A reassigned or relabelled slot starts clean: no pending confirm, no glow. */
   const change = (i: number, next: Slot) => {
@@ -186,12 +186,12 @@ export function StudioKeys({ now }: { now: number }) {
   };
 
   const right = useMemo(() => (sent ? `Sent: ${SLOT_INFO[sent.key].full}, ${agoText(sent.at, now)}` : 'No key sent yet'), [sent, now]);
-  const action = !picked ? (
-    <button type="button" className="oa-btn oa2-hdbtn" onClick={() => void pick()} {...tip('Then click the StreamYard browser window within 10 seconds.')}>
+  const action = (
+    <button type="button" className={findNow ? 'oa-btn cy oa2-hdbtn' : 'oa-btn oa2-hdbtn'} onClick={() => void pick()} {...tip('Then click the StreamYard browser window within 10 seconds. Use it when the wall chose the wrong window.')}>
       <IconAppWindow size={20} aria-hidden="true" />
       Find window
     </button>
-  ) : undefined;
+  );
 
   return (
     <div className="oa2-b oa2-studiokeys" role="group" aria-label="Studio keys">

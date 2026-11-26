@@ -178,10 +178,10 @@ export default {
     states: [
       state('live with comments', 'yt=live', ['Live, 37 watching, since 10:02 AM', 'Comments', 'YouTube · read 4 s ago', 'Could you zoom in a little?', 'YouTube only, read every 10 seconds.', 'Show timer', 'Started 10:02 AM, when the broadcast went live.', 'Studio keys', 'Speaker', 'Presenter', '2 Person', 'Screenshare', 'Mute mic', 'Camera off', 'Go live', 'No key sent yet', 'StreamYard studio', 'Studio window in use: StreamYard in Firefox', 'The wall cannot see which layout is live. It shows what it sent.', 'Mark a moment', 'Say hello and the one piece of news', '!Name channel']),
       state('studio keys, no window picked', 'yt=none&swin=none', ['Speaker', 'Presenter', 'Find window', 'Studio window: no StreamYard window found', '!Go live?']),
-      state('studio keys, window picked', 'yt=none', ['Studio window in use: StreamYard in Firefox', '!Find window']),
+      state('studio keys, window picked', 'yt=none', ['Studio window in use: StreamYard in Firefox', 'Find window']),
       state('studio keys, Go live armed', 'yt=none', ['Click again', 'Go live? Click again'], '[data-key="golive"]'),
       state('studio keys, a scene key waits for the add-on', 'yt=live', ['Speaker: Waiting on StreamYard setup', 'End show'], '[data-key="scene1"]'),
-      state('studio window minimized', 'yt=none&swin=minimized', ['Studio window: minimized']),
+      state('studio window minimized', 'yt=none&swin=minimized', ['Studio window: minimized (StreamYard in Firefox)']),
       state('studio keys, several StreamYard windows', 'yt=none&swin=several', ['Find window', 'Studio window: more than one StreamYard window found']),
       state('busy chat, wrapped rows and a Super Chat', 'yt=busy', ['$5.00', 'Thanks', 'YouTube only, read every 10 seconds.']),
       state('live, no comments yet', 'yt=empty', ['No comments yet. They show here within about 10 seconds of being posted.']),

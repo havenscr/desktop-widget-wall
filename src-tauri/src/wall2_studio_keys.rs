@@ -28,7 +28,8 @@ pub(crate) fn needs_confirm(key: &str) -> bool {
     key == "golive" || key == "end"
 }
 
-/// The browser a program image is, from its file name; None for anything else.
+/// The browser a program image is, from its file name; None for anything else. Brave, Vivaldi and Opera are
+/// taken as well: no earlier reason for leaving Brave out was recorded.
 pub(crate) fn browser_kind(image: &str) -> Option<&'static str> {
     let lower = image.to_ascii_lowercase();
     match lower.rsplit(['\\', '/']).next().unwrap_or("") {
@@ -49,6 +50,18 @@ pub(crate) struct Seen {
     pub pid: u32,
     pub image: String,
     pub title: String,
+    /// On another virtual desktop (or otherwise hidden by the shell): such a window never counts.
+    pub cloaked: bool,
+}
+
+/// Title words of StreamYard pages that are not the studio: a title holding one is not auto-picked.
+/// To verify against the live studio tab title.
+pub(crate) const NON_STUDIO_WORDS: [&str; 8] = ["dashboard", "help", "pricing", "blog", "log in", "sign in", "sign up", "settings"];
+
+/// The scan's title rule: contains "StreamYard" and none of the non-studio words.
+pub(crate) fn studio_title(title: &str) -> bool {
+    let lower = title.to_ascii_lowercase();
+    title_allows(title) && !NON_STUDIO_WORDS.iter().any(|w| lower.contains(w))
 }
 
 /// What a scan of the windows found.
@@ -61,7 +74,7 @@ pub(crate) enum Found {
 
 /// The browser windows titled StreamYard among `seen`. A window of any other program is ignored, whatever its title.
 pub(crate) fn scan_studio(seen: &[Seen]) -> Found {
-    let mut hits = seen.iter().filter(|w| browser_kind(&w.image).is_some() && title_allows(&w.title));
+    let mut hits = seen.iter().filter(|w| !w.cloaked && browser_kind(&w.image).is_some() && studio_title(&w.title));
     match (hits.next(), hits.next()) {
         (None, _) => Found::None,
         (Some(w), None) => Found::One(Remembered { hwnd: w.hwnd, pid: w.pid, image: w.image.clone() }),
@@ -69,12 +82,45 @@ pub(crate) fn scan_studio(seen: &[Seen]) -> Found {
     }
 }
 
-/// The window in use: the kept one while it is alive, else what a fresh scan finds. `scan` runs only when the
-/// kept window is missing or dead, so a window that died is looked up again.
-pub(crate) fn resolve(kept: Option<Remembered>, alive: impl Fn(&Remembered) -> bool, scan: impl FnOnce() -> Found) -> Found {
-    match kept {
-        Some(k) if alive(&k) => Found::One(k),
-        _ => scan(),
+/// The window in use, with how it came to be. Every change goes through one lock held by the caller, so a
+/// scan that began before a hand pick can never overwrite that pick.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub(crate) struct Slot {
+    pub rem: Option<Remembered>,
+    /// Picked by the owner (Find window), so it is kept while it lives, whatever its title says.
+    pub manual: bool,
+    /// The last scan found more than one StreamYard window and nothing is kept.
+    pub several: bool,
+}
+
+/// What a look at the kept window found.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct Look {
+    pub exists: bool,
+    /// Its title still contains "StreamYard".
+    pub streamyard: bool,
+}
+
+impl Slot {
+    /// The owner picked this window.
+    pub fn pick(&mut self, r: Remembered) {
+        *self = Slot { rem: Some(r), manual: true, several: false };
+    }
+
+    /// Keep the window while it lives (and, unless it was picked by hand, still says StreamYard); otherwise drop it
+    /// and look again. One match is kept; none or several leave nothing kept.
+    pub fn refresh(&mut self, look: impl Fn(&Remembered) -> Look, scan: impl FnOnce() -> Found) {
+        if let Some(r) = &self.rem {
+            let l = look(r);
+            if l.exists && (self.manual || l.streamyard) {
+                return;
+            }
+        }
+        *self = match scan() {
+            Found::One(r) => Slot { rem: Some(r), manual: false, several: false },
+            Found::Several => Slot { rem: None, manual: false, several: true },
+            Found::None => Slot::default(),
+        };
     }
 }
 
@@ -191,7 +237,7 @@ pub(crate) fn refusal_word(r: Refusal) -> &'static str {
 
 /// The state of the pick for the page. `armed` wins while a pick waits. `several` is a scan that found
 /// more than one StreamYard window and nothing is kept.
-pub(crate) fn pick_state(armed: bool, remembered: bool, alive: bool, minimized: bool, several: bool) -> &'static str {
+pub(crate) fn pick_state(armed: bool, remembered: bool, minimized: bool, several: bool) -> &'static str {
     if armed {
         "waiting"
     } else if !remembered {
@@ -200,8 +246,6 @@ pub(crate) fn pick_state(armed: bool, remembered: bool, alive: bool, minimized: 
         } else {
             "none"
         }
-    } else if !alive {
-        "gone"
     } else if minimized {
         "minimized"
     } else {
@@ -218,6 +262,8 @@ pub struct PickStart {
 pub struct PickStatus {
     state: &'static str,
     browser: Option<&'static str>,
+    /// Whether the window in use still has "StreamYard" in its title (a yes or no, never the title).
+    studio: bool,
     /// Which studio keys have a chord to send: names only, never a chord.
     keys: Vec<&'static str>,
 }
@@ -259,12 +305,12 @@ pub async fn wall2_studio_pick_status(window: tauri::WebviewWindow, app: tauri::
     let keys: Vec<&'static str> = load_chords(&app).into_iter().map(|(name, _)| name).collect();
     #[cfg(windows)]
     {
-        let (state, browser) = tauri::async_runtime::spawn_blocking(win::status).await.map_err(|_| Refusal::Busy.word().to_string())?;
-        Ok(PickStatus { state, browser, keys })
+        let (state, browser, studio) = tauri::async_runtime::spawn_blocking(win::status).await.map_err(|_| Refusal::Busy.word().to_string())?;
+        Ok(PickStatus { state, browser, studio, keys })
     }
     #[cfg(not(windows))]
     {
-        Ok(PickStatus { state: "none", browser: None, keys })
+        Ok(PickStatus { state: "none", browser: None, studio: false, keys })
     }
 }
 
@@ -297,15 +343,13 @@ mod win {
     use super::*;
     use crate::wall2_keys::{win as keys_win, AppDef, Matcher, Remembered};
     use crate::wall2_winutil::{is_shell_class, sys};
-    use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+    use std::sync::atomic::{AtomicU64, Ordering};
     use std::sync::Mutex;
     use std::time::{Duration, Instant};
     use windows::Win32::UI::WindowsAndMessaging::{GetForegroundWindow, InternalGetWindowText, IsIconic, IsWindow, IsWindowVisible};
 
-    /// Whether the last scan found more than one StreamYard window.
-    static SEVERAL: AtomicBool = AtomicBool::new(false);
-    /// The picked window, in memory only.
-    static PICKED: Mutex<Option<Remembered>> = Mutex::new(None);
+    /// The window in use, in memory only. One lock covers a scan and its store.
+    static PICKED: Mutex<Slot> = Mutex::new(Slot { rem: None, manual: false, several: false });
     /// When the running pick gives up; None when no pick waits.
     static ARMED_UNTIL: Mutex<Option<Instant>> = Mutex::new(None);
     /// A new pick replaces the one before it: the older thread sees the number change and ends.
@@ -329,7 +373,7 @@ mod win {
                     if let Some(found) = candidate(first) {
                         if ROUND.load(Ordering::SeqCst) == round {
                             if let Ok(mut g) = PICKED.lock() {
-                                *g = Some(found);
+                                g.pick(found);
                             }
                             if let Ok(mut g) = ARMED_UNTIL.lock() {
                                 *g = None;
@@ -368,16 +412,22 @@ mod win {
         Some(Remembered { hwnd: fg, pid, image })
     }
 
-    fn alive(r: &Remembered) -> bool {
-        unsafe { IsWindow(sys::hwnd(r.hwnd)).as_bool() } && sys::pid_of(r.hwnd) == r.pid
+    fn look(r: &Remembered) -> Look {
+        let exists = unsafe { IsWindow(sys::hwnd(r.hwnd)).as_bool() } && sys::pid_of(r.hwnd) == r.pid;
+        Look { exists, streamyard: exists && title_allows(&title_of(r.hwnd)) }
     }
 
-    /// Every visible, titled, reachable top-level window of another program, with its image and title.
+    /// Every visible, titled, reachable top-level window of another program. The title is read first, so a
+    /// window that cannot be the studio never has its process opened.
     fn seen_windows() -> Vec<Seen> {
         let me = std::process::id();
         let mut out = Vec::new();
         for h in sys::top_level_windows() {
-            if !unsafe { IsWindowVisible(sys::hwnd(h)).as_bool() } || !sys::has_title(h) {
+            if !unsafe { IsWindowVisible(sys::hwnd(h)).as_bool() } {
+                continue;
+            }
+            let title = title_of(h);
+            if !studio_title(&title) {
                 continue;
             }
             let pid = sys::pid_of(h);
@@ -385,45 +435,42 @@ mod win {
                 continue;
             }
             if let Some(image) = sys::image_path(pid) {
-                out.push(Seen { hwnd: h, pid, image, title: title_of(h) });
+                out.push(Seen { hwnd: h, pid, image, title, cloaked: sys::cloaked(h) });
             }
         }
         out
     }
 
-    /// The window in use: the kept one while alive, else found again. One match is kept; none or several clear it.
-    fn current() -> Option<Remembered> {
-        let kept = PICKED.lock().ok().and_then(|g| g.clone());
-        let found = resolve(kept, alive, || scan_studio(&seen_windows()));
-        let (now, several) = match found {
-            Found::One(r) => (Some(r), false),
-            Found::Several => (None, true),
-            Found::None => (None, false),
-        };
-        SEVERAL.store(several, Ordering::SeqCst);
-        if let Ok(mut g) = PICKED.lock() {
-            *g = now.clone();
+    /// The window in use, found again when the kept one is dead or no longer says StreamYard. The lock is held
+    /// across the look, the scan and the store.
+    fn current() -> Slot {
+        match PICKED.lock() {
+            Ok(mut g) => {
+                g.refresh(look, || scan_studio(&seen_windows()));
+                g.clone()
+            }
+            Err(_) => Slot::default(),
         }
-        now
     }
 
-    pub fn status() -> (&'static str, Option<&'static str>) {
+    pub fn status() -> (&'static str, Option<&'static str>, bool) {
         let armed = armed();
-        let rem = if armed { PICKED.lock().ok().and_then(|g| g.clone()) } else { current() };
-        let minimized = rem.as_ref().is_some_and(|r| unsafe { IsIconic(sys::hwnd(r.hwnd)).as_bool() });
-        let state = pick_state(armed, rem.is_some(), rem.is_some(), minimized, SEVERAL.load(Ordering::SeqCst));
-        let browser = rem.as_ref().and_then(|r| browser_kind(&r.image));
-        (state, browser)
+        let slot = if armed { PICKED.lock().map(|g| g.clone()).unwrap_or_default() } else { current() };
+        let minimized = slot.rem.as_ref().is_some_and(|r| unsafe { IsIconic(sys::hwnd(r.hwnd)).as_bool() });
+        let state = pick_state(armed, slot.rem.is_some(), minimized, slot.several);
+        let browser = slot.rem.as_ref().and_then(|r| browser_kind(&r.image));
+        let studio = slot.rem.as_ref().is_some_and(|r| title_allows(&title_of(r.hwnd)));
+        (state, browser, studio)
     }
 
     fn title_of(hwnd: isize) -> String {
-        let mut buf = [0u16; 256];
+        let mut buf = [0u16; 512];
         let n = unsafe { InternalGetWindowText(sys::hwnd(hwnd), &mut buf) };
         String::from_utf16_lossy(&buf[..(n.max(0) as usize).min(buf.len())])
     }
 
     pub fn send(steps: &[Step], times: u8) -> Result<(), Refusal> {
-        let rem = current().ok_or(Refusal::NoApp)?;
+        let rem = current().rem.ok_or(Refusal::NoApp)?;
         let app = AppDef {
             id: "studio".to_string(),
             name: "Studio".to_string(),
@@ -582,16 +629,15 @@ mod tests {
 
     #[test]
     fn the_pick_states() {
-        assert_eq!(pick_state(true, true, true, false, false), "waiting");
-        assert_eq!(pick_state(false, false, false, false, false), "none");
-        assert_eq!(pick_state(false, false, false, false, true), "several");
-        assert_eq!(pick_state(false, true, false, false, false), "gone");
-        assert_eq!(pick_state(false, true, true, true, false), "minimized");
-        assert_eq!(pick_state(false, true, true, false, false), "picked");
+        assert_eq!(pick_state(true, true, false, false), "waiting");
+        assert_eq!(pick_state(false, false, false, false), "none");
+        assert_eq!(pick_state(false, false, false, true), "several");
+        assert_eq!(pick_state(false, true, true, false), "minimized");
+        assert_eq!(pick_state(false, true, false, false), "picked");
     }
 
     fn seen(hwnd: isize, image: &str, title: &str) -> Seen {
-        Seen { hwnd, pid: hwnd as u32, image: image.to_string(), title: title.to_string() }
+        Seen { hwnd, pid: hwnd as u32, image: image.to_string(), title: title.to_string(), cloaked: false }
     }
 
     const SY: &str = "Studio | StreamYard - Google Chrome";
@@ -626,13 +672,78 @@ mod tests {
         assert_eq!(scan_studio(&w[..1]), Found::None);
     }
 
+    const CH: &str = "C:\\X\\chrome.exe";
+
+    #[test]
+    fn a_dashboard_or_help_tab_is_ignored_and_a_studio_tab_beside_it_is_the_one_match() {
+        for t in ["Dashboard | StreamYard", "StreamYard Help Center", "StreamYard Pricing", "Blog - StreamYard", "Log in | StreamYard", "Sign in - StreamYard", "Sign up for StreamYard", "Settings | StreamYard"] {
+            assert_eq!(scan_studio(&[seen(1, CH, t)]), Found::None, "{t}");
+        }
+        let w = [seen(1, CH, "Dashboard | StreamYard"), seen(2, CH, SY)];
+        assert_eq!(scan_studio(&w), Found::One(rem(2, CH)));
+    }
+
+    #[test]
+    fn a_cloaked_window_on_another_desktop_does_not_count() {
+        let mut hidden = seen(1, CH, SY);
+        hidden.cloaked = true;
+        assert_eq!(scan_studio(&[hidden.clone()]), Found::None);
+        assert_eq!(scan_studio(&[hidden, seen(2, CH, SY)]), Found::One(rem(2, CH)));
+    }
+
+    fn look_of(exists: bool, streamyard: bool) -> impl Fn(&Remembered) -> Look {
+        move |_| Look { exists, streamyard }
+    }
+
     #[test]
     fn a_dead_handle_is_looked_up_again_and_a_live_one_is_not_scanned() {
-        let old = rem(5, "C:\\X\\chrome.exe");
-        let fresh = [seen(9, "C:\\X\\chrome.exe", SY)];
-        assert_eq!(resolve(Some(old.clone()), |_| false, || scan_studio(&fresh)), Found::One(rem(9, "C:\\X\\chrome.exe")));
-        assert_eq!(resolve(Some(old.clone()), |_| true, || panic!("scanned a live window")), Found::One(old));
-        assert_eq!(resolve(None, |_| true, || scan_studio(&fresh)), Found::One(rem(9, "C:\\X\\chrome.exe")));
+        let fresh = [seen(9, CH, SY)];
+        let mut slot = Slot { rem: Some(rem(5, CH)), ..Slot::default() };
+        slot.refresh(look_of(false, false), || scan_studio(&fresh));
+        assert_eq!(slot.rem, Some(rem(9, CH)));
+        slot.refresh(look_of(true, true), || panic!("scanned a live window"));
+        assert_eq!(slot.rem, Some(rem(9, CH)));
+        let mut empty = Slot::default();
+        empty.refresh(look_of(true, true), || scan_studio(&fresh));
+        assert_eq!(empty.rem, Some(rem(9, CH)));
+    }
+
+    #[test]
+    fn a_kept_window_whose_title_drifted_is_dropped_and_looked_up_again() {
+        let mut slot = Slot { rem: Some(rem(5, CH)), ..Slot::default() };
+        slot.refresh(look_of(true, false), || Found::None);
+        assert_eq!(slot, Slot::default());
+        let mut slot = Slot { rem: Some(rem(5, CH)), ..Slot::default() };
+        slot.refresh(look_of(true, false), || Found::Several);
+        assert_eq!(slot, Slot { rem: None, manual: false, several: true });
+    }
+
+    #[test]
+    fn a_hand_pick_is_kept_while_it_lives_whatever_its_title_and_a_rescan_never_replaces_it() {
+        let mut slot = Slot::default();
+        slot.pick(rem(7, CH));
+        slot.refresh(look_of(true, false), || panic!("rescanned a hand pick"));
+        assert_eq!(slot.rem, Some(rem(7, CH)));
+        assert!(slot.manual);
+        slot.refresh(look_of(false, false), || Found::None);
+        assert_eq!(slot, Slot::default());
+    }
+
+    #[test]
+    fn a_pick_after_a_scan_replaces_it_and_clears_several() {
+        let mut slot = Slot::default();
+        slot.refresh(look_of(false, false), || Found::Several);
+        assert!(slot.several);
+        slot.pick(rem(3, CH));
+        assert_eq!(slot, Slot { rem: Some(rem(3, CH)), manual: true, several: false });
+    }
+
+    #[test]
+    fn one_lock_covers_the_scan_and_the_store() {
+        let src = include_str!("wall2_studio_keys.rs").replace("\r\n", "\n");
+        let at = src.find(&["fn cur", "rent() -> Slot"].concat()).expect("current");
+        let body = &src[at..at + src[at..].find("\n    }\n").expect("end")];
+        assert_eq!(body.matches("PICKED.lock()").count(), 1, "{body}");
     }
 
     #[test]
