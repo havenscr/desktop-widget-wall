@@ -49,7 +49,7 @@ describe('the On Air store', () => {
     s().stop();
     expect(s().saved.accumulatedMs).toBe(70_000);
     s().reset();
-    expect(s().saved).toMatchObject({ running: false, accumulatedMs: 0, firstStartAt: null, partIndex: 0 });
+    expect(s().saved).toMatchObject({ running: false, accumulatedMs: 0, firstStartAt: null });
   });
 
   it('keeps the timer in local storage and a fresh store goes on from the stored start', () => {
@@ -118,30 +118,16 @@ describe('the On Air store', () => {
     expect(store.getState().showError).toBe('No config folder on this PC');
   });
 
-  it('moves between parts and marks when each part began', async () => {
-    const { store, step } = setup({ wall2_onair_show: () => SHOW });
-    await store.getState().loadShow();
-    store.getState().start();
-    step(90_000);
-    store.getState().goPart(1);
-    expect(store.getState().saved).toMatchObject({ partIndex: 1, partSinceMs: 90_000 });
-    store.getState().goPart(9);
-    expect(store.getState().saved.partIndex).toBe(2);
-    store.getState().goPart(-3);
-    expect(store.getState().saved.partIndex).toBe(0);
-  });
-
-  it('sends a mark with the show time and the current part, and counts two clicks within a second once', async () => {
+  it('sends a mark with the show time and no part, and counts two clicks within a second once', async () => {
     const { store, calls, step } = setup({ wall2_onair_show: () => SHOW, wall2_onair_mark: () => ({ today: 1, last: ['00:42'] }) });
     await store.getState().loadShow();
     store.getState().start();
     step(42_000);
-    store.getState().goPart(1);
     await store.getState().mark();
     step(500);
     await store.getState().mark();
     const marks = calls.filter((c) => c.command === 'wall2_onair_mark');
-    expect(marks).toEqual([{ command: 'wall2_onair_mark', args: { showMs: 42_000, part: 'Demo' } }]);
+    expect(marks).toEqual([{ command: 'wall2_onair_mark', args: { showMs: 42_000, part: null } }]);
     expect(store.getState().marks).toEqual({ today: 1, last: ['00:42'] });
     step(600);
     await store.getState().mark();
@@ -167,49 +153,6 @@ describe('the On Air store', () => {
       { command: 'wall2_onair_open', args: { which: 'show' } },
       { command: 'wall2_onair_open', args: { which: 'marks' } },
     ]);
-  });
-
-  describe('the current part follows the file', () => {
-    const parts = (n: number) => ({ ...SHOW, parts: Array.from({ length: n }, (_, i) => ({ name: `P${i + 1}`, minutes: 5, notes: [] })) });
-
-    it('holds and keeps the part when the file shrinks, restarts its time, and does not jump back when it grows', async () => {
-      let n = 40;
-      const { store, step } = setup({ wall2_onair_show: () => parts(n) });
-      const s = () => store.getState();
-      await s().loadShow();
-      s().start();
-      step(60_000);
-      s().goPart(29);
-      step(120_000);
-      expect(s().saved).toMatchObject({ partIndex: 29, partSinceMs: 60_000 });
-      n = 3;
-      step(6000);
-      await s().loadShow();
-      expect(s().saved).toMatchObject({ partIndex: 2, partSinceMs: 186_000 });
-      step(30_000);
-      // The page shows the last part; a click on that row changes nothing and keeps its time.
-      const before = s().saved;
-      s().goPart(2);
-      expect(s().saved).toEqual(before);
-      n = 40;
-      step(6000);
-      await s().loadShow();
-      expect(s().saved.partIndex).toBe(2);
-      expect(s().saved.partSinceMs).toBe(186_000);
-    });
-
-    it('does not move the part for a read that holds no parts (a missing or refused file)', async () => {
-      let answer: Show = parts(30);
-      const { store, step } = setup({ wall2_onair_show: () => answer });
-      await store.getState().loadShow();
-      store.getState().goPart(20);
-      answer = { ...SHOW, state: 'missing', parts: [] };
-      step(6000);
-      await store.getState().loadShow();
-      expect(store.getState().saved.partIndex).toBe(20);
-      store.getState().goPart(0);
-      expect(store.getState().saved.partIndex).toBe(20);
-    });
   });
 
   it('stops itself at 24 hours, stays stopped until Reset, and does not start again before that', () => {
@@ -291,5 +234,48 @@ describe('the On Air store', () => {
     step(24 * 3_600_000);
     await store.getState().loadMarks();
     expect(store.getState().marksDate).not.toBe(first);
+  });
+
+  it('saves notes, reads the file again at once, and answers the reason when refused', async () => {
+    let refuse: string | null = null;
+    const { store, calls } = setup({
+      wall2_onair_save_notes: () => {
+        if (refuse) throw refuse;
+        return 2;
+      },
+      wall2_onair_show: () => SHOW,
+    });
+    expect(await store.getState().saveNotes(['a', 'b'])).toBeNull();
+    expect(calls.map((c) => c.command)).toEqual(['wall2_onair_save_notes', 'wall2_onair_show']);
+    expect(calls[0].args).toEqual({ lines: ['a', 'b'] });
+    expect(store.getState().show).toEqual(SHOW);
+    // A second save right after still reads again (the five second floor does not apply).
+    expect(await store.getState().saveNotes(['c'])).toBeNull();
+    expect(calls.filter((c) => c.command === 'wall2_onair_show')).toHaveLength(2);
+    refuse = 'refused: more than 40 notes';
+    expect(await store.getState().saveNotes(['d'])).toBe('Not saved: more than 40 notes');
+    refuse = 'failed';
+    expect(await store.getState().saveNotes(['d'])).toBe('Could not save run-of-show.txt');
+    expect(calls.filter((c) => c.command === 'wall2_onair_show')).toHaveLength(2);
+  });
+
+  it('a failed read after a save is tried once more, then reported as saved but not refreshed', async () => {
+    let reads = 0;
+    let fail = 1;
+    const { store, calls } = setup({
+      wall2_onair_save_notes: () => 1,
+      wall2_onair_show: () => {
+        reads++;
+        if (fail-- > 0) throw 'failed';
+        return SHOW;
+      },
+    });
+    expect(await store.getState().saveNotes(['a'])).toBeNull();
+    expect(reads).toBe(2);
+    expect(store.getState().show).toEqual(SHOW);
+    fail = 5;
+    expect(await store.getState().saveNotes(['a'])).toBe('Saved, but the list could not refresh');
+    expect(reads).toBe(4);
+    expect(calls.filter((c) => c.command === 'wall2_onair_save_notes')).toHaveLength(2);
   });
 });

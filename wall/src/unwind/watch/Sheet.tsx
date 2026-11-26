@@ -6,6 +6,7 @@ import { tip } from '../../ui/HoverTip';
 import { LINES_TITLE, LinesPanel } from './LinesPanel';
 import { LIGHTS_TITLE, LightsPanel } from '../../studio/lightsync/LightsPanel';
 import { LookTunePanel } from './LookTunePanel';
+import { useListEdge } from '../../ui/useListEdge';
 
 /** A small drawing of each look for its tile, as the approved settings sheet draws them. */
 function LookPicture({ look }: { look: LookId }) {
@@ -68,6 +69,8 @@ export function WatchSheet({ initial = 'looks' }: { initial?: 'looks' | 'lines' 
   const [tuned, setTuned] = useState<LookId | null>(null);
   const tuneLook: LookId = looks.mode === 'one' ? looks.all : tuned ?? (playing ? lookFor(looks, playing.kind) : looks.video);
   const ref = useRef<HTMLDivElement>(null);
+  // The Lines and Lights pages scroll inside the sheet (header and page switch stay put); the fade shows while more is below.
+  const edge = useListEdge([page]);
   const set = (next: Partial<LookSettings>) => useWatchStore.getState().setLooks({ ...looks, ...next });
   const close = () => useWatchStore.getState().setSheet(false);
 
@@ -112,7 +115,7 @@ export function WatchSheet({ initial = 'looks' }: { initial?: 'looks' | 'lines' 
         </button>
       </div>
       </div>
-      {page === 'lines' ? <LinesPanel /> : page === 'lights' ? <LightsPanel /> : <>
+      {page !== 'looks' ? <div key={page} className={`ln-body ${edge.className}`} ref={edge.ref} onScroll={edge.onScroll}>{page === 'lines' ? <LinesPanel /> : <LightsPanel />}</div> : <>
       <div className="w-seg w-mode" role="radiogroup" aria-label="The same look for all, or each source its own">
         <button type="button" role="radio" aria-checked={looks.mode === 'one'} className={looks.mode === 'one' ? 'on' : ''} title="Every video, live stream and Twitch channel plays in the same look" onClick={() => set({ mode: 'one' })}>
           Same for all

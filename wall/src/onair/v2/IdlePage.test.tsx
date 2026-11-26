@@ -82,13 +82,13 @@ it('the Recording card says if the Camtasia Recorder is open, not open or not kn
 
 const SHOW_OK = { state: 'ok', title: 'Friday stream', parts: [{ name: 'Welcome', minutes: 5, notes: ['First note'] }, { name: 'Demo', minutes: 10, notes: ['Later note'] }], skipped: 0, reason: null, readAt: 1 } as const;
 
-it('names the first part and its notes even when the saved part is a later one', async () => {
-  useOnAirStore.setState({ saved: { ...IDLE, partIndex: 1 }, show: SHOW_OK as never });
+it('shows every note of the run of show as one list, and ignores a saved part index from an older version', async () => {
+  useOnAirStore.setState({ saved: { ...IDLE, partIndex: 1 } as never, show: SHOW_OK as never });
   render(<IdlePage now={Date.parse('2026-11-12T10:00:00-08:00')} last={null} onHold={() => undefined} />);
   await act(async () => undefined);
-  expect(screen.getByText('Next show notes \u00b7 Welcome')).toBeTruthy();
+  expect(screen.getByText('Next show notes')).toBeTruthy();
   expect(screen.getByText('First note')).toBeTruthy();
-  expect(screen.queryByText('Later note')).toBeNull();
+  expect(screen.getByText('Later note')).toBeTruthy();
 });
 
 it('says why there are no parts and Open file asks for the file: refused, failed read, failed open', async () => {

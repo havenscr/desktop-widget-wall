@@ -8,8 +8,8 @@ import { useWorkLayerStore } from './layerStore';
 /** The pointer shows the layer at once; it hides this long after the pointer and focus leave. */
 export const LAYER_CLOSE_MS = 1500;
 
-/** What keeps the layer down: a take (the video asking to be clicked), a dialog or a menu. The CSS in unwind-work.css names the same set. */
-export const SUPPRESS_SELECTOR = '.w-take, [role="dialog"], [role="menu"], .u-lib-menu, .watt-menu';
+/** What keeps the layer down: a take (the video asking to be clicked), a dialog or a menu (the keys row's own are exempt). The CSS in unwind-work.css names the same set. */
+export const SUPPRESS_SELECTOR = '.w-take, [role="dialog"]:not(.u-keys *), [role="menu"]:not(.u-keys *), .u-lib-menu, .watt-menu';
 
 /** True while something in SUPPRESS_SELECTOR is on the page. */
 export function useSuppressed(): boolean {
@@ -35,7 +35,7 @@ export function useSuppressed(): boolean {
 /**
  * The work layer's hold on the Unwind frame: the pointer or focus inside the frame shows it, and it hides
  * `LAYER_CLOSE_MS` after both leave. It stays hidden while the Watch controls rest or the sheet is open (a take, a
- * dialog or a menu do too, so the timeline, the keys and Next up all follow the one `shown` state). Spread `handlers` on the frame element, give `setEl` as its ref.
+ * dialog or a menu do too, so the timeline, the keys and Next up all follow the one `shown` state; the keys row's own menu and picker are exempt and hold it up through `held`). Spread `handlers` on the frame element, give `setEl` as its ref.
  */
 export function useWorkLayer(place: PlaceId) {
   const [el, setEl] = useState<HTMLElement | null>(null);
@@ -44,9 +44,12 @@ export function useWorkLayer(place: PlaceId) {
   const suppressed = useSuppressed();
   const on = place === 'unwind' && !rest && !sheet && !suppressed;
   const { active, handlers } = useHoverHold(el, { openMs: 0, closeMs: LAYER_CLOSE_MS, enabled: on });
+  // The keys row's menu, picker or rename popover holds the layer up while it is open (not over the sheet or a rest).
+  const held = useWorkLayerStore((s) => s.held);
+  const shown = on && (active || held);
   useEffect(() => {
-    useWorkLayerStore.setState({ shown: active });
+    useWorkLayerStore.setState({ shown });
     return () => useWorkLayerStore.setState({ shown: false });
-  }, [active]);
+  }, [shown]);
   return { setEl, handlers: place === 'unwind' ? handlers : {} };
 }

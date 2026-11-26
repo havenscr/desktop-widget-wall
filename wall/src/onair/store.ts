@@ -37,16 +37,16 @@ export interface OnAirState {
   /** Start the timer as if it began at `startedAt` (the broadcast's start). Only an idle timer; a running, stopped or full one is left alone. */
   startAt: (startedAt: number, now?: number) => void;
   stop: () => void;
-  /** Back to 00:00 and the first part. Only while stopped. */
+  /** Back to 00:00. Only while stopped. */
   reset: () => void;
-  /** Make part `index` current (held to the parts there are). */
-  goPart: (index: number) => void;
   /** Read the run of show, unless it was asked for less than five seconds ago. Answers whether a read started. */
   loadShow: () => Promise<boolean>;
   loadMarks: () => Promise<void>;
   /** One mark (a second within a second counts once). `showMs` is the time to write; the show timer's time when left out (the new On Air frame passes the take or talk time). */
   mark: (showMs?: number) => Promise<void>;
   open: (which: 'show' | 'marks') => Promise<void>;
+  /** Replace the notes in run-of-show.txt with these lines, then read the file again. Answers null when saved, else the one line saying why not. */
+  saveNotes: (lines: string[]) => Promise<string | null>;
 }
 
 /**
@@ -68,10 +68,6 @@ export function createOnAirStore(deps: OnAirDeps) {
       } catch {
         // Not kept across a reload this time; the timer still runs.
       }
-    };
-    const partCount = () => {
-      const show = get().show;
-      return show?.state === 'ok' ? show.parts.length : 0;
     };
     const settle = () => {
       const s = get().saved;
@@ -128,13 +124,6 @@ export function createOnAirStore(deps: OnAirDeps) {
         if (get().saved.running) return;
         save(m.IDLE);
       },
-      goPart: (index) => {
-        const s = get().saved;
-        const to = m.clampIndex(index, partCount());
-        // Compared with the part the page shows (the clamped index), never the raw stored one.
-        if (to === m.clampIndex(s.partIndex, partCount())) return;
-        save({ ...s, partIndex: to, partSinceMs: m.elapsedMs(s, deps.now()) });
-      },
       loadShow: async () => {
         const now = deps.now();
         if (now - lastRead < m.READ_FLOOR_MS) return false;
@@ -146,11 +135,6 @@ export function createOnAirStore(deps: OnAirDeps) {
           if (seq !== readSeq) return true;
           if (!m.isShow(answer)) throw new Error('failed');
           set({ show: answer, showError: null, reading: false });
-          // The current part follows the file: held to the parts there are, kept that way, and the
-          // time in the part starts again when that moves it.
-          const cur = get().saved;
-          const held = answer.state === 'ok' && answer.parts.length > 0 ? m.clampIndex(cur.partIndex, answer.parts.length) : cur.partIndex;
-          if (held !== cur.partIndex) save({ ...cur, partIndex: held, partSinceMs: m.elapsedMs(cur, deps.now()) });
         } catch (e) {
           if (seq !== readSeq) return true;
           set({ showError: m.showErrorText(e), reading: false });
@@ -171,17 +155,36 @@ export function createOnAirStore(deps: OnAirDeps) {
         if (get().marking || now - lastMark < m.MARK_QUIET_MS) return;
         lastMark = now;
         const st = get();
-        const parts = st.show?.state === 'ok' ? st.show.parts : [];
-        const part = parts[m.clampIndex(st.saved.partIndex, parts.length)]?.name ?? null;
         set({ marking: true });
         try {
-          const r = await deps.invoke<unknown>('wall2_onair_mark', { showMs: Math.max(0, Math.min(m.MAX_SHOW_MS, Math.floor(showMs ?? m.elapsedMs(st.saved, now)))), part });
+          const r = await deps.invoke<unknown>('wall2_onair_mark', { showMs: Math.max(0, Math.min(m.MAX_SHOW_MS, Math.floor(showMs ?? m.elapsedMs(st.saved, now)))), part: null });
           set(m.isMarkResult(r) ? { marks: r, marksDate: m.localDate(now), marksNote: null } : { marksNote: 'Could not write marks.txt' });
         } catch (e) {
           set({ marksNote: m.markErrorText(e) });
         } finally {
           set({ marking: false });
         }
+      },
+      saveNotes: async (lines) => {
+        try {
+          await deps.invoke('wall2_onair_save_notes', { lines });
+        } catch (e) {
+          return m.saveErrorText(e);
+        }
+        // Read the file again at once (once more if that fails); the editor closes only on a fresh answer.
+        for (let tries = 0; tries < 2; tries++) {
+          const seq = ++readSeq;
+          lastRead = deps.now();
+          try {
+            const answer = await deps.invoke<unknown>('wall2_onair_show');
+            if (!m.isShow(answer)) throw new Error('failed');
+            if (seq === readSeq) set({ show: answer, showError: null });
+            return null;
+          } catch {
+            // Try once more.
+          }
+        }
+        return m.SAVED_NOT_REFRESHED;
       },
       open: async (which) => {
         try {

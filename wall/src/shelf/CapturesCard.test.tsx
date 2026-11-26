@@ -908,3 +908,100 @@ it.each([
   fireEvent.contextMenu(screen.getByRole('button', { name: /App 2/ }));
   expect((screen.getByRole('menuitem', { name: 'Share link' }) as HTMLButtonElement).disabled).toBe(false);
 });
+
+const press = (el: Element, key: string) => fireEvent.keyDown(el, { key });
+const selectedIndex = () => rowButtons().findIndex((r) => r.getAttribute('aria-current') === 'true');
+
+it('Down and Up move the pick and the big picture, focus follows, and the list does not scroll', async () => {
+  const scroll = vi.fn();
+  Element.prototype.scrollIntoView = scroll;
+  const focus = vi.spyOn(HTMLElement.prototype, 'focus');
+  render(<CapturesCard />);
+  await screen.findByText('Title 0');
+  fireEvent.click(rowButtons()[0]);
+  rowButtons()[0].focus();
+  expect(fireEvent.keyDown(rowButtons()[0], { key: 'ArrowDown', cancelable: true })).toBe(false);
+  await screen.findByText('Title 1');
+  expect(selectedIndex()).toBe(1);
+  expect(document.activeElement).toBe(rowButtons()[1]);
+  press(rowButtons()[1], 'ArrowDown');
+  await screen.findByText('Title 2');
+  press(rowButtons()[2], 'ArrowUp');
+  await screen.findByText('Title 1');
+  expect(selectedIndex()).toBe(1);
+  expect(document.activeElement).toBe(rowButtons()[1]);
+  expect(calls).toEqual([]);
+  expect(scroll).toHaveBeenCalledTimes(3);
+  for (const a of scroll.mock.calls) expect(a[0]).toMatchObject({ block: 'nearest' });
+  expect(focus.mock.calls.filter((a) => (a[0] as FocusOptions | undefined)?.preventScroll === true)).toHaveLength(3);
+  delete (Element.prototype as { scrollIntoView?: unknown }).scrollIntoView;
+});
+
+it('a key that lands on the row already shown leaves no pending focus for later changes', async () => {
+  const scroll = vi.fn();
+  Element.prototype.scrollIntoView = scroll;
+  render(<CapturesCard />);
+  await screen.findByText('Title 0');
+  press(rowButtons()[0], 'Home');
+  press(rowButtons()[0], 'ArrowUp');
+  (document.activeElement as HTMLElement | null)?.blur();
+  fireEvent.click(screen.getByRole('button', { name: /Show: All/ }));
+  fireEvent.click(await screen.findByText('Video'));
+  await screen.findByText('Title 3');
+  fireEvent.click(screen.getByRole('button', { name: /Show: Video/ }));
+  fireEvent.click(await screen.findByText('All'));
+  await screen.findByText('Title 0');
+  expect(rowButtons()).toHaveLength(7);
+  expect(scroll).not.toHaveBeenCalled();
+  expect(document.activeElement).not.toBe(rowButtons()[0]);
+  delete (Element.prototype as { scrollIntoView?: unknown }).scrollIntoView;
+});
+
+it('only the picked row is in the tab order', async () => {
+  render(<CapturesCard />);
+  await screen.findByText('Title 0');
+  press(rowButtons()[0], 'ArrowDown');
+  await screen.findByText('Title 1');
+  expect(rowButtons().map((r) => r.tabIndex)).toEqual([-1, 0, -1, -1, -1, -1, -1]);
+});
+
+it('Home and End go to the first and last row, and the arrows stop at the ends', async () => {
+  render(<CapturesCard />);
+  await screen.findByText('Title 0');
+  press(rowButtons()[0], 'End');
+  await screen.findByText('Title 6');
+  expect(selectedIndex()).toBe(6);
+  expect(document.activeElement).toBe(rowButtons()[6]);
+  press(rowButtons()[6], 'ArrowDown');
+  expect(selectedIndex()).toBe(6);
+  press(rowButtons()[6], 'Home');
+  await screen.findByText('Title 0');
+  expect(selectedIndex()).toBe(0);
+  const ev = new KeyboardEvent('keydown', { key: 'ArrowUp', bubbles: true, cancelable: true });
+  rowButtons()[0].dispatchEvent(ev);
+  expect(ev.defaultPrevented).toBe(true);
+  expect(selectedIndex()).toBe(0);
+});
+
+it('the arrows follow the visible order after a sort change', async () => {
+  render(<CapturesCard />);
+  await screen.findByText('Title 0');
+  fireEvent.click(screen.getByRole('button', { name: /Newest first/ }));
+  await screen.findByText('Title 6');
+  expect(selectedIndex()).toBe(0);
+  press(rowButtons()[0], 'ArrowDown');
+  await screen.findByText('Title 5');
+  expect(rowButtons()[selectedIndex()].textContent).toContain('App 5');
+});
+
+it('the arrows follow the visible order after a filter change', async () => {
+  render(<CapturesCard />);
+  await screen.findByText('Title 0');
+  fireEvent.click(screen.getByRole('button', { name: /Show: All/ }));
+  fireEvent.click(await screen.findByText('Video'));
+  await screen.findByText('Title 3');
+  expect(rowButtons()).toHaveLength(1);
+  press(rowButtons()[0], 'ArrowDown');
+  press(rowButtons()[0], 'End');
+  expect(selectedIndex()).toBe(0);
+});

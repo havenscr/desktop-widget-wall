@@ -1065,3 +1065,112 @@ button.ws-play {
     transition: none;
   }
 }
+
+/* ---- Watch list: the chip row (filter chips, then the sort chip) and the narrowed list ---- */
+/* Under the head: top 47 of the card, 32 px tall, the list from 87. The chips scroll sideways and fade out at the
+   right edge; the sort chip (108 px) never moves. Text is 16 px or more; colours fade, nothing cuts. */
+.w-chiprow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 32px;
+  margin-top: 8px;
+  flex: none;
+}
+.w-chips {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  gap: 10px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  /* Room on every side for the 5 px focus ring, which a scroll box would clip; the margin gives the room back. */
+  padding: 6px;
+  margin: -6px;
+}
+/* The right-edge fade only while chips run past the edge. */
+.w-chips.over {
+  -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 24px), transparent);
+  mask-image: linear-gradient(90deg, #000 calc(100% - 24px), transparent);
+}
+.w-chips::-webkit-scrollbar {
+  display: none;
+}
+.w-chip,
+.w-sortchip {
+  height: 32px;
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  flex: none;
+  padding: 0 12px;
+  border-radius: 16px;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--tx);
+  font: 600 16px/1 var(--body);
+  white-space: nowrap;
+  transition: background-color 160ms ease, border-color 160ms ease, color 160ms ease;
+}
+.w-chip:hover,
+.w-sortchip:hover {
+  background: rgba(255, 255, 255, 0.09);
+}
+.w-chip.on,
+.w-sortchip.on {
+  color: #fff;
+  background: rgba(53, 230, 234, 0.18);
+  border-color: rgba(53, 230, 234, 0.6);
+}
+.w-chip:focus-visible,
+.w-sortchip:focus-visible {
+  outline: 3px solid var(--cyan);
+  outline-offset: 2px;
+}
+.w-chip-n {
+  color: #a39bc6;
+  font-weight: 500;
+}
+.w-chip.on .w-chip-n {
+  color: #fff;
+}
+.w-sortwrap {
+  position: relative;
+  flex: none;
+  width: 108px;
+}
+.w-sortchip {
+  width: 100%;
+  padding: 0 10px;
+  gap: 6px;
+}
+.w-sortmenu {
+  left: auto;
+  right: 0;
+  top: 38px;
+  width: 200px;
+  padding: 6px;
+}
+.w-sortmenu button {
+  height: 34px;
+}
+.w-card .w-chiprow + .w-list {
+  flex-basis: 160px;
+}
+.w-card.grown .w-chiprow + .w-list {
+  flex-basis: 400px;
+}
+.w-none {
+  padding: 10px 4px;
+  color: #a39bc6;
+  font: 500 16px/1.3 var(--body);
+  list-style: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  .w-chip,
+  .w-sortchip {
+    transition: none;
+  }
+}

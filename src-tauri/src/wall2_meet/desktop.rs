@@ -43,9 +43,9 @@ pub fn open_decision(classic_usable: bool, has_entry: bool, desktop_enabled: boo
 }
 
 /// Fixed target for the new Outlook app: its Calendar. New Outlook has no documented way to
-/// open one event, so a meeting click shows its Calendar. An open New Outlook window is raised
-/// instead (`wall2_keys::show_outlook_calendar`); this is only used when none is open, which
-/// starts it. Nothing from the page is ever added to it.
+/// open one event, so a meeting click shows its Calendar. An open New Outlook window already
+/// titled Calendar is raised (`wall2_keys::show_outlook_calendar`, which sends no key); this is
+/// used otherwise, which starts it or asks the running one to open its Calendar. Nothing from the page is ever added to it.
 pub const NEW_OUTLOOK_CALENDAR: &str = "outlookcal:";
 
 /// The documented mailto ProgId of the new Outlook (exact match, any letter case).

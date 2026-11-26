@@ -54,7 +54,7 @@ const states = [
  * In the page (self-contained: it is serialised into the page). With `wlcheck=now|long|rest` the left block while a
  * video plays: the title at most two lines and clamped when long, the channel on one line inside the block's 460 px,
  * text 16 px or more, the block clear of the picture's box, the list card, the tabs, the clock and the office slot
- * (y 662); at rest the channel line is invisible. With `wlcheck=offer` the paste offer: inside the card, clear of the
+ * (y 656); at rest the channel line is invisible. With `wlcheck=offer` the paste offer: inside the card, clear of the
  * list rows and the field, its button 32 to 40 px tall and every text 16 px or more.
  */
 const measureWatchList = () => {
@@ -118,7 +118,7 @@ const measureWatchList = () => {
     const sb = ((stage && stage.getAttribute('data-sky-box')) || '').split(',').map(Number);
     const keep = [['the picture box', sb.length === 4 && !sb.some(Number.isNaN) ? { l: sb[0], t: sb[1], r: sb[0] + sb[2], b: sb[1] + sb[3] } : null], ['the list card', (() => { const e = document.querySelector('.w-card'); return e ? R(e) : null; })()], ['the tabs', (() => { const e = document.querySelector('.u-tabs'); return e ? R(e) : null; })()], ['the clock', (() => { const e = document.querySelector('.clk'); if (!e) return null; const rg = document.createRange(); rg.selectNodeContents(e); return R(rg); })()]];
     for (const [name, box] of keep) if (box && meet(n, box)) fails.push('the left block ' + [n.l, n.t, n.r, n.b].map(Math.round).join(',') + ' overlaps ' + name);
-    if (n.b > 658.5) fails.push('the left block ends at y ' + Math.round(n.b) + ', into the office slot at y 662');
+    if (n.b > 652.5) fails.push('the left block ends at y ' + Math.round(n.b) + ', into the office slot at y 656');
     return { fails, mode };
   }
 };

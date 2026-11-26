@@ -140,10 +140,12 @@ impl BlobStore for MemoryBlobs {
 /// Windows Credential Manager: generic credentials, persisted for this machine and user.
 pub struct CredBlobs;
 
+#[cfg(windows)]
 fn wide(s: &str) -> Vec<u16> {
     s.encode_utf16().chain(std::iter::once(0)).collect()
 }
 
+#[cfg(windows)]
 impl BlobStore for CredBlobs {
     fn read(&self, target: &str) -> Fetch<Vec<u8>> {
         use windows::core::PCWSTR;
@@ -201,6 +203,18 @@ impl BlobStore for CredBlobs {
             let _ = CredDeleteW(PCWSTR(name.as_ptr()), CRED_TYPE_GENERIC, 0);
         }
     }
+}
+
+/// Not Windows: there is no Credential Manager, so nothing is stored and every read finds nothing.
+#[cfg(not(windows))]
+impl BlobStore for CredBlobs {
+    fn read(&self, _target: &str) -> Fetch<Vec<u8>> {
+        Fetch::Missing
+    }
+    fn write(&self, _target: &str, _data: &[u8]) -> bool {
+        false
+    }
+    fn remove(&self, _target: &str) {}
 }
 
 #[cfg(test)]

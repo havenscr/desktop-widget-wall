@@ -12,7 +12,7 @@ export const PAUSE_PRESS_ID = 'onair:rec-pause';
  * one action) and the result line that shows for a few seconds. The Pause tile learns here that Rust
  * took the press without an error, and only then does the take count as paused or resumed.
  */
-export function useDeckKeys() {
+export function useDeckKeys(done?: (id: string, ok: boolean) => void) {
   const { groups, failed } = useLibGroups();
   const [brief, showBrief] = useBrief();
   const sent = useCallback((id: string) => {
@@ -20,7 +20,7 @@ export function useDeckKeys() {
     if (useTakes.getState().takes.current?.pausedAt != null) noteResumed();
     else notePaused();
   }, []);
-  const { press, onKeyDown } = useKeyPress(showBrief, () => {}, sent);
+  const { press, onKeyDown } = useKeyPress(showBrief, () => {}, sent, done);
   return { groups, failed, brief, showBrief, press, onKeyDown };
 }
 

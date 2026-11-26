@@ -83,7 +83,7 @@ function pick(channelSet: boolean | null, state: string | null, chat: LiveChat |
 }
 
 /**
- * The comments card: the read-only YouTube chat while a show is live, and one quiet dashed card with one line and one button when
+ * The comments card: the read-only YouTube chat while a show is live, and one quiet solid card with one line and one button when
  * it cannot be read (no channel, signed out, refused). The channel field lives here, not in Tools. Chat text is shown from memory
  * and never written anywhere.
  */
@@ -100,7 +100,6 @@ export function Comments({ now, style, action }: { now: number; style?: React.CS
 
   let body: React.ReactNode;
   let right: string | undefined;
-  let dashed = true;
   if (editing) {
     body = <ChannelField firstTime={!named} onClose={() => setEditing(false)} />;
   } else if (view === 'reading') {
@@ -111,7 +110,7 @@ export function Comments({ now, style, action }: { now: number; style?: React.CS
         icon={<IconMessageCircle size={22} aria-hidden="true" />}
         line="Name your YouTube channel to show its comments here."
         button={
-          <button type="button" className="oa-btn cy" onClick={() => setEditing(true)} {...tip('Type the handle of the channel your shows go out on')}>
+          <button type="button" className="oa-btn cy" onClick={() => setEditing(true)} {...tip('Pick the channel your shows go out on')}>
             Name channel
           </button>
         }
@@ -149,7 +148,6 @@ export function Comments({ now, style, action }: { now: number; style?: React.CS
   } else if (view === 'chatoff') {
     body = <Quiet icon={<IconMessageCircle size={22} aria-hidden="true" />} line="Chat is off for this broadcast" />;
   } else {
-    dashed = false;
     const messages = chat?.messages ?? [];
     const stale = chat !== null && chatStale(chat, now);
     const quota = chat?.state === 'quota';
@@ -192,7 +190,7 @@ export function Comments({ now, style, action }: { now: number; style?: React.CS
   }
   const showLine = noShow && named && !editing && view !== 'signed-out-card' && view !== 'reading';
   return (
-    <section className="panel oa2-b oa2-comments" data-view={view} data-dashed={dashed ? 'true' : 'false'} aria-label="Comments" style={style}>
+    <section className="panel oa2-b oa2-comments" data-view={view} aria-label="Comments" style={style}>
       <Head label="Comments" right={right} icon={<IconMessageCircle size={20} aria-hidden="true" />} action={action} />
       {body}
       {showLine && <ChannelLine title={channel?.title ?? null} onChange={() => setEditing(true)} />}

@@ -105,7 +105,7 @@ const rule = (variant, results, emit) => {
   } else if (!m.shownRow) fails.push('officemoods: the row is not shown in a state that must show it');
   else {
     const s = m.slot;
-    if (Math.abs(s.r - 2364) > 1 || Math.abs(s.t - 662) > 1 || Math.abs(s.h - 34) > 1) fails.push('officemoods: the row is at right edge ' + r1(s.r) + ', top ' + r1(s.t) + ', ' + r1(s.h) + ' tall (2364, 662, 34)');
+    if (Math.abs(s.r - 2364) > 1 || Math.abs(s.t - 656) > 1 || Math.abs(s.h - 34) > 1) fails.push('officemoods: the row is at right edge ' + r1(s.r) + ', top ' + r1(s.t) + ', ' + r1(s.h) + ' tall (2364, 656, 34)');
     if (s.l < 1239.5) fails.push('officemoods: the row starts at x ' + r1(s.l) + ' (1240 at most to the left)');
     if (m.pointer !== 'none') fails.push('officemoods: the row box takes the pointer');
     for (const c of m.chips) {
@@ -150,7 +150,7 @@ const rule = (variant, results, emit) => {
     else if (ln && !WARN_V.includes(variant.name) && !variant.name.endsWith(NAMES.refused)) fails.push('officemoods: a plain status line is drawn above the row (the status is a hidden live region)');
     else if (ln) {
       if (ln.r > 1695.5) fails.push('officemoods: the line ends at x ' + r1(ln.r) + ' (1695 at most, 12 px left of the tall Spotify panel)');
-      if (Math.abs(ln.t - 630) > 1 || ln.b > 656.5) fails.push('officemoods: the line is at y ' + r1(ln.t) + ' to ' + r1(ln.b) + ' (630 to 656)');
+      if (Math.abs(ln.t - 624) > 1 || ln.b > 650.5) fails.push('officemoods: the line is at y ' + r1(ln.t) + ' to ' + r1(ln.b) + ' (624 to 650)');
       if (ln.l < 934.5) fails.push('officemoods: the line starts at x ' + r1(ln.l) + ' (935 at least, clear of the status line)');
       if (ln.b > s.t - 3) fails.push('officemoods: the line is not clear of the row (ends y ' + r1(ln.b) + ', the row starts ' + r1(s.t) + ')');
       if (m.lineCs && (m.lineCs.ws !== 'nowrap' || m.lineCs.ov !== 'ellipsis')) fails.push('officemoods: the line is not one line with an ellipsis');
@@ -163,7 +163,7 @@ const rule = (variant, results, emit) => {
   if (fails.length) return true;
   emit(variant.name === HIDDEN_V
     ? '  ok   officemoods: the slot is the empty 420 by 34 aria-hidden box with no line'
-    : '  ok   officemoods: the row is at right edge 2364, top 662, 34 tall, from x 1240 or more; chips 34 tall and 76 or wider; an amber line (refusals and failures only) inside x 935 to 1695, y 630 to 656; nothing else draws inside either; text 16 px or more');
+    : '  ok   officemoods: the row is at right edge 2364, top 656, 34 tall, from x 1240 or more; chips 34 tall and 76 or wider; an amber line (refusals and failures only) inside x 935 to 1695, y 624 to 650; nothing else draws inside either; text 16 px or more');
   return false;
 };
 

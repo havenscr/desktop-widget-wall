@@ -1,3 +1,5 @@
+import css from '../../styles/onair2.css?raw';
+import workCss from '../../styles/work.css?raw';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { LIBRARY_DATA } from '../../bridge/devMocks/libraryData';
@@ -84,10 +86,13 @@ it('draws the Live page: chip, comments newest at the bottom, the foot, and the 
   // Comment rows are not buttons: the heading's expand button is the card's only button.
   expect(document.querySelectorAll('.oa2-comments button:not(.oa2-exp)').length).toBe(0);
   expect(document.querySelectorAll('.oa2-comments .oa2-exp').length).toBe(1);
-  await waitFor(() => expect(screen.getByText(/^Part 1 of 2: Load the data/)).toBeTruthy());
-  // The studio keys: four StreamYard keys in row 1 and three in row 2; the prompter box holds the pop-out controls and the status block is drawn.
-  expect(document.querySelectorAll('.oa2-studiokeys .oa2-skrow1 .key-tile').length).toBe(4);
-  expect(document.querySelectorAll('.oa2-studiokeys .oa2-skrow2 .key-tile').length).toBe(3);
+  // No Part line and no part arrows: the run line is hidden and the notes are one list.
+  await waitFor(() => expect(document.querySelectorAll('.oa2-livenotes .oa-note').length).toBeGreaterThan(0));
+  expect((document.querySelector('.oa2-runline') as HTMLElement).hidden).toBe(true);
+  expect(screen.queryByText(/^Part \d+ of \d+/)).toBeNull();
+  expect(screen.queryByRole('button', { name: /(Previous|Next) part/ })).toBeNull();
+  // The studio keys: eight equal keys; the prompter box holds the pop-out controls and the status block is drawn.
+  expect(document.querySelectorAll('.oa2-studiokeys .oa2-skgrid .key-tile').length).toBe(8);
   expect(document.querySelector('.oa2-stagepop')).not.toBeNull();
   expect(document.querySelector('.oa2-empty-live')).toBeNull();
   expect(document.querySelector('.oa2-studiostatus')).not.toBeNull();
@@ -139,47 +144,153 @@ it('says so when the comments cannot be read: no channel, signed out, refused', 
   await waitFor(() => expect(screen.getByText('YouTube would not let the wall read this chat.')).toBeTruthy());
 });
 
-it('the channel field: empty, an unknown name, a good name, and Escape closes the field only', async () => {
+it('the channel chips: a tap sends that handle, the lit chip follows the saved channel, no text field', async () => {
   channelSet = false;
   status = live({ state: 'not-set-up', chat: false });
   await open();
   fireEvent.click(await screen.findByRole('button', { name: 'Name channel' }));
-  const field = screen.getByLabelText('YouTube channel') as HTMLInputElement;
-  expect(screen.getByRole('button', { name: 'Save' }).getAttribute('aria-disabled')).toBe('true');
-  setChannelAnswer = () => {
-    throw 'not found';
-  };
-  fireEvent.change(field, { target: { value: '@nobody' } });
-  fireEvent.click(screen.getByRole('button', { name: 'Save' }));
-  await waitFor(() => expect(screen.getByText('YouTube has no channel with that handle')).toBeTruthy());
-  setChannelAnswer = () => ({ set: true, title: 'Sample Studio' });
-  status = live({ state: 'none', chat: false });
-  fireEvent.change(field, { target: { value: '@sample' } });
-  fireEvent.click(screen.getByRole('button', { name: 'Save' }));
-  await waitFor(() => expect(screen.getByText('Channel: Sample Studio')).toBeTruthy());
-  expect(screen.getByRole('button', { name: 'Change' })).toBeTruthy();
-  fireEvent.click(screen.getByRole('button', { name: 'Change' }));
-  fireEvent.keyDown(screen.getByLabelText('YouTube channel'), { key: 'Escape' });
+  expect(document.querySelector('.oa2-chf input')).toBeNull();
   expect(screen.queryByLabelText('YouTube channel')).toBeNull();
+  const ae = screen.getByRole('button', { name: 'Analytic Endeavors' });
+  const hc = screen.getByRole('button', { name: 'Havens Consulting' });
+  expect(ae.getAttribute('data-lit')).toBe('false');
+  const sent: unknown[] = [];
+  mocks.set('wall2_ytlive_set_channel', (args) => {
+    sent.push((args as { text: string }).text);
+    return setChannelAnswer();
+  });
+  setChannelAnswer = () => ({ set: true, title: 'Havens Consulting' });
+  status = live({ state: 'none', chat: false });
+  fireEvent.click(hc);
+  await waitFor(() => expect(screen.getByText('Channel: Havens Consulting')).toBeTruthy());
+  expect(sent).toEqual(['@HavensConsulting']);
+  fireEvent.click(screen.getByRole('button', { name: 'Change' }));
+  expect(screen.getByRole('button', { name: 'Havens Consulting' }).getAttribute('data-lit')).toBe('true');
+  expect(screen.getByRole('button', { name: 'Analytic Endeavors' }).getAttribute('data-lit')).toBe('false');
+  setChannelAnswer = () => ({ set: true, title: 'Analytic Endeavors' });
+  fireEvent.click(screen.getByRole('button', { name: 'Analytic Endeavors' }));
+  await waitFor(() => expect(screen.getByText('Channel: Analytic Endeavors')).toBeTruthy());
+  expect(sent).toEqual(['@HavensConsulting', '@AnalyticEndeavors']);
+  fireEvent.click(screen.getByRole('button', { name: 'Change' }));
+  fireEvent.keyDown(screen.getByRole('button', { name: 'Analytic Endeavors' }), { key: 'Escape' });
+  expect(screen.queryByRole('button', { name: 'Havens Consulting' })).toBeNull();
   expect(document.querySelector('.oa2-comments')).not.toBeNull();
 });
 
-it('an invalid channel text shows the fixed words, and a failure shows the generic line', async () => {
+it('a refused chip shows the fixed words, and a failure shows the generic line', async () => {
   channelSet = false;
   status = live({ state: 'not-set-up', chat: false });
   await open();
   fireEvent.click(await screen.findByRole('button', { name: 'Name channel' }));
-  fireEvent.change(screen.getByLabelText('YouTube channel'), { target: { value: 'hello' } });
   setChannelAnswer = () => {
-    throw 'invalid';
+    throw 'not found';
   };
-  fireEvent.click(screen.getByRole('button', { name: 'Save' }));
-  await waitFor(() => expect(screen.getByText('That is not a handle or a channel link')).toBeTruthy());
+  fireEvent.click(screen.getByRole('button', { name: 'Analytic Endeavors' }));
+  await waitFor(() => expect(screen.getByText('YouTube has no channel with that handle')).toBeTruthy());
   setChannelAnswer = () => {
     throw 'boom';
   };
-  fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Havens Consulting' }));
   await waitFor(() => expect(screen.getByText('Could not check the channel')).toBeTruthy());
+});
+
+it('the lit chip follows the stored handle, then falls back to the name inside a longer title', async () => {
+  const { litChip, HANDLE_KEY } = await import('./ChannelField');
+  expect(litChip('Analytic Endeavors LLC', null)).toBe(0);
+  expect(litChip('HAVENS CONSULTING | Power BI', null)).toBe(1);
+  expect(litChip('Sample Studio', null)).toBe(-1);
+  expect(litChip('Sample Studio', '@HavensConsulting')).toBe(1);
+  expect(litChip('Havens Consulting', '@analyticendeavors')).toBe(0);
+  expect(litChip(null, '@other')).toBe(-1);
+  // Stored handle wins in the card, even when the YouTube title names neither chip.
+  localStorage.setItem(HANDLE_KEY, '@AnalyticEndeavors');
+  channelSet = true;
+  status = live({ state: 'none', chat: false });
+  await open();
+  fireEvent.click(await screen.findByRole('button', { name: 'Change' }));
+  expect(screen.getByRole('button', { name: 'Analytic Endeavors' }).getAttribute('data-lit')).toBe('true');
+  expect(screen.getByRole('button', { name: 'Havens Consulting' }).getAttribute('data-lit')).toBe('false');
+  expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Analytic Endeavors' }));
+});
+
+it('a title with extra words lights its chip when nothing is stored, and the picker focuses the first chip when none is lit', async () => {
+  mocks.set('wall2_ytlive_channel', () => ({ set: true, title: 'Havens Consulting | Power BI' }));
+  status = live({ state: 'none', chat: false });
+  await open();
+  fireEvent.click(await screen.findByRole('button', { name: 'Change' }));
+  expect(screen.getByRole('button', { name: 'Havens Consulting' }).getAttribute('data-lit')).toBe('true');
+  expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Havens Consulting' }));
+  cleanup();
+  useYtLive.getState().reset();
+  mocks.set('wall2_ytlive_channel', () => ({ set: false, title: null }));
+  status = live({ state: 'not-set-up', chat: false });
+  await open();
+  fireEvent.click(await screen.findByRole('button', { name: 'Name channel' }));
+  expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Analytic Endeavors' }));
+});
+
+it('a tap while the channel is being checked is ignored', async () => {
+  channelSet = false;
+  status = live({ state: 'not-set-up', chat: false });
+  await open();
+  fireEvent.click(await screen.findByRole('button', { name: 'Name channel' }));
+  let release: () => void = () => {};
+  const sent: unknown[] = [];
+  mocks.set('wall2_ytlive_set_channel', (args) => {
+    sent.push((args as { text: string }).text);
+    return new Promise((r) => {
+      release = () => r({ set: true, title: 'Analytic Endeavors' });
+    });
+  });
+  fireEvent.click(screen.getByRole('button', { name: 'Analytic Endeavors' }));
+  await waitFor(() => expect(screen.getByText('Checking the channel')).toBeTruthy());
+  fireEvent.click(screen.getByRole('button', { name: 'Havens Consulting' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Analytic Endeavors' }));
+  expect(sent).toEqual(['@AnalyticEndeavors']);
+  status = live({ state: 'none', chat: false });
+  await act(async () => release());
+  await waitFor(() => expect(screen.getByText('Channel: Analytic Endeavors')).toBeTruthy());
+});
+
+const norm = (t: string) => t.replace(/\r\n/g, '\n');
+
+it('the comments card is solid in every state: no dashed attribute and no transparent rule, with the panel background present', async () => {
+  const sheet = norm(css);
+  const work = norm(workCss);
+  expect(sheet).toMatch(/\.oa2 \.oa2-comments \{[^}]*left: 676px/);
+  expect(work).toMatch(/\n\.panel \{[^}]*background: linear-gradient/);
+  expect(sheet).not.toMatch(/oa2-comments\[data-dashed/);
+  expect(sheet).not.toMatch(/\.oa2-comments[^{]*\{[^}]*(transparent|dashed)/);
+  const states: [LiveStatus, boolean][] = [
+    [live({ state: 'not-set-up', chat: false }), false],
+    [live({ state: 'live' }), true],
+  ];
+  for (const [st, set] of states) {
+    channelSet = set;
+    status = st;
+    useYtLive.getState().reset();
+    const r = await open();
+    await waitFor(() => expect(document.querySelector('.oa2-comments')).not.toBeNull());
+    const card = document.querySelector('.oa2-comments') as HTMLElement;
+    expect(card.hasAttribute('data-dashed')).toBe(false);
+    expect(card.style.background).toBe('');
+    r.unmount();
+  }
+  // The reading state: before the first status answer.
+  useYtLive.getState().reset();
+  mocks.set('wall2_ytlive_status', () => new Promise(() => {}));
+  localStorage.setItem(MODE_STORAGE_KEY, JSON.stringify({ held: 'live' }));
+  render(<OnAir2 />);
+  await waitFor(() => expect(document.querySelector('.oa2-comments')?.getAttribute('data-view')).toBe('reading'));
+  expect(document.querySelector('.oa2-comments')?.hasAttribute('data-dashed')).toBe(false);
+});
+
+it('the chip CSS is 16 px or more and never wraps', () => {
+  const sheet = norm(css);
+  const rule = /\.oa2 \.oa2-chip \{([^}]*)\}/.exec(sheet)?.[1] ?? '';
+  expect(rule).toMatch(/white-space: nowrap/);
+  const px = Number(/font: \d+ (\d+)px/.exec(rule)?.[1]);
+  expect(px).toBeGreaterThanOrEqual(16);
 });
 
 it('starts the timer from the broadcast start once, only when idle, and never again after a Reset', async () => {

@@ -20,12 +20,13 @@ import {
   IconVolume,
   IconVolumeOff,
 } from '@tabler/icons-react';
-import { useCallback, useEffect, useRef, useState, type MouseEvent } from 'react';
+import { useCallback, useEffect, useRef, useState, type KeyboardEvent, type MouseEvent } from 'react';
 import { SHARE_LINES, shareCapture, shareWordOf } from '../bridge/share';
 import { invoke } from '../bridge/tauri';
 import { hover } from '../tools/hover';
 import { useDisplayDark } from '../ui/useDisplayDark';
 import { useListEdge } from '../ui/useListEdge';
+import { useReducedMotion } from '../ui/useReducedMotion';
 import { useVisible } from '../ui/useVisible';
 import { useBrief } from '../work/useBrief';
 import { CapMenu, type CapMenuItem } from './CapMenu';
@@ -244,6 +245,8 @@ function Row({ c, selected, onPick, onMenu }: { c: Capture; selected: boolean; o
       ref={ref}
       type="button"
       className={`cap-row${c.exists ? '' : ' gone'}${selected ? ' sel' : ''}`}
+      data-cap={c.id}
+      tabIndex={selected ? 0 : -1}
       aria-current={selected ? 'true' : undefined}
       onClick={onPick}
       onContextMenu={onMenu}
@@ -326,6 +329,32 @@ export function CapturesCard() {
   useEffect(() => trimThumbs(shown.map((c) => c.id)), [items, sort, filter]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const edge = useListEdge([shown.length, filter, sort]);
+  const reduced = useReducedMotion();
+
+  // Up, Down, Home and End move the pick through the rows as shown (sort and filter order), without wrapping.
+  // The id waits here until the new row has drawn, then it takes focus and scrolls into view.
+  const moveTo = useRef<string | null>(null);
+  const onRowsKey = (e: KeyboardEvent<HTMLDivElement>) => {
+    if (e.altKey || e.ctrlKey || e.metaKey || e.shiftKey || !big) return;
+    const at = shown.findIndex((c) => c.id === big.id);
+    const to = e.key === 'ArrowDown' ? at + 1 : e.key === 'ArrowUp' ? at - 1 : e.key === 'Home' ? 0 : e.key === 'End' ? shown.length - 1 : null;
+    if (to === null) return;
+    e.preventDefault();
+    const next = shown[Math.min(Math.max(to, 0), shown.length - 1)];
+    if (!next || next.id === big.id) return;
+    moveTo.current = next.id;
+    setPicked(next.id);
+  };
+  const bigId = big?.id;
+  useEffect(() => {
+    const id = moveTo.current;
+    moveTo.current = null;
+    if (id === null || id !== bigId) return;
+    const row = Array.from(card.current?.querySelectorAll<HTMLElement>('.cap-row') ?? []).find((r) => r.dataset.cap === id);
+    if (!row) return;
+    row.focus({ preventScroll: true });
+    if (typeof row.scrollIntoView === 'function') row.scrollIntoView({ block: 'nearest', behavior: reduced ? 'auto' : 'smooth' });
+  }, [bigId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const act = (c: Capture, action: CaptureAction) => {
     invoke('wall2_captures_act', { id: c.id, action }).then(
@@ -460,9 +489,12 @@ export function CapturesCard() {
             </div>
           ) : null}
         </div>
-        <div ref={edge.ref} className={`cap-rows ${edge.className}`} role="group" aria-label="Captures" onScroll={edge.onScroll}>
+        <div ref={edge.ref} className={`cap-rows ${edge.className}`} role="group" aria-label="Captures" onScroll={edge.onScroll} onKeyDown={onRowsKey}>
           {shown.map((c) => (
-            <Row key={c.id} c={c} selected={c.id === big.id} onPick={() => setPicked(c.id)} onMenu={openCaptureMenu(c)} />
+            <Row key={c.id} c={c} selected={c.id === big.id} onPick={() => {
+                moveTo.current = null;
+                setPicked(c.id);
+              }} onMenu={openCaptureMenu(c)} />
           ))}
         </div>
       </div>

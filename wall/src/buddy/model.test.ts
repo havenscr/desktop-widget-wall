@@ -136,8 +136,8 @@ const UNWIND_WING_UPPER_BOTTOM = 414;
  */
 const UNWIND_MEASURED: Rect[] = [
   { left: 624, right: 848, top: 126, bottom: 350 }, // art
-  { left: 124, right: 594, top: 572, bottom: 626 }, // Tomorrow
-  { left: 124, right: 663, top: 662, bottom: 686 }, // status line
+  { left: 124, right: 594, top: 566, bottom: 620 }, // Tomorrow
+  { left: 124, right: 663, top: 656, bottom: 680 }, // status line
   { left: 691, right: 876, top: 648, bottom: 700 }, // Screens off
 ];
 
