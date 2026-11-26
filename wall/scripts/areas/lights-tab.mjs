@@ -62,6 +62,7 @@ export default {
   gallery: {
     states: [
       { screen: 'unwind', name: 'sheet pages: Looks', query: `hz=unwind&at=${encodeURIComponent(at)}&clock=review&weather=ok&audio=demo&desktoken=set&office=six&officeoff=offered&officemood=relax`, custom: true, expect: ['Same for all'], actions: '.w-gear >> .ln-pages button:nth-child(1)' },
+      { screen: 'unwind', name: 'sheet pages: Looks, scrolled to the bottom', query: `hz=unwind&at=${encodeURIComponent(at)}&clock=review&weather=ok&watch=mock&wlist=many&wplay=2&wsheet=kind&wtune=drivein.size=90`, custom: true, expect: ['Settings for'], actions: 'scrollend:.wk-rows' },
       { screen: 'unwind', name: 'sheet pages: Lines', query: `hz=unwind&at=${encodeURIComponent(at)}&clock=review&weather=ok&audio=demo&desktoken=set&office=six&officeoff=offered&officemood=relax`, custom: true, expect: ['How lively'], actions: '.w-gear' },
       { screen: 'unwind', name: 'sheet pages: Vibe', query: `hz=unwind&at=${encodeURIComponent(at)}&clock=review&weather=ok&audio=demo&desktoken=set&office=six&officeoff=offered&officemood=relax`, custom: true, expect: ['Auto vibe', 'Music on other tabs'], actions: '.w-gear >> .ln-pages button:nth-child(3)' },
       { screen: 'unwind', name: 'sheet pages: Vibe, scrolled to the bottom', query: `hz=unwind&at=${encodeURIComponent(at)}&clock=review&weather=ok&audio=demo&desktoken=set&office=six&officeoff=offered&officemood=relax`, custom: true, expect: ['Music on other tabs'], actions: '.w-gear >> .ln-pages button:nth-child(3) >> scrollend:.w-sheet > .ln-body' },

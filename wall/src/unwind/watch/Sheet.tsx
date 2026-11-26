@@ -97,7 +97,7 @@ export function WatchSheet({ initial = 'looks' }: { initial?: 'looks' | 'lines' 
   const yt = saved.filter((i) => i.kind !== 'twitch').length;
   const tw = saved.length - yt;
   return (
-    <div className={`w-sheet${page === 'lines' ? ' ln-sheet' : page === 'vibe' ? ' ln-sheet' : page === 'lights' ? ' ln-sheet ls-sheet' : ' w-tune'}`} role="dialog" aria-label={title} ref={ref} tabIndex={-1}>
+    <div className={`w-sheet${page === 'lines' || page === 'vibe' ? ' ln-sheet' : page === 'lights' ? ' ln-sheet ls-sheet' : ' w-tune'}`} role="dialog" aria-label={title} ref={ref} tabIndex={-1}>
       <button type="button" className="w-x" aria-label="Close" title="Close" onClick={close}>
         <IconX size={22} aria-hidden="true" />
       </button>

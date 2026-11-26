@@ -1762,7 +1762,6 @@
 /* The switch sits in the heading row, left of the close cross, so the Looks side keeps main's layout. */
 .w-seg.ln-pages {
   flex: none;
-  width: 184px;
   padding: 3px;
 }
 /* The heading row: the title takes what the switch leaves (two lines at most, the full title in its tip), the

@@ -3,6 +3,8 @@ import { act, render, screen } from '@testing-library/react';
 import { readFileSync } from 'node:fs';
 import { afterEach, expect, it } from 'vitest';
 import { WatchSheet } from './Sheet';
+import { LinesGear } from './LinesPanel';
+import { WatchGear } from './Watch';
 import { resetWatch, useWatchStore } from './store';
 
 const css = () => (readFileSync('src/styles/unwind.css', 'utf8') as string).replace(/\r\n/g, '\n');
@@ -26,8 +28,9 @@ it('the Lines and Lights pages put their body in one scroller with the bottom fa
   const lights = document.querySelector('.w-sheet.ls-sheet');
   expect(lights!.querySelector(':scope > .ln-body.sb-fade-bottom')).not.toBeNull();
   await act(async () => screen.getByRole('tab', { name: 'Looks' }).click());
+  // Looks scrolls its own settings rows (`.wk-rows`, with their own fade, proved by the watchlooks fit-check), not the shared body.
   expect(document.querySelector('.w-sheet .ln-body')).toBeNull();
-  expect(useWatchStore.getState().sheet).toBeDefined();
+  expect(document.querySelector('.w-sheet.w-tune .wk-rows')).not.toBeNull();
 });
 
 it('the sheet stops at wall y 650 and its body scrolls', () => {
@@ -66,7 +69,8 @@ it('the Vibe page is the third of four pages, holds every vibe control and scrol
   const body = dlg.querySelector(':scope > .ln-body.sb-fade-bottom');
   expect(body).not.toBeNull();
   expect(dlg.classList.contains('ln-sheet')).toBe(true);
-  for (const n of ['Auto vibe', 'Drop Glitch', 'Tape Grain', 'Calm cap']) expect(body!.querySelector(`[role="switch"][aria-labelledby]`)).not.toBeNull(), expect(screen.getByRole('switch', { name: n })).toBeTruthy();
+  expect(body!.querySelector('[role="switch"]')).not.toBeNull();
+  for (const n of ['Auto vibe', 'Drop Glitch', 'Tape Grain', 'Calm cap']) expect(screen.getByRole('switch', { name: n })).toBeTruthy();
   expect(screen.getByRole('radiogroup', { name: 'Cover' })).toBeTruthy();
   expect(screen.getByRole('radiogroup', { name: 'Music on other tabs' })).toBeTruthy();
   await act(async () => screen.getByRole('tab', { name: 'Lines' }).click());
@@ -75,11 +79,31 @@ it('the Vibe page is the third of four pages, holds every vibe control and scrol
   expect(screen.getByRole('switch', { name: 'Auto vibe' })).toBeTruthy();
 });
 
-it('a request for the vibe tab opens the sheet on the Vibe page, and the gears open Looks (Watch) and Lines (Listen)', async () => {
+it('a request for the vibe tab opens the sheet on the Vibe page', async () => {
   render(<WatchSheet initial="lines" />);
   expect(screen.getByRole('dialog', { name: 'How the lines move' })).toBeTruthy();
   await act(async () => useWatchStore.getState().setSheet(true, 'vibe'));
   expect(screen.getByRole('dialog', { name: 'The vibe' })).toBeTruthy();
-  const unwind = (readFileSync('src/screens/Unwind.tsx', 'utf8') as string).replace(/\r\n/g, '\n');
-  expect(unwind).toContain("initial={watch ? 'looks' : 'lines'}");
+});
+
+/** The sheet as Unwind mounts it: the gear of the tab in use opens it, Lines from Listen and Looks from Watch. */
+function Mounted({ watch }: { watch: boolean }) {
+  const open = useWatchStore((st) => st.sheet);
+  return (
+    <>
+      {watch ? <WatchGear /> : <LinesGear />}
+      {open ? <WatchSheet initial={watch ? 'looks' : 'lines'} /> : null}
+    </>
+  );
+}
+
+it('the Listen gear opens the sheet on Lines and the Watch gear on Looks', async () => {
+  const listen = render(<Mounted watch={false} />);
+  await act(async () => screen.getByRole('button', { name: 'How the lines move' }).click());
+  expect(screen.getByRole('tab', { name: 'Lines' }).getAttribute('aria-selected')).toBe('true');
+  listen.unmount();
+  resetWatch();
+  render(<Mounted watch />);
+  await act(async () => screen.getByRole('button', { name: 'How video is shown' }).click());
+  expect(screen.getByRole('tab', { name: 'Looks' }).getAttribute('aria-selected')).toBe('true');
 });

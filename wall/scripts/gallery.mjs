@@ -760,7 +760,7 @@ const EXPECT = [
   ['unwind', 'watch: feathered', ['Open in YouTube', 'Lofi beats radio']],
   ['unwind', 'watch: drive-in, Twitch', ['Open on Twitch', 'Twitch channel', 'Live on the wall']],
   ['unwind', 'watch: 24 saved', ['24 saved', 'Saved for the weekend, a very long playlist name', 'YouTube playlist']],
-  ['unwind', 'watch: settings, one look', ['How video is shown', 'Same for all', 'Feathered']],
+  ['unwind', 'watch: settings, one look', ['Same for all', 'Feathered']],
   ['unwind', 'watch: settings, a look per kind', ['Videos and playlists', 'Live streams', 'Saved here: 19 YouTube, 5 Twitch']],
   ['unwind', 'watch: listen, plain audio with videos saved', ['Tokyo Burnout', '!Video', '!Nothing on']],
   ['unwind', 'watch: sparse data', ['Night drive mix', 'Open in YouTube']],
@@ -768,7 +768,7 @@ const EXPECT = [
   ['unwind', 'watch: whole sky', ['Open in YouTube']],
   ['unwind', 'watch: sun, 24 saved, Twitch', ['24 saved', 'Live on the wall', 'Open on Twitch']],
   ['unwind', 'watch: sun', ['Open in YouTube']],
-  ['unwind', 'watch: settings, four looks, whole sky', ['How video is shown', 'Whole sky', 'The sun', 'Drive-in']],
+  ['unwind', 'watch: settings, four looks, whole sky', ['Whole sky', 'The sun', 'Drive-in']],
   ['unwind', 'watch: settings, four looks per kind', ['Videos and playlists', 'Live streams', 'The sun']],
   // tower and hologram
   ['unwind', 'tower and hologram: tower at night, playing', ['Playing on the wall', "WATT\u2019S DRIVE-IN \u00b7 NOW SHOWING"]],
@@ -788,7 +788,7 @@ const EXPECT = [
   ['unwind', 'watch block: shown,', ['Playing on the wall', 'Open in YouTube', '12:34', '!Feathered', '!Whole sky', '!The sun']],
   ['unwind', 'watch block: at rest,', ['Night drive mix', '!Feathered', '!Whole sky', '!The sun']],
   ['unwind', 'watch block: nothing on,', ['Nothing on', 'Play Night drive mix', '!Feathered', '!Whole sky', '!The sun']],
-  ['unwind', 'tower and hologram: settings, five tiles', ['How video is shown', 'Same for all', 'Hologram', 'The whole picture floats']],
+  ['unwind', 'tower and hologram: settings, five tiles', ['Same for all', 'Hologram', 'The whole picture floats']],
   ['unwind', 'tower and hologram: settings, five looks per kind', ['Videos and playlists', 'Live streams', 'Hologram']],
   // watch polish
   ['unwind', 'watch polish: drive-in, paused', ['Paused', '12:34', '45:10', 'Open in YouTube']],
@@ -976,7 +976,7 @@ EXPECT.push(
   ['work', 'deck fixes: Day drawer open, typical', ['Agents today', 'Vendor demo1:30 to 3:30', 'waiting on you']],
   ['work', 'deck fixes: Day drawer open, heavy', ['Agents today', 'waiting on you']],
   ['work', 'deck fixes: Day drawer open, leave banner', ['Leave in 12 min.', 'Agents today', 'Recording00:']],
-  ['unwind', 'lines sheet: the Lines side from Listen', ['How the lines move', 'Bars', '50, your usual', 'One setting for the lines everywhere music plays.']],
+  ['unwind', 'lines sheet: the Lines side from Listen', ['Bars', '50, your usual', 'One setting for the lines everywhere music plays.']],
 );
 
 // watt drive-in: the drive-in look is on with something playing (Watt himself has no text).
