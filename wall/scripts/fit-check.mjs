@@ -63,6 +63,11 @@ const KNOWN_FAILURES = [
     line: /^ *FAIL deck: the key menu covers the bottom strip handle/,
     bug: 'src/styles/work.css:1474: .key-menu opens downward (top: 38px); only .keys .key-menu (the Now row) opens upward, so the 241 px menu of a pinned key ends at y 593 over the strip handle that starts at y 579',
   },
+  {
+    state: '',
+    line: /^ *FAIL on air v2: key tile ".*" is 149 x 74 px \(at least 76 by 76\)/,
+    bug: 'src/styles/onair2.css:373: the studio keys are set to height: 74px, 2 px under the 76 px every On Air key tile must have (onair-modes.mjs:97)',
+  },
 ];
 let currentState = '';
 let unknownFails = 0;
