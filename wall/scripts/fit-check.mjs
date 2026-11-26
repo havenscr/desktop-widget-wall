@@ -201,6 +201,7 @@ const EXPECT = {
   'lines-size': /^ *FAIL lines: the sheet is \d+ px tall/m,
   'lines-control': /^ *FAIL lines: control ".*" is [\d.]+ px tall/m,
   'lines-text': /^ *FAIL lines: text under 16 px /m,
+  'lines-cut': /^ *FAIL lines: text is cut /m,
   'card-end': /^ *FAIL card right end on card \d+: /m,
   'spotify-copy': /^ *FAIL copy: Spotify message is cut/m,
   'account-copy': /^ *FAIL copy: account message is cut/m,
@@ -358,6 +359,7 @@ const OVERFLOWS = {
   'lines-size': '.ln-panel { height: 900px !important; }',
   'lines-control': '.ln-chips button { height: 24px !important; }',
   'lines-text': '.ln-label { font-size: 12px !important; }',
+  'lines-cut': '.ln-label { width: 40px !important; overflow: hidden !important; text-overflow: ellipsis !important; }',
   'spotify-copy': '.sp-note { width: 80px !important; overflow: hidden !important; white-space: nowrap !important; }',
   'account-copy': '.tools-note { width: 80px !important; overflow: hidden !important; white-space: nowrap !important; }',
 };
@@ -1837,6 +1839,9 @@ try {
           if (!el || ![...el.childNodes].some((n) => n.nodeType === 3 && n.textContent.trim())) continue;
           const fs = parseFloat(getComputedStyle(el).fontSize);
           if (fs < 15.5) lines.push('lines: text under 16 px in "' + el.textContent.trim().slice(0, 30) + '" (' + fs + ' px)');
+          // No label, value or help line is ellipsized or clipped: its text fits its own box.
+          const cs = getComputedStyle(el);
+          if ((cs.overflowX !== 'visible' || cs.textOverflow === 'ellipsis') && el.scrollWidth > el.clientWidth + 1) lines.push('lines: text is cut in "' + el.textContent.trim().slice(0, 40) + '" (' + el.scrollWidth + ' px of ' + el.clientWidth + ')');
         }
       }
     }
@@ -2008,6 +2013,7 @@ try {
     'lines-size': (v) => v.name === 'Lines settings sheet',
     'lines-control': (v) => v.name === 'Lines settings sheet',
     'lines-text': (v) => v.name === 'Lines settings sheet',
+    'lines-cut': (v) => v.name === 'Lines settings sheet',
   };
   for (const [name, entry] of Object.entries(AREA_BREAKS)) BREAK_ON[name] = entry.appliesTo;
   const breakOn = BREAK_ON[overflow] ? VARIANTS.filter(BREAK_ON[overflow]) : VARIANTS.slice(0, 1);

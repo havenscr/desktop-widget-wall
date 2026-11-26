@@ -151,7 +151,6 @@ function VibeSwitch({ id, label, on, locked, words, hint, tipText, onToggle }: {
 function VibeSection() {
   const v = useVibeStore();
   const set = v.setVibe;
-  const cover = COVERS.find((x) => x.id === v.cover)!;
   return (
     <section className="ln-vibe" aria-labelledby="ln-vibe-head">
       <div className="ln-row ln-head">
@@ -192,7 +191,6 @@ function VibeSection() {
             </button>
           ))}
         </div>
-        <span className="ln-value ln-fill">{v.cover === DEFAULT_VIBE.cover ? 'your usual' : cover.name}</span>
       </div>
       <p className="ln-hint" id="ln-cover-hint">{VIBE_HINTS.cover}</p>
       <div className="ln-row">

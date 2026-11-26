@@ -1,10 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { CAMERAS } from './cameras';
 import { DEFAULT_VIBE, validateVibe } from './vibeSettings';
+import { visualizerWeight } from './echo';
 import { LEVEL_EASE_S, LEVEL_FRACTIONS, createLevelEase, fractionsAt, stepLevelEase, withMusicLevel, type MusicFractions } from './offTabMusic';
 
 const scratch = () => ({ ...CAMERAS.work });
-const fr = (pos: number): MusicFractions => fractionsAt(pos, { amp: 0, a: 0, n: 0, gp: 0 });
+const fr = (pos: number): MusicFractions => fractionsAt(pos, { amp: 0, a: 0, n: 0, gp: 0, vw: 0 });
 
 describe('music on other tabs: level to values', () => {
   it('Calm is the camera itself', () => {
@@ -22,6 +23,12 @@ describe('music on other tabs: level to values', () => {
     expect(c.eamp / CAMERAS.work.eamp).toBeGreaterThan(2.8);
     expect(c.eamp / CAMERAS.work.eamp).toBeLessThan(3.2);
     expect(c.ea).toBeCloseTo(0.66, 2);
+  });
+  it('cover colours and instrument follow: 0.6 on Medium, 1 on Full, apart from the line count', () => {
+    expect(visualizerWeight(CAMERAS.work)).toBe(0);
+    expect(visualizerWeight(withMusicLevel(CAMERAS.work, fr(1), 1, scratch()))).toBeCloseTo(0.6, 9);
+    expect(visualizerWeight(withMusicLevel(CAMERAS.work, fr(2), 1, scratch()))).toBe(1);
+    expect(visualizerWeight(withMusicLevel(CAMERAS.unwind, fr(1), 1, scratch()))).toBe(1);
   });
   it('at rest, and with no ripple, nothing moves; Unwind is unchanged at any level', () => {
     expect(withMusicLevel(CAMERAS.work, fr(2), 0, scratch())).toBe(CAMERAS.work);

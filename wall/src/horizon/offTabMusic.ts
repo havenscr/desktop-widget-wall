@@ -1,4 +1,5 @@
 import { CAMERAS, ease, type CameraPreset } from './cameras';
+import { visualizerWeight } from './echo';
 
 /** How strongly the music moves the ridgelines on every tab but Unwind: today's look, about 60 percent of Unwind, or Unwind's own strength. */
 export type MusicLevel = 'calm' | 'medium' | 'full';
@@ -19,11 +20,13 @@ export interface MusicFractions {
   a: number;
   n: number;
   gp: number;
+  /** Cover colours and instrument follow (`visualizerWeight`): 0.6 on Medium, not tied to the line count. */
+  vw: number;
 }
 export const LEVEL_FRACTIONS: Readonly<Record<MusicLevel, Readonly<MusicFractions>>> = {
-  calm: { amp: 0, a: 0, n: 0, gp: 0 },
-  medium: { amp: 0.6, a: 0.6, n: 0.375, gp: 0.6 },
-  full: { amp: 1, a: 1, n: 1, gp: 1 },
+  calm: { amp: 0, a: 0, n: 0, gp: 0, vw: 0 },
+  medium: { amp: 0.6, a: 0.6, n: 0.375, gp: 0.6, vw: 0.6 },
+  full: { amp: 1, a: 1, n: 1, gp: 1, vw: 1 },
 };
 
 const POS: Record<MusicLevel, number> = { calm: 0, medium: 1, full: 2 };
@@ -38,6 +41,7 @@ export function fractionsAt(pos: number, out: MusicFractions): MusicFractions {
   out.a = lo.a + (hi.a - lo.a) * k;
   out.n = lo.n + (hi.n - lo.n) * k;
   out.gp = lo.gp + (hi.gp - lo.gp) * k;
+  out.vw = lo.vw + (hi.vw - lo.vw) * k;
   return out;
 }
 
@@ -74,12 +78,14 @@ export function stepLevelEase(s: LevelEase, level: MusicLevel, dt: number, insta
  */
 export function withMusicLevel(camera: CameraPreset, f: MusicFractions, play: number, out: CameraPreset): CameraPreset {
   const w = Math.min(1, Math.max(0, camera.ea / 0.2)) * Math.min(1, Math.max(0, play));
-  if (w <= 0 || (f.amp <= 0 && f.a <= 0 && f.n <= 0 && f.gp <= 0)) return camera;
+  if (w <= 0 || (f.amp <= 0 && f.a <= 0 && f.n <= 0 && f.gp <= 0 && f.vw <= 0)) return camera;
   const u = CAMERAS.unwind;
   Object.assign(out, camera);
   out.eamp = camera.eamp + (u.eamp - camera.eamp) * f.amp * w;
   out.ea = camera.ea + (u.ea - camera.ea) * f.a * w;
   out.en = camera.en + (u.en - camera.en) * f.n * w;
   out.gp = camera.gp + (u.gp - camera.gp) * f.gp * w;
+  const base = visualizerWeight(camera);
+  out.vw = base + (1 - base) * f.vw * w;
   return out;
 }

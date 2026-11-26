@@ -1864,6 +1864,12 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
+/* Help prose wraps to a second line rather than being cut. */
+.ln-hint {
+  white-space: normal;
+  overflow: visible;
+  text-overflow: clip;
+}
 .ln-foot {
   margin-top: 4px;
 }

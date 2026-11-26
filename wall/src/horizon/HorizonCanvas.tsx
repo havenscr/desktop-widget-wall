@@ -209,7 +209,7 @@ export function HorizonCanvas({ now = Date.now }: { now?: () => number }) {
   const echoT = useRef(0);
   // Music on other tabs (`offTabMusic.ts`): the eased level, its fractions, how much music drives the lines, and a scratch camera.
   const levelEase = useRef(createLevelEase(vibeSettings().offTabMusic));
-  const level = useRef<MusicFractions>(fractionsAt(levelEase.current.pos, { amp: 0, a: 0, n: 0, gp: 0 }));
+  const level = useRef<MusicFractions>(fractionsAt(levelEase.current.pos, { amp: 0, a: 0, n: 0, gp: 0, vw: 0 }));
   const playWeight = useRef(0);
   const musicCam = useRef<CameraPreset>({ ...glide.current.to });
   const cap = useRef(createMountainCap());

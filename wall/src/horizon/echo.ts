@@ -61,7 +61,7 @@ const clamp01 = (v: number) => (v > 0 ? (v < 1 ? v : 1) : 0);
  * ease in and out on the way to and from Unwind instead of switching at one frame.
  */
 export function visualizerWeight(camera: CameraPreset): number {
-  return clamp01((camera.en - 3) / (VISUALIZER_EN - 3));
+  return camera.vw !== undefined ? clamp01(camera.vw) : clamp01((camera.en - 3) / (VISUALIZER_EN - 3));
 }
 
 /**
