@@ -7,12 +7,12 @@ import { resetAgents } from '../../agents/useAgents';
 import { mocks } from '../../bridge/tauri';
 import { useFocusStore } from '../../focus/store';
 import { useFixedClock, usePacificTime } from '../../ribbon/testZone';
-import { resetScrim } from '../../ribbon/DrawerScrim';
+import { DrawerScrim, resetScrim } from '../../ribbon/DrawerScrim';
 import { Frame } from '../../screens/Frame';
 import { resetWatch } from '../watch/store';
 import { useWatchRest } from '../watch/rest';
 import { useWorkLayerStore } from './layerStore';
-import { inLayerZone, LAYER_BAND_PX, LAYER_CLOSE_MS, SUPPRESS_SELECTOR } from './useWorkLayer';
+import { inLayerZone, LAYER_BAND_HYSTERESIS_PX, LAYER_BAND_PX, LAYER_CLOSE_MS, SUPPRESS_SELECTOR } from './useWorkLayer';
 
 usePacificTime();
 const t = (hm: string) => Date.parse(`2026-11-11T${hm}:00-08:00`);
@@ -24,6 +24,7 @@ const flush = async (ms = 0) => {
     await vi.advanceTimersByTimeAsync(ms);
   });
 };
+const layerEl = () => document.querySelector<HTMLElement>('.u-work')!;
 const main = () => document.querySelector<HTMLElement>('.main')!;
 const css = (f: string) => (readFileSync(new URL(f, import.meta.url), 'utf8') as string).replace(/\r\n/g, '\n');
 const SHEET = '../../styles/unwind-work.css';
@@ -39,7 +40,7 @@ beforeEach(() => {
   resetAgents();
   resetScrim();
   useWatchRest.setState({ rest: false, cardHeld: false });
-  useWorkLayerStore.setState({ shown: false, held: false });
+  useWorkLayerStore.setState({ shown: false, held: false, panel: false });
   mocks.set('wall2_meet_day', () => ({
     accounts: [{ id: 'work', label: 'Work', state: 'ok' }],
     events: ['a', 'b', 'c', 'd'].map((k) => ({ key: `d-${k}`, accountId: 'work', title: `Meeting ${k}`, start: iso('13:00'), end: iso('14:00'), canJoin: false, canOpen: true, isLive: false })),
@@ -79,14 +80,33 @@ describe('the hover answers only in the bottom band', () => {
     const el = document.createElement('div');
     el.getBoundingClientRect = () => ({ top: 0, bottom: 680, height: 680 }) as DOMRect;
     Object.defineProperty(el, 'offsetHeight', { value: 680 });
-    expect(inLayerZone(el, 100, el)).toBe(false);
+    expect(inLayerZone(el, 100, 100, el)).toBe(false);
     for (const cls of ['u-work', 'day-drawer', 'agents-today', 'u-foot', 'u-office-slot']) {
       const e = document.createElement('div');
       e.className = cls;
       const kid = document.createElement('span');
       e.append(kid);
-      expect(inLayerZone(el, 100, kid)).toBe(true);
+      expect(inLayerZone(el, 100, 100, kid)).toBe(true);
     }
+  });
+  it('the gap under a lifted box is inside the zone, and the band edge has a little hysteresis', () => {
+    const el = document.createElement('div');
+    el.getBoundingClientRect = () => ({ top: 0, bottom: 680, height: 680 }) as DOMRect;
+    Object.defineProperty(el, 'offsetHeight', { value: 680 });
+    const row = document.createElement('div');
+    row.className = 'u-foot';
+    row.getBoundingClientRect = () => ({ left: 0, right: 470, top: 440, bottom: 558, width: 470, height: 118 }) as DOMRect;
+    el.append(row);
+    // Over the lifted box's column, between its top and the band: held. Beside it, the same height: not.
+    expect(inLayerZone(el, 200, 500, el)).toBe(true);
+    expect(inLayerZone(el, 900, 500, el)).toBe(false);
+    expect(inLayerZone(el, 200, 430, el)).toBe(false);
+    // The band's edge: in at 140 px, and once in it holds a little higher.
+    const edge = 680 - LAYER_BAND_PX;
+    expect(inLayerZone(el, 900, edge - 1, el)).toBe(false);
+    expect(inLayerZone(el, 900, edge, el)).toBe(true);
+    expect(inLayerZone(el, 900, edge - LAYER_BAND_HYSTERESIS_PX + 1, el, true)).toBe(true);
+    expect(inLayerZone(el, 900, edge - LAYER_BAND_HYSTERESIS_PX - 1, el, true)).toBe(false);
   });
 });
 
@@ -116,10 +136,37 @@ describe('the row lifts with the layer', () => {
 });
 
 describe('the layer own panel and drawer', () => {
-  it('stay out of what takes the layer down, in the script and in the stylesheet', () => {
-    expect(SUPPRESS_SELECTOR).toContain(':not(.u-work *)');
-    expect(css(SHEET)).toContain("[role='dialog']:not(.u-keys *):not(.u-work *)");
-    expect(css(SHEET)).toContain("[role='menu']:not(.u-keys *):not(.u-work *)");
+  it('only the Day drawer and Agents today are exempt, by class, in the script and in the stylesheet', () => {
+    expect(SUPPRESS_SELECTOR).not.toContain('.u-work *');
+    for (const sel of [SUPPRESS_SELECTOR, css(SHEET)]) {
+      expect(sel).toContain(':not(.day-drawer)');
+      expect(sel).toContain(':not(.agents-today)');
+      expect(sel).toContain(':not(.u-keys *)');
+      expect(sel).not.toContain(':not(.u-work *)');
+    }
+  });
+  it('an unrelated dialog or menu inside the layer still takes it down; the layer own overlays do not', async () => {
+    render(<Frame place="unwind">x</Frame>);
+    await flush();
+    sizeFrame();
+    fireEvent.pointerMove(main(), { clientY: 650 });
+    await flush(100);
+    expect(useWorkLayerStore.getState().shown).toBe(true);
+    for (const own of ['<div class="agents-today" role="dialog"><div role="dialog" class="at-cal"></div></div>', '<div class="day-drawer" role="dialog"><div role="menu"></div></div>']) {
+      layerEl().insertAdjacentHTML('beforeend', own);
+      await flush(50);
+      expect(useWorkLayerStore.getState().shown).toBe(true);
+      layerEl().lastElementChild!.remove();
+      await flush(50);
+    }
+    for (const other of ['<div role="dialog"></div>', '<div role="menu"></div>']) {
+      layerEl().insertAdjacentHTML('beforeend', other);
+      await flush(50);
+      expect(useWorkLayerStore.getState().shown).toBe(false);
+      layerEl().lastElementChild!.remove();
+      await flush(50);
+      expect(useWorkLayerStore.getState().shown).toBe(true);
+    }
   });
   it('a click on the sessions line opens Agents today, the layer is held up and stays after the pointer leaves', async () => {
     mocks.set('wall2_omni_summary', () => summary({ day: [{ lane: 'a1b2c3d4-0001', start: iso('09:42'), end: null, kind: 'run' }] }));
@@ -133,7 +180,7 @@ describe('the layer own panel and drawer', () => {
     fireEvent.click(cell);
     await flush(50);
     expect(document.querySelector('.u-work .agents-today')).not.toBeNull();
-    expect(useWorkLayerStore.getState().held).toBe(true);
+    expect(useWorkLayerStore.getState().panel).toBe(true);
     expect(document.querySelector(SUPPRESS_SELECTOR)).toBeNull();
     fireEvent.pointerLeave(main());
     await flush(LAYER_CLOSE_MS + 600);
@@ -142,7 +189,7 @@ describe('the layer own panel and drawer', () => {
     fireEvent.keyDown(document.querySelector('.agents-today')!, { key: 'Escape' });
     await flush(LAYER_CLOSE_MS + 600);
     expect(document.querySelector('.agents-today')).toBeNull();
-    expect(useWorkLayerStore.getState().held).toBe(false);
+    expect(useWorkLayerStore.getState().panel).toBe(false);
   });
   it('a click on the more chip opens the Day drawer and holds the layer', async () => {
     render(<Frame place="unwind">x</Frame>);
@@ -155,9 +202,69 @@ describe('the layer own panel and drawer', () => {
     fireEvent.click(fold);
     await flush(50);
     expect(document.querySelector('.u-work .day-drawer')).not.toBeNull();
-    expect(useWorkLayerStore.getState().held).toBe(true);
+    expect(useWorkLayerStore.getState().panel).toBe(true);
     fireEvent.pointerLeave(main());
     await flush(LAYER_CLOSE_MS + 600);
+    expect(useWorkLayerStore.getState().shown).toBe(true);
+  });
+  it('the hold clears on an outside press, on leaving the place and on unmount', async () => {
+    mocks.set('wall2_omni_summary', () => summary({ day: [{ lane: 'a1b2c3d4-0001', start: iso('09:42'), end: null, kind: 'run' }] }));
+    const openPanel = async (ui: ReturnType<typeof render>) => {
+      await flush();
+      sizeFrame();
+      fireEvent.pointerMove(main(), { clientY: 650 });
+      await flush(100);
+      fireEvent.click(document.querySelector<HTMLElement>('.u-work .agent-row .ac, .u-work .ag-line')!);
+      await flush(50);
+      expect(useWorkLayerStore.getState().panel).toBe(true);
+      return ui;
+    };
+    // An outside press: the scrim closes the panel.
+    const a = render(
+      <>
+        <Frame place="unwind">x</Frame>
+        <DrawerScrim />
+      </>,
+    );
+    await openPanel(a);
+    fireEvent.pointerDown(document.querySelector('.drawer-scrim')!);
+    await flush(50);
+    expect(document.querySelector('.agents-today')).toBeNull();
+    expect(useWorkLayerStore.getState().panel).toBe(false);
+    a.unmount();
+    resetScrim();
+    // Leaving the place.
+    const b = render(<Frame place="unwind">x</Frame>);
+    await openPanel(b);
+    b.rerender(<Frame place="work">x</Frame>);
+    await flush(50);
+    expect(useWorkLayerStore.getState().panel).toBe(false);
+    b.unmount();
+    // Unmount.
+    const c = render(<Frame place="unwind">x</Frame>);
+    await openPanel(c);
+    c.unmount();
+    expect(useWorkLayerStore.getState().panel).toBe(false);
+  });
+  it('the keys row hold survives the timeline ribbon remounting and closing its panel', async () => {
+    render(<Frame place="unwind">x</Frame>);
+    await flush();
+    sizeFrame();
+    fireEvent.pointerMove(main(), { clientY: 650 });
+    await flush(100);
+    act(() => useWorkLayerStore.setState({ held: true }));
+    // The ribbon leaves (layer closes) and comes back: the keys hold is not written to.
+    fireEvent.pointerLeave(main());
+    await flush(LAYER_CLOSE_MS + 700);
+    expect(useWorkLayerStore.getState().shown).toBe(true);
+    expect(useWorkLayerStore.getState().held).toBe(true);
+    fireEvent.click(document.querySelector<HTMLElement>('.u-work .ev.fold')!);
+    await flush(50);
+    expect(useWorkLayerStore.getState().panel).toBe(true);
+    fireEvent.keyDown(document.querySelector('.day-drawer')!, { key: 'Escape' });
+    await flush(LAYER_CLOSE_MS + 700);
+    expect(useWorkLayerStore.getState().panel).toBe(false);
+    expect(useWorkLayerStore.getState().held).toBe(true);
     expect(useWorkLayerStore.getState().shown).toBe(true);
   });
 });

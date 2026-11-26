@@ -9,8 +9,8 @@ import { useWorkLayerStore } from './layerStore';
 /** The fade out lasts this long. It is the one source: written to the layer as `--u-work-out` (unwind-work.css reads it) and used for the unmount wait. */
 export const LAYER_FADE_OUT_MS = 400;
 
-/** The ribbon's drawer or panel holds the layer up while it is open (the keys row does the same through `held`). */
-const holdLayer = (open: boolean) => useWorkLayerStore.setState({ held: open });
+/** The ribbon's drawer or panel holds the layer up while it is open (the keys row has its own flag, `held`). */
+const holdLayer = (open: boolean) => useWorkLayerStore.setState({ panel: open });
 
 /**
  * Unwind's timeline: a thin line at rest, and the full Work timeline over it while the work layer is up. The layer

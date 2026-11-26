@@ -231,8 +231,9 @@ export function Ribbon({ kind, now = Date.now, compact = false, feed, onOverlay 
   // A layer that hosts this ribbon (Unwind's) learns while its drawer or panel is open, so it stays up under it.
   const overlayOpen = overlay !== null;
   useEffect(() => {
-    if (!onOverlay) return;
-    onOverlay(overlayOpen);
+    // Told only when something opens (and when it closes or the ribbon goes), never on mount: a hold of the host's own is not undone.
+    if (!onOverlay || !overlayOpen) return;
+    onOverlay(true);
     return () => onOverlay(false);
   }, [onOverlay, overlayOpen]);
   // The panel needs the helper: hidden when it is not set up.

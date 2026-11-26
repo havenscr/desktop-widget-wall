@@ -83,7 +83,13 @@
 /* A take (the video asking to be clicked), a dialog or a menu is up: the layer stays down. The keys row's own menu, picker
    and rename popover are not counted (they sit in `.u-keys`), nor are the layer's own Agents panel and Day drawer
    (they sit in `.u-work`): the layer is held up under them. */
-.main:has(.w-take, [role='dialog']:not(.u-keys *):not(.u-work *), [role='menu']:not(.u-keys *):not(.u-work *), .u-lib-menu, .watt-menu) > .u-work {
+.main:has(
+  .w-take,
+  [role='dialog']:not(.u-keys *):not(.day-drawer):not(.day-drawer *):not(.agents-today):not(.agents-today *),
+  [role='menu']:not(.u-keys *):not(.day-drawer *):not(.agents-today *),
+  .u-lib-menu,
+  .watt-menu
+) > .u-work {
   opacity: 0;
   visibility: hidden;
   pointer-events: none;
@@ -160,7 +166,14 @@
 @media (prefers-reduced-motion: reduce) {
   .u-work,
   .u-work[data-shown],
-  .main:has(.w-take, [role='dialog']:not(.u-keys *):not(.u-work *), [role='menu']:not(.u-keys *):not(.u-work *), .u-lib-menu, .watt-menu) > .u-work {
+  .main:has(
+      .w-take,
+      [role='dialog']:not(.u-keys *):not(.day-drawer):not(.day-drawer *):not(.agents-today):not(.agents-today *),
+      [role='menu']:not(.u-keys *):not(.day-drawer *):not(.agents-today *),
+      .u-lib-menu,
+      .watt-menu
+    )
+    > .u-work {
     transition: none;
   }
 }
@@ -477,5 +490,30 @@
   }
   to {
     opacity: 1;
+  }
+}
+
+/* Reduced motion: the row takes its new place with no slide, the day line changes with no fade, the veil has no fade in. */
+@media (prefers-reduced-motion: reduce) {
+  .main[data-place='unwind'] .u-foot,
+  .main[data-place='unwind'] .u-office-slot,
+  .main[data-place='unwind'][data-work-shown] .u-foot,
+  .main[data-place='unwind'][data-work-shown] .u-office-slot {
+    transition: none;
+  }
+  .rib-line,
+  .main[data-work-shown] .rib-line {
+    transition: none;
+  }
+  .u-work:has(.day-drawer, .agents-today)::after {
+    animation: none;
+  }
+}
+/* Reduced transparency: the veil is a plain dim, no blur (as the stage scrim). */
+@media (prefers-reduced-transparency: reduce) {
+  .u-work:has(.day-drawer, .agents-today)::after {
+    background: rgba(6, 4, 22, 0.3);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
   }
 }

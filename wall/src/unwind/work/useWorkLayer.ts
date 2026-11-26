@@ -8,20 +8,32 @@ import { useWorkLayerStore } from './layerStore';
 /** The pointer shows the layer at once; it hides this long after the pointer and focus leave. */
 export const LAYER_CLOSE_MS = 1500;
 
-/** What keeps the layer down: a take (the video asking to be clicked), a dialog or a menu (the keys row's own are exempt). The CSS in unwind-work.css names the same set. */
-export const SUPPRESS_SELECTOR = '.w-take, [role="dialog"]:not(.u-keys *):not(.u-work *), [role="menu"]:not(.u-keys *):not(.u-work *), .u-lib-menu, .watt-menu';
+/** The layer's own overlays, by class: the Day drawer and Agents today (and what sits inside them). They never take the layer down; any other dialog or menu, even one nested in the layer, does. unwind-work.css names the same set. */
+const OWN = ':not(.day-drawer):not(.day-drawer *):not(.agents-today):not(.agents-today *)';
+/** What keeps the layer down: a take (the video asking to be clicked), a dialog or a menu (the keys row's own and the layer's own overlays are exempt). */
+export const SUPPRESS_SELECTOR = `.w-take, [role="dialog"]:not(.u-keys *)${OWN}, [role="menu"]:not(.u-keys *)${OWN}, .u-lib-menu, .watt-menu`;
 
 /** The layer answers the pointer only in this bottom band of the frame (design px), or over what the layer owns. */
 export const LAYER_BAND_PX = 140;
+/** Once the pointer is in, the band's upper edge is this much higher, so a pointer resting on the edge does not flicker the layer. */
+export const LAYER_BAND_HYSTERESIS_PX = 24;
 /** What the pointer may be over, above the band, and still hold the layer: the timeline, its panel and drawer, and the lifted row. */
 export const LAYER_OWN = '.u-work, .day-drawer, .agents-today, .u-foot, .u-office-slot';
+/** The lifted row's boxes: the stay-open zone runs from the top of each down to the band, so the gap under a lifted box is inside it. */
+const LIFTED_ROW = '.u-foot, .u-office-slot';
 
-/** True when a pointer at `y` (client) is in the bottom band of `el`, or `target` is something the layer owns. */
-export function inLayerZone(el: HTMLElement, y: number, target: EventTarget | null): boolean {
+/** True when a pointer at (`x`, `y`) (client) is in the bottom band of `el` (a little higher once `was` in), over the column under a lifted box, or `target` is something the layer owns. */
+export function inLayerZone(el: HTMLElement, x: number, y: number, target: EventTarget | null, was = false): boolean {
   const r = el.getBoundingClientRect();
   const scale = el.offsetHeight > 0 && r.height > 0 ? r.height / el.offsetHeight : 1;
-  if (y >= r.bottom - LAYER_BAND_PX * scale) return true;
-  return target instanceof Element && target.closest(LAYER_OWN) !== null;
+  const edge = r.bottom - (LAYER_BAND_PX + (was ? LAYER_BAND_HYSTERESIS_PX : 0)) * scale;
+  if (y >= edge) return true;
+  if (target instanceof Element && target.closest(LAYER_OWN) !== null) return true;
+  for (const row of el.querySelectorAll(LIFTED_ROW)) {
+    const b = row.getBoundingClientRect();
+    if (b.width > 0 && x >= b.left && x <= b.right && y >= b.top && y < edge) return true;
+  }
+  return false;
 }
 
 /** True while something in SUPPRESS_SELECTOR is on the page. */
@@ -59,11 +71,12 @@ export function useWorkLayer(place: PlaceId) {
   const { active, handlers } = useHoverHold(el, { openMs: 0, closeMs: LAYER_CLOSE_MS, enabled: on });
   // The keys row's menu, picker or rename popover holds the layer up while it is open (not over the sheet or a rest).
   const held = useWorkLayerStore((s) => s.held);
-  const shown = on && (active || held);
+  const panel = useWorkLayerStore((s) => s.panel);
+  const shown = on && (active || held || panel);
   // The pointer holds the layer only while it is in the bottom band or over what the layer owns.
   const inZone = useRef(false);
   const aim = (e: PointerEvent<HTMLElement>) => {
-    const now = el ? inLayerZone(el, e.clientY, e.target) : false;
+    const now = el ? inLayerZone(el, e.clientX, e.clientY, e.target, inZone.current) : false;
     if (now === inZone.current) return;
     inZone.current = now;
     if (now) handlers.onPointerEnter();
