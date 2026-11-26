@@ -3,6 +3,7 @@ import { IconRestore, IconSettings } from '@tabler/icons-react';
 import { tip } from '../../ui/HoverTip';
 import { DEFAULT_LINES, LINE_PRESETS, activePreset, useLinesStore, type LineColours, type LinePreset, type LineRest, type LineType } from '../../horizon/linesSettings';
 import { DEFAULT_VIBE, useVibeStore, type VibeCover } from '../../horizon/vibeSettings';
+import type { MusicLevel } from '../../horizon/offTabMusic';
 import { useWatchStore } from './store';
 
 /** The sheet heading and name on the Lines side. */
@@ -44,11 +45,18 @@ const COVERS: { id: VibeCover; name: string; note: string }[] = [
   { id: 'scene', name: 'Scene only', note: 'Effects keep clear of the song title' },
 ];
 
+const MUSIC_NAMES: { id: MusicLevel; name: string; note: string }[] = [
+  { id: 'calm', name: 'Calm', note: 'The hills on the other tabs ripple softly, as they always have' },
+  { id: 'medium', name: 'Medium', note: 'More lines, taller and in the cover colours, about 60 percent of Unwind' },
+  { id: 'full', name: 'Full', note: 'The other tabs dance as strongly as Unwind' },
+];
+
 /** The words after a vibe switch, and the helper line under it. */
 export const VIBE_HINTS = {
   auto: 'Colour and glow follow how loud the music has been lately.',
   calmCap: 'Halves every effect and softens the kick and bass, for a calmer wall.',
   cover: 'Scene and title lets effects pass over the song title.',
+  offTabMusic: 'How much the music moves the hills on the other tabs.',
 } as const;
 
 /** A slider's value read back in plain words and numbers, on one line. */
@@ -150,7 +158,7 @@ function VibeSection() {
         <span className="ln-label" id="ln-vibe-head">
           Vibe
         </span>
-        <button type="button" className="ln-reset" {...tip('The vibe settings back to your usual: Auto vibe on, the rest off, Scene and title')} onClick={v.reset}>
+        <button type="button" className="ln-reset" {...tip('The vibe settings back to your usual: Auto vibe on, the rest off, Scene and title, Medium music on other tabs')} onClick={v.reset}>
           <IconRestore size={16} aria-hidden="true" />
           Reset vibe
         </button>
@@ -187,6 +195,19 @@ function VibeSection() {
         <span className="ln-value ln-fill">{v.cover === DEFAULT_VIBE.cover ? 'your usual' : cover.name}</span>
       </div>
       <p className="ln-hint" id="ln-cover-hint">{VIBE_HINTS.cover}</p>
+      <div className="ln-row">
+        <span className="ln-label ln-wide" id="ln-music-label">
+          Music on other tabs
+        </span>
+        <div className="ln-chips" role="radiogroup" aria-labelledby="ln-music-label" aria-describedby="ln-music-hint" onKeyDown={arrows(MUSIC_NAMES, v.offTabMusic, (id) => set({ offTabMusic: id }))}>
+          {MUSIC_NAMES.map((x) => (
+            <button key={x.id} type="button" role="radio" aria-checked={v.offTabMusic === x.id} tabIndex={v.offTabMusic === x.id ? 0 : -1} className={v.offTabMusic === x.id ? 'on' : ''} {...tip(x.note)} onClick={() => set({ offTabMusic: x.id })}>
+              {x.name}
+            </button>
+          ))}
+        </div>
+      </div>
+      <p className="ln-hint" id="ln-music-hint">{VIBE_HINTS.offTabMusic}</p>
     </section>
   );
 }

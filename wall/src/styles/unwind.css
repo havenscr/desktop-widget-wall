@@ -1830,6 +1830,9 @@
   font: 500 17px/1.2 var(--body);
   white-space: nowrap;
 }
+.ln-label.ln-wide {
+  width: 172px;
+}
 .ln-sub {
   width: auto;
   margin-left: 14px;

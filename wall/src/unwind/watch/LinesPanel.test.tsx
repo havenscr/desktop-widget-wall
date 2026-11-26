@@ -112,8 +112,8 @@ describe('the Lines panel', () => {
     expect(screen.getByText(/The ridgelines dance as they do today/)).toBeTruthy();
     expect(screen.getByText('One setting for the lines everywhere music plays.')).toBeTruthy();
     const controls = [...screen.getAllByRole('radio'), ...screen.getAllByRole('button'), ...screen.getAllByRole('slider'), ...screen.getAllByRole('switch')];
-    // 14 radios (types, colours, at rest, cover), 5 buttons (two resets, three presets), 3 sliders, 3 switches.
-    expect(controls).toHaveLength(14 + 5 + 3 + 3);
+    // 17 radios (types, colours, at rest, cover, music on other tabs), 5 buttons (two resets, three presets), 3 sliders, 3 switches.
+    expect(controls).toHaveLength(17 + 5 + 3 + 3);
     for (const el of controls) {
       expect(el.getAttribute('title')).toBeNull();
       resetTip();
@@ -145,6 +145,16 @@ describe('the Vibe section', () => {
     expect(sw('Auto vibe').getAttribute('aria-describedby')).toBe('ln-auto-hint');
     expect(screen.getByRole('radiogroup', { name: 'Cover' }).getAttribute('aria-describedby')).toBe('ln-cover-hint');
     expect(document.getElementById('ln-cover-hint')!.textContent).toBe(VIBE_HINTS.cover);
+  });
+
+  it('has Music on other tabs with Medium chosen, a helper line, and keeps a change in the vibe store', () => {
+    render(<LinesPanel />);
+    expect(screen.getByRole('radio', { name: 'Medium' }).getAttribute('aria-checked')).toBe('true');
+    expect(screen.getByRole('radiogroup', { name: 'Music on other tabs' }).getAttribute('aria-describedby')).toBe('ln-music-hint');
+    expect(document.getElementById('ln-music-hint')!.textContent).toBe(VIBE_HINTS.offTabMusic);
+    fireEvent.click(screen.getByRole('radio', { name: 'Full' }));
+    expect(useVibeStore.getState().offTabMusic).toBe('full');
+    expect(JSON.parse(localStorage.getItem('wall2-vibe')!)).toMatchObject({ offTabMusic: 'full' });
   });
 
   it('changes Calm cap and Cover and keeps them in the vibe store, away from the Lines setting', () => {

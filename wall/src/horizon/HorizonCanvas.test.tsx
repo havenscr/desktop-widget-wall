@@ -5,6 +5,7 @@ import { CAMERAS, HOME_MORNING, drawHorizon } from './index';
 import { cloudShiftFor, type CameraPreset } from './cameras';
 import { echoPaths, frameGap, pathContext, recordingContext, stubContext } from './canvasStub';
 import { fitScale, STAGE_HEIGHT, STAGE_WIDTH } from '../stage/fitScale';
+import { useVibeStore } from './vibeSettings';
 import { usePlaceStore } from '../state/places';
 import { danceHistory, ingestLevels, resetAudio, tickAudio } from '../audio/store';
 import { useIdle } from '../ui/useIdle';
@@ -69,6 +70,8 @@ function runFrame(ts: number) {
 }
 
 beforeEach(() => {
+  // These tests pin today's look: Calm music on the other tabs (the default is Medium).
+  useVibeStore.getState().setVibe({ offTabMusic: 'calm' });
   resetStage();
   idleMock.mockImplementation(() => false);
   usePlaceStore.setState({ active: 'work' });
@@ -280,6 +283,24 @@ it('while music plays the ripple takes the active preset\'s numbers, and its liv
   const full = draw.mock.lastCall![1].echo!;
   expect(full.a).toBeGreaterThan(first.a);
   expect(full.a).toBeLessThanOrEqual(CAMERAS.work.ea);
+});
+
+it('Music on other tabs: Calm keeps Work at 3 lines, Medium draws 6 taller lines and Full draws Unwind\'s, easing a change', () => {
+  setReducedMotion(false);
+  const seen = (level: 'calm' | 'medium' | 'full') => {
+    useVibeStore.getState().setVibe({ offTabMusic: level });
+    startMusic();
+    render(<HorizonCanvas now={() => NOON} />);
+    for (let ts = 100; ts <= 5000; ts += 100) runFrame(ts);
+    const e = draw.mock.lastCall![1].echo!;
+    cleanup();
+    return e;
+  };
+  const calm = seen('calm');
+  expect(calm).toMatchObject({ n: 3, amp: CAMERAS.work.eamp });
+  expect(seen('medium').amp).toBeGreaterThan(CAMERAS.work.eamp * 2.5);
+  expect(seen('medium').n).toBeCloseTo(6, 6);
+  expect(seen('full').n).toBeCloseTo(CAMERAS.unwind.en, 6);
 });
 
 it('when music starts the lines lift: rest falls continuously from 1 to 0 over 1.5 s, and the drawn strength never steps', () => {
