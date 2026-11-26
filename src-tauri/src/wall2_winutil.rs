@@ -99,6 +99,7 @@ pub(crate) mod sys {
     use std::ffi::c_void;
     use windows::core::PWSTR;
     use windows::Win32::Foundation::{CloseHandle, BOOL, HANDLE, HWND, LPARAM, TRUE};
+    use windows::Win32::Graphics::Dwm::{DwmGetWindowAttribute, DWMWA_CLOAKED};
     use windows::Win32::Security::{GetTokenInformation, TokenElevation, TOKEN_ELEVATION, TOKEN_QUERY};
     use windows::Win32::System::Threading::{
         GetCurrentProcess, OpenProcess, OpenProcessToken, QueryFullProcessImageNameW, PROCESS_NAME_WIN32,
@@ -154,6 +155,15 @@ pub(crate) mod sys {
         let n = unsafe { GetClassNameW(hwnd(h), &mut buf) };
         let n = (n.max(0) as usize).min(buf.len());
         String::from_utf16_lossy(&buf[..n])
+    }
+
+    /// Whether the shell hides a window, as one on another virtual desktop is hidden.
+    pub fn cloaked(h: isize) -> bool {
+        let mut cloaked = 0u32;
+        unsafe {
+            let _ = DwmGetWindowAttribute(hwnd(h), DWMWA_CLOAKED, &mut cloaked as *mut u32 as *mut c_void, 4);
+        }
+        cloaked != 0
     }
 
     /// Whether a window has any title, read from the window's own record. It never sends a

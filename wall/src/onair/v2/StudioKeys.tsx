@@ -7,7 +7,7 @@ import { useOnAirStore } from '../store';
 import { statusStale } from '../ytlive';
 import { useYtLive } from '../ytliveStore';
 import { Head } from './Tiles';
-import { agoText, needsConfirm, NOTE_MS, refusalText, STUDIO_CONFIRM_MS, studioAnswerText, type StudioKey } from './studioModel';
+import { agoText, needsConfirm, needsFind, NOTE_MS, refusalText, STUDIO_CONFIRM_MS, studioAnswerText, type StudioKey } from './studioModel';
 import { LABEL_MAX_PX, ADDON_ACTION, SLOT_INFO, fitLabel, loadSlots, measureLabel, saveSlots, slotLabel, type ShownAction, type Slot } from './studioSlots';
 import { SLOT_ICON as ICON } from './studioIcons';
 import { StudioPicker } from './StudioPicker';
@@ -64,7 +64,7 @@ export function StudioKeys({ now }: { now: number }) {
   // End show only runs while the show is live; the key is read at press time, not from a stale render.
   const liveNow = useRef(live);
   liveNow.current = live;
-  const picked = status.state === 'picked' || status.state === 'minimized';
+  const findNow = needsFind(status.state);
 
   /** A reassigned or relabelled slot starts clean: no pending confirm, no glow. */
   const change = (i: number, next: Slot) => {
@@ -172,7 +172,7 @@ export function StudioKeys({ now }: { now: number }) {
     if (ADDON_ACTION[action]) help = `${info.full} in StreamYard, through the Stage Pop-out add-on. The add-on must be connected and the studio open in Firefox. Right-click to change the key.`;
     else if (needsConfirm(action as StudioKey)) help = `${info.full} in StreamYard. Click twice within 3 seconds. StreamYard is then sent the key twice. Right-click to change the key.`;
     else if (info.group === 'wall') help = `${info.full}. Right-click to change the key.`;
-    else help = `Send the ${info.full} hotkey to the StreamYard window you picked. Right-click to change the key.`;
+    else help = `Send the ${info.full} hotkey to the StreamYard window in use. Right-click to change the key.`;
     const lib = LIB_ID[action];
     const libAction = lib && keys.groups ? (resolveKey(lib, keys.groups)?.action ?? null) : null;
     const onKey = keys.onKeyDown(libAction);
@@ -216,12 +216,12 @@ export function StudioKeys({ now }: { now: number }) {
   };
 
   const right = useMemo(() => (sent ? `Sent: ${SLOT_INFO[sent.key].full}, ${agoText(sent.at, now)}` : 'No key sent yet'), [sent, now]);
-  const action = !picked ? (
-    <button type="button" className="oa-btn oa2-hdbtn" onClick={() => void pick()} {...tip('Then click the StreamYard browser window within 10 seconds.')}>
+  const action = (
+    <button type="button" className={findNow ? 'oa-btn cy oa2-hdbtn' : 'oa-btn oa2-hdbtn'} onClick={() => void pick()} {...tip('Then click the StreamYard browser window within 10 seconds. Use it when the wall chose the wrong window.')}>
       <IconAppWindow size={20} aria-hidden="true" />
-      Pick window
+      Find window
     </button>
-  ) : undefined;
+  );
 
   return (
     <div className="oa2-b oa2-studiokeys" role="group" aria-label="Studio keys">

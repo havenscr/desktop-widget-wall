@@ -19,6 +19,7 @@ const workCss = workRaw.replace(/\r\n/g, '\n');
 const NOW = 1_700_000_000_000;
 let sends: { key: string; confirm: boolean }[];
 let state: string;
+let studio = true;
 let refuse: string | null;
 
 const both = () => (
@@ -43,13 +44,14 @@ beforeEach(() => {
   localStorage.clear();
   sends = [];
   state = 'picked';
+  studio = true;
   refuse = null;
   useStudio.getState().reset();
   useYtLive.getState().reset();
   resetLibIndex();
   mocks.set('wall2_keys_library', () => LIBRARY_DATA);
   mocks.set('wall2_studio_pick_start', () => ({ state: 'waiting' }));
-  mocks.set('wall2_studio_pick_status', () => ({ state, browser: state === 'none' ? null : 'firefox' }));
+  mocks.set('wall2_studio_pick_status', () => ({ state, browser: state === 'none' || state === 'several' ? null : 'firefox', studio: studio }));
   mocks.set('wall2_studio_key', (args) => {
     sends.push({ key: String(args?.key), confirm: args?.confirm === true });
     if (refuse) throw refuse;
@@ -63,7 +65,7 @@ afterEach(() => {
   mocks.clear();
 });
 
-it('never shows a keys file button: Pick window with no window, nothing in the heading once picked, no tile dim', async () => {
+it('never shows a keys file button: Find window with no window, a quiet Find window once picked, no tile dim', async () => {
   state = 'none';
   await open();
   const tiles = [...document.querySelectorAll('.oa2-skgrid .key-tile')];
@@ -72,15 +74,15 @@ it('never shows a keys file button: Pick window with no window, nothing in the h
   const head = document.querySelector('.oa2-studiokeys .oa2-hd') as HTMLElement;
   const needle = ['Open', 'keys', 'file'].join(' ');
   expect(head.querySelectorAll('button').length).toBe(1);
-  expect(head.textContent).toContain('Pick window');
+  expect(head.textContent).toContain('Find window');
   expect(head.textContent).not.toContain(needle);
   state = 'picked';
   await act(async () => {
     await useStudio.getState().read();
   });
   expect(head.textContent).not.toContain(needle);
-  expect(head.textContent).not.toContain('Pick window');
-  expect(head.querySelectorAll('button').length).toBe(0);
+  expect(head.querySelectorAll('button').length).toBe(1);
+  expect(head.querySelector('button')?.classList.contains('cy')).toBe(false);
   expect(sends.length).toBe(0);
 });
 
@@ -123,7 +125,7 @@ it('says each refusal in words and leaves the Sent line alone', async () => {
   localStorage.setItem(SLOTS_KEY, JSON.stringify(withSlots(['share'])));
   await open();
   const cases: [string, RegExp][] = [
-    ['no studio window', /Pick the StreamYard window first/],
+    ['no studio window', /Open StreamYard in a browser, or press Find window/],
     ['not streamyard', /Switch that window to the StreamYard tab/],
     ['gone', /The studio window is gone/],
     ['not forward', /would not come forward/],
@@ -143,7 +145,7 @@ it('says each refusal in words and leaves the Sent line alone', async () => {
 it('the status block warns in amber when the window is minimized', async () => {
   state = 'minimized';
   await open();
-  const line = screen.getByText('Studio window: minimized');
+  const line = screen.getByText('Studio window: minimized (StreamYard in Firefox)');
   expect(line.getAttribute('data-warn')).toBe('true');
 });
 
@@ -518,4 +520,46 @@ it('fitLabel keeps a label that fits, drops words then letters when it does not,
   expect(measure(long)).toBeLessThanOrEqual(100);
   expect(long.includes('\n')).toBe(false);
   expect(fitLabel('Anything at all', 5, measure)).toBe('\u2026');
+});
+
+it('Find window is prominent for no window or several, quiet while a window is in use or minimized, and the status says which window is in use', async () => {
+  const find = () => [...document.querySelectorAll('.oa2-hd button')].filter((b) => b.textContent?.includes('Find window'));
+  const read = () =>
+    act(async () => {
+      await useStudio.getState().read();
+    });
+  state = 'none';
+  await open();
+  expect(find().length).toBe(2);
+  expect(find().every((b) => b.classList.contains('cy'))).toBe(true);
+  expect(screen.getByText('Studio window: no StreamYard window found')).toBeTruthy();
+  state = 'several';
+  await read();
+  expect(find().every((b) => b.classList.contains('cy'))).toBe(true);
+  expect(screen.getByText('Studio window: more than one StreamYard window found')).toBeTruthy();
+  state = 'picked';
+  await read();
+  expect(find().length).toBe(2);
+  expect(find().some((b) => b.classList.contains('cy'))).toBe(false);
+  expect(screen.getByText('Studio window in use: StreamYard in Firefox')).toBeTruthy();
+  state = 'minimized';
+  await read();
+  expect(find().length).toBe(2);
+  expect(find().some((b) => b.classList.contains('cy'))).toBe(false);
+  studio = false;
+  state = 'picked';
+  await read();
+  expect(screen.getByText('Studio window in use: Firefox window you picked')).toBeTruthy();
+});
+
+it('one click on a quiet Find window starts a new pick', async () => {
+  let started = 0;
+  mocks.set('wall2_studio_pick_start', () => {
+    started += 1;
+    return { state: 'waiting' };
+  });
+  await open();
+  const btn = [...document.querySelectorAll('.oa2-studiokeys .oa2-hd button')].find((b) => b.textContent?.includes('Find window')) as HTMLElement;
+  fireEvent.click(btn);
+  await waitFor(() => expect(started).toBe(1));
 });
