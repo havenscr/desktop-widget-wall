@@ -168,6 +168,8 @@ const measureMarks = () => {
       if (iter.some((t) => t === 'infinite' || t !== '1')) fails.push('status marks: the ' + e.className + ' animation repeats (' + s.animationIterationCount + ')');
     }
     for (const e of [dots[0], ring, need].filter(Boolean)) {
+      // Headless virtual time draws no frames for a 400 ms fade to run in, so how far it had got when the page was read changed from run to run. Each running animation on the mark or above it is taken to its end first; the opacity read is then the one the mark holds after the fade (a fade that ends low, or one that never ends, still fails).
+      for (let n = e; n && n.nodeType === 1; n = n.parentElement) for (const a of n.getAnimations()) { try { a.finish(); } catch { /* an animation that never ends keeps its place */ } }
       const o = effective(e);
       if (o < 0.5) fails.push('status marks: the ' + e.className + ' is at opacity ' + Math.round(o * 100) / 100 + ' after the fade (it must hold)');
     }

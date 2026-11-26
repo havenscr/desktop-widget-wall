@@ -46,6 +46,13 @@ export const RISE_MARGIN = 48;
 const SAMPLES = 60;
 /** Frames with the type in the box whose stacking is read: the page's layers do not change, and each read is costly. */
 const STACK_FRAMES = 3;
+/**
+ * Frames the probe reads after the stacking has been read (the type's coverage across the picture keeps filling in). Each one draws the type on a full scratch canvas and scans it, so a page that keeps
+ * drawing for the whole of headless virtual time (eight seconds of frames) took over a minute and the browser was
+ * killed at its limit. The probe stops after this many frames and keeps its last published numbers, so the answer
+ * no longer depends on how fast the machine draws.
+ */
+export const PROBE_FRAMES = 40;
 
 export function parseLineProbe(search: string): LineProbe | null {
   const q = new URLSearchParams(search);
@@ -57,6 +64,7 @@ export function parseLineProbe(search: string): LineProbe | null {
   let read = 0;
   let measured = 0;
   let most = 0;
+  let frames = 0;
   let scratch: HTMLCanvasElement | null = null;
   let hit: HTMLStyleElement | null = null;
   const seen = new Uint8Array(COLUMNS);
@@ -64,13 +72,22 @@ export function parseLineProbe(search: string): LineProbe | null {
     mainOnly: q.get('ltarget') === 'main',
     lift: q.get('lover') === '1',
     run: (s, f, boxes, main, target) => {
+      let drawn = 0;
+      // Nothing is read before the picture's box is claimed (a look claims it a moment after the page starts); once the stacking has been read, only PROBE_FRAMES more frames are.
+      if (boxes.length === 0) {
+        publish();
+        return;
+      }
+      if (read >= STACK_FRAMES) {
+        if (frames >= PROBE_FRAMES) return;
+        frames++;
+      }
       scratch ??= document.createElement('canvas');
       scratch.width = main.width;
       scratch.height = main.height;
       const x = scratch.getContext('2d', { willReadFrequently: true });
       if (!x) return;
       drawLineType(x, s, f);
-      let drawn = 0;
       const all = x.getImageData(0, 0, scratch.width, scratch.height).data;
       for (let i = 3; i < all.length; i += 16) if (all[i] > 8) drawn++;
       most = Math.max(most, drawn);

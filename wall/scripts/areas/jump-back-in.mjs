@@ -26,10 +26,12 @@ function measureJump() {
   const btns = [...document.querySelectorAll('.work .right-wing .deck-resume')];
   const wing = document.querySelector('.work .right-wing').getBoundingClientRect();
   const row = [...document.querySelectorAll('.work .right-wing .keys.deck-row')].pop();
-  const hd = row.querySelector('.deck-hd');
+  const hd = row?.querySelector('.deck-hd');
+  const name = hd?.querySelector('.deck-name');
+  const ctrl = hd?.querySelector('.deck-hd-r');
+  // Every state runs this measurement; a state with no heading row or no controls on it (the keys.json problem page) has nothing to measure here, and the rule only reads this for the states it owns.
+  if (!hd || !ctrl) return { missingHeading: true, buttons: btns.length };
   const hr = hd.getBoundingClientRect();
-  const name = hd.querySelector('.deck-name');
-  const ctrl = hd.querySelector('.deck-hd-r');
   const cr = ctrl.getBoundingClientRect();
   const plates = [...document.querySelectorAll('.work .right-wing .fy-li')];
   const list = document.querySelector('.work .right-wing .fy-list');
