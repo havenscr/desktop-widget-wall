@@ -15,6 +15,10 @@
 //!   Manager, `WidgetWall2/stagepop/token/0`) is shown once in Tools. A wrong MAC closes the socket with 1008.
 //! - The pin is checked and set under the shared lock when a client authenticates (`authenticate`), so of two
 //!   origins that both passed the handshake only the first to authenticate is kept.
+//! - After the welcome the wall may send `{type:"studio", id, action, name?}` (action `scene`, `mute` or `camera`; a
+//!   scene name of 1 to 80 characters with no control character; the other two take none) and the add-on answers
+//!   `{type:"studio_result", id, ok, reason}`. One studio command is in flight at a time; a second is "busy". The
+//!   answer is accepted only from the current authenticated client and only for the id that is waiting.
 //! - Text frames only, 8 KiB per message and frame, at most 20 inbound frames a second (pings and pongs count), ping every 30 s,
 //!   closed after 60 s of silence.
 //! The token is never logged (this module logs nothing) and never leaves Rust except as the answer to
@@ -54,6 +58,9 @@ const FEEDS_MAX: usize = 12;
 const KEY_MAX: usize = 128;
 const NAME_MAX: usize = 64;
 const COORD_MAX: i32 = 100_000;
+/// A scene name sent to the add-on: at most this many characters.
+pub(crate) const SCENE_MAX: usize = 80;
+const STUDIO_WAIT: Duration = Duration::from_secs(4);
 pub(crate) const SETTINGS_FILE: &str = "onair-stagepop.json";
 
 // Section: pure rules
@@ -130,6 +137,8 @@ pub(crate) enum In {
     Hello { v: u64, cnonce: String, mac: String },
     Feeds { list: Vec<Feed>, mode: String },
     Window { open: bool, fullscreen: bool },
+    /// The add-on's answer to a studio command: the id it was sent with, and ok or a reason word.
+    Studio { id: u64, ok: bool, reason: String },
 }
 
 /// A nonce or MAC as it travels: 1 to 128 base64 characters (either alphabet, padding allowed).
@@ -192,8 +201,67 @@ pub(crate) fn parse_in(text: &str) -> Option<In> {
             Some(In::Feeds { list, mode: mode.to_string() })
         }
         "window" => Some(In::Window { open: v.get("open")?.as_bool()?, fullscreen: v.get("fullscreen")?.as_bool()? }),
+        "studio_result" => {
+            let reason = v.get("reason")?.as_str()?;
+            if reason.len() > 40 {
+                return None;
+            }
+            Some(In::Studio { id: v.get("id")?.as_u64()?, ok: v.get("ok")?.as_bool()?, reason: reason.to_string() })
+        }
         _ => None,
     }
+}
+
+/// The three studio actions the wall may ask for.
+pub(crate) fn studio_action_ok(action: &str) -> bool {
+    matches!(action, "scene" | "mute" | "camera")
+}
+
+/// The studio command for the add-on, fixed shape `{type:"studio", id, action, name?}`. The action must be one
+/// of `scene`, `mute`, `camera`. A scene needs a name of 1 to `SCENE_MAX` characters with no control character;
+/// the other two take none. Nothing is cleaned: a name that is not acceptable as typed is refused.
+pub(crate) fn studio_message(id: u64, action: &str, name: Option<&str>) -> Result<String, &'static str> {
+    if !studio_action_ok(action) {
+        return Err("invalid");
+    }
+    let v = if action == "scene" {
+        let n = name.ok_or("invalid")?;
+        let len = n.chars().count();
+        if len == 0 || len > SCENE_MAX || n.chars().any(|c| c.is_control()) || n.trim().is_empty() {
+            return Err("invalid");
+        }
+        json!({"type": "studio", "id": id, "action": action, "name": n})
+    } else {
+        if name.is_some() {
+            return Err("invalid");
+        }
+        json!({"type": "studio", "id": id, "action": action})
+    };
+    Ok(v.to_string())
+}
+
+/// What a studio key learns: ok, or one reason word the key can show.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct StudioAnswer {
+    pub ok: bool,
+    /// "ok", "already" (ok, nothing to do), "not found", "studio not open", "not connected", "no answer", "busy",
+    /// "refused" or "failed".
+    pub reason: &'static str,
+}
+
+/// Maps the add-on's reason word to a fixed one; anything unknown is "failed".
+pub(crate) fn answer_of(ok: bool, reason: &str) -> StudioAnswer {
+    if ok {
+        return StudioAnswer { ok: true, reason: if reason == "already" { "already" } else { "ok" } };
+    }
+    let reason = match reason {
+        "busy" => "busy",
+        "not found" => "not found",
+        "studio not open" => "studio not open",
+        "refused" => "refused",
+        _ => "failed",
+    };
+    StudioAnswer { ok: false, reason }
 }
 
 /// What the page asks the wall to send to the add-on.
@@ -323,6 +391,9 @@ struct Shared {
     generation: u64,
     tx: Option<Sender<String>>,
     settings: Settings,
+    /// The studio command waiting for its answer: its id and where the answer goes.
+    studio: Option<(u64, Sender<StudioAnswer>)>,
+    studio_id: u64,
 }
 
 pub(crate) struct Core {
@@ -344,6 +415,8 @@ impl Core {
                 generation: 0,
                 tx: None,
                 settings,
+                studio: None,
+                studio_id: 0,
             }),
             vault,
             path: Mutex::new(None),
@@ -452,6 +525,7 @@ impl Core {
             }
             s.generation += 1;
             s.tx = Some(tx);
+            s.studio = None;
             s.run = Run::Connected;
             s.feeds.clear();
             s.mode = None;
@@ -475,6 +549,7 @@ impl Core {
             }
             s.run = Run::Waiting;
             s.tx = None;
+            s.studio = None;
             s.feeds.clear();
             s.mode = None;
             s.window = WindowView { open: false, fullscreen: false };
@@ -499,6 +574,15 @@ impl Core {
                 s.window = next;
                 !same
             }
+            Some(In::Studio { id, ok, reason }) => {
+                let mut s = self.lock();
+                if s.studio.as_ref().is_some_and(|(want, _)| *want == id) {
+                    if let Some((_, answer)) = s.studio.take() {
+                        let _ = answer.send(answer_of(ok, &reason));
+                    }
+                }
+                false
+            }
             _ => false,
         };
         if changed {
@@ -512,6 +596,46 @@ impl Core {
         let tx = s.tx.as_ref().ok_or("not connected")?;
         let text = out_message(cmd, &s.feeds, place_of(&s.settings, elgato))?;
         tx.send(text).map_err(|_| "not connected")
+    }
+
+    /// Sends one studio command and waits (at most 4 s) for the add-on's answer. Every outcome is an answer with a
+    /// reason word, never an error: a bad command is "refused", no add-on is "not connected", silence is "no answer".
+    /// One command is in flight at a time; a second one while it waits is answered "busy" at once.
+    pub(crate) fn studio(&self, action: &str, name: Option<&str>) -> StudioAnswer {
+        self.studio_wait(action, name, STUDIO_WAIT)
+    }
+
+    pub(crate) fn studio_wait(&self, action: &str, name: Option<&str>, wait: Duration) -> StudioAnswer {
+        let fail = |reason: &'static str| StudioAnswer { ok: false, reason };
+        let (answer_tx, answer_rx) = channel();
+        let id = {
+            let mut s = self.lock();
+            let Some(tx) = s.tx.clone() else { return fail("not connected") };
+            let id = s.studio_id + 1;
+            let Ok(text) = studio_message(id, action, name) else { return fail("refused") };
+            // One command at a time: a second one is refused at once and never replaces the waiting one.
+            if s.studio.is_some() {
+                return fail("busy");
+            }
+            s.studio_id = id;
+            s.studio = Some((id, answer_tx));
+            if tx.send(text).is_err() {
+                s.studio = None;
+                return fail("not connected");
+            }
+            id
+        };
+        match answer_rx.recv_timeout(wait) {
+            Ok(a) => a,
+            Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
+                let mut s = self.lock();
+                if s.studio.as_ref().is_some_and(|(want, _)| *want == id) {
+                    s.studio = None;
+                }
+                fail("no answer")
+            }
+            Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => fail(if self.lock().tx.is_some() { "no answer" } else { "not connected" }),
+        }
     }
 
     pub(crate) fn placement_set(&self, left: i32, top: i32) -> Result<(), &'static str> {
@@ -576,6 +700,7 @@ impl Core {
                     s.run = Run::Waiting;
                 }
                 s.tx = None;
+                s.studio = None;
                 s.feeds.clear();
                 s.mode = None;
                 s.window = WindowView { open: false, fullscreen: false };
@@ -937,6 +1062,80 @@ mod tests {
         assert!(serde_json::from_str::<Cmd>("{\"type\":\"mode\",\"key\":\"stage\"}").is_ok());
         assert!(serde_json::from_str::<Cmd>("{\"type\":\"mode\",\"key\":\"a\",\"left\":1}").is_err());
         assert!(serde_json::from_str::<Cmd>("{\"type\":\"reboot\"}").is_err());
+    }
+
+    #[test]
+    fn studio_commands_are_checked() {
+        let m = studio_message(7, "scene", Some("Presenter View")).unwrap();
+        let v: Value = serde_json::from_str(&m).unwrap();
+        assert_eq!(v, json!({"type": "studio", "id": 7, "action": "scene", "name": "Presenter View"}));
+        assert_eq!(serde_json::from_str::<Value>(&studio_message(8, "mute", None).unwrap()).unwrap(), json!({"type": "studio", "id": 8, "action": "mute"}));
+        assert!(studio_message(9, "camera", None).is_ok());
+        for bad in ["", "Scene", "golive", "scene ", "mute;camera"] {
+            assert_eq!(studio_message(1, bad, None), Err("invalid"), "{bad}");
+        }
+        assert_eq!(studio_message(1, "scene", None), Err("invalid"));
+        assert_eq!(studio_message(1, "scene", Some("")), Err("invalid"));
+        assert_eq!(studio_message(1, "scene", Some("   ")), Err("invalid"));
+        assert_eq!(studio_message(1, "mute", Some("Speaker")), Err("invalid"));
+        let long = "a".repeat(SCENE_MAX + 1);
+        assert_eq!(studio_message(1, "scene", Some(&long)), Err("invalid"));
+        assert!(studio_message(1, "scene", Some(&"a".repeat(SCENE_MAX))).is_ok());
+        for ctl in ["a\nb", "a\u{0}b", "a\u{7f}b", "a\tb", "a\u{85}b"] {
+            assert_eq!(studio_message(1, "scene", Some(ctl)), Err("invalid"), "{ctl:?}");
+        }
+    }
+
+    #[test]
+    fn studio_answers_map_to_fixed_reasons() {
+        assert_eq!(answer_of(true, "whatever"), StudioAnswer { ok: true, reason: "ok" });
+        assert_eq!(answer_of(false, "not found").reason, "not found");
+        assert_eq!(answer_of(false, "studio not open").reason, "studio not open");
+        assert_eq!(answer_of(false, "refused").reason, "refused");
+        assert_eq!(answer_of(false, "<script>").reason, "failed");
+        assert_eq!(answer_of(true, "already"), StudioAnswer { ok: true, reason: "already" });
+        assert_eq!(answer_of(false, "busy").reason, "busy");
+        assert!(!answer_of(false, "not found").ok);
+        assert_eq!(parse_in(r#"{"type":"studio_result","id":3,"ok":false,"reason":"not found"}"#), Some(In::Studio { id: 3, ok: false, reason: "not found".into() }));
+        assert_eq!(parse_in(r#"{"type":"studio_result","id":3,"ok":true}"#), None);
+        assert_eq!(parse_in(&format!(r#"{{"type":"studio_result","id":3,"ok":false,"reason":"{}"}}"#, "x".repeat(41))), None);
+    }
+
+    #[test]
+    fn a_studio_command_waits_for_its_answer() {
+        let core = Arc::new(core_with(Some("tok")));
+        // Not connected.
+        assert_eq!(core.studio_wait("mute", None, Duration::from_millis(10)), StudioAnswer { ok: false, reason: "not connected" });
+        let (_, rx) = core.authenticate(ORIGIN, 0).unwrap();
+        // A bad command is refused before anything is sent.
+        assert_eq!(core.studio_wait("golive", None, Duration::from_millis(10)).reason, "refused");
+        assert!(rx.try_recv().is_err());
+        // Silence is "no answer".
+        assert_eq!(core.studio_wait("camera", None, Duration::from_millis(10)).reason, "no answer");
+        let _ = rx.try_recv();
+        // An answer with the right id arrives; a wrong id is ignored.
+        let c = Arc::clone(&core);
+        let t = std::thread::spawn(move || c.studio_wait("scene", Some("Speaker"), Duration::from_secs(3)));
+        let sent: Value = serde_json::from_str(&rx.recv_timeout(Duration::from_secs(3)).unwrap()).unwrap();
+        assert_eq!(sent["action"], "scene");
+        let id = sent["id"].as_u64().unwrap();
+        core.handle_text(&format!(r#"{{"type":"studio_result","id":{},"ok":true,"reason":"ok"}}"#, id + 5));
+        core.handle_text(&format!(r#"{{"type":"studio_result","id":{id},"ok":false,"reason":"not found"}}"#));
+        assert_eq!(t.join().unwrap(), StudioAnswer { ok: false, reason: "not found" });
+    }
+
+    #[test]
+    fn a_second_studio_command_while_one_waits_is_busy_and_keeps_the_first() {
+        let core = Arc::new(core_with(Some("tok")));
+        let (_, rx) = core.authenticate(ORIGIN, 0).unwrap();
+        let c = Arc::clone(&core);
+        let t = std::thread::spawn(move || c.studio_wait("mute", None, Duration::from_secs(3)));
+        let sent: Value = serde_json::from_str(&rx.recv_timeout(Duration::from_secs(3)).unwrap()).unwrap();
+        let id = sent["id"].as_u64().unwrap();
+        assert_eq!(core.studio_wait("camera", None, Duration::from_millis(10)), StudioAnswer { ok: false, reason: "busy" });
+        assert!(rx.try_recv().is_err());
+        core.handle_text(&format!(r#"{{"type":"studio_result","id":{id},"ok":true,"reason":"already"}}"#));
+        assert_eq!(t.join().unwrap(), StudioAnswer { ok: true, reason: "already" });
     }
 
     #[test]
