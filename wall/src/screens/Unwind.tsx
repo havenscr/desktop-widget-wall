@@ -23,6 +23,7 @@ import { useToolsStore } from '../tools/store';
 import { useMusicView } from '../unwind/ytmusic/queue';
 import { LinesGear } from '../unwind/watch/LinesPanel';
 import { WatchCard } from '../unwind/watch/WatchCard';
+import { NextUp } from '../unwind/work/NextUp';
 import { UnwindKeys } from '../unwind/work/UnwindKeys';
 import { UNWIND_ROOM_HEIGHT, UNWIND_ROOM_TOP } from './frameLayout';
 import { OfficeMoods } from '../studio/OfficeMoods';
@@ -156,6 +157,7 @@ export function Unwind() {
           </>
         ) : null}
       </div>
+      <NextUp tab={watch ? 'watch' : 'listen'} />
       {sheet ? <WatchSheet initial={watch ? 'looks' : 'lines'} /> : null}
     </section>
   );

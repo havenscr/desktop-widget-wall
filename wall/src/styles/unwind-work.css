@@ -254,3 +254,168 @@
     transition: none;
   }
 }
+
+/* The Next up band (unwind/work/NextUp.tsx), "Countdown first": one wide band 76 px tall, 10 px under the volume row
+   (stage y 360) and well above the horizon. Watch: the left block, 960 wide, so it never reaches the video's controls
+   (the Watch time bar ends at x 960). Listen: from the cover's edge to the song times, x 500 to 1342. It fades with the layer
+   (250 ms in, 400 ms out) and is invisible, pointer-less and `inert` while hidden. */
+.u-nu {
+  position: absolute;
+  top: 360px;
+  height: 76px;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 14px 0 20px;
+  border-radius: 20px;
+  background: rgba(14, 9, 36, 0.84);
+  border: 1px solid rgba(150, 130, 255, 0.26);
+  box-shadow: 0 14px 40px rgba(0, 0, 0, 0.4);
+  z-index: 3;
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition:
+    opacity var(--u-work-out, 400ms) ease,
+    visibility 0s linear var(--u-work-out, 400ms);
+}
+.u-nu.watch {
+  left: 0;
+  width: 960px;
+}
+.u-nu.listen {
+  left: 500px;
+  width: 842px;
+}
+.u-nu[data-shown] {
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+  transition:
+    opacity 250ms ease,
+    visibility 0s;
+}
+.u-nu-count {
+  flex: 0 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+.u-nu-cap {
+  font: 600 16px/18px var(--disp);
+  letter-spacing: 0.22em;
+  color: #b9b3dc;
+}
+.u-nu-big {
+  font: 600 34px/42px var(--disp);
+  color: #bff7f2;
+  text-shadow: 0 0 18px rgba(31, 211, 200, 0.45);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* No meeting to count down to ("No meetings ahead", "Calendar not available"): a smaller line, so the info column keeps its room. */
+.u-nu-big.quiet {
+  font: 600 22px/42px var(--disp);
+}
+.u-nu-tipwrap {
+  flex: none;
+  display: inline-flex;
+}
+.u-nu-rule {
+  flex: none;
+  width: 1px;
+  height: 52px;
+  margin: 0 8px;
+  background: rgba(150, 130, 255, 0.3);
+}
+.u-nu-info {
+  flex: 1;
+  min-width: 0;
+}
+.u-nu-l1 {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+.u-nu-title {
+  min-width: 0;
+  font: 700 20px/26px var(--disp);
+  color: var(--tx);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.u-nu-people {
+  flex: none;
+  display: flex;
+}
+.u-nu-av {
+  width: 34px;
+  height: 34px;
+  margin-left: -8px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font: 600 16px/1 var(--body);
+  color: var(--tx);
+  background: rgba(120, 100, 220, 0.55);
+  border: 1px solid rgba(14, 9, 36, 0.9);
+}
+.u-nu-av:first-child {
+  margin-left: 0;
+}
+.u-nu-l2 {
+  font: 400 16px/22px var(--body);
+  color: #b9b3dc;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.u-nu-btn {
+  flex: none;
+  height: 48px;
+  padding: 0 20px;
+  border-radius: 12px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font: 600 18px/1 var(--disp);
+  white-space: nowrap;
+  cursor: pointer;
+  border: 1px solid;
+}
+.u-nu-btn.join {
+  border-color: #1fd3c8;
+  background: rgba(20, 90, 95, 0.55);
+  color: #bff7f2;
+}
+.u-nu-btn.air {
+  border-color: #ff4fa0;
+  background: rgba(110, 20, 70, 0.55);
+  color: #ffd0e6;
+}
+.u-nu.listen .u-nu-people,
+.u-nu.listen .u-nu-btn svg {
+  display: none;
+}
+.u-nu.listen .u-nu-btn {
+  padding: 0 16px;
+}
+.u-nu-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+.u-nu-btn:focus-visible {
+  outline: 3px solid var(--cyan);
+  outline-offset: 2px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .u-nu,
+  .u-nu[data-shown] {
+    transition: none;
+  }
+}

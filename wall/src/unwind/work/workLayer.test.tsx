@@ -9,7 +9,10 @@ import { LAYER_FADE_OUT_MS } from './UnwindTimeline';
 import { resetWatch, useWatchStore } from '../watch/store';
 import { useWatchRest } from '../watch/rest';
 import { useWorkLayerStore } from './layerStore';
-import { LAYER_CLOSE_MS } from './useWorkLayer';
+import { NextUp } from './NextUp';
+import { LAYER_CLOSE_MS, SUPPRESS_SELECTOR } from './useWorkLayer';
+import { Unwind } from '../../screens/Unwind';
+import { usePlaceStore } from '../../state/places';
 
 const flush = async (ms = 0) => {
   await act(async () => {
@@ -30,6 +33,72 @@ beforeEach(() => {
 afterEach(() => {
   vi.useRealTimers();
   mocks.clear();
+});
+
+describe('Unwind work layer, one shown state', () => {
+  it('a dialog, menu or take takes the timeline, the keys and Next up down together, and Next up stops reading', async () => {
+    let reads = 0;
+    mocks.set('wall2_meet_next', () => (reads++, { accounts: [], meetings: [] }));
+    render(
+      <Frame place="unwind">
+        <NextUp tab="watch" />
+      </Frame>,
+    );
+    await flush();
+    fireEvent.pointerEnter(main());
+    await flush(50);
+    const band = () => document.querySelector<HTMLElement>('.u-nu')!;
+    expect(useWorkLayerStore.getState().shown).toBe(true);
+    expect(band().hasAttribute('inert')).toBe(false);
+    expect(reads).toBeGreaterThan(0);
+    for (const html of ['<div role="dialog"></div>', '<div role="menu"></div>', '<div class="w-take"></div>', '<div class="u-lib-menu"></div>', '<div class="watt-menu"></div>']) {
+      document.body.insertAdjacentHTML('beforeend', html);
+      await flush(50);
+      expect(useWorkLayerStore.getState().shown).toBe(false);
+      expect(band().hasAttribute('inert')).toBe(true);
+      expect(layer().hasAttribute('inert')).toBe(true);
+      await flush(LAYER_FADE_OUT_MS + 20);
+      const after = reads;
+      await flush(5 * 60_000);
+      expect(reads).toBe(after);
+      document.body.lastElementChild!.remove();
+      await flush(50);
+      expect(useWorkLayerStore.getState().shown).toBe(true);
+    }
+  });
+});
+
+describe('Unwind work layer, nothing always mounted keeps it down', () => {
+  for (const tab of ['listen', 'watch'] as const) {
+    it(`a plain ${tab} render has no take, dialog or menu, so the layer can show`, async () => {
+      usePlaceStore.setState({ active: 'unwind', from: 'work', zenDream: false });
+      useWatchStore.getState().setTab(tab);
+      mocks.set('wall2_meet_next', () => ({ accounts: [], meetings: [] }));
+      render(
+        <Frame place="unwind">
+          <Unwind />
+        </Frame>,
+      );
+      await flush(100);
+      expect(document.querySelector(SUPPRESS_SELECTOR)).toBeNull();
+      fireEvent.pointerEnter(main());
+      await flush(50);
+      expect(useWorkLayerStore.getState().shown).toBe(true);
+    });
+  }
+  it('many class changes in one frame make one look', async () => {
+    render(<Frame place="unwind">x</Frame>);
+    await flush();
+    const spy = vi.spyOn(document, 'querySelector');
+    const el = document.createElement('div');
+    document.body.append(el);
+    for (let i = 0; i < 50; i++) el.className = `c${i}`;
+    await flush(50);
+    const looks = spy.mock.calls.filter((c) => c[0] === SUPPRESS_SELECTOR).length;
+    spy.mockRestore();
+    el.remove();
+    expect(looks).toBeLessThanOrEqual(1);
+  });
 });
 
 describe('Unwind work layer', () => {

@@ -8,16 +8,41 @@ import { useWorkLayerStore } from './layerStore';
 /** The pointer shows the layer at once; it hides this long after the pointer and focus leave. */
 export const LAYER_CLOSE_MS = 1500;
 
+/** What keeps the layer down: a take (the video asking to be clicked), a dialog or a menu (the keys row's own are exempt). The CSS in unwind-work.css names the same set. */
+export const SUPPRESS_SELECTOR = '.w-take, [role="dialog"]:not(.u-keys *), [role="menu"]:not(.u-keys *), .u-lib-menu, .watt-menu';
+
+/** True while something in SUPPRESS_SELECTOR is on the page. */
+export function useSuppressed(): boolean {
+  const [on, setOn] = useState(() => document.querySelector(SUPPRESS_SELECTOR) !== null);
+  useEffect(() => {
+    const look = () => setOn(document.querySelector(SUPPRESS_SELECTOR) !== null);
+    // One look per animation frame, however many class changes land in it.
+    let frame = 0;
+    const soon = () => {
+      if (!frame) frame = requestAnimationFrame(() => ((frame = 0), look()));
+    };
+    const watch = new MutationObserver(soon);
+    watch.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['class', 'role'] });
+    look();
+    return () => {
+      watch.disconnect();
+      if (frame) cancelAnimationFrame(frame);
+    };
+  }, []);
+  return on;
+}
+
 /**
  * The work layer's hold on the Unwind frame: the pointer or focus inside the frame shows it, and it hides
  * `LAYER_CLOSE_MS` after both leave. It stays hidden while the Watch controls rest or the sheet is open (a take, a
- * dialog or a menu hide it in CSS, which can see them; the keys row's own menu and picker are exempt and hold it up). Spread `handlers` on the frame element, give `setEl` as its ref.
+ * dialog or a menu do too, so the timeline, the keys and Next up all follow the one `shown` state; the keys row's own menu and picker are exempt and hold it up through `held`). Spread `handlers` on the frame element, give `setEl` as its ref.
  */
 export function useWorkLayer(place: PlaceId) {
   const [el, setEl] = useState<HTMLElement | null>(null);
   const rest = useWatchRest((s) => s.rest);
   const sheet = useWatchStore((s) => s.sheet);
-  const on = place === 'unwind' && !rest && !sheet;
+  const suppressed = useSuppressed();
+  const on = place === 'unwind' && !rest && !sheet && !suppressed;
   const { active, handlers } = useHoverHold(el, { openMs: 0, closeMs: LAYER_CLOSE_MS, enabled: on });
   // The keys row's menu, picker or rename popover holds the layer up while it is open (not over the sheet or a rest).
   const held = useWorkLayerStore((s) => s.held);

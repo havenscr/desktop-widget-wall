@@ -639,20 +639,18 @@ export function WatchCard() {
   const zone = restZone('card');
   const grow = useListGrow(card, mode === 'list' && !empty && !searching);
   // `closing` marks the card's shrink after it stops growing, so what fades back in beneath it (the keys row) waits for it.
+  // Derived while rendering (not in an effect), so there is no frame between the card letting go and the mark.
   const [closing, setClosing] = useState(false);
-  const wasGrown = useRef(false);
+  const [wasGrown, setWasGrown] = useState(grow.grown);
+  if (wasGrown !== grow.grown) {
+    setWasGrown(grow.grown);
+    setClosing(!grow.grown);
+  }
   useEffect(() => {
-    if (grow.grown) {
-      wasGrown.current = true;
-      setClosing(false);
-      return;
-    }
-    if (!wasGrown.current) return;
-    wasGrown.current = false;
-    setClosing(true);
+    if (!closing) return;
     const id = setTimeout(() => setClosing(false), CARD_COLLAPSE_MS);
     return () => clearTimeout(id);
-  }, [grow.grown]);
+  }, [closing]);
   return (
     <section
       ref={setCard}
