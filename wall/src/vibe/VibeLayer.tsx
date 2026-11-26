@@ -6,7 +6,6 @@ import { useNowPlayingStore } from '../music/store';
 import { useReducedMotion } from '../ui/useReducedMotion';
 import { createAurora } from './aurora';
 import { createGlitch, type GlitchSources } from './glitch';
-import { bakeHole } from './holes';
 import { createTape } from './tape';
 import { bakeMatte, radiusOf, type Matte } from './artMatte';
 import { drawGlow, type GlowInput } from './glow';
@@ -21,33 +20,9 @@ export const SKY_END = 0.48;
 export const SKY_FEATHER = 0.16;
 /** The art box: Listen's cover, or Watch's video. */
 export const ART_SELECTOR = '.u-art, .w-screen';
-/** The song title: Listen's line, or Watch's. Scene and title lets the effects pass over it. */
-export const TITLE_SELECTOR = '.u-np, .w-title';
-/** Layout pixels the title's own canvas reaches past the letters; its mask is a bell that is zero at the canvas edge, so no edge shows. */
-export const TITLE_PAD_X = 120;
-export const TITLE_PAD_Y = 64;
-/** How much of the picture under the title the title's canvas adds back; the back layer already shows through behind the letters. */
-const TITLE_PASS = 0.4;
-/** What the front layer (grain and glitch) must leave clear: controls, readouts and the lists. They get a soft hole. */
-export const PROTECT_SELECTOR = 'button, [role="slider"], [role="switch"], [role="radio"], input, .u-progress, .u-transport, .w-ctl, .w-time, .u-src, .w-sub, .u-right, .w-sheet';
-const HOLE_PAD = 6;
-const HOLE_BLUR = 6;
+/** The grain sheet's left edge when no rail is found, in stage pixels (the rail's right edge). */
+export const SHEET_LEFT = 108;
 const REBAKE_MS = 500;
-
-/** The width of `el`'s text in the root's layout pixels, at most `max`; `max` itself where a range cannot be measured. */
-export function textWidth(el: HTMLElement, root: HTMLElement, max: number): number {
-  try {
-    const r = document.createRange();
-    r.selectNodeContents(el);
-    const w = r.getBoundingClientRect().width;
-    const scale = root.offsetWidth > 0 ? root.getBoundingClientRect().width / root.offsetWidth : 1;
-    if (w > 0 && scale > 0) return Math.min(max, w / scale);
-  } catch {
-    /* no layout here */
-  }
-  return max;
-}
-
 /** Where `el` sits inside `root`, in the root's own (unscaled) layout pixels. */
 export function boxIn(root: HTMLElement, el: HTMLElement): { x: number; y: number; w: number; h: number } {
   let x = 0;
@@ -62,32 +37,28 @@ export function boxIn(root: HTMLElement, el: HTMLElement): { x: number; y: numbe
 }
 
 /**
- * The vibe's back layer, mounted inside the Unwind place on Listen and Watch: Aurora Veil in the sky band and
- * Bass Glow around the art (or the Watch video). One canvas, half resolution, behind the place's own content (the art,
- * title and controls are DOM above it), starting right of the left wing so it never touches the clock or the
- * tabs. The loop runs only while an effect is above 0 and the page is shown; it stops by itself and restarts on sound.
+ * The vibe's layers, mounted inside the Unwind place on Listen and Watch. The back canvas holds Aurora Veil in the sky
+ * band and Bass Glow around the art (or the Watch video): half resolution, behind the place's own content (the art,
+ * title and controls are DOM above it), starting right of the left wing. The front canvas holds Tape Grain and the Drop
+ * Glitch as one even sheet from the rail's edge to the wall's right edge, over the scene, the video and Watt, and under
+ * every word and control (the stylesheet lifts those above it). The loop runs only while an effect is above 0 and the
+ * page is shown; it stops by itself and restarts on sound.
  */
 export function VibeLayer({ host = browserHost }: { host?: LoopHost }) {
   const ref = useRef<HTMLCanvasElement>(null);
-  const titleRef = useRef<HTMLCanvasElement>(null);
   const frontRef = useRef<HTMLCanvasElement>(null);
   const reduced = useReducedMotion();
   useEffect(() => {
     const canvas = ref.current;
     const section = canvas?.parentElement;
     const ctx = canvas?.getContext('2d');
-    const tcanvas = titleRef.current;
-    const tctx = tcanvas?.getContext('2d');
     const fcanvas = frontRef.current;
     const fctx = fcanvas?.getContext('2d');
-    if (!canvas || !section || !ctx || !tcanvas || !tctx || !fcanvas || !fctx) return;
+    if (!canvas || !section || !ctx || !fcanvas || !fctx) return;
     const aurora = createAurora();
     const tape = createTape();
     const glitch = createGlitch();
-    // The front layer's pieces: the hole masks, what the glitch copies from, and whether it drew last frame.
-    let holes: HTMLCanvasElement | null = null;
-    let titleHole: HTMLCanvasElement | null = null;
-    let holeKey = '';
+    // The front layer: whether it drew last frame.
     let frontDrawn = false;
     // The grain's own gain: eased to zero over about a second when the loop runs over budget, so it never cuts.
     let grainGain = 1;
@@ -99,6 +70,9 @@ export function VibeLayer({ host = browserHost }: { host?: LoopHost }) {
     const probeOn = new URLSearchParams(location.search).get('vibeprobe') === '1';
     const probe = createProbe(() => console.info('vibe: frames over budget, dropping to 20 fps'));
     let left = 0;
+    // The front sheet's own corner in the section's pixels (negative: it starts left of and above the place).
+    let fl = 0;
+    let ft = 0;
     let cw = 0;
     let ch = 0;
     let matte: Matte | null = null;
@@ -111,11 +85,7 @@ export function VibeLayer({ host = browserHost }: { host?: LoopHost }) {
     let lastE = -1;
     let lastA = -1;
     let lastH = -1;
-    let lastT = -1;
     let lastP = -1;
-    let titleOn = false;
-    // Where the title's own canvas copies from the back canvas, in back canvas pixels, and its size in its own.
-    const tbox = { sx: 0, sy: 0, sw: 0, sh: 0, dw: 0, dh: 0 };
     let sig = '';
     // The two frame inputs are built once and refilled each frame.
     const input: VibeInput = { settings: vibeSettings(), playing: false, energy: 0 };
@@ -130,24 +100,40 @@ export function VibeLayer({ host = browserHost }: { host?: LoopHost }) {
       const h = section.offsetHeight;
       canvas.style.left = `${left}px`;
       canvas.style.width = `${w}px`;
-      fcanvas.style.left = `${left}px`;
-      fcanvas.style.width = `${w}px`;
+      // The front sheet: from the rail's right edge to the stage's right edge, the stage's full height. The stage has
+      // a transform, so its edges are read from its own layout, in the section's pixels.
+      const stage = section.closest<HTMLElement>('.stage');
+      const rail = stage?.querySelector<HTMLElement>('.rail');
+      const at = stage ? boxIn(stage, section) : { x: 0, y: 0, w: 0, h: 0 };
+      const railEdge = rail && rail.offsetWidth > 0 && stage ? (() => { const r = boxIn(stage, rail); return r.x + r.w; })() : SHEET_LEFT;
+      const sheetW = stage ? Math.max(0, stage.offsetWidth - railEdge) : w;
+      const sheetH = stage ? stage.offsetHeight : h;
+      fl = stage ? railEdge - at.x : left;
+      ft = stage ? -at.y : 0;
+      fcanvas.style.left = `${fl}px`;
+      fcanvas.style.top = `${ft}px`;
+      fcanvas.style.width = `${sheetW}px`;
+      fcanvas.style.height = `${sheetH}px`;
       const bw = Math.max(1, Math.round(w * BACKING));
       const bh = Math.max(1, Math.round(h * BACKING));
+      const fw = Math.max(1, Math.round(sheetW * BACKING));
+      const fh = Math.max(1, Math.round(sheetH * BACKING));
       if (bw !== canvas.width || bh !== canvas.height) {
         canvas.width = bw;
         canvas.height = bh;
-        fcanvas.width = bw;
-        fcanvas.height = bh;
-        holeKey = '';
         skyFade = null;
         lastE = -1;
       }
+      if (fw !== fcanvas.width || fh !== fcanvas.height) {
+        fcanvas.width = fw;
+        fcanvas.height = fh;
+        lastE = -1;
+      }
       // The sprites are baked per instance and width: a remount that finds the canvas already sized still needs them.
-      if (bakedW !== bw) {
-        tape.bake(fctx, bw);
-        glitch.bake(bw);
-        bakedW = bw;
+      if (bakedW !== fw) {
+        tape.bake(fctx, fw);
+        glitch.bake(fw);
+        bakedW = fw;
       }
       cw = bw;
       ch = bh;
@@ -174,53 +160,8 @@ export function VibeLayer({ host = browserHost }: { host?: LoopHost }) {
         matte = null;
         matteKey = '';
       }
-      const tel = section.querySelector<HTMLElement>(TITLE_SELECTOR);
-      let tx = 0;
-      let ty = 0;
-      let tw = 0;
-      let th = 0;
-      if (tel && tel.offsetWidth > 0) {
-        const b = boxIn(section, tel);
-        // Round the letters, not the line's whole box (a title line is as wide as its column).
-        const letters = textWidth(tel, section, b.w);
-        tx = b.x - TITLE_PAD_X;
-        ty = b.y - TITLE_PAD_Y;
-        tw = letters + 2 * TITLE_PAD_X;
-        th = b.h + 2 * TITLE_PAD_Y;
-      }
-      tcanvas.style.left = `${tx}px`;
-      tcanvas.style.top = `${ty}px`;
-      tcanvas.style.width = `${tw}px`;
-      tcanvas.style.height = `${th}px`;
-      tbox.dw = Math.max(1, Math.round(tw * BACKING));
-      tbox.dh = Math.max(1, Math.round(th * BACKING));
-      if (tcanvas.width !== tbox.dw || tcanvas.height !== tbox.dh) {
-        tcanvas.width = tbox.dw;
-        tcanvas.height = tbox.dh;
-        lastT = -1;
-      }
-      tbox.sx = (tx - left) * BACKING;
-      tbox.sy = ty * BACKING;
-      tbox.sw = tw * BACKING;
-      tbox.sh = th * BACKING;
-      titleOn = tw > 0;
-      // The front layer: soft holes over the controls and the title, and where the glitch reads the horizon from.
-      const rects: number[] = [];
-      for (const n of section.querySelectorAll<HTMLElement>(PROTECT_SELECTOR)) {
-        if (n.offsetWidth <= 0 || n.offsetHeight <= 0) continue;
-        const b = boxIn(section, n);
-        rects.push((b.x - left - HOLE_PAD) * BACKING, (b.y - HOLE_PAD) * BACKING, (b.w + 2 * HOLE_PAD) * BACKING, (b.h + 2 * HOLE_PAD) * BACKING);
-      }
-      const trects: number[] = [];
-      if (tw > 0) trects.push((tx + TITLE_PAD_X - HOLE_PAD - left) * BACKING, (ty + TITLE_PAD_Y - HOLE_PAD) * BACKING, (tw - 2 * TITLE_PAD_X + 2 * HOLE_PAD) * BACKING, (th - 2 * TITLE_PAD_Y + 2 * HOLE_PAD) * BACKING);
-      const hk = `${bw}x${bh}|${rects.join(',')}|${trects.join(',')}`;
-      if (hk !== holeKey) {
-        holeKey = hk;
-        holes = bakeHole(bw, bh, rects, HOLE_BLUR);
-        titleHole = bakeHole(bw, bh, trects, HOLE_BLUR);
-      }
-      gsrc.art.x = art.x * BACKING;
-      gsrc.art.y = art.y * BACKING;
+      gsrc.art.x = (art.x + left - fl) * BACKING;
+      gsrc.art.y = (art.y - ft) * BACKING;
       gsrc.art.w = art.w * BACKING;
       gsrc.art.h = art.h * BACKING;
       gsrc.img = el?.querySelector('img') ?? null;
@@ -234,11 +175,11 @@ export function VibeLayer({ host = browserHost }: { host?: LoopHost }) {
         gsrc.hz = hzEl;
         gsrc.map.ax = (sc * kx) / BACKING;
         gsrc.map.ay = (sc * ky) / BACKING;
-        gsrc.map.bx = (sr.left + left * sc - hr.left) * kx;
-        gsrc.map.by = (sr.top - hr.top) * ky;
+        gsrc.map.bx = (sr.left + fl * sc - hr.left) * kx;
+        gsrc.map.by = (sr.top + ft * sc - hr.top) * ky;
       } else gsrc.hz = null;
       // Churn that moves nothing (class changes under the observer) wakes nothing.
-      const now = `${left}|${w}|${h}|${art.x}|${art.y}|${art.w}|${art.h}|${matteKey}|${tx}|${ty}|${tw}|${th}|${holeKey}`;
+      const now = `${left}|${w}|${h}|${art.x}|${art.y}|${art.w}|${art.h}|${matteKey}|${fl}|${ft}|${sheetW}|${sheetH}`;
       if (now === sig) return;
       sig = now;
       loop.kick();
@@ -256,11 +197,10 @@ export function VibeLayer({ host = browserHost }: { host?: LoopHost }) {
       const still = reduced;
       const kick = still ? 0 : danceKick() * frame.kickGain;
       const bass = still ? 0.3 : audio.bass * frame.bassGain;
-      if (still && Math.abs(energy - lastE) <= 0.1 && Math.abs(frame.aurora - lastA) + Math.abs(frame.halo - lastH) + Math.abs(frame.titleCover - lastT) + Math.abs(frame.tape - lastP) < 0.004 && lastE >= 0) return;
+      if (still && Math.abs(energy - lastE) <= 0.1 && Math.abs(frame.aurora - lastA) + Math.abs(frame.halo - lastH) + Math.abs(frame.tape - lastP) < 0.004 && lastE >= 0) return;
       lastE = energy;
       lastA = frame.aurora;
       lastH = frame.halo;
-      lastT = frame.titleCover;
       lastP = frame.tape;
       ctx.setTransform(1, 0, 0, 1, 0, 0);
       ctx.globalCompositeOperation = 'source-over';
@@ -284,16 +224,7 @@ export function VibeLayer({ host = browserHost }: { host?: LoopHost }) {
         glowIn.kick = kick;
         drawGlow(ctx, matte, art.x * BACKING, art.y * BACKING, BACKING, glowIn);
       }
-      // Scene and title: the title's own canvas lies over the title and shows the part of this picture under it.
-      // Scene only: it fades out (the plan's 0.2 s ease on the cover change), leaving the title clean.
-      const pass = (1 - frame.titleCover) * TITLE_PASS;
-      tctx.clearRect(0, 0, tcanvas.width, tcanvas.height);
-      if (titleOn && pass > 0.004 && (frame.aurora > 0.003 || frame.halo > 0.003 || frame.haloSwell > 0.003)) {
-        tctx.globalAlpha = pass;
-        tctx.drawImage(canvas, tbox.sx, tbox.sy, tbox.sw, tbox.sh, 0, 0, tbox.dw, tbox.dh);
-        tctx.globalAlpha = 1;
-      }
-      // The front layer: Tape Grain and the Drop Glitch over the scene and the art, with soft holes over the controls.
+      // The front layer: Tape Grain and the Drop Glitch, one even sheet over the scene, the art and Watt, under every word.
       // The grain is the first thing to go when frames run long; both fade with their own eased strengths.
       const gainDt = lastGainS < 0 ? 0 : Math.min(0.25, Math.max(0, nowS - lastGainS));
       lastGainS = nowS;
@@ -306,21 +237,12 @@ export function VibeLayer({ host = browserHost }: { host?: LoopHost }) {
         fctx.setTransform(1, 0, 0, 1, 0, 0);
         fctx.globalCompositeOperation = 'source-over';
         fctx.globalAlpha = 1;
-        fctx.clearRect(0, 0, cw, ch);
-        if (tapeOn) tape.draw(fctx, cw, ch, still ? 0 : nowS, tapeAmt, frame.grain, still, still ? 0 : frame.grainKick);
-        if (glitchAmt > 0.003) glitch.draw(fctx, cw, ch, nowS, state.drops, glitchAmt, gsrc);
-        fctx.globalCompositeOperation = 'destination-out';
-        fctx.globalAlpha = 1;
-        if (holes) fctx.drawImage(holes, 0, 0);
-        if (frame.titleCover > 0.004 && titleHole) {
-          fctx.globalAlpha = frame.titleCover;
-          fctx.drawImage(titleHole, 0, 0);
-          fctx.globalAlpha = 1;
-        }
-        fctx.globalCompositeOperation = 'source-over';
+        fctx.clearRect(0, 0, fcanvas.width, fcanvas.height);
+        if (tapeOn) tape.draw(fctx, fcanvas.width, fcanvas.height, still ? 0 : nowS, tapeAmt, frame.grain, still, still ? 0 : frame.grainKick);
+        if (glitchAmt > 0.003) glitch.draw(fctx, fcanvas.width, fcanvas.height, nowS, state.drops, glitchAmt, gsrc);
         frontDrawn = true;
       } else if (frontDrawn) {
-        fctx.clearRect(0, 0, cw, ch);
+        fctx.clearRect(0, 0, fcanvas.width, fcanvas.height);
         frontDrawn = false;
       }
     };
@@ -342,7 +264,6 @@ export function VibeLayer({ host = browserHost }: { host?: LoopHost }) {
         stepVibe(state, frame, dt, ts / 1000, input);
         if (!frame.active) {
           ctx.clearRect(0, 0, canvas.width, canvas.height);
-          tctx.clearRect(0, 0, tcanvas.width, tcanvas.height);
           fctx.clearRect(0, 0, fcanvas.width, fcanvas.height);
           frontDrawn = false;
           lastE = -1;
@@ -394,7 +315,6 @@ export function VibeLayer({ host = browserHost }: { host?: LoopHost }) {
   return (
     <>
       <canvas ref={ref} className="vibe-back" aria-hidden="true" data-vibe="back" />
-      <canvas ref={titleRef} className="vibe-title" aria-hidden="true" data-vibe="title" />
       <canvas ref={frontRef} className="vibe-front" aria-hidden="true" data-vibe="front" />
     </>
   );

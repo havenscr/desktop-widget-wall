@@ -130,22 +130,20 @@ describe('the Vibe section', () => {
 
   beforeEach(() => resetVibeStore());
 
-  it('has Auto vibe, Drop Glitch, Tape Grain and Calm cap switches and a Cover choice, each with a helper line', () => {
+  it('has Auto vibe, Drop Glitch, Tape Grain and Calm cap switches, each with a helper line', () => {
     render(<VibePanel />);
     expect(sw('Auto vibe').getAttribute('aria-checked')).toBe('true');
     expect(sw('Drop Glitch')).toBeTruthy();
     expect(sw('Tape Grain').getAttribute('aria-checked')).toBe('false');
     expect(sw('Calm cap').getAttribute('aria-checked')).toBe('false');
-    expect(screen.getByRole('radio', { name: 'Scene and title' }).getAttribute('aria-checked')).toBe('true');
     for (const id of ['auto', 'glitch', 'tape', 'calm']) {
       const hint = document.getElementById(`ln-${id}-hint`)!;
       expect(hint.className).toBe('ln-hint');
       expect(hint.textContent!.length).toBeGreaterThan(20);
     }
-    expect(screen.getByText(VIBE_HINTS.cover)).toBeTruthy();
     expect(sw('Auto vibe').getAttribute('aria-describedby')).toBe('ln-auto-hint');
-    expect(screen.getByRole('radiogroup', { name: 'Cover' }).getAttribute('aria-describedby')).toBe('ln-cover-hint');
-    expect(document.getElementById('ln-cover-hint')!.textContent).toBe(VIBE_HINTS.cover);
+    expect(screen.queryByRole('radiogroup', { name: 'Cover' })).toBeNull();
+    expect(screen.queryByText('Scene only')).toBeNull();
   });
 
   it('shows Drop Glitch on and locked while Auto vibe is on, and free once Auto vibe is off', () => {
@@ -199,22 +197,14 @@ describe('the Vibe section', () => {
     expect(useVibeStore.getState().aurora).toBe('full');
   });
 
-  it('changes Calm cap and Cover and keeps them in the vibe store, away from the Lines setting', () => {
+  it('changes Calm cap and keeps them in the vibe store, away from the Lines setting', () => {
     render(<VibePanel />);
     fireEvent.click(sw('Calm cap'));
-    fireEvent.click(screen.getByRole('radio', { name: 'Scene only' }));
-    expect(useVibeStore.getState()).toMatchObject({ calmCap: true, cover: 'scene' });
-    expect(JSON.parse(localStorage.getItem(VIBE_KEY)!)).toMatchObject({ calmCap: true, cover: 'scene' });
+    expect(useVibeStore.getState()).toMatchObject({ calmCap: true });
+    expect(JSON.parse(localStorage.getItem(VIBE_KEY)!)).toMatchObject({ calmCap: true });
     expect(localStorage.getItem(LINES_KEY) ?? '').not.toContain('calmCap');
     act(() => screen.getByRole('button', { name: 'Reset vibe' }).click());
     expect(useVibeStore.getState()).toMatchObject(DEFAULT_VIBE);
-  });
-
-  it('moves the Cover choice with the arrow keys', () => {
-    render(<VibePanel />);
-    screen.getByRole('radio', { name: 'Scene and title' }).focus();
-    fireEvent.keyDown(screen.getByRole('radiogroup', { name: 'Cover' }), { key: 'ArrowRight' });
-    expect(useVibeStore.getState().cover).toBe('scene');
   });
 
   it('puts each switch row out as name, switch, value, the flush right layout of the Looks sheet', () => {
@@ -241,8 +231,8 @@ describe('the Vibe page tips', () => {
       </>,
     );
     const controls = [...screen.getAllByRole('radio'), ...screen.getAllByRole('button'), ...screen.getAllByRole('switch')];
-    // 8 radios (aurora, cover, music on other tabs), 1 reset, 4 switches.
-    expect(controls).toHaveLength(8 + 1 + 4);
+    // 6 radios (aurora, music on other tabs), 1 reset, 4 switches.
+    expect(controls).toHaveLength(6 + 1 + 4);
     for (const el of controls) {
       expect(el.getAttribute('title')).toBeNull();
       resetTip();

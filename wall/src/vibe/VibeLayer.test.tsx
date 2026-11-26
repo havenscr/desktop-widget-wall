@@ -1,5 +1,5 @@
 import { act, cleanup, render } from '@testing-library/react';
-import { Fragment, StrictMode } from 'react';
+import { Fragment, StrictMode, type ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ingestLevels, resetAudio, tickAudio } from '../audio/store';
 import { resetVibeStore, useVibeStore } from '../horizon/vibeSettings';
@@ -12,6 +12,7 @@ import { readFileSync } from 'node:fs';
 /** A stylesheet's text (the path is a variable on purpose: a literal `new URL` is rewritten by the bundler). */
 const sheet = (f: string): string => (readFileSync(new URL(f, import.meta.url), 'utf8') as string).replace(/\r\n/g, '\n');
 import unwindSrc from '../screens/Unwind.tsx?raw';
+import layerSrc from './VibeLayer.tsx?raw';
 
 // The drop stamps are the one signal a test cannot easily make by sound: this lets a test add a drop by hand.
 const fakeDrops = vi.hoisted(() => ({ count: 0, lastAt: -Infinity }));
@@ -86,13 +87,13 @@ beforeEach(() => {
   }));
   // jsdom has no layout: the place is 2000 by 680 and its wing ends at x 480.
   vi.spyOn(HTMLElement.prototype, 'offsetWidth', 'get').mockImplementation(function (this: HTMLElement) {
-    return this.classList.contains('u-wing') ? 440 : this.classList.contains('u-art') ? 224 : 2000;
+    return this.classList.contains('u-wing') ? 440 : this.classList.contains('u-art') ? 224 : this.classList.contains('rail') ? 88 : 2000;
   });
   vi.spyOn(HTMLElement.prototype, 'offsetHeight', 'get').mockImplementation(function (this: HTMLElement) {
     return this.classList.contains('u-art') ? 224 : 680;
   });
   vi.spyOn(HTMLElement.prototype, 'offsetLeft', 'get').mockImplementation(function (this: HTMLElement) {
-    return this.classList.contains('u-wing') ? 40 : this.classList.contains('u-art') ? 900 : 0;
+    return this.classList.contains('u-wing') ? 40 : this.classList.contains('u-art') ? 900 : this.classList.contains('rail') ? 20 : 0;
   });
   vi.spyOn(HTMLElement.prototype, 'offsetTop', 'get').mockImplementation(function (this: HTMLElement) {
     return this.classList.contains('u-art') ? 20 : 0;
@@ -107,12 +108,14 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-function mount(host: LoopHost, art = true, horizon = false, strict = false) {
+function mount(host: LoopHost, art = true, horizon = false, strict = false, stage = false) {
   const s = stubCanvas();
   restore = s.restore;
   const Wrap = strict ? StrictMode : Fragment;
+  const Stage = stage ? ({ children }: { children: ReactNode }) => <div className="stage"><div className="rail" />{children}</div> : Fragment;
   const r = render(
     <Wrap>
+      <Stage>
       {horizon ? <canvas className="horizon-canvas" /> : null}
       <section data-place="unwind">
         <VibeLayer host={host} />
@@ -124,13 +127,13 @@ function mount(host: LoopHost, art = true, horizon = false, strict = false) {
           </div>
         ) : null}
       </section>
+      </Stage>
     </Wrap>,
   );
   return {
     ...r,
     rec: s.rec,
     canvas: r.container.querySelector('canvas.vibe-back')! as HTMLCanvasElement,
-    title: r.container.querySelector('canvas.vibe-title')! as HTMLCanvasElement,
     front: r.container.querySelector('canvas.vibe-front')! as HTMLCanvasElement,
     hz: r.container.querySelector('canvas.horizon-canvas') as HTMLCanvasElement | null,
   };
@@ -157,22 +160,6 @@ describe('the vibe back layer', () => {
     expect(c).toMatch(/transparent 0, #000 64px/);
     expect(c).toMatch(/#000 48px, #000 calc\(100% - 48px\)/);
     expect(c).toMatch(/mask-composite:\s*intersect/);
-  });
-
-  it('each layer\'s mask ramps to zero on the right edge, in both the prefixed and the plain property', () => {
-    const c = sheet('../styles/vibe.css').replace(/\r\n/g, '\n');
-    const ramp = 'linear-gradient(90deg, transparent 0, #000 64px, #000 calc(100% - 96px), transparent 100%)';
-    for (const sel of ['.vibe-back', '.vibe-front']) {
-      const start = c.indexOf('\n' + sel + ' {');
-      expect(start).toBeGreaterThan(-1);
-      const rule = c.slice(start, c.indexOf('}', start));
-      expect(rule).toContain('\n  -webkit-mask-image: ' + ramp);
-      expect(rule).toContain('\n  mask-image: ' + ramp);
-    }
-  });
-
-  it('the main area is its own stacking context while the layer is in it, so z-index -1 stays above the horizon canvas', () => {
-    expect(sheet('../styles/vibe.css')).toMatch(/\.main:has\(\.vibe-back\)\s*\{\s*isolation:\s*isolate/);
   });
 
   it('draws nothing and stops when no music plays and every effect is at rest', () => {
@@ -262,38 +249,6 @@ describe('the vibe back layer', () => {
         tickAudio(t);
       }
     });
-  const copies = (rec: { calls: unknown[][] }, back: HTMLCanvasElement) =>
-    rec.calls.filter((c) => c[0] === 'drawImage' && c[1] === back && c.length === 10);
-
-  it('Scene and title lets the effects pass over the song title; Scene only takes them off it', () => {
-    const m = manual();
-    const { rec, canvas, title } = mount(m.host);
-    expect(title.style.width).toBe('2240px');
-    playFor(4000);
-    m.frames(10000, 60);
-    expect(copies(rec, canvas).length).toBeGreaterThan(10);
-    rec.calls.length = 0;
-    act(() => useVibeStore.getState().setVibe({ cover: 'scene' }));
-    m.frames(20000, 60);
-    // It fades out with the cover ease, then no frame copies anything onto the title.
-    rec.calls.length = 0;
-    m.frames(30000, 30);
-    expect(copies(rec, canvas)).toHaveLength(0);
-    rec.calls.length = 0;
-    act(() => useVibeStore.getState().setVibe({ cover: 'title' }));
-    m.frames(40000, 60);
-    expect(copies(rec, canvas).length).toBeGreaterThan(10);
-  });
-
-  it('its stylesheet puts the title canvas above the title, click-through, with a bell mask that ends at zero', () => {
-    const c = sheet('../styles/vibe.css');
-    expect(c).toMatch(/\.vibe-title\s*\{[^}]*z-index:\s*1/);
-    expect(c).toMatch(/\.vibe-title\s*\{[^}]*pointer-events:\s*none/);
-    // One elliptical bell that ends at zero: no straight edge can show.
-    expect(c).toMatch(/\.vibe-title\s*\{[^}]*radial-gradient\(ellipse closest-side[^}]*transparent 100%\)/);
-    expect(/\.vibe-title\s*\{[^}]*linear-gradient/.test(c)).toBe(false);
-  });
-
   it('bakes the cover again when it finishes loading, not only the plain fill', () => {
     const m = manual();
     const s = stubCanvas();
@@ -355,27 +310,6 @@ describe('the vibe back layer', () => {
     });
     m.frames(3000, 3);
     expect(drawsOf()).toBeGreaterThan(first);
-  });
-
-  it('fades the title layer with the cover ease rather than jumping', () => {
-    const m = manual();
-    const { rec, canvas } = mount(m.host);
-    playFor(4000);
-    m.frames(10000, 60);
-    rec.calls.length = 0;
-    act(() => useVibeStore.getState().setVibe({ cover: 'scene' }));
-    m.frames(20000, 60);
-    // The alpha of each copy onto the title: it steps down, never in one jump, and ends at no copy.
-    const alphas: number[] = [];
-    let a = 0;
-    for (const c of rec.calls) {
-      if (c[0] === 'set globalAlpha') a = c[1] as number;
-      if (c[0] === 'drawImage' && c[1] === canvas && c.length === 10) alphas.push(a);
-    }
-    expect(alphas.length).toBeGreaterThan(3);
-    for (let k = 1; k < alphas.length; k++) expect(alphas[k - 1] - alphas[k]).toBeLessThan(0.05);
-    expect(alphas.some((v) => v > 0.05 && v < 0.35)).toBe(true);
-    expect(alphas[0]).toBeGreaterThan(0.3);
   });
 
   const rampOf = (rec: { calls: unknown[][] }) => {
@@ -498,11 +432,49 @@ describe('the vibe back layer', () => {
     expect(rec.calls.some((c) => c[0] === 'clearRect' && c[3] === front.width && c[4] === front.height)).toBe(true);
   });
 
-  it('its stylesheet puts the front layer above the scene, click-through, and feathers its bounds', () => {
+  it('its stylesheet puts the front layer above the scene and Watt, click-through, with no mask edge', () => {
     const c = sheet('../styles/vibe.css');
     expect(c).toMatch(/\.vibe-front\s*\{[^}]*z-index:\s*2/);
     expect(c).toMatch(/\.vibe-front\s*\{[^}]*pointer-events:\s*none/);
-    expect(c).toMatch(/\.vibe-front\s*\{[^}]*transparent 0, #000 64px/);
+    expect(/\.vibe-front\s*\{[^}]*mask/.test(c)).toBe(false);
+  });
+
+  it('puts the grain sheet below every word and control, and above the scene and Watt', () => {
+    const c = sheet('../styles/vibe.css');
+    const z = (sel: string): number => {
+      const m = c.match(new RegExp('\\.stage[^{]*' + sel.replace(/\./g, '\\.') + '[^{]*\\{[^}]*z-index:\\s*(-?\\d+)'));
+      return m ? Number(m[1]) : NaN;
+    };
+    const sheetZ = Number(c.match(/\.vibe-front\s*\{[^}]*z-index:\s*(\d+)/)![1]);
+    // Watt is z-index 1 on the stage; the horizon, veil, weather and sun row sit under the back layer.
+    const wattZ = Number(sheet('../buddy/watt.css').match(/\.watt\s*\{[^}]*z-index:\s*(\d+)/)?.[1] ?? 1);
+    expect(sheetZ).toBeGreaterThan(wattZ);
+    expect(z('canvas.horizon-canvas')).toBeLessThan(-1);
+    for (const sel of ['.u-wing', '.u-right', '.w-now', '.u-office-slot', '.u-work', '.rib-line', '.u-nu', '.rail', '.clk', '.u-np', '.u-transport']) {
+      expect(z(sel), sel).toBeGreaterThan(sheetZ);
+    }
+    // The main area no longer isolates, or the lifts would be trapped under the sheet.
+    expect(c).toMatch(/\.stage \.main:has\(\.vibe-front\)\s*\{\s*isolation:\s*auto/);
+    // Listen's block is no longer its own layer.
+    expect(c).toMatch(/\.u-listen\s*\{\s*z-index:\s*auto/);
+  });
+
+  it('the sheet runs from the rail\'s edge to the stage\'s right edge, top to bottom', () => {
+    const m = manual();
+    const { front } = mount(m.host, true, false, false, true);
+    expect(front.style.left).toBe('108px');
+    expect(front.style.top).toBe('0px');
+    expect(front.style.width).toBe('1892px');
+    expect(front.style.height).toBe('680px');
+    expect(front.width).toBe(946);
+    expect(front.height).toBe(340);
+  });
+
+  it('there is no title canvas and no hole punching: nothing in the layer follows the words', () => {
+    const m = manual();
+    const { container } = mount(m.host);
+    expect(container.querySelector('canvas[data-vibe="title"]')).toBeNull();
+    expect(layerSrc).not.toMatch(/bakeHole|PROTECT_SELECTOR|titleCover/);
   });
 
   it('stops while the page is hidden and starts again when it is shown', () => {

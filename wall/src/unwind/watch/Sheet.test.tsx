@@ -71,7 +71,7 @@ it('the Vibe page is the third of four pages, holds every vibe control and scrol
   expect(dlg.classList.contains('ln-sheet')).toBe(true);
   expect(body!.querySelector('[role="switch"]')).not.toBeNull();
   for (const n of ['Auto vibe', 'Drop Glitch', 'Tape Grain', 'Calm cap']) expect(screen.getByRole('switch', { name: n })).toBeTruthy();
-  expect(screen.getByRole('radiogroup', { name: 'Cover' })).toBeTruthy();
+  expect(screen.queryByRole('radiogroup', { name: 'Cover' })).toBeNull();
   expect(screen.getByRole('radiogroup', { name: 'Music on other tabs' })).toBeTruthy();
   await act(async () => screen.getByRole('tab', { name: 'Lines' }).click());
   expect(screen.queryByRole('switch', { name: 'Auto vibe' })).toBeNull();
