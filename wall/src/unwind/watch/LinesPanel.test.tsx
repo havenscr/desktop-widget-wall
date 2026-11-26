@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { DEFAULT_LINES, resetLinesStore, useLinesStore } from '../../horizon/linesSettings';
 // @ts-ignore node's own file call; the stylesheet rules are read as text.
@@ -180,9 +180,23 @@ describe('the Vibe section', () => {
     expect(screen.getByRole('radio', { name: 'Medium' }).getAttribute('aria-checked')).toBe('true');
     expect(screen.getByRole('radiogroup', { name: 'Music on other tabs' }).getAttribute('aria-describedby')).toBe('ln-music-hint');
     expect(document.getElementById('ln-music-hint')!.textContent).toBe(VIBE_HINTS.offTabMusic);
-    fireEvent.click(screen.getByRole('radio', { name: 'Full' }));
+    fireEvent.click(within(screen.getByRole('radiogroup', { name: 'Music on other tabs' })).getByRole('radio', { name: 'Full' }));
     expect(useVibeStore.getState().offTabMusic).toBe('full');
     expect(JSON.parse(localStorage.getItem('wall2-vibe')!)).toMatchObject({ offTabMusic: 'full' });
+  });
+
+  it('has an Aurora row with Off, Soft and Full chips, a hint, and Full chosen', () => {
+    render(<VibePanel />);
+    const group = screen.getByRole('radiogroup', { name: 'Aurora' });
+    expect(group.getAttribute('aria-describedby')).toBe('ln-aurora-hint');
+    expect(document.getElementById('ln-aurora-hint')!.textContent).toBe(VIBE_HINTS.aurora);
+    expect(within(group).getByRole('radio', { name: 'Full' }).getAttribute('aria-checked')).toBe('true');
+    fireEvent.click(within(group).getByRole('radio', { name: 'Soft' }));
+    expect(useVibeStore.getState().aurora).toBe('soft');
+    fireEvent.click(within(group).getByRole('radio', { name: 'Off' }));
+    expect(JSON.parse(localStorage.getItem('wall2-vibe')!)).toMatchObject({ aurora: 'off' });
+    fireEvent.click(screen.getByRole('button', { name: /Reset vibe/ }));
+    expect(useVibeStore.getState().aurora).toBe('full');
   });
 
   it('changes Calm cap and Cover and keeps them in the vibe store, away from the Lines setting', () => {
@@ -227,8 +241,8 @@ describe('the Vibe page tips', () => {
       </>,
     );
     const controls = [...screen.getAllByRole('radio'), ...screen.getAllByRole('button'), ...screen.getAllByRole('switch')];
-    // 5 radios (cover, music on other tabs), 1 reset, 4 switches.
-    expect(controls).toHaveLength(5 + 1 + 4);
+    // 8 radios (aurora, cover, music on other tabs), 1 reset, 4 switches.
+    expect(controls).toHaveLength(8 + 1 + 4);
     for (const el of controls) {
       expect(el.getAttribute('title')).toBeNull();
       resetTip();

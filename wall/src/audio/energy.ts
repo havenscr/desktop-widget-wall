@@ -16,22 +16,25 @@ export const GAP_HOLD_MS = 2000;
 /** Energy below this is silence: it snaps to 0 and never counts as a quiet stretch. */
 export const SILENCE_FLOOR = 0.005;
 
-/** A drop needs energy to cross this ... */
-export const DROP_RISE = 0.72;
-/** ... after sitting below this ... */
-export const DROP_ARM = 0.5;
-/** ... for this many seconds ... */
-export const ARM_S = 4;
-/** ... with energy never under this (a song starting out of silence is not a drop). */
-export const DROP_FLOOR = 0.15;
-/** The quiet stretch must stay this flat; a steady climb out of silence is not a build. */
-export const ARM_SPAN = 0.2;
 /**
- * Seconds the armed state survives once energy has left the quiet band without dropping. Sized
- * from the time constant: climbing from the arm level to the rise level takes at most about one
- * window for any loudness a drop can reach, so twice the window leaves room for a slow build.
+ * A drop is judged on the loudness itself, not on the slow average: the last `SHORT_S` seconds
+ * must be at least `DROP_RATIO` times the last `LONG_S` seconds, after the music had been
+ * calmer for `CALM_S` seconds, landing on a kick. Steady loud music never qualifies, however loud.
  */
-export const ARM_EXPIRY_S = 2 * ENERGY_WINDOW_S;
+export const SHORT_S = 2;
+export const LONG_S = 12;
+export const DROP_RATIO = 1.3;
+export const CALM_S = 4;
+/** Calmer means the last 2 seconds are no more than this times the last 12. */
+export const CALM_RATIO = 1.1;
+/** A 12 second average under this is too faint to be a build (a song starting out of silence is not a drop). */
+export const LONG_FLOOR = 0.12;
+/** The calm that arms a drop stays valid this long once the music has left it without dropping. */
+export const ARM_EXPIRY_S = 6;
+/** Loudness is kept as means over this many ms. */
+export const BUCKET_MS = 100;
+const SHORT_N = (SHORT_S * 1000) / BUCKET_MS;
+const LONG_N = (LONG_S * 1000) / BUCKET_MS;
 /** One step moves the average by at most this much time (a hidden page's first tick must not snap it). */
 export const MAX_STEP_MS = 250;
 /** A beat must land within this many ms of the crossing (before or after) to confirm it. */
@@ -50,12 +53,16 @@ export interface EnergyState {
   energy: number;
   drops: DropStamp;
   lastSoundAt: number;
-  // The quiet stretch (energy within [DROP_FLOOR, DROP_ARM) and flat), and the armed flag.
-  stretchSince: number;
-  stretchLo: number;
-  stretchHi: number;
+  // Loudness history: a ring of BUCKET_MS means, newest at `histHead`; `histCount` buckets are valid.
+  hist: Float32Array;
+  histHead: number;
+  histCount: number;
+  bucketMs: number;
+  bucketSum: number;
+  /** Time the last 2 s have stayed calm against the last 12 s, and whether that was long enough. */
+  calmMs: number;
   armed: boolean;
-  leftBandAt: number;
+  riseSince: number;
   // A crossing waiting for a beat, and the beat tracking it reads.
   crossedAt: number;
   beatCount: number;
@@ -64,7 +71,7 @@ export interface EnergyState {
 }
 
 export function createEnergy(): EnergyState {
-  const s = { drops: { count: 0, lastAt: -Infinity } } as EnergyState;
+  const s = { drops: { count: 0, lastAt: -Infinity }, hist: new Float32Array(LONG_N) } as EnergyState;
   resetEnergy(s);
   return s;
 }
@@ -83,11 +90,14 @@ export function resetEnergy(s: EnergyState): void {
 }
 
 function disarm(s: EnergyState): void {
-  s.stretchSince = -Infinity;
-  s.stretchLo = 0;
-  s.stretchHi = 0;
+  s.hist.fill(0);
+  s.histHead = 0;
+  s.histCount = 0;
+  s.bucketMs = 0;
+  s.bucketSum = 0;
+  s.calmMs = 0;
   s.armed = false;
-  s.leftBandAt = -Infinity;
+  s.riseSince = -Infinity;
 }
 
 /**
@@ -123,7 +133,7 @@ export function stepEnergy(
   let e = s.energy + (input - s.energy) * k;
   if (!playing && input === 0 && e < SILENCE_FLOOR) e = 0;
   s.energy = e < 0 ? 0 : e > 1 ? 1 : e;
-  if (playing) detectDrop(s, now);
+  if (playing) detectDrop(s, now, elapsedMs, level);
   else {
     // Falling energy in silence is not a build-up: nothing is counted or armed until sound returns.
     disarm(s);
@@ -133,65 +143,85 @@ export function stepEnergy(
 
 /** True when stepping can change nothing: silent, energy at 0, nothing armed or pending. */
 export function energyIdle(s: EnergyState, playing: boolean): boolean {
-  return !playing && s.energy === 0 && !s.armed && s.stretchSince === -Infinity && s.crossedAt === -Infinity;
+  return !playing && s.energy === 0 && !s.armed && s.histCount === 0 && s.crossedAt === -Infinity;
 }
 
-function detectDrop(s: EnergyState, now: number): void {
-  const e = s.energy;
-  // A crossing waits at most BEAT_CONFIRM_MS for a beat; a beat just before it counts too.
+function meanOf(s: EnergyState, n: number): number {
+  const c = Math.min(n, s.histCount);
+  if (c === 0) return 0;
+  let sum = 0;
+  for (let i = 0; i < c; i++) sum += s.hist[(s.histHead - i + LONG_N) % LONG_N];
+  return sum / c;
+}
+
+function fire(s: EnergyState, now: number): void {
+  s.drops.count++;
+  s.drops.lastAt = now;
+  s.refractoryUntil = now + REFRACTORY_S * 1000;
+  s.crossedAt = -Infinity;
+  s.armed = false;
+  s.calmMs = 0;
+}
+
+/** Feed `elapsedMs` of `level` into exact BUCKET_MS buckets, carrying the remainder. Returns the buckets completed. */
+function addLoudness(s: EnergyState, elapsedMs: number, level: number): number {
+  let left = elapsedMs;
+  let pushed = 0;
+  while (left > 0) {
+    const take = Math.min(left, BUCKET_MS - s.bucketMs);
+    s.bucketSum += level * take;
+    s.bucketMs += take;
+    left -= take;
+    if (s.bucketMs >= BUCKET_MS - 1e-9) {
+      s.histHead = (s.histHead + 1) % LONG_N;
+      s.hist[s.histHead] = s.bucketSum / s.bucketMs;
+      if (s.histCount < LONG_N) s.histCount++;
+      s.bucketMs = 0;
+      s.bucketSum = 0;
+      pushed++;
+    }
+  }
+  return pushed;
+}
+
+function detectDrop(s: EnergyState, now: number, elapsedMs: number, level: number): void {
+  // The history keeps filling while a crossing waits for its kick, so it never has a gap.
+  const pushed = addLoudness(s, elapsedMs, level);
+  // A crossing waits at most BEAT_CONFIRM_MS for a kick; a kick just before it counts too.
   if (s.crossedAt > -Infinity) {
     if (Math.abs(s.beatSeenAt - s.crossedAt) <= BEAT_CONFIRM_MS) {
-      s.drops.count++;
-      s.drops.lastAt = now;
-      s.refractoryUntil = now + REFRACTORY_S * 1000;
-      s.crossedAt = -Infinity;
+      fire(s, now);
       return;
     }
     if (now - s.crossedAt > BEAT_CONFIRM_MS) s.crossedAt = -Infinity;
     else return;
   }
-  if (now < s.refractoryUntil) {
-    disarm(s);
+  if (pushed === 0) return;
+  const stepMs = pushed * BUCKET_MS;
+  const lng = meanOf(s, LONG_N);
+  const sht = meanOf(s, SHORT_N);
+  if (now < s.refractoryUntil || lng < LONG_FLOOR) {
+    s.calmMs = 0;
+    s.armed = false;
+    s.riseSince = -Infinity;
     return;
   }
-  if (e < DROP_FLOOR) {
-    disarm(s);
+  if (sht <= lng * CALM_RATIO) {
+    s.calmMs += stepMs;
+    // Arming needs a full 12 s of history, and a brief swell never revokes it: only a fire or the expiry does.
+    if (s.calmMs >= CALM_S * 1000 && s.histCount >= LONG_N) s.armed = true;
+    s.riseSince = -Infinity;
     return;
   }
-  if (e < DROP_ARM) {
-    s.leftBandAt = -Infinity;
-    if (s.stretchSince === -Infinity) {
-      s.stretchSince = now;
-      s.stretchLo = e;
-      s.stretchHi = e;
-    } else {
-      if (e < s.stretchLo) s.stretchLo = e;
-      if (e > s.stretchHi) s.stretchHi = e;
-      if (!s.armed && s.stretchHi - s.stretchLo > ARM_SPAN) {
-        // Moving, not sitting: start the stretch over from here. Once armed, the build is the point.
-        s.stretchSince = now;
-        s.stretchLo = e;
-        s.stretchHi = e;
-      }
-    }
-    if (now - s.stretchSince >= ARM_S * 1000) s.armed = true;
-    return;
-  }
-  // Energy is at or above the arm level: a stretch cannot grow here.
-  s.stretchSince = -Infinity;
-  if (!s.armed) return;
-  if (s.leftBandAt === -Infinity) s.leftBandAt = now;
-  if (e >= DROP_RISE) {
-    // Crossed. A beat near this moment confirms it (checked on this and the next ticks).
+  // The music has left the calm: the calm that came before stays armed for a while.
+  s.calmMs = 0;
+  if (!s.armed || s.histCount < LONG_N) return;
+  if (s.riseSince === -Infinity) s.riseSince = now;
+  if (sht >= lng * DROP_RATIO) {
     s.armed = false;
     s.crossedAt = now;
-    if (Math.abs(s.beatSeenAt - now) <= BEAT_CONFIRM_MS) {
-      s.drops.count++;
-      s.drops.lastAt = now;
-      s.refractoryUntil = now + REFRACTORY_S * 1000;
-      s.crossedAt = -Infinity;
-    }
-  } else if (now - s.leftBandAt > ARM_EXPIRY_S * 1000) {
-    disarm(s);
+    if (Math.abs(s.beatSeenAt - now) <= BEAT_CONFIRM_MS) fire(s, now);
+  } else if (now - s.riseSince > ARM_EXPIRY_S * 1000) {
+    s.armed = false;
   }
 }

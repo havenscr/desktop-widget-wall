@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import { audioDrops, audioEnergy, danceKick, useAudioStore } from '../audio/store';
+import { audioBeats, audioDrops, audioEnergy, danceKick, useAudioStore } from '../audio/store';
 import { vibeSettings, useVibeStore } from '../horizon/vibeSettings';
 import { liveTint, type Rgb } from '../music/coverTint';
 import { useNowPlayingStore } from '../music/store';
@@ -11,7 +11,7 @@ import { createTape } from './tape';
 import { bakeMatte, radiusOf, type Matte } from './artMatte';
 import { drawGlow, type GlowInput } from './glow';
 import { DEGRADED_FRAME_MS, browserHost, createLoop, createProbe, type LoopHost } from './loop';
-import { createVibeFrame, createVibeState, noteDrop, stepVibe, type VibeInput } from './mix';
+import { createVibeFrame, createVibeState, counterAdvanced, noteDrop, noteKick, stepVibe, type VibeInput } from './mix';
 import { softStops } from './feather';
 
 /** Backing store scale: the canvas is drawn at half resolution and scaled up by CSS. */
@@ -106,6 +106,7 @@ export function VibeLayer({ host = browserHost }: { host?: LoopHost }) {
     let art = { x: 0, y: 0, w: 0, h: 0 };
     let skyFade: CanvasGradient | null = null;
     let lastDrops = audioDrops().count;
+    let lastBeats = audioBeats().count;
     let lastBake = -Infinity;
     let lastE = -1;
     let lastA = -1;
@@ -306,7 +307,7 @@ export function VibeLayer({ host = browserHost }: { host?: LoopHost }) {
         fctx.globalCompositeOperation = 'source-over';
         fctx.globalAlpha = 1;
         fctx.clearRect(0, 0, cw, ch);
-        if (tapeOn) tape.draw(fctx, cw, ch, still ? 0 : nowS, tapeAmt, frame.grain, still);
+        if (tapeOn) tape.draw(fctx, cw, ch, still ? 0 : nowS, tapeAmt, frame.grain, still, still ? 0 : frame.grainKick);
         if (glitchAmt > 0.003) glitch.draw(fctx, cw, ch, nowS, state.drops, glitchAmt, gsrc);
         fctx.globalCompositeOperation = 'destination-out';
         fctx.globalAlpha = 1;
@@ -329,9 +330,13 @@ export function VibeLayer({ host = browserHost }: { host?: LoopHost }) {
       (ts, dt) => {
         const t0 = probeOn ? performance.now() : 0;
         const n = audioDrops().count;
-        if (n > lastDrops) noteDrop(state, ts / 1000);
+        if (counterAdvanced(n, lastDrops)) noteDrop(state, ts / 1000);
         lastDrops = n;
+        const beats = audioBeats().count;
+        if (counterAdvanced(beats, lastBeats)) noteKick(state, ts / 1000);
+        lastBeats = beats;
         input.settings = vibeSettings();
+        input.reduced = reduced;
         input.playing = useAudioStore.getState().playing;
         input.energy = audioEnergy();
         stepVibe(state, frame, dt, ts / 1000, input);

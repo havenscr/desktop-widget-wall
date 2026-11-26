@@ -269,3 +269,38 @@ it('the device timer exists only while capture is started and the page is visibl
   stop();
   expect(vi.getTimerCount()).toBe(0);
 });
+
+it('the demo audio has real builds and drops, 2 to 4 a minute; a constant loud demo never drops', async () => {
+  const { demoPayload } = await import('./capture');
+  const { createEnergy, stepEnergy } = await import('./energy');
+  const { createBeatDetector } = await import('./beat');
+  const { loudness } = await import('./model');
+  /** Runs the payloads from `at(ms)` and returns the time of every drop. */
+  const run = (totalMs: number, at: (ms: number) => ReturnType<typeof demoPayload>): number[] => {
+    const e = createEnergy();
+    const det = createBeatDetector();
+    const times: number[] = [];
+    let seen = 0;
+    for (let ms = 0; ms < totalMs; ms += 33) {
+      const p = at(ms);
+      det.push(Float32Array.from((p.bands ?? []).map((b: number) => b / 255)), ms, ms);
+      stepEnergy(e, ms, 33, loudness({ bass: p.bass ?? 0, mid: p.mid ?? 0, high: p.high ?? 0 }), true, det.count);
+      if (e.drops.count > seen) {
+        seen = e.drops.count;
+        times.push(ms);
+      }
+    }
+    return times;
+  };
+  const drops = run(180_000, demoPayload);
+  expect(drops.length).toBeGreaterThanOrEqual(6);
+  expect(drops.length).toBeLessThanOrEqual(12);
+  for (const minute of [1, 2]) {
+    const n = drops.filter((t) => t >= minute * 60_000 && t < (minute + 1) * 60_000).length;
+    expect(n).toBeGreaterThanOrEqual(2);
+    expect(n).toBeLessThanOrEqual(4);
+  }
+  // Loud the whole time, kicks all along: the chorus of the demo held constant.
+  const flat = run(120_000, (ms) => demoPayload(15_000 + (ms % 5_000)));
+  expect(flat).toEqual([]);
+});
