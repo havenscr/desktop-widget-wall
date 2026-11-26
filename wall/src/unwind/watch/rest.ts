@@ -8,9 +8,9 @@ import { create } from 'zustand';
  * outside the left block (the card, the moods row) reports its pointer and focus through `restZone`, and the
  * controls come back (and stay while the pointer or the keyboard is there) as they do for the left block.
  * `cardHeld` is the card saying it is in use (text in its field, a rename, the new playlist form, a menu, a delete question):
- * then it never rests.
+ * then it never rests. `wall` is the frame's one hover hold (useWorkLayer): while the pointer is on the wall, or for the hold after it leaves, nothing rests, and the controls rest the moment it ends, with the work layer.
  */
-export const useWatchRest = create<{ rest: boolean; cardHeld: boolean }>(() => ({ rest: false, cardHeld: false }));
+export const useWatchRest = create<{ rest: boolean; cardHeld: boolean; wall: boolean }>(() => ({ rest: false, cardHeld: false, wall: false }));
 
 /** How long the controls stay after the pointer or focus leaves them, while something plays (Watch and Listen). */
 export const CTL_REST_MS = 3000;

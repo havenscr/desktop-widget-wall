@@ -16,13 +16,15 @@ export interface HoverHoldOptions {
   closeMs: number;
   /** False keeps it off (and clears it). */
   enabled: boolean;
+  /** True: keyboard focus arriving inside `el` turns it on too (as the pointer does), so a keyboard-only user can reach it. */
+  focusOpens?: boolean;
 }
 
 /**
  * A hold that is on while the pointer or keyboard focus is inside `el`: it turns on after `openMs`, and turns off
  * `closeMs` after the pointer and keyboard focus have both left (focus a mouse click left behind does not hold it). The Watch list card's grow and Unwind's work layer share it.
  */
-export function useHoverHold(el: HTMLElement | null, { openMs, closeMs, enabled }: HoverHoldOptions) {
+export function useHoverHold(el: HTMLElement | null, { openMs, closeMs, enabled, focusOpens = false }: HoverHoldOptions) {
   const [active, setActive] = useState(false);
   const inside = useRef(false);
   const openT = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -78,7 +80,10 @@ export function useHoverHold(el: HTMLElement | null, { openMs, closeMs, enabled 
       onBlurCapture: (e: { relatedTarget: EventTarget | null }) => {
         if (active && !inside.current) arm(e.relatedTarget as Element | null);
       },
-      onFocusCapture: () => clear(closeT),
+      onFocusCapture: (e: { target: EventTarget }) => {
+        clear(closeT);
+        if (focusOpens && enabled && !active && !openT.current && e.target instanceof Element && keyboardFocus(e.target)) start();
+      },
     },
   };
 }
