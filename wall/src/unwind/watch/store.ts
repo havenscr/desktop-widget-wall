@@ -123,7 +123,7 @@ export interface WatchState {
   volume: number;
   sheet: boolean;
   /** The sheet tab asked for when it opened (the palette strip's Settings item asks for Lights); null: the screen's own. */
-  sheetTab: 'looks' | 'lines' | 'lights' | null;
+  sheetTab: 'looks' | 'lines' | 'vibe' | 'lights' | null;
   /** What the player has reported for the item now on. */
   report: PlayerReport;
   /** True while the pointer may reach the frame: YouTube until a refused autoplay plays; Twitch for one click or `TWITCH_CLICK_MS`. */
@@ -179,7 +179,7 @@ export interface WatchState {
   setReport: (r: Partial<PlayerReport>) => void;
   setNeedsClick: (on: boolean) => void;
   setClickHint: (on: boolean) => void;
-  setSheet: (open: boolean, tab?: 'looks' | 'lines' | 'lights') => void;
+  setSheet: (open: boolean, tab?: 'looks' | 'lines' | 'vibe' | 'lights') => void;
   setPeek: (on: boolean) => void;
 }
 

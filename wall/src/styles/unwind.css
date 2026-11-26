@@ -2033,10 +2033,7 @@
 /* The Vibe section's switch rows (`LinesPanel.tsx`), the same layout as the Looks sheet's: the name at its natural
    width on the left, the switch flush right at the end of the slider column, the value in the right column. */
 .ln-vibe {
-  display: flex;
-  flex-direction: column;
   gap: 6px;
-  margin-top: 6px;
 }
 .ln-swrow .ln-label.ln-sw {
   width: auto;
@@ -4792,7 +4789,7 @@ button.sp-qrow:hover {
 
 /* ---- Lights tab (3A) and Custom colours (4C). Rows reuse the Lines side's (40 px rows, 6 px track, 20 px thumb, the 2 px tick). ---- */
 .w-seg.ln-pages {
-  width: 256px;
+  width: 330px;
 }
 .w-sheet.ls-sheet {
   gap: 8px;

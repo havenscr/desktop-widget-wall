@@ -2,7 +2,7 @@
 // is inside it, uncut, at 16 px or more, and the controls keep a usable size. Mock moods and audio are invented.
 const at = '2026-11-11T10:24:00-08:00';
 const Q = (extra = '') => `?hz=unwind&at=${encodeURIComponent(at)}&long=1&agents=3&audio=demo&desktoken=set&office=six&officeoff=offered&officemood=relax${extra}`;
-const OPEN = '.w-gear >> .ln-pages button:nth-child(3)';
+const OPEN = '.w-gear >> .ln-pages button:nth-child(4)';
 
 // Runs in the page.
 function measureLights() {
@@ -61,7 +61,11 @@ export default {
   name: 'lights-tab',
   gallery: {
     states: [
-      { screen: 'unwind', name: 'lights tab: the Lights tab open on Listen', query: `hz=unwind&at=${encodeURIComponent(at)}&clock=review&weather=ok&audio=demo&desktoken=set&office=six&officeoff=offered&officemood=relax`, custom: true, expect: ['Preview, live', 'Intensity', 'Colour speed', 'Brightness', 'Pulse', 'Smoothness', 'Who follows', 'Panel ripple'], actions: '.w-gear >> .ln-pages button:nth-child(3)' },
+      { screen: 'unwind', name: 'sheet pages: Looks', query: `hz=unwind&at=${encodeURIComponent(at)}&clock=review&weather=ok&audio=demo&desktoken=set&office=six&officeoff=offered&officemood=relax`, custom: true, expect: ['Video look'], actions: '.w-gear >> .ln-pages button:nth-child(1)' },
+      { screen: 'unwind', name: 'sheet pages: Lines', query: `hz=unwind&at=${encodeURIComponent(at)}&clock=review&weather=ok&audio=demo&desktoken=set&office=six&officeoff=offered&officemood=relax`, custom: true, expect: ['Line motion'], actions: '.w-gear' },
+      { screen: 'unwind', name: 'sheet pages: Vibe', query: `hz=unwind&at=${encodeURIComponent(at)}&clock=review&weather=ok&audio=demo&desktoken=set&office=six&officeoff=offered&officemood=relax`, custom: true, expect: ['Auto vibe', 'Music on other tabs'], actions: '.w-gear >> .ln-pages button:nth-child(3)' },
+      { screen: 'unwind', name: 'sheet pages: Vibe, scrolled to the bottom', query: `hz=unwind&at=${encodeURIComponent(at)}&clock=review&weather=ok&audio=demo&desktoken=set&office=six&officeoff=offered&officemood=relax`, custom: true, expect: ['Music on other tabs'], actions: '.w-gear >> .ln-pages button:nth-child(3) >> scrollend:.w-sheet > .ln-body' },
+      { screen: 'unwind', name: 'lights tab: the Lights tab open on Listen', query: `hz=unwind&at=${encodeURIComponent(at)}&clock=review&weather=ok&audio=demo&desktoken=set&office=six&officeoff=offered&officemood=relax`, custom: true, expect: ['Preview, live', 'Intensity', 'Colour speed', 'Brightness', 'Pulse', 'Smoothness', 'Who follows', 'Panel ripple'], actions: '.w-gear >> .ln-pages button:nth-child(4)' },
     ],
   },
   fit: {
@@ -70,6 +74,7 @@ export default {
       { name: 'Lights tab, open while sync runs', q: Q('&lsync=on'), click: OPEN, checks: ['.w-sheet.ls-sheet'] },
       { name: 'Sheet heading, Looks tab', q: Q(), click: '.w-gear >> .ln-pages button:nth-child(1)', checks: ['.w-sheet', '.ln-pages'] },
       { name: 'Sheet heading, Lines tab', q: Q(), click: '.w-gear', checks: ['.w-sheet', '.ln-pages'] },
+      { name: 'Sheet heading, Vibe tab', q: Q(), click: '.w-gear >> .ln-pages button:nth-child(3)', checks: ['.w-sheet', '.ln-pages'] },
       { name: 'Sheet heading, Lights tab', q: Q(), click: OPEN, checks: ['.w-sheet', '.ln-pages'] },
     ],
     measurements: { lightsTab: measureLights, sheetHead: measureSheetHead },
@@ -94,7 +99,7 @@ export default {
         let bad = false;
         const fail = (t) => { emit('  FAIL lights tab: ' + t); bad = true; };
         if (!m || !m.found) { fail('the Lights tab is not open'); return true; }
-        if (m.heads.join() !== 'Looks,Lines,Lights') fail('tabs are ' + m.heads.join());
+        if (m.heads.join() !== 'Looks,Lines,Vibe,Lights') fail('tabs are ' + m.heads.join());
         if (m.top < -0.5 || m.bottom > m.vh + 0.5 || m.right > m.vw + 0.5) fail(`the sheet runs off the wall (${Math.round(m.top)} to ${Math.round(m.bottom)} of ${m.vh})`);
         if (m.small.length) fail('text under 16 px: ' + m.small.join(' | '));
         if (m.cut.length) fail('cut text: ' + m.cut.join(' | '));

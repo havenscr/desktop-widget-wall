@@ -8,6 +8,8 @@ import { useWatchStore } from './store';
 
 /** The sheet heading and name on the Lines side. */
 export const LINES_TITLE = 'How the lines move';
+/** The sheet heading and name on the Vibe side. */
+export const VIBE_TITLE = 'The vibe';
 
 const TYPES: { id: LineType; name: string; note: string }[] = [
   { id: 'mountains', name: 'Mountains', note: 'The ridgelines dance as they do today.' },
@@ -149,14 +151,14 @@ function VibeSwitch({ id, label, on, locked, words, hint, tipText, onToggle }: {
   );
 }
 
-/** The Vibe section of the Lines side: Auto vibe, Drop Glitch, Tape Grain, Calm cap and Cover. Its own setting; Reset to my usual leaves it alone. */
-function VibeSection() {
+/** The Vibe side of the settings sheet: Auto vibe, Drop Glitch, Tape Grain, Calm cap and Cover. Its own setting; Reset to my usual leaves it alone. */
+export function VibePanel() {
   const v = useVibeStore();
   const set = v.setVibe;
   // The engine glitches on a drop when Auto vibe or Drop Glitch is on, so the switch reads on and locked under Auto vibe.
   const glitchOn = v.auto || v.dropGlitch;
   return (
-    <section className="ln-vibe" aria-labelledby="ln-vibe-head">
+    <div className="ln-panel ln-vibe" role="group" aria-labelledby="ln-vibe-head">
       <div className="ln-row ln-head">
         <span className="ln-label" id="ln-vibe-head">
           Vibe
@@ -229,7 +231,7 @@ function VibeSection() {
         </div>
       </div>
       <p className="ln-hint" id="ln-music-hint">{VIBE_HINTS.offTabMusic}</p>
-    </section>
+    </div>
   );
 }
 
@@ -338,7 +340,6 @@ export function LinesPanel() {
         </div>
         <span className="ln-value ln-fill">{preset === 'dancing' ? 'your usual' : preset ? '' : 'your own mix'}</span>
       </div>
-      <VibeSection />
       <p className="ln-foot">One setting for the lines everywhere music plays.</p>
     </div>
   );

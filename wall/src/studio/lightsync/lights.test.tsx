@@ -233,11 +233,11 @@ it('every control has a hover tip', async () => {
   }
 });
 
-it('the sheet has Lights as its third tab and the gear tooltip names it', async () => {
+it('the sheet has Lights as its fourth tab and the gear tooltip names it', async () => {
   const { container } = render(<WatchSheet initial="lines" />);
   const tabs = Array.from(container.querySelectorAll('[role="tab"]')).map((t) => t.textContent);
-  expect(tabs).toEqual(['Looks', 'Lines', 'Lights']);
-  fireEvent.click(container.querySelectorAll('[role="tab"]')[2]);
+  expect(tabs).toEqual(['Looks', 'Lines', 'Vibe', 'Lights']);
+  fireEvent.click(container.querySelectorAll('[role="tab"]')[3]);
   expect(container.querySelector('[data-part="lights-panel"]')).not.toBeNull();
 });
 

@@ -1279,6 +1279,10 @@ async function render(cdp, base, s, file, ctl) {
         // is:<selector> fails the state unless that element is on the page (a state that page text cannot tell apart, such as the tall music card).
         const found = await to('Runtime.evaluate', { expression: `!!document.querySelector(${JSON.stringify(step.slice(3))})`, returnByValue: true });
         if (!found.result.value) throw new Error(`is: ${step.slice(3)} is not on the page`);
+      } else if (step.startsWith('scrollend:')) {
+        // scrollend:<selector> scrolls that element to its bottom and lets the fade settle.
+        await to('Runtime.evaluate', { expression: `(() => { const el = document.querySelector(${JSON.stringify(step.slice(10))}); if (el) el.scrollTop = el.scrollHeight; })()` });
+        await new Promise((r) => setTimeout(r, 400));
       } else if (step.startsWith('wait:')) {
         // wait:<ms> pauses (a timer the page runs on its own, such as the music card's 0.75 s rest).
         await new Promise((r) => setTimeout(r, Number(step.slice(5))));

@@ -56,3 +56,30 @@ it('switching page opens the new page at the top (the body is keyed by page)', a
   await act(async () => screen.getByRole('tab', { name: 'Lights' }).click());
   expect(document.querySelector('.ln-body')).not.toBe(first);
 });
+
+it('the Vibe page is the third of four pages, holds every vibe control and scrolls in the one body', async () => {
+  render(<WatchSheet initial="vibe" />);
+  const names = screen.getAllByRole('tab').map((t) => t.textContent);
+  expect(names).toEqual(['Looks', 'Lines', 'Vibe', 'Lights']);
+  const dlg = screen.getByRole('dialog', { name: 'The vibe' });
+  expect(screen.getByRole('tab', { name: 'Vibe' }).getAttribute('aria-selected')).toBe('true');
+  const body = dlg.querySelector(':scope > .ln-body.sb-fade-bottom');
+  expect(body).not.toBeNull();
+  expect(dlg.classList.contains('ln-sheet')).toBe(true);
+  for (const n of ['Auto vibe', 'Drop Glitch', 'Tape Grain', 'Calm cap']) expect(body!.querySelector(`[role="switch"][aria-labelledby]`)).not.toBeNull(), expect(screen.getByRole('switch', { name: n })).toBeTruthy();
+  expect(screen.getByRole('radiogroup', { name: 'Cover' })).toBeTruthy();
+  expect(screen.getByRole('radiogroup', { name: 'Music on other tabs' })).toBeTruthy();
+  await act(async () => screen.getByRole('tab', { name: 'Lines' }).click());
+  expect(screen.queryByRole('switch', { name: 'Auto vibe' })).toBeNull();
+  await act(async () => screen.getByRole('tab', { name: 'Vibe' }).click());
+  expect(screen.getByRole('switch', { name: 'Auto vibe' })).toBeTruthy();
+});
+
+it('a request for the vibe tab opens the sheet on the Vibe page, and the gears open Looks (Watch) and Lines (Listen)', async () => {
+  render(<WatchSheet initial="lines" />);
+  expect(screen.getByRole('dialog', { name: 'How the lines move' })).toBeTruthy();
+  await act(async () => useWatchStore.getState().setSheet(true, 'vibe'));
+  expect(screen.getByRole('dialog', { name: 'The vibe' })).toBeTruthy();
+  const unwind = (readFileSync('src/screens/Unwind.tsx', 'utf8') as string).replace(/\r\n/g, '\n');
+  expect(unwind).toContain("initial={watch ? 'looks' : 'lines'}");
+});
