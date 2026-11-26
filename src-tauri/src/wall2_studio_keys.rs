@@ -1,16 +1,17 @@
 //! StreamYard studio keys: the studio window pick and the five studio chords (Solo, Two up, Share,
 //! Go live, End show) of the On Air Live page.
 //!
-//! The window is picked by the owner bringing it to the front within 10 seconds, and only a
-//! visible top-level window of a fixed browser image (Firefox, Chrome, Edge) is taken. It is kept in
-//! memory only. Every key has a built-in StreamYard default chord; `keys.json`, key `studio`, may override
+//! The wall finds the studio window itself: the one visible top-level window of a fixed browser image
+//! (Firefox, Chrome, Edge, Brave, Vivaldi, Opera) whose title contains "StreamYard". With none or
+//! several, the owner brings the window to the front within 10 seconds (Find window) and that one is
+//! taken. The window is kept in memory only and is found again when its handle dies. Every key has a built-in StreamYard default chord; `keys.json`, key `studio`, may override
 //! one, and a chord Windows would not accept is refused (the default is used instead). A window title can only refuse a send (it
 //! must contain "StreamYard"), never pick or redirect one. The remembered window is looked at again
 //! before every send. Go live and End show are refused here without `confirm`, whatever the page does.
 //! No title, handle, process id or chord crosses to the page, and nothing is logged.
 #![cfg_attr(not(windows), allow(dead_code))]
 
-use crate::wall2_keys::{blocked_chord, parse_steps, Refusal, Step};
+use crate::wall2_keys::{blocked_chord, parse_steps, Refusal, Remembered, Step};
 use crate::wall2_omni::require_wall2;
 use serde::Serialize;
 use serde_json::Value;
@@ -27,14 +28,53 @@ pub(crate) fn needs_confirm(key: &str) -> bool {
     key == "golive" || key == "end"
 }
 
-/// The browser a program image is, from its file name; None for anything else (Brave is left out).
+/// The browser a program image is, from its file name; None for anything else.
 pub(crate) fn browser_kind(image: &str) -> Option<&'static str> {
     let lower = image.to_ascii_lowercase();
     match lower.rsplit(['\\', '/']).next().unwrap_or("") {
         "firefox.exe" => Some("firefox"),
         "chrome.exe" => Some("chrome"),
         "msedge.exe" => Some("edge"),
+        "brave.exe" => Some("brave"),
+        "vivaldi.exe" => Some("vivaldi"),
+        "opera.exe" => Some("opera"),
         _ => None,
+    }
+}
+
+/// One visible top-level window, as the scan sees it.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct Seen {
+    pub hwnd: isize,
+    pub pid: u32,
+    pub image: String,
+    pub title: String,
+}
+
+/// What a scan of the windows found.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) enum Found {
+    None,
+    One(Remembered),
+    Several,
+}
+
+/// The browser windows titled StreamYard among `seen`. A window of any other program is ignored, whatever its title.
+pub(crate) fn scan_studio(seen: &[Seen]) -> Found {
+    let mut hits = seen.iter().filter(|w| browser_kind(&w.image).is_some() && title_allows(&w.title));
+    match (hits.next(), hits.next()) {
+        (None, _) => Found::None,
+        (Some(w), None) => Found::One(Remembered { hwnd: w.hwnd, pid: w.pid, image: w.image.clone() }),
+        (Some(_), Some(_)) => Found::Several,
+    }
+}
+
+/// The window in use: the kept one while it is alive, else what a fresh scan finds. `scan` runs only when the
+/// kept window is missing or dead, so a window that died is looked up again.
+pub(crate) fn resolve(kept: Option<Remembered>, alive: impl Fn(&Remembered) -> bool, scan: impl FnOnce() -> Found) -> Found {
+    match kept {
+        Some(k) if alive(&k) => Found::One(k),
+        _ => scan(),
     }
 }
 
@@ -149,12 +189,17 @@ pub(crate) fn refusal_word(r: Refusal) -> &'static str {
     }
 }
 
-/// The state of the pick for the page. `armed` wins while a pick waits.
-pub(crate) fn pick_state(armed: bool, remembered: bool, alive: bool, minimized: bool) -> &'static str {
+/// The state of the pick for the page. `armed` wins while a pick waits. `several` is a scan that found
+/// more than one StreamYard window and nothing is kept.
+pub(crate) fn pick_state(armed: bool, remembered: bool, alive: bool, minimized: bool, several: bool) -> &'static str {
     if armed {
         "waiting"
     } else if !remembered {
-        "none"
+        if several {
+            "several"
+        } else {
+            "none"
+        }
     } else if !alive {
         "gone"
     } else if minimized {
@@ -252,11 +297,13 @@ mod win {
     use super::*;
     use crate::wall2_keys::{win as keys_win, AppDef, Matcher, Remembered};
     use crate::wall2_winutil::{is_shell_class, sys};
-    use std::sync::atomic::{AtomicU64, Ordering};
+    use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
     use std::sync::Mutex;
     use std::time::{Duration, Instant};
     use windows::Win32::UI::WindowsAndMessaging::{GetForegroundWindow, InternalGetWindowText, IsIconic, IsWindow, IsWindowVisible};
 
+    /// Whether the last scan found more than one StreamYard window.
+    static SEVERAL: AtomicBool = AtomicBool::new(false);
     /// The picked window, in memory only.
     static PICKED: Mutex<Option<Remembered>> = Mutex::new(None);
     /// When the running pick gives up; None when no pick waits.
@@ -321,17 +368,50 @@ mod win {
         Some(Remembered { hwnd: fg, pid, image })
     }
 
-    pub fn status() -> (&'static str, Option<&'static str>) {
-        let rem = PICKED.lock().ok().and_then(|g| g.clone());
-        let (alive, minimized) = match &rem {
-            Some(r) => {
-                let hw = sys::hwnd(r.hwnd);
-                let alive = unsafe { IsWindow(hw).as_bool() } && sys::pid_of(r.hwnd) == r.pid;
-                (alive, alive && unsafe { IsIconic(hw).as_bool() })
+    fn alive(r: &Remembered) -> bool {
+        unsafe { IsWindow(sys::hwnd(r.hwnd)).as_bool() } && sys::pid_of(r.hwnd) == r.pid
+    }
+
+    /// Every visible, titled, reachable top-level window of another program, with its image and title.
+    fn seen_windows() -> Vec<Seen> {
+        let me = std::process::id();
+        let mut out = Vec::new();
+        for h in sys::top_level_windows() {
+            if !unsafe { IsWindowVisible(sys::hwnd(h)).as_bool() } || !sys::has_title(h) {
+                continue;
             }
-            None => (false, false),
+            let pid = sys::pid_of(h);
+            if pid == 0 || pid == me || is_shell_class(&sys::class_name(h)) || sys::keys_blocked(pid) {
+                continue;
+            }
+            if let Some(image) = sys::image_path(pid) {
+                out.push(Seen { hwnd: h, pid, image, title: title_of(h) });
+            }
+        }
+        out
+    }
+
+    /// The window in use: the kept one while alive, else found again. One match is kept; none or several clear it.
+    fn current() -> Option<Remembered> {
+        let kept = PICKED.lock().ok().and_then(|g| g.clone());
+        let found = resolve(kept, alive, || scan_studio(&seen_windows()));
+        let (now, several) = match found {
+            Found::One(r) => (Some(r), false),
+            Found::Several => (None, true),
+            Found::None => (None, false),
         };
-        let state = pick_state(armed(), rem.is_some(), alive, minimized);
+        SEVERAL.store(several, Ordering::SeqCst);
+        if let Ok(mut g) = PICKED.lock() {
+            *g = now.clone();
+        }
+        now
+    }
+
+    pub fn status() -> (&'static str, Option<&'static str>) {
+        let armed = armed();
+        let rem = if armed { PICKED.lock().ok().and_then(|g| g.clone()) } else { current() };
+        let minimized = rem.as_ref().is_some_and(|r| unsafe { IsIconic(sys::hwnd(r.hwnd)).as_bool() });
+        let state = pick_state(armed, rem.is_some(), rem.is_some(), minimized, SEVERAL.load(Ordering::SeqCst));
         let browser = rem.as_ref().and_then(|r| browser_kind(&r.image));
         (state, browser)
     }
@@ -343,11 +423,11 @@ mod win {
     }
 
     pub fn send(steps: &[Step], times: u8) -> Result<(), Refusal> {
-        let rem = PICKED.lock().ok().and_then(|g| g.clone()).ok_or(Refusal::NoApp)?;
+        let rem = current().ok_or(Refusal::NoApp)?;
         let app = AppDef {
             id: "studio".to_string(),
             name: "Studio".to_string(),
-            matcher: Matcher::Exe(vec!["firefox.exe".to_string(), "chrome.exe".to_string(), "msedge.exe".to_string()]),
+            matcher: Matcher::Exe(["firefox.exe", "chrome.exe", "msedge.exe", "brave.exe", "vivaldi.exe", "opera.exe"].iter().map(|e| e.to_string()).collect()),
             fallback: false,
             keys: Vec::new(),
         };
@@ -362,11 +442,13 @@ mod tests {
     const FILE: &str = r#"{ "apps": [], "studio": { "solo": "Alt+1", "two": "Alt+2", "share": "Alt+3", "golive": "Ctrl+Shift+G", "end": "Win+L", "extra": "Alt+9" } }"#;
 
     #[test]
-    fn only_the_three_browsers_are_picked() {
+    fn only_the_six_browsers_are_taken() {
         assert_eq!(browser_kind("C:\\Program Files\\Mozilla Firefox\\firefox.exe"), Some("firefox"));
         assert_eq!(browser_kind("C:\\X\\CHROME.EXE"), Some("chrome"));
         assert_eq!(browser_kind("C:\\X\\msedge.exe"), Some("edge"));
-        assert_eq!(browser_kind("C:\\X\\brave.exe"), None);
+        assert_eq!(browser_kind("C:\\X\\brave.exe"), Some("brave"));
+        assert_eq!(browser_kind("C:\\X\\vivaldi.exe"), Some("vivaldi"));
+        assert_eq!(browser_kind("C:\\X\\opera.exe"), Some("opera"));
         assert_eq!(browser_kind("C:\\X\\notepad.exe"), None);
     }
 
@@ -500,11 +582,57 @@ mod tests {
 
     #[test]
     fn the_pick_states() {
-        assert_eq!(pick_state(true, true, true, false), "waiting");
-        assert_eq!(pick_state(false, false, false, false), "none");
-        assert_eq!(pick_state(false, true, false, false), "gone");
-        assert_eq!(pick_state(false, true, true, true), "minimized");
-        assert_eq!(pick_state(false, true, true, false), "picked");
+        assert_eq!(pick_state(true, true, true, false, false), "waiting");
+        assert_eq!(pick_state(false, false, false, false, false), "none");
+        assert_eq!(pick_state(false, false, false, false, true), "several");
+        assert_eq!(pick_state(false, true, false, false, false), "gone");
+        assert_eq!(pick_state(false, true, true, true, false), "minimized");
+        assert_eq!(pick_state(false, true, true, false, false), "picked");
+    }
+
+    fn seen(hwnd: isize, image: &str, title: &str) -> Seen {
+        Seen { hwnd, pid: hwnd as u32, image: image.to_string(), title: title.to_string() }
+    }
+
+    const SY: &str = "Studio | StreamYard - Google Chrome";
+
+    fn rem(h: isize, image: &str) -> Remembered {
+        Remembered { hwnd: h, pid: h as u32, image: image.to_string() }
+    }
+
+    #[test]
+    fn a_scan_with_no_streamyard_window_finds_none() {
+        let w = [seen(1, "C:\\X\\chrome.exe", "Inbox - Gmail"), seen(2, "C:\\X\\notepad.exe", "notes")];
+        assert_eq!(scan_studio(&w), Found::None);
+        assert_eq!(scan_studio(&[]), Found::None);
+    }
+
+    #[test]
+    fn a_scan_with_one_browser_window_uses_it() {
+        let w = [seen(1, "C:\\X\\chrome.exe", "Inbox"), seen(2, "C:\\X\\brave.exe", SY)];
+        assert_eq!(scan_studio(&w), Found::One(rem(2, "C:\\X\\brave.exe")));
+    }
+
+    #[test]
+    fn a_scan_with_two_browser_windows_reports_several() {
+        let w = [seen(1, "C:\\X\\chrome.exe", SY), seen(2, "C:\\X\\firefox.exe", "StreamYard - Mozilla Firefox")];
+        assert_eq!(scan_studio(&w), Found::Several);
+    }
+
+    #[test]
+    fn a_non_browser_window_titled_streamyard_is_ignored() {
+        let w = [seen(1, "C:\\X\\notepad.exe", "StreamYard notes"), seen(2, "C:\\X\\chrome.exe", SY)];
+        assert_eq!(scan_studio(&w), Found::One(rem(2, "C:\\X\\chrome.exe")));
+        assert_eq!(scan_studio(&w[..1]), Found::None);
+    }
+
+    #[test]
+    fn a_dead_handle_is_looked_up_again_and_a_live_one_is_not_scanned() {
+        let old = rem(5, "C:\\X\\chrome.exe");
+        let fresh = [seen(9, "C:\\X\\chrome.exe", SY)];
+        assert_eq!(resolve(Some(old.clone()), |_| false, || scan_studio(&fresh)), Found::One(rem(9, "C:\\X\\chrome.exe")));
+        assert_eq!(resolve(Some(old.clone()), |_| true, || panic!("scanned a live window")), Found::One(old));
+        assert_eq!(resolve(None, |_| true, || scan_studio(&fresh)), Found::One(rem(9, "C:\\X\\chrome.exe")));
     }
 
     #[test]

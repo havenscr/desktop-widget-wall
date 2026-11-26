@@ -7,7 +7,7 @@ import { useOnAirStore } from '../store';
 import { statusStale } from '../ytlive';
 import { useYtLive } from '../ytliveStore';
 import { Head } from './Tiles';
-import { agoText, needsConfirm, refusalText, STUDIO_CONFIRM_MS, type StudioKey } from './studioModel';
+import { agoText, needsConfirm, needsFind, refusalText, STUDIO_CONFIRM_MS, type StudioKey } from './studioModel';
 import { LABEL_MAX_PX, SLOT_INFO, WAITING, fitLabel, loadSlots, measureLabel, saveSlots, slotLabel, type ShownAction, type Slot } from './studioSlots';
 import { SLOT_ICON as ICON } from './studioIcons';
 import { StudioPicker } from './StudioPicker';
@@ -55,7 +55,7 @@ export function StudioKeys({ now }: { now: number }) {
   // End show only runs while the show is live; the key is read at press time, not from a stale render.
   const liveNow = useRef(live);
   liveNow.current = live;
-  const picked = status.state === 'picked' || status.state === 'minimized';
+  const picked = !needsFind(status.state);
 
   /** A reassigned or relabelled slot starts clean: no pending confirm, no glow. */
   const change = (i: number, next: Slot) => {
@@ -145,7 +145,7 @@ export function StudioKeys({ now }: { now: number }) {
     if (WAITING.has(action)) help = `${info.full}. ${WAITING_TEXT}: this key works once the Stage Pop-out add-on is set up. Right-click to change the key.`;
     else if (needsConfirm(action as StudioKey)) help = `${info.full} in StreamYard. Click twice within 3 seconds. StreamYard is then sent the key twice. Right-click to change the key.`;
     else if (info.group === 'wall') help = `${info.full}. Right-click to change the key.`;
-    else help = `Send the ${info.full} hotkey to the StreamYard window you picked. Right-click to change the key.`;
+    else help = `Send the ${info.full} hotkey to the StreamYard window in use. Right-click to change the key.`;
     const lib = LIB_ID[action];
     const libAction = lib && keys.groups ? (resolveKey(lib, keys.groups)?.action ?? null) : null;
     const onKey = keys.onKeyDown(libAction);
@@ -189,7 +189,7 @@ export function StudioKeys({ now }: { now: number }) {
   const action = !picked ? (
     <button type="button" className="oa-btn oa2-hdbtn" onClick={() => void pick()} {...tip('Then click the StreamYard browser window within 10 seconds.')}>
       <IconAppWindow size={20} aria-hidden="true" />
-      Pick window
+      Find window
     </button>
   ) : undefined;
 

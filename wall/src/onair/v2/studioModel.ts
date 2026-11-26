@@ -9,30 +9,33 @@ export const needsConfirm = (k: StudioKey): boolean => k === 'golive' || k === '
 /** How long the second click may take. Rust asks for `confirm` too. */
 export const STUDIO_CONFIRM_MS = 3000;
 
-export type PickState = 'none' | 'waiting' | 'picked' | 'gone' | 'minimized';
+export type PickState = 'none' | 'several' | 'waiting' | 'picked' | 'gone' | 'minimized';
 export interface PickStatus {
   state: PickState;
-  browser: 'firefox' | 'chrome' | 'edge' | null;
+  browser: keyof typeof BROWSER_NAME | null;
 }
 export interface Sent {
   key: StudioKey;
   at: number;
 }
 
-export const BROWSER_NAME = { firefox: 'Firefox', chrome: 'Chrome', edge: 'Edge' } as const;
+export const BROWSER_NAME = { firefox: 'Firefox', chrome: 'Chrome', edge: 'Edge', brave: 'Brave', vivaldi: 'Vivaldi', opera: 'Opera' } as const;
+
+/** The Find window button shows only when the wall has no single window of its own: none found, several found, or a find waiting. */
+export const needsFind = (s: PickStatus['state']): boolean => s === 'none' || s === 'several' || s === 'waiting' || s === 'gone';
 
 /** One short line per refusal word Rust gives. */
 export function refusalText(e: unknown): string {
   const w = typeof e === 'string' ? e : e instanceof Error ? e.message : '';
   switch (w) {
     case 'no studio window':
-      return 'Pick the StreamYard window first';
+      return 'Open StreamYard in a browser, or press Find window'
     case 'not streamyard':
       return 'Switch that window to the StreamYard tab';
     case 'not set up':
       return 'StreamYard has no hotkey for that key. Set one in StreamYard Settings, Hotkeys';
     case 'gone':
-      return 'The studio window is gone. Pick it again';
+      return 'The studio window is gone. Open StreamYard again'
     case 'not forward':
       return 'The studio window would not come forward';
     case 'busy':
