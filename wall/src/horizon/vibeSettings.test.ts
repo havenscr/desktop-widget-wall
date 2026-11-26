@@ -9,15 +9,15 @@ describe('vibe settings', () => {
   });
 
   it('defaults: Auto vibe on, the rest off, effects pass over the title', () => {
-    expect(DEFAULT_VIBE).toEqual({ auto: true, dropGlitch: false, tapeGrain: false, calmCap: false, cover: 'title' });
+    expect(DEFAULT_VIBE).toEqual({ auto: true, dropGlitch: false, tapeGrain: false, calmCap: false, cover: 'title', offTabMusic: 'medium' });
     expect(vibeSettings()).toMatchObject(DEFAULT_VIBE);
     expect(VIBE_KEY).toBe('wall2-vibe');
   });
 
   it('validates every stored field', () => {
-    expect(validateVibe({ auto: 'yes', dropGlitch: 1, tapeGrain: null, calmCap: 'no', cover: 'all' })).toEqual(DEFAULT_VIBE);
-    expect(validateVibe({ auto: false, dropGlitch: true, tapeGrain: true, calmCap: true, cover: 'scene' })).toEqual({
-      auto: false, dropGlitch: true, tapeGrain: true, calmCap: true, cover: 'scene',
+    expect(validateVibe({ auto: 'yes', dropGlitch: 1, tapeGrain: null, calmCap: 'no', cover: 'all', offTabMusic: 'loud' })).toEqual(DEFAULT_VIBE);
+    expect(validateVibe({ auto: false, dropGlitch: true, tapeGrain: true, calmCap: true, cover: 'scene', offTabMusic: 'full' })).toEqual({
+      auto: false, dropGlitch: true, tapeGrain: true, calmCap: true, cover: 'scene', offTabMusic: 'full',
     });
     expect(validateVibe(null)).toEqual(DEFAULT_VIBE);
     expect(validateVibe('scene')).toEqual(DEFAULT_VIBE);
@@ -26,7 +26,7 @@ describe('vibe settings', () => {
   });
 
   it('the frame reads the settings alone, without the store actions', () => {
-    expect(Object.keys(vibeSettings()).sort()).toEqual(['auto', 'calmCap', 'cover', 'dropGlitch', 'tapeGrain']);
+    expect(Object.keys(vibeSettings()).sort()).toEqual(['auto', 'calmCap', 'cover', 'dropGlitch', 'offTabMusic', 'tapeGrain']);
     useVibeStore.getState().setVibe({ tapeGrain: true });
     expect(vibeSettings().tapeGrain).toBe(true);
     expect(vibeSettings()).toBe(vibeSettings());

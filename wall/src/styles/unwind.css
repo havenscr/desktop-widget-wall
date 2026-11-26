@@ -1830,6 +1830,9 @@
   font: 500 17px/1.2 var(--body);
   white-space: nowrap;
 }
+.ln-label.ln-wide {
+  width: 172px;
+}
 .ln-sub {
   width: auto;
   margin-left: 14px;
@@ -1860,6 +1863,12 @@
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+/* Help prose wraps to a second line rather than being cut. */
+.ln-hint {
+  white-space: normal;
+  overflow: visible;
+  text-overflow: clip;
 }
 .ln-foot {
   margin-top: 4px;

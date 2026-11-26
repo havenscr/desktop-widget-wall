@@ -10,6 +10,8 @@ import { REFLECT, createReflection, drawReflection, reflectionAlpha } from './re
 import { audioBands, audioBeats, clearDanceHistory, danceKick, pauseDanceHistory, useAudioStore } from '../audio/store';
 import { loudness, smoothStep } from '../audio/model';
 import { CAMERAS, HOME_MORNING, MOON_PLACES, cameraFor, cloudShiftFor, glideCamera, localDay, settled, startGlide, stepGlide, type CameraPreset, type Glide } from './cameras';
+import { createLevelEase, fractionsAt, stepLevelEase, withMusicLevel, type LevelEase, type MusicFractions } from './offTabMusic';
+import { vibeSettings } from './vibeSettings';
 import {
   REST_LOOK,
   REST_OPACITY,
@@ -205,6 +207,15 @@ export function HorizonCanvas({ now = Date.now }: { now?: () => number }) {
   // The echo's clock and the real-band sampler, read through the Height cap (`lineTypes.ts`; off
   // at the usual setting, so the bands are read exactly as before).
   const echoT = useRef(0);
+  // Music on other tabs (`offTabMusic.ts`): the eased level, its fractions, how much music drives the lines, and a scratch camera.
+  // Made once (lazily), not on every render.
+  const levelEase = useRef<LevelEase>(null as unknown as LevelEase);
+  if (!levelEase.current) levelEase.current = createLevelEase(vibeSettings().offTabMusic);
+  const level = useRef<MusicFractions>(null as unknown as MusicFractions);
+  if (!level.current) level.current = fractionsAt(levelEase.current.pos, { amp: 0, a: 0, n: 0, gp: 0, vw: 0 });
+  const playWeight = useRef(0);
+  const musicCam = useRef<CameraPreset>(null as unknown as CameraPreset);
+  if (!musicCam.current) musicCam.current = { ...glide.current.to };
   const cap = useRef(createMountainCap());
   const sampler = useRef(createEchoSampler(cap.current.bands));
   // The new line types (Bars, Ribbon, Sparks, Skyline): their state and one frame input, made once.
@@ -270,6 +281,8 @@ export function HorizonCanvas({ now = Date.now }: { now?: () => number }) {
     // The seconds the moving parts of a new type advance in this paint: the frame's own step, and nothing for a
     // repaint (a resize, a visibility change, a changed setting), which only draws what is already there.
     let drawDt = 0;
+    /** The camera as drawn: off Unwind the music level moves its ripple values toward Unwind's while music plays; at rest, still or Zen it is the camera itself. */
+    const tabCamera = () => (still ? glideCamera(glide.current) : withMusicLevel(glideCamera(glide.current), level.current, playWeight.current, musicCam.current));
     const measureCost = import.meta.env.DEV && new URLSearchParams(window.location.search).has('linecost');
     let costFrames = 0;
     let costMs = 0;
@@ -341,7 +354,7 @@ export function HorizonCanvas({ now = Date.now }: { now?: () => number }) {
       }
       const ctx = canvas.getContext('2d');
       if (!ctx) return;
-      const camera = glideCamera(glide.current);
+      const camera = tabCamera();
       live.hy = camera.hy;
       // The Lines setting (`linesSettings.ts`), read from the store without a render.
       const lines = lineSettings();
@@ -596,6 +609,9 @@ export function HorizonCanvas({ now = Date.now }: { now?: () => number }) {
       const driving = !zen && musicDriving(motion.current, audio.playing, audioBands(), dt);
       if (driving) loud.current = smoothStep(loud.current, loudness(audio), dt);
       stepEchoMotion(motion.current, driving, dt);
+      stepLevelEase(levelEase.current, vibeSettings().offTabMusic, dt);
+      fractionsAt(levelEase.current.pos, level.current);
+      playWeight.current = 1 - motion.current.rest;
       // Zen is watched for the length of a session without input: its picture never goes to the idle fade.
       awake.current = stepEchoFade(awake.current, !idleRef.current || zen, dt);
       const layer = wx.current;
@@ -607,7 +623,7 @@ export function HorizonCanvas({ now = Date.now }: { now?: () => number }) {
       stepWeather(layer, dt);
       glide.current = stepGlide(glide.current, dt);
       publish();
-      lineCount.current = stepLineCount(lineCount.current, glideCamera(glide.current).en, dt);
+      lineCount.current = stepLineCount(lineCount.current, tabCamera().en, dt);
       stepEchoGate(gate.current, glide.current, dt);
       echoT.current += dt;
       const beats = audioBeats();
@@ -616,7 +632,7 @@ export function HorizonCanvas({ now = Date.now }: { now?: () => number }) {
       input.beats = beats.count;
       input.lag = beats.lag / 1000;
       input.bass = beats.bass;
-      input.gp = glideCamera(glide.current).gp;
+      input.gp = tabCamera().gp;
       grid.current = stepGridPulse(pulse.current, dt, input);
       if (glide.current.cinematic && glide.current.progress >= 0.5) cinematicDay.current = localDay(nowRef.current());
       paint();

@@ -4,6 +4,7 @@ import { HorizonCanvas } from './HorizonCanvas';
 import { drawHorizon, type HorizonOptions } from './index';
 import { CAMERAS } from './cameras';
 import { recordingContext } from './canvasStub';
+import { useVibeStore } from './vibeSettings';
 import { usePlaceStore } from '../state/places';
 import { BAND_COUNT, HISTORY_ROWS, danceHistory, danceKick, ingestLevels, resetAudio, tickAudio } from '../audio/store';
 import { sampleDance } from '../audio/spectrum';
@@ -73,6 +74,8 @@ beforeEach(() => {
   window.matchMedia = ((query: string) => ({ matches: false, media: query, addEventListener() {}, removeEventListener() {} })) as unknown as typeof window.matchMedia;
   localStorage.clear();
   resetLinesStore();
+  // These tests pin today's look: Calm music on the other tabs (the default is Medium).
+  useVibeStore.getState().setVibe({ offTabMusic: 'calm' });
   usePlaceStore.setState({ active: 'work' });
   resetAudio();
   frames = new Map();

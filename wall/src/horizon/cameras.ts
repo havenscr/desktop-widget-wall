@@ -32,6 +32,8 @@ export interface CameraPreset {
   snowDeg: number;
   /** Grid pulse strength, 0 to 1: scales the beat's glow bands and the bass brightening (subtle 0.5 on Work, Home and Rainier, full 1 on Unwind); blended during a glide. */
   gp: number;
+  /** How much the lines are the visualizer (cover colours, instrument follow), 0 to 1. Omitted: from `en` (`visualizerWeight`); set by the music level on other tabs (`offTabMusic.ts`). */
+  vw?: number;
   /** Which terrain the camera looks at; omitted means `'pano'`. */
   ter?: Terrain;
 }
