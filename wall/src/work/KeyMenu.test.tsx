@@ -167,3 +167,13 @@ it('with every item disabled the menu itself takes focus, so Escape and the arro
   fireEvent.keyDown(document.activeElement as HTMLElement, { key: 'Escape' });
   expect(closed).toBe(1);
 });
+
+it('a key menu on the Always here row opens upward, like the Now keys, clear of the bottom strip handle', async () => {
+  const css = (await import('../styles/work.css?raw')).default.replace(/\r\n/g, '\n');
+  const at = css.indexOf('.pinned .key-menu');
+  expect(at).toBeGreaterThan(0);
+  const body = css.slice(css.indexOf('{', at) + 1, css.indexOf('}', at));
+  expect(body).toContain('top: auto;');
+  expect(body).toContain('bottom: calc(100% + 4px);');
+  expect(css.slice(css.lastIndexOf('}', at), at)).toContain('.keys .key-menu');
+});

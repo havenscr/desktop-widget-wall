@@ -563,3 +563,14 @@ it('one click on a quiet Find window starts a new pick', async () => {
   fireEvent.click(btn);
   await waitFor(() => expect(started).toBe(1));
 });
+
+it('the studio keys are 76 px tall, the least a key may be, and the two rows still fit the 192 px box under the heading', () => {
+  const key = ruleOf(onair2Css, '.oa2 .oa2-studiokeys .deck-tile.key-tile');
+  expect(/(^|[\s;])height: 76px;/.test(key)).toBe(true);
+  const grid = ruleOf(onair2Css, '.oa2-skgrid');
+  expect(/grid-template-rows: repeat\(2, 76px\)/.test(grid)).toBe(true);
+  const top = Number(/top: (\d+)px;/.exec(grid)?.[1]);
+  const gap = Number(/gap: (\d+)px/.exec(grid)?.[1]);
+  expect(top + 76 + gap + 76).toBeLessThanOrEqual(192);
+  expect(top).toBeGreaterThanOrEqual(26);
+});
