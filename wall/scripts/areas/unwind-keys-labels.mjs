@@ -30,7 +30,7 @@ export default {
     variants: [{
       name: NAME,
       q: '?hz=unwind&at=2026-11-11T22%3A30%3A00-08%3A00&clock=review&weather=ok&agents=3&watch=mock&wlist=three&wlook=drivein&wplay=0&meet=heavy&keys=three&hold=three&pins=long',
-      click: 'rest:.u-date',
+      click: 'rest:.u-foot',
       checks: ['.u-keys-tiles'],
       viewportOnly: true,
     }],

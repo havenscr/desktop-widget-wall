@@ -199,7 +199,7 @@ export function useMinute(now: () => number): number {
  * empty day and the task read was good with nothing due. Before a read, after a failed
  * one, or when a feed is not set up, the row shows nothing.
  */
-export function Ribbon({ kind, now = Date.now, compact = false, feed }: { kind: RibbonKind; now?: () => number; compact?: boolean; feed?: DayFeed }) {
+export function Ribbon({ kind, now = Date.now, compact = false, feed, onOverlay }: { kind: RibbonKind; now?: () => number; compact?: boolean; feed?: DayFeed; onOverlay?: (open: boolean) => void }) {
   const visible = useVisible();
   const t = useMinute(now);
   // A layer that already reads the day (Unwind's thin line) passes its feed, so the calendar is asked once.
@@ -228,6 +228,13 @@ export function Ribbon({ kind, now = Date.now, compact = false, feed }: { kind: 
   const boxes = calm ? agentBoxes(agents, t) : [];
   const [overlay, setOverlay] = useState<Overlay>(null);
   const close = useCallback(() => setOverlay(null), []);
+  // A layer that hosts this ribbon (Unwind's) learns while its drawer or panel is open, so it stays up under it.
+  const overlayOpen = overlay !== null;
+  useEffect(() => {
+    if (!onOverlay) return;
+    onOverlay(overlayOpen);
+    return () => onOverlay(false);
+  }, [onOverlay, overlayOpen]);
   // The panel needs the helper: hidden when it is not set up.
   const canPanel = calm && agents.status !== 'unconfigured';
   const openPanel = useCallback(() => setOverlay({ kind: 'panel' }), []);
@@ -437,7 +444,7 @@ export function Ribbon({ kind, now = Date.now, compact = false, feed }: { kind: 
         <span key={l.kind} className="sunm-hit" style={{ left: l.x }} title={l.tip} aria-hidden="true" />
       ))}
       {calm && !compact && overlay?.kind !== 'drawer' && <DayLip open={false} x={handleLeft + HANDLE_W / 2 - LIP_INSET} onToggle={toggleByLip} />}
-      {calm && !compact && overlay?.kind === 'drawer' && (
+      {calm && overlay?.kind === 'drawer' && (
         <DayDrawer
           chips={dayChips}
           allDay={allDay}
@@ -449,7 +456,7 @@ export function Ribbon({ kind, now = Date.now, compact = false, feed }: { kind: 
           lip={<DayLip open x={null} onToggle={toggleByLip} />}
         />
       )}
-      {calm && !compact && overlay?.kind === 'panel' && <AgentsToday now={t} onClose={close} />}
+      {calm && overlay?.kind === 'panel' && <AgentsToday now={t} onClose={close} />}
     </>
   );
 }
