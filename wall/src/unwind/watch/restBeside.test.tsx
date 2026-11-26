@@ -196,7 +196,7 @@ describe('the Watch list card and the Office moods line rest with the controls',
     expect(useWatchRest.getState().rest).toBe(true);
     act(() => useWatchStore.getState().setTab('listen'));
     await flush();
-    expect(useWatchRest.getState()).toEqual({ rest: false, cardHeld: false });
+    expect(useWatchRest.getState()).toEqual({ rest: false, cardHeld: false, wall: false });
     // Back with a countdown pending, then away again before it ends: nothing fires later.
     act(() => useWatchStore.getState().setTab('watch'));
     await flush();

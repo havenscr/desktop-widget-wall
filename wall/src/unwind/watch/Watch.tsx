@@ -312,7 +312,9 @@ export function useControlsFade(canRest: boolean, peek: boolean) {
   const [rest, setRest] = useState(false);
   const timer = useRef<ReturnType<typeof setTimeout>>(undefined);
   // Which zones hold the controls shown: the left block ('now') and the zones beside it that report through `restZone`.
-  const hold = useRef({ zones: new Set<string>(), focused: new Set<string>(), peek: false, can: false });
+  const hold = useRef({ zones: new Set<string>(), focused: new Set<string>(), peek: false, can: false, wall: false });
+  const wall = useWatchRest((s) => s.wall);
+  hold.current.wall = wall;
   hold.current.peek = peek;
   hold.current.can = canRest;
   const wake = useCallback(() => {
@@ -320,13 +322,26 @@ export function useControlsFade(canRest: boolean, peek: boolean) {
     timer.current = undefined;
     setRest(false);
     const h = hold.current;
-    if (!h.can || h.zones.size > 0 || h.focused.size > 0 || h.peek) return;
+    if (!h.can || h.zones.size > 0 || h.focused.size > 0 || h.peek || h.wall) return;
     timer.current = setTimeout(() => {
       timer.current = undefined;
       setRest(true);
     }, ctlTiming.restMs);
   }, []);
   useEffect(() => wake(), [canRest, peek, wake]);
+  // The wall's hover hold ending rests the controls at once, in step with the work layer, unless something else holds them.
+  const wasWall = useRef(false);
+  useEffect(() => {
+    const was = wasWall.current;
+    wasWall.current = wall;
+    if (wall) return wake();
+    const h = hold.current;
+    if (was && h.can && h.zones.size === 0 && h.focused.size === 0 && !h.peek) {
+      clearTimeout(timer.current);
+      timer.current = undefined;
+      setRest(true);
+    }
+  }, [wall, wake]);
   useEffect(() => () => clearTimeout(timer.current), []);
   // The card and the moods row report their pointer and focus here, and read `rest` from the store.
   useEffect(() => {
