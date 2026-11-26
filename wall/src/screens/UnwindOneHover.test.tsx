@@ -62,3 +62,24 @@ it('the controls and the work layer show together on one hover and hide together
   expect(resting()).toBe(true);
   expect(main().hasAttribute('data-work-shown')).toBe(false);
 });
+
+it('a held panel keeps the layer and the controls up together after the pointer leaves', async () => {
+  render(
+    <Frame place="unwind">
+      <Unwind />
+    </Frame>,
+  );
+  await flush(CTL_REST_MS + 300);
+  expect(resting()).toBe(true);
+  fireEvent.pointerEnter(main());
+  await flush(50);
+  act(() => useWorkLayerStore.setState({ panel: true }));
+  fireEvent.pointerLeave(main());
+  await flush(LAYER_CLOSE_MS + CTL_REST_MS + 500);
+  expect(main().hasAttribute('data-work-shown')).toBe(true);
+  expect(resting()).toBe(false);
+  act(() => useWorkLayerStore.setState({ panel: false }));
+  await flush(LAYER_CLOSE_MS + 200);
+  expect(main().hasAttribute('data-work-shown')).toBe(false);
+  expect(resting()).toBe(true);
+});

@@ -899,10 +899,6 @@ try {
       if (!t) throw new Error('grow: .sp-card or .sp-top is missing');
       c.dispatchEvent(new PointerEvent('pointerover', { bubbles: true })); t.click();
     }
-    else if (click === 'nolift') {
-      // The pointer on the wall lifts the bottom row and shows the timeline (one hover); a check of the row at rest puts both back, with no transition.
-      const st = document.createElement('style'); st.textContent = '.u-foot, .u-office-slot { transform: none !important; transition: none !important; } .u-work { display: none !important; }'; document.head.appendChild(st);
-    }
     else if (click.startsWith('hover:')) {
       // Headless --dump-dom has no pointer: every top-level :hover rule is copied for a class that stands in for it.
       const extra = [];

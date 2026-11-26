@@ -84,6 +84,27 @@ describe('one hover shows everything', () => {
     expect(useWatchRest.getState().wall).toBe(false);
     expect(main().hasAttribute('data-work-shown')).toBe(false);
   });
+  it('keyboard focus alone shows the layer, and leaving the keyboard hides it after the hold', async () => {
+    render(
+      <Frame place="unwind">
+        <button className="kb-probe">go</button>
+      </Frame>,
+    );
+    await flush();
+    expect(useWorkLayerStore.getState().shown).toBe(false);
+    const btn = document.querySelector<HTMLButtonElement>('.kb-probe')!;
+    const spy = vi.spyOn(btn, 'matches').mockImplementation((sel: string) => sel === ':focus-visible');
+    act(() => btn.focus());
+    await flush(50);
+    expect(useWorkLayerStore.getState().shown).toBe(true);
+    expect(useWatchRest.getState().wall).toBe(true);
+    act(() => btn.blur());
+    await flush(LAYER_CLOSE_MS - 100);
+    expect(useWorkLayerStore.getState().shown).toBe(true);
+    await flush(200);
+    expect(useWorkLayerStore.getState().shown).toBe(false);
+    spy.mockRestore();
+  });
   it('a held panel keeps the layer up after the pointer leaves', async () => {
     render(<Frame place="unwind">x</Frame>);
     await flush();
@@ -94,9 +115,6 @@ describe('one hover shows everything', () => {
     await flush(LAYER_CLOSE_MS + 700);
     expect(useWorkLayerStore.getState().shown).toBe(true);
     expect(main().hasAttribute('data-work-shown')).toBe(true);
-  });
-  it('the old band rule is gone', () => {
-    expect(readFileSync('src/unwind/work/useWorkLayer.ts', 'utf8')).not.toMatch(/inLayerZone|LAYER_BAND/);
   });
 });
 
@@ -122,6 +140,17 @@ describe('the row lifts with the layer', () => {
     expect(rest.slice(0, rest.indexOf('}'))).toMatch(/transition: transform 400ms ease/);
     expect(s).toMatch(/\.main\[data-work-shown\] \.rib-line \{\s*opacity: 0;\s*transition: opacity 250ms ease/);
     expect(s).toMatch(/\.rib-line \{[^}]*transition: opacity 400ms ease/);
+  });
+});
+
+describe('the tall music card while the row is lifted', () => {
+  it('ends 10 px above the lifted row (wall y 540), eased by the card own height transition', () => {
+    const s = css(SHEET);
+    const at = s.indexOf(".main[data-place='unwind'][data-work-shown] .sp-card.tall");
+    expect(at).toBeGreaterThan(0);
+    const rule = s.slice(at, s.indexOf('}', at));
+    expect(rule).toContain('height: 506px');
+    expect(css('../../styles/unwind.css')).toMatch(/\.sp-card \{[^}]*transition: left 400ms ease-out, width 400ms ease-out, height 400ms ease-out/);
   });
 });
 

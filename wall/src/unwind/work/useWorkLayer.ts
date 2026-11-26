@@ -35,25 +35,27 @@ export function useSuppressed(): boolean {
 }
 
 /**
- * The one hover on the Unwind frame: the pointer anywhere on the wall (or focus inside it) shows the Watch controls and the work layer together,
+ * The one hover on the Unwind frame: the pointer anywhere on the wall (or keyboard focus inside it) shows the Watch controls and the work layer together,
  * and both hide `LAYER_CLOSE_MS` after the pointer and focus leave. The layer stays hidden while the sheet is open (a take, a
  * dialog or a menu do too, so the timeline, the keys and Next up all follow the one `shown` state; the keys row's own menu and picker are exempt and hold it up through `held`).
- * `wall` (in the Watch rest store) is the same hold without the suppression, so the controls stay with the pointer. Spread `handlers` on the frame element, give `setEl` as its ref.
+ * `wall` (in the Watch rest store) is the same hold (with the held menu and panel) without the suppression, so the controls stay with the pointer. Spread `handlers` on the frame element, give `setEl` as its ref.
  */
 export function useWorkLayer(place: PlaceId) {
   const [el, setEl] = useState<HTMLElement | null>(null);
   const sheet = useWatchStore((s) => s.sheet);
   const suppressed = useSuppressed();
   const on = place === 'unwind' && !sheet;
-  const { active, handlers } = useHoverHold(el, { openMs: 0, closeMs: LAYER_CLOSE_MS, enabled: on });
+  const { active, handlers } = useHoverHold(el, { openMs: 0, closeMs: LAYER_CLOSE_MS, enabled: on, focusOpens: true });
   // The keys row's menu, picker or rename popover holds the layer up while it is open (not over the sheet).
   const held = useWorkLayerStore((s) => s.held);
   const panel = useWorkLayerStore((s) => s.panel);
-  const shown = on && !suppressed && (active || held || panel);
+  const up = on && (active || held || panel);
+  const shown = up && !suppressed;
+  // The controls follow the same hold, a dialog aside: a held menu or panel keeps them up with the layer.
   useEffect(() => {
-    useWatchRest.setState({ wall: active });
+    useWatchRest.setState({ wall: up });
     return () => useWatchRest.setState({ wall: false });
-  }, [active]);
+  }, [up]);
   useEffect(() => {
     useWorkLayerStore.setState({ shown });
     return () => useWorkLayerStore.setState({ shown: false });

@@ -11,7 +11,7 @@
  */
 function measureMoods() {
   const st = document.createElement('style');
-  st.textContent = '.sp-card { transition: none !important; } .sp-songs { animation: none !important; }';
+  st.textContent = '.sp-card, .u-office-slot, .u-foot, .u-work, .rib-line { transition: none !important; } .sp-songs { animation: none !important; }';
   document.head.appendChild(st);
   const params = new URLSearchParams(location.search);
   const box = (e) => {
@@ -37,7 +37,7 @@ function measureMoods() {
   };
   texts(slot, 'row');
   texts(line, 'line');
-  const out = { shownRow, slot: box(slot), empty: slot.childNodes.length === 0, ariaHidden: slot.getAttribute('aria-hidden'), pointer: getComputedStyle(slot).pointerEvents, line: box(line), small };
+  const out = { shownRow, card: box(document.querySelector('.sp-card')), slot: box(slot), empty: slot.childNodes.length === 0, ariaHidden: slot.getAttribute('aria-hidden'), pointer: getComputedStyle(slot).pointerEvents, line: box(line), small };
   if (!shownRow) return out;
   out.label = box(slot.querySelector('.u-mood-label'));
   out.chips = [...slot.querySelectorAll('.u-mood')].map((c) => {
@@ -92,6 +92,7 @@ function measureMoods() {
 const r1 = (n) => Math.round(n * 10) / 10;
 const HIDDEN_V = 'Office moods, the home app absent';
 // Twelve long names may be cut by the fit rule (the full name is in each chip's tip).
+const HOVERED_V = ['Office moods, twelve moods, the tall Spotify panel on Up next', 'Office moods, six moods, a tall saved playlist'];
 const CUTS_OK = ['Office moods, twelve long names, Off', 'Office moods, twelve moods, the tall Spotify panel on Up next'];
 
 const rule = (variant, results, emit) => {
@@ -105,7 +106,11 @@ const rule = (variant, results, emit) => {
   } else if (!m.shownRow) fails.push('officemoods: the row is not shown in a state that must show it');
   else {
     const s = m.slot;
-    if (Math.abs(s.r - 2364) > 1 || Math.abs(s.t - 656) > 1 || Math.abs(s.h - 34) > 1) fails.push('officemoods: the row is at right edge ' + r1(s.r) + ', top ' + r1(s.t) + ', ' + r1(s.h) + ' tall (2364, 656, 34)');
+    // A grown music card is the pointer on the wall: the layer is up and the row is lifted 116 px (540), the card ends 10 px above it.
+    const lifted = HOVERED_V.includes(variant.name);
+    const top = lifted ? 540 : 656;
+    if (Math.abs(s.r - 2364) > 1 || Math.abs(s.t - top) > 1 || Math.abs(s.h - 34) > 1) fails.push('officemoods: the row is at right edge ' + r1(s.r) + ', top ' + r1(s.t) + ', ' + r1(s.h) + ' tall (2364, ' + top + ', 34)');
+    if (lifted && m.card && m.card.l < s.r && m.card.b > s.t - 9.95) fails.push('officemoods: the grown music card ends at y ' + r1(m.card.b) + ', ' + r1(s.t - m.card.b) + ' px above the lifted row at ' + r1(s.t) + ' (10 at least)');
     if (s.l < 1239.5) fails.push('officemoods: the row starts at x ' + r1(s.l) + ' (1240 at most to the left)');
     if (m.pointer !== 'none') fails.push('officemoods: the row box takes the pointer');
     for (const c of m.chips) {
@@ -213,8 +218,8 @@ const variants = [
   V(NAMES.stale, `${SIX}&officestale=1`),
   V(NAMES.flight, `${SIX}&officeslow=1`, { click: '[data-mood="gaming"]' }),
   V(NAMES.refused, `${SIX}&studiowrite=onair`, { click: '[data-mood="gaming"]' }),
-  V(NAMES.tall, TWELVE, { click: 'grow >> .mu-places button:nth-child(5) >> nolift' }),
-  V(NAMES.saved, `${SIX}&spotify=notyours&spotifypage=first`, { click: 'grow >> .sp-tile >> nolift' }),
+  V(NAMES.tall, TWELVE, { click: 'grow >> .mu-places button:nth-child(5)' }),
+  V(NAMES.saved, `${SIX}&spotify=notyours&spotifypage=first`, { click: 'grow >> .sp-tile' }),
   V(NAMES.leave, `${SIX}&leave=12`),
   V(NAMES.drivein, `${SIX}&watch=mock&wlist=three&wlook=drivein&wplay=0`),
   V(NAMES.own, `${SIX}&watch=mock&wlook=sky&wmeta=title&wown=edit&wplay=3`),
@@ -288,6 +293,7 @@ export default {
       'moods-small': { css: '.u-mood { height: 30px !important; }', expect: /^ *FAIL officemoods: chip ".*" is [\d.]+ px tall/m, appliesTo: on('six') },
       'moods-sync': { css: '.u-mood.u-sync { width: 180px !important; min-width: 180px !important; }', expect: /^ *FAIL officemoods: the Music sync chip is [\d.]+ px wide/m, appliesTo: on('six') },
       'moods-pal-pad': { css: '.u-pal { padding: 0 2px !important; }', expect: /^ *FAIL officemoods: palette ".*" text is [\d.]+ px from its button edge/m, appliesTo: on('strip') },
+      'moods-card-tall': { css: '.sp-card.tall { height: 624px !important; }', expect: /^ *FAIL officemoods: the grown music card ends at y /m, appliesTo: on('tall') },
       'moods-text': { css: '.u-mood { font-size: 14px !important; }', expect: /^ *FAIL officemoods: text under 16 px/m, appliesTo: on('six') },
     },
   },
