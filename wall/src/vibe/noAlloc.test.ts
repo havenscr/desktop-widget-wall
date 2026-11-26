@@ -4,6 +4,8 @@ import glowSrc from './glow.ts?raw';
 import mixSrc from './mix.ts?raw';
 import colourSrc from './colours.ts?raw';
 import layerSrc from './VibeLayer.tsx?raw';
+import tapeSrc from './tape.ts?raw';
+import glitchSrc from './glitch.ts?raw';
 
 function bodyOf(src: string, name: string): string {
   const text = src.replace(/\r\n/g, '\n');
@@ -70,6 +72,15 @@ describe('the vibe frame path allocates nothing and uses no filter', () => {
 
   const strip = (code: string): string => code.replace(/\/\/.*$/gm, '').replace(/\/\*[\s\S]*?\*\//g, '');
   const scan = (code: string): string[] => RULES.filter(([, re]) => re.test(code)).map(([n]) => n);
+
+  it('Tape Grain draw', () => {
+    expect(scan(strip(arrowBody(tapeSrc, 'draw(ctx, w, h, nowS, amount, grain, still)')))).toEqual([]);
+  });
+
+  it('Drop Glitch draw, slice, set and the random numbers', () => {
+    expect(scan(strip(arrowBody(glitchSrc, 'draw(ctx, w, h, nowS, drops, amount, src)')))).toEqual([]);
+    for (const fn of ['slice', 'set', 'rnd']) expect(scan(strip(bodyOf(glitchSrc, fn))), fn).toEqual([]);
+  });
 
   it('the layer loop callback (each frame)', () => {
     expect(scan(strip(arrowBody(layerSrc, '(ts, dt) =>')))).toEqual([]);
