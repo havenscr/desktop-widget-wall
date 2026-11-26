@@ -487,7 +487,10 @@
     transform 90ms ease-out;
 }
 .focus-mini.undo-out .focus-undo,
-.focus-mini.undo-out .focus-title {
+.focus-mini.undo-out .focus-undo-line {
+  opacity: 0;
+}
+.focus-title {
   position: relative;
 }
 .focus-title .in {
@@ -500,9 +503,6 @@
   white-space: nowrap;
   pointer-events: none;
   animation: focus-fade-out 220ms ease both;
-}
-.focus-undo-line {
-  opacity: 0;
 }
 .focus-mini .focus-mini-text {
   transition: opacity 220ms ease;
