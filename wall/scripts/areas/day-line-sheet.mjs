@@ -4,7 +4,8 @@
 // stay fixed, and the last row can be scrolled into view inside the one scroll body.
 const at = '2026-11-11T10:24:00-08:00';
 const Q = `?hz=unwind&at=${encodeURIComponent(at)}&long=1&agents=3&audio=demo&desktoken=set&office=six&officeoff=offered&officemood=relax`;
-const OPEN_LIGHTS = '.w-gear >> .ln-pages button:nth-child(3)';
+const OPEN_VIBE = '.w-gear >> .ln-pages button:nth-child(3)';
+const OPEN_LIGHTS = '.w-gear >> .ln-pages button:nth-child(4)';
 
 // Runs in the page.
 function measureDayLine() {
@@ -63,6 +64,7 @@ export default {
     variants: [
       { name: 'Day line, bottom row at rest', q: Q, checks: ['.u-foot'] },
       { name: 'Sheet scroll, Lines page', q: Q, click: '.w-gear', checks: ['.w-sheet.ln-sheet'] },
+      { name: 'Sheet scroll, Vibe page', q: Q, click: OPEN_VIBE, checks: ['.w-sheet.ln-sheet'] },
       { name: 'Sheet scroll, Lights page', q: Q, click: OPEN_LIGHTS, checks: ['.w-sheet.ls-sheet'] },
     ],
     measurements: { dayLine: measureDayLine, sheetScroll: measureSheetScroll },
@@ -96,7 +98,7 @@ export default {
         if (m.endMask !== 'none') fail('a fade mask is still drawn at the end of the scroll (' + m.endMask.slice(0, 30) + ')');
         if (!m.reach) fail('the last row cannot be scrolled into view');
         if (m.headMoved) fail('the heading row moved while the body scrolled');
-        if (!bad) emit(`  ok   sheet scroll: the ${m.lights ? 'Lights' : 'Lines'} sheet ends at y ${Math.round(m.bottom)} (650 at most), the body ${m.over ? 'scrolls' : 'fits'} with the heading fixed, the last row reachable`);
+        if (!bad) emit(`  ok   sheet scroll: the ${m.lights ? 'Lights' : variant.name.includes('Vibe') ? 'Vibe' : 'Lines'} sheet ends at y ${Math.round(m.bottom)} (650 at most), the body ${m.over ? 'scrolls' : 'fits'} with the heading fixed, the last row reachable`);
         return bad;
       },
     },

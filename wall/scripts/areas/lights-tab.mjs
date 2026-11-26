@@ -2,7 +2,7 @@
 // is inside it, uncut, at 16 px or more, and the controls keep a usable size. Mock moods and audio are invented.
 const at = '2026-11-11T10:24:00-08:00';
 const Q = (extra = '') => `?hz=unwind&at=${encodeURIComponent(at)}&long=1&agents=3&audio=demo&desktoken=set&office=six&officeoff=offered&officemood=relax${extra}`;
-const OPEN = '.w-gear >> .ln-pages button:nth-child(3)';
+const OPEN = '.w-gear >> .ln-pages button:nth-child(4)';
 
 // Runs in the page.
 function measureLights() {
@@ -54,14 +54,19 @@ function measureSheetHead() {
       const t = r.getBoundingClientRect();
       const bb = b.getBoundingClientRect();
       return { words: b.textContent.trim(), pad: Math.min(t.left - bb.left, bb.right - t.right) };
-    }), cut: title.scrollHeight > title.clientHeight + 1, crossGap: xb.left - tb.right, fontsReady: document.fonts ? document.fonts.status : 'unknown' };
+    }), cut: title.scrollHeight > title.clientHeight + 1 || title.scrollWidth > title.clientWidth + 1, lines: Math.round(text.height / (parseFloat(getComputedStyle(title).lineHeight) || text.height)), crossGap: xb.left - tb.right, fontsReady: document.fonts ? document.fonts.status : 'unknown' };
 }
 
 export default {
   name: 'lights-tab',
   gallery: {
     states: [
-      { screen: 'unwind', name: 'lights tab: the Lights tab open on Listen', query: `hz=unwind&at=${encodeURIComponent(at)}&clock=review&weather=ok&audio=demo&desktoken=set&office=six&officeoff=offered&officemood=relax`, custom: true, expect: ['Preview, live', 'Intensity', 'Colour speed', 'Brightness', 'Pulse', 'Smoothness', 'Who follows', 'Panel ripple'], actions: '.w-gear >> .ln-pages button:nth-child(3)' },
+      { screen: 'unwind', name: 'sheet pages: Looks', query: `hz=unwind&at=${encodeURIComponent(at)}&clock=review&weather=ok&audio=demo&desktoken=set&office=six&officeoff=offered&officemood=relax`, custom: true, expect: ['Same for all'], actions: '.w-gear >> .ln-pages button:nth-child(1)' },
+      { screen: 'unwind', name: 'sheet pages: Looks, scrolled to the bottom', query: `hz=unwind&at=${encodeURIComponent(at)}&clock=review&weather=ok&watch=mock&wlist=many&wplay=2&wsheet=kind&wtune=drivein.size=90`, custom: true, expect: ['Settings for'], actions: 'scrollend:.wk-rows' },
+      { screen: 'unwind', name: 'sheet pages: Lines', query: `hz=unwind&at=${encodeURIComponent(at)}&clock=review&weather=ok&audio=demo&desktoken=set&office=six&officeoff=offered&officemood=relax`, custom: true, expect: ['How lively'], actions: '.w-gear' },
+      { screen: 'unwind', name: 'sheet pages: Vibe', query: `hz=unwind&at=${encodeURIComponent(at)}&clock=review&weather=ok&audio=demo&desktoken=set&office=six&officeoff=offered&officemood=relax`, custom: true, expect: ['Auto vibe', 'Music on other tabs'], actions: '.w-gear >> .ln-pages button:nth-child(3)' },
+      { screen: 'unwind', name: 'sheet pages: Vibe, scrolled to the bottom', query: `hz=unwind&at=${encodeURIComponent(at)}&clock=review&weather=ok&audio=demo&desktoken=set&office=six&officeoff=offered&officemood=relax`, custom: true, expect: ['Music on other tabs'], actions: '.w-gear >> .ln-pages button:nth-child(3) >> scrollend:.w-sheet > .ln-body' },
+      { screen: 'unwind', name: 'lights tab: the Lights tab open on Listen', query: `hz=unwind&at=${encodeURIComponent(at)}&clock=review&weather=ok&audio=demo&desktoken=set&office=six&officeoff=offered&officemood=relax`, custom: true, expect: ['Preview, live', 'Intensity', 'Colour speed', 'Brightness', 'Pulse', 'Smoothness', 'Who follows', 'Panel ripple'], actions: '.w-gear >> .ln-pages button:nth-child(4)' },
     ],
   },
   fit: {
@@ -70,6 +75,7 @@ export default {
       { name: 'Lights tab, open while sync runs', q: Q('&lsync=on'), click: OPEN, checks: ['.w-sheet.ls-sheet'] },
       { name: 'Sheet heading, Looks tab', q: Q(), click: '.w-gear >> .ln-pages button:nth-child(1)', checks: ['.w-sheet', '.ln-pages'] },
       { name: 'Sheet heading, Lines tab', q: Q(), click: '.w-gear', checks: ['.w-sheet', '.ln-pages'] },
+      { name: 'Sheet heading, Vibe tab', q: Q(), click: '.w-gear >> .ln-pages button:nth-child(3)', checks: ['.w-sheet', '.ln-pages'] },
       { name: 'Sheet heading, Lights tab', q: Q(), click: OPEN, checks: ['.w-sheet', '.ln-pages'] },
     ],
     measurements: { lightsTab: measureLights, sheetHead: measureSheetHead },
@@ -84,6 +90,7 @@ export default {
         const tight = (m.tabPad || []).filter((b) => b.pad < 9.5);
         if (tight.length) fail('tab text under 10 px from its button edge: ' + tight.map((b) => `${b.words} ${Math.round(b.pad * 10) / 10}`).join(', '));
         if (m.cut) fail(`"${m.words}" is cut`);
+        if (m.lines > 1) fail(`"${m.words}" runs over ${m.lines} lines (one line only)`);
         if (m.crossGap < 7.5) fail(`the tabs end ${Math.round(m.crossGap * 10) / 10} px from the close cross (8 at least)`);
         if (!bad) emit(`  ok   sheet heading: "${m.words}" ends ${Math.round(m.gap)} px before the tabs, whole, and the tabs clear the cross (fonts ${m.fontsReady})`);
         return bad;
@@ -94,7 +101,7 @@ export default {
         let bad = false;
         const fail = (t) => { emit('  FAIL lights tab: ' + t); bad = true; };
         if (!m || !m.found) { fail('the Lights tab is not open'); return true; }
-        if (m.heads.join() !== 'Looks,Lines,Lights') fail('tabs are ' + m.heads.join());
+        if (m.heads.join() !== 'Looks,Lines,Vibe,Lights') fail('tabs are ' + m.heads.join());
         if (m.top < -0.5 || m.bottom > m.vh + 0.5 || m.right > m.vw + 0.5) fail(`the sheet runs off the wall (${Math.round(m.top)} to ${Math.round(m.bottom)} of ${m.vh})`);
         if (m.small.length) fail('text under 16 px: ' + m.small.join(' | '));
         if (m.cut.length) fail('cut text: ' + m.cut.join(' | '));

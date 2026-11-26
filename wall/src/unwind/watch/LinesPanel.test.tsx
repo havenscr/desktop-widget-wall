@@ -5,7 +5,7 @@ import { DEFAULT_LINES, resetLinesStore, useLinesStore } from '../../horizon/lin
 import { readFileSync } from 'node:fs';
 import { DEFAULT_VIBE, VIBE_KEY, resetVibeStore, useVibeStore } from '../../horizon/vibeSettings';
 import { LINES_KEY } from '../../horizon/linesSettings';
-import { LinesPanel, VIBE_HINTS, sliderWords } from './LinesPanel';
+import { LinesPanel, VIBE_HINTS, VibePanel, sliderWords } from './LinesPanel';
 import { HoverTipLayer, resetTip } from '../../ui/HoverTip';
 
 /** A stylesheet's text (the path is a variable on purpose: a literal `new URL` is rewritten by the bundler). */
@@ -112,8 +112,8 @@ describe('the Lines panel', () => {
     expect(screen.getByText(/The ridgelines dance as they do today/)).toBeTruthy();
     expect(screen.getByText('One setting for the lines everywhere music plays.')).toBeTruthy();
     const controls = [...screen.getAllByRole('radio'), ...screen.getAllByRole('button'), ...screen.getAllByRole('slider'), ...screen.getAllByRole('switch')];
-    // 17 radios (types, colours, at rest, cover, music on other tabs), 5 buttons (two resets, three presets), 3 sliders, 5 switches.
-    expect(controls).toHaveLength(17 + 5 + 3 + 5);
+    // 12 radios (types, colours, at rest), 4 buttons (a reset, three presets), 3 sliders, 1 switch.
+    expect(controls).toHaveLength(12 + 4 + 3 + 1);
     for (const el of controls) {
       expect(el.getAttribute('title')).toBeNull();
       resetTip();
@@ -131,7 +131,7 @@ describe('the Vibe section', () => {
   beforeEach(() => resetVibeStore());
 
   it('has Auto vibe, Drop Glitch, Tape Grain and Calm cap switches and a Cover choice, each with a helper line', () => {
-    render(<LinesPanel />);
+    render(<VibePanel />);
     expect(sw('Auto vibe').getAttribute('aria-checked')).toBe('true');
     expect(sw('Drop Glitch')).toBeTruthy();
     expect(sw('Tape Grain').getAttribute('aria-checked')).toBe('false');
@@ -149,7 +149,7 @@ describe('the Vibe section', () => {
   });
 
   it('shows Drop Glitch on and locked while Auto vibe is on, and free once Auto vibe is off', () => {
-    render(<LinesPanel />);
+    render(<VibePanel />);
     const g = sw('Drop Glitch');
     expect(g.getAttribute('aria-checked')).toBe('true');
     expect(g.getAttribute('aria-disabled')).toBe('true');
@@ -168,7 +168,7 @@ describe('the Vibe section', () => {
   });
 
   it('Tape Grain toggles and is kept in the vibe store, away from the Lines setting', () => {
-    render(<LinesPanel />);
+    render(<VibePanel />);
     fireEvent.click(sw('Tape Grain'));
     expect(useVibeStore.getState().tapeGrain).toBe(true);
     expect(JSON.parse(localStorage.getItem(VIBE_KEY)!)).toMatchObject({ tapeGrain: true });
@@ -176,7 +176,7 @@ describe('the Vibe section', () => {
   });
 
   it('has Music on other tabs with Medium chosen, a helper line, and keeps a change in the vibe store', () => {
-    render(<LinesPanel />);
+    render(<VibePanel />);
     expect(screen.getByRole('radio', { name: 'Medium' }).getAttribute('aria-checked')).toBe('true');
     expect(screen.getByRole('radiogroup', { name: 'Music on other tabs' }).getAttribute('aria-describedby')).toBe('ln-music-hint');
     expect(document.getElementById('ln-music-hint')!.textContent).toBe(VIBE_HINTS.offTabMusic);
@@ -186,28 +186,25 @@ describe('the Vibe section', () => {
   });
 
   it('changes Calm cap and Cover and keeps them in the vibe store, away from the Lines setting', () => {
-    render(<LinesPanel />);
+    render(<VibePanel />);
     fireEvent.click(sw('Calm cap'));
     fireEvent.click(screen.getByRole('radio', { name: 'Scene only' }));
     expect(useVibeStore.getState()).toMatchObject({ calmCap: true, cover: 'scene' });
     expect(JSON.parse(localStorage.getItem(VIBE_KEY)!)).toMatchObject({ calmCap: true, cover: 'scene' });
     expect(localStorage.getItem(LINES_KEY) ?? '').not.toContain('calmCap');
-    // Reset to my usual is the lines only; Reset vibe is the vibe only.
-    act(() => screen.getByRole('button', { name: 'Reset to my usual' }).click());
-    expect(useVibeStore.getState().calmCap).toBe(true);
     act(() => screen.getByRole('button', { name: 'Reset vibe' }).click());
     expect(useVibeStore.getState()).toMatchObject(DEFAULT_VIBE);
   });
 
   it('moves the Cover choice with the arrow keys', () => {
-    render(<LinesPanel />);
+    render(<VibePanel />);
     screen.getByRole('radio', { name: 'Scene and title' }).focus();
     fireEvent.keyDown(screen.getByRole('radiogroup', { name: 'Cover' }), { key: 'ArrowRight' });
     expect(useVibeStore.getState().cover).toBe('scene');
   });
 
   it('puts each switch row out as name, switch, value, the flush right layout of the Looks sheet', () => {
-    render(<LinesPanel />);
+    render(<VibePanel />);
     for (const name of ['Auto vibe', 'Drop Glitch', 'Tape Grain', 'Calm cap']) {
       const row = sw(name).closest('.ln-row')!;
       expect(row.classList.contains('ln-swrow')).toBe(true);
@@ -218,5 +215,43 @@ describe('the Vibe section', () => {
     expect(css).toMatch(/\.ln-swrow \.ln-label\.ln-sw \+ \.ln-switch\s*\{\s*margin-left:\s*auto/);
     expect(css).toMatch(/\.ln-swrow \.ln-label\.ln-sw\s*\{\s*width:\s*auto/);
     expect(css).toMatch(/\.ln-swrow \.ln-switch \+ \.ln-value\s*\{\s*margin-left:\s*0/);
+  });
+});
+
+describe('the Vibe page tips', () => {
+  it('every control has a hint line or a tooltip made with tip()', async () => {
+    render(
+      <>
+        <VibePanel />
+        <HoverTipLayer />
+      </>,
+    );
+    const controls = [...screen.getAllByRole('radio'), ...screen.getAllByRole('button'), ...screen.getAllByRole('switch')];
+    // 5 radios (cover, music on other tabs), 1 reset, 4 switches.
+    expect(controls).toHaveLength(5 + 1 + 4);
+    for (const el of controls) {
+      expect(el.getAttribute('title')).toBeNull();
+      resetTip();
+      fireEvent.focus(el);
+      await act(() => new Promise((r) => setTimeout(r, 5)));
+      expect(document.querySelector('.hover-tip')?.textContent).toBeTruthy();
+    }
+    resetTip();
+  });
+});
+
+describe('the Lines page without the Vibe controls', () => {
+  it('keeps the line controls and none of the vibe ones, and its reset leaves the vibe alone', () => {
+    resetVibeStore();
+    render(<LinesPanel />);
+    for (const name of ['Auto vibe', 'Drop Glitch', 'Tape Grain', 'Calm cap']) expect(screen.queryByRole('switch', { name })).toBeNull();
+    expect(screen.queryByRole('radiogroup', { name: 'Cover' })).toBeNull();
+    expect(screen.queryByRole('radiogroup', { name: 'Music on other tabs' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Reset vibe' })).toBeNull();
+    for (const name of ['How lively', 'Smoothness', 'Height']) expect(screen.getByRole('slider', { name })).toBeTruthy();
+    expect(screen.getByRole('switch', { name: 'Reflection' })).toBeTruthy();
+    act(() => useVibeStore.getState().setVibe({ calmCap: true }));
+    act(() => screen.getByRole('button', { name: 'Reset to my usual' }).click());
+    expect(useVibeStore.getState().calmCap).toBe(true);
   });
 });

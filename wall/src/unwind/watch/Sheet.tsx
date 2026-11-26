@@ -3,7 +3,7 @@ import { IconX } from '@tabler/icons-react';
 import { LOOK_GROUPS, LOOKS, lookFor, type LookId, type LookSettings } from './looks';
 import { useWatchStore } from './store';
 import { tip } from '../../ui/HoverTip';
-import { LINES_TITLE, LinesPanel } from './LinesPanel';
+import { LINES_TITLE, LinesPanel, VIBE_TITLE, VibePanel } from './LinesPanel';
 import { LIGHTS_TITLE, LightsPanel } from '../../studio/lightsync/LightsPanel';
 import { LookTunePanel } from './LookTunePanel';
 import { useListEdge } from '../../ui/useListEdge';
@@ -54,14 +54,16 @@ function Choice({ value, onPick, label }: { value: LookId; onPick: (l: LookId) =
  * it, and closes on its cross, Escape, a click outside it or the gear. The choice is kept in
  * local storage (`wall2-watch-look`) and checked on read.
  */
-export function WatchSheet({ initial = 'looks' }: { initial?: 'looks' | 'lines' | 'lights' }) {
+export function WatchSheet({ initial = 'looks' }: { initial?: 'looks' | 'lines' | 'vibe' | 'lights' }) {
   // lines controls: a "Looks | Lines" switch at the top; Listen opens the sheet on Lines.
   const asked = useWatchStore((s) => s.sheetTab);
-  const [page, setPage] = useState<'looks' | 'lines' | 'lights'>(asked ?? initial);
+  const [page, setPage] = useState<'looks' | 'lines' | 'vibe' | 'lights'>(asked ?? initial);
   useEffect(() => {
     if (asked) setPage(asked);
   }, [asked]);
-  const title = page === 'lines' ? LINES_TITLE : page === 'lights' ? LIGHTS_TITLE : 'How video is shown';
+  const title = page === 'lines' ? LINES_TITLE : page === 'vibe' ? VIBE_TITLE : page === 'lights' ? LIGHTS_TITLE : 'How video is shown';
+  // Four tabs leave the heading little room: the heading row shows a one-word name per page, the dialog and its tip keep the full one.
+  const heading = page === 'lines' ? 'Lines' : page === 'vibe' ? 'Vibe' : page === 'lights' ? 'Lights' : 'Look';
   const looks = useWatchStore((s) => s.looks);
   const saved = useWatchStore((s) => s.saved);
   const playing = useWatchStore((s) => s.playing);
@@ -69,7 +71,7 @@ export function WatchSheet({ initial = 'looks' }: { initial?: 'looks' | 'lines' 
   const [tuned, setTuned] = useState<LookId | null>(null);
   const tuneLook: LookId = looks.mode === 'one' ? looks.all : tuned ?? (playing ? lookFor(looks, playing.kind) : looks.video);
   const ref = useRef<HTMLDivElement>(null);
-  // The Lines and Lights pages scroll inside the sheet (header and page switch stay put); the fade shows while more is below.
+  // The Lines, Vibe and Lights pages scroll inside the sheet (header and page switch stay put); the fade shows while more is below.
   const edge = useListEdge([page]);
   const set = (next: Partial<LookSettings>) => useWatchStore.getState().setLooks({ ...looks, ...next });
   const close = () => useWatchStore.getState().setSheet(false);
@@ -95,27 +97,30 @@ export function WatchSheet({ initial = 'looks' }: { initial?: 'looks' | 'lines' 
   const yt = saved.filter((i) => i.kind !== 'twitch').length;
   const tw = saved.length - yt;
   return (
-    <div className={`w-sheet${page === 'lines' ? ' ln-sheet' : page === 'lights' ? ' ln-sheet ls-sheet' : ' w-tune'}`} role="dialog" aria-label={title} ref={ref} tabIndex={-1}>
+    <div className={`w-sheet${page === 'lines' || page === 'vibe' ? ' ln-sheet' : page === 'lights' ? ' ln-sheet ls-sheet' : ' w-tune'}`} role="dialog" aria-label={title} ref={ref} tabIndex={-1}>
       <button type="button" className="w-x" aria-label="Close" title="Close" onClick={close}>
         <IconX size={22} aria-hidden="true" />
       </button>
       <div className="w-head">
       <div className="u-k" {...tip(title)}>
-        {title}
+        {heading}
       </div>
-      <div className="w-seg ln-pages" role="tablist" aria-label="Looks, lines or lights">
+      <div className="w-seg ln-pages" role="tablist" aria-label="Looks, lines, vibe or lights">
         <button type="button" role="tab" aria-selected={page === 'looks'} className={page === 'looks' ? 'on' : ''} {...tip('How a video is shown on the wall')} onClick={() => setPage('looks')}>
           Looks
         </button>
         <button type="button" role="tab" aria-selected={page === 'lines'} className={page === 'lines' ? 'on' : ''} {...tip('How the music lines along the horizon move')} onClick={() => setPage('lines')}>
           Lines
         </button>
+        <button type="button" role="tab" aria-selected={page === 'vibe'} className={page === 'vibe' ? 'on' : ''} {...tip('How the picture feels with the music: auto vibe, glitch, grain, calm cap and cover')} onClick={() => setPage('vibe')}>
+          Vibe
+        </button>
         <button type="button" role="tab" aria-selected={page === 'lights'} className={page === 'lights' ? 'on' : ''} {...tip('How the lights follow the music: colour, brightness, flash and more')} onClick={() => setPage('lights')}>
           Lights
         </button>
       </div>
       </div>
-      {page !== 'looks' ? <div key={page} className={`ln-body ${edge.className}`} ref={edge.ref} onScroll={edge.onScroll}>{page === 'lines' ? <LinesPanel /> : <LightsPanel />}</div> : <>
+      {page !== 'looks' ? <div key={page} className={`ln-body ${edge.className}`} ref={edge.ref} onScroll={edge.onScroll}>{page === 'lines' ? <LinesPanel /> : page === 'vibe' ? <VibePanel /> : <LightsPanel />}</div> : <>
       <div className="w-seg w-mode" role="radiogroup" aria-label="The same look for all, or each source its own">
         <button type="button" role="radio" aria-checked={looks.mode === 'one'} className={looks.mode === 'one' ? 'on' : ''} title="Every video, live stream and Twitch channel plays in the same look" onClick={() => set({ mode: 'one' })}>
           Same for all
