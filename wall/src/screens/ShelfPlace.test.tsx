@@ -161,3 +161,17 @@ it('a ShareX key sends its library id', async () => {
   await screen.findByText('ShareX: Region');
   expect(sent).toEqual([{ id: 'sx-region' }]);
 });
+
+it('puts the kind of its group on a stills key and a files key, and none on an unmapped key', async () => {
+  const { SHELF_CATEGORY } = await import('./shelfKinds');
+  const saved = SHELF_CATEGORY['sx-ruler'];
+  delete SHELF_CATEGORY['sx-ruler'];
+  try {
+    render(<ShelfPlace />);
+    expect(screen.getByRole('button', { name: 'Region' }).getAttribute('data-kind')).toBe('capture');
+    expect(screen.getByRole('button', { name: 'History' }).getAttribute('data-kind')).toBe('app');
+    expect(screen.getByRole('button', { name: 'Ruler' }).hasAttribute('data-kind')).toBe(false);
+  } finally {
+    if (saved) SHELF_CATEGORY['sx-ruler'] = saved;
+  }
+});

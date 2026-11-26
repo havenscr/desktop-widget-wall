@@ -112,8 +112,8 @@ describe('the Lines panel', () => {
     expect(screen.getByText(/The ridgelines dance as they do today/)).toBeTruthy();
     expect(screen.getByText('One setting for the lines everywhere music plays.')).toBeTruthy();
     const controls = [...screen.getAllByRole('radio'), ...screen.getAllByRole('button'), ...screen.getAllByRole('slider'), ...screen.getAllByRole('switch')];
-    // 17 radios (types, colours, at rest, cover, music on other tabs), 5 buttons (two resets, three presets), 3 sliders, 3 switches.
-    expect(controls).toHaveLength(17 + 5 + 3 + 3);
+    // 17 radios (types, colours, at rest, cover, music on other tabs), 5 buttons (two resets, three presets), 3 sliders, 5 switches.
+    expect(controls).toHaveLength(17 + 5 + 3 + 5);
     for (const el of controls) {
       expect(el.getAttribute('title')).toBeNull();
       resetTip();
@@ -130,13 +130,14 @@ describe('the Vibe section', () => {
 
   beforeEach(() => resetVibeStore());
 
-  it('has Auto vibe and Calm cap switches and a Cover choice, each with a helper line', () => {
+  it('has Auto vibe, Drop Glitch, Tape Grain and Calm cap switches and a Cover choice, each with a helper line', () => {
     render(<LinesPanel />);
     expect(sw('Auto vibe').getAttribute('aria-checked')).toBe('true');
-    expect(screen.queryByRole('switch', { name: 'Drop Glitch' })).toBeNull();
+    expect(sw('Drop Glitch')).toBeTruthy();
+    expect(sw('Tape Grain').getAttribute('aria-checked')).toBe('false');
     expect(sw('Calm cap').getAttribute('aria-checked')).toBe('false');
     expect(screen.getByRole('radio', { name: 'Scene and title' }).getAttribute('aria-checked')).toBe('true');
-    for (const id of ['auto', 'calm']) {
+    for (const id of ['auto', 'glitch', 'tape', 'calm']) {
       const hint = document.getElementById(`ln-${id}-hint`)!;
       expect(hint.className).toBe('ln-hint');
       expect(hint.textContent!.length).toBeGreaterThan(20);
@@ -145,6 +146,33 @@ describe('the Vibe section', () => {
     expect(sw('Auto vibe').getAttribute('aria-describedby')).toBe('ln-auto-hint');
     expect(screen.getByRole('radiogroup', { name: 'Cover' }).getAttribute('aria-describedby')).toBe('ln-cover-hint');
     expect(document.getElementById('ln-cover-hint')!.textContent).toBe(VIBE_HINTS.cover);
+  });
+
+  it('shows Drop Glitch on and locked while Auto vibe is on, and free once Auto vibe is off', () => {
+    render(<LinesPanel />);
+    const g = sw('Drop Glitch');
+    expect(g.getAttribute('aria-checked')).toBe('true');
+    expect(g.getAttribute('aria-disabled')).toBe('true');
+    expect(screen.getByText('On with Auto vibe')).toBeTruthy();
+    fireEvent.click(g);
+    expect(useVibeStore.getState().dropGlitch).toBe(false);
+    fireEvent.click(sw('Auto vibe'));
+    expect(sw('Drop Glitch').getAttribute('aria-checked')).toBe('false');
+    expect(sw('Drop Glitch').getAttribute('aria-disabled')).toBeNull();
+    fireEvent.click(sw('Drop Glitch'));
+    expect(useVibeStore.getState().dropGlitch).toBe(true);
+    // Auto vibe back on: on and locked again, and the choice made is kept.
+    fireEvent.click(sw('Auto vibe'));
+    expect(sw('Drop Glitch').getAttribute('aria-disabled')).toBe('true');
+    expect(useVibeStore.getState().dropGlitch).toBe(true);
+  });
+
+  it('Tape Grain toggles and is kept in the vibe store, away from the Lines setting', () => {
+    render(<LinesPanel />);
+    fireEvent.click(sw('Tape Grain'));
+    expect(useVibeStore.getState().tapeGrain).toBe(true);
+    expect(JSON.parse(localStorage.getItem(VIBE_KEY)!)).toMatchObject({ tapeGrain: true });
+    expect(localStorage.getItem(LINES_KEY) ?? '').not.toContain('tapeGrain');
   });
 
   it('has Music on other tabs with Medium chosen, a helper line, and keeps a change in the vibe store', () => {
@@ -180,7 +208,7 @@ describe('the Vibe section', () => {
 
   it('puts each switch row out as name, switch, value, the flush right layout of the Looks sheet', () => {
     render(<LinesPanel />);
-    for (const name of ['Auto vibe', 'Calm cap']) {
+    for (const name of ['Auto vibe', 'Drop Glitch', 'Tape Grain', 'Calm cap']) {
       const row = sw(name).closest('.ln-row')!;
       expect(row.classList.contains('ln-swrow')).toBe(true);
       const kids = Array.from(row.children);
