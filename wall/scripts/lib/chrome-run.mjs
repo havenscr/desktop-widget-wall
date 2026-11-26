@@ -217,28 +217,29 @@ async function once(chrome, args, limitMs, maxBuffer, hang) {
 /**
  * Run `chrome args` and return its standard output. `label` names the state in messages.
  * `limitMs` is the time limit per try (default 45 s). After the last try a ChromeRunError is thrown.
+ * `tries` is how many times to try (default 3).
  * `hang` is for the proof script only: the first `hang` tries are replaced by a process that sleeps for ever.
  */
-export async function runChrome(chrome, args, { label = '', maxBuffer = 64 * 1024 * 1024, limitMs: limit = DEFAULT_LIMIT_MS, hang = 0 } = {}) {
+export async function runChrome(chrome, args, { label = '', maxBuffer = 64 * 1024 * 1024, limitMs: limit = DEFAULT_LIMIT_MS, hang = 0, tries: maxTries = TRIES } = {}) {
   hook();
   const limitMs = Number(process.env.WALL_CHROME_LIMIT_MS || limit);
   const secs = Math.round(limitMs / 1000);
   const name = label ? ` (${label})` : '';
-  for (let n = 1; n <= TRIES; n++) {
+  for (let n = 1; n <= maxTries; n++) {
     let r;
     try {
       r = await once(chrome, args, limitMs, maxBuffer, n <= hang);
     } catch (e) {
       // A browser that crashed (for example with SIGTRAP on a busy machine) is tried again like one that hung.
       if (!(e instanceof ChromeRunError) || !e.crashed) throw e;
-      if (n < TRIES) {
+      if (n < maxTries) {
         console.log(`  retry ${n}: ${e.message}${name}`);
         continue;
       }
-      throw new ChromeRunError(`${e.message} on all ${TRIES} tries${name}`);
+      throw new ChromeRunError(`${e.message} on all ${maxTries} tries${name}`);
     }
     if (!r.timedOut) return r.out;
-    if (n < TRIES) console.log(`  retry ${n}: the browser did not answer in ${secs} s${name}`);
+    if (n < maxTries) console.log(`  retry ${n}: the browser did not answer in ${secs} s${name}`);
   }
-  throw new ChromeRunError(`the browser did not answer in ${secs} s after ${TRIES} tries${name}`);
+  throw new ChromeRunError(`the browser did not answer in ${secs} s after ${maxTries} tries${name}`);
 }
