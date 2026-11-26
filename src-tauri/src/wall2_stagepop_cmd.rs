@@ -4,7 +4,7 @@
 //! Manager, the monitor list) off the thread that serves the web view. The pairing code leaves this
 //! process only as the answer to `wall2_stagepop_token`, once.
 
-use crate::wall2_stagepop::{loopback, parse_settings, run, Cmd, Core, CredVault, StatusView, SETTINGS_FILE};
+use crate::wall2_stagepop::{loopback, parse_settings, run, Cmd, Core, CredVault, StatusView, StudioAnswer, SETTINGS_FILE};
 use crate::wall2_window::MonitorRect;
 use std::sync::{Arc, OnceLock};
 use tauri::{Emitter, Manager};
@@ -67,6 +67,13 @@ pub async fn wall2_stagepop_status(window: tauri::WebviewWindow) -> Result<Statu
 pub async fn wall2_stagepop_send(window: tauri::WebviewWindow, cmd: Cmd) -> Result<(), String> {
     gate(&window)?;
     off_thread(move || core()?.send(&cmd, elgato()).map_err(str::to_string)).await
+}
+
+/// A scene, mute or camera key for the studio, sent through the add-on. Always answers with ok or a reason word.
+#[tauri::command]
+pub async fn wall2_stagepop_studio(window: tauri::WebviewWindow, action: String, name: Option<String>) -> Result<StudioAnswer, String> {
+    gate(&window)?;
+    off_thread(move || Ok(core()?.studio(&action, name.as_deref()))).await
 }
 
 /// `show` or `new`. The one place the pairing code is handed to the web view, and only for the one-time show.

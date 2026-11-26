@@ -2,7 +2,7 @@ import { useEffect } from 'react';
 import { create } from 'zustand';
 import { invoke } from '../../bridge/tauri';
 import { useAwake } from '../useNow';
-import type { PickStatus, Sent, StudioKey } from './studioModel';
+import type { PickStatus, Sent, StudioAnswer, StudioKey } from './studioModel';
 
 /** How often the pick status is read while the Live page shows and the display is on. */
 export const STUDIO_POLL_MS = 3000;
@@ -17,6 +17,8 @@ interface StudioState {
   read: () => Promise<void>;
   pick: () => Promise<void>;
   send: (key: StudioKey, confirm: boolean) => Promise<void>;
+  /** A scene, mute or camera key, sent through the Stage Pop-out add-on. Never throws: a failure is an answer with a reason. */
+  studio: (action: 'scene' | 'mute' | 'camera', name?: string) => Promise<StudioAnswer>;
   reset: () => void;
 }
 
@@ -42,6 +44,13 @@ export const useStudio = create<StudioState>((set, get) => ({
     const a = await invoke<{ sent: StudioKey; at: number }>('wall2_studio_key', { key, confirm });
     set({ sent: { key: a.sent, at: a.at } });
     void get().read();
+  },
+  studio: async (action, name) => {
+    try {
+      return await invoke<StudioAnswer>('wall2_stagepop_studio', { action, name: action === 'scene' ? name : null });
+    } catch {
+      return { ok: false, reason: 'failed' };
+    }
   },
   reset: () => set({ status: EMPTY, sent: null }),
 }));

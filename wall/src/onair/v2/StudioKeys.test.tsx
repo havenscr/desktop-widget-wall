@@ -7,7 +7,7 @@ import { resetLibIndex } from '../../work/keyLibrary';
 import { useYtLive } from '../ytliveStore';
 import { StudioKeys } from './StudioKeys';
 import { StudioStatus } from './StudioStatus';
-import { STUDIO_CONFIRM_MS } from './studioModel';
+import { STUDIO_CONFIRM_MS, studioAnswerText } from './studioModel';
 import onair2Raw from '../../styles/onair2.css?raw';
 import workRaw from '../../styles/work.css?raw';
 import { DEFAULT_SLOTS, LABEL_MAX_PX, PICKER_ORDER, SLOTS_KEY, fitLabel, loadSlots, measureLabel, parseSlots, saveSlots } from './studioSlots';
@@ -196,15 +196,75 @@ it('a bad stored value falls back to the defaults', async () => {
   }
 });
 
-it('scene, mute and camera keys say Waiting on StreamYard setup and send nothing', async () => {
+it('scene, mute and camera keys send the right action, the scene by its full name, and never the hotkey path', async () => {
+  const calls: { action: string; name: unknown }[] = [];
+  mocks.set('wall2_stagepop_studio', (args) => {
+    calls.push({ action: String(args?.action), name: args?.name });
+    return { ok: true, reason: 'ok' };
+  });
+  localStorage.setItem(SLOTS_KEY, JSON.stringify(DEFAULT_SLOTS.map((d) => (d.a === 'scene2' ? { a: 'scene2', l: 'Panel' } : d))));
   await open();
-  for (const i of [0, 4, 5]) {
+  const order = [0, 1, 4, 5];
+  for (const i of order) {
     fireEvent.click(tiles()[i], { detail: 1 });
-    await waitFor(() => expect(screen.getAllByText(/Waiting on StreamYard setup/).length).toBeGreaterThan(0));
-    await act(async () => void (await new Promise((r) => setTimeout(r, 600))));
+    await waitFor(() => expect(calls.length).toBe(order.indexOf(i) + 1));
+    await act(async () => void (await new Promise((r) => setTimeout(r, 100))));
   }
+  expect(calls).toEqual([
+    { action: 'scene', name: 'Full Screen Speaker' },
+    { action: 'scene', name: 'Presenter View' },
+    { action: 'mute', name: null },
+    { action: 'camera', name: null },
+  ]);
   expect(sends.length).toBe(0);
-  expect(document.querySelector('[data-last="true"]')).toBeNull();
+});
+
+it('the answer shows on the key as a short reason that clears, and a miss does not glow', async () => {
+  mocks.set('wall2_stagepop_studio', () => ({ ok: false, reason: 'not found' }));
+  await open();
+  fireEvent.click(tiles()[0], { detail: 1 });
+  await waitFor(() => expect(tiles()[0].getAttribute('data-note')).toBe('miss'));
+  expect(tiles()[0].querySelector('.oa2-sklbl')!.textContent).toBe('Not found');
+  expect(tiles()[0].getAttribute('data-last')).toBeNull();
+  expect(screen.getAllByText(/no scene or button by that name/).length).toBeGreaterThan(0);
+  await waitFor(() => expect(tiles()[0].getAttribute('data-note')).toBeNull(), { timeout: 4000 });
+  expect(tiles()[0].querySelector('.oa2-sklbl')!.textContent).toBe('Speaker');
+});
+
+it('a good answer glows the key, and every reason has a short text that fits a key', async () => {
+  mocks.set('wall2_stagepop_studio', () => ({ ok: true, reason: 'ok' }));
+  await open();
+  fireEvent.click(tiles()[4], { detail: 1 });
+  await waitFor(() => expect(tiles()[4].getAttribute('data-last')).toBe('true'));
+  for (const r of ['ok', 'not found', 'studio not open', 'not connected', 'no answer', 'refused', 'failed'] as const) {
+    const t = studioAnswerText({ ok: r === 'ok', reason: r });
+    expect(measureLabel(t.short)).toBeLessThanOrEqual(LABEL_MAX_PX);
+    expect(t.full.length).toBeGreaterThan(0);
+  }
+});
+
+it('already muted and busy show short texts that fit a key', async () => {
+  mocks.set('wall2_stagepop_studio', () => ({ ok: true, reason: 'already' }));
+  await open();
+  fireEvent.click(tiles()[4], { detail: 1 });
+  await waitFor(() => expect(tiles()[4].querySelector('.oa2-sklbl')!.textContent).toBe('Already muted'));
+  expect(tiles()[4].getAttribute('data-note')).toBe('ok');
+  expect(studioAnswerText({ ok: true, reason: 'already' }, 'camera').short).toBe('Already off');
+  for (const t of [studioAnswerText({ ok: true, reason: 'already' }, 'mute'), studioAnswerText({ ok: true, reason: 'already' }, 'camera'), studioAnswerText({ ok: false, reason: 'busy' })]) {
+    expect(measureLabel(t.short)).toBeLessThanOrEqual(LABEL_MAX_PX);
+  }
+});
+
+it('Go live keeps its two clicks and does not use the add-on', async () => {
+  const calls: unknown[] = [];
+  mocks.set('wall2_stagepop_studio', (args) => (calls.push(args), { ok: true, reason: 'ok' }));
+  await open();
+  fireEvent.click(tiles()[7], { detail: 1 });
+  await act(async () => void (await new Promise((r) => setTimeout(r, 50))));
+  expect(sends.length).toBe(0);
+  fireEvent.click(tiles()[7], { detail: 1 });
+  await waitFor(() => expect(sends).toEqual([{ key: 'golive', confirm: true }]));
+  expect(calls.length).toBe(0);
 });
 
 it('only the key sent last glows, and a wall action counts', async () => {
