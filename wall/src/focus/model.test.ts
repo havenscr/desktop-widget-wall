@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
   adjustMinutes,
+  adjustRemaining,
+  restart,
   clampMinutes,
   initialFocus,
   minutesLeft,
@@ -103,4 +105,27 @@ describe('focus label', () => {
     expect(long.status === 'running' && long.label?.length).toBe(200);
     expect('label' in restore(JSON.stringify({ status: 'running', minutes: 25, endAt: now + 1000, label: 5 }), now)).toBe(false);
   });
+});
+
+it('adjustRemaining moves the time left by 5 minutes inside 1 to 120 and keeps the preset', () => {
+  const run = start(initialFocus, T);
+  const less = adjustRemaining(run, T, -1);
+  expect(less).toMatchObject({ status: 'running', minutes: 25, endAt: T + 20 * MIN });
+  const more = adjustRemaining(run, T, 1);
+  expect(more).toMatchObject({ endAt: T + 30 * MIN, minutes: 25 });
+  // Floor: 3 minutes left goes to 1, then stays.
+  const low = adjustRemaining(run, T + 22 * MIN, -1);
+  expect(low).toMatchObject({ endAt: T + 22 * MIN + MIN });
+  expect(adjustRemaining(low, T + 22 * MIN, -1)).toBe(low);
+  // Ceiling: 118 left goes to 120, then stays.
+  const high = adjustRemaining({ status: 'paused', minutes: 120, remainingMs: 118 * MIN }, T, 1);
+  expect(high).toEqual({ status: 'paused', minutes: 120, remainingMs: 120 * MIN });
+  expect(adjustRemaining(high, T, 1)).toBe(high);
+  expect(adjustRemaining(initialFocus, T, 1)).toBe(initialFocus);
+});
+
+it('restart runs the same length from full and keeps the label', () => {
+  const paused = pause(start({ status: 'idle', minutes: 50 }, T, 'Draft'), T + 10 * MIN);
+  expect(restart(paused, T + 20 * MIN)).toEqual({ status: 'running', minutes: 50, endAt: T + 70 * MIN, label: 'Draft' });
+  expect(restart(initialFocus, T)).toBe(initialFocus);
 });

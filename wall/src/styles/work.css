@@ -387,6 +387,17 @@
   margin: -6px;
   border-radius: 50%;
 }
+.focus-mini-ring {
+  cursor: pointer;
+  transition:
+    box-shadow 220ms ease,
+    background-color 220ms ease;
+}
+.focus-mini-ring:hover,
+.focus-mini-ring[aria-expanded='true'] {
+  background-color: rgba(53, 230, 234, 0.08);
+  box-shadow: 0 0 26px -2px rgba(53, 230, 234, 0.55);
+}
 .focus-mini-ring:focus-visible {
   outline: 3px solid var(--cyan);
 }
@@ -413,14 +424,132 @@
   flex-direction: column;
   gap: 16px;
   padding: 18px 22px 22px;
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.07), rgba(255, 255, 255, 0.02)), rgba(10, 7, 28, 0.94);
+  background: linear-gradient(180deg, rgb(27, 24, 48), rgb(15, 12, 35));
   border: 1px solid rgba(53, 230, 234, 0.35);
   border-radius: 26px;
   box-shadow: 0 18px 50px -10px rgba(0, 0, 0, 0.7);
 }
+.focus-sheet {
+  animation: focus-fade-in 220ms ease both;
+}
+.focus-sheet.out {
+  animation: focus-fade-out 220ms ease both;
+  pointer-events: none;
+}
+.focus-sheet.live {
+  width: 720px;
+}
 .focus-sheet .rd {
   width: 72px;
   height: 72px;
+}
+.focus-left {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+}
+.focus-left-val {
+  min-width: 150px;
+  text-align: center;
+  font-size: 30px;
+  white-space: nowrap;
+}
+.focus-left-hint {
+  font-size: 20px;
+  white-space: nowrap;
+  color: var(--dim, rgba(255, 255, 255, 0.6));
+}
+.focus-acts {
+  display: flex;
+  gap: 16px;
+}
+.focus-acts .btn {
+  height: 80px;
+}
+.focus-acts .btn.stop {
+  color: #ff9db4;
+  border-color: rgba(255, 120, 150, 0.5);
+  background: rgba(255, 90, 130, 0.1);
+}
+.focus-acts .btn.stop svg {
+  color: #ff7a9a;
+}
+.focus-sheet .btn:disabled,
+.focus-mini .btn:disabled {
+  cursor: default;
+}
+.focus-undo {
+  height: 60px;
+  padding: 0 22px;
+  animation: focus-fade-in 220ms ease both;
+  transition:
+    opacity 220ms ease,
+    transform 90ms ease-out;
+}
+.focus-mini.undo-out .focus-undo,
+.focus-mini.undo-out .focus-undo-line {
+  opacity: 0;
+}
+.focus-title {
+  position: relative;
+}
+.focus-title .in {
+  animation: focus-fade-in 220ms ease both;
+}
+.focus-title .out {
+  position: absolute;
+  left: 0;
+  top: 0;
+  white-space: nowrap;
+  pointer-events: none;
+  animation: focus-fade-out 220ms ease both;
+}
+.focus-mini .focus-mini-text {
+  transition: opacity 220ms ease;
+}
+.focus-undo-line {
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  bottom: -9px;
+  height: 3px;
+  border-radius: 2px;
+  background: var(--cyan);
+  opacity: 0.8;
+  transform-origin: left center;
+  animation: focus-drain linear both;
+  transition: opacity 220ms ease;
+}
+@keyframes focus-drain {
+  from {
+    transform: scaleX(1);
+  }
+  to {
+    transform: scaleX(0);
+  }
+}
+@keyframes focus-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@keyframes focus-fade-out {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .focus-sheet,
+  .focus-sheet.out,
+  .focus-undo {
+    animation-duration: 1ms;
+  }
 }
 .focus-sheet .btn.cy {
   align-self: flex-start;

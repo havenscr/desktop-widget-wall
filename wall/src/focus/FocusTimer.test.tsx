@@ -104,16 +104,161 @@ describe('FocusMini (the Work row)', () => {
     expect(s.minutes).toBe(50);
   });
 
-  it('the ring opens no sheet while a session runs, and Close shuts it', () => {
+  it('Close shuts the length sheet at once (no longer a dialog) and it leaves after the fade', async () => {
     render(<FocusMini />);
     fireEvent.click(screen.getByLabelText('Choose a focus length'));
     fireEvent.click(screen.getByLabelText('Close'));
     expect(screen.queryByRole('dialog')).toBeNull();
-    fireEvent.click(screen.getByLabelText('Start'));
-    fireEvent.click(screen.getByLabelText('25 minutes left'));
+    await flush(300);
+    expect(document.querySelector('.focus-sheet')).toBeNull();
+  });
+
+  it('while a session runs the ring opens the controls sheet with a header, time left and three buttons', async () => {
+    useFocusStore.getState().startLabeled('Review the draft');
+    render(<FocusMini />);
+    const ring = screen.getByLabelText('Focus controls, 25 min left');
+    expect(ring.getAttribute('aria-expanded')).toBe('false');
+    fireEvent.click(ring);
+    expect(ring.getAttribute('aria-expanded')).toBe('true');
+    const sheet = screen.getByRole('dialog', { name: 'Focus controls' });
+    expect(sheet.textContent).toContain('Focus, 25 min left');
+    expect(sheet.textContent).toContain('5 minutes a tap');
+    expect(sheet.textContent).toContain('Pause');
+    expect(sheet.textContent).toContain('Restart 25 min');
+    expect(sheet.textContent).toContain('Stop');
+    fireEvent.click(screen.getByLabelText('5 minutes less'));
+    expect(sheet.textContent).toContain('Focus, 20 min left');
+    expect(useFocusStore.getState().state.minutes).toBe(25);
+    fireEvent.click(screen.getByText('Pause'));
+    expect(screen.getByRole('dialog').textContent).toContain('Focus, paused, 20 min left');
+    expect(screen.getByText('Resume')).toBeTruthy();
+  });
+
+  it('Stop ends the session, closes the sheet and offers Undo until it lapses', async () => {
+    useFocusStore.getState().startLabeled('Review the draft');
+    render(<FocusMini />);
+    await flush(60_000);
+    fireEvent.click(screen.getByLabelText('Focus controls, 24 min left'));
+    fireEvent.click(screen.getByText('Stop'));
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(useFocusStore.getState().state.status).toBe('idle');
+    expect(useFocusStore.getState().state.minutes).toBe(25);
+    expect(screen.getByText('Focus stopped')).toBeTruthy();
+    await flush(5900);
+    expect(screen.getByText('Undo')).toBeTruthy();
+    await flush(400);
+    expect(screen.queryByText('Undo')).toBeNull();
+    expect(screen.getByText('Ready to focus')).toBeTruthy();
+  });
+
+  it('Undo after Stop puts the running session back as if it never stopped', async () => {
+    useFocusStore.getState().startLabeled('Review the draft');
+    render(<FocusMini />);
+    const before = useFocusStore.getState().state;
+    fireEvent.click(screen.getByLabelText('Focus controls, 25 min left'));
+    fireEvent.click(screen.getByText('Stop'));
+    await flush(3000);
+    fireEvent.click(screen.getByText('Undo'));
+    expect(useFocusStore.getState().state).toEqual(before);
+    expect(screen.getByText('Review the draft')).toBeTruthy();
+  });
+
+  it('Restart shows Restarted and Undo brings back the old session', async () => {
+    useFocusStore.getState().startLabeled('Review the draft');
+    useFocusStore.getState().adjustLeft(-1);
+    render(<FocusMini />);
+    const before = useFocusStore.getState().state;
+    fireEvent.click(screen.getByLabelText('Focus controls, 20 min left'));
+    fireEvent.click(screen.getByText('Restart 25 min'));
+    expect(screen.getByText('Restarted')).toBeTruthy();
+    expect(minutesLeftNow()).toBe(25);
+    fireEvent.click(screen.getByText('Undo'));
+    expect(useFocusStore.getState().state).toEqual(before);
+  });
+
+  it('Escape closes the sheet and returns focus to the ring; a press outside closes it too', async () => {
+    useFocusStore.getState().startLabeled('x');
+    render(
+      <div>
+        <FocusMini />
+        <button type="button">elsewhere</button>
+      </div>,
+    );
+    const ring = screen.getByLabelText('Focus controls, 25 min left');
+    fireEvent.click(ring);
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(document.activeElement).toBe(ring);
+    fireEvent.click(ring);
+    expect(screen.getByRole('dialog')).toBeTruthy();
+    fireEvent.pointerDown(screen.getByText('elsewhere'));
     expect(screen.queryByRole('dialog')).toBeNull();
   });
 });
+
+describe('FocusMini fades and focus', () => {
+  it('Stop fades the sheet out instead of cutting it, then removes it', async () => {
+    useFocusStore.getState().startLabeled('x');
+    render(<FocusMini />);
+    fireEvent.click(screen.getByLabelText('Focus controls, 25 min left'));
+    fireEvent.click(screen.getByText('Stop'));
+    const sheet = document.querySelector('.focus-sheet');
+    expect(sheet?.classList.contains('out')).toBe(true);
+    await flush(300);
+    expect(document.querySelector('.focus-sheet')).toBeNull();
+  });
+
+  it('Start from the length sheet fades it out too', async () => {
+    render(<FocusMini />);
+    fireEvent.click(screen.getByLabelText('Choose a focus length'));
+    fireEvent.click(screen.getByText('Start 25 min'));
+    expect(document.querySelector('.focus-sheet')?.classList.contains('out')).toBe(true);
+    await flush(300);
+    expect(document.querySelector('.focus-sheet')).toBeNull();
+  });
+
+  it('focus returns to the ring after Stop, Restart, Start and Undo', async () => {
+    useFocusStore.getState().startLabeled('x');
+    render(<FocusMini />);
+    const ring = () => document.querySelector('.focus-mini-ring') as HTMLElement;
+    const other = () => (document.activeElement as HTMLElement | null)?.blur();
+    fireEvent.click(screen.getByLabelText('Focus controls, 25 min left'));
+    other();
+    fireEvent.click(screen.getByText('Restart 25 min'));
+    expect(document.activeElement).toBe(ring());
+    await flush(300);
+    fireEvent.click(screen.getByLabelText('Focus controls, 25 min left'));
+    fireEvent.click(screen.getByText('Stop'));
+    expect(document.activeElement).toBe(ring());
+    other();
+    fireEvent.click(screen.getByText('Undo'));
+    expect(document.activeElement).toBe(ring());
+    fireEvent.click(screen.getByLabelText('Focus controls, 25 min left'));
+    fireEvent.click(screen.getByText('Stop'));
+    await flush(7000);
+    fireEvent.click(screen.getByLabelText('Choose a focus length'));
+    other();
+    fireEvent.click(screen.getByText('Start 25 min'));
+    expect(document.activeElement).toBe(ring());
+  });
+
+  it('the title crossfades: the old words stay for the fade, then go', async () => {
+    useFocusStore.getState().startLabeled('x');
+    render(<FocusMini />);
+    fireEvent.click(screen.getByLabelText('Focus controls, 25 min left'));
+    fireEvent.click(screen.getByText('Stop'));
+    await flush(6100);
+    expect(document.querySelector('.focus-title .out')?.textContent).toBe('Focus stopped');
+    expect(screen.getByText('Ready to focus')).toBeTruthy();
+    await flush(300);
+    expect(document.querySelector('.focus-title .out')).toBeNull();
+  });
+});
+
+function minutesLeftNow() {
+  const s = useFocusStore.getState().state;
+  return s.status === 'running' ? Math.ceil((s.endAt - Date.now()) / 60_000) : -1;
+}
 
 it('FocusMini closes the length sheet when a session starts elsewhere', () => {
   render(<FocusMini />);
