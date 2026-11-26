@@ -9,15 +9,15 @@ describe('vibe settings', () => {
   });
 
   it('defaults: Auto vibe on, the rest off, effects pass over the title', () => {
-    expect(DEFAULT_VIBE).toEqual({ auto: true, dropGlitch: false, tapeGrain: false, calmCap: false, cover: 'title', offTabMusic: 'medium' });
+    expect(DEFAULT_VIBE).toEqual({ auto: true, dropGlitch: false, tapeGrain: false, calmCap: false, cover: 'title', aurora: 'full', offTabMusic: 'medium' });
     expect(vibeSettings()).toMatchObject(DEFAULT_VIBE);
     expect(VIBE_KEY).toBe('wall2-vibe');
   });
 
   it('validates every stored field', () => {
-    expect(validateVibe({ auto: 'yes', dropGlitch: 1, tapeGrain: null, calmCap: 'no', cover: 'all', offTabMusic: 'loud' })).toEqual(DEFAULT_VIBE);
-    expect(validateVibe({ auto: false, dropGlitch: true, tapeGrain: true, calmCap: true, cover: 'scene', offTabMusic: 'full' })).toEqual({
-      auto: false, dropGlitch: true, tapeGrain: true, calmCap: true, cover: 'scene', offTabMusic: 'full',
+    expect(validateVibe({ auto: 'yes', dropGlitch: 1, tapeGrain: null, calmCap: 'no', cover: 'all', aurora: 'bright', offTabMusic: 'loud' })).toEqual(DEFAULT_VIBE);
+    expect(validateVibe({ auto: false, dropGlitch: true, tapeGrain: true, calmCap: true, cover: 'scene', aurora: 'soft', offTabMusic: 'full' })).toEqual({
+      auto: false, dropGlitch: true, tapeGrain: true, calmCap: true, cover: 'scene', aurora: 'soft', offTabMusic: 'full',
     });
     expect(validateVibe(null)).toEqual(DEFAULT_VIBE);
     expect(validateVibe('scene')).toEqual(DEFAULT_VIBE);
@@ -26,10 +26,24 @@ describe('vibe settings', () => {
   });
 
   it('the frame reads the settings alone, without the store actions', () => {
-    expect(Object.keys(vibeSettings()).sort()).toEqual(['auto', 'calmCap', 'cover', 'dropGlitch', 'offTabMusic', 'tapeGrain']);
+    expect(Object.keys(vibeSettings()).sort()).toEqual(['aurora', 'auto', 'calmCap', 'cover', 'dropGlitch', 'offTabMusic', 'tapeGrain']);
     useVibeStore.getState().setVibe({ tapeGrain: true });
     expect(vibeSettings().tapeGrain).toBe(true);
     expect(vibeSettings()).toBe(vibeSettings());
+  });
+
+  it('the aurora level defaults to Full, keeps Off and Soft, and Reset vibe restores Full', () => {
+    expect(vibeSettings().aurora).toBe('full');
+    useVibeStore.getState().setVibe({ aurora: 'off' });
+    expect(JSON.parse(localStorage.getItem(VIBE_KEY)!)).toMatchObject({ aurora: 'off' });
+    useVibeStore.getState().setVibe({ aurora: 'soft' });
+    resetVibeStore();
+    expect(vibeSettings().aurora).toBe('soft');
+    useVibeStore.getState().setVibe({ aurora: 'loud' as never });
+    expect(vibeSettings().aurora).toBe('full');
+    useVibeStore.getState().setVibe({ aurora: 'off' });
+    useVibeStore.getState().reset();
+    expect(vibeSettings().aurora).toBe('full');
   });
 
   it('a broken or older stored value falls back field by field', () => {

@@ -2,7 +2,7 @@ import type { CSSProperties, KeyboardEvent } from 'react';
 import { IconRestore, IconSettings } from '@tabler/icons-react';
 import { tip } from '../../ui/HoverTip';
 import { DEFAULT_LINES, LINE_PRESETS, activePreset, useLinesStore, type LineColours, type LinePreset, type LineRest, type LineType } from '../../horizon/linesSettings';
-import { DEFAULT_VIBE, useVibeStore, type VibeCover } from '../../horizon/vibeSettings';
+import { DEFAULT_VIBE, useVibeStore, type AuroraLevel, type VibeCover } from '../../horizon/vibeSettings';
 import type { MusicLevel } from '../../horizon/offTabMusic';
 import { useWatchStore } from './store';
 
@@ -47,6 +47,11 @@ const COVERS: { id: VibeCover; name: string; note: string }[] = [
   { id: 'scene', name: 'Scene only', note: 'Effects keep clear of the song title' },
 ];
 
+const AURORA_NAMES: { id: AuroraLevel; name: string; note: string }[] = [
+  { id: 'off', name: 'Off', note: 'No aurora veil over the scene; the glow around the video stays' },
+  { id: 'soft', name: 'Soft', note: 'The aurora veil at half strength' },
+  { id: 'full', name: 'Full', note: 'The aurora veil as it always looks' },
+];
 const MUSIC_NAMES: { id: MusicLevel; name: string; note: string }[] = [
   { id: 'calm', name: 'Calm', note: 'The hills on the other tabs ripple softly, as they always have' },
   { id: 'medium', name: 'Medium', note: 'More lines, taller and in the cover colours, about 60 percent of Unwind' },
@@ -59,6 +64,7 @@ export const VIBE_HINTS = {
   dropGlitch: 'Slices tear across the picture when the music drops. Auto vibe turns it on too.',
   tapeGrain: 'A worn tape look: film grain, fine lines and a slow tracking bar over the scene.',
   calmCap: 'Halves every effect and softens the kick and bass; a drop swells the glow and no longer glitches.',
+  aurora: 'The soft coloured veil over the scene. The warm glow around the video is separate.',
   cover: 'Scene and title lets effects pass over the song title.',
   offTabMusic: 'How much the music moves the hills on the other tabs.',
 } as const;
@@ -160,7 +166,7 @@ export function VibePanel() {
   return (
     <div className="ln-panel ln-vibe" role="group" aria-label="Vibe">
       <div className="ln-row ln-head">
-        <button type="button" className="ln-reset" {...tip('The vibe settings back to your usual: Auto vibe on, the rest off, Scene and title, Medium music on other tabs')} onClick={v.reset}>
+        <button type="button" className="ln-reset" {...tip('The vibe settings back to your usual: Auto vibe on, the rest off, Full aurora, Scene and title, Medium music on other tabs')} onClick={v.reset}>
           <IconRestore size={16} aria-hidden="true" />
           Reset vibe
         </button>
@@ -202,6 +208,19 @@ export function VibePanel() {
         tipText={v.calmCap ? 'Effects are halved. Click to turn it off.' : 'Click to halve every effect.'}
         onToggle={() => set({ calmCap: !v.calmCap })}
       />
+      <div className="ln-row">
+        <span className="ln-label" id="ln-aurora-label">
+          Aurora
+        </span>
+        <div className="ln-chips" role="radiogroup" aria-labelledby="ln-aurora-label" aria-describedby="ln-aurora-hint" onKeyDown={arrows(AURORA_NAMES, v.aurora, (id) => set({ aurora: id }))}>
+          {AURORA_NAMES.map((x) => (
+            <button key={x.id} type="button" role="radio" aria-checked={v.aurora === x.id} tabIndex={v.aurora === x.id ? 0 : -1} className={v.aurora === x.id ? 'on' : ''} {...tip(x.note)} onClick={() => set({ aurora: x.id })}>
+              {x.name}
+            </button>
+          ))}
+        </div>
+      </div>
+      <p className="ln-hint" id="ln-aurora-hint">{VIBE_HINTS.aurora}</p>
       <div className="ln-row">
         <span className="ln-label" id="ln-cover-label">
           Cover

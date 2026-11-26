@@ -14,7 +14,7 @@ export interface Tape {
   /** Bakes the tile, the lines and the bar for `ctx`'s canvas; call again after the canvas changes size. */
   bake(ctx: CanvasRenderingContext2D, w: number): void;
   /** One frame: `amount` is the tape strength, `grain` its grain amount, `still` is reduced motion (no shimmer, no bar). */
-  draw(ctx: CanvasRenderingContext2D, w: number, h: number, nowS: number, amount: number, grain: number, still: boolean): void;
+  draw(ctx: CanvasRenderingContext2D, w: number, h: number, nowS: number, amount: number, grain: number, still: boolean, kick?: number): void;
 }
 
 /** A small deterministic generator, so a bake looks the same every time. */
@@ -72,7 +72,7 @@ export function createTape(): Tape {
       }
       bar = b;
     },
-    draw(ctx, w, h, nowS, amount, grain, still) {
+    draw(ctx, w, h, nowS, amount, grain, still, kick = 0) {
       if (amount <= 0.003) return;
       const a = amount > 1 ? 1 : amount;
       ctx.globalCompositeOperation = 'source-over';
@@ -80,7 +80,7 @@ export function createTape(): Tape {
       const ox = (step * 73) % TILE;
       const oy = (step * 151) % TILE;
       ctx.setTransform(1, 0, 0, 1, -ox, -oy);
-      ctx.globalAlpha = a * (0.22 + 0.5 * (grain > 1 ? 1 : grain));
+      ctx.globalAlpha = Math.min(1, a * (0.22 + 0.5 * (grain > 1 ? 1 : grain)) * (1 + kick));
       ctx.fillStyle = grainPat;
       ctx.fillRect(ox, oy, w, h);
       ctx.setTransform(1, 0, 0, 1, 0, 0);

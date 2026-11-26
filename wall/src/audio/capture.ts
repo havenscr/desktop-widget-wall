@@ -23,8 +23,24 @@ export const DEMO_KICK_HZ = 1.75;
  * wander across the middle bands (12 and up), and a hat high up on the off-beat (once per kick, never
  * faster).
  */
+/** Seconds in one demo song section cycle: a quiet verse, a build, then a loud chorus (3 drops a minute). */
+export const DEMO_CYCLE_S = 20;
+
+/**
+ * How loud the demo is at `t` seconds, 0 to 1: a quiet verse, a four second build, then a loud
+ * chorus, so the drop detector has a real build and a real drop to find about three times a minute.
+ */
+export function demoSection(t: number): number {
+  const p = t % DEMO_CYCLE_S;
+  if (p < 11) return 0;
+  if (p < 15) return 0.25 * ((p - 11) / 4);
+  return 1;
+}
+
 export function demoPayload(ms: number): AudioLevelsPayload {
   const t = ms / 1000;
+  const sec = demoSection(t);
+  const k = 0.9 + 1.0 * sec;
   const beat = Math.exp(-((t * DEMO_KICK_HZ) % 1) * 5);
   // The kick in the bands holds a little longer than the bass level, as a real kick's body does.
   const body = Math.exp(-((t * DEMO_KICK_HZ) % 1) * 3.5);
@@ -42,9 +58,9 @@ export function demoPayload(ms: number): AudioLevelsPayload {
     bands.push(Math.round(Math.min(255, Math.max(0, v))));
   }
   return {
-    bass: 0.25 + 0.35 * beat,
-    mid: 0.2 + 0.1 * Math.sin(t * 0.9),
-    high: 0.12 + 0.06 * Math.sin(t * 2.3),
+    bass: Math.min(1, (0.25 + 0.35 * beat) * k),
+    mid: Math.min(1, (0.2 + 0.1 * Math.sin(t * 0.9)) * k),
+    high: Math.min(1, (0.12 + 0.06 * Math.sin(t * 2.3)) * k),
     bands,
     waveform: [0],
   };
