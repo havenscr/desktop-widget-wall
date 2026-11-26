@@ -42,8 +42,15 @@ export const PICKER_ORDER: Record<'streamyard' | 'wall', SlotAction[]> = {
   wall: ['mark', 'snip', 'hide'],
 };
 
-/** Actions that reach StreamYard through its Stage Pop-out add-on, which is not wired yet. */
-export const WAITING: ReadonlySet<ShownAction> = new Set<ShownAction>(['scene1', 'scene2', 'scene3', 'scene4', 'mute', 'camera']);
+/** The wall's studio command for each key that goes through the Stage Pop-out add-on. */
+export const ADDON_ACTION: Partial<Record<ShownAction, 'scene' | 'mute' | 'camera'>> = {
+  scene1: 'scene',
+  scene2: 'scene',
+  scene3: 'scene',
+  scene4: 'scene',
+  mute: 'mute',
+  camera: 'camera',
+};
 
 export const SLOT_COUNT = 8;
 export const SLOTS_KEY = 'wall2-studio-slots';

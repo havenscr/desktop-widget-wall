@@ -7,8 +7,8 @@ import { useOnAirStore } from '../store';
 import { statusStale } from '../ytlive';
 import { useYtLive } from '../ytliveStore';
 import { Head } from './Tiles';
-import { agoText, needsConfirm, refusalText, STUDIO_CONFIRM_MS, type StudioKey } from './studioModel';
-import { LABEL_MAX_PX, SLOT_INFO, WAITING, fitLabel, loadSlots, measureLabel, saveSlots, slotLabel, type ShownAction, type Slot } from './studioSlots';
+import { agoText, needsConfirm, NOTE_MS, refusalText, STUDIO_CONFIRM_MS, studioAnswerText, type StudioKey } from './studioModel';
+import { LABEL_MAX_PX, ADDON_ACTION, SLOT_INFO, fitLabel, loadSlots, measureLabel, saveSlots, slotLabel, type ShownAction, type Slot } from './studioSlots';
 import { SLOT_ICON as ICON } from './studioIcons';
 import { StudioPicker } from './StudioPicker';
 import { useStudio } from './studioStore';
@@ -16,8 +16,6 @@ import { useDeckKeys } from './useDeckKeys';
 
 /** Wall actions that are keys of the key library. */
 const LIB_ID: Partial<Record<ShownAction, string>> = { snip: 'snip', hide: 'strip-dark' };
-
-export const WAITING_TEXT = 'Waiting on StreamYard setup';
 
 /**
  * The studio keys box: eight equal keys in two rows of four. Each slot holds one action (StreamYard or
@@ -42,16 +40,27 @@ export function StudioKeys({ now }: { now: number }) {
   const status = useStudio((s) => s.status);
   const sent = useStudio((s) => s.sent);
   const send = useStudio((s) => s.send);
+  const studio = useStudio((s) => s.studio);
   const pick = useStudio((s) => s.pick);
   const yt = useYtLive((s) => s.status);
   const live = yt?.state === 'live' && !statusStale(yt, now);
   const [slots, setSlots] = useState<Slot[]>(loadSlots);
   const [picker, setPicker] = useState<number | null>(null);
+  // The add-on's answer, shown on the key for a moment; `n` makes each answer a new element so its fade starts over.
+  const [note, setNote] = useState<{ slot: number; text: string; ok: boolean; n: number } | null>(null);
+  const noteTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const noteN = useRef(0);
   const [armed, setArmed] = useState<{ slot: number; action: ShownAction } | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const busy = useRef(false);
   const tiles = useRef<(HTMLButtonElement | null)[]>([]);
-  useEffect(() => () => clearTimeout(timer.current), []);
+  useEffect(
+    () => () => {
+      clearTimeout(timer.current);
+      clearTimeout(noteTimer.current);
+    },
+    [],
+  );
   // End show only runs while the show is live; the key is read at press time, not from a stale render.
   const liveNow = useRef(live);
   liveNow.current = live;
@@ -80,11 +89,28 @@ export function StudioKeys({ now }: { now: number }) {
   const press = async (slot: number, action: ShownAction, detail: number, label: string) => {
     // A click that is part of a double click never counts, and neither does one while a send runs.
     if (detail > 1 || busy.current) return;
-    if (WAITING.has(action)) {
-      keys.showBrief(`${label}: ${WAITING_TEXT}`);
+    const gen = genOf(slot);
+    const addon = ADDON_ACTION[action];
+    if (addon) {
+      busy.current = true;
+      try {
+        // The full scene name from SLOT_INFO goes, never the label: the label is only a display name the user may
+        // edit, while the full name is the scene's real name in StreamYard.
+        const a = await studio(addon, addon === 'scene' ? SLOT_INFO[action].full : undefined);
+        const t = studioAnswerText(a, addon);
+        keys.showBrief(`${SLOT_INFO[action].full}: ${t.full}`);
+        if (gen === genOf(slot)) {
+          clearTimeout(noteTimer.current);
+          noteN.current += 1;
+          setNote({ slot, text: t.short, ok: a.ok, n: noteN.current });
+          noteTimer.current = setTimeout(() => setNote(null), NOTE_MS);
+          if (a.ok) setLast({ slot });
+        }
+      } finally {
+        busy.current = false;
+      }
       return;
     }
-    const gen = genOf(slot);
     if (action === 'mark') {
       const before = useOnAirStore.getState().marks;
       await mark(undefined);
@@ -136,13 +162,14 @@ export function StudioKeys({ now }: { now: number }) {
     const I = ICON[action];
     const isArmed = armed !== null && armed.slot === i && armed.action === action;
     const full = isArmed ? 'Click again' : slotLabel({ a: action, l: slot.l });
+    const shownNote = note !== null && note.slot === i ? note : null;
     const text = fitLabel(full, LABEL_MAX_PX, measureLabel);
     // The accessible name uses the whole label, never the fitted one, and always holds the words drawn on the key.
     const custom = !isArmed && !!SLOT_INFO[action].scene && !!slot.l;
     const base = custom ? `${full}, ${info.full}` : info.full;
     const name = isArmed ? `${info.full}? Click again` : base.includes(text) ? base : `${text}, ${base}`;
     let help: string;
-    if (WAITING.has(action)) help = `${info.full}. ${WAITING_TEXT}: this key works once the Stage Pop-out add-on is set up. Right-click to change the key.`;
+    if (ADDON_ACTION[action]) help = `${info.full} in StreamYard, through the Stage Pop-out add-on. The add-on must be connected and the studio open in Firefox. Right-click to change the key.`;
     else if (needsConfirm(action as StudioKey)) help = `${info.full} in StreamYard. Click twice within 3 seconds. StreamYard is then sent the key twice. Right-click to change the key.`;
     else if (info.group === 'wall') help = `${info.full}. Right-click to change the key.`;
     else help = `Send the ${info.full} hotkey to the StreamYard window you picked. Right-click to change the key.`;
@@ -160,6 +187,7 @@ export function StudioKeys({ now }: { now: number }) {
         data-armed={isArmed ? 'true' : undefined}
         data-last={last !== null && last.slot === i ? 'true' : undefined}
         data-key={action}
+        data-note={shownNote ? (shownNote.ok ? 'ok' : 'miss') : undefined}
         data-slot={i}
         aria-label={name}
         aria-busy={action === 'mark' ? marking : undefined}
@@ -180,7 +208,9 @@ export function StudioKeys({ now }: { now: number }) {
         {...tip(help)}
       >
         <I size={22} stroke={1.8} aria-hidden="true" />
-        <span className="deck-lbl oa2-sklbl">{text}</span>
+        <span className="deck-lbl oa2-sklbl" key={shownNote ? 'n' + shownNote.n : 'l'}>
+          {shownNote ? shownNote.text : text}
+        </span>
       </button>
     );
   };
