@@ -55,6 +55,32 @@ export function reset(s: FocusState): FocusState {
   return { status: 'idle', minutes: s.minutes };
 }
 
+/** Time left never goes under 1 minute or over 120 when it is nudged by hand. */
+export const MIN_LEFT_MS = 60_000;
+export const MAX_LEFT_MS = MAX_MINUTES * 60_000;
+
+/**
+ * Move the time left of a running or paused session by 5 minutes. The preset length is
+ * untouched. A session already under a limit is never pushed past where it stood.
+ */
+export function adjustRemaining(s: FocusState, now: number, direction: 1 | -1): FocusState {
+  if (s.status !== 'running' && s.status !== 'paused') return s;
+  const left = remainingMs(s, now);
+  const wanted = left + direction * STEP_MINUTES * 60_000;
+  const next = direction === 1 ? Math.min(wanted, Math.max(left, MAX_LEFT_MS)) : Math.max(wanted, Math.min(left, MIN_LEFT_MS));
+  if (next === left) return s;
+  const label = s.label ? { label: s.label } : {};
+  return s.status === 'running'
+    ? { status: 'running', minutes: s.minutes, endAt: now + next, ...label }
+    : { status: 'paused', minutes: s.minutes, remainingMs: next, ...label };
+}
+
+/** The same length again from full, running, keeping the name. Only a running or paused session restarts. */
+export function restart(s: FocusState, now: number): FocusState {
+  if (s.status !== 'running' && s.status !== 'paused') return s;
+  return { status: 'running', minutes: s.minutes, endAt: now + s.minutes * 60_000, ...(s.label ? { label: s.label } : {}) };
+}
+
 /** Moves a running timer whose end time has passed to finished. */
 export function tick(s: FocusState, now: number): FocusState {
   if (s.status === 'running' && now >= s.endAt) return { status: 'finished', minutes: s.minutes };

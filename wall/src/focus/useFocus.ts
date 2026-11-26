@@ -7,6 +7,7 @@ export function useFocus() {
   const visible = useVisible();
   const state = useFocusStore((s) => s.state);
   const now = useFocusStore((s) => s.now);
+  const undo = useFocusStore((s) => s.undo);
   const actions = useFocusStore;
 
   useEffect(() => {
@@ -25,11 +26,16 @@ export function useFocus() {
   return {
     state,
     now,
+    undo,
     start: a.start,
     startLabeled: a.startLabeled,
     pause: a.pause,
     resume: a.resume,
     reset: a.reset,
     setMinutes: a.setMinutes,
+    adjustLeft: a.adjustLeft,
+    stop: a.stop,
+    restart: a.restart,
+    undoLast: a.undoLast,
   };
 }

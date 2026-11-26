@@ -2,7 +2,7 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { DND_KEY } from './dnd';
 import { FOCUS_DAY_KEY } from './day';
 import { FOCUS_KEY } from './model';
-import { createFocusStore } from './store';
+import { createFocusStore, UNDO_MS } from './store';
 
 const MIN = 60_000;
 
@@ -165,4 +165,108 @@ it('restores saved sessions at start and drops earlier days on the next write', 
   s.start();
   expect(t.useStore.getState().sessions).toEqual([{ start: Date.now(), end: Date.now() + 25 * MIN, id: Date.now() }]);
   t.useStore.getState().dispose();
+});
+
+it('adjustLeft changes the time left of the running session and not its length', () => {
+  const t = setup();
+  const s = t.useStore.getState();
+  s.init();
+  s.start();
+  s.adjustLeft(-1);
+  const st = t.useStore.getState().state;
+  expect(st).toMatchObject({ status: 'running', minutes: 25, endAt: Date.now() + 20 * MIN });
+  expect(JSON.parse(t.mem.get(FOCUS_KEY)!).endAt).toBe(Date.now() + 20 * MIN);
+  s.dispose();
+});
+
+it('stop ends the session at once and Undo inside the window restores it, time kept counting', async () => {
+  const t = setup();
+  const s = t.useStore.getState();
+  s.init();
+  s.startLabeled('Draft');
+  const before = t.useStore.getState().state;
+  await vi.advanceTimersByTimeAsync(2 * MIN);
+  s.stop();
+  expect(t.useStore.getState().state).toEqual({ status: 'idle', minutes: 25 });
+  expect(t.useStore.getState().undo?.kind).toBe('stop');
+  await vi.advanceTimersByTimeAsync(UNDO_MS - 1000);
+  s.undoLast();
+  expect(t.useStore.getState().state).toEqual(before);
+  expect(t.useStore.getState().undo).toBeNull();
+  s.dispose();
+});
+
+it('the undo offer lapses after the window and Undo then does nothing', async () => {
+  const t = setup();
+  const s = t.useStore.getState();
+  s.init();
+  s.start();
+  s.stop();
+  await vi.advanceTimersByTimeAsync(UNDO_MS + 1);
+  expect(t.useStore.getState().undo).toBeNull();
+  s.undoLast();
+  expect(t.useStore.getState().state.status).toBe('idle');
+  s.dispose();
+});
+
+it('Undo of a stopped paused session restores the paused time; starting anew clears the offer', async () => {
+  const t = setup();
+  const s = t.useStore.getState();
+  s.init();
+  s.startLabeled('Draft');
+  await vi.advanceTimersByTimeAsync(5 * MIN);
+  s.pause();
+  const paused = t.useStore.getState().state;
+  s.stop();
+  await vi.advanceTimersByTimeAsync(2000);
+  s.undoLast();
+  expect(t.useStore.getState().state).toEqual(paused);
+  s.stop();
+  s.startLabeled('Other');
+  expect(t.useStore.getState().undo).toBeNull();
+  s.dispose();
+});
+
+it('restart starts the same length from full keeping the label, and Undo after it brings back the old session', async () => {
+  const t = setup();
+  const s = t.useStore.getState();
+  s.init();
+  s.startLabeled('Draft');
+  await vi.advanceTimersByTimeAsync(10 * MIN);
+  const before = t.useStore.getState().state;
+  s.restart();
+  expect(t.useStore.getState().state).toMatchObject({ status: 'running', minutes: 25, endAt: Date.now() + 25 * MIN, label: 'Draft' });
+  expect(t.useStore.getState().undo?.kind).toBe('restart');
+  await vi.advanceTimersByTimeAsync(1000);
+  s.undoLast();
+  expect(t.useStore.getState().state).toEqual(before);
+  expect(t.useStore.getState().sessions.at(-1)?.end).toBe((before as { endAt: number }).endAt);
+  s.dispose();
+});
+
+it('Undo of a stop on a session that ran out meanwhile is refused', async () => {
+  const t = setup();
+  const s = t.useStore.getState();
+  s.init();
+  s.start();
+  await vi.advanceTimersByTimeAsync(25 * MIN - 2000);
+  s.stop();
+  await vi.advanceTimersByTimeAsync(3000);
+  s.undoLast();
+  expect(t.useStore.getState().state.status).toBe('idle');
+  s.dispose();
+});
+
+it('a task hold still starts from idle after a Stop, and the stop releases Do Not Disturb', async () => {
+  const t = setup();
+  const s = t.useStore.getState();
+  s.init();
+  s.start();
+  await vi.advanceTimersByTimeAsync(10);
+  s.stop();
+  await vi.advanceTimersByTimeAsync(10);
+  expect(t.calls.at(-1)).toBe('disable_do_not_disturb');
+  s.startLabeled('Task');
+  expect(t.useStore.getState().state).toMatchObject({ status: 'running', label: 'Task' });
+  s.dispose();
 });

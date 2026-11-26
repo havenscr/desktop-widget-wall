@@ -1,6 +1,7 @@
-import { IconMinus, IconPlayerPauseFilled, IconPlayerPlayFilled, IconPlus, IconRotate, IconX } from '@tabler/icons-react';
-import { useEffect, useState, type ReactNode } from 'react';
-import { adjustMinutes, minutesLeft, PRESETS, ringFraction, type FocusState } from './model';
+import { IconMinus, IconPlayerPauseFilled, IconPlayerPlayFilled, IconPlus, IconRotate, IconSquareFilled, IconX } from '@tabler/icons-react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { adjustMinutes, MAX_LEFT_MS, MIN_LEFT_MS, minutesLeft, PRESETS, remainingMs, ringFraction, type FocusState } from './model';
+import { UNDO_MS } from './store';
 import { useFocus } from './useFocus';
 
 /** The ring: 176 px with a 10 px stroke on the full card, smaller on the Work row (concept `.ring`). */
@@ -156,70 +157,138 @@ function Picker({
   );
 }
 
+/** How long the sheet and the undo row take to fade out. */
+const FADE_MS = 220;
+
 /**
- * The Work left wing's focus row (concept `f_work`, owner vote A): a small ring with the
- * minutes left, the label, and one round button (start, pause or resume). Tapping the ring while no session
- * runs opens a sheet with 25, 50, Custom and Start.
+ * The Work left wing's focus row (concept `f_work`, owner votes 1A and 2A): a small ring
+ * with the minutes left, the label, and one round button (start, pause or resume). The
+ * ring is a button that always opens a sheet above the row. Before a session it holds the
+ * length (25, 50, Custom, Start). During one it holds the time left with 5 minute steps,
+ * Pause or Resume, Restart and Stop. Stop and Restart act at once and the row offers Undo
+ * for a few seconds.
  */
 export function FocusMini() {
   const f = useFocus();
   const { state } = f;
   const adjustable = state.status === 'idle' || state.status === 'finished';
+  const mode = adjustable ? 'length' : 'live';
   const [open, setOpen] = useState(false);
+  // The sheet stays mounted for its fade out; `leaving` marks that (it is no dialog then).
+  const [mounted, setMounted] = useState(false);
   const [custom, setCustom] = useState(() => !(PRESETS as readonly number[]).includes(state.minutes));
-  const title =
-    'label' in state && state.label
+  const root = useRef<HTMLElement>(null);
+  const ring = useRef<HTMLButtonElement>(null);
+  // Which sheet was opened: a session starting or ending elsewhere (a task hold) closes it,
+  // so it does not come back unasked.
+  const [openMode, setOpenMode] = useState(mode);
+  const shown = open && openMode === mode;
+  const leaving = mounted && !shown;
+  const left = minutesLeft(state, f.now);
+
+  useEffect(() => {
+    if (open && openMode !== mode) setOpen(false);
+  }, [open, openMode, mode]);
+  useEffect(() => {
+    if (shown) {
+      setMounted(true);
+      return;
+    }
+    const id = setTimeout(() => setMounted(false), FADE_MS);
+    return () => clearTimeout(id);
+  }, [shown]);
+
+  // Escape closes and hands focus back to the ring; a press outside closes.
+  useEffect(() => {
+    if (!shown) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return;
+      setOpen(false);
+      ring.current?.focus();
+    };
+    const onPress = (e: Event) => {
+      if (root.current && e.target instanceof Node && !root.current.contains(e.target)) setOpen(false);
+    };
+    document.addEventListener('keydown', onKey);
+    document.addEventListener('pointerdown', onPress);
+    return () => {
+      document.removeEventListener('keydown', onKey);
+      document.removeEventListener('pointerdown', onPress);
+    };
+  }, [shown]);
+
+  // The undo row fades in with the offer and out after it; `held` keeps the last offer for that fade.
+  const [held, setHeld] = useState(f.undo);
+  useEffect(() => {
+    if (f.undo) {
+      setHeld(f.undo);
+      return;
+    }
+    const id = setTimeout(() => setHeld(null), FADE_MS);
+    return () => clearTimeout(id);
+  }, [f.undo]);
+  const undoShown = f.undo !== null;
+  const undoVisible = undoShown || held !== null;
+
+  const title = f.undo
+    ? f.undo.kind === 'restart'
+      ? 'Restarted'
+      : 'Focus stopped'
+    : 'label' in state && state.label
       ? state.label
       : state.status === 'finished'
         ? 'Focus done'
         : state.status === 'idle'
           ? 'Ready to focus'
           : 'Focusing';
-  const sheet = open && adjustable;
-  // A session started elsewhere (a task hold) closes the sheet, so it does not come back
-  // unasked when the timer returns to idle.
-  useEffect(() => {
-    if (!adjustable) setOpen(false);
-  }, [adjustable]);
+  const ringLabel = adjustable ? 'Choose a focus length' : `Focus controls, ${left} min left`;
+  const paused = state.status === 'paused';
+  const leftMs = remainingMs(state, f.now);
+  const act = (fn: () => void) => () => {
+    setOpen(false);
+    fn();
+  };
 
   return (
-    <section className="focus-mini" aria-label="Focus timer">
+    <section ref={root} className={`focus-mini${undoVisible ? ' has-undo' : ''}${undoShown ? '' : ' undo-out'}`} aria-label="Focus timer">
       <button
+        ref={ring}
         type="button"
         className="focus-mini-ring"
-        aria-label={adjustable ? 'Choose a focus length' : undefined}
-        aria-expanded={adjustable ? sheet : undefined}
-        onClick={() => adjustable && setOpen((o) => !o)}
+        aria-label={ringLabel}
+        aria-expanded={shown}
+        onClick={() => {
+          setOpenMode(mode);
+          setOpen((o) => !(o && openMode === mode));
+        }}
       >
         <Ring state={state} now={f.now} size={60} />
       </button>
       <div className="blk focus-mini-text">
-        <span className="k">{state.status === 'paused' ? 'Focus, paused' : 'Focus'}</span>
+        <span className="k">{paused && !f.undo ? 'Focus, paused' : 'Focus'}</span>
         <div className="t2 ellipsis">{title}</div>
       </div>
-      {state.status === 'running' ? (
+      {undoVisible ? (
+        <button type="button" className="btn cy focus-undo" onClick={f.undoLast} disabled={!undoShown}>
+          <IconRotate size={24} aria-hidden="true" />
+          Undo
+        </button>
+      ) : state.status === 'running' ? (
         <button type="button" className="rd" aria-label="Pause" onClick={f.pause}>
           <IconPlayerPauseFilled size={26} aria-hidden="true" />
         </button>
-      ) : state.status === 'paused' ? (
+      ) : paused ? (
         <button type="button" className="rd" aria-label="Resume" onClick={f.resume}>
           <IconPlayerPlayFilled size={26} aria-hidden="true" />
         </button>
       ) : (
-        <button
-          type="button"
-          className="rd"
-          aria-label="Start"
-          onClick={() => {
-            setOpen(false);
-            f.start();
-          }}
-        >
+        <button type="button" className="rd" aria-label="Start" onClick={act(f.start)}>
           <IconPlayerPlayFilled size={26} aria-hidden="true" />
         </button>
       )}
-      {sheet && (
-        <div className="focus-sheet" role="dialog" aria-label="Focus length">
+      {undoVisible && <span className="focus-undo-line" style={{ animationDuration: `${UNDO_MS}ms` }} aria-hidden="true" />}
+      {(shown || leaving) && mode === 'length' && openMode === 'length' && (
+        <div className={`focus-sheet${shown ? '' : ' out'}`} role={shown ? 'dialog' : undefined} aria-label="Focus length">
           <div className="row sb">
             <span className="k">Focus length</span>
             <button type="button" className="rd" aria-label="Close" onClick={() => setOpen(false)}>
@@ -227,17 +296,51 @@ export function FocusMini() {
             </button>
           </div>
           <Picker minutes={state.minutes} custom={custom} setCustom={setCustom} setMinutes={f.setMinutes} />
-          <button
-            type="button"
-            className="btn cy"
-            onClick={() => {
-              setOpen(false);
-              f.start();
-            }}
-          >
+          <button type="button" className="btn cy" onClick={act(f.start)}>
             <IconPlayerPlayFilled size={26} aria-hidden="true" />
             Start {state.minutes} min
           </button>
+        </div>
+      )}
+      {(shown || leaving) && mode === 'live' && openMode === 'live' && (
+        <div className={`focus-sheet live${shown ? '' : ' out'}`} role={shown ? 'dialog' : undefined} aria-label="Focus controls">
+          <div className="row sb">
+            <span className="k">{paused ? `Focus, paused, ${left} min left` : `Focus, ${left} min left`}</span>
+            <button type="button" className="rd" aria-label="Close" onClick={() => setOpen(false)}>
+              <IconX size={28} aria-hidden="true" />
+            </button>
+          </div>
+          <div className="focus-left">
+            <button type="button" className="rd" aria-label="5 minutes less" disabled={leftMs <= MIN_LEFT_MS} onClick={() => f.adjustLeft(-1)}>
+              <IconMinus size={28} aria-hidden="true" />
+            </button>
+            <span className="b6 focus-left-val">{left} min</span>
+            <button type="button" className="rd" aria-label="5 minutes more" disabled={leftMs >= MAX_LEFT_MS} onClick={() => f.adjustLeft(1)}>
+              <IconPlus size={28} aria-hidden="true" />
+            </button>
+            <span className="s focus-left-hint">5 minutes a tap</span>
+          </div>
+          <div className="focus-acts">
+            {paused ? (
+              <button type="button" className="btn cy" onClick={f.resume}>
+                <IconPlayerPlayFilled size={26} aria-hidden="true" />
+                Resume
+              </button>
+            ) : (
+              <button type="button" className="btn" onClick={f.pause}>
+                <IconPlayerPauseFilled size={26} aria-hidden="true" />
+                Pause
+              </button>
+            )}
+            <button type="button" className="btn" onClick={act(f.restart)}>
+              <IconRotate size={26} aria-hidden="true" />
+              Restart {state.minutes} min
+            </button>
+            <button type="button" className="btn stop" onClick={act(f.stop)}>
+              <IconSquareFilled size={22} aria-hidden="true" />
+              Stop
+            </button>
+          </div>
         </div>
       )}
     </section>
