@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type PointerEvent } from 'react';
+import { useEffect, useState } from 'react';
 import type { PlaceId } from '../../state/places';
 import { useHoverHold } from '../../ui/useHoverHold';
 import { useWatchRest } from '../watch/rest';
@@ -12,29 +12,6 @@ export const LAYER_CLOSE_MS = 1500;
 const OWN = ':not(.day-drawer):not(.day-drawer *):not(.agents-today):not(.agents-today *)';
 /** What keeps the layer down: a take (the video asking to be clicked), a dialog or a menu (the keys row's own and the layer's own overlays are exempt). */
 export const SUPPRESS_SELECTOR = `.w-take, [role="dialog"]:not(.u-keys *)${OWN}, [role="menu"]:not(.u-keys *)${OWN}, .u-lib-menu, .watt-menu`;
-
-/** The layer answers the pointer only in this bottom band of the frame (design px), or over what the layer owns. */
-export const LAYER_BAND_PX = 140;
-/** Once the pointer is in, the band's upper edge is this much higher, so a pointer resting on the edge does not flicker the layer. */
-export const LAYER_BAND_HYSTERESIS_PX = 24;
-/** What the pointer may be over, above the band, and still hold the layer: the timeline, its panel and drawer, and the lifted row. */
-export const LAYER_OWN = '.u-work, .day-drawer, .agents-today, .u-foot, .u-office-slot';
-/** The lifted row's boxes: the stay-open zone runs from the top of each down to the band, so the gap under a lifted box is inside it. */
-const LIFTED_ROW = '.u-foot, .u-office-slot';
-
-/** True when a pointer at (`x`, `y`) (client) is in the bottom band of `el` (a little higher once `was` in), over the column under a lifted box, or `target` is something the layer owns. */
-export function inLayerZone(el: HTMLElement, x: number, y: number, target: EventTarget | null, was = false): boolean {
-  const r = el.getBoundingClientRect();
-  const scale = el.offsetHeight > 0 && r.height > 0 ? r.height / el.offsetHeight : 1;
-  const edge = r.bottom - (LAYER_BAND_PX + (was ? LAYER_BAND_HYSTERESIS_PX : 0)) * scale;
-  if (y >= edge) return true;
-  if (target instanceof Element && target.closest(LAYER_OWN) !== null) return true;
-  for (const row of el.querySelectorAll(LIFTED_ROW)) {
-    const b = row.getBoundingClientRect();
-    if (b.width > 0 && x >= b.left && x <= b.right && y >= b.top && y < edge) return true;
-  }
-  return false;
-}
 
 /** True while something in SUPPRESS_SELECTOR is on the page. */
 export function useSuppressed(): boolean {
@@ -58,38 +35,28 @@ export function useSuppressed(): boolean {
 }
 
 /**
- * The work layer's hold on the Unwind frame: the pointer in the bottom band of the frame (or over the layer's own panel and the lifted row) or focus inside the frame shows it, and it hides
- * `LAYER_CLOSE_MS` after both leave. It stays hidden while the Watch controls rest or the sheet is open (a take, a
- * dialog or a menu do too, so the timeline, the keys and Next up all follow the one `shown` state; the keys row's own menu and picker are exempt and hold it up through `held`). Spread `handlers` on the frame element, give `setEl` as its ref.
+ * The one hover on the Unwind frame: the pointer anywhere on the wall (or focus inside it) shows the Watch controls and the work layer together,
+ * and both hide `LAYER_CLOSE_MS` after the pointer and focus leave. The layer stays hidden while the sheet is open (a take, a
+ * dialog or a menu do too, so the timeline, the keys and Next up all follow the one `shown` state; the keys row's own menu and picker are exempt and hold it up through `held`).
+ * `wall` (in the Watch rest store) is the same hold without the suppression, so the controls stay with the pointer. Spread `handlers` on the frame element, give `setEl` as its ref.
  */
 export function useWorkLayer(place: PlaceId) {
   const [el, setEl] = useState<HTMLElement | null>(null);
-  const rest = useWatchRest((s) => s.rest);
   const sheet = useWatchStore((s) => s.sheet);
   const suppressed = useSuppressed();
-  const on = place === 'unwind' && !rest && !sheet && !suppressed;
+  const on = place === 'unwind' && !sheet;
   const { active, handlers } = useHoverHold(el, { openMs: 0, closeMs: LAYER_CLOSE_MS, enabled: on });
-  // The keys row's menu, picker or rename popover holds the layer up while it is open (not over the sheet or a rest).
+  // The keys row's menu, picker or rename popover holds the layer up while it is open (not over the sheet).
   const held = useWorkLayerStore((s) => s.held);
   const panel = useWorkLayerStore((s) => s.panel);
-  const shown = on && (active || held || panel);
-  // The pointer holds the layer only while it is in the bottom band or over what the layer owns.
-  const inZone = useRef(false);
-  const aim = (e: PointerEvent<HTMLElement>) => {
-    const now = el ? inLayerZone(el, e.clientX, e.clientY, e.target, inZone.current) : false;
-    if (now === inZone.current) return;
-    inZone.current = now;
-    if (now) handlers.onPointerEnter();
-    else handlers.onPointerLeave();
-  };
-  const away = () => {
-    if (!inZone.current) return;
-    inZone.current = false;
-    handlers.onPointerLeave();
-  };
+  const shown = on && !suppressed && (active || held || panel);
+  useEffect(() => {
+    useWatchRest.setState({ wall: active });
+    return () => useWatchRest.setState({ wall: false });
+  }, [active]);
   useEffect(() => {
     useWorkLayerStore.setState({ shown });
     return () => useWorkLayerStore.setState({ shown: false });
   }, [shown]);
-  return { setEl, handlers: place === 'unwind' ? { ...handlers, onPointerEnter: aim, onPointerMove: aim, onPointerLeave: away } : {} };
+  return { setEl, handlers: place === 'unwind' ? handlers : {} };
 }
