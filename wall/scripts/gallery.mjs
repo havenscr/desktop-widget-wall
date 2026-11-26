@@ -36,6 +36,12 @@ const OPACITY = {
   'unwind|listen inactive': { '.sp-card': 0, '.u-listen .u-transport': 0, '.u-listen-gear > *': 0, '.u-listen .u-np': 0.5, '.u-listen .u-artist': 0.5, '.u-listen .u-art': 0.5 },
 };
 
+/** States whose Next up meeting line must not be squeezed: its box is at least `info` px wide and the big text fits or is ellipsized. Keyed 'screen|state'. */
+const FIT = {
+  'unwind|work layer up, Listen calendar not available': { info: 200 },
+  'unwind|work layer up, Watch calendar not available': { info: 200 },
+};
+
 /** How long a state may take past SETTLE_MS for its expected text to appear (a busy machine). Never applies to text that must not be shown. */
 const EXPECT_GRACE_MS = 8000;
 const PARALLEL = 3;
@@ -270,6 +276,8 @@ state('unwind', 'work layer at rest, Listen', 'ltab=listen&lctl=shown&meet=heavy
 add('unwind', 'work layer up, Listen', url('unwind', TIMES.night, 'ltab=listen&lctl=shown&meet=heavy'), true, 'hover:.u-date');
 state('unwind', 'work layer at rest, Watch', 'watch=mock&wlist=three&wlook=drivein&wplay=0&meet=heavy', TIMES.night);
 add('unwind', 'work layer up, Watch', url('unwind', TIMES.night, 'watch=mock&wlist=three&wlook=drivein&wplay=0&meet=heavy&keys=three&hold=three&pins=three'), true, 'hover:.u-date');
+add('unwind', 'work layer up, Watch calendar not available', url('unwind', TIMES.night, 'watch=mock&wlist=three&wlook=drivein&wplay=0&meet=signedout&keys=three&hold=three&pins=three'), true, 'hover:.u-date');
+add('unwind', 'work layer up, Listen calendar not available', url('unwind', TIMES.night, 'ltab=listen&lctl=shown&meet=signedout'), true, 'hover:.u-date');
 add('unwind', 'work layer up, Watch five keys', url('unwind', TIMES.night, 'watch=mock&wlist=three&wlook=drivein&wplay=0&meet=heavy&keys=three&hold=three&pins=long'), true, 'hover:.u-date');
 add('unwind', 'work layer up, Watch one key', url('unwind', TIMES.night, 'watch=mock&wlist=three&wlook=drivein&wplay=0&meet=heavy&keys=three&hold=three&pins=one'), true, 'hover:.u-date');
 add('unwind', 'work layer up, Watch list grown', url('unwind', TIMES.night, 'watch=mock&wlist=three&wlook=drivein&wplay=0&meet=heavy&keys=three&hold=three&pins=three'), true, 'hover:.w-card');
@@ -973,8 +981,13 @@ EXPECT.push(
 
 // watt drive-in: the drive-in look is on with something playing (Watt himself has no text).
 EXPECT.push(['unwind', 'Watt: drive-in', ['Open in YouTube']]);
+// work layer up, calendar not available: the Next up band says so (these come first; the prefix below would otherwise claim them).
+EXPECT.push(
+  ['unwind', 'work layer up, Listen calendar not available', 'Calendar not available'],
+  ['unwind', 'work layer up, Watch calendar not available', 'Calendar not available'],
+);
 // work layer up: the full ribbon's hour labels show over the page.
-EXPECT.push(['unwind', 'work layer up', ['12 PM', '2 PM']]);
+EXPECT.push(['unwind', 'work layer up', ['12 PM', '2 PM', 'Go On Air']]);
 
 /**
  * States that set a knob but change nothing in the page text, so no text can prove them: the
@@ -1335,6 +1348,19 @@ async function render(cdp, base, s, file, ctl) {
       const got = await to('Runtime.evaluate', { expression: `(() => { const el = document.querySelector(${JSON.stringify(sel)}); return el ? Number(getComputedStyle(el).opacity) : null; })()`, returnByValue: true });
       const v = got.result.value;
       if (v === null || Math.abs(v - want) > 0.05) errors.push(`${sel} opacity ${v}, wanted ${want}`);
+    }
+    const fit = FIT[`${s.screen}|${s.name}`];
+    if (fit) {
+      const got = await to('Runtime.evaluate', {
+        expression: `(() => { const i = document.querySelector('.u-nu-info'), b = document.querySelector('.u-nu-big'); return i && b ? { info: i.clientWidth, sw: b.scrollWidth, cw: b.clientWidth, ellipsis: getComputedStyle(b).textOverflow === 'ellipsis' } : null; })()`,
+        returnByValue: true,
+      });
+      const v = got.result.value;
+      if (!v) errors.push('.u-nu-info or .u-nu-big not found');
+      else {
+        if (v.info < fit.info) errors.push(`.u-nu-info is ${v.info}px wide, wanted at least ${fit.info}`);
+        if (v.sw > v.cw && !v.ellipsis) errors.push(`.u-nu-big overflows (${v.sw} > ${v.cw}) and is not ellipsized`);
+      }
     }
     if (info.w !== W || info.h !== H) errors.push(`viewport ${info.w} x ${info.h}`);
     if (ctl.cancelled) throw new Error('cancelled');
