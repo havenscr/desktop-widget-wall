@@ -11,7 +11,7 @@ import { createTape } from './tape';
 import { bakeMatte, radiusOf, type Matte } from './artMatte';
 import { drawGlow, type GlowInput } from './glow';
 import { DEGRADED_FRAME_MS, browserHost, createLoop, createProbe, type LoopHost } from './loop';
-import { createVibeFrame, createVibeState, noteDrop, noteKick, stepVibe, type VibeInput } from './mix';
+import { createVibeFrame, createVibeState, counterAdvanced, noteDrop, noteKick, stepVibe, type VibeInput } from './mix';
 import { softStops } from './feather';
 
 /** Backing store scale: the canvas is drawn at half resolution and scaled up by CSS. */
@@ -330,12 +330,13 @@ export function VibeLayer({ host = browserHost }: { host?: LoopHost }) {
       (ts, dt) => {
         const t0 = probeOn ? performance.now() : 0;
         const n = audioDrops().count;
-        if (n > lastDrops) noteDrop(state, ts / 1000);
+        if (counterAdvanced(n, lastDrops)) noteDrop(state, ts / 1000);
         lastDrops = n;
         const beats = audioBeats().count;
-        if (beats > lastBeats) noteKick(state, ts / 1000);
+        if (counterAdvanced(beats, lastBeats)) noteKick(state, ts / 1000);
         lastBeats = beats;
         input.settings = vibeSettings();
+        input.reduced = reduced;
         input.playing = useAudioStore.getState().playing;
         input.energy = audioEnergy();
         stepVibe(state, frame, dt, ts / 1000, input);

@@ -29,8 +29,8 @@ export const LIVE_TAU_S = 0.3;
 /** The palette position follows the (already slow) energy over this, seconds. */
 export const PALETTE_TAU_S = 0.5;
 /** Longest step a frame may advance, seconds (a stalled frame must not jump). */
-/** The aurora's own ease: two stages of this make Off fade out in about half a second. */
-export const AURORA_TAU_S = 0.08;
+/** The aurora's own ease: two stages of this make Off fade out in half a second (exactly 0 by then). */
+export const AURORA_TAU_S = 0.055;
 /** The aurora level's strength: Off 0, Soft half, Full today's look. */
 export const AURORA_GAIN = { off: 0, soft: 0.5, full: 1 } as const;
 /** A kick makes the grain specks this much stronger, easing back over `KICK_S`. */
@@ -154,6 +154,9 @@ function targets(settings: VibeSettings, playing: boolean): typeof T {
 }
 
 /** A kick at `nowS`: the grain specks pulse. */
+/** True when a store counter moved on since `last`. A counter that restarted (a reset) and then counted again also counts. */
+export const counterAdvanced = (count: number, last: number): boolean => count > last || (count < last && count > 0);
+
 export function noteKick(s: VibeState, nowS: number): void {
   s.kickAt = nowS;
 }
@@ -202,6 +205,8 @@ export interface VibeInput {
   playing: boolean;
   /** Slow energy, 0 to 1 (`audioEnergy()`). */
   energy: number;
+  /** Reduced motion: the kick pulse is off and never keeps the loop awake. */
+  reduced?: boolean;
 }
 
 /**
@@ -248,7 +253,8 @@ export function stepVibe(s: VibeState, out: VibeFrame, dt: number, nowS: number,
   out.haloSwell = live * swell * cap;
   out.tape = live * tape * mTape * cap;
   out.grain = mGrain;
-  out.grainKick = KICK_GRAIN * kickPulse(nowS - s.kickAt) * cap;
+  const kickOn = !input.reduced;
+  out.grainKick = kickOn ? KICK_GRAIN * kickPulse(nowS - s.kickAt) * cap : 0;
   // Calm cap removes the glitch (it fades out with the level); the swell above is what a drop shows.
   out.glitch = live * glitch * (1 - calm);
   out.env = env;
@@ -259,6 +265,6 @@ export function stepVibe(s: VibeState, out: VibeFrame, dt: number, nowS: number,
   out.bassGain = 1 - 0.25 * calm;
   out.live = live;
   out.active =
-    live > 0 || au !== t.auto || tape !== t.tape || glitch !== t.glitch || calm !== t.calm || aur !== t.aurora || s.kickAt > nowS - KICK_S || title !== t.title || env > 0 || swell > 0;
+    live > 0 || au !== t.auto || tape !== t.tape || glitch !== t.glitch || calm !== t.calm || aur !== t.aurora || (kickOn && s.kickAt > nowS - KICK_S) || title !== t.title || env > 0 || swell > 0;
   return out;
 }

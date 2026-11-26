@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { DEFAULT_VIBE, type VibeSettings } from '../horizon/vibeSettings';
 import {
+  counterAdvanced,
   DROP_S,
   EASE_TAU_S,
   LIVE_TAU_S,
@@ -329,23 +330,22 @@ describe('aurora level', () => {
     expect(run('soft', true).aurora).toBeCloseTo(0.25, 4);
   });
 
-  it('Off fades out over about half a second, never in one frame', () => {
+  it('Off fades out smoothly, never in one frame, and is exactly 0 by 0.5 s', () => {
     const s = createVibeState();
     settleVibe(s, DEFAULT_VIBE, true, 0);
     const f = createVibeFrame();
     const settings = { ...DEFAULT_VIBE, aurora: 'off' as const };
     let prev = 1;
     let maxStep = 0;
-    let at05 = 1;
-    for (let i = 1; i <= 90; i++) {
+    let at03 = 1;
+    for (let i = 1; i <= 15; i++) {
       stepVibe(s, f, FRAME, i * FRAME, { settings, playing: true, energy: 0 });
       maxStep = Math.max(maxStep, prev - f.aurora);
       prev = f.aurora;
-      if (i === 15) at05 = f.aurora;
+      if (i === 9) at03 = f.aurora;
     }
-    expect(at05).toBeLessThan(0.06);
-    expect(at05).toBeGreaterThan(0.001);
-    expect(maxStep).toBeLessThan(0.2);
+    expect(at03).toBeGreaterThan(0.001);
+    expect(maxStep).toBeLessThan(0.25);
     expect(f.aurora).toBe(0);
   });
 
@@ -386,5 +386,37 @@ describe('grain on the kick', () => {
     const a = stepVibe(createVibeState(), createVibeFrame(), FRAME, 0, { settings: DEFAULT_VIBE, playing: true, energy: 0.1 }).grain;
     const b = stepVibe(createVibeState(), createVibeFrame(), FRAME, 0, { settings: DEFAULT_VIBE, playing: true, energy: 0.9 }).grain;
     expect(a).toBe(b);
+  });
+});
+
+describe('kick pulse, reduced motion and counters', () => {
+  it('reduced motion zeroes the pulse and does not keep the loop awake', () => {
+    const settings = { ...DEFAULT_VIBE, aurora: 'full' as const };
+    const s = createVibeState();
+    settleVibe(s, settings, false, 0);
+    const f = createVibeFrame();
+    noteKick(s, 5);
+    stepVibe(s, f, FRAME, 5.01, { settings, playing: false, energy: 0 });
+    expect(f.grainKick).toBeGreaterThan(0);
+    expect(f.active).toBe(true);
+    stepVibe(s, f, FRAME, 5.02, { settings, playing: false, energy: 0, reduced: true });
+    expect(f.grainKick).toBe(0);
+    expect(f.active).toBe(false);
+  });
+
+  it('a counter that was reset and then counted again still advances', () => {
+    expect(counterAdvanced(6, 5)).toBe(true);
+    expect(counterAdvanced(5, 5)).toBe(false);
+    expect(counterAdvanced(0, 5)).toBe(false);
+    expect(counterAdvanced(1, 5)).toBe(true);
+    const s = createVibeState();
+    const f = createVibeFrame();
+    let last = 5;
+    const count = 1;
+    if (counterAdvanced(count, last)) noteKick(s, 3);
+    last = count;
+    stepVibe(s, f, FRAME, 3, { settings: DEFAULT_VIBE, playing: true, energy: 0.5 });
+    expect(f.grainKick).toBeGreaterThan(0.29);
+    expect(last).toBe(1);
   });
 });

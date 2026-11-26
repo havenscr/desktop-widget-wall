@@ -59,7 +59,6 @@ export interface EnergyState {
   histCount: number;
   bucketMs: number;
   bucketSum: number;
-  bucketN: number;
   /** Time the last 2 s have stayed calm against the last 12 s, and whether that was long enough. */
   calmMs: number;
   armed: boolean;
@@ -96,7 +95,6 @@ function disarm(s: EnergyState): void {
   s.histCount = 0;
   s.bucketMs = 0;
   s.bucketSum = 0;
-  s.bucketN = 0;
   s.calmMs = 0;
   s.armed = false;
   s.riseSince = -Infinity;
@@ -165,7 +163,30 @@ function fire(s: EnergyState, now: number): void {
   s.calmMs = 0;
 }
 
+/** Feed `elapsedMs` of `level` into exact BUCKET_MS buckets, carrying the remainder. Returns the buckets completed. */
+function addLoudness(s: EnergyState, elapsedMs: number, level: number): number {
+  let left = elapsedMs;
+  let pushed = 0;
+  while (left > 0) {
+    const take = Math.min(left, BUCKET_MS - s.bucketMs);
+    s.bucketSum += level * take;
+    s.bucketMs += take;
+    left -= take;
+    if (s.bucketMs >= BUCKET_MS - 1e-9) {
+      s.histHead = (s.histHead + 1) % LONG_N;
+      s.hist[s.histHead] = s.bucketSum / s.bucketMs;
+      if (s.histCount < LONG_N) s.histCount++;
+      s.bucketMs = 0;
+      s.bucketSum = 0;
+      pushed++;
+    }
+  }
+  return pushed;
+}
+
 function detectDrop(s: EnergyState, now: number, elapsedMs: number, level: number): void {
+  // The history keeps filling while a crossing waits for its kick, so it never has a gap.
+  const pushed = addLoudness(s, elapsedMs, level);
   // A crossing waits at most BEAT_CONFIRM_MS for a kick; a kick just before it counts too.
   if (s.crossedAt > -Infinity) {
     if (Math.abs(s.beatSeenAt - s.crossedAt) <= BEAT_CONFIRM_MS) {
@@ -175,17 +196,8 @@ function detectDrop(s: EnergyState, now: number, elapsedMs: number, level: numbe
     if (now - s.crossedAt > BEAT_CONFIRM_MS) s.crossedAt = -Infinity;
     else return;
   }
-  s.bucketMs += elapsedMs;
-  s.bucketSum += level;
-  s.bucketN++;
-  if (s.bucketMs < BUCKET_MS) return;
-  const stepMs = s.bucketMs;
-  s.histHead = (s.histHead + 1) % LONG_N;
-  s.hist[s.histHead] = s.bucketSum / s.bucketN;
-  if (s.histCount < LONG_N) s.histCount++;
-  s.bucketMs = 0;
-  s.bucketSum = 0;
-  s.bucketN = 0;
+  if (pushed === 0) return;
+  const stepMs = pushed * BUCKET_MS;
   const lng = meanOf(s, LONG_N);
   const sht = meanOf(s, SHORT_N);
   if (now < s.refractoryUntil || lng < LONG_FLOOR) {
@@ -196,13 +208,14 @@ function detectDrop(s: EnergyState, now: number, elapsedMs: number, level: numbe
   }
   if (sht <= lng * CALM_RATIO) {
     s.calmMs += stepMs;
-    s.armed = s.calmMs >= CALM_S * 1000;
+    // Arming needs a full 12 s of history, and a brief swell never revokes it: only a fire or the expiry does.
+    if (s.calmMs >= CALM_S * 1000 && s.histCount >= LONG_N) s.armed = true;
     s.riseSince = -Infinity;
     return;
   }
   // The music has left the calm: the calm that came before stays armed for a while.
   s.calmMs = 0;
-  if (!s.armed) return;
+  if (!s.armed || s.histCount < LONG_N) return;
   if (s.riseSince === -Infinity) s.riseSince = now;
   if (sht >= lng * DROP_RATIO) {
     s.armed = false;

@@ -104,7 +104,7 @@ describe('drop flag', () => {
   }
 
   it('fires for a build and a chorus, 2 s against 12 s', () => {
-    const r = trace([[10, 0.3], [4, 0.45], [6, 0.9]]);
+    const r = trace([[16, 0.3], [4, 0.45], [6, 0.9]]);
     expect(r.s.drops.count).toBe(1);
     expect(SHORT_S).toBe(2);
     expect(LONG_S).toBe(12);
@@ -112,7 +112,7 @@ describe('drop flag', () => {
   });
 
   it('fires for loud-but-not-maxed music: 0.4 verse then 0.7 chorus', () => {
-    expect(trace([[10, 0.4], [8, 0.7]]).s.drops.count).toBe(1);
+    expect(trace([[16, 0.4], [8, 0.7]]).s.drops.count).toBe(1);
   });
 
   it('never fires on steady loud mastered music, 0.6 to 0.7 the whole time', () => {
@@ -123,11 +123,51 @@ describe('drop flag', () => {
   });
 
   it('does not fire when there is no kick on the rise', () => {
-    expect(trace([[10, 0.3], [4, 0.45], [10, 0.9]], 0).s.drops.count).toBe(0);
+    expect(trace([[16, 0.3], [4, 0.45], [10, 0.9]], 0).s.drops.count).toBe(0);
+  });
+
+  it('fires at the same time at 10 ms and 33 ms ticks, within 100 ms', () => {
+    const fireAt = (tick: number): number => {
+      const e = createEnergy();
+      let beats = 0;
+      let nextBeat = 500;
+      for (let t = tick; t <= 40000; t += tick) {
+        while (nextBeat <= t) {
+          beats++;
+          nextBeat += 500;
+        }
+        stepEnergy(e, t, tick, t < 18000 ? 0.3 : 0.9, true, beats);
+      }
+      expect(e.drops.count).toBe(1);
+      return e.drops.lastAt;
+    };
+    expect(Math.abs(fireAt(10) - fireAt(33))).toBeLessThanOrEqual(100);
+  });
+
+  it('keeps the history gapless while a crossing waits for its kick', () => {
+    const r = rig();
+    r.run(16000, 0.3);
+    const before = r.s.histCount;
+    r.run(200, 1);
+    expect(r.s.crossedAt === -Infinity || r.s.histCount >= before).toBe(true);
+    expect(r.s.histCount).toBe(120);
+    expect(r.s.hist.slice().filter((x) => x > 0.9).length).toBeGreaterThanOrEqual(1);
+  });
+
+  it('never fires with only 4 s of quiet intro, then loud music', () => {
+    expect(trace([[4, 0.3], [20, 0.9]]).s.drops.count).toBe(0);
+    expect(trace([[11, 0.3], [20, 0.9]]).s.drops.count).toBe(0);
+  });
+
+  it('a brief swell during the calm does not revoke the arming', () => {
+    const r = trace([[16, 0.4], [1.5, 0.55], [5, 0.4]]);
+    expect(r.s.drops.count).toBe(0);
+    r.run(6000, 0.7, true, 500);
+    expect(r.s.drops.count).toBe(1);
   });
 
   it('locks out for 8 s after a drop, then fires the next', () => {
-    const r = trace([[10, 0.3], [6, 0.9]]);
+    const r = trace([[16, 0.3], [6, 0.9]]);
     expect(r.s.drops.count).toBe(1);
     // A second build and chorus right away: the chorus lands inside the lockout, so nothing.
     r.run(1000, 0.3, true, 500);
@@ -142,7 +182,7 @@ describe('drop flag', () => {
 
   /** Quiet stretch, then loud: the classic build and jump. Beats every 500 ms throughout. */
   function buildAndJump(r: ReturnType<typeof rig>) {
-    r.run(12000, 0.3, true, 500);
+    r.run(16000, 0.3, true, 500);
     r.run(30000, 1, true, 500);
   }
 
@@ -172,14 +212,14 @@ describe('drop flag', () => {
 
   it('needs a beat to confirm the crossing', () => {
     const r = rig();
-    r.run(12000, 0.3);
+    r.run(16000, 0.3);
     r.run(30000, 1);
     expect(r.s.drops.count).toBe(0);
   });
 
   it('confirms with a beat that arrives just after the crossing', () => {
     const q = rig();
-    q.run(12000, 0.3);
+    q.run(16000, 0.3);
     while (q.s.crossedAt === -Infinity) q.run(DT, 1);
     expect(q.s.drops.count).toBe(0);
     q.beat();
@@ -189,7 +229,7 @@ describe('drop flag', () => {
 
   it('does not count a beat from long before the crossing', () => {
     const r = rig();
-    r.run(12000, 0.3);
+    r.run(16000, 0.3);
     r.beat();
     r.run(1000, 0.3);
     r.run(30000, 1);
@@ -252,7 +292,7 @@ describe('drop flag', () => {
   it('flags the drop for a realistic build then 0.8 or 0.85 loudness', () => {
     for (const level of [0.8, 0.85]) {
       const r = rig();
-      r.run(8000, 0.3, true, 500);
+      r.run(16000, 0.3, true, 500);
       r.run(30000, level, true, 500);
       expect(r.s.drops.count).toBe(1);
     }
@@ -274,7 +314,7 @@ describe('drop flag', () => {
     expect(r.s.energy - before).toBeLessThan(1 - Math.exp(-MAX_STEP_MS / 1000 / ENERGY_WINDOW_S) + 1e-9);
     expect(r.s.armed).toBe(false);
     // The loudness history starts over at the wake-up tick; none carries across the gap.
-    expect(r.s.histCount).toBeLessThanOrEqual(1);
+    expect(r.s.histCount).toBeLessThanOrEqual(3);
   });
 
   it('is idle only when silent, at 0 and nothing armed', () => {
