@@ -29,6 +29,15 @@ export const LIVE_TAU_S = 0.3;
 /** The palette position follows the (already slow) energy over this, seconds. */
 export const PALETTE_TAU_S = 0.5;
 /** Longest step a frame may advance, seconds (a stalled frame must not jump). */
+/** The aurora's own ease: two stages of this make Off fade out in about half a second. */
+export const AURORA_TAU_S = 0.08;
+/** The aurora level's strength: Off 0, Soft half, Full today's look. */
+export const AURORA_GAIN = { off: 0, soft: 0.5, full: 1 } as const;
+/** A kick makes the grain specks this much stronger, easing back over `KICK_S`. */
+export const KICK_GRAIN = 0.3;
+export const KICK_S = 0.25;
+/** The grain pulse for `s` seconds since a kick: 1 at the kick, eased to exactly 0 at `KICK_S`. */
+export const kickPulse = (s: number): number => (s >= 0 && s < KICK_S ? Math.pow(1 - s / KICK_S, 2) : 0);
 export const MAX_DT_S = 1 / 20;
 const SNAP = 0.002;
 
@@ -71,6 +80,10 @@ export interface VibeState {
   tape: Ease2;
   glitch: Ease2;
   calm: Ease2;
+  /** The aurora level's strength, 0 to 1. */
+  aurora: Ease2;
+  /** Frame clock seconds of the last kick; -Infinity for none. */
+  kickAt: number;
   /** 1 while the title is kept clear of the effects (Cover: Scene only). */
   title: Ease2;
   /** 1 while music plays; eases to 0 after it stops. */
@@ -85,7 +98,7 @@ const ease0 = (v = 0): Ease2 => ({ a: v, b: v });
 /** The state at rest: the settings' defaults, as if just started with no music. */
 export function createVibeState(): VibeState {
   return {
-    auto: ease0(), tape: ease0(), glitch: ease0(), calm: ease0(), title: ease0(), live: ease0(),
+    auto: ease0(), tape: ease0(), glitch: ease0(), calm: ease0(), aurora: ease0(), kickAt: -Infinity, title: ease0(), live: ease0(),
     palette: 0, drops: new Float64Array(MAX_DROPS).fill(-Infinity),
   };
 }
@@ -97,6 +110,8 @@ export function settleVibe(s: VibeState, settings: VibeSettings, playing: boolea
   s.tape = ease0(t.tape);
   s.glitch = ease0(t.glitch);
   s.calm = ease0(t.calm);
+  s.aurora = ease0(t.aurora);
+  s.kickAt = -Infinity;
   s.title = ease0(t.title);
   s.live = ease0(t.live);
   s.palette = clamp01(energy);
@@ -124,7 +139,7 @@ export function noteDrop(s: VibeState, nowS: number): void {
 }
 
 // One scratch object, rewritten by each call: the frame path allocates nothing.
-const T = { auto: 0, tape: 0, glitch: 0, calm: 0, title: 0, live: 0 };
+const T = { auto: 0, tape: 0, glitch: 0, calm: 0, aurora: 0, title: 0, live: 0 };
 
 function targets(settings: VibeSettings, playing: boolean): typeof T {
   T.auto = settings.auto ? 1 : 0;
@@ -132,9 +147,15 @@ function targets(settings: VibeSettings, playing: boolean): typeof T {
   // Vote 3A: the manual switch, or Auto vibe, lets a drop glitch.
   T.glitch = settings.dropGlitch || settings.auto ? 1 : 0;
   T.calm = settings.calmCap ? 1 : 0;
+  T.aurora = AURORA_GAIN[settings.aurora];
   T.title = settings.cover === 'scene' ? 1 : 0;
   T.live = playing ? 1 : 0;
   return T;
+}
+
+/** A kick at `nowS`: the grain specks pulse. */
+export function noteKick(s: VibeState, nowS: number): void {
+  s.kickAt = nowS;
 }
 
 /** What the layers draw with this frame. Written in place by `stepVibe`; strengths are 0 to about 1.2. */
@@ -148,6 +169,8 @@ export interface VibeFrame {
   /** Tape strength, and the grain amount inside it. */
   tape: number;
   grain: number;
+  /** Extra strength of the grain specks right after a kick, 0 to `KICK_GRAIN`. Lines and bar stay steady. */
+  grainKick: number;
   /** Glitch strength; multiply by `envOf` of each drop stamp's age. 0 under Calm cap. */
   glitch: number;
   /** Drop envelope and swell, the larger of the two newest drops. */
@@ -168,7 +191,7 @@ export interface VibeFrame {
 
 export function createVibeFrame(): VibeFrame {
   return {
-    aurora: 0, rich: 0, halo: 0, haloSwell: 0, tape: 0, grain: 0, glitch: 0, env: 0, swell: 0,
+    aurora: 0, rich: 0, halo: 0, haloSwell: 0, tape: 0, grain: 0, grainKick: 0, glitch: 0, env: 0, swell: 0,
     palette: 0, titleCover: 0, kickGain: 1, bassGain: 1, live: 0, active: false,
   };
 }
@@ -193,6 +216,7 @@ export function stepVibe(s: VibeState, out: VibeFrame, dt: number, nowS: number,
   const tape = ease2(s.tape, t.tape, d, EASE_TAU_S);
   const glitch = ease2(s.glitch, t.glitch, d, EASE_TAU_S);
   const calm = ease2(s.calm, t.calm, d, EASE_TAU_S);
+  const aur = ease2(s.aurora, t.aurora, d, AURORA_TAU_S);
   const title = ease2(s.title, t.title, d, EASE_TAU_S);
   const live = ease2(s.live, t.live, d, LIVE_TAU_S);
   s.palette = ease1(s.palette, clamp01(input.energy), d, PALETTE_TAU_S);
@@ -205,7 +229,8 @@ export function stepVibe(s: VibeState, out: VibeFrame, dt: number, nowS: number,
   const mRich = au * sstep(0.25, 0.9, quiet) + fx * 0.45;
   const mHalo = au * (0.32 + 0.68 * e) + fx * 0.7;
   const mTape = au * (0.5 + 0.3 * e) + fx * 0.7;
-  const mGrain = au * (1 - 0.62 * e) + fx * 0.7;
+  // The resting grain is the same at any loudness; a kick adds the pulse below.
+  const mGrain = 0.7;
 
   let env = 0;
   let swell = 0;
@@ -217,12 +242,13 @@ export function stepVibe(s: VibeState, out: VibeFrame, dt: number, nowS: number,
     if (sv > swell) swell = sv;
   }
 
-  out.aurora = live * mAurora * cap * (1 + 0.18 * swell * cap);
+  out.aurora = live * mAurora * aur * cap * (1 + 0.18 * swell * cap);
   out.rich = live * mRich;
   out.halo = live * mHalo * cap;
   out.haloSwell = live * swell * cap;
   out.tape = live * tape * mTape * cap;
   out.grain = mGrain;
+  out.grainKick = KICK_GRAIN * kickPulse(nowS - s.kickAt) * cap;
   // Calm cap removes the glitch (it fades out with the level); the swell above is what a drop shows.
   out.glitch = live * glitch * (1 - calm);
   out.env = env;
@@ -233,6 +259,6 @@ export function stepVibe(s: VibeState, out: VibeFrame, dt: number, nowS: number,
   out.bassGain = 1 - 0.25 * calm;
   out.live = live;
   out.active =
-    live > 0 || au !== t.auto || tape !== t.tape || glitch !== t.glitch || calm !== t.calm || title !== t.title || env > 0 || swell > 0;
+    live > 0 || au !== t.auto || tape !== t.tape || glitch !== t.glitch || calm !== t.calm || aur !== t.aurora || s.kickAt > nowS - KICK_S || title !== t.title || env > 0 || swell > 0;
   return out;
 }

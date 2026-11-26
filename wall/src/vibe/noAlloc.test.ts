@@ -74,7 +74,7 @@ describe('the vibe frame path allocates nothing and uses no filter', () => {
   const scan = (code: string): string[] => RULES.filter(([, re]) => re.test(code)).map(([n]) => n);
 
   it('Tape Grain draw', () => {
-    expect(scan(strip(arrowBody(tapeSrc, 'draw(ctx, w, h, nowS, amount, grain, still)')))).toEqual([]);
+    expect(scan(strip(arrowBody(tapeSrc, 'draw(ctx, w, h, nowS, amount, grain, still, kick = 0)')))).toEqual([]);
   });
 
   it('Drop Glitch draw, slice, set and the random numbers', () => {

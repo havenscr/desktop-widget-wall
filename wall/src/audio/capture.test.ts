@@ -269,3 +269,25 @@ it('the device timer exists only while capture is started and the page is visibl
   stop();
   expect(vi.getTimerCount()).toBe(0);
 });
+
+it('the demo audio has real builds and drops: 2 to 4 a minute, and none on a flat stretch', async () => {
+  const { demoPayload } = await import('./capture');
+  const { createEnergy, stepEnergy } = await import('./energy');
+  const { createBeatDetector } = await import('./beat');
+  const { loudness } = await import('./model');
+  const run = (from: number, to: number) => {
+    const e = createEnergy();
+    const det = createBeatDetector();
+    for (let ms = from; ms < to; ms += 33) {
+      const p = demoPayload(ms);
+      det.push(Float32Array.from((p.bands ?? []).map((b: number) => b / 255)), ms, ms);
+      stepEnergy(e, ms, 33, loudness({ bass: p.bass ?? 0, mid: p.mid ?? 0, high: p.high ?? 0 }), true, det.count);
+    }
+    return e.drops.count;
+  };
+  const perMinute = run(0, 60_000);
+  expect(perMinute).toBeGreaterThanOrEqual(2);
+  expect(perMinute).toBeLessThanOrEqual(4);
+  expect(run(0, 180_000)).toBeGreaterThanOrEqual(6);
+  expect(run(0, 180_000)).toBeLessThanOrEqual(12);
+});

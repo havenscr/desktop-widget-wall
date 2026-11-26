@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import {
-  ARM_S,
-  DROP_RISE,
+  CALM_S,
+  DROP_RATIO,
+  LONG_S,
+  SHORT_S,
   ENERGY_WINDOW_S,
   GAP_HOLD_MS,
   MAX_STEP_MS,
@@ -94,6 +96,50 @@ describe('slow energy', () => {
 });
 
 describe('drop flag', () => {
+  /** A trace given as [seconds, loudness] pieces, with a kick every 500 ms (or none). */
+  function trace(pieces: [number, number][], beatEvery = 500) {
+    const r = rig();
+    for (const [sec, level] of pieces) r.run(sec * 1000, level, true, beatEvery);
+    return r;
+  }
+
+  it('fires for a build and a chorus, 2 s against 12 s', () => {
+    const r = trace([[10, 0.3], [4, 0.45], [6, 0.9]]);
+    expect(r.s.drops.count).toBe(1);
+    expect(SHORT_S).toBe(2);
+    expect(LONG_S).toBe(12);
+    expect(DROP_RATIO).toBe(1.3);
+  });
+
+  it('fires for loud-but-not-maxed music: 0.4 verse then 0.7 chorus', () => {
+    expect(trace([[10, 0.4], [8, 0.7]]).s.drops.count).toBe(1);
+  });
+
+  it('never fires on steady loud mastered music, 0.6 to 0.7 the whole time', () => {
+    const r = rig();
+    for (let i = 0; i < 120; i++) r.run(1000, 0.6 + 0.1 * (i % 2), true, 500);
+    for (let i = 0; i < 120; i++) r.run(500, 0.6 + 0.1 * ((i * 7) % 3) / 2, true, 500);
+    expect(r.s.drops.count).toBe(0);
+  });
+
+  it('does not fire when there is no kick on the rise', () => {
+    expect(trace([[10, 0.3], [4, 0.45], [10, 0.9]], 0).s.drops.count).toBe(0);
+  });
+
+  it('locks out for 8 s after a drop, then fires the next', () => {
+    const r = trace([[10, 0.3], [6, 0.9]]);
+    expect(r.s.drops.count).toBe(1);
+    // A second build and chorus right away: the chorus lands inside the lockout, so nothing.
+    r.run(1000, 0.3, true, 500);
+    r.run(3000, 0.9, true, 500);
+    expect(r.s.drops.count).toBe(1);
+    // After a calmer stretch, the next chorus fires.
+    r.run(20000, 0.3, true, 500);
+    r.run(6000, 0.9, true, 500);
+    expect(r.s.drops.count).toBe(2);
+    expect(REFRACTORY_S).toBe(8);
+  });
+
   /** Quiet stretch, then loud: the classic build and jump. Beats every 500 ms throughout. */
   function buildAndJump(r: ReturnType<typeof rig>) {
     r.run(12000, 0.3, true, 500);
@@ -105,7 +151,7 @@ describe('drop flag', () => {
     buildAndJump(r);
     expect(r.s.drops.count).toBe(1);
     expect(r.s.drops.lastAt).toBeGreaterThan(12000);
-    expect(r.s.energy).toBeGreaterThanOrEqual(DROP_RISE);
+    expect(r.s.energy).toBeGreaterThan(0.5);
   });
 
   it('never drops on steady loud music, from silence or mid track', () => {
@@ -134,7 +180,7 @@ describe('drop flag', () => {
   it('confirms with a beat that arrives just after the crossing', () => {
     const q = rig();
     q.run(12000, 0.3);
-    while (q.s.energy < DROP_RISE) q.run(DT, 1);
+    while (q.s.crossedAt === -Infinity) q.run(DT, 1);
     expect(q.s.drops.count).toBe(0);
     q.beat();
     q.run(DT * 2, 1);
@@ -146,8 +192,7 @@ describe('drop flag', () => {
     r.run(12000, 0.3);
     r.beat();
     r.run(1000, 0.3);
-    while (r.s.energy < DROP_RISE) r.run(DT, 1);
-    r.run(600, 1);
+    r.run(30000, 1);
     expect(r.s.drops.count).toBe(0);
   });
 
@@ -164,7 +209,7 @@ describe('drop flag', () => {
 
   it('needs the full arm time below the arm level', () => {
     const r = rig();
-    r.run((ARM_S - 1.5) * 1000, 0.3, true, 500);
+    r.run((CALM_S - 1.5) * 1000, 0.3, true, 500);
     r.run(30000, 1, true, 500);
     expect(r.s.drops.count).toBe(0);
   });
@@ -228,8 +273,8 @@ describe('drop flag', () => {
     stepEnergy(r.s, r.now + 60000, 60000, 1, true, 0);
     expect(r.s.energy - before).toBeLessThan(1 - Math.exp(-MAX_STEP_MS / 1000 / ENERGY_WINDOW_S) + 1e-9);
     expect(r.s.armed).toBe(false);
-    // Any quiet stretch starts over at the wake-up tick; none carries across the gap.
-    expect(r.s.stretchSince === -Infinity || r.s.stretchSince === r.now + 60000).toBe(true);
+    // The loudness history starts over at the wake-up tick; none carries across the gap.
+    expect(r.s.histCount).toBeLessThanOrEqual(1);
   });
 
   it('is idle only when silent, at 0 and nothing armed', () => {

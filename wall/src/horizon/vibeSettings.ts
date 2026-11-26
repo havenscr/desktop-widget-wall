@@ -4,6 +4,10 @@ import { DEFAULT_MUSIC_LEVEL, MUSIC_LEVELS, type MusicLevel } from './offTabMusi
 /** What the song title block does under the effects: `scene` keeps it clear, `title` lets them pass over it. */
 export type VibeCover = 'scene' | 'title';
 
+/** The aurora veil over the scene: off, half strength, or the full look. */
+export type AuroraLevel = 'off' | 'soft' | 'full';
+export const AURORA_LEVELS: AuroraLevel[] = ['off', 'soft', 'full'];
+
 export interface VibeSettings {
   /** Colour, glow and the mix follow how loud the music has been lately (on), or sit at fixed levels (off). */
   auto: boolean;
@@ -18,13 +22,15 @@ export interface VibeSettings {
   /** Halves the strength of every effect and swaps the glitch for a soft swell. */
   calmCap: boolean;
   cover: VibeCover;
+  /** The aurora veil's strength. Bass Glow is separate and not affected. */
+  aurora: AuroraLevel;
   /** How strongly the music moves the ridgelines on every tab but Unwind (Work, Home, Meet, On Air, Shelf). */
   offTabMusic: MusicLevel;
 }
 
 /** Auto vibe on; the rest off; effects pass over the title. The effects run on Listen and Watch. */
 export const DEFAULT_VIBE: Readonly<VibeSettings> = {
-  auto: true, dropGlitch: false, tapeGrain: false, calmCap: false, cover: 'title', offTabMusic: DEFAULT_MUSIC_LEVEL,
+  auto: true, dropGlitch: false, tapeGrain: false, calmCap: false, cover: 'title', aurora: 'full', offTabMusic: DEFAULT_MUSIC_LEVEL,
 };
 /** Its own store, so a Lines reset or preset never touches the vibe. */
 export const VIBE_KEY = 'wall2-vibe';
@@ -40,6 +46,7 @@ export function validateVibe(value: unknown): VibeSettings {
     tapeGrain: flag(v.tapeGrain, DEFAULT_VIBE.tapeGrain),
     calmCap: flag(v.calmCap, DEFAULT_VIBE.calmCap),
     cover: COVERS.includes(v.cover as VibeCover) ? (v.cover as VibeCover) : DEFAULT_VIBE.cover,
+    aurora: AURORA_LEVELS.includes(v.aurora as AuroraLevel) ? (v.aurora as AuroraLevel) : DEFAULT_VIBE.aurora,
     offTabMusic: MUSIC_LEVELS.includes(v.offTabMusic as MusicLevel) ? (v.offTabMusic as MusicLevel) : DEFAULT_VIBE.offTabMusic,
   };
 }
@@ -82,7 +89,7 @@ export const useVibeStore = create<VibeStore>((set) => ({
 }));
 
 const pick = (v: VibeSettings): VibeSettings => ({
-  auto: v.auto, dropGlitch: v.dropGlitch, tapeGrain: v.tapeGrain, calmCap: v.calmCap, cover: v.cover, offTabMusic: v.offTabMusic,
+  auto: v.auto, dropGlitch: v.dropGlitch, tapeGrain: v.tapeGrain, calmCap: v.calmCap, cover: v.cover, aurora: v.aurora, offTabMusic: v.offTabMusic,
 });
 // The settings alone (no actions), rebuilt only when they change, so a frame reads them for free.
 let current = pick(useVibeStore.getState());
