@@ -244,16 +244,74 @@ it('restart starts the same length from full keeping the label, and Undo after i
   s.dispose();
 });
 
-it('Undo of a stop on a session that ran out meanwhile is refused', async () => {
+it('Undo of a stop on a session that ran out meanwhile restores it finished, as if it ended on its own', async () => {
   const t = setup();
   const s = t.useStore.getState();
   s.init();
   s.start();
   await vi.advanceTimersByTimeAsync(25 * MIN - 2000);
+  const sessions = t.useStore.getState().sessions;
   s.stop();
   await vi.advanceTimersByTimeAsync(3000);
   s.undoLast();
-  expect(t.useStore.getState().state.status).toBe('idle');
+  expect(t.useStore.getState().state).toEqual({ status: 'finished', minutes: 25 });
+  expect(t.useStore.getState().sessions).toEqual(sessions.map((x) => ({ ...x, done: true })));
+  expect(JSON.parse(t.mem.get(FOCUS_DAY_KEY)!).sessions).toEqual(t.useStore.getState().sessions);
+  s.dispose();
+});
+
+it('Undo of a restart on a session that ran out meanwhile restores finished and releases Do Not Disturb', async () => {
+  const t = setup();
+  const s = t.useStore.getState();
+  s.init();
+  s.start();
+  await vi.advanceTimersByTimeAsync(25 * MIN - 2000);
+  const sessions = t.useStore.getState().sessions;
+  s.restart();
+  await vi.advanceTimersByTimeAsync(3000);
+  s.undoLast();
+  expect(t.useStore.getState().state).toEqual({ status: 'finished', minutes: 25 });
+  expect(t.useStore.getState().sessions).toEqual(sessions.map((x) => ({ ...x, done: true })));
+  await vi.advanceTimersByTimeAsync(10);
+  expect(t.calls.at(-1)).toBe('disable_do_not_disturb');
+  expect(t.mem.has(DND_KEY)).toBe(false);
+  s.dispose();
+});
+
+it('Undo returns the day ribbon to its exact earlier records (no gap, no new climb, no restart fragment)', async () => {
+  const t = setup();
+  const s = t.useStore.getState();
+  s.init();
+  s.startLabeled('Draft');
+  await vi.advanceTimersByTimeAsync(5 * MIN);
+  s.adjustLeft(-1);
+  await vi.advanceTimersByTimeAsync(MIN);
+  const before = structuredClone(t.useStore.getState().sessions);
+  s.stop();
+  await vi.advanceTimersByTimeAsync(2000);
+  s.undoLast();
+  expect(t.useStore.getState().sessions).toEqual(before);
+  expect(JSON.parse(t.mem.get(FOCUS_DAY_KEY)!).sessions).toEqual(before);
+  s.restart();
+  await vi.advanceTimersByTimeAsync(2000);
+  s.undoLast();
+  expect(t.useStore.getState().sessions).toEqual(before);
+  s.pause();
+  const paused = structuredClone(t.useStore.getState().sessions);
+  s.restart();
+  s.undoLast();
+  expect(t.useStore.getState().sessions).toEqual(paused);
+  s.dispose();
+});
+
+it('adjustLeft cannot revive a session already past its end', async () => {
+  const t = setup();
+  const s = t.useStore.getState();
+  s.init();
+  s.start();
+  vi.setSystemTime(Date.now() + 26 * MIN);
+  s.adjustLeft(1);
+  expect(t.useStore.getState().state.status).toBe('finished');
   s.dispose();
 });
 

@@ -244,10 +244,22 @@ export function FocusMini() {
   const ringLabel = adjustable ? 'Choose a focus length' : `Focus controls, ${left} min left`;
   const paused = state.status === 'paused';
   const leftMs = remainingMs(state, f.now);
+  // The pressed button unmounts, so focus goes back to the ring after these actions.
   const act = (fn: () => void) => () => {
     setOpen(false);
     fn();
+    ring.current?.focus();
   };
+  // The title crossfades: the old words fade out over the new ones.
+  const [outTitle, setOutTitle] = useState<string | null>(null);
+  const lastTitle = useRef(title);
+  useEffect(() => {
+    if (lastTitle.current === title) return;
+    setOutTitle(lastTitle.current);
+    lastTitle.current = title;
+    const id = setTimeout(() => setOutTitle(null), FADE_MS);
+    return () => clearTimeout(id);
+  }, [title]);
 
   return (
     <section ref={root} className={`focus-mini${undoVisible ? ' has-undo' : ''}${undoShown ? '' : ' undo-out'}`} aria-label="Focus timer">
@@ -266,10 +278,21 @@ export function FocusMini() {
       </button>
       <div className="blk focus-mini-text">
         <span className="k">{paused && !f.undo ? 'Focus, paused' : 'Focus'}</span>
-        <div className="t2 ellipsis">{title}</div>
+        <div className="t2 ellipsis focus-title">
+          <span className={outTitle === null ? undefined : 'in'}>{title}</span>
+          {outTitle !== null && (
+            <span className="out" aria-hidden="true">
+              {outTitle}
+            </span>
+          )}
+        </div>
       </div>
       {undoVisible ? (
-        <button type="button" className="btn cy focus-undo" onClick={f.undoLast} disabled={!undoShown}>
+        <button type="button" className="btn cy focus-undo" onClick={() => {
+            f.undoLast();
+            ring.current?.focus();
+          }}
+          disabled={!undoShown}>
           <IconRotate size={24} aria-hidden="true" />
           Undo
         </button>
@@ -287,7 +310,7 @@ export function FocusMini() {
         </button>
       )}
       {undoVisible && <span className="focus-undo-line" style={{ animationDuration: `${UNDO_MS}ms` }} aria-hidden="true" />}
-      {(shown || leaving) && mode === 'length' && openMode === 'length' && (
+      {(shown || leaving) && openMode === 'length' && (
         <div className={`focus-sheet${shown ? '' : ' out'}`} role={shown ? 'dialog' : undefined} aria-label="Focus length">
           <div className="row sb">
             <span className="k">Focus length</span>
@@ -302,7 +325,7 @@ export function FocusMini() {
           </button>
         </div>
       )}
-      {(shown || leaving) && mode === 'live' && openMode === 'live' && (
+      {(shown || leaving) && openMode === 'live' && (
         <div className={`focus-sheet live${shown ? '' : ' out'}`} role={shown ? 'dialog' : undefined} aria-label="Focus controls">
           <div className="row sb">
             <span className="k">{paused ? `Focus, paused, ${left} min left` : `Focus, ${left} min left`}</span>

@@ -19,8 +19,8 @@ export const UNDO_MS = 6000;
 export interface FocusUndo {
   kind: 'stop' | 'restart';
   prev: m.FocusState;
-  /** Epoch ms the offer lapses. */
-  until: number;
+  /** The day ribbon's records as they stood before the action; Undo puts exactly these back. */
+  sessions: FocusSession[];
 }
 
 export interface FocusStore {
@@ -97,7 +97,7 @@ export function createFocusStore(deps: FocusDeps) {
       if (undoTimer !== undefined) clearTimeout(undoTimer);
       undoTimer = undefined;
     };
-    const commit = (next: m.FocusState, fresh = false) => {
+    const commit = (next: m.FocusState, fresh = false, restoreSessions?: FocusSession[]) => {
       const prev = get().state;
       if (next === prev) return;
       generation++;
@@ -113,6 +113,7 @@ export function createFocusStore(deps: FocusDeps) {
         sessions = closeSession(sessions, Math.min(prev.endAt, now));
         if (next.status === 'finished') sessions = completeSession(sessions);
       }
+      if (restoreSessions) sessions = restoreSessions;
       const daySaved = sessions !== get().sessions;
       set({ state: next, now, sessions, undo: null });
       try {
@@ -126,9 +127,8 @@ export function createFocusStore(deps: FocusDeps) {
       else if (next.status !== 'running' && prev.status === 'running') void dnd.release();
     };
 
-    const offerUndo = (kind: FocusUndo['kind'], prev: m.FocusState) => {
-      const until = deps.now() + UNDO_MS;
-      set({ undo: { kind, prev, until } });
+    const offerUndo = (kind: FocusUndo['kind'], prev: m.FocusState, sessions: FocusSession[]) => {
+      set({ undo: { kind, prev, sessions } });
       undoTimer = setTimeout(() => set({ undo: null }), UNDO_MS);
     };
 
@@ -183,30 +183,32 @@ export function createFocusStore(deps: FocusDeps) {
         const s = get().state;
         if (s.status === 'idle' || s.status === 'finished') commit({ status: 'idle', minutes: m.clampMinutes(minutes) });
       },
-      adjustLeft: (direction) => commit(m.adjustRemaining(get().state, deps.now(), direction)),
+      adjustLeft: (direction) => {
+        get().reconcile(); // a session already past its end is finished, not revived by Plus
+        commit(m.adjustRemaining(get().state, deps.now(), direction));
+      },
       stop: () => {
         const prev = get().state;
         if (prev.status !== 'running' && prev.status !== 'paused') return;
+        const before = get().sessions;
         commit(m.reset(prev));
-        offerUndo('stop', prev);
+        offerUndo('stop', prev, before);
       },
       restart: () => {
         const prev = get().state;
         if (prev.status !== 'running' && prev.status !== 'paused') return;
+        const before = get().sessions;
         commit(m.restart(prev, deps.now()), true);
-        offerUndo('restart', prev);
+        offerUndo('restart', prev, before);
       },
       undoLast: () => {
         const u = get().undo;
         if (!u) return;
         const now = deps.now();
-        // The time kept counting: a running session that ran out meanwhile has nothing to come back to.
-        if (u.prev.status === 'running' && u.prev.endAt <= now) {
-          clearUndoTimer();
-          set({ undo: null });
-          return;
-        }
-        commit(u.prev);
+        // The time kept counting: a session that ran out meanwhile comes back finished, as if it ended on its own.
+        const ranOut = u.prev.status === 'running' && u.prev.endAt <= now;
+        const target: m.FocusState = ranOut ? { status: 'finished', minutes: u.prev.minutes } : u.prev;
+        commit(target, false, ranOut ? completeSession(u.sessions) : u.sessions);
         set({ undo: null });
       },
       reconcile: () => {
