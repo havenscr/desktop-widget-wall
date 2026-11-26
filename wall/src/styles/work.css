@@ -1230,20 +1230,24 @@
 .fy-plate {
   --g: 183, 175, 214;
 }
-.key-tile[data-kind='layout'] {
+.key-tile[data-kind='layout'],
+.shelf-key[data-kind='layout'] {
   --g: 53, 230, 234;
 }
-.key-tile[data-kind='capture'] {
+.key-tile[data-kind='capture'],
+.shelf-key[data-kind='capture'] {
   --g: 255, 61, 154;
 }
 .key-tile[data-kind='focus'] {
   --g: 154, 123, 255;
 }
 .key-tile[data-kind='app'],
+.shelf-key[data-kind='app'],
 .fy-plate[data-kind='app'] {
   --g: 93, 242, 182;
 }
 .key-tile[data-kind='agent'],
+.shelf-key[data-kind='agent'],
 .fy-plate[data-kind='agent'] {
   --g: 255, 194, 77;
 }

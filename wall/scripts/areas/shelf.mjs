@@ -200,6 +200,7 @@ export default {
     state('shelf: the list menu open', LISTS, ['Tasks (To-Do)', 'Tax / Business', 'House, garden', 'Later today'], ['.lp-btn']),
     state('shelf: the list menu open with eight lists', MANY, ['Errands', 'Reading list', 'Later today'], ['.lp-btn']),
     state('shelf: more ShareX keys', LISTS, ['More ShareX', 'Scroll', 'Color', 'Last', 'Ruler', 'Pin', 'Highlight', 'Folder', 'Stop rec'], ['.shelf-more']),
+    state('shelf: a key hovered, wash faded in', LISTS, ['Region', 'Screen', 'History'], ['hover:.shelf-keys .shelf-key:nth-child(2) >> wait:500']),
     state('shelf: at rest, scrollbars hidden', LISTS, ['Recent files', 'Captures', 'Stop rec']),
     state('shelf: pointer over Recent files, scrollbar shown', LISTS, ['Recent files', 'Quarterly review.pptx'], ['hover:.rf-rows >> wait:800']),
     state('shelf: pointer over Captures, scrollbar shown and not faded', LISTS, ['Captures', 'Copy'], ['hover:.cap-rows >> wait:800']),
