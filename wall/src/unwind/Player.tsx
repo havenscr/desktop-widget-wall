@@ -10,6 +10,7 @@ import {
 import { anchorProgress, formatTime, isPlaying, isQuiet, type NowPlayingInfo, type ProgressAnchor } from '../music/model';
 import { isKnownPlayer, isKnownPlayerName, playerName, sourceKey } from '../music/players';
 import { FitTitle } from '../ui/FitTitle';
+import { tip } from '../ui/HoverTip';
 import { reanchorNowPlaying, rejectArt, seekMedia } from '../music/store';
 import { useSkyKeepClear } from '../horizon/sky';
 import { useNowPlaying } from '../music/useNowPlaying';
@@ -254,8 +255,12 @@ export function Player() {
           </div>
           <div className="u-meta">
             <span className="u-k">{watchMatch ? 'Last played in Watch' : fromWall ? ON_THE_WALL : idle.source ? `Last played on ${shownSource(idle.source)}` : 'Last played'}</span>
-            <FitTitle top={64} firstLines={1} lh={1.06} className="u-np u-was">{idle.title}</FitTitle>
-            <FitTitle top={32} firstLines={1} maxLines={2} lh={1.2} className="u-artist">{idle.artist}</FitTitle>
+            <FitTitle top={64} boxH={68} lh={1.06} className="u-np u-was" {...tip(idle.title)}>
+              {idle.title}
+            </FitTitle>
+            <FitTitle top={32} boxH={39} lh={1.2} className="u-artist" {...tip(idle.artist)}>
+              {idle.artist}
+            </FitTitle>
             {transport}
           </div>
         </div>
@@ -272,8 +277,12 @@ export function Player() {
         </div>
         <div className="u-meta">
           {sourceLabel ? <span className="u-k u-src">{watchMatch ? 'Playing in Watch' : sourceLabel}</span> : null}
-          <FitTitle top={64} firstLines={1} lh={1.06} className="u-np">{info?.title || 'Unknown title'}</FitTitle>
-          <FitTitle top={32} firstLines={1} maxLines={2} lh={1.2} className="u-artist">{info?.artist || info?.album || ''}</FitTitle>
+          <FitTitle top={64} boxH={68} lh={1.06} className="u-np" {...tip(info?.title || 'Unknown title')}>
+            {info?.title || 'Unknown title'}
+          </FitTitle>
+          <FitTitle top={32} boxH={39} lh={1.2} className="u-artist" {...tip(info?.artist || info?.album || '')}>
+            {info?.artist || info?.album || ''}
+          </FitTitle>
           {transport}
         </div>
       </div>
@@ -339,8 +348,12 @@ function MusicPlayer({ music, setBox }: { music: MusicView; setBox: (el: HTMLDiv
         </div>
         <div className="u-meta">
           <span className="u-k u-src">{live ? 'YouTube, on the wall' : 'Last played on the wall'}</span>
-          <FitTitle top={64} firstLines={1} lh={1.06} className={`u-np${live ? '' : ' u-was'}`}>{music.title}</FitTitle>
-          <FitTitle top={32} firstLines={1} maxLines={2} lh={1.2} className="u-artist">{music.channel}</FitTitle>
+          <FitTitle top={64} boxH={68} lh={1.06} className={`u-np${live ? '' : ' u-was'}`} {...tip(music.title)}>
+            {music.title}
+          </FitTitle>
+          <FitTitle top={32} boxH={39} lh={1.2} className="u-artist" {...tip(music.channel)}>
+            {music.channel}
+          </FitTitle>
           {transport}
         </div>
       </div>

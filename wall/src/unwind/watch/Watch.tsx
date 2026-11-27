@@ -493,10 +493,12 @@ export function WatchPanel() {
       <div className="w-panel" role="tabpanel" id={WATCH_PANEL_ID} aria-labelledby={WATCH_TAB_ID} data-state="idle">
         <div className="w-now" ref={setNowEl} data-ctl="shown">
           <span className="u-k u-src">Your playlist · ended</span>
-          <FitTitle top={48} firstLines={2} lh={1.1} className="w-title" {...tip(finishedEntry.label)}>
+          <FitTitle top={48} boxH={106} lh={1.1} className="w-title" {...tip(finishedEntry.label)}>
             {finishedEntry.label}
           </FitTitle>
-          <FitTitle top={24} firstLines={1} maxLines={2} lh={1.3} className="w-by">{bye}</FitTitle>
+          <FitTitle top={24} boxH={32} lh={1.3} className="w-by" {...tip(bye)}>
+            {bye}
+          </FitTitle>
           <div className="w-sub">{finished.none ? 'Every video was skipped' : 'Stopped after the last video'}</div>
           <div className="w-ctl w-idle own-ended">
             {finished.none ? (
@@ -567,7 +569,7 @@ export function WatchPanel() {
         <span className="u-k u-src">{own ? `Your playlist · ${own.place} of ${own.count}` : kindName(playing.kind)}</span>
         <FitTitle
           top={48}
-          firstLines={2}
+          boxH={106}
           lh={1.1}
           className="w-title"
           {...tip(
@@ -585,7 +587,7 @@ export function WatchPanel() {
           {shownTitle}
         </FitTitle>
         {channel ? (
-          <FitTitle top={24} firstLines={1} maxLines={2} lh={1.3} className="w-by" {...tip(`Channel: ${channel}. As the player reports it.`)}>
+          <FitTitle top={24} boxH={32} lh={1.3} className="w-by" {...tip(`Channel: ${channel}. As the player reports it.`)}>
             {channel}
           </FitTitle>
         ) : null}

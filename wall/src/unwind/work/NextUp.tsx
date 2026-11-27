@@ -50,7 +50,7 @@ function Body() {
       <div className="u-nu-rule" aria-hidden="true" />
       <div className="u-nu-info">
         <div className="u-nu-l1">
-          <FitTitle top={18} firstLines={2} maxLines={2} fade lh={1.1} className="u-nu-title" {...tip(line)}>
+          <FitTitle top={20} boxH={40} lh={1.1} className="u-nu-title" {...tip(line)}>
             {line}
           </FitTitle>
           {circles.length > 0 ? (

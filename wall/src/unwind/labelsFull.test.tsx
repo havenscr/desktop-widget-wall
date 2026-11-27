@@ -5,7 +5,7 @@ import { readFileSync } from 'node:fs';
 import watchCard from './watch/WatchCard.tsx?raw';
 import watchSrc from './watch/Watch.tsx?raw';
 import playerSrc from './Player.tsx?raw';
-import { FitTitle, fitSizes, linesAllowed } from '../ui/FitTitle';
+import { FitTitle, fitSizes } from '../ui/FitTitle';
 import { spillTitles, agentsLineWidth, textWidth, CORNER_LEFT, SPILL_GAP, type Chip } from '../ribbon/model';
 
 const read = (f: string): string => readFileSync(`src/styles/${f}`, 'utf8') as string;
@@ -24,42 +24,41 @@ describe('labels show in full', () => {
   it('the title steps down but never below 16 px, and never clamps', () => {
     expect(Math.min(...fitSizes(48))).toBe(16);
     expect(Math.min(...fitSizes(64))).toBe(16);
-    expect(linesAllowed(48, 48, 2)).toBe(2);
-    expect(linesAllowed(34, 48, 2)).toBe(3);
     const title = rule(unwindCss, '.w-title');
     expect(title).not.toContain('line-clamp');
     expect(title).not.toContain('overflow: hidden');
     const np = rule(unwindCss, '.u-np');
     expect(np).not.toContain('nowrap');
-    expect(np).toContain('overflow-wrap: anywhere');
+    // Words wrap between words only: a word is never broken inside.
+    expect(np).toContain('overflow-wrap: normal');
+    expect(rule(unwindCss, '.u-pin-name')).toContain('overflow-wrap: normal');
   });
 
   it('a long title renders whole in the title box', () => {
     const long = '1994 PURPLE CHROME ENGINE | Synthwave Retro Mix for long drives';
     const r = render(
-      <FitTitle top={48} firstLines={2} lh={1.1} className="w-title">
+      <FitTitle top={48} boxH={106} lh={1.1} className="w-title">
         {long}
       </FitTitle>,
     );
     expect(r.container.querySelector('.w-title')!.textContent).toBe(long);
   });
 
-  it('steps the size down until the lines fit, and stops at 16 px', () => {
-    // 40 px per 16 px line of 1.1: the box is as tall as its lines at whatever size is set.
+  it('steps the size down until the words fit the box, and stops at 16 px', () => {
+    // The box holds 106 px: the text is as tall as its lines at whatever size is set.
     const spy = vi.spyOn(HTMLElement.prototype, 'scrollHeight', 'get').mockImplementation(function (this: HTMLElement) {
       const size = parseFloat(this.style.fontSize) || 48;
-      const linesAt = Math.ceil((size * 40) / 48 / 6);
-      return Math.round(linesAt * size * 1.1);
+      return Math.round(size * 1.1 * 3);
     });
     try {
       const r = render(
-        <FitTitle top={48} firstLines={2} lh={1.1} className="w-title">
+        <FitTitle top={48} boxH={106} lh={1.1} className="w-title">
           {'A title long enough to need more lines than the biggest size allows'}
         </FitTitle>,
       );
       const px = parseFloat((r.container.querySelector('.w-title') as HTMLElement).style.fontSize);
-      expect(px).toBeLessThan(48);
-      expect(px).toBeGreaterThanOrEqual(16);
+      // Three lines fit 106 px at 32 px, the largest step that does.
+      expect(px).toBe(32);
     } finally {
       spy.mockRestore();
     }
@@ -75,9 +74,16 @@ describe('labels show in full', () => {
     expect(norm(playerSrc)).not.toMatch(/className=\{`u-np u-ell/);
   });
 
-  it('Watch list names wrap instead of an ellipsis', () => {
+  it('Watch list names are fitted inside the 40 px row, not an ellipsis', () => {
     expect(norm(watchCard)).not.toContain('w-label u-ell');
-    expect(rule(unwindCss, '.w-label')).toContain('overflow-wrap: anywhere');
+    expect(norm(watchCard)).toContain('<FitTitle top={20} boxH={40}');
+    expect(rule(unwindCss, '.w-row')).toContain('height: 40px');
+    expect(rule(unwindCss, '.w-play')).toContain('height: 40px');
+  });
+
+  it('the Listen title and artist keep the old box heights', () => {
+    expect(norm(playerSrc)).toContain('boxH={68}');
+    expect(norm(playerSrc)).toContain('boxH={39}');
   });
 
   it('the Next up title wraps and is fitted, not cut', () => {
@@ -101,9 +107,9 @@ describe('fades instead of hard cuts', () => {
     vi.spyOn(HTMLElement.prototype, 'scrollHeight', 'get').mockImplementation(function (this: HTMLElement) {
       return 400;
     });
-  const mount = (maxLines: number) =>
+  const mount = (boxH: number) =>
     render(
-      <FitTitle top={22} firstLines={1} maxLines={maxLines} fade lh={1.3} className="u-s">
+      <FitTitle top={22} boxH={boxH} lh={1.3} className="u-s">
         {'First thing: a meeting with a very long name that cannot fit one line'}
       </FitTitle>,
     ).container.querySelector('.u-s') as HTMLElement;
@@ -111,8 +117,8 @@ describe('fades instead of hard cuts', () => {
   it('a one line title fades at its right edge, a longer one fades downward', () => {
     const spy = tall();
     try {
-      expect(mount(1).getAttribute('data-cut')).toBe('x');
-      expect(mount(2).getAttribute('data-cut')).toBe('y');
+      expect(mount(29).getAttribute('data-cut')).toBe('x');
+      expect(mount(58).getAttribute('data-cut')).toBe('y');
     } finally {
       spy.mockRestore();
     }
