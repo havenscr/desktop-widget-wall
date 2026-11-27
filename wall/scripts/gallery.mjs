@@ -1313,6 +1313,14 @@ async function render(cdp, base, s, file, ctl) {
         const at = await to('Runtime.evaluate', { expression: `(() => { const r = document.querySelector(${sel})?.getBoundingClientRect(); return r ? [r.left + r.width - 12, r.top + r.height / 2] : null; })()`, returnByValue: true });
         const [x, y] = at.result.value ?? [0, 0];
         await to('Input.dispatchMouseEvent', { type: 'mouseMoved', x, y });
+        if (pointer[1] === 'hover') {
+          // The pointer arriving on Unwind lifts its bottom row (one hover shows everything at once). A real pointer
+          // follows a control that moved off it, so once the lift has settled the pointer goes to where the control is now.
+          await new Promise((r) => setTimeout(r, 400));
+          const now = await to('Runtime.evaluate', { expression: `(() => { const r = document.querySelector(${sel})?.getBoundingClientRect(); return r ? [r.left + r.width - 12, r.top + r.height / 2] : null; })()`, returnByValue: true });
+          const [nx, ny] = now.result.value ?? [x, y];
+          if (Math.abs(nx - x) > 4 || Math.abs(ny - y) > 4) await to('Input.dispatchMouseEvent', { type: 'mouseMoved', x: nx, y: ny });
+        }
         if (pointer[1] === 'press') await to('Input.dispatchMouseEvent', { type: 'mousePressed', x, y, button: 'left', clickCount: 1 });
       } else {
         const ctx = step.startsWith('ctx:');
