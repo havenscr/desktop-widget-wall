@@ -17,21 +17,26 @@ export interface SlotInfo {
   group: 'streamyard' | 'wall';
   /** A scene key: its label can be edited. */
   scene?: true;
+  /** The colour kind of the key; keys of no kind keep the base key colour. */
+  kind?: StudioKind;
 }
 
+/** The colour kinds of the studio keys. The stylesheet colours each kind by data-skind. */
+export type StudioKind = 'scene' | 'mic' | 'camera' | 'mark' | 'golive';
+
 export const SLOT_INFO: Record<ShownAction, SlotInfo> = {
-  scene1: { label: 'Speaker', full: 'Full Screen Speaker', group: 'streamyard', scene: true },
-  scene2: { label: 'Presenter', full: 'Presenter View', group: 'streamyard', scene: true },
-  scene3: { label: '2 Person', full: '2 Person Presenter View', group: 'streamyard', scene: true },
-  scene4: { label: 'Screenshare', full: 'Screenshare', group: 'streamyard', scene: true },
-  mute: { label: 'Mute mic', full: 'Mute mic', group: 'streamyard' },
-  camera: { label: 'Camera off', full: 'Camera off', group: 'streamyard' },
+  scene1: { label: 'Speaker', full: 'Full Screen Speaker', group: 'streamyard', scene: true, kind: 'scene' },
+  scene2: { label: 'Presenter', full: 'Presenter View', group: 'streamyard', scene: true, kind: 'scene' },
+  scene3: { label: '2 Person', full: '2 Person Presenter View', group: 'streamyard', scene: true, kind: 'scene' },
+  scene4: { label: 'Screenshare', full: 'Screenshare', group: 'streamyard', scene: true, kind: 'scene' },
+  mute: { label: 'Mute mic', full: 'Mute mic', group: 'streamyard', kind: 'mic' },
+  camera: { label: 'Camera off', full: 'Camera off', group: 'streamyard', kind: 'camera' },
   share: { label: 'Share', full: 'Share', group: 'streamyard' },
-  golive: { label: 'Go live', full: 'Go live', group: 'streamyard' },
-  end: { label: 'End show', full: 'End show', group: 'streamyard' },
+  golive: { label: 'Go live', full: 'Go live', group: 'streamyard', kind: 'golive' },
+  end: { label: 'End show', full: 'End show', group: 'streamyard', kind: 'golive' },
   solo: { label: 'Solo', full: 'Solo', group: 'streamyard' },
   two: { label: 'Two up', full: 'Two up', group: 'streamyard' },
-  mark: { label: 'Mark a moment', full: 'Mark a moment', group: 'wall' },
+  mark: { label: 'Mark a moment', full: 'Mark a moment', group: 'wall', kind: 'mark' },
   snip: { label: 'Snip', full: 'Snip', group: 'wall' },
   hide: { label: 'Hide screen', full: 'Hide screen', group: 'wall' },
 };
