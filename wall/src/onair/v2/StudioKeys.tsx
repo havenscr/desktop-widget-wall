@@ -47,8 +47,9 @@ export function StudioKeys({ now }: { now: number }) {
   const pick = useStudio((s) => s.pick);
   const yt = useYtLive((s) => s.status);
   const live = yt?.state === 'live' && !statusStale(yt, now);
-  // The last mic and camera state the add-on reported; null until it has. An answer without a state leaves it as it was.
-  const [devices, setDevices] = useState<{ mute: DeviceState | null; camera: DeviceState | null }>({ mute: null, camera: null });
+  // The last mic and camera state the add-on reported, kept in the studio store so it survives leaving Live mode.
+  const devices = useStudio((s) => s.devices);
+  const setDevice = useStudio((s) => s.setDevice);
   const [slots, setSlots] = useState<Slot[]>(loadSlots);
   const [picker, setPicker] = useState<number | null>(null);
   // The add-on's answer, shown on the key for a moment; `n` makes each answer a new element so its fade starts over.
@@ -110,9 +111,12 @@ export function StudioKeys({ now }: { now: number }) {
         const a = await studio(addon, addon === 'scene' ? SLOT_INFO[action].full : undefined);
         const t = studioAnswerText(a, addon);
         if (addon === 'mute' || addon === 'camera') {
-          // A miss can still land late, so the state is unknown again. The older add-on answers "already" with no state: that means off.
-          const next: DeviceState | null | undefined = !a.ok ? null : a.state === 'on' || a.state === 'off' ? a.state : a.reason === 'already' ? 'off' : undefined;
-          if (next !== undefined) setDevices((d) => ({ ...d, [addon]: next }));
+          // Only "failed" and "no answer" may hide a toggle that landed late, so only they make the state unknown again.
+          // Every other miss (busy, not connected, not found, studio not open, refused) leaves the known state alone.
+          // The older add-on answers "already" with no state: that means off.
+          const lateMiss = a.reason === 'failed' || a.reason === 'no answer';
+          const next: DeviceState | null | undefined = !a.ok ? (lateMiss ? null : undefined) : a.state === 'on' || a.state === 'off' ? a.state : a.reason === 'already' ? 'off' : undefined;
+          if (next !== undefined) setDevice(addon, next);
         }
         // A sent key names its scene or button; a miss gives the whole reason alone, so the line always fits.
         keys.showBrief(a.ok ? `${SLOT_INFO[action].full}: ${t.full}` : t.full);

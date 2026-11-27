@@ -329,7 +329,7 @@ it('an answer with no state leaves the key face alone, and an old already answer
   expect(face(4)).toBe('Unmute mic');
 });
 
-it('the camera key turns into Camera on when the camera is off, and a miss changes nothing', async () => {
+it('the camera key turns into Camera on when the camera is off, and a not found miss keeps that face', async () => {
   let reply: { ok: boolean; reason: string; state?: string } = { ok: true, reason: 'ok', state: 'off' };
   mocks.set('wall2_stagepop_studio', () => reply);
   await open();
@@ -341,8 +341,65 @@ it('the camera key turns into Camera on when the camera is off, and a miss chang
   await waitFor(() => expect(tiles()[5].querySelector('.oa2-sklbl')!.textContent).toBe('Camera on'), { timeout: 4000 });
   reply = { ok: false, reason: 'not found', state: 'on' };
   fireEvent.click(tiles()[5], { detail: 1 });
-  await waitFor(() => expect(face(5)).toBe('Camera off'));
   await waitFor(() => expect(tiles()[5].querySelector('.oa2-sklbl')!.textContent).toBe('Not found'));
+  expect(face(5)).toBe('Camera on');
+});
+
+it('the mic and camera state survives an unmount and a remount', async () => {
+  mocks.set('wall2_stagepop_studio', () => ({ ok: true, reason: 'ok', state: 'off' }));
+  await open();
+  fireEvent.click(tiles()[4], { detail: 1 });
+  await waitFor(() => expect(face(4)).toBe('Unmute mic'));
+  await waitFor(() => expect(tiles()[4].querySelector('.oa2-sklbl')!.textContent).toBe('Unmute mic'), { timeout: 4000 });
+  fireEvent.click(tiles()[5], { detail: 1 });
+  await waitFor(() => expect(face(5)).toBe('Camera on'));
+  cleanup();
+  await open();
+  expect(face(4)).toBe('Unmute mic');
+  expect(face(5)).toBe('Camera on');
+});
+
+it('busy and not connected keep a known state, failed and no answer reset it', async () => {
+  let reply: { ok: boolean; reason: string; state?: string } = { ok: true, reason: 'ok', state: 'off' };
+  mocks.set('wall2_stagepop_studio', () => reply);
+  await open();
+  fireEvent.click(tiles()[4], { detail: 1 });
+  await waitFor(() => expect(face(4)).toBe('Unmute mic'));
+  for (const reason of ['busy', 'not connected']) {
+    await waitFor(() => expect(tiles()[4].querySelector('.oa2-sklbl')!.textContent).toBe('Unmute mic'), { timeout: 4000 });
+    reply = { ok: false, reason };
+    fireEvent.click(tiles()[4], { detail: 1 });
+    await waitFor(() => expect(tiles()[4].querySelector('.oa2-sklbl')!.textContent).not.toBe('Unmute mic'));
+    expect(face(4)).toBe('Unmute mic');
+  }
+  for (const reason of ['failed', 'no answer']) {
+    act(() => useStudio.getState().setDevice('mute', 'off'));
+    await waitFor(() => expect(tiles()[4].querySelector('.oa2-sklbl')!.textContent).toBe('Unmute mic'), { timeout: 4000 });
+    reply = { ok: false, reason };
+    fireEvent.click(tiles()[4], { detail: 1 });
+    await waitFor(() => expect(face(4)).toBe('Mute mic'));
+  }
+});
+
+it('a scene press leaves the mic and camera faces alone, and a mic miss leaves the camera state alone', async () => {
+  let reply: { ok: boolean; reason: string; state?: string } = { ok: true, reason: 'ok', state: 'off' };
+  mocks.set('wall2_stagepop_studio', () => reply);
+  await open();
+  fireEvent.click(tiles()[4], { detail: 1 });
+  await waitFor(() => expect(face(4)).toBe('Unmute mic'));
+  await waitFor(() => expect(tiles()[4].querySelector('.oa2-sklbl')!.textContent).toBe('Unmute mic'), { timeout: 4000 });
+  fireEvent.click(tiles()[5], { detail: 1 });
+  await waitFor(() => expect(face(5)).toBe('Camera on'));
+  await waitFor(() => expect(tiles()[5].querySelector('.oa2-sklbl')!.textContent).toBe('Camera on'), { timeout: 4000 });
+  fireEvent.click(tiles()[0], { detail: 1 });
+  await waitFor(() => expect(tiles()[0].querySelector('.oa2-sklbl')!.textContent).not.toBe('Full Screen Speaker'));
+  expect(face(4)).toBe('Unmute mic');
+  expect(face(5)).toBe('Camera on');
+  await waitFor(() => expect(tiles()[4].querySelector('.oa2-sklbl')!.textContent).toBe('Unmute mic'), { timeout: 4000 });
+  reply = { ok: false, reason: 'failed' };
+  fireEvent.click(tiles()[4], { detail: 1 });
+  await waitFor(() => expect(face(4)).toBe('Mute mic'));
+  expect(face(5)).toBe('Camera on');
 });
 
 it('a failed mic answer returns the key to its default face', async () => {

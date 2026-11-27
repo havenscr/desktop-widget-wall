@@ -1217,6 +1217,20 @@ mod tests {
     }
 
     #[test]
+    fn a_studio_answer_carries_the_device_state() {
+        let core = Arc::new(core_with(Some("tok")));
+        let (_, rx) = core.authenticate(ORIGIN, 0).unwrap();
+        let c = Arc::clone(&core);
+        let t = std::thread::spawn(move || c.studio_wait("mute", None, Duration::from_secs(3)));
+        let sent: Value = serde_json::from_str(&rx.recv_timeout(Duration::from_secs(3)).unwrap()).unwrap();
+        let id = sent["id"].as_u64().unwrap();
+        core.handle_text(&format!(r#"{{"type":"studio_result","id":{id},"ok":true,"reason":"ok","state":"off"}}"#));
+        let a = t.join().unwrap();
+        assert!(a.ok);
+        assert_eq!(a.state, Some("off"));
+    }
+
+    #[test]
     fn a_second_studio_command_while_one_waits_is_busy_and_keeps_the_first() {
         let core = Arc::new(core_with(Some("tok")));
         let (_, rx) = core.authenticate(ORIGIN, 0).unwrap();
