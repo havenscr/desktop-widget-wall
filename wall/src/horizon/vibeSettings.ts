@@ -41,18 +41,20 @@ export const VIBE_KEY = 'wall2-vibe';
 
 const flag = (v: unknown, fallback: boolean) => (typeof v === 'boolean' ? v : fallback);
 
-/** A stored Drop Glitch: a look, or the old switch (on is Tear, off is Off); anything else is the default. */
-export function glitchOf(v: unknown): GlitchLook {
+/** A stored Drop Glitch: a look, or the old switch (on is Tear; off is Tear while Auto vibe is on, else Off); anything else is the default. */
+export function glitchOf(v: unknown, auto: boolean = DEFAULT_VIBE.auto): GlitchLook {
   if (v === true) return 'tear';
-  if (v === false) return 'off';
+  // Auto vibe used to force the glitch on, so an old off with Auto vibe on was seen as Tear.
+  if (v === false) return auto ? 'tear' : 'off';
   return GLITCH_LOOKS.includes(v as GlitchLook) ? (v as GlitchLook) : DEFAULT_VIBE.dropGlitch;
 }
 
 export function validateVibe(value: unknown): VibeSettings {
   const v = value && typeof value === 'object' ? (value as Partial<Record<keyof VibeSettings, unknown>>) : {};
+  const auto = flag(v.auto, DEFAULT_VIBE.auto);
   return {
-    auto: flag(v.auto, DEFAULT_VIBE.auto),
-    dropGlitch: glitchOf(v.dropGlitch),
+    auto,
+    dropGlitch: glitchOf(v.dropGlitch, auto),
     tapeGrain: flag(v.tapeGrain, DEFAULT_VIBE.tapeGrain),
     calmCap: flag(v.calmCap, DEFAULT_VIBE.calmCap),
     aurora: AURORA_LEVELS.includes(v.aurora as AuroraLevel) ? (v.aurora as AuroraLevel) : DEFAULT_VIBE.aurora,

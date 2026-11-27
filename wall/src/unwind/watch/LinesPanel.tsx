@@ -72,7 +72,7 @@ export const VIBE_HINTS = {
   auto: 'Colour and glow follow how loud the music has been lately.',
   dropGlitch: 'How a big drop hits the picture. A bigger jump in the music hits harder; Off means off, with Auto vibe on or not.',
   tapeGrain: 'A worn tape look: film grain, fine lines and a slow tracking bar over the scene.',
-  calmCap: 'Halves every effect and softens the kick and bass; a drop swells the glow and no longer glitches.',
+  calmCap: 'Halves every effect, the drop glitch included, and softens the kick and bass; a drop also swells the glow.',
   aurora: 'The soft coloured veil over the scene. The warm glow around the video is separate.',
   offTabMusic: 'How much the music moves the hills on the other tabs.',
   mountain: 'How much the music moves the mountain lines.',

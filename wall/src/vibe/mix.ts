@@ -173,7 +173,7 @@ export interface VibeFrame {
   grain: number;
   /** Extra strength of the grain specks right after a kick, 0 to `KICK_GRAIN`. Lines and bar stay steady. */
   grainKick: number;
-  /** Glitch strength; multiply by `envOf` of each drop stamp's age. 0 under Calm cap. */
+  /** Glitch strength; multiply by `envOf` of each drop stamp's age. halved under Calm cap. */
   glitch: number;
   /** Drop envelope and swell, the larger of the two newest drops. */
   env: number;
@@ -251,8 +251,8 @@ export function stepVibe(s: VibeState, out: VibeFrame, dt: number, nowS: number,
   out.grain = mGrain;
   const kickOn = !input.reduced;
   out.grainKick = kickOn ? KICK_GRAIN * kickPulse(nowS - s.kickAt) * cap : 0;
-  // Calm cap removes the glitch (it fades out with the level); the swell above is what a drop shows.
-  out.glitch = live * glitch * (1 - calm);
+  // Calm cap halves the glitch with the rest (the level eases, so it never steps); the swell above adds to what a drop shows.
+  out.glitch = live * glitch * cap;
   out.env = env;
   out.swell = swell;
   out.palette = s.palette;

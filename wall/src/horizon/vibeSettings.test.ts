@@ -88,13 +88,20 @@ describe('Drop Glitch and Mountain dance settings', () => {
     resetVibeStore();
   });
 
-  it('migrates the stored switch: true becomes Tear, false becomes Off', () => {
+  it('migrates the stored switch: true is Tear; false is Tear with Auto vibe on (it forced the glitch on) and Off with Auto vibe off', () => {
     expect(validateVibe({ dropGlitch: true }).dropGlitch).toBe('tear');
-    expect(validateVibe({ dropGlitch: false }).dropGlitch).toBe('off');
+    expect(validateVibe({ auto: true, dropGlitch: true }).dropGlitch).toBe('tear');
+    expect(validateVibe({ auto: false, dropGlitch: true }).dropGlitch).toBe('tear');
+    expect(validateVibe({ auto: true, dropGlitch: false }).dropGlitch).toBe('tear');
+    expect(validateVibe({ dropGlitch: false }).dropGlitch).toBe('tear');
+    expect(validateVibe({ auto: false, dropGlitch: false }).dropGlitch).toBe('off');
     localStorage.setItem(VIBE_KEY, JSON.stringify({ auto: true, dropGlitch: false, tapeGrain: true }));
     resetVibeStore();
+    expect(vibeSettings().dropGlitch).toBe('tear');
+    localStorage.setItem(VIBE_KEY, JSON.stringify({ auto: false, dropGlitch: false }));
+    resetVibeStore();
     expect(vibeSettings().dropGlitch).toBe('off');
-    localStorage.setItem(VIBE_KEY, JSON.stringify({ dropGlitch: true }));
+    localStorage.setItem(VIBE_KEY, JSON.stringify({ auto: false, dropGlitch: true }));
     resetVibeStore();
     expect(vibeSettings().dropGlitch).toBe('tear');
     // The next save writes the look, not the old boolean.

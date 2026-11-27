@@ -119,26 +119,26 @@ describe('mix table', () => {
     for (const look of ['tear', 'split', 'roll', 'flash'] as const) expect(at({ ...DEFAULT_VIBE, auto: false, dropGlitch: look }, 0.5).glitch).toBe(1);
   });
 
-  it('Calm cap halves the effects, removes the glitch and softens kick and bass', () => {
+  it('Calm cap halves the effects, the glitch included, and softens kick and bass', () => {
     const base = at({ ...DEFAULT_VIBE, tapeGrain: true }, 0.5);
     const calm = at({ ...DEFAULT_VIBE, tapeGrain: true, calmCap: true }, 0.5);
     expect(calm.aurora).toBeCloseTo(base.aurora / 2, 5);
     expect(calm.halo).toBeCloseTo(base.halo / 2, 5);
     expect(calm.tape).toBeCloseTo(base.tape / 2, 5);
-    expect(calm.glitch).toBe(0);
+    expect(calm.glitch).toBeCloseTo(base.glitch / 2, 5);
     expect(calm.kickGain).toBe(0.5);
     expect(calm.bassGain).toBe(0.75);
     expect(base.glitch).toBe(1);
   });
 
-  it('a drop shows the swell in the glow even under Calm cap, and the glitch envelope only without it', () => {
+  it('a drop shows the swell in the glow even under Calm cap, and the glitch envelope at half strength', () => {
     const settings = { ...DEFAULT_VIBE, calmCap: true };
     const s = createVibeState();
     settleVibe(s, settings, true, 0.5);
     noteDrop(s, 10);
     const out = stepVibe(s, createVibeFrame(), FRAME, 10.1, { settings, playing: true, energy: 0.5 });
     expect(out.haloSwell).toBeGreaterThan(0.1);
-    expect(out.glitch).toBe(0);
+    expect(out.glitch).toBeCloseTo(0.5, 5);
     expect(out.env).toBeGreaterThan(0);
   });
 
