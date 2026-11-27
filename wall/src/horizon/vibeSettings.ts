@@ -22,7 +22,7 @@ export interface VibeSettings {
   dropGlitch: GlitchLook;
   /** Film grain, scanlines and a slow tracking bar. */
   tapeGrain: boolean;
-  /** Halves the strength of every effect and swaps the glitch for a soft swell. */
+  /** Halves the strength of every effect, the drop glitch included. */
   calmCap: boolean;
   /** The aurora veil's strength. Bass Glow is separate and not affected. */
   aurora: AuroraLevel;

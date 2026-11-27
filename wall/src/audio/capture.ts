@@ -127,9 +127,9 @@ export function startAudio(): () => void {
       // Review stills: `vdrop=<ms>` fires one drop after that long, `vglitch=<look>` picks the Drop Glitch look.
       const q = new URLSearchParams(window.location.search);
       const look = q.get('vglitch') as GlitchLook | null;
-      if (look && GLITCH_LOOKS.includes(look)) useVibeStore.getState().setVibe({ dropGlitch: look });
+      if (import.meta.env.DEV && look && GLITCH_LOOKS.includes(look)) useVibeStore.getState().setVibe({ dropGlitch: look });
       const vdrop = Number(q.get('vdrop'));
-      if (vdrop > 0) setTimeout(() => devFireDrop(now()), vdrop);
+      if (import.meta.env.DEV && vdrop > 0) setTimeout(() => devFireDrop(now()), vdrop);
       every(() => {
         if (!document.hidden) ingestLevels(demoPayload(now()), now());
       }, TICK_MS);

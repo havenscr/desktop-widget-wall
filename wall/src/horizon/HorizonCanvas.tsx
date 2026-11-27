@@ -417,7 +417,7 @@ export function HorizonCanvas({ now = Date.now }: { now?: () => number }) {
           tf.scale = scale;
           tf.live = echo.a * typeLiveShare(lines.type, m.rest, flat);
           tf.restLine = flat ? sstep(m.rest) * Math.min(1, gate.current.value * awake.current) : 0;
-          tf.kick = danceKick();
+          tf.kick = danceKick() * Math.min(1, mountainF.current);
           tf.dt = drawDt;
           tf.stops = stops;
           typeShown = true;
@@ -612,10 +612,11 @@ export function HorizonCanvas({ now = Date.now }: { now?: () => number }) {
       // Zen ignores the music: the ridge lies still-calm underneath the breath's own lines.
       const driving = !zen && musicDriving(motion.current, audio.playing, audioBands(), dt);
       if (driving) loud.current = smoothStep(loud.current, loudness(audio), dt);
-      stepEchoMotion(motion.current, driving, dt);
+      // Mountain dance first: its eased factor also slows the line drift (at Off the drift stops; past Medium it does not speed up).
+      mountainF.current = stepMountainGain(mountainF.current, vibeSettings().mountain, dt);
+      stepEchoMotion(motion.current, driving, dt, Math.min(1, mountainF.current));
       stepLevelEase(levelEase.current, vibeSettings().offTabMusic, dt);
       fractionsAt(levelEase.current.pos, level.current);
-      mountainF.current = stepMountainGain(mountainF.current, vibeSettings().mountain, dt);
       playWeight.current = 1 - motion.current.rest;
       // Zen is watched for the length of a session without input: its picture never goes to the idle fade.
       awake.current = stepEchoFade(awake.current, !idleRef.current || zen, dt);

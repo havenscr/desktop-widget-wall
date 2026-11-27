@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
+import { draw, when, type HorizonDrawOptions } from './renderer';
+import { echoPaths, pathContext } from './canvasStub';
 import hz from './HorizonCanvas.tsx?raw';
 import { CAMERAS } from './cameras';
-import { echoOptions } from './echo';
+import { REST_LOOK, createEchoMotion, echoOptions, stepEchoMotion } from './echo';
 import { ampScale } from './lineTypes';
 import { applyMountainGain, MOUNTAIN_EASE_S, mountainGain, stepMountainGain } from './mountainDance';
 import { fractionsAt, withMusicLevel } from './offTabMusic';
@@ -69,5 +71,70 @@ describe('Mountain dance', () => {
     expect(lively).toBeGreaterThan(0);
     expect(apply).toBeGreaterThan(lively);
     expect(src).toContain('mountainF.current = stepMountain' + "Gain(mountainF.current, vibeSettings().mountain, dt)");
+  });
+});
+
+/** The echo lines' heights while music plays for `seconds`, at a Mountain dance level, read from the renderer's real strokes. */
+function playedLines(level: 'off' | 'low' | 'medium' | 'high', seconds: number, frames: number[]) {
+  const cam = CAMERAS.unwind;
+  const motion = createEchoMotion(true);
+  const out: number[][][] = [];
+  let f = Math.min(1, mountainGain(level));
+  const dt = 1 / 60;
+  const total = Math.round(seconds * 60);
+  for (let i = 1; i <= total; i++) {
+    // Music is playing the whole time: the drift advances unless the factor holds it.
+    stepEchoMotion(motion, true, dt, f);
+    if (frames.includes(i)) {
+      const echo = echoOptions(cam, 1, i * dt, 1, motion.rest, REST_LOOK)!;
+      echo.drift = motion.drift;
+      echo.n = Math.max(1, cam.en);
+      applyMountainGain(echo, mountainGain(level));
+      const o: HorizonDrawOptions = { W: 2560, H: 720, scale: 1, hy: cam.hy, az0: cam.az0, ppd: cam.ppd, vex: cam.vex, snowDeg: cam.snowDeg, cityScale: cam.cs, vx: cam.vx, ms: when(2026, 11, 11, 21.7), t: i * dt, phase: 0.4, grain: false, echo };
+      const { ctx, strokes } = pathContext();
+      draw(ctx, o);
+      out.push(echoPaths(strokes, cam.hy).echo.map((l) => l.h));
+    }
+    f = Math.min(1, mountainGain(level));
+  }
+  return out;
+}
+
+describe('Mountain dance Off holds the lines still while music plays', () => {
+  it('the drift stops: stepping with a factor of 0 never moves it, and a factor of 1 or more runs at 1x', () => {
+    const a = createEchoMotion(true);
+    const b = createEchoMotion(true);
+    const c = createEchoMotion(true);
+    for (let i = 0; i < 400; i++) {
+      stepEchoMotion(a, true, 1 / 60, 0);
+      stepEchoMotion(b, true, 1 / 60, 1);
+      stepEchoMotion(c, true, 1 / 60, 1.5);
+    }
+    expect(a.drift).toBe(createEchoMotion(true).drift);
+    expect(b.drift).not.toBe(a.drift);
+    expect(c.drift).toBe(b.drift);
+  });
+
+  it('every line keeps its y values from frame to frame at Off, with music playing and the rest settle over', () => {
+    const [a, b, c] = playedLines('off', 6, [300, 330, 359]);
+    expect(a.length).toBeGreaterThan(3);
+    for (const other of [b, c]) {
+      expect(other.length).toBe(a.length);
+      for (let l = 0; l < a.length; l++) for (let i = 0; i < a[l].length; i++) expect(other[l][i]).toBe(a[l][i]);
+    }
+  });
+
+  it('control: at Medium the same frames differ, so the check can fail', () => {
+    const [a, b] = playedLines('medium', 6, [300, 330]);
+    let moved = 0;
+    for (let l = 0; l < a.length; l++) for (let i = 0; i < a[l].length; i++) moved = Math.max(moved, Math.abs(b[l][i] - a[l][i]));
+    expect(moved).toBeGreaterThan(0.5);
+  });
+
+  it('the horizon passes the eased factor to the drift and scales the ribbon kick', () => {
+    const src = hz.replace(/\r\n/g, '\n');
+    expect(src).toContain('stepEchoMotion(motion.current, driving, dt, Math.min(1, ' + 'mountainF.current))');
+    expect(src).toContain('tf.kick = danceKick() * Math.min(1, ' + 'mountainF.current)');
+    expect(src.indexOf('mountainF.current = stepMountain' + 'Gain')).toBeLessThan(src.indexOf('stepEchoMotion(motion.current'));
   });
 });

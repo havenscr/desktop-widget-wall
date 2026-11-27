@@ -79,7 +79,7 @@ describe('the vibe frame path allocates nothing and uses no filter', () => {
 
   it('Drop Glitch draw, slice, set and the random numbers', () => {
     expect(scan(strip(arrowBody(glitchSrc, 'draw(ctx, w, h, nowS, drops, amount, src, power, look)')))).toEqual([]);
-    for (const fn of ['slice', 'set', 'rnd', 'size', 'splitLook', 'rollLook', 'flashLook', 'drawLook']) expect(scan(strip(bodyOf(glitchSrc, fn))), fn).toEqual([]);
+    for (const fn of ['slice', 'set', 'rnd', 'size', 'splitChannels', 'splitBands', 'rollLook', 'flashLook', 'drawLook', 'tearDrops']) expect(scan(strip(bodyOf(glitchSrc, fn))), fn).toEqual([]);
   });
 
   it('the layer loop callback (each frame)', () => {

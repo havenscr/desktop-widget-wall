@@ -95,15 +95,16 @@ describe('Drop Glitch', () => {
   });
 
   it('Tear is the look when none is named, and Off draws nothing', () => {
-    const { g, rec, src, hz } = make();
-    g.draw(rec.ctx, 760, 340, 10.3, drops(10), 1, src, undefined, 'off');
-    expect(slices(rec.calls, hz)).toHaveLength(0);
-    g.draw(rec.ctx, 760, 340, 10.3, drops(10), 1, src, undefined, 'tear');
-    const tear = slices(rec.calls, hz).length;
+    const off = make();
+    off.g.draw(off.rec.ctx, 760, 340, 10.3, drops(10), 1, off.src, undefined, 'off');
+    expect(slices(off.rec.calls, off.hz)).toHaveLength(0);
+    const t = make();
+    t.g.draw(t.rec.ctx, 760, 340, 10.3, drops(10), 1, t.src, undefined, 'tear');
+    const tear = slices(t.rec.calls, t.hz).length;
     expect(tear).toBeGreaterThanOrEqual(7);
-    rec.calls.length = 0;
-    g.draw(rec.ctx, 760, 340, 10.3, drops(10), 1, src);
-    expect(slices(rec.calls, hz)).toHaveLength(tear);
+    const n = make();
+    n.g.draw(n.rec.ctx, 760, 340, 10.3, drops(10), 1, n.src);
+    expect(slices(n.rec.calls, n.hz)).toHaveLength(tear);
   });
 
   const others = ['split', 'roll', 'flash'] as const;
@@ -150,6 +151,16 @@ describe('Drop Glitch', () => {
     expect(calls.some((c) => c[0] === 'set fillStyle' && String(c[1]).includes('60,220,255'))).toBe(true);
   });
 
+  it('Split pulls its channels once for all live drops, not once per drop', () => {
+    const one = make();
+    one.g.draw(one.rec.ctx, 760, 340, 10.3, drops(10), 1, one.src, undefined, 'split');
+    const two = make();
+    two.g.draw(two.rec.ctx, 760, 340, 10.3, drops(10, 9.9), 1, two.src, undefined, 'split');
+    const fills = (calls: unknown[][]) => calls.filter((c) => c[0] === 'set fillStyle' && String(c[1]).includes('255,60,170')).length;
+    expect(fills(one.rec.calls)).toBe(1);
+    expect(fills(two.rec.calls)).toBe(1);
+  });
+
   it('Roll moves its band down the screen as the drop ages', () => {
     const bandY = (age: number) => {
       const { calls } = peakOf('roll', age);
@@ -165,6 +176,59 @@ describe('Drop Glitch', () => {
     expect(zoom.length).toBeGreaterThan(0);
     expect((zoom[0][8] as number) / 760).toBeLessThan(1.06);
     expect(calls.some((c) => c[0] === 'drawImage' && (c[1] as HTMLCanvasElement).width === 128)).toBe(true);
+  });
+});
+
+describe('Changing the look during a drop never cuts', () => {
+  const peak = (calls: unknown[][]) => {
+    let m = 0;
+    for (const c of calls) if (c[0] === 'set globalAlpha' && typeof c[1] === 'number' && c[1] < 1) m = Math.max(m, c[1]);
+    return m;
+  };
+  const bloom = (calls: unknown[][]) => calls.some((c) => c[0] === 'drawImage' && (c[1] as HTMLCanvasElement).width === 128);
+  const tinted = (calls: unknown[][], rgb: string) => calls.some((c) => c[0] === 'set fillStyle' && String(c[1]).includes(rgb));
+
+  it('Flash to Off fades the Flash out over about 250 ms: lower, still drawn, then gone', () => {
+    const { g, rec, src } = make();
+    g.draw(rec.ctx, 760, 340, 10.2, drops(10), 1, src, undefined, 'flash');
+    const before = peak(rec.calls);
+    rec.calls.length = 0;
+    g.draw(rec.ctx, 760, 340, 10.23, drops(10), 1, src, undefined, 'off');
+    expect(bloom(rec.calls)).toBe(true);
+    const mid = peak(rec.calls);
+    expect(mid).toBeGreaterThan(0);
+    expect(mid).toBeLessThan(before);
+    rec.calls.length = 0;
+    g.draw(rec.ctx, 760, 340, 10.36, drops(10), 1, src, undefined, 'off');
+    const later = peak(rec.calls);
+    expect(later).toBeLessThan(mid);
+    rec.calls.length = 0;
+    g.draw(rec.ctx, 760, 340, 10.5, drops(10), 1, src, undefined, 'off');
+    expect(rec.calls.some((c) => c[0] === 'drawImage')).toBe(false);
+  });
+
+  it('Flash to Split crossfades: both looks draw while the weights trade places, then only Split', () => {
+    const { g, rec, src } = make();
+    g.draw(rec.ctx, 760, 340, 10.2, drops(10), 1, src, undefined, 'flash');
+    rec.calls.length = 0;
+    g.draw(rec.ctx, 760, 340, 10.23, drops(10), 1, src, undefined, 'split');
+    expect(bloom(rec.calls)).toBe(true);
+    expect(tinted(rec.calls, '255,60,170')).toBe(true);
+    rec.calls.length = 0;
+    g.draw(rec.ctx, 760, 340, 10.5, drops(10), 1, src, undefined, 'split');
+    expect(bloom(rec.calls)).toBe(false);
+    expect(tinted(rec.calls, '255,60,170')).toBe(true);
+  });
+
+  it('Tear to Off fades the slices out in steps, not at once', () => {
+    const { g, rec, src, hz } = make();
+    g.draw(rec.ctx, 760, 340, 10.2, drops(10), 1, src, undefined, 'tear');
+    rec.calls.length = 0;
+    g.draw(rec.ctx, 760, 340, 10.23, drops(10), 1, src, undefined, 'off');
+    expect(slices(rec.calls, hz).length).toBeGreaterThan(0);
+    rec.calls.length = 0;
+    g.draw(rec.ctx, 760, 340, 10.6, drops(10), 1, src, undefined, 'off');
+    expect(slices(rec.calls, hz)).toHaveLength(0);
   });
 });
 

@@ -119,8 +119,8 @@ function size(c: HTMLCanvasElement, w: number, h: number): void {
   if (c.height !== h) c.height = h;
 }
 
-/** Split: the picture's colour channels pull apart sideways, and a few wide bands shake. */
-function splitLook(fx: Fx, w: number, h: number, e: number, weight: number, seed: number, src: GlitchSources): void {
+/** Split, the channels: the picture's colour channels pull apart sideways. One pass for every live drop together (`e` is their summed strength). */
+function splitChannels(fx: Fx, w: number, h: number, e: number, src: GlitchSources): void {
   const m = src.map;
   const pull = 6 + 40 * e;
   const l = fx.lctx;
@@ -136,10 +136,16 @@ function splitLook(fx: Fx, w: number, h: number, e: number, weight: number, seed
     t.globalCompositeOperation = 'source-atop';
     t.fillStyle = c === 0 ? MAGENTA : CYAN;
     t.fillRect(0, 0, w, h);
-    l.globalAlpha = Math.min(1, e * 0.9) * weight;
+    l.globalAlpha = Math.min(1, e * 0.9);
     l.drawImage(fx.tmp, 0, 0);
   }
+}
+
+/** Split, the bands: a few wide bands shake, per drop and seed. */
+function splitBands(fx: Fx, w: number, h: number, e: number, weight: number, seed: number, src: GlitchSources): void {
   if (!src.hz) return;
+  const m = src.map;
+  const l = fx.lctx;
   for (let i = 0; i < 4; i++) {
     const bh = 22 + rnd(seed, i + 10) * 46;
     const y = (0.06 + 0.88 * rnd(seed, i)) * (h - bh);
@@ -201,6 +207,7 @@ function flashLook(fx: Fx, w: number, h: number, e: number, src: GlitchSources):
 function drawLook(ctx: CanvasRenderingContext2D, fx: Fx, w: number, h: number, nowS: number, drops: Float64Array, amount: number, src: GlitchSources, power: Float64Array | undefined, look: GlitchLook): void {
   const l = fx.lctx;
   let any = false;
+  let sum = 0;
   for (let d = 0; d < drops.length; d++) {
     const age = nowS - drops[d];
     if (!(age >= 0 && age < DROP_S)) continue;
@@ -220,12 +227,15 @@ function drawLook(ctx: CanvasRenderingContext2D, fx: Fx, w: number, h: number, n
       const k = Math.floor(phase);
       const f = sstep(0, 1, phase - k);
       const base = (drops[d] % 997) * 13;
-      splitLook(fx, w, h, e, 1 - f, base + k, src);
-      splitLook(fx, w, h, e, f, base + k + 1, src);
+      sum += e;
+      splitBands(fx, w, h, e, 1 - f, base + k, src);
+      splitBands(fx, w, h, e, f, base + k + 1, src);
     } else if (look === 'roll') rollLook(fx, w, h, e, age, src);
     else flashLook(fx, w, h, e, src);
   }
   if (!any) return;
+  // Split pulls its channels once for all live drops together, not once per drop and seed.
+  if (sum > 0) splitChannels(fx, w, h, Math.min(1, sum), src);
   // Fade in from the left edge (the rail side): the whole layer is multiplied by the strip, so no look starts with a hard edge.
   l.globalCompositeOperation = 'destination-in';
   l.globalAlpha = 1;
@@ -272,11 +282,36 @@ function bakeFx(): Fx | null {
   return { layer, lctx, tmp, tctx, fade, bloom, band };
 }
 
+/** Tear: slices torn from the horizon canvas and the art, per live drop, scaled by `amount` and the drop's own power. */
+function tearDrops(ctx: CanvasRenderingContext2D, bctx: CanvasRenderingContext2D, buf: HTMLCanvasElement, feather: HTMLCanvasElement, w: number, h: number, nowS: number, drops: Float64Array, amount: number, src: GlitchSources, power: Float64Array | undefined): void {
+  ctx.globalCompositeOperation = 'screen';
+  for (let d = 0; d < drops.length; d++) {
+    const age = nowS - drops[d];
+    if (!(age >= 0 && age < DROP_S)) continue;
+    const env = envOf(age) * amount * (power ? power[d] : 1);
+    if (env < 0.01) continue;
+    // Two seeds are alive at once and crossfade, per drop stamp, so the slices re-roll without a pop.
+    const phase = age * SEED_HZ;
+    const k = Math.floor(phase);
+    const f = sstep(0, 1, phase - k);
+    const base = (drops[d] % 997) * 13;
+    set(ctx, bctx, buf, feather, w, h, base + k, env * (1 - f), src);
+    set(ctx, bctx, buf, feather, w, h, base + k + 1, env * f, src);
+  }
+  ctx.globalAlpha = 1;
+}
+
+/** Seconds a look takes to fade out (and the next to fade in) when the Drop Glitch choice changes. */
+export const LOOK_FADE_S = 0.25;
+
 export function createGlitch(): Glitch {
   let buf: HTMLCanvasElement | null = null;
   let bctx: CanvasRenderingContext2D | null = null;
   let feather: HTMLCanvasElement | null = null;
   let fx: Fx | null = null;
+  const wts = new Float64Array(4);
+  let lastNow = -1;
+  let seen = false;
   return {
     bake(w) {
       const b = document.createElement('canvas');
@@ -302,27 +337,26 @@ export function createGlitch(): Glitch {
       if (!fx) fx = bakeFx();
     },
     draw(ctx, w, h, nowS, drops, amount, src, power, look) {
+      // A change of look during a drop never cuts: each look keeps a weight that eases to 1 for the chosen look and to 0
+      // for the others over `LOOK_FADE_S`, so the outgoing look fades out (Off included) while the new one fades in.
+      const idx = look === 'split' ? 1 : look === 'roll' ? 2 : look === 'flash' ? 3 : look === 'off' ? -1 : 0;
+      const dt = lastNow < 0 ? 0 : Math.min(LOOK_FADE_S, Math.max(0, nowS - lastNow));
+      lastNow = nowS;
+      if (!seen) {
+        seen = true;
+        if (idx >= 0) wts[idx] = 1;
+      }
+      const step = dt / LOOK_FADE_S;
+      for (let k = 0; k < 4; k++) {
+        const to = k === idx ? 1 : 0;
+        wts[k] += Math.max(-step, Math.min(step, to - wts[k]));
+      }
       if (amount <= 0.003 || !buf || !bctx || !feather) return;
-      if (look === 'off') return;
-      if (look === 'split' || look === 'roll' || look === 'flash') {
-        if (fx) drawLook(ctx, fx, w, h, nowS, drops, amount, src, power, look);
-        return;
+      for (let k = 0; k < 4; k++) {
+        if (wts[k] <= 0.003) continue;
+        if (k === 0) tearDrops(ctx, bctx, buf, feather, w, h, nowS, drops, amount * wts[0], src, power);
+        else if (fx) drawLook(ctx, fx, w, h, nowS, drops, amount * wts[k], src, power, k === 1 ? 'split' : k === 2 ? 'roll' : 'flash');
       }
-      ctx.globalCompositeOperation = 'screen';
-      for (let d = 0; d < drops.length; d++) {
-        const age = nowS - drops[d];
-        if (!(age >= 0 && age < DROP_S)) continue;
-        const env = envOf(age) * amount * (power ? power[d] : 1);
-        if (env < 0.01) continue;
-        // Two seeds are alive at once and crossfade, per drop stamp, so the slices re-roll without a pop.
-        const phase = age * SEED_HZ;
-        const k = Math.floor(phase);
-        const f = sstep(0, 1, phase - k);
-        const base = (drops[d] % 997) * 13;
-        set(ctx, bctx, buf, feather, w, h, base + k, env * (1 - f), src);
-        set(ctx, bctx, buf, feather, w, h, base + k + 1, env * f, src);
-      }
-      ctx.globalAlpha = 1;
     },
   };
 }

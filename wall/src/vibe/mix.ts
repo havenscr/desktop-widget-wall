@@ -173,7 +173,7 @@ export interface VibeFrame {
   grain: number;
   /** Extra strength of the grain specks right after a kick, 0 to `KICK_GRAIN`. Lines and bar stay steady. */
   grainKick: number;
-  /** Glitch strength; multiply by `envOf` of each drop stamp's age. halved under Calm cap. */
+  /** Glitch strength; multiply by `envOf` of each drop stamp's age. Halved under Calm cap. */
   glitch: number;
   /** Drop envelope and swell, the larger of the two newest drops. */
   env: number;
