@@ -7,10 +7,10 @@ import { resetLibIndex } from '../../work/keyLibrary';
 import { useYtLive } from '../ytliveStore';
 import { StudioKeys } from './StudioKeys';
 import { StudioStatus } from './StudioStatus';
-import { STUDIO_CONFIRM_MS, studioAnswerText } from './studioModel';
+import { refusalText, STUDIO_CONFIRM_MS, STUDIO_FULL_MAX, studioAnswerText } from './studioModel';
 import onair2Raw from '../../styles/onair2.css?raw';
 import workRaw from '../../styles/work.css?raw';
-import { DEFAULT_SLOTS, LABEL_MAX_PX, PICKER_ORDER, SLOTS_KEY, fitLabel, loadSlots, measureLabel, parseSlots, saveSlots } from './studioSlots';
+import { DEFAULT_SLOTS, LABEL_MAX_PX, PICKER_ORDER, SLOT_INFO, SLOTS_KEY, fitLabel, loadSlots, measureLabel, parseSlots, saveSlots } from './studioSlots';
 import { useStudio } from './studioStore';
 
 /** The stylesheets as text, with line endings the same on every checkout. */
@@ -125,12 +125,12 @@ it('says each refusal in words and leaves the Sent line alone', async () => {
   localStorage.setItem(SLOTS_KEY, JSON.stringify(withSlots(['share'])));
   await open();
   const cases: [string, RegExp][] = [
-    ['no studio window', /Open StreamYard in a browser, or press Find window/],
+    ['no studio window', /Open StreamYard, or press Find window/],
     ['not streamyard', /Switch that window to the StreamYard tab/],
-    ['gone', /The studio window is gone/],
+    ['gone', /The studio window is gone; press Find window/],
     ['not forward', /would not come forward/],
     ['busy', /still sending/],
-    ['not set up', /Set one in StreamYard Settings, Hotkeys/],
+    ['not set up', /Set a hotkey in StreamYard Settings, Hotkeys/],
   ];
   for (const [word, text] of cases) {
     refuse = word;
@@ -139,7 +139,11 @@ it('says each refusal in words and leaves the Sent line alone', async () => {
     await act(async () => void (await new Promise((r) => setTimeout(r, 600))));
   }
   expect(useStudio.getState().sent).toBeNull();
-  expect(screen.getByText('No key sent yet', { selector: '.oa2-hd-r' })).toBeTruthy();
+  // The right-hand text steps aside while a refusal shows; it is drawn again once the brief clears.
+  expect(document.querySelector('.oa2-studiokeys .oa2-hd-r')).toBeNull();
+  for (const w of ['no studio window', 'not streamyard', 'not set up', 'gone', 'not forward', 'busy', 'needs confirm', 'other']) {
+    expect(refusalText(w).length).toBeLessThanOrEqual(STUDIO_FULL_MAX);
+  }
 });
 
 it('the status block warns in amber when the window is minimized', async () => {
@@ -226,7 +230,7 @@ it('the answer shows on the key as a short reason that clears, and a miss does n
   await waitFor(() => expect(tiles()[0].getAttribute('data-note')).toBe('miss'));
   expect(tiles()[0].querySelector('.oa2-sklbl')!.textContent).toBe('Not found');
   expect(tiles()[0].getAttribute('data-last')).toBeNull();
-  expect(screen.getAllByText(/no scene or button by that name/).length).toBeGreaterThan(0);
+  expect(screen.getAllByText('StreamYard has no scene by that name').length).toBeGreaterThan(0);
   await waitFor(() => expect(tiles()[0].getAttribute('data-note')).toBeNull(), { timeout: 4000 });
   expect(tiles()[0].querySelector('.oa2-sklbl')!.textContent).toBe('Speaker');
 });
@@ -240,6 +244,37 @@ it('a good answer glows the key, and every reason has a short text that fits a k
     const t = studioAnswerText({ ok: r === 'ok', reason: r });
     expect(measureLabel(t.short)).toBeLessThanOrEqual(LABEL_MAX_PX);
     expect(t.full.length).toBeGreaterThan(0);
+  }
+});
+
+it('a miss says which step failed, in words that fit the key and the heading, and the heading drops the right text', async () => {
+  mocks.set('wall2_stagepop_studio', () => ({ ok: false, reason: 'not found', why: 'no leaf match', n: 4 }));
+  await open();
+  fireEvent.click(tiles()[2], { detail: 1 });
+  await waitFor(() => expect(tiles()[2].querySelector('.oa2-sklbl')!.textContent).toBe('No match'));
+  const brief = document.querySelector('.oa2-studiokeys .oa2-brief')!;
+  expect(brief.textContent).toBe('None of the 4 scenes has that exact name');
+  expect(document.querySelector('.oa2-studiokeys .oa2-hd-r')).toBeNull();
+  const whys = ['tabs', 'no scenes', 'several', 'not usable', 'too many leaves', 'no card', 'no leaf match', 'no button', 'unreadable', undefined] as const;
+  for (const action of ['scene', 'mute', 'camera'] as const) {
+    for (const why of whys) {
+      for (const n of [undefined, 0, 2, 99]) {
+        const t = studioAnswerText({ ok: false, reason: 'not found', why, n }, action);
+        expect(measureLabel(t.short)).toBeLessThanOrEqual(LABEL_MAX_PX);
+        expect(t.full.length).toBeLessThanOrEqual(STUDIO_FULL_MAX);
+      }
+    }
+  }
+  expect(studioAnswerText({ ok: false, reason: 'not found', why: 'tabs', n: 2 }, 'scene').full).toBe('2 StreamYard studio tabs open; close one');
+  expect(studioAnswerText({ ok: false, reason: 'not found', why: 'several', n: 2 }, 'scene').full).toBe('2 StreamYard scenes have that name');
+  expect(studioAnswerText({ ok: false, reason: 'not found', why: 'no scenes' }, 'scene').full).toBe('Open the Scenes panel in StreamYard');
+  expect(studioAnswerText({ ok: false, reason: 'failed', why: 'error' }, 'mute').short).toBe('Page error');
+  // Every other heading line fits too: each reason alone, and a sent scene with its full name.
+  for (const r of ['ok', 'already', 'busy', 'not found', 'studio not open', 'not connected', 'no answer', 'refused', 'failed'] as const) {
+    expect(studioAnswerText({ ok: r === 'ok' || r === 'already', reason: r }, 'scene').full.length).toBeLessThanOrEqual(STUDIO_FULL_MAX);
+  }
+  for (const a of ['scene1', 'scene2', 'scene3', 'scene4', 'mute', 'camera'] as const) {
+    expect(`${SLOT_INFO[a].full}: ${studioAnswerText({ ok: true, reason: 'ok' }).full}`.length).toBeLessThanOrEqual(STUDIO_FULL_MAX);
   }
 });
 

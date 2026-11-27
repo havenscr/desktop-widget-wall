@@ -19,7 +19,8 @@ export function Head({ label, right, icon, brief, action }: { label: string; rig
       ) : (
         <span className="k">{label}</span>
       )}
-      {right !== undefined && <span className="oa2-hd-r ellipsis">{right}</span>}
+      {/* While a brief shows it takes the whole row, so the brief is never cut short by the right-hand text. */}
+      {right !== undefined && !brief && <span className="oa2-hd-r ellipsis">{right}</span>}
       {action}
     </div>
   );

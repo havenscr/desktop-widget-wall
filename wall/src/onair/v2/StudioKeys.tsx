@@ -101,7 +101,8 @@ export function StudioKeys({ now }: { now: number }) {
         // edit, while the full name is the scene's real name in StreamYard.
         const a = await studio(addon, addon === 'scene' ? SLOT_INFO[action].full : undefined);
         const t = studioAnswerText(a, addon);
-        keys.showBrief(`${SLOT_INFO[action].full}: ${t.full}`);
+        // A sent key names its scene or button; a miss gives the whole reason alone, so the line always fits.
+        keys.showBrief(a.ok ? `${SLOT_INFO[action].full}: ${t.full}` : t.full);
         if (gen === genOf(slot)) {
           clearTimeout(noteTimer.current);
           noteN.current += 1;
@@ -128,7 +129,7 @@ export function StudioKeys({ now }: { now: number }) {
     if (lib) {
       const k = keys.groups ? resolveKey(lib, keys.groups) : null;
       if (!k) {
-        keys.showBrief(keys.groups ? `The key library has no runnable key "${lib}"` : 'The key library is not ready');
+        keys.showBrief(keys.groups ? `No runnable library key "${lib}"` : 'The key library is not ready');
         return;
       }
       if (keyboardOnMouseKey(k.action, detail)) return;
