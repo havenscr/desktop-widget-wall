@@ -186,6 +186,28 @@ it('goes when its anchor moves more than a few pixels (Watt walking on), and sta
   expect(document.querySelector('.hover-tip')).toBeNull();
 });
 
+it('stays with an anchor that moves while it keeps the keyboard focus (the Unwind row lifting)', async () => {
+  const r = render(
+    <>
+      <button className="anchor" {...tip('About the pill')}>
+        x
+      </button>
+      <HoverTipLayer />
+    </>,
+  );
+  const a = r.container.querySelector<HTMLButtonElement>('.anchor')!;
+  let top = 640;
+  a.getBoundingClientRect = () => ({ left: 200, top, width: 40, height: 30, right: 240, bottom: top + 30, x: 200, y: top, toJSON() {} }) as DOMRect;
+  act(() => a.focus());
+  await flush(0);
+  expect(document.querySelector('.hover-tip')!.textContent).toBe('About the pill');
+  const before = document.querySelector<HTMLElement>('.hover-tip')!.style.top;
+  top -= 116;
+  await flush(TIP_ANCHOR_CHECK_MS);
+  expect(document.querySelector('.hover-tip')!.textContent).toBe('About the pill');
+  expect(document.querySelector<HTMLElement>('.hover-tip')!.style.top).not.toBe(before);
+});
+
 it('the default placement is centred over the control and clamped 12 px from the edge; align start lines the left edges up', async () => {
   const width = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'offsetWidth');
   Object.defineProperty(HTMLElement.prototype, 'offsetWidth', { configurable: true, get: function (this: HTMLElement) { return this.classList.contains('hover-tip') ? 300 : 0; } });

@@ -43,8 +43,9 @@
    up, the Office row, the work layer, the timeline line, the Watch button's art overlay and Listen's gear, which is
    absolute at a fixed spot) get z-index alone; a position here would move them. Only plain in-flow elements (the rail, the
    clock and Listen's readouts) are given position: relative so the z-index applies. The work layer keeps its own z-index 90
-   while its day drawer or Agents panel is open. */
-.stage:has(.vibe-front) :is(.u-right, .w-now, .w-sheet, .u-office-slot, .u-card, .u-listen-gear, .u-video) {
+   while its day drawer or Agents panel is open. On Listen the right wing is an empty box over the music card's right part:
+   it is not lifted (`:not(:empty)`), so the card stays over it and takes the pointer there, as on main. */
+.stage:has(.vibe-front) :is(.u-right:not(:empty), .w-now, .w-sheet, .u-office-slot, .u-card, .u-listen-gear, .u-video) {
   z-index: 6;
 }
 .stage:has(.vibe-front) .u-wing {

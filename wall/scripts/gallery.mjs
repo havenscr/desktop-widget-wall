@@ -1310,7 +1310,17 @@ async function render(cdp, base, s, file, ctl) {
         await to('Runtime.evaluate', { expression: `(() => { const el=document.querySelector(${JSON.stringify(selector)}); if (!el) return; const set=Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value')?.set; set?.call(el,${JSON.stringify(value)}); el.dispatchEvent(new Event('input',{bubbles:true})); })()` });
       } else if (pointer) {
         const sel = JSON.stringify(step.slice(pointer[0].length));
-        const at = await to('Runtime.evaluate', { expression: `(() => { const r = document.querySelector(${sel})?.getBoundingClientRect(); return r ? [r.left + r.width - 12, r.top + r.height / 2] : null; })()`, returnByValue: true });
+        const centre = `(() => { const r = document.querySelector(${sel})?.getBoundingClientRect(); return r ? [r.left + r.width - 12, r.top + r.height / 2] : null; })()`;
+        if (pointer[1] === 'hover') {
+          // A real pointer reaches a control from elsewhere on the wall: it lands on a neutral spot first (a spot of the main
+          // area that holds no control), so the one hover lifts Unwind's bottom row, and once the lift has settled it goes to
+          // where the control is now. The pointer does not follow the control after that last move.
+          const neutral = await to('Runtime.evaluate', { expression: `(() => { const m = document.querySelector('.main'); if (!m) return null; for (let y = 40; y < innerHeight - 40; y += 40) for (let x = 40; x < innerWidth - 40; x += 40) { const a = document.elementFromPoint(x, y); if (a && (a === m || a.classList.contains('top'))) return [x, y]; } return null; })()`, returnByValue: true });
+          const [px, py] = neutral.result.value ?? [W / 2, H / 2];
+          await to('Input.dispatchMouseEvent', { type: 'mouseMoved', x: px, y: py });
+          await new Promise((r) => setTimeout(r, 400));
+        }
+        const at = await to('Runtime.evaluate', { expression: centre, returnByValue: true });
         const [x, y] = at.result.value ?? [0, 0];
         await to('Input.dispatchMouseEvent', { type: 'mouseMoved', x, y });
         if (pointer[1] === 'press') await to('Input.dispatchMouseEvent', { type: 'mousePressed', x, y, button: 'left', clickCount: 1 });
