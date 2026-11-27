@@ -75,7 +75,8 @@ export function OnAir2() {
     writeLast(rec);
     setLast(rec);
   }, [mode]);
-  const why = new URLSearchParams(window.location.search).get('whylong') === '3' ? WHY_THREE : new URLSearchParams(window.location.search).get('whylong') === '1' ? WHY_LONG : pick.why;
+  const whylong = import.meta.env.DEV ? new URLSearchParams(window.location.search).get('whylong') : null;
+  const why = whylong === '3' ? WHY_THREE : whylong === '1' ? WHY_LONG : pick.why;
   return (
     <section className="oa2" data-place="onair" data-mode={pick.mode} data-held={held ? 'true' : 'false'} aria-label="On air">
       <ModesRow pick={pick} held={held} why={why} onHold={hold} onAuto={() => hold(null)} />

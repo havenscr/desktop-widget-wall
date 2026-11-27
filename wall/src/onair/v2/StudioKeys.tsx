@@ -94,7 +94,7 @@ export function StudioKeys({ now }: { now: number }) {
     // A click that is part of a double click never counts, and neither does one while a send runs.
     if (detail > 1 || busy.current) return;
     // Development review only: any press answers with a library key id of 59 characters, for the never cut rule on the result line (`?brieflong=1`).
-    if (new URLSearchParams(window.location.search).get('brieflong') === '1') {
+    if (import.meta.env.DEV && new URLSearchParams(window.location.search).get('brieflong') === '1') {
       keys.showBrief(`No runnable library key "${BRIEF_LONG_LIB}"`);
       return;
     }
