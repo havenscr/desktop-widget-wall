@@ -17,8 +17,9 @@
 //!   origins that both passed the handshake only the first to authenticate is kept.
 //! - After the welcome the wall may send `{type:"studio", id, action, name?}` (action `scene`, `mute` or `camera`; a
 //!   scene name of 1 to 80 characters with no control character; the other two take none) and the add-on answers
-//!   `{type:"studio_result", id, ok, reason}`. One studio command is in flight at a time; a second is "busy". The
-//!   answer is accepted only from the current authenticated client and only for the id that is waiting.
+//!   `{type:"studio_result", id, ok, reason, why?, n?}` (why: the step a miss failed at; n: a count). One studio
+//!   command is in flight at a time; a second is "busy". The answer is accepted only from the current authenticated
+//!   client and only for the id that is waiting.
 //! - Text frames only, 8 KiB per message and frame, at most 20 inbound frames a second (pings and pongs count), ping every 30 s,
 //!   closed after 60 s of silence.
 //! The token is never logged (this module logs nothing) and never leaves Rust except as the answer to
@@ -137,8 +138,9 @@ pub(crate) enum In {
     Hello { v: u64, cnonce: String, mac: String },
     Feeds { list: Vec<Feed>, mode: String },
     Window { open: bool, fullscreen: bool },
-    /// The add-on's answer to a studio command: the id it was sent with, and ok or a reason word.
-    Studio { id: u64, ok: bool, reason: String },
+    /// The add-on's answer to a studio command: the id it was sent with, ok or a reason word, and for a miss the
+    /// step that failed (`why`) with a count (`n`) when the add-on sends them.
+    Studio { id: u64, ok: bool, reason: String, why: Option<String>, n: Option<u64> },
 }
 
 /// A nonce or MAC as it travels: 1 to 128 base64 characters (either alphabet, padding allowed).
@@ -206,7 +208,10 @@ pub(crate) fn parse_in(text: &str) -> Option<In> {
             if reason.len() > 40 {
                 return None;
             }
-            Some(In::Studio { id: v.get("id")?.as_u64()?, ok: v.get("ok")?.as_bool()?, reason: reason.to_string() })
+            // why and n are optional extras: a missing or odd one is left out, never a reason to drop the answer.
+            let why = v.get("why").and_then(Value::as_str).filter(|w| w.len() <= 40).map(str::to_string);
+            let n = v.get("n").and_then(Value::as_u64);
+            Some(In::Studio { id: v.get("id")?.as_u64()?, ok: v.get("ok")?.as_bool()?, reason: reason.to_string(), why, n })
         }
         _ => None,
     }
@@ -247,12 +252,30 @@ pub struct StudioAnswer {
     /// "ok", "already" (ok, nothing to do), "not found", "studio not open", "not connected", "no answer", "busy",
     /// "refused" or "failed".
     pub reason: &'static str,
+    /// For a miss, the step that failed, from a fixed list (see `why_of`); absent when the add-on gave none.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub why: Option<&'static str>,
+    /// A count that goes with `why` (tabs, scenes or buttons), 0 to 99.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub n: Option<u8>,
+}
+
+impl StudioAnswer {
+    pub(crate) fn plain(ok: bool, reason: &'static str) -> Self {
+        StudioAnswer { ok, reason, why: None, n: None }
+    }
+}
+
+/// The add-on's step words for a miss; anything else is left out.
+pub(crate) fn why_of(why: &str) -> Option<&'static str> {
+    const WHYS: [&str; 10] = ["tabs", "no scenes", "several", "not usable", "too many leaves", "no card", "no leaf match", "no button", "unreadable", "error"];
+    WHYS.iter().copied().find(|w| *w == why)
 }
 
 /// Maps the add-on's reason word to a fixed one; anything unknown is "failed".
 pub(crate) fn answer_of(ok: bool, reason: &str) -> StudioAnswer {
     if ok {
-        return StudioAnswer { ok: true, reason: if reason == "already" { "already" } else { "ok" } };
+        return StudioAnswer::plain(true, if reason == "already" { "already" } else { "ok" });
     }
     let reason = match reason {
         "busy" => "busy",
@@ -261,7 +284,17 @@ pub(crate) fn answer_of(ok: bool, reason: &str) -> StudioAnswer {
         "refused" => "refused",
         _ => "failed",
     };
-    StudioAnswer { ok: false, reason }
+    StudioAnswer::plain(false, reason)
+}
+
+/// `answer_of` plus the step that failed and its count, kept only for a miss and only when the step word is known.
+pub(crate) fn answer_with(ok: bool, reason: &str, why: Option<&str>, n: Option<u64>) -> StudioAnswer {
+    let mut a = answer_of(ok, reason);
+    if !a.ok {
+        a.why = why.and_then(why_of);
+        a.n = if a.why.is_some() { n.filter(|n| *n <= 99).map(|n| n as u8) } else { None };
+    }
+    a
 }
 
 /// What the page asks the wall to send to the add-on.
@@ -574,11 +607,11 @@ impl Core {
                 s.window = next;
                 !same
             }
-            Some(In::Studio { id, ok, reason }) => {
+            Some(In::Studio { id, ok, reason, why, n }) => {
                 let mut s = self.lock();
                 if s.studio.as_ref().is_some_and(|(want, _)| *want == id) {
                     if let Some((_, answer)) = s.studio.take() {
-                        let _ = answer.send(answer_of(ok, &reason));
+                        let _ = answer.send(answer_with(ok, &reason, why.as_deref(), n));
                     }
                 }
                 false
@@ -606,7 +639,7 @@ impl Core {
     }
 
     pub(crate) fn studio_wait(&self, action: &str, name: Option<&str>, wait: Duration) -> StudioAnswer {
-        let fail = |reason: &'static str| StudioAnswer { ok: false, reason };
+        let fail = |reason: &'static str| StudioAnswer::plain(false, reason);
         let (answer_tx, answer_rx) = channel();
         let id = {
             let mut s = self.lock();
@@ -1088,24 +1121,46 @@ mod tests {
 
     #[test]
     fn studio_answers_map_to_fixed_reasons() {
-        assert_eq!(answer_of(true, "whatever"), StudioAnswer { ok: true, reason: "ok" });
+        assert_eq!(answer_of(true, "whatever"), StudioAnswer::plain(true, "ok"));
         assert_eq!(answer_of(false, "not found").reason, "not found");
         assert_eq!(answer_of(false, "studio not open").reason, "studio not open");
         assert_eq!(answer_of(false, "refused").reason, "refused");
         assert_eq!(answer_of(false, "<script>").reason, "failed");
-        assert_eq!(answer_of(true, "already"), StudioAnswer { ok: true, reason: "already" });
+        assert_eq!(answer_of(true, "already"), StudioAnswer::plain(true, "already"));
         assert_eq!(answer_of(false, "busy").reason, "busy");
         assert!(!answer_of(false, "not found").ok);
-        assert_eq!(parse_in(r#"{"type":"studio_result","id":3,"ok":false,"reason":"not found"}"#), Some(In::Studio { id: 3, ok: false, reason: "not found".into() }));
+        assert_eq!(parse_in(r#"{"type":"studio_result","id":3,"ok":false,"reason":"not found"}"#), Some(In::Studio { id: 3, ok: false, reason: "not found".into(), why: None, n: None }));
+        assert_eq!(
+            parse_in(r#"{"type":"studio_result","id":3,"ok":false,"reason":"not found","why":"no leaf match","n":4}"#),
+            Some(In::Studio { id: 3, ok: false, reason: "not found".into(), why: Some("no leaf match".into()), n: Some(4) })
+        );
+        // An odd why or n never drops the answer.
+        assert_eq!(
+            parse_in(r#"{"type":"studio_result","id":3,"ok":false,"reason":"not found","why":7,"n":"x"}"#),
+            Some(In::Studio { id: 3, ok: false, reason: "not found".into(), why: None, n: None })
+        );
         assert_eq!(parse_in(r#"{"type":"studio_result","id":3,"ok":true}"#), None);
         assert_eq!(parse_in(&format!(r#"{{"type":"studio_result","id":3,"ok":false,"reason":"{}"}}"#, "x".repeat(41))), None);
+    }
+
+    #[test]
+    fn a_miss_keeps_a_known_step_and_its_count() {
+        assert_eq!(answer_with(false, "not found", Some("tabs"), Some(2)), StudioAnswer { ok: false, reason: "not found", why: Some("tabs"), n: Some(2) });
+        assert_eq!(answer_with(false, "not found", Some("no scenes"), None), StudioAnswer { ok: false, reason: "not found", why: Some("no scenes"), n: None });
+        assert_eq!(answer_with(false, "not found", Some("<b>"), Some(2)), StudioAnswer::plain(false, "not found"));
+        assert_eq!(answer_with(false, "not found", Some("several"), Some(100)), StudioAnswer { ok: false, reason: "not found", why: Some("several"), n: None });
+        assert_eq!(answer_with(true, "ok", Some("several"), Some(2)), StudioAnswer::plain(true, "ok"));
+        let json = serde_json::to_string(&StudioAnswer::plain(false, "busy")).unwrap();
+        assert_eq!(json, r#"{"ok":false,"reason":"busy"}"#);
+        let json = serde_json::to_string(&answer_with(false, "not found", Some("several"), Some(2))).unwrap();
+        assert_eq!(json, r#"{"ok":false,"reason":"not found","why":"several","n":2}"#);
     }
 
     #[test]
     fn a_studio_command_waits_for_its_answer() {
         let core = Arc::new(core_with(Some("tok")));
         // Not connected.
-        assert_eq!(core.studio_wait("mute", None, Duration::from_millis(10)), StudioAnswer { ok: false, reason: "not connected" });
+        assert_eq!(core.studio_wait("mute", None, Duration::from_millis(10)), StudioAnswer::plain(false, "not connected"));
         let (_, rx) = core.authenticate(ORIGIN, 0).unwrap();
         // A bad command is refused before anything is sent.
         assert_eq!(core.studio_wait("golive", None, Duration::from_millis(10)).reason, "refused");
@@ -1120,8 +1175,8 @@ mod tests {
         assert_eq!(sent["action"], "scene");
         let id = sent["id"].as_u64().unwrap();
         core.handle_text(&format!(r#"{{"type":"studio_result","id":{},"ok":true,"reason":"ok"}}"#, id + 5));
-        core.handle_text(&format!(r#"{{"type":"studio_result","id":{id},"ok":false,"reason":"not found"}}"#));
-        assert_eq!(t.join().unwrap(), StudioAnswer { ok: false, reason: "not found" });
+        core.handle_text(&format!(r#"{{"type":"studio_result","id":{id},"ok":false,"reason":"not found","why":"no leaf match","n":4}}"#));
+        assert_eq!(t.join().unwrap(), StudioAnswer { ok: false, reason: "not found", why: Some("no leaf match"), n: Some(4) });
     }
 
     #[test]
@@ -1132,10 +1187,10 @@ mod tests {
         let t = std::thread::spawn(move || c.studio_wait("mute", None, Duration::from_secs(3)));
         let sent: Value = serde_json::from_str(&rx.recv_timeout(Duration::from_secs(3)).unwrap()).unwrap();
         let id = sent["id"].as_u64().unwrap();
-        assert_eq!(core.studio_wait("camera", None, Duration::from_millis(10)), StudioAnswer { ok: false, reason: "busy" });
+        assert_eq!(core.studio_wait("camera", None, Duration::from_millis(10)), StudioAnswer::plain(false, "busy"));
         assert!(rx.try_recv().is_err());
         core.handle_text(&format!(r#"{{"type":"studio_result","id":{id},"ok":true,"reason":"already"}}"#));
-        assert_eq!(t.join().unwrap(), StudioAnswer { ok: true, reason: "already" });
+        assert_eq!(t.join().unwrap(), StudioAnswer::plain(true, "already"));
     }
 
     #[test]

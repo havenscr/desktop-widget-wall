@@ -30,8 +30,10 @@ function writeHeld(held: PageMode | null): void {
   }
 }
 
-/** A 90 character reason, for the one line rule (`?whylong=1`, development review only). */
-const WHY_LONG = 'the wall picked this page because a recorder, a broadcast and a call are all on at the same time';
+/** A reason longer than any the wall gives, for the never cut rule (`?whylong=1`, development review only). */
+const WHY_LONG = 'the wall cannot read the camera and the mic';
+/** Three lines of reason (`?whylong=3`, development review only): the row grows to hold it. */
+const WHY_THREE = 'the wall cannot read the camera and mic, so it waits';
 
 /**
  * On Air: the modes row on every page, and a page for Live, Recording, Presenting and nothing on air.
@@ -73,7 +75,8 @@ export function OnAir2() {
     writeLast(rec);
     setLast(rec);
   }, [mode]);
-  const why = new URLSearchParams(window.location.search).get('whylong') === '1' ? WHY_LONG : pick.why;
+  const whylong = import.meta.env.DEV ? new URLSearchParams(window.location.search).get('whylong') : null;
+  const why = whylong === '3' ? WHY_THREE : whylong === '1' ? WHY_LONG : pick.why;
   return (
     <section className="oa2" data-place="onair" data-mode={pick.mode} data-held={held ? 'true' : 'false'} aria-label="On air">
       <ModesRow pick={pick} held={held} why={why} onHold={hold} onAuto={() => hold(null)} />

@@ -185,12 +185,13 @@ it('moves focus along the radio group with the arrow keys and wraps', async () =
   expect(document.activeElement).toBe(c);
 });
 
-it('keeps a long reason to one line with the whole text in the hover card', async () => {
+it('shows a long reason whole, never cut, with the whole text in the hover card too', async () => {
   window.history.replaceState(null, '', '/?whylong=1');
   try {
     await open();
     const why = document.querySelector('.oa2-why') as HTMLElement;
-    expect(why.textContent!.length).toBeGreaterThanOrEqual(90);
+    expect(why.textContent).toBe('the wall cannot read the camera and the mic');
+    expect(why.className).not.toMatch(/ellipsis/);
     fireEvent.mouseEnter(why);
   } finally {
     window.history.replaceState(null, '', '/');

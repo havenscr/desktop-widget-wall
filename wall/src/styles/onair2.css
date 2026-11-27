@@ -27,7 +27,7 @@
   left: 0;
   top: 4px;
   width: 640px;
-  height: 40px;
+  min-height: 40px;
   flex-direction: row;
   align-items: center;
   gap: 12px;
@@ -102,14 +102,14 @@
 .oa2-auto:hover {
   border-color: rgba(53, 230, 234, 0.55);
 }
+/* The reason is never cut: it wraps, and the row grows with it (the band under the row is free to y 84). */
 .oa2-why {
   flex: 1;
   min-width: 0;
-  font: 500 17px/22px var(--body);
+  font: 500 16px/18px var(--body);
   color: var(--dim);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  white-space: normal;
+  overflow-wrap: break-word;
 }
 
 /* ---- block headings ---- */
@@ -117,7 +117,7 @@
   display: flex;
   align-items: center;
   gap: 10px;
-  height: 26px;
+  min-height: 26px;
   flex: none;
   white-space: nowrap;
   min-width: 0;
@@ -144,9 +144,12 @@
   font-weight: 600;
 }
 .oa2-brief {
-  font: 500 18px/26px var(--body);
+  flex: 1 1 0;
+  font: 500 16px/18px var(--body);
   color: var(--cyan);
   min-width: 0;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 
 /* ---- timers and chips ---- */
@@ -350,7 +353,7 @@
 .oa2 .oa2-rail:hover { color: var(--tx); border-color: rgba(255, 255, 255, 0.4); }
 .oa2-rail-n { font: 600 28px/1 var(--body); color: var(--tx); }
 .oa2-rail-w { font: 500 16px/1 var(--body); }
-.oa2-studiokeys { left: 1796px; top: 4px; width: 620px; height: 192px; }
+.oa2-studiokeys { left: 1796px; top: 4px; width: 620px; min-height: 192px; }
 .oa2-stagepop { left: 1796px; top: 210px; width: 620px; height: 104px; gap: 6px; }
 .oa2-stagepop .oa2-hd { height: 32px; gap: 8px; }
 .oa2-stagepop .oa2-hd .oa-btn.sm { flex: none; }
@@ -368,7 +371,7 @@
 .oa2-lights-live > .st-block { height: 148px; }
 /* The studio keys: eight equal keys, two rows of four, under the heading. Rule A: one key style; the colour variable
    follows the key's kind (data-skind, never data-kind) and the glow and armed state sit on top of it. Rule B: icon above, label below, centred, 16 px, one line. */
-.oa2-skgrid { position: absolute; left: 0; right: 0; top: 30px; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); grid-template-rows: repeat(2, 76px); gap: 8px; }
+.oa2-skgrid { position: relative; margin-top: 4px; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); grid-template-rows: repeat(2, 76px); gap: 8px; }
 .oa2 .oa2-studiokeys .deck-tile.key-tile { --g: 183, 175, 214; height: 76px; grid-template-rows: 22px 20px; row-gap: 4px; padding: 0 8px; font-size: 16px; line-height: 20px; justify-items: center; align-content: center; text-align: center; }
 .oa2 .oa2-studiokeys .deck-tile.key-tile[data-skind='scene'] { --g: 53, 230, 234; }
 .oa2 .oa2-studiokeys .deck-tile.key-tile[data-skind='mic'] { --g: 154, 123, 255; }

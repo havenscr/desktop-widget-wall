@@ -15,6 +15,7 @@ import { useStudio } from './studioStore';
 import { useDeckKeys } from './useDeckKeys';
 
 /** Wall actions that are keys of the key library. */
+const BRIEF_LONG_LIB = 'strip-dark-with-a-very-long-library-key-id-of-sixty-chars-x';
 const LIB_ID: Partial<Record<ShownAction, string>> = { snip: 'snip', hide: 'strip-dark' };
 
 /**
@@ -92,6 +93,11 @@ export function StudioKeys({ now }: { now: number }) {
   const press = async (slot: number, action: ShownAction, detail: number, label: string) => {
     // A click that is part of a double click never counts, and neither does one while a send runs.
     if (detail > 1 || busy.current) return;
+    // Development review only: any press answers with a library key id of 59 characters, for the never cut rule on the result line (`?brieflong=1`).
+    if (import.meta.env.DEV && new URLSearchParams(window.location.search).get('brieflong') === '1') {
+      keys.showBrief(`No runnable library key "${BRIEF_LONG_LIB}"`);
+      return;
+    }
     const gen = genOf(slot);
     const addon = ADDON_ACTION[action];
     if (addon) {
@@ -101,7 +107,8 @@ export function StudioKeys({ now }: { now: number }) {
         // edit, while the full name is the scene's real name in StreamYard.
         const a = await studio(addon, addon === 'scene' ? SLOT_INFO[action].full : undefined);
         const t = studioAnswerText(a, addon);
-        keys.showBrief(`${SLOT_INFO[action].full}: ${t.full}`);
+        // A sent key names its scene or button; a miss gives the whole reason alone, so the line always fits.
+        keys.showBrief(a.ok ? `${SLOT_INFO[action].full}: ${t.full}` : t.full);
         if (gen === genOf(slot)) {
           clearTimeout(noteTimer.current);
           noteN.current += 1;
@@ -128,7 +135,7 @@ export function StudioKeys({ now }: { now: number }) {
     if (lib) {
       const k = keys.groups ? resolveKey(lib, keys.groups) : null;
       if (!k) {
-        keys.showBrief(keys.groups ? `The key library has no runnable key "${lib}"` : 'The key library is not ready');
+        keys.showBrief(keys.groups ? `No runnable library key "${lib}"` : 'The key library is not ready');
         return;
       }
       if (keyboardOnMouseKey(k.action, detail)) return;
