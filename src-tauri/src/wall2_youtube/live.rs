@@ -602,7 +602,7 @@ fn acquire_chat(now: u64, shown: bool) -> Option<(Lease, String, Option<String>,
     })
 }
 
-/// A commenter's picture: https only, on a known Google image host, no credentials or port, asked for at 64 px.
+/// A commenter's picture: https only, on a known Google image host, no credentials or port, asked for at 80 px.
 const AVATAR_HOSTS: [&str; 4] = ["yt3.ggpht.com", "yt4.ggpht.com", "lh3.googleusercontent.com", "yt3.googleusercontent.com"];
 
 fn clean_avatar(value: Option<&Value>) -> Option<String> {
@@ -612,7 +612,7 @@ fn clean_avatar(value: Option<&Value>) -> Option<String> {
     let (host, tail) = rest.split_once('/')?;
     if !AVATAR_HOSTS.contains(&host) || tail.contains('@') { return None }
     let url = match url.rsplit_once("=s") {
-        Some((head, size)) if !size.is_empty() && size.bytes().all(|b| b.is_ascii_digit() || b == b'-' || b.is_ascii_lowercase()) => format!("{head}=s64-c-k-c0x00ffffff-no-rj"),
+        Some((head, size)) if !url.contains(['?', '#']) && !size.is_empty() && size.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-') => format!("{head}=s80-c-k-c0x00ffffff-no-rj"),
         _ => url.to_string(),
     };
     Some(url)
@@ -1178,14 +1178,18 @@ mod tests {
     #[test]
     fn avatar_host_allow_list() {
         let ok = |u: &str| clean_avatar(Some(&json!(u)));
-        assert_eq!(ok("https://yt4.ggpht.com/abc/photo=s88-c-k-c0x00ffffff-no-rj").as_deref(), Some("https://yt4.ggpht.com/abc/photo=s64-c-k-c0x00ffffff-no-rj"));
+        assert_eq!(ok("https://yt4.ggpht.com/abc/photo=s88-c-k-c0x00ffffff-no-rj").as_deref(), Some("https://yt4.ggpht.com/abc/photo=s80-c-k-c0x00ffffff-no-rj"));
         assert!(ok("https://yt3.ggpht.com/abc").is_some());
         assert!(ok("https://lh3.googleusercontent.com/a/x=s96-c").is_some());
         assert!(ok("https://yt3.googleusercontent.com/x").is_some());
         for bad in ["http://yt3.ggpht.com/a", "https://evil.example/a", "https://yt3.ggpht.com.evil.example/a", "https://yt3.ggpht.com@evil.example/a",
-            "https://evil.example/yt3.ggpht.com/a", "https://yt3.ggpht.com:8443/a", "https://yt3.ggpht.com", "data:image/png;base64,AAAA", "", "https://yt3.ggpht.com/a b"] {
+            "https://evil.example/yt3.ggpht.com/a", "https://yt3.ggpht.com:8443/a", "https://yt3.ggpht.com", "data:image/png;base64,AAAA", "", "https://yt3.ggpht.com/a b",
+            "https://YT3.ggpht.com/a", "https://yt3.ggpht.com./a"] {
             assert!(ok(bad).is_none(), "{bad}");
         }
+        assert_eq!(ok("https://yt3.ggpht.com/abc/photo=sAB-c").as_deref(), Some("https://yt3.ggpht.com/abc/photo=s80-c-k-c0x00ffffff-no-rj"));
+        assert_eq!(ok("https://yt3.ggpht.com/abc/photo=s88?x=1").as_deref(), Some("https://yt3.ggpht.com/abc/photo=s88?x=1"));
+        assert_eq!(ok("https://yt3.ggpht.com/abc/photo=s88#f").as_deref(), Some("https://yt3.ggpht.com/abc/photo=s88#f"));
         assert!(clean_avatar(None).is_none());
         assert!(clean_avatar(Some(&json!(5))).is_none());
     }
