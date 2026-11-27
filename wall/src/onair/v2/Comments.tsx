@@ -16,6 +16,34 @@ function readAgo(readAt: number | null, now: number): string {
   return `YouTube · read ${s < 60 ? `${s} s` : `${Math.floor(s / 60)} min`} ago`;
 }
 
+/** The letter and colour of the tile shown when a picture is missing or fails: the first letter or digit of the handle, and a hue taken from the whole handle. */
+export function avatarTile(name: string): { letter: string; hue: number } {
+  const chars = Array.from(name.replace(/^@/, ''));
+  const letter = (chars.find((c) => /[\p{L}\p{N}]/u.test(c)) ?? chars[0] ?? '?').toUpperCase();
+  let h = 0;
+  for (const c of name) h = (h * 31 + (c.codePointAt(0) ?? 0)) % 360;
+  return { letter, hue: h };
+}
+
+/** A round 40 px picture that fades in when it has loaded; a missing or broken one is a round tile with the handle's first letter. */
+export function Avatar({ name, src }: { name: string; src: string | null | undefined }) {
+  const [state, setState] = useState<'wait' | 'ok' | 'bad'>('wait');
+  useEffect(() => setState('wait'), [src]);
+  const tile = avatarTile(name);
+  if (!src || state === 'bad') {
+    return (
+      <span className="oa2-cm-av oa2-cm-tile" aria-hidden="true" style={{ background: `hsl(${tile.hue} 45% 32%)` }}>
+        {tile.letter}
+      </span>
+    );
+  }
+  return (
+    <span className="oa2-cm-av" aria-hidden="true">
+      <img src={src} alt="" width={40} height={40} decoding="async" loading="lazy" referrerPolicy="no-referrer" data-loaded={state === 'ok' ? 'true' : 'false'} onLoad={() => setState('ok')} onError={() => setState('bad')} />
+    </span>
+  );
+}
+
 /** Rows keep their place while the pointer is on the list; newest at the bottom. The list scrolls and stays on the newest row unless the viewer scrolled up; while rows are hidden above, the top edge fades (never a hard cut), so a row taller than the list is readable in full by scrolling. Long handles and long unbroken text wrap in full. */
 function Rows({ messages, dim }: { messages: LiveMessage[]; dim: boolean }) {
   const list = useRef<HTMLDivElement | null>(null);
@@ -66,14 +94,17 @@ function Rows({ messages, dim }: { messages: LiveMessage[]; dim: boolean }) {
     >
       {shown.map((m) => (
         <div key={m.id} className="oa2-cm" data-super={m.superChat ? 'true' : undefined} {...tip(`${m.name}: ${m.text}${m.superChat ? ` (Super Chat ${m.superChat})` : ''}`)}>
-          <span className="oa2-cm-n">{m.name}</span>
-          {m.superChat && (
-            <span className="oa2-cm-sc">
-              <IconStarFilled size={14} aria-hidden="true" />
-              {m.superChat}
-            </span>
-          )}
-          <span className="oa2-cm-t">{m.text}</span>
+          <Avatar name={m.name} src={m.avatar} />
+          <div className="oa2-cm-b">
+            <span className="oa2-cm-n">{m.name}</span>
+            {m.superChat && (
+              <span className="oa2-cm-sc">
+                <IconStarFilled size={14} aria-hidden="true" />
+                {m.superChat}
+              </span>
+            )}
+            <span className="oa2-cm-t">{m.text}</span>
+          </div>
         </div>
       ))}
     </div>

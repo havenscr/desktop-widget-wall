@@ -547,5 +547,45 @@ it('shows a long handle and a long unbroken link in full, with no clamp or ellip
     expect(body).toContain('overflow-wrap: anywhere');
     expect(body).not.toMatch(/text-overflow|line-clamp|nowrap|overflow: hidden/);
   }
-  expect(rule('.oa2-cm')).toContain('flex-wrap: wrap');
+  expect(rule('.oa2-cm-b')).toContain('flex-wrap: wrap');
+});
+
+const PIC = 'data:image/svg+xml;utf8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%2F%3E';
+
+it('shows a commenter picture as a 40 px lazy round image with no referrer and no alt text', async () => {
+  chat = { ...okChat(1), messages: [{ id: 'a', name: '@Sample', text: 'hi there', at: Date.now() - 2000, superChat: null, avatar: PIC }] };
+  await open();
+  await waitFor(() => expect(screen.getByText('hi there')).toBeTruthy());
+  const img = document.querySelector('.oa2-cm img') as HTMLImageElement;
+  expect(img.getAttribute('src')).toBe(PIC);
+  expect(img.getAttribute('alt')).toBe('');
+  expect(img.getAttribute('decoding')).toBe('async');
+  expect(img.getAttribute('loading')).toBe('lazy');
+  expect(img.getAttribute('referrerpolicy')).toBe('no-referrer');
+  expect(img.getAttribute('width')).toBe('40');
+  expect(img.getAttribute('data-loaded')).toBe('false');
+  fireEvent.load(img);
+  expect(img.getAttribute('data-loaded')).toBe('true');
+  const sheet = css.replace(/\r\n/g, '\n');
+  expect(sheet).toMatch(/\.oa2-cm-av img \{[^}]*opacity: 0;[^}]*transition: opacity/);
+  expect(sheet).toMatch(/\.oa2-cm-av \{[^}]*width: 40px;[^}]*height: 40px;[^}]*border-radius: 50%/);
+});
+
+it('shows a round letter tile when there is no picture or the picture fails to load', async () => {
+  chat = {
+    ...okChat(2),
+    messages: [
+      { id: 'a', name: '@marlo_sample', text: 'no picture here', at: Date.now() - 2000, superChat: null },
+      { id: 'b', name: 'Zed', text: 'broken picture here', at: Date.now() - 1000, superChat: null, avatar: PIC },
+    ],
+  };
+  await open();
+  await waitFor(() => expect(screen.getByText('broken picture here')).toBeTruthy());
+  let tiles = [...document.querySelectorAll('.oa2-cm-tile')].map((t) => t.textContent);
+  expect(tiles).toEqual(['M']);
+  fireEvent.error(document.querySelector('.oa2-cm img') as HTMLImageElement);
+  await waitFor(() => expect(document.querySelectorAll('.oa2-cm img').length).toBe(0));
+  tiles = [...document.querySelectorAll('.oa2-cm-tile')].map((t) => t.textContent);
+  expect(tiles).toEqual(['M', 'Z']);
+  expect((document.querySelector('.oa2-cm-tile') as HTMLElement).style.background).toMatch(/^(hsl|rgb)/);
 });

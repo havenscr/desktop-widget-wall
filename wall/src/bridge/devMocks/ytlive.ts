@@ -46,6 +46,18 @@ const LONG_TEXTS = [
   'Thanks',
 ];
 
+/** Inline pictures, so no test or gallery needs the network. */
+const PALETTE = ['#e07a5f', '#3d85c6', '#81b29a', '#f2cc8f', '#9a7fd1', '#4fb0c6'];
+const face = (i: number): string => {
+  const bg = PALETTE[i % PALETTE.length];
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" fill="${bg}"/><circle cx="32" cy="25" r="11" fill="#fff" fill-opacity=".85"/><path d="M10 64a22 22 0 0 1 44 0z" fill="#fff" fill-opacity=".85"/></svg>`;
+  return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
+};
+/** A picture that cannot be decoded, to show the letter tile after a failed load. */
+const BROKEN = 'data:image/png;base64,AAAA';
+/** Row 2 has no picture and row 3 fails to load; the rest have one. */
+const avatarFor = (i: number): string | null => (i === 2 ? null : i === 3 ? BROKEN : face(i));
+
 /** The native side stamps `readAt` and `stoppedAt` in Unix seconds; the other times are milliseconds. */
 const sec = (ms: number): number => Math.floor(ms / 1000);
 
@@ -58,7 +70,7 @@ function messages(kind: string, at: number): LiveMessage[] {
       { name: '@SampleViewerWithAVeryLongHandleName2026', text: 'https://www.example.com/r/sample/comments/abc123/a_very_long_unbroken_link_that_goes_on_and_on_and_on_with_no_spaces_at_all_for_a_while' },
       { name: '@ShortOne', text: 'Thanks' },
     ];
-    return rows.map((r, i) => ({ id: `m${i}`, ...r, at: at - (rows.length - i) * 20_000, superChat: null }));
+    return rows.map((r, i) => ({ id: `m${i}`, ...r, at: at - (rows.length - i) * 20_000, superChat: null, avatar: face(i) }));
   }
   if (kind === 'tall') {
     // The newest comment is taller than the list: the list scrolls and fades at the top.
@@ -68,12 +80,12 @@ function messages(kind: string, at: number): LiveMessage[] {
       { name: 'Tess', text: 'Sound is good here', superChat: null },
       { name: '@TallSampleViewer', text: long, superChat: '$10.00' },
     ];
-    return rows.map((r, i) => ({ id: `m${i}`, ...r, at: at - (rows.length - i) * 20_000 }));
+    return rows.map((r, i) => ({ id: `m${i}`, ...r, at: at - (rows.length - i) * 20_000, avatar: face(i) }));
   }
   if (kind === 'busy') {
-    return LONG_TEXTS.map((text, i) => ({ id: `m${i}`, name: NAMES[i], text, at: at - (LONG_TEXTS.length - i) * 20_000, superChat: i === 1 ? '$5.00' : null }));
+    return LONG_TEXTS.map((text, i) => ({ id: `m${i}`, name: NAMES[i], text, at: at - (LONG_TEXTS.length - i) * 20_000, superChat: i === 1 ? '$5.00' : null, avatar: avatarFor(i) }));
   }
-  return TEXTS.map((text, i) => ({ id: `m${i}`, name: NAMES[i], text, at: at - (TEXTS.length - i) * 15_000, superChat: i === 5 ? '$2.00' : null }));
+  return TEXTS.map((text, i) => ({ id: `m${i}`, name: NAMES[i], text, at: at - (TEXTS.length - i) * 15_000, superChat: i === 5 ? '$2.00' : null, avatar: avatarFor(i) }));
 }
 
 export function registerYtLiveMocks(): void {

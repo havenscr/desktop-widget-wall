@@ -67,7 +67,7 @@ pub struct LiveStatus {
 
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct ChatMessage { id: String, name: String, text: String, at: u64, super_chat: Option<String> }
+pub struct ChatMessage { id: String, name: String, text: String, at: u64, super_chat: Option<String>, avatar: Option<String> }
 
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -602,12 +602,28 @@ fn acquire_chat(now: u64, shown: bool) -> Option<(Lease, String, Option<String>,
     })
 }
 
+/// A commenter's picture: https only, on a known Google image host, no credentials or port, asked for at 64 px.
+const AVATAR_HOSTS: [&str; 4] = ["yt3.ggpht.com", "yt4.ggpht.com", "lh3.googleusercontent.com", "yt3.googleusercontent.com"];
+
+fn clean_avatar(value: Option<&Value>) -> Option<String> {
+    let url = value?.as_str()?;
+    if url.len() > 300 || !url.is_ascii() || url.chars().any(|c| c.is_ascii_control() || c == ' ' || c == '\\') { return None }
+    let rest = url.strip_prefix("https://")?;
+    let (host, tail) = rest.split_once('/')?;
+    if !AVATAR_HOSTS.contains(&host) || tail.contains('@') { return None }
+    let url = match url.rsplit_once("=s") {
+        Some((head, size)) if !size.is_empty() && size.bytes().all(|b| b.is_ascii_digit() || b == b'-' || b.is_ascii_lowercase()) => format!("{head}=s64-c-k-c0x00ffffff-no-rj"),
+        _ => url.to_string(),
+    };
+    Some(url)
+}
+
 fn chat_with(ctx: &Ctx, now: u64, shown: bool) -> LiveChat {
     let Some((_lease, chat_id, token, generation)) = acquire_chat(now, shown)
         else { return with_live(|v| v.chat_answer(now)) };
     let fields = "nextPageToken,pollingIntervalMillis,offlineAt,items(id,snippet(\
         type,publishedAt,displayMessage,superChatDetails(amountDisplayString,userComment),\
-        messageDeletedDetails/deletedMessageId),authorDetails/displayName)";
+        messageDeletedDetails/deletedMessageId),authorDetails(displayName,profileImageUrl))";
     let mut params = vec![
         ("liveChatId", chat_id.as_str()), ("part", "snippet,authorDetails"),
         ("maxResults", "200"), ("fields", fields),
@@ -651,10 +667,11 @@ fn chat_with(ctx: &Ctx, now: u64, shown: bool) -> LiveChat {
                 let Some(text) = clean_text(item.pointer("/snippet/displayMessage"), 200) else { continue };
                 text
             };
+            let avatar = clean_avatar(item.pointer("/authorDetails/profileImageUrl"));
             let super_chat = (kind == Some("superChatEvent"))
                 .then(|| clean_text(item.pointer("/snippet/superChatDetails/amountDisplayString"), 16))
                 .flatten();
-            messages.retain(|m| m.id != id); messages.push_back(ChatMessage { id: id.to_string(), name, text, at: at * 1000, super_chat });
+            messages.retain(|m| m.id != id); messages.push_back(ChatMessage { id: id.to_string(), name, text, at: at * 1000, super_chat, avatar });
             while messages.len() > CHAT_KEEP { messages.pop_front(); }
         }
         v.chat.messages = messages.into(); v.chat.state = "ok"; v.chat.read_at = Some(now); v.chat.stale = false; v.chat.word = None;
@@ -1159,6 +1176,21 @@ mod tests {
     }
 
     #[test]
+    fn avatar_host_allow_list() {
+        let ok = |u: &str| clean_avatar(Some(&json!(u)));
+        assert_eq!(ok("https://yt4.ggpht.com/abc/photo=s88-c-k-c0x00ffffff-no-rj").as_deref(), Some("https://yt4.ggpht.com/abc/photo=s64-c-k-c0x00ffffff-no-rj"));
+        assert!(ok("https://yt3.ggpht.com/abc").is_some());
+        assert!(ok("https://lh3.googleusercontent.com/a/x=s96-c").is_some());
+        assert!(ok("https://yt3.googleusercontent.com/x").is_some());
+        for bad in ["http://yt3.ggpht.com/a", "https://evil.example/a", "https://yt3.ggpht.com.evil.example/a", "https://yt3.ggpht.com@evil.example/a",
+            "https://evil.example/yt3.ggpht.com/a", "https://yt3.ggpht.com:8443/a", "https://yt3.ggpht.com", "data:image/png;base64,AAAA", "", "https://yt3.ggpht.com/a b"] {
+            assert!(ok(bad).is_none(), "{bad}");
+        }
+        assert!(clean_avatar(None).is_none());
+        assert!(clean_avatar(Some(&json!(5))).is_none());
+    }
+
+    #[test]
     fn chat_keeps_supported_messages_replaces_deletes_and_caps_at_30() {
         let _guard = exclusive();
         prime_token(); set_live_memory(T0);
@@ -1266,7 +1298,7 @@ mod tests {
         set_live_memory(T0);
         with_live(|v| v.chat.messages.push(ChatMessage {
             id: "message-one".into(), name: "Viewer One".into(), text: "Hello".into(),
-            at: T0 * 1_000, super_chat: None,
+            at: T0 * 1_000, super_chat: None, avatar: None,
         }));
         clear(false);
         assert!(read_channel(&path).is_some());
@@ -1666,7 +1698,7 @@ mod tests {
         with_live(|v| {
             v.candidates = vec![video_id(1)]; v.find_attempt = Some(T0 - 61);
             v.page_token = Some("old-page".into());
-            v.chat.messages.push(ChatMessage { id: "old.message".into(), name: "Viewer".into(), text: "Old".into(), at: T0, super_chat: None });
+            v.chat.messages.push(ChatMessage { id: "old.message".into(), name: "Viewer".into(), text: "Old".into(), at: T0, super_chat: None, avatar: None });
         });
         let details = FakeHttp::reads(vec![ok(videos(vec![live_video(&video_id(1), "1", Some("new-chat"))]))], vec![]);
         let answer = run(&details, &creds, &now, |ctx| {
@@ -1676,7 +1708,7 @@ mod tests {
         with_live(|v| { assert!(v.page_token.is_none()); assert!(v.chat.messages.is_empty()); });
 
         reset_for_test(); prime_token(); set_live_memory(T0);
-        with_live(|v| v.chat.messages.push(ChatMessage { id: "old.message".into(), name: "Viewer".into(), text: "Old".into(), at: T0, super_chat: None }));
+        with_live(|v| v.chat.messages.push(ChatMessage { id: "old.message".into(), name: "Viewer".into(), text: "Old".into(), at: T0, super_chat: None, avatar: None }));
         let hidden = FakeHttp::reads(vec![], vec![]);
         run(&hidden, &creds, &now, |ctx| {
             status_with(ctx, Some(saved_channel()), T0 + CHAT_FORGET, false, false)
@@ -1795,7 +1827,7 @@ mod tests {
                     "nextPageToken,pollingIntervalMillis,offlineAt,items(id,snippet(",
                     "type,publishedAt,displayMessage,superChatDetails(amountDisplayString,",
                     "userComment),messageDeletedDetails/deletedMessageId),",
-                    "authorDetails/displayName)"
+                    "authorDetails(displayName,profileImageUrl))"
                 ),
             ),
         ]);

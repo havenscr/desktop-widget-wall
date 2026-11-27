@@ -35,6 +35,8 @@ export interface LiveMessage {
   text: string;
   at: number;
   superChat: string | null;
+  /** The commenter's picture on a Google image host (https), or absent. */
+  avatar?: string | null;
 }
 
 export interface LiveChat {
