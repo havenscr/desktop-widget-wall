@@ -123,17 +123,18 @@ function measureOnAirLive() {
       }
     }
   }
-  // Comments: a row is at most two lines, no visible row is cut at the top, and eight short rows fit.
+  // Comments: handles and text show in full, no visible row is cut at the top, and eight short rows fit.
   const list = root.querySelector('.oa2-cms[role="log"]');
   if (list) {
     const lt = list.getBoundingClientRect().top;
     const rows = [...list.querySelectorAll(':scope > .oa2-cm')];
     const shown = rows.filter(visible);
     for (const row of rows) {
-      const t = row.querySelector('.oa2-cm-t');
-      if (t && t.getBoundingClientRect().height > 52.5) {
-        fails.push('on air live: a comment row is ' + r1(t.getBoundingClientRect().height) + ' px tall (two lines are 52)');
-        break;
+      for (const part of row.querySelectorAll('.oa2-cm-n, .oa2-cm-t')) {
+        if (part.scrollWidth > part.clientWidth + 0.5 || getComputedStyle(part).textOverflow === 'ellipsis' || getComputedStyle(part).overflow !== 'visible') {
+          fails.push('on air live: a comment row ' + (part.className.includes('-n') ? 'handle' : 'text') + ' is cut');
+          break;
+        }
       }
     }
     const cut = shown.find((row) => row.getBoundingClientRect().top < lt - 0.5);
@@ -203,6 +204,7 @@ export default {
     variants: [
       variant('live with comments', 'yt=live'),
       variant('busy chat', 'yt=busy'),
+      variant('long handle and long link', 'yt=longlink'),
       variant('no comments yet', 'yt=empty'),
       variant('scheduled', 'yt=scheduled'),
       variant('stale', 'yt=stale'),
@@ -230,12 +232,12 @@ export default {
       onairLive: (variantEntry, results, emit) => {
         for (const failure of results.onairLive) emit(`  FAIL ${failure}`);
         if (results.onairLive.length) return true;
-        if (variantEntry.name.startsWith('On Air live,')) emit('  ok   on air live: every block in its planned box (the split at 620 / 436 or the dragged and folded states, the handle in the gap) inside y 20 to 510, eight equal studio keys in two rows with one-line centred labels, comment rows at most two lines and none cut, notes 27 px, key tiles at least 76 px, text at least 16 px');
+        if (variantEntry.name.startsWith('On Air live,')) emit('  ok   on air live: every block in its planned box (the split at 620 / 436 or the dragged and folded states, the handle in the gap) inside y 20 to 510, eight equal studio keys in two rows with one-line centred labels, comment rows shown in full and none cut, notes 27 px, key tiles at least 76 px, text at least 16 px');
         return false;
       },
     },
     breaks: {
-      'onair-cm-cut': { css: '.oa2-cm-t { display: block !important; -webkit-line-clamp: unset !important; overflow: visible !important; }', expect: /^ *FAIL on air live: a comment row is [\d.]+ px tall/m, appliesTo: isNamed('busy chat') },
+      'onair-cm-cut': { css: '.oa2-cm-t { overflow: hidden !important; height: 20px !important; }', expect: /^ *FAIL on air live: a comment row text is cut/m, appliesTo: isNamed('busy chat') },
       'onair-notes-wide': { css: '.oa2 .oa-card.oa2-livenotes { width: 620px !important; }', expect: /^ *FAIL on air live: \.oa2-livenotes is at/m, appliesTo: isNamed('live with comments') },
       'onair-run-file': { css: '.oa2-runline[hidden] { display: flex !important; min-height: 20px; }', expect: /^ *FAIL on air live: the run line is shown with no parts/m, appliesTo: isNamed('live, no run of show file') },
       'onair-split-min': { css: '.oa2 .oa-card.oa2-livenotes { width: 200px !important; }', expect: /^ *FAIL on air live: the notes are [\d.]+ px wide, under their minimum/m, appliesTo: isNamed('live with comments') },

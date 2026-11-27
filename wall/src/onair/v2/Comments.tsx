@@ -16,7 +16,7 @@ function readAgo(readAt: number | null, now: number): string {
   return `YouTube · read ${s < 60 ? `${s} s` : `${Math.floor(s / 60)} min`} ago`;
 }
 
-/** Rows keep their place while the pointer is on the list; newest at the bottom; a row that does not fit whole at the top is hidden, never cut. */
+/** Rows keep their place while the pointer is on the list; newest at the bottom; a row that does not fit whole at the top is hidden, never cut (the newest is always shown). Long handles and long unbroken text wrap in full. */
 function Rows({ messages, dim }: { messages: LiveMessage[]; dim: boolean }) {
   const list = useRef<HTMLDivElement | null>(null);
   const [over, setOver] = useState(false);
@@ -26,9 +26,9 @@ function Rows({ messages, dim }: { messages: LiveMessage[]; dim: boolean }) {
     const el = list.current;
     if (!el) return;
     const top = el.getBoundingClientRect().top;
-    for (const row of el.querySelectorAll<HTMLElement>(':scope > .oa2-cm')) {
-      row.toggleAttribute('data-cut', row.getBoundingClientRect().top < top - 0.5);
-    }
+    const rows = [...el.querySelectorAll<HTMLElement>(':scope > .oa2-cm')];
+    // The newest row (last) is never hidden, even when it alone is taller than the list.
+    rows.forEach((row, i) => row.toggleAttribute('data-cut', i < rows.length - 1 && row.getBoundingClientRect().top < top - 0.5));
   });
   return (
     <div

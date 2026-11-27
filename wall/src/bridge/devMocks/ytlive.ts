@@ -52,6 +52,13 @@ const now = (): number => (reviewNow ? reviewNow() : Date.now());
 
 function messages(kind: string, at: number): LiveMessage[] {
   if (kind === 'empty') return [];
+  if (kind === 'longlink') {
+    const rows = [
+      { name: '@SampleViewerWithAVeryLongHandleName2026', text: 'https://www.example.com/r/sample/comments/abc123/a_very_long_unbroken_link_that_goes_on_and_on_and_on_with_no_spaces_at_all_for_a_while' },
+      { name: '@ShortOne', text: 'Thanks' },
+    ];
+    return rows.map((r, i) => ({ id: `m${i}`, ...r, at: at - (rows.length - i) * 20_000, superChat: null }));
+  }
   if (kind === 'busy') {
     return LONG_TEXTS.map((text, i) => ({ id: `m${i}`, name: NAMES[i], text, at: at - (LONG_TEXTS.length - i) * 20_000, superChat: i === 1 ? '$5.00' : null }));
   }

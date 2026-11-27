@@ -1,3 +1,5 @@
+// @ts-ignore node's own file calls; this test reads the stylesheet as text.
+import { readFileSync } from 'node:fs';
 import { act, fireEvent, render } from '@testing-library/react';
 import { useState } from 'react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
@@ -239,4 +241,13 @@ it('the default placement is centred over the control and clamped 12 px from the
   } finally {
     if (width) Object.defineProperty(HTMLElement.prototype, 'offsetWidth', width);
   }
+});
+
+it('wraps a long unbroken string inside the card instead of running past its box', () => {
+  const sheet = (readFileSync('src/styles/app.css', 'utf8') as string).replace(/\r\n/g, '\n');
+  const m = /^\.hover-tip\s*\{([^}]*)\}/m.exec(sheet);
+  expect(m).not.toBeNull();
+  expect(m![1]).toContain('overflow-wrap: anywhere');
+  expect(m![1]).toContain('max-width: 520px');
+  expect(m![1]).not.toMatch(/white-space:\s*nowrap|word-break:\s*keep-all/);
 });
