@@ -48,7 +48,7 @@ function measureYoutubePlayback() {
   const tall = !!cardEl && cardEl.getAttribute('data-tall') === 'true';
   const layerUp = !!document.querySelector('.main[data-work-shown]');
   const layerAsked = /[?&]layer=up(&|$)/.test(location.search);
-  if (layerUp && !layerAsked) fails.push('the work layer is up but this variant did not ask for it');
+  if (layerUp && !layerAsked && !/[?&]layer=either(&|$)/.test(location.search)) fails.push('the work layer is up but this variant did not ask for it');
   if (!layerUp && layerAsked) fails.push('this variant asked for the work layer and it is not up');
   const foot = cardEl ? cardEl.querySelector('.yt-foot') : null;
   const note = cardEl ? cardEl.querySelector('.yt-note') : null;

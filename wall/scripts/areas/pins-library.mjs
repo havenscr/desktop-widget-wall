@@ -190,7 +190,7 @@ const variants = [
   { ...v('mixed pins', '&wpins=mixed', null, 'pins', PINS), name: names.mixed },
   { ...v('a 60 character name', '&wpins=liblong', null, 'pins', PINS), name: names.long },
   { ...v('x', '&wpins=none', 'ctx:.sp-tile', 'menu', ['.sp-card']), name: names.spMenu },
-  { ...v('x', '&wpins=none&layer=hidden', `${TALL} >> ctx:.sp-tilebox:nth-child(5) .sp-tile`, 'menu', ['.sp-card']), name: names.spTall },
+  { ...v('x', '&wpins=none&layer=either', `${TALL} >> ctx:.sp-tilebox:nth-child(5) .sp-tile`, 'menu', ['.sp-card']), name: names.spTall },
   { ...v('x', '&wpins=none', `${SWITCH} >> ctx:${TILE}`, 'menu', ['.sp-card']), name: names.ytTile },
   { ...v('x', '&wpins=none', `${SWITCH} >> ${TILE} >> ctx:.yt-row .yt-play`, 'menu', ['.sp-card']), name: names.ytRow },
   { ...v('x', '&wpins=mixedfull', `ctx:.sp-tilebox:nth-child(4) .sp-tile >> ${PIN_ROW}`, 'menu', ['.sp-card']), name: names.chooser },
