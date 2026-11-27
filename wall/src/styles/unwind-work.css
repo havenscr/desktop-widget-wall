@@ -366,9 +366,16 @@
   min-width: 0;
   font: 700 20px/26px var(--disp);
   color: var(--tx);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  overflow-wrap: anywhere;
+}
+/* A long title wraps to two lines at a slightly smaller size; the time and buttons stay put. */
+.u-nu-title.long {
+  font-size: 17px;
+  line-height: 20px;
+}
+.u-nu-title.longer {
+  font-size: 16px;
+  line-height: 18px;
 }
 .u-nu-people {
   flex: none;

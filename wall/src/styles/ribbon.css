@@ -152,6 +152,30 @@
   -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 16px), transparent);
   mask-image: linear-gradient(to right, #000 calc(100% - 16px), transparent);
 }
+/* A title too long for its chip carries on over the empty track after it (the chip keeps its edge, the
+   text keeps its colour), or, when the next chip is close, drops to a short second row under the chips. */
+.rib .ev.spill {
+  overflow: visible;
+}
+.rib .ev.spill .ev-t {
+  overflow: visible;
+  margin-right: 0;
+}
+.rib .ev-row {
+  position: absolute;
+  top: 64px;
+  height: 16px;
+  font: 400 16px/16px var(--body);
+  color: #e4dcff;
+  white-space: nowrap;
+  pointer-events: none;
+}
+.rib .ev-row.past {
+  color: rgba(193, 191, 205, 1);
+}
+.rib.has-allday .ev-row {
+  top: 67px;
+}
 /* Stacked lanes for events that overlap (Ribbon.tsx sets each lane's top and height): two
    lanes keep a smaller title, three are thin bars with the title in the hover. */
 .rib .ev.s2,

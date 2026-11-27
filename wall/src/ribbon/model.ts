@@ -660,7 +660,73 @@ export const OVER_MARKER_EXTRA_PX = 26;
 
 /** Width the agents line takes, estimated from its words (16 px type). */
 export function agentsLineWidth(text: string, over = false): number {
-  return Math.ceil(text.length * 8.2) + 4 + (over ? OVER_MARKER_EXTRA_PX : 0);
+  return Math.ceil(textWidth(text, 16, 500)) + 4 + (over ? OVER_MARKER_EXTRA_PX : 0);
+}
+
+const widthCache = new Map<string, number>();
+let measureCtx: CanvasRenderingContext2D | null | undefined;
+
+/**
+ * The real width of `text` in the wall's body type at `px` and `weight`, measured on a canvas.
+ * Where there is no canvas (a test run) or the fonts are still loading, the width is estimated
+ * at half the size a character, with 5 percent to spare.
+ */
+export function textWidth(text: string, px: number, weight = 400): number {
+  const guess = Math.ceil(text.length * px * 0.53);
+  if (typeof document === 'undefined' || /jsdom/i.test(globalThis.navigator?.userAgent ?? '')) return guess;
+  if (measureCtx === undefined) measureCtx = document.createElement('canvas').getContext('2d');
+  if (!measureCtx) return guess;
+  const family = getComputedStyle(document.documentElement).getPropertyValue('--body').trim() || 'sans-serif';
+  const font = `${weight} ${px}px ${family}`;
+  const key = `${font}|${text}`;
+  const hit = widthCache.get(key);
+  if (hit !== undefined) return hit;
+  measureCtx.font = font;
+  const w = measureCtx.measureText(text).width;
+  // Kept only once the fonts have loaded, so a measure made on a fallback face is made again.
+  if (document.fonts?.status === 'loaded') widthCache.set(key, w);
+  return w;
+}
+
+/** A title too long for its chip: carried on over empty track ("side"), or dropped to a second row under the chips ("row"). */
+export interface Spill {
+  mode: 'side' | 'row';
+  /** Where the text starts (the chip's x plus its padding) and how wide it runs. */
+  x: number;
+  width: number;
+}
+
+/** Gap kept between a carried-on title and whatever comes next. */
+export const SPILL_GAP = 10;
+
+/**
+ * For each single-lane chip whose title does not fit inside it: carry the name on past the chip
+ * when the track after it is empty, else put it on a short second row under the chips when that
+ * row is clear (`avoid`: the agent bar and line), else leave it faded (the hover has it whole).
+ * `blockers` are the x of everything else on the chip row; `avoid` the boxes the second row keeps off.
+ */
+export function spillTitles(shown: readonly Chip[], blockers: readonly number[], avoid: readonly { x: number; width: number }[], px = 17): Map<string, Spill> {
+  const out = new Map<string, Spill>();
+  const end = RX(END_HOUR) + 40;
+  let rowEnd = -Infinity;
+  for (const c of [...shown].sort((a, b) => a.x - b.x)) {
+    if (c.narrow || c.lanes > 1) continue;
+    const w = Math.ceil(textWidth(c.title, px));
+    if (w <= c.width - 22) continue;
+    const x = c.x + 11;
+    const next = Math.min(end, ...blockers.filter((b) => b >= c.x + c.width - 1));
+    if (x + w + SPILL_GAP <= next) {
+      out.set(c.key, { mode: 'side', x, width: w });
+      continue;
+    }
+    // The second row stops before the corner button at the end of the ribbon.
+    const row = { x, width: w };
+    if (x >= rowEnd + SPILL_GAP && row.x + row.width <= RX(END_HOUR) && !overlapsAny(row, avoid)) {
+      out.set(c.key, { mode: 'row', ...row });
+      rowEnd = row.x + row.width;
+    }
+  }
+  return out;
 }
 
 /** Fewer than this many pixels right of the needle and the agents line goes before it. */

@@ -46,7 +46,7 @@ it('draws today\'s calendar with past, now and live chips, and the needle with t
   const chips = [...r.container.querySelectorAll('.ev')];
   expect(chips.map((c) => [c.textContent, c.className])).toEqual([
     ['AE sync', 'ev past'],
-    ['Design review', 'ev now'],
+    ['Design review', 'ev now spill'],
     ['Livestream: Fabric Apps', 'ev next live'],
   ]);
   expect((chips[0] as HTMLElement).style.left).toBe(`${RX(9)}px`);
@@ -398,7 +398,7 @@ it('Home: folds all-day events into one "1 all day" chip at the row start that l
   expect(chip.style.left).toBe(`${RX(6)}px`);
   // The timed event keeps the full lane.
   const review = [...r.container.querySelectorAll('.ev:not(.allday)')] as HTMLElement[];
-  expect(review.map((e) => [e.textContent, e.className])).toEqual([['Design review', 'ev now']]);
+  expect(review.map((e) => [e.textContent, e.className])).toEqual([['Design review', 'ev now spill']]);
   fireEvent.mouseEnter(chip);
   await flush(TIP_DELAY_MS);
   expect(document.querySelector('.hover-tip')!.textContent).toContain('Company offsite, Work');
@@ -459,9 +459,11 @@ it('fades the end of a title that does not fit, and leaves a title that fits alo
     const titles = [...r.container.querySelectorAll('.ev .ev-t')];
     expect(titles.map((t) => [t.textContent, t.hasAttribute('data-cut')])).toEqual([
       ['AE sync', false],
-      ['Design review', true],
+      ['Design review', false],
       ['Livestream: Fabric Apps', false],
     ]);
+    // With empty track after it, the long title carries on past its chip instead of fading.
+    expect(r.container.querySelector('.ev.spill .ev-t')!.textContent).toBe('Design review');
   } finally {
     sw.mockRestore();
     cw.mockRestore();

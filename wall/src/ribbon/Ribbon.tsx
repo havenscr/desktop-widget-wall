@@ -11,7 +11,7 @@ import { AgentRow, agentBoxes } from './AgentRow';
 import { useAgentsStore } from '../agents/useAgents';
 import { useRemeasure } from '../ui/useRemeasure';
 import { useVisible } from '../ui/useVisible';
-import { allDayBarText, allDayChips, HANDLE_W, handleX, labelBox, allDayText, allDayWidth, calmLayout, chipLayout, chips, HIDDEN_NAMED, hiddenNames, dueLabelSpan, isLate, dueMarks, focusBars, hourLabels, msToNextMinute, needle, needleTip, overlapsAny, skyGradient, spanText, sunLabels, ticks, type Chip, type FoldChip, type MoreChip } from './model';
+import { allDayBarText, allDayChips, HANDLE_W, handleX, labelBox, allDayText, allDayWidth, calmLayout, chipLayout, chips, spillTitles, HIDDEN_NAMED, hiddenNames, dueLabelSpan, isLate, dueMarks, focusBars, hourLabels, msToNextMinute, needle, needleTip, overlapsAny, skyGradient, spanText, sunLabels, ticks, type Chip, type FoldChip, type MoreChip } from './model';
 import { AgentsToday } from './AgentsToday';
 import { DayDrawer } from './DayDrawer';
 import { DayLip } from './DayLip';
@@ -25,14 +25,14 @@ export type RibbonKind = 'work' | 'home';
 const TICKS = ticks();
 
 /** A chip's title. When it does not fit, the last 16 px of the letters fade (the chip keeps its crisp edge and colour). */
-function ChipTitle({ text }: { text: string }) {
+function ChipTitle({ text, spill = false }: { text: string; spill?: boolean }) {
   const ref = useRef<HTMLSpanElement>(null);
   const measure = useCallback(() => {
     const el = ref.current;
     if (!el) return;
-    if (el.scrollWidth > el.clientWidth + 1) el.setAttribute('data-cut', '');
+    if (!spill && el.scrollWidth > el.clientWidth + 1) el.setAttribute('data-cut', '');
     else el.removeAttribute('data-cut');
-  }, []);
+  }, [spill]);
   useLayoutEffect(measure);
   // A width change (layout or window resize) or a late font measures again.
   useRemeasure(ref, measure);
@@ -226,6 +226,14 @@ export function Ribbon({ kind, now = Date.now, compact = false, feed, onOverlay 
   // shared store: the agent row owns the poll.
   const agents = useAgentsStore();
   const boxes = calm ? agentBoxes(agents, t) : [];
+  // A title too long for its chip carries on over empty track, or drops to a second row when the next chip is close.
+  const spills = spillTitles(
+    shown,
+    [...shown.map((c) => c.x), ...fold.folds.map((f) => f.x), ...lay.more.map((m) => m.x), ...(lay.allDay ? [lay.allDay.x] : [])],
+    boxes,
+  );
+  const rowBoxes = [...spills.values()].filter((p) => p.mode === 'row');
+  const dueAvoid = [...boxes, ...rowBoxes];
   const [overlay, setOverlay] = useState<Overlay>(null);
   const close = useCallback(() => setOverlay(null), []);
   // A layer that hosts this ribbon (Unwind's) learns while its drawer or panel is open, so it stays up under it.
@@ -363,6 +371,7 @@ export function Ribbon({ kind, now = Date.now, compact = false, feed, onOverlay 
           const toned = c.category && !c.live ? c.category : null;
           // ...and a livestream that has a category keeps its pink and gains a small dot in that colour (room permitting).
           const dot = c.category?.name && c.live && !c.narrow ? c.category : null;
+          const spill = spills.get(c.key);
           return (
             <Fragment key={c.key}>
               {c.narrow && c.beside !== null && (
@@ -370,8 +379,13 @@ export function Ribbon({ kind, now = Date.now, compact = false, feed, onOverlay 
                   {c.title}
                 </span>
               )}
+              {spill?.mode === 'row' && (
+                <span className={`ev-row ${cls}`} style={{ left: spill.x, width: spill.width }} aria-hidden="true">
+                  {c.title}
+                </span>
+              )}
               <div
-                className={`ev ${cls}${c.canOpen ? ' open' : ''}`}
+                className={`ev ${cls}${c.canOpen ? ' open' : ''}${spill?.mode === 'side' ? ' spill' : ''}`}
                 data-tone={toned?.tone}
                 data-dot={dot ? '' : undefined}
                 style={{ left: c.x, width: c.width, ...(toned ? toneVars(toned.tone, c.state, 'ribbon') : {}), ...(dot ? toneDotVars(dot.tone) : {}), ...(box ?? {}) } as CSSProperties}
@@ -391,7 +405,7 @@ export function Ribbon({ kind, now = Date.now, compact = false, feed, onOverlay 
                 }
                 {...tip(() => <ChipTip c={c} account={account} />)}
               >
-                {c.narrow ? null : <ChipTitle text={c.title} />}
+                {c.narrow || spill?.mode === 'row' ? null : <ChipTitle text={c.title} spill={spill?.mode === 'side'} />}
               </div>
             </Fragment>
           );
@@ -402,7 +416,7 @@ export function Ribbon({ kind, now = Date.now, compact = false, feed, onOverlay 
             <i key={b.x} className="fo" style={{ left: b.x, width: b.width }} aria-hidden="true" />
           ))}
         {marks.map((d) => {
-          const bare = overlapsAny(dueLabelSpan(d), boxes);
+          const bare = overlapsAny(dueLabelSpan(d), dueAvoid);
           return (
             <div
               key={d.key}

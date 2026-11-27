@@ -14,6 +14,11 @@ import { useWorkLayerStore } from './layerStore';
 import { durationText, focusToday, meetingsLeft, waitingCount } from './stats';
 import { LAYER_FADE_OUT_MS } from './UnwindTimeline';
 
+/** The Next up line: the meeting and its start time, shown in full. */
+function nextUpTitle(meeting: { title: string; start: string } | null | undefined): string {
+  return meeting ? `${meeting.title} at ${clock(Date.parse(meeting.start))}` : 'Nothing booked';
+}
+
 /** "9:00 AM" for the quiet line. */
 function clock(ms: number): string {
   return new Date(ms).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
@@ -43,7 +48,7 @@ function Body() {
       <div className="u-nu-rule" aria-hidden="true" />
       <div className="u-nu-info">
         <div className="u-nu-l1">
-          <span className="u-nu-title">{meeting ? `${meeting.title} at ${clock(Date.parse(meeting.start))}` : 'Nothing booked'}</span>
+          <span className={`u-nu-title${nextUpTitle(meeting).length > 44 ? ' long longer' : nextUpTitle(meeting).length > 24 ? ' long' : ''}`}>{nextUpTitle(meeting)}</span>
           {circles.length > 0 ? (
             <span className="u-nu-people" aria-hidden="true">
               {circles.map((p, i) => (

@@ -16,6 +16,7 @@ import {
   IconVolume,
   IconVolumeOff,
 } from '@tabler/icons-react';
+import { FitTitle } from '../../ui/FitTitle';
 import { useSkyKeepClear } from '../../horizon/sky';
 import { useSignalStore } from '../../signals/store';
 import { useToolsStore } from '../../tools/store';
@@ -492,9 +493,9 @@ export function WatchPanel() {
       <div className="w-panel" role="tabpanel" id={WATCH_PANEL_ID} aria-labelledby={WATCH_TAB_ID} data-state="idle">
         <div className="w-now" ref={setNowEl} data-ctl="shown">
           <span className="u-k u-src">Your playlist · ended</span>
-          <div className="w-title" {...tip(finishedEntry.label)}>
+          <FitTitle top={48} firstLines={2} lh={1.1} className="w-title" {...tip(finishedEntry.label)}>
             {finishedEntry.label}
-          </div>
+          </FitTitle>
           <div className="w-by u-ell">{bye}</div>
           <div className="w-sub">{finished.none ? 'Every video was skipped' : 'Stopped after the last video'}</div>
           <div className="w-ctl w-idle own-ended">
@@ -564,7 +565,10 @@ export function WatchPanel() {
     <div className="w-panel" role="tabpanel" id={WATCH_PANEL_ID} aria-labelledby={WATCH_TAB_ID} data-state="playing" data-ctl={ctl}>
       <div className="w-now" ref={setNowEl} data-ctl={ctl} {...zone()}>
         <span className="u-k u-src">{own ? `Your playlist · ${own.place} of ${own.count}` : kindName(playing.kind)}</span>
-        <div
+        <FitTitle
+          top={48}
+          firstLines={2}
+          lh={1.1}
           className="w-title"
           {...tip(
             <>
@@ -579,7 +583,7 @@ export function WatchPanel() {
           )}
         >
           {shownTitle}
-        </div>
+        </FitTitle>
         {channel ? (
           <div className="w-by u-ell" {...tip(`Channel: ${channel}. As the player reports it.`)}>
             {channel}
