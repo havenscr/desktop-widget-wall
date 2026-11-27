@@ -7,13 +7,14 @@ import { knob } from './long';
  * Dev only: the YouTube live commands, for `npm run dev` in a plain browser and the gallery. Every name, channel and comment here
  * is invented.
  *
- *   ?yt=none|scheduled|live|stale|quota|busy|empty|signedout|notsetup|refused     (default `none`)
+ *   ?yt=none|scheduled|live|stale|quota|busy|tall|empty|signedout|notsetup|refused     (default `none`)
  *     none        the channel is named, no broadcast
  *     scheduled   a broadcast starts in 36 minutes
  *     live        live, 37 watching, twelve comments
  *     stale       live, but YouTube has not answered for 14 minutes
  *     quota       live, today's chat reads are used up
  *     busy        live, long comments and a Super Chat
+     tall        live, the newest comment is taller than the list
  *     empty       live, no comments yet
  *     signedout   no YouTube sign-in
  *     notsetup    no channel named
@@ -58,6 +59,16 @@ function messages(kind: string, at: number): LiveMessage[] {
       { name: '@ShortOne', text: 'Thanks' },
     ];
     return rows.map((r, i) => ({ id: `m${i}`, ...r, at: at - (rows.length - i) * 20_000, superChat: null }));
+  }
+  if (kind === 'tall') {
+    // The newest comment is taller than the list: the list scrolls and fades at the top.
+    const long = 'This is a very long sample comment that keeps going so that it is taller than the whole comments list. '.repeat(9).trim();
+    const rows = [
+      { name: 'Rowan', text: 'Hello from the back row', superChat: null },
+      { name: 'Tess', text: 'Sound is good here', superChat: null },
+      { name: '@TallSampleViewer', text: long, superChat: '$10.00' },
+    ];
+    return rows.map((r, i) => ({ id: `m${i}`, ...r, at: at - (rows.length - i) * 20_000 }));
   }
   if (kind === 'busy') {
     return LONG_TEXTS.map((text, i) => ({ id: `m${i}`, name: NAMES[i], text, at: at - (LONG_TEXTS.length - i) * 20_000, superChat: i === 1 ? '$5.00' : null }));

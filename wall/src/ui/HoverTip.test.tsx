@@ -1,8 +1,7 @@
-// @ts-ignore node's own file calls; this test reads the stylesheet as text.
-import { readFileSync } from 'node:fs';
 import { act, fireEvent, render } from '@testing-library/react';
 import { useState } from 'react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
+import appCss from '../styles/app.css?raw';
 import { HoverTipLayer, pinTip, resetTip, tip, TIP_ANCHOR_CHECK_MS, TIP_DELAY_MS, TIP_MOVE_PX, TIP_REFRESH_MS } from './HoverTip';
 
 const flush = async (ms = 0) => {
@@ -244,7 +243,7 @@ it('the default placement is centred over the control and clamped 12 px from the
 });
 
 it('wraps a long unbroken string inside the card instead of running past its box', () => {
-  const sheet = (readFileSync('src/styles/app.css', 'utf8') as string).replace(/\r\n/g, '\n');
+  const sheet = appCss.replace(/\r\n/g, '\n');
   const m = /^\.hover-tip\s*\{([^}]*)\}/m.exec(sheet);
   expect(m).not.toBeNull();
   expect(m![1]).toContain('overflow-wrap: anywhere');
