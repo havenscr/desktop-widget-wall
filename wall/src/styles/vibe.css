@@ -35,15 +35,20 @@
   pointer-events: none;
 }
 
-/* The words and controls, lifted above the sheet. Order from the bottom: the grain sheet (2), the work layer and the day
-   timeline (4), then the cards, the wings, the left block, the Office moods row and Listen's title and controls (6), then
-   Next up (7, as before, it rides over the cards). Elements that already carry a position (the wings, the cards, Next up,
-   the Office row, the work layer, the timeline line, the Watch button's art overlay and Listen's gear, which is absolute at
-   a fixed spot) get z-index alone; a position here would move them. Only plain in-flow elements (the rail, the clock and
-   Listen's readouts) are given position: relative so the z-index applies. The work layer keeps its own z-index 90 while its
-   day drawer or Agents panel is open. */
-.stage:has(.vibe-front) :is(.u-wing, .u-right, .w-now, .w-sheet, .u-office-slot, .u-card, .u-listen-gear, .u-video) {
+/* The words and controls, lifted above the sheet. Order from the bottom: the grain sheet (2), the left wing (3), the work layer
+   and the day timeline (4), then the cards, the right wing, the left block, the Office moods row and Listen's title and
+   controls (6), then Next up (7: main had it at 3, above the cards at 2 and the work layer at 1; 7 keeps that order). The
+   wing sits under the work layer because its box reaches down into the timeline band, and the timeline's first icons and
+   chips must take the clicks there, as they do on main. Elements that already carry a position (the wings, the cards, Next
+   up, the Office row, the work layer, the timeline line, the Watch button's art overlay and Listen's gear, which is
+   absolute at a fixed spot) get z-index alone; a position here would move them. Only plain in-flow elements (the rail, the
+   clock and Listen's readouts) are given position: relative so the z-index applies. The work layer keeps its own z-index 90
+   while its day drawer or Agents panel is open. */
+.stage:has(.vibe-front) :is(.u-right, .w-now, .w-sheet, .u-office-slot, .u-card, .u-listen-gear, .u-video) {
   z-index: 6;
+}
+.stage:has(.vibe-front) .u-wing {
+  z-index: 3;
 }
 .stage:has(.vibe-front) .u-nu {
   z-index: 7;

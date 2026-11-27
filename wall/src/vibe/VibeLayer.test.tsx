@@ -474,10 +474,14 @@ describe('the vibe back layer', () => {
     const line = zOf(c, '.rib-line');
     expect(work).toBeGreaterThan(sheetZ);
     expect(line).toBeGreaterThan(sheetZ);
-    for (const card of ['.u-card', '.u-right', '.w-now', '.w-sheet', '.u-office-slot', '.u-wing']) {
+    for (const card of ['.u-card', '.u-right', '.w-now', '.w-sheet', '.u-office-slot']) {
       expect(zOf(c, card), card).toBeGreaterThan(work);
       expect(zOf(c, card), card).toBeGreaterThan(line);
     }
+    // The left wing's box reaches into the timeline band: it sits above the grain and under the work layer, so the timeline takes the clicks there.
+    expect(zOf(c, '.u-wing')).toBeGreaterThan(sheetZ);
+    expect(zOf(c, '.u-wing')).toBeLessThan(work);
+    expect(zOf(c, '.u-wing')).toBeLessThan(line);
     // Next up still rides over the cards.
     expect(zOf(c, '.u-nu')).toBeGreaterThan(zOf(c, '.u-card'));
     // Every word and control on Listen and the frame is above the grain.
