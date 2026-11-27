@@ -46,6 +46,20 @@ export const REFRACTORY_S = 8;
 export interface DropStamp {
   count: number;
   lastAt: number;
+  /** How big the jump was, `DROP_MIN_STRENGTH` (just over the bar) to 1 (a big jump). */
+  strength: number;
+}
+
+/** The weakest hit a drop gives, for a jump that only just clears `DROP_RATIO`. */
+export const DROP_MIN_STRENGTH = 0.6;
+/** A jump of this ratio (short mean over long mean) or more hits at full strength. */
+export const DROP_FULL_RATIO = 2.2;
+
+/** A drop's strength from its jump: `DROP_MIN_STRENGTH` at `DROP_RATIO`, rising to 1 at `DROP_FULL_RATIO`. */
+export function dropStrength(ratio: number): number {
+  if (!Number.isFinite(ratio)) return 1;
+  const k = Math.min(1, Math.max(0, (ratio - DROP_RATIO) / (DROP_FULL_RATIO - DROP_RATIO)));
+  return DROP_MIN_STRENGTH + (1 - DROP_MIN_STRENGTH) * k;
 }
 
 export interface EnergyState {
@@ -71,7 +85,7 @@ export interface EnergyState {
 }
 
 export function createEnergy(): EnergyState {
-  const s = { drops: { count: 0, lastAt: -Infinity }, hist: new Float32Array(LONG_N) } as EnergyState;
+  const s = { drops: { count: 0, lastAt: -Infinity, strength: 1 }, hist: new Float32Array(LONG_N) } as EnergyState;
   resetEnergy(s);
   return s;
 }
@@ -81,6 +95,7 @@ export function resetEnergy(s: EnergyState): void {
   s.energy = 0;
   s.drops.count = 0;
   s.drops.lastAt = -Infinity;
+  s.drops.strength = 1;
   s.lastSoundAt = -Infinity;
   disarm(s);
   s.crossedAt = -Infinity;
@@ -157,6 +172,8 @@ function meanOf(s: EnergyState, n: number): number {
 function fire(s: EnergyState, now: number): void {
   s.drops.count++;
   s.drops.lastAt = now;
+  const lng = meanOf(s, LONG_N);
+  s.drops.strength = lng > 0 ? dropStrength(meanOf(s, SHORT_N) / lng) : 1;
   s.refractoryUntil = now + REFRACTORY_S * 1000;
   s.crossedAt = -Infinity;
   s.armed = false;

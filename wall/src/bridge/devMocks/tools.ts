@@ -1,6 +1,6 @@
 import { GROUP_KEY, useToolsStore, type ToolsFocus } from '../../tools/store';
 
-const FOCUS: readonly string[] = ['accounts', 'keylights', 'desktoken', 'sharekey', 'stagepop', 'health', 'lights', 'display'];
+const FOCUS: readonly string[] = ['accounts', 'keylights', 'desktoken', 'sharekey', 'stagepop', 'health', 'lights', 'display', 'vibe'];
 import { mocks } from '../tauri';
 import { knob } from './long';
 

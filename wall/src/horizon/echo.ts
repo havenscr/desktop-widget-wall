@@ -285,8 +285,11 @@ const fr1 = (x: number) => x - Math.floor(x);
 /** The fastest a settle may move the lines on average, line spacings a second (twice the playing drift). */
 const SETTLE_MAX_SPEED = 2 * DRIFT_SPEED;
 
-/** Advance the motion by `dt` seconds with music driving the lines (`driving`) or not. */
-export function stepEchoMotion(m: EchoMotion, driving: boolean, dt: number): void {
+/**
+ * Advance the motion by `dt` seconds with music driving the lines (`driving`) or not. `drift` (0 to 1, default 1) scales how
+ * fast the lines drift while music plays: 0 holds them where they are, and the rest settle is not touched.
+ */
+export function stepEchoMotion(m: EchoMotion, driving: boolean, dt: number, drift = 1): void {
   const d = Math.max(0, dt);
   if (driving) {
     if (!m.driving) {
@@ -300,7 +303,7 @@ export function stepEchoMotion(m: EchoMotion, driving: boolean, dt: number): voi
       const s = m.r0 > 0 ? 1 - m.rest / m.r0 : 1;
       m.v = m.v0 + (DRIFT_SPEED - m.v0) * s;
     } else m.v = DRIFT_SPEED;
-    m.drift = fr1(m.drift + m.v * d);
+    m.drift = fr1(m.drift + m.v * d * Math.min(1, Math.max(0, drift)));
     return;
   }
   if (m.driving) {

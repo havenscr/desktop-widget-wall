@@ -11,6 +11,10 @@ import { resetReports } from './reports';
 import { resetRetries } from './sources';
 import { GROUP_KEY, resetTools, useToolsStore, type ToolsFocus } from './store';
 import { GROUPS, ToolsDrawer, groupOf } from './ToolsDrawer';
+import { VibePanel } from '../unwind/watch/LinesPanel';
+import { resetVibeStore, useVibeStore } from '../horizon/vibeSettings';
+import { within } from '@testing-library/react';
+import tools from './ToolsDrawer.tsx?raw';
 
 const flush = async (ms = 0) => {
   await act(async () => {
@@ -153,7 +157,7 @@ it('the arrow keys move between rail groups', async () => {
   expect(open()).toEqual(['health']);
   fireEvent.keyDown(tab('health'), { key: 'ArrowUp' });
   fireEvent.keyDown(tab('accounts'), { key: 'ArrowUp' });
-  expect(open()).toEqual(['display']);
+  expect(open()).toEqual(['vibe']);
 });
 
 const lines = () => Object.fromEntries([...document.querySelectorAll('[data-rail-status]')].map((e) => [e.getAttribute('data-rail-status'), e.textContent]));
@@ -241,4 +245,58 @@ it('a status read that never answers times out to Could not check after 15 s, ne
   await flush(1500);
   expect(lines().accounts).toBe('Could not check');
   expect(document.querySelector('[data-rail-status="accounts"]')?.className).toContain('bad');
+});
+
+it('Vibe is the fifth group, after Display, and its list line reads back the Mountain dance level', async () => {
+  localStorage.clear();
+  resetVibeStore();
+  expect(GROUPS.map((g) => g.id)).toEqual(['accounts', 'health', 'lights', 'display', 'vibe']);
+  expect(groupOf('vibe')).toBe('vibe');
+  await openAt('vibe');
+  expect(open()).toEqual(['vibe']);
+  const line = () => document.querySelector('[data-rail-status="vibe"]')!.textContent;
+  expect(line()).toBe('Dance Medium');
+  act(() => useVibeStore.getState().setVibe({ mountain: 'high' }));
+  expect(line()).toBe('Dance High');
+  act(() => useVibeStore.getState().setVibe({ mountain: 'off' }));
+  expect(line()).toBe('Dance Off');
+});
+
+it('the Tools Vibe group is the Unwind Vibe component on the same store: a change in one shows in the other at once', async () => {
+  localStorage.clear();
+  resetVibeStore();
+  render(
+    <>
+      <div data-testid="unwind">
+        <VibePanel />
+      </div>
+    </>,
+  );
+  await openAt('vibe');
+  const panel = document.querySelector('#tools-panel-vibe') as HTMLElement;
+  const unwind = screen.getByTestId('unwind');
+  const checked = (root: HTMLElement, g: string, name: string) => within(within(root).getByRole('radiogroup', { name: g })).getByRole('radio', { name }).getAttribute('aria-checked');
+  // Both read the same, and carry the same controls.
+  for (const g of ['Drop Glitch', 'Mountain dance', 'Music on other tabs', 'Aurora']) expect(within(panel).getByRole('radiogroup', { name: g })).toBeTruthy();
+  for (const n of ['Auto vibe', 'Calm cap', 'Tape Grain']) expect(within(panel).getByRole('switch', { name: n })).toBeTruthy();
+  expect(within(panel).getByRole('button', { name: /Reset vibe/ })).toBeTruthy();
+  // A change in Tools shows on the Unwind page.
+  fireEvent.click(within(within(panel).getByRole('radiogroup', { name: 'Mountain dance' })).getByRole('radio', { name: 'Low' }));
+  expect(checked(unwind, 'Mountain dance', 'Low')).toBe('true');
+  // A change on the Unwind page shows in Tools.
+  fireEvent.click(within(within(unwind).getByRole('radiogroup', { name: 'Drop Glitch' })).getByRole('radio', { name: 'Flash' }));
+  expect(checked(panel, 'Drop Glitch', 'Flash')).toBe('true');
+  fireEvent.click(within(unwind).getByRole('switch', { name: 'Tape Grain' }));
+  expect(within(panel).getByRole('switch', { name: 'Tape Grain' }).getAttribute('aria-checked')).toBe('true');
+  // Reset in Tools resets both.
+  fireEvent.click(within(panel).getByRole('button', { name: /Reset vibe/ }));
+  expect(checked(unwind, 'Drop Glitch', 'Tear')).toBe('true');
+  expect(checked(unwind, 'Mountain dance', 'Medium')).toBe('true');
+  expect(JSON.parse(localStorage.getItem('wall2-vibe')!)).toMatchObject({ dropGlitch: 'tear', mountain: 'medium' });
+});
+
+it('the drawer builds its Vibe group from the shared panel, not from a copy of the controls', () => {
+  const src = tools.replace(/\r\n/g, '\n');
+  expect(src).toContain('return <Vibe' + 'Panel />');
+  expect(src).not.toContain('role="radi' + 'ogroup"');
 });
