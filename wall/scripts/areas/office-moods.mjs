@@ -238,7 +238,11 @@ const variants = [
 const on = (...keys) => (v) => keys.some((k) => v.name === `Office moods, ${NAMES[k]}`);
 
 const gq = (extra) => `hz=unwind&at=${encodeURIComponent(night)}&clock=review&weather=ok&audio=demo${extra.includes('desktoken=') ? '' : TOKEN}&${extra}`;
-const gstate = (name, extra, expect, actions) => ({ screen: 'unwind', name: `office moods: ${name}`, query: gq(extra), custom: true, expect, ...(actions ? { actions } : {}) });
+// The row's "Office moods" label is dropped by the fit rule when the row is crowded (fitMoodRow), and the Off chip turns icon-only with twelve moods, so
+// neither word is always visible text. States that show a row assert the row itself (its group is named "Office moods"); the twelve-mood states also
+// assert the Off chip is on the page (data-mood="off"), since its text is not drawn there.
+const ROW = '[data-slot="office-lights"][aria-label="Office moods"]';
+const gstate = (name, extra, expect, actions, expectDom) => ({ screen: 'unwind', name: `office moods: ${name}`, query: gq(extra), custom: true, expect, ...(expectDom ? { expectDom } : {}), ...(actions ? { actions } : {}) });
 const LONG_NAME = 'Bright desk for the long afternoon sessions';
 
 export default {
@@ -248,9 +252,9 @@ export default {
       gstate('absent, the slot stays empty', 'office=absent', ['!Office moods', '!No mood on.']),
       gstate('the home app is down, the slot stays empty', 'office=down', ['!Office moods', '!No mood on.']),
       gstate('an empty list, the slot stays empty', 'office=empty', ['!Office moods', '!No mood on.']),
-      gstate('six moods and Off, a mood on', 'office=six&officeoff=offered&officemood=relax', ['Bright desk', 'Reading', 'Relax', 'Gaming', 'Meeting', 'Night', 'Off', 'Relax:', 'Room 35%, neon 30%']),
-      gstate('six moods, no Off until the home app offers it', 'office=six&officemood=gaming', ['Gaming:', 'Room 25%, panels 10%']),
-      gstate('five moods, none on', 'office=five', ['No mood on.']),
+      gstate('six moods and Off, a mood on', 'office=six&officeoff=offered&officemood=relax', ['Bright desk', 'Reading', 'Relax', 'Gaming', 'Meeting', 'Night', 'Off', 'Relax:', 'Room 35%, neon 30%'], undefined, [ROW]),
+      gstate('six moods, no Off until the home app offers it', 'office=six&officemood=gaming', ['Gaming:', 'Room 25%, panels 10%'], undefined, [ROW]),
+      gstate('five moods, none on', 'office=five', ['No mood on.'], undefined, [ROW]),
       gstate('Off is lit', 'office=six&officeoff=on', ['Office lights are off.', 'Off']),
       gstate('music sync chip first, idle', 'office=six&officeoff=offered&officemood=relax', ['Music sync', 'Relax:'], 'hover:[data-part="sync-main"]'),
       gstate('music sync on', 'office=six&officeoff=offered&officemood=relax&lsync=on', ['Music sync']),
@@ -274,12 +278,12 @@ export default {
       gstate('a hovered Off chip', 'office=six&officeoff=offered&officemood=relax', ['Turns the office lights off. No other room changes.'], 'focus:[data-mood="off"]'),
       gstate('a focused chip', 'office=six&officeoff=offered&officemood=relax', ['Meeting: Room 80%, desk lamp on'], 'focus:[data-mood="meeting"]'),
       gstate('a hovered chip with no token', 'office=six&officeoff=offered&desktoken=unset', ["Office moods are view only here. To switch them, add the desk token in Tools.", 'Gaming: Room 25%, panels 10%'], 'hover:[data-mood="gaming"] >> wait:700 >> hover:[data-mood="gaming"]'),
-      gstate('twelve long names and lines', 'office=twelve&officeoff=offered&officemood=brightDesk', [LONG_NAME]),
-      gstate('twelve moods under the tall Spotify panel', 'office=twelve&officeoff=offered&officemood=brightDesk', [LONG_NAME], 'grow >> .mu-places button:nth-child(5)'),
+      gstate('twelve long names and lines', 'office=twelve&officeoff=offered&officemood=brightDesk', [LONG_NAME], undefined, [ROW, '[data-mood="off"]']),
+      gstate('twelve moods under the tall Spotify panel', 'office=twelve&officeoff=offered&officemood=brightDesk', [LONG_NAME], 'grow >> .mu-places button:nth-child(5)', [ROW, '[data-mood="off"]']),
       gstate('a hovered long name shows the whole name and line', 'office=twelve&officeoff=offered&officemood=brightDesk', [`${LONG_NAME}: Room 70%, neon 20%, desk lamp on, panels off`], `hover:[data-mood="brightDesk"]`),
-      gstate('six moods with the leave banner', 'office=six&officeoff=offered&officemood=relax&leave=12', ['Relax:']),
-      gstate('six moods on Watch with the drive-in', 'office=six&officeoff=offered&officemood=relax&watch=mock&wlist=three&wlook=drivein&wplay=0', ['Relax:']),
-      gstate('six moods beside a tall own playlist', 'office=six&officeoff=offered&officemood=relax&watch=mock&wlook=sky&wmeta=title&wown=edit&wplay=3', ['Friday wind down']),
+      gstate('six moods with the leave banner', 'office=six&officeoff=offered&officemood=relax&leave=12', ['Relax:'], undefined, [ROW]),
+      gstate('six moods on Watch with the drive-in', 'office=six&officeoff=offered&officemood=relax&watch=mock&wlist=three&wlook=drivein&wplay=0', ['Relax:'], undefined, [ROW]),
+      gstate('six moods beside a tall own playlist', 'office=six&officeoff=offered&officemood=relax&watch=mock&wlook=sky&wmeta=title&wown=edit&wplay=3', ['Friday wind down'], undefined, [ROW]),
     ],
   },
   fit: {

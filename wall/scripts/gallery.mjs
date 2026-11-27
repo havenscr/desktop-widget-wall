@@ -1348,6 +1348,11 @@ async function render(cdp, base, s, file, ctl) {
     if (info.boundary) errors.push('an error fallback is showing');
     const failed = [...missed(info.text, false), ...missed(firstText).filter((w) => w.absent)];
     for (const { needle, absent } of failed) errors.push(`${absent ? 'unexpected' : 'expected'} text ${absent ? 'shown' : 'not shown'}: "${needle}"`);
+    // Elements that must be on the page whether or not their words show (a label the fit rule drops, an icon-only chip): by selector.
+    for (const sel of s.expectDom ?? []) {
+      const got = await to('Runtime.evaluate', { expression: `!!document.querySelector(${JSON.stringify(sel)})`, returnByValue: true });
+      if (!got.result.value) errors.push(`expected element not on the page: ${sel}`);
+    }
     for (const [sel, want] of Object.entries(OPACITY[`${s.screen}|${s.name}`] ?? {})) {
       const got = await to('Runtime.evaluate', { expression: `(() => { const el = document.querySelector(${JSON.stringify(sel)}); return el ? Number(getComputedStyle(el).opacity) : null; })()`, returnByValue: true });
       const v = got.result.value;

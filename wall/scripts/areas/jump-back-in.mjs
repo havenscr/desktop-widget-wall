@@ -24,7 +24,10 @@ const states = [
 // Runs in the page: the heading's offer button (its kind and size), whether the heading holds everything inside the wing, the plates and the chip labels.
 function measureJump() {
   const btns = [...document.querySelectorAll('.work .right-wing .deck-resume')];
-  const wing = document.querySelector('.work .right-wing').getBoundingClientRect();
+  const wingEl = document.querySelector('.work .right-wing');
+  // Every state runs this measurement; a state that is not the Work screen has no wing and nothing to measure.
+  if (!wingEl) return { missingHeading: true, buttons: btns.length };
+  const wing = wingEl.getBoundingClientRect();
   const row = [...document.querySelectorAll('.work .right-wing .keys.deck-row')].pop();
   const hd = row?.querySelector('.deck-hd');
   const name = hd?.querySelector('.deck-name');

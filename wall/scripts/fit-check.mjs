@@ -57,28 +57,45 @@ const LOOK_BOX_SKY = { x: 1106, y: 16, w: 889, h: 500 };
  * Real product bugs this check has found that are not fixed yet. A FAIL line under a listed state that matches is
  * printed as KNOWN FAILURE (so it stays in the output), and does not fail the run; any other FAIL still does.
  * Remove the entry in the PR that fixes the bug: an entry that no longer matches anything is reported, unless it is marked
- * `sometimes` (whether the card has grown when a variant is read is not fixed, so such a line may or may not appear).
+ * `sometimes` (a line that may or may not appear). Each line is pinned to the numbers seen, so a different failure in the same state is not let through.
  */
 const KNOWN_FAILURES = [
-  { sometimes: true, state: 'YouTube add,', line: /^ *FAIL library add: the menu (passes the foot of the rows|lies on the foot player|lies over its own row|sticks out of the card|ends at x \d+, not on the control)/, bug: 'open item: src/unwind/watch/AddToPlaylist.tsx:91 places the library menu once at open (the foot player and the control edge come out wrong in the fit variants); not yet classified' },
-  { state: 'Own playlists', line: /^ *FAIL own playlists: (the list is at|\d+ whole rows show|the card ends at y|a row is)/, bug: 'open item: own playlists list sits 40 px lower with four rows, the editor ends 6 px over the office slot (slot top moved to 656 in #306) and its rows are 496 wide (src/styles/ownlists.css:419 says 506); not yet classified' },
+  { state: 'YouTube add, at rest', line: /^ *FAIL library add: the menu ends at x 2478, not on the control \(x 2511\)$/, bug: 'open item: src/unwind/watch/AddToPlaylist.tsx:91 places the library menu once at open (the control edge comes out wrong in the fit variants: the menu ends at x 2478, the control at 2511); not yet classified' },
+  { state: 'YouTube add, at rest, search results, the menu open', line: /^ *FAIL library add: the menu lies over its own row$/, bug: 'open item: src/unwind/watch/AddToPlaylist.tsx:91 places the library menu once at open (over its own row in the search results variant); not yet classified' },
+  { state: 'Own playlists, the list', line: /^ *FAIL own playlists: the list is at 2015, 108 510 by 160 \(2015, 68 510 by 200\)$/, bug: 'open item: own playlists list sits 40 px lower with four rows (top 108, 160 tall, not 68 and 200); not yet classified' },
+  { state: 'Own playlists, the list', line: /^ *FAIL own playlists: 4 whole rows show \(five\)$/, bug: 'open item: own playlists list sits 40 px lower, so four whole rows show, not five; not yet classified' },
+  { state: 'Own playlists, the editor', line: /^ *FAIL own playlists: the card ends at y 650, 6 px over the office slot \(12\)$/, bug: 'open item: the own playlists editor ends 6 px over the office slot (slot top moved to 656 in #306); not yet classified' },
+  { state: 'Own playlists, the editor', line: /^ *FAIL own playlists: a row is 496 by 56 \(506 by 56\)$/, bug: 'open item: own playlists editor rows are 496 wide (src/styles/ownlists.css:419 says 506); not yet classified' },
   { state: 'Hide screen, failure words', line: /^ *FAIL hide screen: (the grown pill covers control|the failure words cover more than)/, bug: 'open item: with twelve Office moods and Off the 240 px failure pill covers the Off chip and 11 px of the chip before it; not yet classified' },
-  { state: 'Rail, On Air', line: /^ *FAIL on air v2: (oa-help-l is at y|\.oa2-idlenotes holds)/, bug: 'open item: the On Air help line ends 2.8 px under the band (y 512.8, band ends 510); not yet classified' },
-  { state: 'On Air v2,', line: /^ *FAIL on air v2: (oa-help-l is at y|\.oa2-idlenotes holds)/, bug: 'open item: the On Air help line ends 2.8 px under the band (y 512.8, band ends 510); not yet classified' },
+  { state: 'Rail, On Air', line: /^ *FAIL on air v2: (oa-help-l is at y 483 to 512\.8, outside the band y 20 to 510|\.oa2-idlenotes holds \.oa-help-l at x 825 to 1855, y 483 to 512\.8, outside its box)/, bug: 'open item: the On Air help line ends 2.8 px under the band (y 512.8, band ends 510); not yet classified' },
+  { state: 'On Air v2,', line: /^ *FAIL on air v2: (oa-help-l is at y 483 to 512\.8, outside the band y 20 to 510|\.oa2-idlenotes holds \.oa-help-l at x 825 to 1855, y 483 to 512\.8, outside its box)/, bug: 'open item: the On Air help line ends 2.8 px under the band (y 512.8, band ends 510); not yet classified' },
   { state: 'Studio home, Meet chip', line: /^ *FAIL (studiohome: the (Meet chip or the hero|sheet) is not on the page|\.st-(drawer|d-keys|d-rooms): not found)/, bug: 'open item: the Meet page variants no longer show the Lights chip or the sheet (the chip is only in the Work lanes header, src/agents/Lanes.tsx:198; the call=teams knob shows no call); not yet classified' },
-  { state: 'YouTube search, sort menu open', line: /^ *FAIL \.yt-lib: width \d+ <= \d+, height \d+ <= \d+, /, bug: 'open item: the open sort menu makes the YouTube library scroll 356 px in 295 (the library box is not meant to scroll); not yet classified' },
-  { state: 'Studio lights, On Air', line: /^ *FAIL on air v2: \.oa2-checklist holds SPAN/, bug: 'open item: with one key light set up and silent the On Air checklist text runs 4.9 px past its box (x 2544.9, box ends 2540); only seen when the On Air rules run on this variant, not yet classified' },
+  { state: 'YouTube search, sort menu open', line: /^ *FAIL \.yt-lib: width \d+ <= \d+, height 356 <= \d+, /, bug: 'open item: the open sort menu makes the YouTube library scroll 356 px in 295 (the library box is not meant to scroll); not yet classified' },
+  { state: 'Studio lights, On Air', line: /^ *FAIL on air v2: \.oa2-checklist holds SPAN at x \d+ to 2544\.9, y [\d.]+ to [\d.]+, outside its box/, bug: 'open item: with one key light set up and silent the On Air checklist text runs 4.9 px past its box (x 2544.9, box ends 2540); only seen when the On Air rules run on this variant, not yet classified' },
   { state: 'Sun ridge,', line: /^ *FAIL sun ridge: a click at \d+,\d+ on the waiting sun reaches/, bug: 'PR 316 (one hover; 3 failures before it, 18 after): a click on the waiting sun reaches a plain div in main instead of the video frame; the covering element is not found yet' },
   { state: 'Watch polish, whole sky, autoplay refused', line: /^ *FAIL pointer at \.w-sky \.w-frame \(\d+, \d+\) reaches main tall/, bug: 'PR 316: the take frame no longer gets the pointer, it reaches main itself (same cause as the waiting sun above)' },
 ];
 let currentState = '';
 let unknownFails = 0;
+let failed = false;
 const knownHit = new Set();
 const writeLine = console.log.bind(console);
+/** Failures raised through fail() in the current state, and FAIL lines printed in it (known or not). */
+let stateFails = 0;
+let stateFailLines = 0;
+/** A state that failed without printing a single FAIL line is an unknown failure: nothing says which bug it is. */
+const closeState = () => {
+  if (stateFails > 0 && stateFailLines === 0) unknownFails += 1;
+  stateFails = 0;
+  stateFailLines = 0;
+};
+const fail = () => { failed = true; stateFails += 1; };
 console.log = (...parts) => {
   const text = parts.length === 1 && typeof parts[0] === 'string' ? parts[0] : '';
-  if (text && !text.startsWith(' ')) currentState = text;
+  // A state line is "<name> (<query>):" at the start of a line; other unindented lines (summaries, notes) are not states.
+  if (/^\S.*\):$/.test(text)) { closeState(); currentState = text; }
   if (/^ *FAIL /.test(text)) {
+    stateFailLines += 1;
     const known = KNOWN_FAILURES.find((k) => currentState.startsWith(k.state) && k.line.test(text));
     if (known) {
       knownHit.add(known);
@@ -979,10 +996,11 @@ try {
       const box = e.getBoundingClientRect();
       // The Zen controls column holds its hint. Dream covers the whole stage (its text also drifts up to 15 px each way), so it is held by itself, not the band.
       const holder = e.closest('.dream') || e.closest('.zen-bl') || e.parentElement.closest('.centre') || band || document.documentElement;
-      // A plain line of text with a fixed line height smaller than its font's own content box (Inter's is 1.21 em) reports a scroll height up to a quarter em taller than the box on newer Chromium builds, though nothing is cut: with visible overflow and no child elements, that overhang alone is not an overflow.
+      // A plain line of text with a fixed line height smaller than its font's own content box (Inter's is 1.21 em) reports a scroll height up to a quarter em taller than the box on newer Chromium builds, though nothing is cut: in an Inter box with a fixed line height under 1.21 em, visible overflow and no child elements, that overhang alone is not an overflow (any other box keeps its scroll height).
       const cs0 = getComputedStyle(e);
       const overhang = e.scrollHeight - e.clientHeight;
-      const glyphOnly = cs0.overflowY === 'visible' && e.children.length === 0 && overhang > 0 && overhang <= 0.25 * parseFloat(cs0.fontSize);
+      const fs0 = parseFloat(cs0.fontSize);
+      const glyphOnly = /Inter/.test(cs0.fontFamily) && cs0.lineHeight !== 'normal' && parseFloat(cs0.lineHeight) < 1.21 * fs0 && cs0.overflowY === 'visible' && e.children.length === 0 && overhang > 0 && overhang <= 0.25 * fs0;
       return { sw: e.scrollWidth, cw: e.clientWidth, sh: glyphOnly ? e.clientHeight : e.scrollHeight, ch: e.clientHeight,
         inHolder: out(box, holder.getBoundingClientRect()), inView: out(box, view) };
     }) }));
@@ -1527,8 +1545,15 @@ try {
       if (player && player.bottom > 300.5) listen.push('listen: the player ends at y ' + Math.round(player.bottom) + ', over the lines (300 at most)');
       if (player && card && player.right > card.left - 0.5) listen.push('listen: the player reaches x ' + Math.round(player.right) + ', into the Spotify card at ' + Math.round(card.left));
       if (!card) listen.push('listen: the Spotify card is not there');
-      // A card that has grown (the pointer or a keyboard focus landing on it opens it a moment after a variant's own steps, so whether a resting variant is measured before or after is not fixed) is held to the tall box: x 1707, ending at y 648, or 530 while the work layer lifts the row. The area rules hold its exact size.
-      else if (card.left < (cardEl.dataset.tall === 'true' ? 1706.5 : 1739.5) || card.right > 2540.5 || card.bottom > (cardEl.dataset.tall === 'true' ? (document.querySelector('.main')?.hasAttribute('data-work-shown') ? 530.5 : 648.5) : 510.5) || card.top < 0) listen.push('listen: the Spotify card is at x ' + Math.round(card.left) + ' to ' + Math.round(card.right) + ', y ' + Math.round(card.top) + ' to ' + Math.round(card.bottom) + ' (x 1740 to 2540, y 0 to 510)');
+      // A variant that grows the card (a grow step) or asks for the work layer is held to the tall box: x 1707, ending at y 648, or 530 while the work layer lifts the row. The area rules hold its exact size.
+      else {
+        // The tall box is allowed only to a variant that grows the card itself (a grow step) or says the layer is up or may be (layer=up or layer=either); a resting variant is held to the small box even if the card happened to be grown when it was read.
+        const asked = (new URLSearchParams(location.search).get('click') ?? '').split(' >> ').includes('grow') || /[?&]layer=(up|either)(&|$)/.test(location.search);
+        const tallBox = cardEl.dataset.tall === 'true' && asked;
+        const maxX0 = tallBox ? 1706.5 : 1739.5;
+        const maxB = tallBox ? (document.querySelector('.main')?.hasAttribute('data-work-shown') ? 530.5 : 648.5) : 510.5;
+        if (card.left < maxX0 || card.right > 2540.5 || card.bottom > maxB || card.top < 0) listen.push('listen: the Spotify card is at x ' + Math.round(card.left) + ' to ' + Math.round(card.right) + ', y ' + Math.round(card.top) + ' to ' + Math.round(card.bottom) + ' (x ' + Math.round(maxX0 + 0.5) + ' to 2540, y 0 to ' + Math.round(maxB - 0.5) + ')');
+      }
       const next = document.querySelector('.u-next')?.getBoundingClientRect();
       const wingBox = document.querySelector('.u-wing')?.getBoundingClientRect();
       const rows = [...document.querySelectorAll('.u-next-row')].map((e) => e.getBoundingClientRect());
@@ -1984,7 +2009,6 @@ try {
   const page = join(out, 'work.html');
   writeFileSync(page, html.replace('</body>', `${broken}${areaMeasurementScript}${measure}</body>`));
 
-  let failed = false;
   if (overflow) console.log(`deliberate overflow: ${overflow} (${OVERFLOWS[overflow] || BREAK_QUERIES[overflow]})`);
   // A deliberate break runs on the first state, or for the picker on the state that opens it.
   const BREAK_ON = {
@@ -2117,26 +2141,29 @@ try {
     }
     const text = m[1].replaceAll('&quot;', '"').replaceAll('&amp;', '&');
     const { res, page: doc, overlaps, cut, gaps, cardEnds, wattCard, header, deck, deckRoom, nowH, edges, hits, grid, lw, sig, toolsOut, copyOut, meetOut, strip, opened, watchPolish, skyLayers, thCheck, tileText, listen, lines, watchBehaviour, wattDriveIn, areaResults } = JSON.parse(text);
+    for (const [key, r] of Object.entries(areaResults ?? {})) {
+      if (r && typeof r === 'object' && 'measurementError' in r) { console.log(`  FAIL ${key}: the measurement threw: ${r.measurementError}`); fail(); }
+    }
     // watt drive-in
     if (wattDriveIn) {
       for (const f of wattDriveIn.fails) console.log(`  FAIL ${f}`);
-      if (wattDriveIn.fails.length) failed = true;
+      if (wattDriveIn.fails.length) fail();
       else if (wattDriveIn.waiting) console.log('  ok   watt drive-in: the marquee is waiting, Watt is not at the show');
       else console.log(`  ok   watt drive-in: seated at ${wattDriveIn.at}, on his ground, 30 px or more left of the screen, 22 px or more from every control at his height, near his seat, 24 px or less into the tower`);
     }
     for (const area of activeAreas) {
       for (const rule of Object.values(area.fit?.rules ?? {})) {
-        if (rule(v, areaResults, console.log)) failed = true;
+        if (rule(v, areaResults, console.log)) fail();
       }
     }
     // watch behaviour
     for (const f of watchBehaviour) console.log(`  FAIL ${f}`);
-    if (watchBehaviour.length) failed = true;
+    if (watchBehaviour.length) fail();
     else if (v.wb === 'rest') console.log("  ok   watch behaviour: the controls are faded and take no pointer, the dimmed title clear of the video's box");
     else if (v.wb === 'away') console.log("  ok   watch behaviour: out of sight the stage is transparent and takes no pointer; the rail's mark sits in its button");
     // sky layers
     for (const f of skyLayers.fails) console.log(`  FAIL ${f}`);
-    if (skyLayers.fails.length) failed = true;
+    if (skyLayers.fails.length) fail();
     else if (v.sky === 'front') console.log('  ok   sky layers: the front canvas covers the stage over the video, the land opaque, the sky clear');
     else if (v.sky === 'moonif') console.log(`  ok   sky layers: ${skyLayers.moon ? `the moon at ${skyLayers.moon} is 40 px clear of the block, the cards and the clock` : 'no moon in this layout'}`);
     else if (v.sky === 'moon') console.log(`  ok   sky layers: the moon at ${skyLayers.moon} is 40 px clear of every card, the player and the clock`);
@@ -2144,25 +2171,25 @@ try {
     // every player state the low place under the player, on Watch with nothing on its first place. Not with a
     // break that moves the moon on purpose (that one must fail on its distance alone).
     if (v.moonAt && !(overflow && BREAK_QUERIES[overflow]) && skyLayers.moon !== v.moonAt) {
-      failed = true;
+      fail();
       console.log(`  FAIL sky layers: the moon is at ${skyLayers.moon || 'no place'}, expected ${v.moonAt} (the first place clear of this layout)`);
     }
     if (v.sky === 'moon') skyMoons.push({ name: v.name, moon: skyLayers.moon });
     // watch polish
     if (watchPolish) {
       for (const f of watchPolish.fails) console.log(`  FAIL ${f}`);
-      if (watchPolish.fails.length) failed = true;
+      if (watchPolish.fails.length) fail();
       else console.log('  ok   watch polish: the control row is one line clear of the list, nothing over the video\'s box');
       if (v.name.startsWith('Watch polish') || v.name.startsWith('Watch matrix')) switchBoxes.push({ name: v.name, box: watchPolish.sw });
     }
     // look tiles
     for (const f of tileText) console.log(`  FAIL ${f}`);
-    if (tileText.length) failed = true;
+    if (tileText.length) fail();
     else if (v.checks.includes('.w-tile')) console.log('  ok   watch polish: every look tile keeps 16 px text');
     // tower and hologram
     if (thCheck) {
       for (const f of thCheck.fails) console.log(`  FAIL ${f}`);
-      if (thCheck.fails.length) failed = true;
+      if (thCheck.fails.length) fail();
       else if (thCheck.mode === 'tower') console.log('  ok   tower and hologram: nothing of the frame paints over the video box 1244,54,672,378; the frame is clear of the left block and the list card; the marquee says the state');
       else console.log('  ok   tower and hologram: the tilted pane is whole, inside the stage, clear of the card, blended over its plate, with no front layer');
     }
@@ -2207,27 +2234,27 @@ try {
       };
       const beam = compare(asDrawn, bare);
       const mix = compare(asDrawn, noPlate);
-      // Hiding the other layers changes how the browser rounds the blend at the pane's edge: a few pixels (2 on this machine, 2 levels off at most) differ in a clean build. A layer that paints over the picture moves hundreds of pixels and more than 3 levels, so only a speck of at most 16 pixels, none more than 3 levels off, is let through.
-      if (beam.n <= 0 || beam.over > 16 || beam.worst > 3) {
-        failed = true;
+      // Hiding the other layers changes how the browser rounds the blend at the pane's edge: a few pixels (2 on this machine, 2 levels off at most) differ in a clean build. A layer that paints over the picture moves hundreds of pixels and more than 3 levels, so only the edge pixels (at most 4, none more than 2 levels off) are let through.
+      if (beam.n <= 0 || beam.over > 4 || beam.worst > 2) {
+        fail();
         console.log(`  FAIL tower and hologram: pixel proof: something paints over the Hologram picture (${beam.n <= 0 ? 'the screenshots differ in size' : `${beam.over} of ${beam.n} pixels inside the tilted pane change by more than 1 level when everything but the plate and the stage is hidden, within ${beam.box.join(',')}, the most ${beam.worst}`})`);
       } else console.log(`  ok   tower and hologram: pixel proof: nothing paints over the picture (${beam.n} pixels inside the tilted pane are the same with only the plate and the stage drawn)`);
       if (mix.n <= 0 || mix.over < mix.n / 20) {
-        failed = true;
+        fail();
         console.log(`  FAIL tower and hologram: pixel proof: the picture does not mix with the plate (${mix.over} of ${mix.n} pixels inside the tilted pane change by more than 1 level when the plate is hidden, the mean ${mix.mean.toFixed(2)})`);
       } else console.log(`  ok   tower and hologram: pixel proof: the picture mixes with the plate (${mix.over} of ${mix.n} pixels change when the plate is hidden, the mean ${mix.mean.toFixed(1)} levels)`);
       if (process.env.WALL_PROOF_LOG) console.log(`  proof numbers: beam ${JSON.stringify(beam)} mix ${JSON.stringify(mix)} quad ${JSON.stringify(q)} dy ${dy}`);
     }
     // unwind listen
     for (const l of listen) console.log(`  FAIL ${l}`);
-    if (listen.length) failed = true;
+    if (listen.length) fail();
     else if (v.listen) console.log('  ok   listen: the player ends above y 300 left of the card, the card in x 1740 to 2540 above y 510, Up next in the wing above the horizon, the office lights slot empty');
     // lines controls
     for (const l of lines) console.log(`  FAIL ${l}`);
-    if (lines.length) failed = true;
+    if (lines.length) fail();
     else if (v.linesSheet) console.log('  ok   lines: the sheet fits the stage, every control inside it and 32 px tall, no text under 16 px');
     for (const t of [...toolsOut, ...copyOut, ...meetOut]) console.log(`  FAIL ${t}`);
-    if (toolsOut.length || copyOut.length || meetOut.length) failed = true;
+    if (toolsOut.length || copyOut.length || meetOut.length) fail();
     else if (v.q.includes('tools=')) console.log('  ok   the drawer stays inside x 1700 to 2560 and y 0 to 720, clear of the rail, no cut text without a tooltip');
     else if (v.q.includes('go=meet')) console.log('  ok   Meet: a card reaches the right edge, nothing empty in the upper right');
     // keys style
@@ -2242,7 +2269,7 @@ try {
       const img = readPng(shot);
       if (img.w !== 2560 || img.h < 720) {
         console.log(`  FAIL deck: the edge screenshot is ${img.w} x ${img.h}, smaller than the stage`);
-        failed = true;
+        fail();
       }
       const dy = (img.h - 720) / 2;
       const low = [];
@@ -2268,42 +2295,42 @@ try {
         if (r < 3) low.push(`  FAIL deck: key "${e.label}" edge against the sky ${r} to 1 (at least 3 to 1; the lower is the ${which})`);
       }
       for (const l of low) console.log(l);
-      if (low.length || edges.length === 0) failed = true;
+      if (low.length || edges.length === 0) fail();
       if (edges.length === 0) console.log('  FAIL deck: no key edge could be measured');
       else if (!low.length) console.log(`  ok   every key edge against the sky at least 3 to 1, top and side (lowest ${lowest}, ${edges.length} keys)`);
     }
     for (const d of sig) console.log(`  FAIL ${d}`);
-    if (sig.length) failed = true;
+    if (sig.length) fail();
     else if (/[?&](leave|rec)=/.test(v.q)) console.log('  ok   leave banner and recording chip: inside their band, one line, covering no text or control');
     for (const d of lw) console.log(`  FAIL ${d}`);
-    if (lw.length) failed = true;
+    if (lw.length) fail();
     else if (v.q.includes('hz=work')) console.log('  ok   left wing: three music buttons on one line, TEMP header centred, round controls round');
     if (v.strip) {
       for (const f of strip) console.log(`  FAIL ${f}`);
       const wantOpen = v.click?.includes('rib-handle') ? opened.drawer : v.click?.includes('ag-line') ? opened.panel && opened.rows > 0 : true;
       if (!wantOpen) console.log(`  FAIL strip: the overlay did not open (${JSON.stringify(opened)})`);
-      if (strip.length || !wantOpen) failed = true;
+      if (strip.length || !wantOpen) fail();
       else console.log('  ok   strip 104 px, no strip labels sharing pixels, folded counts whole, overlays inside the stage below the clock, rows at least 32 px');
     }
     for (const d of deck) console.log(`  FAIL ${d}`);
-    if (deck.length) failed = true;
+    if (deck.length) fail();
     else if (v.q.includes('hz=work')) console.log(`  ok   the deck stays above its floor${deckRoom === null ? '' : ` (${deckRoom} px of room)`}, every key label inside its tile, the Now heading whole`);
     for (const h of header) console.log(`  FAIL ${h}`);
-    if (header.length) failed = true;
+    if (header.length) fail();
     else if (v.q.includes('hz=work')) console.log('  ok   the agents header is one line');
     for (const h of hits) {
       const ok = h.found && h.ok;
-      if (!ok) failed = true;
+      if (!ok) fail();
       console.log(h.found ? `  ${ok ? 'ok  ' : 'FAIL'} pointer at ${h.sel} (${h.x}, ${h.y}) reaches ${ok ? 'it' : h.got}` : `  FAIL pointer at ${h.sel}: not found`);
     }
     if (v.noHit) {
-      if (grid.length) failed = true;
+      if (grid.length) fail();
       console.log(`  ${grid.length ? 'FAIL' : 'ok  '} no point of the sky or the floor lands on ${v.noHit}${grid.length ? `: ${grid.slice(0, 6).join(' ')}${grid.length > 6 ? ` and ${grid.length - 6} more` : ''}` : ''}`);
     }
     if (v.card) {
       const c = wattCard;
       const okCard = c !== null && c.buttons >= 11 && Math.min(...c.heights) >= 34 - SLACK && c.outside === 0 && c.covered.length === 0 && c.minFont >= 16;
-      if (!okCard) failed = true;
+      if (!okCard) fail();
       console.log(
         c === null
           ? '  FAIL Watt menu did not open'
@@ -2314,10 +2341,10 @@ try {
     for (const c of cut) console.log(`  FAIL ${c}`);
     for (const g of gaps) console.log(`  FAIL ${g}`);
     for (const c of cardEnds) console.log(`  FAIL ${c}`);
-    if (overlaps.length || cut.length || gaps.length || cardEnds.length) failed = true;
+    if (overlaps.length || cut.length || gaps.length || cardEnds.length) fail();
     else console.log('  ok   no overlapping agent hit boxes or chips, no cut card line beside unused room, stage labels at least 8 px apart, card ends at least 12 px clear of stage tracks');
     const pageOk = doc.vw === 2560 && doc.vh === 720 && doc.sw <= doc.cw && doc.sh <= doc.ch;
-    if (!pageOk) failed = true;
+    if (!pageOk) fail();
     console.log(`  ${pageOk ? 'ok  ' : 'FAIL'} page: viewport ${doc.vw} x ${doc.vh} (must be 2560 x 720), scroll ${doc.sw} x ${doc.sh} <= ${doc.cw} x ${doc.ch}`);
     const sides = (o) => {
       const over = Object.entries(o).filter(([, px]) => px > SLACK);
@@ -2325,13 +2352,13 @@ try {
     };
     if (v.maxRows !== undefined) {
       const rowsOk = doc.rows >= 1 && doc.rows <= v.maxRows;
-      if (!rowsOk) failed = true;
+      if (!rowsOk) fail();
       console.log(`  ${rowsOk ? 'ok  ' : 'FAIL'} .u-chip rows: ${doc.rows} (1 to ${v.maxRows})`);
     }
     for (const { sel, items } of res) {
       if (items.length === 0) {
         console.log(`  FAIL ${sel}: not found`);
-        failed = true;
+        fail();
         continue;
       }
       items.forEach((r, i) => {
@@ -2339,7 +2366,7 @@ try {
         // A pop-out scrolls inside itself by design; its rows must not overflow.
         const scrollOk = v.viewportOnly && sel.endsWith('.sound-pop') ? r.sw <= r.cw : r.sw <= r.cw && r.sh <= r.ch;
         const ok = scrollOk && (v.viewportOnly || inside(r.inHolder)) && inside(r.inView);
-        if (!ok) failed = true;
+        if (!ok) fail();
         console.log(
           `  ${ok ? 'ok  ' : 'FAIL'} ${sel}${items.length > 1 ? ` [${i}]` : ''}: width ${r.sw} <= ${r.cw}, height ${r.sh} <= ${r.ch}, container ${sides(r.inHolder)}, viewport ${sides(r.inView)}`,
         );
@@ -2350,11 +2377,11 @@ try {
   if (nowHeights.some((n) => n.page === 'keys') && (nowHeights.some((n) => n.page === 'foryou') || nowHeights.some((n) => n.page === 'recording'))) {
     const hs = [...new Set(nowHeights.map((n) => n.h))];
     if (hs.length > 1) {
-      failed = true;
+      fail();
       for (const n of nowHeights) console.log(`  FAIL deck: the Now row is ${Math.round(n.h)} px tall on ${n.page === 'recording' ? 'Recording' : n.name} (every page must match)`);
     } else if (Math.abs(hs[0] - 108) > 0.5) {
       // deck and drawer fixes: the row is its 32 px heading, 6 px, and one 70 px tile row (108; it was 98 with 60 px tiles).
-      failed = true;
+      fail();
       console.log(`  FAIL deck: the Now row is ${hs[0]} px tall on every page, expected 108 (a 32 px heading, 6 px, a 70 px tile row)`);
     } else console.log(`keys style: the Now row is ${hs[0]} px tall on every key page, on For you and on Recording`);
   }
@@ -2407,7 +2434,7 @@ try {
       const all = a.w * a.h;
       const summary = `${diff} of ${all} pixels differ at all, ${over2} by more than 2 levels${box ? ` (within ${box.join(',')})` : ''}, the most ${worst}`;
       if (diff < 0 || worst > 8 || over2 > all / 1000) {
-        failed = true;
+        fail();
         console.log(`  FAIL sky layers: the pixel proof at ${when}: ${diff < 0 ? 'the two screenshots differ in size' : `${over2} pixels differ by more than 2 levels: ${summary}`}, one canvas against the front layer with nothing between`);
       } else console.log(`sky layers: the pixel proof at ${when}: ${summary}; one canvas against the front layer with nothing between`);
     }
@@ -2440,7 +2467,7 @@ try {
         return Math.max(Math.abs(a.px[i] - b.px[i]), Math.abs(a.px[i + 1] - b.px[i + 1]), Math.abs(a.px[i + 2] - b.px[i + 2]));
       };
       if (a.w !== b.w || a.h !== b.h || a.w !== 2560) {
-        failed = true;
+        fail();
         console.log(`  FAIL whole sky soft edge: the pixel proof at ${when}: the two screenshots differ in size`);
         continue;
       }
@@ -2448,7 +2475,7 @@ try {
       const side = diffAt(bx.x + 2, bx.y + 250);
       const middle = diffAt(bx.x + bx.w / 2, bx.y + 150);
       if (corner > 4 || side > 4 || middle < 20) {
-        failed = true;
+        fail();
         console.log(`  FAIL whole sky soft edge: the pixel proof at ${when}: the corner differs from the sky by ${corner} levels and the left edge by ${side} (each must be 4 or less), the middle by ${middle} (it must be 20 or more)`);
       } else console.log(`whole sky soft edge: the pixel proof at ${when}: the corner is the sky (${corner} levels off), the left edge too (${side}), the middle is the picture (${middle} levels from the sky)`);
     }
@@ -2458,13 +2485,14 @@ try {
     const first = key(switchBoxes[0].box);
     const off = switchBoxes.filter((s) => key(s.box) !== first);
     if (off.length) {
-      failed = true;
+      fail();
       for (const s of off) console.log(`  FAIL watch polish: the left block is at ${key(s.box)} on ${s.name}, not ${first} as on ${switchBoxes[0].name}`);
     } else console.log(`watch polish: the left block is at ${first} in all ${switchBoxes.length} states`);
   }
   const stale = KNOWN_FAILURES.filter((k) => !k.sometimes && !knownHit.has(k));
   if (!flag('area') && !overflow && stale.length) console.log(`  FAIL known failure no longer seen, remove it from KNOWN_FAILURES: ${stale.map((k) => k.state).join('; ')}`);
-  process.exit((failed && (unknownFails > 0 || knownHit.size === 0)) || (!flag('area') && !overflow && stale.length) ? 1 : 0);
+  closeState();
+  process.exit(unknownFails > 0 || (!flag('area') && !overflow && stale.length) ? 1 : 0);
 } catch (e) {
   if (!(e instanceof ChromeRunError)) throw e;
   console.error(`  FAIL ${e.message}`);

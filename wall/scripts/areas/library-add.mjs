@@ -174,8 +174,8 @@ function measureLibraryAdd() {
 const day24 = (extra) => `?hz=unwind&at=${day}&long=1&agents=3&${extra}`;
 const variant = (name, extra, click, mode, want) => ({
   name: `YouTube add, ${name}`,
-  // A tall variant brings the work layer up with the pointer, and an open menu may take it down again (src/unwind/work/useWorkLayer.ts), so the run does not say which.
-  q: day24(`${extra}&addcheck=${mode}${want ? `&addwant=${want}` : ''}${name.startsWith('tall') ? '&layer=either' : ''}`),
+  // A tall variant brings the work layer up with the pointer, and an open menu may take it down again (src/unwind/work/useWorkLayer.ts), so the run does not say which. A variant with a menu open may also have the card grown by the pointer that opened it when it is read; it says so too, which is what lets the fit check hold it to the tall box.
+  q: day24(`${extra}&addcheck=${mode}${want ? `&addwant=${want}` : ''}${name.startsWith('tall') || mode === 'open' ? '&layer=either' : ''}`),
   checks: ['.sp-card', '.yt-lib'],
   click,
   ...(name.startsWith('tall') ? {} : { listen: true }),
