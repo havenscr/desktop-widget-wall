@@ -497,8 +497,8 @@ function WatchList({ empty, draft, setDraft, host, own }: { empty: boolean; draf
                       <KindIcon kind="own" />
                     </span>
                     <FitTitle top={20} boxH={40} lh={1.1} className="w-label">
-                    {item.label}
-                  </FitTitle>
+                      {item.label}
+                    </FitTitle>
                     {here ? (
                       <span className="own-pill" title={`Video ${own!.place} of ${own!.count}`}>
                         {own!.place} of {own!.count}
