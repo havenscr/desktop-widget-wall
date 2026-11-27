@@ -25,7 +25,7 @@ import { knob } from './long';
  *   ?meetnow=1                         the one meeting a call belongs to, 10:00 to 11:00 (devMocks/meet.ts); ?meetlong=1 gives it a 120 character title
  *   ?callbrowserav=1                   a browser holds the camera and microphone with no call (devMocks/signals.ts)
  *   ?recorder=open|none|unknown        the Camtasia Recorder read (default open)
- *   ?whylong=1                         the new frame's reason line is 90 characters long
+ *   ?whylong=1                         the new frame's reason is longer than any real one
  *
  * Open file turns `missing` into the starter's three parts, as the app does.
  */

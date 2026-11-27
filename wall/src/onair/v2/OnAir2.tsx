@@ -30,8 +30,8 @@ function writeHeld(held: PageMode | null): void {
   }
 }
 
-/** A 90 character reason, for the one line rule (`?whylong=1`, development review only). */
-const WHY_LONG = 'the wall picked this page because a recorder, a broadcast and a call are all on at the same time';
+/** A reason longer than any the wall gives, for the never cut rule (`?whylong=1`, development review only). */
+const WHY_LONG = 'the wall cannot read the camera and the mic';
 
 /**
  * On Air: the modes row on every page, and a page for Live, Recording, Presenting and nothing on air.

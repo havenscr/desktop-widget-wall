@@ -102,14 +102,14 @@
 .oa2-auto:hover {
   border-color: rgba(53, 230, 234, 0.55);
 }
+/* The reason is never cut: it wraps onto a second line inside the 40 px row. */
 .oa2-why {
   flex: 1;
   min-width: 0;
-  font: 500 17px/22px var(--body);
+  font: 500 16px/18px var(--body);
   color: var(--dim);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  white-space: normal;
+  overflow-wrap: break-word;
 }
 
 /* ---- block headings ---- */

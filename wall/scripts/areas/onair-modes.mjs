@@ -85,13 +85,14 @@ function measureOnAir2() {
       }
     }
   }
-  // The reason is one line and inside the modes box.
+  // The reason is never cut: at most two lines, nothing hidden, and inside the modes box.
   const why = root.querySelector('.oa2-why');
   const modes = root.querySelector('.oa2-modes');
   if (why && modes) {
     const wb = why.getBoundingClientRect();
     const mb = modes.getBoundingClientRect();
-    if (Math.abs(wb.height - 22) > 1) fails.push('on air v2: the reason is ' + r1(wb.height) + ' px tall (one line is 22)');
+    if (wb.height > 37) fails.push('on air v2: the reason is ' + r1(wb.height) + ' px tall (two lines are 36)');
+    if (why.scrollWidth > why.clientWidth + 1 || why.scrollHeight > why.clientHeight + 1) fails.push('on air v2: the reason is cut');
     if (wb.left < mb.left - 0.5 || wb.right > mb.right + 0.5 || wb.top < mb.top - 0.5 || wb.bottom > mb.bottom + 0.5) fails.push('on air v2: the reason is outside the modes row');
   }
   // Every key tile at least 76 by 76.
@@ -189,12 +190,12 @@ export default {
       onair2: (variantEntry, results, emit) => {
         for (const failure of results.onair2) emit(`  FAIL ${failure}`);
         if (results.onair2.length) return true;
-        if (variantEntry.name.startsWith('On Air v2,')) emit('  ok   on air v2: every block in its planned box inside y 20 to 510, the empty boxes empty, the reason on one line, key tiles at least 76 px, text at least 16 px, no note cut without "+N more"');
+        if (variantEntry.name.startsWith('On Air v2,')) emit('  ok   on air v2: every block in its planned box inside y 20 to 510, the empty boxes empty, the reason in full on at most two lines, key tiles at least 76 px, text at least 16 px, no note cut without "+N more"');
         return false;
       },
     },
     breaks: {
-      'onair2-why': { css: '.oa2-why { white-space: normal !important; }', query: '&whylong=1', expect: /^ *FAIL on air v2: the reason is [\d.]+ px tall/m, appliesTo: isNamed('Recording running') },
+      'onair2-why': { css: '.oa2-why { white-space: nowrap !important; overflow: hidden !important; }', query: '&whylong=1', expect: /^ *FAIL on air v2: the reason is cut/m, appliesTo: isNamed('Recording running') },
       'onair2-keys': { css: '.oa2 .key-tile { height: 30px !important; min-height: 0 !important; }', expect: /^ *FAIL on air v2: key tile ".*" is \d+ x \d+ px/m, appliesTo: isNamed('Recording running') },
       'onair2-box': { css: '.oa2-outline { width: 1100px !important; }', expect: /^ *FAIL on air v2: \.oa2-outline is at/m, appliesTo: isNamed('Recording running') },
       'onair2-empty': { css: '.oa2-empty-prompter::after { content: "x"; }', expect: /^ *FAIL on air v2: the empty prompter box draws/m, appliesTo: isNamed('Presenting matched') },
