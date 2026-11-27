@@ -467,6 +467,64 @@
   height: 506px;
 }
 
+/* Inside the cut card (506 px, the opened playlist's area is 281 px high on Spotify and 229 on YouTube Music): the head column
+   of an opened playlist was laid out for 624, with a 200 px cover (Spotify) or a 140 px picture plus a column of buttons
+   (YouTube), so Play, Shuffle, Refresh and Open in YouTube ended below the card foot. While the layer is shown the Spotify
+   cover shrinks to 72 px (eased with the card). The YouTube head becomes a grid: back and Refresh and Open in YouTube in
+   the top row, the title and facts under it, Play, Shuffle and Pin last; its picture steps aside. The grid is a hard change
+   of layout, so useCompactHead sets data-compact only after the head has faded out (120 ms), and it fades back in (130 ms),
+   on the way in and on the way out. The track lists keep scrolling in their own area. */
+.sp-songs.tall .sp-shead .sp-cover {
+  transition: width 250ms ease, height 250ms ease;
+}
+.main[data-place='unwind'][data-work-shown] .sp-songs.tall:not(.yt-songs) .sp-shead .sp-cover {
+  width: 72px !important;
+  height: 72px !important;
+}
+.yt-songs.tall .sp-shead {
+  transition: opacity 130ms ease;
+}
+.yt-songs.tall .sp-shead[data-fading] {
+  opacity: 0;
+  transition-duration: 120ms;
+}
+@media (prefers-reduced-motion: reduce) {
+  .sp-songs.tall .sp-shead .sp-cover,
+  .yt-songs.tall .sp-shead {
+    transition: none;
+  }
+}
+.yt-songs.tall .sp-shead[data-compact] {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-content: start;
+  align-items: center;
+  row-gap: 10px;
+}
+.yt-songs.tall .sp-shead[data-compact] .sp-backrow {
+  grid-column: 1;
+  grid-row: 1;
+  margin-bottom: 0;
+}
+.yt-songs.tall .sp-shead[data-compact] .yt-shactions {
+  display: contents;
+}
+.yt-songs.tall .sp-shead[data-compact] .yt-refreshrow {
+  grid-column: 2;
+  grid-row: 1;
+}
+.yt-songs.tall .sp-shead[data-compact] .yt-songthumb {
+  display: none;
+}
+.yt-songs.tall .sp-shead[data-compact] .sp-text {
+  grid-column: 1 / -1;
+  grid-row: 2;
+}
+.yt-songs.tall .sp-shead[data-compact] .yt-playbtns {
+  grid-column: 1 / -1;
+  grid-row: 3;
+}
+
 /* The frame is its own stacking layer on some Unwind looks (isolation), which would put the panel under the stage-wide scrim.
    While the layer's panel or drawer is open the frame rises over the scrim, and the layer's own veil (the same dim and blur,
    over the whole frame, under the panel) does for the frame's content what the scrim does for the rest. */

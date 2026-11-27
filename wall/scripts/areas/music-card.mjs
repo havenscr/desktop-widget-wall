@@ -2,6 +2,8 @@
 // states, fit variants, one browser measurement with its rule, and the deliberate breaks. Moved here from the two big
 // review scripts; nothing is registered there for it.
 
+import { askLayer } from '../lib/layer-ask.mjs';
+
 /**
  * Runs in the page (it references nothing outside its own body). The tall view: 833 by 624 at wall 1707, 24, above the bottom
  * row, no text under 16 px, every control 32 px or more, nothing cut or out of the card, Play and Shuffle inside their column.
@@ -18,11 +20,15 @@ function measureTallMusic() {
   const cardEl = document.querySelector('.sp-card');
   const card = cardEl?.getBoundingClientRect();
   const tall = cardEl?.getAttribute('data-tall') === 'true';
+  const layerUp = !!document.querySelector('.main[data-work-shown]');
+  const layerAsked = /[?&]layer=up(&|$)/.test(location.search);
+  if (layerUp && !layerAsked) fails.push('the work layer is up but this variant did not ask for it');
+  if (!layerUp && layerAsked) fails.push('this variant asked for the work layer and it is not up');
   if (!card) return { card: false, tall: false, fails };
   if (tall) {
     // The tall view: the right third, 833 by 624 at wall 1707, 24, ending above the bottom row (the Hide screen control and the office lights slot).
     const near = (a, b) => Math.abs(a - b) <= 1.5;
-    if (!near(card.left, 1707) || !near(card.top, 24) || !near(card.width, 833) || !near(card.height, 624)) fails.push('listen tall: the card is at x ' + Math.round(card.left) + ' to ' + Math.round(card.right) + ', y ' + Math.round(card.top) + ' to ' + Math.round(card.bottom) + ' (833 by 624 at 1707, 24)');
+    if (!near(card.left, 1707) || !near(card.top, 24) || !near(card.width, 833) || !near(card.height, (document.querySelector('.main[data-work-shown]') ? 506 : 624))) fails.push('listen tall: the card is at x ' + Math.round(card.left) + ' to ' + Math.round(card.right) + ', y ' + Math.round(card.top) + ' to ' + Math.round(card.bottom) + ' (833 by 624 at 1707, 24; 506 with the work layer shown)');
     if (card.bottom > 648.5) fails.push('listen tall: the card ends at y ' + Math.round(card.bottom) + ', into the bottom row (648 at most)');
     if (card.left < 0 || card.right > 2540.5 || card.top < 0 || card.bottom > 720) fails.push('listen tall: the card leaves the wall: x ' + Math.round(card.left) + ' to ' + Math.round(card.right) + ', y ' + Math.round(card.top) + ' to ' + Math.round(card.bottom));
     for (const [name, el] of [['Hide screen', document.querySelector('.so-layer')], ['the office lights slot', document.querySelector('[data-slot="office-lights"]')]]) {
@@ -140,7 +146,7 @@ export default {
     ],
   },
   fit: {
-    variants: [
+    variants: askLayer([
     { name: TALL_OPEN, q: fitQuery('&audio=demo'), checks: ['.sp-card'], click: 'grow' },
     tallVariant('heavy library', '&spotify=heavy', 'grow'),
     tallVariant('a playlist opened', '&audio=demo', 'grow >> .sp-tile'),
@@ -169,7 +175,7 @@ export default {
     { name: 'Listen, the tall view, a playlist that is not his', q: fitQuery('&audio=demo&spotify=notyours'), checks: ['.sp-card'], click: 'grow >> .sp-tile' },
     { name: 'Listen, the resting card, a playlist that is not his', q: fitQuery('&audio=demo&spotify=notyours'), checks: ['.sp-card'], click: '.sp-tile', listen: true },
     { name: 'Sky layers, Listen at night, the tall view open, the moon in open sky', q: fitQuery('&audio=demo', night), checks: ['.sp-card'], click: 'grow', sky: 'moon', moonAt: '760,352,44' },
-    ],
+    ]),
     measurements: { tallMusic: measureTallMusic },
     rules: {
       tallMusic: (variant, results, emit) => {
