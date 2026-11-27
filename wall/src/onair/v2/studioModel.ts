@@ -66,7 +66,12 @@ export interface StudioAnswer {
   why?: StudioWhy;
   /** A count that goes with `why`: studio tabs, scenes or buttons. */
   n?: number;
+  /** For a mute or camera key that went through: the mic or camera after the press ("off" is muted or camera off). Absent from an older add-on. */
+  state?: DeviceState;
 }
+
+/** The mic or camera as the add-on last reported it. */
+export type DeviceState = 'on' | 'off';
 
 /** The longest heading line a studio answer may give, so it fits the heading at 18 px beside Find window. */
 export const STUDIO_FULL_MAX = 44;
@@ -79,6 +84,11 @@ export const STUDIO_FULL_MAX = 44;
 export function studioAnswerText(a: StudioAnswer, action?: 'scene' | 'mute' | 'camera'): { short: string; full: string } {
   const thing = action === 'camera' ? 'camera' : 'mic';
   const n = typeof a.n === 'number' && Number.isInteger(a.n) && a.n >= 0 ? a.n : null;
+  if (a.ok && (a.state === 'on' || a.state === 'off') && (action === 'mute' || action === 'camera')) {
+    const off = a.state === 'off';
+    if (action === 'camera') return off ? { short: 'Camera off', full: 'The camera is off' } : { short: 'Camera on', full: 'The camera is on' };
+    return off ? { short: 'Mic muted', full: 'The mic is muted' } : { short: 'Mic live', full: 'The mic is live' };
+  }
   switch (a.reason) {
     case 'already':
       return action === 'camera' ? { short: 'Already off', full: 'The camera is already off' } : { short: 'Already muted', full: 'The mic is already muted' };

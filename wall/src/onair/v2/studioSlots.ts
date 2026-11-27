@@ -72,6 +72,13 @@ export const DEFAULT_SLOTS: readonly Slot[] = [
   { a: 'golive' },
 ];
 
+/** The face of a toggle key from the last known state: Mute mic or Unmute mic, Camera off or Camera on. Other keys have none. */
+export function toggleLabel(action: ShownAction, state: 'on' | 'off' | null): string | null {
+  if (action === 'mute') return state === 'off' ? 'Unmute mic' : 'Mute mic';
+  if (action === 'camera') return state === 'off' ? 'Camera on' : 'Camera off';
+  return null;
+}
+
 export const slotLabel = (s: { a: ShownAction; l?: string }): string => (SLOT_INFO[s.a].scene && s.l ? s.l : SLOT_INFO[s.a].label);
 
 /** The stored slots, or the defaults when nothing valid is stored. One bad entry throws the whole value away. */
