@@ -461,6 +461,13 @@
   transition: transform 250ms ease;
 }
 
+/* The tall music card runs to wall y 648; while the row is lifted (its top is at y 540) the card ends 10 px above it, so the
+   lifted Office moods row is never under the card. Its height eases with the card's own size transition. */
+.main[data-place='unwind'][data-work-shown] .sp-card.tall,
+.main[data-place='unwind'][data-work-shown] .sp-card.yt.tall {
+  height: 506px;
+}
+
 /* The frame is its own stacking layer on some Unwind looks (isolation), which would put the panel under the stage-wide scrim.
    While the layer's panel or drawer is open the frame rises over the scrim, and the layer's own veil (the same dim and blur,
    over the whole frame, under the panel) does for the frame's content what the scrim does for the rest. */

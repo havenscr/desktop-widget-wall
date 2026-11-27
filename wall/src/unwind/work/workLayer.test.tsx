@@ -26,7 +26,7 @@ const css = (f: string) => (readFileSync(new URL(f, import.meta.url), 'utf8') as
 beforeEach(() => {
   vi.useFakeTimers();
   resetWatch();
-  useWatchRest.setState({ rest: false, cardHeld: false });
+  useWatchRest.setState({ rest: false, cardHeld: false, wall: false });
   useWorkLayerStore.setState({ shown: false, held: false });
   mocks.set('wall2_meet_day', () => ({ accounts: [], events: [] }));
 });
@@ -129,13 +129,10 @@ describe('Unwind work layer', () => {
     await flush(500);
     expect(document.querySelector('.u-work .rib')).toBeNull();
   });
-  it('stays down while the controls rest or the sheet is open', async () => {
+  it('shows with the hover whatever the controls state, and stays down while the sheet is open', async () => {
     useWatchRest.setState({ rest: true });
     render(<Frame place="unwind">x</Frame>);
     fireEvent.pointerEnter(main());
-    await flush();
-    expect(layer().hasAttribute('data-shown')).toBe(false);
-    act(() => useWatchRest.setState({ rest: false }));
     await flush();
     expect(layer().hasAttribute('data-shown')).toBe(true);
     act(() => useWatchStore.setState({ sheet: true }));
@@ -211,19 +208,13 @@ describe('Unwind work layer', () => {
     expect(s).toMatch(/\.w-card \{[^}]*?position: relative;\s*z-index: (\d+)/);
     expect(Number(/\.w-card \{[^}]*?position: relative;\s*z-index: (\d+)/.exec(s)?.[1])).toBeGreaterThan(z);
   });
-  it('held (the keys row menu or picker open) keeps the layer up after the pointer leaves, and not past a rest', async () => {
+  it('held (the keys row menu or picker open) keeps the layer up after the pointer leaves', async () => {
     render(<Frame place="unwind">x</Frame>);
     fireEvent.pointerEnter(main());
     await flush();
     act(() => useWorkLayerStore.setState({ held: true }));
     fireEvent.pointerLeave(main());
     await flush(LAYER_CLOSE_MS + 500);
-    expect(useWorkLayerStore.getState().shown).toBe(true);
-    act(() => useWatchRest.setState({ rest: true }));
-    await flush();
-    expect(useWorkLayerStore.getState().shown).toBe(false);
-    act(() => useWatchRest.setState({ rest: false }));
-    await flush();
     expect(useWorkLayerStore.getState().shown).toBe(true);
     act(() => useWorkLayerStore.setState({ held: false }));
     await flush(LAYER_CLOSE_MS + 500);

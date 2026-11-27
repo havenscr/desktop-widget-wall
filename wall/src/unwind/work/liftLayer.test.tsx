@@ -12,7 +12,7 @@ import { Frame } from '../../screens/Frame';
 import { resetWatch } from '../watch/store';
 import { useWatchRest } from '../watch/rest';
 import { useWorkLayerStore } from './layerStore';
-import { inLayerZone, LAYER_BAND_HYSTERESIS_PX, LAYER_BAND_PX, LAYER_CLOSE_MS, SUPPRESS_SELECTOR } from './useWorkLayer';
+import { LAYER_CLOSE_MS, SUPPRESS_SELECTOR } from './useWorkLayer';
 
 usePacificTime();
 const t = (hm: string) => Date.parse(`2026-11-11T${hm}:00-08:00`);
@@ -29,7 +29,7 @@ const main = () => document.querySelector<HTMLElement>('.main')!;
 const css = (f: string) => (readFileSync(new URL(f, import.meta.url), 'utf8') as string).replace(/\r\n/g, '\n');
 const SHEET = '../../styles/unwind-work.css';
 
-// A 680 tall frame at the top of the page, so the bottom band is y 540 to 680.
+// A 680 tall frame at the top of the page.
 function sizeFrame() {
   Object.defineProperty(main(), 'offsetHeight', { configurable: true, value: 680 });
   main().getBoundingClientRect = () => ({ top: 0, bottom: 680, left: 0, right: 2416, width: 2416, height: 680, x: 0, y: 0, toJSON: () => ({}) });
@@ -39,7 +39,7 @@ beforeEach(() => {
   resetWatch();
   resetAgents();
   resetScrim();
-  useWatchRest.setState({ rest: false, cardHeld: false });
+  useWatchRest.setState({ rest: false, cardHeld: false, wall: false });
   useWorkLayerStore.setState({ shown: false, held: false, panel: false });
   mocks.set('wall2_meet_day', () => ({
     accounts: [{ id: 'work', label: 'Work', state: 'ok' }],
@@ -59,54 +59,62 @@ beforeEach(() => {
 });
 afterEach(() => vi.useRealTimers());
 
-describe('the hover answers only in the bottom band', () => {
-  it('a pointer high on the frame does nothing, the band shows the layer, and leaving the band hides it after 1.5 s', async () => {
+describe('one hover shows everything', () => {
+  it('a pointer anywhere on the wall shows the layer and the lifted row at once, moving changes nothing, and leaving hides it after 1.5 s', async () => {
     render(<Frame place="unwind">x</Frame>);
     await flush();
     sizeFrame();
-    fireEvent.pointerMove(main(), { clientY: 200 });
-    await flush(50);
-    expect(useWorkLayerStore.getState().shown).toBe(false);
-    fireEvent.pointerMove(main(), { clientY: 680 - LAYER_BAND_PX + 5 });
+    fireEvent.pointerEnter(main());
     await flush(50);
     expect(useWorkLayerStore.getState().shown).toBe(true);
-    fireEvent.pointerMove(main(), { clientY: 200 });
+    expect(useWatchRest.getState().wall).toBe(true);
+    expect(main().hasAttribute('data-work-shown')).toBe(true);
+    for (const y of [20, 400, 660, 300]) {
+      fireEvent.pointerMove(main(), { clientY: y });
+      await flush(50);
+      expect(useWorkLayerStore.getState().shown).toBe(true);
+      expect(main().hasAttribute('data-work-shown')).toBe(true);
+    }
+    fireEvent.pointerLeave(main());
+    await flush(LAYER_CLOSE_MS - 100);
+    expect(useWorkLayerStore.getState().shown).toBe(true);
+    expect(useWatchRest.getState().wall).toBe(true);
+    await flush(200);
+    expect(useWorkLayerStore.getState().shown).toBe(false);
+    expect(useWatchRest.getState().wall).toBe(false);
+    expect(main().hasAttribute('data-work-shown')).toBe(false);
+  });
+  it('keyboard focus alone shows the layer, and leaving the keyboard hides it after the hold', async () => {
+    render(
+      <Frame place="unwind">
+        <button className="kb-probe">go</button>
+      </Frame>,
+    );
+    await flush();
+    expect(useWorkLayerStore.getState().shown).toBe(false);
+    const btn = document.querySelector<HTMLButtonElement>('.kb-probe')!;
+    const spy = vi.spyOn(btn, 'matches').mockImplementation((sel: string) => sel === ':focus-visible');
+    act(() => btn.focus());
+    await flush(50);
+    expect(useWorkLayerStore.getState().shown).toBe(true);
+    expect(useWatchRest.getState().wall).toBe(true);
+    act(() => btn.blur());
     await flush(LAYER_CLOSE_MS - 100);
     expect(useWorkLayerStore.getState().shown).toBe(true);
     await flush(200);
     expect(useWorkLayerStore.getState().shown).toBe(false);
+    spy.mockRestore();
   });
-  it('the timeline, its panels and the lifted row count as the zone even above the band', () => {
-    const el = document.createElement('div');
-    el.getBoundingClientRect = () => ({ top: 0, bottom: 680, height: 680 }) as DOMRect;
-    Object.defineProperty(el, 'offsetHeight', { value: 680 });
-    expect(inLayerZone(el, 100, 100, el)).toBe(false);
-    for (const cls of ['u-work', 'day-drawer', 'agents-today', 'u-foot', 'u-office-slot']) {
-      const e = document.createElement('div');
-      e.className = cls;
-      const kid = document.createElement('span');
-      e.append(kid);
-      expect(inLayerZone(el, 100, 100, kid)).toBe(true);
-    }
-  });
-  it('the gap under a lifted box is inside the zone, and the band edge has a little hysteresis', () => {
-    const el = document.createElement('div');
-    el.getBoundingClientRect = () => ({ top: 0, bottom: 680, height: 680 }) as DOMRect;
-    Object.defineProperty(el, 'offsetHeight', { value: 680 });
-    const row = document.createElement('div');
-    row.className = 'u-foot';
-    row.getBoundingClientRect = () => ({ left: 0, right: 470, top: 440, bottom: 558, width: 470, height: 118 }) as DOMRect;
-    el.append(row);
-    // Over the lifted box's column, between its top and the band: held. Beside it, the same height: not.
-    expect(inLayerZone(el, 200, 500, el)).toBe(true);
-    expect(inLayerZone(el, 900, 500, el)).toBe(false);
-    expect(inLayerZone(el, 200, 430, el)).toBe(false);
-    // The band's edge: in at 140 px, and once in it holds a little higher.
-    const edge = 680 - LAYER_BAND_PX;
-    expect(inLayerZone(el, 900, edge - 1, el)).toBe(false);
-    expect(inLayerZone(el, 900, edge, el)).toBe(true);
-    expect(inLayerZone(el, 900, edge - LAYER_BAND_HYSTERESIS_PX + 1, el, true)).toBe(true);
-    expect(inLayerZone(el, 900, edge - LAYER_BAND_HYSTERESIS_PX - 1, el, true)).toBe(false);
+  it('a held panel keeps the layer up after the pointer leaves', async () => {
+    render(<Frame place="unwind">x</Frame>);
+    await flush();
+    fireEvent.pointerEnter(main());
+    await flush(50);
+    act(() => useWorkLayerStore.setState({ panel: true }));
+    fireEvent.pointerLeave(main());
+    await flush(LAYER_CLOSE_MS + 700);
+    expect(useWorkLayerStore.getState().shown).toBe(true);
+    expect(main().hasAttribute('data-work-shown')).toBe(true);
   });
 });
 
@@ -116,7 +124,7 @@ describe('the row lifts with the layer', () => {
     await flush();
     sizeFrame();
     expect(main().hasAttribute('data-work-shown')).toBe(false);
-    fireEvent.pointerMove(main(), { clientY: 650 });
+    fireEvent.pointerEnter(main());
     await flush(50);
     expect(main().hasAttribute('data-work-shown')).toBe(true);
     fireEvent.pointerLeave(main());
@@ -135,6 +143,17 @@ describe('the row lifts with the layer', () => {
   });
 });
 
+describe('the tall music card while the row is lifted', () => {
+  it('ends 10 px above the lifted row (wall y 540), eased by the card own height transition', () => {
+    const s = css(SHEET);
+    const at = s.indexOf(".main[data-place='unwind'][data-work-shown] .sp-card.tall");
+    expect(at).toBeGreaterThan(0);
+    const rule = s.slice(at, s.indexOf('}', at));
+    expect(rule).toContain('height: 506px');
+    expect(css('../../styles/unwind.css')).toMatch(/\.sp-card \{[^}]*transition: left 400ms ease-out, width 400ms ease-out, height 400ms ease-out/);
+  });
+});
+
 describe('the layer own panel and drawer', () => {
   it('only the Day drawer and Agents today are exempt, by class, in the script and in the stylesheet', () => {
     expect(SUPPRESS_SELECTOR).not.toContain('.u-work *');
@@ -149,7 +168,7 @@ describe('the layer own panel and drawer', () => {
     render(<Frame place="unwind">x</Frame>);
     await flush();
     sizeFrame();
-    fireEvent.pointerMove(main(), { clientY: 650 });
+    fireEvent.pointerEnter(main());
     await flush(100);
     expect(useWorkLayerStore.getState().shown).toBe(true);
     for (const own of ['<div class="agents-today" role="dialog"><div role="dialog" class="at-cal"></div></div>', '<div class="day-drawer" role="dialog"><div role="menu"></div></div>']) {
@@ -173,7 +192,7 @@ describe('the layer own panel and drawer', () => {
     render(<Frame place="unwind">x</Frame>);
     await flush();
     sizeFrame();
-    fireEvent.pointerMove(main(), { clientY: 650 });
+    fireEvent.pointerEnter(main());
     await flush(100);
     const cell = document.querySelector<HTMLElement>('.u-work .agent-row .ac, .u-work .ag-line')!;
     expect(cell).not.toBeNull();
@@ -195,7 +214,7 @@ describe('the layer own panel and drawer', () => {
     render(<Frame place="unwind">x</Frame>);
     await flush();
     sizeFrame();
-    fireEvent.pointerMove(main(), { clientY: 650 });
+    fireEvent.pointerEnter(main());
     await flush(100);
     const fold = document.querySelector<HTMLElement>('.u-work .ev.fold')!;
     expect(fold).not.toBeNull();
@@ -212,7 +231,7 @@ describe('the layer own panel and drawer', () => {
     const openPanel = async (ui: ReturnType<typeof render>) => {
       await flush();
       sizeFrame();
-      fireEvent.pointerMove(main(), { clientY: 650 });
+      fireEvent.pointerEnter(main());
       await flush(100);
       fireEvent.click(document.querySelector<HTMLElement>('.u-work .agent-row .ac, .u-work .ag-line')!);
       await flush(50);
@@ -250,7 +269,7 @@ describe('the layer own panel and drawer', () => {
     render(<Frame place="unwind">x</Frame>);
     await flush();
     sizeFrame();
-    fireEvent.pointerMove(main(), { clientY: 650 });
+    fireEvent.pointerEnter(main());
     await flush(100);
     act(() => useWorkLayerStore.setState({ held: true }));
     // The ribbon leaves (layer closes) and comes back: the keys hold is not written to.
