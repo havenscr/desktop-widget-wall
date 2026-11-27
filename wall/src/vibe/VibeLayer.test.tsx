@@ -439,24 +439,72 @@ describe('the vibe back layer', () => {
     expect(/\.vibe-front\s*\{[^}]*mask/.test(c)).toBe(false);
   });
 
-  it('puts the grain sheet below every word and control, and above the scene and Watt', () => {
-    const c = sheet('../styles/vibe.css');
-    const z = (sel: string): number => {
-      const m = c.match(new RegExp('\\.stage[^{]*' + sel.replace(/\./g, '\\.') + '[^{]*\\{[^}]*z-index:\\s*(-?\\d+)'));
-      return m ? Number(m[1]) : NaN;
-    };
-    const sheetZ = Number(c.match(/\.vibe-front\s*\{[^}]*z-index:\s*(\d+)/)![1]);
-    // Watt is z-index 1 on the stage; the horizon, veil, weather and sun row sit under the back layer.
-    const wattZ = Number(sheet('../buddy/watt.css').match(/\.watt\s*\{[^}]*z-index:\s*(\d+)/)?.[1] ?? 1);
-    expect(sheetZ).toBeGreaterThan(wattZ);
-    expect(z('canvas.horizon-canvas')).toBeLessThan(-1);
-    for (const sel of ['.u-wing', '.u-right', '.w-now', '.u-office-slot', '.u-work', '.rib-line', '.u-nu', '.rail', '.clk', '.u-np', '.u-transport']) {
-      expect(z(sel), sel).toBeGreaterThan(sheetZ);
+  /** The declarations a stylesheet gives each class: `.a, .b { x: y }` and `prefix :is(.a, .b) { x: y }` count for `a` and `b`. */
+  const rulesFor = (css: string, cls: string): Record<string, string>[] => {
+    const out: Record<string, string>[] = [];
+    for (const m of css.replace(/\/\*[\s\S]*?\*\//g, '').matchAll(/(?:^|\n)([^{}\n@/][^{}]*)\{([^}]*)\}/g)) {
+      const sel = m[1].trim();
+      const group = sel.match(/:is\(((?:[^()]|\([^()]*(?:\([^()]*\))?[^()]*\))*)\)\s*$/);
+      const parts = (group ? group[1] : sel).split(/,(?![^(]*\))/).map((x) => x.trim().replace(/^\.stage:has\(\.vibe-front\)\s+/, ''));
+      if (!parts.some((p) => p === cls || p.startsWith(cls + ':not('))) continue;
+      const decl: Record<string, string> = {};
+      for (const d of m[2].split(';')) {
+        const i = d.indexOf(':');
+        if (i > 0) decl[d.slice(0, i).trim()] = d.slice(i + 1).trim();
+      }
+      out.push(decl);
     }
-    // The main area no longer isolates, or the lifts would be trapped under the sheet.
+    return out;
+  };
+  const zOf = (css: string, cls: string): number => {
+    const z = rulesFor(css, cls).map((r) => r['z-index']).filter((v) => v !== undefined);
+    return z.length ? Number(z[z.length - 1]) : NaN;
+  };
+
+  it('stacks the grain sheet above the scene and Watt, below the cards and words, with the work layer between', () => {
+    const c = sheet('../styles/vibe.css');
+    const sheetZ = Number(c.match(/\.vibe-front\s*\{[^}]*z-index:\s*(\d+)/)![1]);
+    const watt = sheet('../buddy/watt.css');
+    const wattZ = Number(watt.match(/\n\.watt\s*\{\s*z-index:\s*(\d+)/)![1]);
+    expect(sheetZ).toBeGreaterThan(wattZ);
+    // The horizon, veil, weather and sun row sit under the back layer (-1), which sits under the grain.
+    expect(zOf(c, 'canvas.horizon-canvas')).toBeLessThan(-1);
+    expect(zOf(c, '.vibe-back')).toBeLessThan(sheetZ);
+    const work = zOf(c, '.u-work');
+    const line = zOf(c, '.rib-line');
+    expect(work).toBeGreaterThan(sheetZ);
+    expect(line).toBeGreaterThan(sheetZ);
+    for (const card of ['.u-card', '.u-right', '.w-now', '.w-sheet', '.u-office-slot', '.u-wing']) {
+      expect(zOf(c, card), card).toBeGreaterThan(work);
+      expect(zOf(c, card), card).toBeGreaterThan(line);
+    }
+    // Next up still rides over the cards.
+    expect(zOf(c, '.u-nu')).toBeGreaterThan(zOf(c, '.u-card'));
+    // Every word and control on Listen and the frame is above the grain.
+    for (const sel of ['.rail', '.clk', '.u-np', '.u-artist', '.u-transport', '.u-src', '.u-progress', '.u-listen-gear', '.u-video']) {
+      expect(zOf(c, sel), sel).toBeGreaterThan(sheetZ);
+    }
+    // The main area no longer isolates, or the lifts would be trapped under the sheet; Listen's block is no longer its own layer.
     expect(c).toMatch(/\.stage \.main:has\(\.vibe-front\)\s*\{\s*isolation:\s*auto/);
-    // Listen's block is no longer its own layer.
     expect(c).toMatch(/\.u-listen\s*\{\s*z-index:\s*auto/);
+  });
+
+  it('lifts only by z-index where an element already has a position, so nothing moves', () => {
+    const c = sheet('../styles/vibe.css');
+    const unwind = sheet('../styles/unwind.css');
+    // Listen's gear is absolute at a fixed spot: the lift never gives it another position.
+    expect(rulesFor(unwind, '.u-listen-gear').some((r) => r.position === 'absolute')).toBe(true);
+    for (const cls of ['.u-wing', '.u-right', '.w-now', '.w-sheet', '.u-office-slot', '.u-card', '.u-listen-gear', '.u-video', '.u-work', '.rib-line', '.u-nu']) {
+      for (const r of rulesFor(c, cls)) expect(r.position, cls).toBeUndefined();
+    }
+    // Only the plain in-flow elements are given one.
+    for (const cls of ['.rail', '.clk', '.u-np', '.u-transport']) expect(rulesFor(c, cls).some((r) => r.position === 'relative'), cls).toBe(true);
+  });
+
+  it('leaves the work layer its own z-index 90 while a day drawer or the Agents panel is open', () => {
+    const c = sheet('../styles/vibe.css');
+    expect(c).toContain('.u-work:not(:has(.day-drawer, .agents-today))');
+    expect(sheet('../styles/unwind-work.css')).toMatch(/\.u-work:has\(\.day-drawer, \.agents-today\)\s*\{\s*z-index:\s*90/);
   });
 
   it('the sheet runs from the rail\'s edge to the stage\'s right edge, top to bottom', () => {
