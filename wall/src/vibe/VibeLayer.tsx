@@ -239,7 +239,7 @@ export function VibeLayer({ host = browserHost }: { host?: LoopHost }) {
         fctx.globalAlpha = 1;
         fctx.clearRect(0, 0, fcanvas.width, fcanvas.height);
         if (tapeOn) tape.draw(fctx, fcanvas.width, fcanvas.height, still ? 0 : nowS, tapeAmt, frame.grain, still, still ? 0 : frame.grainKick);
-        if (glitchAmt > 0.003) glitch.draw(fctx, fcanvas.width, fcanvas.height, nowS, state.drops, glitchAmt, gsrc);
+        if (glitchAmt > 0.003) glitch.draw(fctx, fcanvas.width, fcanvas.height, nowS, state.drops, glitchAmt, gsrc, state.power, input.settings.dropGlitch);
         frontDrawn = true;
       } else if (frontDrawn) {
         fctx.clearRect(0, 0, fcanvas.width, fcanvas.height);
@@ -252,7 +252,7 @@ export function VibeLayer({ host = browserHost }: { host?: LoopHost }) {
       (ts, dt) => {
         const t0 = probeOn ? performance.now() : 0;
         const n = audioDrops().count;
-        if (counterAdvanced(n, lastDrops)) noteDrop(state, ts / 1000);
+        if (counterAdvanced(n, lastDrops)) noteDrop(state, ts / 1000, audioDrops().strength);
         lastDrops = n;
         const beats = audioBeats().count;
         if (counterAdvanced(beats, lastBeats)) noteKick(state, ts / 1000);

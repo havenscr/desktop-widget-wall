@@ -1,4 +1,4 @@
-import { IconBulb, IconHeartbeat, IconPalette, IconRefresh, IconUserCircle, IconX, type Icon } from '@tabler/icons-react';
+import { IconBulb, IconHeartbeat, IconMusic, IconPalette, IconRefresh, IconUserCircle, IconX, type Icon } from '@tabler/icons-react';
 import { useEffect, useMemo, useRef, useState, type ComponentType, type KeyboardEvent as ReactKeyboardEvent } from 'react';
 import { invoke } from '../bridge/tauri';
 import { formatBuild, type BuildInfo } from '../clock/format';
@@ -9,6 +9,8 @@ import { useWatchStore } from '../unwind/watch/store';
 import { useSceneWeather } from '../weather/sceneSetting';
 import { useBackdropSettings } from '../backdrop/settings';
 import { SkyPanel, skyLine } from './SkyPanel';
+import { VibePanel, MOUNTAIN_WORD } from '../unwind/watch/LinesPanel';
+import { useVibeStore } from '../horizon/vibeSettings';
 import { isAbsent } from '../work/deckModel';
 import { joinKeys, reloadKeys, useKeysFeedStore, type Read } from '../work/keysFeed';
 import type { KeysSummary } from '../work/keysModel';
@@ -265,6 +267,13 @@ function DisplayPanel() {
   );
 }
 
+/** The Vibe group: the very component the Unwind Vibe page shows, on the same store. Its Tools line reads back the Mountain dance level. */
+function VibeToolsPanel() {
+  const mountain = useVibeStore((s) => s.mountain);
+  useRailStatus('vibe', `Dance ${MOUNTAIN_WORD[mountain]}`, 'none');
+  return <VibePanel />;
+}
+
 /** One rail entry's group. Adding an option to the drawer is one new entry here (and its panel above). */
 export interface ToolsGroup {
   id: Exclude<ToolsFocus, null | 'keylights' | 'desktoken' | 'sharekey' | 'stagepop'>;
@@ -281,6 +290,7 @@ export const GROUPS: readonly ToolsGroup[] = [
   { id: 'health', name: 'Health', icon: IconHeartbeat, tip: 'When each source was last read, and the keys file', sections: [], Panel: HealthPanel },
   { id: 'lights', name: 'Lights and home', icon: IconBulb, tip: 'Key lights, Light sync, the home app token, the share key and the stage pop-out', sections: ['keylights', 'desktoken', 'sharekey', 'stagepop'], Panel: LightsPanel },
   { id: 'display', name: 'Display', icon: IconPalette, tip: 'Weather in the scene, the animated sky and the video look', sections: [], Panel: DisplayPanel },
+  { id: 'vibe', name: 'Vibe', icon: IconMusic, tip: 'How the picture and the mountain lines react to the music: Auto vibe, Drop Glitch, Calm cap, Mountain dance, Tape Grain and Aurora', sections: [], Panel: VibeToolsPanel },
 ];
 
 /** The group a focus names: a group id, or a section inside a group. */

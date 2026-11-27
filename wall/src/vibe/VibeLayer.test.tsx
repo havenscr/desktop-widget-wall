@@ -354,9 +354,10 @@ describe('the vibe back layer', () => {
     expect(rec.calls.some((c) => c[0] === 'clearRect')).toBe(true);
   });
 
-  it('a drop tears slices with Auto vibe on, or with Drop Glitch on, and with neither or under Calm cap it does not', () => {
-    const tears = (settings: Record<string, boolean>) => {
+  it('a drop tears slices with Tear on, with Auto vibe on or off, and with Off or under Calm cap (halved, not removed) accordingly', () => {
+    const tears = (settings: Record<string, boolean | string>) => {
       cleanup();
+      localStorage.clear();
       resetVibeStore();
       const m = manual();
       act(() => useVibeStore.getState().setVibe(settings));
@@ -369,9 +370,10 @@ describe('the vibe back layer', () => {
       return rec.calls.filter((c) => c[0] === 'drawImage' && c[1] === hz).length;
     };
     expect(tears({ auto: true })).toBeGreaterThan(5);
-    expect(tears({ auto: false, dropGlitch: true })).toBeGreaterThan(5);
-    expect(tears({ auto: false, dropGlitch: false })).toBe(0);
-    expect(tears({ auto: true, calmCap: true })).toBe(0);
+    expect(tears({ auto: false, dropGlitch: 'tear' })).toBeGreaterThan(5);
+    expect(tears({ auto: false, dropGlitch: 'off' })).toBe(0);
+    expect(tears({ auto: true, dropGlitch: 'off' })).toBe(0);
+    expect(tears({ auto: true, calmCap: true })).toBeGreaterThan(5);
   });
 
   it('a remount over a canvas that is already sized (dev double mount) still bakes the sprites and tears', () => {
