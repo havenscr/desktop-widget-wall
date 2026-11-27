@@ -27,9 +27,9 @@ export interface Glitch {
   bake(w: number): void;
   /**
    * One frame: every live drop in `drops` (clock seconds, -Infinity for none) draws its look, scaled by `amount` and
-   * by that drop's own `power` (0 to 1, parallel to `drops`; 1 when left out). `look` is Tear (the default), Split, Roll or Flash.
+   * by that drop's own `power` (about 0 to 1, parallel to `drops`; 1 when left out) and lasting its own `dur` seconds (parallel; `DROP_S` when left out). `look` is Tear (the default), Split, Roll or Flash.
    */
-  draw(ctx: CanvasRenderingContext2D, w: number, h: number, nowS: number, drops: Float64Array, amount: number, src: GlitchSources, power?: Float64Array, look?: GlitchLook): void;
+  draw(ctx: CanvasRenderingContext2D, w: number, h: number, nowS: number, drops: Float64Array, amount: number, src: GlitchSources, power?: Float64Array, look?: GlitchLook, dur?: Float64Array): void;
 }
 
 /** A repeatable pseudo random number in 0 to 1 from two numbers; pure arithmetic, no state. */
@@ -156,12 +156,12 @@ function splitBands(fx: Fx, w: number, h: number, e: number, weight: number, see
 }
 
 /** Roll: a tape tracking band rolls down the screen, its picture shifted and its lines noisy. */
-function rollLook(fx: Fx, w: number, h: number, e: number, age: number, src: GlitchSources): void {
+function rollLook(fx: Fx, w: number, h: number, e: number, age: number, dur: number, src: GlitchSources): void {
   const m = src.map;
   const l = fx.lctx;
   const t = fx.tctx;
   const bh = Math.max(40, h * 0.3);
-  const p = sstep(0, 1, age / DROP_S);
+  const p = sstep(0, 1, age / dur);
   const y = -bh + (h + bh) * p;
   // The picture inside the band, pulled sideways, shaped by the band's own profile.
   t.globalCompositeOperation = 'source-over';
@@ -204,14 +204,15 @@ function flashLook(fx: Fx, w: number, h: number, e: number, src: GlitchSources):
   }
 }
 
-function drawLook(ctx: CanvasRenderingContext2D, fx: Fx, w: number, h: number, nowS: number, drops: Float64Array, amount: number, src: GlitchSources, power: Float64Array | undefined, look: GlitchLook): void {
+function drawLook(ctx: CanvasRenderingContext2D, fx: Fx, w: number, h: number, nowS: number, drops: Float64Array, amount: number, src: GlitchSources, power: Float64Array | undefined, look: GlitchLook, durs: Float64Array | undefined): void {
   const l = fx.lctx;
   let any = false;
   let sum = 0;
   for (let d = 0; d < drops.length; d++) {
     const age = nowS - drops[d];
-    if (!(age >= 0 && age < DROP_S)) continue;
-    const e = envOf(age) * amount * (power ? power[d] : 1);
+    const dur = durs ? durs[d] : DROP_S;
+    if (!(age >= 0 && age < dur)) continue;
+    const e = envOf(age, dur) * amount * (power ? power[d] : 1);
     if (e < 0.01) continue;
     if (!any) {
       size(fx.layer, w, h);
@@ -230,7 +231,7 @@ function drawLook(ctx: CanvasRenderingContext2D, fx: Fx, w: number, h: number, n
       sum += e;
       splitBands(fx, w, h, e, 1 - f, base + k, src);
       splitBands(fx, w, h, e, f, base + k + 1, src);
-    } else if (look === 'roll') rollLook(fx, w, h, e, age, src);
+    } else if (look === 'roll') rollLook(fx, w, h, e, age, dur, src);
     else flashLook(fx, w, h, e, src);
   }
   if (!any) return;
@@ -283,12 +284,13 @@ function bakeFx(): Fx | null {
 }
 
 /** Tear: slices torn from the horizon canvas and the art, per live drop, scaled by `amount` and the drop's own power. */
-function tearDrops(ctx: CanvasRenderingContext2D, bctx: CanvasRenderingContext2D, buf: HTMLCanvasElement, feather: HTMLCanvasElement, w: number, h: number, nowS: number, drops: Float64Array, amount: number, src: GlitchSources, power: Float64Array | undefined): void {
+function tearDrops(ctx: CanvasRenderingContext2D, bctx: CanvasRenderingContext2D, buf: HTMLCanvasElement, feather: HTMLCanvasElement, w: number, h: number, nowS: number, drops: Float64Array, amount: number, src: GlitchSources, power: Float64Array | undefined, durs: Float64Array | undefined): void {
   ctx.globalCompositeOperation = 'screen';
   for (let d = 0; d < drops.length; d++) {
     const age = nowS - drops[d];
-    if (!(age >= 0 && age < DROP_S)) continue;
-    const env = envOf(age) * amount * (power ? power[d] : 1);
+    const dur = durs ? durs[d] : DROP_S;
+    if (!(age >= 0 && age < dur)) continue;
+    const env = envOf(age, dur) * amount * (power ? power[d] : 1);
     if (env < 0.01) continue;
     // Two seeds are alive at once and crossfade, per drop stamp, so the slices re-roll without a pop.
     const phase = age * SEED_HZ;
@@ -336,7 +338,7 @@ export function createGlitch(): Glitch {
       feather = f;
       if (!fx) fx = bakeFx();
     },
-    draw(ctx, w, h, nowS, drops, amount, src, power, look) {
+    draw(ctx, w, h, nowS, drops, amount, src, power, look, dur) {
       // A change of look during a drop never cuts: each look keeps a weight that eases to 1 for the chosen look and to 0
       // for the others over `LOOK_FADE_S`, so the outgoing look fades out (Off included) while the new one fades in.
       const idx = look === 'split' ? 1 : look === 'roll' ? 2 : look === 'flash' ? 3 : look === 'off' ? -1 : 0;
@@ -354,8 +356,8 @@ export function createGlitch(): Glitch {
       if (amount <= 0.003 || !buf || !bctx || !feather) return;
       for (let k = 0; k < 4; k++) {
         if (wts[k] <= 0.003) continue;
-        if (k === 0) tearDrops(ctx, bctx, buf, feather, w, h, nowS, drops, amount * wts[0], src, power);
-        else if (fx) drawLook(ctx, fx, w, h, nowS, drops, amount * wts[k], src, power, k === 1 ? 'split' : k === 2 ? 'roll' : 'flash');
+        if (k === 0) tearDrops(ctx, bctx, buf, feather, w, h, nowS, drops, amount * wts[0], src, power, dur);
+        else if (fx) drawLook(ctx, fx, w, h, nowS, drops, amount * wts[k], src, power, k === 1 ? 'split' : k === 2 ? 'roll' : 'flash', dur);
       }
     },
   };

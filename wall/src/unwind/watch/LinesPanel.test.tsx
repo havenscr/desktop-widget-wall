@@ -266,8 +266,8 @@ describe('the Vibe page tips', () => {
       </>,
     );
     const controls = [...screen.getAllByRole('radio'), ...screen.getAllByRole('button'), ...screen.getAllByRole('switch')];
-    // 5 + 4 + 3 + 3 radios (Drop Glitch, Mountain dance, Music on other tabs, Aurora), 1 reset, 3 switches.
-    expect(controls).toHaveLength(15 + 1 + 3);
+    // 5 + 4 + 3 + 3 radios (Drop Glitch, Mountain dance, Music on other tabs, Aurora), 1 reset, 3 switches. Plus Beat hits, Length and Strength (2 + 3 + 3 radios) and the Sensitivity slider.
+    expect(controls).toHaveLength(15 + 1 + 3 + 8 + 1);
     for (const el of controls) {
       expect(el.getAttribute('title')).toBeNull();
       resetTip();
@@ -309,5 +309,71 @@ describe('the Lines page without the Vibe controls', () => {
     act(() => useVibeStore.getState().setVibe({ calmCap: true }));
     act(() => screen.getByRole('button', { name: 'Reset to my usual' }).click());
     expect(useVibeStore.getState().calmCap).toBe(true);
+  });
+});
+
+describe('the Drop Glitch settings in the Vibe panel', () => {
+  const group = (name: string) => screen.getByRole('radiogroup', { name });
+  beforeEach(() => {
+    localStorage.clear();
+    resetVibeStore();
+  });
+
+  it('shows Sensitivity (3), Beat hits Off, Length and Strength Normal, with the number beside the slider', () => {
+    render(<VibePanel />);
+    const slider = screen.getByRole('slider', { name: 'Sensitivity' }) as HTMLInputElement;
+    expect(slider.value).toBe('3');
+    expect(slider.min).toBe('1');
+    expect(slider.max).toBe('10');
+    expect(slider.closest('.ln-row')!.querySelector('.ln-num')!.textContent).toBe('3');
+    expect(within(group('Beat hits')).getByRole('radio', { name: 'Off' }).getAttribute('aria-checked')).toBe('true');
+    expect(within(group('Length')).getByRole('radio', { name: 'Normal' }).getAttribute('aria-checked')).toBe('true');
+    expect(within(group('Strength')).getByRole('radio', { name: 'Normal' }).getAttribute('aria-checked')).toBe('true');
+  });
+
+  it('each control writes its setting and keeps it', () => {
+    render(<VibePanel />);
+    fireEvent.change(screen.getByRole('slider', { name: 'Sensitivity' }), { target: { value: '8' } });
+    fireEvent.click(within(group('Beat hits')).getByRole('radio', { name: 'Light' }));
+    fireEvent.click(within(group('Length')).getByRole('radio', { name: 'Long' }));
+    fireEvent.click(within(group('Strength')).getByRole('radio', { name: 'Hard' }));
+    expect(useVibeStore.getState()).toMatchObject({ dropSensitivity: 8, beatHits: 'light', glitchLength: 'long', glitchStrength: 'hard' });
+    expect(JSON.parse(localStorage.getItem(VIBE_KEY)!)).toMatchObject({ dropSensitivity: 8, beatHits: 'light', glitchLength: 'long', glitchStrength: 'hard' });
+  });
+
+  it('every new row has its sentence as a hover tip', async () => {
+    render(
+      <>
+        <VibePanel />
+        <HoverTipLayer />
+      </>,
+    );
+    for (const [label, sentence] of [['Sensitivity', VIBE_HINTS.dropSensitivity], ['Beat hits', VIBE_HINTS.beatHits], ['Length', VIBE_HINTS.glitchLength], ['Strength', VIBE_HINTS.glitchStrength]] as const) {
+      resetTip();
+      fireEvent.focus(screen.getByText(label));
+      await act(() => new Promise((r) => setTimeout(r, 5)));
+      expect(document.querySelector('.hover-tip')?.textContent, label).toBe(sentence);
+    }
+    resetTip();
+  });
+
+  it('Try it fires one hit, and dims and disables the rows when Drop Glitch is Off', async () => {
+    const { useTryStore } = await import('../../vibe/tryIt');
+    const before = useTryStore.getState().count;
+    render(<VibePanel />);
+    fireEvent.click(screen.getByRole('button', { name: 'Try it' }));
+    expect(useTryStore.getState().count).toBe(before + 1);
+    fireEvent.click(within(group('Drop Glitch')).getByRole('radio', { name: 'Off' }));
+    const block = screen.getByRole('group', { name: 'Drop Glitch settings' });
+    expect(block.className).toContain('off');
+    expect((screen.getByRole('slider', { name: 'Sensitivity' }) as HTMLInputElement).disabled).toBe(true);
+    expect((within(group('Length')).getByRole('radio', { name: 'Long' }) as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByRole('button', { name: 'Try it' }) as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it('the stylesheet keeps the new rows compact and dims them when Off', () => {
+    const css = sheet('../../styles/unwind.css');
+    expect(css).toMatch(/\.ln-dg\.off \{\n  opacity: 0\.38;/);
+    expect(css).toMatch(/\.ln-vibe \.ln-dg \.ln-row \{\n  min-height: 32px;/);
   });
 });

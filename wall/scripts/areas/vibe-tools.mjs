@@ -7,7 +7,7 @@ const UNWIND = `?hz=unwind&at=${at}&long=1&agents=3&watch=mock&wlist=none&wtab=l
 const TOOLS_Q = `?hz=work&at=${at}&clock=review&weather=ok&agents=3&tools=vibe`;
 const SHEET = ['.w-sheet', '.w-sheet .ln-vibe'];
 const DRAWER = ['.tools-drawer', '.tools-drawer .tools-rail', '.tools-drawer .tools-panel:not([hidden])', '.tools-drawer .ln-vibe'];
-const NAMES = ['Vibe, the Unwind page', 'Vibe, the Tools group'];
+const NAMES = ['Vibe, the Unwind page', 'Vibe, the Tools group', 'Vibe, the Unwind page, Drop Glitch Off', 'Vibe, the Tools group, Drop Glitch Off'];
 
 // Runs in the page. References nothing outside its body.
 function measureVibe() {
@@ -43,7 +43,7 @@ function measureVibe() {
     if (r.right > rr.right + 0.5 || r.left < rr.left - 0.5) fails.push('vibe: "' + name + '" leaves the box sideways');
   }
   // Chips: at least 10 px from their text, and 8 px apart.
-  const chips = [...root.querySelectorAll('.ln-chips button, .ln-reset')];
+  const chips = [...root.querySelectorAll('.ln-chips button, .ln-reset, .ln-try')];
   for (const c of chips) {
     const cs = getComputedStyle(c);
     if (parseFloat(cs.paddingLeft) < 9.99 || parseFloat(cs.paddingRight) < 9.99) fails.push('vibe: "' + (c.textContent || '').trim() + '" has under 10 px between its text and its side');
@@ -60,7 +60,10 @@ function measureVibe() {
   const sec = [...root.querySelectorAll('.ln-gh')].map((e) => e.textContent.trim());
   const groups = root.querySelectorAll('[role="radiogroup"]').length;
   const switches = root.querySelectorAll('[role="switch"]').length;
-  return { found: true, fails, height: r1(br.height), bottom: r1(br.bottom), rootHeight: r1(rr.height), groups, switches, sec, inSheet };
+  const sliders = root.querySelectorAll('input[type="range"]').length;
+  const labelLefts = [...root.querySelectorAll('.ln-row > .ln-label:not(.ln-wide)')].map((e) => r1(e.getBoundingClientRect().left));
+  const chipHeights = chips.map((c) => r1(c.getBoundingClientRect().height));
+  return { found: true, fails, sliders, labelLefts, chipHeights, height: r1(br.height), bottom: r1(br.bottom), rootHeight: r1(rr.height), groups, switches, sec, inSheet };
 }
 
 function ruleVibe(variant, results, emit) {
@@ -69,7 +72,9 @@ function ruleVibe(variant, results, emit) {
   if (!m || !m.found) { emit('  FAIL vibe: the controls are not shown'); return true; }
   const fails = [...m.fails];
   if (m.sec.join('|') !== 'Music reacts|Screen look') fails.push('vibe: the headings read "' + m.sec.join('", "') + '"');
-  if (m.groups !== 4 || m.switches !== 3) fails.push('vibe: ' + m.groups + ' chip rows and ' + m.switches + ' switches, expected 4 and 3');
+  if (m.groups !== 7 || m.switches !== 3 || m.sliders !== 1) fails.push('vibe: ' + m.groups + ' chip rows, ' + m.switches + ' switches and ' + m.sliders + ' sliders, expected 7, 3 and 1');
+  if (m.labelLefts.some((x) => Math.abs(x - m.labelLefts[0]) > 0.5)) fails.push('vibe: the row labels do not share one left edge (' + m.labelLefts.join(', ') + ')');
+  if (m.chipHeights.some((x) => Math.abs(x - m.chipHeights[0]) > 0.5)) fails.push('vibe: the chips are not one height (' + [...new Set(m.chipHeights)].join(', ') + ')');
   for (const f of fails) emit('  FAIL ' + f);
   if (!fails.length) emit('  ok   vibe: no scroll bar, no cut or wrapped text, 16 px or more, chips 10 px clear, the box ends at y ' + m.bottom + ' (' + m.height + ' px tall, controls ' + m.rootHeight + ' px)');
   return fails.length > 0;
@@ -97,6 +102,8 @@ export default {
     variants: [
       { name: NAMES[0], q: UNWIND, checks: SHEET, viewportOnly: true },
       { name: NAMES[1], q: TOOLS_Q, checks: DRAWER, viewportOnly: true },
+      { name: NAMES[2], q: UNWIND + '&vglitch=off', checks: SHEET, viewportOnly: true },
+      { name: NAMES[3], q: TOOLS_Q + '&audio=demo&vglitch=off', checks: DRAWER, viewportOnly: true },
     ],
     measurements: { vibe: measureVibe },
     rules: { vibe: ruleVibe },

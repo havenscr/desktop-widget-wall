@@ -56,13 +56,41 @@ export const DROP_MIN_STRENGTH = 0.6;
 export const DROP_FULL_RATIO = 2.2;
 
 /** A drop's strength from its jump: `DROP_MIN_STRENGTH` at `DROP_RATIO`, rising to 1 at `DROP_FULL_RATIO`. */
-export function dropStrength(ratio: number): number {
+export function dropStrength(ratio: number, bar: number = DROP_RATIO): number {
   if (!Number.isFinite(ratio)) return 1;
-  const k = Math.min(1, Math.max(0, (ratio - DROP_RATIO) / (DROP_FULL_RATIO - DROP_RATIO)));
+  const k = Math.min(1, Math.max(0, (ratio - bar) / (DROP_FULL_RATIO - bar)));
   return DROP_MIN_STRENGTH + (1 - DROP_MIN_STRENGTH) * k;
 }
 
+/** What one Sensitivity level asks of a drop: seconds of calm, how calm, how big a jump, and how loud the build must be. */
+export interface DropTuning {
+  calmS: number;
+  calmRatio: number;
+  dropRatio: number;
+  longFloor: number;
+}
+
+/** Sensitivity, 1 (strict) to 10 (loose); 3 is the rule the wall always had. */
+export const SENS_MIN = 1;
+export const SENS_MAX = 10;
+export const SENS_DEFAULT = 3;
+const STRICT: Readonly<DropTuning> = { calmS: 6, calmRatio: 1.05, dropRatio: 1.5, longFloor: 0.16 };
+const USUAL: Readonly<DropTuning> = { calmS: CALM_S, calmRatio: CALM_RATIO, dropRatio: DROP_RATIO, longFloor: LONG_FLOOR };
+const LOOSE: Readonly<DropTuning> = { calmS: 1, calmRatio: 1.14, dropRatio: 1.08, longFloor: 0.04 };
+const mix = (a: number, b: number, t: number): number => a + (b - a) * t;
+const r3 = (x: number): number => Math.round(x * 1000) / 1000;
+
+/** The drop rule for a Sensitivity level: straight lines from strict at 1 through the usual rule at 3 to loose at 10. Level 3 returns the constants above exactly. */
+export function dropTuning(level: number): DropTuning {
+  const l = Number.isFinite(level) ? Math.min(SENS_MAX, Math.max(SENS_MIN, Math.round(level))) : SENS_DEFAULT;
+  if (l === SENS_DEFAULT) return { ...USUAL };
+  const [a, b, t] = l < SENS_DEFAULT ? [STRICT, USUAL, (l - SENS_MIN) / (SENS_DEFAULT - SENS_MIN)] : [USUAL, LOOSE, (l - SENS_DEFAULT) / (SENS_MAX - SENS_DEFAULT)];
+  return { calmS: r3(mix(a.calmS, b.calmS, t)), calmRatio: r3(mix(a.calmRatio, b.calmRatio, t)), dropRatio: r3(mix(a.dropRatio, b.dropRatio, t)), longFloor: r3(mix(a.longFloor, b.longFloor, t)) };
+}
+
 export interface EnergyState {
+  /** The drop rule in force (Sensitivity). */
+  tune: DropTuning;
   /** The slow average of loudness, 0 to 1. */
   energy: number;
   drops: DropStamp;
@@ -85,7 +113,7 @@ export interface EnergyState {
 }
 
 export function createEnergy(): EnergyState {
-  const s = { drops: { count: 0, lastAt: -Infinity, strength: 1 }, hist: new Float32Array(LONG_N) } as EnergyState;
+  const s = { tune: { ...USUAL }, drops: { count: 0, lastAt: -Infinity, strength: 1 }, hist: new Float32Array(LONG_N) } as EnergyState;
   resetEnergy(s);
   return s;
 }
@@ -173,7 +201,7 @@ function fire(s: EnergyState, now: number): void {
   s.drops.count++;
   s.drops.lastAt = now;
   const lng = meanOf(s, LONG_N);
-  s.drops.strength = lng > 0 ? dropStrength(meanOf(s, SHORT_N) / lng) : 1;
+  s.drops.strength = lng > 0 ? dropStrength(meanOf(s, SHORT_N) / lng, s.tune.dropRatio) : 1;
   s.refractoryUntil = now + REFRACTORY_S * 1000;
   s.crossedAt = -Infinity;
   s.armed = false;
@@ -217,16 +245,17 @@ function detectDrop(s: EnergyState, now: number, elapsedMs: number, level: numbe
   const stepMs = pushed * BUCKET_MS;
   const lng = meanOf(s, LONG_N);
   const sht = meanOf(s, SHORT_N);
-  if (now < s.refractoryUntil || lng < LONG_FLOOR) {
+  if (now < s.refractoryUntil || lng < s.tune.longFloor) {
     s.calmMs = 0;
     s.armed = false;
     s.riseSince = -Infinity;
     return;
   }
-  if (sht <= lng * CALM_RATIO) {
+  const jump = s.armed && s.histCount >= LONG_N && sht >= lng * s.tune.dropRatio;
+  if (!jump && sht <= lng * s.tune.calmRatio) {
     s.calmMs += stepMs;
     // Arming needs a full 12 s of history, and a brief swell never revokes it: only a fire or the expiry does.
-    if (s.calmMs >= CALM_S * 1000 && s.histCount >= LONG_N) s.armed = true;
+    if (s.calmMs >= s.tune.calmS * 1000 && s.histCount >= LONG_N) s.armed = true;
     s.riseSince = -Infinity;
     return;
   }
@@ -234,7 +263,7 @@ function detectDrop(s: EnergyState, now: number, elapsedMs: number, level: numbe
   s.calmMs = 0;
   if (!s.armed || s.histCount < LONG_N) return;
   if (s.riseSince === -Infinity) s.riseSince = now;
-  if (sht >= lng * DROP_RATIO) {
+  if (sht >= lng * s.tune.dropRatio) {
     s.armed = false;
     s.crossedAt = now;
     if (Math.abs(s.beatSeenAt - now) <= BEAT_CONFIRM_MS) fire(s, now);

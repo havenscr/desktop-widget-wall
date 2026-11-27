@@ -2110,8 +2110,49 @@
   margin-top: -2px;
   white-space: nowrap;
 }
+/* The four Drop Glitch settings (Sensitivity, Beat hits, Length, Strength) sit under the Drop Glitch row on the same label
+   column, in a tighter block. With Drop Glitch Off they dim and are disabled; the height never changes. */
+.ln-dg {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  transition: opacity 0.25s;
+}
+.ln-dg.off {
+  opacity: 0.38;
+}
+.ln-vibe .ln-dg .ln-row {
+  min-height: 32px;
+}
+.ln-vibe .ln-value.ln-num {
+  width: 28px;
+  margin-left: 12px;
+  color: var(--cyan);
+}
+/* Try it: a chip the page's own size, after the Drop Glitch chips. */
+.ln-try {
+  height: 36px;
+  margin-left: auto;
+  padding: 0 14px;
+  border-radius: 18px;
+  border: 1px solid rgba(83, 230, 235, 0.65);
+  background: rgba(53, 230, 234, 0.12);
+  color: var(--cyan);
+  font: 500 16px/1 var(--body);
+  white-space: nowrap;
+}
+.ln-dg .ln-chips button:disabled,
+.ln-dg .ln-track input:disabled {
+  cursor: default;
+}
+.ln-try:disabled {
+  opacity: 0.45;
+  border-color: var(--line);
+  color: var(--dim);
+}
 @media (prefers-reduced-motion: reduce) {
-  .ln-switch i {
+  .ln-switch i,
+  .ln-dg {
     transition: none;
   }
 }

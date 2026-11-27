@@ -1,4 +1,4 @@
-import type { VibeSettings } from '../horizon/vibeSettings';
+import { GLITCH_LENGTH_S, GLITCH_STRENGTH_GAIN, type VibeSettings } from '../horizon/vibeSettings';
 
 /**
  * The vibe effects' mix, with no drawing. One call per frame turns the settings, the slow energy
@@ -46,8 +46,16 @@ export const DROP_S = 0.95;
 /** Seconds between glitch slice steps. */
 export const STEP_S = 1 / 13;
 
-/** The glitch envelope for `s` seconds since a drop: 0 before and after, 50 ms rise, eased tail. */
-export const envOf = (s: number): number => (s >= 0 && s < DROP_S ? sstep(0, 0.05, s) * Math.pow(1 - s / DROP_S, 2) : 0);
+/** The glitch envelope for `s` seconds since a drop: 0 before and after, 50 ms rise, eased tail over `dur` seconds (the Length setting; `DROP_S` is today's). */
+export const envOf = (s: number, dur: number = DROP_S): number => (s >= 0 && s < dur ? sstep(0, 0.05, s) * Math.pow(1 - s / dur, 2) : 0);
+
+/** Beat hits: a quarter of a drop's strength, on beats at least this hard, no more often than every 4 s and never within 2 s after a drop. */
+export const BEAT_HIT_POWER = 0.25;
+export const BEAT_HIT_MIN_STRENGTH = 0.7;
+export const BEAT_HIT_GAP_S = 4;
+export const BEAT_HIT_AFTER_DROP_S = 2;
+/** Strength never goes past this, so Hard on a full drop stays close to today's top. */
+export const POWER_CAP = 1.15;
 /** Below this the swell tail counts as finished (about 2.6 s after a drop) and is exactly 0. */
 export const SWELL_EPS = 0.002;
 /** The glow swell for `s` seconds since a drop: 70 ms rise, exp(-s / 0.42), exactly 0 once under `SWELL_EPS`. */
@@ -91,6 +99,14 @@ export interface VibeState {
   drops: Float64Array;
   /** How hard each drop hits, parallel to `drops` (`DROP_MIN_STRENGTH` to 1). */
   power: Float64Array;
+  /** How long each stamp's glitch lasts, seconds, parallel to `drops`. */
+  dur: Float64Array;
+  /** How much of each stamp's glow swell shows: 1 for a drop and a try, 0 for a beat hit. */
+  swellW: Float64Array;
+  /** Clock seconds of the last real drop, the last beat hit, and the last Try it; -Infinity for none. */
+  lastDropAt: number;
+  lastBeatHitAt: number;
+  tryAt: number;
 }
 
 const ease0 = (v = 0): Ease2 => ({ a: v, b: v });
@@ -100,6 +116,7 @@ export function createVibeState(): VibeState {
   return {
     auto: ease0(), tape: ease0(), glitch: ease0(), calm: ease0(), aurora: ease0(), kickAt: -Infinity, live: ease0(),
     palette: 0, drops: new Float64Array(MAX_DROPS).fill(-Infinity), power: new Float64Array(MAX_DROPS).fill(1),
+    dur: new Float64Array(MAX_DROPS).fill(DROP_S), swellW: new Float64Array(MAX_DROPS).fill(1), lastDropAt: -Infinity, lastBeatHitAt: -Infinity, tryAt: -Infinity,
   };
 }
 
@@ -115,27 +132,68 @@ export function settleVibe(s: VibeState, settings: VibeSettings, playing: boolea
   s.live = ease0(t.live);
   s.palette = clamp01(energy);
   s.drops.fill(-Infinity);
+  s.lastDropAt = -Infinity;
+  s.lastBeatHitAt = -Infinity;
+  s.tryAt = -Infinity;
 }
 
-const contribution = (at: number, nowS: number): number => Math.max(envOf(nowS - at), swellOf(nowS - at));
+const contribution = (s: VibeState, i: number, nowS: number): number => Math.max(envOf(nowS - s.drops[i], s.dur[i]), swellOf(nowS - s.drops[i]) * s.swellW[i]);
 
 /**
  * A drop at `nowS`. Earlier drops keep fading, so drops overlap their tails and nothing cuts. It
  * takes a free slot, or when all are in use the one contributing least right now (a finished
  * tail first), which can only change the envelope by that smallest amount.
  */
-export function noteDrop(s: VibeState, nowS: number, strength = 1): void {
+function stamp(s: VibeState, nowS: number, power: number, dur: number, swellW: number): void {
   let slot = 0;
   let least = Infinity;
   for (let i = 0; i < s.drops.length; i++) {
-    const c = s.drops[i] === -Infinity ? -1 : contribution(s.drops[i], nowS);
+    const c = s.drops[i] === -Infinity ? -1 : contribution(s, i, nowS);
     if (c < least) {
       least = c;
       slot = i;
     }
   }
   s.drops[slot] = nowS;
-  s.power[slot] = Number.isFinite(strength) ? Math.min(1, Math.max(0, strength)) : 1;
+  s.power[slot] = power;
+  s.dur[slot] = dur;
+  s.swellW[slot] = swellW;
+}
+
+/** The strength a stamp hits with: the jump's (or the hit's) own power times the Strength setting, held under `POWER_CAP`. */
+const powerOf = (strength: number, settings: VibeSettings | undefined): number => {
+  const p = Number.isFinite(strength) ? Math.min(1, Math.max(0, strength)) : 1;
+  return settings ? Math.min(POWER_CAP, p * GLITCH_STRENGTH_GAIN[settings.glitchStrength]) : p;
+};
+const durOf = (settings: VibeSettings | undefined): number => (settings ? GLITCH_LENGTH_S[settings.glitchLength] : DROP_S);
+
+/**
+ * A drop at `nowS`, with the Length and Strength in `settings` (today's when left out). Earlier drops keep fading, so
+ * drops overlap their tails and nothing cuts. It takes a free slot, or when all are in use the one contributing least
+ * right now (a finished tail first), which can only change the envelope by that smallest amount.
+ */
+export function noteDrop(s: VibeState, nowS: number, strength = 1, settings?: VibeSettings): void {
+  stamp(s, nowS, powerOf(strength, settings), durOf(settings), 1);
+  s.lastDropAt = nowS;
+}
+
+/**
+ * A beat hit (Beat hits: Light) at `nowS`, for a beat of `beatStrength` (0 to 1). Only a hard beat counts, at most one
+ * every `BEAT_HIT_GAP_S`, never within `BEAT_HIT_AFTER_DROP_S` after a drop. A quarter of a drop's strength, no glow swell.
+ * True when it fired.
+ */
+export function noteBeatHit(s: VibeState, nowS: number, beatStrength: number, settings: VibeSettings): boolean {
+  if (settings.beatHits !== 'light' || !(beatStrength >= BEAT_HIT_MIN_STRENGTH)) return false;
+  if (nowS - s.lastBeatHitAt < BEAT_HIT_GAP_S || nowS - s.lastDropAt < BEAT_HIT_AFTER_DROP_S) return false;
+  stamp(s, nowS, powerOf(BEAT_HIT_POWER, settings), durOf(settings), 0);
+  s.lastBeatHitAt = nowS;
+  return true;
+}
+
+/** Try it: one hit at full drop strength with the current Length and Strength, shown even with no music. */
+export function noteTry(s: VibeState, nowS: number, settings: VibeSettings): void {
+  stamp(s, nowS, powerOf(1, settings), durOf(settings), 1);
+  s.tryAt = nowS;
 }
 
 // One scratch object, rewritten by each call: the frame path allocates nothing.
@@ -237,8 +295,8 @@ export function stepVibe(s: VibeState, out: VibeFrame, dt: number, nowS: number,
   let swell = 0;
   for (let i = 0; i < s.drops.length; i++) {
     const age = nowS - s.drops[i];
-    const ev = envOf(age);
-    const sv = swellOf(age);
+    const ev = envOf(age, s.dur[i]);
+    const sv = swellOf(age) * s.swellW[i];
     if (ev > env) env = ev;
     if (sv > swell) swell = sv;
   }
@@ -252,7 +310,9 @@ export function stepVibe(s: VibeState, out: VibeFrame, dt: number, nowS: number,
   const kickOn = !input.reduced;
   out.grainKick = kickOn ? KICK_GRAIN * kickPulse(nowS - s.kickAt) * cap : 0;
   // Calm cap halves the glitch with the rest (the level eases, so it never steps); the swell above adds to what a drop shows.
-  out.glitch = live * glitch * cap;
+  // A Try it hit shows with no music too: its own envelope starts and ends at 0, so lifting the music gate for it never cuts.
+  const tryLive = nowS - s.tryAt < GLITCH_LENGTH_S.long + 0.1 ? 1 : 0;
+  out.glitch = Math.max(live, tryLive) * glitch * cap;
   out.env = env;
   out.swell = swell;
   out.palette = s.palette;
