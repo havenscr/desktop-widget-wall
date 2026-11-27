@@ -331,11 +331,12 @@ it('kind: each default key carries its colour kind, and End show keeps the Go li
   const kinds = tiles().map((k) => k.getAttribute('data-skind'));
   expect(kinds).toEqual(['scene', 'scene', 'scene', 'scene', 'mic', 'camera', 'mark', 'golive']);
   cleanup();
-  localStorage.setItem(SLOTS_KEY, JSON.stringify(withSlots(['share', 'end'])));
+  // While live, the Go live slot draws End show, and it keeps the Go live kind.
+  liveStatus();
   render(both());
   const t = tiles();
-  expect(t[0].hasAttribute('data-skind')).toBe(false);
-  expect(t[1].getAttribute('data-skind')).toBe('golive');
+  expect(t[7].getAttribute('data-key')).toBe('end');
+  expect(t[7].getAttribute('data-skind')).toBe('golive');
 });
 
 it('kind colours: the stylesheet gives each kind its colour', () => {
@@ -602,4 +603,23 @@ it('the studio keys are 76 px tall, the least a key may be, and the two rows sti
   const gap = Number(/gap: (\d+)px/.exec(grid)?.[1]);
   expect(top + 76 + gap + 76).toBeLessThanOrEqual(192);
   expect(top).toBeGreaterThanOrEqual(26);
+});
+
+it('the scene on stage stays lit while a later key is the last action, and the lit state moves to a newer scene', async () => {
+  mocks.set('wall2_stagepop_studio', () => ({ ok: true, reason: 'ok' }));
+  await open();
+  fireEvent.click(tiles()[0], { detail: 1 });
+  await waitFor(() => expect(tiles()[0].getAttribute('data-stage')).toBe('true'));
+  expect(tiles()[0].getAttribute('data-last')).toBe('true');
+  fireEvent.click(tiles()[4], { detail: 1 });
+  await waitFor(() => expect(tiles()[4].getAttribute('data-last')).toBe('true'));
+  expect(tiles()[0].getAttribute('data-stage')).toBe('true');
+  expect(tiles()[0].hasAttribute('data-last')).toBe(false);
+  expect(tiles()[4].hasAttribute('data-stage')).toBe(false);
+  fireEvent.click(tiles()[1], { detail: 1 });
+  await waitFor(() => expect(tiles()[1].getAttribute('data-stage')).toBe('true'));
+  expect(tiles()[0].hasAttribute('data-stage')).toBe(false);
+  expect(document.querySelectorAll('[data-stage]').length).toBe(1);
+  const sel = '.oa2 .oa2-studiokeys .deck-tile.key-tile';
+  expect(onair2Css).toContain(`${sel}[data-stage='true']`);
 });

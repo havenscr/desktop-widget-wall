@@ -28,6 +28,8 @@ export function StudioKeys({ now }: { now: number }) {
   const gens = useRef<number[]>([]);
   const genOf = (i: number) => gens.current[i] ?? 0;
   const [last, setLast] = useState<{ slot: number } | null>(null);
+  // The scene on stage: the last scene key sent. It stays lit while later keys come and go as the last action.
+  const [stage, setStage] = useState<{ slot: number } | null>(null);
   const done = useCallback((id: string, ok: boolean) => {
     const p = pending.current;
     if (!p || p.id !== id) return;
@@ -72,6 +74,7 @@ export function StudioKeys({ now }: { now: number }) {
     clearTimeout(timer.current);
     setArmed(null);
     setLast((l) => (l && l.slot === i ? null : l));
+    setStage((g) => (g && g.slot === i ? null : g));
     setSlots((cur) => {
       const out = cur.map((s, j) => (j === i ? next : s));
       saveSlots(out);
@@ -104,7 +107,10 @@ export function StudioKeys({ now }: { now: number }) {
           noteN.current += 1;
           setNote({ slot, text: t.short, ok: a.ok, n: noteN.current });
           noteTimer.current = setTimeout(() => setNote(null), NOTE_MS);
-          if (a.ok) setLast({ slot });
+          if (a.ok) {
+            setLast({ slot });
+            if (SLOT_INFO[action].scene) setStage({ slot });
+          }
         }
       } finally {
         busy.current = false;
@@ -186,6 +192,7 @@ export function StudioKeys({ now }: { now: number }) {
         className="deck-tile key-tile oa2-sk"
         data-armed={isArmed ? 'true' : undefined}
         data-last={last !== null && last.slot === i ? 'true' : undefined}
+        data-stage={stage !== null && stage.slot === i ? 'true' : undefined}
         data-key={action}
         data-skind={info.kind}
         data-note={shownNote ? (shownNote.ok ? 'ok' : 'miss') : undefined}
