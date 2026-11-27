@@ -1,5 +1,5 @@
 import { IconClock, IconMessageCircle, IconStarFilled } from '@tabler/icons-react';
-import { useLayoutEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { tip } from '../../ui/HoverTip';
 import { chatStale, type LiveChat, type LiveMessage } from '../ytlive';
 import { useYtLive } from '../ytliveStore';
@@ -16,20 +16,36 @@ function readAgo(readAt: number | null, now: number): string {
   return `YouTube · read ${s < 60 ? `${s} s` : `${Math.floor(s / 60)} min`} ago`;
 }
 
-/** Rows keep their place while the pointer is on the list; newest at the bottom; a row that does not fit whole at the top is hidden, never cut. */
+/** Rows keep their place while the pointer is on the list; newest at the bottom. The list scrolls and stays on the newest row unless the viewer scrolled up; while rows are hidden above, the top edge fades (never a hard cut), so a row taller than the list is readable in full by scrolling. Long handles and long unbroken text wrap in full. */
 function Rows({ messages, dim }: { messages: LiveMessage[]; dim: boolean }) {
   const list = useRef<HTMLDivElement | null>(null);
+  const pinned = useRef(true);
   const [over, setOver] = useState(false);
   const [held, setHeld] = useState<LiveMessage[] | null>(null);
   const shown = over && held ? held : messages;
+  const mark = () => {
+    const el = list.current;
+    if (!el) return;
+    el.toggleAttribute('data-above', el.scrollTop > 0.5);
+  };
   useLayoutEffect(() => {
     const el = list.current;
     if (!el) return;
-    const top = el.getBoundingClientRect().top;
-    for (const row of el.querySelectorAll<HTMLElement>(':scope > .oa2-cm')) {
-      row.toggleAttribute('data-cut', row.getBoundingClientRect().top < top - 0.5);
-    }
+    if (pinned.current) el.scrollTop = el.scrollHeight;
+    mark();
   });
+  // Fonts and the card's own size settle after the first paint; keep the newest row in view while pinned.
+  useEffect(() => {
+    const el = list.current;
+    if (!el || typeof ResizeObserver === 'undefined') return;
+    const ro = new ResizeObserver(() => {
+      if (pinned.current) el.scrollTop = el.scrollHeight;
+      mark();
+    });
+    ro.observe(el);
+    for (const row of el.children) ro.observe(row);
+    return () => ro.disconnect();
+  }, [shown]);
   return (
     <div
       ref={list}
@@ -37,6 +53,11 @@ function Rows({ messages, dim }: { messages: LiveMessage[]; dim: boolean }) {
       aria-label="Comments"
       role="log"
       data-dim={dim ? 'true' : 'false'}
+      onScroll={(e) => {
+        const el = e.currentTarget;
+        pinned.current = el.scrollHeight - el.clientHeight - el.scrollTop < 2;
+        mark();
+      }}
       onPointerEnter={() => {
         setHeld(messages);
         setOver(true);

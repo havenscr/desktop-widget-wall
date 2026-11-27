@@ -22,9 +22,26 @@ function measureOnAirLive() {
   const want = q.get('screen') === 'onair' && q.get('oamode') === 'live';
   if (!root || root.getAttribute('data-mode') !== 'live') return want ? ['on air live: the Live page did not open'] : [];
   const r1 = (n) => Math.round(n * 10) / 10;
+  // A comment row scrolled wholly out of the comments list is not on screen.
+  const scrolledOut = (e) => {
+    const l = e.closest && e.closest('.oa2-cms[role="log"]');
+    if (!l || l === e) return false;
+    const b = e.getBoundingClientRect();
+    const lb = l.getBoundingClientRect();
+    return b.bottom <= lb.top + 0.5 || b.top >= lb.bottom - 0.5;
+  };
+  // A box as drawn: inside the comments list it is clipped to the list (the list scrolls).
+  const drawn = (e) => {
+    const b = e.getBoundingClientRect();
+    const l = e.closest && e.closest('.oa2-cms[role="log"]');
+    if (!l || l === e) return b;
+    const lb = l.getBoundingClientRect();
+    return { left: b.left, right: b.right, top: Math.max(b.top, lb.top), bottom: Math.min(b.bottom, lb.bottom) };
+  };
   const visible = (e) => {
     const b = e.getBoundingClientRect();
     if (b.width === 0 && b.height === 0) return false;
+    if (scrolledOut(e)) return false;
     const cs = getComputedStyle(e);
     return cs.display !== 'none' && cs.visibility !== 'hidden';
   };
@@ -64,7 +81,7 @@ function measureOnAirLive() {
     }
     for (const c of el.querySelectorAll('*')) {
       if (!visible(c)) continue;
-      const cb = c.getBoundingClientRect();
+      const cb = drawn(c);
       if (cb.left < x - 1 || cb.right > x + w + 1 || cb.top < y - 1 || cb.bottom > y + h + 1) {
         fails.push('on air live: ' + sel + ' holds ' + (String(c.className).split(' ')[0] || c.tagName) + ' outside its box (x ' + r1(cb.left) + ' to ' + r1(cb.right) + ', y ' + r1(cb.top) + ' to ' + r1(cb.bottom) + ')');
         break;
@@ -123,23 +140,54 @@ function measureOnAirLive() {
       }
     }
   }
-  // Comments: a row is at most two lines, no visible row is cut at the top, and eight short rows fit.
+  // Comments: handles and text show in full, rows hidden above the list fade (never a hard cut), the newest row is reachable
+  // (visible, or by scroll when it is taller than the list), and eight short rows fit.
   const list = root.querySelector('.oa2-cms[role="log"]');
   if (list) {
     const lt = list.getBoundingClientRect().top;
     const rows = [...list.querySelectorAll(':scope > .oa2-cm')];
-    const shown = rows.filter(visible);
     for (const row of rows) {
-      const t = row.querySelector('.oa2-cm-t');
-      if (t && t.getBoundingClientRect().height > 52.5) {
-        fails.push('on air live: a comment row is ' + r1(t.getBoundingClientRect().height) + ' px tall (two lines are 52)');
-        break;
+      const rb = row.getBoundingClientRect();
+      for (const part of row.querySelectorAll('.oa2-cm-n, .oa2-cm-t')) {
+        const pb = part.getBoundingClientRect();
+        if (part.scrollWidth > part.clientWidth + 0.5 || getComputedStyle(part).textOverflow === 'ellipsis' || getComputedStyle(part).overflow !== 'visible') {
+          fails.push('on air live: a comment row ' + (part.className.includes('-n') ? 'handle' : 'text') + ' is cut');
+          break;
+        }
+        if (pb.left < rb.left - 0.5 || pb.right > rb.right + 0.5) {
+          fails.push('on air live: a comment row ' + (part.className.includes('-n') ? 'handle' : 'text') + ' runs outside the row width');
+          break;
+        }
       }
     }
-    const cut = shown.find((row) => row.getBoundingClientRect().top < lt - 0.5);
-    if (cut) fails.push('on air live: a comment row is cut at the top of the list');
+    const cs = getComputedStyle(list);
+    const faded = (cs.maskImage && cs.maskImage !== 'none') || (cs.webkitMaskImage && cs.webkitMaskImage !== 'none');
+    const above = rows.some((row) => row.getBoundingClientRect().top < lt - 0.5);
+    if (above && (!list.hasAttribute('data-above') || !faded)) fails.push('on air live: a comment row is cut at the top of the list without a fade');
+    if (!above && faded) fails.push('on air live: the comments list fades at the top with nothing hidden above');
+    const last = rows[rows.length - 1];
+    if (last) {
+      const lb = last.getBoundingClientRect();
+      if (lb.bottom > list.getBoundingClientRect().bottom + 0.5) fails.push('on air live: the newest comment is not at the bottom of the list (' + r1(lb.bottom) + ' vs ' + r1(list.getBoundingClientRect().bottom) + ', scrollTop ' + r1(list.scrollTop) + ', scrollHeight ' + list.scrollHeight + ', client ' + list.clientHeight + ')');
+      const handle = last.querySelector('.oa2-cm-n');
+      if (handle) {
+        const reach = () => {
+          const hb = handle.getBoundingClientRect();
+          const l = list.getBoundingClientRect();
+          return hb.top >= l.top - 0.5 && hb.bottom <= l.bottom + 0.5;
+        };
+        if (!reach()) {
+          const keep = list.scrollTop;
+          list.scrollTop = 0;
+          const byScroll = reach();
+          list.scrollTop = keep;
+          if (!byScroll) fails.push('on air live: the newest comment handle cannot be reached by scrolling the list');
+        }
+      }
+    }
+    const fullRows = rows.filter((row) => row.getBoundingClientRect().top >= lt - 0.5);
     const longRows = rows.some((row) => (row.querySelector('.oa2-cm-t')?.textContent || '').length > 100);
-    if (!longRows && rows.length >= 8 && shown.length < 8) fails.push('on air live: only ' + shown.length + ' of ' + rows.length + ' single-line comment rows fit (eight should)');
+    if (!longRows && rows.length >= 8 && fullRows.length < 8) fails.push('on air live: only ' + fullRows.length + ' of ' + rows.length + ' single-line comment rows fit (eight should)');
     const foot = root.querySelector('.oa2-cfoot');
     if (foot && list.getBoundingClientRect().bottom > foot.getBoundingClientRect().top + 0.5) fails.push('on air live: the comments list reaches into its foot');
   }
@@ -163,7 +211,7 @@ function measureOnAirLive() {
   // Nothing above wall y 20 or below y 510.
   for (const c of root.querySelectorAll('*')) {
     if (!visible(c)) continue;
-    const b = c.getBoundingClientRect();
+    const b = drawn(c);
     if (b.top < 19.5 || b.bottom > 510.5) {
       fails.push('on air live: ' + (String(c.className).split(' ')[0] || c.tagName) + ' is at y ' + r1(b.top) + ' to ' + r1(b.bottom) + ', outside the band y 20 to 510');
       break;
@@ -203,6 +251,8 @@ export default {
     variants: [
       variant('live with comments', 'yt=live'),
       variant('busy chat', 'yt=busy'),
+      variant('long handle and long link', 'yt=longlink'),
+      variant('newest comment taller than the list', 'yt=tall'),
       variant('no comments yet', 'yt=empty'),
       variant('scheduled', 'yt=scheduled'),
       variant('stale', 'yt=stale'),
@@ -230,12 +280,14 @@ export default {
       onairLive: (variantEntry, results, emit) => {
         for (const failure of results.onairLive) emit(`  FAIL ${failure}`);
         if (results.onairLive.length) return true;
-        if (variantEntry.name.startsWith('On Air live,')) emit('  ok   on air live: every block in its planned box (the split at 620 / 436 or the dragged and folded states, the handle in the gap) inside y 20 to 510, eight equal studio keys in two rows with one-line centred labels, comment rows at most two lines and none cut, notes 27 px, key tiles at least 76 px, text at least 16 px');
+        if (variantEntry.name.startsWith('On Air live,')) emit('  ok   on air live: every block in its planned box (the split at 620 / 436 or the dragged and folded states, the handle in the gap) inside y 20 to 510, eight equal studio keys in two rows with one-line centred labels, comment rows shown in full, the top faded when rows are hidden and the newest row reachable, notes 27 px, key tiles at least 76 px, text at least 16 px');
         return false;
       },
     },
     breaks: {
-      'onair-cm-cut': { css: '.oa2-cm-t { display: block !important; -webkit-line-clamp: unset !important; overflow: visible !important; }', expect: /^ *FAIL on air live: a comment row is [\d.]+ px tall/m, appliesTo: isNamed('busy chat') },
+      'onair-cm-cut': { css: '.oa2-cm-t { overflow: hidden !important; height: 20px !important; }', expect: /^ *FAIL on air live: a comment row text is cut/m, appliesTo: isNamed('busy chat') },
+      'onair-cm-nofade': { css: ".oa2-cms[data-above] { mask-image: none !important; -webkit-mask-image: none !important; }", expect: /^ *FAIL on air live: a comment row is cut at the top of the list without a fade/m, appliesTo: isNamed('newest comment taller than the list') },
+      'onair-cm-noscroll': { css: '.oa2-cms { overflow-y: clip !important; }', expect: /^ *FAIL on air live: the newest comment is not at the bottom of the list/m, appliesTo: isNamed('newest comment taller than the list') },
       'onair-notes-wide': { css: '.oa2 .oa-card.oa2-livenotes { width: 620px !important; }', expect: /^ *FAIL on air live: \.oa2-livenotes is at/m, appliesTo: isNamed('live with comments') },
       'onair-run-file': { css: '.oa2-runline[hidden] { display: flex !important; min-height: 20px; }', expect: /^ *FAIL on air live: the run line is shown with no parts/m, appliesTo: isNamed('live, no run of show file') },
       'onair-split-min': { css: '.oa2 .oa-card.oa2-livenotes { width: 200px !important; }', expect: /^ *FAIL on air live: the notes are [\d.]+ px wide, under their minimum/m, appliesTo: isNamed('live with comments') },

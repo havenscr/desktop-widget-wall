@@ -528,3 +528,24 @@ it('the split: a storage that throws does not stop it', async () => {
   expect(cw()).toBe('600px');
   spy.mockRestore();
 });
+
+it('shows a long handle and a long unbroken link in full, with no clamp or ellipsis on the row', async () => {
+  const handle = '@SampleViewerWithAVeryLongHandleName2026';
+  const link = 'https://www.example.com/r/sample/comments/abc123/a_very_long_unbroken_link_that_goes_on_and_on_with_no_spaces_at_all';
+  chat = { ...okChat(2), messages: [{ id: 'a', name: handle, text: link, at: Date.now() - 2000, superChat: null }, { id: 'b', name: 'Viewer', text: 'Thanks', at: Date.now() - 1000, superChat: null }] };
+  await open();
+  await waitFor(() => expect(screen.getByText(link)).toBeTruthy());
+  expect(screen.getByText(handle).textContent).toBe(handle);
+  const sheet = css.replace(/\r\n/g, '\n');
+  const rule = (sel: string) => {
+    const m = new RegExp(`^\\${sel}\\s*\\{([^}]*)\\}`, 'm').exec(sheet);
+    expect(m).not.toBeNull();
+    return m![1];
+  };
+  for (const sel of ['.oa2-cm-n', '.oa2-cm-t']) {
+    const body = rule(sel);
+    expect(body).toContain('overflow-wrap: anywhere');
+    expect(body).not.toMatch(/text-overflow|line-clamp|nowrap|overflow: hidden/);
+  }
+  expect(rule('.oa2-cm')).toContain('flex-wrap: wrap');
+});
