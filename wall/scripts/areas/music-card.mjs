@@ -22,7 +22,7 @@ function measureTallMusic() {
   if (tall) {
     // The tall view: the right third, 833 by 624 at wall 1707, 24, ending above the bottom row (the Hide screen control and the office lights slot).
     const near = (a, b) => Math.abs(a - b) <= 1.5;
-    if (!near(card.left, 1707) || !near(card.top, 24) || !near(card.width, 833) || !near(card.height, 624)) fails.push('listen tall: the card is at x ' + Math.round(card.left) + ' to ' + Math.round(card.right) + ', y ' + Math.round(card.top) + ' to ' + Math.round(card.bottom) + ' (833 by 624 at 1707, 24)');
+    if (!near(card.left, 1707) || !near(card.top, 24) || !near(card.width, 833) || !near(card.height, (document.querySelector('.main[data-work-shown]') ? 506 : 624))) fails.push('listen tall: the card is at x ' + Math.round(card.left) + ' to ' + Math.round(card.right) + ', y ' + Math.round(card.top) + ' to ' + Math.round(card.bottom) + ' (833 by 624 at 1707, 24; 506 with the work layer shown)');
     if (card.bottom > 648.5) fails.push('listen tall: the card ends at y ' + Math.round(card.bottom) + ', into the bottom row (648 at most)');
     if (card.left < 0 || card.right > 2540.5 || card.top < 0 || card.bottom > 720) fails.push('listen tall: the card leaves the wall: x ' + Math.round(card.left) + ' to ' + Math.round(card.right) + ', y ' + Math.round(card.top) + ' to ' + Math.round(card.bottom));
     for (const [name, el] of [['Hide screen', document.querySelector('.so-layer')], ['the office lights slot', document.querySelector('[data-slot="office-lights"]')]]) {

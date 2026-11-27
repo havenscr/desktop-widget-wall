@@ -53,7 +53,7 @@ function measureYoutubePlayback() {
   if (foot) {
     out.yp = true;
     const f = box(foot);
-    if (!near(f.left, 1728, 2) || !near(f.top, 572, 2) || !near(f.width, 791, 2) || !near(f.height, 61, 2)) fails.push('the foot is ' + r0(f.width) + ' by ' + r0(f.height) + ' at x ' + r0(f.left) + ', y ' + r0(f.top) + ' (791 by 61 at 1728, 572)');
+    if (!near(f.left, 1728, 2) || !near(f.top, document.querySelector('.main[data-work-shown]') ? 454 : 572, 2) || !near(f.width, 791, 2) || !near(f.height, 61, 2)) fails.push('the foot is ' + r0(f.width) + ' by ' + r0(f.height) + ' at x ' + r0(f.left) + ', y ' + r0(f.top) + ' (791 by 61 at 1728, 572; y 454 with the work layer shown)');
     const list = libEl ? libEl.querySelector('.yt-rowscroll, .yt-scroll') : null;
     const l = box(list);
     if (l && l.height > 0 && l.bottom > f.top + 0.5) fails.push('the list ends at y ' + r0(l.bottom) + ', into the foot (its top is y ' + r0(f.top) + ')');

@@ -23,18 +23,25 @@ it('the Spotify cover shrinks with the card, on the card’s 250 ms ease', () =>
   expect(r).toContain('height: 72px !important');
 });
 
-it('the YouTube head becomes a grid with its buttons in rows that fit', () => {
-  expect(rule(`${shown} .yt-songs.tall .sp-shead`)).toContain('display: grid');
-  expect(rule(`${shown} .yt-songs.tall .yt-shactions`)).toContain('display: contents');
-  expect(rule(`${shown} .yt-songs.tall .yt-refreshrow`)).toContain('grid-row: 1');
-  expect(rule(`${shown} .yt-songs.tall .yt-playbtns`)).toContain('grid-row: 3');
+it('the YouTube head becomes a grid only once its mark is set, and fades around the switch', () => {
+  const head = '.yt-songs.tall .sp-shead';
+  expect(rule(`${head}[data-compact]`)).toContain('display: grid');
+  expect(rule(`${head}[data-compact] .yt-shactions`)).toContain('display: contents');
+  expect(rule(`${head}[data-compact] .yt-refreshrow`)).toContain('grid-row: 1');
+  expect(rule(`${head}[data-compact] .yt-playbtns`)).toContain('grid-row: 3');
+  expect(rule(`${head}[data-compact] .yt-songthumb`)).toContain('display: none');
+  expect(rule(head)).toContain('opacity 130ms');
+  const out = rule(`${head}[data-fading]`);
+  expect(out).toContain('opacity: 0');
+  expect(out).toContain('120ms');
 });
 
-it('every rule of the compact head sits under the layer-shown mark', () => {
-  const at = css.indexOf('.sp-songs.tall .sp-shead .sp-cover {');
-  const end = css.indexOf('@keyframes tall-head-settle');
-  const block = css.slice(at, end);
-  for (const sel of block.split('{').slice(0, -1).map((b) => b.split('}').pop()!.trim()).filter((x) => x && x !== '.sp-songs.tall .sp-shead .sp-cover')) {
-    expect(sel.startsWith(shown)).toBe(true);
-  }
+it('the head hook waits the fade out before it switches, and the same times are in the CSS', () => {
+  const hook = (readFileSync('src/unwind/ytmusic/useCompactHead.ts', 'utf8') as string).replace(/\r\n/g, '\n');
+  expect(hook).toContain('HEAD_OUT_MS = 120');
+  expect(hook).toContain('HEAD_IN_MS = 130');
+  expect(hook).toContain("attributeFilter: ['data-work-shown']");
+  const songs = (readFileSync('src/unwind/ytmusic/YtSongs.tsx', 'utf8') as string).replace(/\r\n/g, '\n');
+  expect(songs).toContain('data-compact');
+  expect(songs).toContain('data-fading');
 });

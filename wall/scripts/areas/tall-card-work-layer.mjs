@@ -17,8 +17,8 @@ const variant = (name, extra, click, more = {}) => ({ name: `Tall card with the 
 const OPENED_YT = 'Tall card with the work layer, YouTube playlist opened';
 
 /**
- * Runs in the page (it references nothing outside its own body). Puts the page in the layer-shown state itself (the frame's
- * `data-work-shown` mark; the layer's own open state needs a pointer) with transitions off, then reads the card: 506 px high,
+ * Runs in the page (it references nothing outside its own body). Reads the page in the layer-shown state (the frame's
+ * `data-work-shown` mark) with transitions off, then reads the card: 506 px high,
  * and every button, field and slider whole inside it with 10 px or more to the foot. A control inside a list's own scroll
  * area may be partly scrolled away; the scroll area itself must still end inside the card with the same 10 px.
  */
@@ -29,7 +29,9 @@ function measureTallWork() {
   const main = document.querySelector('.main');
   const cardEl = document.querySelector('.sp-card');
   if (!main || !cardEl || cardEl.getAttribute('data-tall') !== 'true') return { tall: false, fails: [] };
-  main.setAttribute('data-work-shown', '');
+  // The layer comes up by itself in these runs (the pointer rests on the card); its own timers have run by now, so the YouTube head is compact.
+  if (!main.hasAttribute('data-work-shown')) return { tall: true, fails: ['the work layer is not shown'], buttons: 0 };
+  if (cardEl.querySelector('.sp-shead[data-fading]')) return { tall: true, fails: ['the head is still fading'], buttons: 0 };
   void main.offsetHeight;
   const card = cardEl.getBoundingClientRect();
   const fails = [];

@@ -45,7 +45,7 @@ function measureForYou() {
   const name = (e) => String((e.className && e.className.baseVal) || e.className || e.tagName);
   const hit = (a, b) => a.left < b.right - 0.5 && b.left < a.right - 0.5 && a.top < b.bottom - 0.5 && b.top < a.bottom - 0.5;
   if (tall) {
-    if (!near(card.left, 1707, 1.5) || !near(card.top, 24, 1.5) || !near(card.width, 833, 1.5) || !near(card.height, 624, 1.5)) fails.push('the tall card is at x ' + r0(card.left) + ', y ' + r0(card.top) + ', ' + r0(card.width) + ' by ' + r0(card.height) + ' (833 by 624 at 1707, 24)');
+    if (!near(card.left, 1707, 1.5) || !near(card.top, 24, 1.5) || !near(card.width, 833, 1.5) || !near(card.height, (document.querySelector('.main[data-work-shown]') ? 506 : 624), 1.5)) fails.push('the tall card is at x ' + r0(card.left) + ', y ' + r0(card.top) + ', ' + r0(card.width) + ' by ' + r0(card.height) + ' (833 by 624 at 1707, 24; 506 with the work layer shown)');
   } else if (!near(card.left, 1740, 1.5) || !near(card.top, 24, 1.5) || !near(card.width, 800, 1.5) || !near(card.height, 462, 1.5)) {
     fails.push('the resting card is at x ' + r0(card.left) + ', y ' + r0(card.top) + ', ' + r0(card.width) + ' by ' + r0(card.height) + ' (800 by 462 at 1740, 24)');
   }

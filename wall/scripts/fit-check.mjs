@@ -1488,9 +1488,13 @@ try {
       const slot = document.querySelector('[data-slot="office-lights"]');
       if (!slot) listen.push('listen: the office lights slot is not there');
       else {
+        // With the work layer shown the row is lifted 116 px (unwind-work.css), so its top is 540 instead of 656; the lift's transition (250 ms up, 400 ms down) is ended first so the box read is the one it settles on, whichever way it was going.
+        const lifted = !!document.querySelector('.main[data-work-shown]');
+        const ts = document.createElement('style'); ts.textContent = '.u-foot, .u-office-slot { transition: none !important; }'; document.head.appendChild(ts);
+        const slotTop = lifted ? 540 : 662;
         const sr = slot.getBoundingClientRect();
         // Its stage box (7A's foot row): right edge at wall x 2364 (176 px from the stage's right edge), top 662, 34 tall; 420 wide empty, up to 1124 with the moods row.
-        if (Math.abs(sr.right - 2364) > 1 || Math.abs(sr.top - 662) > 1 || Math.abs(sr.height - 34) > 1 || sr.width < 419.5 || sr.width > 1124.5) listen.push('listen: the office lights slot is at x ' + Math.round(sr.left) + ' to ' + Math.round(sr.right) + ', y ' + Math.round(sr.top) + ' to ' + Math.round(sr.bottom) + ' (right edge 2364, top 662, 34 tall, 420 to 1124 wide)');
+        if (Math.abs(sr.right - 2364) > 1 || Math.abs(sr.top - slotTop) > 1 || Math.abs(sr.height - 34) > 1 || sr.width < 419.5 || sr.width > 1124.5) listen.push('listen: the office lights slot' + (lifted ? ' (work layer shown)' : '') + ' is at x ' + Math.round(sr.left) + ' to ' + Math.round(sr.right) + ', y ' + Math.round(sr.top) + ' to ' + Math.round(sr.bottom) + ' (right edge 2364, top 662, 34 tall, 420 to 1124 wide)');
         const bn = document.querySelector('.leave-banner')?.getBoundingClientRect();
         const ln = document.querySelector('.u-line')?.getBoundingClientRect();
         if (bn && ln && hit(bn, ln)) listen.push('listen: the leave banner covers the status line');
