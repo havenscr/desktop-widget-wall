@@ -1523,6 +1523,18 @@
 .top:has(:is(.w-sky, .w-sun) .w-take) .unwind :is(.u-wing, .u-right, .u-tabrow, .w-now, .w-sheet) {
   pointer-events: auto;
 }
+/* The main area carries the wall's one hover hold (Frame.tsx), so while it lets the picture through a band along the
+   foot stays a hit target of its own: the pointer arriving at the foot still holds the layer. It lies below the
+   picture (the frame ends above it), and the wall's controls keep their place above it. */
+.main:has(:is(.w-sky, .w-sun) .w-take)::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 150px;
+  pointer-events: auto;
+}
 /* The waiting sun's top reaches up beside the clock, whose block is as wide as the band: while
    it waits, that block is only as wide as the clock and its date (no change to what is drawn),
    so a click on the top of the disc reaches the picture. */
