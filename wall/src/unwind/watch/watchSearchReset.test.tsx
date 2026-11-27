@@ -32,9 +32,11 @@ const click = async (el: Element) => {
   await flush();
 };
 const mainButton = () => document.querySelector('.w-add') as HTMLButtonElement;
-const press = async (el: Element, type: 'pointerdown' | 'pointerup') => {
+const press = async (el: Element, type: 'pointerdown' | 'pointerup' | 'pointercancel', init: { id?: number; x?: number; y?: number; primary?: boolean } = {}) => {
   await act(async () => {
-    fireEvent(el, new MouseEvent(type, { bubbles: true, cancelable: true, button: 0 }));
+    const e = new MouseEvent(type, { bubbles: true, cancelable: true, button: 0, clientX: init.x ?? 10, clientY: init.y ?? 10 });
+    Object.assign(e, { pointerId: init.id ?? 1, isPrimary: init.primary ?? true });
+    fireEvent(el, e);
   });
 };
 const clickOn = async (el: Element) => {
@@ -147,5 +149,97 @@ describe('resetting the Watch search', () => {
     expect(useWatchSearch.getState().open).toBe(false);
     expect(document.querySelector('.ws')).toBeNull();
     expect(box().value).toBe('');
+  });
+
+  it('Escape clears the typed text, and so does the box emptied by hand', async () => {
+    await act(async () => {
+      fireEvent.keyDown(box(), { key: 'Escape' });
+    });
+    expect(box().value).toBe('');
+    await type('again');
+    expect(box().value).toBe('again');
+    await type('');
+    expect(box().value).toBe('');
+  });
+
+  it('a click on a hover detail card, a slider, a tab or a focusable element does not reset', async () => {
+    const mk = (html: string) => {
+      page.insertAdjacentHTML('beforeend', html);
+      return page.lastElementChild!;
+    };
+    for (const el of [
+      mk('<div class="yt-dcard">x</div>'),
+      mk('<div role="tooltip">x</div>'),
+      mk('<div role="slider"></div>'),
+      mk('<div role="switch"></div>'),
+      mk('<div role="tab"></div>'),
+      mk('<div role="option"></div>'),
+      mk('<div role="button"></div>'),
+      mk('<div tabindex="0"></div>'),
+    ]) {
+      await clickOn(el);
+      expect(document.querySelector('.ws')).not.toBeNull();
+    }
+  });
+
+  it('closing the Day drawer by its scrim does not reset', async () => {
+    const scrim = document.createElement('div');
+    scrim.className = 'drawer-scrim';
+    page.appendChild(scrim);
+    document.documentElement.setAttribute('data-drawer-open', '');
+    try {
+      await clickOn(scrim);
+      document.documentElement.removeAttribute('data-drawer-open');
+      await clickOn(scrim);
+    } finally {
+      document.documentElement.removeAttribute('data-drawer-open');
+    }
+    expect(document.querySelector('.ws')).not.toBeNull();
+    expect(box().value).toBe('night');
+  });
+
+  it('a press while an overlay owns the pointer, released after it closed, does not reset', async () => {
+    document.documentElement.setAttribute('data-drawer-open', '');
+    await press(page, 'pointerdown');
+    document.documentElement.removeAttribute('data-drawer-open');
+    await press(page, 'pointerup');
+    expect(document.querySelector('.ws')).not.toBeNull();
+  });
+
+  it('only the arming pointer resets: another pointer releasing, or a second touch, does not', async () => {
+    await press(page, 'pointerdown', { id: 1 });
+    await press(page, 'pointerup', { id: 2 });
+    expect(document.querySelector('.ws')).not.toBeNull();
+    await press(page, 'pointerup', { id: 1 });
+    expect(document.querySelector('.ws')).toBeNull();
+  });
+
+  it('a secondary touch never arms', async () => {
+    await press(page, 'pointerdown', { id: 5, primary: false });
+    await press(page, 'pointerup', { id: 5, primary: false });
+    expect(document.querySelector('.ws')).not.toBeNull();
+  });
+
+  it('a cancelled pointer disarms', async () => {
+    await press(page, 'pointerdown', { id: 1 });
+    await press(page, 'pointercancel', { id: 1 });
+    await press(page, 'pointerup', { id: 1 });
+    expect(document.querySelector('.ws')).not.toBeNull();
+  });
+
+  it('a drag of more than 8 px does not reset', async () => {
+    await press(page, 'pointerdown', { x: 10, y: 10 });
+    await press(page, 'pointerup', { x: 40, y: 10 });
+    expect(document.querySelector('.ws')).not.toBeNull();
+  });
+
+  it('coming back to the Watch view paints the empty default list at once', async () => {
+    cleanup();
+    expect(useWatchSearch.getState().open).toBe(true);
+    render(<WatchCard />);
+    // The reset is a layout effect (before paint); the result is the empty default list with the first render's output replaced.
+    expect(document.querySelector('.ws')).toBeNull();
+    expect(box().value).toBe('');
+    expect(useWatchSearch.getState().open).toBe(false);
   });
 });

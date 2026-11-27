@@ -1,6 +1,8 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent } from 'react';
 import { IconBrandTwitch, IconBrandYoutube, IconBroadcast, IconCheck, IconPencil, IconPlaylist, IconPlaylistAdd, IconPlus, IconSearch, IconX } from '@tabler/icons-react';
 import { useSkyKeepClear } from '../../horizon/sky';
+import { CLICKABLE } from '../../ribbon/DayLip';
+import { overlayOwnsPointer } from '../../ribbon/DrawerScrim';
 import { FitTitle } from '../../ui/FitTitle';
 import { tip } from '../../ui/HoverTip';
 import { useSignalStore } from '../../signals/store';
@@ -29,6 +31,12 @@ import { useListView } from './listViewStore';
 export { PASTE_ERROR_MS };
 /** How long the offer of a second choice (the playlist a pasted video link also names) stays under the field. */
 export const OFFER_MS = 20_000;
+
+/** What a bare-page click never means: fields, menus, dialogs, hover detail cards, controls with a role, and the overlay scrim. */
+const NOT_BARE =
+  'input, textarea, select, label, [contenteditable="true"], [role="menu"], [role="menuitem"], [role="dialog"], [role="tooltip"], [role="slider"], [role="switch"], [role="tab"], [role="option"], [role="listbox"], .w-pop, .watt-menu, .yt-dcard, .hover-tip, .drawer-scrim';
+/** A press and release further apart than this is a drag, not a click. */
+const DRAG_PX = 8;
 
 export function KindIcon({ kind, size = 22 }: { kind: WatchKind; size?: number }) {
   switch (kind) {
@@ -293,24 +301,38 @@ function WatchList({ empty, draft, setDraft, host, own }: { empty: boolean; draf
     if (list.ref.current) list.ref.current.scrollTop = 0;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [resetNonce]);
-  // While results show, a click (press and release) on bare page outside the card ends the search. Hover alone never does;
-  // buttons, fields, menus and dialogs elsewhere keep their own clicks.
+  // While results show, a click (press and release, the same pointer, both on bare page outside the card) ends the search.
+  // Hover alone never does; anything that acts on a click, hover detail cards, other overlays and their scrims keep their own clicks.
   useEffect(() => {
     if (!searching || !host) return;
-    let armed = false;
+    let armed: { id: number; x: number; y: number } | null = null;
     const bare = (t: EventTarget | null) =>
-      t instanceof Element && !host.contains(t) && !t.closest('button, a, input, textarea, select, label, [role="menu"], [role="dialog"], .w-pop, .watt-menu');
-    const down = (e: PointerEvent) => void (armed = e.button === 0 && bare(e.target));
+      t instanceof Element &&
+      !overlayOwnsPointer() &&
+      !host.contains(t) &&
+      !t.closest(`${CLICKABLE}, ${NOT_BARE}`);
+    const down = (e: PointerEvent) => {
+      if (armed) return; // a second touch while one is held never arms or moves the first
+      if (e.button === 0 && e.isPrimary !== false && bare(e.target)) armed = { id: e.pointerId, x: e.clientX, y: e.clientY };
+    };
     const up = (e: PointerEvent) => {
-      const hit = armed && e.button === 0 && bare(e.target);
-      armed = false;
-      if (hit) resetWatchSearch();
+      if (!armed || e.pointerId !== armed.id) return;
+      const a = armed;
+      armed = null;
+      if (e.button !== 0 || !bare(e.target)) return;
+      if (Math.hypot(e.clientX - a.x, e.clientY - a.y) > DRAG_PX) return;
+      resetWatchSearch();
+    };
+    const cancel = (e: PointerEvent) => {
+      if (armed && e.pointerId === armed.id) armed = null;
     };
     document.addEventListener('pointerdown', down, true);
     document.addEventListener('pointerup', up, true);
+    document.addEventListener('pointercancel', cancel, true);
     return () => {
       document.removeEventListener('pointerdown', down, true);
       document.removeEventListener('pointerup', up, true);
+      document.removeEventListener('pointercancel', cancel, true);
     };
   }, [searching, host]);
   const st = useWatchStore.getState();
@@ -669,7 +691,8 @@ export function WatchCard() {
     });
   }, [unnamed]);
   // Opening the Watch tab starts from the default list: no results kept from a visit before.
-  useEffect(() => resetWatchSearch(), []);
+  // (before paint, so no stale results show for a frame)
+  useLayoutEffect(() => resetWatchSearch(), []);
   const mode = open ? 'edit' : own?.follow ? 'follow' : 'list';
   const searching = useWatchSearch((s) => s.open) && mode === 'list';
   const empty = mode === 'list' && saved.length === 0 && !draft && !searching;
