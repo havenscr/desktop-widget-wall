@@ -187,7 +187,9 @@ function measureOnAirLive() {
     }
     const fullRows = rows.filter((row) => row.getBoundingClientRect().top >= lt - 0.5);
     const longRows = rows.some((row) => (row.querySelector('.oa2-cm-t')?.textContent || '').length > 100);
-    if (!longRows && rows.length >= 8 && fullRows.length < 8) fails.push('on air live: only ' + fullRows.length + ' of ' + rows.length + ' single-line comment rows fit (eight should)');
+    // Each row carries a 40 px picture, so in the narrowest card (the list under 400 px) some short rows wrap to two lines: seven must fit there.
+    const want = list.getBoundingClientRect().width < 400 ? 7 : 8;
+    if (!longRows && rows.length >= want && fullRows.length < want) fails.push('on air live: only ' + fullRows.length + ' of ' + rows.length + ' single-line comment rows fit (' + (want === 8 ? 'eight' : 'seven') + ' should)');
     const foot = root.querySelector('.oa2-cfoot');
     if (foot && list.getBoundingClientRect().bottom > foot.getBoundingClientRect().top + 0.5) fails.push('on air live: the comments list reaches into its foot');
   }
