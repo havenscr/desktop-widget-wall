@@ -59,9 +59,11 @@ const LOOK_BOX_SKY = { x: 1106, y: 16, w: 889, h: 500 };
  * Remove the entry in the PR that fixes the bug: an entry that no longer matches anything is reported, unless it is marked
  * `sometimes` (a line that may or may not appear). Each line is pinned to the numbers seen, so a different failure in the same state is not let through.
  */
+/** The seven at-rest library add variants with the menu open (wall/scripts/areas/library-add.mjs); the closed ones stay on the full check. */
+const OPEN_AT_REST = /^YouTube add, at rest, (Liked, the menu open on (a middle row|the last whole row)|search results, the menu open|Liked, (no playlist yet|already in one playlist|one playlist full|nine playlists)) \(/;
 const KNOWN_FAILURES = [
-  { state: 'YouTube add, at rest', line: /^ *FAIL library add: the menu ends at x 2478, not on the control \(x 2511\)$/, bug: 'open item: src/unwind/watch/AddToPlaylist.tsx:91 places the library menu once at open (the control edge comes out wrong in the fit variants: the menu ends at x 2478, the control at 2511); not yet classified' },
-  { state: 'YouTube add, at rest', line: /^ *FAIL listen: the Spotify card is at x 1707 to 2540, y 24 to 648 \(x 1740 to 2540, y 0 to 510\)$/, bug: 'open item: opening the library add menu at rest grows the Spotify card to the tall box (x 1707 to 2540, y 24 to 648) in all seven at-rest variants with the menu open, with no grow asked and no work layer asked; not yet classified' },
+  { state: OPEN_AT_REST, line: /^ *FAIL library add: the menu ends at x 2478, not on the control \(x 2511\)$/, bug: 'open item: src/unwind/watch/AddToPlaylist.tsx:91 places the library menu once at open (the control edge comes out wrong in the fit variants: the menu ends at x 2478, the control at 2511); not yet classified' },
+  { state: OPEN_AT_REST, line: /^ *FAIL listen: the Spotify card is at x 1707 to 2540, y 24 to 648 \(x 1740 to 2540, y 0 to 510\)$/, bug: 'open item: opening the library add menu at rest grows the Spotify card to the tall box (x 1707 to 2540, y 24 to 648) in all seven at-rest variants with the menu open, with no grow asked and no work layer asked; not yet classified' },
   { state: 'YouTube add, at rest, search results, the menu open', line: /^ *FAIL library add: the menu lies over its own row$/, bug: 'open item: src/unwind/watch/AddToPlaylist.tsx:91 places the library menu once at open (over its own row in the search results variant); not yet classified' },
   { state: 'Own playlists, the list', line: /^ *FAIL own playlists: the list is at 2015, 108 510 by 160 \(2015, 68 510 by 200\)$/, bug: 'open item: own playlists list sits 40 px lower with four rows (top 108, 160 tall, not 68 and 200); not yet classified' },
   { state: 'Own playlists, the list', line: /^ *FAIL own playlists: 4 whole rows show \(five\)$/, bug: 'open item: own playlists list sits 40 px lower, so four whole rows show, not five; not yet classified' },
@@ -97,7 +99,7 @@ console.log = (...parts) => {
   if (/^\S.*\):$/.test(text)) { closeState(); currentState = text; }
   if (/^ *FAIL /.test(text)) {
     stateFailLines += 1;
-    const known = KNOWN_FAILURES.find((k) => currentState.startsWith(k.state) && k.line.test(text));
+    const known = KNOWN_FAILURES.find((k) => (k.state instanceof RegExp ? k.state.test(currentState) : currentState.startsWith(k.state)) && k.line.test(text));
     if (known) {
       knownHit.add(known);
       writeLine(`  KNOWN FAILURE (real bug, not fixed in this check): ${text.trim().slice(5)} [${known.bug}]`);
