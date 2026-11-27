@@ -47,12 +47,19 @@ export default {
   },
   fit: {
     variants: [
+      { name: 'Labels full, Listen with long names keeps the player above the lines', q: '?hz=unwind&at=2026-11-11T10%3A24%3A00-08%3A00&clock=review&long=1&agents=ask&spotify=long&media=long&audio=demo', checks: ['.u-listen', '.sp-card', '.u-next', '.u-line'] },
+      { name: 'Labels full, Listen with a heavy library keeps the player above the lines', q: '?hz=unwind&at=2026-11-11T10%3A24%3A00-08%3A00&clock=review&long=1&agents=ask&spotify=heavy&media=long&audio=demo', checks: ['.u-listen', '.sp-card', '.u-next', '.u-line'] },
       { name: 'Labels full, Watch with long names', q: `?${WATCH}&wlist=three&wpins=long&wplay=0&wmeta=long&long=1`, checks: ['.w-now', '.w-card'] },
       { name: 'Labels full, Work with long chip names', q: '?hz=work&at=2026-11-11T10%3A24%3A00-08%3A00&clock=review&weather=ok&long=1&meet=heavy', checks: ['.left-wing'] },
     ],
     measurements: {
       labelsFull: () => {
         const out = { cut: [], small: [], overlap: [], missing: false };
+        // The old boxes hold: a Watch list row is 40 px, a pin is 48 px, and nothing grows to move what sits around it.
+        for (const e of document.querySelectorAll('.w-row')) if (e.getBoundingClientRect().height > 40.5) out.cut.push(`a Watch list row is ${Math.round(e.getBoundingClientRect().height)} px, not 40`);
+        for (const e of document.querySelectorAll('.u-pin')) if (e.getBoundingClientRect().height > 48.5) out.cut.push(`a pin is ${Math.round(e.getBoundingClientRect().height)} px, not 48`);
+        for (const e of document.querySelectorAll('.u-listen .u-transport')) if (e.getBoundingClientRect().bottom > 300) out.cut.push(`the Listen player ends at y ${Math.round(e.getBoundingClientRect().bottom)}, past 300`);
+        for (const e of document.querySelectorAll('.w-title')) if (e.getBoundingClientRect().height > 107) out.cut.push(`the Watch title is ${Math.round(e.getBoundingClientRect().height)} px, not 106`);
         const R = (e) => e.getBoundingClientRect();
         const hit = (a, b) => a.right > b.left + 0.5 && a.left < b.right - 0.5 && a.bottom > b.top + 0.5 && a.top < b.bottom - 0.5;
         for (const sel of ['.w-title', '.w-by', '.w-label', '.u-pin-name', '.u-np', '.u-artist', '.u-nu-title', '.rib .due .n', '.rib .ev .ev-t']) {

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent } from 'react';
 import { IconBrandTwitch, IconBrandYoutube, IconBroadcast, IconCheck, IconPencil, IconPlaylist, IconPlaylistAdd, IconPlus, IconSearch, IconX } from '@tabler/icons-react';
 import { useSkyKeepClear } from '../../horizon/sky';
+import { FitTitle } from '../../ui/FitTitle';
 import { tip } from '../../ui/HoverTip';
 import { useSignalStore } from '../../signals/store';
 import { defaultLabel, kindName, parseLink, refKey, type WatchKind, type WatchRef } from './links';
@@ -495,7 +496,9 @@ function WatchList({ empty, draft, setDraft, host, own }: { empty: boolean; draf
                     <span className="w-kind" {...tip(kindName('own'))}>
                       <KindIcon kind="own" />
                     </span>
-                    <span className="w-label">{item.label}</span>
+                    <FitTitle top={20} boxH={40} lh={1.1} className="w-label">
+                      {item.label}
+                    </FitTitle>
                     {here ? (
                       <span className="own-pill" title={`Video ${own!.place} of ${own!.count}`}>
                         {own!.place} of {own!.count}
@@ -541,7 +544,9 @@ function WatchList({ empty, draft, setDraft, host, own }: { empty: boolean; draf
                   <span className="w-kind" {...tip(kindName(item.kind))}>
                     <KindIcon kind={item.kind} />
                   </span>
-                  <span className="w-label">{item.label}</span>
+                  <FitTitle top={20} boxH={40} lh={1.1} className="w-label">
+                    {item.label}
+                  </FitTitle>
                   {item.kind === 'playlist' ? <span className="w-count">YouTube</span> : null}
                   {on ? <span className="w-on">On</span> : null}
                 </button>
