@@ -89,6 +89,8 @@ export interface VibeState {
   palette: number;
   /** Frame clock seconds of each live drop; -Infinity marks a free slot. Fixed size, never reallocated. */
   drops: Float64Array;
+  /** How hard each drop hits, parallel to `drops` (`DROP_MIN_STRENGTH` to 1). */
+  power: Float64Array;
 }
 
 const ease0 = (v = 0): Ease2 => ({ a: v, b: v });
@@ -97,7 +99,7 @@ const ease0 = (v = 0): Ease2 => ({ a: v, b: v });
 export function createVibeState(): VibeState {
   return {
     auto: ease0(), tape: ease0(), glitch: ease0(), calm: ease0(), aurora: ease0(), kickAt: -Infinity, live: ease0(),
-    palette: 0, drops: new Float64Array(MAX_DROPS).fill(-Infinity),
+    palette: 0, drops: new Float64Array(MAX_DROPS).fill(-Infinity), power: new Float64Array(MAX_DROPS).fill(1),
   };
 }
 
@@ -122,7 +124,7 @@ const contribution = (at: number, nowS: number): number => Math.max(envOf(nowS -
  * takes a free slot, or when all are in use the one contributing least right now (a finished
  * tail first), which can only change the envelope by that smallest amount.
  */
-export function noteDrop(s: VibeState, nowS: number): void {
+export function noteDrop(s: VibeState, nowS: number, strength = 1): void {
   let slot = 0;
   let least = Infinity;
   for (let i = 0; i < s.drops.length; i++) {
@@ -133,6 +135,7 @@ export function noteDrop(s: VibeState, nowS: number): void {
     }
   }
   s.drops[slot] = nowS;
+  s.power[slot] = Number.isFinite(strength) ? Math.min(1, Math.max(0, strength)) : 1;
 }
 
 // One scratch object, rewritten by each call: the frame path allocates nothing.
@@ -141,8 +144,8 @@ const T = { auto: 0, tape: 0, glitch: 0, calm: 0, aurora: 0, live: 0 };
 function targets(settings: VibeSettings, playing: boolean): typeof T {
   T.auto = settings.auto ? 1 : 0;
   T.tape = settings.tapeGrain ? 1 : 0;
-  // Vote 3A: the manual switch, or Auto vibe, lets a drop glitch.
-  T.glitch = settings.dropGlitch || settings.auto ? 1 : 0;
+  // Off means off, with Auto vibe on or not: the look alone decides.
+  T.glitch = settings.dropGlitch !== 'off' ? 1 : 0;
   T.calm = settings.calmCap ? 1 : 0;
   T.aurora = AURORA_GAIN[settings.aurora];
   T.live = playing ? 1 : 0;

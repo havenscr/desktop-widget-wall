@@ -127,42 +127,71 @@ describe('the Lines panel', () => {
 
 describe('the Vibe section', () => {
   const sw = (name: string) => screen.getByRole('switch', { name });
+  const group = (name: string) => screen.getByRole('radiogroup', { name });
+  const chip = (g: string, name: string) => within(group(g)).getByRole('radio', { name });
 
   beforeEach(() => resetVibeStore());
 
-  it('has Auto vibe, Drop Glitch, Tape Grain and Calm cap switches, each with a helper line', () => {
+  it('has two groups, Music reacts and Screen look, with every control in its place', () => {
     render(<VibePanel />);
+    const text = document.body.textContent!;
+    expect(text.indexOf('Music reacts')).toBeGreaterThanOrEqual(0);
+    expect(text.indexOf('Music reacts')).toBeLessThan(text.indexOf('Screen look'));
+    const order = ['Reset vibe', 'Auto vibe', 'Drop Glitch', 'Calm cap', 'Mountain dance', 'Music on other tabs', 'Screen look', 'Tape Grain', 'Aurora'];
+    const at = order.map((n) => text.indexOf(n));
+    expect(at.every((v) => v >= 0)).toBe(true);
+    expect([...at].sort((x, y) => x - y)).toEqual(at);
     expect(sw('Auto vibe').getAttribute('aria-checked')).toBe('true');
-    expect(sw('Drop Glitch')).toBeTruthy();
     expect(sw('Tape Grain').getAttribute('aria-checked')).toBe('false');
     expect(sw('Calm cap').getAttribute('aria-checked')).toBe('false');
-    for (const id of ['auto', 'glitch', 'tape', 'calm']) {
-      const hint = document.getElementById(`ln-${id}-hint`)!;
-      expect(hint.className).toBe('ln-hint');
-      expect(hint.textContent!.length).toBeGreaterThan(20);
-    }
-    expect(sw('Auto vibe').getAttribute('aria-describedby')).toBe('ln-auto-hint');
     expect(screen.queryByRole('radiogroup', { name: 'Cover' })).toBeNull();
-    expect(screen.queryByText('Scene only')).toBeNull();
   });
 
-  it('shows Drop Glitch on and locked while Auto vibe is on, and free once Auto vibe is off', () => {
+  it('shows the Reset vibe button on the first heading row', () => {
     render(<VibePanel />);
-    const g = sw('Drop Glitch');
-    expect(g.getAttribute('aria-checked')).toBe('true');
-    expect(g.getAttribute('aria-disabled')).toBe('true');
-    expect(screen.getByText('On with Auto vibe')).toBeTruthy();
-    fireEvent.click(g);
-    expect(useVibeStore.getState().dropGlitch).toBe(false);
-    fireEvent.click(sw('Auto vibe'));
-    expect(sw('Drop Glitch').getAttribute('aria-checked')).toBe('false');
-    expect(sw('Drop Glitch').getAttribute('aria-disabled')).toBeNull();
-    fireEvent.click(sw('Drop Glitch'));
-    expect(useVibeStore.getState().dropGlitch).toBe(true);
-    // Auto vibe back on: on and locked again, and the choice made is kept.
-    fireEvent.click(sw('Auto vibe'));
-    expect(sw('Drop Glitch').getAttribute('aria-disabled')).toBe('true');
-    expect(useVibeStore.getState().dropGlitch).toBe(true);
+    const head = screen.getByText('Music reacts').closest('.ln-row')!;
+    expect(within(head as HTMLElement).getByRole('button', { name: /Reset vibe/ })).toBeTruthy();
+  });
+
+  it('Drop Glitch is one chip row: Off, Tear, Split, Roll, Flash, with Tear chosen', () => {
+    render(<VibePanel />);
+    const names = within(group('Drop Glitch')).getAllByRole('radio').map((r) => r.textContent);
+    expect(names).toEqual(['Off', 'Tear', 'Split', 'Roll', 'Flash']);
+    expect(chip('Drop Glitch', 'Tear').getAttribute('aria-checked')).toBe('true');
+    expect(screen.queryByRole('switch', { name: 'Drop Glitch' })).toBeNull();
+  });
+
+  it('each Drop Glitch chip sets its look and keeps it in the vibe store', () => {
+    render(<VibePanel />);
+    for (const [name, id] of [['Off', 'off'], ['Split', 'split'], ['Roll', 'roll'], ['Flash', 'flash'], ['Tear', 'tear']] as const) {
+      fireEvent.click(chip('Drop Glitch', name));
+      expect(useVibeStore.getState().dropGlitch).toBe(id);
+      expect(JSON.parse(localStorage.getItem(VIBE_KEY)!)).toMatchObject({ dropGlitch: id });
+      expect(chip('Drop Glitch', name).getAttribute('aria-checked')).toBe('true');
+    }
+  });
+
+  it('Off stays off with Auto vibe on: nothing locks the choice', () => {
+    render(<VibePanel />);
+    expect(sw('Auto vibe').getAttribute('aria-checked')).toBe('true');
+    fireEvent.click(chip('Drop Glitch', 'Off'));
+    expect(useVibeStore.getState()).toMatchObject({ auto: true, dropGlitch: 'off' });
+    expect(chip('Drop Glitch', 'Off').getAttribute('aria-checked')).toBe('true');
+    expect(chip('Drop Glitch', 'Off').getAttribute('aria-disabled')).toBeNull();
+    fireEvent.click(chip('Drop Glitch', 'Roll'));
+    expect(useVibeStore.getState().dropGlitch).toBe('roll');
+  });
+
+  it('Mountain dance is a chip row: Off, Low, Medium, High, with Medium chosen and a one-line hint', () => {
+    render(<VibePanel />);
+    expect(within(group('Mountain dance')).getAllByRole('radio').map((r) => r.textContent)).toEqual(['Off', 'Low', 'Medium', 'High']);
+    expect(chip('Mountain dance', 'Medium').getAttribute('aria-checked')).toBe('true');
+    expect(screen.getByText('How much the music moves the mountain lines.')).toBeTruthy();
+    for (const [name, id] of [['Off', 'off'], ['Low', 'low'], ['High', 'high'], ['Medium', 'medium']] as const) {
+      fireEvent.click(chip('Mountain dance', name));
+      expect(useVibeStore.getState().mountain).toBe(id);
+    }
+    expect(JSON.parse(localStorage.getItem(VIBE_KEY)!)).toMatchObject({ mountain: 'medium' });
   });
 
   it('Tape Grain toggles and is kept in the vibe store, away from the Lines setting', () => {
@@ -173,25 +202,24 @@ describe('the Vibe section', () => {
     expect(localStorage.getItem(LINES_KEY) ?? '').not.toContain('tapeGrain');
   });
 
-  it('has Music on other tabs with Medium chosen, a helper line, and keeps a change in the vibe store', () => {
+  it('has Music on other tabs with Medium chosen and no hint line: its sentence is a hover tip on the name', () => {
     render(<VibePanel />);
-    expect(screen.getByRole('radio', { name: 'Medium' }).getAttribute('aria-checked')).toBe('true');
-    expect(screen.getByRole('radiogroup', { name: 'Music on other tabs' }).getAttribute('aria-describedby')).toBe('ln-music-hint');
-    expect(document.getElementById('ln-music-hint')!.textContent).toBe(VIBE_HINTS.offTabMusic);
-    fireEvent.click(within(screen.getByRole('radiogroup', { name: 'Music on other tabs' })).getByRole('radio', { name: 'Full' }));
+    const g = group('Music on other tabs');
+    expect(within(g).getByRole('radio', { name: 'Medium' }).getAttribute('aria-checked')).toBe('true');
+    expect(g.getAttribute('aria-describedby')).toBeNull();
+    expect(document.body.textContent).not.toContain(VIBE_HINTS.offTabMusic);
+    fireEvent.click(within(g).getByRole('radio', { name: 'Full' }));
     expect(useVibeStore.getState().offTabMusic).toBe('full');
     expect(JSON.parse(localStorage.getItem('wall2-vibe')!)).toMatchObject({ offTabMusic: 'full' });
   });
 
-  it('has an Aurora row with Off, Soft and Full chips, a hint, and Full chosen', () => {
+  it('has an Aurora row with Off, Soft and Full chips and Full chosen', () => {
     render(<VibePanel />);
-    const group = screen.getByRole('radiogroup', { name: 'Aurora' });
-    expect(group.getAttribute('aria-describedby')).toBe('ln-aurora-hint');
-    expect(document.getElementById('ln-aurora-hint')!.textContent).toBe(VIBE_HINTS.aurora);
-    expect(within(group).getByRole('radio', { name: 'Full' }).getAttribute('aria-checked')).toBe('true');
-    fireEvent.click(within(group).getByRole('radio', { name: 'Soft' }));
+    const g = group('Aurora');
+    expect(within(g).getByRole('radio', { name: 'Full' }).getAttribute('aria-checked')).toBe('true');
+    fireEvent.click(within(g).getByRole('radio', { name: 'Soft' }));
     expect(useVibeStore.getState().aurora).toBe('soft');
-    fireEvent.click(within(group).getByRole('radio', { name: 'Off' }));
+    fireEvent.click(within(g).getByRole('radio', { name: 'Off' }));
     expect(JSON.parse(localStorage.getItem('wall2-vibe')!)).toMatchObject({ aurora: 'off' });
     fireEvent.click(screen.getByRole('button', { name: /Reset vibe/ }));
     expect(useVibeStore.getState().aurora).toBe('full');
@@ -207,18 +235,25 @@ describe('the Vibe section', () => {
     expect(useVibeStore.getState()).toMatchObject(DEFAULT_VIBE);
   });
 
-  it('puts each switch row out as name, switch, value, the flush right layout of the Looks sheet', () => {
+  it('puts a switch row out as name, switch, short hint, and the chips are the page chips', () => {
     render(<VibePanel />);
-    for (const name of ['Auto vibe', 'Drop Glitch', 'Tape Grain', 'Calm cap']) {
+    for (const name of ['Auto vibe', 'Tape Grain', 'Calm cap']) {
       const row = sw(name).closest('.ln-row')!;
       expect(row.classList.contains('ln-swrow')).toBe(true);
-      const kids = Array.from(row.children);
-      expect(kids.map((k) => k.className.split(' ')[0])).toEqual(['ln-label', 'ln-switch', 'ln-value']);
+      expect(Array.from(row.children).map((k) => k.className.split(' ')[0])).toEqual(['ln-label', 'ln-switch', 'ln-short']);
     }
+    for (const name of ['Drop Glitch', 'Mountain dance', 'Music on other tabs', 'Aurora']) expect(group(name).classList.contains('ln-chips')).toBe(true);
+  });
+
+  it('keeps every font at 16 px or more and every chip with room at its sides', () => {
     const css = sheet('../../styles/unwind.css');
-    expect(css).toMatch(/\.ln-swrow \.ln-label\.ln-sw \+ \.ln-switch\s*\{\s*margin-left:\s*auto/);
-    expect(css).toMatch(/\.ln-swrow \.ln-label\.ln-sw\s*\{\s*width:\s*auto/);
-    expect(css).toMatch(/\.ln-swrow \.ln-switch \+ \.ln-value\s*\{\s*margin-left:\s*0/);
+    const block = (sel: string) => css.replace(/\r\n/g, '\n').match(new RegExp(`${sel.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*\\{([^}]*)\\}`))?.[1] ?? '';
+    for (const sel of ['.ln-gh', '.ln-short', '.ln-chips button,\n.ln-reset']) {
+      const px = /font(?:-size)?:[^;]*?(\d+)px/.exec(block(sel));
+      expect(px, sel).not.toBeNull();
+      expect(Number(px![1]), sel).toBeGreaterThanOrEqual(16);
+    }
+    expect(block('.ln-chips button,\n.ln-reset')).toMatch(/padding:\s*0 14px/);
   });
 });
 
@@ -231,8 +266,8 @@ describe('the Vibe page tips', () => {
       </>,
     );
     const controls = [...screen.getAllByRole('radio'), ...screen.getAllByRole('button'), ...screen.getAllByRole('switch')];
-    // 6 radios (aurora, music on other tabs), 1 reset, 4 switches.
-    expect(controls).toHaveLength(6 + 1 + 4);
+    // 5 + 4 + 3 + 3 radios (Drop Glitch, Mountain dance, Music on other tabs, Aurora), 1 reset, 3 switches.
+    expect(controls).toHaveLength(15 + 1 + 3);
     for (const el of controls) {
       expect(el.getAttribute('title')).toBeNull();
       resetTip();
@@ -242,13 +277,30 @@ describe('the Vibe page tips', () => {
     }
     resetTip();
   });
+
+  it('every setting name carries its full sentence as a hover tip', async () => {
+    render(
+      <>
+        <VibePanel />
+        <HoverTipLayer />
+      </>,
+    );
+    for (const [label, sentence] of [['Auto vibe', VIBE_HINTS.auto], ['Drop Glitch', VIBE_HINTS.dropGlitch], ['Calm cap', VIBE_HINTS.calmCap], ['Mountain dance', VIBE_HINTS.mountain], ['Music on other tabs', VIBE_HINTS.offTabMusic], ['Tape Grain', VIBE_HINTS.tapeGrain], ['Aurora', VIBE_HINTS.aurora]] as const) {
+      resetTip();
+      fireEvent.focus(screen.getByText(label));
+      await act(() => new Promise((r) => setTimeout(r, 5)));
+      expect(document.querySelector('.hover-tip')?.textContent, label).toBe(sentence);
+    }
+    resetTip();
+  });
 });
 
 describe('the Lines page without the Vibe controls', () => {
   it('keeps the line controls and none of the vibe ones, and its reset leaves the vibe alone', () => {
     resetVibeStore();
     render(<LinesPanel />);
-    for (const name of ['Auto vibe', 'Drop Glitch', 'Tape Grain', 'Calm cap']) expect(screen.queryByRole('switch', { name })).toBeNull();
+    for (const name of ['Auto vibe', 'Tape Grain', 'Calm cap']) expect(screen.queryByRole('switch', { name })).toBeNull();
+    expect(screen.queryByRole('radiogroup', { name: 'Drop Glitch' })).toBeNull();
     expect(screen.queryByRole('radiogroup', { name: 'Cover' })).toBeNull();
     expect(screen.queryByRole('radiogroup', { name: 'Music on other tabs' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Reset vibe' })).toBeNull();

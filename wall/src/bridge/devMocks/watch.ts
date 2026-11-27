@@ -39,7 +39,7 @@ import { knob } from './long';
  *                             is the stored source); `known` also remembers the first saved item, `unknown` does not.
  *                             Use with `media=none`, `wtab=listen`.
  *   ?wplay=<n>                play saved item n (0 is the first)
- *   ?wsheet=one|kind          open the settings sheet (`kind`: a look per kind)
+ *   ?wsheet=one|kind|vibe     open the settings sheet (`kind`: a look per kind; `vibe`: on the Vibe page)
  *   ?wtune=sky.size=80,sky.soft=0,sun.up=-100   settings of a look (look.key=value, a switch as 0 or 1)
  *   ?wtab=listen              stay on Listen (for the art's video icon)
  *   ?wposter=bright           a pale bright picture, the worst case for text over video
@@ -432,7 +432,7 @@ export function registerWatchMocks(): void {
     const sleep = knob('wsleep');
     if (sleep === 'end') void endSleepNow();
     else if (sleep !== null && Number.isFinite(Number(sleep)) && Number(sleep) > 0) startSleepAt(Date.now() + Number(sleep) * 60_000, 30);
-    if (knob('wsheet')) useWatchStore.getState().setSheet(true);
+    if (knob('wsheet')) useWatchStore.getState().setSheet(true, knob('wsheet') === 'vibe' ? 'vibe' : undefined);
     const link = knob('wpaste');
     if (link) setTimeout(() => pasteLink(link), 150);
   }, 600);

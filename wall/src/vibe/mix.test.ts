@@ -111,12 +111,12 @@ describe('mix table', () => {
     expect(a.grain).toBeCloseTo(0.7, 5);
   });
 
-  it('Tape Grain gates the tape; the glitch follows its own switch or Auto vibe', () => {
+  it('Tape Grain gates the tape; the glitch follows its own look, Auto vibe or not', () => {
     expect(at(DEFAULT_VIBE, 0.5).tape).toBe(0);
     expect(at({ ...DEFAULT_VIBE, tapeGrain: true }, 0.5).tape).toBeGreaterThan(0);
     expect(at(DEFAULT_VIBE, 0.5).glitch).toBe(1);
-    expect(at({ ...DEFAULT_VIBE, auto: false }, 0.5).glitch).toBe(0);
-    expect(at({ ...DEFAULT_VIBE, auto: false, dropGlitch: true }, 0.5).glitch).toBe(1);
+    expect(at({ ...DEFAULT_VIBE, auto: false }, 0.5).glitch).toBe(1);
+    for (const look of ['tear', 'split', 'roll', 'flash'] as const) expect(at({ ...DEFAULT_VIBE, auto: false, dropGlitch: look }, 0.5).glitch).toBe(1);
   });
 
   it('Calm cap halves the effects, removes the glitch and softens kick and bass', () => {
@@ -249,7 +249,7 @@ describe('nothing ends abruptly', () => {
   const cases: [string, Partial<VibeSettings>][] = [
     ['Auto vibe off', { auto: false }],
     ['Tape Grain on', { tapeGrain: true }],
-    ['Drop Glitch on (Auto off)', { dropGlitch: true, auto: false }],
+    ['Drop Glitch Split (Auto off)', { dropGlitch: 'split', auto: false }],
     ['Calm cap on', { calmCap: true }],
   ];
 

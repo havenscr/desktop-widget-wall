@@ -12,6 +12,7 @@ import { loudness, smoothStep } from '../audio/model';
 import { CAMERAS, HOME_MORNING, MOON_PLACES, cameraFor, cloudShiftFor, glideCamera, localDay, settled, startGlide, stepGlide, type CameraPreset, type Glide } from './cameras';
 import { createLevelEase, fractionsAt, stepLevelEase, withMusicLevel, type LevelEase, type MusicFractions } from './offTabMusic';
 import { vibeSettings } from './vibeSettings';
+import { applyMountainGain, mountainGain, stepMountainGain } from './mountainDance';
 import {
   REST_LOOK,
   REST_OPACITY,
@@ -213,6 +214,8 @@ export function HorizonCanvas({ now = Date.now }: { now?: () => number }) {
   if (!levelEase.current) levelEase.current = createLevelEase(vibeSettings().offTabMusic);
   const level = useRef<MusicFractions>(null as unknown as MusicFractions);
   if (!level.current) level.current = fractionsAt(levelEase.current.pos, { amp: 0, a: 0, n: 0, gp: 0, vw: 0 });
+  // Mountain dance (`mountainDance.ts`): the eased factor on the ridge's dance height.
+  const mountainF = useRef(mountainGain(vibeSettings().mountain));
   const playWeight = useRef(0);
   const musicCam = useRef<CameraPreset>(null as unknown as CameraPreset);
   if (!musicCam.current) musicCam.current = { ...glide.current.to };
@@ -393,6 +396,7 @@ export function HorizonCanvas({ now = Date.now }: { now?: () => number }) {
         const stops = lineStops(lines.colours, liveTint(performance.now()));
         let echo = echoOptions(camera, loud.current, echoT.current, gate.current.value * awake.current, m.rest, lines.rest, flat ? FLAT_REST_OPACITY : undefined, m.rest < 1 ? danceKick() * (1 - m.rest) : 0, stops);
         if (echo && lines.lively !== 50) echo.amp *= ampScale(lines.lively);
+        if (echo) applyMountainGain(echo, mountainF.current);
         const turningOff = glide.current.to.ea === 0 && glide.current.progress < 1;
         if (echo && turningOff && echoStrength(echo) > lastEchoA.current) {
           scaleEcho(echo, lastEchoA.current / echoStrength(echo));
@@ -611,6 +615,7 @@ export function HorizonCanvas({ now = Date.now }: { now?: () => number }) {
       stepEchoMotion(motion.current, driving, dt);
       stepLevelEase(levelEase.current, vibeSettings().offTabMusic, dt);
       fractionsAt(levelEase.current.pos, level.current);
+      mountainF.current = stepMountainGain(mountainF.current, vibeSettings().mountain, dt);
       playWeight.current = 1 - motion.current.rest;
       // Zen is watched for the length of a session without input: its picture never goes to the idle fade.
       awake.current = stepEchoFade(awake.current, !idleRef.current || zen, dt);
