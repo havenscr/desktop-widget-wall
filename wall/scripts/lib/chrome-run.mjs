@@ -223,12 +223,14 @@ async function once(chrome, args, limitMs, maxBuffer, hang) {
 export async function runChrome(chrome, args, { label = '', maxBuffer = 64 * 1024 * 1024, limitMs: limit = DEFAULT_LIMIT_MS, hang = 0, tries: maxTries = TRIES } = {}) {
   hook();
   const limitMs = Number(process.env.WALL_CHROME_LIMIT_MS || limit);
-  const secs = Math.round(limitMs / 1000);
+  // Each retry waits half the first limit longer: a page that is only slow (a machine with many builds running, load 50 and more) gets the time it needs, while one that never answers still ends the run.
+  const tryMs = (n) => limitMs + Math.round(limitMs * 0.5) * (n - 1);
+  const secs = (n) => Math.round(tryMs(n) / 1000);
   const name = label ? ` (${label})` : '';
   for (let n = 1; n <= maxTries; n++) {
     let r;
     try {
-      r = await once(chrome, args, limitMs, maxBuffer, n <= hang);
+      r = await once(chrome, args, tryMs(n), maxBuffer, n <= hang);
     } catch (e) {
       // A browser that crashed (for example with SIGTRAP on a busy machine) is tried again like one that hung.
       if (!(e instanceof ChromeRunError) || !e.crashed) throw e;
@@ -239,7 +241,7 @@ export async function runChrome(chrome, args, { label = '', maxBuffer = 64 * 102
       throw new ChromeRunError(`${e.message} on all ${maxTries} tries${name}`);
     }
     if (!r.timedOut) return r.out;
-    if (n < maxTries) console.log(`  retry ${n}: the browser did not answer in ${secs} s${name}`);
+    if (n < maxTries) console.log(`  retry ${n}: the browser did not answer in ${secs(n)} s${name}`);
   }
-  throw new ChromeRunError(`the browser did not answer in ${secs} s after ${maxTries} tries${name}`);
+  throw new ChromeRunError(`the browser did not answer in ${secs(maxTries)} s after ${maxTries} tries${name}`);
 }
