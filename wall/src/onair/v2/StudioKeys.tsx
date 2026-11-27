@@ -7,9 +7,9 @@ import { useOnAirStore } from '../store';
 import { statusStale } from '../ytlive';
 import { useYtLive } from '../ytliveStore';
 import { Head } from './Tiles';
-import { agoText, needsConfirm, needsFind, NOTE_MS, refusalText, STUDIO_CONFIRM_MS, studioAnswerText, type StudioKey } from './studioModel';
-import { LABEL_MAX_PX, ADDON_ACTION, SLOT_INFO, fitLabel, loadSlots, measureLabel, saveSlots, slotLabel, type ShownAction, type Slot } from './studioSlots';
-import { SLOT_ICON as ICON } from './studioIcons';
+import { agoText, needsConfirm, needsFind, NOTE_MS, refusalText, STUDIO_CONFIRM_MS, studioAnswerText, type DeviceState, type StudioKey } from './studioModel';
+import { LABEL_MAX_PX, ADDON_ACTION, SLOT_INFO, fitLabel, loadSlots, measureLabel, saveSlots, slotLabel, toggleLabel, type ShownAction, type Slot } from './studioSlots';
+import { ICON_WHEN_OFF, SLOT_ICON as ICON } from './studioIcons';
 import { StudioPicker } from './StudioPicker';
 import { useStudio } from './studioStore';
 import { useDeckKeys } from './useDeckKeys';
@@ -47,6 +47,9 @@ export function StudioKeys({ now }: { now: number }) {
   const pick = useStudio((s) => s.pick);
   const yt = useYtLive((s) => s.status);
   const live = yt?.state === 'live' && !statusStale(yt, now);
+  // The last mic and camera state the add-on reported, kept in the studio store so it survives leaving Live mode.
+  const devices = useStudio((s) => s.devices);
+  const setDevice = useStudio((s) => s.setDevice);
   const [slots, setSlots] = useState<Slot[]>(loadSlots);
   const [picker, setPicker] = useState<number | null>(null);
   // The add-on's answer, shown on the key for a moment; `n` makes each answer a new element so its fade starts over.
@@ -107,6 +110,14 @@ export function StudioKeys({ now }: { now: number }) {
         // edit, while the full name is the scene's real name in StreamYard.
         const a = await studio(addon, addon === 'scene' ? SLOT_INFO[action].full : undefined);
         const t = studioAnswerText(a, addon);
+        if (addon === 'mute' || addon === 'camera') {
+          // Only "failed" and "no answer" may hide a toggle that landed late, so only they make the state unknown again.
+          // Every other miss (busy, not connected, not found, studio not open, refused) leaves the known state alone.
+          // The older add-on answers "already" with no state: that means off.
+          const lateMiss = a.reason === 'failed' || a.reason === 'no answer';
+          const next: DeviceState | null | undefined = !a.ok ? (lateMiss ? null : undefined) : a.state === 'on' || a.state === 'off' ? a.state : a.reason === 'already' ? 'off' : undefined;
+          if (next !== undefined) setDevice(addon, next);
+        }
         // A sent key names its scene or button; a miss gives the whole reason alone, so the line always fits.
         keys.showBrief(a.ok ? `${SLOT_INFO[action].full}: ${t.full}` : t.full);
         if (gen === genOf(slot)) {
@@ -171,10 +182,13 @@ export function StudioKeys({ now }: { now: number }) {
   const tile = (slot: Slot, i: number) => {
     // While the show is live the Go live key is the End show key.
     const action: ShownAction = slot.a === 'golive' && live ? 'end' : slot.a;
-    const info = SLOT_INFO[action];
-    const I = ICON[action];
+    const dev = action === 'mute' || action === 'camera' ? devices[action] : null;
+    const face = toggleLabel(action, dev);
+    // A toggle key shows what pressing it does now, so its name follows the face.
+    const info = face ? { ...SLOT_INFO[action], label: face, full: face } : SLOT_INFO[action];
+    const I = (dev === 'off' && ICON_WHEN_OFF[action]) || ICON[action];
     const isArmed = armed !== null && armed.slot === i && armed.action === action;
-    const full = isArmed ? 'Click again' : slotLabel({ a: action, l: slot.l });
+    const full = isArmed ? 'Click again' : face ?? slotLabel({ a: action, l: slot.l });
     const shownNote = note !== null && note.slot === i ? note : null;
     const text = fitLabel(full, LABEL_MAX_PX, measureLabel);
     // The accessible name uses the whole label, never the fitted one, and always holds the words drawn on the key.

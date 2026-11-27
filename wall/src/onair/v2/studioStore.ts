@@ -2,7 +2,7 @@ import { useEffect } from 'react';
 import { create } from 'zustand';
 import { invoke } from '../../bridge/tauri';
 import { useAwake } from '../useNow';
-import type { PickStatus, Sent, StudioAnswer, StudioKey } from './studioModel';
+import type { DeviceState, PickStatus, Sent, StudioAnswer, StudioKey } from './studioModel';
 
 /** How often the pick status is read while the Live page shows and the display is on. */
 export const STUDIO_POLL_MS = 3000;
@@ -19,12 +19,17 @@ interface StudioState {
   send: (key: StudioKey, confirm: boolean) => Promise<void>;
   /** A scene, mute or camera key, sent through the Stage Pop-out add-on. Never throws: a failure is an answer with a reason. */
   studio: (action: 'scene' | 'mute' | 'camera', name?: string) => Promise<StudioAnswer>;
+  /** The last mic and camera state the add-on reported; null until it has. Kept here so it survives the Live page unmounting. */
+  devices: { mute: DeviceState | null; camera: DeviceState | null };
+  setDevice: (which: 'mute' | 'camera', state: DeviceState | null) => void;
   reset: () => void;
 }
 
 export const useStudio = create<StudioState>((set, get) => ({
   status: EMPTY,
   sent: null,
+  devices: { mute: null, camera: null },
+  setDevice: (which, state) => set((s) => ({ devices: { ...s.devices, [which]: state } })),
   read: async () => {
     try {
       set({ status: await invoke<PickStatus>('wall2_studio_pick_status') });
@@ -52,7 +57,7 @@ export const useStudio = create<StudioState>((set, get) => ({
       return { ok: false, reason: 'failed' };
     }
   },
-  reset: () => set({ status: EMPTY, sent: null }),
+  reset: () => set({ status: EMPTY, sent: null, devices: { mute: null, camera: null } }),
 }));
 
 /** Reads the pick status while the Live page shows and the display is on; faster while a pick waits. */

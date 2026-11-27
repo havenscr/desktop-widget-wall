@@ -17,7 +17,7 @@
 //!   origins that both passed the handshake only the first to authenticate is kept.
 //! - After the welcome the wall may send `{type:"studio", id, action, name?}` (action `scene`, `mute` or `camera`; a
 //!   scene name of 1 to 80 characters with no control character; the other two take none) and the add-on answers
-//!   `{type:"studio_result", id, ok, reason, why?, n?}` (why: the step a miss failed at; n: a count). One studio
+//!   `{type:"studio_result", id, ok, reason, why?, n?, state?}` (why: the step a miss failed at; n: a count; state: "on" or "off", the mic or camera after the press). One studio
 //!   command is in flight at a time; a second is "busy". The answer is accepted only from the current authenticated
 //!   client and only for the id that is waiting.
 //! - Text frames only, 8 KiB per message and frame, at most 20 inbound frames a second (pings and pongs count), ping every 30 s,
@@ -140,7 +140,7 @@ pub(crate) enum In {
     Window { open: bool, fullscreen: bool },
     /// The add-on's answer to a studio command: the id it was sent with, ok or a reason word, and for a miss the
     /// step that failed (`why`) with a count (`n`) when the add-on sends them.
-    Studio { id: u64, ok: bool, reason: String, why: Option<String>, n: Option<u64> },
+    Studio { id: u64, ok: bool, reason: String, why: Option<String>, n: Option<u64>, state: Option<String> },
 }
 
 /// A nonce or MAC as it travels: 1 to 128 base64 characters (either alphabet, padding allowed).
@@ -211,7 +211,8 @@ pub(crate) fn parse_in(text: &str) -> Option<In> {
             // why and n are optional extras: a missing or odd one is left out, never a reason to drop the answer.
             let why = v.get("why").and_then(Value::as_str).filter(|w| w.len() <= 40).map(str::to_string);
             let n = v.get("n").and_then(Value::as_u64);
-            Some(In::Studio { id: v.get("id")?.as_u64()?, ok: v.get("ok")?.as_bool()?, reason: reason.to_string(), why, n })
+            let state = v.get("state").and_then(Value::as_str).map(str::to_string);
+            Some(In::Studio { id: v.get("id")?.as_u64()?, ok: v.get("ok")?.as_bool()?, reason: reason.to_string(), why, n, state })
         }
         _ => None,
     }
@@ -258,11 +259,24 @@ pub struct StudioAnswer {
     /// A count that goes with `why` (tabs, scenes or buttons), 0 to 99.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub n: Option<u8>,
+    /// For a mute or camera key that went through: the mic or camera after the press, "on" or "off" ("off" is muted
+    /// or camera off). Absent from an older add-on.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub state: Option<&'static str>,
 }
 
 impl StudioAnswer {
     pub(crate) fn plain(ok: bool, reason: &'static str) -> Self {
-        StudioAnswer { ok, reason, why: None, n: None }
+        StudioAnswer { ok, reason, why: None, n: None, state: None }
+    }
+}
+
+/// The add-on's mic or camera state; only the exact words "on" and "off" pass.
+pub(crate) fn state_of(state: &str) -> Option<&'static str> {
+    match state {
+        "on" => Some("on"),
+        "off" => Some("off"),
+        _ => None,
     }
 }
 
@@ -287,10 +301,13 @@ pub(crate) fn answer_of(ok: bool, reason: &str) -> StudioAnswer {
     StudioAnswer::plain(false, reason)
 }
 
-/// `answer_of` plus the step that failed and its count, kept only for a miss and only when the step word is known.
-pub(crate) fn answer_with(ok: bool, reason: &str, why: Option<&str>, n: Option<u64>) -> StudioAnswer {
+/// `answer_of` plus the step that failed and its count, kept only for a miss and only when the step word is known,
+/// and the mic or camera state, kept only for a sent key and only when it is "on" or "off".
+pub(crate) fn answer_with(ok: bool, reason: &str, why: Option<&str>, n: Option<u64>, state: Option<&str>) -> StudioAnswer {
     let mut a = answer_of(ok, reason);
-    if !a.ok {
+    if a.ok {
+        a.state = state.and_then(state_of);
+    } else {
         a.why = why.and_then(why_of);
         a.n = if a.why.is_some() { n.filter(|n| *n <= 99).map(|n| n as u8) } else { None };
     }
@@ -607,11 +624,11 @@ impl Core {
                 s.window = next;
                 !same
             }
-            Some(In::Studio { id, ok, reason, why, n }) => {
+            Some(In::Studio { id, ok, reason, why, n, state }) => {
                 let mut s = self.lock();
                 if s.studio.as_ref().is_some_and(|(want, _)| *want == id) {
                     if let Some((_, answer)) = s.studio.take() {
-                        let _ = answer.send(answer_with(ok, &reason, why.as_deref(), n));
+                        let _ = answer.send(answer_with(ok, &reason, why.as_deref(), n, state.as_deref()));
                     }
                 }
                 false
@@ -1129,30 +1146,50 @@ mod tests {
         assert_eq!(answer_of(true, "already"), StudioAnswer::plain(true, "already"));
         assert_eq!(answer_of(false, "busy").reason, "busy");
         assert!(!answer_of(false, "not found").ok);
-        assert_eq!(parse_in(r#"{"type":"studio_result","id":3,"ok":false,"reason":"not found"}"#), Some(In::Studio { id: 3, ok: false, reason: "not found".into(), why: None, n: None }));
+        assert_eq!(parse_in(r#"{"type":"studio_result","id":3,"ok":false,"reason":"not found"}"#), Some(In::Studio { id: 3, ok: false, reason: "not found".into(), why: None, n: None, state: None }));
         assert_eq!(
             parse_in(r#"{"type":"studio_result","id":3,"ok":false,"reason":"not found","why":"no leaf match","n":4}"#),
-            Some(In::Studio { id: 3, ok: false, reason: "not found".into(), why: Some("no leaf match".into()), n: Some(4) })
+            Some(In::Studio { id: 3, ok: false, reason: "not found".into(), why: Some("no leaf match".into()), n: Some(4), state: None })
         );
         // An odd why or n never drops the answer.
         assert_eq!(
             parse_in(r#"{"type":"studio_result","id":3,"ok":false,"reason":"not found","why":7,"n":"x"}"#),
-            Some(In::Studio { id: 3, ok: false, reason: "not found".into(), why: None, n: None })
+            Some(In::Studio { id: 3, ok: false, reason: "not found".into(), why: None, n: None, state: None })
         );
+        // A state passes only as the exact word "on" or "off"; a missing or odd one is left out, never a reason to drop the answer.
+        assert_eq!(
+            parse_in(r#"{"type":"studio_result","id":3,"ok":true,"reason":"ok","state":"off"}"#),
+            Some(In::Studio { id: 3, ok: true, reason: "ok".into(), why: None, n: None, state: Some("off".into()) })
+        );
+        assert_eq!(answer_with(true, "ok", None, None, Some("off")).state, Some("off"));
+        assert_eq!(answer_with(true, "ok", None, None, Some("on")).state, Some("on"));
+        assert_eq!(answer_with(true, "ok", None, None, Some("ON")).state, None);
+        assert_eq!(answer_with(true, "ok", None, None, Some("<b>")).state, None);
+        assert_eq!(answer_with(true, "ok", None, None, None), StudioAnswer::plain(true, "ok"));
+        assert_eq!(answer_with(true, "already", None, None, None), StudioAnswer::plain(true, "already"));
+        assert_eq!(answer_with(false, "not found", None, None, Some("off")).state, None);
+        assert_eq!(
+            parse_in(r#"{"type":"studio_result","id":3,"ok":true,"reason":"ok","state":7}"#),
+            Some(In::Studio { id: 3, ok: true, reason: "ok".into(), why: None, n: None, state: None })
+        );
+        let json = serde_json::to_string(&answer_with(true, "ok", None, None, Some("off"))).unwrap();
+        assert!(json.contains(r#""state":"off""#));
+        let json = serde_json::to_string(&StudioAnswer::plain(true, "ok")).unwrap();
+        assert!(!json.contains("state"));
         assert_eq!(parse_in(r#"{"type":"studio_result","id":3,"ok":true}"#), None);
         assert_eq!(parse_in(&format!(r#"{{"type":"studio_result","id":3,"ok":false,"reason":"{}"}}"#, "x".repeat(41))), None);
     }
 
     #[test]
     fn a_miss_keeps_a_known_step_and_its_count() {
-        assert_eq!(answer_with(false, "not found", Some("tabs"), Some(2)), StudioAnswer { ok: false, reason: "not found", why: Some("tabs"), n: Some(2) });
-        assert_eq!(answer_with(false, "not found", Some("no scenes"), None), StudioAnswer { ok: false, reason: "not found", why: Some("no scenes"), n: None });
-        assert_eq!(answer_with(false, "not found", Some("<b>"), Some(2)), StudioAnswer::plain(false, "not found"));
-        assert_eq!(answer_with(false, "not found", Some("several"), Some(100)), StudioAnswer { ok: false, reason: "not found", why: Some("several"), n: None });
-        assert_eq!(answer_with(true, "ok", Some("several"), Some(2)), StudioAnswer::plain(true, "ok"));
+        assert_eq!(answer_with(false, "not found", Some("tabs"), Some(2), None), StudioAnswer { ok: false, reason: "not found", why: Some("tabs"), n: Some(2), state: None });
+        assert_eq!(answer_with(false, "not found", Some("no scenes"), None, None), StudioAnswer { ok: false, reason: "not found", why: Some("no scenes"), n: None, state: None });
+        assert_eq!(answer_with(false, "not found", Some("<b>"), Some(2), None), StudioAnswer::plain(false, "not found"));
+        assert_eq!(answer_with(false, "not found", Some("several"), Some(100), None), StudioAnswer { ok: false, reason: "not found", why: Some("several"), n: None, state: None });
+        assert_eq!(answer_with(true, "ok", Some("several"), Some(2), None), StudioAnswer::plain(true, "ok"));
         let json = serde_json::to_string(&StudioAnswer::plain(false, "busy")).unwrap();
         assert_eq!(json, r#"{"ok":false,"reason":"busy"}"#);
-        let json = serde_json::to_string(&answer_with(false, "not found", Some("several"), Some(2))).unwrap();
+        let json = serde_json::to_string(&answer_with(false, "not found", Some("several"), Some(2), None)).unwrap();
         assert_eq!(json, r#"{"ok":false,"reason":"not found","why":"several","n":2}"#);
     }
 
@@ -1176,7 +1213,21 @@ mod tests {
         let id = sent["id"].as_u64().unwrap();
         core.handle_text(&format!(r#"{{"type":"studio_result","id":{},"ok":true,"reason":"ok"}}"#, id + 5));
         core.handle_text(&format!(r#"{{"type":"studio_result","id":{id},"ok":false,"reason":"not found","why":"no leaf match","n":4}}"#));
-        assert_eq!(t.join().unwrap(), StudioAnswer { ok: false, reason: "not found", why: Some("no leaf match"), n: Some(4) });
+        assert_eq!(t.join().unwrap(), StudioAnswer { ok: false, reason: "not found", why: Some("no leaf match"), n: Some(4), state: None });
+    }
+
+    #[test]
+    fn a_studio_answer_carries_the_device_state() {
+        let core = Arc::new(core_with(Some("tok")));
+        let (_, rx) = core.authenticate(ORIGIN, 0).unwrap();
+        let c = Arc::clone(&core);
+        let t = std::thread::spawn(move || c.studio_wait("mute", None, Duration::from_secs(3)));
+        let sent: Value = serde_json::from_str(&rx.recv_timeout(Duration::from_secs(3)).unwrap()).unwrap();
+        let id = sent["id"].as_u64().unwrap();
+        core.handle_text(&format!(r#"{{"type":"studio_result","id":{id},"ok":true,"reason":"ok","state":"off"}}"#));
+        let a = t.join().unwrap();
+        assert!(a.ok);
+        assert_eq!(a.state, Some("off"));
     }
 
     #[test]
