@@ -8,7 +8,8 @@ const at = '2026-11-11T10:24:00-08:00';
 const night = '2026-11-11T22:30:00-08:00';
 const DRIVE_IN = 'watch=mock&wlist=three&wlook=drivein&wplay=0';
 const OFFICE = '&desktoken=set&office=twelve&officeoff=offered&officemood=brightDesk';
-const q = (extra, when = at) => `?hz=unwind&at=${encodeURIComponent(when)}&clock=review&weather=ok&long=1&audio=demo${extra}`;
+// `liftrow` marks the pages this area's measurement may put into the lifted state: measurements run on every page of a full run, and without the mark it would lift all of them.
+const q = (extra, when = at) => `?hz=unwind&at=${encodeURIComponent(when)}&clock=review&weather=ok&long=1&audio=demo&liftrow=1${extra}`;
 
 const V = {
   listen: 'Lifted row, Listen with the Office moods',
@@ -19,6 +20,7 @@ const GAP = 8;
 
 /** Runs in the page (it references nothing outside its own body). */
 function measureLifted() {
+  if (!new URLSearchParams(location.search).get('liftrow')) return null;
   const st = document.createElement('style');
   st.textContent = '.u-foot, .u-office-slot { transition: none !important; } .sp-card { transition: none !important; } .rib-line { transition: none !important; }';
   document.head.appendChild(st);

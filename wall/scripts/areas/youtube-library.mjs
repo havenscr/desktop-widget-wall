@@ -38,10 +38,13 @@ function measureYoutubeLibrary() {
   const near = (a, b, tol) => Math.abs(a - b) <= tol;
   const name = (e) => String((e.className && e.className.baseVal) || e.className || e.tagName);
   const hit = (a, b) => a.left < b.right - 0.5 && b.left < a.right - 0.5 && a.top < b.bottom - 0.5 && b.top < a.bottom - 0.5;
+  // The pointer on the wall shows the work layer and lifts the bottom row (data-work-shown): the tall card is then 506 high, else 624.
+  const lifted = document.querySelector('.main')?.hasAttribute('data-work-shown');
+  const wantH = lifted ? 506 : 624;
   if (libEl) {
     if (tall) {
-      if (!near(card.left, 1707, 1.5) || !near(card.top, 24, 1.5) || !near(card.width, 833, 1.5) || !near(card.height, 624, 1.5)) fails.push('the tall card is at x ' + r0(card.left) + ', y ' + r0(card.top) + ', ' + r0(card.width) + ' by ' + r0(card.height) + ' (833 by 624 at 1707, 24)');
-      if (card.bottom > 648.5) fails.push('the tall card ends at y ' + r0(card.bottom) + ', into the bottom row (648 at most)');
+      if (!near(card.left, 1707, 1.5) || !near(card.top, 24, 1.5) || !near(card.width, 833, 1.5) || !near(card.height, wantH, 1.5)) fails.push('the tall card is at x ' + r0(card.left) + ', y ' + r0(card.top) + ', ' + r0(card.width) + ' by ' + r0(card.height) + ' (833 by ' + wantH + ' at 1707, 24' + (lifted ? ', the work layer shown' : '') + ')');
+      if (card.bottom > (lifted ? 530.5 : 648.5)) fails.push('the tall card ends at y ' + r0(card.bottom) + ', into the bottom row (' + (lifted ? 530 : 648) + ' at most)');
     } else if (!near(card.left, 1740, 1.5) || !near(card.top, 24, 1.5) || !near(card.width, 800, 1.5) || !near(card.height, 462, 1.5)) {
       fails.push('the resting card is at x ' + r0(card.left) + ', y ' + r0(card.top) + ', ' + r0(card.width) + ' by ' + r0(card.height) + ' (800 by 462 at 1740, 24)');
     }
@@ -76,10 +79,10 @@ function measureYoutubeLibrary() {
         const sc = e.closest('.yt-scroll').getBoundingClientRect();
         const cut = { left: Math.max(r.left, sc.left), right: Math.min(r.right, sc.right), top: Math.max(r.top, sc.top), bottom: Math.min(r.bottom, sc.bottom) };
         if (cut.right <= cut.left || cut.bottom <= cut.top) continue;
-        if (cut.left < card.left - 0.5 || cut.right > card.right + 0.5 || cut.top < card.top - 0.5 || cut.bottom > card.bottom + 0.5) fails.push(name(e) + ' sticks out of the card');
+        if (cut.left < card.left - 0.5 || cut.right > card.right + 0.5 || cut.top < card.top - 0.5 || cut.bottom > card.bottom + 0.5) fails.push(name(e) + ' sticks out of the card (' + r0(cut.bottom - card.bottom) + ' px past the card foot)');
         continue;
       }
-      if (r.left < card.left - 0.5 || r.right > card.right + 0.5 || r.top < card.top - 0.5 || r.bottom > card.bottom + 0.5) fails.push(name(e) + ' sticks out of the card');
+      if (r.left < card.left - 0.5 || r.right > card.right + 0.5 || r.top < card.top - 0.5 || r.bottom > card.bottom + 0.5) fails.push(name(e) + ' sticks out of the card (' + r0(r.bottom - card.bottom) + ' px past the card foot)');
     }
     // No two of tabs, field, grid, left column and rows overlap.
     const parts = [['the tabs', '.yt-bar .sp-tabs'], ['the field', '.yt-bar .sp-search'], ['the grid', '.yt-grid'], ['the left column', '.yt-songs .sp-shead'], ['the rows', '.yt-rowscroll']];

@@ -121,9 +121,9 @@ function measureLibraryAdd() {
         if (!near(m.width, 300, 0.5)) fails.push('the menu is ' + r1(m.width) + ' wide (300)');
         if (m.left < card.left - 0.5 || m.right > card.right + 0.5 || m.top < card.top - 0.5 || m.bottom > card.bottom + 0.5) fails.push('the menu sticks out of the card');
         if (m.left < own.right && m.right > own.left && m.top < own.bottom - 0.5 && m.bottom > own.top + 0.5) fails.push('the menu lies over its own row');
-        if (m.bottom > sc.bottom + 8.5) fails.push('the menu passes the foot of the rows by ' + r1(m.bottom - sc.bottom) + ' px (8 at most)');
+        if (m.bottom > sc.bottom + 8.5) fails.push('the menu passes the foot of the rows by ' + r1(m.bottom - sc.bottom) + ' px (8 at most; menu y ' + r1(m.top) + ' to ' + r1(m.bottom) + ', rows end ' + r1(sc.bottom) + ', control y ' + r1(a.top) + ' to ' + r1(a.bottom) + ', card y ' + r1(card.top) + ' to ' + r1(card.bottom) + ')');
         const foot = document.querySelector('.yt-foot');
-        if (foot && m.bottom > R(foot).top + 0.5 && m.top < R(foot).bottom) fails.push('the menu lies on the foot player');
+        if (foot && m.bottom > R(foot).top + 0.5 && m.top < R(foot).bottom) fails.push('the menu lies on the foot player (menu y ' + r1(m.top) + ' to ' + r1(m.bottom) + ', player y ' + r1(R(foot).top) + ' to ' + r1(R(foot).bottom) + ')');
         if (!near(m.right, a.right, 1.5)) fails.push('the menu ends at x ' + r1(m.right) + ', not on the control (x ' + r1(a.right) + ')');
         const cut = [...menu.querySelectorAll('.u-ell, .w-pop-k')].filter((e) => e.scrollWidth > e.clientWidth + 1);
         if (cut.length) fails.push('text cut in the menu: "' + (cut[0].textContent || '').trim().slice(0, 24) + '"');

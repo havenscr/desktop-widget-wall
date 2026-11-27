@@ -44,8 +44,11 @@ function measureForYou() {
   const near = (a, b, tol) => Math.abs(a - b) <= tol;
   const name = (e) => String((e.className && e.className.baseVal) || e.className || e.tagName);
   const hit = (a, b) => a.left < b.right - 0.5 && b.left < a.right - 0.5 && a.top < b.bottom - 0.5 && b.top < a.bottom - 0.5;
+  // The pointer on the wall shows the work layer and lifts the bottom row (data-work-shown): the tall card is then 506 high, else 624.
+  const lifted = document.querySelector('.main')?.hasAttribute('data-work-shown');
+  const wantH = lifted ? 506 : 624;
   if (tall) {
-    if (!near(card.left, 1707, 1.5) || !near(card.top, 24, 1.5) || !near(card.width, 833, 1.5) || !near(card.height, 624, 1.5)) fails.push('the tall card is at x ' + r0(card.left) + ', y ' + r0(card.top) + ', ' + r0(card.width) + ' by ' + r0(card.height) + ' (833 by 624 at 1707, 24)');
+    if (!near(card.left, 1707, 1.5) || !near(card.top, 24, 1.5) || !near(card.width, 833, 1.5) || !near(card.height, wantH, 1.5)) fails.push('the tall card is at x ' + r0(card.left) + ', y ' + r0(card.top) + ', ' + r0(card.width) + ' by ' + r0(card.height) + ' (833 by ' + wantH + ' at 1707, 24' + (lifted ? ', the work layer shown' : '') + ')');
   } else if (!near(card.left, 1740, 1.5) || !near(card.top, 24, 1.5) || !near(card.width, 800, 1.5) || !near(card.height, 462, 1.5)) {
     fails.push('the resting card is at x ' + r0(card.left) + ', y ' + r0(card.top) + ', ' + r0(card.width) + ' by ' + r0(card.height) + ' (800 by 462 at 1740, 24)');
   }
