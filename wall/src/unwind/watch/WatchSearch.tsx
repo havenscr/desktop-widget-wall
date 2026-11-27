@@ -9,7 +9,7 @@ import { useYoutubeStatus } from '../ytmusic/status';
 import { YtEmpty, YtState, YtThumb, ownVideo } from '../ytmusic/YtParts';
 import { YtSortButton } from '../ytmusic/YtSort';
 import { AddMenu } from './AddToPlaylist';
-import { closeWatchSearch, pickView, pickWatchSort, runWatchSearch, useWatchSearch, type SearchView } from './searchStore';
+import { closeWatchSearch, resetWatchSearch, pickView, pickWatchSort, runWatchSearch, useWatchSearch, type SearchView } from './searchStore';
 import { useWatchStore } from './store';
 
 /** "87 searches left today" (the same allowance as Listen's search); empty while the count is not known. */
@@ -163,7 +163,7 @@ export function WatchResults({ host }: { host: HTMLElement | null }) {
             </button>
           ))}
         </div>
-        <button type="button" className="ws-back" {...tip('Back to the watch list. The video keeps playing.')} onClick={closeWatchSearch}>
+        <button type="button" className="ws-back" {...tip('Back to the watch list. The video keeps playing.')} onClick={resetWatchSearch}>
           ← Watch list
         </button>
       </div>

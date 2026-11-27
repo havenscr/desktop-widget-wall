@@ -53,9 +53,11 @@ interface SearchState {
   found: Found | null;
   view: SearchView;
   sort: YtSort;
+  /** Counts up each time the panel is reset, so the card can clear its box and scroll to the top. */
+  resetNonce: number;
 }
 
-export const useWatchSearch = create<SearchState>(() => ({ open: false, query: '', found: null, view: loadView(), sort: loadSort() }));
+export const useWatchSearch = create<SearchState>(() => ({ resetNonce: 0, open: false, query: '', found: null, view: loadView(), sort: loadSort() }));
 
 const LINK_HOSTS = new Set(['youtube.com', 'www.youtube.com', 'm.youtube.com', 'music.youtube.com', 'youtu.be', 'twitch.tv', 'www.twitch.tv', 'm.twitch.tv']);
 
@@ -103,6 +105,12 @@ export async function runWatchSearch(text: string): Promise<void> {
 export function closeWatchSearch(): void {
   seq += 1;
   if (useWatchSearch.getState().open) useWatchSearch.setState({ open: false, query: '', found: null });
+}
+
+/** The panel back to a clean default list: results dropped, search box cleared, scrolled to the top. Sort and view stay. */
+export function resetWatchSearch(): void {
+  seq += 1;
+  useWatchSearch.setState((s) => ({ open: false, query: '', found: null, resetNonce: s.resetNonce + 1 }));
 }
 
 export function pickView(view: SearchView): void {

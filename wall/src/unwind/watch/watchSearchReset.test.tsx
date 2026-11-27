@@ -1,0 +1,151 @@
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { mocks } from '../../bridge/tauri';
+import type { YtVideo } from '../../music/youtube';
+import { useSignalStore } from '../../signals/store';
+import { HoverTipLayer, resetTip } from '../../ui/HoverTip';
+import { resetYoutubeStatus } from '../ytmusic/status';
+import { WatchCard } from './WatchCard';
+import { useToolsStore } from '../../tools/store';
+import { loadSort, loadView, pickView, resetWatchSearch, useWatchSearch } from './searchStore';
+import { SAVED_KEY } from './saved';
+import { resetWatch } from './store';
+
+vi.setConfig({ testTimeout: 20_000 });
+
+const vid = (n: number): YtVideo => ({ id: String(n).padStart(11, 'v'), title: `Clip ${n}`, channel: `Channel ${n}`, seconds: 100 * n, thumb: null, playable: 'yes', views: 1000 * (5 - n) });
+const FOUND = [vid(1), vid(2), vid(3)];
+
+const flush = async () => {
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(0);
+  });
+};
+const box = () => screen.getByLabelText('Search or paste a link') as HTMLInputElement;
+const type = async (text: string) => {
+  await act(async () => {
+    fireEvent.change(box(), { target: { value: text } });
+  });
+};
+const click = async (el: Element) => {
+  await act(async () => (el as HTMLElement).click());
+  await flush();
+};
+const mainButton = () => document.querySelector('.w-add') as HTMLButtonElement;
+const press = async (el: Element, type: 'pointerdown' | 'pointerup') => {
+  await act(async () => {
+    fireEvent(el, new MouseEvent(type, { bubbles: true, cancelable: true, button: 0 }));
+  });
+};
+const clickOn = async (el: Element) => {
+  await press(el, 'pointerdown');
+  await press(el, 'pointerup');
+  await act(async () => (el as HTMLElement).click());
+};
+
+let search: ReturnType<typeof vi.fn<() => unknown>>;
+let page: HTMLElement;
+beforeEach(async () => {
+  vi.useFakeTimers();
+  localStorage.clear();
+  localStorage.setItem(SAVED_KEY, JSON.stringify([{ kind: 'video', id: 'Ab3dEfGh1jK', label: 'Night drive mix' }]));
+  resetWatch();
+  resetWatchSearch();
+  useWatchSearch.setState({ view: loadView(), sort: loadSort() });
+  resetYoutubeStatus();
+  useToolsStore.setState({ open: false });
+  useSignalStore.setState({ call: null });
+  search = vi.fn(() => ({ items: FOUND, next: null }));
+  mocks.set('wall2_youtube_search', (_args?: unknown) => search());
+  mocks.set('wall2_youtube_status', () => ({ setup: true, signedIn: true, reason: null, searchesLeft: 87 }));
+  page = document.createElement('div');
+  document.body.appendChild(page);
+  render(
+    <>
+      <WatchCard />
+      <HoverTipLayer />
+    </>,
+  );
+  await type('night');
+  await click(mainButton());
+});
+afterEach(() => {
+  cleanup();
+  page.remove();
+  vi.useRealTimers();
+  mocks.clear();
+  resetTip();
+  localStorage.clear();
+  resetWatchSearch();
+});
+
+describe('resetting the Watch search', () => {
+  it('shows results to start with', () => {
+    expect(document.querySelector('.ws')).not.toBeNull();
+    expect(search).toHaveBeenCalledTimes(1);
+  });
+
+  it('a click on bare page outside the card ends the search and empties the box', async () => {
+    await clickOn(page);
+    expect(document.querySelector('.ws')).toBeNull();
+    expect(useWatchSearch.getState().open).toBe(false);
+    expect(box().value).toBe('');
+    expect(search).toHaveBeenCalledTimes(1);
+  });
+
+  it('hover off the card, or a press with no release, does not reset', async () => {
+    const card = document.querySelector('.w-card')!;
+    await act(async () => {
+      fireEvent.pointerEnter(card);
+      fireEvent.pointerLeave(card);
+      fireEvent.pointerMove(page);
+      fireEvent.mouseOver(page);
+    });
+    await press(page, 'pointerdown');
+    expect(document.querySelector('.ws')).not.toBeNull();
+    expect(box().value).toBe('night');
+  });
+
+  it('a click inside the card (sort, view, a result, the box) does not reset', async () => {
+    await clickOn(document.querySelector('.ws-seg button[aria-label="Show the results as a list"]')!);
+    await clickOn(document.querySelector('.ws-play')!);
+    await clickOn(box());
+    await clickOn(document.querySelector('.ws-bar')!);
+    expect(document.querySelector('.ws')).not.toBeNull();
+    expect(box().value).toBe('night');
+    expect(useWatchSearch.getState().view).toBe('list');
+  });
+
+  it('a press inside the card released outside does not reset', async () => {
+    await press(box(), 'pointerdown');
+    await press(page, 'pointerup');
+    expect(document.querySelector('.ws')).not.toBeNull();
+  });
+
+  it('the Watch list button resets: box empty, results gone, view kept', async () => {
+    pickView('list');
+    await click(document.querySelector('.ws-back')!);
+    expect(document.querySelector('.ws')).toBeNull();
+    expect(box().value).toBe('');
+    expect(useWatchSearch.getState().view).toBe('list');
+    expect(search).toHaveBeenCalledTimes(1);
+  });
+
+  it('the box is empty when the card comes back to the watch list by Escape', async () => {
+    await act(async () => {
+      fireEvent.keyDown(box(), { key: 'Escape' });
+    });
+    expect(document.querySelector('.ws')).toBeNull();
+    expect(box().value).toBe('');
+  });
+
+  it('opening the Watch tab again starts with no results kept', async () => {
+    cleanup();
+    expect(useWatchSearch.getState().open).toBe(true);
+    render(<WatchCard />);
+    await flush();
+    expect(useWatchSearch.getState().open).toBe(false);
+    expect(document.querySelector('.ws')).toBeNull();
+    expect(box().value).toBe('');
+  });
+});

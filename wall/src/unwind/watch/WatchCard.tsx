@@ -20,7 +20,7 @@ import { useOwnLists } from './ownLists';
 import { CARD_COLLAPSE_MS, useListGrow } from './useListGrow';
 import { restBridge, restZone, useWatchRest } from './rest';
 import { playOwn, setFollow, useOwnView, type OwnView } from './ownPlay';
-import { closeWatchSearch, isLinkText, runWatchSearch, useWatchSearch, wordsProblem } from './searchStore';
+import { closeWatchSearch, isLinkText, resetWatchSearch, runWatchSearch, useWatchSearch, wordsProblem } from './searchStore';
 import { WatchResults } from './WatchSearch';
 import { ListChips } from './ListChips';
 import { ALL_CHIP, chipCounts, chipExists, countLine, filterItems, sortItems, wordsOf } from './listView';
@@ -225,6 +225,7 @@ function WatchList({ empty, draft, setDraft, host, own }: { empty: boolean; draf
   const editing = useWatchStore((s) => s.editing);
   const inCall = useSignalStore((s) => s.call !== null);
   const searching = useWatchSearch((s) => s.open);
+  const resetNonce = useWatchSearch((s) => s.resetNonce);
   const [text, setText] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [asking, setAsking] = useState<string | null>(null);
@@ -280,6 +281,38 @@ function WatchList({ empty, draft, setDraft, host, own }: { empty: boolean; draf
     if (list.ref.current) list.ref.current.scrollTop = 0;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [chip, view.sort, filterText]);
+  // Back on the watch list (a reset, Escape, the way back): the search box is empty. A reset also scrolls the list to its top.
+  const wasSearching = useRef(searching);
+  useEffect(() => {
+    if (wasSearching.current && !searching) setText('');
+    wasSearching.current = searching;
+  }, [searching]);
+  useEffect(() => {
+    setText('');
+    setError(null);
+    if (list.ref.current) list.ref.current.scrollTop = 0;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [resetNonce]);
+  // While results show, a click (press and release) on bare page outside the card ends the search. Hover alone never does;
+  // buttons, fields, menus and dialogs elsewhere keep their own clicks.
+  useEffect(() => {
+    if (!searching || !host) return;
+    let armed = false;
+    const bare = (t: EventTarget | null) =>
+      t instanceof Element && !host.contains(t) && !t.closest('button, a, input, textarea, select, label, [role="menu"], [role="dialog"], .w-pop, .watt-menu');
+    const down = (e: PointerEvent) => void (armed = e.button === 0 && bare(e.target));
+    const up = (e: PointerEvent) => {
+      const hit = armed && e.button === 0 && bare(e.target);
+      armed = false;
+      if (hit) resetWatchSearch();
+    };
+    document.addEventListener('pointerdown', down, true);
+    document.addEventListener('pointerup', up, true);
+    return () => {
+      document.removeEventListener('pointerdown', down, true);
+      document.removeEventListener('pointerup', up, true);
+    };
+  }, [searching, host]);
   const st = useWatchStore.getState();
   // Another row's click drops a draft that was never made.
   const other = () => {
@@ -635,6 +668,8 @@ export function WatchCard() {
       }
     });
   }, [unnamed]);
+  // Opening the Watch tab starts from the default list: no results kept from a visit before.
+  useEffect(() => resetWatchSearch(), []);
   const mode = open ? 'edit' : own?.follow ? 'follow' : 'list';
   const searching = useWatchSearch((s) => s.open) && mode === 'list';
   const empty = mode === 'list' && saved.length === 0 && !draft && !searching;
