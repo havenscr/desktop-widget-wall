@@ -288,7 +288,7 @@ const ruleOf = (css: string, sel: string): string => {
 /** Classes and attributes in a selector: the middle number of its specificity. */
 const weight = (sel: string): number => (sel.match(/\.[\w-]+|\[[^\]]+\]/g) ?? []).length;
 
-it('rule A: no studio key has a kind, and the stylesheet colours every studio key as the base key, beating every kind rule', async () => {
+it('rule A: studio keys carry a skind, never a data-kind, and every kind rule outweighs the base key colour', async () => {
   await open();
   expect(tiles().some((k) => k.hasAttribute('data-kind'))).toBe(false);
   cleanup();
@@ -304,15 +304,44 @@ it('rule A: no studio key has a kind, and the stylesheet colours every studio ke
   expect(ruleOf(onair2Css, '.oa2 .oa2-studiokeys .deck-tile.key-tile.off')).toBe('');
   const sel = '.oa2 .oa2-studiokeys .deck-tile.key-tile';
   const base = /--g: ([\d, ]+);/.exec(ruleOf(workCss, '.key-tile,\n.fy-plate'))?.[1];
-  const studio = /--g: ([\d, ]+);/.exec(ruleOf(onair2Css, sel))?.[1];
   expect(base).toBeTruthy();
-  // The studio colour is the base colour, not a kind's.
-  expect(studio).toBe(base);
-  // The pin outweighs every kind rule (`.key-tile[data-kind='...']`), so a kind could never recolour it.
-  for (const m of workCss.matchAll(/(\.key-tile\[data-kind=[^{]+)\{/g)) expect(weight(sel)).toBeGreaterThan(weight(m[1].trim().split(',')[0]));
-  // The only accents are the last-sent glow and the armed state.
+  // Keys of no kind keep the base colour.
+  expect(ruleOf(onair2Css, sel)).toContain(`--g: ${base};`);
+  for (const k of ['scene', 'mic', 'camera', 'mark', 'golive']) {
+    const kind = `${sel}[data-skind='${k}']`;
+    for (const m of workCss.matchAll(/(\.key-tile\[data-kind=[^{]+)\{/g)) expect(weight(kind)).toBeGreaterThan(weight(m[1].trim().split(',')[0]));
+  }
   expect(onair2Css).toContain(`${sel}[data-last='true']`);
   expect(onair2Css).toContain(`${sel}[data-armed='true']`);
+});
+
+it('centring: the key centres its icon and label with equal room above and below', () => {
+  const rule = ruleOf(onair2Css, '.oa2 .oa2-studiokeys .deck-tile.key-tile');
+  expect(rule).toContain('align-content: center');
+  expect(rule).not.toContain('align-content: start');
+  expect(rule).toContain('padding: 0 8px');
+  expect(rule).toContain('height: 76px');
+  expect(rule).toContain('font-size: 16px');
+  // The armed state only recolours the key, so it stays centred.
+  expect(ruleOf(onair2Css, `.oa2 .oa2-studiokeys .deck-tile.key-tile[data-armed='true']`)).not.toContain('padding');
+});
+
+it('kind: each default key carries its colour kind, and End show keeps the Go live kind', async () => {
+  await open();
+  const kinds = tiles().map((k) => k.getAttribute('data-skind'));
+  expect(kinds).toEqual(['scene', 'scene', 'scene', 'scene', 'mic', 'camera', 'mark', 'golive']);
+  cleanup();
+  localStorage.setItem(SLOTS_KEY, JSON.stringify(withSlots(['share', 'end'])));
+  render(both());
+  const t = tiles();
+  expect(t[0].hasAttribute('data-skind')).toBe(false);
+  expect(t[1].getAttribute('data-skind')).toBe('golive');
+});
+
+it('kind colours: the stylesheet gives each kind its colour', () => {
+  const sel = '.oa2 .oa2-studiokeys .deck-tile.key-tile';
+  const want: Record<string, string> = { scene: '53, 230, 234', mic: '154, 123, 255', camera: '154, 123, 255', mark: '255, 61, 154', golive: '255, 82, 82' };
+  for (const [k, rgb] of Object.entries(want)) expect(ruleOf(onair2Css, `${sel}[data-skind='${k}']`)).toContain(`--g: ${rgb};`);
 });
 
 it('rule B: a label too long for its key is shortened to one line, and the full name stays in the accessible name', async () => {

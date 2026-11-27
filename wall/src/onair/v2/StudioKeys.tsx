@@ -187,6 +187,7 @@ export function StudioKeys({ now }: { now: number }) {
         data-armed={isArmed ? 'true' : undefined}
         data-last={last !== null && last.slot === i ? 'true' : undefined}
         data-key={action}
+        data-skind={info.kind}
         data-note={shownNote ? (shownNote.ok ? 'ok' : 'miss') : undefined}
         data-slot={i}
         aria-label={name}
