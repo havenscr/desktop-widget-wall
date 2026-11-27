@@ -18,11 +18,17 @@ export function useCompactHead<T extends HTMLElement>(present: boolean) {
   const want = useRef(false);
   useLayoutEffect(() => {
     const main = ref.current?.closest('.main') ?? null;
-    if (!main) return undefined;
+    if (!main) {
+      // No head drawn: nothing is faded or compact, so the next head to mount starts clean.
+      setCompact(false);
+      setFading(false);
+      return undefined;
+    }
     let timer: ReturnType<typeof setTimeout> | null = null;
     const read = () => main.hasAttribute('data-work-shown');
     want.current = read();
     setCompact(want.current);
+    setFading(false);
     const settle = () => {
       timer = null;
       setCompact(want.current);

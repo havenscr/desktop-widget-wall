@@ -45,3 +45,11 @@ it('the head hook waits the fade out before it switches, and the same times are 
   expect(songs).toContain('data-compact');
   expect(songs).toContain('data-fading');
 });
+
+it('both fades stop under reduced motion', () => {
+  const at = css.indexOf('@media (prefers-reduced-motion: reduce) {\n  .sp-songs.tall .sp-shead .sp-cover,');
+  expect(at).toBeGreaterThan(-1);
+  const block = css.slice(at, css.indexOf('\n}\n', at));
+  expect(block).toContain('.yt-songs.tall .sp-shead');
+  expect(block).toContain('transition: none');
+});

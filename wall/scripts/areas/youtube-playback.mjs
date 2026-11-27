@@ -3,6 +3,8 @@
 // measurement and its rule, and a deliberate break for each rule. The mock frame never loads a real player (`watch=mock`),
 // and `ytplay=` starts a pick the way a click does (see `devMocks/youtube.ts`). Everything this area needs lives here.
 
+import { askLayer } from '../lib/layer-ask.mjs';
+
 const night = encodeURIComponent('2026-11-11T22:30:00-08:00');
 const day = '2026-11-11T10:24:00-08:00';
 const SWITCH = '.sp-switch button:nth-child(2)';
@@ -44,6 +46,10 @@ function measureYoutubePlayback() {
   const out = { yp: false, fails, hasFoot: false, hasNote: false, hasRows: false, hasPlaying: false, hasUpNext: false, hasLayer: false, rest: false };
   const card = box(cardEl);
   const tall = !!cardEl && cardEl.getAttribute('data-tall') === 'true';
+  const layerUp = !!document.querySelector('.main[data-work-shown]');
+  const layerAsked = /[?&]layer=up(&|$)/.test(location.search);
+  if (layerUp && !layerAsked) fails.push('the work layer is up but this variant did not ask for it');
+  if (!layerUp && layerAsked) fails.push('this variant asked for the work layer and it is not up');
   const foot = cardEl ? cardEl.querySelector('.yt-foot') : null;
   const note = cardEl ? cardEl.querySelector('.yt-note') : null;
   const libEl = cardEl ? cardEl.querySelector('.yt-lib') : null;
@@ -214,7 +220,7 @@ export default {
     ],
   },
   fit: {
-    variants: [
+    variants: askLayer([
       variant('tall, a playlist playing', play('on'), steps(SWITCH, TALL, TILE), { checks: ['.sp-card', '.yt-lib', '.yt-foot'] }),
       variant('at rest, a playlist playing', play('on'), steps(SWITCH, TILE), { listen: true }),
       variant('tall, nothing on', play(''), steps(SWITCH, TALL, TILE), { checks: ['.sp-card', '.yt-lib', '.yt-foot'] }),
@@ -228,7 +234,7 @@ export default {
       variant('at rest, search playing', play('search', '&ytsearch=night'), SWITCH, { listen: true }),
       variant('Up next with the wall\'s music', play('on'), SWITCH, { listen: true, checks: ['.u-listen', '.sp-card', '.u-next', '.u-next-row'] }),
       variant('the player out of sight on Listen', play('on'), SWITCH, { listen: true, checks: ['.sp-card', '.w-layer'] }),
-    ],
+    ]),
     measurements: { youtubePlayback: measureYoutubePlayback },
     rules: {
       youtubePlayback: (variant, results, emit) => {

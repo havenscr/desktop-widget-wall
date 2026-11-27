@@ -489,6 +489,7 @@
   transition-duration: 120ms;
 }
 @media (prefers-reduced-motion: reduce) {
+  .sp-songs.tall .sp-shead .sp-cover,
   .yt-songs.tall .sp-shead {
     transition: none;
   }

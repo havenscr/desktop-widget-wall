@@ -2,6 +2,8 @@
 // See all. Gallery states, fit variants with one browser measurement and its rule, and a deliberate break
 // for each rule. Everything this area needs lives here; nothing is registered in the two big review scripts.
 
+import { askLayer } from '../lib/layer-ask.mjs';
+
 const night = encodeURIComponent('2026-11-11T22:30:00-08:00');
 const day = '2026-11-11T10:24:00-08:00';
 const SWITCH = '.sp-switch button:nth-child(2)';
@@ -40,6 +42,10 @@ function measureForYou() {
   document.head.appendChild(st);
   const card = cardEl.getBoundingClientRect();
   const tall = cardEl.getAttribute('data-tall') === 'true';
+  const layerUp = !!document.querySelector('.main[data-work-shown]');
+  const layerAsked = /[?&]layer=up(&|$)/.test(location.search);
+  if (layerUp && !layerAsked) fails.push('the work layer is up but this variant did not ask for it');
+  if (!layerUp && layerAsked) fails.push('this variant asked for the work layer and it is not up');
   const r0 = (n) => Math.round(n * 10) / 10;
   const near = (a, b, tol) => Math.abs(a - b) <= tol;
   const name = (e) => String((e.className && e.className.baseVal) || e.className || e.tagName);
@@ -127,7 +133,7 @@ export default {
     ],
   },
   fit: {
-    variants: [
+    variants: askLayer([
       variant('at rest, six played', 'ytplayed=6', steps(SWITCH, FORYOU, CLOSEFOCUS), { listen: true }),
       variant('at rest, two played', 'ytplayed=2', steps(SWITCH, FORYOU, CLOSEFOCUS), { listen: true }),
       variant('at rest, nothing played', 'ytplayed=none', steps(SWITCH, FORYOU, CLOSEFOCUS), { listen: true }),
@@ -135,7 +141,7 @@ export default {
       variant('at rest, not answering', 'ytplayed=6&ytfy=down', steps(SWITCH, FORYOU, CLOSEFOCUS), { listen: true }),
       variant('opens on Focus', 'ytplayed=6', steps(SWITCH, FORYOU), { listen: true }),
       variant('tall, six played', 'ytplayed=6', steps(SWITCH, TALL, FORYOU, CLOSEFOCUS)),
-    ],
+    ]),
     measurements: { musicForYou: measureForYou },
     rules: {
       musicForYou: (v, results, emit) => {
