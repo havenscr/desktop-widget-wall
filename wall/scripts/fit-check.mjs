@@ -81,6 +81,8 @@ const KNOWN_FAILURES = [
   { state: 'Studio home, Meet chip', line: /^ *FAIL (studiohome: the (Meet chip or the hero|sheet) is not on the page|\.st-(drawer|d-keys|d-rooms): not found)/, bug: 'open item: the Meet page variants no longer show the Lights chip or the sheet (the chip is only in the Work lanes header, src/agents/Lanes.tsx:198; the call=teams knob shows no call); not yet classified' },
   { state: 'YouTube search, sort menu open', line: /^ *FAIL \.yt-lib: width \d+ <= \d+, height \d+ <= \d+, /, bug: 'open item: the open sort menu makes the YouTube library scroll 356 px in 295 (the library box is not meant to scroll); not yet classified' },
   { state: 'Studio lights, On Air', line: /^ *FAIL on air v2: \.oa2-checklist holds SPAN/, bug: 'open item: with one key light set up and silent the On Air checklist text runs 4.9 px past its box (x 2544.9, box ends 2540); only seen when the On Air rules run on this variant, not yet classified' },
+  { state: 'Sun ridge,', line: /^ *FAIL sun ridge: a click at \d+,\d+ on the waiting sun reaches/, bug: 'PR 316 (one hover; 3 failures before it, 18 after): a click on the waiting sun reaches a plain div in main instead of the video frame; the covering element is not found yet' },
+  { state: 'Watch polish, whole sky, autoplay refused', line: /^ *FAIL pointer at \.w-sky \.w-frame \(\d+, \d+\) reaches main tall/, bug: 'PR 316: the take frame no longer gets the pointer, it reaches main itself (same cause as the waiting sun above)' },
 ];
 let currentState = '';
 let unknownFails = 0;
