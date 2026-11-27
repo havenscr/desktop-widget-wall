@@ -366,12 +366,17 @@
 .oa2-sp-note[data-failed='true'] { color: var(--amber); }
 .oa2-lights-live { left: 1796px; top: 328px; width: 620px; height: 154px; }
 .oa2-lights-live > .st-block { height: 148px; }
-/* The studio keys: eight equal keys, two rows of four, under the heading. Rule A: one key style, so the colour
-   variable is pinned to the base key colour (no data-kind on these tiles); the only accents are the last-sent glow,
-   the armed state and the off state every key has. Rule B: icon above, label below, centred, 16 px, one line. */
+/* The studio keys: eight equal keys, two rows of four, under the heading. Rule A: one key style; the colour variable
+   follows the key's kind (data-skind, never data-kind) and the glow and armed state sit on top of it. Rule B: icon above, label below, centred, 16 px, one line. */
 .oa2-skgrid { position: absolute; left: 0; right: 0; top: 30px; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); grid-template-rows: repeat(2, 76px); gap: 8px; }
-.oa2 .oa2-studiokeys .deck-tile.key-tile { --g: 183, 175, 214; height: 76px; grid-template-rows: 22px 20px; row-gap: 4px; padding: 8px 8px 0; font-size: 16px; line-height: 20px; justify-items: center; align-content: start; text-align: center; }
+.oa2 .oa2-studiokeys .deck-tile.key-tile { --g: 183, 175, 214; height: 76px; grid-template-rows: 22px 20px; row-gap: 4px; padding: 0 8px; font-size: 16px; line-height: 20px; justify-items: center; align-content: center; text-align: center; }
+.oa2 .oa2-studiokeys .deck-tile.key-tile[data-skind='scene'] { --g: 53, 230, 234; }
+.oa2 .oa2-studiokeys .deck-tile.key-tile[data-skind='mic'] { --g: 154, 123, 255; }
+.oa2 .oa2-studiokeys .deck-tile.key-tile[data-skind='camera'] { --g: 154, 123, 255; }
+.oa2 .oa2-studiokeys .deck-tile.key-tile[data-skind='mark'] { --g: 255, 61, 154; }
+.oa2 .oa2-studiokeys .deck-tile.key-tile[data-skind='golive'] { --g: 255, 82, 82; }
 .oa2 .oa2-studiokeys .deck-tile.key-tile .deck-lbl.oa2-sklbl { display: block; white-space: nowrap; overflow: hidden; text-overflow: clip; max-height: none; max-width: 100%; font-size: 16px; line-height: 20px; text-align: center; -webkit-line-clamp: unset; line-clamp: unset; align-self: start; }
+.oa2 .oa2-studiokeys .deck-tile.key-tile[data-stage='true'],
 .oa2 .oa2-studiokeys .deck-tile.key-tile[data-last='true'] { background: linear-gradient(180deg, rgba(var(--g), 0.36), rgba(var(--g), 0.22)), rgba(11, 8, 32, 0.86); border-color: rgb(var(--g)); box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.2), 0 0 0 2px rgba(var(--g), 0.38), 0 0 16px -2px rgba(var(--g), 0.6); }
 .oa2 .oa2-studiokeys .deck-tile.key-tile[data-armed='true'] { border-color: rgba(255, 82, 82, 0.9); background: rgba(255, 82, 82, 0.16); }
 /* The picker: a tall popover left of the keys box, down the strip (x 1478 to 1908, y 14 to 704), the whole list with no scrolling. */

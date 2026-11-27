@@ -1,7 +1,8 @@
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { invoke, isTauri } from '../bridge/tauri';
 import type { AudioLevelsPayload } from './model';
-import { ingestLevels, resetAudio, tickAudio } from './store';
+import { devFireDrop, ingestLevels, resetAudio, tickAudio } from './store';
+import { useVibeStore, GLITCH_LOOKS, type GlitchLook } from '../horizon/vibeSettings';
 import { createSourceClock } from './sourceTime';
 
 export const RETRY_WAIT = 30_000;
@@ -123,6 +124,12 @@ export function startAudio(): () => void {
 
   if (!isTauri()) {
     if (wantsDemo(window.location.search)) {
+      // Review stills: `vdrop=<ms>` fires one drop after that long, `vglitch=<look>` picks the Drop Glitch look.
+      const q = new URLSearchParams(window.location.search);
+      const look = q.get('vglitch') as GlitchLook | null;
+      if (import.meta.env.DEV && look && GLITCH_LOOKS.includes(look)) useVibeStore.getState().setVibe({ dropGlitch: look });
+      const vdrop = Number(q.get('vdrop'));
+      if (import.meta.env.DEV && vdrop > 0) setTimeout(() => devFireDrop(now()), vdrop);
       every(() => {
         if (!document.hidden) ingestLevels(demoPayload(now()), now());
       }, TICK_MS);

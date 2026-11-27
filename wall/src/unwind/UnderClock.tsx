@@ -185,7 +185,7 @@ function Pins({ onMenu }: { onMenu: (open: boolean) => void }) {
               {item ? (
                 <>
                   <PinArtSquare shown={item} />
-                  <FitTitle top={16} firstLines={2} fade lh={1.125} className="u-pin-name">
+                  <FitTitle top={16} boxH={36} lh={1.125} className="u-pin-name">
                     {item.name}
                   </FitTitle>
                 </>

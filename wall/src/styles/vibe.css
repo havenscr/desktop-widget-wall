@@ -50,6 +50,11 @@
 .stage:has(.vibe-front) .u-wing {
   z-index: 3;
 }
+/* Watt sits with the work layer (4), above the left wing (3): the wing's box reaches over the band he walks, and a click on him
+   must reach him there. The work layer comes later in the page, so it still wins where they meet. */
+.stage:has(.vibe-front) .watt {
+  z-index: 4;
+}
 .stage:has(.vibe-front) .u-nu {
   z-index: 7;
 }

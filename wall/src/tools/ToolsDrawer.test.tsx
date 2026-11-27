@@ -80,13 +80,13 @@ const pick = async (group: string) => {
   await flush();
 };
 
-it('draws nothing until it is opened, then the rail of four groups, the build stamp and no footer', async () => {
+it('draws nothing until it is opened, then the rail of five groups, the build stamp and no footer', async () => {
   render(<ToolsDrawer />);
   expect(screen.queryByLabelText('Tools')).toBeNull();
   act(() => useToolsStore.getState().openDrawer());
   await flush();
   const drawer = screen.getByLabelText('Tools');
-  expect(screen.getAllByRole('tab').map((t) => t.getAttribute('data-group'))).toEqual(['accounts', 'health', 'lights', 'display']);
+  expect(screen.getAllByRole('tab').map((t) => t.getAttribute('data-group'))).toEqual(['accounts', 'health', 'lights', 'display', 'vibe']);
   expect(drawer.querySelector('.tools-top')?.textContent).toContain('Build 7c9f442');
   expect(drawer.textContent).not.toContain('Accounts and sources moved here from the screens');
   // One panel is open (Accounts); every current function is one click away in its group.

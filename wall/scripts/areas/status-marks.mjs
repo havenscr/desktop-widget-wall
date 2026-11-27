@@ -182,7 +182,15 @@ const measureMarks = () => {
     const tom = document.querySelector('.u-tomorrow');
     if (tom) {
       const t = R(tom);
-      if (!near(t.l, 124, 1) || !near(t.w, 470, 1) || !near(t.t, 582.4, 1.5) || !near(t.h, 53.6, 1.5)) fails.push('status marks: Tomorrow is at ' + where(t) + ' (124, 582, 594, 636)');
+      // One line is 53.6 px tall from y 582.4; with the work layer down the line may take a second row, so the box may only
+      // grow upward (its bottom stays at 636) by one row of 28.6 px, and the element above it stays clear of it.
+      const grown = t.t < 582.4 - 1.5;
+      if (!near(t.l, 124, 1) || !near(t.w, 470, 1) || !near(t.t + t.h, 636, 1.5) || t.t > 582.4 + 1.5 || t.t < 582.4 - 29.5) fails.push('status marks: Tomorrow is at ' + where(t) + ' (124, 582 or one row higher, 594, bottom 636)');
+      const above = tom.previousElementSibling;
+      if (above) {
+        const a = R(above);
+        if (a.w > 0 && a.h > 0 && a.t + a.h > t.t + 0.5 && !(a.l >= t.l + t.w || a.l + a.w <= t.l)) fails.push('status marks: Tomorrow' + (grown ? ' (two lines)' : '') + ' at ' + where(t) + ' overlaps the element above it at ' + where(a));
+      }
       if (meet(L, t)) fails.push('status marks: the row at ' + where(L) + ' overlaps Tomorrow at ' + where(t));
     }
     const centre = document.querySelector('.u-centre');

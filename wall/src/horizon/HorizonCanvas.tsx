@@ -12,6 +12,7 @@ import { loudness, smoothStep } from '../audio/model';
 import { CAMERAS, HOME_MORNING, MOON_PLACES, cameraFor, cloudShiftFor, glideCamera, localDay, settled, startGlide, stepGlide, type CameraPreset, type Glide } from './cameras';
 import { createLevelEase, fractionsAt, stepLevelEase, withMusicLevel, type LevelEase, type MusicFractions } from './offTabMusic';
 import { vibeSettings } from './vibeSettings';
+import { applyMountainGain, mountainGain, stepMountainGain } from './mountainDance';
 import {
   REST_LOOK,
   REST_OPACITY,
@@ -213,6 +214,8 @@ export function HorizonCanvas({ now = Date.now }: { now?: () => number }) {
   if (!levelEase.current) levelEase.current = createLevelEase(vibeSettings().offTabMusic);
   const level = useRef<MusicFractions>(null as unknown as MusicFractions);
   if (!level.current) level.current = fractionsAt(levelEase.current.pos, { amp: 0, a: 0, n: 0, gp: 0, vw: 0 });
+  // Mountain dance (`mountainDance.ts`): the eased factor on the ridge's dance height.
+  const mountainF = useRef(mountainGain(vibeSettings().mountain));
   const playWeight = useRef(0);
   const musicCam = useRef<CameraPreset>(null as unknown as CameraPreset);
   if (!musicCam.current) musicCam.current = { ...glide.current.to };
@@ -393,6 +396,7 @@ export function HorizonCanvas({ now = Date.now }: { now?: () => number }) {
         const stops = lineStops(lines.colours, liveTint(performance.now()));
         let echo = echoOptions(camera, loud.current, echoT.current, gate.current.value * awake.current, m.rest, lines.rest, flat ? FLAT_REST_OPACITY : undefined, m.rest < 1 ? danceKick() * (1 - m.rest) : 0, stops);
         if (echo && lines.lively !== 50) echo.amp *= ampScale(lines.lively);
+        if (echo) applyMountainGain(echo, mountainF.current);
         const turningOff = glide.current.to.ea === 0 && glide.current.progress < 1;
         if (echo && turningOff && echoStrength(echo) > lastEchoA.current) {
           scaleEcho(echo, lastEchoA.current / echoStrength(echo));
@@ -413,7 +417,7 @@ export function HorizonCanvas({ now = Date.now }: { now?: () => number }) {
           tf.scale = scale;
           tf.live = echo.a * typeLiveShare(lines.type, m.rest, flat);
           tf.restLine = flat ? sstep(m.rest) * Math.min(1, gate.current.value * awake.current) : 0;
-          tf.kick = danceKick();
+          tf.kick = danceKick() * Math.min(1, mountainF.current);
           tf.dt = drawDt;
           tf.stops = stops;
           typeShown = true;
@@ -608,7 +612,9 @@ export function HorizonCanvas({ now = Date.now }: { now?: () => number }) {
       // Zen ignores the music: the ridge lies still-calm underneath the breath's own lines.
       const driving = !zen && musicDriving(motion.current, audio.playing, audioBands(), dt);
       if (driving) loud.current = smoothStep(loud.current, loudness(audio), dt);
-      stepEchoMotion(motion.current, driving, dt);
+      // Mountain dance first: its eased factor also slows the line drift (at Off the drift stops; past Medium it does not speed up).
+      mountainF.current = stepMountainGain(mountainF.current, vibeSettings().mountain, dt);
+      stepEchoMotion(motion.current, driving, dt, Math.min(1, mountainF.current));
       stepLevelEase(levelEase.current, vibeSettings().offTabMusic, dt);
       fractionsAt(levelEase.current.pos, level.current);
       playWeight.current = 1 - motion.current.rest;

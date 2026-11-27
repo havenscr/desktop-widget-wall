@@ -337,8 +337,8 @@
   letter-spacing: -0.01em;
   text-shadow: 0 0 40px rgba(255, 61, 154, 0.35);
   padding-bottom: 4px;
-  /* Shows in full: FitTitle steps the size down (never under 16 px) to fit three lines. */
-  overflow-wrap: anywhere;
+  /* Shows in full: FitTitle steps the size down (never under 16 px) inside the old box, wrapping between words only. */
+  overflow-wrap: normal;
 }
 .u-np.u-was {
   color: var(--dim);
@@ -620,8 +620,8 @@
   font: 500 48px/1.1 var(--disp);
   letter-spacing: -0.01em;
   text-shadow: 0 0 40px rgba(255, 61, 154, 0.35);
-  /* Shows in full: FitTitle steps the size down (never under 16 px) to fit three lines. */
-  overflow-wrap: anywhere;
+  /* Shows in full: FitTitle steps the size down (never under 16 px) inside the old box, wrapping between words only. */
+  overflow-wrap: normal;
 }
 .w-title.w-none {
   font-weight: 300;
@@ -639,7 +639,7 @@
   font-size: 24px;
   line-height: 1.3;
   color: var(--dim);
-  overflow-wrap: anywhere;
+  overflow-wrap: normal;
 }
 .w-ctl {
   display: flex;
@@ -1017,7 +1017,7 @@
 /* Five whole 40 px rows; past five it scrolls a row at a time, with a visible scrollbar and a
    fade along the bottom while more rows are below. */
 .w-list {
-  flex: 0 1 216px;
+  flex: 0 1 200px;
   min-height: 0;
   overflow-y: auto;
   margin: 8px -8px 0;
@@ -1027,9 +1027,6 @@
 }
 .w-list > li {
   scroll-snap-align: start;
-}
-.w-list > li + li {
-  margin-top: 4px;
 }
 .w-list.more {
   -webkit-mask-image: linear-gradient(180deg, #000 calc(100% - 30px), rgba(0, 0, 0, 0.15));
@@ -1042,16 +1039,16 @@
   display: flex;
   align-items: center;
   gap: 4px;
-  min-height: 40px;
+  height: 40px;
 }
 .w-play {
   flex: 1;
   min-width: 0;
-  min-height: 40px;
+  height: 40px;
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 6px 10px;
+  padding: 0 10px;
   border-radius: 12px;
   font-size: 20px;
   color: var(--tx);
@@ -1078,12 +1075,11 @@
 .w-row.on .w-kind {
   color: var(--cyan);
 }
-/* A list name wraps to a second line (the row grows to fit) instead of an ellipsis. */
+/* A list name fits the 40 px row (FitTitle: one line, or two smaller ones) and fades if it still does not. */
 .w-label {
   min-width: 0;
   flex: 1;
-  line-height: 22px;
-  overflow-wrap: anywhere;
+  line-height: 1.1;
 }
 .w-on {
   flex: none;
@@ -2046,27 +2042,56 @@
   left: 24px;
   background: #ece8ff;
 }
-/* The Vibe section's switch rows (`LinesPanel.tsx`), the same layout as the Looks sheet's: the name at its natural
-   width on the left, the switch flush right at the end of the slider column, the value in the right column. */
+/* The Vibe controls (`LinesPanel.tsx`), in two groups, on the Unwind Vibe page and in the Tools drawer's Vibe group: a small
+   heading per group, one 36 px row per setting, the name at 130 px (its full sentence is a hover tip), the control, and a
+   short hint beside it (or one line under the two new chip rows). Chips are the page's own `.ln-chips`. */
 .ln-vibe {
-  gap: 6px;
-  /* The section's own heading is gone (the page tab names it): the reset sits right on its row, 6 px clear of the scroller's top like the Lines page. */
-  padding-top: 6px;
+  gap: 4px;
+  padding-top: 2px;
 }
 .ln-vibe > .ln-head {
-  justify-content: flex-end;
+  justify-content: space-between;
 }
-.ln-swrow .ln-label.ln-sw {
+.ln-gh {
+  font: 600 16px/1 var(--disp);
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--dim);
+  white-space: nowrap;
+}
+.ln-vibe .ln-row {
+  min-height: 36px;
+}
+.ln-vibe .ln-label {
+  width: 130px;
+}
+.ln-vibe .ln-label.ln-wide {
   width: auto;
 }
-.ln-swrow .ln-label.ln-sw + .ln-switch {
-  margin-left: auto;
-}
-.ln-swrow .ln-switch + .ln-value {
+.ln-vibe .ln-reset {
   margin-left: 0;
 }
-.ln-switch[aria-disabled='true'] {
-  cursor: default;
+.ln-split {
+  margin-top: 6px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+}
+.ln-short {
+  flex: 1;
+  min-width: 0;
+  margin-left: 6px;
+  color: var(--dim);
+  font-size: 16px;
+  white-space: nowrap;
+}
+.ln-short.ln-short-end {
+  flex: none;
+  margin-left: auto;
+  text-align: right;
+}
+.ln-vhint {
+  margin-top: -2px;
+  white-space: nowrap;
 }
 @media (prefers-reduced-motion: reduce) {
   .ln-switch i {
@@ -2478,7 +2503,7 @@
 .u-listen .u-artist {
   margin-top: 2px;
   line-height: 1.2;
-  overflow-wrap: anywhere;
+  overflow-wrap: normal;
 }
 .u-listen .u-transport {
   gap: 14px;
@@ -4428,7 +4453,7 @@ button.sp-qrow:hover {
 .u-pin-name {
   min-width: 0;
   flex: 1;
-  overflow-wrap: anywhere;
+  overflow-wrap: normal;
 }
 /* The name fits two lines at 16 px (FitTitle); a longer one fades on its last line and the tip has it whole. */
 .u-pin-add {

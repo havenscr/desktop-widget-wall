@@ -12,6 +12,7 @@ import { LAST_MOOD_AT_KEY, ROOM_RETRY_MS, RoomCard } from './RoomCard';
 import { drawnLine } from './statusTestUtil';
 import { Tabs } from './Tabs';
 import { Tomorrow } from './Tomorrow';
+import { useWorkLayerStore } from './work/layerStore';
 import { useAppVolume, VOLUME_DEBOUNCE_MS } from './Volume';
 import { useSpotifySeen } from './spotifySource';
 import { resetSpotifyStatus } from './spotify/status';
@@ -84,6 +85,34 @@ it('shows the first event after midnight as Tomorrow, or nothing', async () => {
   const r3 = render(<Tomorrow now={now} />);
   await flush();
   expect(r3.container.textContent).toBe('');
+});
+
+it('Tomorrow keeps one line with the work layer shown and takes two when it is hidden', async () => {
+  const now = () => Date.parse('2026-11-11T21:42:00-08:00');
+  mocks.set('wall2_meet_day', () => ({
+    events: [{ key: 'b', title: 'A planning meeting with a very long name that cannot fit', start: '2026-11-12T17:00:00Z', end: '2026-11-12T17:30:00Z' }],
+  }));
+  const tall = vi.spyOn(HTMLElement.prototype, 'scrollHeight', 'get').mockReturnValue(400);
+  try {
+    useWorkLayerStore.setState({ shown: true });
+    const r = render(<Tomorrow now={now} />);
+    await flush();
+    const line = () => r.container.querySelector('.u-s') as HTMLElement;
+    // Shown: a 29 px box is one row, so the line fades at its right edge and does not grow.
+    expect(line().getAttribute('data-cut')).toBe('x');
+    expect(line().style.maxHeight).toBe('');
+    // Hidden: a 58 px box is two rows, cut downward at whole rows (2 x 16 px x 1.3, rounded up to 42 px).
+    await act(async () => useWorkLayerStore.setState({ shown: false }));
+    expect(line().getAttribute('data-cut')).toBe('y');
+    expect(line().style.maxHeight).toBe('42px');
+    // Back up: one line again.
+    await act(async () => useWorkLayerStore.setState({ shown: true }));
+    expect(line().getAttribute('data-cut')).toBe('x');
+    r.unmount();
+  } finally {
+    tall.mockRestore();
+    useWorkLayerStore.setState({ shown: false });
+  }
 });
 
 it('marks cached Tomorrow data "as of" after a failed refresh and hides it after 30 minutes', async () => {
