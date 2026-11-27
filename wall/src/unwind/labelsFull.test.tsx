@@ -111,10 +111,15 @@ describe('chip titles that do not fit', () => {
     const b = chip('b', 560, 100, 'Next');
     expect(spillTitles([a, b], [560], [{ x: 380, width: 400 }]).has('a')).toBe(false);
   });
-  it('a title near the corner button stays short of it', () => {
-    const c = chip('a', CORNER_LEFT - 200, 100, 'A long name for a chip near the end of the day');
-    const got = spillTitles([c], [], []).get('a');
-    expect(got === undefined || got.x + got.width <= CORNER_LEFT - SPILL_GAP).toBe(true);
+  it('a title that cannot fit before the corner button stays faded', () => {
+    const c = chip('a', CORNER_LEFT - 300, 100, 'A long name for a chip near the end of the day');
+    expect(spillTitles([c], [], []).get('a')).toBeUndefined();
+  });
+  it('a title with room before the corner button carries on and ends short of it', () => {
+    const c = chip('a', CORNER_LEFT - 700, 100, 'A long name for a chip near the end of the day');
+    const got = spillTitles([c], [], []).get('a')!;
+    expect(got.mode).toBe('side');
+    expect(got.x + got.width).toBeLessThanOrEqual(CORNER_LEFT - SPILL_GAP);
   });
   it('a title never runs across the needle', () => {
     const c = chip('a', 400, 100, 'CAA AE session with a long name');

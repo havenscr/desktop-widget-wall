@@ -60,7 +60,9 @@ export default {
             const r = R(e);
             if (r.width === 0 || getComputedStyle(e).visibility === 'hidden') continue;
             const cs = getComputedStyle(e);
-            if (cs.textOverflow === 'ellipsis' || e.scrollHeight > e.clientHeight + 1 || e.scrollWidth > e.clientWidth + 1) out.cut.push(`${sel} "${(e.textContent || '').slice(0, 24)}"`);
+            // A title that does not fit at 16 px fades on its last line on purpose (data-cut, the hover has it whole).
+            const faded = e.hasAttribute('data-cut') && cs.maskImage !== 'none' && cs.maskImage !== '';
+            if (!faded && (cs.textOverflow === 'ellipsis' || e.scrollHeight > e.clientHeight + 1 || e.scrollWidth > e.clientWidth + 1)) out.cut.push(`${sel} "${(e.textContent || '').slice(0, 24)}"`);
             if (parseFloat(cs.fontSize) < 16) out.small.push(`${sel} ${cs.fontSize}`);
           }
         }

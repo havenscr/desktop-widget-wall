@@ -18,6 +18,12 @@
   line-height: 1.3;
   color: var(--dim);
 }
+/* A title that still does not fit at 16 px: what fits shows, the last line fades out (the hover tip has it whole). */
+.fit-fade[data-cut] {
+  overflow: hidden;
+  -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 1.1em), rgba(0, 0, 0, 0.15));
+  mask-image: linear-gradient(to bottom, #000 calc(100% - 1.1em), rgba(0, 0, 0, 0.15));
+}
 .u-xs {
   font-size: 19px;
   color: var(--faint);
@@ -4342,7 +4348,7 @@ button.sp-qrow:hover {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 8px;
-  min-height: 48px;
+  height: 48px;
 }
 .u-pinslot {
   position: relative;
@@ -4351,11 +4357,11 @@ button.sp-qrow:hover {
 }
 .u-pin {
   width: 100%;
-  min-height: 48px;
+  height: 48px;
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 6px 8px 6px 6px;
+  padding: 0 8px 0 6px;
   border-radius: 14px;
   background: rgba(10, 7, 28, 0.72);
   border: 1px solid var(--line);
@@ -4417,12 +4423,7 @@ button.sp-qrow:hover {
   flex: 1;
   overflow-wrap: anywhere;
 }
-/* The name wraps whole: the pin grows taller and the row under it moves down. */
-.u-pin-word {
-  display: inline;
-  white-space: normal;
-  overflow-wrap: anywhere;
-}
+/* The name fits two lines at 16 px (FitTitle); a longer one fades on its last line and the tip has it whole. */
 .u-pin-add {
   white-space: nowrap;
   overflow: hidden;

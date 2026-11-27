@@ -14,22 +14,27 @@ export function linesAllowed(size: number, top: number, firstLines: number, maxL
 /**
  * A title that always shows in full: it takes the largest size (from `top` down to 16 px) at which
  * it fits in its lines, wrapping rather than cutting. `firstLines` lines at `top`, `maxLines` below
- * (the last step, 16 px, is kept even when it still needs more). Measured again only when the text
+ * (the last step, 16 px, is kept even when it still needs more). With `fade`, a title that still
+ * needs more lines at 16 px shows what fits, with a soft fade on its last line (`data-cut`; the caller
+ * puts the whole text in a hover tip); never an ellipsis. Measured again only when the text
  * or the numbers change, when its width changes and when a font finishes loading.
  */
 export function FitTitle({
   top,
   firstLines,
   maxLines = 3,
+  fade = false,
   lh,
   className,
   children,
   ...rest
-}: { top: number; firstLines: number; maxLines?: number; lh: number; className: string; children: ReactNode } & Record<string, unknown>) {
+}: { top: number; firstLines: number; maxLines?: number; fade?: boolean; lh: number; className: string; children: ReactNode } & Record<string, unknown>) {
   const ref = useRef<HTMLDivElement>(null);
   const measure = useCallback(() => {
     const el = ref.current;
     if (!el) return;
+    el.removeAttribute('data-cut');
+    el.style.maxHeight = '';
     const cs = getComputedStyle(el);
     const pad = (parseFloat(cs.paddingTop) || 0) + (parseFloat(cs.paddingBottom) || 0);
     for (const size of fitSizes(top)) {
@@ -37,7 +42,13 @@ export function FitTitle({
       const lines = Math.round((el.scrollHeight - pad) / (size * lh));
       if (lines <= linesAllowed(size, top, firstLines, maxLines)) return;
     }
-  }, [top, firstLines, maxLines, lh]);
+    if (fade) {
+      const last = fitSizes(top).at(-1)!;
+      const rows = linesAllowed(last, top, firstLines, maxLines);
+      el.style.maxHeight = `${Math.ceil(rows * last * lh + pad)}px`;
+      el.setAttribute('data-cut', '');
+    }
+  }, [top, firstLines, maxLines, fade, lh]);
   // Not on every render (a player's progress ticks each second): only when the words or the numbers change.
   useLayoutEffect(measure, [measure, children]);
   // A width change (layout or window resize) or a late font measures again.
@@ -49,7 +60,7 @@ export function FitTitle({
     return () => fonts.removeEventListener('loadingdone', measure);
   }, [measure]);
   return (
-    <div ref={ref} className={className} {...rest}>
+    <div ref={ref} className={fade ? `${className} fit-fade` : className} {...rest}>
       {children}
     </div>
   );

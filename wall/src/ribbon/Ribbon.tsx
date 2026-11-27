@@ -43,6 +43,24 @@ function ChipTitle({ text, spill = false }: { text: string; spill?: boolean }) {
   );
 }
 
+/** A due mark's title. One that does not fit its 180 px fades over its last 16 px (the hover has it whole). */
+function DueName({ text }: { text: string }) {
+  const ref = useRef<HTMLSpanElement>(null);
+  const measure = useCallback(() => {
+    const el = ref.current;
+    if (!el) return;
+    if (el.scrollWidth > el.clientWidth + 1) el.setAttribute('data-cut', '');
+    else el.removeAttribute('data-cut');
+  }, []);
+  useLayoutEffect(measure);
+  useRemeasure(ref, measure);
+  return (
+    <span ref={ref} className="n">
+      {text}
+    </span>
+  );
+}
+
 /** Asks Rust to open the event in Outlook; Rust holds the link behind the key. */
 function openEvent(key: string): void {
   invoke('wall2_open_event', { key }).catch(() => undefined);
@@ -458,7 +476,7 @@ export function Ribbon({ kind, now = Date.now, compact = false, feed, onOverlay 
               <i aria-hidden="true" />
               {!bare && (
                 <>
-                  <span className="n">{d.title}</span>
+                  <DueName text={d.title} />
                   <span aria-hidden="true">, {d.time}</span>
                 </>
               )}
