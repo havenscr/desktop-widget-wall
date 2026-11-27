@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { render } from '@testing-library/react';
 // @ts-ignore node's own file call; the stylesheet rules are read as text.
 import { readFileSync } from 'node:fs';
@@ -6,7 +6,7 @@ import watchCard from './watch/WatchCard.tsx?raw';
 import watchSrc from './watch/Watch.tsx?raw';
 import playerSrc from './Player.tsx?raw';
 import { FitTitle, fitSizes, linesAllowed } from '../ui/FitTitle';
-import { spillTitles, agentsLineWidth, textWidth, type Chip } from '../ribbon/model';
+import { spillTitles, agentsLineWidth, textWidth, CORNER_LEFT, SPILL_GAP, type Chip } from '../ribbon/model';
 
 const read = (f: string): string => readFileSync(`src/styles/${f}`, 'utf8') as string;
 const unwindCss = read('unwind.css');
@@ -16,7 +16,8 @@ const norm = (s: string) => s.replace(/\r\n/g, '\n');
 const rule = (css: string, sel: string): string => {
   const text = norm(css);
   const at = text.indexOf(`\n${sel} {`);
-  return at < 0 ? '' : text.slice(at, text.indexOf('}', at));
+  if (at < 0) throw new Error(`no rule for ${sel}`);
+  return text.slice(at, text.indexOf('}', at));
 };
 
 describe('labels show in full', () => {
@@ -43,6 +44,31 @@ describe('labels show in full', () => {
     expect(r.container.querySelector('.w-title')!.textContent).toBe(long);
   });
 
+  it('steps the size down until the lines fit, and stops at 16 px', () => {
+    // 40 px per 16 px line of 1.1: the box is as tall as its lines at whatever size is set.
+    const spy = vi.spyOn(HTMLElement.prototype, 'scrollHeight', 'get').mockImplementation(function (this: HTMLElement) {
+      const size = parseFloat(this.style.fontSize) || 48;
+      const linesAt = Math.ceil((size * 40) / 48 / 6);
+      return Math.round(linesAt * size * 1.1);
+    });
+    try {
+      const r = render(
+        <FitTitle top={48} firstLines={2} lh={1.1} className="w-title">
+          {'A title long enough to need more lines than the biggest size allows'}
+        </FitTitle>,
+      );
+      const px = parseFloat((r.container.querySelector('.w-title') as HTMLElement).style.fontSize);
+      expect(px).toBeLessThan(48);
+      expect(px).toBeGreaterThanOrEqual(16);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it('a selector that is not in the stylesheet throws', () => {
+    expect(() => rule(unwindCss, '.no-such-rule')).toThrow();
+  });
+
   it('the Watch and Listen titles use the fitting title, not an ellipsis row', () => {
     expect(norm(watchSrc)).toContain('<FitTitle');
     expect(norm(playerSrc)).not.toMatch(/className="u-np[^"]*u-ell/);
@@ -54,12 +80,11 @@ describe('labels show in full', () => {
     expect(rule(unwindCss, '.w-label')).toContain('overflow-wrap: anywhere');
   });
 
-  it('the Next up title wraps, at 16 px or more', () => {
+  it('the Next up title wraps and is fitted, not cut', () => {
     const t = rule(workCss, '.u-nu-title');
     expect(t).not.toContain('nowrap');
     expect(t).not.toContain('ellipsis');
-    const px = Number(/font-size: (\d+)px/.exec(rule(workCss, '.u-nu-title.long'))![1]);
-    expect(px).toBeGreaterThanOrEqual(16);
+    expect(norm(readFileSync('src/unwind/work/NextUp.tsx', 'utf8') as string)).toContain('<FitTitle');
   });
 
   it('a chip carries its name past its edge, and the second row is 16 px', () => {
@@ -85,6 +110,17 @@ describe('chip titles that do not fit', () => {
     const a = chip('a', 400, 100, 'CAA AE session with a long name');
     const b = chip('b', 560, 100, 'Next');
     expect(spillTitles([a, b], [560], [{ x: 380, width: 400 }]).has('a')).toBe(false);
+  });
+  it('a title near the corner button stays short of it', () => {
+    const c = chip('a', CORNER_LEFT - 200, 100, 'A long name for a chip near the end of the day');
+    const got = spillTitles([c], [], []).get('a');
+    expect(got === undefined || got.x + got.width <= CORNER_LEFT - SPILL_GAP).toBe(true);
+  });
+  it('a title never runs across the needle', () => {
+    const c = chip('a', 400, 100, 'CAA AE session with a long name');
+    const got = spillTitles([c], [], [], [{ x: 560, width: 12 }]).get('a');
+    expect(got).toBeUndefined();
+    expect(spillTitles([c], [], [], [{ x: 1500, width: 12 }]).get('a')?.mode).toBe('side');
   });
   it('a title that fits is left alone', () => {
     expect(spillTitles([chip('a', 400, 300, 'Standup')], [], []).size).toBe(0);

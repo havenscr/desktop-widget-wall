@@ -230,10 +230,25 @@ export function Ribbon({ kind, now = Date.now, compact = false, feed, onOverlay 
   const spills = spillTitles(
     shown,
     [...shown.map((c) => c.x), ...fold.folds.map((f) => f.x), ...lay.more.map((m) => m.x), ...(lay.allDay ? [lay.allDay.x] : [])],
-    boxes,
+    [...boxes, ...marks.map((d) => ({ x: d.x - 8, width: 16 }))],
+    [{ x: n.x - 6, width: 12 }],
   );
   const rowBoxes = [...spills.values()].filter((p) => p.mode === 'row');
   const dueAvoid = [...boxes, ...rowBoxes];
+  // The spill measures real text, so it is worked out again once the fonts have loaded.
+  const [, setFontTick] = useState(0);
+  useEffect(() => {
+    const fonts = typeof document === 'undefined' ? undefined : document.fonts;
+    if (!fonts) return;
+    let live = true;
+    const bump = () => live && setFontTick((v) => v + 1);
+    fonts.ready?.then(bump);
+    fonts.addEventListener?.('loadingdone', bump);
+    return () => {
+      live = false;
+      fonts.removeEventListener?.('loadingdone', bump);
+    };
+  }, []);
   const [overlay, setOverlay] = useState<Overlay>(null);
   const close = useCallback(() => setOverlay(null), []);
   // A layer that hosts this ribbon (Unwind's) learns while its drawer or panel is open, so it stays up under it.

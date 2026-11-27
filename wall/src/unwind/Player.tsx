@@ -255,7 +255,7 @@ export function Player() {
           <div className="u-meta">
             <span className="u-k">{watchMatch ? 'Last played in Watch' : fromWall ? ON_THE_WALL : idle.source ? `Last played on ${shownSource(idle.source)}` : 'Last played'}</span>
             <FitTitle top={64} firstLines={1} lh={1.06} className="u-np u-was">{idle.title}</FitTitle>
-            <div className="u-artist u-ell">{idle.artist}</div>
+            <FitTitle top={32} firstLines={1} maxLines={2} lh={1.2} className="u-artist">{idle.artist}</FitTitle>
             {transport}
           </div>
         </div>
@@ -273,7 +273,7 @@ export function Player() {
         <div className="u-meta">
           {sourceLabel ? <span className="u-k u-src">{watchMatch ? 'Playing in Watch' : sourceLabel}</span> : null}
           <FitTitle top={64} firstLines={1} lh={1.06} className="u-np">{info?.title || 'Unknown title'}</FitTitle>
-          <div className="u-artist u-ell">{info?.artist || info?.album || ''}</div>
+          <FitTitle top={32} firstLines={1} maxLines={2} lh={1.2} className="u-artist">{info?.artist || info?.album || ''}</FitTitle>
           {transport}
         </div>
       </div>
@@ -340,7 +340,7 @@ function MusicPlayer({ music, setBox }: { music: MusicView; setBox: (el: HTMLDiv
         <div className="u-meta">
           <span className="u-k u-src">{live ? 'YouTube, on the wall' : 'Last played on the wall'}</span>
           <FitTitle top={64} firstLines={1} lh={1.06} className={`u-np${live ? '' : ' u-was'}`}>{music.title}</FitTitle>
-          <div className="u-artist u-ell">{music.channel}</div>
+          <FitTitle top={32} firstLines={1} maxLines={2} lh={1.2} className="u-artist">{music.channel}</FitTitle>
           {transport}
         </div>
       </div>

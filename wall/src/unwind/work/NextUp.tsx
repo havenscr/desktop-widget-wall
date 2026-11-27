@@ -8,6 +8,7 @@ import { drawnPeople, initials, NO_JOIN_LINK_LABEL } from '../../meet/heroModel'
 import { countdownText } from '../../meet/model';
 import { useMeetingFeed, useNextMeeting } from '../../work/useNextMeeting';
 import { usePlaceStore } from '../../state/places';
+import { FitTitle } from '../../ui/FitTitle';
 import { tip } from '../../ui/HoverTip';
 import { reviewNow } from '../../ui/reviewClock';
 import { useWorkLayerStore } from './layerStore';
@@ -36,6 +37,7 @@ function Body() {
   const left = meetingsLeft(meetings, now, meeting);
   const waiting = waitingCount(agents.summary, snoozed.ids);
   const stats = `${focus} focus · ${left} ${left === 1 ? 'meeting' : 'meetings'} · ${waiting} waiting`;
+  const line = nextUpTitle(meeting);
   const people = drawnPeople(meeting?.details);
   const circles = people.slice(0, 3);
   const canJoin = !!meeting?.canJoin;
@@ -48,7 +50,9 @@ function Body() {
       <div className="u-nu-rule" aria-hidden="true" />
       <div className="u-nu-info">
         <div className="u-nu-l1">
-          <span className={`u-nu-title${nextUpTitle(meeting).length > 44 ? ' long longer' : nextUpTitle(meeting).length > 24 ? ' long' : ''}`}>{nextUpTitle(meeting)}</span>
+          <FitTitle top={20} firstLines={2} maxLines={2} lh={1.1} className="u-nu-title">
+            {line}
+          </FitTitle>
           {circles.length > 0 ? (
             <span className="u-nu-people" aria-hidden="true">
               {circles.map((p, i) => (

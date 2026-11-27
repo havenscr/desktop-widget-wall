@@ -364,19 +364,12 @@
 }
 .u-nu-title {
   min-width: 0;
-  font: 700 20px/26px var(--disp);
+  flex: 1;
+  font: 700 20px/1.1 var(--disp);
   color: var(--tx);
   overflow-wrap: anywhere;
 }
-/* A long title wraps to two lines at a slightly smaller size; the time and buttons stay put. */
-.u-nu-title.long {
-  font-size: 17px;
-  line-height: 20px;
-}
-.u-nu-title.longer {
-  font-size: 16px;
-  line-height: 18px;
-}
+/* FitTitle steps the size down (never under 16 px) so the meeting fits two lines; the time and buttons stay put. */
 .u-nu-people {
   flex: none;
   display: flex;
@@ -397,7 +390,7 @@
   margin-left: 0;
 }
 .u-nu-l2 {
-  font: 400 16px/22px var(--body);
+  font: 400 16px/20px var(--body);
   color: #b9b3dc;
   white-space: nowrap;
   overflow: hidden;

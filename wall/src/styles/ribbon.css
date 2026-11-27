@@ -163,9 +163,9 @@
 }
 .rib .ev-row {
   position: absolute;
-  top: 64px;
-  height: 16px;
-  font: 400 16px/16px var(--body);
+  top: 66px;
+  height: 20px;
+  font: 400 16px/20px var(--body);
   color: #e4dcff;
   white-space: nowrap;
   pointer-events: none;
@@ -174,7 +174,7 @@
   color: rgba(193, 191, 205, 1);
 }
 .rib.has-allday .ev-row {
-  top: 67px;
+  top: 69px;
 }
 /* Stacked lanes for events that overlap (Ribbon.tsx sets each lane's top and height): two
    lanes keep a smaller title, three are thin bars with the title in the hover. */

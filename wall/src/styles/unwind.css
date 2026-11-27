@@ -626,9 +626,7 @@
   font-size: 24px;
   line-height: 1.3;
   color: var(--dim);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  overflow-wrap: anywhere;
 }
 .w-ctl {
   display: flex;
@@ -1006,7 +1004,7 @@
 /* Five whole 40 px rows; past five it scrolls a row at a time, with a visible scrollbar and a
    fade along the bottom while more rows are below. */
 .w-list {
-  flex: 0 1 200px;
+  flex: 0 1 216px;
   min-height: 0;
   overflow-y: auto;
   margin: 8px -8px 0;
@@ -1016,6 +1014,9 @@
 }
 .w-list > li {
   scroll-snap-align: start;
+}
+.w-list > li + li {
+  margin-top: 4px;
 }
 .w-list.more {
   -webkit-mask-image: linear-gradient(180deg, #000 calc(100% - 30px), rgba(0, 0, 0, 0.15));
@@ -1028,16 +1029,16 @@
   display: flex;
   align-items: center;
   gap: 4px;
-  height: 40px;
+  min-height: 40px;
 }
 .w-play {
   flex: 1;
   min-width: 0;
-  height: 40px;
+  min-height: 40px;
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 0 10px;
+  padding: 6px 10px;
   border-radius: 12px;
   font-size: 20px;
   color: var(--tx);
@@ -1064,11 +1065,11 @@
 .w-row.on .w-kind {
   color: var(--cyan);
 }
-/* A list name wraps to a second line (the row is 40 px, so two 20 px lines) instead of an ellipsis. */
+/* A list name wraps to a second line (the row grows to fit) instead of an ellipsis. */
 .w-label {
   min-width: 0;
   flex: 1;
-  line-height: 20px;
+  line-height: 22px;
   overflow-wrap: anywhere;
 }
 .w-on {
@@ -2463,7 +2464,8 @@
 }
 .u-listen .u-artist {
   margin-top: 2px;
-  line-height: 38px;
+  line-height: 1.2;
+  overflow-wrap: anywhere;
 }
 .u-listen .u-transport {
   gap: 14px;
@@ -4340,19 +4342,20 @@ button.sp-qrow:hover {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 8px;
-  height: 48px;
+  min-height: 48px;
 }
 .u-pinslot {
   position: relative;
   min-width: 0;
+  display: flex;
 }
 .u-pin {
   width: 100%;
-  height: 48px;
+  min-height: 48px;
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 0 8px 0 6px;
+  padding: 6px 8px 6px 6px;
   border-radius: 14px;
   background: rgba(10, 7, 28, 0.72);
   border: 1px solid var(--line);
@@ -4412,19 +4415,13 @@ button.sp-qrow:hover {
 .u-pin-name {
   min-width: 0;
   flex: 1;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
+  overflow-wrap: anywhere;
 }
-/* Each word is its own box: a word too long for the pin is cut with an ellipsis on its line (the full label is in the tip). */
+/* The name wraps whole: the pin grows taller and the row under it moves down. */
 .u-pin-word {
-  display: inline-block;
-  max-width: 100%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  vertical-align: top;
+  display: inline;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 .u-pin-add {
   white-space: nowrap;

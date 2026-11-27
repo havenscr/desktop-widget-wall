@@ -79,6 +79,6 @@ it('Meet shows the ribbon with today\'s events', async () => {
   expect(rib.getAttribute('data-kind')).toBe('work');
   expect([...rib.querySelectorAll('.ev')].map((e) => [e.textContent, e.className])).toEqual([
     ['AE sync', 'ev past'],
-    ['Call', 'ev now spill'],
+    ['Call', 'ev now'],
   ]);
 });

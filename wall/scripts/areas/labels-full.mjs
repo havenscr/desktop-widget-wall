@@ -28,6 +28,75 @@ export default {
         custom: true,
         expect: ['An Extremely Long Song Title'],
       },
+      {
+        screen: 'work',
+        name: 'labels in full: Work, the busy afternoon with long chip names',
+        query: 'hz=work&at=2026-11-11T10%3A24%3A00-08%3A00&clock=review&weather=ok&long=1&meet=heavy',
+        custom: true,
+        expect: ['Quarterly planning'],
+      },
+      {
+        screen: 'unwind',
+        name: 'labels in full: Unwind with the timeline up, the long meeting',
+        query: 'hz=unwind&at=2026-11-11T22%3A30%3A00-08%3A00&clock=review&weather=ok&ltab=listen&lctl=shown&meet=heavy&media=long',
+        custom: true,
+        expect: ['Customer escalation review'],
+        actions: 'hover:.u-foot',
+      },
     ],
+  },
+  fit: {
+    variants: [
+      { name: 'Labels full, Watch with long names', q: `?${WATCH}&wlist=three&wpins=long&wplay=0&wmeta=long&long=1`, checks: ['.w-now', '.w-card'] },
+      { name: 'Labels full, Work with long chip names', q: '?hz=work&at=2026-11-11T10%3A24%3A00-08%3A00&clock=review&weather=ok&long=1&meet=heavy', checks: ['.left-wing'] },
+    ],
+    measurements: {
+      labelsFull: () => {
+        const out = { cut: [], small: [], overlap: [], missing: false };
+        const R = (e) => e.getBoundingClientRect();
+        const hit = (a, b) => a.right > b.left + 0.5 && a.left < b.right - 0.5 && a.bottom > b.top + 0.5 && a.top < b.bottom - 0.5;
+        for (const sel of ['.w-title', '.w-by', '.w-label', '.u-pin-name', '.u-np', '.u-artist', '.u-nu-title']) {
+          for (const e of document.querySelectorAll(sel)) {
+            const r = R(e);
+            if (r.width === 0 || getComputedStyle(e).visibility === 'hidden') continue;
+            const cs = getComputedStyle(e);
+            if (cs.textOverflow === 'ellipsis' || e.scrollHeight > e.clientHeight + 1 || e.scrollWidth > e.clientWidth + 1) out.cut.push(`${sel} "${(e.textContent || '').slice(0, 24)}"`);
+            if (parseFloat(cs.fontSize) < 16) out.small.push(`${sel} ${cs.fontSize}`);
+          }
+        }
+        // Chip names carried past their chip, and second row names, stay off the needle, the corner button and every other chip.
+        const names = [...document.querySelectorAll('.rib .ev.spill .ev-t, .rib .ev-row')].filter((e) => R(e).width > 0);
+        const others = [['the needle', '.rib .ndl b'], ['the corner button', '.screens-off']].flatMap(([n, sel]) => [...document.querySelectorAll(sel)].map((e) => [n, R(e)]));
+        const chips = [...document.querySelectorAll('.rib .ev:not(.spill)')].map((e) => ['a chip', R(e)]);
+        for (const e of names) {
+          const range = document.createRange();
+          range.selectNodeContents(e);
+          const r = range.getBoundingClientRect();
+          for (const [n, o] of [...others, ...chips]) if (hit(r, o)) out.overlap.push(`"${(e.textContent || '').slice(0, 20)}" ${Math.round(r.left)},${Math.round(r.top)},${Math.round(r.right)},${Math.round(r.bottom)} touches ${n} ${Math.round(o.left)},${Math.round(o.top)},${Math.round(o.right)},${Math.round(o.bottom)}`);
+        }
+        out.count = names.length;
+        return out;
+      },
+    },
+    rules: {
+      labelsFull: (variant, results, emit) => {
+        if (!variant.name.startsWith('Labels full')) return false;
+        const m = results.labelsFull;
+        const bad = [...m.cut.map((x) => `${x} is cut`), ...m.small.map((x) => `${x} is under 16 px`), ...m.overlap];
+        if (bad.length === 0) {
+          emit(`  ok   labels full: no label cut, none under 16 px, no chip name over the needle, the corner button or a chip (${m.count} chip names carried on)`);
+          return false;
+        }
+        emit(`  FAIL labels full: ${bad.slice(0, 6).join('; ')}`);
+        return true;
+      },
+    },
+    breaks: {
+      'labels-full-cut': {
+        css: '.w-title, .u-nu-title, .w-label { max-height: 30px !important; overflow: hidden !important; }',
+        expect: /^ *FAIL labels full: .* is cut/m,
+        appliesTo: (variant) => variant.name === 'Labels full, Watch with long names',
+      },
+    },
   },
 };
