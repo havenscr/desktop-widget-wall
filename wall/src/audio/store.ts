@@ -41,6 +41,14 @@ export function audioDrops(): Readonly<DropStamp> {
   return energy.drops;
 }
 
+/** Development only (`?audio=demo&vdrop=<ms>`): count one drop as if the detector had fired, at full strength. */
+export function devFireDrop(nowMs: number): void {
+  if (!import.meta.env.DEV) return;
+  energy.drops.count++;
+  energy.drops.lastAt = nowMs;
+  energy.drops.strength = 1;
+}
+
 /** The newest spectrum bands, 0 to 1 (bass first). A live view: copy it to keep a frame. */
 export function audioBands(): Readonly<Float32Array> {
   return bands;

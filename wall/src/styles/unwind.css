@@ -2046,27 +2046,56 @@
   left: 24px;
   background: #ece8ff;
 }
-/* The Vibe section's switch rows (`LinesPanel.tsx`), the same layout as the Looks sheet's: the name at its natural
-   width on the left, the switch flush right at the end of the slider column, the value in the right column. */
+/* The Vibe controls (`LinesPanel.tsx`), in two groups, on the Unwind Vibe page and in the Tools drawer's Vibe group: a small
+   heading per group, one 36 px row per setting, the name at 130 px (its full sentence is a hover tip), the control, and a
+   short hint beside it (or one line under the two new chip rows). Chips are the page's own `.ln-chips`. */
 .ln-vibe {
-  gap: 6px;
-  /* The section's own heading is gone (the page tab names it): the reset sits right on its row, 6 px clear of the scroller's top like the Lines page. */
-  padding-top: 6px;
+  gap: 4px;
+  padding-top: 2px;
 }
 .ln-vibe > .ln-head {
-  justify-content: flex-end;
+  justify-content: space-between;
 }
-.ln-swrow .ln-label.ln-sw {
+.ln-gh {
+  font: 600 16px/1 var(--disp);
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--dim);
+  white-space: nowrap;
+}
+.ln-vibe .ln-row {
+  min-height: 36px;
+}
+.ln-vibe .ln-label {
+  width: 130px;
+}
+.ln-vibe .ln-label.ln-wide {
   width: auto;
 }
-.ln-swrow .ln-label.ln-sw + .ln-switch {
-  margin-left: auto;
-}
-.ln-swrow .ln-switch + .ln-value {
+.ln-vibe .ln-reset {
   margin-left: 0;
 }
-.ln-switch[aria-disabled='true'] {
-  cursor: default;
+.ln-split {
+  margin-top: 6px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+}
+.ln-short {
+  flex: 1;
+  min-width: 0;
+  margin-left: 6px;
+  color: var(--dim);
+  font-size: 16px;
+  white-space: nowrap;
+}
+.ln-short.ln-short-end {
+  flex: none;
+  margin-left: auto;
+  text-align: right;
+}
+.ln-vhint {
+  margin-top: -2px;
+  white-space: nowrap;
 }
 @media (prefers-reduced-motion: reduce) {
   .ln-switch i {
