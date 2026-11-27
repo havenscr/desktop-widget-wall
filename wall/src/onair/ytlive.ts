@@ -2,8 +2,9 @@ import { invoke } from '../bridge/tauri';
 
 /**
  * Types and typed `invoke` wrappers for the YouTube live commands (`wall2_ytlive_*`). The native side keeps the token, the live
- * chat id and the page token behind it; nothing here is ever a URL, an id of a chat, an address or a token. Times are Unix
- * milliseconds. Chat text and names are held in memory only.
+ * chat id and the page token behind it; nothing here is ever a URL, an id of a chat, an address or a token. Times here are Unix
+ * milliseconds. The native side stamps `readAt` and `stoppedAt` in Unix seconds (and sends `startedAt`, `scheduledAt` and each
+ * message `at` already in milliseconds), so the wrappers below turn the two seconds fields into milliseconds. Chat text and names are held in memory only.
  */
 export type LiveState = 'not-set-up' | 'signed-out' | 'none' | 'scheduled' | 'live';
 
@@ -34,6 +35,8 @@ export interface LiveMessage {
   text: string;
   at: number;
   superChat: string | null;
+  /** The commenter's picture on a Google image host (https), or absent. */
+  avatar?: string | null;
 }
 
 export interface LiveChat {
@@ -49,12 +52,19 @@ export interface LiveChat {
 /** Fixed words the channel commands reject with. */
 export type ChannelError = 'invalid' | 'not found';
 
+const secToMs = (s: number | null): number | null => (s === null ? null : s * 1000);
+
+/** The native status, with `readAt` (Unix seconds there) in milliseconds. */
+export const statusFromNative = (s: LiveStatus): LiveStatus => ({ ...s, readAt: secToMs(s.readAt) });
+/** The native chat, with `readAt` and `stoppedAt` (Unix seconds there) in milliseconds. */
+export const chatFromNative = (c: LiveChat): LiveChat => ({ ...c, readAt: secToMs(c.readAt), stoppedAt: secToMs(c.stoppedAt) });
+
 export const ytlive = {
   channel: () => invoke<LiveChannel>('wall2_ytlive_channel'),
   setChannel: (text: string) => invoke<LiveChannel>('wall2_ytlive_set_channel', { text }),
   forgetChannel: () => invoke<null>('wall2_ytlive_forget_channel'),
-  status: (fresh?: boolean) => invoke<LiveStatus>('wall2_ytlive_status', { fresh: fresh === true }),
-  chat: () => invoke<LiveChat>('wall2_ytlive_chat'),
+  status: async (fresh?: boolean) => statusFromNative(await invoke<LiveStatus>('wall2_ytlive_status', { fresh: fresh === true })),
+  chat: async () => chatFromNative(await invoke<LiveChat>('wall2_ytlive_chat')),
 };
 
 /** Status older than this is shown as "as of". */

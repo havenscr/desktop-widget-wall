@@ -1,5 +1,5 @@
 import { IconClock, IconMessageCircle, IconStarFilled } from '@tabler/icons-react';
-import { useLayoutEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { tip } from '../../ui/HoverTip';
 import { chatStale, type LiveChat, type LiveMessage } from '../ytlive';
 import { useYtLive } from '../ytliveStore';
@@ -16,20 +16,78 @@ function readAgo(readAt: number | null, now: number): string {
   return `YouTube · read ${s < 60 ? `${s} s` : `${Math.floor(s / 60)} min`} ago`;
 }
 
-/** Rows keep their place while the pointer is on the list; newest at the bottom; a row that does not fit whole at the top is hidden, never cut. */
+const graphemes = (text: string): string[] =>
+  typeof Intl !== 'undefined' && 'Segmenter' in Intl
+    ? [...new Intl.Segmenter(undefined, { granularity: 'grapheme' }).segment(text)].map((p) => p.segment)
+    : Array.from(text);
+
+/** The letter and colour of the tile shown when a picture is missing or fails: the first letter or digit of the handle (a whole grapheme, so a flag or joined emoji is never cut), and a hue taken from the whole handle. */
+export function avatarTile(name: string): { letter: string; hue: number } {
+  const parts = graphemes(name.replace(/^@/, ''));
+  const letter = (parts.find((c) => /[\p{L}\p{N}]/u.test(c)) ?? parts[0] ?? '?').toUpperCase();
+  let h = 0;
+  for (const c of name) h = (h * 31 + (c.codePointAt(0) ?? 0)) % 360;
+  return { letter, hue: h };
+}
+
+/** A round 40 px picture that fades in when it has loaded; a missing or broken one is a round tile with the handle's first letter. The picture's state lives in a child keyed by its address, so a new address always starts at waiting. */
+export function Avatar({ name, src }: { name: string; src: string | null | undefined }) {
+  const tile = avatarTile(name);
+  const letter = (
+    <span className="oa2-cm-av oa2-cm-tile" aria-hidden="true" style={{ background: `hsl(${tile.hue} 45% 32%)` }}>
+      {tile.letter}
+    </span>
+  );
+  if (!src) return letter;
+  return <AvatarImage key={src} src={src} fallback={letter} />;
+}
+
+function AvatarImage({ src, fallback }: { src: string; fallback: ReactNode }) {
+  const [state, setState] = useState<'wait' | 'ok' | 'bad'>('wait');
+  const img = useRef<HTMLImageElement | null>(null);
+  // A cached picture can finish before React attaches onLoad; catch it here.
+  useLayoutEffect(() => {
+    const el = img.current;
+    if (el && el.complete && el.naturalWidth > 0) setState('ok');
+  }, []);
+  if (state === 'bad') return fallback;
+  return (
+    <span className="oa2-cm-av" aria-hidden="true">
+      <img ref={img} src={src} alt="" width={40} height={40} decoding="async" loading="lazy" referrerPolicy="no-referrer" data-loaded={state === 'ok' ? 'true' : 'false'} onLoad={() => setState('ok')} onError={() => setState('bad')} />
+    </span>
+  );
+}
+
+/** Rows keep their place while the pointer is on the list; newest at the bottom. The list scrolls and stays on the newest row unless the viewer scrolled up; while rows are hidden above, the top edge fades (never a hard cut), so a row taller than the list is readable in full by scrolling. Long handles and long unbroken text wrap in full. */
 function Rows({ messages, dim }: { messages: LiveMessage[]; dim: boolean }) {
   const list = useRef<HTMLDivElement | null>(null);
+  const pinned = useRef(true);
   const [over, setOver] = useState(false);
   const [held, setHeld] = useState<LiveMessage[] | null>(null);
   const shown = over && held ? held : messages;
+  const mark = () => {
+    const el = list.current;
+    if (!el) return;
+    el.toggleAttribute('data-above', el.scrollTop > 0.5);
+  };
   useLayoutEffect(() => {
     const el = list.current;
     if (!el) return;
-    const top = el.getBoundingClientRect().top;
-    for (const row of el.querySelectorAll<HTMLElement>(':scope > .oa2-cm')) {
-      row.toggleAttribute('data-cut', row.getBoundingClientRect().top < top - 0.5);
-    }
+    if (pinned.current) el.scrollTop = el.scrollHeight;
+    mark();
   });
+  // Fonts and the card's own size settle after the first paint; keep the newest row in view while pinned.
+  useEffect(() => {
+    const el = list.current;
+    if (!el || typeof ResizeObserver === 'undefined') return;
+    const ro = new ResizeObserver(() => {
+      if (pinned.current) el.scrollTop = el.scrollHeight;
+      mark();
+    });
+    ro.observe(el);
+    for (const row of el.children) ro.observe(row);
+    return () => ro.disconnect();
+  }, [shown]);
   return (
     <div
       ref={list}
@@ -37,6 +95,11 @@ function Rows({ messages, dim }: { messages: LiveMessage[]; dim: boolean }) {
       aria-label="Comments"
       role="log"
       data-dim={dim ? 'true' : 'false'}
+      onScroll={(e) => {
+        const el = e.currentTarget;
+        pinned.current = el.scrollHeight - el.clientHeight - el.scrollTop < 2;
+        mark();
+      }}
       onPointerEnter={() => {
         setHeld(messages);
         setOver(true);
@@ -45,14 +108,17 @@ function Rows({ messages, dim }: { messages: LiveMessage[]; dim: boolean }) {
     >
       {shown.map((m) => (
         <div key={m.id} className="oa2-cm" data-super={m.superChat ? 'true' : undefined} {...tip(`${m.name}: ${m.text}${m.superChat ? ` (Super Chat ${m.superChat})` : ''}`)}>
-          <span className="oa2-cm-n">{m.name}</span>
-          {m.superChat && (
-            <span className="oa2-cm-sc">
-              <IconStarFilled size={14} aria-hidden="true" />
-              {m.superChat}
-            </span>
-          )}
-          <span className="oa2-cm-t">{m.text}</span>
+          <Avatar name={m.name} src={m.avatar} />
+          <div className="oa2-cm-b">
+            <span className="oa2-cm-n">{m.name}</span>
+            {m.superChat && (
+              <span className="oa2-cm-sc">
+                <IconStarFilled size={14} aria-hidden="true" />
+                {m.superChat}
+              </span>
+            )}
+            <span className="oa2-cm-t">{m.text}</span>
+          </div>
         </div>
       ))}
     </div>

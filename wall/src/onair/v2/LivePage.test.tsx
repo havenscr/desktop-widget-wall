@@ -18,6 +18,8 @@ import { OnAir2 } from './OnAir2';
 vi.setConfig({ testTimeout: 20_000 });
 
 const MIN = 60_000;
+/** The native side stamps readAt and stoppedAt in Unix seconds. */
+const sec = (ms: number): number => Math.floor(ms / 1000);
 const SHOW: Show = { state: 'ok', title: 'Friday stream', parts: [{ name: 'Load the data', minutes: 5, notes: ['Open the blank file'] }, { name: 'Shape the columns', minutes: 6, notes: [] }], skipped: 0, reason: null, readAt: 1 };
 const SECRET = 'zebra-crossing-comment';
 
@@ -29,9 +31,9 @@ let channelSet: boolean;
 let setChannelAnswer: () => unknown;
 let show: Show;
 
-const live = (over: Partial<LiveStatus> = {}): LiveStatus => ({ state: 'live', startedAt: Date.now() - 22 * MIN, scheduledAt: null, viewers: 37, chat: true, readAt: Date.now(), stale: false, word: null, statusLeft: 1000, chatLeft: 1000, ...over });
+const live = (over: Partial<LiveStatus> = {}): LiveStatus => ({ state: 'live', startedAt: Date.now() - 22 * MIN, scheduledAt: null, viewers: 37, chat: true, readAt: sec(Date.now()), stale: false, word: null, statusLeft: 1000, chatLeft: 1000, ...over });
 const msgs = (n: number, text = (i: number) => `comment ${i}`) => Array.from({ length: n }, (_, i) => ({ id: `m${i}`, name: `Viewer ${i}`, text: text(i), at: Date.now() - (n - i) * 1000, superChat: i === 1 ? '$5.00' : null }));
-const okChat = (n = 3): LiveChat => ({ state: 'ok', messages: msgs(n), readAt: Date.now(), stale: false, stoppedAt: null, word: null });
+const okChat = (n = 3): LiveChat => ({ state: 'ok', messages: msgs(n), readAt: sec(Date.now()), stale: false, stoppedAt: null, word: null });
 
 const open = async () => {
   localStorage.setItem(MODE_STORAGE_KEY, JSON.stringify({ held: 'live' }));
@@ -318,8 +320,8 @@ it('leaves a stopped timer alone', async () => {
 });
 
 it('the stale and quota lines', async () => {
-  status = live({ readAt: Date.now() - 14 * MIN, stale: true });
-  chat = { ...okChat(), readAt: Date.now() - 14 * MIN, stale: true };
+  status = live({ readAt: sec(Date.now() - 14 * MIN), stale: true });
+  chat = { ...okChat(), readAt: sec(Date.now() - 14 * MIN), stale: true };
   const a = await open();
   await waitFor(() => expect(screen.getByText('YouTube has not answered for 14 min. These are the last comments read.')).toBeTruthy());
   expect(screen.getByRole('button', { name: 'Check again' })).toBeTruthy();
@@ -327,10 +329,23 @@ it('the stale and quota lines', async () => {
   a.unmount();
   useYtLive.getState().reset();
   status = live();
-  chat = { ...okChat(), state: 'quota', stoppedAt: Date.now() - 43 * MIN, word: 'quota' };
+  chat = { ...okChat(), state: 'quota', stoppedAt: sec(Date.now() - 43 * MIN), word: 'quota' };
   await open();
   await waitFor(() => expect(screen.getByText(/^Today's YouTube reads are used up\. Comments stopped here at/)).toBeTruthy());
   expect(screen.queryByRole('button', { name: 'Check again' })).toBeNull();
+});
+
+it('a read 14 minutes old in native seconds shows the stale foot even when native says fresh', async () => {
+  status = live({ readAt: sec(Date.now() - 14 * MIN) });
+  chat = { ...okChat(), readAt: sec(Date.now() - 14 * MIN) };
+  await open();
+  await waitFor(() => expect(screen.getByText('YouTube has not answered for 14 min. These are the last comments read.')).toBeTruthy());
+});
+
+it('a fresh read in native seconds does not show the stale foot', async () => {
+  await open();
+  await waitFor(() => expect(screen.getByText('comment 0')).toBeTruthy());
+  expect(screen.queryByText(/YouTube has not answered/)).toBeNull();
 });
 
 it('live with no comments yet says when they come', async () => {
@@ -512,4 +527,65 @@ it('the split: a storage that throws does not stop it', async () => {
   fireEvent.keyDown(handle(), { key: 'ArrowLeft' });
   expect(cw()).toBe('600px');
   spy.mockRestore();
+});
+
+it('shows a long handle and a long unbroken link in full, with no clamp or ellipsis on the row', async () => {
+  const handle = '@SampleViewerWithAVeryLongHandleName2026';
+  const link = 'https://www.example.com/r/sample/comments/abc123/a_very_long_unbroken_link_that_goes_on_and_on_with_no_spaces_at_all';
+  chat = { ...okChat(2), messages: [{ id: 'a', name: handle, text: link, at: Date.now() - 2000, superChat: null }, { id: 'b', name: 'Viewer', text: 'Thanks', at: Date.now() - 1000, superChat: null }] };
+  await open();
+  await waitFor(() => expect(screen.getByText(link)).toBeTruthy());
+  expect(screen.getByText(handle).textContent).toBe(handle);
+  const sheet = css.replace(/\r\n/g, '\n');
+  const rule = (sel: string) => {
+    const m = new RegExp(`^\\${sel}\\s*\\{([^}]*)\\}`, 'm').exec(sheet);
+    expect(m).not.toBeNull();
+    return m![1];
+  };
+  for (const sel of ['.oa2-cm-n', '.oa2-cm-t']) {
+    const body = rule(sel);
+    expect(body).toContain('overflow-wrap: anywhere');
+    expect(body).not.toMatch(/text-overflow|line-clamp|nowrap|overflow: hidden/);
+  }
+  expect(rule('.oa2-cm-b')).toContain('flex-wrap: wrap');
+});
+
+const PIC = 'data:image/svg+xml;utf8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%2F%3E';
+
+it('shows a commenter picture as a 40 px lazy round image with no referrer and no alt text', async () => {
+  chat = { ...okChat(1), messages: [{ id: 'a', name: '@Sample', text: 'hi there', at: Date.now() - 2000, superChat: null, avatar: PIC }] };
+  await open();
+  await waitFor(() => expect(screen.getByText('hi there')).toBeTruthy());
+  const img = document.querySelector('.oa2-cm img') as HTMLImageElement;
+  expect(img.getAttribute('src')).toBe(PIC);
+  expect(img.getAttribute('alt')).toBe('');
+  expect(img.getAttribute('decoding')).toBe('async');
+  expect(img.getAttribute('loading')).toBe('lazy');
+  expect(img.getAttribute('referrerpolicy')).toBe('no-referrer');
+  expect(img.getAttribute('width')).toBe('40');
+  expect(img.getAttribute('data-loaded')).toBe('false');
+  fireEvent.load(img);
+  expect(img.getAttribute('data-loaded')).toBe('true');
+  const sheet = css.replace(/\r\n/g, '\n');
+  expect(sheet).toMatch(/\.oa2-cm-av img \{[^}]*opacity: 0;[^}]*transition: opacity/);
+  expect(sheet).toMatch(/\.oa2-cm-av \{[^}]*width: 40px;[^}]*height: 40px;[^}]*border-radius: 50%/);
+});
+
+it('shows a round letter tile when there is no picture or the picture fails to load', async () => {
+  chat = {
+    ...okChat(2),
+    messages: [
+      { id: 'a', name: '@marlo_sample', text: 'no picture here', at: Date.now() - 2000, superChat: null },
+      { id: 'b', name: 'Zed', text: 'broken picture here', at: Date.now() - 1000, superChat: null, avatar: PIC },
+    ],
+  };
+  await open();
+  await waitFor(() => expect(screen.getByText('broken picture here')).toBeTruthy());
+  let tiles = [...document.querySelectorAll('.oa2-cm-tile')].map((t) => t.textContent);
+  expect(tiles).toEqual(['M']);
+  fireEvent.error(document.querySelector('.oa2-cm img') as HTMLImageElement);
+  await waitFor(() => expect(document.querySelectorAll('.oa2-cm img').length).toBe(0));
+  tiles = [...document.querySelectorAll('.oa2-cm-tile')].map((t) => t.textContent);
+  expect(tiles).toEqual(['M', 'Z']);
+  expect((document.querySelector('.oa2-cm-tile') as HTMLElement).style.background).toMatch(/^(hsl|rgb)/);
 });

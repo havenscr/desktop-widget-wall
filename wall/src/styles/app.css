@@ -192,6 +192,7 @@ button,
     0 10px 30px -8px rgba(0, 0, 0, 0.8);
   font: 600 18px/1.35 var(--disp);
   color: #f1ecff;
+  overflow-wrap: anywhere;
   pointer-events: none;
   animation: tip-in 160ms ease-out;
 }
