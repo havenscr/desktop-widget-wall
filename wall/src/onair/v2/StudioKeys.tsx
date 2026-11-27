@@ -15,6 +15,7 @@ import { useStudio } from './studioStore';
 import { useDeckKeys } from './useDeckKeys';
 
 /** Wall actions that are keys of the key library. */
+const BRIEF_LONG_LIB = 'strip-dark-with-a-very-long-library-key-id-of-sixty-chars-x';
 const LIB_ID: Partial<Record<ShownAction, string>> = { snip: 'snip', hide: 'strip-dark' };
 
 /**
@@ -92,6 +93,11 @@ export function StudioKeys({ now }: { now: number }) {
   const press = async (slot: number, action: ShownAction, detail: number, label: string) => {
     // A click that is part of a double click never counts, and neither does one while a send runs.
     if (detail > 1 || busy.current) return;
+    // Development review only: any press answers with a library key id of 59 characters, for the never cut rule on the result line (`?brieflong=1`).
+    if (new URLSearchParams(window.location.search).get('brieflong') === '1') {
+      keys.showBrief(`No runnable library key "${BRIEF_LONG_LIB}"`);
+      return;
+    }
     const gen = genOf(slot);
     const addon = ADDON_ACTION[action];
     if (addon) {

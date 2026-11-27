@@ -44,14 +44,16 @@ function measureOnAir2() {
     const el = document.querySelector('.oa2 ' + sel);
     if (!el) continue;
     const b = el.getBoundingClientRect();
-    if (Math.abs(b.left - x) > 1 || Math.abs(b.top - y) > 1 || Math.abs(b.width - w) > 1 || Math.abs(b.height - h) > 1) {
+    const growsTo = sel === '.oa2-modes' ? 60 : 0;
+    const hBad = growsTo ? b.height < h - 1 || b.height > growsTo : Math.abs(b.height - h) > 1;
+    if (Math.abs(b.left - x) > 1 || Math.abs(b.top - y) > 1 || Math.abs(b.width - w) > 1 || hBad) {
       fails.push('on air v2: ' + sel + ' is at x ' + r1(b.left) + ', y ' + r1(b.top) + ', ' + r1(b.width) + ' by ' + r1(b.height) + ' and should be at x ' + x + ', y ' + y + ', ' + w + ' by ' + h);
       continue;
     }
     for (const c of el.querySelectorAll('*')) {
       if (!visible(c)) continue;
       const cb = c.getBoundingClientRect();
-      if (cb.left < x - 1 || cb.right > x + w + 1 || cb.top < y - 1 || cb.bottom > y + h + 1) {
+      if (cb.left < x - 1 || cb.right > x + w + 1 || cb.top < y - 1 || cb.bottom > y + (growsTo || h) + 1) {
         fails.push('on air v2: ' + sel + ' holds ' + (c.className && c.className.baseVal === undefined ? '.' + String(c.className).split(' ')[0] : c.tagName) + ' at x ' + r1(cb.left) + ' to ' + r1(cb.right) + ', y ' + r1(cb.top) + ' to ' + r1(cb.bottom) + ', outside its box (x ' + x + ' to ' + (x + w) + ', y ' + y + ' to ' + (y + h) + ')');
         break;
       }
@@ -91,9 +93,33 @@ function measureOnAir2() {
   if (why && modes) {
     const wb = why.getBoundingClientRect();
     const mb = modes.getBoundingClientRect();
-    if (wb.height > 37) fails.push('on air v2: the reason is ' + r1(wb.height) + ' px tall (two lines are 36)');
+    if (wb.height > 55) fails.push('on air v2: the reason is ' + r1(wb.height) + ' px tall (three lines are 54)');
     if (why.scrollWidth > why.clientWidth + 1 || why.scrollHeight > why.clientHeight + 1) fails.push('on air v2: the reason is cut');
     if (wb.left < mb.left - 0.5 || wb.right > mb.right + 0.5 || wb.top < mb.top - 0.5 || wb.bottom > mb.bottom + 0.5) fails.push('on air v2: the reason is outside the modes row');
+  }
+  // The studio keys result line (the brief) is never cut: no ellipsis, no clipped text, at most two lines, inside the heading row,
+  // the heading row clear of the keys, and the grown box clear of the stage box under it (wall y 230).
+  const brief = root.querySelector('.oa2-brief');
+  if (brief) {
+    const bb = brief.getBoundingClientRect();
+    const cs = getComputedStyle(brief);
+    const hd = brief.closest('.oa2-hd');
+    const sk = brief.closest('.oa2-studiokeys');
+    const grid = sk && sk.querySelector('.oa2-skgrid');
+    if (cs.textOverflow === 'ellipsis' || brief.className.includes('ellipsis')) fails.push('on air v2: the result line ends in an ellipsis');
+    if (brief.scrollWidth > brief.clientWidth + 1 || brief.scrollHeight > brief.clientHeight + 1) fails.push('on air v2: the result line is cut');
+    if (bb.height > 37) fails.push('on air v2: the result line is ' + r1(bb.height) + ' px tall (two lines are 36)');
+    if (hd) {
+      const hb = hd.getBoundingClientRect();
+      if (bb.left < hb.left - 0.5 || bb.right > hb.right + 0.5 || bb.top < hb.top - 0.5 || bb.bottom > hb.bottom + 0.5) fails.push('on air v2: the result line is outside its heading row');
+      for (const c of hd.querySelectorAll(':scope > *')) {
+        if (c === brief) continue;
+        const cb = c.getBoundingClientRect();
+        if (bb.left < cb.right && cb.left < bb.right && bb.top < cb.bottom && cb.top < bb.bottom) fails.push('on air v2: the result line overlaps ' + (String(c.className).split(' ')[0] || c.tagName));
+      }
+      if (grid && grid.getBoundingClientRect().top < hd.getBoundingClientRect().bottom - 0.5) fails.push('on air v2: the studio keys reach into the heading row');
+    }
+    if (sk && sk.getBoundingClientRect().bottom > 230.5) fails.push('on air v2: the studio keys box ends at y ' + r1(sk.getBoundingClientRect().bottom) + ', under y 230');
   }
   // Every key tile at least 76 by 76.
   for (const tile of root.querySelectorAll('.key-tile')) {
@@ -182,6 +208,8 @@ export default {
       variant('Presenting held while recording', `${REC}&call=teams&meetnow=1&oamode=meet`),
       variant('Recording, Watt standing at x 1000', 'oamode=rec&wattspot=1000'),
       variant('Recording, Watt standing at x 2300', 'oamode=rec&wattspot=2300'),
+      variant('Recording, a three line reason', `${REC}&whylong=3`),
+      variant('Live, a 59 character library key in the result line', 'oamode=live&yt=live&brieflong=1', { click: '.oa2-skgrid .key-tile[aria-label="Mute mic"]' }),
       variant('Recording, long notes', `${REC}&show=long`),
       variant('Presenting, long notes', `${MEET}&show=long`),
     ],
@@ -190,12 +218,13 @@ export default {
       onair2: (variantEntry, results, emit) => {
         for (const failure of results.onair2) emit(`  FAIL ${failure}`);
         if (results.onair2.length) return true;
-        if (variantEntry.name.startsWith('On Air v2,')) emit('  ok   on air v2: every block in its planned box inside y 20 to 510, the empty boxes empty, the reason in full on at most two lines, key tiles at least 76 px, text at least 16 px, no note cut without "+N more"');
+        if (variantEntry.name.startsWith('On Air v2,')) emit('  ok   on air v2: every block in its planned box inside y 20 to 510, the empty boxes empty, the reason in full on at most three lines, key tiles at least 76 px, text at least 16 px, no note cut without "+N more"');
         return false;
       },
     },
     breaks: {
       'onair2-why': { css: '.oa2-why { white-space: nowrap !important; overflow: hidden !important; }', query: '&whylong=1', expect: /^ *FAIL on air v2: the reason is cut/m, appliesTo: isNamed('Recording running') },
+      'onair2-brief': { css: '.oa2-brief { white-space: nowrap !important; overflow: hidden !important; text-overflow: ellipsis !important; }', expect: /^ *FAIL on air v2: the result line is cut/m, appliesTo: isNamed('Live, a 59 character library key in the result line') },
       'onair2-keys': { css: '.oa2 .key-tile { height: 30px !important; min-height: 0 !important; }', expect: /^ *FAIL on air v2: key tile ".*" is \d+ x \d+ px/m, appliesTo: isNamed('Recording running') },
       'onair2-box': { css: '.oa2-outline { width: 1100px !important; }', expect: /^ *FAIL on air v2: \.oa2-outline is at/m, appliesTo: isNamed('Recording running') },
       'onair2-empty': { css: '.oa2-empty-prompter::after { content: "x"; }', expect: /^ *FAIL on air v2: the empty prompter box draws/m, appliesTo: isNamed('Presenting matched') },

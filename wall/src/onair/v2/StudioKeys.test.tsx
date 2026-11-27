@@ -634,10 +634,12 @@ it('the studio keys are 76 px tall, the least a key may be, and the two rows sti
   expect(/(^|[\s;])height: 76px;/.test(key)).toBe(true);
   const grid = ruleOf(onair2Css, '.oa2-skgrid');
   expect(/grid-template-rows: repeat\(2, 76px\)/.test(grid)).toBe(true);
-  const top = Number(/top: (\d+)px;/.exec(grid)?.[1]);
+  // The grid follows the heading row (26 px at least, taller when the result line takes two lines) with a margin between.
+  const top = 26 + Number(/margin-top: (\d+)px;/.exec(grid)?.[1]);
   const gap = Number(/gap: (\d+)px/.exec(grid)?.[1]);
   expect(top + 76 + gap + 76).toBeLessThanOrEqual(192);
   expect(top).toBeGreaterThanOrEqual(26);
+  expect(/min-height: 192px/.test(ruleOf(onair2Css, '.oa2-studiokeys'))).toBe(true);
 });
 
 it('the scene on stage stays lit while a later key is the last action, and the lit state moves to a newer scene', async () => {

@@ -13,7 +13,7 @@ export function Head({ label, right, icon, brief, action }: { label: string; rig
     <div className="oa2-hd">
       {icon}
       {brief ? (
-        <span className="oa2-brief ellipsis" role="status" {...tip(brief)}>
+        <span className="oa2-brief" role="status" {...tip(brief)}>
           {brief}
         </span>
       ) : (
