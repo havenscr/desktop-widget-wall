@@ -364,12 +364,12 @@
 }
 .u-nu-title {
   min-width: 0;
-  font: 700 20px/26px var(--disp);
+  flex: 1;
+  font: 700 20px/1.1 var(--disp);
   color: var(--tx);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  overflow-wrap: anywhere;
 }
+/* FitTitle steps the size down (never under 16 px) so the meeting fits two lines; the time and buttons stay put. */
 .u-nu-people {
   flex: none;
   display: flex;
@@ -390,7 +390,7 @@
   margin-left: 0;
 }
 .u-nu-l2 {
-  font: 400 16px/22px var(--body);
+  font: 400 16px/20px var(--body);
   color: #b9b3dc;
   white-space: nowrap;
   overflow: hidden;

@@ -495,7 +495,7 @@ function WatchList({ empty, draft, setDraft, host, own }: { empty: boolean; draf
                     <span className="w-kind" {...tip(kindName('own'))}>
                       <KindIcon kind="own" />
                     </span>
-                    <span className="w-label u-ell">{item.label}</span>
+                    <span className="w-label">{item.label}</span>
                     {here ? (
                       <span className="own-pill" title={`Video ${own!.place} of ${own!.count}`}>
                         {own!.place} of {own!.count}
@@ -541,7 +541,7 @@ function WatchList({ empty, draft, setDraft, host, own }: { empty: boolean; draf
                   <span className="w-kind" {...tip(kindName(item.kind))}>
                     <KindIcon kind={item.kind} />
                   </span>
-                  <span className="w-label u-ell">{item.label}</span>
+                  <span className="w-label">{item.label}</span>
                   {item.kind === 'playlist' ? <span className="w-count">YouTube</span> : null}
                   {on ? <span className="w-on">On</span> : null}
                 </button>

@@ -23,7 +23,7 @@ import {
 const FRAME = 1 / 30;
 const FIELDS: (keyof VibeFrame)[] = [
   'aurora', 'rich', 'halo', 'haloSwell', 'tape', 'grain', 'glitch', 'env', 'swell',
-  'grainKick', 'palette', 'titleCover', 'kickGain', 'bassGain', 'live',
+  'grainKick', 'palette', 'kickGain', 'bassGain', 'live',
 ];
 
 /** Run from rest at `from` for `seconds` at 30 fps with `to`; returns the largest one frame change of any field. */
@@ -251,7 +251,6 @@ describe('nothing ends abruptly', () => {
     ['Tape Grain on', { tapeGrain: true }],
     ['Drop Glitch on (Auto off)', { dropGlitch: true, auto: false }],
     ['Calm cap on', { calmCap: true }],
-    ['Cover Scene only', { cover: 'scene' }],
   ];
 
   for (const [name, patch] of cases) {
@@ -266,11 +265,6 @@ describe('nothing ends abruptly', () => {
       for (const k of FIELDS) expect(back.out[k], k).toBeCloseTo(rest.out[k] as number, 9);
     });
   }
-
-  it('Cover lands exactly on 0 and 1', () => {
-    expect(run(...flip({ cover: 'scene' })).out.titleCover).toBe(1);
-    expect(run({ ...DEFAULT_VIBE, cover: 'scene' }, DEFAULT_VIBE).out.titleCover).toBe(0);
-  });
 
   it('the music stopping eases everything to exactly 0 within about 3 s, in small steps', () => {
     const r = run(DEFAULT_VIBE, DEFAULT_VIBE, { playing: true, playingTo: false, seconds: 5 });

@@ -1,5 +1,8 @@
 import { useDayFeed } from '../ribbon/useDayEvents';
+import { FitTitle } from '../ui/FitTitle';
+import { tip } from '../ui/HoverTip';
 import { useVisible } from '../ui/useVisible';
+import { useWorkLayerStore } from './work/layerStore';
 import { firstTomorrow, tomorrowTime } from './model';
 import type { DayEvent } from '../ribbon/model';
 
@@ -40,6 +43,8 @@ export function useTomorrow(now: () => number = Date.now, wallNow: () => number 
  */
 export function Tomorrow({ now = Date.now, wallNow = Date.now }: { now?: () => number; wallNow?: () => number }) {
   const t = useTomorrow(now, wallNow);
+  // With the work layer up the row sits just above the timeline and has one line; down, it may take two.
+  const lifted = useWorkLayerStore((s) => s.shown);
   if (!t) return null;
   if (t.kind === 'unavailable') {
     return (
@@ -52,10 +57,10 @@ export function Tomorrow({ now = Date.now, wallNow = Date.now }: { now?: () => n
   return (
     <div className="u-blk u-tomorrow">
       <span className="u-k">Tomorrow</span>
-      <div className="u-s u-ell">
+      <FitTitle top={22} firstLines={1} maxLines={lifted ? 1 : 2} fade lh={1.3} className="u-s" {...tip(`First thing: ${t.first.title} at ${tomorrowTime(Date.parse(t.first.start))}`)}>
         First thing: {t.first.title} at {tomorrowTime(Date.parse(t.first.start))}
         {t.asOf !== null ? <span className="u-asof"> as of {clockTime(t.asOf)}</span> : null}
-      </div>
+      </FitTitle>
     </div>
   );
 }

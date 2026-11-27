@@ -84,8 +84,6 @@ export interface VibeState {
   aurora: Ease2;
   /** Frame clock seconds of the last kick; -Infinity for none. */
   kickAt: number;
-  /** 1 while the title is kept clear of the effects (Cover: Scene only). */
-  title: Ease2;
   /** 1 while music plays; eases to 0 after it stops. */
   live: Ease2;
   palette: number;
@@ -98,7 +96,7 @@ const ease0 = (v = 0): Ease2 => ({ a: v, b: v });
 /** The state at rest: the settings' defaults, as if just started with no music. */
 export function createVibeState(): VibeState {
   return {
-    auto: ease0(), tape: ease0(), glitch: ease0(), calm: ease0(), aurora: ease0(), kickAt: -Infinity, title: ease0(), live: ease0(),
+    auto: ease0(), tape: ease0(), glitch: ease0(), calm: ease0(), aurora: ease0(), kickAt: -Infinity, live: ease0(),
     palette: 0, drops: new Float64Array(MAX_DROPS).fill(-Infinity),
   };
 }
@@ -112,7 +110,6 @@ export function settleVibe(s: VibeState, settings: VibeSettings, playing: boolea
   s.calm = ease0(t.calm);
   s.aurora = ease0(t.aurora);
   s.kickAt = -Infinity;
-  s.title = ease0(t.title);
   s.live = ease0(t.live);
   s.palette = clamp01(energy);
   s.drops.fill(-Infinity);
@@ -139,7 +136,7 @@ export function noteDrop(s: VibeState, nowS: number): void {
 }
 
 // One scratch object, rewritten by each call: the frame path allocates nothing.
-const T = { auto: 0, tape: 0, glitch: 0, calm: 0, aurora: 0, title: 0, live: 0 };
+const T = { auto: 0, tape: 0, glitch: 0, calm: 0, aurora: 0, live: 0 };
 
 function targets(settings: VibeSettings, playing: boolean): typeof T {
   T.auto = settings.auto ? 1 : 0;
@@ -148,7 +145,6 @@ function targets(settings: VibeSettings, playing: boolean): typeof T {
   T.glitch = settings.dropGlitch || settings.auto ? 1 : 0;
   T.calm = settings.calmCap ? 1 : 0;
   T.aurora = AURORA_GAIN[settings.aurora];
-  T.title = settings.cover === 'scene' ? 1 : 0;
   T.live = playing ? 1 : 0;
   return T;
 }
@@ -181,8 +177,6 @@ export interface VibeFrame {
   swell: number;
   /** Cool (0, quiet) to warm (1, loud). */
   palette: number;
-  /** 1 while the title block is protected from the effects. */
-  titleCover: number;
   /** Calm cap's gain on the kick and the bass the glow reads. */
   kickGain: number;
   bassGain: number;
@@ -195,7 +189,7 @@ export interface VibeFrame {
 export function createVibeFrame(): VibeFrame {
   return {
     aurora: 0, rich: 0, halo: 0, haloSwell: 0, tape: 0, grain: 0, grainKick: 0, glitch: 0, env: 0, swell: 0,
-    palette: 0, titleCover: 0, kickGain: 1, bassGain: 1, live: 0, active: false,
+    palette: 0, kickGain: 1, bassGain: 1, live: 0, active: false,
   };
 }
 
@@ -222,7 +216,6 @@ export function stepVibe(s: VibeState, out: VibeFrame, dt: number, nowS: number,
   const glitch = ease2(s.glitch, t.glitch, d, EASE_TAU_S);
   const calm = ease2(s.calm, t.calm, d, EASE_TAU_S);
   const aur = ease2(s.aurora, t.aurora, d, AURORA_TAU_S);
-  const title = ease2(s.title, t.title, d, EASE_TAU_S);
   const live = ease2(s.live, t.live, d, LIVE_TAU_S);
   s.palette = ease1(s.palette, clamp01(input.energy), d, PALETTE_TAU_S);
 
@@ -260,11 +253,10 @@ export function stepVibe(s: VibeState, out: VibeFrame, dt: number, nowS: number,
   out.env = env;
   out.swell = swell;
   out.palette = s.palette;
-  out.titleCover = title;
   out.kickGain = cap;
   out.bassGain = 1 - 0.25 * calm;
   out.live = live;
   out.active =
-    live > 0 || au !== t.auto || tape !== t.tape || glitch !== t.glitch || calm !== t.calm || aur !== t.aurora || (kickOn && s.kickAt > nowS - KICK_S) || title !== t.title || env > 0 || swell > 0;
+    live > 0 || au !== t.auto || tape !== t.tape || glitch !== t.glitch || calm !== t.calm || aur !== t.aurora || (kickOn && s.kickAt > nowS - KICK_S) || env > 0 || swell > 0;
   return out;
 }

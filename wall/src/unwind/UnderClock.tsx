@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type CSSProperties, type KeyboardEvent } f
 import { IconPlus, IconVolume, IconVolumeOff, IconZzz } from '@tabler/icons-react';
 import { playerName, procName, sourceKey } from '../music/players';
 import { useNowPlaying } from '../music/useNowPlaying';
+import { FitTitle } from '../ui/FitTitle';
 import { quietFocus, tip } from '../ui/HoverTip';
 import { useVisible } from '../ui/useVisible';
 import { clampVolume, volumePercent } from './model';
@@ -96,11 +97,6 @@ interface MenuAt {
   byKeyboard: boolean;
 }
 
-/** A label as words, each its own box: a word too long for the pin is cut with an ellipsis on its line, never broken mid-word. */
-function words(label: string) {
-  return label.split(' ').flatMap((w, i) => (i === 0 ? [<span className="u-pin-word" key={i}>{w}</span>] : [' ', <span className="u-pin-word" key={i}>{w}</span>]));
-}
-
 /** What a click on a pin starts, by what the pin is. */
 function playPin(shown: PinShown): void {
   if (shown.kind === 'spotify-playlist' || shown.kind === 'spotify-album') {
@@ -189,7 +185,9 @@ function Pins({ onMenu }: { onMenu: (open: boolean) => void }) {
               {item ? (
                 <>
                   <PinArtSquare shown={item} />
-                  <span className="u-pin-name">{words(item.name)}</span>
+                  <FitTitle top={16} firstLines={2} fade lh={1.125} className="u-pin-name">
+                    {item.name}
+                  </FitTitle>
                 </>
               ) : (
                 <>
