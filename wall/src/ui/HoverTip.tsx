@@ -179,9 +179,13 @@ export function HoverTipLayer() {
         hideTip(true);
         return;
       }
-      // An anchor that moved (Watt walking on, a list scrolling) leaves its card behind: it goes.
+      // An anchor that moved (Watt walking on, a list scrolling) leaves its card behind: it goes. One that moved and still
+      // has the pointer or the keyboard focus (Unwind's row lifting while it is in use) takes its card along.
       const now = anchor ? designBox(anchor) : null;
-      if (now && box && (Math.abs(now.x - box.x) > TIP_MOVE_PX || Math.abs(now.y - box.y) > TIP_MOVE_PX)) hideTip(true);
+      if (now && box && (Math.abs(now.x - box.x) > TIP_MOVE_PX || Math.abs(now.y - box.y) > TIP_MOVE_PX)) {
+        if (anchor && (anchor.matches(':hover') || anchor.contains(document.activeElement))) useTipStore.setState({ box: now });
+        else hideTip(true);
+      }
     }, TIP_ANCHOR_CHECK_MS);
     const refresh = setInterval(() => setTick((n) => n + 1), TIP_REFRESH_MS);
     return () => {
