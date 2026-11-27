@@ -18,6 +18,8 @@ import { OnAir2 } from './OnAir2';
 vi.setConfig({ testTimeout: 20_000 });
 
 const MIN = 60_000;
+/** The native side stamps readAt and stoppedAt in Unix seconds. */
+const sec = (ms: number): number => Math.floor(ms / 1000);
 const SHOW: Show = { state: 'ok', title: 'Friday stream', parts: [{ name: 'Load the data', minutes: 5, notes: ['Open the blank file'] }, { name: 'Shape the columns', minutes: 6, notes: [] }], skipped: 0, reason: null, readAt: 1 };
 const SECRET = 'zebra-crossing-comment';
 
@@ -29,9 +31,9 @@ let channelSet: boolean;
 let setChannelAnswer: () => unknown;
 let show: Show;
 
-const live = (over: Partial<LiveStatus> = {}): LiveStatus => ({ state: 'live', startedAt: Date.now() - 22 * MIN, scheduledAt: null, viewers: 37, chat: true, readAt: Date.now(), stale: false, word: null, statusLeft: 1000, chatLeft: 1000, ...over });
+const live = (over: Partial<LiveStatus> = {}): LiveStatus => ({ state: 'live', startedAt: Date.now() - 22 * MIN, scheduledAt: null, viewers: 37, chat: true, readAt: sec(Date.now()), stale: false, word: null, statusLeft: 1000, chatLeft: 1000, ...over });
 const msgs = (n: number, text = (i: number) => `comment ${i}`) => Array.from({ length: n }, (_, i) => ({ id: `m${i}`, name: `Viewer ${i}`, text: text(i), at: Date.now() - (n - i) * 1000, superChat: i === 1 ? '$5.00' : null }));
-const okChat = (n = 3): LiveChat => ({ state: 'ok', messages: msgs(n), readAt: Date.now(), stale: false, stoppedAt: null, word: null });
+const okChat = (n = 3): LiveChat => ({ state: 'ok', messages: msgs(n), readAt: sec(Date.now()), stale: false, stoppedAt: null, word: null });
 
 const open = async () => {
   localStorage.setItem(MODE_STORAGE_KEY, JSON.stringify({ held: 'live' }));
@@ -318,8 +320,8 @@ it('leaves a stopped timer alone', async () => {
 });
 
 it('the stale and quota lines', async () => {
-  status = live({ readAt: Date.now() - 14 * MIN, stale: true });
-  chat = { ...okChat(), readAt: Date.now() - 14 * MIN, stale: true };
+  status = live({ readAt: sec(Date.now() - 14 * MIN), stale: true });
+  chat = { ...okChat(), readAt: sec(Date.now() - 14 * MIN), stale: true };
   const a = await open();
   await waitFor(() => expect(screen.getByText('YouTube has not answered for 14 min. These are the last comments read.')).toBeTruthy());
   expect(screen.getByRole('button', { name: 'Check again' })).toBeTruthy();
@@ -327,10 +329,23 @@ it('the stale and quota lines', async () => {
   a.unmount();
   useYtLive.getState().reset();
   status = live();
-  chat = { ...okChat(), state: 'quota', stoppedAt: Date.now() - 43 * MIN, word: 'quota' };
+  chat = { ...okChat(), state: 'quota', stoppedAt: sec(Date.now() - 43 * MIN), word: 'quota' };
   await open();
   await waitFor(() => expect(screen.getByText(/^Today's YouTube reads are used up\. Comments stopped here at/)).toBeTruthy());
   expect(screen.queryByRole('button', { name: 'Check again' })).toBeNull();
+});
+
+it('a read 14 minutes old in native seconds shows the stale foot even when native says fresh', async () => {
+  status = live({ readAt: sec(Date.now() - 14 * MIN) });
+  chat = { ...okChat(), readAt: sec(Date.now() - 14 * MIN) };
+  await open();
+  await waitFor(() => expect(screen.getByText('YouTube has not answered for 14 min. These are the last comments read.')).toBeTruthy());
+});
+
+it('a fresh read in native seconds does not show the stale foot', async () => {
+  await open();
+  await waitFor(() => expect(screen.getByText('comment 0')).toBeTruthy());
+  expect(screen.queryByText(/YouTube has not answered/)).toBeNull();
 });
 
 it('live with no comments yet says when they come', async () => {

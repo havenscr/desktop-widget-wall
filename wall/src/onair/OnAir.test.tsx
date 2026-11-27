@@ -90,8 +90,8 @@ const openLive = (show: Show = SHOW) => {
   localStorage.setItem(MODE_STORAGE_KEY, JSON.stringify({ held: 'live' }));
   mocks.set('wall2_onair_show', () => show);
   mocks.set('wall2_ytlive_channel', () => ({ set: false, title: null }));
-  mocks.set('wall2_ytlive_status', () => ({ state: 'none', startedAt: null, scheduledAt: null, viewers: null, chat: false, readAt: Date.now(), stale: false, word: null, statusLeft: 1000, chatLeft: 1000 }));
-  mocks.set('wall2_ytlive_chat', () => ({ state: 'ok', messages: [], readAt: Date.now(), stale: false, stoppedAt: null, word: null }));
+  mocks.set('wall2_ytlive_status', () => ({ state: 'none', startedAt: null, scheduledAt: null, viewers: null, chat: false, readAt: Math.floor(Date.now() / 1000), stale: false, word: null, statusLeft: 1000, chatLeft: 1000 }));
+  mocks.set('wall2_ytlive_chat', () => ({ state: 'ok', messages: [], readAt: Math.floor(Date.now() / 1000), stale: false, stoppedAt: null, word: null }));
   mocks.set('wall2_signals_report', () => null);
   return render(<OnAir />);
 };
