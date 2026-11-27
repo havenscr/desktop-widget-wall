@@ -10,7 +10,7 @@ const day = '2026-11-11T10:24:00-08:00';
 const SWITCH = '.sp-switch button:nth-child(2)';
 const TALL = 'grow';
 const TILE = '.yt-tile';
-const LIKED = '.sp-tabs button:nth-child(3)';
+const LIKED = '.mu-places button:nth-child(3)';
 // The pointer goes to the right end of what it is sent to: on the title, so it is on the play part and not on the add control.
 const ROW4 = 'hover:.yt-row:nth-child(4) .yt-title';
 const steps = (...s) => s.join(' >> ');

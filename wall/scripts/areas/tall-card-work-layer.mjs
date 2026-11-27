@@ -7,7 +7,7 @@ const day = '2026-11-11T10:24:00-08:00';
 const SWITCH = '.sp-switch button:nth-child(2)';
 const TALL = 'grow';
 const TILE = '.yt-tile';
-const LIKED = '.sp-tabs button:nth-child(3)';
+const LIKED = '.mu-places button:nth-child(3)';
 const FORYOU = '.mu-places button:nth-child(1)';
 const CLOSEFOCUS = '.yt-chip:nth-child(1)';
 const steps = (...s) => s.join(' >> ');

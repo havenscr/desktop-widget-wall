@@ -47,6 +47,7 @@ import { inflateSync } from 'node:zlib';
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { ChromeRunError, onCleanup, runChrome } from './lib/chrome-run.mjs';
+import { askLayer } from './lib/layer-ask.mjs';
 import { loadAreasOrExit, validateFitReferences, validateRegistrations } from './areas/load.mjs';
 
 // The whole sky's picture box in wall pixels (LOOK_BOXES.sky in looks.ts, which fit-check compares with the drawn one).
@@ -774,12 +775,13 @@ VARIANTS.push(
   { name: 'Strip: the Day drawer, twelve busy, long titles', q: work('12busy', '&meet=overlap'), click: '.rib-handle', checks: ['.day-drawer', '.day-drawer .dd-rows'], strip: true, viewportOnly: true },
   { name: 'Strip: Agents today over the limit', q: work('12busy', '&days=typical'), click: '.rib .ag-line', checks: ['.agents-today', '.agents-today .at-head', '.agents-today .at-busy'], strip: true, viewportOnly: true },
 );
-const allAreaVariants = areas.flatMap((area) => area.fit?.variants ?? []);
+const allAreaVariants = askLayer(areas.flatMap((area) => area.fit?.variants ?? []));
 const validationVariants = [...VARIANTS, ...allAreaVariants];
-const areaVariants = activeAreas.flatMap((area) => area.fit?.variants ?? []);
+const areaVariants = askLayer(activeAreas.flatMap((area) => area.fit?.variants ?? []));
 const builtInVariantNames = VARIANTS.map((variant) => variant.name);
 if (flag('area')) VARIANTS.splice(0, VARIANTS.length, ...areaVariants);
 else VARIANTS.push(...areaVariants);
+VARIANTS.splice(0, VARIANTS.length, ...askLayer(VARIANTS));
 try {
   validateRegistrations(areas, { 'variant name': builtInVariantNames });
   validateFitReferences(areas, validationVariants);
@@ -911,6 +913,8 @@ try {
   // difference to the page as drawn is whatever else paints over the picture), `noplate` hides the plate only (so the
   // difference is what the picture mixes with). All three shots run with CSS animations and transitions stopped (`still` for the page as drawn), so a moving part cannot differ between two captures.
   const measure = `<script>{ const m = new URLSearchParams(location.search).get('thpx'); const css = { bare: '.w-layer > :not(.w-stage):not(.w-holo-plate), .w-panel > * { visibility: hidden !important; }', noplate: '.w-holo-plate { visibility: hidden !important; }', still: '' }[m]; if (m) { const fz = document.createElement('style'); fz.textContent = '*,*::before,*::after{animation:none!important;transition:none!important}'; document.head.appendChild(fz); } if (css) { const st = document.createElement('style'); st.textContent = css; document.head.appendChild(st); } }</script><script>setTimeout(() => {
+    // The card's height and the bottom row's lift ease over a few hundred milliseconds, which virtual time never draws: they are read at their end.
+    { const st = document.createElement('style'); st.textContent = '.sp-card, .u-foot, .u-office-slot { transition: none !important; }'; document.head.appendChild(st); }
     // unwind listen: measured at the end of the songs view's slide (virtual time draws no frames for it to run).
     if (new URLSearchParams(location.search).get('listen')) { const st = document.createElement('style'); st.textContent = '.sp-songs { animation: none !important; }'; document.head.appendChild(st); }
     // Steps separated by " >> " run 300 ms apart; within a step, " then " runs them at once.

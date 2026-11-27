@@ -174,7 +174,8 @@ function measureLibraryAdd() {
 const day24 = (extra) => `?hz=unwind&at=${day}&long=1&agents=3&${extra}`;
 const variant = (name, extra, click, mode, want) => ({
   name: `YouTube add, ${name}`,
-  q: day24(`${extra}&addcheck=${mode}${want ? `&addwant=${want}` : ''}`),
+  // A tall variant brings the work layer up with the pointer, and its open menu takes it down again (src/unwind/work/useWorkLayer.ts), so it asks for neither.
+  q: day24(`${extra}&addcheck=${mode}${want ? `&addwant=${want}` : ''}${name.startsWith('tall') ? '&layer=hidden' : ''}`),
   checks: ['.sp-card', '.yt-lib'],
   click,
   ...(name.startsWith('tall') ? {} : { listen: true }),

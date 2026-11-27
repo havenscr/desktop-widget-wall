@@ -115,8 +115,8 @@ export default {
   fit: {
     variants: [
       variant('results', '', SWITCH),
-      variant('sort menu open', '', steps(SWITCH, SORT), { listen: false }),
-      variant('sorted by Longest first', '', steps(SWITCH, SORT, LONGEST), { listen: false }),
+      variant('sort menu open', '&layer=up', steps(SWITCH, SORT), { listen: false }),
+      variant('sorted by Longest first', '&layer=up', steps(SWITCH, SORT, LONGEST), { listen: false }),
       variant('details card', '&ytcard=3', SWITCH),
       variant('tall, results', '', steps(SWITCH, TALL), { listen: false }),
       variant('tall, details card', '&ytcard=4', steps(SWITCH, TALL), { listen: false }),
