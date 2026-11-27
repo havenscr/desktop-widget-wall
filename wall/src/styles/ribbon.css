@@ -135,7 +135,7 @@
   border: 1px solid rgba(154, 123, 255, 0.55);
   color: #e4dcff;
 }
-/* A title that does not fit fades over its last 16 px, out to the chip's edge; one that fits is untouched. */
+/* A title that does not fit fades over its last 24 px, out to the chip's edge; one that fits is untouched. */
 .rib .ev .ev-t {
   display: block;
   overflow: hidden;
@@ -149,8 +149,32 @@
   margin-right: 0;
 }
 .rib .ev .ev-t[data-cut] {
-  -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 16px), transparent);
-  mask-image: linear-gradient(to right, #000 calc(100% - 16px), transparent);
+  -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 24px), transparent);
+  mask-image: linear-gradient(to right, #000 calc(100% - 24px), transparent);
+}
+/* A title too long for its chip carries on over the empty track after it (the chip keeps its edge, the
+   text keeps its colour), or, when the next chip is close, drops to a short second row under the chips. */
+.rib .ev.spill {
+  overflow: visible;
+}
+.rib .ev.spill .ev-t {
+  overflow: visible;
+  margin-right: 0;
+}
+.rib .ev-row {
+  position: absolute;
+  top: 66px;
+  height: 20px;
+  font: 400 16px/20px var(--body);
+  color: #e4dcff;
+  white-space: nowrap;
+  pointer-events: none;
+}
+.rib .ev-row.past {
+  color: rgba(193, 191, 205, 1);
+}
+.rib.has-allday .ev-row {
+  top: 69px;
 }
 /* Stacked lanes for events that overlap (Ribbon.tsx sets each lane's top and height): two
    lanes keep a smaller title, three are thin bars with the title in the hover. */
@@ -283,7 +307,10 @@
   text-shadow: 0 0 4px rgba(6, 4, 22, 0.95), 0 0 9px rgba(6, 4, 22, 0.9);
   max-width: 180px;
   overflow: hidden;
-  text-overflow: ellipsis;
+}
+.rib .due .n[data-cut] {
+  -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 24px), transparent);
+  mask-image: linear-gradient(to right, #000 calc(100% - 24px), transparent);
 }
 /* Focus bar: today's sessions up to now. */
 .rib .fo {
@@ -361,7 +388,7 @@
 .rib.has-allday .ev-side {
   top: 42px;
   height: 24px;
-  font-size: 15px;
+  font-size: 16px;
   line-height: 22px;
 }
 .rib .adbar {
