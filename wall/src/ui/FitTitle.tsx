@@ -15,8 +15,8 @@ export function linesAllowed(size: number, top: number, firstLines: number, maxL
  * A title that always shows in full: it takes the largest size (from `top` down to 16 px) at which
  * it fits in its lines, wrapping rather than cutting. `firstLines` lines at `top`, `maxLines` below
  * (the last step, 16 px, is kept even when it still needs more). With `fade`, a title that still
- * needs more lines at 16 px shows what fits, with a soft fade on its last line (`data-cut`; the caller
- * puts the whole text in a hover tip); never an ellipsis. Measured again only when the text
+ * needs more lines at 16 px shows what fits, with a soft fade on its last line (`data-cut`: "y" for two lines or more, "x" for one line, a fade over its right
+ * edge; the caller puts the whole text in a hover tip); never an ellipsis. Measured again only when the text
  * or the numbers change, when its width changes and when a font finishes loading.
  */
 export function FitTitle({
@@ -45,8 +45,14 @@ export function FitTitle({
     if (fade) {
       const last = fitSizes(top).at(-1)!;
       const rows = linesAllowed(last, top, firstLines, maxLines);
-      el.style.maxHeight = `${Math.ceil(rows * last * lh + pad)}px`;
-      el.setAttribute('data-cut', '');
+      if (rows <= 1) {
+        // One line: it is cut across, so it fades over its last 24 px at the right edge (nowrap, in the stylesheet).
+        el.setAttribute('data-cut', 'x');
+      } else {
+        // Several lines: what fits shows and the last line fades out downward.
+        el.style.maxHeight = `${Math.ceil(rows * last * lh + pad)}px`;
+        el.setAttribute('data-cut', 'y');
+      }
     }
   }, [top, firstLines, maxLines, fade, lh]);
   // Not on every render (a player's progress ticks each second): only when the words or the numbers change.

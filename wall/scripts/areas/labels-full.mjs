@@ -55,12 +55,14 @@ export default {
         const out = { cut: [], small: [], overlap: [], missing: false };
         const R = (e) => e.getBoundingClientRect();
         const hit = (a, b) => a.right > b.left + 0.5 && a.left < b.right - 0.5 && a.bottom > b.top + 0.5 && a.top < b.bottom - 0.5;
-        for (const sel of ['.w-title', '.w-by', '.w-label', '.u-pin-name', '.u-np', '.u-artist', '.u-nu-title']) {
+        for (const sel of ['.w-title', '.w-by', '.w-label', '.u-pin-name', '.u-np', '.u-artist', '.u-nu-title', '.rib .due .n', '.rib .ev .ev-t']) {
           for (const e of document.querySelectorAll(sel)) {
             const r = R(e);
             if (r.width === 0 || getComputedStyle(e).visibility === 'hidden') continue;
             const cs = getComputedStyle(e);
             // A title that does not fit at 16 px fades on its last line on purpose (data-cut, the hover has it whole).
+            // A chip name carried on past its chip is meant to run over the chip's edge.
+            if (e.closest('.ev.spill')) continue;
             const faded = e.hasAttribute('data-cut') && cs.maskImage !== 'none' && cs.maskImage !== '';
             if (!faded && (cs.textOverflow === 'ellipsis' || e.scrollHeight > e.clientHeight + 1 || e.scrollWidth > e.clientWidth + 1)) out.cut.push(`${sel} "${(e.textContent || '').slice(0, 24)}"`);
             if (parseFloat(cs.fontSize) < 16) out.small.push(`${sel} ${cs.fontSize}`);

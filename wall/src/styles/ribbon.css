@@ -135,7 +135,7 @@
   border: 1px solid rgba(154, 123, 255, 0.55);
   color: #e4dcff;
 }
-/* A title that does not fit fades over its last 16 px, out to the chip's edge; one that fits is untouched. */
+/* A title that does not fit fades over its last 24 px, out to the chip's edge; one that fits is untouched. */
 .rib .ev .ev-t {
   display: block;
   overflow: hidden;
@@ -149,8 +149,8 @@
   margin-right: 0;
 }
 .rib .ev .ev-t[data-cut] {
-  -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 16px), transparent);
-  mask-image: linear-gradient(to right, #000 calc(100% - 16px), transparent);
+  -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 24px), transparent);
+  mask-image: linear-gradient(to right, #000 calc(100% - 24px), transparent);
 }
 /* A title too long for its chip carries on over the empty track after it (the chip keeps its edge, the
    text keeps its colour), or, when the next chip is close, drops to a short second row under the chips. */
@@ -309,8 +309,8 @@
   overflow: hidden;
 }
 .rib .due .n[data-cut] {
-  -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 16px), transparent);
-  mask-image: linear-gradient(to right, #000 calc(100% - 16px), transparent);
+  -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 24px), transparent);
+  mask-image: linear-gradient(to right, #000 calc(100% - 24px), transparent);
 }
 /* Focus bar: today's sessions up to now. */
 .rib .fo {
@@ -388,7 +388,7 @@
 .rib.has-allday .ev-side {
   top: 42px;
   height: 24px;
-  font-size: 15px;
+  font-size: 16px;
   line-height: 22px;
 }
 .rib .adbar {

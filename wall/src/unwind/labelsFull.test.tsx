@@ -96,6 +96,50 @@ describe('labels show in full', () => {
 const chip = (key: string, x: number, width: number, title: string): Chip =>
   ({ key, title, x, width, state: 'next', live: false, lane: 0, lanes: 1, narrow: false, beside: null, start: 0, end: 0, accountId: null, canOpen: false, category: null }) as Chip;
 
+describe('fades instead of hard cuts', () => {
+  const tall = () =>
+    vi.spyOn(HTMLElement.prototype, 'scrollHeight', 'get').mockImplementation(function (this: HTMLElement) {
+      return 400;
+    });
+  const mount = (maxLines: number) =>
+    render(
+      <FitTitle top={22} firstLines={1} maxLines={maxLines} fade lh={1.3} className="u-s">
+        {'First thing: a meeting with a very long name that cannot fit one line'}
+      </FitTitle>,
+    ).container.querySelector('.u-s') as HTMLElement;
+
+  it('a one line title fades at its right edge, a longer one fades downward', () => {
+    const spy = tall();
+    try {
+      expect(mount(1).getAttribute('data-cut')).toBe('x');
+      expect(mount(2).getAttribute('data-cut')).toBe('y');
+    } finally {
+      spy.mockRestore();
+    }
+    const x = rule(unwindCss, ".fit-fade[data-cut='x']");
+    expect(x).toContain('to right');
+    expect(x).toContain('nowrap');
+    expect(rule(unwindCss, ".fit-fade[data-cut='y']")).toContain('to bottom');
+  });
+
+  it('the due title fades over its right edge and has no ellipsis', () => {
+    expect(rule(ribbonCss, '.rib .due .n')).not.toContain('ellipsis');
+    const f = rule(ribbonCss, '.rib .due .n[data-cut]');
+    expect(f).toContain('to right');
+    expect(f).toContain('24px');
+  });
+
+  it('a chip title that does not fit fades over its right 24 px', () => {
+    expect(rule(ribbonCss, '.rib .ev .ev-t[data-cut]')).toContain('calc(100% - 24px)');
+  });
+
+  it('the pin chip is 48 px tall, in the row and in the chip', () => {
+    expect(rule(unwindCss, '.u-pins')).toContain('height: 48px');
+    expect(rule(unwindCss, '.u-pin')).toContain('height: 48px');
+    expect(rule(unwindCss, '.u-pin')).not.toContain('min-height');
+  });
+});
+
 describe('chip titles that do not fit', () => {
   it('carry on over empty track', () => {
     const c = chip('a', 400, 100, 'CAA AE session with a long name');

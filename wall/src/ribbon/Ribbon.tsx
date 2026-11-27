@@ -24,7 +24,7 @@ export type RibbonKind = 'work' | 'home';
 
 const TICKS = ticks();
 
-/** A chip's title. When it does not fit, the last 16 px of the letters fade (the chip keeps its crisp edge and colour). */
+/** A chip's title. When it does not fit, the last 24 px of the letters fade (the chip keeps its crisp edge and colour). */
 function ChipTitle({ text, spill = false }: { text: string; spill?: boolean }) {
   const ref = useRef<HTMLSpanElement>(null);
   const measure = useCallback(() => {
@@ -43,7 +43,7 @@ function ChipTitle({ text, spill = false }: { text: string; spill?: boolean }) {
   );
 }
 
-/** A due mark's title. One that does not fit its 180 px fades over its last 16 px (the hover has it whole). */
+/** A due mark's title. One that does not fit its 180 px fades over its last 24 px (the hover has it whole). */
 function DueName({ text }: { text: string }) {
   const ref = useRef<HTMLSpanElement>(null);
   const measure = useCallback(() => {
