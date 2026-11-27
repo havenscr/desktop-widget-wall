@@ -15,38 +15,53 @@
   mask-composite: intersect;
 }
 
-/* z-index -1 only works against a stacking context of the main area's own: without one the layer would sit behind
-   the horizon's canvas and the veil and be invisible. Watch's sky and layered looks already isolate it; this makes
-   Listen the same. */
-.main:has(.vibe-back) {
-  isolation: isolate;
+/* The Unwind place has no stacking context of its own, so the back layer, the grain sheet and the words all share the
+   stage's. From the bottom: the horizon, veil, weather and sun row (-3), the back layer and the video (-1), Watt (1),
+   the grain sheet (2), then every word and control (6). The stage has a transform, so it is that one context and
+   nothing here can escape it. */
+.stage:has(.vibe-front) > :is(canvas.horizon-canvas, .veil, canvas.horizon-weather, .sun-layer) {
+  z-index: -3;
+}
+.stage .main:has(.vibe-front) {
+  isolation: auto;
 }
 
-/* The title's own layer (Scene and title): a canvas over the song title that shows the part of the back layer under it,
-   so the effects pass over the letters. It is above the title and click-through. Its mask is one elliptical bell
-   that reaches zero at the canvas edge (smooth steps, no straight edge anywhere), so it never reads as a shape.
-   Scene only fades it out. */
-.vibe-title {
-  position: absolute;
-  z-index: 1;
-  pointer-events: none;
-  mix-blend-mode: screen;
-  -webkit-mask-image: radial-gradient(ellipse closest-side, #000 0, rgba(0, 0, 0, 0.84) 25%, rgba(0, 0, 0, 0.5) 50%, rgba(0, 0, 0, 0.16) 75%, transparent 100%);
-  mask-image: radial-gradient(ellipse closest-side, #000 0, rgba(0, 0, 0, 0.84) 25%, rgba(0, 0, 0, 0.5) 50%, rgba(0, 0, 0, 0.16) 75%, transparent 100%);
-}
-
-/* The front layer (Tape Grain and the Drop Glitch): over the scene and the art, under nothing the user presses (the
-   layer punches soft holes over every control and readout, and over the title with Cover set to Scene only).
-   Click-through, normal blend, and its own bounds feather like the back layer's. */
+/* The front layer (Tape Grain and the Drop Glitch): one even sheet from the rail's edge to the wall's right edge, top to
+   bottom, over the scene, the video and Watt. The canvas is placed in stage pixels by VibeLayer. It sits under every word
+   and control (the lift below), so a glass panel shows it only faintly through its glass. Click-through, normal blend. */
 .vibe-front {
   position: absolute;
-  top: 0;
-  right: 0;
-  height: 100%;
   z-index: 2;
   pointer-events: none;
-  -webkit-mask-image: linear-gradient(90deg, transparent 0, #000 64px, #000 calc(100% - 96px), transparent 100%), linear-gradient(180deg, transparent 0, #000 48px, #000 calc(100% - 48px), transparent 100%);
-  mask-image: linear-gradient(90deg, transparent 0, #000 64px, #000 calc(100% - 96px), transparent 100%), linear-gradient(180deg, transparent 0, #000 48px, #000 calc(100% - 48px), transparent 100%);
-  -webkit-mask-composite: source-in;
-  mask-composite: intersect;
+}
+
+/* The words and controls, lifted above the sheet. Order from the bottom: the grain sheet (2), the left wing (3), the work layer
+   and the day timeline (4), then the cards, the right wing, the left block, the Office moods row and Listen's title and
+   controls (6), then Next up (7: main had it at 3, above the cards at 2 and the work layer at 1; 7 keeps that order). The
+   wing sits under the work layer because its box reaches down into the timeline band, and the timeline's first icons and
+   chips must take the clicks there, as they do on main. Elements that already carry a position (the wings, the cards, Next
+   up, the Office row, the work layer, the timeline line, the Watch button's art overlay and Listen's gear, which is
+   absolute at a fixed spot) get z-index alone; a position here would move them. Only plain in-flow elements (the rail, the
+   clock and Listen's readouts) are given position: relative so the z-index applies. The work layer keeps its own z-index 90
+   while its day drawer or Agents panel is open. */
+.stage:has(.vibe-front) :is(.u-right, .w-now, .w-sheet, .u-office-slot, .u-card, .u-listen-gear, .u-video) {
+  z-index: 6;
+}
+.stage:has(.vibe-front) .u-wing {
+  z-index: 3;
+}
+.stage:has(.vibe-front) .u-nu {
+  z-index: 7;
+}
+.stage:has(.vibe-front) :is(.u-work:not(:has(.day-drawer, .agents-today)), .rib-line) {
+  z-index: 4;
+}
+.stage:has(.vibe-front) :is(.rail, .clk, .u-np, .u-artist, .u-transport, .u-src, .u-progress) {
+  position: relative;
+  z-index: 6;
+}
+/* Listen's block was its own layer (z-index 1); it joins the stage's, so its title and controls can be lifted above the sheet
+   while the cover stays under it. */
+.stage:has(.vibe-front) .u-listen {
+  z-index: auto;
 }
