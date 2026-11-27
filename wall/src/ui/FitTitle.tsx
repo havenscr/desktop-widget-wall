@@ -43,7 +43,10 @@ export function FitTitle({
     if (rows <= 1 || wide) {
       el.setAttribute('data-cut', 'x');
     } else {
-      el.style.maxHeight = `${boxH}px`;
+      // Whole rows only, never a sliver of the next line: the box may be shorter than boxH, never taller.
+      const cs = getComputedStyle(el);
+      const pad = (parseFloat(cs.paddingTop) || 0) + (parseFloat(cs.paddingBottom) || 0);
+      el.style.maxHeight = `${Math.min(boxH, Math.ceil(rows * last * lh + pad))}px`;
       el.setAttribute('data-cut', 'y');
     }
   }, [top, boxH, lh]);

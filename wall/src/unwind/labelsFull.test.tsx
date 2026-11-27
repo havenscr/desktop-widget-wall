@@ -188,3 +188,85 @@ describe('the agents line width', () => {
     expect(agentsLineWidth('1 working')).toBeLessThan(agentsLineWidth('1 needs you, 1 working (1 through helpers)'));
   });
 });
+
+describe('FitTitle behaviour', () => {
+  const tallAndWide = () => {
+    const h = vi.spyOn(HTMLElement.prototype, 'scrollHeight', 'get').mockReturnValue(400);
+    const w = vi.spyOn(HTMLElement.prototype, 'scrollWidth', 'get').mockReturnValue(900);
+    const c = vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(300);
+    return () => {
+      h.mockRestore();
+      w.mockRestore();
+      c.mockRestore();
+    };
+  };
+  const mountAt = (top: number, boxH: number, lh: number) =>
+    render(
+      <FitTitle top={top} boxH={boxH} lh={lh} className="u-pin-name">
+        {'Supercalifragilisticexpialidocious'}
+      </FitTitle>,
+    ).container.querySelector('.u-pin-name') as HTMLElement;
+
+  it('a word wider than its box gets 16 px and the right-edge fade', () => {
+    const undo = tallAndWide();
+    try {
+      const el = mountAt(16, 36, 1.125);
+      expect(el.style.fontSize).toBe('16px');
+      expect(el.getAttribute('data-cut')).toBe('x');
+    } finally {
+      undo();
+    }
+  });
+
+  it('the box never exceeds boxH when the text cannot fit, and cuts at whole rows', () => {
+    const h = vi.spyOn(HTMLElement.prototype, 'scrollHeight', 'get').mockReturnValue(400);
+    try {
+      for (const [top, boxH, lh] of [[16, 36, 1.125], [20, 40, 1.1], [22, 58, 1.3], [48, 106, 1.1]] as const) {
+        const el = mountAt(top, boxH, lh);
+        expect(el.style.fontSize).toBe('16px');
+        if (el.getAttribute('data-cut') === 'y') {
+          const px = parseFloat(el.style.maxHeight);
+          expect(px).toBeLessThanOrEqual(boxH);
+          const rows = Math.floor(boxH / (16 * lh) + 0.01);
+          expect(px).toBe(Math.ceil(rows * 16 * lh));
+        }
+      }
+      // 40 px at 16 px and 1.1 is two whole rows (35.2 px), not 40 px with a sliver of a third line.
+      expect(parseFloat(mountAt(20, 40, 1.1).style.maxHeight)).toBe(36);
+    } finally {
+      h.mockRestore();
+    }
+  });
+
+  it('the pin name path (boxH 36) steps down to 16 px and fades down on two lines', () => {
+    const h = vi.spyOn(HTMLElement.prototype, 'scrollHeight', 'get').mockReturnValue(400);
+    try {
+      const el = mountAt(16, 36, 1.125);
+      expect(el.getAttribute('data-cut')).toBe('y');
+      expect(parseFloat(el.style.maxHeight)).toBe(36);
+    } finally {
+      h.mockRestore();
+    }
+  });
+
+  it('Tomorrow takes one line with the work layer up and two when it is down', async () => {
+    const { Tomorrow } = await import('./Tomorrow');
+    const { useWorkLayerStore } = await import('./work/layerStore');
+    const src = norm(readFileSync('src/unwind/Tomorrow.tsx', 'utf8') as string);
+    expect(src).toContain('boxH={lifted ? 29 : 58}');
+    expect(typeof Tomorrow).toBe('function');
+    for (const shown of [true, false]) {
+      useWorkLayerStore.setState({ shown });
+      expect(useWorkLayerStore.getState().shown).toBe(shown);
+    }
+    useWorkLayerStore.setState({ shown: false });
+    const h = vi.spyOn(HTMLElement.prototype, 'scrollHeight', 'get').mockReturnValue(400);
+    try {
+      const mk = (boxH: number) => mountAt(22, boxH, 1.3);
+      expect(mk(29).getAttribute('data-cut')).toBe('x');
+      expect(mk(58).getAttribute('data-cut')).toBe('y');
+    } finally {
+      h.mockRestore();
+    }
+  });
+});
