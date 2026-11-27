@@ -191,14 +191,15 @@ for (const mode of ['hang2', 'hang3']) {
     check(sleeper.pgid !== ownerGroup, 'the group is not the starting script\'s own group');
   }
   if (mode === 'hang2') {
-    const retries = (r.stdout.match(/^ {2}retry \d: the browser did not answer in 4 s \(test state\)$/gm) ?? []).length;
+    const retries = (r.stdout.match(/^ {2}retry \d: the browser did not answer in [46] s \(test state\)$/gm) ?? []).length;
     check(r.status === 0, `exit code 0 (got ${r.status})`);
     check(retries === 2, `two retry lines (got ${retries})`);
-    check(r.secs >= 8 && r.secs < 8 + 12, `hangs noticed at the limit: ${r.secs.toFixed(1)} s for two 4 s waits plus one run`);
+    // Each retry waits half the limit longer: 4 s, then 6 s.
+    check(r.secs >= 10 && r.secs < 10 + 12, `hangs noticed at the limit: ${r.secs.toFixed(1)} s for a 4 s and a 6 s wait plus one run`);
     check(r.seen.size >= 4, `both hung tries had a sleeper and a child (${r.seen.size} recorded)`);
   } else {
     check(r.status === 1, `exit code 1 (got ${r.status})`);
-    check(/FAIL the browser did not answer in 4 s after 3 tries \(test state\)/.test(r.stderr), 'the failure line names the state');
+    check(/FAIL the browser did not answer in 8 s after 3 tries \(test state\)/.test(r.stderr), 'the failure line names the state');
   }
   check(r.left.length === 0, `every recorded process id is gone${r.left.length ? ` (still there: ${r.left.join(', ')})` : ''}`);
   check(r.leftovers.length === 0, `its temporary folder is empty${r.leftovers.length ? ` (left: ${r.leftovers.join(', ')})` : ''}`);

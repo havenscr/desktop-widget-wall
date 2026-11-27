@@ -90,7 +90,7 @@ function measureTasks() {
     if (rows.length && Math.abs(box(rows[0]).top - lb.top) > 0.6) fails.push('tasks: the first row is not at the top of the list');
     if (!inside(lb, bb, 0.5)) fails.push('tasks: the list (x ' + r1(lb.left) + ' to ' + r1(lb.right) + ', y ' + r1(lb.top) + ' to ' + r1(lb.bottom) + ') sticks out of its block');
     const bar = list.offsetWidth - list.clientWidth;
-    const wantBar = rows.length > 5 ? 6 : 0;
+    const wantBar = rows.length > 5 ? 20 : 0; // the shared scrollbar (ui/scrollbar.css): a 14 px transparent gap and the 6 px bar
     if (bar !== wantBar) fails.push('tasks: the scroll bar is ' + bar + ' px wide, expected ' + wantBar + ' with ' + rows.length + ' rows');
     const mask = getComputedStyle(list).maskImage || getComputedStyle(list).webkitMaskImage;
     if (rows.length > 5) {
@@ -257,7 +257,7 @@ export default {
       'tasks-empty-collapse': { css: '.work .tasks-body { height: auto !important; }', expect: /^ *FAIL tasks: Always here starts at y [\d.]+ with 0 rows \(main: 267.7\)/m, appliesTo: (v) => v.name === EMPTY },
       'tasks-box': { css: '.work .tasks-hd { margin-bottom: 30px !important; }', expect: /^ *FAIL tasks: the block is x [\d.]+, y [\d.]+, [\d.]+ by [\d.]+ with \d+ rows \(main: 1944, 24, 596 by 243.7\)/m, appliesTo: (v) => v.name === TYPICAL },
       'tasks-overlap': { css: '.work .tasks { margin-bottom: -60px !important; }', expect: /^ *FAIL tasks: the block ends at y [\d.]+, over Always here which starts at y [\d.]+/m, appliesTo: (v) => v.name === THREE },
-      'tasks-bar': { css: '.work .tasks-list::-webkit-scrollbar { width: 14px !important; }', expect: /^ *FAIL tasks: the scroll bar is 14 px wide, expected 6 with 12 rows/m, appliesTo: (v) => v.name === TWELVE },
+      'tasks-bar': { css: '.work .tasks-list::-webkit-scrollbar { width: 14px !important; }', expect: /^ *FAIL tasks: the scroll bar is 14 px wide, expected 20 with 12 rows/m, appliesTo: (v) => v.name === TWELVE },
       'tasks-fade': { css: '.work .tasks-list.fade-bottom { mask-image: none !important; }', expect: /^ *FAIL tasks: no fade at the foot while more rows wait below/m, appliesTo: (v) => v.name === TWELVE },
       'tasks-inside': { css: '.work .tasks-list { margin-right: -12px !important; }', expect: /^ *FAIL tasks: the list \(x [\d.]+ to [\d.]+, y [\d.]+ to [\d.]+\) sticks out of its block/m, appliesTo: (v) => v.name === TYPICAL },
       // A title squeezed under 180 px; a title cut with no ellipsis.

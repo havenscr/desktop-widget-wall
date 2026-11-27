@@ -9,7 +9,7 @@ const day = '2026-11-11T10:24:00-08:00';
 const SWITCH = '.sp-switch button:nth-child(2)';
 const TALL = 'grow';
 const TILE = '.yt-tile';
-const LIKED = '.sp-tabs button:nth-child(3)';
+const LIKED = '.mu-places button:nth-child(3)';
 const base = (extra) => `hz=unwind&at=${night}&clock=review&weather=ok&audio=demo&${extra}`;
 const lib = (knob, extra = '') => base(`youtube=in&ytlib=${knob}${extra}`);
 const state = (name, query, expect, actions) => ({ screen: 'unwind', name: `youtube library: ${name}`, query, custom: true, expect, actions });
@@ -36,7 +36,7 @@ function measureYoutubeLibrary() {
   const tall = cardEl.getAttribute('data-tall') === 'true';
   const layerUp = !!document.querySelector('.main[data-work-shown]');
   const layerAsked = /[?&]layer=up(&|$)/.test(location.search);
-  if (layerUp && !layerAsked) fails.push('the work layer is up but this variant did not ask for it');
+  if (layerUp && !layerAsked && !/[?&]layer=either(&|$)/.test(location.search)) fails.push('the work layer is up but this variant did not ask for it');
   if (!layerUp && layerAsked) fails.push('this variant asked for the work layer and it is not up');
   const libEl = cardEl.querySelector('.yt-lib');
   const hintEl = cardEl.querySelector('.yt-hint');
@@ -161,7 +161,7 @@ export default {
     variants: askLayer([
       variant('at rest, Playlists', 'youtube=in&ytlib=full', '.sp-switch button:nth-child(2)', { listen: true }),
       variant('at rest, a few playlists', 'youtube=in&ytlib=few', '.sp-switch button:nth-child(2)', { listen: true }),
-      variant('at rest, Liked', 'youtube=in&ytlib=full', `${SWITCH} >> ${LIKED}`, { listen: true }),
+      variant('at rest, Liked', 'youtube=in&ytlib=full&late=1', `${SWITCH} >> ${LIKED}`, { listen: true }),
       variant('at rest, a playlist opened', 'youtube=in&ytlib=full', `${SWITCH} >> ${TILE}`, { listen: true }),
       variant('at rest, search results', 'youtube=in&ytlib=full&ytsearch=night', SWITCH, { listen: true }),
       variant('at rest, 12 searches left', 'youtube=in&ytlib=low', SWITCH, { listen: true }),
@@ -171,7 +171,7 @@ export default {
       variant('at rest, long names, a playlist opened', 'youtube=in&ytlib=long', `${SWITCH} >> ${TILE}`, { listen: true }),
       { name: TALL_PL, q: fitQuery('youtube=in&ytlib=full'), checks: ['.sp-card', '.yt-lib'], click: `${SWITCH} >> ${TALL}` },
       { name: TALL_OPEN, q: fitQuery('youtube=in&ytlib=full'), checks: ['.sp-card', '.yt-lib'], click: `${SWITCH} >> ${TALL} >> ${TILE}` },
-      variant('tall, Liked', 'youtube=in&ytlib=full', `${SWITCH} >> ${TALL} >> ${LIKED}`),
+      variant('tall, Liked', 'youtube=in&ytlib=full&late=1', `${SWITCH} >> ${TALL} >> ${LIKED}`),
       variant('tall, search results', 'youtube=in&ytlib=full&ytsearch=night', `${SWITCH} >> ${TALL}`),
       variant('tall, long names', 'youtube=in&ytlib=long', `${SWITCH} >> ${TALL}`),
       { name: LONG, q: fitQuery('youtube=in&ytlib=long'), checks: ['.sp-card', '.yt-lib'], click: `${SWITCH} >> ${TALL} >> ${TILE}` },

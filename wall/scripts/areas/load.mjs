@@ -7,7 +7,7 @@ const ALLOWED_FILES = new Set(['README.md', 'load.mjs']);
 const TOP_KEYS = new Set(['name', 'gallery', 'fit']);
 const GALLERY_KEYS = new Set(['states']);
 const FIT_KEYS = new Set(['variants', 'measurements', 'rules', 'breaks']);
-const STATE_KEYS = new Set(['screen', 'name', 'query', 'custom', 'actions', 'expect', 'expectNote']);
+const STATE_KEYS = new Set(['screen', 'name', 'query', 'custom', 'actions', 'expect', 'expectNote', 'expectDom']);
 const VARIANT_KEYS = new Set(['name', 'q', 'checks', 'click', 'viewportOnly', 'maxRows', 'card', 'hits', 'noHit', 'strip', 'edges', 'nowH', 'hide', 'note', 'sky', 'moonAt', 'th', 'listen', 'linesSheet', 'linesProbe', 'wb']);
 
 export async function loadAreas(selected) {

@@ -168,6 +168,15 @@ const measureMarks = () => {
       if (iter.some((t) => t === 'infinite' || t !== '1')) fails.push('status marks: the ' + e.className + ' animation repeats (' + s.animationIterationCount + ')');
     }
     for (const e of [dots[0], ring, need].filter(Boolean)) {
+      // Headless virtual time draws no frames for a 400 ms fade to run in, so how far it had got when the page was read changed from run to run. Each running animation on the mark or above it is taken to its end first; the opacity read is then the one the mark holds after the fade (a fade that ends low, or one that never ends, still fails).
+      for (let n = e; n && n.nodeType === 1; n = n.parentElement) for (const a of n.getAnimations()) {
+        // Finishing hides a slow fade, so the mark's own fade is held to its timing first: 400 ms (CSS animation-duration read above is the style; this is what the animation really runs with).
+        if (n === e && a.animationName === 'u-mark-in') {
+          const dur = a.effect.getTiming().duration;
+          if (Math.abs(Number(dur) - 400) > 10) fails.push('status marks: the ' + e.className + ' fade runs for ' + dur + ' ms (400)');
+        }
+        try { a.finish(); } catch { /* an animation that never ends keeps its place */ }
+      }
       const o = effective(e);
       if (o < 0.5) fails.push('status marks: the ' + e.className + ' is at opacity ' + Math.round(o * 100) / 100 + ' after the fade (it must hold)');
     }
@@ -271,6 +280,7 @@ export default {
       'marks-net-color': { css: '.u-cap .u-cap-net { color: #a39bc6 !important; }', expect: /^ *FAIL status marks: the alerts count is rgb\(163, 155, 198\)/m, appliesTo: on(V.busy) },
       'marks-ring': { css: '.u-ring { display: none !important; }', expect: /^ *FAIL status marks: the helper has no fresh answer but no grey ring is drawn/m, appliesTo: on(V.stale) },
       'marks-fade': { css: '.u-dot, .u-need { animation: none !important; }', expect: /^ *FAIL status marks: the u-dot does not fade in over 400 ms/m, appliesTo: on(V.calm) },
+      'marks-slow-fade': { css: '.u-dot { animation-duration: 2s !important; }', expect: /^ *FAIL status marks: the u-dot fade runs for 2000 ms/m, appliesTo: on(V.calm) },
       'marks-loop': { css: '.u-need { animation-iteration-count: infinite !important; }', expect: /^ *FAIL status marks: the u-need animation repeats/m, appliesTo: on(V.need) },
       'marks-watch': { css: '.u-line { margin-left: 520px !important; }', expect: /^ *FAIL status marks: the row at [\d,]+ overlaps (the centre column|the drive-in)/m, appliesTo: on(V.watch) },
       'marks-card-work': { css: '.hover-tip { transform: translateX(-90px) !important; }', expect: /^ *FAIL status marks: the card on the capsule starts at x \d+ but the control starts at x \d+/m, appliesTo: on(V.cardWork) },

@@ -17,14 +17,15 @@ function measureTidyWeb() {
   const kind = new URLSearchParams(location.search).get('tidycheck');
   const out = [];
   if (kind === 'sound') {
-    const tag = document.querySelector('.home .sound-chip .sound-tag.sug');
+    // The Sound card redesign (#265) shows the suggested play as the chip itself (`.sound-chip.sug`), with no separate "Suggested" tag: the mark is that chip, whole and with its icon inside it.
+    const tag = document.querySelector('.home .sound-chip.sug');
     const label = document.querySelector('.home .sound-lbl');
     if (!tag) out.push('tidy sound: the "Suggested" mark is not on the page');
     else {
       if (tag.scrollWidth > tag.clientWidth + 0.5) out.push('tidy sound: the "Suggested" mark is cut (' + tag.scrollWidth + ' px of text in ' + tag.clientWidth + ')');
-      const art = tag.closest('.sound-chip')?.querySelector('.sound-art');
+      const art = tag.querySelector('.sound-art');
       if (art) {
-        const gap = Math.round((tag.getBoundingClientRect().left - art.getBoundingClientRect().right) * 10) / 10;
+        const gap = Math.round((tag.getBoundingClientRect().right - art.getBoundingClientRect().right) * 10) / 10;
         if (gap < 2) out.push('tidy sound: the "Suggested" mark is ' + gap + " px from the chip's icon (2 or more clear)");
       }
     }
@@ -69,7 +70,7 @@ export default {
     },
     breaks: {
       // The tag set big enough to be cut or touch the icon; the label set small; generated content added inside a key.
-      'tidy-sound-tag-big': { css: '.sound-tag.sug { flex: none !important; } .sound-tag svg { flex: none !important; width: 200px !important; height: 200px !important; }', expect: /^ *FAIL tidy sound: the "Suggested" mark is (cut|-?[\d.]+ px from the chip's icon)/m, appliesTo: (v) => v.name === SOUND },
+      'tidy-sound-tag-big': { css: '.sound-chip.sug { width: 40px !important; overflow: hidden !important; }', expect: /^ *FAIL tidy sound: the "Suggested" mark is (cut|-?[\d.]+ px from the chip's icon)/m, appliesTo: (v) => v.name === SOUND },
       'tidy-sound-label': { css: '.sound-lbl { font-size: 12px !important; }', expect: /^ *FAIL tidy sound: the "Where" label is [\d.]+ px \(16 or more\)/m, appliesTo: (v) => v.name === SOUND },
       'tidy-key-corner': { css: '.key-tile .deck-lbl::after { content: "x"; }', expect: /^ *FAIL tidy keys: key ".*" has generated content inside it/m, appliesTo: (v) => v.name === KEYS },
     },

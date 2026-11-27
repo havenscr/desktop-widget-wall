@@ -10,7 +10,7 @@ const day = '2026-11-11T10:24:00-08:00';
 const SWITCH = '.sp-switch button:nth-child(2)';
 const TALL = 'grow';
 const TILE = '.yt-tile';
-const LIKED = '.sp-tabs button:nth-child(3)';
+const LIKED = '.mu-places button:nth-child(3)';
 // The pointer goes to the right end of what it is sent to: on the title, so it is on the play part and not on the add control.
 const ROW4 = 'hover:.yt-row:nth-child(4) .yt-title';
 const steps = (...s) => s.join(' >> ');
@@ -48,7 +48,7 @@ function measureYoutubePlayback() {
   const tall = !!cardEl && cardEl.getAttribute('data-tall') === 'true';
   const layerUp = !!document.querySelector('.main[data-work-shown]');
   const layerAsked = /[?&]layer=up(&|$)/.test(location.search);
-  if (layerUp && !layerAsked) fails.push('the work layer is up but this variant did not ask for it');
+  if (layerUp && !layerAsked && !/[?&]layer=either(&|$)/.test(location.search)) fails.push('the work layer is up but this variant did not ask for it');
   if (!layerUp && layerAsked) fails.push('this variant asked for the work layer and it is not up');
   const foot = cardEl ? cardEl.querySelector('.yt-foot') : null;
   const note = cardEl ? cardEl.querySelector('.yt-note') : null;

@@ -16,8 +16,10 @@ const variant = (name, knobs, extra = {}) => ({ name, q: fitQuery(knobs), checks
 function measureShelf() {
   const fails = [];
   const want = new URLSearchParams(location.search).get('screen') === 'shelf';
+  // Only the Shelf area's own pages (screen=shelf) are held to these rules: another area's variant that happens to show the Shelf (the rail's) has its own data, with no task lists to pick from.
+  if (!want) return [];
   const root = document.querySelector('.shelf-place');
-  if (!root) return want ? ['shelf: the place did not open'] : [];
+  if (!root) return ['shelf: the place did not open'];
   const rib = document.querySelector('.rib');
   const floor = Math.min(510, rib ? rib.getBoundingClientRect().top : 720);
   const r1 = (n) => Math.round(n * 10) / 10;

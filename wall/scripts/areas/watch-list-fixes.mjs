@@ -52,7 +52,7 @@ const states = [
 
 /**
  * In the page (self-contained: it is serialised into the page). With `wlcheck=now|long|rest` the left block while a
- * video plays: the title at most two lines and clamped when long, the channel on one line inside the block's 460 px,
+ * video plays: the title whole inside its fixed 106 px box (stepped down, never under 16 px), the channel on one line inside the block's 460 px,
  * text 16 px or more, the block clear of the picture's box, the list card, the tabs, the clock and the office slot
  * (y 656); at rest the channel line is invisible. With `wlcheck=offer` the paste offer: inside the card, clear of the
  * list rows and the field, its button 32 to 40 px tall and every text 16 px or more.
@@ -103,11 +103,13 @@ const measureWatchList = () => {
       return { fails, mode };
     }
     const cs = getComputedStyle(title);
-    const lines = Math.round(R(title).h / parseFloat(cs.lineHeight));
-    if (lines > 2) fails.push('the title is ' + lines + ' lines (two at most)');
-    const clamped = title.scrollHeight > title.clientHeight + 1;
-    if (mode === 'long' && !clamped && lines <= 2) fails.push('the long title is not cut at two lines');
-    if (cs.webkitLineClamp !== '2' || cs.overflow !== 'hidden') fails.push('a clamped title ends in an ellipsis only with -webkit-line-clamp 2 and hidden overflow (found ' + cs.webkitLineClamp + ' and ' + cs.overflow + ')');
+    // Since labels in full (#321, #324) the title shows whole: FitTitle steps the size down (never under 16 px) inside a box of fixed height (106 px) and fades what still does not fit, with no ellipsis.
+    const fs = parseFloat(cs.fontSize);
+    if (R(title).h > 106.5) fails.push('the title box is ' + Math.round(R(title).h) + ' px tall (the fixed 106)');
+    if (fs < 15.99) fails.push('the title is ' + Math.round(fs) + ' px (16 at least)');
+    const pad = (parseFloat(cs.paddingTop) || 0) + (parseFloat(cs.paddingBottom) || 0);
+    if (title.scrollHeight - pad > title.clientHeight - pad + 1 && !title.hasAttribute('data-cut')) fails.push('the title is cut with no fade mark');
+    if (mode === 'long' && fs >= 47.5 && !title.hasAttribute('data-cut')) fails.push('the long title was not fitted (still ' + Math.round(fs) + ' px)');
     if (!by) return { fails: fails.concat(['watch list: no channel line']), mode };
     const b = R(by);
     if (b.h > px(by, 'lineHeight') * 1.05) fails.push('the channel is ' + Math.round(b.h) + ' px tall, more than one line');
@@ -156,7 +158,7 @@ export default {
     measurements: { watchlist: measureWatchList },
     rules: { watchlist: rule },
     breaks: {
-      'watchlist-title-lines': { css: '.w-title { -webkit-line-clamp: unset !important; display: block !important; }', expect: /^ *FAIL watch list: the title is \d+ lines/m, appliesTo: on('Watch list, long title and channel, feathered') },
+      'watchlist-title-lines': { css: '.w-title { font-size: 48px !important; max-height: none !important; }', expect: /^ *FAIL watch list: the title box is \d+ px tall/m, appliesTo: on('Watch list, long title and channel, feathered') },
       'watchlist-channel-wrap': { css: '.w-by { white-space: normal !important; }', expect: /^ *FAIL watch list: the channel is \d+ px tall, more than one line/m, appliesTo: on('Watch list, long title and channel, whole sky') },
       'watchlist-overlap': { css: '.w-by { margin-bottom: 500px !important; }', expect: /^ *FAIL watch list: the left block ends at y \d+, into the office slot/m, appliesTo: on('Watch list, long title and channel, feathered', 'Watch list, long title and channel, whole sky', 'Watch list, long title and channel, drive-in') },
       'watchlist-text': { css: '.w-by { font-size: 12px !important; }', expect: /^ *FAIL watch list: text under 16 px in the channel line/m, appliesTo: on('Watch list, title and channel, whole sky') },

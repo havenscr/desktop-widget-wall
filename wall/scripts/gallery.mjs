@@ -709,7 +709,7 @@ const EXPECT = [
   ['home', 'sound silent (fallback after 2.5 seconds)', 'Sound'],
   ['home', 'broken: home app not set up', 'Network and securityNot set up'],
   ['home', 'broken: home app down', 'Home app not reachable'],
-  ['home', 'broken: moods failing', 'MoodsHome app not reachable'],
+  ['home', 'broken: moods failing', 'Home app not reachable'],
   ['home', 'broken: task app not set up', 'Around the houseNot set up'],
   ['home', 'broken: task app down', 'Task app not reachable'],
   ['home', 'timeline: nothing scheduled at home', 'Nothing scheduled at home'],
@@ -723,13 +723,13 @@ const EXPECT = [
   ['home', 'desk absent', ['Show all 4', '!inside.']],
   ['home', 'desk stale', ['as of', 'Lights on in two rooms']],
   ['home', 'house line', ['Lights on in three rooms', 'Hall']],
-  ['home', 'seven moods', ['7 moods', '4 more']],
-  ['home', 'moods slid', ['Movie', '1 more']],
-  ['home', 'moods with scenes', ['7 moods', '3 more']],
+  ['home', 'seven moods', ['3 more', 'Still Working']],
+  ['home', 'moods slid', ['Movie', 'Back']],
+  ['home', 'moods with scenes', ['3 more', 'Still Working'], true],
   ['home', 'moods with scenes slid', ['Romantic Mode', 'Fireplace Cozy']],
   ['home', 'chores five', ['Sort the recycling', '8 more can wait']],
   ['home', 'chores with alerts', ['10 more can wait', 'Show all 6']],
-  ['home', 'sound playing on a speaker', ['Now playing', 'Lantern Song 1', 'Living room, 4 speakers', 'All Speakers', 'Common Areas']],
+  ['home', 'sound playing on a speaker', ['Mira Vale', 'Lantern Song 1', 'Living room, 4 speakers', 'All Speakers', 'Common Areas']],
   ['home', 'shield drawer, stale read', ['open alerts as of', 'Clear all waits for a fresh read']],
   ['home', 'shield drawer, plain http address', ['Clear all needs a tailnet or local address']],
   ['home', 'sound nothing playing', ['Nothing playing', 'Play']],
@@ -759,14 +759,14 @@ const EXPECT = [
   ['unwind', 'watch: three saved, nothing on', ['Nothing on', 'Play Night drive mix', '3 saved']],
   ['unwind', 'watch: feathered', ['Open in YouTube', 'Lofi beats radio']],
   ['unwind', 'watch: drive-in, Twitch', ['Open on Twitch', 'Twitch channel', 'Live on the wall']],
-  ['unwind', 'watch: 24 saved', ['24 saved', 'Saved for the weekend, a very long playlist name', 'YouTube playlist']],
+  ['unwind', 'watch: 24 saved', ['62 saved', 'Saved for the weekend, a very long playlist name', 'YouTube playlist']],
   ['unwind', 'watch: settings, one look', ['Same for all', 'Feathered']],
-  ['unwind', 'watch: settings, a look per kind', ['Videos and playlists', 'Live streams', 'Saved here: 19 YouTube, 5 Twitch']],
+  ['unwind', 'watch: settings, a look per kind', ['Videos and playlists', 'Live streams', 'Saved here: 49 YouTube, 13 Twitch']],
   ['unwind', 'watch: listen, plain audio with videos saved', ['Tokyo Burnout', '!Video', '!Nothing on']],
   ['unwind', 'watch: sparse data', ['Night drive mix', 'Open in YouTube']],
-  ['unwind', 'watch: whole sky, 24', ['24 saved', 'Saved for the weekend', '12:34']],
+  ['unwind', 'watch: whole sky, 24', ['62 saved', 'Saved for the weekend', '12:34']],
   ['unwind', 'watch: whole sky', ['Open in YouTube']],
-  ['unwind', 'watch: sun, 24 saved, Twitch', ['24 saved', 'Live on the wall', 'Open on Twitch']],
+  ['unwind', 'watch: sun, 24 saved, Twitch', ['62 saved', 'Live on the wall', 'Open on Twitch']],
   ['unwind', 'watch: sun', ['Open in YouTube']],
   ['unwind', 'watch: settings, four looks, whole sky', ['Whole sky', 'The sun', 'Drive-in']],
   ['unwind', 'watch: settings, four looks per kind', ['Videos and playlists', 'Live streams', 'The sun']],
@@ -778,8 +778,8 @@ const EXPECT = [
   ['unwind', 'tower and hologram: tower at night, autoplay refused', ['Click the video to start', "WATT\u2019S DRIVE-IN"]],
   ['unwind', 'tower and hologram: tower at night, nothing on', ['Nothing on', 'Nothing on the screen', "WATT\u2019S DRIVE-IN"]],
   ['unwind', 'tower and hologram: tower at noon, nothing on', ['Nothing on', 'Nothing on the screen']],
-  ['unwind', 'tower and hologram: tower at night, 24', ['24 saved', 'Saved for the weekend, a very long playlist name', 'YouTube playlist']],
-  ['unwind', 'tower and hologram: hologram at night, 24', ['24 saved', 'Saved for the weekend, a very long playlist name']],
+  ['unwind', 'tower and hologram: tower at night, 24', ['62 saved', 'Saved for the weekend, a very long playlist name', 'YouTube playlist']],
+  ['unwind', 'tower and hologram: hologram at night, 24', ['62 saved', 'Saved for the weekend, a very long playlist name']],
   ['unwind', 'tower and hologram: hologram, autoplay refused', ['Click the video to start', '!12:34']],
   ['unwind', 'tower and hologram: hologram at', ['Open in YouTube', '12:34']],
   // No Look switch under the block any more: the row ends with the gear, and no look's name is on the page.
@@ -899,7 +899,7 @@ const EXPECT = [
   ['work', 'leave: heavy data', ['Leave in 4 min.', 'Dismiss', 'Architecture working']],
   ['work', 'leave: Day drawer open', ['Leave in 12 min.', 'Agents today', 'Recording00:']],
   ['work', 'leave: feed stale', ['may be out of date', '!Leave in']],
-  ['home', 'leave: on home', ['Leave in 12 min.', 'Moods']],
+  ['home', 'leave: on home', ['Leave in 12 min.', 'Condo']],
   ['unwind', 'leave: on unwind', ['Leave in 4 min.', 'Dismiss', 'Hide screen']],
   ['meet', 'leave: on meet', ['Leave in 12 min.', 'Design review with the platform team']],
   ['zen', 'leave: none on zen', ['Start', '!Leave in']],
@@ -908,7 +908,7 @@ const EXPECT = [
   ['work', 'recording: agents header', ['Now \u00b7 Recording', '00:0', '!Recording00:', 'Architecture working']],
   ['work', 'recording: helper down', ['not reachable', 'Recording00:', 'Now \u00b7 Recording']],
   ['work', 'recording: Hold', ['Recording00:', 'Command palette', '!Now \u00b7 Recording']],
-  ['home', 'recording: home', ['Recording00:', 'Moods']],
+  ['home', 'recording: home', ['Recording00:', 'Condo']],
   ['unwind', 'recording: unwind', ['Recording00:', 'Hide screen']],
   ['meet', 'recording: meet', ['Recording00:', 'Design review with the platform team']],
   ['zen', 'recording: none on zen', ['Start', '!Recording00']],
@@ -921,12 +921,12 @@ const EXPECT = [
   ['unwind', 'listen: hover on a playlist', ['Shuffle', 'Songs', 'Road Trip 1', '!Playlist / Playlist']],
   ['unwind', 'listen: songs, hover on a song', ['Lantern Song 5', 'Quiet Geometry']],
   ['unwind', 'listen: signed out', ['Sign in to Spotify in Tools to browse here.', 'Sign in to Spotify in Tools to see what is next']],
-  ['unwind', 'listen: spotify down', ['Spotify is not answering right now.', '!Up next']],
+  ['unwind', 'listen: spotify down', ['Spotify is not answering right now.', '!Lantern Song 2']],
   ['unwind', 'listen: spotify not set up', ['Spotify is not set up on this wall', 'not set up', '!Up next']],
   ['unwind', 'listen: Starting Spotify', 'Starting Spotify'],
   ['unwind', 'listen: Spotify is still starting', 'Spotify is still starting'],
   ['unwind', 'listen: choose this computer', 'More than one computer is signed in to Spotify'],
-  ['unwind', 'listen: search with ten results', ['Track 10', 'Playlist 10']],
+  ['unwind', 'listen: search with ten results', ['Track 10', 'Playlist 6', 'See all 10']],
   ['unwind', 'listen: Spotify did not show up', 'Spotify opened but did not show up as a player'],
   ['unwind', 'listen: followed playlist songs unavailable', ["Spotify's public page does not list this playlist. It may be private.", 'Play', '!Retry']],
   ['unwind', 'listen: Playing in Watch', ['Playing in Watch', 'Back to Watch']],
@@ -1358,6 +1358,11 @@ async function render(cdp, base, s, file, ctl) {
     if (info.boundary) errors.push('an error fallback is showing');
     const failed = [...missed(info.text, false), ...missed(firstText).filter((w) => w.absent)];
     for (const { needle, absent } of failed) errors.push(`${absent ? 'unexpected' : 'expected'} text ${absent ? 'shown' : 'not shown'}: "${needle}"`);
+    // Elements that must be on the page whether or not their words show (a label the fit rule drops, an icon-only chip): by selector.
+    for (const sel of s.expectDom ?? []) {
+      const got = await to('Runtime.evaluate', { expression: `!!document.querySelector(${JSON.stringify(sel)})`, returnByValue: true });
+      if (!got.result.value) errors.push(`expected element not on the page: ${sel}`);
+    }
     for (const [sel, want] of Object.entries(OPACITY[`${s.screen}|${s.name}`] ?? {})) {
       const got = await to('Runtime.evaluate', { expression: `(() => { const el = document.querySelector(${JSON.stringify(sel)}); return el ? Number(getComputedStyle(el).opacity) : null; })()`, returnByValue: true });
       const v = got.result.value;

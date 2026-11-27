@@ -133,7 +133,9 @@ const measurePins = () => {
     if (!songs || !pin) return { fails: ['library pins: no opened YouTube playlist with a Pin button'], mode };
     const tall = songs.classList.contains('tall');
     const name = document.querySelector('.yt-songs .sp-name');
-    const acts = R(document.querySelector('.yt-shactions'));
+    // The compact header (#325, while the work layer cuts the card) lays its actions out in the header's own grid (`.yt-shactions` is `display: contents`, no box): the buttons are then held to the header's box.
+    const compactHead = document.querySelector('.yt-songs .sp-shead[data-compact]');
+    const acts = R(compactHead ? compactHead : document.querySelector('.yt-shactions'));
     if (!tall && name && R(name).w < 120) fails.push('the playlist name is ' + Math.round(R(name).w) + ' px wide (120 or more at rest)');
     if (tall) {
       if (acts.w > 248.5) fails.push('the header actions are ' + Math.round(acts.w) + ' px wide (the column is 248)');
@@ -188,7 +190,7 @@ const variants = [
   { ...v('mixed pins', '&wpins=mixed', null, 'pins', PINS), name: names.mixed },
   { ...v('a 60 character name', '&wpins=liblong', null, 'pins', PINS), name: names.long },
   { ...v('x', '&wpins=none', 'ctx:.sp-tile', 'menu', ['.sp-card']), name: names.spMenu },
-  { ...v('x', '&wpins=none', `${TALL} >> ctx:.sp-tilebox:nth-child(5) .sp-tile`, 'menu', ['.sp-card']), name: names.spTall },
+  { ...v('x', '&wpins=none&layer=either', `${TALL} >> ctx:.sp-tilebox:nth-child(5) .sp-tile`, 'menu', ['.sp-card']), name: names.spTall },
   { ...v('x', '&wpins=none', `${SWITCH} >> ctx:${TILE}`, 'menu', ['.sp-card']), name: names.ytTile },
   { ...v('x', '&wpins=none', `${SWITCH} >> ${TILE} >> ctx:.yt-row .yt-play`, 'menu', ['.sp-card']), name: names.ytRow },
   { ...v('x', '&wpins=mixedfull', `ctx:.sp-tilebox:nth-child(4) .sp-tile >> ${PIN_ROW}`, 'menu', ['.sp-card']), name: names.chooser },
