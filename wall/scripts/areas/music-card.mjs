@@ -2,8 +2,10 @@
 // states, fit variants, one browser measurement with its rule, and the deliberate breaks. Moved here from the two big
 // review scripts; nothing is registered there for it.
 
+import { askLayer } from '../lib/layer-ask.mjs';
+
 /**
- * Runs in the page (it references nothing outside its own body). The tall view: 833 by 624 at wall 1707, 24 (506 high while the work layer shows), above the bottom
+ * Runs in the page (it references nothing outside its own body). The tall view: 833 by 624 at wall 1707, 24, above the bottom
  * row, no text under 16 px, every control 32 px or more, nothing cut or out of the card, Play and Shuffle inside their column.
  * At rest (on a Listen state that asks for it): 800 by 462, the Play on chip at the right end of the top row, the chooser
  * inside the wall and the card. Transitions are switched off first, so the box measured is the one the card settles on.
@@ -12,22 +14,22 @@ function measureTallMusic() {
   const fails = [];
   const hit = (a, b) => a.left < b.right - 0.5 && b.left < a.right - 0.5 && a.top < b.bottom - 0.5 && b.top < a.bottom - 0.5;
   const st = document.createElement('style');
-  st.textContent = '.sp-card, .u-foot, .u-office-slot { transition: none !important; }';
+  st.textContent = '.sp-card { transition: none !important; }';
   document.head.appendChild(st);
 
   const cardEl = document.querySelector('.sp-card');
   const card = cardEl?.getBoundingClientRect();
   const tall = cardEl?.getAttribute('data-tall') === 'true';
+  const layerUp = !!document.querySelector('.main[data-work-shown]');
+  const layerAsked = /[?&]layer=up(&|$)/.test(location.search);
+  if (layerUp && !layerAsked) fails.push('the work layer is up but this variant did not ask for it');
+  if (!layerUp && layerAsked) fails.push('this variant asked for the work layer and it is not up');
   if (!card) return { card: false, tall: false, fails };
   if (tall) {
     // The tall view: the right third, 833 by 624 at wall 1707, 24, ending above the bottom row (the Hide screen control and the office lights slot).
     const near = (a, b) => Math.abs(a - b) <= 1.5;
-    // The pointer on the wall shows the work layer and lifts the bottom row to y 540 (data-work-shown, unwind-work.css): the card is then 506 high,
-    // ending at y 530. Without the layer it is 624 high, ending above the unlifted row.
-    const lifted = document.querySelector('.main')?.hasAttribute('data-work-shown');
-    const wantH = lifted ? 506 : 624;
-    if (!near(card.left, 1707) || !near(card.top, 24) || !near(card.width, 833) || !near(card.height, wantH)) fails.push('listen tall: the card is at x ' + Math.round(card.left) + ' to ' + Math.round(card.right) + ', y ' + Math.round(card.top) + ' to ' + Math.round(card.bottom) + ' (833 by ' + wantH + ' at 1707, 24' + (lifted ? ', the layer shown' : '') + ')');
-    if (card.bottom > (lifted ? 530.5 : 648.5)) fails.push('listen tall: the card ends at y ' + Math.round(card.bottom) + ', into the bottom row (' + (lifted ? 530 : 648) + ' at most)');
+    if (!near(card.left, 1707) || !near(card.top, 24) || !near(card.width, 833) || !near(card.height, (document.querySelector('.main[data-work-shown]') ? 506 : 624))) fails.push('listen tall: the card is at x ' + Math.round(card.left) + ' to ' + Math.round(card.right) + ', y ' + Math.round(card.top) + ' to ' + Math.round(card.bottom) + ' (833 by 624 at 1707, 24; 506 with the work layer shown)');
+    if (card.bottom > 648.5) fails.push('listen tall: the card ends at y ' + Math.round(card.bottom) + ', into the bottom row (648 at most)');
     if (card.left < 0 || card.right > 2540.5 || card.top < 0 || card.bottom > 720) fails.push('listen tall: the card leaves the wall: x ' + Math.round(card.left) + ' to ' + Math.round(card.right) + ', y ' + Math.round(card.top) + ' to ' + Math.round(card.bottom));
     for (const [name, el] of [['Hide screen', document.querySelector('.so-layer')], ['the office lights slot', document.querySelector('[data-slot="office-lights"]')]]) {
       const r = el?.getBoundingClientRect();
@@ -62,7 +64,7 @@ function measureTallMusic() {
       for (const e of [root, ...root.querySelectorAll('*')]) {
         const r = e.getBoundingClientRect();
         if (r.width === 0 || r.height === 0 || e.closest('svg') || e.tagName === 'svg') continue;
-        if (r.left < card.left - 0.5 || r.right > card.right + 0.5 || r.top < card.top - 0.5 || r.bottom > card.bottom + 0.5) fails.push('listen tall: ' + name(e) + ' sticks out of the card (' + [r.left - card.left, card.right - r.right, r.top - card.top, card.bottom - r.bottom].map((v) => Math.round(v)).join(', ') + ' px from the card left, right, top, foot)');
+        if (r.left < card.left - 0.5 || r.right > card.right + 0.5 || r.top < card.top - 0.5 || r.bottom > card.bottom + 0.5) fails.push('listen tall: ' + name(e) + ' sticks out of the card');
         const cs = getComputedStyle(e);
         if ((cs.overflowX !== 'visible') && e.scrollWidth > e.clientWidth + 1 && cs.textOverflow !== 'ellipsis' && [...e.childNodes].some((c) => c.nodeType === 3 && c.textContent.trim())) fails.push('listen tall: text clipped in ' + name(e) + ' "' + (e.textContent || '').trim().slice(0, 24) + '" with no ellipsis');
       }
@@ -144,7 +146,7 @@ export default {
     ],
   },
   fit: {
-    variants: [
+    variants: askLayer([
     { name: TALL_OPEN, q: fitQuery('&audio=demo'), checks: ['.sp-card'], click: 'grow' },
     tallVariant('heavy library', '&spotify=heavy', 'grow'),
     tallVariant('a playlist opened', '&audio=demo', 'grow >> .sp-tile'),
@@ -173,7 +175,7 @@ export default {
     { name: 'Listen, the tall view, a playlist that is not his', q: fitQuery('&audio=demo&spotify=notyours'), checks: ['.sp-card'], click: 'grow >> .sp-tile' },
     { name: 'Listen, the resting card, a playlist that is not his', q: fitQuery('&audio=demo&spotify=notyours'), checks: ['.sp-card'], click: '.sp-tile', listen: true },
     { name: 'Sky layers, Listen at night, the tall view open, the moon in open sky', q: fitQuery('&audio=demo', night), checks: ['.sp-card'], click: 'grow', sky: 'moon', moonAt: '760,352,44' },
-    ],
+    ]),
     measurements: { tallMusic: measureTallMusic },
     rules: {
       tallMusic: (variant, results, emit) => {
@@ -183,7 +185,7 @@ export default {
         for (const failure of m.fails) emit(`  FAIL ${failure}`);
         if (m.fails.length) return true;
         emit(m.tall
-          ? '  ok   listen tall: the card is 833 by 624 (506 with the work layer shown) at 1707, 24 above the bottom row, no text under 16 px, every control 32 px or more, nothing cut or out of the card, the Play on list inside the card'
+          ? '  ok   listen tall: the card is 833 by 624 at 1707, 24 above the bottom row, no text under 16 px, every control 32 px or more, nothing cut or out of the card, the Play on list inside the card'
           : '  ok   listen: the resting card is 800 by 462 with the Play on chip at the right end of the top row, the Play on list inside the card');
         return false;
       },

@@ -6,6 +6,7 @@ import { PinButton } from '../watch/PinButton';
 import { MAX_PAGES, PAGE_SIZE, nearEnd, readTime, videosLine } from './model';
 import { playAll, playFrom, queueable, useYtQueue, type QueueFrom } from './queue';
 import { closePlaylist, loadList, refreshSongs, retryList, useYtLibrary } from './store';
+import { useCompactHead } from './useCompactHead';
 import { RowSkeletons, YtEmpty, YtRows, YtState, YtThumb } from './YtParts';
 
 /**
@@ -28,6 +29,7 @@ export function YtSongs({ tall }: { tall: boolean }) {
     document.addEventListener('keydown', key);
     return () => document.removeEventListener('keydown', key);
   }, []);
+  const head = useCompactHead<HTMLDivElement>(!!opened);
   const failed = useYtQueue((s) => s.failed);
   const [openFailed, setOpenFailed] = useState(false);
   const failTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -42,7 +44,7 @@ export function YtSongs({ tall }: { tall: boolean }) {
   const first = songs.items.length === 0;
   return (
     <div className={`sp-songs yt-songs${tall ? ' tall' : ''}`}>
-      <div className="sp-shead">
+      <div className="sp-shead" ref={head.ref} data-compact={head.compact ? '' : undefined} data-fading={head.fading ? '' : undefined}>
         <span className="sp-backrow">
           <button type="button" className="sp-back" aria-label="Back to Playlists" title="Back to Playlists (Escape)" onClick={closePlaylist}>
             <IconArrowLeft size={20} stroke={2} aria-hidden="true" />

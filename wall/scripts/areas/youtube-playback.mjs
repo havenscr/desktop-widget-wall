@@ -3,12 +3,14 @@
 // measurement and its rule, and a deliberate break for each rule. The mock frame never loads a real player (`watch=mock`),
 // and `ytplay=` starts a pick the way a click does (see `devMocks/youtube.ts`). Everything this area needs lives here.
 
+import { askLayer } from '../lib/layer-ask.mjs';
+
 const night = encodeURIComponent('2026-11-11T22:30:00-08:00');
 const day = '2026-11-11T10:24:00-08:00';
 const SWITCH = '.sp-switch button:nth-child(2)';
 const TALL = 'grow';
 const TILE = '.yt-tile';
-const LIKED = '.mu-places button:nth-child(3)';
+const LIKED = '.sp-tabs button:nth-child(3)';
 // The pointer goes to the right end of what it is sent to: on the title, so it is on the play part and not on the add control.
 const ROW4 = 'hover:.yt-row:nth-child(4) .yt-title';
 const steps = (...s) => s.join(' >> ');
@@ -44,6 +46,10 @@ function measureYoutubePlayback() {
   const out = { yp: false, fails, hasFoot: false, hasNote: false, hasRows: false, hasPlaying: false, hasUpNext: false, hasLayer: false, rest: false };
   const card = box(cardEl);
   const tall = !!cardEl && cardEl.getAttribute('data-tall') === 'true';
+  const layerUp = !!document.querySelector('.main[data-work-shown]');
+  const layerAsked = /[?&]layer=up(&|$)/.test(location.search);
+  if (layerUp && !layerAsked) fails.push('the work layer is up but this variant did not ask for it');
+  if (!layerUp && layerAsked) fails.push('this variant asked for the work layer and it is not up');
   const foot = cardEl ? cardEl.querySelector('.yt-foot') : null;
   const note = cardEl ? cardEl.querySelector('.yt-note') : null;
   const libEl = cardEl ? cardEl.querySelector('.yt-lib') : null;
@@ -53,9 +59,7 @@ function measureYoutubePlayback() {
   if (foot) {
     out.yp = true;
     const f = box(foot);
-    // The tall card is 506 high while the work layer shows (the pointer on the wall), so its foot player sits 118 px higher.
-    const footTop = tall && document.querySelector('.main')?.hasAttribute('data-work-shown') ? 454 : 572;
-    if (!near(f.left, 1728, 2) || !near(f.top, footTop, 2) || !near(f.width, 791, 2) || !near(f.height, 61, 2)) fails.push('the foot is ' + r0(f.width) + ' by ' + r0(f.height) + ' at x ' + r0(f.left) + ', y ' + r0(f.top) + ' (791 by 61 at 1728, ' + footTop + ')');
+    if (!near(f.left, 1728, 2) || !near(f.top, document.querySelector('.main[data-work-shown]') ? 454 : 572, 2) || !near(f.width, 791, 2) || !near(f.height, 61, 2)) fails.push('the foot is ' + r0(f.width) + ' by ' + r0(f.height) + ' at x ' + r0(f.left) + ', y ' + r0(f.top) + ' (791 by 61 at 1728, 572; y 454 with the work layer shown)');
     const list = libEl ? libEl.querySelector('.yt-rowscroll, .yt-scroll') : null;
     const l = box(list);
     if (l && l.height > 0 && l.bottom > f.top + 0.5) fails.push('the list ends at y ' + r0(l.bottom) + ', into the foot (its top is y ' + r0(f.top) + ')');
@@ -216,7 +220,7 @@ export default {
     ],
   },
   fit: {
-    variants: [
+    variants: askLayer([
       variant('tall, a playlist playing', play('on'), steps(SWITCH, TALL, TILE), { checks: ['.sp-card', '.yt-lib', '.yt-foot'] }),
       variant('at rest, a playlist playing', play('on'), steps(SWITCH, TILE), { listen: true }),
       variant('tall, nothing on', play(''), steps(SWITCH, TALL, TILE), { checks: ['.sp-card', '.yt-lib', '.yt-foot'] }),
@@ -230,7 +234,7 @@ export default {
       variant('at rest, search playing', play('search', '&ytsearch=night'), SWITCH, { listen: true }),
       variant('Up next with the wall\'s music', play('on'), SWITCH, { listen: true, checks: ['.u-listen', '.sp-card', '.u-next', '.u-next-row'] }),
       variant('the player out of sight on Listen', play('on'), SWITCH, { listen: true, checks: ['.sp-card', '.w-layer'] }),
-    ],
+    ]),
     measurements: { youtubePlayback: measureYoutubePlayback },
     rules: {
       youtubePlayback: (variant, results, emit) => {

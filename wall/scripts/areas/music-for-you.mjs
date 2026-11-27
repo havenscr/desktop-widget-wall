@@ -2,6 +2,8 @@
 // See all. Gallery states, fit variants with one browser measurement and its rule, and a deliberate break
 // for each rule. Everything this area needs lives here; nothing is registered in the two big review scripts.
 
+import { askLayer } from '../lib/layer-ask.mjs';
+
 const night = encodeURIComponent('2026-11-11T22:30:00-08:00');
 const day = '2026-11-11T10:24:00-08:00';
 const SWITCH = '.sp-switch button:nth-child(2)';
@@ -40,15 +42,16 @@ function measureForYou() {
   document.head.appendChild(st);
   const card = cardEl.getBoundingClientRect();
   const tall = cardEl.getAttribute('data-tall') === 'true';
+  const layerUp = !!document.querySelector('.main[data-work-shown]');
+  const layerAsked = /[?&]layer=up(&|$)/.test(location.search);
+  if (layerUp && !layerAsked) fails.push('the work layer is up but this variant did not ask for it');
+  if (!layerUp && layerAsked) fails.push('this variant asked for the work layer and it is not up');
   const r0 = (n) => Math.round(n * 10) / 10;
   const near = (a, b, tol) => Math.abs(a - b) <= tol;
   const name = (e) => String((e.className && e.className.baseVal) || e.className || e.tagName);
   const hit = (a, b) => a.left < b.right - 0.5 && b.left < a.right - 0.5 && a.top < b.bottom - 0.5 && b.top < a.bottom - 0.5;
-  // The pointer on the wall shows the work layer and lifts the bottom row (data-work-shown): the tall card is then 506 high, else 624.
-  const lifted = document.querySelector('.main')?.hasAttribute('data-work-shown');
-  const wantH = lifted ? 506 : 624;
   if (tall) {
-    if (!near(card.left, 1707, 1.5) || !near(card.top, 24, 1.5) || !near(card.width, 833, 1.5) || !near(card.height, wantH, 1.5)) fails.push('the tall card is at x ' + r0(card.left) + ', y ' + r0(card.top) + ', ' + r0(card.width) + ' by ' + r0(card.height) + ' (833 by ' + wantH + ' at 1707, 24' + (lifted ? ', the work layer shown' : '') + ')');
+    if (!near(card.left, 1707, 1.5) || !near(card.top, 24, 1.5) || !near(card.width, 833, 1.5) || !near(card.height, (document.querySelector('.main[data-work-shown]') ? 506 : 624), 1.5)) fails.push('the tall card is at x ' + r0(card.left) + ', y ' + r0(card.top) + ', ' + r0(card.width) + ' by ' + r0(card.height) + ' (833 by 624 at 1707, 24; 506 with the work layer shown)');
   } else if (!near(card.left, 1740, 1.5) || !near(card.top, 24, 1.5) || !near(card.width, 800, 1.5) || !near(card.height, 462, 1.5)) {
     fails.push('the resting card is at x ' + r0(card.left) + ', y ' + r0(card.top) + ', ' + r0(card.width) + ' by ' + r0(card.height) + ' (800 by 462 at 1740, 24)');
   }
@@ -130,7 +133,7 @@ export default {
     ],
   },
   fit: {
-    variants: [
+    variants: askLayer([
       variant('at rest, six played', 'ytplayed=6', steps(SWITCH, FORYOU, CLOSEFOCUS), { listen: true }),
       variant('at rest, two played', 'ytplayed=2', steps(SWITCH, FORYOU, CLOSEFOCUS), { listen: true }),
       variant('at rest, nothing played', 'ytplayed=none', steps(SWITCH, FORYOU, CLOSEFOCUS), { listen: true }),
@@ -138,7 +141,7 @@ export default {
       variant('at rest, not answering', 'ytplayed=6&ytfy=down', steps(SWITCH, FORYOU, CLOSEFOCUS), { listen: true }),
       variant('opens on Focus', 'ytplayed=6', steps(SWITCH, FORYOU), { listen: true }),
       variant('tall, six played', 'ytplayed=6', steps(SWITCH, TALL, FORYOU, CLOSEFOCUS)),
-    ],
+    ]),
     measurements: { musicForYou: measureForYou },
     rules: {
       musicForYou: (v, results, emit) => {

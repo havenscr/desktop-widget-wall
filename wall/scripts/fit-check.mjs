@@ -59,25 +59,11 @@ const LOOK_BOX_SKY = { x: 1106, y: 16, w: 889, h: 500 };
  * `sometimes` (whether the card has grown when a variant is read is not fixed, so such a line may or may not appear).
  */
 const KNOWN_FAILURES = [
-  {
-    state: '',
-    line: /^ *FAIL listen tall: (sp-shbtns|sp-btn (plain|fill) big) sticks out of the card/,
-    bug: 'src/styles/unwind-work.css:466: with the work layer shown the tall card is cut to 506 px, and the Play and Shuffle buttons of an opened Spotify playlist then end 23 px below the card foot (the tall layout needs 624)',
-  },
-  {
-    state: '',
-    line: /^ *FAIL (youtube library|listen tall): (yt-shactions|yt-refreshrow|yt-playbtns|u-rd sm yt-(refresh|openyt)|sp-btn (plain|fill) big yt-(playall|shuffle|pin icon)) sticks out of the card/,
-    bug: 'src/styles/unwind-work.css:467: with the work layer shown the tall card is cut to 506 px, and the Play, Shuffle and refresh row of an opened YouTube playlist then end 15 to 71 px below the card foot (the tall layout needs 624)',
-  },
-  // Open items: failing on main before the Unwind one hover change (#316) and not yet classified as a product bug or a stale expectation.
   { sometimes: true, state: 'YouTube add,', line: /^ *FAIL library add: the menu (passes the foot of the rows|lies on the foot player|lies over its own row|sticks out of the card|ends at x \d+, not on the control)/, bug: 'open item: src/unwind/watch/AddToPlaylist.tsx:91 places the library menu once at open (the foot player and the control edge come out wrong in the fit variants); not yet classified' },
-  { sometimes: true, state: 'YouTube add,', line: /^ *FAIL \.sp-card: width \d+ <= \d+, height \d+ <= \d+, /, bug: 'open item: the tall YouTube playlist view needs more than the 506 px the card has while the work layer shows (src/styles/unwind-work.css:467)' },
-  { state: 'Library pins, opened YouTube playlist, tall', line: /^ *FAIL \.yt-songs: /, bug: 'open item: the same 506 px tall card (src/styles/unwind-work.css:467) leaves the songs list 190 px for 393 px of content' },
   { state: 'Own playlists', line: /^ *FAIL own playlists: (the list is at|\d+ whole rows show|the card ends at y|a row is)/, bug: 'open item: own playlists list sits 40 px lower with four rows, the editor ends 6 px over the office slot (slot top moved to 656 in #306) and its rows are 496 wide (src/styles/ownlists.css:419 says 506); not yet classified' },
   { state: 'Hide screen, failure words', line: /^ *FAIL hide screen: (the grown pill covers control|the failure words cover more than)/, bug: 'open item: with twelve Office moods and Off the 240 px failure pill covers the Off chip and 11 px of the chip before it; not yet classified' },
   { state: 'Rail, On Air', line: /^ *FAIL on air v2: (oa-help-l is at y|\.oa2-idlenotes holds)/, bug: 'open item: the On Air help line ends 2.8 px under the band (y 512.8, band ends 510); not yet classified' },
   { state: 'On Air v2,', line: /^ *FAIL on air v2: (oa-help-l is at y|\.oa2-idlenotes holds)/, bug: 'open item: the On Air help line ends 2.8 px under the band (y 512.8, band ends 510); not yet classified' },
-  { state: 'Saved playlist', line: /^ *FAIL \.sp-(songs|shead): width \d+ <= \d+, height \d+ <= \d+, /, bug: 'src/styles/unwind-work.css:466: with the work layer shown the tall card is cut to 506 px, and the opened saved playlist (songs and head) then needs 392 px in 281' },
   { state: 'Studio home, Meet chip', line: /^ *FAIL (studiohome: the (Meet chip or the hero|sheet) is not on the page|\.st-(drawer|d-keys|d-rooms): not found)/, bug: 'open item: the Meet page variants no longer show the Lights chip or the sheet (the chip is only in the Work lanes header, src/agents/Lanes.tsx:198; the call=teams knob shows no call); not yet classified' },
   { state: 'YouTube search, sort menu open', line: /^ *FAIL \.yt-lib: width \d+ <= \d+, height \d+ <= \d+, /, bug: 'open item: the open sort menu makes the YouTube library scroll 356 px in 295 (the library box is not meant to scroll); not yet classified' },
   { state: 'Studio lights, On Air', line: /^ *FAIL on air v2: \.oa2-checklist holds SPAN/, bug: 'open item: with one key light set up and silent the On Air checklist text runs 4.9 px past its box (x 2544.9, box ends 2540); only seen when the On Air rules run on this variant, not yet classified' },
@@ -1546,9 +1532,14 @@ try {
       const slot = document.querySelector('[data-slot="office-lights"]');
       if (!slot) listen.push('listen: the office lights slot is not there');
       else {
+        // With the work layer shown the row is lifted 116 px (unwind-work.css), so its top is 540 instead of 656; the lift's transition (250 ms up, 400 ms down) is ended first so the box read is the one it settles on, whichever way it was going.
+        const lifted = !!document.querySelector('.main[data-work-shown]');
+        const ts = document.createElement('style'); ts.textContent = '.u-foot, .u-office-slot { transition: none !important; }'; document.head.appendChild(ts);
+        // The slot rests at y 656 (the Day line moved it up in #306; 662 was the older constant) and lifts to 540.
+        const slotTop = lifted ? 540 : 656;
         const sr = slot.getBoundingClientRect();
         // Its stage box (7A's foot row): right edge at wall x 2364 (176 px from the stage's right edge), top 656, 34 tall; 420 wide empty, up to 1124 with the moods row.
-        if (Math.abs(sr.right - 2364) > 1 || Math.abs(sr.top - 656) > 1 || Math.abs(sr.height - 34) > 1 || sr.width < 419.5 || sr.width > 1124.5) listen.push('listen: the office lights slot is at x ' + Math.round(sr.left) + ' to ' + Math.round(sr.right) + ', y ' + Math.round(sr.top) + ' to ' + Math.round(sr.bottom) + ' (right edge 2364, top 656, 34 tall, 420 to 1124 wide)');
+        if (Math.abs(sr.right - 2364) > 1 || Math.abs(sr.top - slotTop) > 1 || Math.abs(sr.height - 34) > 1 || sr.width < 419.5 || sr.width > 1124.5) listen.push('listen: the office lights slot' + (lifted ? ' (work layer shown)' : '') + ' is at x ' + Math.round(sr.left) + ' to ' + Math.round(sr.right) + ', y ' + Math.round(sr.top) + ' to ' + Math.round(sr.bottom) + ' (right edge 2364, top 656, 34 tall, 420 to 1124 wide)');
         const bn = document.querySelector('.leave-banner')?.getBoundingClientRect();
         const ln = document.querySelector('.u-line')?.getBoundingClientRect();
         if (bn && ln && hit(bn, ln)) listen.push('listen: the leave banner covers the status line');

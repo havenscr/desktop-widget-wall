@@ -2,12 +2,14 @@
 // shows, fit variants with one browser measurement and its rule, and a deliberate break for each rule.
 // Everything this area needs lives here; nothing is registered in the two big review scripts.
 
+import { askLayer } from '../lib/layer-ask.mjs';
+
 const night = encodeURIComponent('2026-11-11T22:30:00-08:00');
 const day = '2026-11-11T10:24:00-08:00';
 const SWITCH = '.sp-switch button:nth-child(2)';
 const TALL = 'grow';
 const TILE = '.yt-tile';
-const LIKED = '.mu-places button:nth-child(3)';
+const LIKED = '.sp-tabs button:nth-child(3)';
 const base = (extra) => `hz=unwind&at=${night}&clock=review&weather=ok&audio=demo&${extra}`;
 const lib = (knob, extra = '') => base(`youtube=in&ytlib=${knob}${extra}`);
 const state = (name, query, expect, actions) => ({ screen: 'unwind', name: `youtube library: ${name}`, query, custom: true, expect, actions });
@@ -32,19 +34,20 @@ function measureYoutubeLibrary() {
   document.head.appendChild(st);
   const card = cardEl.getBoundingClientRect();
   const tall = cardEl.getAttribute('data-tall') === 'true';
+  const layerUp = !!document.querySelector('.main[data-work-shown]');
+  const layerAsked = /[?&]layer=up(&|$)/.test(location.search);
+  if (layerUp && !layerAsked) fails.push('the work layer is up but this variant did not ask for it');
+  if (!layerUp && layerAsked) fails.push('this variant asked for the work layer and it is not up');
   const libEl = cardEl.querySelector('.yt-lib');
   const hintEl = cardEl.querySelector('.yt-hint');
   const r0 = (n) => Math.round(n * 10) / 10;
   const near = (a, b, tol) => Math.abs(a - b) <= tol;
   const name = (e) => String((e.className && e.className.baseVal) || e.className || e.tagName);
   const hit = (a, b) => a.left < b.right - 0.5 && b.left < a.right - 0.5 && a.top < b.bottom - 0.5 && b.top < a.bottom - 0.5;
-  // The pointer on the wall shows the work layer and lifts the bottom row (data-work-shown): the tall card is then 506 high, else 624.
-  const lifted = document.querySelector('.main')?.hasAttribute('data-work-shown');
-  const wantH = lifted ? 506 : 624;
   if (libEl) {
     if (tall) {
-      if (!near(card.left, 1707, 1.5) || !near(card.top, 24, 1.5) || !near(card.width, 833, 1.5) || !near(card.height, wantH, 1.5)) fails.push('the tall card is at x ' + r0(card.left) + ', y ' + r0(card.top) + ', ' + r0(card.width) + ' by ' + r0(card.height) + ' (833 by ' + wantH + ' at 1707, 24' + (lifted ? ', the work layer shown' : '') + ')');
-      if (card.bottom > (lifted ? 530.5 : 648.5)) fails.push('the tall card ends at y ' + r0(card.bottom) + ', into the bottom row (' + (lifted ? 530 : 648) + ' at most)');
+      if (!near(card.left, 1707, 1.5) || !near(card.top, 24, 1.5) || !near(card.width, 833, 1.5) || !near(card.height, (document.querySelector('.main[data-work-shown]') ? 506 : 624), 1.5)) fails.push('the tall card is at x ' + r0(card.left) + ', y ' + r0(card.top) + ', ' + r0(card.width) + ' by ' + r0(card.height) + ' (833 by 624 at 1707, 24; 506 with the work layer shown)');
+      if (card.bottom > 648.5) fails.push('the tall card ends at y ' + r0(card.bottom) + ', into the bottom row (648 at most)');
     } else if (!near(card.left, 1740, 1.5) || !near(card.top, 24, 1.5) || !near(card.width, 800, 1.5) || !near(card.height, 462, 1.5)) {
       fails.push('the resting card is at x ' + r0(card.left) + ', y ' + r0(card.top) + ', ' + r0(card.width) + ' by ' + r0(card.height) + ' (800 by 462 at 1740, 24)');
     }
@@ -79,10 +82,10 @@ function measureYoutubeLibrary() {
         const sc = e.closest('.yt-scroll').getBoundingClientRect();
         const cut = { left: Math.max(r.left, sc.left), right: Math.min(r.right, sc.right), top: Math.max(r.top, sc.top), bottom: Math.min(r.bottom, sc.bottom) };
         if (cut.right <= cut.left || cut.bottom <= cut.top) continue;
-        if (cut.left < card.left - 0.5 || cut.right > card.right + 0.5 || cut.top < card.top - 0.5 || cut.bottom > card.bottom + 0.5) fails.push(name(e) + ' sticks out of the card (' + r0(cut.bottom - card.bottom) + ' px past the card foot)');
+        if (cut.left < card.left - 0.5 || cut.right > card.right + 0.5 || cut.top < card.top - 0.5 || cut.bottom > card.bottom + 0.5) fails.push(name(e) + ' sticks out of the card');
         continue;
       }
-      if (r.left < card.left - 0.5 || r.right > card.right + 0.5 || r.top < card.top - 0.5 || r.bottom > card.bottom + 0.5) fails.push(name(e) + ' sticks out of the card (' + r0(r.bottom - card.bottom) + ' px past the card foot)');
+      if (r.left < card.left - 0.5 || r.right > card.right + 0.5 || r.top < card.top - 0.5 || r.bottom > card.bottom + 0.5) fails.push(name(e) + ' sticks out of the card');
     }
     // No two of tabs, field, grid, left column and rows overlap.
     const parts = [['the tabs', '.yt-bar .sp-tabs'], ['the field', '.yt-bar .sp-search'], ['the grid', '.yt-grid'], ['the left column', '.yt-songs .sp-shead'], ['the rows', '.yt-rowscroll']];
@@ -155,7 +158,7 @@ export default {
     ],
   },
   fit: {
-    variants: [
+    variants: askLayer([
       variant('at rest, Playlists', 'youtube=in&ytlib=full', '.sp-switch button:nth-child(2)', { listen: true }),
       variant('at rest, a few playlists', 'youtube=in&ytlib=few', '.sp-switch button:nth-child(2)', { listen: true }),
       variant('at rest, Liked', 'youtube=in&ytlib=full', `${SWITCH} >> ${LIKED}`, { listen: true }),
@@ -175,7 +178,7 @@ export default {
       variant('tall, empty', 'youtube=in&ytlib=empty', `${SWITCH} >> ${TALL}`),
       { name: NOTSET, q: fitQuery('youtube=off'), checks: ['.sp-card', '.yt-hint'], click: SWITCH, listen: true },
       { name: OUT, q: fitQuery('youtube=out'), checks: ['.sp-card', '.yt-hint'], click: SWITCH, listen: true },
-    ],
+    ]),
     measurements: { youtubeLibrary: measureYoutubeLibrary },
     rules: {
       youtubeLibrary: (variant, results, emit) => {
