@@ -45,6 +45,9 @@ const LONG_TEXTS = [
   'Thanks',
 ];
 
+/** The native side stamps `readAt` and `stoppedAt` in Unix seconds; the other times are milliseconds. */
+const sec = (ms: number): number => Math.floor(ms / 1000);
+
 const now = (): number => (reviewNow ? reviewNow() : Date.now());
 
 function messages(kind: string, at: number): LiveMessage[] {
@@ -74,21 +77,21 @@ export function registerYtLiveMocks(): void {
   mocks.set('wall2_ytlive_status', (): LiveStatus => {
     const k = knob('yt') ?? 'none';
     const t = now();
-    const base: LiveStatus = { state: 'none', startedAt: null, scheduledAt: null, viewers: null, chat: false, readAt: t - 4000, stale: false, word: null, statusLeft: 1100, chatLeft: 3900 };
+    const base: LiveStatus = { state: 'none', startedAt: null, scheduledAt: null, viewers: null, chat: false, readAt: sec(t - 4000), stale: false, word: null, statusLeft: 1100, chatLeft: 3900 };
     if (k === 'notsetup') return named ? base : { ...base, state: 'not-set-up' };
     if (k === 'signedout') return { ...base, state: 'signed-out' };
     if (k === 'scheduled') return { ...base, state: 'scheduled', scheduledAt: t + 36 * MIN };
     if (k === 'none') return base;
     const live: LiveStatus = { ...base, state: 'live', startedAt: t - 22 * MIN, viewers: 37, chat: k !== 'refused' };
-    if (k === 'stale') return { ...live, readAt: t - 14 * MIN, stale: true, word: 'busy' };
+    if (k === 'stale') return { ...live, readAt: sec(t - 14 * MIN), stale: true, word: 'busy' };
     return live;
   });
   mocks.set('wall2_ytlive_chat', (): LiveChat => {
     const k = knob('yt') ?? 'none';
     const t = now();
-    const ok: LiveChat = { state: 'ok', messages: messages(k, t), readAt: t - 4000, stale: false, stoppedAt: null, word: null };
-    if (k === 'stale') return { ...ok, readAt: t - 14 * MIN, stale: true };
-    if (k === 'quota') return { ...ok, state: 'quota', stoppedAt: t - 43 * MIN, word: 'quota' };
+    const ok: LiveChat = { state: 'ok', messages: messages(k, t), readAt: sec(t - 4000), stale: false, stoppedAt: null, word: null };
+    if (k === 'stale') return { ...ok, readAt: sec(t - 14 * MIN), stale: true };
+    if (k === 'quota') return { ...ok, state: 'quota', stoppedAt: sec(t - 43 * MIN), word: 'quota' };
     if (k === 'refused') return { state: 'off', messages: [], readAt: null, stale: false, stoppedAt: null, word: 'refused' };
     return ok;
   });
