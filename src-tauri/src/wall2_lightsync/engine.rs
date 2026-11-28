@@ -191,7 +191,7 @@ impl Settings {
             floor: clamp_or(s.floor, 0.05, 0.6, 0.35).min(brightness - 0.1),
             bass_gain: clamp_or(s.bass_gain, 0.0, 2.0, 1.0),
             high_gain: clamp_or(s.high_gain, 0.0, 2.0, 1.0),
-            kick_flash: clamp_or(s.kick_flash, 0.0, 1.0, 0.25),
+            kick_flash: clamp_or(s.kick_flash, 0.0, 1.0, 0.4),
             attack_ms: clamp_or(s.attack_ms, 40.0, 400.0, 150.0),
             release_ms: clamp_or(s.release_ms, 200.0, 2000.0, 900.0),
             ripple_ms: clamp_or(s.ripple_ms, 200.0, 1500.0, 600.0),
@@ -207,7 +207,7 @@ impl Settings {
             level_window: clamp_or(s.level_window, 1.0, 12.0, 8.0).round(),
             drift_ms: clamp_or(s.drift_ms, 2000.0, 30000.0, 10000.0),
             beat_nudge: clamp_or(s.beat_nudge, 0.0, 0.25, 0.04),
-            min_pulse_gap_ms: clamp_or(s.min_pulse_gap_ms, 340.0, 1000.0, 500.0),
+            min_pulse_gap_ms: clamp_or(s.min_pulse_gap_ms, 340.0, 1000.0, 400.0),
             slew_down: clamp_or(s.slew_down, 0.3, 5.0, 0.8),
             auto_level: s.auto_level.unwrap_or(false),
         }
