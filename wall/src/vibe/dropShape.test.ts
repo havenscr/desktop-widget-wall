@@ -82,6 +82,19 @@ describe('Beat hits', () => {
     expect(hit(s, 10, 1)).toBe(true);
     expect(s.drops[0]).toBe(10);
   });
+  it('with the look Off a hit neither stamps nor uses up the limiter', () => {
+    const s = createVibeState();
+    expect(hit(s, 10, 1, on({ beatHits: 'light', dropGlitch: 'off' }))).toBe(false);
+    expect(s.lastBeatHitAt).toBe(-Infinity);
+    expect(s.drops.every((d) => d === -Infinity)).toBe(true);
+    expect(hit(s, 10.5, 1)).toBe(true);
+  });
+  it('a limiter time ahead of the clock blocks nothing', () => {
+    const s = createVibeState();
+    s.lastBeatHitAt = 500;
+    s.lastDropAt = 500;
+    expect(hit(s, 10, 1)).toBe(true);
+  });
   it('at most once every 4 s', () => {
     const s = createVibeState();
     expect(hit(s, 10, 1)).toBe(true);

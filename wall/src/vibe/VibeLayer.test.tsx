@@ -6,6 +6,7 @@ import { resetVibeStore, useVibeStore } from '../horizon/vibeSettings';
 import { VibeLayer, resetVibeLimiter, vibeLimiterTimes } from './VibeLayer';
 import type { LoopHost } from './loop';
 import { stubCanvas } from './testCanvas';
+import { fireTry } from './tryIt';
 // @ts-ignore node's own file call; the stylesheet rules are read as text.
 import { readFileSync } from 'node:fs';
 
@@ -77,6 +78,7 @@ beforeEach(() => {
   resetVibeStore();
   vi.stubGlobal('ResizeObserver', RO);
   fakeDrops.count = 0;
+  fakeDrops.lastAt = -Infinity;
   fakeBeats.on = false;
   fakeBeats.count = 0;
   vi.spyOn(Element.prototype, 'getBoundingClientRect').mockImplementation(() => ({
@@ -413,6 +415,84 @@ describe('the vibe back layer', () => {
     fakeBeats.count += 1;
     second.frames(hitAt * 1000 + 1000, 4);
     expect(vibeLimiterTimes().lastBeatHitAt).toBe(hitAt);
+  });
+
+  it('a remount right after a drop keeps the drop limiter: a beat hit inside 2 s of it is blocked', () => {
+    act(() => useVibeStore.getState().setVibe({ beatHits: 'light' }));
+    fakeBeats.on = true;
+    fakeDrops.lastAt = 10500;
+    const m = manual();
+    mount(m.host, true, true);
+    playFor(4000);
+    m.frames(10900, 10);
+    fakeBeats.count += 1;
+    m.frames(11000, 4);
+    expect(vibeLimiterTimes().lastBeatHitAt).toBe(-Infinity);
+    fakeBeats.count += 1;
+    m.frames(12600, 4);
+    expect(vibeLimiterTimes().lastBeatHitAt).toBeGreaterThan(12.5);
+  });
+
+  it('a limiter time ahead of the clock does not block a hit', () => {
+    act(() => useVibeStore.getState().setVibe({ beatHits: 'light' }));
+    fakeBeats.on = true;
+    const first = manual();
+    mount(first.host, true, true);
+    playFor(4000);
+    first.frames(50000, 30);
+    fakeBeats.count += 1;
+    first.frames(51000, 4);
+    expect(vibeLimiterTimes().lastBeatHitAt).toBeGreaterThan(50.9);
+    cleanup();
+    const second = manual();
+    mount(second.host, true, true);
+    playFor(4000);
+    second.frames(10000, 10);
+    fakeBeats.count += 1;
+    second.frames(11000, 4);
+    const at = vibeLimiterTimes().lastBeatHitAt;
+    expect(at).toBeGreaterThan(10.9);
+    expect(at).toBeLessThan(12);
+  });
+
+  it('beats while the look is Off do not use up the beat hit limiter, so the first hit after turning it on shows', () => {
+    act(() => useVibeStore.getState().setVibe({ beatHits: 'light', dropGlitch: 'off' }));
+    fakeBeats.on = true;
+    const m = manual();
+    mount(m.host, true, true);
+    playFor(4000);
+    m.frames(10000, 30);
+    fakeBeats.count += 1;
+    m.frames(11000, 4);
+    expect(vibeLimiterTimes().lastBeatHitAt).toBe(-Infinity);
+    act(() => useVibeStore.getState().setVibe({ dropGlitch: 'tear' }));
+    fakeBeats.count += 1;
+    m.frames(12000, 4);
+    expect(vibeLimiterTimes().lastBeatHitAt).toBeGreaterThan(11.9);
+  });
+
+  it('Try it fires the chosen look once, and nothing with the look Off', () => {
+    const tears = (look: 'tear' | 'off') => {
+      cleanup();
+      localStorage.clear();
+      resetVibeStore();
+      const m = manual();
+      act(() => useVibeStore.getState().setVibe({ auto: false, dropGlitch: look }));
+      const { rec, hz } = mount(m.host, true, true);
+      playFor(4000);
+      m.frames(10000, 60);
+      rec.calls.length = 0;
+      act(() => fireTry());
+      m.frames(20000, 20);
+      const during = rec.calls.filter((c) => c[0] === 'drawImage' && c[1] === hz).length;
+      rec.calls.length = 0;
+      m.frames(40000, 40);
+      return [during, rec.calls.filter((c) => c[0] === 'drawImage' && c[1] === hz).length];
+    };
+    const tear = tears('tear');
+    expect(tear[0]).toBeGreaterThan(5);
+    expect(tear[1]).toBe(0);
+    expect(tears('off')).toEqual([0, 0]);
   });
 
   it('when frames run over budget the grain eases to zero in steps instead of cutting', () => {

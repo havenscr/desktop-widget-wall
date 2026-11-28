@@ -56,6 +56,8 @@ export const BEAT_HIT_GAP_S = 4;
 export const BEAT_HIT_AFTER_DROP_S = 2;
 /** A drop that fires within this long after a beat hit takes over: the hit's glitch ends early and the drop plays. */
 export const BEAT_HIT_YIELD_S = 0.3;
+/** A hit weaker than this (power times the level) draws nothing: glitch.ts skips under 0.01, and Calm cap halves the level. */
+export const BEAT_HIT_MIN_POWER = 0.02;
 /** Strength never goes past this, so Hard on a full drop stays close to today's top. */
 export const POWER_CAP = 1.15;
 /** Below this the swell tail counts as finished (about 2.6 s after a drop) and is exactly 0. */
@@ -192,8 +194,14 @@ export function noteDrop(s: VibeState, nowS: number, strength = 1, settings?: Vi
  */
 export function noteBeatHit(s: VibeState, nowS: number, beatStrength: number, settings: VibeSettings): boolean {
   if (settings.beatHits !== 'light' || !(beatStrength >= BEAT_HIT_MIN_STRENGTH)) return false;
-  if (nowS - s.lastBeatHitAt < BEAT_HIT_GAP_S || nowS - s.lastDropAt < BEAT_HIT_AFTER_DROP_S) return false;
-  s.beatSlot = stamp(s, nowS, powerOf(BEAT_HIT_POWER, settings), durOf(settings), 0);
+  // Nothing is drawn with the look Off or a hit too weak to see, so such a hit neither stamps nor uses up the limiter.
+  const power = powerOf(BEAT_HIT_POWER, settings);
+  if (settings.dropGlitch === 'off' || power < BEAT_HIT_MIN_POWER) return false;
+  // A limiter time ahead of the clock (a restarted clock) blocks nothing.
+  const sinceHit = nowS - s.lastBeatHitAt;
+  const sinceDrop = nowS - s.lastDropAt;
+  if ((sinceHit >= 0 && sinceHit < BEAT_HIT_GAP_S) || (sinceDrop >= 0 && sinceDrop < BEAT_HIT_AFTER_DROP_S)) return false;
+  s.beatSlot = stamp(s, nowS, power, durOf(settings), 0);
   s.lastBeatHitAt = nowS;
   return true;
 }

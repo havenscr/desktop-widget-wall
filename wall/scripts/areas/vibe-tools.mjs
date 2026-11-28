@@ -8,19 +8,21 @@ const TOOLS_Q = `?hz=work&at=${at}&clock=review&weather=ok&agents=3&tools=vibe`;
 // The sheet's body scrolls by design now (a tall Drop Glitch card), so the controls themselves are not held inside the box.
 const SHEET = ['.w-sheet'];
 const DRAWER = ['.tools-drawer', '.tools-drawer .tools-rail', '.tools-drawer .tools-panel:not([hidden])', '.tools-drawer .ln-vibe'];
-const NAMES = ['Vibe, the Unwind page', 'Vibe, the Tools group', 'Vibe, the Unwind page, Drop Glitch Off', 'Vibe, the Tools group, Drop Glitch Off'];
+const NAMES = ['Vibe, the Unwind page', 'Vibe, the Tools group', 'Vibe, the Unwind page, Drop Glitch Off', 'Vibe, the Tools group, Drop Glitch Off', 'Vibe, the Tools group, Tune when it fires open'];
 
 // Runs in the page. References nothing outside its body.
 function measureVibe() {
   const root = [...document.querySelectorAll('.ln-vibe')].find((r) => r.getClientRects().length > 0);
   if (!root) return { found: false, fails: [] };
   const fails = [];
+  const tuneOpen = !!root.querySelector('.dg-tune:not([hidden])');
   const r1 = (n) => Math.round(n * 10) / 10;
   const box = root.closest('.w-sheet') || root.closest('.tools-drawer');
   const inSheet = !!root.closest('.w-sheet');
   // No scroll bar: every ancestor up to the box, and the box itself, fits its content.
   for (let el = root; el && el !== box.parentElement; el = el.parentElement) {
-    if (!(inSheet && el.classList.contains('ln-body')) && el.scrollHeight > el.clientHeight + 1 && getComputedStyle(el).overflowY !== 'visible') fails.push('vibe: a scroll bar would show on ' + (el.className || el.tagName) + ' (' + el.scrollHeight + ' px of content in ' + el.clientHeight + ' px)');
+    // The Tools drawer's body may scroll once Tune is open (it fades at the bottom); the drawer itself still ends by y 697.
+    if (!(inSheet && el.classList.contains('ln-body')) && !(!inSheet && tuneOpen && el.classList.contains('tools-body')) && el.scrollHeight > el.clientHeight + 1 && getComputedStyle(el).overflowY !== 'visible') fails.push('vibe: a scroll bar would show on ' + (el.className || el.tagName) + ' (' + el.scrollHeight + ' px of content in ' + el.clientHeight + ' px)');
   }
   // The sheet's body scrolls by design (the Drop Glitch card is tall, with a fade at the bottom); the Tools drawer never does.
   const body = root.closest('.ln-body');
@@ -65,7 +67,7 @@ function measureVibe() {
   const groups = shown('[role="radiogroup"]');
   const switches = shown('[role="switch"]');
   const sliders = shown('input[type="range"]');
-  const tuneShown = !!root.querySelector('.dg-tune:not([hidden])');
+  const tuneShown = tuneOpen;
   // Every control and text keeps at least a 16 px gutter from the box's edges on both sides.
   const edge = root.closest('.w-sheet') || box;
   const er = edge.getBoundingClientRect();
@@ -117,6 +119,7 @@ export default {
       { name: NAMES[1], q: TOOLS_Q, checks: DRAWER, viewportOnly: true },
       { name: NAMES[2], q: UNWIND + '&vglitch=off', checks: SHEET, viewportOnly: true },
       { name: NAMES[3], q: TOOLS_Q + '&audio=demo&vglitch=off', checks: DRAWER, viewportOnly: true },
+      { name: NAMES[4], q: TOOLS_Q, checks: ['.tools-drawer'], click: '.tools-drawer .dg-fold', viewportOnly: true },
     ],
     measurements: { vibe: measureVibe },
     rules: { vibe: ruleVibe },
