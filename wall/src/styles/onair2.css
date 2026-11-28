@@ -369,9 +369,11 @@
 .oa2-sp-note[data-failed='true'] { color: var(--amber); }
 .oa2-lights-live { left: 1796px; top: 328px; width: 620px; height: 154px; }
 .oa2-lights-live > .st-block { height: 148px; }
-/* The studio keys: eight equal keys, two rows of four, under the heading. Rule A: one key style; the colour variable
+/* The studio keys: seven keys, a row of three scene keys and a row of four, under the heading. Rule A: one key style; the colour variable
    follows the key's kind (data-skind, never data-kind) and the glow and armed state sit on top of it. Rule B: icon above, label below, centred, 16 px, one line. */
-.oa2-skgrid { position: relative; margin-top: 4px; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); grid-template-rows: repeat(2, 76px); gap: 8px; }
+.oa2-skgrid { position: relative; margin-top: 4px; display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); grid-template-rows: repeat(2, 76px); gap: 8px; }
+.oa2-skgrid > .key-tile { grid-column: span 3; }
+.oa2-skgrid > .key-tile:nth-child(-n + 3) { grid-column: span 4; }
 .oa2 .oa2-studiokeys .deck-tile.key-tile { --g: 183, 175, 214; height: 76px; grid-template-rows: 22px 20px; row-gap: 4px; padding: 0 8px; font-size: 16px; line-height: 20px; justify-items: center; align-content: center; text-align: center; }
 .oa2 .oa2-studiokeys .deck-tile.key-tile[data-skind='scene'] { --g: 53, 230, 234; }
 .oa2 .oa2-studiokeys .deck-tile.key-tile[data-skind='mic'] { --g: 154, 123, 255; }

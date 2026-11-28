@@ -10,7 +10,7 @@ import { StudioStatus } from './StudioStatus';
 import { refusalText, STUDIO_CONFIRM_MS, STUDIO_FULL_MAX, studioAnswerText } from './studioModel';
 import onair2Raw from '../../styles/onair2.css?raw';
 import workRaw from '../../styles/work.css?raw';
-import { DEFAULT_SLOTS, LABEL_MAX_PX, PICKER_ORDER, SLOT_INFO, SLOTS_KEY, fitLabel, loadSlots, measureLabel, parseSlots, saveSlots, toggleLabel } from './studioSlots';
+import { DEFAULT_SLOTS, LABEL_MAX_PX, SCENE_LABEL_MAX_PX, labelMaxPx, PICKER_ORDER, SLOT_INFO, SLOTS_KEY, fitLabel, loadSlots, measureLabel, parseSlots, saveSlots, toggleLabel } from './studioSlots';
 import { useStudio } from './studioStore';
 
 /** The stylesheets as text, with line endings the same on every checkout. */
@@ -69,7 +69,7 @@ it('never shows a keys file button: Find window with no window, a quiet Find win
   state = 'none';
   await open();
   const tiles = [...document.querySelectorAll('.oa2-skgrid .key-tile')];
-  expect(tiles.map((t) => t.getAttribute('aria-label'))).toEqual(['Full Screen Speaker', 'Presenter View', '2 Person Presenter View', 'Screenshare', 'Mute mic', 'Camera off', 'Mark a moment', 'Go live']);
+  expect(tiles.map((t) => t.getAttribute('aria-label'))).toEqual(['Presenter View', '2 Person Presenter View', 'Screenshare', 'Mute mic', 'Camera off', 'Mark a moment', 'Go live']);
   expect(tiles.some((t) => t.classList.contains('off') || t.hasAttribute('aria-disabled'))).toBe(false);
   const head = document.querySelector('.oa2-studiokeys .oa2-hd') as HTMLElement;
   const needle = ['Open', 'keys', 'file'].join(' ');
@@ -153,32 +153,32 @@ it('the status block warns in amber when the window is minimized', async () => {
   expect(line.getAttribute('data-warn')).toBe('true');
 });
 
-it('shows eight equal keys in two rows of four, defaults in order, short scene labels with full names in the key hover', async () => {
+it('shows seven keys in two rows (three scene keys, then four), defaults in order, short scene labels with full names in the key hover', async () => {
   await open();
   const t = tiles();
-  expect(t.length).toBe(8);
-  expect(t.map((k) => k.getAttribute('data-key'))).toEqual(['scene1', 'scene2', 'scene3', 'scene4', 'mute', 'camera', 'mark', 'golive']);
-  expect(t.map((k) => k.querySelector('.deck-lbl')?.textContent)).toEqual(['Speaker', 'Presenter', '2 Person', 'Screenshare', 'Mute mic', 'Camera off', 'Mark a moment', 'Go live']);
+  expect(t.length).toBe(7);
+  expect(t.map((k) => k.getAttribute('data-key'))).toEqual(['scene2', 'scene3', 'scene4', 'mute', 'camera', 'mark', 'golive']);
+  expect(t.map((k) => k.querySelector('.deck-lbl')?.textContent)).toEqual(['Presenter', '2 Person', 'Screenshare', 'Mute mic', 'Camera off', 'Mark a moment', 'Go live']);
   const grid = document.querySelector('.oa2-skgrid') as HTMLElement;
-  expect(grid.querySelectorAll('.key-tile').length).toBe(8);
+  expect(grid.querySelectorAll('.key-tile').length).toBe(7);
 });
 
 it('right-click opens the picker with the StreamYard group then the Wall group, and a pick survives a reload', async () => {
   await open();
-  rightClick(tiles()[7]);
+  rightClick(tiles()[6]);
   const dlg = screen.getByRole('dialog');
   const heads = [...dlg.querySelectorAll('.pk-gh')].map((h) => h.textContent);
   expect(heads).toEqual(['StreamYard', 'Wall']);
   const rows = [...dlg.querySelectorAll('.pk-row')].map((r) => r.getAttribute('aria-label'));
-  expect(rows).toEqual(['Full Screen Speaker', 'Presenter View', '2 Person Presenter View', 'Screenshare', 'Mute mic', 'Camera off', 'Share', 'Go live', 'Solo', 'Two up', 'Mark a moment', 'Snip', 'Hide screen']);
+  expect(rows).toEqual(['Presenter View', '2 Person Presenter View', 'Screenshare', 'Mute mic', 'Camera off', 'Share', 'Go live', 'Solo', 'Two up', 'Mark a moment', 'Snip', 'Hide screen']);
   expect(dlg.querySelector('input[aria-label="Label"]')).toBeNull();
   fireEvent.click(screen.getByRole('button', { name: 'Snip' }));
   expect(screen.queryByRole('dialog')).toBeNull();
-  expect(tiles()[7].getAttribute('data-key')).toBe('snip');
-  expect(JSON.parse(localStorage.getItem(SLOTS_KEY) ?? '')[7]).toEqual({ a: 'snip' });
+  expect(tiles()[6].getAttribute('data-key')).toBe('snip');
+  expect(JSON.parse(localStorage.getItem(SLOTS_KEY) ?? '')[6]).toEqual({ a: 'snip' });
   cleanup();
   await open();
-  expect(tiles()[7].getAttribute('data-key')).toBe('snip');
+  expect(tiles()[6].getAttribute('data-key')).toBe('snip');
 });
 
 it('a scene key has a Label field that renames the key and keeps the full name in its aria name', async () => {
@@ -187,15 +187,15 @@ it('a scene key has a Label field that renames the key and keeps the full name i
   const field = screen.getByLabelText('Label') as HTMLInputElement;
   fireEvent.change(field, { target: { value: 'Host' } });
   expect(tiles()[0].querySelector('.deck-lbl')?.textContent).toBe('Host');
-  expect(tiles()[0].getAttribute('aria-label')).toBe('Host, Full Screen Speaker');
-  expect(JSON.parse(localStorage.getItem(SLOTS_KEY) ?? '')[0]).toEqual({ a: 'scene1', l: 'Host' });
+  expect(tiles()[0].getAttribute('aria-label')).toBe('Host, Presenter View');
+  expect(JSON.parse(localStorage.getItem(SLOTS_KEY) ?? '')[0]).toEqual({ a: 'scene2', l: 'Host' });
 });
 
 it('a bad stored value falls back to the defaults', async () => {
-  for (const bad of ['not json', '[]', JSON.stringify(Array(8).fill({ a: 'nope' })), JSON.stringify([...DEFAULT_SLOTS.slice(0, 7), 5])]) {
+  for (const bad of ['not json', '[]', JSON.stringify(Array(7).fill({ a: 'nope' })), JSON.stringify([...DEFAULT_SLOTS.slice(0, 6), 5])]) {
     localStorage.setItem(SLOTS_KEY, bad);
     render(both());
-    expect(tiles().map((k) => k.getAttribute('data-key'))).toEqual(['scene1', 'scene2', 'scene3', 'scene4', 'mute', 'camera', 'mark', 'golive']);
+    expect(tiles().map((k) => k.getAttribute('data-key'))).toEqual(['scene2', 'scene3', 'scene4', 'mute', 'camera', 'mark', 'golive']);
     cleanup();
   }
 });
@@ -208,14 +208,13 @@ it('scene, mute and camera keys send the right action, the scene by its full nam
   });
   localStorage.setItem(SLOTS_KEY, JSON.stringify(DEFAULT_SLOTS.map((d) => (d.a === 'scene2' ? { a: 'scene2', l: 'Panel' } : d))));
   await open();
-  const order = [0, 1, 4, 5];
+  const order = [0, 3, 4];
   for (const i of order) {
     fireEvent.click(tiles()[i], { detail: 1 });
     await waitFor(() => expect(calls.length).toBe(order.indexOf(i) + 1));
     await act(async () => void (await new Promise((r) => setTimeout(r, 100))));
   }
   expect(calls).toEqual([
-    { action: 'scene', name: 'Full Screen Speaker' },
     { action: 'scene', name: 'Presenter View' },
     { action: 'mute', name: null },
     { action: 'camera', name: null },
@@ -232,14 +231,14 @@ it('the answer shows on the key as a short reason that clears, and a miss does n
   expect(tiles()[0].getAttribute('data-last')).toBeNull();
   expect(screen.getAllByText('StreamYard has no scene by that name').length).toBeGreaterThan(0);
   await waitFor(() => expect(tiles()[0].getAttribute('data-note')).toBeNull(), { timeout: 4000 });
-  expect(tiles()[0].querySelector('.oa2-sklbl')!.textContent).toBe('Speaker');
+  expect(tiles()[0].querySelector('.oa2-sklbl')!.textContent).toBe('Presenter');
 });
 
 it('a good answer glows the key, and every reason has a short text that fits a key', async () => {
   mocks.set('wall2_stagepop_studio', () => ({ ok: true, reason: 'ok' }));
   await open();
-  fireEvent.click(tiles()[4], { detail: 1 });
-  await waitFor(() => expect(tiles()[4].getAttribute('data-last')).toBe('true'));
+  fireEvent.click(tiles()[3], { detail: 1 });
+  await waitFor(() => expect(tiles()[3].getAttribute('data-last')).toBe('true'));
   for (const r of ['ok', 'not found', 'studio not open', 'not connected', 'no answer', 'refused', 'failed'] as const) {
     const t = studioAnswerText({ ok: r === 'ok', reason: r });
     expect(measureLabel(t.short)).toBeLessThanOrEqual(LABEL_MAX_PX);
@@ -273,7 +272,7 @@ it('a miss says which step failed, in words that fit the key and the heading, an
   for (const r of ['ok', 'already', 'busy', 'not found', 'studio not open', 'not connected', 'no answer', 'refused', 'failed'] as const) {
     expect(studioAnswerText({ ok: r === 'ok' || r === 'already', reason: r }, 'scene').full.length).toBeLessThanOrEqual(STUDIO_FULL_MAX);
   }
-  for (const a of ['scene1', 'scene2', 'scene3', 'scene4', 'mute', 'camera'] as const) {
+  for (const a of ['scene2', 'scene3', 'scene4', 'mute', 'camera'] as const) {
     expect(`${SLOT_INFO[a].full}: ${studioAnswerText({ ok: true, reason: 'ok' }).full}`.length).toBeLessThanOrEqual(STUDIO_FULL_MAX);
   }
 });
@@ -281,9 +280,9 @@ it('a miss says which step failed, in words that fit the key and the heading, an
 it('already muted and busy show short texts that fit a key', async () => {
   mocks.set('wall2_stagepop_studio', () => ({ ok: true, reason: 'already' }));
   await open();
-  fireEvent.click(tiles()[4], { detail: 1 });
-  await waitFor(() => expect(tiles()[4].querySelector('.oa2-sklbl')!.textContent).toBe('Already muted'));
-  expect(tiles()[4].getAttribute('data-note')).toBe('ok');
+  fireEvent.click(tiles()[3], { detail: 1 });
+  await waitFor(() => expect(tiles()[3].querySelector('.oa2-sklbl')!.textContent).toBe('Already muted'));
+  expect(tiles()[3].getAttribute('data-note')).toBe('ok');
   expect(studioAnswerText({ ok: true, reason: 'already' }, 'camera').short).toBe('Already off');
   for (const t of [studioAnswerText({ ok: true, reason: 'already' }, 'mute'), studioAnswerText({ ok: true, reason: 'already' }, 'camera'), studioAnswerText({ ok: false, reason: 'busy' })]) {
     expect(measureLabel(t.short)).toBeLessThanOrEqual(LABEL_MAX_PX);
@@ -296,16 +295,16 @@ it('the mic key turns into Unmute mic when the add-on says the mic is off, and b
   let reply: { ok: boolean; reason: string; state?: string } = { ok: true, reason: 'ok', state: 'off' };
   mocks.set('wall2_stagepop_studio', () => reply);
   await open();
-  expect(face(4)).toBe('Mute mic');
-  fireEvent.click(tiles()[4], { detail: 1 });
-  await waitFor(() => expect(face(4)).toBe('Unmute mic'));
-  await waitFor(() => expect(tiles()[4].querySelector('.oa2-sklbl')!.textContent).toBe('Mic muted'));
+  expect(face(3)).toBe('Mute mic');
+  fireEvent.click(tiles()[3], { detail: 1 });
+  await waitFor(() => expect(face(3)).toBe('Unmute mic'));
+  await waitFor(() => expect(tiles()[3].querySelector('.oa2-sklbl')!.textContent).toBe('Mic muted'));
   expect(document.querySelector('.oa2-studiokeys .oa2-brief')!.textContent).toContain('The mic is muted');
-  await waitFor(() => expect(tiles()[4].querySelector('.oa2-sklbl')!.textContent).toBe('Unmute mic'), { timeout: 4000 });
+  await waitFor(() => expect(tiles()[3].querySelector('.oa2-sklbl')!.textContent).toBe('Unmute mic'), { timeout: 4000 });
   reply = { ok: true, reason: 'ok', state: 'on' };
-  fireEvent.click(tiles()[4], { detail: 1 });
-  await waitFor(() => expect(face(4)).toBe('Mute mic'));
-  await waitFor(() => expect(tiles()[4].querySelector('.oa2-sklbl')!.textContent).toBe('Mic live'));
+  fireEvent.click(tiles()[3], { detail: 1 });
+  await waitFor(() => expect(face(3)).toBe('Mute mic'));
+  await waitFor(() => expect(tiles()[3].querySelector('.oa2-sklbl')!.textContent).toBe('Mic live'));
   expect(document.querySelector('.oa2-studiokeys .oa2-brief')!.textContent).toContain('The mic is live');
 });
 
@@ -313,71 +312,71 @@ it('an answer with no state leaves the key face alone, and an old already answer
   let reply: { ok: boolean; reason: string } = { ok: true, reason: 'ok' };
   mocks.set('wall2_stagepop_studio', () => reply);
   await open();
-  fireEvent.click(tiles()[4], { detail: 1 });
-  await waitFor(() => expect(tiles()[4].querySelector('.oa2-sklbl')!.textContent).toBe('Sent'));
-  expect(face(4)).toBe('Mute mic');
+  fireEvent.click(tiles()[3], { detail: 1 });
+  await waitFor(() => expect(tiles()[3].querySelector('.oa2-sklbl')!.textContent).toBe('Sent'));
+  expect(face(3)).toBe('Mute mic');
   reply = { ok: true, reason: 'already' };
-  await waitFor(() => expect(tiles()[4].querySelector('.oa2-sklbl')!.textContent).toBe('Mute mic'), { timeout: 4000 });
-  fireEvent.click(tiles()[4], { detail: 1 });
-  await waitFor(() => expect(tiles()[4].querySelector('.oa2-sklbl')!.textContent).toBe('Already muted'));
-  expect(face(4)).toBe('Unmute mic');
+  await waitFor(() => expect(tiles()[3].querySelector('.oa2-sklbl')!.textContent).toBe('Mute mic'), { timeout: 4000 });
+  fireEvent.click(tiles()[3], { detail: 1 });
+  await waitFor(() => expect(tiles()[3].querySelector('.oa2-sklbl')!.textContent).toBe('Already muted'));
+  expect(face(3)).toBe('Unmute mic');
   // A later answer without a state keeps it.
   reply = { ok: true, reason: 'ok' };
-  await waitFor(() => expect(tiles()[4].querySelector('.oa2-sklbl')!.textContent).toBe('Unmute mic'), { timeout: 4000 });
-  fireEvent.click(tiles()[4], { detail: 1 });
-  await waitFor(() => expect(tiles()[4].querySelector('.oa2-sklbl')!.textContent).toBe('Sent'));
-  expect(face(4)).toBe('Unmute mic');
+  await waitFor(() => expect(tiles()[3].querySelector('.oa2-sklbl')!.textContent).toBe('Unmute mic'), { timeout: 4000 });
+  fireEvent.click(tiles()[3], { detail: 1 });
+  await waitFor(() => expect(tiles()[3].querySelector('.oa2-sklbl')!.textContent).toBe('Sent'));
+  expect(face(3)).toBe('Unmute mic');
 });
 
 it('the camera key turns into Camera on when the camera is off, and a not found miss keeps that face', async () => {
   let reply: { ok: boolean; reason: string; state?: string } = { ok: true, reason: 'ok', state: 'off' };
   mocks.set('wall2_stagepop_studio', () => reply);
   await open();
-  expect(face(5)).toBe('Camera off');
-  fireEvent.click(tiles()[5], { detail: 1 });
-  await waitFor(() => expect(face(5)).toBe('Camera on'));
-  await waitFor(() => expect(tiles()[5].querySelector('.oa2-sklbl')!.textContent).toBe('Camera off'));
+  expect(face(4)).toBe('Camera off');
+  fireEvent.click(tiles()[4], { detail: 1 });
+  await waitFor(() => expect(face(4)).toBe('Camera on'));
+  await waitFor(() => expect(tiles()[4].querySelector('.oa2-sklbl')!.textContent).toBe('Camera off'));
   expect(document.querySelector('.oa2-studiokeys .oa2-brief')!.textContent).toContain('The camera is off');
-  await waitFor(() => expect(tiles()[5].querySelector('.oa2-sklbl')!.textContent).toBe('Camera on'), { timeout: 4000 });
+  await waitFor(() => expect(tiles()[4].querySelector('.oa2-sklbl')!.textContent).toBe('Camera on'), { timeout: 4000 });
   reply = { ok: false, reason: 'not found', state: 'on' };
-  fireEvent.click(tiles()[5], { detail: 1 });
-  await waitFor(() => expect(tiles()[5].querySelector('.oa2-sklbl')!.textContent).toBe('Not found'));
-  expect(face(5)).toBe('Camera on');
+  fireEvent.click(tiles()[4], { detail: 1 });
+  await waitFor(() => expect(tiles()[4].querySelector('.oa2-sklbl')!.textContent).toBe('Not found'));
+  expect(face(4)).toBe('Camera on');
 });
 
 it('the mic and camera state survives an unmount and a remount', async () => {
   mocks.set('wall2_stagepop_studio', () => ({ ok: true, reason: 'ok', state: 'off' }));
   await open();
+  fireEvent.click(tiles()[3], { detail: 1 });
+  await waitFor(() => expect(face(3)).toBe('Unmute mic'));
+  await waitFor(() => expect(tiles()[3].querySelector('.oa2-sklbl')!.textContent).toBe('Unmute mic'), { timeout: 4000 });
   fireEvent.click(tiles()[4], { detail: 1 });
-  await waitFor(() => expect(face(4)).toBe('Unmute mic'));
-  await waitFor(() => expect(tiles()[4].querySelector('.oa2-sklbl')!.textContent).toBe('Unmute mic'), { timeout: 4000 });
-  fireEvent.click(tiles()[5], { detail: 1 });
-  await waitFor(() => expect(face(5)).toBe('Camera on'));
+  await waitFor(() => expect(face(4)).toBe('Camera on'));
   cleanup();
   await open();
-  expect(face(4)).toBe('Unmute mic');
-  expect(face(5)).toBe('Camera on');
+  expect(face(3)).toBe('Unmute mic');
+  expect(face(4)).toBe('Camera on');
 });
 
 it('busy and not connected keep a known state, failed and no answer reset it', async () => {
   let reply: { ok: boolean; reason: string; state?: string } = { ok: true, reason: 'ok', state: 'off' };
   mocks.set('wall2_stagepop_studio', () => reply);
   await open();
-  fireEvent.click(tiles()[4], { detail: 1 });
-  await waitFor(() => expect(face(4)).toBe('Unmute mic'));
+  fireEvent.click(tiles()[3], { detail: 1 });
+  await waitFor(() => expect(face(3)).toBe('Unmute mic'));
   for (const reason of ['busy', 'not connected']) {
-    await waitFor(() => expect(tiles()[4].querySelector('.oa2-sklbl')!.textContent).toBe('Unmute mic'), { timeout: 4000 });
+    await waitFor(() => expect(tiles()[3].querySelector('.oa2-sklbl')!.textContent).toBe('Unmute mic'), { timeout: 4000 });
     reply = { ok: false, reason };
-    fireEvent.click(tiles()[4], { detail: 1 });
-    await waitFor(() => expect(tiles()[4].querySelector('.oa2-sklbl')!.textContent).not.toBe('Unmute mic'));
-    expect(face(4)).toBe('Unmute mic');
+    fireEvent.click(tiles()[3], { detail: 1 });
+    await waitFor(() => expect(tiles()[3].querySelector('.oa2-sklbl')!.textContent).not.toBe('Unmute mic'));
+    expect(face(3)).toBe('Unmute mic');
   }
   for (const reason of ['failed', 'no answer']) {
     act(() => useStudio.getState().setDevice('mute', 'off'));
-    await waitFor(() => expect(tiles()[4].querySelector('.oa2-sklbl')!.textContent).toBe('Unmute mic'), { timeout: 4000 });
+    await waitFor(() => expect(tiles()[3].querySelector('.oa2-sklbl')!.textContent).toBe('Unmute mic'), { timeout: 4000 });
     reply = { ok: false, reason };
-    fireEvent.click(tiles()[4], { detail: 1 });
-    await waitFor(() => expect(face(4)).toBe('Mute mic'));
+    fireEvent.click(tiles()[3], { detail: 1 });
+    await waitFor(() => expect(face(3)).toBe('Mute mic'));
   }
 });
 
@@ -385,33 +384,33 @@ it('a scene press leaves the mic and camera faces alone, and a mic miss leaves t
   let reply: { ok: boolean; reason: string; state?: string } = { ok: true, reason: 'ok', state: 'off' };
   mocks.set('wall2_stagepop_studio', () => reply);
   await open();
+  fireEvent.click(tiles()[3], { detail: 1 });
+  await waitFor(() => expect(face(3)).toBe('Unmute mic'));
+  await waitFor(() => expect(tiles()[3].querySelector('.oa2-sklbl')!.textContent).toBe('Unmute mic'), { timeout: 4000 });
   fireEvent.click(tiles()[4], { detail: 1 });
-  await waitFor(() => expect(face(4)).toBe('Unmute mic'));
-  await waitFor(() => expect(tiles()[4].querySelector('.oa2-sklbl')!.textContent).toBe('Unmute mic'), { timeout: 4000 });
-  fireEvent.click(tiles()[5], { detail: 1 });
-  await waitFor(() => expect(face(5)).toBe('Camera on'));
-  await waitFor(() => expect(tiles()[5].querySelector('.oa2-sklbl')!.textContent).toBe('Camera on'), { timeout: 4000 });
+  await waitFor(() => expect(face(4)).toBe('Camera on'));
+  await waitFor(() => expect(tiles()[4].querySelector('.oa2-sklbl')!.textContent).toBe('Camera on'), { timeout: 4000 });
   fireEvent.click(tiles()[0], { detail: 1 });
-  await waitFor(() => expect(tiles()[0].querySelector('.oa2-sklbl')!.textContent).not.toBe('Full Screen Speaker'));
-  expect(face(4)).toBe('Unmute mic');
-  expect(face(5)).toBe('Camera on');
-  await waitFor(() => expect(tiles()[4].querySelector('.oa2-sklbl')!.textContent).toBe('Unmute mic'), { timeout: 4000 });
+  await waitFor(() => expect(tiles()[0].querySelector('.oa2-sklbl')!.textContent).not.toBe('Presenter View'));
+  expect(face(3)).toBe('Unmute mic');
+  expect(face(4)).toBe('Camera on');
+  await waitFor(() => expect(tiles()[3].querySelector('.oa2-sklbl')!.textContent).toBe('Unmute mic'), { timeout: 4000 });
   reply = { ok: false, reason: 'failed' };
-  fireEvent.click(tiles()[4], { detail: 1 });
-  await waitFor(() => expect(face(4)).toBe('Mute mic'));
-  expect(face(5)).toBe('Camera on');
+  fireEvent.click(tiles()[3], { detail: 1 });
+  await waitFor(() => expect(face(3)).toBe('Mute mic'));
+  expect(face(4)).toBe('Camera on');
 });
 
 it('a failed mic answer returns the key to its default face', async () => {
   let reply: { ok: boolean; reason: string; state?: string } = { ok: true, reason: 'ok', state: 'off' };
   mocks.set('wall2_stagepop_studio', () => reply);
   await open();
-  fireEvent.click(tiles()[4], { detail: 1 });
-  await waitFor(() => expect(face(4)).toBe('Unmute mic'));
-  await waitFor(() => expect(tiles()[4].querySelector('.oa2-sklbl')!.textContent).toBe('Unmute mic'), { timeout: 4000 });
+  fireEvent.click(tiles()[3], { detail: 1 });
+  await waitFor(() => expect(face(3)).toBe('Unmute mic'));
+  await waitFor(() => expect(tiles()[3].querySelector('.oa2-sklbl')!.textContent).toBe('Unmute mic'), { timeout: 4000 });
   reply = { ok: false, reason: 'failed' };
-  fireEvent.click(tiles()[4], { detail: 1 });
-  await waitFor(() => expect(face(4)).toBe('Mute mic'));
+  fireEvent.click(tiles()[3], { detail: 1 });
+  await waitFor(() => expect(face(3)).toBe('Mute mic'));
 });
 
 it('toggle faces and their answer texts fit a key and the heading', () => {
@@ -437,10 +436,10 @@ it('Go live keeps its two clicks and does not use the add-on', async () => {
   const calls: unknown[] = [];
   mocks.set('wall2_stagepop_studio', (args) => (calls.push(args), { ok: true, reason: 'ok' }));
   await open();
-  fireEvent.click(tiles()[7], { detail: 1 });
+  fireEvent.click(tiles()[6], { detail: 1 });
   await act(async () => void (await new Promise((r) => setTimeout(r, 50))));
   expect(sends.length).toBe(0);
-  fireEvent.click(tiles()[7], { detail: 1 });
+  fireEvent.click(tiles()[6], { detail: 1 });
   await waitFor(() => expect(sends).toEqual([{ key: 'golive', confirm: true }]));
   expect(calls.length).toBe(0);
 });
@@ -471,10 +470,10 @@ it('rule A: studio keys carry a skind, never a data-kind, and every kind rule ou
   expect(tiles().some((k) => k.hasAttribute('data-kind'))).toBe(false);
   cleanup();
   const all = Object.values(PICKER_ORDER).flat();
-  for (let at = 0; at < all.length; at += 8) {
+  for (let at = 0; at < all.length; at += 7) {
     localStorage.setItem(SLOTS_KEY, JSON.stringify(DEFAULT_SLOTS.map((d, i) => (all[at + i] ? { a: all[at + i] } : d))));
     render(both());
-    expect(tiles().length).toBe(8);
+    expect(tiles().length).toBe(7);
     expect(tiles().some((k) => k.hasAttribute('data-kind'))).toBe(false);
     cleanup();
   }
@@ -507,14 +506,14 @@ it('centring: the key centres its icon and label with equal room above and below
 it('kind: each default key carries its colour kind, and End show keeps the Go live kind', async () => {
   await open();
   const kinds = tiles().map((k) => k.getAttribute('data-skind'));
-  expect(kinds).toEqual(['scene', 'scene', 'scene', 'scene', 'mic', 'camera', 'mark', 'golive']);
+  expect(kinds).toEqual(['scene', 'scene', 'scene', 'mic', 'camera', 'mark', 'golive']);
   cleanup();
   // While live, the Go live slot draws End show, and it keeps the Go live kind.
   liveStatus();
   render(both());
   const t = tiles();
-  expect(t[7].getAttribute('data-key')).toBe('end');
-  expect(t[7].getAttribute('data-skind')).toBe('golive');
+  expect(t[6].getAttribute('data-key')).toBe('end');
+  expect(t[6].getAttribute('data-skind')).toBe('golive');
 });
 
 it('kind colours: the stylesheet gives each kind its colour', () => {
@@ -524,12 +523,12 @@ it('kind colours: the stylesheet gives each kind its colour', () => {
 });
 
 it('rule B: a label too long for its key is shortened to one line, and the full name stays in the accessible name', async () => {
-  localStorage.setItem(SLOTS_KEY, JSON.stringify(DEFAULT_SLOTS.map((d, i) => (i === 0 ? { a: 'scene1', l: 'ABCDEFGHIJKLMNOP' } : d))));
+  localStorage.setItem(SLOTS_KEY, JSON.stringify(DEFAULT_SLOTS.map((d, i) => (i === 3 ? { a: 'scene2', l: 'ABCDEFGHIJKLMNOP' } : i === 0 ? { a: 'scene3', l: 'ABCDEFGHIJKLMNOP' } : d))));
   await open();
-  for (const k of tiles()) {
+  for (const [i, k] of tiles().entries()) {
     const text = k.querySelector('.deck-lbl')?.textContent ?? '';
     expect(text.includes('\n')).toBe(false);
-    expect(measureLabel(text)).toBeLessThanOrEqual(LABEL_MAX_PX);
+    expect(measureLabel(text)).toBeLessThanOrEqual(labelMaxPx(i));
     expect(k.getAttribute('aria-label')).toContain(text);
   }
   // Whatever the text, the drawn words are exactly what fitLabel gives for the full label, so no line can wrap.
@@ -540,10 +539,13 @@ it('rule B: a label too long for its key is shortened to one line, and the full 
     expect(measureLabel(fit)).toBeLessThanOrEqual(LABEL_MAX_PX);
     expect(fitLabel(fit, LABEL_MAX_PX, measureLabel)).toBe(fit);
   }
-  const long = tiles()[0];
+  // The scene row has the wider limit: the same label fits whole there and is cut on a row 2 key.
+  expect(SCENE_LABEL_MAX_PX).toBeGreaterThan(LABEL_MAX_PX);
+  expect(tiles()[0].querySelector('.deck-lbl')?.textContent).toBe('ABCDEFGHIJKLMNOP');
+  const long = tiles()[3];
   expect(long.querySelector('.deck-lbl')?.textContent?.endsWith('\u2026')).toBe(true);
   // The name holds the whole label and the drawn words.
-  expect(long.getAttribute('aria-label')).toBe('ABCDEFGHIJKLMN\u2026, ABCDEFGHIJKLMNOP, Full Screen Speaker');
+  expect(long.getAttribute('aria-label')).toMatch(/^ABCDEFGHIJKLM\w*\u2026, ABCDEFGHIJKLMNOP, Presenter View$/);
   const rule = ruleOf(onair2Css, '.oa2 .oa2-studiokeys .deck-tile.key-tile .deck-lbl.oa2-sklbl');
   expect(rule).toContain('white-space: nowrap');
   expect(rule).toContain('font-size: 16px');
@@ -583,8 +585,8 @@ it('two keys with the same action: only the one pressed glows', async () => {
 
 it('a pending Go live confirm does not follow a reassignment to another key', async () => {
   await open();
-  fireEvent.click(tiles()[7], { detail: 1 });
-  expect(tiles()[7].getAttribute('data-armed')).toBe('true');
+  fireEvent.click(tiles()[6], { detail: 1 });
+  expect(tiles()[6].getAttribute('data-armed')).toBe('true');
   rightClick(tiles()[0]);
   fireEvent.click(screen.getByRole('button', { name: 'Go live' }));
   expect(tiles()[0].getAttribute('data-key')).toBe('golive');
@@ -600,20 +602,20 @@ const liveStatus = (): void => {
 
 it('while live the Go live key is End show, glows per slot through the swap, and End show sends only while live', async () => {
   await open();
-  fireEvent.click(tiles()[7], { detail: 1 });
-  fireEvent.click(tiles()[7], { detail: 1 });
-  await waitFor(() => expect(tiles()[7].getAttribute('data-last')).toBe('true'));
+  fireEvent.click(tiles()[6], { detail: 1 });
+  fireEvent.click(tiles()[6], { detail: 1 });
+  await waitFor(() => expect(tiles()[6].getAttribute('data-last')).toBe('true'));
   act(() => liveStatus());
-  expect(tiles()[7].getAttribute('data-key')).toBe('end');
-  expect(tiles()[7].getAttribute('data-last')).toBe('true');
-  fireEvent.click(tiles()[7], { detail: 1 });
-  fireEvent.click(tiles()[7], { detail: 1 });
+  expect(tiles()[6].getAttribute('data-key')).toBe('end');
+  expect(tiles()[6].getAttribute('data-last')).toBe('true');
+  fireEvent.click(tiles()[6], { detail: 1 });
+  fireEvent.click(tiles()[6], { detail: 1 });
   await waitFor(() => expect(sends.map((x) => x.key)).toEqual(['golive', 'end']));
   // Back to not live: the key is Go live again, still the one that glows, and no End show is sent.
   act(() => useYtLive.setState({ status: null }));
-  expect(tiles()[7].getAttribute('data-key')).toBe('golive');
-  expect(tiles()[7].getAttribute('data-last')).toBe('true');
-  fireEvent.click(tiles()[7], { detail: 1 });
+  expect(tiles()[6].getAttribute('data-key')).toBe('golive');
+  expect(tiles()[6].getAttribute('data-last')).toBe('true');
+  fireEvent.click(tiles()[6], { detail: 1 });
   expect(sends.map((x) => x.key)).toEqual(['golive', 'end']);
 });
 
@@ -635,8 +637,8 @@ it('two Go live keys: a confirm arms only the key pressed', async () => {
   await open();
   fireEvent.click(tiles()[0], { detail: 1 });
   expect(tiles()[0].getAttribute('data-armed')).toBe('true');
-  expect(tiles()[7].hasAttribute('data-armed')).toBe(false);
-  expect(tiles()[7].querySelector('.deck-lbl')?.textContent).toBe('Go live');
+  expect(tiles()[6].hasAttribute('data-armed')).toBe(false);
+  expect(tiles()[6].querySelector('.deck-lbl')?.textContent).toBe('Go live');
 });
 
 it('Snip through a slot also runs from the keyboard, as it is not a mouse-only key', async () => {
@@ -675,7 +677,7 @@ it('the picker opens from the keyboard, takes the focus, completes a pick, and r
   for (const press of [{ key: 'ContextMenu' }, { key: 'F10', shiftKey: true }]) {
     localStorage.clear();
     await open();
-    const key = tiles()[7];
+    const key = tiles()[6];
     key.focus();
     fireEvent.keyDown(key, press);
     const dlg = screen.getByRole('dialog');
@@ -686,8 +688,8 @@ it('the picker opens from the keyboard, takes the focus, completes a pick, and r
     // Enter on a button is a click.
     fireEvent.click(row);
     expect(screen.queryByRole('dialog')).toBeNull();
-    expect(tiles()[7].getAttribute('data-key')).not.toBe('golive');
-    await waitFor(() => expect(document.activeElement).toBe(tiles()[7]));
+    expect(tiles()[6].getAttribute('data-key')).not.toBe('golive');
+    await waitFor(() => expect(document.activeElement).toBe(tiles()[6]));
     cleanup();
   }
 });
@@ -696,27 +698,33 @@ it('Mark a moment is busy while it writes', async () => {
   let release: (v: unknown) => void = () => {};
   mocks.set('wall2_onair_mark', () => new Promise((r) => (release = r)));
   await open();
-  fireEvent.click(tiles()[6], { detail: 1 });
-  await waitFor(() => expect(tiles()[6].getAttribute('aria-busy')).toBe('true'));
+  fireEvent.click(tiles()[5], { detail: 1 });
+  await waitFor(() => expect(tiles()[5].getAttribute('aria-busy')).toBe('true'));
   await act(async () => release({ ok: true }));
+});
+
+it('a value stored with the retired Full Screen Speaker key loads without it', () => {
+  const old = ['scene1', 'scene2', 'scene3', 'scene4', 'mute', 'camera', 'mark', 'golive'].map((a) => ({ a }));
+  expect(parseSlots(JSON.stringify(old)).map((s) => s.a)).toEqual(DEFAULT_SLOTS.map((s) => s.a));
+  expect(Object.keys(SLOT_INFO)).not.toContain(['scene', '1'].join(''));
 });
 
 it('the slots are saved on a change and read back; bad stored data and a bad label are cleaned', () => {
   expect(parseSlots(null).map((s) => s.a)).toEqual(DEFAULT_SLOTS.map((s) => s.a));
-  const slots = DEFAULT_SLOTS.map((d, i) => (i === 0 ? { a: 'scene1' as const, l: 'Host' } : { ...d }));
+  const slots = DEFAULT_SLOTS.map((d, i) => (i === 0 ? { a: 'scene2' as const, l: 'Host' } : { ...d }));
   saveSlots(slots);
   expect(JSON.parse(localStorage.getItem(SLOTS_KEY) ?? '')).toEqual(slots);
   expect(loadSlots()).toEqual(slots);
   // A label on a key that is not a scene is dropped; a long one is cut to 16 characters.
-  const raw = JSON.stringify(DEFAULT_SLOTS.map((d, i) => (i === 0 ? { a: 'scene2', l: '  ' + 'x'.repeat(40) } : i === 4 ? { a: 'mute', l: 'Quiet' } : d)));
+  const raw = JSON.stringify(DEFAULT_SLOTS.map((d, i) => (i === 0 ? { a: 'scene2', l: '  ' + 'x'.repeat(40) } : i === 3 ? { a: 'mute', l: 'Quiet' } : d)));
   const out = parseSlots(raw);
   expect(out[0]).toEqual({ a: 'scene2', l: 'x'.repeat(16) });
-  expect(out[4]).toEqual({ a: 'mute' });
+  expect(out[3]).toEqual({ a: 'mute' });
   // A label that is not a string throws the whole value away; a label of only spaces is dropped.
-  expect(parseSlots(JSON.stringify(DEFAULT_SLOTS.map((d, i) => (i === 0 ? { a: 'scene1', l: 7 } : d)))).map((x) => x.l)).toEqual(Array(8).fill(undefined));
-  expect(parseSlots(JSON.stringify(DEFAULT_SLOTS.map((d, i) => (i === 0 ? { a: 'scene1', l: '   ' } : d))))[0]).toEqual({ a: 'scene1' });
-  expect(parseSlots(JSON.stringify(DEFAULT_SLOTS.map((d, i) => (i === 6 ? { a: 'snip', l: 'Shot' } : d))))[6]).toEqual({ a: 'snip' });
-  for (const bad of ['{', 'null', '{}', JSON.stringify(DEFAULT_SLOTS.slice(0, 7)), JSON.stringify([...DEFAULT_SLOTS.slice(0, 7), { a: 'mute', l: 4 }])]) expect(parseSlots(bad).map((s) => s.a)).toEqual(DEFAULT_SLOTS.map((s) => s.a));
+  expect(parseSlots(JSON.stringify(DEFAULT_SLOTS.map((d, i) => (i === 0 ? { a: 'scene2', l: 7 } : d)))).map((x) => x.l)).toEqual(Array(7).fill(undefined));
+  expect(parseSlots(JSON.stringify(DEFAULT_SLOTS.map((d, i) => (i === 0 ? { a: 'scene2', l: '   ' } : d))))[0]).toEqual({ a: 'scene2' });
+  expect(parseSlots(JSON.stringify(DEFAULT_SLOTS.map((d, i) => (i === 5 ? { a: 'snip', l: 'Shot' } : d))))[5]).toEqual({ a: 'snip' });
+  for (const bad of ['{', 'null', '{}', JSON.stringify(DEFAULT_SLOTS.slice(0, 6)), JSON.stringify([...DEFAULT_SLOTS.slice(0, 6), { a: 'mute', l: 4 }])]) expect(parseSlots(bad).map((s) => s.a)).toEqual(DEFAULT_SLOTS.map((s) => s.a));
 });
 
 it('fitLabel keeps a label that fits, drops words then letters when it does not, and never wraps', () => {
@@ -791,15 +799,31 @@ it('the scene on stage stays lit while a later key is the last action, and the l
   fireEvent.click(tiles()[0], { detail: 1 });
   await waitFor(() => expect(tiles()[0].getAttribute('data-stage')).toBe('true'));
   expect(tiles()[0].getAttribute('data-last')).toBe('true');
-  fireEvent.click(tiles()[4], { detail: 1 });
-  await waitFor(() => expect(tiles()[4].getAttribute('data-last')).toBe('true'));
+  fireEvent.click(tiles()[3], { detail: 1 });
+  await waitFor(() => expect(tiles()[3].getAttribute('data-last')).toBe('true'));
   expect(tiles()[0].getAttribute('data-stage')).toBe('true');
   expect(tiles()[0].hasAttribute('data-last')).toBe(false);
-  expect(tiles()[4].hasAttribute('data-stage')).toBe(false);
+  expect(tiles()[3].hasAttribute('data-stage')).toBe(false);
   fireEvent.click(tiles()[1], { detail: 1 });
   await waitFor(() => expect(tiles()[1].getAttribute('data-stage')).toBe('true'));
   expect(tiles()[0].hasAttribute('data-stage')).toBe(false);
   expect(document.querySelectorAll('[data-stage]').length).toBe(1);
   const sel = '.oa2 .oa2-studiokeys .deck-tile.key-tile';
   expect(onair2Css).toContain(`${sel}[data-stage='true']`);
+});
+
+it('legacy eight-key arrays migrate without losing custom keys or labels', () => {
+  const names = (raw: unknown[]) => parseSlots(JSON.stringify(raw));
+  // First key swapped, no scene1: index 0 is dropped, the rest survive in order with labels.
+  const swapped = [{ a: 'snip' }, { a: 'scene2', l: 'Mine' }, { a: 'scene3' }, { a: 'scene4', l: 'Wide' }, { a: 'mute' }, { a: 'camera' }, { a: 'mark' }, { a: 'end' }];
+  expect(names(swapped)).toEqual([{ a: 'scene2', l: 'Mine' }, { a: 'scene3' }, { a: 'scene4', l: 'Wide' }, { a: 'mute' }, { a: 'camera' }, { a: 'mark' }, { a: 'golive' }]);
+  // scene1 first, and scene1 elsewhere: only scene1 goes.
+  const first = [{ a: 'scene1' }, { a: 'scene3', l: 'Two' }, { a: 'snip' }, { a: 'scene4', l: 'Wide' }, { a: 'mute' }, { a: 'camera' }, { a: 'mark' }, { a: 'golive' }];
+  const want = [{ a: 'scene3', l: 'Two' }, { a: 'snip' }, { a: 'scene4', l: 'Wide' }, { a: 'mute' }, { a: 'camera' }, { a: 'mark' }, { a: 'golive' }];
+  expect(names(first)).toEqual(want);
+  const mid = [{ a: 'scene3', l: 'Two' }, { a: 'snip' }, { a: 'scene1' }, { a: 'scene4', l: 'Wide' }, { a: 'mute' }, { a: 'camera' }, { a: 'mark' }, { a: 'golive' }];
+  expect(names(mid)).toEqual(want);
+  // A stored scene1 that carries a label is still dropped.
+  const labelled = [{ a: 'scene1', l: 'Full' }, ...want];
+  expect(names(labelled)).toEqual(want);
 });

@@ -8,7 +8,7 @@ import { statusStale } from '../ytlive';
 import { useYtLive } from '../ytliveStore';
 import { Head } from './Tiles';
 import { agoText, needsConfirm, needsFind, NOTE_MS, refusalText, STUDIO_CONFIRM_MS, studioAnswerText, type DeviceState, type StudioKey } from './studioModel';
-import { LABEL_MAX_PX, ADDON_ACTION, SLOT_INFO, fitLabel, loadSlots, measureLabel, saveSlots, slotLabel, toggleLabel, type ShownAction, type Slot } from './studioSlots';
+import { labelMaxPx, ADDON_ACTION, SLOT_INFO, fitLabel, loadSlots, measureLabel, saveSlots, slotLabel, toggleLabel, type ShownAction, type Slot } from './studioSlots';
 import { ICON_WHEN_OFF, SLOT_ICON as ICON } from './studioIcons';
 import { StudioPicker } from './StudioPicker';
 import { useStudio } from './studioStore';
@@ -19,7 +19,7 @@ const BRIEF_LONG_LIB = 'strip-dark-with-a-very-long-library-key-id-of-sixty-char
 const LIB_ID: Partial<Record<ShownAction, string>> = { snip: 'snip', hide: 'strip-dark' };
 
 /**
- * The studio keys box: eight equal keys in two rows of four. Each slot holds one action (StreamYard or
+ * The studio keys box: seven keys in two rows: three scene keys, then four. Each slot holds one action (StreamYard or
  * wall), chosen by right-click. Every key has one look; only the key sent last glows.
  */
 export function StudioKeys({ now }: { now: number }) {
@@ -190,7 +190,7 @@ export function StudioKeys({ now }: { now: number }) {
     const isArmed = armed !== null && armed.slot === i && armed.action === action;
     const full = isArmed ? 'Click again' : face ?? slotLabel({ a: action, l: slot.l });
     const shownNote = note !== null && note.slot === i ? note : null;
-    const text = fitLabel(full, LABEL_MAX_PX, measureLabel);
+    const text = fitLabel(full, labelMaxPx(i), measureLabel);
     // The accessible name uses the whole label, never the fitted one, and always holds the words drawn on the key.
     const custom = !isArmed && !!SLOT_INFO[action].scene && !!slot.l;
     const base = custom ? `${full}, ${info.full}` : info.full;

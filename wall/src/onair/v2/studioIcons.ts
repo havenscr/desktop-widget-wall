@@ -3,7 +3,6 @@ import type { ShownAction } from './studioSlots';
 
 /** The icon of each studio key action. */
 export const SLOT_ICON: Record<ShownAction, Icon> = {
-  scene1: IconUser,
   scene2: IconPresentation,
   scene3: IconUsers,
   scene4: IconScreenShare,

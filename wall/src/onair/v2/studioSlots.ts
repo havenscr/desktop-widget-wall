@@ -1,5 +1,5 @@
-/** The eight studio keys: which action each slot holds, its label, and how a label is fitted to a key. */
-export type SlotAction = 'scene1' | 'scene2' | 'scene3' | 'scene4' | 'mute' | 'camera' | 'share' | 'golive' | 'solo' | 'two' | 'mark' | 'snip' | 'hide';
+/** The seven studio keys: which action each slot holds, its label, and how a label is fitted to a key. */
+export type SlotAction = 'scene2' | 'scene3' | 'scene4' | 'mute' | 'camera' | 'share' | 'golive' | 'solo' | 'two' | 'mark' | 'snip' | 'hide';
 /** What a key can show: a slot's action, or End show, which only ever stands in for Go live while the show is live. */
 export type ShownAction = SlotAction | 'end';
 
@@ -25,7 +25,6 @@ export interface SlotInfo {
 export type StudioKind = 'scene' | 'mic' | 'camera' | 'mark' | 'golive';
 
 export const SLOT_INFO: Record<ShownAction, SlotInfo> = {
-  scene1: { label: 'Speaker', full: 'Full Screen Speaker', group: 'streamyard', scene: true, kind: 'scene' },
   scene2: { label: 'Presenter', full: 'Presenter View', group: 'streamyard', scene: true, kind: 'scene' },
   scene3: { label: '2 Person', full: '2 Person Presenter View', group: 'streamyard', scene: true, kind: 'scene' },
   scene4: { label: 'Screenshare', full: 'Screenshare', group: 'streamyard', scene: true, kind: 'scene' },
@@ -43,13 +42,12 @@ export const SLOT_INFO: Record<ShownAction, SlotInfo> = {
 
 /** The picker's order: the StreamYard group, then the Wall group. */
 export const PICKER_ORDER: Record<'streamyard' | 'wall', SlotAction[]> = {
-  streamyard: ['scene1', 'scene2', 'scene3', 'scene4', 'mute', 'camera', 'share', 'golive', 'solo', 'two'],
+  streamyard: ['scene2', 'scene3', 'scene4', 'mute', 'camera', 'share', 'golive', 'solo', 'two'],
   wall: ['mark', 'snip', 'hide'],
 };
 
 /** The wall's studio command for each key that goes through the Stage Pop-out add-on. */
 export const ADDON_ACTION: Partial<Record<ShownAction, 'scene' | 'mute' | 'camera'>> = {
-  scene1: 'scene',
   scene2: 'scene',
   scene3: 'scene',
   scene4: 'scene',
@@ -57,12 +55,11 @@ export const ADDON_ACTION: Partial<Record<ShownAction, 'scene' | 'mute' | 'camer
   camera: 'camera',
 };
 
-export const SLOT_COUNT = 8;
+export const SLOT_COUNT = 7;
 export const SLOTS_KEY = 'wall2-studio-slots';
 export const MAX_LABEL = 16;
 
 export const DEFAULT_SLOTS: readonly Slot[] = [
-  { a: 'scene1' },
   { a: 'scene2' },
   { a: 'scene3' },
   { a: 'scene4' },
@@ -86,8 +83,16 @@ export function parseSlots(raw: string | null): Slot[] {
   const defaults = DEFAULT_SLOTS.map((s) => ({ ...s }));
   if (!raw) return defaults;
   try {
-    const v: unknown = JSON.parse(raw);
-    if (!Array.isArray(v) || v.length !== SLOT_COUNT) return defaults;
+    const parsed: unknown = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return defaults;
+    // Legacy migration: eight keys were stored before Full Screen Speaker (scene1) was retired. Drop every scene1;
+    // if still eight (the user had swapped it for another key), drop index 0, the position it held.
+    let v: unknown[] = parsed;
+    if (v.length === 8) {
+      v = v.filter((e) => !(typeof e === 'object' && e !== null && (e as { a?: unknown }).a === 'scene1'));
+      if (v.length === 8) v = v.slice(1);
+    }
+    if (v.length !== SLOT_COUNT) return defaults;
     const out: Slot[] = [];
     for (const e of v) {
       if (typeof e !== 'object' || e === null) return defaults;
@@ -158,5 +163,10 @@ export function measureLabel(s: string): number {
   return ctx.measureText(s).width;
 }
 
-/** The widest a label may be on a key: the key is about 149 px wide with 8 px of padding each side. */
+/** The widest a label may be on a row 2 key: the key is about 149 px wide with 8 px of padding each side. */
 export const LABEL_MAX_PX = 128;
+/** The widest a label may be on a scene key (row 1): the key is about 201 px wide with 8 px of padding each side. */
+export const SCENE_LABEL_MAX_PX = 185;
+/** The number of keys in the scene row. */
+export const SCENE_ROW = 3;
+export const labelMaxPx = (slotIndex: number): number => (slotIndex < SCENE_ROW ? SCENE_LABEL_MAX_PX : LABEL_MAX_PX);
