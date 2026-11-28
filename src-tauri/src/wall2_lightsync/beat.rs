@@ -90,11 +90,6 @@ impl BeatDetector {
         self.bass = 0.0;
     }
 
-    /// Onset time (ms, the push clock) of the newest beat, or negative infinity.
-    pub(crate) fn last_beat_at(&self) -> f64 {
-        self.last_beat_at
-    }
-
     /// The plain low level of the newest frame, 0 to 1 (kept for the fixture and tests).
     #[cfg(test)]
     pub(crate) fn bass(&self) -> f64 {
@@ -102,8 +97,8 @@ impl BeatDetector {
     }
 
     /// Feed one frame of normalised bands (0 to 1) at source time `now` ms, which arrived at `arrival` ms
-    /// on the real clock. True when a beat was confirmed by this frame.
-    pub(crate) fn push(&mut self, bands: &[f64], now: f64, arrival: f64) -> bool {
+    /// on the real clock. When a beat was confirmed by this frame, the ms from its onset to now.
+    pub(crate) fn push(&mut self, bands: &[f64], now: f64, arrival: f64) -> Option<f64> {
         if now - self.prev_at > GAP_RESET_MS {
             self.clear();
         }
@@ -132,7 +127,7 @@ impl BeatDetector {
         let base = if self.size > 0 { median(&self.window, self.size, &mut self.scratch) } else { level };
         let above = level - base;
 
-        let mut beat = false;
+        let mut beat = None;
         if let Some(pending_at) = self.pending_at {
             if above >= HOLD_DB {
                 self.pending_held += 1;
@@ -153,7 +148,7 @@ impl BeatDetector {
                     }
                     self.stamps[BEAT_HISTORY - 1] = pending_at;
                     self.pending_at = None;
-                    beat = true;
+                    beat = Some(now - pending_at);
                 }
             } else {
                 self.pending_at = None;
@@ -201,7 +196,7 @@ mod tests {
         let mut beats = Vec::new();
         for (i, f) in frames.iter().enumerate() {
             let t = i as f64 * frame_ms;
-            if d.push(f, t, t) {
+            if d.push(f, t, t).is_some() {
                 beats.push(i);
             }
         }
@@ -227,7 +222,7 @@ mod tests {
     fn silence_gives_no_beat_and_zero_bass() {
         let mut d = BeatDetector::new();
         for i in 0..60 {
-            assert!(!d.push(&[0.0; 32], f64::from(i) * 33.0, f64::from(i) * 33.0));
+            assert!(d.push(&[0.0; 32], f64::from(i) * 33.0, f64::from(i) * 33.0).is_none());
         }
         assert_eq!(d.bass(), 0.0);
     }

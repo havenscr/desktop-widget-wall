@@ -42,7 +42,7 @@ export const CALM_WINDOW_MS = 1000;
 export const CALM_MAX_BEATS = 3;
 /** Window of the running median the threshold sits on. */
 export const MEDIAN_WINDOW_MS = 1000;
-/** How far above the median an onset frame must be (7 dB: measured on the lightsim songs, 9 dB missed most kicks under a loud bed; pure pink noise gives about one stray beat every two minutes, and the hold rule below stops lone noisy frames). */
+/** How far above the median an onset frame must be (7 dB: measured on the lightsim songs, 9 dB missed most kicks under a loud bed; pure pink noise gives about 0.65 stray beats a minute, one every 90 s or so (3 in the 4.5 minutes the beat test pins), and the hold rule below stops lone noisy frames). */
 export const ONSET_DB = 7;
 /** How far above the median the frames after an onset must stay. */
 export const HOLD_DB = 4;

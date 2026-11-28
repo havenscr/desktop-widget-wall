@@ -108,6 +108,10 @@ export const AUTO_ATTACK_MS = 2000;
 export const AUTO_RELEASE_MS = 8000;
 export const AUTO_GAIN_MIN = 0.5;
 export const AUTO_GAIN_MAX = 3;
+/** Under this input level Auto level holds: the running level, and so the gain, stays where the last real music left it. Same numbers as `engine.rs`. */
+export const AUTO_SILENCE = 0.04;
+/** The running level never releases below this, so the gain stays at or under 2.5 and a noisy quiet room is not boosted past `LEVEL_LO`. */
+export const AUTO_LEVEL_FLOOR = 0.2;
 /** The changing-bass term (bass against its 1.5 s mean, scaled and capped, added to the bass envelope target) and the ripple fade. */
 export const SLOW_BASS_MS = 1500;
 export const MOTION_GAIN = 6;
@@ -116,9 +120,12 @@ export const RIPPLE_FALLOFF = 0.5;
 /** A confirmed beat starts its pulse at the onset frame, never more than this far back. */
 export const MAX_BACKDATE_MS = 150;
 
-/** The gain Auto level applies this step; moves `st.autoLevel` toward the louder of the two inputs. */
+/** How far back a beat's pulse starts: the detector's lag, at most `MAX_BACKDATE_MS` and at most the preset's rise, so the first frame lands at the peak and the rise shaping is kept. */
+export const backdateOf = (lag: number | undefined, riseMs: number): number => (Number.isFinite(lag) ? Math.min(MAX_BACKDATE_MS, Math.max(0, riseMs), Math.max(0, lag as number)) : 0);
+
+/** The gain Auto level applies this step; moves `st.autoLevel` toward the louder of the two inputs, and holds it through silence. */
 export function autoGain(st: { autoLevel: number }, loud: number, dt: number): number {
-  st.autoLevel += (loud - st.autoLevel) * (1 - Math.exp(-dt / (loud > st.autoLevel ? AUTO_ATTACK_MS : AUTO_RELEASE_MS)));
+  if (loud >= AUTO_SILENCE) st.autoLevel = Math.max(AUTO_LEVEL_FLOOR, st.autoLevel + (loud - st.autoLevel) * (1 - Math.exp(-dt / (loud > st.autoLevel ? AUTO_ATTACK_MS : AUTO_RELEASE_MS))));
   return Math.min(AUTO_GAIN_MAX, Math.max(AUTO_GAIN_MIN, AUTO_TARGET / Math.max(1e-3, st.autoLevel)));
 }
 
@@ -227,7 +234,7 @@ export function stepPreview(st: PreviewState, s: LightSyncSettings, ui: LightsUi
   const kick = hexRgb(palette.kick);
   if (input.beatCount > st.seen) {
     st.nudgeLeft += s.beatNudge;
-    if (!(st.kickAgeMs < s.minPulseGapMs)) st.kickAgeMs = Number.isFinite(input.beatLagMs) ? Math.min(MAX_BACKDATE_MS, Math.max(0, input.beatLagMs as number)) : 0;
+    if (!(st.kickAgeMs < s.minPulseGapMs)) st.kickAgeMs = backdateOf(input.beatLagMs, s.kickRiseMs);
   }
   st.seen = input.beatCount;
   const take = Math.min(st.nudgeLeft, (s.beatNudge * dt) / NUDGE_MS);

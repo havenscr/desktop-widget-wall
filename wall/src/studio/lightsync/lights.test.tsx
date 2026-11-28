@@ -10,7 +10,7 @@ import { useWatchStore } from '../../unwind/watch/store';
 import { WatchSheet } from '../../unwind/watch/Sheet';
 import { resetHome } from '../homeStore';
 import { OfficeMoods } from '../OfficeMoods';
-import { Swing, newPreview, stepPreview } from './preview';
+import { AUTO_LEVEL_FLOOR, AUTO_TARGET, Swing, autoGain, kickShape, newPreview, stepPreview } from './preview';
 import { DEFAULT_LIGHTS_UI, DEFAULT_LIGHT_SYNC, INTENSITIES, INTENSITY_IDS, SWATCHES, driftOf, engineSettings, resolvePalette } from './model';
 import { useAudioStore } from '../../audio/store';
 import { LightsPanel, driftWords, brightWords, flashWords, smoothWords } from './LightsPanel';
@@ -482,6 +482,61 @@ it('the preview matches the native frames on the shared fixture (Subtle)', () =>
     const f = stepPreview(st, fxSettings, { ...DEFAULT_LIGHTS_UI, autoLevel: false }, fx.palette, { bass, high, beatCount: beats, dtMs: fx.dtMs });
     f.plays.flat().forEach((v, k) => expect(Math.abs(v - fx.plays[i][k]), `frame ${i} channel ${k}`).toBeLessThan(2e-6));
   });
+});
+
+it('the preview matches the native frames with Auto level on, a beat lag and the High preset', () => {
+  const fx = JSON.parse(readFileSync('../src-tauri/tests/fixtures/lightsync-auto-frames.json', 'utf8').replace(/\r\n/g, '\n')) as { dtMs: number; colourBars: number; palette: { colors: string[]; kick: string }; settings: Record<string, number | boolean>; frames: [number, number, number, number][]; plays: number[][] };
+  expect(fx.plays.length).toBe(fx.frames.length);
+  expect(fx.frames.some((f) => f[3] > 0)).toBe(true);
+  const settings = { ...DEFAULT_LIGHT_SYNC, ...fx.settings } as typeof DEFAULT_LIGHT_SYNC;
+  const ui = { ...DEFAULT_LIGHTS_UI, colourBars: fx.colourBars, autoLevel: true };
+  expect(driftOf(ui.colourBars)).toBe(fx.settings.driftMs);
+  const st = newPreview(settings.floor);
+  let beats = 0;
+  fx.frames.forEach(([bass, high, beat, lag], i) => {
+    if (beat) beats += 1;
+    const f = stepPreview(st, settings, ui, fx.palette, { bass, high, beatCount: beats, beatLagMs: lag, dtMs: fx.dtMs });
+    f.plays.flat().forEach((v, k) => expect(Math.abs(v - fx.plays[i][k]), `frame ${i} channel ${k}`).toBeLessThan(2e-6));
+  });
+});
+
+it('Auto level holds through silence: music after 30 s of quiet never starts louder than the same music at the steady gain', () => {
+  const music = { bass: 0.5, high: 0.2, beatCount: 0, dtMs: 33 };
+  const s = { ...DEFAULT_LIGHT_SYNC };
+  const quiet = { bass: 0, high: 0, beatCount: 0, dtMs: 33 };
+  // The reference starts from the same silence at the steady gain (1 at this level), so the onset's own rise is in both.
+  const peakOf = (autoLevel: boolean) => {
+    const ui = { ...DEFAULT_LIGHTS_UI, autoLevel };
+    const st = newPreview(s.floor);
+    for (let i = 0; i < 909; i++) stepPreview(st, s, ui, SYNTH, quiet);
+    let peak = 0;
+    for (let i = 0; i < 30; i++) {
+      stepPreview(st, s, ui, SYNTH, music);
+      peak = Math.max(peak, st.bassEnv, st.highEnv);
+    }
+    return peak;
+  };
+  expect(peakOf(true)).toBeLessThanOrEqual(peakOf(false) + 0.05);
+});
+
+it('Auto level does not boost steady low noise past the level where sound starts to count', () => {
+  const st = { autoLevel: AUTO_TARGET };
+  let gain = 1;
+  for (let i = 0; i < 1800; i++) gain = autoGain(st, 0.06, 33);
+  expect(st.autoLevel).toBeGreaterThanOrEqual(AUTO_LEVEL_FLOOR);
+  expect(0.06 * gain).toBeLessThanOrEqual(0.2);
+});
+
+it.each(INTENSITY_IDS)('a backdated beat on %s starts the pulse at the peak, once', (id) => {
+  const s = { ...DEFAULT_LIGHT_SYNC, ...INTENSITIES[id].settings };
+  const ui = { ...DEFAULT_LIGHTS_UI, autoLevel: false };
+  const st = newPreview(s.floor);
+  stepPreview(st, s, ui, SYNTH, { bass: 0, high: 0, beatCount: 0, dtMs: 33 });
+  stepPreview(st, s, ui, SYNTH, { bass: 0, high: 0, beatCount: 1, beatLagMs: 100, dtMs: 33 });
+  expect(st.kickAgeMs).toBe(s.kickRiseMs + 33);
+  expect(kickShape(s.kickRiseMs, s.kickRiseMs, s.kickDecayMs)).toBe(1);
+  stepPreview(st, s, ui, SYNTH, { bass: 0, high: 0, beatCount: 2, beatLagMs: 66, dtMs: 33 });
+  expect(st.kickAgeMs).toBe(s.kickRiseMs + 66);
 });
 
 it('the flash guard holds every intensity and the harshest sliders under five swings a second, Plays and panels', () => {

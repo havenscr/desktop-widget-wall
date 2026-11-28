@@ -356,7 +356,7 @@ it('a value saved by the strobe engine loads as Subtle once, keeping palette, ow
   // Saved again it carries the version, and the next load keeps what was chosen after it.
   let text = '';
   saveLightSync({ ...got, settings: { ...got.settings, floor: 0.2 } }, { setItem: (_k, v) => void (text = v) });
-  expect(JSON.parse(text).version).toBe(3);
+  expect(JSON.parse(text).version).toBe(4);
   expect(loadLightSync({ getItem: () => text }).settings.floor).toBe(0.2);
 });
 
@@ -364,7 +364,7 @@ it('the move to Subtle is saved at load and a version 3 value is left as it is',
   const store: Record<string, string> = { [LIGHT_SYNC_KEY]: JSON.stringify({ palette: 'neon', settings: { floor: 0.06 }, ui: { colourBars: 1 } }) };
   const io = { getItem: (k: string) => store[k] ?? null, setItem: (k: string, v: string) => void (store[k] = v) };
   expect(loadLightSync(io).settings.floor).toBe(INTENSITIES.subtle.settings.floor);
-  expect(JSON.parse(store[LIGHT_SYNC_KEY]).version).toBe(3);
+  expect(JSON.parse(store[LIGHT_SYNC_KEY]).version).toBe(4);
   store[LIGHT_SYNC_KEY] = JSON.stringify({ ...JSON.parse(store[LIGHT_SYNC_KEY]), settings: { ...INTENSITIES.subtle.settings, floor: 0.2 } });
   expect(loadLightSync(io).settings.floor).toBe(0.2);
   const stale = { getItem: () => JSON.stringify({ version: '3', settings: { floor: 0.06 } }) };
@@ -387,9 +387,42 @@ it.each(INTENSITY_IDS)('a version 2 value that is exactly the old %s preset move
   expect(got.settings).toMatchObject({ ...INTENSITIES[id].settings, bassGain: 1.3, highGain: 1.3, plays: false });
   expect(isEdited(got.settings, got.ui)).toBe(false);
   expect(got.ui.ripple).toBe(false);
-  // The round trip: stored as version 3 and read back unchanged.
-  expect(JSON.parse(store[LIGHT_SYNC_KEY]).version).toBe(3);
+  // The round trip: stored as version 4 and read back unchanged.
+  expect(JSON.parse(store[LIGHT_SYNC_KEY]).version).toBe(4);
   expect(loadLightSync(io)).toEqual(got);
+});
+
+/** The built-in columns as version 3 saved them (before the pulse values moved). */
+const V3_OLD = {
+  subtle: { ...INTENSITIES.subtle.settings, kickFlash: 0.25, minPulseGapMs: 500 },
+  moderate: { ...INTENSITIES.moderate.settings },
+  high: { ...INTENSITIES.high.settings, beatNudge: 0.15 },
+} as const;
+
+it.each(INTENSITY_IDS)('a version 3 value that is exactly the old %s column moves to the new column', (id) => {
+  const store: Record<string, string> = { [LIGHT_SYNC_KEY]: JSON.stringify({ version: 3, palette: 'neon', settings: { ...V3_OLD[id], bassGain: 1.3, highGain: 1.3 }, ui: { colourBars: INTENSITIES[id].colourBars, preset: id } }) };
+  const io = { getItem: (k: string) => store[k] ?? null, setItem: (k: string, v: string) => void (store[k] = v) };
+  const got = loadLightSync(io);
+  expect(got.settings).toMatchObject({ ...INTENSITIES[id].settings, bassGain: 1.3, highGain: 1.3 });
+  expect(got.ui.preset).toBe(id);
+  expect(isEdited(got.settings, got.ui)).toBe(false);
+  expect(JSON.parse(store[LIGHT_SYNC_KEY]).version).toBe(4);
+  expect(loadLightSync(io)).toEqual(got);
+});
+
+it('a version 3 value with its own numbers, or its own saved preset, stays exactly as it is', () => {
+  const mine = { ...V3_OLD.subtle, kickFlash: 0.3 };
+  const custom = loadLightSync({ getItem: () => JSON.stringify({ version: 3, settings: mine, ui: { colourBars: 4, preset: 'subtle' } }) });
+  expect(custom.settings).toMatchObject({ kickFlash: 0.3, minPulseGapMs: 500 });
+  expect(custom.ui.saved).toEqual({});
+  expect(isEdited(custom.settings, custom.ui)).toBe(true);
+  // Saved presets: one equal to the old High column is dropped (the button applies the new column); a custom one is kept.
+  const saved = { high: { settings: V3_OLD.high, colourBars: 1 }, subtle: { settings: mine, colourBars: 4 } };
+  const got = loadLightSync({ getItem: () => JSON.stringify({ version: 3, settings: mine, ui: { colourBars: 4, preset: 'subtle', saved } }) });
+  expect(got.ui.saved.high).toBeUndefined();
+  expect(got.ui.saved.subtle).toEqual({ settings: expect.objectContaining(mine), colourBars: 4 });
+  expect(got.settings).toMatchObject({ kickFlash: 0.3, minPulseGapMs: 500 });
+  expect(isEdited(got.settings, got.ui)).toBe(false);
 });
 
 it('a version 2 value with its own numbers keeps them exactly, on the preset with the nearest old floor, with no dot', () => {

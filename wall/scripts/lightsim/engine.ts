@@ -7,7 +7,7 @@
  *
  * Nothing here talks to a device; it is maths on numbers.
  */
-import { AUTO_TARGET, GUARD_MAX_TRANSITIONS, MAX_BACKDATE_MS, RIPPLE_FALLOFF, Swing, autoGain, bassMotion, bandLevel, kickShape, paletteColour, type Rgb } from '../../src/studio/lightsync/preview';
+import { AUTO_TARGET, GUARD_MAX_TRANSITIONS, backdateOf, RIPPLE_FALLOFF, Swing, autoGain, bassMotion, bandLevel, kickShape, paletteColour, type Rgb } from '../../src/studio/lightsync/preview';
 import { DEFAULT_LIGHT_SYNC, INTENSITIES, DEFAULT_LIGHTS_UI, driftOf, type Follow, type IntensityId, type LightSyncSettings, type LightsUi } from '../../src/studio/lightsync/model';
 
 const FRAME_MS = 33;
@@ -102,7 +102,7 @@ export class Engine {
     this.clockMs += dt;
     if (input.beat) {
       this.nudgeLeft += s.beatNudge;
-      if (!(this.kickAgeMs < s.minPulseGapMs)) this.kickAgeMs = Number.isFinite(input.beatLagMs) ? Math.min(MAX_BACKDATE_MS, Math.max(0, input.beatLagMs as number)) : 0;
+      if (!(this.kickAgeMs < s.minPulseGapMs)) this.kickAgeMs = backdateOf(input.beatLagMs, s.kickRiseMs);
     }
     const take = Math.min(this.nudgeLeft, (s.beatNudge * dt) / NUDGE_MS);
     this.nudgeLeft -= take;

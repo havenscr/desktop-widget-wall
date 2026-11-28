@@ -70,6 +70,8 @@ function analyser(rate: number) {
 }
 
 const RATES = [44_100, 48_000] as const;
+/** Stray beats on the fixed pink noise runs below; see the test. */
+const STRAYS_ON_PINK = 3;
 /** Beats are stamped on 33 ms frames, so spacing is checked to 35 ms. */
 const SPACING_MS = 35;
 
@@ -154,13 +156,13 @@ describe('beat detector', () => {
     });
 
     it(`gives almost no beats from pink noise at ${rate} Hz, quiet to loud, two seeds each`, () => {
-      // Fixed seeds. At 7 dB a lone stray beat can land on pure noise: measured at 0.6 a minute over
-      // 24 minutes of other seeds, so six 45 s runs (4.5 minutes) allow three.
+      // Fixed seeds. At 7 dB a lone stray beat can land on pure noise, measured at about 0.65 a minute (one every 90 s or so):
+      // exactly 3 in these six 45 s runs (4.5 minutes) at both rates. Pinned, so a change that raises it fails, and one that lowers it is noticed.
       let strays = 0;
       for (const amp of [0.05, 0.2, 1]) {
         for (const seed of [24, 73]) strays += run(analyse(pink(rate, 45, amp, seed))).length;
       }
-      expect(strays).toBeLessThanOrEqual(3);
+      expect(strays).toBe(STRAYS_ON_PINK);
     });
   }
 

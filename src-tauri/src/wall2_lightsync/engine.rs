@@ -253,13 +253,17 @@ const AUTO_ATTACK_MS: f64 = 2000.0;
 const AUTO_RELEASE_MS: f64 = 8000.0;
 const AUTO_GAIN_MIN: f64 = 0.5;
 const AUTO_GAIN_MAX: f64 = 3.0;
+/// Under this input level Auto level holds: the running level, and so the gain, stays where the last real music left it.
+const AUTO_SILENCE: f64 = 0.04;
+/// The running level never releases below this, so the gain stays at or under 2.5 and a noisy quiet room is not boosted past `LEVEL_LO`.
+const AUTO_LEVEL_FLOOR: f64 = 0.2;
 /// The changing-bass term: how far the bass is from its slow mean (about 1.5 s), scaled and capped, added to the bass envelope target.
 const SLOW_BASS_MS: f64 = 1500.0;
 const MOTION_GAIN: f64 = 6.0;
 const MOTION_DEPTH: f64 = 0.25;
 /// The ripple's strength fades by this share of the way out.
 const RIPPLE_FALLOFF: f64 = 0.5;
-/// A confirmed beat starts its pulse at the onset frame, but never more than this far back.
+/// A confirmed beat starts its pulse at the onset frame, but never more than this far back, and never past the preset's rise (so the first frame lands at the peak).
 const MAX_BACKDATE_MS: f64 = 150.0;
 
 /// Hard cap under WCAG 2.3.1 (three general flashes in a second), on every intensity and slider position:
@@ -444,8 +448,10 @@ impl Engine {
         if s.auto_level {
             // A slow running level (fast to follow a rise slowly: 2 s up, 8 s down) sets one gain for both bands, clamped, before Sensitivity.
             let loud = bass_in.max(high_in);
-            let tau = if loud > self.auto_level { AUTO_ATTACK_MS } else { AUTO_RELEASE_MS };
-            self.auto_level += (loud - self.auto_level) * (1.0 - (-dt / tau).exp());
+            if loud >= AUTO_SILENCE {
+                let tau = if loud > self.auto_level { AUTO_ATTACK_MS } else { AUTO_RELEASE_MS };
+                self.auto_level = (self.auto_level + (loud - self.auto_level) * (1.0 - (-dt / tau).exp())).max(AUTO_LEVEL_FLOOR);
+            }
             let gain = (AUTO_TARGET / self.auto_level.max(1e-3)).clamp(AUTO_GAIN_MIN, AUTO_GAIN_MAX);
             bass_in = (bass_in * gain).clamp(0.0, 1.0);
             high_in = (high_in * gain).clamp(0.0, 1.0);
@@ -460,7 +466,7 @@ impl Engine {
         if input.beat {
             self.nudge_left += s.beat_nudge;
             if !(self.kick_age_ms < s.min_pulse_gap_ms) {
-                self.kick_age_ms = if input.beat_lag_ms.is_finite() { input.beat_lag_ms.clamp(0.0, MAX_BACKDATE_MS) } else { 0.0 };
+                self.kick_age_ms = if input.beat_lag_ms.is_finite() { input.beat_lag_ms.clamp(0.0, MAX_BACKDATE_MS.min(s.kick_rise_ms.max(0.0))) } else { 0.0 };
             }
         }
         let take = self.nudge_left.min(s.beat_nudge * dt / NUDGE_MS);
@@ -1168,6 +1174,61 @@ mod tests {
         assert!(e.pos - pos > 0.04, "but it still nudged the colour");
     }
 
+    fn auto_on(name: &str) -> Tuning {
+        let mut v = intensity(name);
+        v["autoLevel"] = serde_json::json!(true);
+        tuning(js(v))
+    }
+
+    #[test]
+    fn auto_level_holds_through_silence_so_the_first_loud_frame_does_not_flash() {
+        let music = Input { bass: 0.5, high: 0.2, beat: false, beat_lag_ms: 0.0, dt_ms: 33.0 };
+        // The reference starts from the same silence at the steady gain (1 at this level), so the onset's own rise is in both.
+        let peak_of = |t: &Tuning| {
+            let mut e = Engine::new(0.35);
+            for _ in 0..909 {
+                e.step(t, quiet(33.0), 4, &[]);
+            }
+            assert!(!t.settings.auto_level || e.auto_level == AUTO_TARGET, "30 s of silence left the running level where it was");
+            let mut peak: f64 = 0.0;
+            for _ in 0..30 {
+                e.step(t, music, 4, &[]);
+                peak = peak.max(e.bass_env.max(e.high_env));
+            }
+            peak
+        };
+        let (auto, plain) = (peak_of(&auto_on("subtle")), peak_of(&tuning(js(intensity("subtle")))));
+        assert!(auto <= plain + 0.05, "first second peaked at {auto}, steady gain {plain}");
+    }
+
+    #[test]
+    fn auto_level_does_not_boost_steady_low_noise_past_the_sound_threshold() {
+        let t = auto_on("subtle");
+        let mut e = Engine::new(0.35);
+        for _ in 0..1800 {
+            e.step(&t, Input { bass: 0.06, high: 0.06, beat: false, beat_lag_ms: 0.0, dt_ms: 33.0 }, 4, &[]);
+        }
+        let gain = (AUTO_TARGET / e.auto_level.max(1e-3)).clamp(AUTO_GAIN_MIN, AUTO_GAIN_MAX);
+        assert!(e.auto_level >= AUTO_LEVEL_FLOOR);
+        assert!(0.06 * gain <= LEVEL_LO, "noise boosted to {}", 0.06 * gain);
+    }
+
+    #[test]
+    fn a_backdated_beat_starts_at_the_peak_on_every_preset_and_pulses_once() {
+        for name in ["subtle", "moderate", "high"] {
+            let t = tuning(js(intensity(name)));
+            let rise = t.settings.kick_rise_ms;
+            let mut e = Engine::new(0.35);
+            e.step(&t, quiet(33.0), 4, &[]);
+            e.step(&t, Input { bass: 0.0, high: 0.0, beat: true, beat_lag_ms: 100.0, dt_ms: 33.0 }, 4, &[]);
+            assert_eq!(e.kick_age_ms, rise + 33.0, "{name}: the backdate stops at the rise, so the first frame rendered at the peak");
+            assert_eq!(kick_shape(rise, rise, t.settings.kick_decay_ms), 1.0);
+            // A second beat inside the gap does not restart the pulse.
+            e.step(&t, Input { bass: 0.0, high: 0.0, beat: true, beat_lag_ms: 66.0, dt_ms: 33.0 }, 4, &[]);
+            assert_eq!(e.kick_age_ms, rise + 66.0, "{name}: no double pulse");
+        }
+    }
+
     #[test]
     fn fixture_parity() {
         let v: serde_json::Value = serde_json::from_str(&FIXTURE.replace("\r\n", "\n")).unwrap();
@@ -1203,5 +1264,62 @@ mod tests {
         }
         v["plays"] = serde_json::json!(plays);
         std::fs::write(std::env::var("LIGHTSYNC_FIXTURE_OUT").unwrap(), serde_json::to_string(&v).unwrap()).unwrap();
+    }
+
+    const AUTO_FIXTURE: &str = include_str!("../../tests/fixtures/lightsync-auto-frames.json");
+
+    fn auto_fixture_run(v: &serde_json::Value) -> Vec<Vec<f64>> {
+        let t = fixture_tuning_with(v["palette"]["colors"].clone(), v["palette"]["kick"].clone(), v["settings"].clone());
+        assert!(t.settings.auto_level);
+        let dt = v["dtMs"].as_f64().unwrap();
+        let mut e = Engine::new(t.settings.floor);
+        v["frames"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|f| {
+                let out = e.step(&t, Input { bass: f[0].as_f64().unwrap(), high: f[1].as_f64().unwrap(), beat: f[2].as_i64().unwrap() != 0, beat_lag_ms: f[3].as_f64().unwrap(), dt_ms: dt }, 4, &[]);
+                out.plays.iter().flatten().map(|x| (x * 1e6).round() / 1e6).collect()
+            })
+            .collect()
+    }
+
+    /// Auto level on, a nonzero beat lag (66 and 100 ms, alternating) and the High preset: the page and the native engine give the same frames.
+    #[test]
+    fn auto_level_and_lag_fixture_parity() {
+        let v: serde_json::Value = serde_json::from_str(&AUTO_FIXTURE.replace("\r\n", "\n")).unwrap();
+        let want = v["plays"].as_array().unwrap();
+        let got = auto_fixture_run(&v);
+        assert_eq!(want.len(), got.len());
+        for (i, row) in got.iter().enumerate() {
+            for (k, g) in row.iter().enumerate() {
+                let exp = want[i][k].as_f64().unwrap();
+                assert!((g - exp).abs() < 2e-6, "frame {i} channel {k}: {g} vs {exp}");
+            }
+        }
+    }
+
+    /// Writes `lightsync-auto-frames.json`: the shared track after 3 s more silence, at 0.6 of its level, with the High preset, Auto level on and a lag on every beat.
+    /// One frame per line. `LIGHTSYNC_AUTO_OUT=path cargo test regenerate_auto_fixture -- --ignored`.
+    #[test]
+    #[ignore]
+    fn regenerate_auto_fixture() {
+        let base: serde_json::Value = serde_json::from_str(&FIXTURE.replace("\r\n", "\n")).unwrap();
+        let mut settings = intensity("high");
+        settings["autoLevel"] = serde_json::json!(true);
+        let mut frames: Vec<serde_json::Value> = (0..90).map(|_| serde_json::json!([0.0, 0.0, 0, 0.0])).collect();
+        let mut n = 0;
+        for (bass, high, beat) in fixture_frames() {
+            let lag = if beat { n += 1; if n % 2 == 1 { 66.0 } else { 100.0 } } else { 0.0 };
+            frames.push(serde_json::json!([(bass * 0.6 * 1e4).round() / 1e4, (high * 0.6 * 1e4).round() / 1e4, i32::from(beat), lag]));
+        }
+        let mut v = serde_json::json!({ "dtMs": 33, "palette": base["palette"], "settings": settings, "frames": frames });
+        v["plays"] = serde_json::json!(auto_fixture_run(&v));
+        let line = |k: &str| v[k].as_array().unwrap().iter().map(|r| format!("    {r}")).collect::<Vec<_>>().join(",\n");
+        let text = format!(
+            "{{\n  \"note\": \"Generated by regenerate_auto_fixture in engine.rs; do not edit by hand. Frames are [bass, high, beat, beatLagMs].\",\n  \"dtMs\": 33,\n  \"colourBars\": 1,\n  \"palette\": {},\n  \"settings\": {},\n  \"frames\": [\n{}\n  ],\n  \"plays\": [\n{}\n  ]\n}}\n",
+            v["palette"], v["settings"], line("frames"), line("plays")
+        );
+        std::fs::write(std::env::var("LIGHTSYNC_AUTO_OUT").unwrap(), text).unwrap();
     }
 }
