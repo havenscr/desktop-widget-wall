@@ -3,7 +3,7 @@ import { Fragment, StrictMode, type ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ingestLevels, resetAudio, tickAudio } from '../audio/store';
 import { resetVibeStore, useVibeStore } from '../horizon/vibeSettings';
-import { VibeLayer } from './VibeLayer';
+import { VibeLayer, resetVibeLimiter } from './VibeLayer';
 import type { LoopHost } from './loop';
 import { stubCanvas } from './testCanvas';
 // @ts-ignore node's own file call; the stylesheet rules are read as text.
@@ -69,6 +69,7 @@ class RO {
 
 let restore = () => {};
 beforeEach(() => {
+  resetVibeLimiter();
   resetAudio();
   localStorage.clear();
   resetVibeStore();

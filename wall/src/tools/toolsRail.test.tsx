@@ -297,6 +297,6 @@ it('the Tools Vibe group is the Unwind Vibe component on the same store: a chang
 
 it('the drawer builds its Vibe group from the shared panel, not from a copy of the controls', () => {
   const src = tools.replace(/\r\n/g, '\n');
-  expect(src).toContain('return <Vibe' + 'Panel />');
+  expect(src).toContain('return <Vibe' + 'Panel tuneOpen={false} />');
   expect(src).not.toContain('role="radi' + 'ogroup"');
 });

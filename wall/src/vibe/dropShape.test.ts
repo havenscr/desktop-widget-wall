@@ -1,15 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_VIBE, GLITCH_LENGTH_S, GLITCH_STRENGTH_GAIN, type VibeSettings } from '../horizon/vibeSettings';
+import { DEFAULT_VIBE, GLITCH_LENGTH_S, type VibeSettings } from '../horizon/vibeSettings';
 import { createBeatDetector } from '../audio/beat';
 import {
-  BEAT_HIT_AFTER_DROP_S,
-  BEAT_HIT_GAP_S,
-  BEAT_HIT_POWER,
-  DROP_S,
-  POWER_CAP,
   createVibeFrame,
   createVibeState,
   envOf,
+  flushBeatHit,
   noteBeatHit,
   noteDrop,
   noteTry,
@@ -21,19 +17,24 @@ const on = (o: Partial<VibeSettings>): VibeSettings => ({ ...DEFAULT_VIBE, ...o 
 
 describe('Length', () => {
   it('Normal is the envelope the wall always had', () => {
-    for (const s of [0, 0.01, 0.05, 0.3, 0.7, 0.94, 0.95, 2])
-      expect(envOf(s, GLITCH_LENGTH_S.normal)).toBe(s >= 0 && s < DROP_S ? Math.min(1, s / 0.05) ** 2 * (3 - 2 * Math.min(1, s / 0.05)) * (1 - s / DROP_S) ** 2 : 0);
-    expect(GLITCH_LENGTH_S.normal).toBe(DROP_S);
-    expect(envOf(0.4)).toBe(envOf(0.4, DROP_S));
+    const expected: [number, number][] = [[0, 0], [0.01, 0.10182204986149582], [0.05, 0.8975069252077561], [0.3, 0.46814404432132967], [0.7, 0.06925207756232689], [0.94, 0.00011080332409972368], [0.95, 0], [2, 0]];
+    for (const [t, v] of expected) {
+      expect(envOf(t, 0.95)).toBeCloseTo(v, 9);
+      expect(envOf(t)).toBeCloseTo(v, 9);
+    }
+    expect(GLITCH_LENGTH_S.normal).toBe(0.95);
   });
   it('Short and Long last 0.5 s and 2 s and fade in and out', () => {
-    for (const [len, dur] of [['short', 0.5], ['long', 2]] as const) {
-      expect(GLITCH_LENGTH_S[len]).toBe(dur);
-      expect(envOf(0, dur)).toBe(0);
-      expect(envOf(dur, dur)).toBe(0);
-      expect(envOf(dur - 0.01, dur)).toBeLessThan(0.001);
-      expect(envOf(0.05, dur)).toBeGreaterThan(0.8);
-    }
+    expect(GLITCH_LENGTH_S.short).toBe(0.5);
+    expect(GLITCH_LENGTH_S.long).toBe(2);
+    expect(envOf(0, 0.5)).toBe(0);
+    expect(envOf(0.5, 0.5)).toBe(0);
+    expect(envOf(0.05, 0.5)).toBeCloseTo(0.81, 9);
+    expect(envOf(0.49, 0.5)).toBeCloseTo(0.0004, 9);
+    expect(envOf(0, 2)).toBe(0);
+    expect(envOf(2, 2)).toBe(0);
+    expect(envOf(0.05, 2)).toBeCloseTo(0.950625, 9);
+    expect(envOf(1.99, 2)).toBeCloseTo(0.000025, 9);
   });
   it('a drop keeps the length it was stamped with', () => {
     const s = createVibeState();
@@ -56,42 +57,63 @@ describe('Strength', () => {
     noteDrop(s, 1, 0.5, on({ glitchStrength: 'soft' }));
     noteDrop(s, 2, 0.5, on({ glitchStrength: 'hard' }));
     noteDrop(s, 3, 1, on({ glitchStrength: 'hard' }));
-    expect(s.power[0]).toBeCloseTo(0.5 * GLITCH_STRENGTH_GAIN.soft);
+    expect(s.power[0]).toBeCloseTo(0.3);
     expect(s.power[1]).toBeCloseTo(0.7);
-    expect(s.power[2]).toBe(POWER_CAP);
-    expect(POWER_CAP).toBeLessThanOrEqual(1.2);
+    expect(s.power[2]).toBe(1.15);
   });
 });
 
 describe('Beat hits', () => {
   const light = on({ beatHits: 'light' });
+  /** Queue a hit at `t`, then let its hold pass. */
+  const hit = (s: ReturnType<typeof createVibeState>, t: number, strength: number, settings = light): boolean => {
+    const queued = noteBeatHit(s, t, strength, settings);
+    flushBeatHit(s, t + 0.3, settings);
+    return queued;
+  };
   it('Off never fires', () => {
     const s = createVibeState();
-    expect(noteBeatHit(s, 10, 1, on({ beatHits: 'off' }))).toBe(false);
+    expect(hit(s, 10, 1, on({ beatHits: 'off' }))).toBe(false);
     expect(s.drops.every((d) => d === -Infinity)).toBe(true);
   });
   it('fires on a hard beat only, a quarter strength, with no glow swell', () => {
     const s = createVibeState();
-    expect(noteBeatHit(s, 10, 0.3, light)).toBe(false);
-    expect(noteBeatHit(s, 10, 0.9, light)).toBe(true);
-    expect(s.power[0]).toBe(BEAT_HIT_POWER);
+    expect(hit(s, 10, 0.3)).toBe(false);
+    expect(hit(s, 10, 0.9)).toBe(true);
+    expect(s.power[0]).toBe(0.25);
     expect(s.swellW[0]).toBe(0);
+  });
+  it('shows 0.3 s after its beat, not before', () => {
+    const s = createVibeState();
+    noteBeatHit(s, 10, 1, light);
+    expect(flushBeatHit(s, 10.29, light)).toBe(false);
+    expect(s.drops[0]).toBe(-Infinity);
+    expect(flushBeatHit(s, 10.3, light)).toBe(true);
+    expect(s.drops[0]).toBeCloseTo(10.3);
   });
   it('at most once every 4 s', () => {
     const s = createVibeState();
-    expect(noteBeatHit(s, 10, 1, light)).toBe(true);
-    expect(noteBeatHit(s, 10 + BEAT_HIT_GAP_S - 0.1, 1, light)).toBe(false);
-    expect(noteBeatHit(s, 10 + BEAT_HIT_GAP_S, 1, light)).toBe(true);
+    expect(hit(s, 10, 1)).toBe(true);
+    expect(hit(s, 10.3 + 3.6, 1)).toBe(false);
+    expect(hit(s, 10.3 + 4, 1)).toBe(true);
   });
   it('never within 2 s after a drop', () => {
     const s = createVibeState();
     noteDrop(s, 10, 1, light);
-    expect(noteBeatHit(s, 10 + BEAT_HIT_AFTER_DROP_S - 0.1, 1, light)).toBe(false);
-    expect(noteBeatHit(s, 10 + BEAT_HIT_AFTER_DROP_S, 1, light)).toBe(true);
+    expect(hit(s, 11.9, 1)).toBe(false);
+    expect(hit(s, 12, 1)).toBe(true);
+  });
+  it('a drop within the next 0.3 s cancels the hit that was waiting', () => {
+    const s = createVibeState();
+    expect(noteBeatHit(s, 10, 1, light)).toBe(true);
+    noteDrop(s, 10.2, 1, light);
+    expect(flushBeatHit(s, 10.6, light)).toBe(false);
+    expect([...s.drops].filter((d) => d > -Infinity)).toEqual([10.2]);
+    expect(s.lastBeatHitAt).toBe(-Infinity);
   });
   it('takes the Length and Strength settings, a quarter of the Hard strength under Hard', () => {
     const s = createVibeState();
-    noteBeatHit(s, 10, 1, on({ beatHits: 'light', glitchLength: 'short', glitchStrength: 'hard' }));
+    hit(s, 10, 1, on({ beatHits: 'light', glitchLength: 'short', glitchStrength: 'hard' }));
     expect(s.dur[0]).toBe(0.5);
     expect(s.power[0]).toBeCloseTo(0.35);
   });

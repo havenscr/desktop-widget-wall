@@ -5,7 +5,8 @@
 const at = encodeURIComponent('2026-11-11T22:30:00-08:00');
 const UNWIND = `?hz=unwind&at=${at}&long=1&agents=3&watch=mock&wlist=none&wtab=listen&wsheet=vibe&audio=demo&clock=review&weather=ok`;
 const TOOLS_Q = `?hz=work&at=${at}&clock=review&weather=ok&agents=3&tools=vibe`;
-const SHEET = ['.w-sheet', '.w-sheet .ln-vibe'];
+// The sheet's body scrolls by design now (a tall Drop Glitch card), so the controls themselves are not held inside the box.
+const SHEET = ['.w-sheet'];
 const DRAWER = ['.tools-drawer', '.tools-drawer .tools-rail', '.tools-drawer .tools-panel:not([hidden])', '.tools-drawer .ln-vibe'];
 const NAMES = ['Vibe, the Unwind page', 'Vibe, the Tools group', 'Vibe, the Unwind page, Drop Glitch Off', 'Vibe, the Tools group, Drop Glitch Off'];
 
@@ -19,16 +20,18 @@ function measureVibe() {
   const inSheet = !!root.closest('.w-sheet');
   // No scroll bar: every ancestor up to the box, and the box itself, fits its content.
   for (let el = root; el && el !== box.parentElement; el = el.parentElement) {
-    if (el.scrollHeight > el.clientHeight + 1 && getComputedStyle(el).overflowY !== 'visible') fails.push('vibe: a scroll bar would show on ' + (el.className || el.tagName) + ' (' + el.scrollHeight + ' px of content in ' + el.clientHeight + ' px)');
+    if (!(inSheet && el.classList.contains('ln-body')) && el.scrollHeight > el.clientHeight + 1 && getComputedStyle(el).overflowY !== 'visible') fails.push('vibe: a scroll bar would show on ' + (el.className || el.tagName) + ' (' + el.scrollHeight + ' px of content in ' + el.clientHeight + ' px)');
   }
+  // The sheet's body scrolls by design (the Drop Glitch card is tall, with a fade at the bottom); the Tools drawer never does.
   const body = root.closest('.ln-body');
-  if (body && body.scrollHeight > body.clientHeight + 1) fails.push('vibe: the page body scrolls (' + body.scrollHeight + ' of ' + body.clientHeight + ' px)');
+  if (!inSheet && body && body.scrollHeight > body.clientHeight + 1) fails.push('vibe: the page body scrolls (' + body.scrollHeight + ' of ' + body.clientHeight + ' px)');
   const br = box.getBoundingClientRect();
   if (br.bottom > (inSheet ? 650 : 697) + 0.5) fails.push('vibe: the box ends at y ' + r1(br.bottom) + ', past y ' + (inSheet ? 650 : 697));
   const rr = root.getBoundingClientRect();
   if (root.scrollWidth > root.clientWidth + 1) fails.push('vibe: the controls are ' + root.scrollWidth + ' px wide in a ' + root.clientWidth + ' px box (' + [...root.querySelectorAll('*')].filter((e) => e.getBoundingClientRect().right > rr.right + 1).map((e) => (e.className || e.tagName) + ':' + (e.textContent || '').slice(0, 12) + ':' + Math.round(e.getBoundingClientRect().right - rr.right)).slice(0, 6).join(' | ') + ')');
   // Text: at least 16 px, never cut, never wrapped.
   for (const el of [root, ...root.querySelectorAll('*')]) {
+    if (el.getClientRects().length === 0) continue;
     const own = [...el.childNodes].some((n) => n.nodeType === 3 && n.textContent.trim() !== '');
     if (!own) continue;
     const cs = getComputedStyle(el);
@@ -50,7 +53,7 @@ function measureVibe() {
     const h = c.getBoundingClientRect().height;
     if (h < 32) fails.push('vibe: "' + (c.textContent || '').trim() + '" is ' + r1(h) + ' px tall, under 32');
   }
-  for (const g of root.querySelectorAll('.ln-chips')) {
+  for (const g of root.querySelectorAll('.ln-chips, .dg-tiles')) {
     const k = [...g.children].map((c) => c.getBoundingClientRect());
     for (let i = 1; i < k.length; i++) if (k[i].left - k[i - 1].right < 7.5) fails.push('vibe: two chips are ' + r1(k[i].left - k[i - 1].right) + ' px apart');
   }
@@ -58,12 +61,22 @@ function measureVibe() {
   const rows = [...root.querySelectorAll('.ln-row')].map((r) => r.getBoundingClientRect());
   for (let i = 1; i < rows.length; i++) if (rows[i].top < rows[i - 1].bottom - 0.5) fails.push('vibe: two rows overlap');
   const sec = [...root.querySelectorAll('.ln-gh')].map((e) => e.textContent.trim());
-  const groups = root.querySelectorAll('[role="radiogroup"]').length;
-  const switches = root.querySelectorAll('[role="switch"]').length;
-  const sliders = root.querySelectorAll('input[type="range"]').length;
+  const shown = (sel) => [...root.querySelectorAll(sel)].filter((e) => e.getClientRects().length > 0).length;
+  const groups = shown('[role="radiogroup"]');
+  const switches = shown('[role="switch"]');
+  const sliders = shown('input[type="range"]');
+  const tuneShown = !!root.querySelector('.dg-tune:not([hidden])');
+  // Every control and text keeps at least a 16 px gutter from the box's edges on both sides.
+  const edge = root.closest('.w-sheet') || box;
+  const er = edge.getBoundingClientRect();
+  for (const el of root.querySelectorAll('button, input, .dg-row > *, .dg-head > *, .ln-row > *')) {
+    const r = el.getBoundingClientRect();
+    if (r.width === 0) continue;
+    if (r.left - er.left < 15.5 || er.right - r.right < 15.5) fails.push('vibe: "' + ((el.textContent || el.className || '').trim().slice(0, 20)) + '" is ' + r1(Math.min(r.left - er.left, er.right - r.right)) + ' px from the box edge, under 16');
+  }
   const labelLefts = [...root.querySelectorAll('.ln-row > .ln-label:not(.ln-wide)')].map((e) => r1(e.getBoundingClientRect().left));
   const chipHeights = chips.map((c) => r1(c.getBoundingClientRect().height));
-  return { found: true, fails, sliders, labelLefts, chipHeights, height: r1(br.height), bottom: r1(br.bottom), rootHeight: r1(rr.height), groups, switches, sec, inSheet };
+  return { found: true, fails, sliders, labelLefts, chipHeights, height: r1(br.height), bottom: r1(br.bottom), rootHeight: r1(rr.height), groups, switches, sec, inSheet, tuneShown };
 }
 
 function ruleVibe(variant, results, emit) {
@@ -72,7 +85,7 @@ function ruleVibe(variant, results, emit) {
   if (!m || !m.found) { emit('  FAIL vibe: the controls are not shown'); return true; }
   const fails = [...m.fails];
   if (m.sec.join('|') !== 'Music reacts|Screen look') fails.push('vibe: the headings read "' + m.sec.join('", "') + '"');
-  if (m.groups !== 7 || m.switches !== 3 || m.sliders !== 1) fails.push('vibe: ' + m.groups + ' chip rows, ' + m.switches + ' switches and ' + m.sliders + ' sliders, expected 7, 3 and 1');
+  if (m.groups !== (m.tuneShown ? 6 : 4) || m.switches !== (m.tuneShown ? 4 : 3) || m.sliders !== (m.tuneShown ? 1 : 0)) fails.push('vibe: ' + m.groups + ' choice groups, ' + m.switches + ' switches and ' + m.sliders + ' sliders, expected ' + (m.tuneShown ? '6, 4 and 1' : '4, 3 and 0'));
   if (m.labelLefts.some((x) => Math.abs(x - m.labelLefts[0]) > 0.5)) fails.push('vibe: the row labels do not share one left edge (' + m.labelLefts.join(', ') + ')');
   if (m.chipHeights.some((x) => Math.abs(x - m.chipHeights[0]) > 0.5)) fails.push('vibe: the chips are not one height (' + [...new Set(m.chipHeights)].join(', ') + ')');
   for (const f of fails) emit('  FAIL ' + f);

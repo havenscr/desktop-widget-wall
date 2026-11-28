@@ -1,9 +1,11 @@
-import { useId, type CSSProperties, type KeyboardEvent, type ReactNode } from 'react';
-import { IconRestore, IconSettings } from '@tabler/icons-react';
+import { useId, useState, type CSSProperties, type KeyboardEvent } from 'react';
+import { IconActivity, IconArrowsExchange, IconBan, IconBaselineDensityMedium, IconBolt, IconChevronDown, IconEqual, IconFocus2, IconPlayerPlay, IconRestore, IconSettings } from '@tabler/icons-react';
 import { tip } from '../../ui/HoverTip';
 import { DEFAULT_LINES, LINE_PRESETS, activePreset, useLinesStore, type LineColours, type LinePreset, type LineRest, type LineType } from '../../horizon/linesSettings';
-import { SENSITIVITY_DEFAULT, SENSITIVITY_MAX, SENSITIVITY_MIN, useVibeStore, type AuroraLevel, type BeatHits, type GlitchLength, type GlitchLook, type GlitchStrength, type MountainLevel } from '../../horizon/vibeSettings';
+import { SENSITIVITY_DEFAULT, SENSITIVITY_MAX, SENSITIVITY_MIN, useVibeStore, type AuroraLevel, type GlitchLength, type GlitchLook, type GlitchStrength, type MountainLevel } from '../../horizon/vibeSettings';
 import { fireTry } from '../../vibe/tryIt';
+import { useAudioStore } from '../../audio/store';
+import { loudness } from '../../audio/model';
 import type { MusicLevel } from '../../horizon/offTabMusic';
 import { useWatchStore } from './store';
 
@@ -61,10 +63,6 @@ const GLITCH_NAMES: { id: GlitchLook; name: string; note: string }[] = [
   { id: 'roll', name: 'Roll', note: 'On a drop a tape tracking band rolls down the screen' },
   { id: 'flash', name: 'Flash', note: 'On a drop a bright bloom washes over the picture with a small zoom punch' },
 ];
-const BEAT_NAMES: { id: BeatHits; name: string; note: string }[] = [
-  { id: 'off', name: 'Off', note: 'Only a real drop glitches the picture' },
-  { id: 'light', name: 'Light', note: 'The hardest beats add a small glitch, a quarter of a drop, at most every 4 seconds and never right after a drop' },
-];
 const LENGTH_NAMES: { id: GlitchLength; name: string; note: string }[] = [
   { id: 'short', name: 'Short', note: 'Each hit fades out in half a second' },
   { id: 'normal', name: 'Normal', note: 'Each hit lasts about a second, as it always has' },
@@ -100,7 +98,6 @@ export const VIBE_HINTS = {
 /** The short line beside or under a setting. */
 export const VIBE_SHORT = {
   auto: 'Glow follows the music',
-  dropGlitch: 'How a big drop hits the picture',
   calmCap: 'Halves every effect',
   mountain: 'How much the music moves the mountain lines.',
   tapeGrain: 'Grain and fine lines',
@@ -181,7 +178,7 @@ function VibeSwitch({ uid, id, label, on, hint, full, tipText, onToggle, hintRig
 }
 
 /** One chip row of the Vibe controls: the name (its full sentence on hover) and the chips. `hint` is the line under the row, when it has one. */
-function VibeChips<T extends string>({ uid, id, label, items, value, full, hint, wide, onPick, trailing, after, disabled }: { uid: string; id: string; label: string; items: { id: T; name: string; note: string }[]; value: T; full: string; hint?: string; wide?: boolean; onPick: (id: T) => void; trailing?: string; after?: ReactNode; disabled?: boolean }) {
+function VibeChips<T extends string>({ uid, id, label, items, value, full, hint, wide, onPick, trailing }: { uid: string; id: string; label: string; items: { id: T; name: string; note: string }[]; value: T; full: string; hint?: string; wide?: boolean; onPick: (id: T) => void; trailing?: string }) {
   return (
     <>
       <div className="ln-row">
@@ -190,12 +187,11 @@ function VibeChips<T extends string>({ uid, id, label, items, value, full, hint,
         </span>
         <div className="ln-chips" role="radiogroup" aria-labelledby={`${uid}-${id}-label`} aria-describedby={hint ? `${uid}-${id}-hint` : undefined} onKeyDown={arrows(items, value, onPick)}>
           {items.map((x) => (
-            <button key={x.id} type="button" role="radio" disabled={disabled} aria-checked={value === x.id} tabIndex={value === x.id ? 0 : -1} className={value === x.id ? 'on' : ''} {...tip(x.note)} onClick={() => onPick(x.id)}>
+            <button key={x.id} type="button" role="radio" aria-checked={value === x.id} tabIndex={value === x.id ? 0 : -1} className={value === x.id ? 'on' : ''} {...tip(x.note)} onClick={() => onPick(x.id)}>
               {x.name}
             </button>
           ))}
         </div>
-        {after}
         {trailing ? <span className="ln-short ln-short-end">{trailing}</span> : null}
       </div>
       {hint ? (
@@ -207,20 +203,48 @@ function VibeChips<T extends string>({ uid, id, label, items, value, full, hint,
   );
 }
 
-/** The Sensitivity row: a 1 to 10 slider in the page's own slider look, the number beside it. */
-function SensitivityRow({ uid, value, onChange, disabled }: { uid: string; value: number; onChange: (v: number) => void; disabled?: boolean }) {
+const GLITCH_ICONS: Record<GlitchLook, typeof IconBan> = { off: IconBan, tear: IconBaselineDensityMedium, split: IconEqual, roll: IconArrowsExchange, flash: IconFocus2 };
+
+/** The live sound level, a soft bar behind the Drops slider's track. Only this bar re-renders as the music moves. */
+function LevelBar() {
+  const level = useAudioStore((st) => Math.round(loudness(st) * 50) / 50);
+  return <i className="dg-level" aria-hidden="true" style={{ width: `${level * 100}%` }} />;
+}
+
+/** The Drops row: a 1 to 10 slider from "big only" to "any lift" with the live level inside its track and the number at the end. */
+function DropsRow({ uid, value, onChange }: { uid: string; value: number; onChange: (v: number) => void }) {
   const span = SENSITIVITY_MAX - SENSITIVITY_MIN;
   const style = { '--usual': `${((SENSITIVITY_DEFAULT - SENSITIVITY_MIN) / span) * 100}%`, '--at': `${((value - SENSITIVITY_MIN) / span) * 100}%` } as CSSProperties;
   return (
-    <div className="ln-row">
-      <label className="ln-label" htmlFor={`${uid}-sens`} {...tip(VIBE_HINTS.dropSensitivity)}>
-        Sensitivity
-      </label>
-      <span className="ln-track" style={style}>
-        <i className="ln-usual" aria-hidden="true" />
-        <input id={`${uid}-sens`} type="range" disabled={disabled} min={SENSITIVITY_MIN} max={SENSITIVITY_MAX} step={1} value={value} aria-valuetext={`${value} of ${SENSITIVITY_MAX}`} {...tip('Low waits for a big jump after a long calm. High fires on small swells. The mark is your usual.')} onChange={(e) => onChange(Number(e.target.value))} />
-      </span>
-      <span className="ln-value ln-num">{value}</span>
+    <>
+      <div className="dg-row">
+        <label className="dg-label" htmlFor={`${uid}-sens`} {...tip(VIBE_HINTS.dropSensitivity)}>
+          Drops
+        </label>
+        <span className="ln-track dg-track" style={style}>
+          <LevelBar />
+          <i className="ln-usual" aria-hidden="true" />
+          <input id={`${uid}-sens`} type="range" min={SENSITIVITY_MIN} max={SENSITIVITY_MAX} step={1} value={value} aria-valuetext={`${value} of ${SENSITIVITY_MAX}, from big drops only to any lift`} {...tip('Left fires only on a big jump after a long calm. Right fires on any lift. The soft bar is the sound level now; the mark is your usual.')} onChange={(e) => onChange(Number(e.target.value))} />
+        </span>
+        <span className="dg-num">{value}</span>
+      </div>
+      <div className="dg-row dg-scale" aria-hidden="true">
+        <span>big only</span>
+        <span>any lift</span>
+      </div>
+    </>
+  );
+}
+
+/** A segmented control of three choices: one pill, the chosen part lit. */
+function Seg<T extends string>({ label, items, value, full, onPick }: { label: string; items: { id: T; name: string; note: string }[]; value: T; full: string; onPick: (id: T) => void }) {
+  return (
+    <div className="dg-seg" role="radiogroup" aria-label={label} onKeyDown={arrows(items, value, onPick)} {...tip(full)}>
+      {items.map((x) => (
+        <button key={x.id} type="button" role="radio" aria-checked={value === x.id} tabIndex={value === x.id ? 0 : -1} className={value === x.id ? 'on' : ''} {...tip(x.note)} onClick={() => onPick(x.id)}>
+          {x.name}
+        </button>
+      ))}
     </div>
   );
 }
@@ -228,16 +252,73 @@ function SensitivityRow({ uid, value, onChange, disabled }: { uid: string; value
 /**
  * The Vibe controls, in two groups: Music reacts and Screen look. The same component serves the Unwind Vibe page and the
  * Tools drawer's Vibe group, both reading the one vibe store, so a change in one shows in the other at once. Its own
- * setting; Reset to my usual on the Lines page leaves it alone.
+ * setting; Reset to my usual on the Lines page leaves it alone. `tuneOpen` is whether "Tune when it fires" starts open: the
+ * sheet scrolls and starts it open; the Tools drawer cannot scroll and starts it folded.
  */
-export function VibePanel() {
+export function VibePanel({ tuneOpen = true }: { tuneOpen?: boolean } = {}) {
   const uid = useId();
   const v = useVibeStore();
   const set = v.setVibe;
   // With Drop Glitch Off the settings under it dim and take no input.
   const off = v.dropGlitch === 'off';
+  const [open, setOpen] = useState(tuneOpen);
+  const beatsOn = v.beatHits === 'light';
   return (
     <div className="ln-panel ln-vibe" role="group" aria-label="Vibe">
+      <section className="dg-card" aria-labelledby={`${uid}-dg`}>
+        <div className="dg-head">
+          <IconBolt size={20} aria-hidden="true" />
+          <span className="dg-title" id={`${uid}-dg`} {...tip(VIBE_HINTS.dropGlitch)}>
+            Drop Glitch
+          </span>
+          <button type="button" className="ln-try" disabled={off} {...tip('Fire one hit now with the current look, length and strength, even with no music. It shows on Listen and Watch.')} onClick={fireTry}>
+            <IconPlayerPlay size={16} aria-hidden="true" />
+            Try it
+          </button>
+        </div>
+        <div className="dg-tiles" role="radiogroup" aria-labelledby={`${uid}-dg`} onKeyDown={arrows(GLITCH_NAMES, v.dropGlitch, (id) => set({ dropGlitch: id }))}>
+          {GLITCH_NAMES.map((x) => {
+            const Icon = GLITCH_ICONS[x.id];
+            return (
+              <button key={x.id} type="button" role="radio" aria-checked={v.dropGlitch === x.id} tabIndex={v.dropGlitch === x.id ? 0 : -1} className={v.dropGlitch === x.id ? 'on' : ''} {...tip(x.note)} onClick={() => set({ dropGlitch: x.id })}>
+                <Icon size={22} aria-hidden="true" />
+                {x.name}
+              </button>
+            );
+          })}
+        </div>
+        <button type="button" className="dg-fold" aria-expanded={open} aria-controls={`${uid}-tune`} {...tip('Show or hide how easily a drop fires, the beat hits, and how long and how hard each hit is.')} onClick={() => setOpen(!open)}>
+          <IconChevronDown size={18} aria-hidden="true" className={open ? '' : 'shut'} />
+          Tune when it fires
+        </button>
+        <div className={`dg-tune${off ? ' off' : ''}`} id={`${uid}-tune`} role="group" aria-label="Tune when it fires" aria-disabled={off} hidden={!open}>
+          <fieldset disabled={off} className="dg-set">
+            <DropsRow uid={uid} value={v.dropSensitivity} onChange={(n) => set({ dropSensitivity: n })} />
+            <div className="dg-row dg-beat">
+              <span className="dg-label dg-bl" id={`${uid}-beats-label`} {...tip(VIBE_HINTS.beatHits)}>
+                <IconActivity size={18} aria-hidden="true" />
+                Beat hits
+              </span>
+              <span className="dg-help" id={`${uid}-beats-hint`}>
+                a light glitch on hard beats
+              </span>
+              <button type="button" role="switch" aria-checked={beatsOn} aria-labelledby={`${uid}-beats-label`} aria-describedby={`${uid}-beats-hint`} className={`ln-switch${beatsOn ? ' on' : ''}`} {...tip(beatsOn ? 'Light glitches on the hardest beats are on. Click to turn them off.' : 'Click for a small glitch on the hardest beats, at most every 4 seconds.')} onClick={() => set({ beatHits: beatsOn ? 'off' : 'light' })}>
+                <i aria-hidden="true" />
+              </button>
+            </div>
+            <div className="dg-row dg-each">
+              <span className="dg-label" {...tip('How long and how hard each glitch is, for a drop, a beat hit and Try it.')}>
+                Each hit
+              </span>
+              <Seg label="Length" items={LENGTH_NAMES} value={v.glitchLength} full={VIBE_HINTS.glitchLength} onPick={(id) => set({ glitchLength: id })} />
+            </div>
+            <div className="dg-row dg-each">
+              <span className="dg-label" aria-hidden="true" />
+              <Seg label="Strength" items={STRENGTH_NAMES} value={v.glitchStrength} full={VIBE_HINTS.glitchStrength} onPick={(id) => set({ glitchStrength: id })} />
+            </div>
+          </fieldset>
+        </div>
+      </section>
       <div className="ln-row ln-head">
         <span className="ln-gh">Music reacts</span>
         <button type="button" className="ln-reset" {...tip('The vibe settings back to your usual: Auto vibe on, Tear, drop sensitivity 3, Medium mountain dance and music on other tabs, the rest off, Full aurora')} onClick={v.reset}>
@@ -255,35 +336,7 @@ export function VibePanel() {
         tipText={v.auto ? 'Colour and glow follow the music. Click to turn it off.' : 'Every effect sits at a fixed level. Click to follow the music.'}
         onToggle={() => set({ auto: !v.auto })}
       />
-      <VibeChips
-        uid={uid}
-        id="glitch"
-        label="Drop Glitch"
-        items={GLITCH_NAMES}
-        value={v.dropGlitch}
-        full={VIBE_HINTS.dropGlitch}
-        onPick={(id) => set({ dropGlitch: id })}
-      />
-      <div className={`ln-dg${off ? ' off' : ''}`} role="group" aria-label="Drop Glitch settings" aria-disabled={off}>
-        <SensitivityRow uid={uid} disabled={off} value={v.dropSensitivity} onChange={(n) => set({ dropSensitivity: n })} />
-        <VibeChips uid={uid} disabled={off} id="beats" label="Beat hits" items={BEAT_NAMES} value={v.beatHits} full={VIBE_HINTS.beatHits} onPick={(id) => set({ beatHits: id })} />
-        <VibeChips uid={uid} disabled={off} id="length" label="Length" items={LENGTH_NAMES} value={v.glitchLength} full={VIBE_HINTS.glitchLength} onPick={(id) => set({ glitchLength: id })} />
-        <VibeChips
-          uid={uid}
-          id="strength"
-          disabled={off}
-          label="Strength"
-          items={STRENGTH_NAMES}
-          value={v.glitchStrength}
-          full={VIBE_HINTS.glitchStrength}
-          onPick={(id) => set({ glitchStrength: id })}
-          after={
-            <button type="button" className="ln-try" disabled={off} {...tip('Fire one hit now with the current look, length and strength, even with no music. It shows on Listen and Watch.')} onClick={fireTry}>
-              Try it
-            </button>
-          }
-        />
-      </div>
+      <VibeChips uid={uid} id="mountain" label="Mountain dance" items={MOUNTAIN_NAMES} value={v.mountain} full={VIBE_HINTS.mountain} hint={VIBE_SHORT.mountain} onPick={(id) => set({ mountain: id })} />
       <VibeSwitch
         uid={uid}
         id="calm"
@@ -294,7 +347,6 @@ export function VibePanel() {
         tipText={v.calmCap ? 'Effects are halved. Click to turn it off.' : 'Click to halve every effect.'}
         onToggle={() => set({ calmCap: !v.calmCap })}
       />
-      <VibeChips uid={uid} id="mountain" label="Mountain dance" items={MOUNTAIN_NAMES} value={v.mountain} full={VIBE_HINTS.mountain} hint={VIBE_SHORT.mountain} onPick={(id) => set({ mountain: id })} />
       <VibeChips uid={uid} id="music" label="Music on other tabs" wide items={MUSIC_NAMES} value={v.offTabMusic} full={VIBE_HINTS.offTabMusic} onPick={(id) => set({ offTabMusic: id })} />
       <div className="ln-row ln-head ln-split">
         <span className="ln-gh">Screen look</span>

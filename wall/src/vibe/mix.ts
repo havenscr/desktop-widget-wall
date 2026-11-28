@@ -54,6 +54,9 @@ export const BEAT_HIT_POWER = 0.25;
 export const BEAT_HIT_MIN_STRENGTH = 0.7;
 export const BEAT_HIT_GAP_S = 4;
 export const BEAT_HIT_AFTER_DROP_S = 2;
+/** A beat hit waits this long before it shows. A drop is confirmed by a beat up to 250 ms after the jump, so a hit that
+ *  would land just before a drop is cancelled by that drop instead of showing twice. */
+export const BEAT_HIT_HOLD_S = 0.3;
 /** Strength never goes past this, so Hard on a full drop stays close to today's top. */
 export const POWER_CAP = 1.15;
 /** Below this the swell tail counts as finished (about 2.6 s after a drop) and is exactly 0. */
@@ -106,6 +109,8 @@ export interface VibeState {
   /** Clock seconds of the last real drop, the last beat hit, and the last Try it; -Infinity for none. */
   lastDropAt: number;
   lastBeatHitAt: number;
+  /** Clock seconds a beat hit was queued; -Infinity for none waiting. */
+  beatQueuedAt: number;
   tryAt: number;
 }
 
@@ -116,7 +121,7 @@ export function createVibeState(): VibeState {
   return {
     auto: ease0(), tape: ease0(), glitch: ease0(), calm: ease0(), aurora: ease0(), kickAt: -Infinity, live: ease0(),
     palette: 0, drops: new Float64Array(MAX_DROPS).fill(-Infinity), power: new Float64Array(MAX_DROPS).fill(1),
-    dur: new Float64Array(MAX_DROPS).fill(DROP_S), swellW: new Float64Array(MAX_DROPS).fill(1), lastDropAt: -Infinity, lastBeatHitAt: -Infinity, tryAt: -Infinity,
+    dur: new Float64Array(MAX_DROPS).fill(DROP_S), swellW: new Float64Array(MAX_DROPS).fill(1), lastDropAt: -Infinity, lastBeatHitAt: -Infinity, beatQueuedAt: -Infinity, tryAt: -Infinity,
   };
 }
 
@@ -175,16 +180,27 @@ const durOf = (settings: VibeSettings | undefined): number => (settings ? GLITCH
 export function noteDrop(s: VibeState, nowS: number, strength = 1, settings?: VibeSettings): void {
   stamp(s, nowS, powerOf(strength, settings), durOf(settings), 1);
   s.lastDropAt = nowS;
+  // A beat hit still waiting belongs to this drop's own beat: the drop replaces it.
+  s.beatQueuedAt = -Infinity;
 }
 
 /**
- * A beat hit (Beat hits: Light) at `nowS`, for a beat of `beatStrength` (0 to 1). Only a hard beat counts, at most one
- * every `BEAT_HIT_GAP_S`, never within `BEAT_HIT_AFTER_DROP_S` after a drop. A quarter of a drop's strength, no glow swell.
- * True when it fired.
+ * A beat hit (Beat hits: Light) for a beat at `nowS` of `beatStrength` (0 to 1). Only a hard beat counts, at most one
+ * every `BEAT_HIT_GAP_S`, never within `BEAT_HIT_AFTER_DROP_S` after a drop. It is queued, not shown: `flushBeatHit`
+ * shows it `BEAT_HIT_HOLD_S` later unless a drop arrived in between. True when it was queued.
  */
 export function noteBeatHit(s: VibeState, nowS: number, beatStrength: number, settings: VibeSettings): boolean {
   if (settings.beatHits !== 'light' || !(beatStrength >= BEAT_HIT_MIN_STRENGTH)) return false;
-  if (nowS - s.lastBeatHitAt < BEAT_HIT_GAP_S || nowS - s.lastDropAt < BEAT_HIT_AFTER_DROP_S) return false;
+  if (nowS - s.lastBeatHitAt < BEAT_HIT_GAP_S || nowS - s.lastDropAt < BEAT_HIT_AFTER_DROP_S || s.beatQueuedAt > -Infinity) return false;
+  s.beatQueuedAt = nowS;
+  return true;
+}
+
+/** Show the queued beat hit once its hold is over: a quarter of a drop's strength, no glow swell. True when it showed. */
+export function flushBeatHit(s: VibeState, nowS: number, settings: VibeSettings): boolean {
+  if (s.beatQueuedAt === -Infinity || nowS - s.beatQueuedAt < BEAT_HIT_HOLD_S) return false;
+  s.beatQueuedAt = -Infinity;
+  if (settings.beatHits !== 'light') return false;
   stamp(s, nowS, powerOf(BEAT_HIT_POWER, settings), durOf(settings), 0);
   s.lastBeatHitAt = nowS;
   return true;

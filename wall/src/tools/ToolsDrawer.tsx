@@ -271,7 +271,7 @@ function DisplayPanel() {
 function VibeToolsPanel() {
   const mountain = useVibeStore((s) => s.mountain);
   useRailStatus('vibe', `Dance ${MOUNTAIN_WORD[mountain]}`, 'none');
-  return <VibePanel />;
+  return <VibePanel tuneOpen={false} />;
 }
 
 /** One rail entry's group. Adding an option to the drawer is one new entry here (and its panel above). */
