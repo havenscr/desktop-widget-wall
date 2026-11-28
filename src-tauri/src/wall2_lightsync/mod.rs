@@ -475,22 +475,22 @@ fn run_stream_loop(rig: &dyn Rig, live: &mut Live, ctl: &Control, latest: Latest
         }
         let t = now();
         let tuning = ctl.tuning();
-        let mut beat = false;
+        let mut beat_lag: Option<f64> = None;
         if let Some((seq, b)) = latest() {
             if seq != last_seq {
                 last_seq = seq;
                 bands = b;
                 last_frame_at = t;
-                beat = detector.push(&beat::unit_bands(&bands)[..beat::BEAT_BANDS], t, t);
+                beat_lag = detector.push(&beat::unit_bands(&bands)[..beat::BEAT_BANDS], t, t);
             }
         }
         if t - last_frame_at > FRAME_STALE_MS {
             bands.clear();
         }
         let (bass, high) = engine::levels_from_bands(&bands);
-        let out = engine.step(&tuning, engine::Input { bass, high, beat, dt_ms: t - last_tick }, plays.len(), &panel_xy);
+        let out = engine.step(&tuning, engine::Input { bass, high, beat: beat_lag.is_some(), beat_lag_ms: beat_lag.unwrap_or(0.0), dt_ms: t - last_tick }, plays.len(), &panel_xy);
         last_tick = t;
-        stats.observe(t, beat, &out.plays, tuning.settings.plays);
+        stats.observe(t, beat_lag.is_some(), &out.plays, tuning.settings.plays);
 
         let channels: Vec<stream::Channel> = plays.iter().zip(&out.plays).map(|(id, c)| (*id, [stream::to16(c[0]), stream::to16(c[1]), stream::to16(c[2])])).collect();
         let sent = stream::encode_frame(sequence, &area_id, &channels).is_some_and(|f| live.hue.send(&f));

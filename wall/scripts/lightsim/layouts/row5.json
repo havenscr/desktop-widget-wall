@@ -1,0 +1,11 @@
+{
+  "name": "Placeholder: five triangles in a row",
+  "note": "Swap for the real Nanoleaf layout: same shape as the panels layout the native side reads (id, x, y in Nanoleaf layout units), plus an optional up flag used only for drawing.",
+  "panels": [
+    { "id": 1, "x": 0, "y": 0, "up": true },
+    { "id": 2, "x": 75, "y": 43, "up": false },
+    { "id": 3, "x": 150, "y": 0, "up": true },
+    { "id": 4, "x": 225, "y": 43, "up": false },
+    { "id": 5, "x": 300, "y": 0, "up": true }
+  ]
+}

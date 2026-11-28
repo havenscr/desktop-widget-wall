@@ -74,6 +74,9 @@ export interface PreviewState {
   clockMs: number;
   /** Colours of beat nudge still to apply, spread over `NUDGE_MS`. */
   nudgeLeft: number;
+  /** Running input level for Auto level, and the slow bass mean for the changing-bass term. */
+  autoLevel: number;
+  slowBass: number;
   recent: { dt: number; bass: number; high: number }[];
   plays: LightState[];
   panels: LightState[];
@@ -99,6 +102,39 @@ const FRAME_MS = 33;
 const NUDGE_MS = 200;
 const LEVEL_LO = 0.2;
 const LEVEL_SPAN = 0.7;
+/** Auto level: the gain pulls the running level toward this; the running level follows 2 s up, 8 s down; the gain is clamped. Same numbers as `engine.rs`. */
+export const AUTO_TARGET = 0.5;
+export const AUTO_ATTACK_MS = 2000;
+export const AUTO_RELEASE_MS = 8000;
+export const AUTO_GAIN_MIN = 0.5;
+export const AUTO_GAIN_MAX = 3;
+/** Under this input level Auto level holds: the running level, and so the gain, stays where the last real music left it. Same numbers as `engine.rs`. */
+export const AUTO_SILENCE = 0.04;
+/** The running level never releases below this, so the gain stays at or under 2.5 and a noisy quiet room is not boosted past `LEVEL_LO`. */
+export const AUTO_LEVEL_FLOOR = 0.2;
+/** The changing-bass term (bass against its 1.5 s mean, scaled and capped, added to the bass envelope target) and the ripple fade. */
+export const SLOW_BASS_MS = 1500;
+export const MOTION_GAIN = 6;
+export const MOTION_DEPTH = 0.25;
+export const RIPPLE_FALLOFF = 0.5;
+/** A confirmed beat starts its pulse at the onset frame, never more than this far back. */
+export const MAX_BACKDATE_MS = 150;
+
+/** How far back a beat's pulse starts: the detector's lag, at most `MAX_BACKDATE_MS` and at most the preset's rise, so the first frame lands at the peak and the rise shaping is kept. */
+export const backdateOf = (lag: number | undefined, riseMs: number): number => (Number.isFinite(lag) ? Math.min(MAX_BACKDATE_MS, Math.max(0, riseMs), Math.max(0, lag as number)) : 0);
+
+/** The gain Auto level applies this step; moves `st.autoLevel` toward the louder of the two inputs, and holds it through silence. */
+export function autoGain(st: { autoLevel: number }, loud: number, dt: number): number {
+  if (loud >= AUTO_SILENCE) st.autoLevel = Math.max(AUTO_LEVEL_FLOOR, st.autoLevel + (loud - st.autoLevel) * (1 - Math.exp(-dt / (loud > st.autoLevel ? AUTO_ATTACK_MS : AUTO_RELEASE_MS))));
+  return Math.min(AUTO_GAIN_MAX, Math.max(AUTO_GAIN_MIN, AUTO_TARGET / Math.max(1e-3, st.autoLevel)));
+}
+
+/** The bass envelope's extra target for a changing bass: positive on a rise above the slow mean, negative on a dip. */
+export function bassMotion(st: { slowBass: number }, wb: number, dt: number): number {
+  st.slowBass += (wb - st.slowBass) * (1 - Math.exp(-dt / SLOW_BASS_MS));
+  return Math.min(1, Math.max(-1, (wb - st.slowBass) * MOTION_GAIN)) * MOTION_DEPTH;
+}
+
 const PLAYS = 4;
 const PANELS = 5;
 
@@ -110,6 +146,8 @@ export const newPreview = (floor: number, beatCount = 0): PreviewState => ({
   pos: 0,
   clockMs: 0,
   nudgeLeft: 0,
+  autoLevel: AUTO_TARGET,
+  slowBass: 0,
   recent: [],
   plays: Array.from({ length: PLAYS }, () => light(floor)),
   panels: Array.from({ length: PANELS }, () => light(floor)),
@@ -171,17 +209,24 @@ function lightFrame(st: PreviewState, s: LightSyncSettings, dt: number, ls: Ligh
   return shown;
 }
 
-export function stepPreview(st: PreviewState, s: LightSyncSettings, ui: LightsUi, palette: PreviewPalette, input: { bass: number; high: number; beatCount: number; dtMs: number }): PreviewFrame {
+export function stepPreview(st: PreviewState, s: LightSyncSettings, ui: LightsUi, palette: PreviewPalette, input: { bass: number; high: number; beatCount: number; dtMs: number; beatLagMs?: number }): PreviewFrame {
   const dt = Number.isFinite(input.dtMs) ? Math.min(500, Math.max(0, input.dtMs)) : 0;
   const shaped = (level: number, gain: number) => clamp01(clamp01((clamp01(level) - LEVEL_LO) / LEVEL_SPAN) * gain);
   // The mean of the recent band levels over `levelWindow` frames, weighted by the time each lasted.
-  st.recent.push({ dt: Math.max(1, dt), bass: clamp01(input.bass), high: clamp01(input.high) });
+  let bassIn = clamp01(input.bass);
+  let highIn = clamp01(input.high);
+  if (ui.autoLevel === true) {
+    const g = autoGain(st, Math.max(bassIn, highIn), dt);
+    bassIn = clamp01(bassIn * g);
+    highIn = clamp01(highIn * g);
+  }
+  st.recent.push({ dt: Math.max(1, dt), bass: bassIn, high: highIn });
   const span = s.levelWindow * FRAME_MS;
   let total = st.recent.reduce((t, r) => t + r.dt, 0);
   while (st.recent.length > 1 && total - st.recent[0].dt >= span) total -= st.recent.shift()!.dt;
   const wb = st.recent.reduce((t, r) => t + r.dt * r.bass, 0) / total;
   const wh = st.recent.reduce((t, r) => t + r.dt * r.high, 0) / total;
-  st.bassEnv = follow(st.bassEnv, shaped(wb, s.bassGain), dt, s.attackMs, s.releaseMs);
+  st.bassEnv = follow(st.bassEnv, clamp01(shaped(wb, s.bassGain) + bassMotion(st, wb, dt)), dt, s.attackMs, s.releaseMs);
   st.highEnv = follow(st.highEnv, shaped(wh, s.highGain), dt, s.attackMs, s.releaseMs);
   st.clockMs += dt;
 
@@ -189,7 +234,7 @@ export function stepPreview(st: PreviewState, s: LightSyncSettings, ui: LightsUi
   const kick = hexRgb(palette.kick);
   if (input.beatCount > st.seen) {
     st.nudgeLeft += s.beatNudge;
-    if (!(st.kickAgeMs < s.minPulseGapMs)) st.kickAgeMs = 0;
+    if (!(st.kickAgeMs < s.minPulseGapMs)) st.kickAgeMs = backdateOf(input.beatLagMs, s.kickRiseMs);
   }
   st.seen = input.beatCount;
   const take = Math.min(st.nudgeLeft, (s.beatNudge * dt) / NUDGE_MS);
@@ -206,7 +251,7 @@ export function stepPreview(st: PreviewState, s: LightSyncSettings, ui: LightsUi
   const front = st.kickAgeMs < s.rippleMs ? st.kickAgeMs / s.rippleMs : null;
   const panels = st.panels.map((ls, i) => {
     const d = Math.abs(i - 2) / 2;
-    const lift = ui.ripple ? (front === null ? 0 : Math.exp(-(((d - front) / 0.2) ** 2)) * (1 - front * front)) : pulse;
+    const lift = ui.ripple ? (front === null ? 0 : Math.exp(-(((d - front) / 0.2) ** 2)) * (1 - RIPPLE_FALLOFF * front)) : pulse;
     return lightFrame(st, s, dt, ls, paletteColour(colours, st.pos + i / PANELS), kick, env, lift, 255);
   });
   if (Number.isFinite(st.kickAgeMs)) st.kickAgeMs += dt;

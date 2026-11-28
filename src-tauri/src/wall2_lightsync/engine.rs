@@ -53,6 +53,8 @@ pub(crate) struct SettingsIn {
     pub beat_nudge: Option<f64>,
     pub min_pulse_gap_ms: Option<f64>,
     pub slew_down: Option<f64>,
+    /// Auto level: normalise the input by a slow running level before the band gains (default off).
+    pub auto_level: Option<bool>,
 }
 
 /// What `start` and `tune` take.
@@ -138,6 +140,8 @@ pub(crate) struct Settings {
     pub drift_ms: f64,
     /// Colours a beat nudges the palette along.
     pub beat_nudge: f64,
+    /// Normalise the input by a slow running level before the band gains.
+    pub auto_level: bool,
     pub min_pulse_gap_ms: f64,
     /// The fastest brightness fall, per second.
     pub slew_down: f64,
@@ -187,7 +191,7 @@ impl Settings {
             floor: clamp_or(s.floor, 0.05, 0.6, 0.35).min(brightness - 0.1),
             bass_gain: clamp_or(s.bass_gain, 0.0, 2.0, 1.0),
             high_gain: clamp_or(s.high_gain, 0.0, 2.0, 1.0),
-            kick_flash: clamp_or(s.kick_flash, 0.0, 1.0, 0.25),
+            kick_flash: clamp_or(s.kick_flash, 0.0, 1.0, 0.4),
             attack_ms: clamp_or(s.attack_ms, 40.0, 400.0, 150.0),
             release_ms: clamp_or(s.release_ms, 200.0, 2000.0, 900.0),
             ripple_ms: clamp_or(s.ripple_ms, 200.0, 1500.0, 600.0),
@@ -203,8 +207,9 @@ impl Settings {
             level_window: clamp_or(s.level_window, 1.0, 12.0, 8.0).round(),
             drift_ms: clamp_or(s.drift_ms, 2000.0, 30000.0, 10000.0),
             beat_nudge: clamp_or(s.beat_nudge, 0.0, 0.25, 0.04),
-            min_pulse_gap_ms: clamp_or(s.min_pulse_gap_ms, 340.0, 1000.0, 500.0),
+            min_pulse_gap_ms: clamp_or(s.min_pulse_gap_ms, 340.0, 1000.0, 400.0),
             slew_down: clamp_or(s.slew_down, 0.3, 5.0, 0.8),
+            auto_level: s.auto_level.unwrap_or(false),
         }
     }
 }
@@ -222,6 +227,8 @@ pub(crate) struct Input {
     pub bass: f64,
     pub high: f64,
     pub beat: bool,
+    /// Milliseconds from the beat's onset frame to the frame that confirmed it; the pulse starts that far in.
+    pub beat_lag_ms: f64,
     pub dt_ms: f64,
 }
 
@@ -240,6 +247,24 @@ const NUDGE_MS: f64 = 200.0;
 /// The band level where sound starts to count, and the span above it that fills the range.
 const LEVEL_LO: f64 = 0.2;
 const LEVEL_SPAN: f64 = 0.7;
+/// Auto level: the running level is pulled toward this when the gain is 1; the gain is clamped.
+const AUTO_TARGET: f64 = 0.5;
+const AUTO_ATTACK_MS: f64 = 2000.0;
+const AUTO_RELEASE_MS: f64 = 8000.0;
+const AUTO_GAIN_MIN: f64 = 0.5;
+const AUTO_GAIN_MAX: f64 = 3.0;
+/// Under this input level Auto level holds: the running level, and so the gain, stays where the last real music left it.
+const AUTO_SILENCE: f64 = 0.04;
+/// The running level never releases below this, so the gain stays at or under 2.5 and a noisy quiet room is not boosted past `LEVEL_LO`.
+const AUTO_LEVEL_FLOOR: f64 = 0.2;
+/// The changing-bass term: how far the bass is from its slow mean (about 1.5 s), scaled and capped, added to the bass envelope target.
+const SLOW_BASS_MS: f64 = 1500.0;
+const MOTION_GAIN: f64 = 6.0;
+const MOTION_DEPTH: f64 = 0.25;
+/// The ripple's strength fades by this share of the way out.
+const RIPPLE_FALLOFF: f64 = 0.5;
+/// A confirmed beat starts its pulse at the onset frame, but never more than this far back, and never past the preset's rise (so the first frame lands at the peak).
+const MAX_BACKDATE_MS: f64 = 150.0;
 
 /// Hard cap under WCAG 2.3.1 (three general flashes in a second), on every intensity and slider position:
 /// a swing of `GUARD_DELTA` against the last extreme, in the opposite direction to the previous one, counts as
@@ -360,6 +385,10 @@ pub(crate) struct Engine {
     recent: VecDeque<(f64, f64, f64)>,
     play_state: Vec<LightState>,
     panel_state: Vec<LightState>,
+    /// Running input level for auto level (attack `AUTO_ATTACK_MS`, release `AUTO_RELEASE_MS`).
+    auto_level: f64,
+    /// Slow mean of the bass level, for the changing-bass term.
+    slow_bass: f64,
 }
 
 fn lerp(a: Rgb, b: Rgb, t: f64) -> Rgb {
@@ -377,7 +406,7 @@ fn unit(c: Rgb) -> Rgb {
 
 impl Engine {
     pub(crate) fn new(floor: f64) -> Engine {
-        Engine { bass_env: 0.0, high_env: 0.0, kick_age_ms: f64::INFINITY, pos: 0.0, clock_ms: 0.0, nudge_left: 0.0, floor0: floor, recent: VecDeque::new(), play_state: Vec::new(), panel_state: Vec::new() }
+        Engine { bass_env: 0.0, high_env: 0.0, kick_age_ms: f64::INFINITY, pos: 0.0, clock_ms: 0.0, nudge_left: 0.0, floor0: floor, recent: VecDeque::new(), play_state: Vec::new(), panel_state: Vec::new(), auto_level: AUTO_TARGET, slow_bass: 0.0 }
     }
 
     /// A one-pole follower: fast up, slow down.
@@ -415,15 +444,29 @@ impl Engine {
         let s = &t.settings;
         let dt = if input.dt_ms.is_finite() { input.dt_ms.clamp(0.0, 500.0) } else { 0.0 };
         let level = |v: f64| if v.is_finite() { v.clamp(0.0, 1.0) } else { 0.0 };
-        let (wb, wh) = self.windowed(dt, level(input.bass), level(input.high), s.level_window);
-        self.bass_env = Self::follow(self.bass_env, Self::shaped(wb, s.bass_gain), dt, s.attack_ms, s.release_ms);
+        let (mut bass_in, mut high_in) = (level(input.bass), level(input.high));
+        if s.auto_level {
+            // A slow running level (fast to follow a rise slowly: 2 s up, 8 s down) sets one gain for both bands, clamped, before Sensitivity.
+            let loud = bass_in.max(high_in);
+            if loud >= AUTO_SILENCE {
+                let tau = if loud > self.auto_level { AUTO_ATTACK_MS } else { AUTO_RELEASE_MS };
+                self.auto_level = (self.auto_level + (loud - self.auto_level) * (1.0 - (-dt / tau).exp())).max(AUTO_LEVEL_FLOOR);
+            }
+            let gain = (AUTO_TARGET / self.auto_level.max(1e-3)).clamp(AUTO_GAIN_MIN, AUTO_GAIN_MAX);
+            bass_in = (bass_in * gain).clamp(0.0, 1.0);
+            high_in = (high_in * gain).clamp(0.0, 1.0);
+        }
+        let (wb, wh) = self.windowed(dt, bass_in, high_in, s.level_window);
+        self.slow_bass += (wb - self.slow_bass) * (1.0 - (-dt / SLOW_BASS_MS).exp());
+        let motion = ((wb - self.slow_bass) * MOTION_GAIN).clamp(-1.0, 1.0) * MOTION_DEPTH;
+        self.bass_env = Self::follow(self.bass_env, (Self::shaped(wb, s.bass_gain) + motion).clamp(0.0, 1.0), dt, s.attack_ms, s.release_ms);
         self.high_env = Self::follow(self.high_env, Self::shaped(wh, s.high_gain), dt, s.attack_ms, s.release_ms);
         self.clock_ms += dt;
 
         if input.beat {
             self.nudge_left += s.beat_nudge;
             if !(self.kick_age_ms < s.min_pulse_gap_ms) {
-                self.kick_age_ms = 0.0;
+                self.kick_age_ms = if input.beat_lag_ms.is_finite() { input.beat_lag_ms.clamp(0.0, MAX_BACKDATE_MS.min(s.kick_rise_ms.max(0.0))) } else { 0.0 };
             }
         }
         let take = self.nudge_left.min(s.beat_nudge * dt / NUDGE_MS);
@@ -525,7 +568,7 @@ impl Engine {
             .map(|(i, d)| {
                 let colour = palette_colour(&t.palette.colors, self.pos + i as f64 / n);
                 // Ripple off: the whole set takes the same pulse as the Plays, no ring.
-                let lift = if s.ripple { front.map_or(0.0, |f| (-((d / far - f) / 0.2).powi(2)).exp() * (1.0 - f * f)) } else { pulse };
+                let lift = if s.ripple { front.map_or(0.0, |f| (-((d / far - f) / 0.2).powi(2)).exp() * (1.0 - RIPPLE_FALLOFF * f)) } else { pulse };
                 let c = Self::light(self.clock_ms, dt, &mut states[i], s, colour, t.palette.kick, env, lift, 255.0);
                 [(c[0] * 255.0).round() as u8, (c[1] * 255.0).round() as u8, (c[2] * 255.0).round() as u8, 0]
             })
@@ -612,7 +655,7 @@ mod tests {
     }
 
     fn quiet(dt: f64) -> Input {
-        Input { bass: 0.0, high: 0.0, beat: false, dt_ms: dt }
+        Input { bass: 0.0, high: 0.0, beat: false, beat_lag_ms: 0.0, dt_ms: dt }
     }
 
     /// Every colour the same grey, so lights compare by brightness alone.
@@ -629,13 +672,13 @@ mod tests {
         let mut e = Engine::new(0.06);
         let mut out = e.step(&t, quiet(33.0), 4, &[]);
         for _ in 0..40 {
-            out = e.step(&t, Input { bass: 1.0, high: 0.0, beat: false, dt_ms: 33.0 }, 4, &[]);
+            out = e.step(&t, Input { bass: 1.0, high: 0.0, beat: false, beat_lag_ms: 0.0, dt_ms: 33.0 }, 4, &[]);
         }
         let lum = |p: &Rgb| p[0] + p[1] + p[2];
         assert!(lum(&out.plays[1]) > lum(&out.plays[0]) * 1.2 && lum(&out.plays[2]) > lum(&out.plays[3]) * 1.2, "{:?}", out.plays);
         let mut e = Engine::new(0.06);
         for _ in 0..40 {
-            out = e.step(&t, Input { bass: 0.0, high: 1.0, beat: false, dt_ms: 33.0 }, 4, &[]);
+            out = e.step(&t, Input { bass: 0.0, high: 1.0, beat: false, beat_lag_ms: 0.0, dt_ms: 33.0 }, 4, &[]);
         }
         assert!(lum(&out.plays[0]) > lum(&out.plays[1]) * 1.2 && lum(&out.plays[3]) > lum(&out.plays[2]) * 1.2, "{:?}", out.plays);
     }
@@ -689,7 +732,7 @@ mod tests {
         let mut e = Engine::new(0.06);
         let mut out = e.step(t, quiet(33.0), plays, xy);
         for _ in 0..n {
-            out = e.step(t, Input { bass, high, beat: false, dt_ms: 33.0 }, plays, xy);
+            out = e.step(t, Input { bass, high, beat: false, beat_lag_ms: 0.0, dt_ms: 33.0 }, plays, xy);
         }
         out
     }
@@ -795,7 +838,7 @@ mod tests {
     fn plays_off_sends_black_and_panels_off_sends_none() {
         let t = tuning(SettingsIn { plays: Some(false), panels: Some(false), ..Default::default() });
         let mut e = Engine::new(0.06);
-        let out = e.step(&t, Input { bass: 1.0, high: 1.0, beat: true, dt_ms: 33.0 }, 4, &XY);
+        let out = e.step(&t, Input { bass: 1.0, high: 1.0, beat: true, beat_lag_ms: 0.0, dt_ms: 33.0 }, 4, &XY);
         assert_eq!(out.plays, vec![[0.0; 3]; 4]);
         assert!(out.panels.is_empty());
     }
@@ -804,7 +847,7 @@ mod tests {
     fn odd_input_never_breaks_the_frame() {
         let t = tuning(SettingsIn::default());
         let mut e = Engine::new(0.06);
-        let out = e.step(&t, Input { bass: f64::NAN, high: 9.0, beat: false, dt_ms: f64::INFINITY }, 4, &XY);
+        let out = e.step(&t, Input { bass: f64::NAN, high: 9.0, beat: false, beat_lag_ms: 0.0, dt_ms: f64::INFINITY }, 4, &XY);
         assert!(out.plays.iter().flatten().all(|v| (0.0..=1.0).contains(v)));
     }
 
@@ -829,9 +872,9 @@ mod tests {
     /// The three intensities, the same columns the page's table sends.
     fn intensity(name: &str) -> serde_json::Value {
         match name {
-            "subtle" => serde_json::json!({ "floor": 0.35, "brightness": 0.8, "energyDepth": 0.35, "kickFlash": 0.25, "kickWhite": 0.0, "kickRiseMs": 80, "kickDecayMs": 450, "attackMs": 150, "releaseMs": 900, "levelWindow": 8, "driftMs": 10000, "beatNudge": 0.04, "minPulseGapMs": 500, "slewDown": 0.8 }),
+            "subtle" => serde_json::json!({ "floor": 0.35, "brightness": 0.8, "energyDepth": 0.35, "kickFlash": 0.4, "kickWhite": 0.0, "kickRiseMs": 80, "kickDecayMs": 450, "attackMs": 150, "releaseMs": 900, "levelWindow": 8, "driftMs": 10000, "beatNudge": 0.04, "minPulseGapMs": 400, "slewDown": 0.8 }),
             "moderate" => serde_json::json!({ "floor": 0.25, "brightness": 0.9, "energyDepth": 0.55, "kickFlash": 0.45, "kickWhite": 0.15, "kickRiseMs": 60, "kickDecayMs": 320, "attackMs": 100, "releaseMs": 650, "levelWindow": 4, "driftMs": 6000, "beatNudge": 0.08, "minPulseGapMs": 400, "slewDown": 1.5 }),
-            "high" => serde_json::json!({ "floor": 0.15, "brightness": 1.0, "energyDepth": 0.75, "kickFlash": 0.7, "kickWhite": 0.35, "kickRiseMs": 40, "kickDecayMs": 220, "attackMs": 60, "releaseMs": 420, "levelWindow": 2, "driftMs": 4000, "beatNudge": 0.15, "minPulseGapMs": 340, "slewDown": 3.0 }),
+            "high" => serde_json::json!({ "floor": 0.15, "brightness": 1.0, "energyDepth": 0.75, "kickFlash": 0.7, "kickWhite": 0.35, "kickRiseMs": 40, "kickDecayMs": 220, "attackMs": 60, "releaseMs": 420, "levelWindow": 2, "driftMs": 4000, "beatNudge": 0.08, "minPulseGapMs": 340, "slewDown": 3.0 }),
             // Every control at the harshest the native clamps allow.
             _ => serde_json::json!({ "floor": 0.05, "brightness": 1.0, "energyDepth": 1.0, "kickFlash": 1.0, "kickWhite": 0.5, "kickRiseMs": 30, "kickDecayMs": 150, "attackMs": 40, "releaseMs": 200, "levelWindow": 1, "driftMs": 2000, "beatNudge": 0.25, "minPulseGapMs": 340, "slewDown": 5.0 }),
         }
@@ -880,7 +923,7 @@ mod tests {
         let mut e = Engine::new(0.35);
         let mut peak = 0.0_f64;
         for i in 0..60 {
-            let out = e.step(&t, Input { bass: 0.0, high: 0.0, beat: i == 5, dt_ms: 33.0 }, 4, &[]);
+            let out = e.step(&t, Input { bass: 0.0, high: 0.0, beat: i == 5, beat_lag_ms: 0.0, dt_ms: 33.0 }, 4, &[]);
             for (k, p) in out.plays.iter().enumerate() {
                 peak = peak.max(p.iter().cloned().fold(0.0, f64::max));
                 let want = palette_colour(&t.palette.colors, e.pos + k as f64 * 0.25);
@@ -899,7 +942,7 @@ mod tests {
         let mut e = Engine::new(0.35);
         let quiet_out = e.step(&t, quiet(33.0), 4, &[]);
         let mut top = 0.0_f64;
-        e.step(&t, Input { bass: 0.0, high: 0.0, beat: true, dt_ms: 33.0 }, 4, &[]);
+        e.step(&t, Input { bass: 0.0, high: 0.0, beat: true, beat_lag_ms: 0.0, dt_ms: 33.0 }, 4, &[]);
         for _ in 0..6 {
             top = top.max(e.step(&t, quiet(33.0), 4, &[]).plays[1][0]);
         }
@@ -916,7 +959,7 @@ mod tests {
         let t = tuned(serde_json::json!({ "rippleMs": 600, "floor": 0.05, "kickFlash": 1.0, "kickRiseMs": 30, "slewDown": 5 }));
         let mut e = Engine::new(0.05);
         let base = e.step(&t, quiet(33.0), 0, &XY).panels;
-        let mut first = e.step(&t, Input { bass: 0.0, high: 0.0, beat: true, dt_ms: 33.0 }, 0, &XY);
+        let mut first = e.step(&t, Input { bass: 0.0, high: 0.0, beat: true, beat_lag_ms: 0.0, dt_ms: 33.0 }, 0, &XY);
         for _ in 0..3 {
             first = e.step(&t, quiet(33.0), 0, &XY);
         }
@@ -943,7 +986,7 @@ mod tests {
         assert!(!off.settings.ripple);
         let mut e = Engine::new(0.35);
         let base = e.step(&off, quiet(33.0), 0, &XY).panels;
-        e.step(&off, Input { bass: 0.0, high: 0.0, beat: true, dt_ms: 33.0 }, 0, &XY);
+        e.step(&off, Input { bass: 0.0, high: 0.0, beat: true, beat_lag_ms: 0.0, dt_ms: 33.0 }, 0, &XY);
         let mut hit = e.step(&off, quiet(33.0), 0, &XY);
         for _ in 0..2 {
             hit = e.step(&off, quiet(33.0), 0, &XY);
@@ -961,7 +1004,7 @@ mod tests {
             for (bass, high, beat) in frames {
                 // 50 Hz steps, each with the 33 ms frame's levels held.
                 for k in 0..2 {
-                    let out = e.step(&t, Input { bass, high, beat: beat && k == 0, dt_ms: 20.0 }, 4, &[]);
+                    let out = e.step(&t, Input { bass, high, beat: beat && k == 0, beat_lag_ms: 0.0, dt_ms: 20.0 }, 4, &[]);
                     if let Some(p) = &prev {
                         for (a, b) in p.plays.iter().zip(&out.plays) {
                             let (ya, yb) = (a.iter().cloned().fold(0.0, f64::max), b.iter().cloned().fold(0.0, f64::max));
@@ -999,7 +1042,7 @@ mod tests {
                 }
                 for (bass, high, beat) in input {
                     now += step;
-                    let out = e.step(&t, Input { bass, high, beat, dt_ms: step }, 4, &XY);
+                    let out = e.step(&t, Input { bass, high, beat, beat_lag_ms: 0.0, dt_ms: step }, 4, &XY);
                     for (sw, c) in plays.iter_mut().zip(&out.plays) {
                         sw.commit(now, super::lum(*c));
                         worst_p = worst_p.max(sw.transitions());
@@ -1028,7 +1071,7 @@ mod tests {
                 let mut worst = 0.0_f64;
                 for i in 0..120 {
                     let beat = i >= phase && (i - phase) % 16 == 0;
-                    let out = e.step(&t, Input { bass: 0.0, high: 0.0, beat, dt_ms: 33.0 }, 4, &[]);
+                    let out = e.step(&t, Input { bass: 0.0, high: 0.0, beat, beat_lag_ms: 0.0, dt_ms: 33.0 }, 4, &[]);
                     for (a, b) in prev.plays.iter().zip(&out.plays) {
                         for k in 0..3 {
                             worst = worst.max((a[k] - b[k]).abs());
@@ -1118,17 +1161,72 @@ mod tests {
     fn pulses_closer_than_the_gap_do_not_restart_the_brightness() {
         let t = tuning(js(intensity("subtle")));
         let mut e = Engine::new(0.35);
-        e.step(&t, Input { bass: 0.0, high: 0.0, beat: true, dt_ms: 33.0 }, 4, &[]);
+        e.step(&t, Input { bass: 0.0, high: 0.0, beat: true, beat_lag_ms: 0.0, dt_ms: 33.0 }, 4, &[]);
         for _ in 0..4 {
             e.step(&t, quiet(33.0), 4, &[]);
         }
         let pos = e.pos;
-        e.step(&t, Input { bass: 0.0, high: 0.0, beat: true, dt_ms: 33.0 }, 4, &[]);
+        e.step(&t, Input { bass: 0.0, high: 0.0, beat: true, beat_lag_ms: 0.0, dt_ms: 33.0 }, 4, &[]);
         assert!(e.kick_age_ms > 100.0, "the second beat at about 170 ms did not restart the pulse");
         for _ in 0..8 {
             e.step(&t, quiet(33.0), 4, &[]);
         }
         assert!(e.pos - pos > 0.04, "but it still nudged the colour");
+    }
+
+    fn auto_on(name: &str) -> Tuning {
+        let mut v = intensity(name);
+        v["autoLevel"] = serde_json::json!(true);
+        tuning(js(v))
+    }
+
+    #[test]
+    fn auto_level_holds_through_silence_so_the_first_loud_frame_does_not_flash() {
+        let music = Input { bass: 0.5, high: 0.2, beat: false, beat_lag_ms: 0.0, dt_ms: 33.0 };
+        // The reference starts from the same silence at the steady gain (1 at this level), so the onset's own rise is in both.
+        let peak_of = |t: &Tuning| {
+            let mut e = Engine::new(0.35);
+            for _ in 0..909 {
+                e.step(t, quiet(33.0), 4, &[]);
+            }
+            assert!(!t.settings.auto_level || e.auto_level == AUTO_TARGET, "30 s of silence left the running level where it was");
+            let mut peak: f64 = 0.0;
+            for _ in 0..30 {
+                e.step(t, music, 4, &[]);
+                peak = peak.max(e.bass_env.max(e.high_env));
+            }
+            peak
+        };
+        let (auto, plain) = (peak_of(&auto_on("subtle")), peak_of(&tuning(js(intensity("subtle")))));
+        assert!(auto <= plain + 0.05, "first second peaked at {auto}, steady gain {plain}");
+    }
+
+    #[test]
+    fn auto_level_does_not_boost_steady_low_noise_past_the_sound_threshold() {
+        let t = auto_on("subtle");
+        let mut e = Engine::new(0.35);
+        for _ in 0..1800 {
+            e.step(&t, Input { bass: 0.06, high: 0.06, beat: false, beat_lag_ms: 0.0, dt_ms: 33.0 }, 4, &[]);
+        }
+        let gain = (AUTO_TARGET / e.auto_level.max(1e-3)).clamp(AUTO_GAIN_MIN, AUTO_GAIN_MAX);
+        assert!(e.auto_level >= AUTO_LEVEL_FLOOR);
+        assert!(0.06 * gain <= LEVEL_LO, "noise boosted to {}", 0.06 * gain);
+    }
+
+    #[test]
+    fn a_backdated_beat_starts_at_the_peak_on_every_preset_and_pulses_once() {
+        for name in ["subtle", "moderate", "high"] {
+            let t = tuning(js(intensity(name)));
+            let rise = t.settings.kick_rise_ms;
+            let mut e = Engine::new(0.35);
+            e.step(&t, quiet(33.0), 4, &[]);
+            e.step(&t, Input { bass: 0.0, high: 0.0, beat: true, beat_lag_ms: 100.0, dt_ms: 33.0 }, 4, &[]);
+            assert_eq!(e.kick_age_ms, rise + 33.0, "{name}: the backdate stops at the rise, so the first frame rendered at the peak");
+            assert_eq!(kick_shape(rise, rise, t.settings.kick_decay_ms), 1.0);
+            // A second beat inside the gap does not restart the pulse.
+            e.step(&t, Input { bass: 0.0, high: 0.0, beat: true, beat_lag_ms: 66.0, dt_ms: 33.0 }, 4, &[]);
+            assert_eq!(e.kick_age_ms, rise + 66.0, "{name}: no double pulse");
+        }
     }
 
     #[test]
@@ -1141,7 +1239,7 @@ mod tests {
         assert_eq!(want.len(), frames.len());
         let mut e = Engine::new(t.settings.floor);
         for (i, (bass, high, beat)) in frames.into_iter().enumerate() {
-            let out = e.step(&t, Input { bass, high, beat, dt_ms: dt }, 4, &[]);
+            let out = e.step(&t, Input { bass, high, beat, beat_lag_ms: 0.0, dt_ms: dt }, 4, &[]);
             let flat: Vec<f64> = out.plays.iter().flatten().copied().collect();
             for (k, got) in flat.iter().enumerate() {
                 let exp = want[i][k].as_f64().unwrap();
@@ -1161,10 +1259,67 @@ mod tests {
         let mut e = Engine::new(t.settings.floor);
         let mut plays = Vec::new();
         for (bass, high, beat) in fixture_frames() {
-            let out = e.step(&t, Input { bass, high, beat, dt_ms: dt }, 4, &[]);
+            let out = e.step(&t, Input { bass, high, beat, beat_lag_ms: 0.0, dt_ms: dt }, 4, &[]);
             plays.push(out.plays.iter().flatten().map(|x| (x * 1e6).round() / 1e6).collect::<Vec<f64>>());
         }
         v["plays"] = serde_json::json!(plays);
         std::fs::write(std::env::var("LIGHTSYNC_FIXTURE_OUT").unwrap(), serde_json::to_string(&v).unwrap()).unwrap();
+    }
+
+    const AUTO_FIXTURE: &str = include_str!("../../tests/fixtures/lightsync-auto-frames.json");
+
+    fn auto_fixture_run(v: &serde_json::Value) -> Vec<Vec<f64>> {
+        let t = fixture_tuning_with(v["palette"]["colors"].clone(), v["palette"]["kick"].clone(), v["settings"].clone());
+        assert!(t.settings.auto_level);
+        let dt = v["dtMs"].as_f64().unwrap();
+        let mut e = Engine::new(t.settings.floor);
+        v["frames"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|f| {
+                let out = e.step(&t, Input { bass: f[0].as_f64().unwrap(), high: f[1].as_f64().unwrap(), beat: f[2].as_i64().unwrap() != 0, beat_lag_ms: f[3].as_f64().unwrap(), dt_ms: dt }, 4, &[]);
+                out.plays.iter().flatten().map(|x| (x * 1e6).round() / 1e6).collect()
+            })
+            .collect()
+    }
+
+    /// Auto level on, a nonzero beat lag (66 and 100 ms, alternating) and the High preset: the page and the native engine give the same frames.
+    #[test]
+    fn auto_level_and_lag_fixture_parity() {
+        let v: serde_json::Value = serde_json::from_str(&AUTO_FIXTURE.replace("\r\n", "\n")).unwrap();
+        let want = v["plays"].as_array().unwrap();
+        let got = auto_fixture_run(&v);
+        assert_eq!(want.len(), got.len());
+        for (i, row) in got.iter().enumerate() {
+            for (k, g) in row.iter().enumerate() {
+                let exp = want[i][k].as_f64().unwrap();
+                assert!((g - exp).abs() < 2e-6, "frame {i} channel {k}: {g} vs {exp}");
+            }
+        }
+    }
+
+    /// Writes `lightsync-auto-frames.json`: the shared track after 3 s more silence, at 0.6 of its level, with the High preset, Auto level on and a lag on every beat.
+    /// One frame per line. `LIGHTSYNC_AUTO_OUT=path cargo test regenerate_auto_fixture -- --ignored`.
+    #[test]
+    #[ignore]
+    fn regenerate_auto_fixture() {
+        let base: serde_json::Value = serde_json::from_str(&FIXTURE.replace("\r\n", "\n")).unwrap();
+        let mut settings = intensity("high");
+        settings["autoLevel"] = serde_json::json!(true);
+        let mut frames: Vec<serde_json::Value> = (0..90).map(|_| serde_json::json!([0.0, 0.0, 0, 0.0])).collect();
+        let mut n = 0;
+        for (bass, high, beat) in fixture_frames() {
+            let lag = if beat { n += 1; if n % 2 == 1 { 66.0 } else { 100.0 } } else { 0.0 };
+            frames.push(serde_json::json!([(bass * 0.6 * 1e4).round() / 1e4, (high * 0.6 * 1e4).round() / 1e4, i32::from(beat), lag]));
+        }
+        let mut v = serde_json::json!({ "dtMs": 33, "palette": base["palette"], "settings": settings, "frames": frames });
+        v["plays"] = serde_json::json!(auto_fixture_run(&v));
+        let line = |k: &str| v[k].as_array().unwrap().iter().map(|r| format!("    {r}")).collect::<Vec<_>>().join(",\n");
+        let text = format!(
+            "{{\n  \"note\": \"Generated by regenerate_auto_fixture in engine.rs; do not edit by hand. Frames are [bass, high, beat, beatLagMs].\",\n  \"dtMs\": 33,\n  \"colourBars\": 1,\n  \"palette\": {},\n  \"settings\": {},\n  \"frames\": [\n{}\n  ],\n  \"plays\": [\n{}\n  ]\n}}\n",
+            v["palette"], v["settings"], line("frames"), line("plays")
+        );
+        std::fs::write(std::env::var("LIGHTSYNC_AUTO_OUT").unwrap(), text).unwrap();
     }
 }

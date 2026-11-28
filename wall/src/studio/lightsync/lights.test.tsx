@@ -10,7 +10,7 @@ import { useWatchStore } from '../../unwind/watch/store';
 import { WatchSheet } from '../../unwind/watch/Sheet';
 import { resetHome } from '../homeStore';
 import { OfficeMoods } from '../OfficeMoods';
-import { Swing, newPreview, stepPreview } from './preview';
+import { AUTO_LEVEL_FLOOR, AUTO_TARGET, Swing, autoGain, kickShape, newPreview, stepPreview } from './preview';
 import { DEFAULT_LIGHTS_UI, DEFAULT_LIGHT_SYNC, INTENSITIES, INTENSITY_IDS, SWATCHES, driftOf, engineSettings, resolvePalette } from './model';
 import { useAudioStore } from '../../audio/store';
 import { LightsPanel, driftWords, brightWords, flashWords, smoothWords } from './LightsPanel';
@@ -29,9 +29,9 @@ vi.mock('../../music/coverTint', async (orig) => ({
 
 /** The plan's table, written out by hand so a wrong value in the model fails here. */
 const COLUMNS = {
-  subtle: { settings: { floor: 0.45, brightness: 0.8, energyDepth: 0.35, kickFlash: 0.25, kickWhite: 0, kickRiseMs: 80, kickDecayMs: 450, attackMs: 150, releaseMs: 900, levelWindow: 8, beatNudge: 0.04, minPulseGapMs: 500, slewDown: 0.8 }, colourBars: 4, driftMs: 10000 },
+  subtle: { settings: { floor: 0.45, brightness: 0.8, energyDepth: 0.35, kickFlash: 0.4, kickWhite: 0, kickRiseMs: 80, kickDecayMs: 450, attackMs: 150, releaseMs: 900, levelWindow: 8, beatNudge: 0.04, minPulseGapMs: 400, slewDown: 0.8 }, colourBars: 4, driftMs: 10000 },
   moderate: { settings: { floor: 0.35, brightness: 0.9, energyDepth: 0.55, kickFlash: 0.45, kickWhite: 0.15, kickRiseMs: 60, kickDecayMs: 320, attackMs: 100, releaseMs: 650, levelWindow: 4, beatNudge: 0.08, minPulseGapMs: 400, slewDown: 1.5 }, colourBars: 2, driftMs: 6000 },
-  high: { settings: { floor: 0.25, brightness: 1, energyDepth: 0.75, kickFlash: 0.7, kickWhite: 0.35, kickRiseMs: 40, kickDecayMs: 220, attackMs: 60, releaseMs: 420, levelWindow: 2, beatNudge: 0.15, minPulseGapMs: 340, slewDown: 3 }, colourBars: 1, driftMs: 4000 },
+  high: { settings: { floor: 0.25, brightness: 1, energyDepth: 0.75, kickFlash: 0.7, kickWhite: 0.35, kickRiseMs: 40, kickDecayMs: 220, attackMs: 60, releaseMs: 420, levelWindow: 2, beatNudge: 0.08, minPulseGapMs: 340, slewDown: 3 }, colourBars: 1, driftMs: 4000 },
 } as const;
 
 let calls: { command: string; args?: Record<string, unknown> }[];
@@ -132,20 +132,20 @@ it('pulse and smoothness map to kickFlash and releaseMs', () => {
 it('a settings change while sync runs is sent as a tune with the palette and the engine fields only', () => {
   syncOn();
   render(<LightsPanel />);
-  fireEvent.change(slider('ls-flash'), { target: { value: '40' } });
+  fireEvent.change(slider('ls-flash'), { target: { value: '60' } });
   const sent = tunes()[0].args as { palette: { colors: string[]; kick: string; rest: string }; settings: Record<string, unknown> };
   expect(sent.palette.colors).toEqual(resolvePalette('synthwave').colors);
-  expect(Object.keys(sent.settings).sort()).toEqual([...Object.keys(DEFAULT_LIGHT_SYNC), 'colourBars', 'driftMs', 'follow', 'ripple'].sort());
+  expect(Object.keys(sent.settings).sort()).toEqual([...Object.keys(DEFAULT_LIGHT_SYNC), 'autoLevel', 'colourBars', 'driftMs', 'follow', 'ripple'].sort());
   expect(sent.settings).toMatchObject({ colourBars: 4, driftMs: 10000, ripple: true, follow: { plays: ['highs', 'bass', 'bass', 'highs'], panels: 'both' } });
-  expect(sent.settings.kickFlash).toBe(0.4);
-  expect(saved().settings.kickFlash).toBe(0.4);
+  expect(sent.settings.kickFlash).toBe(0.6);
+  expect(saved().settings.kickFlash).toBe(0.6);
 });
 
 it('with sync off a change is saved and nothing is sent', () => {
   render(<LightsPanel />);
-  fireEvent.change(slider('ls-flash'), { target: { value: '40' } });
+  fireEvent.change(slider('ls-flash'), { target: { value: '60' } });
   expect(tunes().length).toBe(0);
-  expect(saved().settings.kickFlash).toBe(0.4);
+  expect(saved().settings.kickFlash).toBe(0.6);
 });
 
 it('a tile tap cycles that light bass, highs, both and no other', () => {
@@ -479,9 +479,64 @@ it('the preview matches the native frames on the shared fixture (Subtle)', () =>
   let beats = 0;
   fx.frames.forEach(([bass, high, beat], i) => {
     if (beat) beats += 1;
-    const f = stepPreview(st, fxSettings, DEFAULT_LIGHTS_UI, fx.palette, { bass, high, beatCount: beats, dtMs: fx.dtMs });
+    const f = stepPreview(st, fxSettings, { ...DEFAULT_LIGHTS_UI, autoLevel: false }, fx.palette, { bass, high, beatCount: beats, dtMs: fx.dtMs });
     f.plays.flat().forEach((v, k) => expect(Math.abs(v - fx.plays[i][k]), `frame ${i} channel ${k}`).toBeLessThan(2e-6));
   });
+});
+
+it('the preview matches the native frames with Auto level on, a beat lag and the High preset', () => {
+  const fx = JSON.parse(readFileSync('../src-tauri/tests/fixtures/lightsync-auto-frames.json', 'utf8').replace(/\r\n/g, '\n')) as { dtMs: number; colourBars: number; palette: { colors: string[]; kick: string }; settings: Record<string, number | boolean>; frames: [number, number, number, number][]; plays: number[][] };
+  expect(fx.plays.length).toBe(fx.frames.length);
+  expect(fx.frames.some((f) => f[3] > 0)).toBe(true);
+  const settings = { ...DEFAULT_LIGHT_SYNC, ...fx.settings } as typeof DEFAULT_LIGHT_SYNC;
+  const ui = { ...DEFAULT_LIGHTS_UI, colourBars: fx.colourBars, autoLevel: true };
+  expect(driftOf(ui.colourBars)).toBe(fx.settings.driftMs);
+  const st = newPreview(settings.floor);
+  let beats = 0;
+  fx.frames.forEach(([bass, high, beat, lag], i) => {
+    if (beat) beats += 1;
+    const f = stepPreview(st, settings, ui, fx.palette, { bass, high, beatCount: beats, beatLagMs: lag, dtMs: fx.dtMs });
+    f.plays.flat().forEach((v, k) => expect(Math.abs(v - fx.plays[i][k]), `frame ${i} channel ${k}`).toBeLessThan(2e-6));
+  });
+});
+
+it('Auto level holds through silence: music after 30 s of quiet never starts louder than the same music at the steady gain', () => {
+  const music = { bass: 0.5, high: 0.2, beatCount: 0, dtMs: 33 };
+  const s = { ...DEFAULT_LIGHT_SYNC };
+  const quiet = { bass: 0, high: 0, beatCount: 0, dtMs: 33 };
+  // The reference starts from the same silence at the steady gain (1 at this level), so the onset's own rise is in both.
+  const peakOf = (autoLevel: boolean) => {
+    const ui = { ...DEFAULT_LIGHTS_UI, autoLevel };
+    const st = newPreview(s.floor);
+    for (let i = 0; i < 909; i++) stepPreview(st, s, ui, SYNTH, quiet);
+    let peak = 0;
+    for (let i = 0; i < 30; i++) {
+      stepPreview(st, s, ui, SYNTH, music);
+      peak = Math.max(peak, st.bassEnv, st.highEnv);
+    }
+    return peak;
+  };
+  expect(peakOf(true)).toBeLessThanOrEqual(peakOf(false) + 0.05);
+});
+
+it('Auto level does not boost steady low noise past the level where sound starts to count', () => {
+  const st = { autoLevel: AUTO_TARGET };
+  let gain = 1;
+  for (let i = 0; i < 1800; i++) gain = autoGain(st, 0.06, 33);
+  expect(st.autoLevel).toBeGreaterThanOrEqual(AUTO_LEVEL_FLOOR);
+  expect(0.06 * gain).toBeLessThanOrEqual(0.2);
+});
+
+it.each(INTENSITY_IDS)('a backdated beat on %s starts the pulse at the peak, once', (id) => {
+  const s = { ...DEFAULT_LIGHT_SYNC, ...INTENSITIES[id].settings };
+  const ui = { ...DEFAULT_LIGHTS_UI, autoLevel: false };
+  const st = newPreview(s.floor);
+  stepPreview(st, s, ui, SYNTH, { bass: 0, high: 0, beatCount: 0, dtMs: 33 });
+  stepPreview(st, s, ui, SYNTH, { bass: 0, high: 0, beatCount: 1, beatLagMs: 100, dtMs: 33 });
+  expect(st.kickAgeMs).toBe(s.kickRiseMs + 33);
+  expect(kickShape(s.kickRiseMs, s.kickRiseMs, s.kickDecayMs)).toBe(1);
+  stepPreview(st, s, ui, SYNTH, { bass: 0, high: 0, beatCount: 2, beatLagMs: 66, dtMs: 33 });
+  expect(st.kickAgeMs).toBe(s.kickRiseMs + 66);
 });
 
 it('the flash guard holds every intensity and the harshest sliders under five swings a second, Plays and panels', () => {
@@ -654,7 +709,7 @@ it('the preset brightness floors are Subtle 45, Moderate 35 and High 25 percent'
   }
 });
 
-it('Sensitivity sets both band gains, shows a word, and Auto level is saved but not sent to the engine', () => {
+it('Sensitivity sets both band gains, shows a word, and Auto level is saved and sent to the engine', () => {
   syncOn();
   const { container } = render(<LightsPanel />);
   fireEvent.change(slider('ls-sens'), { target: { value: '100' } });
@@ -667,7 +722,8 @@ it('Sensitivity sets both band gains, shows a word, and Auto level is saved but 
   expect(useLightSync.getState().ui.autoLevel).toBe(false);
   expect(saved().ui.autoLevel).toBe(false);
   const sent = (tunes().at(-1)?.args as { settings: Record<string, unknown> }).settings;
-  expect('autoLevel' in sent || 'preset' in sent || 'saved' in sent).toBe(false);
+  expect(sent.autoLevel).toBe(false);
+  expect('preset' in sent || 'saved' in sent).toBe(false);
 });
 
 it('the sheet keeps 16 px at both sides and the panel is one minmax(0,1fr) column', () => {

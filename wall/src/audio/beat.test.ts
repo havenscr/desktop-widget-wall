@@ -70,6 +70,8 @@ function analyser(rate: number) {
 }
 
 const RATES = [44_100, 48_000] as const;
+/** Stray beats on the fixed pink noise runs below; see the test. */
+const STRAYS_ON_PINK = 3;
 /** Beats are stamped on 33 ms frames, so spacing is checked to 35 ms. */
 const SPACING_MS = 35;
 
@@ -139,7 +141,7 @@ describe('beat detector', () => {
       const expected = Math.floor((12 - offset) / 0.5);
       expect(beats.length).toBeGreaterThanOrEqual(expected - 1);
       expect(beats.length).toBeLessThanOrEqual(expected + 1);
-      // Every gap is one kick period, or (at most once: the 9 dB margin can miss a kick under the bed) two.
+      // Every gap is one kick period, or (at most once: the 7 dB margin can miss a kick under the bed) two.
       const gaps = beats.slice(1).map((b, i) => b - beats[i]);
       for (const g of gaps) expect(Math.min(Math.abs(g - 500), Math.abs(g - 1000))).toBeLessThanOrEqual(SPACING_MS);
       expect(gaps.filter((g) => g > 750).length).toBeLessThanOrEqual(1);
@@ -153,12 +155,14 @@ describe('beat detector', () => {
       for (let i = 1; i < beats.length; i++) expect(Math.abs(beats[i] - beats[i - 1] - 500)).toBeLessThanOrEqual(SPACING_MS);
     });
 
-    it(`yields no beats from pink noise at ${rate} Hz, quiet to loud, two seeds each`, () => {
-      // Fixed seeds. Not a guarantee: over 54 minutes of other seeds per rate the detector gave
-      // 0 stray beats at 44.1 kHz and 3 at 48 kHz (see the pull request).
+    it(`gives almost no beats from pink noise at ${rate} Hz, quiet to loud, two seeds each`, () => {
+      // Fixed seeds. At 7 dB a lone stray beat can land on pure noise, measured at about 0.65 a minute (one every 90 s or so):
+      // exactly 3 in these six 45 s runs (4.5 minutes) at both rates. Pinned, so a change that raises it fails, and one that lowers it is noticed.
+      let strays = 0;
       for (const amp of [0.05, 0.2, 1]) {
-        for (const seed of [24, 73]) expect(run(analyse(pink(rate, 45, amp, seed)))).toEqual([]);
+        for (const seed of [24, 73]) strays += run(analyse(pink(rate, 45, amp, seed))).length;
       }
+      expect(strays).toBe(STRAYS_ON_PINK);
     });
   }
 
