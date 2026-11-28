@@ -84,9 +84,15 @@ export function parseSlots(raw: string | null): Slot[] {
   if (!raw) return defaults;
   try {
     const parsed: unknown = JSON.parse(raw);
-    // The retired Full Screen Speaker key (scene1) is dropped quietly, so a value stored with it still loads.
-    const v: unknown = Array.isArray(parsed) ? parsed.filter((e) => !(typeof e === 'object' && e !== null && (e as { a?: unknown }).a === 'scene1')) : parsed;
-    if (!Array.isArray(v) || v.length !== SLOT_COUNT) return defaults;
+    if (!Array.isArray(parsed)) return defaults;
+    // Legacy migration: eight keys were stored before Full Screen Speaker (scene1) was retired. Drop every scene1;
+    // if still eight (the user had swapped it for another key), drop index 0, the position it held.
+    let v: unknown[] = parsed;
+    if (v.length === 8) {
+      v = v.filter((e) => !(typeof e === 'object' && e !== null && (e as { a?: unknown }).a === 'scene1'));
+      if (v.length === 8) v = v.slice(1);
+    }
+    if (v.length !== SLOT_COUNT) return defaults;
     const out: Slot[] = [];
     for (const e of v) {
       if (typeof e !== 'object' || e === null) return defaults;
@@ -157,5 +163,10 @@ export function measureLabel(s: string): number {
   return ctx.measureText(s).width;
 }
 
-/** The widest a label may be on a key: the key is about 149 px wide with 8 px of padding each side. */
+/** The widest a label may be on a row 2 key: the key is about 149 px wide with 8 px of padding each side. */
 export const LABEL_MAX_PX = 128;
+/** The widest a label may be on a scene key (row 1): the key is about 201 px wide with 8 px of padding each side. */
+export const SCENE_LABEL_MAX_PX = 185;
+/** The number of keys in the scene row. */
+export const SCENE_ROW = 3;
+export const labelMaxPx = (slotIndex: number): number => (slotIndex < SCENE_ROW ? SCENE_LABEL_MAX_PX : LABEL_MAX_PX);

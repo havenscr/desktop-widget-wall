@@ -10,7 +10,7 @@ import { StudioStatus } from './StudioStatus';
 import { refusalText, STUDIO_CONFIRM_MS, STUDIO_FULL_MAX, studioAnswerText } from './studioModel';
 import onair2Raw from '../../styles/onair2.css?raw';
 import workRaw from '../../styles/work.css?raw';
-import { DEFAULT_SLOTS, LABEL_MAX_PX, PICKER_ORDER, SLOT_INFO, SLOTS_KEY, fitLabel, loadSlots, measureLabel, parseSlots, saveSlots, toggleLabel } from './studioSlots';
+import { DEFAULT_SLOTS, LABEL_MAX_PX, SCENE_LABEL_MAX_PX, labelMaxPx, PICKER_ORDER, SLOT_INFO, SLOTS_KEY, fitLabel, loadSlots, measureLabel, parseSlots, saveSlots, toggleLabel } from './studioSlots';
 import { useStudio } from './studioStore';
 
 /** The stylesheets as text, with line endings the same on every checkout. */
@@ -153,7 +153,7 @@ it('the status block warns in amber when the window is minimized', async () => {
   expect(line.getAttribute('data-warn')).toBe('true');
 });
 
-it('shows eight equal keys in two rows of four, defaults in order, short scene labels with full names in the key hover', async () => {
+it('shows seven keys in two rows (three scene keys, then four), defaults in order, short scene labels with full names in the key hover', async () => {
   await open();
   const t = tiles();
   expect(t.length).toBe(7);
@@ -523,12 +523,12 @@ it('kind colours: the stylesheet gives each kind its colour', () => {
 });
 
 it('rule B: a label too long for its key is shortened to one line, and the full name stays in the accessible name', async () => {
-  localStorage.setItem(SLOTS_KEY, JSON.stringify(DEFAULT_SLOTS.map((d, i) => (i === 0 ? { a: 'scene2', l: 'ABCDEFGHIJKLMNOP' } : d))));
+  localStorage.setItem(SLOTS_KEY, JSON.stringify(DEFAULT_SLOTS.map((d, i) => (i === 3 ? { a: 'scene2', l: 'ABCDEFGHIJKLMNOP' } : i === 0 ? { a: 'scene3', l: 'ABCDEFGHIJKLMNOP' } : d))));
   await open();
-  for (const k of tiles()) {
+  for (const [i, k] of tiles().entries()) {
     const text = k.querySelector('.deck-lbl')?.textContent ?? '';
     expect(text.includes('\n')).toBe(false);
-    expect(measureLabel(text)).toBeLessThanOrEqual(LABEL_MAX_PX);
+    expect(measureLabel(text)).toBeLessThanOrEqual(labelMaxPx(i));
     expect(k.getAttribute('aria-label')).toContain(text);
   }
   // Whatever the text, the drawn words are exactly what fitLabel gives for the full label, so no line can wrap.
@@ -539,10 +539,13 @@ it('rule B: a label too long for its key is shortened to one line, and the full 
     expect(measureLabel(fit)).toBeLessThanOrEqual(LABEL_MAX_PX);
     expect(fitLabel(fit, LABEL_MAX_PX, measureLabel)).toBe(fit);
   }
-  const long = tiles()[0];
+  // The scene row has the wider limit: the same label fits whole there and is cut on a row 2 key.
+  expect(SCENE_LABEL_MAX_PX).toBeGreaterThan(LABEL_MAX_PX);
+  expect(tiles()[0].querySelector('.deck-lbl')?.textContent).toBe('ABCDEFGHIJKLMNOP');
+  const long = tiles()[3];
   expect(long.querySelector('.deck-lbl')?.textContent?.endsWith('\u2026')).toBe(true);
   // The name holds the whole label and the drawn words.
-  expect(long.getAttribute('aria-label')).toBe('ABCDEFGHIJKLMN\u2026, ABCDEFGHIJKLMNOP, Presenter View');
+  expect(long.getAttribute('aria-label')).toMatch(/^ABCDEFGHIJKLM\w*\u2026, ABCDEFGHIJKLMNOP, Presenter View$/);
   const rule = ruleOf(onair2Css, '.oa2 .oa2-studiokeys .deck-tile.key-tile .deck-lbl.oa2-sklbl');
   expect(rule).toContain('white-space: nowrap');
   expect(rule).toContain('font-size: 16px');
@@ -807,4 +810,20 @@ it('the scene on stage stays lit while a later key is the last action, and the l
   expect(document.querySelectorAll('[data-stage]').length).toBe(1);
   const sel = '.oa2 .oa2-studiokeys .deck-tile.key-tile';
   expect(onair2Css).toContain(`${sel}[data-stage='true']`);
+});
+
+it('legacy eight-key arrays migrate without losing custom keys or labels', () => {
+  const names = (raw: unknown[]) => parseSlots(JSON.stringify(raw));
+  // First key swapped, no scene1: index 0 is dropped, the rest survive in order with labels.
+  const swapped = [{ a: 'snip' }, { a: 'scene2', l: 'Mine' }, { a: 'scene3' }, { a: 'scene4', l: 'Wide' }, { a: 'mute' }, { a: 'camera' }, { a: 'mark' }, { a: 'end' }];
+  expect(names(swapped)).toEqual([{ a: 'scene2', l: 'Mine' }, { a: 'scene3' }, { a: 'scene4', l: 'Wide' }, { a: 'mute' }, { a: 'camera' }, { a: 'mark' }, { a: 'golive' }]);
+  // scene1 first, and scene1 elsewhere: only scene1 goes.
+  const first = [{ a: 'scene1' }, { a: 'scene3', l: 'Two' }, { a: 'snip' }, { a: 'scene4', l: 'Wide' }, { a: 'mute' }, { a: 'camera' }, { a: 'mark' }, { a: 'golive' }];
+  const want = [{ a: 'scene3', l: 'Two' }, { a: 'snip' }, { a: 'scene4', l: 'Wide' }, { a: 'mute' }, { a: 'camera' }, { a: 'mark' }, { a: 'golive' }];
+  expect(names(first)).toEqual(want);
+  const mid = [{ a: 'scene3', l: 'Two' }, { a: 'snip' }, { a: 'scene1' }, { a: 'scene4', l: 'Wide' }, { a: 'mute' }, { a: 'camera' }, { a: 'mark' }, { a: 'golive' }];
+  expect(names(mid)).toEqual(want);
+  // A stored scene1 that carries a label is still dropped.
+  const labelled = [{ a: 'scene1', l: 'Full' }, ...want];
+  expect(names(labelled)).toEqual(want);
 });
