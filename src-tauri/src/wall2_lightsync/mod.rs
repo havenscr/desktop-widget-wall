@@ -488,7 +488,7 @@ fn run_stream_loop(rig: &dyn Rig, live: &mut Live, ctl: &Control, latest: Latest
             bands.clear();
         }
         let (bass, high) = engine::levels_from_bands(&bands);
-        let out = engine.step(&tuning, engine::Input { bass, high, beat, dt_ms: t - last_tick }, plays.len(), &panel_xy);
+        let out = engine.step(&tuning, engine::Input { bass, high, beat, beat_lag_ms: if beat { t - detector.last_beat_at() } else { 0.0 }, dt_ms: t - last_tick }, plays.len(), &panel_xy);
         last_tick = t;
         stats.observe(t, beat, &out.plays, tuning.settings.plays);
 

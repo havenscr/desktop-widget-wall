@@ -137,7 +137,7 @@ export function run(song: Song, cap: Captured, preset: IntensityId, layout: Layo
     if (t - lastFrameAt > FRAME_STALE_MS) bands = [];
     const [bass, high] = levelsFromBands(bands);
     const pulseStart = beat && !(engine.kickAgeMs < tuning.s.minPulseGapMs);
-    const out = engine.step(tuning, { bass, high, beat, dtMs: t - lastTick }, 4, xy);
+    const out = engine.step(tuning, { bass, high, beat, beatLagMs: beat ? t - detector.lastBeatAt : 0, dtMs: t - lastTick }, 4, xy);
     lastTick = t;
     let sentPanels = false;
     if (out.panels.length && t - lastPanel >= PANEL_EVERY_MS) {

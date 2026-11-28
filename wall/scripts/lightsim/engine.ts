@@ -7,7 +7,7 @@
  *
  * Nothing here talks to a device; it is maths on numbers.
  */
-import { GUARD_MAX_TRANSITIONS, Swing, bandLevel, kickShape, paletteColour, type Rgb } from '../../src/studio/lightsync/preview';
+import { AUTO_TARGET, GUARD_MAX_TRANSITIONS, MAX_BACKDATE_MS, RIPPLE_FALLOFF, Swing, autoGain, bassMotion, bandLevel, kickShape, paletteColour, type Rgb } from '../../src/studio/lightsync/preview';
 import { DEFAULT_LIGHT_SYNC, INTENSITIES, DEFAULT_LIGHTS_UI, driftOf, type Follow, type IntensityId, type LightSyncSettings, type LightsUi } from '../../src/studio/lightsync/model';
 
 const FRAME_MS = 33;
@@ -27,7 +27,7 @@ const hexRgb = (h: string): Rgb => [1, 3, 5].map((i) => parseInt(h.slice(i, i + 
 /** The settings an intensity sends, as the page builds them (`engineSettings`). */
 export function tuningFor(id: IntensityId, palette: { colors: readonly string[]; kick: string }, follow: Follow[] = DEFAULT_LIGHTS_UI.follow): EngineTuning {
   const col = INTENSITIES[id];
-  const ui: LightsUi = { colourBars: col.colourBars, follow: follow.slice(), ripple: DEFAULT_LIGHTS_UI.ripple };
+  const ui: LightsUi = { colourBars: col.colourBars, follow: follow.slice(), ripple: DEFAULT_LIGHTS_UI.ripple, preset: id, saved: {}, autoLevel: process.env.LIGHTSIM_AUTOLEVEL !== '0' };
   return { s: { ...DEFAULT_LIGHT_SYNC, ...col.settings, driftMs: driftOf(ui.colourBars) }, ui, colors: palette.colors.map(hexRgb), kick: hexRgb(palette.kick) };
 }
 
@@ -61,6 +61,8 @@ export class Engine {
   pos = 0;
   clockMs = 0;
   nudgeLeft = 0;
+  autoLevel = AUTO_TARGET;
+  slowBass = 0;
   recent: [number, number, number][] = [];
   plays: LightState[] = [];
   panels: LightState[] = [];
@@ -84,16 +86,23 @@ export class Engine {
     return [b / total, h / total];
   }
 
-  step(t: EngineTuning, input: { bass: number; high: number; beat: boolean; dtMs: number }, nPlays: number, panelXy: readonly (readonly [number, number])[]): { plays: Rgb[]; panels: Rgb[] } {
+  step(t: EngineTuning, input: { bass: number; high: number; beat: boolean; dtMs: number; beatLagMs?: number }, nPlays: number, panelXy: readonly (readonly [number, number])[]): { plays: Rgb[]; panels: Rgb[] } {
     const s = t.s;
     const dt = Number.isFinite(input.dtMs) ? Math.min(500, Math.max(0, input.dtMs)) : 0;
-    const [wb, wh] = this.windowed(dt, clamp01(input.bass), clamp01(input.high), s.levelWindow);
-    this.bassEnv = this.follow(this.bassEnv, this.shaped(wb, s.bassGain), dt, s.attackMs, s.releaseMs);
+    let bassIn = clamp01(input.bass);
+    let highIn = clamp01(input.high);
+    if (t.ui.autoLevel === true) {
+      const g = autoGain(this, Math.max(bassIn, highIn), dt);
+      bassIn = clamp01(bassIn * g);
+      highIn = clamp01(highIn * g);
+    }
+    const [wb, wh] = this.windowed(dt, bassIn, highIn, s.levelWindow);
+    this.bassEnv = this.follow(this.bassEnv, clamp01(this.shaped(wb, s.bassGain) + bassMotion(this, wb, dt)), dt, s.attackMs, s.releaseMs);
     this.highEnv = this.follow(this.highEnv, this.shaped(wh, s.highGain), dt, s.attackMs, s.releaseMs);
     this.clockMs += dt;
     if (input.beat) {
       this.nudgeLeft += s.beatNudge;
-      if (!(this.kickAgeMs < s.minPulseGapMs)) this.kickAgeMs = 0;
+      if (!(this.kickAgeMs < s.minPulseGapMs)) this.kickAgeMs = Number.isFinite(input.beatLagMs) ? Math.min(MAX_BACKDATE_MS, Math.max(0, input.beatLagMs as number)) : 0;
     }
     const take = Math.min(this.nudgeLeft, (s.beatNudge * dt) / NUDGE_MS);
     this.nudgeLeft -= take;
@@ -157,7 +166,7 @@ export class Engine {
     const front = this.kickAgeMs < s.rippleMs ? this.kickAgeMs / s.rippleMs : null;
     return dist.map((d, i) => {
       const colour = paletteColour(t.colors, this.pos + i / n);
-      const lift = t.ui.ripple ? (front === null ? 0 : Math.exp(-(((d / far - front) / 0.2) ** 2)) * (1 - front * front)) : pulse;
+      const lift = t.ui.ripple ? (front === null ? 0 : Math.exp(-(((d / far - front) / 0.2) ** 2)) * (1 - RIPPLE_FALLOFF * front)) : pulse;
       return this.light(dt, this.panels[i], s, colour, t.kick, env, lift, 255);
     });
   }

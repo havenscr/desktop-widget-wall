@@ -666,9 +666,9 @@ it('rendering the tip without committing it (no effects) does not consume the Hu
 
 /** The plan's table, written out by hand so a wrong value in the model fails here. */
 const COLUMNS = {
-  subtle: { settings: { floor: 0.45, brightness: 0.8, energyDepth: 0.35, kickFlash: 0.25, kickWhite: 0, kickRiseMs: 80, kickDecayMs: 450, attackMs: 150, releaseMs: 900, levelWindow: 8, beatNudge: 0.04, minPulseGapMs: 500, slewDown: 0.8 }, colourBars: 4, driftMs: 10000 },
+  subtle: { settings: { floor: 0.45, brightness: 0.8, energyDepth: 0.35, kickFlash: 0.4, kickWhite: 0, kickRiseMs: 80, kickDecayMs: 450, attackMs: 150, releaseMs: 900, levelWindow: 8, beatNudge: 0.04, minPulseGapMs: 400, slewDown: 0.8 }, colourBars: 4, driftMs: 10000 },
   moderate: { settings: { floor: 0.35, brightness: 0.9, energyDepth: 0.55, kickFlash: 0.45, kickWhite: 0.15, kickRiseMs: 60, kickDecayMs: 320, attackMs: 100, releaseMs: 650, levelWindow: 4, beatNudge: 0.08, minPulseGapMs: 400, slewDown: 1.5 }, colourBars: 2, driftMs: 6000 },
-  high: { settings: { floor: 0.25, brightness: 1, energyDepth: 0.75, kickFlash: 0.7, kickWhite: 0.35, kickRiseMs: 40, kickDecayMs: 220, attackMs: 60, releaseMs: 420, levelWindow: 2, beatNudge: 0.15, minPulseGapMs: 340, slewDown: 3 }, colourBars: 1, driftMs: 4000 },
+  high: { settings: { floor: 0.25, brightness: 1, energyDepth: 0.75, kickFlash: 0.7, kickWhite: 0.35, kickRiseMs: 40, kickDecayMs: 220, attackMs: 60, releaseMs: 420, levelWindow: 2, beatNudge: 0.08, minPulseGapMs: 340, slewDown: 3 }, colourBars: 1, driftMs: 4000 },
 } as const;
 
 it('the store writes an intensity column, saves it and sends one tune; a field moved after it reads as Custom', () => {

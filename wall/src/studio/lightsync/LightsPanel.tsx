@@ -57,7 +57,7 @@ function useLive(root: React.RefObject<HTMLDivElement | null>) {
     const tick = (now: number) => {
       const { settings, ui } = useLightSync.getState();
       const a = useAudioStore.getState();
-      const f = stepPreview(state, settings, ui, live.current.palette, { bass: a.bass, high: a.high, beatCount: audioBeats().count, dtMs: now - last });
+      const f = stepPreview(state, settings, ui, live.current.palette, { bass: a.bass, high: a.high, beatCount: audioBeats().count, beatLagMs: audioBeats().lag, dtMs: now - last });
       last = now;
       const el = root.current;
       if (el) {
@@ -244,7 +244,7 @@ export function LightsPanel() {
         icon={<IconEar size={20} aria-hidden="true" />}
         title="Hearing"
         part="lights-hearing"
-        aside={<Switch id="ls-auto-label" on={ui.autoLevel} label="Auto level" tipOn="Keeps the level steady from song to song. Click to turn it off." tipOff="Click to keep the level steady from song to song. Saved, but the light engine does not use it yet." onClick={() => useLightSync.getState().setUi({ autoLevel: !ui.autoLevel })} />}
+        aside={<Switch id="ls-auto-label" on={ui.autoLevel} label="Auto level" tipOn="Evens out quiet and loud sources so the lights react alike, before Sensitivity applies. Click to turn it off." tipOff="Click to even out quiet and loud sources so the lights react alike. Off: the lights follow the raw level." onClick={() => useLightSync.getState().setUi({ autoLevel: !ui.autoLevel })} />}
       >
         <div className="ls-row">
           <label className="ls-label" htmlFor="ls-sens">

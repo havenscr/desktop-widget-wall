@@ -51,9 +51,9 @@ export const INTENSITY_IDS: readonly IntensityId[] = ['subtle', 'moderate', 'hig
 /** Every setting an intensity rewrites, plus the colour speed it uses (`colourBars`, which sets the drift). */
 export type PresetSettings = Pick<LightSyncSettings, 'floor' | 'brightness' | 'energyDepth' | 'kickFlash' | 'kickWhite' | 'kickRiseMs' | 'kickDecayMs' | 'attackMs' | 'releaseMs' | 'levelWindow' | 'beatNudge' | 'minPulseGapMs' | 'slewDown'>;
 export const INTENSITIES: Record<IntensityId, { settings: PresetSettings; colourBars: number }> = {
-  subtle: { settings: { floor: 0.45, brightness: 0.8, energyDepth: 0.35, kickFlash: 0.25, kickWhite: 0, kickRiseMs: 80, kickDecayMs: 450, attackMs: 150, releaseMs: 900, levelWindow: 8, beatNudge: 0.04, minPulseGapMs: 500, slewDown: 0.8 }, colourBars: 4 },
+  subtle: { settings: { floor: 0.45, brightness: 0.8, energyDepth: 0.35, kickFlash: 0.4, kickWhite: 0, kickRiseMs: 80, kickDecayMs: 450, attackMs: 150, releaseMs: 900, levelWindow: 8, beatNudge: 0.04, minPulseGapMs: 400, slewDown: 0.8 }, colourBars: 4 },
   moderate: { settings: { floor: 0.35, brightness: 0.9, energyDepth: 0.55, kickFlash: 0.45, kickWhite: 0.15, kickRiseMs: 60, kickDecayMs: 320, attackMs: 100, releaseMs: 650, levelWindow: 4, beatNudge: 0.08, minPulseGapMs: 400, slewDown: 1.5 }, colourBars: 2 },
-  high: { settings: { floor: 0.25, brightness: 1, energyDepth: 0.75, kickFlash: 0.7, kickWhite: 0.35, kickRiseMs: 40, kickDecayMs: 220, attackMs: 60, releaseMs: 420, levelWindow: 2, beatNudge: 0.15, minPulseGapMs: 340, slewDown: 3 }, colourBars: 1 },
+  high: { settings: { floor: 0.25, brightness: 1, energyDepth: 0.75, kickFlash: 0.7, kickWhite: 0.35, kickRiseMs: 40, kickDecayMs: 220, attackMs: 60, releaseMs: 420, levelWindow: 2, beatNudge: 0.08, minPulseGapMs: 340, slewDown: 3 }, colourBars: 1 },
 };
 
 export const DEFAULT_INTENSITY: IntensityId = 'subtle';
@@ -132,7 +132,7 @@ export interface LightsUi {
   preset: IntensityId;
   /** The presets you saved over the built-in ones. */
   saved: Partial<Record<IntensityId, PresetValues>>;
-  /** Auto level, page only for now: the engine has no matching knob (`engine.rs` follows the raw level), so it is stored and not sent. */
+  /** Auto level: the engine divides the input by a slow running level (2 s up, 8 s down, gain 0.5 to 3) before Sensitivity. Sent as `autoLevel`. */
   autoLevel: boolean;
 }
 
@@ -174,7 +174,7 @@ export function driftOf(colourBars: number): number {
 
 /** The settings object the native side takes: the engine fields plus the Lights tab's three. */
 export function engineSettings(settings: LightSyncSettings, ui: LightsUi): Record<string, unknown> {
-  return { ...settings, colourBars: ui.colourBars, driftMs: driftOf(ui.colourBars), follow: { plays: ui.follow.slice(0, 4), panels: ui.follow[4] }, ripple: ui.ripple };
+  return { ...settings, autoLevel: ui.autoLevel, colourBars: ui.colourBars, driftMs: driftOf(ui.colourBars), follow: { plays: ui.follow.slice(0, 4), panels: ui.follow[4] }, ripple: ui.ripple };
 }
 
 /** The native side's ranges (`Settings::from_in`). `floor` is also held 0.1 under `brightness`. */

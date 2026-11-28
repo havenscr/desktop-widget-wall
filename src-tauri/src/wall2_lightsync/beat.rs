@@ -15,7 +15,7 @@ pub(crate) const BEAT_GAP_TOLERANCE_MS: f64 = 66.0;
 pub(crate) const CALM_WINDOW_MS: f64 = 1000.0;
 pub(crate) const CALM_MAX_BEATS: usize = 3;
 pub(crate) const MEDIAN_WINDOW_MS: f64 = 1000.0;
-pub(crate) const ONSET_DB: f64 = 9.0;
+pub(crate) const ONSET_DB: f64 = 7.0;
 pub(crate) const HOLD_DB: f64 = 4.0;
 pub(crate) const CONFIRM_FRAMES: u32 = 2;
 pub(crate) const WARMUP_FRAMES: usize = 10;
@@ -88,6 +88,11 @@ impl BeatDetector {
         self.pending_at = None;
         self.pending_held = 0;
         self.bass = 0.0;
+    }
+
+    /// Onset time (ms, the push clock) of the newest beat, or negative infinity.
+    pub(crate) fn last_beat_at(&self) -> f64 {
+        self.last_beat_at
     }
 
     /// The plain low level of the newest frame, 0 to 1 (kept for the fixture and tests).
@@ -257,7 +262,7 @@ mod tests {
             ("CALM_WINDOW_MS", "1000"),
             ("CALM_MAX_BEATS", "3"),
             ("MEDIAN_WINDOW_MS", "1000"),
-            ("ONSET_DB", "9"),
+            ("ONSET_DB", "7"),
             ("HOLD_DB", "4"),
             ("CONFIRM_FRAMES", "2"),
             ("WARMUP_FRAMES", "10"),
@@ -270,6 +275,6 @@ mod tests {
             (BEAT_BANDS, BASS_BANDS, CALM_MAX_BEATS, CONFIRM_FRAMES, WARMUP_FRAMES, BEAT_HISTORY),
             (12, 6, 3, 2, 10, 8)
         );
-        assert_eq!((MIN_BEAT_GAP_MS, BEAT_GAP_TOLERANCE_MS, CALM_WINDOW_MS, MEDIAN_WINDOW_MS, ONSET_DB, HOLD_DB, GAP_RESET_MS), (340.0, 66.0, 1000.0, 1000.0, 9.0, 4.0, 500.0));
+        assert_eq!((MIN_BEAT_GAP_MS, BEAT_GAP_TOLERANCE_MS, CALM_WINDOW_MS, MEDIAN_WINDOW_MS, ONSET_DB, HOLD_DB, GAP_RESET_MS), (340.0, 66.0, 1000.0, 1000.0, 7.0, 4.0, 500.0));
     }
 }

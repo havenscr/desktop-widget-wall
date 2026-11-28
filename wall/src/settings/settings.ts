@@ -89,6 +89,9 @@ export const LIGHT_SYNC_KEY = 'wall2.lightsync';
 /** The saved shape: 3 has presets with saved values and Sensitivity apart from them; 2 was the pulse engine with the old floors. A value without it was saved by the strobe engine. */
 export const LIGHT_SYNC_VERSION = 3;
 
+/** Other values a built-in preset had before the beat detector change (kick flash, pulse gap, beat nudge); merged over the current column to recognise an old saved preset. */
+const OLD_VALUES: Partial<Record<IntensityId, Partial<PresetValues['settings']>>> = { subtle: { kickFlash: 0.25, minPulseGapMs: 500 }, high: { beatNudge: 0.15 } };
+
 /** The floors the built-in presets had before version 3 (every other value is unchanged). */
 const OLD_FLOORS: Record<IntensityId, number> = { subtle: 0.35, moderate: 0.25, high: 0.15 };
 
@@ -125,7 +128,7 @@ export function loadLightSync(storage: Pick<Storage, 'getItem'> | null = safeSto
         } else {
           // Version 2: exactly an old built-in preset moves to that preset's new values; anything else is kept as your own values
           // on the preset with the nearest old floor, so nothing is lost and no edited dot shows.
-          const old = (id: IntensityId): PresetValues => ({ settings: { ...INTENSITIES[id].settings, floor: OLD_FLOORS[id] }, colourBars: INTENSITIES[id].colourBars });
+          const old = (id: IntensityId): PresetValues => ({ settings: { ...INTENSITIES[id].settings, ...OLD_VALUES[id], floor: OLD_FLOORS[id] }, colourBars: INTENSITIES[id].colourBars });
           const exact = INTENSITY_IDS.find((id) => sameAsPreset(out.settings, out.ui, old(id)));
           if (exact) {
             out.settings = { ...out.settings, ...INTENSITIES[exact].settings };
