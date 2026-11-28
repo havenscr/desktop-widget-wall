@@ -4,6 +4,7 @@ import { newPreview, stepPreview } from '../../src/studio/lightsync/preview';
 import { INTENSITY_IDS, SYNTHWAVE } from '../../src/studio/lightsync/model';
 import { SONG_MAKERS } from './songs';
 import { capture } from './sim';
+import { createBeatDetector } from '../../src/audio/beat';
 
 describe('light sync sandbox', () => {
   it('the engine port gives the page preview frames on a row of five panels', () => {
@@ -42,5 +43,33 @@ describe('light sync sandbox', () => {
     const i = cap.at.findIndex((a) => a > k + 20);
     const low = (j: number) => cap.frames[j].bands.slice(0, 6).reduce((s, v) => s + v, 0) / 6;
     expect(low(i)).toBeGreaterThan(low(i - 1) + 40);
+  });
+
+  /** The beat detector alone, fed as the native loop feeds it (50 Hz ticks, newest frame): hits on true kicks and false beats. */
+  function detect(id: keyof typeof SONG_MAKERS) {
+    const song = SONG_MAKERS[id]();
+    const cap = capture(song);
+    const det = createBeatDetector();
+    const hit = new Set<number>();
+    let falses = 0;
+    let next = 0;
+    for (let t = 0; t <= song.seconds * 1000; t += 20) {
+      let fresh = -1;
+      while (next < cap.at.length && cap.at[next] <= t) fresh = next++;
+      if (fresh < 0) continue;
+      const b = cap.frames[fresh].bands;
+      if (!det.push(Array.from({ length: 12 }, (_, i) => (i < b.length ? b[i] / 255 : 0)), t, t)) continue;
+      const k = song.kicks.findIndex((kt, i) => det.lastBeatAt - kt * 1000 >= -60 && det.lastBeatAt - kt * 1000 <= 150 && !hit.has(i));
+      if (k < 0) falses++;
+      else hit.add(k);
+    }
+    return { hits: hit.size / song.kicks.length, falsesPerMin: (falses * 60) / song.seconds };
+  }
+
+  it('the tempo lock finds synthwave kicks the onset bar misses, without false beats on the other songs', () => {
+    expect(detect('synthwave').hits).toBeGreaterThanOrEqual(0.25);
+    expect(detect('house120').hits).toBeGreaterThanOrEqual(0.97);
+    expect(detect('ballad70').falsesPerMin).toBe(0);
+    expect(detect('edm-drop').falsesPerMin).toBeLessThanOrEqual(1.4);
   });
 });

@@ -71,7 +71,7 @@ test('light sync sandbox', () => {
     'min lum: lowest luminance a Play showed. at peak: share of music time Left sits at its cap. colour/min: palette colour changes on Left. edge/centre lift: beat swing of the edge panel against the centre panel. ' +
     'corr, lag: correlation of the beat motion of Left and the centre panel, and the lag that fits best (positive: panel after Play). guard holds: frames the flash guard changed. silence lum: brightest Left frame in the silence.\n\n' +
     markdown(rows) +
-    '\n\n## Beat detector onset threshold probe\n\nHit rate / false beats a minute of the detector alone at each onset threshold (dB over the running median; 9 is the product).\n\n| song | 9 dB | 7 dB | 6 dB | 5 dB |\n|-|-|-|-|-|\n' +
+    '\n\n## Beat detector onset threshold probe\n\nHit rate / false beats a minute of the detector alone at each onset threshold (dB over the running median; 7 is the product, the tempo lock on).\n\n| song | 9 dB | 7 dB | 6 dB | 5 dB |\n|-|-|-|-|-|\n' +
     sweeps.join('\n') + '\n';
   writeFileSync(join(out, 'metrics.md'), md);
   console.log(md);
