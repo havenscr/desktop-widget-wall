@@ -138,7 +138,11 @@ function PresetBar() {
   const ui = useLightSync((st) => st.ui);
   const group = useRef<HTMLDivElement>(null);
   const edited = isEdited(s, ui);
-  const pick = (id: IntensityId) => useLightSync.getState().setIntensity(id);
+  const pick = (id: IntensityId) => {
+    // The active preset, edited or not, is left alone: Reset is the only way to drop edits.
+    if (id === useLightSync.getState().ui.preset) return;
+    useLightSync.getState().setIntensity(id);
+  };
   const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
     const at = INTENSITY_IDS.indexOf(document.activeElement?.getAttribute('data-intensity') as IntensityId);
     const n = INTENSITY_IDS.length;
@@ -156,7 +160,7 @@ function PresetBar() {
           const Icon = PRESET_ICON[id];
           const on = ui.preset === id;
           return (
-            <button key={id} type="button" role="radio" data-intensity={id} aria-checked={on} tabIndex={on ? 0 : -1} className={on ? 'on' : ''} {...tip(`${INTENSITY_TIP[id]}${on && edited ? ' A slider has moved off it.' : ''}`)} onClick={() => pick(id)}>
+            <button key={id} type="button" role="radio" data-intensity={id} aria-checked={on} tabIndex={on ? 0 : -1} className={on ? 'on' : ''} {...tip(`${INTENSITY_TIP[id]}${on && edited ? ' A slider has moved off it; tap Reset to drop the edits.' : ''}`)} onClick={() => pick(id)}>
               <Icon size={18} aria-hidden="true" />
               {INTENSITY_NAME[id]}
               {on && edited ? <b className="ls-dot" data-part="preset-dot" aria-label="changed" /> : null}
@@ -164,11 +168,11 @@ function PresetBar() {
           );
         })}
       </div>
-      <button type="button" className="ls-save" disabled={!edited} {...tip(edited ? `Keep these slider values as your ${name} preset.` : `No slider has moved off ${name}.`)} onClick={() => useLightSync.getState().savePreset()}>
+      <button type="button" className="ls-save" disabled={!edited} {...tip(edited ? `Keep these slider values as your ${name} preset. Sensitivity is not part of a preset.` : `No slider has moved off ${name}.`)} onClick={() => useLightSync.getState().savePreset()}>
         <IconDeviceFloppy size={18} aria-hidden="true" />
         Save to {name}
       </button>
-      <button type="button" className="ls-undo" aria-label={`Reset ${name}`} disabled={!edited} {...tip(edited ? `Bring ${name} back to its saved values.` : `${name} is as saved.`)} onClick={() => useLightSync.getState().resetPreset()}>
+      <button type="button" className="ls-undo" aria-label={`Reset ${name}`} disabled={!edited} {...tip(edited ? `Drop your edits and bring ${name} back to its saved values. Sensitivity stays as it is.` : `${name} is as saved.`)} onClick={() => useLightSync.getState().resetPreset()}>
         <IconRestore size={18} aria-hidden="true" />
       </button>
     </div>

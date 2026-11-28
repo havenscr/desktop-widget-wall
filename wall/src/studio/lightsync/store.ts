@@ -274,7 +274,10 @@ export const useLightSync = create<LightSyncState>((set, get) => ({
     get().setUi({ follow });
   },
   resetLights() {
-    set({ settings: { ...DEFAULT_LIGHT_SYNC }, ui: clampUi(null) });
+    // The saved presets and the active one stay; the sliders come back to the active preset's stored values.
+    const { saved, preset } = get().ui;
+    const col = presetOf(preset, saved);
+    set({ settings: clampSettings({ ...DEFAULT_LIGHT_SYNC, ...col.settings }), ui: clampUi({ ...clampUi(null), colourBars: col.colourBars, preset, saved }) });
     persist();
     tuneNow();
   },

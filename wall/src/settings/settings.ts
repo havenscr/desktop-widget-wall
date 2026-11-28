@@ -1,5 +1,5 @@
 import { DEFAULT_ZEN_MODE, isZenMode, type ZenMode } from '../zen/modes';
-import { CUSTOM_MIN, DEFAULT_INTENSITY, DEFAULT_LIGHT_SYNC, INTENSITIES, DEFAULT_PALETTE, clampCustom, clampSettings, clampUi, isPaletteId, type LightSyncSettings, type LightsUi, type PaletteId } from '../studio/lightsync/model';
+import { CUSTOM_MIN, DEFAULT_INTENSITY, DEFAULT_LIGHT_SYNC, INTENSITIES, INTENSITY_IDS, DEFAULT_PALETTE, clampCustom, clampSettings, clampUi, isPaletteId, sameAsPreset, type IntensityId, type PresetValues, type LightSyncSettings, type LightsUi, type PaletteId } from '../studio/lightsync/model';
 
 /** Wall 2 settings, read from localStorage. No settings screen yet. */
 export const SETTINGS_KEY = 'wall2-settings';
@@ -86,8 +86,11 @@ function safeStorage(): Storage | null {
 
 /** The per-PC light sync choice: the palette last picked and the tuning (`wall2.lightsync`). */
 export const LIGHT_SYNC_KEY = 'wall2.lightsync';
-/** The saved shape: 2 is the pulse engine (Subtle, Moderate, High). A value without it was saved by the strobe engine. */
-export const LIGHT_SYNC_VERSION = 2;
+/** The saved shape: 3 has presets with saved values and Sensitivity apart from them; 2 was the pulse engine with the old floors. A value without it was saved by the strobe engine. */
+export const LIGHT_SYNC_VERSION = 3;
+
+/** The floors the built-in presets had before version 3 (every other value is unchanged). */
+const OLD_FLOORS: Record<IntensityId, number> = { subtle: 0.35, moderate: 0.25, high: 0.15 };
 
 export interface LightSyncChoice {
   palette: PaletteId;
@@ -111,14 +114,32 @@ export function loadLightSync(storage: Pick<Storage, 'getItem'> | null = safeSto
       if (isPaletteId(saved.palette) && (saved.palette !== 'custom' || out.custom.length >= CUSTOM_MIN)) out.palette = saved.palette;
       out.settings = clampSettings(saved.settings);
       out.ui = clampUi(saved.ui);
-      if (typeof saved.version !== 'number' || saved.version < LIGHT_SYNC_VERSION) {
-        // Saved by the strobe engine: its floor, flash and smoothness are not the gentle look, so move to Subtle once.
-        // The palette, your own colours, who follows each light and the ripple stay; so do the lights on or off and the gains.
-        const subtle = INTENSITIES[DEFAULT_INTENSITY];
-        // The band gains are a sensitivity choice, not the gentle look: they are kept.
-        const { bassGain: _b, highGain: _h, ...look } = subtle.settings;
-        out.settings = { ...out.settings, ...look };
-        out.ui = { ...out.ui, colourBars: subtle.colourBars };
+      const version = typeof saved.version === 'number' ? saved.version : 0;
+      if (version < LIGHT_SYNC_VERSION) {
+        if (version < 2) {
+          // Saved by the strobe engine: its floor, flash and smoothness are not the gentle look, so move to Subtle once.
+          // The palette, your own colours, who follows each light and the ripple stay; so do the lights on or off and the gains.
+          const subtle = INTENSITIES[DEFAULT_INTENSITY];
+          out.settings = { ...out.settings, ...subtle.settings };
+          out.ui = { ...out.ui, colourBars: subtle.colourBars, preset: DEFAULT_INTENSITY, saved: {} };
+        } else {
+          // Version 2: exactly an old built-in preset moves to that preset's new values; anything else is kept as your own values
+          // on the preset with the nearest old floor, so nothing is lost and no edited dot shows.
+          const old = (id: IntensityId): PresetValues => ({ settings: { ...INTENSITIES[id].settings, floor: OLD_FLOORS[id] }, colourBars: INTENSITIES[id].colourBars });
+          const exact = INTENSITY_IDS.find((id) => sameAsPreset(out.settings, out.ui, old(id)));
+          if (exact) {
+            out.settings = { ...out.settings, ...INTENSITIES[exact].settings };
+            out.ui = clampUi({ ...out.ui, colourBars: INTENSITIES[exact].colourBars, preset: exact, saved: {} });
+          } else {
+            const nearest = INTENSITY_IDS.reduce((a, b) => (Math.abs(OLD_FLOORS[b] - out.settings.floor) < Math.abs(OLD_FLOORS[a] - out.settings.floor) ? b : a));
+            const mine = {} as PresetValues['settings'];
+            for (const k of Object.keys(INTENSITIES[nearest].settings) as (keyof PresetValues['settings'])[]) (mine as Record<string, number>)[k] = out.settings[k] as number;
+            out.ui = clampUi({ ...out.ui, preset: nearest, saved: { [nearest]: { settings: mine, colourBars: out.ui.colourBars } } });
+          }
+        }
+        // Sensitivity is one slider: two different band gains (old data) become their mean, inside the slider's 0.4 to 1.6.
+        const gain = Math.round(Math.min(1.6, Math.max(0.4, (out.settings.bassGain + out.settings.highGain) / 2)) * 100) / 100;
+        out.settings = { ...out.settings, bassGain: gain, highGain: gain };
         // Saved at once, so the move happens on one launch only.
         if (storage && 'setItem' in storage) saveLightSync(out, storage as Pick<Storage, 'setItem'>);
       }

@@ -49,10 +49,11 @@ export type IntensityId = 'subtle' | 'moderate' | 'high';
 export const INTENSITY_IDS: readonly IntensityId[] = ['subtle', 'moderate', 'high'];
 
 /** Every setting an intensity rewrites, plus the colour speed it uses (`colourBars`, which sets the drift). */
-export const INTENSITIES: Record<IntensityId, { settings: Pick<LightSyncSettings, 'floor' | 'brightness' | 'energyDepth' | 'kickFlash' | 'kickWhite' | 'kickRiseMs' | 'kickDecayMs' | 'attackMs' | 'releaseMs' | 'levelWindow' | 'beatNudge' | 'minPulseGapMs' | 'slewDown' | 'bassGain' | 'highGain'>; colourBars: number }> = {
-  subtle: { settings: { floor: 0.45, brightness: 0.8, energyDepth: 0.35, kickFlash: 0.25, kickWhite: 0, kickRiseMs: 80, kickDecayMs: 450, attackMs: 150, releaseMs: 900, levelWindow: 8, beatNudge: 0.04, minPulseGapMs: 500, slewDown: 0.8, bassGain: 1, highGain: 1 }, colourBars: 4 },
-  moderate: { settings: { floor: 0.35, brightness: 0.9, energyDepth: 0.55, kickFlash: 0.45, kickWhite: 0.15, kickRiseMs: 60, kickDecayMs: 320, attackMs: 100, releaseMs: 650, levelWindow: 4, beatNudge: 0.08, minPulseGapMs: 400, slewDown: 1.5, bassGain: 1, highGain: 1 }, colourBars: 2 },
-  high: { settings: { floor: 0.25, brightness: 1, energyDepth: 0.75, kickFlash: 0.7, kickWhite: 0.35, kickRiseMs: 40, kickDecayMs: 220, attackMs: 60, releaseMs: 420, levelWindow: 2, beatNudge: 0.15, minPulseGapMs: 340, slewDown: 3, bassGain: 1, highGain: 1 }, colourBars: 1 },
+export type PresetSettings = Pick<LightSyncSettings, 'floor' | 'brightness' | 'energyDepth' | 'kickFlash' | 'kickWhite' | 'kickRiseMs' | 'kickDecayMs' | 'attackMs' | 'releaseMs' | 'levelWindow' | 'beatNudge' | 'minPulseGapMs' | 'slewDown'>;
+export const INTENSITIES: Record<IntensityId, { settings: PresetSettings; colourBars: number }> = {
+  subtle: { settings: { floor: 0.45, brightness: 0.8, energyDepth: 0.35, kickFlash: 0.25, kickWhite: 0, kickRiseMs: 80, kickDecayMs: 450, attackMs: 150, releaseMs: 900, levelWindow: 8, beatNudge: 0.04, minPulseGapMs: 500, slewDown: 0.8 }, colourBars: 4 },
+  moderate: { settings: { floor: 0.35, brightness: 0.9, energyDepth: 0.55, kickFlash: 0.45, kickWhite: 0.15, kickRiseMs: 60, kickDecayMs: 320, attackMs: 100, releaseMs: 650, levelWindow: 4, beatNudge: 0.08, minPulseGapMs: 400, slewDown: 1.5 }, colourBars: 2 },
+  high: { settings: { floor: 0.25, brightness: 1, energyDepth: 0.75, kickFlash: 0.7, kickWhite: 0.35, kickRiseMs: 40, kickDecayMs: 220, attackMs: 60, releaseMs: 420, levelWindow: 2, beatNudge: 0.15, minPulseGapMs: 340, slewDown: 3 }, colourBars: 1 },
 };
 
 export const DEFAULT_INTENSITY: IntensityId = 'subtle';
@@ -60,17 +61,17 @@ export const DEFAULT_INTENSITY: IntensityId = 'subtle';
 /** The name an intensity shows, and its one line for the button's tip. */
 export const INTENSITY_NAME: Record<IntensityId, string> = { subtle: 'Subtle', moderate: 'Moderate', high: 'High' };
 export const INTENSITY_TIP: Record<IntensityId, string> = {
-  subtle: 'Subtle: a slow swell on the beat, no white, colours drifting gently. Picking it sets every slider below.',
-  moderate: 'Moderate: a clear pulse on every beat with a touch of white, colours moving along. Picking it sets every slider below.',
-  high: 'High: a lively, quick pulse and the brightest peaks. It still never goes dark or flashes like a camera. Picking it sets every slider below.',
+  subtle: 'Subtle: a slow swell on the beat, no white, colours drifting gently. Picking it sets every slider below except Sensitivity.',
+  moderate: 'Moderate: a clear pulse on every beat with a touch of white, colours moving along. Picking it sets every slider below except Sensitivity.',
+  high: 'High: a lively, quick pulse and the brightest peaks. It still never goes dark or flashes like a camera. Picking it sets every slider below except Sensitivity.',
 };
 
 /** Smoothness is the fade-back time (200 to 2000 ms) shown as 0 to 100. */
 export const smoothOf = (releaseMs: number) => Math.round((releaseMs - 200) / 18);
 export const releaseOf = (smooth: number) => Math.round(200 + (smooth * 1800) / 100);
 
-/** One preset's stored values: every setting an intensity rewrites, plus the colour speed. */
-export type PresetValues = { settings: (typeof INTENSITIES)['subtle']['settings']; colourBars: number };
+/** One preset's stored values: every look setting an intensity rewrites, plus the colour speed. Sensitivity (the band gains) is not part of a preset. */
+export type PresetValues = { settings: PresetSettings; colourBars: number };
 
 /** The preset a button applies: the one you saved over it, else the built-in column. */
 export function presetOf(id: IntensityId, saved: Partial<Record<IntensityId, PresetValues>> | undefined): PresetValues {
@@ -99,6 +100,8 @@ export const gainOf = (sensitivity: number) => Math.round((0.4 + (sensitivity * 
 
 export const DEFAULT_LIGHT_SYNC: LightSyncSettings = {
   ...INTENSITIES.subtle.settings,
+  bassGain: 1,
+  highGain: 1,
   beatStep: true,
   rippleMs: 600,
   plays: true,

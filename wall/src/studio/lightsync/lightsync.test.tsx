@@ -11,7 +11,7 @@ import { SYNC_WIDTH, SYNC_WORD, fitMoodRow, syncChipModel } from '../moodRow';
 import { OfficeMoods } from '../OfficeMoods';
 import { SyncChip, SyncTip } from '../SyncChip';
 import { renderToString } from 'react-dom/server';
-import { DEFAULT_LIGHTS_UI, DEFAULT_LIGHT_SYNC, INTENSITIES, INTENSITY_IDS, PALETTES, intensityOf, engineSettings, clampSettings, isHex, resolvePalette, type PaletteId } from './model';
+import { DEFAULT_LIGHTS_UI, DEFAULT_LIGHT_SYNC, INTENSITIES, INTENSITY_IDS, PALETTES, intensityOf, isEdited, clampUi, engineSettings, clampSettings, isHex, resolvePalette, type PaletteId } from './model';
 import { attachPoll, resetLightSync, useLightSync } from './store';
 
 vi.setConfig({ testTimeout: 20_000 });
@@ -349,26 +349,66 @@ it('a value saved by the strobe engine loads as Subtle once, keeping palette, ow
     ui: { colourBars: 1, follow: ['bass', 'bass', 'highs', 'highs', 'both'], ripple: false },
   };
   const got = loadLightSync({ getItem: () => JSON.stringify(old) });
-  expect(got.settings).toMatchObject({ ...INTENSITIES.subtle.settings, bassGain: 1.5, plays: false });
+  expect(got.settings).toMatchObject({ ...INTENSITIES.subtle.settings, bassGain: 1.25, highGain: 1.25, plays: false });
   expect(got.ui).toEqual({ ...DEFAULT_LIGHTS_UI, colourBars: INTENSITIES.subtle.colourBars, follow: ['bass', 'bass', 'highs', 'highs', 'both'], ripple: false });
   expect(got.palette).toBe('custom');
   expect(got.custom).toEqual(old.custom);
   // Saved again it carries the version, and the next load keeps what was chosen after it.
   let text = '';
   saveLightSync({ ...got, settings: { ...got.settings, floor: 0.2 } }, { setItem: (_k, v) => void (text = v) });
-  expect(JSON.parse(text).version).toBe(2);
+  expect(JSON.parse(text).version).toBe(3);
   expect(loadLightSync({ getItem: () => text }).settings.floor).toBe(0.2);
 });
 
-it('the move to Subtle is saved at load and a version 2 value is left as it is', () => {
+it('the move to Subtle is saved at load and a version 3 value is left as it is', () => {
   const store: Record<string, string> = { [LIGHT_SYNC_KEY]: JSON.stringify({ palette: 'neon', settings: { floor: 0.06 }, ui: { colourBars: 1 } }) };
   const io = { getItem: (k: string) => store[k] ?? null, setItem: (k: string, v: string) => void (store[k] = v) };
   expect(loadLightSync(io).settings.floor).toBe(INTENSITIES.subtle.settings.floor);
-  expect(JSON.parse(store[LIGHT_SYNC_KEY]).version).toBe(2);
+  expect(JSON.parse(store[LIGHT_SYNC_KEY]).version).toBe(3);
   store[LIGHT_SYNC_KEY] = JSON.stringify({ ...JSON.parse(store[LIGHT_SYNC_KEY]), settings: { ...INTENSITIES.subtle.settings, floor: 0.2 } });
   expect(loadLightSync(io).settings.floor).toBe(0.2);
-  const stale = { getItem: () => JSON.stringify({ version: '2', settings: { floor: 0.06 } }) };
+  const stale = { getItem: () => JSON.stringify({ version: '3', settings: { floor: 0.06 } }) };
   expect(loadLightSync(stale).settings.floor).toBe(INTENSITIES.subtle.settings.floor);
+});
+
+const V2_OLD = {
+  subtle: { floor: 0.35, brightness: 0.8, energyDepth: 0.35, kickFlash: 0.25, kickWhite: 0, kickRiseMs: 80, kickDecayMs: 450, attackMs: 150, releaseMs: 900, levelWindow: 8, beatNudge: 0.04, minPulseGapMs: 500, slewDown: 0.8 },
+  moderate: { floor: 0.25, brightness: 0.9, energyDepth: 0.55, kickFlash: 0.45, kickWhite: 0.15, kickRiseMs: 60, kickDecayMs: 320, attackMs: 100, releaseMs: 650, levelWindow: 4, beatNudge: 0.08, minPulseGapMs: 400, slewDown: 1.5 },
+  high: { floor: 0.15, brightness: 1, energyDepth: 0.75, kickFlash: 0.7, kickWhite: 0.35, kickRiseMs: 40, kickDecayMs: 220, attackMs: 60, releaseMs: 420, levelWindow: 2, beatNudge: 0.15, minPulseGapMs: 340, slewDown: 3 },
+} as const;
+const OLD_BARS = { subtle: 4, moderate: 2, high: 1 } as const;
+
+it.each(INTENSITY_IDS)('a version 2 value that is exactly the old %s preset moves to that preset with its new values', (id) => {
+  const store: Record<string, string> = { [LIGHT_SYNC_KEY]: JSON.stringify({ version: 2, palette: 'neon', settings: { ...V2_OLD[id], bassGain: 1.3, highGain: 1.3, plays: false }, ui: { colourBars: OLD_BARS[id], ripple: false } }) };
+  const io = { getItem: (k: string) => store[k] ?? null, setItem: (k: string, v: string) => void (store[k] = v) };
+  const got = loadLightSync(io);
+  expect(got.ui.preset).toBe(id);
+  expect(got.ui.saved).toEqual({});
+  expect(got.settings).toMatchObject({ ...INTENSITIES[id].settings, bassGain: 1.3, highGain: 1.3, plays: false });
+  expect(isEdited(got.settings, got.ui)).toBe(false);
+  expect(got.ui.ripple).toBe(false);
+  // The round trip: stored as version 3 and read back unchanged.
+  expect(JSON.parse(store[LIGHT_SYNC_KEY]).version).toBe(3);
+  expect(loadLightSync(io)).toEqual(got);
+});
+
+it('a version 2 value with its own numbers keeps them exactly, on the preset with the nearest old floor, with no dot', () => {
+  const mine = { ...V2_OLD.moderate, floor: 0.22, kickFlash: 0.6, releaseMs: 500 };
+  const store: Record<string, string> = { [LIGHT_SYNC_KEY]: JSON.stringify({ version: 2, settings: { ...mine, bassGain: 0.2, highGain: 1.9 }, ui: { colourBars: 4 } }) };
+  const io = { getItem: (k: string) => store[k] ?? null, setItem: (k: string, v: string) => void (store[k] = v) };
+  const got = loadLightSync(io);
+  expect(got.ui.preset).toBe('moderate');
+  expect(got.settings).toMatchObject({ ...mine, bassGain: 1.05, highGain: 1.05 });
+  expect(got.ui.colourBars).toBe(4);
+  expect(got.ui.saved.moderate).toEqual({ settings: expect.objectContaining(mine), colourBars: 4 });
+  expect(isEdited(got.settings, got.ui)).toBe(false);
+  expect(loadLightSync(io)).toEqual(got);
+  expect(clampUi(JSON.parse(store[LIGHT_SYNC_KEY]).ui)).toEqual(got.ui);
+  // A far floor lands on the nearest end; unequal gains outside the slider are clamped after the mean.
+  const high = loadLightSync({ getItem: () => JSON.stringify({ version: 2, settings: { ...V2_OLD.high, floor: 0.1, kickFlash: 0.5, bassGain: 2, highGain: 2 } }) });
+  expect(high.ui.preset).toBe('high');
+  expect(high.settings.bassGain).toBe(1.6);
+  expect(high.settings.highGain).toBe(1.6);
 });
 
 it.each(PALETTES.filter((p) => p.enabled).map((p) => p.id))('palette %s sends its colours on start', async (id) => {
@@ -626,9 +666,9 @@ it('rendering the tip without committing it (no effects) does not consume the Hu
 
 /** The plan's table, written out by hand so a wrong value in the model fails here. */
 const COLUMNS = {
-  subtle: { settings: { floor: 0.45, brightness: 0.8, energyDepth: 0.35, kickFlash: 0.25, kickWhite: 0, kickRiseMs: 80, kickDecayMs: 450, attackMs: 150, releaseMs: 900, levelWindow: 8, beatNudge: 0.04, minPulseGapMs: 500, slewDown: 0.8, bassGain: 1, highGain: 1 }, colourBars: 4, driftMs: 10000 },
-  moderate: { settings: { floor: 0.35, brightness: 0.9, energyDepth: 0.55, kickFlash: 0.45, kickWhite: 0.15, kickRiseMs: 60, kickDecayMs: 320, attackMs: 100, releaseMs: 650, levelWindow: 4, beatNudge: 0.08, minPulseGapMs: 400, slewDown: 1.5, bassGain: 1, highGain: 1 }, colourBars: 2, driftMs: 6000 },
-  high: { settings: { floor: 0.25, brightness: 1, energyDepth: 0.75, kickFlash: 0.7, kickWhite: 0.35, kickRiseMs: 40, kickDecayMs: 220, attackMs: 60, releaseMs: 420, levelWindow: 2, beatNudge: 0.15, minPulseGapMs: 340, slewDown: 3, bassGain: 1, highGain: 1 }, colourBars: 1, driftMs: 4000 },
+  subtle: { settings: { floor: 0.45, brightness: 0.8, energyDepth: 0.35, kickFlash: 0.25, kickWhite: 0, kickRiseMs: 80, kickDecayMs: 450, attackMs: 150, releaseMs: 900, levelWindow: 8, beatNudge: 0.04, minPulseGapMs: 500, slewDown: 0.8 }, colourBars: 4, driftMs: 10000 },
+  moderate: { settings: { floor: 0.35, brightness: 0.9, energyDepth: 0.55, kickFlash: 0.45, kickWhite: 0.15, kickRiseMs: 60, kickDecayMs: 320, attackMs: 100, releaseMs: 650, levelWindow: 4, beatNudge: 0.08, minPulseGapMs: 400, slewDown: 1.5 }, colourBars: 2, driftMs: 6000 },
+  high: { settings: { floor: 0.25, brightness: 1, energyDepth: 0.75, kickFlash: 0.7, kickWhite: 0.35, kickRiseMs: 40, kickDecayMs: 220, attackMs: 60, releaseMs: 420, levelWindow: 2, beatNudge: 0.15, minPulseGapMs: 340, slewDown: 3 }, colourBars: 1, driftMs: 4000 },
 } as const;
 
 it('the store writes an intensity column, saves it and sends one tune; a field moved after it reads as Custom', () => {
@@ -658,5 +698,6 @@ it('a new install is on Subtle, and with sync off an intensity pick sends nothin
   useLightSync.getState().setIntensity('high');
   expect(count('wall2_lightsync_tune')).toBe(0);
   useLightSync.getState().resetLights();
-  expect(intensityOf(useLightSync.getState().settings, useLightSync.getState().ui)).toBe('subtle');
+  // The active preset stays through a reset, and its values come back.
+  expect(intensityOf(useLightSync.getState().settings, useLightSync.getState().ui)).toBe('high');
 });

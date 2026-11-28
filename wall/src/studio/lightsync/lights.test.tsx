@@ -29,9 +29,9 @@ vi.mock('../../music/coverTint', async (orig) => ({
 
 /** The plan's table, written out by hand so a wrong value in the model fails here. */
 const COLUMNS = {
-  subtle: { settings: { floor: 0.45, brightness: 0.8, energyDepth: 0.35, kickFlash: 0.25, kickWhite: 0, kickRiseMs: 80, kickDecayMs: 450, attackMs: 150, releaseMs: 900, levelWindow: 8, beatNudge: 0.04, minPulseGapMs: 500, slewDown: 0.8, bassGain: 1, highGain: 1 }, colourBars: 4, driftMs: 10000 },
-  moderate: { settings: { floor: 0.35, brightness: 0.9, energyDepth: 0.55, kickFlash: 0.45, kickWhite: 0.15, kickRiseMs: 60, kickDecayMs: 320, attackMs: 100, releaseMs: 650, levelWindow: 4, beatNudge: 0.08, minPulseGapMs: 400, slewDown: 1.5, bassGain: 1, highGain: 1 }, colourBars: 2, driftMs: 6000 },
-  high: { settings: { floor: 0.25, brightness: 1, energyDepth: 0.75, kickFlash: 0.7, kickWhite: 0.35, kickRiseMs: 40, kickDecayMs: 220, attackMs: 60, releaseMs: 420, levelWindow: 2, beatNudge: 0.15, minPulseGapMs: 340, slewDown: 3, bassGain: 1, highGain: 1 }, colourBars: 1, driftMs: 4000 },
+  subtle: { settings: { floor: 0.45, brightness: 0.8, energyDepth: 0.35, kickFlash: 0.25, kickWhite: 0, kickRiseMs: 80, kickDecayMs: 450, attackMs: 150, releaseMs: 900, levelWindow: 8, beatNudge: 0.04, minPulseGapMs: 500, slewDown: 0.8 }, colourBars: 4, driftMs: 10000 },
+  moderate: { settings: { floor: 0.35, brightness: 0.9, energyDepth: 0.55, kickFlash: 0.45, kickWhite: 0.15, kickRiseMs: 60, kickDecayMs: 320, attackMs: 100, releaseMs: 650, levelWindow: 4, beatNudge: 0.08, minPulseGapMs: 400, slewDown: 1.5 }, colourBars: 2, driftMs: 6000 },
+  high: { settings: { floor: 0.25, brightness: 1, energyDepth: 0.75, kickFlash: 0.7, kickWhite: 0.35, kickRiseMs: 40, kickDecayMs: 220, attackMs: 60, releaseMs: 420, levelWindow: 2, beatNudge: 0.15, minPulseGapMs: 340, slewDown: 3 }, colourBars: 1, driftMs: 4000 },
 } as const;
 
 let calls: { command: string; args?: Record<string, unknown> }[];
@@ -202,9 +202,19 @@ it('resetLights puts every setting back, and keeps the palette and your colours'
   expect(s.settings).toEqual(DEFAULT_LIGHT_SYNC);
   expect(s.ui).toEqual(DEFAULT_LIGHTS_UI);
   expect(s.palette).toBe('neon');
+  // The saved presets and the active one survive a reset.
+  act(() => useLightSync.getState().setIntensity('high'));
+  act(() => useLightSync.getState().setSettings({ kickFlash: 0.9 }));
+  act(() => useLightSync.getState().savePreset());
+  act(() => useLightSync.getState().resetLights());
+  expect(useLightSync.getState().ui.preset).toBe('high');
+  expect(useLightSync.getState().ui.saved.high?.settings.kickFlash).toBe(0.9);
+  expect(useLightSync.getState().settings.kickFlash).toBe(0.9);
+  act(() => useLightSync.getState().setIntensity('subtle'));
+  act(() => useLightSync.getState().resetLights());
   expect(s.custom.length).toBe(3);
-  // Flash, colour speed, who follows, ripple and the reset each send one.
-  expect(tunes().length).toBe(5);
+  // Flash, colour speed, who follows, ripple and the reset each send one (the extra preset steps send more).
+  expect(tunes().length).toBeGreaterThanOrEqual(5);
 });
 
 it('every control has a hover tip', async () => {
@@ -524,7 +534,8 @@ for (const id of INTENSITY_IDS) {
   it(`picking ${id} rewrites its whole column and sends one tune with it`, () => {
     syncOn();
     render(<LightsPanel />);
-    // Start away from every column so the pick has something to rewrite.
+    // Start on another preset, away from every column, so the pick has something to rewrite.
+    fireEvent.click(radios()[(INTENSITY_IDS.indexOf(id) + 1) % 3]);
     fireEvent.change(slider('ls-flash'), { target: { value: '5' } });
     fireEvent.change(slider('ls-speed'), { target: { value: '0' } });
     const before = tunes().length;
@@ -546,7 +557,8 @@ it('the High column keeps its drift at 4000 ms, the table value', () => {
 
 it('moving any slider puts a dot on the active preset and lights Save to it; picking a preset clears it', () => {
   const { container } = render(<LightsPanel />);
-  for (const [name, value] of [['ls-flash', '60'], ['ls-smooth', '10'], ['ls-speed', '0'], ['Brightness floor', '20'], ['Brightness peak', '95'], ['ls-sens', '90']] as const) {
+  for (const [name, value] of [['ls-flash', '60'], ['ls-smooth', '10'], ['ls-speed', '0'], ['Brightness floor', '20'], ['Brightness peak', '95']] as const) {
+    fireEvent.click(undoBtn(container));
     fireEvent.click(radios()[1]);
     expect(dot(container)).toBeNull();
     fireEvent.change(slider(name), { target: { value } });
@@ -560,6 +572,35 @@ it('moving any slider puts a dot on the active preset and lights Save to it; pic
   fireEvent.click(radios()[2]);
   expect(dot(container)).toBeNull();
   expect(checked()).toEqual(['false', 'false', 'true']);
+});
+
+it('Sensitivity is not part of a preset: a preset tap, Save and Reset leave it, and moving it is no edit', () => {
+  const { container } = render(<LightsPanel />);
+  fireEvent.click(radios()[1]);
+  fireEvent.change(slider('ls-sens'), { target: { value: '90' } });
+  expect(dot(container)).toBeNull();
+  expect(saveBtn(container).disabled).toBe(true);
+  const gain = useLightSync.getState().settings.bassGain;
+  fireEvent.click(radios()[2]);
+  expect(useLightSync.getState().settings).toMatchObject({ bassGain: gain, highGain: gain });
+  fireEvent.change(slider('ls-flash'), { target: { value: '60' } });
+  fireEvent.click(saveBtn(container));
+  fireEvent.change(slider('ls-flash'), { target: { value: '10' } });
+  fireEvent.click(undoBtn(container));
+  expect(useLightSync.getState().settings).toMatchObject({ bassGain: gain, highGain: gain });
+  expect(Object.keys(useLightSync.getState().ui.saved.high?.settings ?? {})).not.toContain('bassGain');
+});
+
+it('tapping the active preset while it is edited does nothing; Reset drops the edits', () => {
+  const { container } = render(<LightsPanel />);
+  fireEvent.click(radios()[1]);
+  fireEvent.change(slider('ls-flash'), { target: { value: '60' } });
+  const before = useLightSync.getState().settings;
+  fireEvent.click(radios()[1]);
+  expect(useLightSync.getState().settings).toEqual(before);
+  expect(dot(container)).not.toBeNull();
+  fireEvent.click(undoBtn(container));
+  expect(dot(container)).toBeNull();
 });
 
 it('Save to the preset keeps the slider values: the dot goes, and picking another preset and back returns them', () => {
