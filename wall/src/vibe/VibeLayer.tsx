@@ -10,11 +10,24 @@ import { createTape } from './tape';
 import { bakeMatte, radiusOf, type Matte } from './artMatte';
 import { drawGlow, type GlowInput } from './glow';
 import { DEGRADED_FRAME_MS, browserHost, createLoop, createProbe, type LoopHost } from './loop';
-import { createVibeFrame, createVibeState, counterAdvanced, noteDrop, noteKick, stepVibe, type VibeInput } from './mix';
+import { createVibeFrame, createVibeState, counterAdvanced, noteBeatHit, noteDrop, noteKick, noteTry, stepVibe, type VibeInput } from './mix';
 import { softStops } from './feather';
+import { useTryStore } from './tryIt';
 
 /** Backing store scale: the canvas is drawn at half resolution and scaled up by CSS. */
 export const BACKING = 0.5;
+/**
+ * The rate limiters' clock seconds, kept outside the component: a remount (reduced motion, a width change) starts a fresh
+ * VibeState, and without this a beat hit could fire inside 4 s of the last one or 2 s of a drop.
+ */
+const limiter = { lastDropAt: -Infinity, lastBeatHitAt: -Infinity };
+/** The limiter times as they stand (tests). */
+export const vibeLimiterTimes = (): { lastDropAt: number; lastBeatHitAt: number } => ({ ...limiter });
+/** Forget the limiter times (tests). */
+export function resetVibeLimiter(): void {
+  limiter.lastDropAt = -Infinity;
+  limiter.lastBeatHitAt = -Infinity;
+}
 /** The sky band the aurora may fill, as a fraction of the place's height, and where it feathers out above the ridge. */
 export const SKY_END = 0.48;
 export const SKY_FEATHER = 0.16;
@@ -66,6 +79,9 @@ export function VibeLayer({ host = browserHost }: { host?: LoopHost }) {
     let bakedW = 0;
     const gsrc: GlitchSources = { hz: null, map: { ax: 1, bx: 0, ay: 1, by: 0 }, img: null, art: { x: 0, y: 0, w: 0, h: 0 } };
     const state = createVibeState();
+    // The drop clock is the audio tick clock; the newest detector drop counts even if this layer was not mounted for it.
+    state.lastDropAt = Math.max(limiter.lastDropAt, audioDrops().lastAt / 1000);
+    state.lastBeatHitAt = limiter.lastBeatHitAt;
     const frame = createVibeFrame();
     const probeOn = new URLSearchParams(location.search).get('vibeprobe') === '1';
     const probe = createProbe(() => console.info('vibe: frames over budget, dropping to 20 fps'));
@@ -81,6 +97,7 @@ export function VibeLayer({ host = browserHost }: { host?: LoopHost }) {
     let skyFade: CanvasGradient | null = null;
     let lastDrops = audioDrops().count;
     let lastBeats = audioBeats().count;
+    let lastTry = useTryStore.getState().count;
     let lastBake = -Infinity;
     let lastE = -1;
     let lastA = -1;
@@ -239,7 +256,7 @@ export function VibeLayer({ host = browserHost }: { host?: LoopHost }) {
         fctx.globalAlpha = 1;
         fctx.clearRect(0, 0, fcanvas.width, fcanvas.height);
         if (tapeOn) tape.draw(fctx, fcanvas.width, fcanvas.height, still ? 0 : nowS, tapeAmt, frame.grain, still, still ? 0 : frame.grainKick);
-        if (glitchAmt > 0.003) glitch.draw(fctx, fcanvas.width, fcanvas.height, nowS, state.drops, glitchAmt, gsrc, state.power, input.settings.dropGlitch);
+        if (glitchAmt > 0.003) glitch.draw(fctx, fcanvas.width, fcanvas.height, nowS, state.drops, glitchAmt, gsrc, state.power, input.settings.dropGlitch, state.dur);
         frontDrawn = true;
       } else if (frontDrawn) {
         fctx.clearRect(0, 0, fcanvas.width, fcanvas.height);
@@ -252,12 +269,23 @@ export function VibeLayer({ host = browserHost }: { host?: LoopHost }) {
       (ts, dt) => {
         const t0 = probeOn ? performance.now() : 0;
         const n = audioDrops().count;
-        if (counterAdvanced(n, lastDrops)) noteDrop(state, ts / 1000, audioDrops().strength);
+        input.settings = vibeSettings();
+        // A limiter time from ahead of this clock (a restarted clock) means nothing; forget it.
+        if (state.lastDropAt > ts / 1000) state.lastDropAt = -Infinity;
+        if (state.lastBeatHitAt > ts / 1000) state.lastBeatHitAt = -Infinity;
+        if (counterAdvanced(n, lastDrops)) noteDrop(state, ts / 1000, audioDrops().strength, input.settings);
         lastDrops = n;
         const beats = audioBeats().count;
-        if (counterAdvanced(beats, lastBeats)) noteKick(state, ts / 1000);
+        if (counterAdvanced(beats, lastBeats)) {
+          noteKick(state, ts / 1000);
+          noteBeatHit(state, ts / 1000, audioBeats().strength, input.settings);
+        }
+        limiter.lastDropAt = state.lastDropAt;
+        limiter.lastBeatHitAt = state.lastBeatHitAt;
         lastBeats = beats;
-        input.settings = vibeSettings();
+        const tries = useTryStore.getState().count;
+        if (tries > lastTry && input.settings.dropGlitch !== 'off') noteTry(state, ts / 1000, input.settings);
+        lastTry = tries;
         input.reduced = reduced;
         input.playing = useAudioStore.getState().playing;
         input.energy = audioEnergy();
@@ -283,6 +311,7 @@ export function VibeLayer({ host = browserHost }: { host?: LoopHost }) {
       if (s.playing !== prev.playing || (s.playing && !loop.running)) kick();
     });
     const offSettings = useVibeStore.subscribe(kick);
+    const offTry = useTryStore.subscribe(kick);
     // Layout reads once per frame at most, however many changes come at once.
     let pending = 0;
     const later = (): void => {
@@ -306,6 +335,7 @@ export function VibeLayer({ host = browserHost }: { host?: LoopHost }) {
       if (pending) host.caf(pending);
       offAudio();
       offSettings();
+      offTry();
       ro?.disconnect();
       watched?.removeEventListener('load', onImgLoad);
       mo.disconnect();

@@ -2110,8 +2110,198 @@
   margin-top: -2px;
   white-space: nowrap;
 }
+/* The Drop Glitch card: the look tiles, Try it in the header, then one "Tune when it fires" section (Drops slider with the
+   live sound level in its track, the Beat hits switch, and two segmented controls for each hit). With the look Off the
+   tune section dims and takes no input; its height never changes. */
+.dg-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: rgba(10, 7, 28, 0.35);
+}
+.dg-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--tx);
+}
+.dg-title {
+  font: 600 18px/1.2 var(--body);
+  white-space: nowrap;
+}
+.dg-tiles {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 8px;
+}
+.dg-tiles button {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 64px;
+  padding: 0 4px;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  background: rgba(10, 7, 28, 0.5);
+  color: var(--dim);
+  font: 500 16px/1 var(--body);
+  white-space: nowrap;
+}
+.dg-tiles button:hover,
+.dg-seg button:hover {
+  color: var(--tx);
+  border-color: rgba(83, 230, 235, 0.45);
+}
+.dg-tiles button.on,
+.dg-seg button.on {
+  color: var(--cyan);
+  border-color: rgba(83, 230, 235, 0.65);
+  background: rgba(53, 230, 234, 0.14);
+}
+.dg-fold {
+  display: inline-flex;
+  align-items: center;
+  align-self: flex-start;
+  gap: 6px;
+  height: 32px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--tx);
+  font: 500 16px/1 var(--body);
+  white-space: nowrap;
+}
+.dg-fold svg {
+  transition: transform 0.15s;
+}
+.dg-fold svg.shut {
+  transform: rotate(-90deg);
+}
+.dg-tune {
+  transition: opacity 0.25s;
+}
+.dg-tune.off {
+  opacity: 0.38;
+}
+.dg-set {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.dg-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 36px;
+}
+.dg-label {
+  flex: none;
+  width: 120px;
+  color: var(--tx);
+  font: 500 17px/1.2 var(--body);
+  white-space: nowrap;
+}
+.dg-bl {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.dg-track {
+  position: relative;
+}
+/* The live sound level: a soft bar behind the slider's own track. */
+.dg-level {
+  position: absolute;
+  left: 0;
+  top: 11px;
+  height: 10px;
+  max-width: 100%;
+  border-radius: 5px;
+  background: rgba(83, 230, 235, 0.3);
+  pointer-events: none;
+}
+.dg-num {
+  flex: none;
+  width: 28px;
+  text-align: right;
+  color: var(--cyan);
+  font: 500 17px/1 var(--body);
+}
+.dg-scale {
+  min-height: 22px;
+  margin-top: -6px;
+  padding: 0 40px 0 132px;
+  justify-content: space-between;
+  color: var(--dim);
+  font-size: 16px;
+  white-space: nowrap;
+}
+.dg-help {
+  flex: 1;
+  min-width: 0;
+  color: var(--dim);
+  font-size: 16px;
+  white-space: nowrap;
+}
+.dg-seg {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 4px;
+  padding: 3px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: rgba(10, 7, 28, 0.5);
+}
+.dg-seg button {
+  height: 34px;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--dim);
+  font: 500 16px/1 var(--body);
+  white-space: nowrap;
+}
+.dg-set:disabled button {
+  cursor: default;
+}
+.dg-each {
+  min-height: 42px;
+}
+/* Try it: a chip the page's own size, at the right of the card header. */
+.ln-try {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 36px;
+  margin-left: auto;
+  padding: 0 14px;
+  border-radius: 18px;
+  border: 1px solid rgba(83, 230, 235, 0.65);
+  background: rgba(53, 230, 234, 0.12);
+  color: var(--cyan);
+  font: 500 16px/1 var(--body);
+  white-space: nowrap;
+}
+.ln-try:disabled {
+  opacity: 0.45;
+  border-color: var(--line);
+  color: var(--dim);
+}
 @media (prefers-reduced-motion: reduce) {
-  .ln-switch i {
+  .ln-switch i,
+  .dg-tune,
+  .dg-fold svg {
     transition: none;
   }
 }

@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { SENS_DEFAULT, SENS_MAX, SENS_MIN } from '../audio/energy';
 import { DEFAULT_MUSIC_LEVEL, MUSIC_LEVELS, type MusicLevel } from './offTabMusic';
 
 /** The aurora veil over the scene: off, half strength, or the full look. */
@@ -15,6 +16,22 @@ export const MOUNTAIN_LEVELS: MountainLevel[] = ['off', 'low', 'medium', 'high']
 /** The factor on the ridge's dance height for each level. */
 export const MOUNTAIN_GAIN: Readonly<Record<MountainLevel, number>> = { off: 0, low: 0.5, medium: 1, high: 1.5 };
 
+/** Small glitches on the hardest beats: off (today), or Light. */
+export type BeatHits = 'off' | 'light';
+export const BEAT_HITS: BeatHits[] = ['off', 'light'];
+/** How long a hit lasts: Short 0.5 s, Normal 0.95 s (today), Long 2 s. */
+export type GlitchLength = 'short' | 'normal' | 'long';
+export const GLITCH_LENGTHS: GlitchLength[] = ['short', 'normal', 'long'];
+export const GLITCH_LENGTH_S: Readonly<Record<GlitchLength, number>> = { short: 0.5, normal: 0.95, long: 2 };
+/** How hard a hit is: Soft 0.6 times, Normal today's amount, Hard 1.4 times. */
+export type GlitchStrength = 'soft' | 'normal' | 'hard';
+export const GLITCH_STRENGTHS: GlitchStrength[] = ['soft', 'normal', 'hard'];
+export const GLITCH_STRENGTH_GAIN: Readonly<Record<GlitchStrength, number>> = { soft: 0.6, normal: 1, hard: 1.4 };
+/** Sensitivity slider range and default (3 is the drop rule the wall always had). */
+export const SENSITIVITY_MIN = SENS_MIN;
+export const SENSITIVITY_MAX = SENS_MAX;
+export const SENSITIVITY_DEFAULT = SENS_DEFAULT;
+
 export interface VibeSettings {
   /** Colour, glow and the mix follow how loud the music has been lately (on), or sit at fixed levels (off). */
   auto: boolean;
@@ -30,11 +47,20 @@ export interface VibeSettings {
   offTabMusic: MusicLevel;
   /** How much the music moves the mountain lines, on every tab. */
   mountain: MountainLevel;
+  /** How easily a drop fires, 1 (strict) to 10 (loose). */
+  dropSensitivity: number;
+  /** A small glitch on the hardest beats. */
+  beatHits: BeatHits;
+  /** How long each hit lasts. */
+  glitchLength: GlitchLength;
+  /** How hard each hit is. */
+  glitchStrength: GlitchStrength;
 }
 
 /** Auto vibe on; the rest off. The effects run on Listen and Watch, under every word. A `cover` saved by an older build is ignored on load and dropped on the next save. */
 export const DEFAULT_VIBE: Readonly<VibeSettings> = {
   auto: true, dropGlitch: 'tear', tapeGrain: false, calmCap: false, aurora: 'full', offTabMusic: DEFAULT_MUSIC_LEVEL, mountain: 'medium',
+  dropSensitivity: SENSITIVITY_DEFAULT, beatHits: 'off', glitchLength: 'normal', glitchStrength: 'normal',
 };
 /** Its own store, so a Lines reset or preset never touches the vibe. */
 export const VIBE_KEY = 'wall2-vibe';
@@ -49,6 +75,11 @@ export function glitchOf(v: unknown, auto: boolean = DEFAULT_VIBE.auto): GlitchL
   return GLITCH_LOOKS.includes(v as GlitchLook) ? (v as GlitchLook) : DEFAULT_VIBE.dropGlitch;
 }
 
+/** A stored Sensitivity: a whole number 1 to 10, else the default. */
+export function sensitivityOf(v: unknown): number {
+  return typeof v === 'number' && Number.isFinite(v) ? Math.min(SENSITIVITY_MAX, Math.max(SENSITIVITY_MIN, Math.round(v))) : SENSITIVITY_DEFAULT;
+}
+
 export function validateVibe(value: unknown): VibeSettings {
   const v = value && typeof value === 'object' ? (value as Partial<Record<keyof VibeSettings, unknown>>) : {};
   const auto = flag(v.auto, DEFAULT_VIBE.auto);
@@ -60,6 +91,10 @@ export function validateVibe(value: unknown): VibeSettings {
     aurora: AURORA_LEVELS.includes(v.aurora as AuroraLevel) ? (v.aurora as AuroraLevel) : DEFAULT_VIBE.aurora,
     offTabMusic: MUSIC_LEVELS.includes(v.offTabMusic as MusicLevel) ? (v.offTabMusic as MusicLevel) : DEFAULT_VIBE.offTabMusic,
     mountain: MOUNTAIN_LEVELS.includes(v.mountain as MountainLevel) ? (v.mountain as MountainLevel) : DEFAULT_VIBE.mountain,
+    dropSensitivity: sensitivityOf(v.dropSensitivity),
+    beatHits: BEAT_HITS.includes(v.beatHits as BeatHits) ? (v.beatHits as BeatHits) : DEFAULT_VIBE.beatHits,
+    glitchLength: GLITCH_LENGTHS.includes(v.glitchLength as GlitchLength) ? (v.glitchLength as GlitchLength) : DEFAULT_VIBE.glitchLength,
+    glitchStrength: GLITCH_STRENGTHS.includes(v.glitchStrength as GlitchStrength) ? (v.glitchStrength as GlitchStrength) : DEFAULT_VIBE.glitchStrength,
   };
 }
 
@@ -102,6 +137,7 @@ export const useVibeStore = create<VibeStore>((set) => ({
 
 const pick = (v: VibeSettings): VibeSettings => ({
   auto: v.auto, dropGlitch: v.dropGlitch, tapeGrain: v.tapeGrain, calmCap: v.calmCap, aurora: v.aurora, offTabMusic: v.offTabMusic, mountain: v.mountain,
+  dropSensitivity: v.dropSensitivity, beatHits: v.beatHits, glitchLength: v.glitchLength, glitchStrength: v.glitchStrength,
 });
 // The settings alone (no actions), rebuilt only when they change, so a frame reads them for free.
 let current = pick(useVibeStore.getState());

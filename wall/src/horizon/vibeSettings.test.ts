@@ -9,15 +9,15 @@ describe('vibe settings', () => {
   });
 
   it('defaults: Auto vibe on, the rest off', () => {
-    expect(DEFAULT_VIBE).toEqual({ auto: true, dropGlitch: 'tear', tapeGrain: false, calmCap: false, aurora: 'full', offTabMusic: 'medium', mountain: 'medium' });
+    expect(DEFAULT_VIBE).toEqual({ auto: true, dropGlitch: 'tear', tapeGrain: false, calmCap: false, aurora: 'full', offTabMusic: 'medium', mountain: 'medium', dropSensitivity: 3, beatHits: 'off', glitchLength: 'normal', glitchStrength: 'normal' });
     expect(vibeSettings()).toMatchObject(DEFAULT_VIBE);
     expect(VIBE_KEY).toBe('wall2-vibe');
   });
 
   it('validates every stored field', () => {
-    expect(validateVibe({ auto: 'yes', dropGlitch: 1, tapeGrain: null, calmCap: 'no', aurora: 'bright', offTabMusic: 'loud', mountain: 'huge' })).toEqual(DEFAULT_VIBE);
-    expect(validateVibe({ auto: false, dropGlitch: 'roll', tapeGrain: true, calmCap: true, aurora: 'soft', offTabMusic: 'full', mountain: 'high' })).toEqual({
-      auto: false, dropGlitch: 'roll', tapeGrain: true, calmCap: true, aurora: 'soft', offTabMusic: 'full', mountain: 'high',
+    expect(validateVibe({ auto: 'yes', dropGlitch: 1, tapeGrain: null, calmCap: 'no', aurora: 'bright', offTabMusic: 'loud', mountain: 'huge', dropSensitivity: 'max', beatHits: 'heavy', glitchLength: 'forever', glitchStrength: 'brutal' })).toEqual(DEFAULT_VIBE);
+    expect(validateVibe({ auto: false, dropGlitch: 'roll', tapeGrain: true, calmCap: true, aurora: 'soft', offTabMusic: 'full', mountain: 'high', dropSensitivity: 7, beatHits: 'light', glitchLength: 'long', glitchStrength: 'hard' })).toEqual({
+      auto: false, dropGlitch: 'roll', tapeGrain: true, calmCap: true, aurora: 'soft', offTabMusic: 'full', mountain: 'high', dropSensitivity: 7, beatHits: 'light', glitchLength: 'long', glitchStrength: 'hard',
     });
     expect(validateVibe(null)).toEqual(DEFAULT_VIBE);
     expect(validateVibe('scene')).toEqual(DEFAULT_VIBE);
@@ -25,8 +25,22 @@ describe('vibe settings', () => {
     expect(validateVibe(7)).toEqual(DEFAULT_VIBE);
   });
 
+  it('settings stored before the drop settings existed load as today: sensitivity 3, beat hits off, Normal length and strength', () => {
+    const old = { auto: false, dropGlitch: 'split', tapeGrain: true, calmCap: false, aurora: 'soft', offTabMusic: 'full', mountain: 'low' };
+    localStorage.setItem(VIBE_KEY, JSON.stringify(old));
+    resetVibeStore();
+    expect(vibeSettings()).toEqual({ ...old, dropSensitivity: 3, beatHits: 'off', glitchLength: 'normal', glitchStrength: 'normal' });
+  });
+
+  it('keeps a stored sensitivity whole and inside 1 to 10', () => {
+    expect(validateVibe({ dropSensitivity: 0 }).dropSensitivity).toBe(1);
+    expect(validateVibe({ dropSensitivity: 99 }).dropSensitivity).toBe(10);
+    expect(validateVibe({ dropSensitivity: 6.4 }).dropSensitivity).toBe(6);
+    expect(validateVibe({ dropSensitivity: NaN }).dropSensitivity).toBe(3);
+  });
+
   it('the frame reads the settings alone, without the store actions', () => {
-    expect(Object.keys(vibeSettings()).sort()).toEqual(['aurora', 'auto', 'calmCap', 'dropGlitch', 'mountain', 'offTabMusic', 'tapeGrain']);
+    expect(Object.keys(vibeSettings()).sort()).toEqual(['aurora', 'auto', 'beatHits', 'calmCap', 'dropGlitch', 'dropSensitivity', 'glitchLength', 'glitchStrength', 'mountain', 'offTabMusic', 'tapeGrain']);
     useVibeStore.getState().setVibe({ tapeGrain: true });
     expect(vibeSettings().tapeGrain).toBe(true);
     expect(vibeSettings()).toBe(vibeSettings());

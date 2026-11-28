@@ -1325,7 +1325,10 @@ try {
       if (rail && hit(dr, rail.getBoundingClientRect())) toolsOut.push('tools drawer: covers the rail');
       // The drawer ends at or above y 697 in every state, and nothing inside it scrolls (the open panel, the rail, the drawer itself).
       if (dr.bottom > 697 + 0.5) toolsOut.push('tools drawer: bottom edge y ' + (Math.round(dr.bottom * 10) / 10) + ', past y 697');
+      // The one exception: the body scrolls inside the drawer while the Vibe group's Tune is open (vibe-tools.mjs checks that state).
+      const bodyMayScroll = !!drawer.querySelector('.dg-tune:not([hidden])');
       for (const box of [drawer, ...drawer.querySelectorAll('.tools-body, .tools-rail, .tools-panel:not([hidden])')]) {
+        if (bodyMayScroll && box !== drawer) continue;
         if (box.scrollHeight > box.clientHeight + 1 || box.scrollWidth > box.clientWidth + 1) toolsOut.push('tools drawer: ' + (box.className || 'drawer') + ' scrolls (' + box.scrollHeight + ' of ' + box.clientHeight + ' px)');
       }
       // The rail: every group, its one-line status 16 px or more, controls 32 px or more.

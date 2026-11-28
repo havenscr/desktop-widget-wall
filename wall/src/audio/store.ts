@@ -1,9 +1,10 @@
 import { create } from 'zustand';
 import { SILENCE_MS, clamp01, hasSound, loudness, smoothStep, type AudioLevelsPayload, type Levels } from './model';
 import { createBeatDetector, type BeatDetector } from './beat';
-import { createEnergy, energyIdle, resetEnergy, stepEnergy, type DropStamp } from './energy';
+import { createEnergy, dropTuning, energyIdle, resetEnergy, stepEnergy, type DropStamp } from './energy';
 import { APP_DANCE_PARAMS, clearDance, createDance, setDanceParams, stepDance, type DanceParams } from './dance';
 import { lineSettings } from '../horizon/linesSettings';
+import { vibeSettings } from '../horizon/vibeSettings';
 
 export interface AudioState extends Levels {
   /** True while sound arrived in the last 0.35 seconds. */
@@ -27,6 +28,8 @@ export const BAND_COUNT = 32;
 const bands = new Float32Array(BAND_COUNT);
 const detector = createBeatDetector();
 const energy = createEnergy();
+// The Sensitivity level the drop rule was last built for.
+let tunedFor = -1;
 
 /** How loud the music has been lately, 0 to 1 (a slow average; 0 in silence). */
 export function audioEnergy(): number {
@@ -178,6 +181,11 @@ export function tickAudio(now: number): void {
   const playing = now - lastSoundAt <= SILENCE_MS;
   // Slow energy and drops read the levels as they stood before this tick moves them.
   const lv = useAudioStore.getState();
+  const sens = vibeSettings().dropSensitivity;
+  if (sens !== tunedFor) {
+    tunedFor = sens;
+    energy.tune = dropTuning(sens);
+  }
   if (!energyIdle(energy, playing)) stepEnergy(energy, now, elapsedMs, loudness(lv), playing, detector.count);
   advanceHistory(now, playing);
   if (!playing) {

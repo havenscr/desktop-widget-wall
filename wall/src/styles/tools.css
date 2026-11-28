@@ -16,6 +16,8 @@
   flex-direction: column;
   gap: 14px;
   padding: 20px 26px 16px;
+  /* Stays within the 720 px wall (ends by y 697): a tall group, such as Vibe with Tune open, scrolls in its body. */
+  max-height: 677px;
   background: linear-gradient(180deg, rgba(255, 255, 255, 0.055), rgba(255, 255, 255, 0.016)), rgb(11, 8, 30);
   border: 1px solid var(--line);
   border-radius: 26px;
@@ -81,6 +83,16 @@
   display: grid;
   grid-template-columns: 242px 1fr;
   gap: 17px;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  scroll-padding-bottom: 48px;
+}
+/* The body scrolls only when a group is taller than the drawer; the bottom edge fades while the Vibe group's Tune is open. */
+.tools-body:has(.dg-tune:not([hidden])) {
+  -webkit-mask-image: linear-gradient(180deg, #000 calc(100% - 34px), rgba(0, 0, 0, 0.15));
+  mask-image: linear-gradient(180deg, #000 calc(100% - 34px), rgba(0, 0, 0, 0.15));
 }
 .tools-rail {
   display: flex;

@@ -55,6 +55,9 @@ export const GAP_RESET_MS = 500;
 /** Beat timestamps kept in `beats`, newest last. */
 export const BEAT_HISTORY = 8;
 
+/** A beat this many dB over the onset bar counts as full strength. */
+export const BEAT_FULL_DB = 12;
+
 const BAND_DB_FLOOR = -70;
 const BAND_DB_RANGE = 60;
 /** History slots: enough for one median window at well over the 30 Hz event rate. */
@@ -76,6 +79,8 @@ export interface BeatDetector {
   readonly lastBeatAt: number;
   /** Milliseconds between the newest beat's onset and the frame that confirmed it. */
   readonly lag: number;
+  /** How hard the newest beat hit, 0 (just over the onset bar) to 1 (about `BEAT_FULL_DB` over it). */
+  readonly strength: number;
   /** Mean of the lowest bands (0 to 5) in the newest frame, 0 to 1. */
   readonly bass: number;
   /** The newest beat onset times in ms, oldest first (copied; for tests and diagnostics). */
@@ -120,6 +125,7 @@ export function createBeatDetector(tuning: Partial<BeatTuning> = {}): BeatDetect
   // An onset waiting for its confirming frames.
   let pendingAt = NaN;
   let pendingHeld = 0;
+  let pendingAbove = 0;
   // Arrival times of the frames that confirmed the newest beats, newest last.
   const arrivals = new Float64Array(CALM_MAX_BEATS).fill(-Infinity);
   const stamps = new Float64Array(BEAT_HISTORY);
@@ -129,6 +135,7 @@ export function createBeatDetector(tuning: Partial<BeatTuning> = {}): BeatDetect
     lastBeatAt: -Infinity,
     lag: 0,
     bass: 0,
+    strength: 0,
   };
 
   const clear = () => {
@@ -170,6 +177,7 @@ export function createBeatDetector(tuning: Partial<BeatTuning> = {}): BeatDetect
       if (!Number.isNaN(pendingAt)) {
         if (above >= holdDb) {
           pendingHeld++;
+          if (above > pendingAbove) pendingAbove = above;
           if (
             pendingHeld >= confirmFrames &&
             (arrival - arrivals[CALM_MAX_BEATS - 1] < MIN_BEAT_GAP_MS - BEAT_GAP_TOLERANCE_MS ||
@@ -181,6 +189,7 @@ export function createBeatDetector(tuning: Partial<BeatTuning> = {}): BeatDetect
             state.count++;
             state.lastBeatAt = pendingAt;
             state.lag = now - pendingAt;
+            state.strength = Math.min(1, Math.max(0, (pendingAbove - onsetDb) / BEAT_FULL_DB));
             for (let i = 1; i < CALM_MAX_BEATS; i++) arrivals[i - 1] = arrivals[i];
             arrivals[CALM_MAX_BEATS - 1] = arrival;
             for (let i = 1; i < BEAT_HISTORY; i++) stamps[i - 1] = stamps[i];
@@ -200,6 +209,7 @@ export function createBeatDetector(tuning: Partial<BeatTuning> = {}): BeatDetect
       ) {
         pendingAt = now;
         pendingHeld = 0;
+        pendingAbove = above;
       }
 
       prevLevel = level;
@@ -220,6 +230,7 @@ export function createBeatDetector(tuning: Partial<BeatTuning> = {}): BeatDetect
       state.count = 0;
       state.lastBeatAt = -Infinity;
       state.lag = 0;
+      state.strength = 0;
       arrivals.fill(-Infinity);
       stamps.fill(0);
     },
@@ -231,6 +242,9 @@ export function createBeatDetector(tuning: Partial<BeatTuning> = {}): BeatDetect
     },
     get lag() {
       return state.lag;
+    },
+    get strength() {
+      return state.strength;
     },
     get bass() {
       return state.bass;
