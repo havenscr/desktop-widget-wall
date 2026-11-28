@@ -1,5 +1,5 @@
-/** The eight studio keys: which action each slot holds, its label, and how a label is fitted to a key. */
-export type SlotAction = 'scene1' | 'scene2' | 'scene3' | 'scene4' | 'mute' | 'camera' | 'share' | 'golive' | 'solo' | 'two' | 'mark' | 'snip' | 'hide';
+/** The seven studio keys: which action each slot holds, its label, and how a label is fitted to a key. */
+export type SlotAction = 'scene2' | 'scene3' | 'scene4' | 'mute' | 'camera' | 'share' | 'golive' | 'solo' | 'two' | 'mark' | 'snip' | 'hide';
 /** What a key can show: a slot's action, or End show, which only ever stands in for Go live while the show is live. */
 export type ShownAction = SlotAction | 'end';
 
@@ -25,7 +25,6 @@ export interface SlotInfo {
 export type StudioKind = 'scene' | 'mic' | 'camera' | 'mark' | 'golive';
 
 export const SLOT_INFO: Record<ShownAction, SlotInfo> = {
-  scene1: { label: 'Speaker', full: 'Full Screen Speaker', group: 'streamyard', scene: true, kind: 'scene' },
   scene2: { label: 'Presenter', full: 'Presenter View', group: 'streamyard', scene: true, kind: 'scene' },
   scene3: { label: '2 Person', full: '2 Person Presenter View', group: 'streamyard', scene: true, kind: 'scene' },
   scene4: { label: 'Screenshare', full: 'Screenshare', group: 'streamyard', scene: true, kind: 'scene' },
@@ -43,13 +42,12 @@ export const SLOT_INFO: Record<ShownAction, SlotInfo> = {
 
 /** The picker's order: the StreamYard group, then the Wall group. */
 export const PICKER_ORDER: Record<'streamyard' | 'wall', SlotAction[]> = {
-  streamyard: ['scene1', 'scene2', 'scene3', 'scene4', 'mute', 'camera', 'share', 'golive', 'solo', 'two'],
+  streamyard: ['scene2', 'scene3', 'scene4', 'mute', 'camera', 'share', 'golive', 'solo', 'two'],
   wall: ['mark', 'snip', 'hide'],
 };
 
 /** The wall's studio command for each key that goes through the Stage Pop-out add-on. */
 export const ADDON_ACTION: Partial<Record<ShownAction, 'scene' | 'mute' | 'camera'>> = {
-  scene1: 'scene',
   scene2: 'scene',
   scene3: 'scene',
   scene4: 'scene',
@@ -57,12 +55,11 @@ export const ADDON_ACTION: Partial<Record<ShownAction, 'scene' | 'mute' | 'camer
   camera: 'camera',
 };
 
-export const SLOT_COUNT = 8;
+export const SLOT_COUNT = 7;
 export const SLOTS_KEY = 'wall2-studio-slots';
 export const MAX_LABEL = 16;
 
 export const DEFAULT_SLOTS: readonly Slot[] = [
-  { a: 'scene1' },
   { a: 'scene2' },
   { a: 'scene3' },
   { a: 'scene4' },
@@ -86,7 +83,9 @@ export function parseSlots(raw: string | null): Slot[] {
   const defaults = DEFAULT_SLOTS.map((s) => ({ ...s }));
   if (!raw) return defaults;
   try {
-    const v: unknown = JSON.parse(raw);
+    const parsed: unknown = JSON.parse(raw);
+    // The retired Full Screen Speaker key (scene1) is dropped quietly, so a value stored with it still loads.
+    const v: unknown = Array.isArray(parsed) ? parsed.filter((e) => !(typeof e === 'object' && e !== null && (e as { a?: unknown }).a === 'scene1')) : parsed;
     if (!Array.isArray(v) || v.length !== SLOT_COUNT) return defaults;
     const out: Slot[] = [];
     for (const e of v) {

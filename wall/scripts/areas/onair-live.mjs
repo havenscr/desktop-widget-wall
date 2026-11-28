@@ -99,19 +99,21 @@ function measureOnAirLive() {
     const b = hd.getBoundingClientRect();
     if (Math.abs(b.left - (800 + cw)) > 1 || Math.abs(b.width - 24) > 1) fails.push('on air live: the split handle is at x ' + r1(b.left) + ', ' + r1(b.width) + ' wide and should be in the 24 px gap at x ' + (800 + cw));
   }
-  // Studio keys: eight equal keys, two rows of four, under the heading. Every label is one line high and centred
+  // Studio keys: seven keys, a row of three scene keys then a row of four; keys in a row are equal, under the heading. Every label is one line high and centred
   // (left and right gaps within 1 px), 16 px, and no key is dim.
   const sk = root.querySelector('.oa2-studiokeys');
   if (sk) {
     const top = sk.getBoundingClientRect().top;
     const tiles = [...sk.querySelectorAll('.oa2-skgrid .key-tile')];
-    if (tiles.length !== 8) fails.push('on air live: the studio keys have ' + tiles.length + ' keys (they have 8)');
+    if (tiles.length !== 7) fails.push('on air live: the studio keys have ' + tiles.length + ' keys (they have 7)');
     const head = sk.querySelector('.oa2-hd');
-    const ws = new Set(tiles.map((t) => Math.round(t.getBoundingClientRect().width)));
+    const wsOf = (list) => new Set(list.map((t) => Math.round(t.getBoundingClientRect().width)));
+    const wsBad = wsOf(tiles.slice(0, 3)).size > 1 || wsOf(tiles.slice(3)).size > 1;
+    const ws = wsOf(tiles);
     const hs = new Set(tiles.map((t) => Math.round(t.getBoundingClientRect().height)));
-    if (ws.size > 1 || hs.size > 1) fails.push('on air live: the studio keys are not equal (widths ' + [...ws].join('/') + ', heights ' + [...hs].join('/') + ')');
+    if (wsBad || hs.size > 1) fails.push('on air live: the studio keys are not equal (widths ' + [...ws].join('/') + ', heights ' + [...hs].join('/') + ')');
     const tops = [...new Set(tiles.map((t) => Math.round(t.getBoundingClientRect().top)))];
-    if (tiles.length === 8 && tops.length !== 2) fails.push('on air live: the studio keys sit in ' + tops.length + ' rows (they sit in 2)');
+    if (tiles.length === 7 && tops.length !== 2) fails.push('on air live: the studio keys sit in ' + tops.length + ' rows (they sit in 2)');
     for (const t of tiles) {
       const name = t.getAttribute('data-key');
       const b = t.getBoundingClientRect();
@@ -226,11 +228,11 @@ export default {
   name: 'onair-live',
   gallery: {
     states: [
-      state('live with comments', 'yt=live', ['Live, 37 watching, since 10:02 AM', 'Comments', 'YouTube · read 4 s ago', 'Could you zoom in a little?', 'YouTube only, read every 10 seconds.', 'Show timer', 'Started 10:02 AM, when the broadcast went live.', 'Studio keys', 'Speaker', 'Presenter', '2 Person', 'Screenshare', 'Mute mic', 'Camera off', 'Go live', 'No key sent yet', 'StreamYard studio', 'Studio window in use: StreamYard in Firefox', 'The wall cannot see which layout is live. It shows what it sent.', 'Mark a moment', 'Say hello and the one piece of news', '!Name channel']),
-      state('studio keys, no window picked', 'yt=none&swin=none', ['Speaker', 'Presenter', 'Find window', 'Studio window: no StreamYard window found', '!Go live?']),
+      state('live with comments', 'yt=live', ['Live, 37 watching, since 10:02 AM', 'Comments', 'YouTube · read 4 s ago', 'Could you zoom in a little?', 'YouTube only, read every 10 seconds.', 'Show timer', 'Started 10:02 AM, when the broadcast went live.', 'Studio keys', 'Presenter', '2 Person', 'Screenshare', 'Mute mic', 'Camera off', 'Go live', 'No key sent yet', 'StreamYard studio', 'Studio window in use: StreamYard in Firefox', 'The wall cannot see which layout is live. It shows what it sent.', 'Mark a moment', 'Say hello and the one piece of news', '!Name channel']),
+      state('studio keys, no window picked', 'yt=none&swin=none', ['Presenter', '2 Person', 'Find window', 'Studio window: no StreamYard window found', '!Go live?']),
       state('studio keys, window picked', 'yt=none', ['Studio window in use: StreamYard in Firefox', 'Find window']),
       state('studio keys, Go live armed', 'yt=none', ['Click again', 'Go live? Click again'], '[data-key="golive"]'),
-      state('studio keys, a scene key waits for the add-on', 'yt=live', ['Speaker: Waiting on StreamYard setup', 'End show'], '[data-key="scene1"]'),
+      state('studio keys, a scene key waits for the add-on', 'yt=live', ['Presenter: Waiting on StreamYard setup', 'End show'], '[data-key="scene2"]'),
       state('studio window minimized', 'yt=none&swin=minimized', ['Studio window: minimized (StreamYard in Firefox)']),
       state('studio keys, several StreamYard windows', 'yt=none&swin=several', ['Find window', 'Studio window: more than one StreamYard window found']),
       state('busy chat, wrapped rows and a Super Chat', 'yt=busy', ['$5.00', 'Thanks', 'YouTube only, read every 10 seconds.']),
@@ -282,7 +284,7 @@ export default {
       onairLive: (variantEntry, results, emit) => {
         for (const failure of results.onairLive) emit(`  FAIL ${failure}`);
         if (results.onairLive.length) return true;
-        if (variantEntry.name.startsWith('On Air live,')) emit('  ok   on air live: every block in its planned box (the split at 620 / 436 or the dragged and folded states, the handle in the gap) inside y 20 to 510, eight equal studio keys in two rows with one-line centred labels, comment rows shown in full, the top faded when rows are hidden and the newest row reachable, notes 27 px, key tiles at least 76 px, text at least 16 px');
+        if (variantEntry.name.startsWith('On Air live,')) emit('  ok   on air live: every block in its planned box (the split at 620 / 436 or the dragged and folded states, the handle in the gap) inside y 20 to 510, seven studio keys in two rows (three scene keys, then four) with one-line centred labels, comment rows shown in full, the top faded when rows are hidden and the newest row reachable, notes 27 px, key tiles at least 76 px, text at least 16 px');
         return false;
       },
     },

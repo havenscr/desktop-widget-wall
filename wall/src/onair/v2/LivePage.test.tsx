@@ -94,7 +94,7 @@ it('draws the Live page: chip, comments newest at the bottom, the foot, and the 
   expect(screen.queryByText(/^Part \d+ of \d+/)).toBeNull();
   expect(screen.queryByRole('button', { name: /(Previous|Next) part/ })).toBeNull();
   // The studio keys: eight equal keys; the prompter box holds the pop-out controls and the status block is drawn.
-  expect(document.querySelectorAll('.oa2-studiokeys .oa2-skgrid .key-tile').length).toBe(8);
+  expect(document.querySelectorAll('.oa2-studiokeys .oa2-skgrid .key-tile').length).toBe(7);
   expect(document.querySelector('.oa2-stagepop')).not.toBeNull();
   expect(document.querySelector('.oa2-empty-live')).toBeNull();
   expect(document.querySelector('.oa2-studiostatus')).not.toBeNull();
