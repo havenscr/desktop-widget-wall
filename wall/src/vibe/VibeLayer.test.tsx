@@ -3,7 +3,7 @@ import { Fragment, StrictMode, type ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ingestLevels, resetAudio, tickAudio } from '../audio/store';
 import { resetVibeStore, useVibeStore } from '../horizon/vibeSettings';
-import { VibeLayer, resetVibeLimiter } from './VibeLayer';
+import { VibeLayer, resetVibeLimiter, vibeLimiterTimes } from './VibeLayer';
 import type { LoopHost } from './loop';
 import { stubCanvas } from './testCanvas';
 // @ts-ignore node's own file call; the stylesheet rules are read as text.
@@ -16,10 +16,12 @@ import layerSrc from './VibeLayer.tsx?raw';
 
 // The drop stamps are the one signal a test cannot easily make by sound: this lets a test add a drop by hand.
 const fakeDrops = vi.hoisted(() => ({ count: 0, lastAt: -Infinity }));
-vi.mock('../audio/store', async (orig) => ({
-  ...(await orig<typeof import('../audio/store')>()),
-  audioDrops: () => fakeDrops,
-}));
+// Beats too: a test can switch the detector's counter for its own.
+const fakeBeats = vi.hoisted(() => ({ on: false, count: 0, strength: 1 }));
+vi.mock('../audio/store', async (orig) => {
+  const real = await orig<typeof import('../audio/store')>();
+  return { ...real, audioDrops: () => fakeDrops, audioBeats: () => (fakeBeats.on ? fakeBeats : real.audioBeats()) } as typeof real;
+});
 
 const sound = {
   bass: 0.8,
@@ -75,6 +77,8 @@ beforeEach(() => {
   resetVibeStore();
   vi.stubGlobal('ResizeObserver', RO);
   fakeDrops.count = 0;
+  fakeBeats.on = false;
+  fakeBeats.count = 0;
   vi.spyOn(Element.prototype, 'getBoundingClientRect').mockImplementation(() => ({
     left: 0,
     top: 0,
@@ -388,6 +392,27 @@ describe('the vibe back layer', () => {
     fakeDrops.count += 1;
     m.frames(20000, 20);
     expect(rec.calls.filter((c) => c[0] === 'drawImage' && c[1] === hz).length).toBeGreaterThan(5);
+  });
+
+  it('a remount keeps the beat hit limiter: a hit 1 s after the last one stays blocked', () => {
+    act(() => useVibeStore.getState().setVibe({ beatHits: 'light' }));
+    fakeBeats.on = true;
+    const first = manual();
+    mount(first.host, true, true);
+    playFor(4000);
+    first.frames(10000, 30);
+    fakeBeats.count += 1;
+    first.frames(11000, 4);
+    const hitAt = vibeLimiterTimes().lastBeatHitAt;
+    expect(hitAt).toBeGreaterThan(10.9);
+    cleanup();
+    const second = manual();
+    mount(second.host, true, true);
+    playFor(4000);
+    second.frames(11500, 10);
+    fakeBeats.count += 1;
+    second.frames(hitAt * 1000 + 1000, 4);
+    expect(vibeLimiterTimes().lastBeatHitAt).toBe(hitAt);
   });
 
   it('when frames run over budget the grain eases to zero in steps instead of cutting', () => {

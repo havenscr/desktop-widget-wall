@@ -10,7 +10,7 @@ import { createTape } from './tape';
 import { bakeMatte, radiusOf, type Matte } from './artMatte';
 import { drawGlow, type GlowInput } from './glow';
 import { DEGRADED_FRAME_MS, browserHost, createLoop, createProbe, type LoopHost } from './loop';
-import { createVibeFrame, createVibeState, counterAdvanced, flushBeatHit, noteBeatHit, noteDrop, noteKick, noteTry, stepVibe, type VibeInput } from './mix';
+import { createVibeFrame, createVibeState, counterAdvanced, noteBeatHit, noteDrop, noteKick, noteTry, stepVibe, type VibeInput } from './mix';
 import { softStops } from './feather';
 import { useTryStore } from './tryIt';
 
@@ -21,6 +21,8 @@ export const BACKING = 0.5;
  * VibeState, and without this a beat hit could fire inside 4 s of the last one or 2 s of a drop.
  */
 const limiter = { lastDropAt: -Infinity, lastBeatHitAt: -Infinity };
+/** The limiter times as they stand (tests). */
+export const vibeLimiterTimes = (): { lastDropAt: number; lastBeatHitAt: number } => ({ ...limiter });
 /** Forget the limiter times (tests). */
 export function resetVibeLimiter(): void {
   limiter.lastDropAt = -Infinity;
@@ -278,7 +280,6 @@ export function VibeLayer({ host = browserHost }: { host?: LoopHost }) {
           noteKick(state, ts / 1000);
           noteBeatHit(state, ts / 1000, audioBeats().strength, input.settings);
         }
-        flushBeatHit(state, ts / 1000, input.settings);
         limiter.lastDropAt = state.lastDropAt;
         limiter.lastBeatHitAt = state.lastBeatHitAt;
         lastBeats = beats;

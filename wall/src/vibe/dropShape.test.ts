@@ -5,7 +5,6 @@ import {
   createVibeFrame,
   createVibeState,
   envOf,
-  flushBeatHit,
   noteBeatHit,
   noteDrop,
   noteTry,
@@ -65,12 +64,7 @@ describe('Strength', () => {
 
 describe('Beat hits', () => {
   const light = on({ beatHits: 'light' });
-  /** Queue a hit at `t`, then let its hold pass. */
-  const hit = (s: ReturnType<typeof createVibeState>, t: number, strength: number, settings = light): boolean => {
-    const queued = noteBeatHit(s, t, strength, settings);
-    flushBeatHit(s, t + 0.3, settings);
-    return queued;
-  };
+  const hit = (s: ReturnType<typeof createVibeState>, t: number, strength: number, settings = light): boolean => noteBeatHit(s, t, strength, settings);
   it('Off never fires', () => {
     const s = createVibeState();
     expect(hit(s, 10, 1, on({ beatHits: 'off' }))).toBe(false);
@@ -83,19 +77,16 @@ describe('Beat hits', () => {
     expect(s.power[0]).toBe(0.25);
     expect(s.swellW[0]).toBe(0);
   });
-  it('shows 0.3 s after its beat, not before', () => {
+  it('shows at once, on the beat', () => {
     const s = createVibeState();
-    noteBeatHit(s, 10, 1, light);
-    expect(flushBeatHit(s, 10.29, light)).toBe(false);
-    expect(s.drops[0]).toBe(-Infinity);
-    expect(flushBeatHit(s, 10.3, light)).toBe(true);
-    expect(s.drops[0]).toBeCloseTo(10.3);
+    expect(hit(s, 10, 1)).toBe(true);
+    expect(s.drops[0]).toBe(10);
   });
   it('at most once every 4 s', () => {
     const s = createVibeState();
     expect(hit(s, 10, 1)).toBe(true);
-    expect(hit(s, 10.3 + 3.6, 1)).toBe(false);
-    expect(hit(s, 10.3 + 4, 1)).toBe(true);
+    expect(hit(s, 13.6, 1)).toBe(false);
+    expect(hit(s, 14, 1)).toBe(true);
   });
   it('never within 2 s after a drop', () => {
     const s = createVibeState();
@@ -103,13 +94,26 @@ describe('Beat hits', () => {
     expect(hit(s, 11.9, 1)).toBe(false);
     expect(hit(s, 12, 1)).toBe(true);
   });
-  it('a drop within the next 0.3 s cancels the hit that was waiting', () => {
+  it('a drop within 0.3 s after a beat hit cuts the hit short and plays the drop', () => {
     const s = createVibeState();
-    expect(noteBeatHit(s, 10, 1, light)).toBe(true);
+    expect(hit(s, 10, 1)).toBe(true);
     noteDrop(s, 10.2, 1, light);
-    expect(flushBeatHit(s, 10.6, light)).toBe(false);
     expect([...s.drops].filter((d) => d > -Infinity)).toEqual([10.2]);
-    expect(s.lastBeatHitAt).toBe(-Infinity);
+    expect([...s.swellW].filter((_, i) => s.drops[i] > -Infinity)).toEqual([1]);
+  });
+  it('a drop 0.3 s or more after a beat hit leaves the hit to fade', () => {
+    const s = createVibeState();
+    hit(s, 10, 1);
+    noteDrop(s, 10.3, 1, light);
+    expect([...s.drops].filter((d) => d > -Infinity)).toEqual([10, 10.3]);
+  });
+  it('a drop still obeys its own limiter: the hit is not brought back, and no hit follows within 2 s', () => {
+    const s = createVibeState();
+    hit(s, 10, 1);
+    noteDrop(s, 10.1, 1, light);
+    expect(hit(s, 10.2, 1)).toBe(false);
+    expect(hit(s, 12.2, 1)).toBe(false);
+    expect(hit(s, 14.1, 1)).toBe(true);
   });
   it('takes the Length and Strength settings, a quarter of the Hard strength under Hard', () => {
     const s = createVibeState();
