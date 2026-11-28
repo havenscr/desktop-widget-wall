@@ -1,7 +1,7 @@
 // @ts-ignore node's own file calls; this test reads the shared fixture as text.
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { BEAT_BANDS, BEAT_GAP_TOLERANCE_MS, MIN_BEAT_GAP_MS, createBeatDetector } from './beat';
+import { BEAT_BANDS, BEAT_GAP_TOLERANCE_MS, MIN_BEAT_GAP_MS, TEMPO_TOL_MS, createBeatDetector } from './beat';
 import { createSourceClock } from './sourceTime';
 
 /*
@@ -120,6 +120,58 @@ function kicks(rate: number, seconds: number, bpm: number, amp: number, offset =
 
 const mix = (a: Float64Array, b: Float64Array) => a.map((v, i) => v + b[i]);
 
+/** A held sub bass note, like a synth bed: two sines near 45 Hz, steady in level. */
+function bed(rate: number, seconds: number, amp: number): Float64Array {
+  const out = new Float64Array(Math.round(seconds * rate));
+  for (let i = 0; i < out.length; i++) {
+    const t = i / rate;
+    out[i] = amp * (Math.sin(2 * Math.PI * 45 * t) + 0.5 * Math.sin(2 * Math.PI * 55 * t + 1));
+  }
+  return out;
+}
+
+/** Single kick-shaped bumps at the given times (seconds). */
+function bumps(rate: number, seconds: number, times: number[], amp: number): Float64Array {
+  const out = new Float64Array(Math.round(seconds * rate));
+  for (const at of times) {
+    const first = Math.round(at * rate);
+    for (let i = first; i < Math.min(out.length, first + Math.round(0.4 * rate)); i++) {
+      const tk = (i - first) / rate;
+      const phase = 2 * Math.PI * (50 * tk + 70 * 0.03 * (1 - Math.exp(-tk / 0.03)));
+      out[i] += amp * Math.exp(-tk / 0.18) * Math.sin(phase) * Math.min(1, tk / 0.002);
+    }
+  }
+  return out;
+}
+
+/** Signed distance in ms from `ms` to the nearest point of the grid `offset + k * period` (seconds). */
+function offGrid(ms: number, offset: number, period: number): number {
+  let d = (((ms / 1000 - offset) % period) + period) % period;
+  if (d > period / 2) d -= period;
+  return d * 1000;
+}
+
+/** Feed frames; collect every beat with its strength and whether the tempo lock made it. */
+function runWeak(frames: Frame[]) {
+  const d = createBeatDetector();
+  const beats: { at: number; strength: number; weak: boolean }[] = [];
+  let weak = 0;
+  for (const f of frames) {
+    if (!d.push(f.bands, f.t)) continue;
+    const w = d.tempo().weakBeats;
+    beats.push({ at: d.lastBeatAt, strength: d.strength, weak: w > weak });
+    weak = w;
+  }
+  return { beats, tempo: d.tempo() };
+}
+
+const SOFT_BPM = 100;
+const SOFT_PERIOD = 60 / SOFT_BPM;
+const SOFT_OFFSET = 0.37;
+/** Bed and kick levels at which a soft kick rises about 4 dB over the median: under the 7 dB onset bar. */
+const BED_AMP = 0.09;
+const SOFT_AMP = 0.25;
+
 function run(frames: Frame[]): number[] {
   const d = createBeatDetector();
   for (const f of frames) d.push(f.bands, f.t);
@@ -164,7 +216,96 @@ describe('beat detector', () => {
       }
       expect(strays).toBe(STRAYS_ON_PINK);
     });
+
+    it(`locks onto a soft 100 BPM kick under a sustained 45 Hz bed at ${rate} Hz: half the kicks after 6 s, 600 ms apart, period within 3 ms`, () => {
+      const frames = analyse(mix(kicks(rate, 30, SOFT_BPM, SOFT_AMP, SOFT_OFFSET), bed(rate, 30, BED_AMP)));
+      // The onset bar alone finds only some of them; the tempo lock more than doubles that.
+      const off = createBeatDetector({ tempo: false });
+      const barOnly = frames.filter((f) => off.push(f.bands, f.t)).length;
+      const { beats, tempo } = runWeak(frames);
+      expect(beats.length).toBeGreaterThanOrEqual(barOnly + 15);
+      const late = beats.filter((b) => b.at > 6000);
+      const kicksAfter = Math.floor((30 - 6 - SOFT_OFFSET) / SOFT_PERIOD);
+      expect(late.length).toBeGreaterThanOrEqual(Math.ceil(kicksAfter / 2));
+      expect(late.filter((b) => b.weak).length).toBeGreaterThan(0);
+      // Each gap is a whole number of periods: one to within 40 ms (a frame and a half), a missed kick or two (a soft kick can miss) to within two frames.
+      const gaps = late.slice(1).map((b, i) => b.at - late[i].at);
+      for (const g of gaps) {
+        const k = Math.round(g / 600);
+        expect(k).toBeGreaterThanOrEqual(1);
+        expect(k).toBeLessThanOrEqual(4);
+        expect(Math.abs(g - k * 600)).toBeLessThanOrEqual(k === 1 ? 40 : 70);
+      }
+      expect(gaps.filter((g) => Math.abs(g - 600) <= 40).length).toBeGreaterThanOrEqual(gaps.length * 0.6);
+      expect(Math.abs(tempo.period - 600)).toBeLessThanOrEqual(3);
+      // A weak beat reads a strength above zero (the vibe layer scales its hit by it).
+      for (const b of beats.filter((x) => x.weak)) expect(b.strength).toBeGreaterThan(0);
+    });
+
+    it(`stops beating within two periods once the kicks stop and the bed carries on at ${rate} Hz`, () => {
+      const lastKick = SOFT_OFFSET + SOFT_PERIOD * Math.floor((15 - SOFT_OFFSET) / SOFT_PERIOD);
+      const kickSig = kicks(rate, 30, SOFT_BPM, SOFT_AMP, SOFT_OFFSET).map((v, i) => (i / rate < lastKick + 0.4 ? v : 0));
+      const { beats } = runWeak(analyse(mix(kickSig, bed(rate, 30, BED_AMP))));
+      expect(beats.filter((b) => b.at < lastKick * 1000).length).toBeGreaterThan(5);
+      for (const b of beats) expect(b.at).toBeLessThanOrEqual(lastKick * 1000 + 2 * 600 + TEMPO_TOL_MS);
+    });
+
+    it(`puts no beat more than 60 ms off the grid when random off-beat bumps ride with a soft kick at ${rate} Hz`, () => {
+      const rand = rng(11);
+      const times: number[] = [];
+      for (let t = 1; t < 29; t += 0.5 + rand() * 1.3) {
+        const d = ((t - SOFT_OFFSET) % SOFT_PERIOD + SOFT_PERIOD) % SOFT_PERIOD;
+        if (d > 0.15 && d < SOFT_PERIOD - 0.15) times.push(t);
+      }
+      const sig = mix(mix(kicks(rate, 30, SOFT_BPM, SOFT_AMP, SOFT_OFFSET), bumps(rate, 30, times, SOFT_AMP)), bed(rate, 30, BED_AMP));
+      const { beats } = runWeak(analyse(sig));
+      expect(beats.filter((b) => b.at > 6000).length).toBeGreaterThan(5);
+      for (const b of beats) expect(Math.abs(offGrid(b.at, SOFT_OFFSET, SOFT_PERIOD))).toBeLessThanOrEqual(60);
+    });
   }
+
+  describe('a kick with a short body (the hold rule)', () => {
+    // Band frames at the 33 ms event rate: a floor, then every `period` frames a hit that reads 8.1, 6.8 and 0.8 dB over the
+    // floor (a drum and bass kick: it clears the 7 dB bar but its second hold frame drops under the 4 dB hold).
+    const floor = 0.3;
+    const frame = (db: number) => new Array(32).fill(floor + db / 60);
+    function hits(period: number, reps: number, extra: number[] = []): number[][] {
+      const out: number[][] = [];
+      for (let i = 0; i < 12; i++) out.push(frame(0));
+      for (let r = 0; r < reps; r++) {
+        for (let f = 0; f < period; f++) out.push(frame([8.1, 6.8, 0.8][f] ?? 0));
+      }
+      for (const at of extra) [8.1, 6.8, 0.8].forEach((db, j) => (out[at + j] = frame(db)));
+      return out;
+    }
+    const feed = (frames: number[][], tuning = {}) => {
+      const d = createBeatDetector(tuning);
+      const beats: number[] = [];
+      frames.forEach((f, i) => {
+        if (d.push(f, i * 33.333333333333336)) beats.push(d.lastBeatAt);
+      });
+      return beats;
+    };
+
+    it('is confirmed after one hold frame once the kick sits on a locked grid, and not before', () => {
+      const frames = hits(15, 24);
+      expect(feed(frames, { tempo: false })).toHaveLength(0);
+      const beats = feed(frames);
+      expect(beats.length).toBeGreaterThanOrEqual(18);
+      // Every beat is a hit onset: frame 12 + 15 k.
+      for (const b of beats) {
+        const r = (((b / 33.333333333333336 - 12) % 15) + 15) % 15;
+        expect(Math.min(r, 15 - r)).toBeLessThan(1e-6);
+      }
+    });
+
+    it('is not confirmed early off the grid', () => {
+      // Hits 4 to 10 frames after a grid hit: none of them becomes a beat.
+      const off = [123, 155, 182, 214, 246, 273];
+      const beats = feed(hits(15, 24, off));
+      for (const at of off) expect(beats.some((b) => Math.abs(b / 33.333333333333336 - at) < 1)).toBe(false);
+    });
+  });
 
   it('yields no beats from silence or a steady tone', () => {
     const d = createBeatDetector();

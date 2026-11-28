@@ -59,7 +59,8 @@ describe('source clock', () => {
     expect(truth.length).toBeGreaterThan(20);
     expect(fixed.some((b) => b.frame % 40 >= 36)).toBe(true); // some beats really do confirm inside a burst
     expect(fixed).toHaveLength(truth.length); // no beat lost or added
-    for (const b of fixed) expect(b.lag).toBeGreaterThanOrEqual(60); // confirmed over two real frame steps, never at once
+    // Confirmed over real frame steps, never at once: two steps, or one for a kick on the tempo lock's grid (it confirms on one hold frame).
+    for (const b of fixed) expect(b.lag).toBeGreaterThanOrEqual(30);
     // Spacing: within 35 ms of the truth, except a gap that spans a stall, which can be off by up to the stall
     // (the first frame after a stall can only be stamped when it arrives; the event carries no capture time).
     for (let i = 1; i < fixed.length; i++) {
