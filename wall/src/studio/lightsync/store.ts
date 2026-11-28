@@ -5,7 +5,7 @@ import { readCoverStrips, targetTint } from '../../music/coverTint';
 import { useNowPlayingStore } from '../../music/store';
 import { useHome } from '../homeStore';
 import { swatchFor } from '../moodRow';
-import { CUSTOM_MAX, CUSTOM_MIN, DEFAULT_LIGHT_SYNC, FOLLOWS, INTENSITIES, type IntensityId, clampCustom, clampSettings, clampUi, engineSettings, padToMinimum, resolvePalette, type LightSyncSettings, type LightSyncStatus, type LightsUi, type PaletteContext, type PaletteId } from './model';
+import { CUSTOM_MAX, CUSTOM_MIN, DEFAULT_LIGHT_SYNC, FOLLOWS, INTENSITIES, type IntensityId, type PresetValues, presetOf, clampCustom, clampSettings, clampUi, engineSettings, padToMinimum, resolvePalette, type LightSyncSettings, type LightSyncStatus, type LightsUi, type PaletteContext, type PaletteId } from './model';
 
 const hex = (c: number[]) => '#' + c.map((v) => Math.max(0, Math.min(255, Math.round(v))).toString(16).padStart(2, '0')).join('');
 
@@ -48,6 +48,10 @@ export interface LightSyncState {
   setUi: (u: Partial<LightsUi>) => void;
   /** An Intensity button: every field in that column, and its colour speed, written at once and sent as one tune. */
   setIntensity: (id: IntensityId) => void;
+  /** Save to the preset: the sliders' values now become the active preset's stored values. */
+  savePreset: () => void;
+  /** Reset: the active preset's stored values come back. */
+  resetPreset: () => void;
   /** One light's Who follows tile: bass, then highs, then both. */
   cycleFollow: (i: number) => void;
   /** Your usual: every Lights setting back (the palette and your colours stay). */
@@ -247,10 +251,21 @@ export const useLightSync = create<LightSyncState>((set, get) => ({
     tuneNow();
   },
   setIntensity(id) {
-    const col = INTENSITIES[id];
-    set({ settings: clampSettings({ ...get().settings, ...col.settings }), ui: clampUi({ ...get().ui, colourBars: col.colourBars }) });
+    const col = presetOf(id, get().ui.saved);
+    set({ settings: clampSettings({ ...get().settings, ...col.settings }), ui: clampUi({ ...get().ui, colourBars: col.colourBars, preset: id }) });
     persist();
     tuneNow();
+  },
+  savePreset() {
+    const { settings, ui } = get();
+    const keys = Object.keys(INTENSITIES[ui.preset].settings) as (keyof PresetValues['settings'])[];
+    const values = {} as PresetValues['settings'];
+    for (const k of keys) (values as Record<string, number>)[k] = settings[k] as number;
+    set({ ui: clampUi({ ...ui, saved: { ...ui.saved, [ui.preset]: { settings: values, colourBars: ui.colourBars } } }) });
+    persist();
+  },
+  resetPreset() {
+    get().setIntensity(get().ui.preset);
   },
   cycleFollow(i) {
     const follow = get().ui.follow.slice();
@@ -259,7 +274,10 @@ export const useLightSync = create<LightSyncState>((set, get) => ({
     get().setUi({ follow });
   },
   resetLights() {
-    set({ settings: { ...DEFAULT_LIGHT_SYNC }, ui: clampUi(null) });
+    // The saved presets and the active one stay; the sliders come back to the active preset's stored values.
+    const { saved, preset } = get().ui;
+    const col = presetOf(preset, saved);
+    set({ settings: clampSettings({ ...DEFAULT_LIGHT_SYNC, ...col.settings }), ui: clampUi({ ...clampUi(null), colourBars: col.colourBars, preset, saved }) });
     persist();
     tuneNow();
   },

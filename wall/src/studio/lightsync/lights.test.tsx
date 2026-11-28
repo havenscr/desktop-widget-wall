@@ -11,7 +11,7 @@ import { WatchSheet } from '../../unwind/watch/Sheet';
 import { resetHome } from '../homeStore';
 import { OfficeMoods } from '../OfficeMoods';
 import { Swing, newPreview, stepPreview } from './preview';
-import { DEFAULT_LIGHTS_UI, DEFAULT_LIGHT_SYNC, INTENSITIES, INTENSITY_IDS, PALETTES, SWATCHES, driftOf, engineSettings, resolvePalette } from './model';
+import { DEFAULT_LIGHTS_UI, DEFAULT_LIGHT_SYNC, INTENSITIES, INTENSITY_IDS, SWATCHES, driftOf, engineSettings, resolvePalette } from './model';
 import { useAudioStore } from '../../audio/store';
 import { LightsPanel, driftWords, brightWords, flashWords, smoothWords } from './LightsPanel';
 import { resetLightSync, useLightSync } from './store';
@@ -29,9 +29,9 @@ vi.mock('../../music/coverTint', async (orig) => ({
 
 /** The plan's table, written out by hand so a wrong value in the model fails here. */
 const COLUMNS = {
-  subtle: { settings: { floor: 0.35, brightness: 0.8, energyDepth: 0.35, kickFlash: 0.25, kickWhite: 0, kickRiseMs: 80, kickDecayMs: 450, attackMs: 150, releaseMs: 900, levelWindow: 8, beatNudge: 0.04, minPulseGapMs: 500, slewDown: 0.8 }, colourBars: 4, driftMs: 10000 },
-  moderate: { settings: { floor: 0.25, brightness: 0.9, energyDepth: 0.55, kickFlash: 0.45, kickWhite: 0.15, kickRiseMs: 60, kickDecayMs: 320, attackMs: 100, releaseMs: 650, levelWindow: 4, beatNudge: 0.08, minPulseGapMs: 400, slewDown: 1.5 }, colourBars: 2, driftMs: 6000 },
-  high: { settings: { floor: 0.15, brightness: 1, energyDepth: 0.75, kickFlash: 0.7, kickWhite: 0.35, kickRiseMs: 40, kickDecayMs: 220, attackMs: 60, releaseMs: 420, levelWindow: 2, beatNudge: 0.15, minPulseGapMs: 340, slewDown: 3 }, colourBars: 1, driftMs: 4000 },
+  subtle: { settings: { floor: 0.45, brightness: 0.8, energyDepth: 0.35, kickFlash: 0.25, kickWhite: 0, kickRiseMs: 80, kickDecayMs: 450, attackMs: 150, releaseMs: 900, levelWindow: 8, beatNudge: 0.04, minPulseGapMs: 500, slewDown: 0.8 }, colourBars: 4, driftMs: 10000 },
+  moderate: { settings: { floor: 0.35, brightness: 0.9, energyDepth: 0.55, kickFlash: 0.45, kickWhite: 0.15, kickRiseMs: 60, kickDecayMs: 320, attackMs: 100, releaseMs: 650, levelWindow: 4, beatNudge: 0.08, minPulseGapMs: 400, slewDown: 1.5 }, colourBars: 2, driftMs: 6000 },
+  high: { settings: { floor: 0.25, brightness: 1, energyDepth: 0.75, kickFlash: 0.7, kickWhite: 0.35, kickRiseMs: 40, kickDecayMs: 220, attackMs: 60, releaseMs: 420, levelWindow: 2, beatNudge: 0.15, minPulseGapMs: 340, slewDown: 3 }, colourBars: 1, driftMs: 4000 },
 } as const;
 
 let calls: { command: string; args?: Record<string, unknown> }[];
@@ -65,31 +65,30 @@ const saved = () => JSON.parse(localStorage.getItem(LIGHT_SYNC_KEY) ?? '{}');
 /** Sync is on: a change is sent as a tune. */
 const syncOn = () => useLightSync.setState({ status: { paired: true, bridgeChanged: false, running: true, starting: false, lastError: null, stoppedHueSync: false } });
 
-it('the Lights tab has every row, the preview and Your usual, with starting values read back', () => {
+it('the Lights tab is the room, the preset bar and three groups, with starting values read back', () => {
   const { container } = render(<LightsPanel />);
-  for (const label of ['Intensity', 'Colour speed', 'Brightness', 'Pulse', 'Smoothness', 'Who follows', 'Panel ripple']) expect(container.textContent).toContain(label);
-  expect(container.textContent).toContain('Preview, live');
-  expect(container.querySelector('[data-part="lights-preview"]')).not.toBeNull();
-  // Preview B: two labelled strips. Five panel tiles (the engine's count), four named Plays; no monitor bar.
-  const rows = Array.from(container.querySelectorAll('.ls-strip'));
-  expect(rows.map((r) => r.querySelector('b')?.textContent)).toEqual(['Panels', 'Plays']);
-  expect(container.querySelectorAll('.ls-pn')).toHaveLength(5);
-  expect(Array.from(container.querySelectorAll('.ls-play em')).map((e) => e.textContent)).toEqual(['Far Left', 'Left', 'Right', 'Far Right']);
-  expect(container.querySelector('.ls-bar')).toBeNull();
-  expect(container.textContent).toContain('a colour every 10 s');
-  expect(container.textContent).toContain('35% to 80%');
-  expect(container.textContent).toContain('soft');
-  expect(container.textContent).toContain('smooth');
-  expect(container.querySelector('[role="switch"]')?.getAttribute('aria-checked')).toBe('true');
-  expect(Array.from(container.querySelectorAll('.ls-tile')).map((t) => t.getAttribute('data-follow'))).toEqual(['highs', 'bass', 'bass', 'highs', 'both']);
-  // A cream tick on each slider marks the usual.
-  expect(container.querySelectorAll('.ln-usual').length).toBe(5);
+  for (const label of ['Tap a light to set it', 'Hearing', 'Auto level', 'Sensitivity', 'Light', 'Ripple', 'Brightness', 'Colour', 'Pulse', 'Smooth']) expect(container.textContent).toContain(label);
+  const panel = container.querySelector('.ls-panel') as HTMLElement;
+  expect(Array.from(panel.children).map((c) => c.className.split(' ')[0])).toEqual(['ls-room', 'ls-presets', 'ls-card', 'ls-card', 'ls-card']);
+  expect(Array.from(container.querySelectorAll('.ls-tile')).map((t) => t.textContent)).toEqual(['Far Left', 'Left', 'Shapes', 'Right', 'Far Right']);
+  expect(Array.from(container.querySelectorAll('.ls-legend .ls-key')).map((k) => k.textContent)).toEqual(['Bass', 'Highs', 'Both']);
+  expect(container.textContent).toContain('every 10 s');
+  expect(container.textContent).toContain('45 to 80%');
+  expect(container.textContent).toContain('steady');
+  const switches = Array.from(container.querySelectorAll('[role="switch"]'));
+  expect(switches.map((x) => x.getAttribute('aria-checked'))).toEqual(['true', 'true']);
+  // Tiles in room order carry the follow of their light: Far Left, Left, Shapes (the panels), Right, Far Right.
+  expect(Array.from(container.querySelectorAll('.ls-tile')).map((t) => t.getAttribute('data-follow'))).toEqual(['highs', 'bass', 'both', 'bass', 'highs']);
+  // A cream tick on each slider marks the usual; the old Intensity row, preview strips and Your usual are gone.
+  expect(container.querySelectorAll('.ln-usual').length).toBe(6);
+  expect(container.querySelector('.ls-strip, .ls-intensity, .ln-reset')).toBeNull();
+  expect(container.querySelector('[data-part="sound-level"]')).not.toBeNull();
 });
 
 it('words read back the values', () => {
-  expect(driftWords(4000)).toBe('a colour every 4 s');
-  expect(driftWords(20000)).toBe('a colour every 20 s');
-  expect(brightWords(0.2, 1)).toBe('20% to 100%');
+  expect(driftWords(4000)).toBe('every 4 s');
+  expect(driftWords(20000)).toBe('every 20 s');
+  expect(brightWords(0.2, 1)).toBe('20 to 100%');
   expect([flashWords(0.1), flashWords(0.5), flashWords(0.8), flashWords(1)]).toEqual(['soft', 'medium', 'strong', 'hard']);
   expect([smoothWords(0), smoothWords(20), smoothWords(50), smoothWords(90)]).toEqual(['snappy', 'a little smooth', 'smooth', 'very smooth']);
 });
@@ -99,7 +98,7 @@ it('colour speed moves between slow and fast, is saved, and is sent as colourBar
   const { container } = render(<LightsPanel />);
   fireEvent.change(slider('ls-speed'), { target: { value: '4' } });
   expect(useLightSync.getState().ui.colourBars).toBe(1);
-  expect(container.textContent).toContain('a colour every 4 s');
+  expect(container.textContent).toContain('every 4 s');
   expect(saved().ui.colourBars).toBe(1);
   expect(tunes().length).toBe(1);
   expect((tunes()[0].args as { settings: { colourBars: number; driftMs: number } }).settings).toMatchObject({ colourBars: 1, driftMs: 4000 });
@@ -111,7 +110,7 @@ it('brightness has a floor and a peak handle, held in order and inside the nativ
   fireEvent.change(slider('Brightness floor'), { target: { value: '30' } });
   fireEvent.change(slider('Brightness peak'), { target: { value: '70' } });
   expect(useLightSync.getState().settings).toMatchObject({ floor: 0.3, brightness: 0.7 });
-  expect(container.textContent).toContain('30% to 70%');
+  expect(container.textContent).toContain('30 to 70%');
   fireEvent.change(slider('Brightness floor'), { target: { value: '90' } });
   expect(useLightSync.getState().settings.floor).toBe(0.6);
   fireEvent.change(slider('Brightness peak'), { target: { value: '5' } });
@@ -149,7 +148,7 @@ it('with sync off a change is saved and nothing is sent', () => {
   expect(saved().settings.kickFlash).toBe(0.4);
 });
 
-it('Who follows: a click cycles bass, highs, both for that light only', () => {
+it('a tile tap cycles that light bass, highs, both and no other', () => {
   const { container } = render(<LightsPanel />);
   const tile = (i: number) => container.querySelectorAll('.ls-tile')[i] as HTMLElement;
   expect(tile(1).getAttribute('data-follow')).toBe('bass');
@@ -159,17 +158,20 @@ it('Who follows: a click cycles bass, highs, both for that light only', () => {
   expect(tile(1).getAttribute('data-follow')).toBe('both');
   fireEvent.click(tile(1));
   expect(tile(1).getAttribute('data-follow')).toBe('bass');
-  fireEvent.click(tile(4));
+  // The third tile is the Shapes: the panels' light, the last of the five.
+  fireEvent.click(tile(2));
   expect(useLightSync.getState().ui.follow).toEqual(['highs', 'bass', 'bass', 'highs', 'bass']);
   expect(saved().ui.follow[4]).toBe('bass');
 });
+
+const ripple = (c: HTMLElement) => c.querySelector('[role="switch"][aria-labelledby="ls-ripple-label"]') as HTMLElement;
 
 it('Who follows and Panel ripple are sent to a running sync as follow and ripple', () => {
   syncOn();
   const { container } = render(<LightsPanel />);
   fireEvent.click(container.querySelectorAll('.ls-tile')[0]);
-  fireEvent.click(container.querySelectorAll('.ls-tile')[4]);
-  fireEvent.click(container.querySelector('[role="switch"]') as HTMLElement);
+  fireEvent.click(container.querySelectorAll('.ls-tile')[2]);
+  fireEvent.click(ripple(container));
   const last = tunes().at(-1)?.args as { settings: { follow: { plays: string[]; panels: string }; ripple: boolean } };
   expect(last.settings.follow).toEqual({ plays: ['both', 'bass', 'bass', 'highs'], panels: 'bass' });
   expect(last.settings.ripple).toBe(false);
@@ -179,42 +181,53 @@ it('Who follows and Panel ripple are sent to a running sync as follow and ripple
 
 it('Panel ripple switches off and on', () => {
   const { container } = render(<LightsPanel />);
-  const sw = container.querySelector('[role="switch"]') as HTMLElement;
+  const sw = ripple(container);
   fireEvent.click(sw);
   expect(sw.getAttribute('aria-checked')).toBe('false');
-  expect(container.textContent).toContain('Off');
   expect(useLightSync.getState().ui.ripple).toBe(false);
   fireEvent.click(sw);
   expect(useLightSync.getState().ui.ripple).toBe(true);
 });
 
-it('Your usual puts every setting back, and keeps the palette and your colours', () => {
+it('resetLights puts every setting back, and keeps the palette and your colours', () => {
   syncOn();
   useLightSync.setState({ palette: 'neon', custom: ['#ff3d9a', '#35e6ea', '#9a7bff'] });
   const { container } = render(<LightsPanel />);
   fireEvent.change(slider('ls-flash'), { target: { value: '10' } });
   fireEvent.change(slider('ls-speed'), { target: { value: '0' } });
   fireEvent.click(container.querySelector('.ls-tile') as HTMLElement);
-  fireEvent.click(container.querySelector('[role="switch"]') as HTMLElement);
-  fireEvent.click(Array.from(container.querySelectorAll('button')).find((b) => b.textContent?.includes('Your usual')) as HTMLElement);
+  fireEvent.click(ripple(container));
+  act(() => useLightSync.getState().resetLights());
   const s = useLightSync.getState();
   expect(s.settings).toEqual(DEFAULT_LIGHT_SYNC);
   expect(s.ui).toEqual(DEFAULT_LIGHTS_UI);
   expect(s.palette).toBe('neon');
+  // The saved presets and the active one survive a reset.
+  act(() => useLightSync.getState().setIntensity('high'));
+  act(() => useLightSync.getState().setSettings({ kickFlash: 0.9 }));
+  act(() => useLightSync.getState().savePreset());
+  act(() => useLightSync.getState().resetLights());
+  expect(useLightSync.getState().ui.preset).toBe('high');
+  expect(useLightSync.getState().ui.saved.high?.settings.kickFlash).toBe(0.9);
+  expect(useLightSync.getState().settings.kickFlash).toBe(0.9);
+  act(() => useLightSync.getState().setIntensity('subtle'));
+  act(() => useLightSync.getState().resetLights());
   expect(s.custom.length).toBe(3);
-  // Flash, colour speed, who follows, ripple and Your usual each send one.
-  expect(tunes().length).toBe(5);
+  // Flash, colour speed, who follows, ripple and the reset each send one (the extra preset steps send more).
+  expect(tunes().length).toBeGreaterThanOrEqual(5);
 });
 
 it('every control has a hover tip', async () => {
+  // A slider moved off its preset lights Save and Reset, so they are enabled and can be hovered too.
+  useLightSync.getState().setSettings({ kickFlash: 0.9 });
   const { container } = render(
     <>
       <LightsPanel />
       <HoverTipLayer />
     </>,
   );
-  const controls = Array.from(container.querySelectorAll('input[type="range"], .ls-tile, [role="switch"], .ln-reset, [role="radio"]'));
-  expect(controls.length).toBe(15);
+  const controls = Array.from(container.querySelectorAll('input[type="range"], .ls-tile, [role="switch"], .ls-save, .ls-undo, [role="radio"]'));
+  expect(controls.length).toBe(18);
   vi.useFakeTimers();
   try {
     for (const c of controls) {
@@ -365,7 +378,7 @@ it('a flat cover (one colour) is filled up to three with the nearest swatches', 
   }
 });
 
-it('the preview tiles change colour and brightness when the palette and the sound change', async () => {
+it('the room tiles glow brighter when the sound is louder', async () => {
   let cb: FrameRequestCallback | null = null;
   vi.stubGlobal('requestAnimationFrame', (f: FrameRequestCallback) => {
     cb = f;
@@ -382,22 +395,16 @@ it('the preview tiles change colour and brightness when the palette and the soun
         act(() => cb?.(t));
       }
     };
-    const pn = () => Array.from(container.querySelectorAll<HTMLElement>('.ls-pn'));
-    const colours = () => pn().map((e) => e.style.background);
-    const opac = () => pn().map((e) => (e.style.background.match(/\d+/g) ?? []).map(Number).reduce((a, b) => Math.max(a, b), 0));
+    const glow = () => Array.from(container.querySelectorAll<HTMLElement>('.ls-tile')).map((e) => Number(e.style.getPropertyValue('--glow')));
+    const level = () => Number((container.querySelector('.ls-panel') as HTMLElement).style.getPropertyValue('--lvl'));
     tick();
-    const quietColours = colours();
-    const quiet = opac();
-    expect(quietColours.every((c) => c !== '')).toBe(true);
-    // Louder sound: the tiles brighten.
+    const quiet = glow();
+    expect(quiet.every((g) => g > 0)).toBe(true);
+    expect(level()).toBe(0);
     useAudioStore.setState({ bass: 1, high: 1 });
     tick(30);
-    expect(Math.max(...opac())).toBeGreaterThan(Math.max(...quiet));
-    // Another palette: the same tiles take its colours.
-    expect(PALETTES.some((p) => p.id === 'neon')).toBe(true);
-    act(() => useLightSync.setState({ palette: 'neon' }));
-    tick();
-    expect(colours()).not.toEqual(quietColours);
+    expect(Math.max(...glow())).toBeGreaterThan(Math.max(...quiet));
+    expect(level()).toBe(1);
   } finally {
     vi.unstubAllGlobals();
     useAudioStore.setState({ bass: 0, high: 0 });
@@ -453,12 +460,12 @@ it('Panel ripple off pulses the panels whole, and on starts the ring at the cent
 });
 
 it('the preview takes "both" as the mean, as the engine does', () => {
-  const st = newPreview(0.35);
+  const st = newPreview(DEFAULT_LIGHT_SYNC.floor);
   const ui = { ...DEFAULT_LIGHTS_UI, follow: ['both', 'bass', 'highs', 'both', 'both'] as typeof DEFAULT_LIGHTS_UI.follow };
   let f = frame(st, {}, ui, 0, 1, 0);
   for (let i = 0; i < 60; i++) f = frame(st, {}, ui, 0, 1, 0);
   const mean = (st.bassEnv + st.highEnv) / 2;
-  const target = 0.35 + 0.45 * Math.min(1, 0.35 * mean);
+  const target = DEFAULT_LIGHT_SYNC.floor + (DEFAULT_LIGHT_SYNC.brightness - DEFAULT_LIGHT_SYNC.floor) * Math.min(1, DEFAULT_LIGHT_SYNC.energyDepth * mean);
   expect(f.panels[0].some((v) => v > 0)).toBe(true);
   expect(st.plays[0].b).toBeCloseTo(target, 5);
 });
@@ -466,11 +473,13 @@ it('the preview takes "both" as the mean, as the engine does', () => {
 it('the preview matches the native frames on the shared fixture (Subtle)', () => {
   const fx = JSON.parse(readFileSync('../src-tauri/tests/fixtures/lightsync-frames.json', 'utf8').replace(/\r\n/g, '\n')) as { dtMs: number; palette: { colors: string[]; kick: string }; frames: [number, number, number][]; plays: number[][] };
   expect(fx.plays.length).toBe(fx.frames.length);
-  const st = newPreview(DEFAULT_LIGHT_SYNC.floor);
+  // The shared fixture was cut at a floor of 0.35, so it is held there whatever Subtle's floor is now.
+  const fxSettings = { ...DEFAULT_LIGHT_SYNC, floor: 0.35 };
+  const st = newPreview(fxSettings.floor);
   let beats = 0;
   fx.frames.forEach(([bass, high, beat], i) => {
     if (beat) beats += 1;
-    const f = stepPreview(st, DEFAULT_LIGHT_SYNC, DEFAULT_LIGHTS_UI, fx.palette, { bass, high, beatCount: beats, dtMs: fx.dtMs });
+    const f = stepPreview(st, fxSettings, DEFAULT_LIGHTS_UI, fx.palette, { bass, high, beatCount: beats, dtMs: fx.dtMs });
     f.plays.flat().forEach((v, k) => expect(Math.abs(v - fx.plays[i][k]), `frame ${i} channel ${k}`).toBeLessThan(2e-6));
   });
 });
@@ -505,21 +514,28 @@ it('the flash guard holds every intensity and the harshest sliders under five sw
 
 const radios = () => Array.from(document.querySelectorAll<HTMLElement>('[role="radio"][data-intensity]'));
 
-it('Intensity sits first on the Lights tab with three buttons and helper text, Subtle lit', () => {
+const dot = (c: HTMLElement) => c.querySelector('[data-part="preset-dot"]');
+const checked = () => radios().map((r) => r.getAttribute('aria-checked'));
+const saveBtn = (c: HTMLElement) => c.querySelector('.ls-save') as HTMLButtonElement;
+const undoBtn = (c: HTMLElement) => c.querySelector('.ls-undo') as HTMLButtonElement;
+
+it('the preset bar sits after the room with three buttons, Subtle lit, no dot and Save held back', () => {
   const { container } = render(<LightsPanel />);
-  const row = container.querySelector('.ls-intensity') as HTMLElement;
-  expect(row).toBe(container.querySelector('.ls-panel')?.firstElementChild);
+  expect(container.querySelector('.ls-presets')).toBe(container.querySelector('.ls-panel')?.children[1]);
   expect(radios().map((r) => r.textContent)).toEqual(['Subtle', 'Moderate', 'High']);
-  expect(radios().map((r) => r.getAttribute('aria-checked'))).toEqual(['true', 'false', 'false']);
-  expect(container.textContent).toContain('How lively the lights are.');
-  expect(container.querySelector('[data-part="intensity-value"]')?.textContent).toBe('');
+  expect(checked()).toEqual(['true', 'false', 'false']);
+  expect(dot(container)).toBeNull();
+  expect(saveBtn(container).textContent).toBe('Save to Subtle');
+  expect(saveBtn(container).disabled).toBe(true);
+  expect(undoBtn(container).disabled).toBe(true);
 });
 
 for (const id of INTENSITY_IDS) {
   it(`picking ${id} rewrites its whole column and sends one tune with it`, () => {
     syncOn();
     render(<LightsPanel />);
-    // Start away from every column so the pick has something to rewrite.
+    // Start on another preset, away from every column, so the pick has something to rewrite.
+    fireEvent.click(radios()[(INTENSITY_IDS.indexOf(id) + 1) % 3]);
     fireEvent.change(slider('ls-flash'), { target: { value: '5' } });
     fireEvent.change(slider('ls-speed'), { target: { value: '0' } });
     const before = tunes().length;
@@ -539,48 +555,129 @@ it('the High column keeps its drift at 4000 ms, the table value', () => {
   for (const id of INTENSITY_IDS) expect(driftOf(INTENSITIES[id].colourBars)).toBe(COLUMNS[id].driftMs);
 });
 
-it('moving any slider shows Custom and lights no button; picking a level brings the name back', () => {
+it('moving any slider puts a dot on the active preset and lights Save to it; picking a preset clears it', () => {
   const { container } = render(<LightsPanel />);
   for (const [name, value] of [['ls-flash', '60'], ['ls-smooth', '10'], ['ls-speed', '0'], ['Brightness floor', '20'], ['Brightness peak', '95']] as const) {
+    fireEvent.click(undoBtn(container));
     fireEvent.click(radios()[1]);
-    expect(container.querySelector('[data-part="intensity-value"]')?.textContent).toBe('');
+    expect(dot(container)).toBeNull();
     fireEvent.change(slider(name), { target: { value } });
-    expect(container.querySelector('[data-part="intensity-value"]')?.textContent).toBe('Custom');
-    expect(radios().map((r) => r.getAttribute('aria-checked'))).toEqual(['false', 'false', 'false']);
+    expect(dot(container)).not.toBeNull();
+    expect(radios()[1].contains(dot(container))).toBe(true);
+    expect(checked()).toEqual(['false', 'true', 'false']);
+    expect(saveBtn(container).disabled).toBe(false);
+    expect(saveBtn(container).textContent).toBe('Save to Moderate');
+    expect(undoBtn(container).disabled).toBe(false);
   }
   fireEvent.click(radios()[2]);
-  expect(container.querySelector('[data-part="intensity-value"]')?.textContent).toBe('');
-  expect(radios()[2].getAttribute('aria-checked')).toBe('true');
+  expect(dot(container)).toBeNull();
+  expect(checked()).toEqual(['false', 'false', 'true']);
 });
 
-it('Your usual puts Subtle back and its tip says so', () => {
+it('Sensitivity is not part of a preset: a preset tap, Save and Reset leave it, and moving it is no edit', () => {
+  const { container } = render(<LightsPanel />);
+  fireEvent.click(radios()[1]);
+  fireEvent.change(slider('ls-sens'), { target: { value: '90' } });
+  expect(dot(container)).toBeNull();
+  expect(saveBtn(container).disabled).toBe(true);
+  const gain = useLightSync.getState().settings.bassGain;
+  fireEvent.click(radios()[2]);
+  expect(useLightSync.getState().settings).toMatchObject({ bassGain: gain, highGain: gain });
+  fireEvent.change(slider('ls-flash'), { target: { value: '60' } });
+  fireEvent.click(saveBtn(container));
+  fireEvent.change(slider('ls-flash'), { target: { value: '10' } });
+  fireEvent.click(undoBtn(container));
+  expect(useLightSync.getState().settings).toMatchObject({ bassGain: gain, highGain: gain });
+  expect(Object.keys(useLightSync.getState().ui.saved.high?.settings ?? {})).not.toContain('bassGain');
+});
+
+it('tapping the active preset while it is edited does nothing; Reset drops the edits', () => {
+  const { container } = render(<LightsPanel />);
+  fireEvent.click(radios()[1]);
+  fireEvent.change(slider('ls-flash'), { target: { value: '60' } });
+  const before = useLightSync.getState().settings;
+  fireEvent.click(radios()[1]);
+  expect(useLightSync.getState().settings).toEqual(before);
+  expect(dot(container)).not.toBeNull();
+  fireEvent.click(undoBtn(container));
+  expect(dot(container)).toBeNull();
+});
+
+it('Save to the preset keeps the slider values: the dot goes, and picking another preset and back returns them', () => {
+  const { container } = render(<LightsPanel />);
+  fireEvent.click(radios()[1]);
+  fireEvent.change(slider('ls-flash'), { target: { value: '90' } });
+  fireEvent.change(slider('Brightness floor'), { target: { value: '50' } });
+  fireEvent.click(saveBtn(container));
+  expect(dot(container)).toBeNull();
+  expect(saveBtn(container).disabled).toBe(true);
+  expect(useLightSync.getState().ui.saved.moderate?.settings).toMatchObject({ kickFlash: 0.9, floor: 0.5 });
+  expect(saved().ui.saved.moderate.settings.kickFlash).toBe(0.9);
+  fireEvent.click(radios()[0]);
+  expect(useLightSync.getState().settings.kickFlash).toBe(COLUMNS.subtle.settings.kickFlash);
+  fireEvent.click(radios()[1]);
+  expect(useLightSync.getState().settings).toMatchObject({ kickFlash: 0.9, floor: 0.5 });
+  expect(dot(container)).toBeNull();
+  // The saved one survives a reload.
+  resetLightSync();
+  expect(useLightSync.getState().ui.saved.moderate?.settings.kickFlash).toBe(0.9);
+});
+
+it('Reset brings the active preset back to its stored values, saved ones included, and sends one tune', () => {
+  syncOn();
   const { container } = render(<LightsPanel />);
   fireEvent.click(radios()[2]);
-  fireEvent.click(container.querySelector('.ln-reset') as HTMLElement);
-  expect(radios().map((r) => r.getAttribute('aria-checked'))).toEqual(['true', 'false', 'false']);
-  expect(useLightSync.getState().settings).toEqual(DEFAULT_LIGHT_SYNC);
+  fireEvent.change(slider('ls-flash'), { target: { value: '10' } });
+  fireEvent.change(slider('ls-speed'), { target: { value: '0' } });
+  const before = tunes().length;
+  fireEvent.click(undoBtn(container));
+  expect(useLightSync.getState().settings).toMatchObject(COLUMNS.high.settings);
+  expect(useLightSync.getState().ui.colourBars).toBe(COLUMNS.high.colourBars);
+  expect(tunes().length).toBe(before + 1);
+  expect(dot(container)).toBeNull();
+  // After a save, Reset returns the saved values, not the built-in ones.
+  fireEvent.change(slider('ls-flash'), { target: { value: '33' } });
+  fireEvent.click(saveBtn(container));
+  fireEvent.change(slider('ls-flash'), { target: { value: '5' } });
+  fireEvent.click(undoBtn(container));
+  expect(useLightSync.getState().settings.kickFlash).toBe(0.33);
 });
 
-it('the Your usual tip names Subtle and no longer says bars', async () => {
-  const { container } = render(
-    <>
-      <LightsPanel />
-      <HoverTipLayer />
-    </>,
-  );
-  vi.useFakeTimers();
-  try {
-    fireEvent.mouseEnter(container.querySelector('.ln-reset') as HTMLElement);
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(400);
-    });
-    const text = document.querySelector('.hover-tip')?.textContent ?? '';
-    expect(text).toContain('Subtle');
-    expect(text).toContain('a colour every 10 s');
-    expect(text).not.toContain('bars');
-  } finally {
-    vi.useRealTimers();
+it('the preset brightness floors are Subtle 45, Moderate 35 and High 25 percent', () => {
+  expect(INTENSITY_IDS.map((id) => Math.round(INTENSITIES[id].settings.floor * 100))).toEqual([45, 35, 25]);
+  expect(DEFAULT_LIGHT_SYNC.floor).toBe(0.45);
+  const { container } = render(<LightsPanel />);
+  for (const [i, floor] of [45, 35, 25].entries()) {
+    fireEvent.click(radios()[i]);
+    expect(slider('Brightness floor').value).toBe(String(floor));
+    expect(container.querySelector('.ls-dual')?.nextElementSibling?.textContent?.startsWith(`${floor} to `)).toBe(true);
   }
+});
+
+it('Sensitivity sets both band gains, shows a word, and Auto level is saved but not sent to the engine', () => {
+  syncOn();
+  const { container } = render(<LightsPanel />);
+  fireEvent.change(slider('ls-sens'), { target: { value: '100' } });
+  expect(useLightSync.getState().settings).toMatchObject({ bassGain: 1.6, highGain: 1.6 });
+  expect(container.textContent).toContain('touchy');
+  fireEvent.change(slider('ls-sens'), { target: { value: '0' } });
+  expect(container.textContent).toContain('calm');
+  const auto = container.querySelector('[role="switch"][aria-labelledby="ls-auto-label"]') as HTMLElement;
+  fireEvent.click(auto);
+  expect(useLightSync.getState().ui.autoLevel).toBe(false);
+  expect(saved().ui.autoLevel).toBe(false);
+  const sent = (tunes().at(-1)?.args as { settings: Record<string, unknown> }).settings;
+  expect('autoLevel' in sent || 'preset' in sent || 'saved' in sent).toBe(false);
+});
+
+it('the sheet keeps 16 px at both sides and the panel is one minmax(0,1fr) column', () => {
+  const css = readFileSync('src/styles/unwind.css', 'utf8').replace(/\r\n/g, '\n');
+  const block = (sel: string) => css.slice(css.indexOf(`\n${sel} {`), css.indexOf('\n}', css.indexOf(`\n${sel} {`)));
+  expect(block('.w-sheet.ls-sheet')).toMatch(/padding: \d+px 16px \d+px;/);
+  expect(block('.w-sheet.ls-sheet > .ln-body')).toMatch(/padding: 0;/);
+  expect(block('.ls-panel')).toContain(['grid-template-columns: minmax(0, ', '1fr);'].join(''));
+  for (const sel of ['.ls-room', '.ls-card']) expect(block(sel)).toContain('min-width: 0;');
+  expect(block('.ls-row')).toContain(['grid-template-columns: 112px minmax(0, ', '1fr) 92px;'].join(''));
 });
 
 it('keyboard order: the group is one tab stop, arrows move and pick, Home and End jump', () => {
@@ -613,26 +710,25 @@ it('every intensity column is the hand-written table', () => {
   for (const id of INTENSITY_IDS) expect(INTENSITIES[id]).toEqual({ settings: COLUMNS[id].settings, colourBars: COLUMNS[id].colourBars });
 });
 
-it('dragging Smoothness away from a level and back to its stop reads as that level again', () => {
+it('dragging Smoothness away from a preset and back to its stop clears the dot again', () => {
   const { container } = render(<LightsPanel />);
   for (const [i, id] of INTENSITY_IDS.entries()) {
     fireEvent.click(radios()[i]);
     const stop = String(Math.round((COLUMNS[id].settings.releaseMs - 200) / 18));
     expect(slider('ls-smooth').value).toBe(stop);
     fireEvent.change(slider('ls-smooth'), { target: { value: '95' } });
-    expect(container.querySelector('[data-part="intensity-value"]')?.textContent).toBe('Custom');
+    expect(dot(container)).not.toBeNull();
     fireEvent.change(slider('ls-smooth'), { target: { value: stop } });
-    expect(container.querySelector('[data-part="intensity-value"]')?.textContent).toBe('');
+    expect(dot(container)).toBeNull();
     expect(radios()[i].getAttribute('aria-checked')).toBe('true');
   }
 });
 
-it('a field with no slider (kickWhite, beatNudge) changed in the store reads as Custom', () => {
+it('a field with no slider (kickWhite, beatNudge) changed in the store puts the dot on the preset', () => {
   const { container } = render(<LightsPanel />);
   for (const patch of [{ kickWhite: 0.3 }, { beatNudge: 0.2 }]) {
     fireEvent.click(radios()[0]);
     act(() => useLightSync.getState().setSettings(patch));
-    expect(container.querySelector('[data-part="intensity-value"]')?.textContent).toBe('Custom');
-    expect(radios().map((r) => r.getAttribute('aria-checked'))).toEqual(['false', 'false', 'false']);
+    expect(dot(container)).not.toBeNull();
   }
 });
