@@ -115,7 +115,9 @@ export function loadLightSync(storage: Pick<Storage, 'getItem'> | null = safeSto
         // Saved by the strobe engine: its floor, flash and smoothness are not the gentle look, so move to Subtle once.
         // The palette, your own colours, who follows each light and the ripple stay; so do the lights on or off and the gains.
         const subtle = INTENSITIES[DEFAULT_INTENSITY];
-        out.settings = { ...out.settings, ...subtle.settings };
+        // The band gains are a sensitivity choice, not the gentle look: they are kept.
+        const { bassGain: _b, highGain: _h, ...look } = subtle.settings;
+        out.settings = { ...out.settings, ...look };
         out.ui = { ...out.ui, colourBars: subtle.colourBars };
         // Saved at once, so the move happens on one launch only.
         if (storage && 'setItem' in storage) saveLightSync(out, storage as Pick<Storage, 'setItem'>);

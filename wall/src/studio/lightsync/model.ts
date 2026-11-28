@@ -49,10 +49,10 @@ export type IntensityId = 'subtle' | 'moderate' | 'high';
 export const INTENSITY_IDS: readonly IntensityId[] = ['subtle', 'moderate', 'high'];
 
 /** Every setting an intensity rewrites, plus the colour speed it uses (`colourBars`, which sets the drift). */
-export const INTENSITIES: Record<IntensityId, { settings: Pick<LightSyncSettings, 'floor' | 'brightness' | 'energyDepth' | 'kickFlash' | 'kickWhite' | 'kickRiseMs' | 'kickDecayMs' | 'attackMs' | 'releaseMs' | 'levelWindow' | 'beatNudge' | 'minPulseGapMs' | 'slewDown'>; colourBars: number }> = {
-  subtle: { settings: { floor: 0.35, brightness: 0.8, energyDepth: 0.35, kickFlash: 0.25, kickWhite: 0, kickRiseMs: 80, kickDecayMs: 450, attackMs: 150, releaseMs: 900, levelWindow: 8, beatNudge: 0.04, minPulseGapMs: 500, slewDown: 0.8 }, colourBars: 4 },
-  moderate: { settings: { floor: 0.25, brightness: 0.9, energyDepth: 0.55, kickFlash: 0.45, kickWhite: 0.15, kickRiseMs: 60, kickDecayMs: 320, attackMs: 100, releaseMs: 650, levelWindow: 4, beatNudge: 0.08, minPulseGapMs: 400, slewDown: 1.5 }, colourBars: 2 },
-  high: { settings: { floor: 0.15, brightness: 1, energyDepth: 0.75, kickFlash: 0.7, kickWhite: 0.35, kickRiseMs: 40, kickDecayMs: 220, attackMs: 60, releaseMs: 420, levelWindow: 2, beatNudge: 0.15, minPulseGapMs: 340, slewDown: 3 }, colourBars: 1 },
+export const INTENSITIES: Record<IntensityId, { settings: Pick<LightSyncSettings, 'floor' | 'brightness' | 'energyDepth' | 'kickFlash' | 'kickWhite' | 'kickRiseMs' | 'kickDecayMs' | 'attackMs' | 'releaseMs' | 'levelWindow' | 'beatNudge' | 'minPulseGapMs' | 'slewDown' | 'bassGain' | 'highGain'>; colourBars: number }> = {
+  subtle: { settings: { floor: 0.45, brightness: 0.8, energyDepth: 0.35, kickFlash: 0.25, kickWhite: 0, kickRiseMs: 80, kickDecayMs: 450, attackMs: 150, releaseMs: 900, levelWindow: 8, beatNudge: 0.04, minPulseGapMs: 500, slewDown: 0.8, bassGain: 1, highGain: 1 }, colourBars: 4 },
+  moderate: { settings: { floor: 0.35, brightness: 0.9, energyDepth: 0.55, kickFlash: 0.45, kickWhite: 0.15, kickRiseMs: 60, kickDecayMs: 320, attackMs: 100, releaseMs: 650, levelWindow: 4, beatNudge: 0.08, minPulseGapMs: 400, slewDown: 1.5, bassGain: 1, highGain: 1 }, colourBars: 2 },
+  high: { settings: { floor: 0.25, brightness: 1, energyDepth: 0.75, kickFlash: 0.7, kickWhite: 0.35, kickRiseMs: 40, kickDecayMs: 220, attackMs: 60, releaseMs: 420, levelWindow: 2, beatNudge: 0.15, minPulseGapMs: 340, slewDown: 3, bassGain: 1, highGain: 1 }, colourBars: 1 },
 };
 
 export const DEFAULT_INTENSITY: IntensityId = 'subtle';
@@ -69,21 +69,36 @@ export const INTENSITY_TIP: Record<IntensityId, string> = {
 export const smoothOf = (releaseMs: number) => Math.round((releaseMs - 200) / 18);
 export const releaseOf = (smooth: number) => Math.round(200 + (smooth * 1800) / 100);
 
-/** The intensity whose whole column matches the settings and colour speed now; null (shown as Custom) once a slider has moved. */
-export function intensityOf(settings: LightSyncSettings, ui: Pick<LightsUi, 'colourBars'>): IntensityId | null {
-  for (const id of INTENSITY_IDS) {
-    const col = INTENSITIES[id];
-    // Smoothness is a 0 to 100 slider, so releaseMs matches by its stop: dragging away and back must read as the level again.
-    const same = (Object.keys(col.settings) as (keyof typeof col.settings)[]).every((k) => (k === 'releaseMs' ? smoothOf(settings[k]) === smoothOf(col.settings[k]) : settings[k] === col.settings[k]));
-    if (same && ui.colourBars === col.colourBars) return id;
-  }
-  return null;
+/** One preset's stored values: every setting an intensity rewrites, plus the colour speed. */
+export type PresetValues = { settings: (typeof INTENSITIES)['subtle']['settings']; colourBars: number };
+
+/** The preset a button applies: the one you saved over it, else the built-in column. */
+export function presetOf(id: IntensityId, saved: Partial<Record<IntensityId, PresetValues>> | undefined): PresetValues {
+  return saved?.[id] ?? INTENSITIES[id];
 }
+
+/** Smoothness is a 0 to 100 slider, so releaseMs matches by its stop: dragging away and back must read as the preset again. */
+export function sameAsPreset(settings: LightSyncSettings, ui: Pick<LightsUi, 'colourBars'>, preset: PresetValues): boolean {
+  const same = (Object.keys(preset.settings) as (keyof PresetValues['settings'])[]).every((k) => (k === 'releaseMs' ? smoothOf(settings[k]) === smoothOf(preset.settings[k]) : settings[k] === preset.settings[k]));
+  return same && ui.colourBars === preset.colourBars;
+}
+
+/** True once a slider has moved off the active preset's stored values (the dot, and Save to lights up). */
+export function isEdited(settings: LightSyncSettings, ui: Pick<LightsUi, 'colourBars' | 'preset' | 'saved'>): boolean {
+  return !sameAsPreset(settings, ui, presetOf(ui.preset, ui.saved));
+}
+
+/** The intensity whose built-in column matches the settings and colour speed now; null once a slider has moved. */
+export function intensityOf(settings: LightSyncSettings, ui: Pick<LightsUi, 'colourBars'>): IntensityId | null {
+  return INTENSITY_IDS.find((id) => sameAsPreset(settings, ui, INTENSITIES[id])) ?? null;
+}
+
+/** Sensitivity is one slider (0 to 100) that sets both band gains, 0.4 to 1.6 (the engine takes 0 to 2). */
+export const sensitivityOf = (gain: number) => Math.round(((gain - 0.4) / 1.2) * 100);
+export const gainOf = (sensitivity: number) => Math.round((0.4 + (sensitivity * 1.2) / 100) * 100) / 100;
 
 export const DEFAULT_LIGHT_SYNC: LightSyncSettings = {
   ...INTENSITIES.subtle.settings,
-  bassGain: 1,
-  highGain: 1,
   beatStep: true,
   rippleMs: 600,
   plays: true,
@@ -110,9 +125,15 @@ export interface LightsUi {
   colourBars: number;
   follow: Follow[];
   ripple: boolean;
+  /** The preset the segmented control sits on. */
+  preset: IntensityId;
+  /** The presets you saved over the built-in ones. */
+  saved: Partial<Record<IntensityId, PresetValues>>;
+  /** Auto level, page only for now: the engine has no matching knob (`engine.rs` follows the raw level), so it is stored and not sent. */
+  autoLevel: boolean;
 }
 
-export const DEFAULT_LIGHTS_UI: LightsUi = { colourBars: INTENSITIES.subtle.colourBars, follow: ['highs', 'bass', 'bass', 'highs', 'both'], ripple: true };
+export const DEFAULT_LIGHTS_UI: LightsUi = { colourBars: INTENSITIES.subtle.colourBars, follow: ['highs', 'bass', 'bass', 'highs', 'both'], ripple: true, preset: DEFAULT_INTENSITY, saved: {}, autoLevel: true };
 
 export function clampUi(raw: unknown): LightsUi {
   const r = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>;
@@ -121,7 +142,25 @@ export function clampUi(raw: unknown): LightsUi {
     colourBars: typeof r.colourBars === 'number' && COLOUR_BARS.includes(r.colourBars) ? r.colourBars : DEFAULT_LIGHTS_UI.colourBars,
     follow,
     ripple: typeof r.ripple === 'boolean' ? r.ripple : DEFAULT_LIGHTS_UI.ripple,
+    preset: INTENSITY_IDS.includes(r.preset as IntensityId) ? (r.preset as IntensityId) : DEFAULT_LIGHTS_UI.preset,
+    saved: clampSaved(r.saved),
+    autoLevel: typeof r.autoLevel === 'boolean' ? r.autoLevel : DEFAULT_LIGHTS_UI.autoLevel,
   };
+}
+
+/** Saved presets, each checked: its settings clamped, its colour speed one of the stops; anything else is dropped. */
+function clampSaved(raw: unknown): Partial<Record<IntensityId, PresetValues>> {
+  const out: Partial<Record<IntensityId, PresetValues>> = {};
+  const r = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>;
+  for (const id of INTENSITY_IDS) {
+    const v = r[id] as { settings?: unknown; colourBars?: unknown } | undefined;
+    if (!v || typeof v !== 'object' || typeof v.colourBars !== 'number' || !COLOUR_BARS.includes(v.colourBars)) continue;
+    const clamped = clampSettings({ ...INTENSITIES[id].settings, ...(v.settings as object) });
+    const settings = {} as PresetValues['settings'];
+    for (const k of Object.keys(INTENSITIES[id].settings) as (keyof PresetValues['settings'])[]) (settings as Record<string, number>)[k] = clamped[k] as number;
+    out[id] = { settings, colourBars: v.colourBars };
+  }
+  return out;
 }
 
 /** Milliseconds per colour for a colour speed. */

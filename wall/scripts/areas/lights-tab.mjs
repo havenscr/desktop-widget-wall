@@ -9,13 +9,17 @@ function measureLights() {
   const sheet = document.querySelector('.w-sheet.ls-sheet');
   if (!sheet) return { found: false };
   const sr = sheet.getBoundingClientRect();
-  const parts = [...sheet.querySelectorAll('.u-k, .ln-label, .ln-value, .ln-hint, .ln-foot, .ls-live, .ls-tile span, .ls-tile b, .ln-reset, .ln-pages button')];
+  const parts = [...sheet.querySelectorAll('.u-k, .ls-label, .ls-value, .ls-roomtitle, .ls-key, .ls-cardtitle, .ls-swlabel, .ls-tile span, .ls-save, .ls-seg button, .ln-pages button')];
   const small = parts.filter((e) => e.textContent && e.textContent.trim() && parseFloat(getComputedStyle(e).fontSize) < 15.99).map((e) => e.textContent.trim().slice(0, 30));
   const cut = parts.filter((e) => e.scrollWidth > e.clientWidth + 1).map((e) => e.textContent.trim().slice(0, 30));
   const outside = [...sheet.querySelectorAll('*')].filter((e) => { const r = e.getBoundingClientRect(); return r.width > 0 && (r.left < sr.left - 0.5 || r.right > sr.right + 0.5); }).length;
-  const rows = [...sheet.querySelectorAll('.ls-row, .ls-who')].map((e) => { const r = e.getBoundingClientRect(); return { b: r.bottom, t: r.top }; });
+  // Every row keeps a 16 px gutter from the sheet edge on both sides (the sheet's own border is 1 px).
+  const rowsBox = [...sheet.querySelectorAll('.ls-room, .ls-presets, .ls-card')].map((e) => e.getBoundingClientRect());
+  const gutterL = Math.min(...rowsBox.map((r) => r.left - sr.left));
+  const gutterR = Math.min(...rowsBox.map((r) => sr.right - r.right));
+  const rows = [...sheet.querySelectorAll('.ls-room, .ls-presets, .ls-card')].map((e) => { const r = e.getBoundingClientRect(); return { b: r.bottom, t: r.top }; });
   const overlap = rows.some((r, i) => i > 0 && r.t < rows[i - 1].b - 0.5);
-  const controls = [...sheet.querySelectorAll('input[type="range"], .ls-tile, [role="switch"]')].map((e) => { const r = e.getBoundingClientRect(); return { h: r.height, w: r.width }; });
+  const controls = [...sheet.querySelectorAll('input[type="range"], .ls-tile, [role="switch"], .ls-save, .ls-undo')].map((e) => { const r = e.getBoundingClientRect(); return { h: r.height, w: r.width }; });
   const tinyControl = controls.filter((c) => c.h < 24 || c.w < 24).length;
   const heads = [...sheet.querySelectorAll('.ln-pages button')].map((e) => e.textContent.trim());
   const tr = document.createRange();
@@ -23,14 +27,12 @@ function measureLights() {
   if (tEl) tr.selectNodeContents(tEl);
   const title = tEl ? tr.getBoundingClientRect() : null;
   const tabs = sheet.querySelector('.ln-pages')?.getBoundingClientRect();
-  const hb = sheet.querySelector('.ls-head')?.getBoundingClientRect();
-  const bx = (e) => { const r = e?.getBoundingClientRect(); return r ? { l: r.left, t: r.top, r: r.right, b: r.bottom } : null; };
-  const lab = document.createRange();
-  const liveEl = sheet.querySelector('.ls-live');
-  if (liveEl) lab.selectNodeContents(liveEl);
-  const strips = [...sheet.querySelectorAll('.ls-strip')].map((e) => ({ name: e.getAttribute('data-row'), ...bx(e), kids: [...e.querySelectorAll('b, .ls-pn, .ls-play')].map((k) => { if (k.tagName !== 'B') return bx(k); const rg = document.createRange(); rg.selectNodeContents(k); const t = rg.getBoundingClientRect(); const box = k.getBoundingClientRect(); return { l: t.left, t: t.top, r: t.right, b: t.bottom, boxR: box.right }; }) }));
-  const preview = { head: hb ? { l: hb.left, t: hb.top, r: hb.right, b: hb.bottom } : null, usual: bx(sheet.querySelector('.ls-usualbtn')), live: liveEl ? bx(lab) : null, strips, pn: sheet.querySelectorAll('.ls-pn').length, pl: [...sheet.querySelectorAll('.ls-play em')].map((e) => e.textContent), oldBar: !!sheet.querySelector('.ls-bar') };
-  return { preview, found: true, top: sr.top, bottom: sr.bottom, left: sr.left, right: sr.right, vh: window.innerHeight, vw: window.innerWidth, small, cut, outside, overlap, tinyControl, heads, titleTabs: title && tabs ? title.right - tabs.left : -999, tiles: sheet.querySelectorAll('.ls-tile').length, rowCount: sheet.querySelectorAll('.ls-row').length };
+  const body = sheet.querySelector(':scope > .ln-body');
+  const scrolls = body ? body.scrollHeight > body.clientHeight + 1 : true;
+  const panel = sheet.querySelector('.ls-panel');
+  const column = panel ? getComputedStyle(panel).gridTemplateColumns : '';
+  const lastBottom = rows.length ? Math.max(...rows.map((r) => r.b)) : 0;
+  return { found: true, top: sr.top, bottom: sr.bottom, left: sr.left, right: sr.right, vh: window.innerHeight, vw: window.innerWidth, small, cut, outside, overlap, tinyControl, heads, titleTabs: title && tabs ? title.right - tabs.left : -999, tiles: sheet.querySelectorAll('.ls-tile').length, cards: sheet.querySelectorAll('.ls-card').length, switches: sheet.querySelectorAll('[role="switch"]').length, sliders: sheet.querySelectorAll('input[type="range"]').length, presets: sheet.querySelectorAll('.ls-seg [role="radio"]').length, gutterL, gutterR, scrolls, column, panelW: panel ? panel.getBoundingClientRect().width : 0, bodyW: body ? body.clientWidth : 0, lastBottom, wrongTiles: [...sheet.querySelectorAll('.ls-tile')].map((e) => e.textContent.trim()).join() };
 }
 
 // Runs in the page: the heading row of whichever tab of the sheet is open (Looks, Lines or Lights). The title's drawn text ends
@@ -66,7 +68,7 @@ export default {
       { screen: 'unwind', name: 'sheet pages: Lines', query: `hz=unwind&at=${encodeURIComponent(at)}&clock=review&weather=ok&audio=demo&desktoken=set&office=six&officeoff=offered&officemood=relax`, custom: true, expect: ['How lively'], actions: '.w-gear' },
       { screen: 'unwind', name: 'sheet pages: Vibe', query: `hz=unwind&at=${encodeURIComponent(at)}&clock=review&weather=ok&audio=demo&desktoken=set&office=six&officeoff=offered&officemood=relax`, custom: true, expect: ['Auto vibe', 'Music on other tabs'], actions: '.w-gear >> .ln-pages button:nth-child(3)' },
       { screen: 'unwind', name: 'sheet pages: Vibe, scrolled to the bottom', query: `hz=unwind&at=${encodeURIComponent(at)}&clock=review&weather=ok&audio=demo&desktoken=set&office=six&officeoff=offered&officemood=relax`, custom: true, expect: ['Music on other tabs'], actions: '.w-gear >> .ln-pages button:nth-child(3) >> scrollend:.w-sheet > .ln-body' },
-      { screen: 'unwind', name: 'lights tab: the Lights tab open on Listen', query: `hz=unwind&at=${encodeURIComponent(at)}&clock=review&weather=ok&audio=demo&desktoken=set&office=six&officeoff=offered&officemood=relax`, custom: true, expect: ['Preview, live', 'Intensity', 'Colour speed', 'Brightness', 'Pulse', 'Smoothness', 'Who follows', 'Panel ripple'], actions: '.w-gear >> .ln-pages button:nth-child(4)' },
+      { screen: 'unwind', name: 'lights tab: the Lights tab open on Listen', query: `hz=unwind&at=${encodeURIComponent(at)}&clock=review&weather=ok&audio=demo&desktoken=set&office=six&officeoff=offered&officemood=relax`, custom: true, expect: ['Tap a light to set it', 'Subtle', 'Hearing', 'Sensitivity', 'Brightness', 'Ripple', 'Pulse', 'Smooth'], actions: '.w-gear >> .ln-pages button:nth-child(4)' },
     ],
   },
   fit: {
@@ -109,31 +111,21 @@ export default {
         if (m.overlap) fail('rows overlap');
         if (m.tinyControl) fail(m.tinyControl + ' controls under 24 px');
         if (m.titleTabs > -8) fail('the heading runs into the tabs by ' + Math.round(m.titleTabs) + ' px');
-        if (m.tiles !== 5 || m.rowCount < 5) fail(`rows missing (${m.rowCount} rows, ${m.tiles} tiles)`);
-        const pv = m.preview;
-        const hit = (a, b) => a && b && a.l < b.r - 0.5 && b.l < a.r - 0.5 && a.t < b.b - 0.5 && b.t < a.b - 0.5;
-        if (!pv || pv.strips.length !== 2 || pv.pn !== 5 || pv.pl.length !== 4 || pv.oldBar) fail('the preview is not two strips with 5 panel tiles and 4 named plays');
-        else {
-          for (const st of pv.strips) {
-            if (hit(st, pv.usual)) fail(`the ${st.name} strip overlaps Your usual`);
-            if (pv.live && hit(st, pv.live)) fail(`the ${st.name} strip overlaps the Preview label`);
-            if (st.t < pv.head.t || st.b > pv.head.b || st.l < pv.head.l || st.r > pv.head.r) fail(`the ${st.name} strip leaves the preview box`);
-            for (let i = 1; i < st.kids.length; i++) if (hit(st.kids[i - 1], st.kids[i])) fail(`two parts of the ${st.name} strip overlap`);
-            // The label is measured by its text, not its box; every child must also end inside the head.
-            const lab = st.kids[0], next = st.kids[1];
-            if (lab && next && lab.r > next.l - 4) fail(`the ${st.name} label text runs to ${Math.round(lab.r)} px, within 4 px of the next part at ${Math.round(next.l)} px`);
-            for (const k of st.kids) if (k.r > pv.head.r + 0.5 || k.l < pv.head.l - 0.5) fail(`a part of the ${st.name} strip runs past the preview box`);
-          }
-          if (hit(pv.strips[0], pv.strips[1])) fail('the two preview strips overlap');
-        }
-        if (!bad) emit(`  ok   lights tab: ${m.rowCount} rows and 5 light tiles inside the sheet, text 16 px or more, nothing cut`);
+        if (m.tiles !== 5 || m.wrongTiles !== 'Far Left,Left,Shapes,Right,Far Right') fail('room tiles are ' + m.wrongTiles);
+        if (m.cards !== 3 || m.switches !== 2 || m.presets !== 3 || m.sliders !== 6) fail(`groups missing (${m.cards} cards, ${m.switches} switches, ${m.presets} presets, ${m.sliders} sliders)`);
+        if (m.gutterL < 15.5 || m.gutterR < 15.5) fail(`gutter to the sheet edge is ${Math.round(m.gutterL * 10) / 10} left and ${Math.round(m.gutterR * 10) / 10} right (16 each at least)`);
+        if (m.scrolls) fail('the page body scrolls');
+        if (!/^\d+(\.\d+)?px$/.test(m.column)) fail('the panel column is not one fixed track: ' + m.column);
+        if (m.lastBottom > m.bottom - 15.5) fail(`the last group ends ${Math.round(m.bottom - m.lastBottom)} px above the sheet edge (16 at least)`);
+        if (!bad) emit(`  ok   lights tab: 3 groups, 5 light tiles and 16 px gutters inside the sheet, text 16 px or more, nothing cut`);
         return bad;
       },
     },
     breaks: {
       'sheet-head-run': { css: '.w-head > .ln-pages { position: absolute !important; top: 14px; right: 70px; }', expect: /^ *FAIL sheet heading: .* px from the tabs/m, appliesTo: (v) => v.name === 'Sheet heading, Looks tab' },
       'tab-pad': { css: '.w-head > .w-seg.ln-pages { width: 190px !important; }', expect: /^ *FAIL sheet heading: tab text under 10 px/m, appliesTo: (v) => v.name === 'Sheet heading, Lights tab' },
-      'lights-small': { css: '.ls-help { font-size: 12px !important; }', expect: /^ *FAIL lights tab: text under 16 px/m, appliesTo: (v) => v.name === 'Lights tab, open on Listen' },
+      'lights-gutter': { css: '.ls-panel { margin-right: -10px !important; }', expect: /^ *FAIL lights tab: gutter to the sheet edge/m, appliesTo: (v) => v.name === 'Lights tab, open on Listen' },
+      'lights-small': { css: '.ls-label { font-size: 12px !important; }', expect: /^ *FAIL lights tab: text under 16 px/m, appliesTo: (v) => v.name === 'Lights tab, open on Listen' },
     },
   },
 };

@@ -4841,124 +4841,289 @@ button.sp-qrow:hover {
   flex-direction: column;
 }
 
-/* ---- Lights tab (3A) and Custom colours (4C). Rows reuse the Lines side's (40 px rows, 6 px track, 20 px thumb, the 2 px tick). ---- */
+/* ---- Lights tab (1A, room first, three groups) and Custom colours (4C). ---- */
 .w-seg.ln-pages {
   width: 330px;
 }
+/* 16 px to the sheet edge on both sides; the panel is one grid column that no child can widen. */
 .w-sheet.ls-sheet {
+  height: 490px;
   gap: 8px;
-  padding-bottom: 14px;
+  padding: 20px 16px 16px;
+}
+.w-sheet.ls-sheet > .w-head {
+  /* The sheet keeps 16 px at the sides, so the heading keeps its distance from the close cross. */
+  margin: -10px 54px -6px 0;
+}
+.w-sheet.ls-sheet > .ln-body {
+  overflow: hidden;
+  padding: 0;
+  margin: 0;
 }
 .ls-panel {
-  gap: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  align-content: start;
+  gap: 9px;
+  --bass: var(--cyan);
+  --highs: #ff5fae;
+  --both: #9a7bff;
 }
-.ls-head {
-  position: relative;
-  height: 112px;
-  margin-bottom: 6px;
+.ls-room {
+  min-width: 0;
+  padding: 8px 12px 10px;
   border-radius: 14px;
   border: 1px solid var(--line);
   background: rgba(10, 7, 28, 0.55);
 }
-.ls-live {
+.ls-roomhead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  height: 28px;
+}
+.ls-roomtitle {
+  color: var(--dim);
+  font: 500 16px/1.2 var(--body);
+  white-space: nowrap;
+}
+.ls-legend {
+  display: flex;
+  gap: 12px;
+}
+.ls-key {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--tx);
+  font: 500 16px/1.2 var(--body);
+  white-space: nowrap;
+}
+.ls-key i {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--role);
+}
+.ls-key.bass,
+.ls-tile.bass {
+  --role: var(--bass);
+}
+.ls-key.highs,
+.ls-tile.highs {
+  --role: var(--highs);
+}
+.ls-key.both,
+.ls-tile.both {
+  --role: var(--both);
+}
+.ls-tiles {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1.3fr) minmax(0, 1fr) minmax(0, 1fr);
+  gap: 8px;
+}
+.ls-tile {
+  min-width: 0;
+  height: 54px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  background: rgba(10, 7, 28, 0.5);
+  color: var(--dim);
+  font: 500 16px/1.1 var(--body);
+  white-space: nowrap;
+  --glow: 0.5;
+}
+.ls-tile:hover {
+  color: var(--tx);
+  border-color: rgba(83, 230, 235, 0.45);
+}
+.ls-tile:focus-visible,
+.u-pal-set:focus-visible,
+.u-custom button:focus-visible,
+.ls-save:focus-visible,
+.ls-undo:focus-visible {
+  outline: 3px solid var(--cyan);
+  outline-offset: 2px;
+}
+/* The lamp glows in its role's colour, brighter as the light it stands for does. */
+.ls-lamp {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 24px;
+}
+.ls-bulb {
+  width: 14px;
+  height: 24px;
+  border-radius: 7px;
+  background: var(--role);
+  opacity: calc(0.55 + 0.45 * var(--glow));
+  box-shadow: 0 0 calc(4px + 14px * var(--glow)) var(--role);
+}
+.ls-shapes {
+  gap: 2px;
+}
+.ls-shapes i {
+  width: 18px;
+  height: 16px;
+  background: var(--role);
+  opacity: calc(0.55 + 0.45 * var(--glow));
+  clip-path: polygon(50% 0, 100% 100%, 0 100%);
+  filter: drop-shadow(0 0 calc(2px + 6px * var(--glow)) var(--role));
+}
+.ls-shapes i:nth-child(2) {
+  clip-path: polygon(0 0, 100% 0, 50% 100%);
+}
+.ls-presets {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.ls-seg {
+  flex: none;
+  padding: 3px;
+}
+.ls-seg button {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 30px;
+  padding: 0 12px;
+  font-size: 16px;
+}
+.ls-dot {
   position: absolute;
-  left: 12px;
-  top: 10px;
+  top: 3px;
+  right: 5px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #ffc24d;
+}
+.ls-save,
+.ls-undo {
+  height: 38px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border-radius: 19px;
+  border: 1px solid rgba(255, 194, 77, 0.6);
+  background: rgba(255, 194, 77, 0.1);
+  color: #ffd27a;
+  font: 500 16px/1 var(--body);
+  white-space: nowrap;
+}
+.ls-save {
+  flex: 1;
+  min-width: 0;
+  padding: 0 12px;
+}
+.ls-undo {
+  flex: none;
+  width: 38px;
+  border-color: var(--line);
+  background: rgba(10, 7, 28, 0.5);
+  color: var(--tx);
+}
+.ls-save:disabled,
+.ls-undo:disabled {
+  border-color: var(--line);
+  background: rgba(10, 7, 28, 0.4);
+  color: var(--faint);
+}
+.ls-card {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 2px;
+  padding: 6px 12px;
+  border-radius: 14px;
+  border: 1px solid var(--line);
+  background: rgba(10, 7, 28, 0.4);
+}
+.ls-cardhead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 32px;
+}
+.ls-cardtitle {
   display: inline-flex;
   align-items: center;
   gap: 8px;
   color: var(--tx);
-  font: 500 16px/1.2 var(--body);
-}
-.ls-live i {
-  width: 9px;
-  height: 9px;
-  border-radius: 50%;
-  background: #5df2b6;
-}
-.ls-usualbtn {
-  position: absolute;
-  right: 10px;
-  top: 8px;
-  height: 32px;
-  margin: 0;
-}
-.ls-preview {
-  position: absolute;
-  left: 12px;
-  right: 12px;
-  top: 46px;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-.ls-strip {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  height: 22px;
-}
-.ls-strip b {
-  flex: none;
-  width: 76px;
-  color: var(--dim);
-  font: 600 16px/1 var(--body);
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-}
-.ls-pns {
-  display: flex;
-  gap: 3px;
-}
-.ls-pn {
-  display: block;
-  width: 26px;
-  height: 20px;
-  clip-path: polygon(50% 0, 100% 100%, 0 100%);
-}
-.ls-pn:nth-child(even) {
-  clip-path: polygon(0 0, 100% 0, 50% 100%);
-}
-.ls-plays {
-  display: flex;
-  gap: 14px;
-}
-.ls-play {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-.ls-play i {
-  display: block;
-  width: 26px;
-  height: 10px;
-  border-radius: 5px;
-}
-.ls-play em {
-  font: 500 16px/1 var(--body);
-  font-style: normal;
-  color: var(--dim);
+  font: 600 17px/1.2 var(--body);
   white-space: nowrap;
 }
-.ls-row .ln-label {
-  width: 128px;
+.ls-sw {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--dim);
+  font: 500 16px/1.2 var(--body);
+  white-space: nowrap;
 }
-.ls-help {
-  margin: -4px 0 3px;
+.ls-row {
+  display: grid;
+  grid-template-columns: 112px minmax(0, 1fr) 92px;
+  align-items: center;
+  gap: 12px;
+  min-height: 32px;
 }
-.ls-panel .ls-row {
-  min-height: 34px;
+.ls-label {
+  color: var(--tx);
+  font: 500 16px/1.2 var(--body);
+  white-space: nowrap;
 }
-.ls-seg {
-  flex: none;
-  width: 330px;
+.ls-value {
+  color: var(--dim);
+  font-size: 16px;
+  text-align: right;
+  white-space: nowrap;
 }
-.ls-seg button {
-  padding: 0 12px;
-  font-size: 17px;
+.ls-pair {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 16px;
+  min-height: 32px;
+  align-items: center;
 }
-.ls-custom {
-  color: var(--cyan);
+.ls-half {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+}
+.ls-motion {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.ls-one {
+  min-width: 0;
+}
+/* The sound level, a soft bar inside the Sensitivity track. */
+.ls-level {
+  position: absolute;
+  z-index: 0;
+  left: 10px;
+  top: 10px;
+  height: 12px;
+  width: calc((100% - 20px) * var(--lvl, 0));
+  border-radius: 6px;
+  background: rgba(53, 230, 234, 0.28);
+  pointer-events: none;
 }
 .ls-dual {
   --usual2: 90%;
@@ -4980,57 +5145,6 @@ button.sp-qrow:hover {
 }
 .ls-usual2 {
   left: calc(10px + (100% - 20px) * var(--usual2) / 100%);
-}
-.ls-who {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  margin-bottom: 6px;
-}
-.ls-wholabel {
-  width: auto;
-}
-.ls-tiles {
-  display: flex;
-  gap: 8px;
-}
-.ls-tile {
-  flex: 1;
-  min-width: 0;
-  height: 52px;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 2px;
-  border-radius: 10px;
-  border: 1px solid var(--line);
-  background: rgba(10, 7, 28, 0.5);
-  color: var(--tx);
-  font: 500 16px/1.1 var(--body);
-  white-space: nowrap;
-}
-.ls-tile b {
-  font-weight: 600;
-  color: var(--tx);
-}
-.ls-tile.bass b {
-  color: var(--cyan);
-}
-.ls-tile.highs b {
-  color: #ff5fae;
-}
-.ls-tile:hover {
-  border-color: rgba(83, 230, 235, 0.45);
-}
-.ls-tile:focus-visible,
-.u-pal-set:focus-visible,
-.u-custom button:focus-visible {
-  outline: 3px solid var(--cyan);
-  outline-offset: 2px;
-}
-.ls-onoff {
-  text-align: left;
 }
 /* The strip's Settings item: a round icon button at its end. */
 .u-pal-set {
